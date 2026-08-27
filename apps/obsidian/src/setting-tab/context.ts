@@ -14,6 +14,9 @@ import type ZotLitPlugin from "@/zt-main";
 
 /** Settings keys, used to type declarative `control` bindings against the schema. */
 export type SettingsKey = keyof Settings;
+export type ProfileControlKey =
+  `note-profile:${string}:${"label" | "folder" | "citation-style"}`;
+export type SettingsControlKey = SettingsKey | ProfileControlKey;
 
 /** The release-service surface the setting tab needs — reused by both render paths. */
 export type ReleaseTabActions = Pick<

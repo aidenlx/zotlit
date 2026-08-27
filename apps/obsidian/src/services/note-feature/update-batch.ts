@@ -34,10 +34,12 @@ import { BatchModal, FlatManifest } from "@/views/batch-modal";
 import type {
   CreateNoteDiagnostic,
   CreateNoteResult,
+  NoteProfileDiagnostic,
   UpdateScope,
 } from "./operations";
 import {
   createNoteNotice,
+  noteProfileDiagnosticNotice,
   resolveLiteratureNoteWithWarning,
   updateNote,
 } from "./update-single";
@@ -72,6 +74,7 @@ interface RunContext {
   username: string | null;
   /** How much of each existing note an update refreshes. */
   scope: UpdateScope;
+  profileId?: string | null;
 }
 
 export type BatchUpdateResult =
@@ -92,6 +95,8 @@ export interface BatchUpdateOptions {
    * confirmation introduction so a partial run is visible before it writes.
    */
   unavailableLibraries?: number;
+  /** Headless explicit Profile. Existing notes with another stamp are refused. */
+  profileId?: string | null;
 }
 
 /**
@@ -114,7 +119,7 @@ export async function runBatchUpdate(
   itemIDs: readonly number[],
   opts: BatchUpdateOptions = {},
 ): Promise<BatchUpdateResult> {
-  const { scope = "full", unavailableLibraries = 0 } = opts;
+  const { scope = "full", unavailableLibraries = 0, profileId } = opts;
   if (deps.db.state !== "ready") {
     logger.warn("Batch update: database not ready", { count: itemIDs.length });
     return { outcome: "db-unavailable" };
@@ -136,7 +141,7 @@ export async function runBatchUpdate(
     if (!ref) {
       return { outcome: "not-found" };
     }
-    await updateNote(deps, ref, scope);
+    await updateNote(deps, ref, { scope, profileId });
     return { outcome: "single-update" };
   }
 
@@ -197,7 +202,7 @@ export async function runBatchUpdate(
       });
     },
     onRun: (controls) =>
-      executeBatchActions(deps, { actions, scope }, controls),
+      executeBatchActions(deps, { actions, scope, profileId }, controls),
   }).open();
   return { outcome: "batch-modal" };
 }
@@ -280,10 +285,14 @@ async function classifyActions(
 
 async function executeBatchActions(
   deps: SingleUpdateDeps,
-  plan: { actions: readonly BatchAction[]; scope: UpdateScope },
+  plan: {
+    actions: readonly BatchAction[];
+    scope: UpdateScope;
+    profileId?: string | null;
+  },
   controls: BatchRunControls,
 ): Promise<BatchRunResult> {
-  const { actions, scope } = plan;
+  const { actions, scope, profileId } = plan;
   const [settings] = await Promise.all([
     deps.settings.loaded,
     deps.noteFeature.ready,
@@ -298,6 +307,7 @@ async function executeBatchActions(
     collectionCache: new CollectionCache(),
     tagMemo: new Map(),
     scope,
+    profileId,
   };
 
   // The signed-in username is an account-wide scalar, resolved once under the
@@ -353,7 +363,7 @@ async function runAction(
     throw new Error(m.batch_update_unknown_item({ id: action.itemID }));
 
   if (action.kind === "update") {
-    await deps.noteFeature.writeNoteUpdate(action.file, {
+    const result = await deps.noteFeature.writeNoteUpdate(action.file, {
       client: run.client,
       item,
       tagMemo: run.tagMemo,
@@ -362,7 +372,11 @@ async function runAction(
       scope: run.scope,
       groupIdMemo: run.groupIdMemo,
       username: run.username,
+      profileId: run.profileId,
     });
+    if (result.diagnostic) {
+      throw new BatchProfileRefusedError(result.diagnostic);
+    }
     return "updated";
   }
   const result = await deps.noteFeature.createNote(item, {
@@ -370,8 +384,19 @@ async function runAction(
     tagMemo: run.tagMemo,
     groupIdMemo: run.groupIdMemo,
     username: run.username,
+    profileId: run.profileId,
   });
   return batchCreateOutcome(result);
+}
+
+export class BatchProfileRefusedError extends Error {
+  readonly diagnostic: NoteProfileDiagnostic;
+
+  constructor(diagnostic: NoteProfileDiagnostic) {
+    super(noteProfileDiagnosticNotice(diagnostic));
+    this.name = "BatchProfileRefusedError";
+    this.diagnostic = diagnostic;
+  }
 }
 
 export class BatchCreateRefusedError extends Error {

@@ -1,15 +1,20 @@
 import { Keymap, Platform, SuggestModal } from "obsidian";
 import type { TFile } from "obsidian";
 
+import { confirm } from "@/lib/confirm";
+import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
+import { BaseNotice } from "@/lib/notice";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
 import {
   createNoteWithToast,
+  noteProfileDiagnosticNotice,
   resolveLiteratureNoteWithWarning,
 } from "@/services/note-feature/update-single";
 
+import { chooseLiteratureNoteProfile } from "./profile-picker";
 import type { QuickSwitchDeps } from "./register";
 
 /** Glyph for the `Mod` modifier, matching how Obsidian labels its own hotkeys. */
@@ -54,7 +59,24 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     const existing = resolveLiteratureNoteWithWarning(
       this.#deps.noteIndex.getNotesByItemKey(hit.item.indexedKey),
     );
-    const file = existing ?? (await this.#create(hit));
+    const profiles = this.#deps.settings.current?.["note.profiles"] ?? [];
+    if (profiles.length === 0) {
+      await this.#open(existing ?? (await this.#create(hit)), evt);
+      return;
+    }
+
+    const choice = await chooseLiteratureNoteProfile(this.#deps.app, profiles);
+    if (!choice) return;
+    const file = existing
+      ? await this.#resolveExisting(hit, existing, choice)
+      : await this.#create(hit, choice.id);
+    await this.#open(file, evt);
+  }
+
+  async #open(
+    file: TFile | null | undefined,
+    evt: MouseEvent | KeyboardEvent,
+  ): Promise<void> {
     if (!file) return;
 
     await this.#deps.app.workspace.openLinkText(
@@ -66,7 +88,43 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
   }
 
   /** Create-arm: no existing note → render one and return it. */
-  async #create(hit: SearchHit): Promise<TFile | null> {
-    return createNoteWithToast(this.#deps.noteFeature, hit.item);
+  async #create(
+    hit: SearchHit,
+    profileId?: string | null,
+  ): Promise<TFile | null> {
+    return createNoteWithToast(this.#deps.noteFeature, hit.item, profileId);
+  }
+
+  async #resolveExisting(
+    hit: SearchHit,
+    file: TFile,
+    choice: { id: string | null; label: string },
+  ): Promise<TFile> {
+    const stamped =
+      this.#deps.app.metadataCache.getFileCache(file)?.frontmatter?.[
+        FIELD_LITERATURE_NOTE_PROFILE
+      ];
+    const stampedId = stamped === undefined ? null : String(stamped);
+    if (stampedId === choice.id) return file;
+
+    const shouldSwitch = await confirm(
+      {
+        title: m.modal_profile_switch_title({ label: choice.label }),
+        content: m.modal_profile_switch_desc({ label: choice.label }),
+        action: m.modal_profile_switch_confirm(),
+        destructive: true,
+      },
+      this.#deps.app,
+    );
+    if (!shouldSwitch) return file;
+
+    const result = await this.#deps.noteFeature.switchNoteProfile(file, {
+      indexedKey: hit.item.indexedKey,
+      profileId: choice.id,
+    });
+    if (result.diagnostic) {
+      new BaseNotice(noteProfileDiagnosticNotice(result.diagnostic));
+    }
+    return file;
   }
 }

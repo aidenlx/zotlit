@@ -20,6 +20,7 @@ import type {
   CitationIndexActions,
   PandocEngineActions,
   ReleaseTabActions,
+  SettingsControlKey,
   SettingsKey,
   SettingTabContext,
 } from "./context";
@@ -34,6 +35,12 @@ import {
 } from "./maintenance";
 import { noteImportPageItems } from "./note-import";
 import { defaultPlaceholder } from "./placeholder";
+import {
+  getProfileControlValue,
+  isProfileControlKey,
+  literatureNoteProfileItems,
+  setProfileControlValue,
+} from "./profiles";
 import { resourcesGroup } from "./resources";
 import {
   AUTO_TRIM_KEYS,
@@ -109,13 +116,22 @@ export class ZotLitSettingTab extends PluginSettingTab {
     // The migration-pending flag is tracked the same way, so the resources
     // reminder appears/disappears reactively on both render paths.
     let lastFields = settings.current?.["note.frontmatter-fields"];
+    let lastProfiles = settings.current?.["note.profiles"];
     let lastPending = settings.current?.["release.migration-pending"];
     plugin.register(
       settings.subscribe((value) => {
         const fields = value?.["note.frontmatter-fields"];
+        const profiles = value?.["note.profiles"];
         const pending = value?.["release.migration-pending"];
-        if (fields === lastFields && pending === lastPending) return;
+        if (
+          fields === lastFields &&
+          profiles === lastProfiles &&
+          pending === lastPending
+        ) {
+          return;
+        }
         lastFields = fields;
+        lastProfiles = profiles;
         lastPending = pending;
         this.#requestUpdate();
       }),
@@ -129,6 +145,9 @@ export class ZotLitSettingTab extends PluginSettingTab {
 
   /** Bridge declarative `control` reads to {@link SettingsService}. */
   override getControlValue(key: string): unknown {
+    if (isProfileControlKey(key)) {
+      return getProfileControlValue(this.#settings, key);
+    }
     const value = this.#settings.current?.[key as SettingsKey];
     // Auto-trim stores `false | "nl" | "slurp"`; its dropdown reads a string.
     if (AUTO_TRIM_KEYS.has(key as SettingsKey)) return encodeAutoTrim(value);
@@ -139,6 +158,10 @@ export class ZotLitSettingTab extends PluginSettingTab {
 
   /** Bridge declarative `control` writes to {@link SettingsService}. */
   override setControlValue(key: string, value: unknown): void {
+    if (isProfileControlKey(key)) {
+      setProfileControlValue(this.#settings, key, value);
+      return;
+    }
     const next = AUTO_TRIM_KEYS.has(key as SettingsKey)
       ? decodeAutoTrim(value)
       : key === LOG_LEVEL_KEY
@@ -165,7 +188,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
       requestUpdate: () => this.update(),
     };
 
-    const items: SettingDefinitionItem<SettingsKey>[] = [
+    const items: SettingDefinitionItem<SettingsControlKey>[] = [
       // Migration reminder (while pending) and the resources strip, one
       // headerless group — see resourcesGroup for why the reminder is
       // included structurally rather than via `visible`.
@@ -181,6 +204,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
           placeholder: defaultPlaceholder("note.literature-folder"),
         },
       },
+      ...literatureNoteProfileItems(ctx),
       // Self-contained domains live on navigable sub-pages, grouped apart
       // from the hub items above so the page rows read as their own section.
       {

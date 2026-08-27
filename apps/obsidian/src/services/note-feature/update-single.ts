@@ -12,6 +12,7 @@ import { EmptyFilenameError } from "@/services/note-feature/filename";
 import type {
   CreateNoteResult,
   NoteFeature,
+  NoteProfileDiagnostic,
   UpdateResult,
   UpdateScope,
 } from "@/services/note-feature/operations";
@@ -46,7 +47,10 @@ export interface SingleUpdateDeps {
 export async function updateNote(
   deps: SingleUpdateDeps,
   ref: ItemRef,
-  scope: UpdateScope = "full",
+  {
+    scope = "full",
+    profileId,
+  }: { scope?: UpdateScope; profileId?: string | null } = {},
 ): Promise<void> {
   const file = resolveLiteratureNoteWithWarning(
     deps.noteIndex.getNotesByItemKey(ref.indexedKey),
@@ -57,7 +61,7 @@ export async function updateNote(
       new BaseNotice(m.notice_update_metadata_no_note());
       return;
     }
-    await createAndOpen(deps, ref);
+    await createAndOpen(deps, ref, profileId);
     return;
   }
 
@@ -67,7 +71,11 @@ export async function updateNote(
   if (!itemKey) return;
 
   void toast.promise(
-    deps.noteFeature.updateNote(file, { indexedKey: itemKey, scope }),
+    deps.noteFeature.updateNote(file, {
+      indexedKey: itemKey,
+      scope,
+      profileId,
+    }),
     updateNoteToast(scope),
   );
 }
@@ -85,16 +93,21 @@ export function updateNoteToast(scope: UpdateScope): {
   if (scope === "metadata") {
     return {
       loading: m.notice_updating_note_metadata(),
-      success: () => m.notice_updated_note_metadata(),
+      success: (result) =>
+        result.diagnostic
+          ? noteProfileDiagnosticNotice(result.diagnostic)
+          : m.notice_updated_note_metadata(),
       error,
     };
   }
   return {
     loading: m.notice_updating_note(),
     success: (result) =>
-      result.bodyUpdated
-        ? m.notice_updated_note()
-        : m.notice_updated_note_no_region(),
+      result.diagnostic
+        ? noteProfileDiagnosticNotice(result.diagnostic)
+        : result.bodyUpdated
+          ? m.notice_updated_note()
+          : m.notice_updated_note_no_region(),
     error,
   };
 }
@@ -103,11 +116,12 @@ export function updateNoteToast(scope: UpdateScope): {
 export async function createAndOpen(
   deps: SingleUpdateDeps,
   ref: ItemRef,
+  profileId?: string | null,
 ): Promise<void> {
   const [item] = getItemsByID(deps.db.client, [ref.itemID]);
   if (!item) return;
 
-  const file = await createNoteWithToast(deps.noteFeature, item);
+  const file = await createNoteWithToast(deps.noteFeature, item, profileId);
   if (!file) return;
   await deps.app.workspace.openLinkText(file.path, "", false, {
     active: true,
@@ -122,17 +136,21 @@ export async function createAndOpen(
 export async function createNoteWithToast(
   noteFeature: Pick<NoteFeature, "createNote">,
   item: Item,
+  profileId?: string | null,
 ): Promise<TFile | null> {
   try {
-    const result = await toast.promise(noteFeature.createNote(item), {
-      loading: m.notice_creating_note(),
-      success: createNoteNotice,
-      error: (_msg, e) =>
-        e instanceof EmptyFilenameError || e instanceof InertTemplateError
-          ? e.message
-          : m.notice_create_note_failed(),
-      swallowError: false,
-    });
+    const result = await toast.promise(
+      noteFeature.createNote(item, { profileId }),
+      {
+        loading: m.notice_creating_note(),
+        success: createNoteNotice,
+        error: (_msg, e) =>
+          e instanceof EmptyFilenameError || e instanceof InertTemplateError
+            ? e.message
+            : m.notice_create_note_failed(),
+        swallowError: false,
+      },
+    );
     return result.outcome === "created" ? result.file : null;
   } catch {
     return null;
@@ -142,9 +160,25 @@ export async function createNoteWithToast(
 export function createNoteNotice(result: CreateNoteResult): string {
   if (result.outcome === "created") return m.notice_created_note();
   const { diagnostic } = result;
-  return diagnostic.code === "literature-note-exists"
-    ? m.notice_create_note_exists({ path: diagnostic.paths[0] })
-    : m.notice_create_note_duplicates({ paths: diagnostic.paths.join(", ") });
+  switch (diagnostic.code) {
+    case "literature-note-exists":
+      return m.notice_create_note_exists({ path: diagnostic.paths[0] });
+    case "duplicate-literature-notes":
+      return m.notice_create_note_duplicates({
+        paths: diagnostic.paths.join(", "),
+      });
+    case "unknown-literature-note-profile":
+    case "literature-note-profile-conflict":
+      return noteProfileDiagnosticNotice(diagnostic);
+  }
+}
+
+export function noteProfileDiagnosticNotice(
+  diagnostic: NoteProfileDiagnostic,
+): string {
+  return diagnostic.code === "unknown-literature-note-profile"
+    ? m.notice_literature_note_profile_unknown({ id: diagnostic.profileId })
+    : m.notice_literature_note_profile_conflict();
 }
 
 export function duplicateLiteratureNoteWarning(

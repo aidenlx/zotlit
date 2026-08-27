@@ -30,6 +30,10 @@ import {
   buildAnnotationResolvers,
   renderAnnotations,
 } from "@/lib/annotation-render";
+import {
+  FIELD_CITATION_STYLE,
+  FIELD_LITERATURE_NOTE_PROFILE,
+} from "@/lib/constants";
 import { ensureParentFolder } from "@/lib/ensure-folder";
 import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
@@ -57,14 +61,40 @@ const FRONTMATTER_BLOCK = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n+|$)/;
 export interface UpdateResult {
   bodyUpdated: boolean;
   duplicateRegionCount: number;
+  diagnostic?: NoteProfileDiagnostic;
 }
 
-export interface CreateNoteDiagnostic {
+export interface ExistingNoteDiagnostic {
   code: "literature-note-exists" | "duplicate-literature-notes";
   hint: string;
   indexedKey: string;
   paths: [string, ...string[]];
 }
+
+export interface UnknownNoteProfileDiagnostic {
+  code: "unknown-literature-note-profile";
+  hint: string;
+  profileId: string;
+  path?: string;
+  indexedKey?: string;
+}
+
+export interface NoteProfileConflictDiagnostic {
+  code: "literature-note-profile-conflict";
+  hint: string;
+  indexedKey: string;
+  path: string;
+  existingProfileId: string | null;
+  requestedProfileId: string | null;
+}
+
+export type NoteProfileDiagnostic =
+  | UnknownNoteProfileDiagnostic
+  | NoteProfileConflictDiagnostic;
+
+export type CreateNoteDiagnostic =
+  | ExistingNoteDiagnostic
+  | NoteProfileDiagnostic;
 
 export type CreateNoteResult =
   | { outcome: "created"; file: TFile }
@@ -97,6 +127,8 @@ export interface CreateNoteOptions {
    * resolves it from its own lease when omitted.
    */
   username?: string | null;
+  /** `null` explicitly selects the built-in default Profile. */
+  profileId?: string | null;
 }
 
 interface CreateNoteInternalOptions extends CreateNoteOptions {
@@ -117,6 +149,8 @@ export interface WriteNoteUpdateOptions {
   groupIdMemo?: GroupIDMemo;
   /** Once-resolved account username for the batch. */
   username: string | null;
+  /** Headless explicit Profile. A different stamp is refused. */
+  profileId?: string | null;
 }
 
 /** Events the bound note feature emits; a UI subscriber owns any rendering. */
@@ -153,10 +187,19 @@ export interface NoteFeature {
   /** @see updateNote */
   updateNote(
     file: TFile,
-    options: { indexedKey: string; scope?: UpdateScope },
+    options: {
+      indexedKey: string;
+      scope?: UpdateScope;
+      profileId?: string | null;
+    },
+  ): Promise<UpdateResult>;
+  /** Re-stamp one note after explicit user consent, then refresh it. */
+  switchNoteProfile(
+    file: TFile,
+    options: { indexedKey: string; profileId: string | null },
   ): Promise<UpdateResult>;
   /** @see overwriteNote */
-  overwriteNote(file: TFile, indexedKey: string): Promise<void>;
+  overwriteNote(file: TFile, indexedKey: string): Promise<UpdateResult>;
   /** @see writeNoteUpdate */
   writeNoteUpdate(
     file: TFile,
@@ -251,6 +294,7 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
     ),
     createNote: createAtGate,
     updateNote: (file, options) => updateNote(ctx, file, options),
+    switchNoteProfile: (file, options) => switchNoteProfile(ctx, file, options),
     overwriteNote: (file, indexedKey) => overwriteNote(ctx, file, indexedKey),
     writeNoteUpdate: (file, options) => writeNoteUpdate(ctx, file, options),
     renderCitation: (items, secondary = false) =>
@@ -309,8 +353,30 @@ async function createNote(
     ctx.noteIndex.whenIndexed(),
     ctx.template.ready,
   ]);
+  const requestedProfileId = options.profileId ?? undefined;
+  const profile = resolveLiteratureNoteProfile(settings, requestedProfileId);
+  if (!profile) {
+    return refusedUnknownProfile(requestedProfileId!, {
+      indexedKey: item.indexedKey,
+    });
+  }
   const existing = ctx.noteIndex.getNotesByItemKey(item.indexedKey);
   if (existing.length > 0) {
+    if (existing.length === 1 && options.profileId !== undefined) {
+      const existingProfileId = stampedProfileId(ctx, existing[0]!);
+      if (!resolveLiteratureNoteProfile(settings, existingProfileId)) {
+        return refusedUnknownProfile(existingProfileId!, {
+          indexedKey: item.indexedKey,
+          path: existing[0]!.path,
+        });
+      }
+      if (existingProfileId !== requestedProfileId) {
+        return refusedProfileConflict(item.indexedKey, existing[0]!, {
+          existingProfileId,
+          requestedProfileId,
+        });
+      }
+    }
     return refusedCreate(item.indexedKey, existing);
   }
   // Pin the client across the async vault write and the child-note import flush
@@ -330,7 +396,7 @@ async function createNote(
   let { path, canSuffix } = resolveNotePath(ctx, item, {
     itemTags,
     itemCollections,
-    settings,
+    settings: profile.settings,
   });
 
   for (let attempt = 0; ; attempt++) {
@@ -341,7 +407,8 @@ async function createNote(
         tagMemo,
         collectionCache,
         path,
-        settings,
+        settings: profile.settings,
+        profile,
         groupIdMemo: options.groupIdMemo,
         username,
         onFileCreated: (created) => {
@@ -367,7 +434,7 @@ async function createNote(
       ({ path, canSuffix } = resolveNotePath(ctx, item, {
         itemTags,
         itemCollections,
-        settings,
+        settings: profile.settings,
         forceSuffix: true,
       }));
     }
@@ -389,6 +456,7 @@ async function writeNewNote(
     collectionCache: CollectionCache;
     path: string;
     settings: Readonly<Settings>;
+    profile: ResolvedLiteratureNoteProfile;
     groupIdMemo?: GroupIDMemo;
     username: string | null;
     onFileCreated?: (file: TFile) => void;
@@ -420,7 +488,11 @@ async function writeNewNote(
   });
   const body = ctx.template.render("note", context);
   const fm: Record<string, unknown> = {};
-  applyFrontmatter(ctx, fm, { context, itemKey: item.indexedKey });
+  applyFrontmatter(ctx, fm, {
+    context,
+    itemKey: item.indexedKey,
+    profile: options.profile,
+  });
   const content = `---\n${stringifyYaml(fm)}---\n${body}`;
 
   const file = await ctx.app.vault.create(path, content);
@@ -434,19 +506,46 @@ async function writeNewNote(
 async function updateNote(
   ctx: OpsContext,
   file: TFile,
-  options: { indexedKey: string; scope?: UpdateScope },
+  options: {
+    indexedKey: string;
+    scope?: UpdateScope;
+    profileId?: string | null;
+    profileOverride?: string | null;
+  },
 ): Promise<UpdateResult> {
-  const { indexedKey, scope = "full" } = options;
+  const { indexedKey, scope = "full", profileOverride } = options;
   // Settle readiness and prepare the attachment handle before pinning the
   // client, so the lease (an auto-refresh gate) spans only the DB reads, the
   // vault writes, and the child-note import flush — not the warm-up awaits.
-  await Promise.all([ctx.noteIndex.whenIndexed(), ctx.template.ready]);
+  const [settings] = await Promise.all([
+    ctx.settings.loaded,
+    ctx.noteIndex.whenIndexed(),
+    ctx.template.ready,
+  ]);
+  const stampedId = stampedProfileId(ctx, file);
+  if (profileOverride === undefined && options.profileId !== undefined) {
+    const requestedId = options.profileId ?? undefined;
+    if (!resolveLiteratureNoteProfile(settings, requestedId)) {
+      return refusedUpdateProfile(requestedId!, file.path);
+    }
+    if (requestedId !== stampedId) {
+      return refusedUpdateProfileConflict(indexedKey, file.path, {
+        existingProfileId: stampedId,
+        requestedProfileId: requestedId,
+      });
+    }
+  }
+  const profileId =
+    profileOverride === undefined ? stampedId : (profileOverride ?? undefined);
+  const profile = resolveLiteratureNoteProfile(settings, profileId);
+  if (!profile) return refusedUpdateProfile(profileId!, file.path);
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   using lease = await ctx.db.acquireRead();
   const { context, noteImport } = await contextForIndexedKey(ctx, indexedKey, {
     client: lease.client,
     attachmentImport,
     sourcePath: file.path,
+    settings: profile.settings,
   });
   return applyManagedUpdate(ctx, file, {
     context,
@@ -454,6 +553,27 @@ async function updateNote(
     noteImport,
     itemKey: indexedKey,
     scope,
+    profile,
+  });
+}
+
+async function switchNoteProfile(
+  ctx: OpsContext,
+  file: TFile,
+  options: { indexedKey: string; profileId: string | null },
+): Promise<UpdateResult> {
+  const settings = await ctx.settings.loaded;
+  const profileId = options.profileId ?? undefined;
+  const profile = resolveLiteratureNoteProfile(settings, profileId);
+  if (!profile) return refusedUpdateProfile(profileId!, file.path);
+
+  await ctx.app.fileManager.processFrontMatter(file, (fm) => {
+    if (profileId === undefined) delete fm[FIELD_LITERATURE_NOTE_PROFILE];
+    else fm[FIELD_LITERATURE_NOTE_PROFILE] = profileId;
+  });
+  return updateNote(ctx, file, {
+    indexedKey: options.indexedKey,
+    profileOverride: options.profileId,
   });
 }
 
@@ -472,18 +592,33 @@ async function writeNoteUpdate(
   file: TFile,
   options: WriteNoteUpdateOptions,
 ): Promise<UpdateResult> {
+  const profileId = stampedProfileId(ctx, file);
+  if (options.profileId !== undefined) {
+    const requestedId = options.profileId ?? undefined;
+    if (!resolveLiteratureNoteProfile(options.settings, requestedId)) {
+      return refusedUpdateProfile(requestedId!, file.path);
+    }
+    if (requestedId !== profileId) {
+      return refusedUpdateProfileConflict(options.item.indexedKey, file.path, {
+        existingProfileId: profileId,
+        requestedProfileId: requestedId,
+      });
+    }
+  }
+  const profile = resolveLiteratureNoteProfile(options.settings, profileId);
+  if (!profile) return refusedUpdateProfile(profileId!, file.path);
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   const noteImport = await ctx.noteImport.prepare({
     client: options.client,
     sourcePath: file.path,
-    settings: options.settings,
+    settings: profile.settings,
     groupIdMemo: options.groupIdMemo,
     tagMemo: options.tagMemo,
   });
   const resolvers = buildNoteResolvers(ctx, {
     attachmentImport,
     noteImport,
-    settings: options.settings,
+    settings: profile.settings,
     sourcePath: file.path,
   });
   const context = fetchNoteContext(options.client, options.item, {
@@ -499,6 +634,7 @@ async function writeNoteUpdate(
     noteImport,
     itemKey: options.item.indexedKey,
     scope: options.scope ?? "full",
+    profile,
   });
 }
 
@@ -515,10 +651,12 @@ async function applyManagedUpdate(
     noteImport: Pick<NoteImport, "flush">;
     itemKey: string;
     scope: UpdateScope;
+    profile: ResolvedLiteratureNoteProfile;
   },
 ): Promise<UpdateResult> {
-  const { context, attachmentImport, noteImport, itemKey, scope } = input;
-  await refreshFrontmatter(ctx, file, { context, itemKey });
+  const { context, attachmentImport, noteImport, itemKey, scope, profile } =
+    input;
+  await refreshFrontmatter(ctx, file, { context, itemKey, profile });
   const result =
     scope === "full"
       ? await replaceManagedBody(ctx, file, { context, itemKey })
@@ -572,19 +710,31 @@ async function overwriteNote(
   ctx: OpsContext,
   file: TFile,
   indexedKey: string,
-): Promise<void> {
+): Promise<UpdateResult> {
   // Settle readiness and prepare the attachment handle before pinning the
   // client, so the lease (an auto-refresh gate) spans only the DB reads, the
   // vault writes, and the child-note import flush — not the warm-up awaits.
-  await Promise.all([ctx.noteIndex.whenIndexed(), ctx.template.ready]);
+  const [settings] = await Promise.all([
+    ctx.settings.loaded,
+    ctx.noteIndex.whenIndexed(),
+    ctx.template.ready,
+  ]);
+  const profileId = stampedProfileId(ctx, file);
+  const profile = resolveLiteratureNoteProfile(settings, profileId);
+  if (!profile) return refusedUpdateProfile(profileId!, file.path);
   const attachmentImport = await ctx.attachmentImport.prepare(file.path);
   using lease = await ctx.db.acquireRead();
   const { context, noteImport } = await contextForIndexedKey(ctx, indexedKey, {
     client: lease.client,
     attachmentImport,
     sourcePath: file.path,
+    settings: profile.settings,
   });
-  await refreshFrontmatter(ctx, file, { context, itemKey: indexedKey });
+  await refreshFrontmatter(ctx, file, {
+    context,
+    itemKey: indexedKey,
+    profile,
+  });
   const body = ctx.template.render("note", context);
   await ctx.app.vault.process(file, (content) => {
     const prefix = FRONTMATTER_BLOCK.exec(content)?.[0] ?? "";
@@ -596,6 +746,7 @@ async function overwriteNote(
     path: file.path,
     itemKey: indexedKey,
   });
+  return { bodyUpdated: true, duplicateRegionCount: 0 };
 }
 
 /**
@@ -708,10 +859,10 @@ async function contextForIndexedKey(
     client: NodeDatabaseClient;
     attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
     sourcePath: string;
+    settings: Readonly<Settings>;
   },
 ): Promise<{ context: NoteTemplateContext; noteImport: NoteImport }> {
-  const settings = await ctx.settings.loaded;
-  const { client, sourcePath } = options;
+  const { client, sourcePath, settings } = options;
   const parsed = resolveIndexedKeyLibrary(client, indexedKey);
   if (!parsed) throw new Error(`Zotero item not found: ${indexedKey}`);
 
@@ -740,7 +891,11 @@ async function contextForIndexedKey(
 async function refreshFrontmatter(
   ctx: OpsContext,
   file: TFile,
-  input: { context: NoteTemplateContext; itemKey: string },
+  input: {
+    context: NoteTemplateContext;
+    itemKey: string;
+    profile: ResolvedLiteratureNoteProfile;
+  },
 ): Promise<void> {
   await ctx.app.fileManager.processFrontMatter(file, (fm) => {
     applyFrontmatter(ctx, fm, input);
@@ -755,9 +910,13 @@ async function refreshFrontmatter(
 function applyFrontmatter(
   ctx: OpsContext,
   fm: Record<string, unknown>,
-  input: { context: NoteTemplateContext; itemKey: string },
+  input: {
+    context: NoteTemplateContext;
+    itemKey: string;
+    profile: ResolvedLiteratureNoteProfile;
+  },
 ): void {
-  const { context, itemKey } = input;
+  const { context, itemKey, profile } = input;
   const failed: string[] = [];
   applyManagedFrontmatter(fm, context, {
     compiled: ctx.template.frontmatterFields,
@@ -769,7 +928,123 @@ function applyFrontmatter(
       logger.warn("Skipped frontmatter append", { key, itemKey, ...detail });
     },
   });
+  if (profile.id === undefined) delete fm[FIELD_LITERATURE_NOTE_PROFILE];
+  else fm[FIELD_LITERATURE_NOTE_PROFILE] = profile.id;
+  if (profile.citationStyle === undefined) delete fm[FIELD_CITATION_STYLE];
+  else fm[FIELD_CITATION_STYLE] = profile.citationStyle;
   if (failed.length > 0) {
     ctx.events.emit("frontmatter-eval-failed", { itemKey, fields: failed });
   }
+}
+
+interface ResolvedLiteratureNoteProfile {
+  id: string | undefined;
+  settings: Readonly<Settings>;
+  citationStyle: string | null | undefined;
+}
+
+function resolveLiteratureNoteProfile(
+  settings: Readonly<Settings>,
+  id: string | undefined,
+): ResolvedLiteratureNoteProfile | undefined {
+  if (id === undefined) {
+    return { id, settings, citationStyle: undefined };
+  }
+  const profile = settings["note.profiles"].find(
+    (candidate) => candidate.id === id,
+  );
+  if (!profile) return undefined;
+  const bindings = profile.bindings;
+  return {
+    id,
+    settings: {
+      ...settings,
+      "note.literature-folder":
+        bindings?.["note.literature-folder"] ??
+        settings["note.literature-folder"],
+      "citation.references-style":
+        bindings?.["citation.references-style"] !== undefined
+          ? bindings["citation.references-style"]
+          : settings["citation.references-style"],
+    },
+    citationStyle: bindings?.["citation.references-style"],
+  };
+}
+
+function stampedProfileId(
+  ctx: NoteFeatureDeps,
+  file: TFile,
+): string | undefined {
+  const value =
+    ctx.app.metadataCache.getFileCache(file)?.frontmatter?.[
+      FIELD_LITERATURE_NOTE_PROFILE
+    ];
+  return value === undefined ? undefined : String(value);
+}
+
+function refusedUnknownProfile(
+  profileId: string,
+  context: { path?: string; indexedKey?: string },
+): {
+  outcome: "refused";
+  diagnostic: UnknownNoteProfileDiagnostic;
+} {
+  return {
+    outcome: "refused",
+    diagnostic: {
+      code: "unknown-literature-note-profile",
+      hint: "Re-stamp the note or recreate the Profile with the same ID.",
+      profileId,
+      ...context,
+    },
+  };
+}
+
+function refusedUpdateProfile(profileId: string, path: string): UpdateResult {
+  return {
+    ...NO_BODY_UPDATE,
+    diagnostic: refusedUnknownProfile(profileId, { path }).diagnostic,
+  };
+}
+
+function refusedUpdateProfileConflict(
+  indexedKey: string,
+  path: string,
+  profiles: {
+    existingProfileId: string | undefined;
+    requestedProfileId: string | undefined;
+  },
+): UpdateResult {
+  return {
+    ...NO_BODY_UPDATE,
+    diagnostic: {
+      code: "literature-note-profile-conflict",
+      hint: "Follow the stamped Profile, or switch the note interactively before this headless update.",
+      indexedKey,
+      path,
+      existingProfileId: profiles.existingProfileId ?? null,
+      requestedProfileId: profiles.requestedProfileId ?? null,
+    },
+  };
+}
+
+function refusedProfileConflict(
+  indexedKey: string,
+  file: TFile,
+  profiles: {
+    existingProfileId: string | undefined;
+    requestedProfileId: string | undefined;
+  },
+): Extract<CreateNoteResult, { outcome: "refused" }> {
+  return {
+    outcome: "refused",
+    diagnostic: {
+      code: "literature-note-profile-conflict",
+      hint: "Keep the existing Profile, or switch the note to the requested Profile and refresh its managed content.",
+      indexedKey,
+      path: file.path,
+      existingProfileId: profiles.existingProfileId ?? null,
+      requestedProfileId: profiles.requestedProfileId ?? null,
+    },
+  };
 }

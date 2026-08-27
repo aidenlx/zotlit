@@ -34,12 +34,18 @@ import {
 } from "@zotlit/templates/obsidian";
 import type { ItemFields } from "@zotlit/zotero-types";
 
-import { FIELD_CITEKEY, FIELD_ZOTERO_KEY } from "@/lib/constants";
+import {
+  FIELD_CITATION_STYLE,
+  FIELD_CITEKEY,
+  FIELD_LITERATURE_NOTE_PROFILE,
+  FIELD_ZOTERO_KEY,
+} from "@/lib/constants";
 import type {
   AttachmentSource,
   SourceOrigin,
 } from "@/services/attachment-import/service";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
+import type { Settings } from "@/services/settings/schema";
 
 import type { NoteFeatureDeps, SyncRenderDeps } from "./context";
 import { createNoteFeature } from "./operations";
@@ -849,6 +855,113 @@ describe("createNote", () => {
     expect(renderFilenameCalledBeforeSignal).toBe(true);
     expect(file.path).toBe("Literature/Root.md");
   });
+
+  it("creates under an explicit Profile with its folder, stamp, and citation style", async () => {
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const item = makeItem({
+      key: "ROOT1234",
+      indexedKey: "ROOT1234",
+      title: "Root",
+      citationKey: "root2024",
+    });
+    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    const app = makeApp();
+    const deps: SyncRenderDeps = {
+      app,
+      template: makeTemplate(),
+      db: makeDb(),
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings({
+        "note.profiles": [
+          {
+            id: profileId,
+            label: "Books",
+            bindings: {
+              "note.literature-folder": "Books",
+              "citation.references-style": "apa",
+            },
+          },
+        ],
+      }),
+      attachmentImport: blockedAttachmentImport,
+      noteImport: {
+        prepare: async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            indexedKey: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+        }),
+      },
+    };
+
+    const file = createdFile(
+      await createNoteFeature(deps).createNote(item, { profileId }),
+    );
+
+    expect(file.path).toBe("Books/Root.md");
+    expect(app.vault.contentByPath.get(file.path)).toContain(
+      `${FIELD_LITERATURE_NOTE_PROFILE}: ${profileId}`,
+    );
+    expect(app.vault.contentByPath.get(file.path)).toContain(
+      `${FIELD_CITATION_STYLE}: apa`,
+    );
+  });
+
+  it("returns a Profile conflict when an explicit create disagrees with the existing stamp", async () => {
+    const existingProfileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const requestedProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const existing = makeFile("Books/Root.md");
+    const app = makeApp();
+    app.metadataCache.getFileCache.mockReturnValue({
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: existingProfileId },
+    });
+    const deps: SyncRenderDeps = {
+      app,
+      template: makeTemplate(),
+      db: makeDb(),
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [existing],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings({
+        "note.profiles": [
+          { id: existingProfileId, label: "Books" },
+          { id: requestedProfileId, label: "Papers" },
+        ],
+      }),
+      attachmentImport: blockedAttachmentImport,
+      noteImport: {
+        prepare: vi.fn(),
+      },
+    };
+
+    const result = await createNoteFeature(deps).createNote(
+      makeCreateGateItem(),
+      { profileId: requestedProfileId },
+    );
+
+    expect(result).toEqual({
+      outcome: "refused",
+      diagnostic: {
+        code: "literature-note-profile-conflict",
+        hint: expect.stringContaining("Keep"),
+        indexedKey: "ROOT1234",
+        path: "Books/Root.md",
+        existingProfileId,
+        requestedProfileId,
+      },
+    });
+  });
 });
 
 describe("overwriteNote", () => {
@@ -960,6 +1073,7 @@ function makeUpdateHarness(options: {
    *  engine's transformRender emits. @default a fresh `NEW BODY` region */
   renderedRegion?: string;
   frontmatterFields?: readonly CompiledFrontmatterField[];
+  settings?: Partial<Settings>;
 }): UpdateHarness {
   let content = options.content;
   const fm: Record<string, unknown> = { ...options.frontmatter };
@@ -989,7 +1103,7 @@ function makeUpdateHarness(options: {
 
   const deps: SyncRenderDeps = {
     app: {
-      metadataCache: { getFileCache: () => null },
+      metadataCache: { getFileCache: () => ({ frontmatter: fm }) },
       vault: {
         getAbstractFileByPath: () => null,
         getRoot: () => new TFolder(),
@@ -1010,7 +1124,7 @@ function makeUpdateHarness(options: {
       getNotesByItemKey: () => [],
     },
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-    settings: makeSettings(),
+    settings: makeSettings(options.settings),
     attachmentImport: blockedAttachmentImport,
     noteImport: {
       prepare: async () => ({
@@ -1066,6 +1180,95 @@ function stubIndexedKeyUpdate(context: NoteTemplateContext): void {
 }
 
 describe("updateNote", () => {
+  it("follows the stamped Profile and refreshes its citation-style binding", async () => {
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
+      settings: {
+        "note.profiles": [
+          {
+            id: profileId,
+            label: "Books",
+            bindings: {
+              "note.literature-folder": "Books",
+              "citation.references-style": "apa",
+            },
+          },
+        ],
+      },
+    });
+
+    await createNoteFeature(harness.deps).updateNote(
+      makeFile("Books/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(harness.frontmatter()).toMatchObject({
+      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+      [FIELD_CITATION_STYLE]: "apa",
+    });
+  });
+
+  it("refuses an unknown Profile stamp without touching the note", async () => {
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
+    });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(result).toEqual({
+      bodyUpdated: false,
+      duplicateRegionCount: 0,
+      diagnostic: {
+        code: "unknown-literature-note-profile",
+        hint: expect.stringContaining("Re-stamp"),
+        profileId,
+        path: "Literature/Root.md",
+      },
+    });
+    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+  });
+
+  it("switches the stamp after consent and refreshes with the new Profile", async () => {
+    const oldProfileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const newProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
+      settings: {
+        "note.profiles": [
+          { id: oldProfileId, label: "Books" },
+          {
+            id: newProfileId,
+            label: "Papers",
+            bindings: { "citation.references-style": "ieee" },
+          },
+        ],
+      },
+    });
+
+    const result = await createNoteFeature(harness.deps).switchNoteProfile(
+      makeFile("Books/Root.md"),
+      { indexedKey: "ABC12345", profileId: newProfileId },
+    );
+
+    expect(result.diagnostic).toBeUndefined();
+    expect(harness.frontmatter()).toMatchObject({
+      [FIELD_LITERATURE_NOTE_PROFILE]: newProfileId,
+      [FIELD_CITATION_STYLE]: "ieee",
+    });
+  });
+
   it("preserves user content outside the managed region, replacing only the region body", async () => {
     const context = updateContext();
     stubIndexedKeyUpdate(context);
@@ -1365,6 +1568,37 @@ describe("writeNoteUpdate", () => {
     expect(harness.processMock).not.toHaveBeenCalled();
     expect(harness.frontmatterMock).toHaveBeenCalledOnce();
     expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
+  });
+
+  it("refuses a conflicting explicit Profile on the headless batch seam", async () => {
+    const stampedId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const requestedId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: stampedId },
+    });
+    const options = writeOptions();
+    options.settings = {
+      ...options.settings,
+      "note.profiles": [
+        { id: stampedId, label: "Books" },
+        { id: requestedId, label: "Papers" },
+      ],
+    };
+    options.profileId = requestedId;
+
+    const result = await createNoteFeature(harness.deps).writeNoteUpdate(
+      makeFile("Books/Root.md"),
+      options,
+    );
+
+    expect(result.diagnostic).toMatchObject({
+      code: "literature-note-profile-conflict",
+      existingProfileId: stampedId,
+      requestedProfileId: requestedId,
+    });
+    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.frontmatterMock).not.toHaveBeenCalled();
   });
 });
 
@@ -1754,11 +1988,14 @@ function makeDb(): SyncRenderDeps["db"] {
   };
 }
 
-function makeSettings(): NoteFeatureDeps["settings"] {
+function makeSettings(
+  overrides: Partial<Settings> = {},
+): NoteFeatureDeps["settings"] {
   return {
     loaded: Promise.resolve({
       ...settingsDefaults,
       "note.literature-folder": "Literature",
+      ...overrides,
     }),
   };
 }
@@ -1898,6 +2135,7 @@ function makeCreateGateItem(): Item {
 
 function createGateContext(): NoteTemplateContext {
   return {
+    indexedKey: "ROOT1234",
     notePath: "Literature/Root.md",
     noteLink: () => "[[Literature/Root.md]]",
     relatedItems: [],

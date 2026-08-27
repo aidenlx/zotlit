@@ -86,8 +86,12 @@ import {
   VERSION_KEY,
 } from "./classify";
 import type { HydrationOrigin } from "./classify";
-import { defaults, schema } from "./schema";
-import type { Settings } from "./schema";
+import { DEFAULT_LITERATURE_NOTE_PROFILE, defaults, schema } from "./schema";
+import type {
+  LiteratureNoteProfile,
+  LiteratureNoteProfileBindings,
+  Settings,
+} from "./schema";
 
 const SAVE_DEBOUNCE_MS = 200;
 const CURRENT_VERSION = 9;
@@ -120,6 +124,17 @@ export interface SettingsDiagnostic {
   readonly key: keyof Settings;
   /** The rejected value as persisted, kept until that key is updated or reset. */
   readonly value: unknown;
+}
+
+export interface LiteratureNoteProfilePatch {
+  readonly label?: string;
+  /** Complete sparse binding record. Omitted keys inherit global settings. */
+  readonly bindings?: LiteratureNoteProfileBindings;
+}
+
+export interface ResolvedLiteratureNoteProfileBindings {
+  readonly "note.literature-folder": string;
+  readonly "citation.references-style": string | null;
 }
 
 /** Raw values of broken overrides, keyed by the settings key they belong to. */
@@ -263,6 +278,87 @@ export class SettingsService extends Service<void> {
     invokeSubscriber(fn, this.#loaded ? this.#snapshot() : null);
     return () => {
       this.#subscribers.delete(fn);
+    };
+  }
+
+  /** Get the empty built-in Profile, or one added Profile by its stable id. */
+  getLiteratureNoteProfile(
+    id?: string,
+  ):
+    | typeof DEFAULT_LITERATURE_NOTE_PROFILE
+    | LiteratureNoteProfile
+    | undefined {
+    this.#requireLoaded("getLiteratureNoteProfile");
+    if (id === undefined) return DEFAULT_LITERATURE_NOTE_PROFILE;
+    const profile = this.#snapshot()["note.profiles"].find(
+      (profile) => profile.id === id,
+    );
+    return profile && cloneLiteratureNoteProfile(profile);
+  }
+
+  /** Add a Profile with a generated identity and no binding overrides. */
+  createLiteratureNoteProfile(label: string): LiteratureNoteProfile {
+    this.#requireLoaded("createLiteratureNoteProfile");
+    const profile = { id: crypto.randomUUID(), label };
+    this.update((current) => ({
+      "note.profiles": [...current["note.profiles"], profile],
+    }));
+    return cloneLiteratureNoteProfile(profile);
+  }
+
+  /** Edit one Profile while preserving its identity. */
+  updateLiteratureNoteProfile(
+    id: string,
+    patch: LiteratureNoteProfilePatch,
+  ): LiteratureNoteProfile {
+    this.#requireLoaded("updateLiteratureNoteProfile");
+    const profiles = this.#snapshot()["note.profiles"];
+    const index = profiles.findIndex((profile) => profile.id === id);
+    if (index === -1) throw new Error(`Unknown literature note Profile: ${id}`);
+    const current = profiles[index]!;
+    const bindings = patch.bindings ?? current.bindings;
+    const profile: LiteratureNoteProfile = {
+      id,
+      label: patch.label ?? current.label,
+      ...(bindings === undefined ? {} : { bindings }),
+    };
+    const next = [...profiles];
+    next[index] = profile;
+    this.update({ "note.profiles": next });
+    return cloneLiteratureNoteProfile(profile);
+  }
+
+  /** Delete one added Profile. The built-in empty Profile is not stored. */
+  deleteLiteratureNoteProfile(id: string): void {
+    this.#requireLoaded("deleteLiteratureNoteProfile");
+    const profiles = this.#snapshot()["note.profiles"];
+    const next = profiles.filter((profile) => profile.id !== id);
+    if (next.length === profiles.length) {
+      throw new Error(`Unknown literature note Profile: ${id}`);
+    }
+    this.update({ "note.profiles": next });
+  }
+
+  /** Resolve sparse Profile bindings over the current global settings. */
+  resolveLiteratureNoteProfileBindings(
+    id?: string,
+  ): ResolvedLiteratureNoteProfileBindings | undefined {
+    this.#requireLoaded("resolveLiteratureNoteProfileBindings");
+    const current = this.#snapshot();
+    const profile =
+      id === undefined
+        ? undefined
+        : current["note.profiles"].find((candidate) => candidate.id === id);
+    if (id !== undefined && profile === undefined) return undefined;
+    const bindings = profile?.bindings;
+    return {
+      "note.literature-folder":
+        bindings?.["note.literature-folder"] ??
+        current["note.literature-folder"],
+      "citation.references-style":
+        bindings?.["citation.references-style"] !== undefined
+          ? bindings["citation.references-style"]
+          : current["citation.references-style"],
     };
   }
 
@@ -751,6 +847,18 @@ function assertWritableKey(key: string, op: string): void {
   if (!isSettingsKey(key)) {
     throw new Error(`SettingsService.${op}(): unknown settings key '${key}'`);
   }
+}
+
+function cloneLiteratureNoteProfile(
+  profile: LiteratureNoteProfile,
+): LiteratureNoteProfile {
+  return {
+    id: profile.id,
+    label: profile.label,
+    ...(profile.bindings === undefined
+      ? {}
+      : { bindings: { ...profile.bindings } }),
+  };
 }
 
 /**
