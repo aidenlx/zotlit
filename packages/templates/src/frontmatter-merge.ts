@@ -31,7 +31,16 @@ export function mergeFrontmatterFields(
   evaluated: Record<string, unknown>,
   { current = {}, onConflict }: MergeFrontmatterOptions = {},
 ): Record<string, unknown> {
-  const patch: Record<string, unknown> = {};
+  const patch: Record<string, unknown> = Object.create(null);
+
+  const setPatch = (key: string, value: unknown): void => {
+    Object.defineProperty(patch, key, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  };
 
   for (const field of fields) {
     if (!Object.hasOwn(evaluated, field.key)) continue;
@@ -40,26 +49,28 @@ export function mergeFrontmatterFields(
     if (generated === undefined) continue;
     if (generated === FRONTMATTER_ABSENT) {
       if (field.merge === "replace" && Object.hasOwn(current, field.key)) {
-        patch[field.key] = FRONTMATTER_ABSENT;
+        setPatch(field.key, FRONTMATTER_ABSENT);
       }
       continue;
     }
-    const existing = current[field.key];
+    const existing = Object.hasOwn(current, field.key)
+      ? current[field.key]
+      : undefined;
     switch (field.merge) {
       case "replace":
-        patch[field.key] = generated;
+        setPatch(field.key, generated);
         break;
       case "append":
         if (Array.isArray(existing) && Array.isArray(generated)) {
-          patch[field.key] = appendDistinct(existing, generated);
+          setPatch(field.key, appendDistinct(existing, generated));
         } else if (isBlank(existing)) {
-          patch[field.key] = generated;
+          setPatch(field.key, generated);
         } else {
           onConflict?.(field.key, { reason: "shape-mismatch" });
         }
         break;
       case "keep":
-        if (isBlank(existing)) patch[field.key] = generated;
+        if (isBlank(existing)) setPatch(field.key, generated);
         break;
     }
   }

@@ -68,7 +68,7 @@
   "notice_overwrote_note": "Literature note overwritten.",
   "notice_overwrite_note_failed": "Failed to overwrite literature note.",
   "notice_frontmatter_eval_failed": "Some frontmatter fields failed to evaluate and were skipped: {fields}.",
-  "notice_managed_frontmatter_refused": "Correct these Managed Frontmatter fields, then try again: {fields}.",
+  "notice_managed_frontmatter_refused": "ZotLit kept the existing Managed Frontmatter. {failures}",
   "managed_frontmatter_refused_recovery": "Correct the named fields, then try again.",
   "managed_frontmatter_eval_failure": "Managed Frontmatter field '{field}' failed to evaluate.",
   "managed_frontmatter_eval_recovery": "Correct '{field}' in the Literature Note Template document, then try again.",
