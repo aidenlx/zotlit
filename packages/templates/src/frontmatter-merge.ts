@@ -1,5 +1,11 @@
 import type { FrontmatterMergeStrategy } from "./constants";
 
+/**
+ * Generated-field state that deletes an existing key under `replace` and
+ * preserves it under `append` or `keep`. A create operation always omits it.
+ */
+export const FRONTMATTER_ABSENT = Symbol("frontmatter absent");
+
 export interface FrontmatterFieldMergeSpec {
   key: string;
   merge: FrontmatterMergeStrategy;
@@ -31,6 +37,13 @@ export function mergeFrontmatterFields(
     if (!Object.hasOwn(evaluated, field.key)) continue;
 
     const generated = evaluated[field.key];
+    if (generated === undefined) continue;
+    if (generated === FRONTMATTER_ABSENT) {
+      if (field.merge === "replace" && Object.hasOwn(current, field.key)) {
+        patch[field.key] = FRONTMATTER_ABSENT;
+      }
+      continue;
+    }
     const existing = current[field.key];
     switch (field.merge) {
       case "replace":
