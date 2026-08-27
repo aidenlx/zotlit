@@ -38,6 +38,10 @@ import {
   migrateV8ToV9,
 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
+import {
+  LiteratureNoteTemplateMigrationService,
+  loadLiteratureNoteTemplateMigrationData,
+} from "./template/migration";
 import { TemplateService } from "./template/service";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
@@ -129,6 +133,32 @@ export function buildServices(
     .use({
       libraryScope: ({ db, settings }) =>
         new LibraryScopeService({ db, settings }),
+    })
+    .use({
+      templateMigration: ({
+        db,
+        libraryScope,
+        noteIndex,
+        settings,
+        template,
+        zoteroPref,
+      }) =>
+        new LiteratureNoteTemplateMigrationService({
+          app: plugin.app,
+          settings,
+          template,
+          loadVerificationData: () =>
+            loadLiteratureNoteTemplateMigrationData({
+              app: plugin.app,
+              db,
+              libraryScope,
+              noteIndex,
+              settings,
+              templates: template,
+              zoteroPref,
+            }),
+          openPrompt: () => openWelcomeView(plugin.app, "upgraded"),
+        }),
     })
     .use({
       itemLookup: ({ db, libraryScope }) =>

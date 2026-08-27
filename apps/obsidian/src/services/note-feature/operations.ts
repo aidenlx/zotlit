@@ -98,10 +98,19 @@ export interface MissingLiteratureNoteTemplateDiagnostic {
   indexedKey?: string;
 }
 
+export interface LiteratureNoteTemplateConversionRequiredDiagnostic {
+  code: "literature-note-template-conversion-required";
+  hint: string;
+  profileId: string;
+  path?: string;
+  indexedKey?: string;
+}
+
 export type NoteProfileDiagnostic =
   | UnknownNoteProfileDiagnostic
   | NoteProfileConflictDiagnostic
-  | MissingLiteratureNoteTemplateDiagnostic;
+  | MissingLiteratureNoteTemplateDiagnostic
+  | LiteratureNoteTemplateConversionRequiredDiagnostic;
 
 export type CreateNoteDiagnostic =
   | ExistingNoteDiagnostic
@@ -371,6 +380,11 @@ async function createNote(
       indexedKey: item.indexedKey,
     });
   }
+  if (conversionRequired(settings, requestedProfileId)) {
+    return refusedTemplateConversion(requestedProfileId!, {
+      indexedKey: item.indexedKey,
+    });
+  }
   const existing = ctx.noteIndex.getNotesByItemKey(item.indexedKey);
   if (existing.length > 0) {
     if (existing.length === 1 && options.profileId !== undefined) {
@@ -562,6 +576,9 @@ async function updateNote(
     profileOverride === undefined ? stampedId : (profileOverride ?? undefined);
   const profile = resolveLiteratureNoteProfile(settings, profileId);
   if (!profile) return refusedUpdateProfile(profileId!, file.path);
+  if (conversionRequired(settings, profileId)) {
+    return refusedUpdateTemplateConversion(profileId!, file.path);
+  }
   const document =
     scope === "full" ? resolveProfileDocument(ctx, profile) : undefined;
   if (document === null) {
@@ -595,6 +612,9 @@ async function switchNoteProfile(
   const profileId = options.profileId ?? undefined;
   const profile = resolveLiteratureNoteProfile(settings, profileId);
   if (!profile) return refusedUpdateProfile(profileId!, file.path);
+  if (conversionRequired(settings, profileId)) {
+    return refusedUpdateTemplateConversion(profileId!, file.path);
+  }
   const document = resolveProfileDocument(ctx, profile);
   if (document === null) {
     return refusedUpdateMissingDocument(profile.document!, file.path);
@@ -640,6 +660,9 @@ async function writeNoteUpdate(
   }
   const profile = resolveLiteratureNoteProfile(options.settings, profileId);
   if (!profile) return refusedUpdateProfile(profileId!, file.path);
+  if (conversionRequired(options.settings, profileId)) {
+    return refusedUpdateTemplateConversion(profileId!, file.path);
+  }
   const document =
     options.scope === "metadata"
       ? undefined
@@ -801,6 +824,9 @@ async function overwriteNote(
   const profileId = stampedProfileId(ctx, file);
   const profile = resolveLiteratureNoteProfile(settings, profileId);
   if (!profile) return refusedUpdateProfile(profileId!, file.path);
+  if (conversionRequired(settings, profileId)) {
+    return refusedUpdateTemplateConversion(profileId!, file.path);
+  }
   const document = resolveProfileDocument(ctx, profile);
   if (document === null) {
     return refusedUpdateMissingDocument(profile.document!, file.path);
@@ -1034,7 +1060,12 @@ function resolveLiteratureNoteProfile(
   id: string | undefined,
 ): ResolvedLiteratureNoteProfile | undefined {
   if (id === undefined) {
-    return { id, document: undefined, settings, citationStyle: undefined };
+    return {
+      id,
+      document: settings["note.default-profile"].document,
+      settings,
+      citationStyle: undefined,
+    };
   }
   const profile = settings["note.profiles"].find(
     (candidate) => candidate.id === id,
@@ -1056,6 +1087,15 @@ function resolveLiteratureNoteProfile(
     },
     citationStyle: bindings?.["citation.references-style"],
   };
+}
+
+function conversionRequired(
+  settings: Readonly<Settings>,
+  profileId: string | undefined,
+): boolean {
+  return (
+    settings["note.template-conversion-pending"] && profileId !== undefined
+  );
 }
 
 function resolveProfileDocument(
@@ -1124,6 +1164,34 @@ function refusedUpdateMissingDocument(
   return {
     ...NO_BODY_UPDATE,
     diagnostic: refusedMissingDocument(document, { path }).diagnostic,
+  };
+}
+
+function refusedTemplateConversion(
+  profileId: string,
+  context: { path?: string; indexedKey?: string },
+): {
+  outcome: "refused";
+  diagnostic: LiteratureNoteTemplateConversionRequiredDiagnostic;
+} {
+  return {
+    outcome: "refused",
+    diagnostic: {
+      code: "literature-note-template-conversion-required",
+      hint: "Convert the legacy Literature Note Templates before using added Profiles.",
+      profileId,
+      ...context,
+    },
+  };
+}
+
+function refusedUpdateTemplateConversion(
+  profileId: string,
+  path: string,
+): UpdateResult {
+  return {
+    ...NO_BODY_UPDATE,
+    diagnostic: refusedTemplateConversion(profileId, { path }).diagnostic,
   };
 }
 

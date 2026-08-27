@@ -1,6 +1,7 @@
 // Presentational tree for the Welcome View: fresh-state onboarding timeline with doc chips and footer links, plus the upgraded-state Migration Prompt banner.
 import type { IconName } from "obsidian";
 import type { ReactNode } from "react";
+import { useState } from "react";
 
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
@@ -329,6 +330,42 @@ function FooterLink() {
 
 function MigrationBanner() {
   const actions = useWelcomeActions();
+  const templateConversionPending = useWelcomeStore(
+    (state) => state.templateConversionPending,
+  );
+  const [converting, setConverting] = useState(false);
+  if (templateConversionPending) {
+    return (
+      <div
+        className="zt:relative zt:mt-6 zt:flex zt:flex-wrap zt:items-center zt:gap-4.5 zt:rounded-lg zt:border zt:px-6 zt:py-5.5"
+        style={{
+          background: "hsla(var(--interactive-accent-hsl), 0.14)",
+          borderColor: "hsla(var(--interactive-accent-hsl), 0.35)",
+        }}
+      >
+        <div className="zt:min-w-0 zt:flex-1 zt:basis-[220px]">
+          <StepHeading>{m.welcome_template_conversion_title()}</StepHeading>
+          <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
+            {m.welcome_template_conversion_body()}
+          </p>
+        </div>
+        <Button
+          variant="cta"
+          icon="combine"
+          loading={converting}
+          disabled={converting}
+          onClick={() => {
+            setConverting(true);
+            void actions.convertLiteratureNoteTemplates().finally(() => {
+              setConverting(false);
+            });
+          }}
+        >
+          {m.welcome_template_conversion_action()}
+        </Button>
+      </div>
+    );
+  }
   return (
     <div
       className="zt:relative zt:mt-6 zt:flex zt:flex-wrap zt:items-center zt:gap-4.5 zt:rounded-lg zt:border zt:px-6 zt:py-5.5"

@@ -319,6 +319,21 @@ describe("SettingsService literature note profiles", () => {
     });
   });
 
+  it("sets and clears the default profile document", async () => {
+    const { service } = makeService();
+    await service.ready;
+
+    service.setDefaultLiteratureNoteProfileDocument("literature-note.md");
+    expect(service.getLiteratureNoteProfile()).toEqual({
+      document: "literature-note.md",
+    });
+
+    service.setDefaultLiteratureNoteProfileDocument(null);
+    expect(service.getLiteratureNoteProfile()).toBe(
+      DEFAULT_LITERATURE_NOTE_PROFILE,
+    );
+  });
+
   it("creates, edits, and deletes a profile without deriving its id from its label", async () => {
     const { plugin, service } = makeService();
     await service.ready;

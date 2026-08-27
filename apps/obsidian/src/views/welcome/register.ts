@@ -5,6 +5,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import type { DatabaseService } from "@/services/database/service";
 import type { SettingsService } from "@/services/settings/service";
+import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { createSetupActions } from "./setup-actions";
@@ -17,6 +18,7 @@ export interface WelcomeRegistrationDeps {
   db: DatabaseService;
   zoteroPref: ZoteroPrefService;
   settings: SettingsService;
+  templateMigration: LiteratureNoteTemplateMigrationService;
 }
 
 export function registerWelcomeView(
@@ -41,6 +43,7 @@ export function registerWelcomeView(
         zoteroPref: deps.zoteroPref,
         settings: deps.settings,
         setupActions,
+        templateMigration: deps.templateMigration,
       }),
   );
 

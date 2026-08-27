@@ -26,21 +26,42 @@ import type { CompiledFrontmatter } from "./frontmatter";
 import { TemplateEngine } from "./index";
 import { createLiquidEngine } from "./liquid";
 import {
+  LegacyTemplateConversionError,
   LiteratureNoteTemplateError,
   parseLiteratureNoteTemplate as parseLiteratureNoteTemplateImpl,
+  synthesizeLegacyLiteratureNoteTemplate,
 } from "./literature-note-template";
-import type { LiteratureNoteTemplateDocument } from "./literature-note-template";
+import type {
+  LegacyLiteratureNoteTemplates,
+  LiteratureNoteTemplateDocument,
+} from "./literature-note-template";
 import { formatManagedRegion } from "./obsidian";
 
 export type { TemplateLanguage } from "./constants";
 
-export { LiteratureNoteTemplateError } from "./literature-note-template";
+export {
+  CONVERTED_DEFAULT_PROFILE_DOCUMENT,
+  LegacyTemplateConversionError,
+  LiteratureNoteTemplateError,
+} from "./literature-note-template";
 export type {
+  LegacyLiteratureNoteTemplates,
+  LegacyTemplateConversionErrorCode,
   LiteratureNoteTemplateDocument,
   LiteratureNoteTemplateErrorCode,
   LiteratureNoteTemplateManifest,
   ManagedBlock,
 } from "./literature-note-template";
+
+export interface ConvertedLegacyLiteratureNoteTemplate {
+  readonly source: string;
+  readonly document: LiteratureNoteTemplateDocument;
+  readonly rendered: {
+    readonly create: string;
+    readonly update: string;
+    readonly filename: string;
+  };
+}
 
 /** One root-variable read found by static analysis of a registered Liquid template. */
 export interface RootVariableUse {
@@ -189,6 +210,54 @@ export class TemplateFacade {
 
   parseLiteratureNoteTemplate(source: string): LiteratureNoteTemplateDocument {
     return parseLiteratureNoteTemplateImpl(source);
+  }
+
+  /**
+   * Synthesize and verify the default Profile document without mutating the
+   * facade. All three legacy outputs must match byte-for-byte before the
+   * caller may persist the returned source.
+   */
+  convertLegacyLiteratureNoteTemplates(
+    legacy: LegacyLiteratureNoteTemplates,
+    data: { readonly note: object; readonly filename: object },
+  ): ConvertedLegacyLiteratureNoteTemplate {
+    const source = synthesizeLegacyLiteratureNoteTemplate(legacy);
+    const document = this.parseLiteratureNoteTemplate(source);
+    const legacyRendered = {
+      create: this.render("note", data.note),
+      update: this.render("content", data.note),
+      filename: this.render("filename", data.filename),
+    };
+    const rendered = {
+      create: this.renderLiteratureNoteTemplateForCreate(document, data.note),
+      update: this.renderLiteratureNoteTemplateForUpdate(document, data.note),
+      filename: this.renderLiteratureNoteTemplateFilename(
+        document,
+        data.filename,
+      ),
+    };
+    if (rendered.update === null) {
+      throw new LegacyTemplateConversionError(
+        "legacy-render-mismatch",
+        "Converted document has no Managed Block",
+        {
+          difference: "update output",
+          recovery: "Keep one standard content render and retry conversion.",
+        },
+      );
+    }
+    assertSameRender("create output", legacyRendered.create, rendered.create);
+    assertSameRender("update output", legacyRendered.update, rendered.update);
+    assertSameRender(
+      "filename output",
+      legacyRendered.filename,
+      rendered.filename,
+    );
+    return {
+      source,
+      document,
+      rendered: { ...rendered, update: rendered.update },
+    };
   }
 
   renderLiteratureNoteTemplateForCreate<T extends object>(
@@ -458,6 +527,26 @@ export class TemplateFacade {
       }
     };
   }
+}
+
+function assertSameRender(
+  difference: string,
+  legacy: string,
+  converted: string,
+): void {
+  if (legacy === converted) return;
+  let byte = 0;
+  const limit = Math.min(legacy.length, converted.length);
+  while (byte < limit && legacy[byte] === converted[byte]) byte += 1;
+  throw new LegacyTemplateConversionError(
+    "legacy-render-mismatch",
+    `Converted ${difference} differs from the legacy render at byte ${byte}`,
+    {
+      difference,
+      recovery:
+        "Keep the legacy files unchanged and adjust the templates before retrying conversion.",
+    },
+  );
 }
 
 let nextManagedBlockPlaceholder = 0;

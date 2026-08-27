@@ -1,7 +1,10 @@
 // In-memory parsing and validation for one Literature Note Template document.
 
 import * as v from "valibot";
-import { parseDocument as parseYamlDocument } from "yaml";
+import {
+  parseDocument as parseYamlDocument,
+  stringify as stringifyYaml,
+} from "yaml";
 
 import type { TemplateLanguage } from "./constants";
 
@@ -9,6 +12,10 @@ const OPEN_MANAGED = "{% managed %}";
 const CLOSE_MANAGED = "{% endmanaged %}";
 
 const nonEmptyString = v.pipe(v.string(), v.trim(), v.nonEmpty());
+const nonEmptyTemplateSource = v.pipe(
+  v.string(),
+  v.check((source) => source.trim().length > 0, "Empty template source"),
+);
 
 const manifestSchema = v.strictObject({
   id: nonEmptyString,
@@ -19,7 +26,7 @@ const manifestSchema = v.strictObject({
   contract: v.pipe(v.number(), v.integer(), v.minValue(1)),
   minAppVersion: v.optional(nonEmptyString),
   sampleItemType: v.optional(nonEmptyString),
-  filename: nonEmptyString,
+  filename: nonEmptyTemplateSource,
   profileDefaults: v.optional(
     v.strictObject({
       folder: v.optional(nonEmptyString),
@@ -57,6 +64,113 @@ export interface LiteratureNoteTemplateDocument {
   manifest: LiteratureNoteTemplateManifest;
   body: string;
   managedBlock: ManagedBlock | null;
+}
+
+export interface LegacyLiteratureNoteTemplates {
+  readonly note: {
+    readonly source: string;
+    readonly language: TemplateLanguage;
+  };
+  readonly content: {
+    readonly source: string;
+    readonly language: TemplateLanguage;
+  };
+  readonly filename: {
+    readonly source: string;
+    readonly language: TemplateLanguage;
+  };
+}
+
+export type LegacyTemplateConversionErrorCode =
+  | "unsupported-legacy-template"
+  | "legacy-render-mismatch";
+
+export class LegacyTemplateConversionError extends Error {
+  readonly code: LegacyTemplateConversionErrorCode;
+  readonly difference: string;
+  readonly recovery: string;
+
+  constructor(
+    code: LegacyTemplateConversionErrorCode,
+    message: string,
+    options: ErrorOptions & { difference: string; recovery: string },
+  ) {
+    super(message, options);
+    this.name = "LegacyTemplateConversionError";
+    this.code = code;
+    this.difference = options.difference;
+    this.recovery = options.recovery;
+  }
+}
+
+export const CONVERTED_DEFAULT_PROFILE_DOCUMENT = "literature-note-default.md";
+
+/** Synthesize one document from the three legacy Literature Note slots. */
+export function synthesizeLegacyLiteratureNoteTemplate(
+  legacy: LegacyLiteratureNoteTemplates,
+): string {
+  const language = legacy.note.language;
+  if (
+    legacy.content.language !== language ||
+    legacy.filename.language !== language
+  ) {
+    throw new LegacyTemplateConversionError(
+      "unsupported-legacy-template",
+      "Legacy note, content, and filename templates use different languages",
+      {
+        difference: "template language",
+        recovery:
+          "Use one rendering language for the note, content, and filename templates, then retry conversion.",
+      },
+    );
+  }
+
+  const insertion =
+    language === "liquid"
+      ? '{% render "content" with zt as zt %}'
+      : '<%~ include("content", zt) %>';
+  if (countOccurrences(legacy.note.source, insertion) !== 1) {
+    throw new LegacyTemplateConversionError(
+      "unsupported-legacy-template",
+      "Legacy note template must contain one supported content insertion",
+      {
+        difference: "content insertion",
+        recovery:
+          "Keep one standard content render in the legacy note template, then retry conversion.",
+      },
+    );
+  }
+
+  const body = legacy.note.source.replace(
+    insertion,
+    () => `{% managed %}${legacy.content.source}{% endmanaged %}`,
+  );
+  const manifest = stringifyYaml(
+    {
+      id: "zotlit.converted-default",
+      name: "Converted default",
+      version: "1.0.0",
+      author: "ZotLit",
+      description: "Converted from legacy Literature Note Templates.",
+      contract: 2,
+      filename: legacy.filename.source,
+      language,
+    },
+    { lineWidth: 0 },
+  );
+  return `---\n${manifest}---\n${body}`;
+}
+
+function countOccurrences(source: string, value: string): number {
+  let count = 0;
+  let from = 0;
+  while (from <= source.length) {
+    const index = source.indexOf(value, from);
+    if (index === -1) return count;
+    count += 1;
+    from = index + value.length;
+  }
+  return count;
 }
 
 export type LiteratureNoteTemplateErrorCode =

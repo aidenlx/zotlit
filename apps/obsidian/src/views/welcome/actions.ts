@@ -5,6 +5,7 @@ import type { SetupActions } from "./setup-actions";
 
 export interface WelcomeActions extends SetupActions {
   openExternal: (url: string) => void;
+  convertLiteratureNoteTemplates: () => Promise<void>;
 }
 
 export const WelcomeActionsContext = createContext<WelcomeActions | null>(null);

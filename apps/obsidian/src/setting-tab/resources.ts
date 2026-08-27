@@ -14,6 +14,7 @@ import {
   DOCS_GETTING_STARTED,
   MIGRATION_GUIDE,
 } from "@/views/welcome/links";
+import { openWelcomeView } from "@/views/welcome/register";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { languagePackDefinition } from "./language-pack";
@@ -33,6 +34,24 @@ export function migrationReminderItem(
     desc: m.welcome_migration_body(),
     render: (setting) => {
       renderMigrationReminderButtons(setting, ctx);
+    },
+  };
+}
+
+/** Durable reminder for the user-consented three-slot template conversion. */
+export function templateConversionReminderItem(
+  ctx: SettingTabContext,
+): SettingDefinition<SettingsKey> {
+  return {
+    name: m.welcome_template_conversion_title(),
+    desc: m.welcome_template_conversion_body(),
+    render: (setting) => {
+      setting.addButton((button) =>
+        button
+          .setButtonText(m.settings_template_conversion_reminder_action())
+          .setCta()
+          .onClick(() => void openWelcomeView(ctx.app, "upgraded")),
+      );
     },
   };
 }
@@ -66,11 +85,16 @@ export function resourcesGroup(
   ctx: SettingTabContext,
 ): SettingDefinitionGroup<SettingsKey> {
   const pending = ctx.settings.current?.["release.migration-pending"] === true;
+  const templateConversionPending =
+    ctx.settings.current?.["note.template-conversion-pending"] === true;
   const languagePack = languagePackSettingCopy(ctx.languagePack);
   return {
     type: "group",
     items: [
       ...(pending ? [migrationReminderItem(ctx)] : []),
+      ...(templateConversionPending
+        ? [templateConversionReminderItem(ctx)]
+        : []),
       ...(languagePack ? [languagePackDefinition(languagePack)] : []),
       ...resourcesItems(ctx),
     ],
