@@ -10,6 +10,8 @@ import type { TemplateLanguage } from "./constants";
 
 const OPEN_MANAGED = "{% managed %}";
 const CLOSE_MANAGED = "{% endmanaged %}";
+const OPEN_ANNOTATION = "{% annotation %}";
+const CLOSE_ANNOTATION = "{% endannotation %}";
 
 const nonEmptyString = v.pipe(v.string(), v.trim(), v.nonEmpty());
 const nonEmptyTemplateSource = v.pipe(
@@ -84,10 +86,17 @@ export interface ManagedBlock {
   end: number;
 }
 
+export interface AnnotationBlock {
+  source: string;
+  start: number;
+  end: number;
+}
+
 export interface LiteratureNoteTemplateDocument {
   manifest: LiteratureNoteTemplateManifest;
   body: string;
   managedBlock: ManagedBlock | null;
+  annotationBlock: AnnotationBlock | null;
 }
 
 export interface LegacyLiteratureNoteTemplates {
@@ -211,7 +220,9 @@ export type LiteratureNoteTemplateErrorCode =
   | "invalid-manifest"
   | "frontmatter-not-supported"
   | "invalid-managed-block"
-  | "duplicate-managed-block";
+  | "duplicate-managed-block"
+  | "invalid-annotation-block"
+  | "duplicate-annotation-block";
 
 export class LiteratureNoteTemplateError extends Error {
   readonly code: LiteratureNoteTemplateErrorCode;
@@ -262,6 +273,22 @@ export function parseLiteratureNoteTemplate(
     manifest: result.output,
     body,
     managedBlock: findManagedBlock(body, result.output.language),
+    annotationBlock: findAnnotationBlock(body, result.output.language),
+  };
+}
+
+/** Return a render-only document whose Annotation Block contributes no bytes. */
+export function withoutAnnotationBlock(
+  document: LiteratureNoteTemplateDocument,
+): LiteratureNoteTemplateDocument {
+  if (!document.annotationBlock) return document;
+  const { start, end } = document.annotationBlock;
+  const body = document.body.slice(0, start) + document.body.slice(end);
+  return {
+    ...document,
+    body,
+    managedBlock: findManagedBlock(body, document.manifest.language),
+    annotationBlock: null,
   };
 }
 
@@ -322,56 +349,96 @@ function findManagedBlock(
   body: string,
   language: TemplateLanguage,
 ): ManagedBlock | null {
+  return findTemplateBlock(body, language, {
+    open: OPEN_MANAGED,
+    close: CLOSE_MANAGED,
+    invalidCode: "invalid-managed-block",
+    duplicateCode: "duplicate-managed-block",
+    label: "Managed Block",
+  });
+}
+
+function findAnnotationBlock(
+  body: string,
+  language: TemplateLanguage,
+): AnnotationBlock | null {
+  return findTemplateBlock(body, language, {
+    open: OPEN_ANNOTATION,
+    close: CLOSE_ANNOTATION,
+    invalidCode: "invalid-annotation-block",
+    duplicateCode: "duplicate-annotation-block",
+    label: "Annotation Block",
+  });
+}
+
+function findTemplateBlock(
+  body: string,
+  language: TemplateLanguage,
+  options: {
+    open: string;
+    close: string;
+    invalidCode: Extract<
+      LiteratureNoteTemplateErrorCode,
+      "invalid-managed-block" | "invalid-annotation-block"
+    >;
+    duplicateCode: Extract<
+      LiteratureNoteTemplateErrorCode,
+      "duplicate-managed-block" | "duplicate-annotation-block"
+    >;
+    label: string;
+  },
+): ManagedBlock | null {
+  const { open, close, invalidCode, duplicateCode, label } = options;
   const literalRanges =
     language === "liquid" ? findLiquidLiteralRanges(body) : [];
-  const firstOpen = findFormatTag(body, OPEN_MANAGED, { literalRanges });
-  const firstClose = findFormatTag(body, CLOSE_MANAGED, { literalRanges });
+  const firstOpen = findFormatTag(body, open, { literalRanges });
+  const firstClose = findFormatTag(body, close, { literalRanges });
   if (firstOpen === -1 && firstClose === -1) return null;
   if (firstOpen === -1 || (firstClose !== -1 && firstClose < firstOpen)) {
     throw new LiteratureNoteTemplateError(
-      "invalid-managed-block",
-      `Unexpected ${CLOSE_MANAGED} tag`,
+      invalidCode,
+      `Unexpected ${close} tag`,
       {
-        recovery: `Remove the unmatched tag or add ${OPEN_MANAGED} before it.`,
+        recovery: `Remove the unmatched tag or add ${open} before it.`,
       },
     );
   }
 
-  const secondOpen = findFormatTag(body, OPEN_MANAGED, {
-    from: firstOpen + OPEN_MANAGED.length,
+  const secondOpen = findFormatTag(body, open, {
+    from: firstOpen + open.length,
     literalRanges,
   });
   if (secondOpen !== -1) {
     throw new LiteratureNoteTemplateError(
-      "duplicate-managed-block",
-      `Duplicate ${OPEN_MANAGED} block at line ${lineAt(body, secondOpen)}`,
-      { recovery: "Keep at most one Managed Block in the document body." },
+      duplicateCode,
+      `Duplicate ${open} block at line ${lineAt(body, secondOpen)}`,
+      { recovery: `Keep at most one ${label} in the document body.` },
     );
   }
   if (firstClose === -1) {
     throw new LiteratureNoteTemplateError(
-      "invalid-managed-block",
-      `${OPEN_MANAGED} block is not closed`,
-      { recovery: `Add ${CLOSE_MANAGED} after the Managed Block body.` },
+      invalidCode,
+      `${open} block is not closed`,
+      { recovery: `Add ${close} after the ${label} body.` },
     );
   }
 
-  const extraClose = findFormatTag(body, CLOSE_MANAGED, {
-    from: firstClose + CLOSE_MANAGED.length,
+  const extraClose = findFormatTag(body, close, {
+    from: firstClose + close.length,
     literalRanges,
   });
   if (extraClose !== -1) {
     throw new LiteratureNoteTemplateError(
-      "invalid-managed-block",
-      `Unexpected ${CLOSE_MANAGED} tag at line ${lineAt(body, extraClose)}`,
-      { recovery: "Keep exactly one closing tag for the Managed Block." },
+      invalidCode,
+      `Unexpected ${close} tag at line ${lineAt(body, extraClose)}`,
+      { recovery: `Keep exactly one closing tag for the ${label}.` },
     );
   }
 
   return {
-    source: body.slice(firstOpen + OPEN_MANAGED.length, firstClose),
+    source: body.slice(firstOpen + open.length, firstClose),
     start: firstOpen,
-    end: firstClose + CLOSE_MANAGED.length,
+    end: firstClose + close.length,
   };
 }
 

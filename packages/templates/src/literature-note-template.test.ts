@@ -146,6 +146,85 @@ language: liquid
     expect(document.managedBlock?.source).toBe("Managed body");
   });
 
+  it.each(["liquid", "eta"] as const)(
+    "parses and renders an isolated %s Annotation Block",
+    (language) => {
+      const facade = new TemplateFacade();
+      const outside =
+        language === "liquid"
+          ? '{% assign outside = "leak" %}'
+          : '<% const outside = "leak" %>';
+      const annotation =
+        language === "liquid"
+          ? "{% if outside %}LEAK{% else %}{{ zt.text }}{% endif %}"
+          : '<% if (typeof outside !== "undefined") { %>LEAK<% } else { %><%= zt.text %><% } %>';
+      const document = facade.parseLiteratureNoteTemplate(`---
+id: example.annotation-${language}
+name: Annotation note
+version: 1.0.0
+author: Ada Example
+description: Tests Annotation Block rendering.
+contract: 2
+filename: note
+language: ${language}
+---
+${outside}Before{% annotation %}${annotation}{% endannotation %}After`);
+
+      expect(document.annotationBlock?.source).toBe(annotation);
+      expect(
+        facade.renderLiteratureNoteTemplateForCreate(document, {
+          text: "ROOT",
+        }),
+      ).toBe("BeforeAfter");
+      expect(
+        facade.renderLiteratureNoteTemplateAnnotation(document, {
+          text: "ROOT",
+        }),
+      ).toBe("ROOT");
+    },
+  );
+
+  it("reports an absent Annotation Block", () => {
+    const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(`---
+id: example.no-annotation
+name: No annotation
+version: 1.0.0
+author: Ada Example
+description: Has no Annotation Block.
+contract: 2
+filename: note
+---
+Body`);
+
+    expect(document.annotationBlock).toBeNull();
+    expect(
+      facade.renderLiteratureNoteTemplateAnnotation(document, {}),
+    ).toBeNull();
+  });
+
+  it("strips an Annotation Block nested in the Managed Block", () => {
+    const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(`---
+id: example.nested-annotation
+name: Nested annotation
+version: 1.0.0
+author: Ada Example
+description: Keeps Annotation Block bytes out of note renders.
+contract: 2
+filename: note
+---
+Before{% managed %}A{% annotation %}ANNOTATION{% endannotation %}B{% endmanaged %}After`);
+    const managed = formatManagedRegion("AB");
+
+    expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
+      `Before${managed}After`,
+    );
+    expect(facade.renderLiteratureNoteTemplateForUpdate(document, {})).toBe(
+      managed,
+    );
+  });
+
   it("renders an isolated Liquid Managed Block identically for create and update", () => {
     const facade = new TemplateFacade();
     const document = facade.parseLiteratureNoteTemplate(`---
@@ -294,6 +373,26 @@ filename: note
     );
   });
 
+  it("treats Annotation Block tags inside Liquid raw and comment blocks as literals", () => {
+    const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(`---
+id: example.annotation-literal
+name: Literal annotation tags
+version: 1.0.0
+author: Ada Example
+description: Tests literal Annotation Block tags.
+contract: 2
+filename: note
+---
+{% raw %}{% annotation %}Raw{% endannotation %}{% endraw %}
+{% comment %}{% annotation %}Comment{% endannotation %}{% endcomment %}`);
+
+    expect(document.annotationBlock).toBeNull();
+    expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
+      "{% annotation %}Raw{% endannotation %}\n",
+    );
+  });
+
   it("uses Liquid defaults and returns no update for a static body", () => {
     const facade = new TemplateFacade();
     const document = facade.parseLiteratureNoteTemplate(`---
@@ -336,6 +435,29 @@ filename: note
       expect.objectContaining<Partial<LiteratureNoteTemplateError>>({
         code: "duplicate-managed-block",
         message: expect.stringContaining("Duplicate {% managed %} block"),
+      }),
+    );
+  });
+
+  it("rejects a duplicate Annotation Block before rendering", () => {
+    const facade = new TemplateFacade();
+
+    expect(() =>
+      facade.parseLiteratureNoteTemplate(`---
+id: example.duplicate-annotation
+name: Duplicate annotation
+version: 1.0.0
+author: Ada Example
+description: Invalid duplicate Annotation Blocks.
+contract: 2
+filename: note
+---
+{% annotation %}First{% endannotation %}
+{% annotation %}Second{% endannotation %}`),
+    ).toThrowError(
+      expect.objectContaining<Partial<LiteratureNoteTemplateError>>({
+        code: "duplicate-annotation-block",
+        message: expect.stringContaining("Duplicate {% annotation %} block"),
       }),
     );
   });

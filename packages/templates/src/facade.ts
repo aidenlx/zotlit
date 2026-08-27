@@ -30,10 +30,11 @@ import {
   LiteratureNoteTemplateError,
   parseLiteratureNoteTemplate as parseLiteratureNoteTemplateImpl,
   synthesizeLegacyLiteratureNoteTemplate,
+  withoutAnnotationBlock,
 } from "./literature-note-template";
 import type {
-  LegacyLiteratureNoteTemplates,
   LiteratureNoteTemplateDocument,
+  LegacyLiteratureNoteTemplates,
 } from "./literature-note-template";
 import { formatManagedRegion } from "./obsidian";
 
@@ -46,6 +47,7 @@ export {
   synthesizeLegacyLiteratureNoteTemplate,
 } from "./literature-note-template";
 export type {
+  AnnotationBlock,
   LegacyLiteratureNoteTemplates,
   LegacyTemplateConversionErrorCode,
   LiteratureNoteTemplateDocument,
@@ -266,22 +268,24 @@ export class TemplateFacade {
     document: LiteratureNoteTemplateDocument,
     data: T,
   ): string {
-    const block = document.managedBlock;
+    const renderDocument = withoutAnnotationBlock(document);
+    const block = renderDocument.managedBlock;
     if (!block) {
-      return this.#renderDocumentSource(document, data, {
+      return this.#renderDocumentSource(renderDocument, data, {
         part: "body",
-        source: document.body,
+        source: renderDocument.body,
       });
     }
 
     const outerSourceWithoutPlaceholder =
-      document.body.slice(0, block.start) + document.body.slice(block.end);
+      renderDocument.body.slice(0, block.start) +
+      renderDocument.body.slice(block.end);
     const placeholder = managedBlockPlaceholder(outerSourceWithoutPlaceholder);
     const outerSource =
-      document.body.slice(0, block.start) +
+      renderDocument.body.slice(0, block.start) +
       placeholder +
-      document.body.slice(block.end);
-    const outer = this.#renderDocumentSource(document, data, {
+      renderDocument.body.slice(block.end);
+    const outer = this.#renderDocumentSource(renderDocument, data, {
       part: "body",
       source: outerSource,
     });
@@ -299,7 +303,7 @@ export class TemplateFacade {
         },
       );
     }
-    const managed = this.#renderDocumentSource(document, data, {
+    const managed = this.#renderDocumentSource(renderDocument, data, {
       part: "managed",
       source: block.source,
     });
@@ -310,12 +314,24 @@ export class TemplateFacade {
     document: LiteratureNoteTemplateDocument,
     data: T,
   ): string | null {
-    if (!document.managedBlock) return null;
-    const managed = this.#renderDocumentSource(document, data, {
+    const renderDocument = withoutAnnotationBlock(document);
+    if (!renderDocument.managedBlock) return null;
+    const managed = this.#renderDocumentSource(renderDocument, data, {
       part: "managed",
-      source: document.managedBlock.source,
+      source: renderDocument.managedBlock.source,
     });
     return formatManagedRegion(managed);
+  }
+
+  renderLiteratureNoteTemplateAnnotation<T extends object>(
+    document: LiteratureNoteTemplateDocument,
+    data: T,
+  ): string | null {
+    if (!document.annotationBlock) return null;
+    return this.#renderDocumentSource(document, data, {
+      part: "annotation",
+      source: document.annotationBlock.source,
+    });
   }
 
   renderLiteratureNoteTemplateFilename<T extends object>(
@@ -441,7 +457,13 @@ export class TemplateFacade {
   #renderDocumentSource(
     document: LiteratureNoteTemplateDocument,
     data: object,
-    { part, source }: { part: "body" | "managed" | "filename"; source: string },
+    {
+      part,
+      source,
+    }: {
+      part: "body" | "managed" | "annotation" | "filename";
+      source: string;
+    },
   ): string {
     return this.render(`${document.manifest.id}:${part}`, data, {
       source,
