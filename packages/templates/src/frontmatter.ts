@@ -8,6 +8,16 @@ import type {
   FrontmatterMergeStrategy,
 } from "./constants";
 
+export {
+  FrontmatterJsonEError,
+  renderJsonEFrontmatterValue,
+} from "./frontmatter-json-e";
+export type {
+  FrontmatterJsonValue,
+  RenderJsonEFrontmatterValueOptions,
+} from "./frontmatter-json-e";
+export { FRONTMATTER_ABSENT } from "./frontmatter-merge";
+
 type BasenameHelper = (path: string, ext?: string) => string;
 type FrontmatterEvaluator = (zt: object, basename: BasenameHelper) => unknown;
 
