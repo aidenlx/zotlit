@@ -16,6 +16,7 @@ import type {
   AutoTrim,
   FrontmatterField,
   FrontmatterLanguage,
+  TemplateLanguage,
 } from "./constants";
 import {
   compileFrontmatterFields as compileFrontmatterFieldsImpl,
@@ -24,6 +25,22 @@ import {
 import type { CompiledFrontmatter } from "./frontmatter";
 import { TemplateEngine } from "./index";
 import { createLiquidEngine } from "./liquid";
+import {
+  LiteratureNoteTemplateError,
+  parseLiteratureNoteTemplate as parseLiteratureNoteTemplateImpl,
+} from "./literature-note-template";
+import type { LiteratureNoteTemplateDocument } from "./literature-note-template";
+import { formatManagedRegion } from "./obsidian";
+
+export type { TemplateLanguage } from "./constants";
+
+export { LiteratureNoteTemplateError } from "./literature-note-template";
+export type {
+  LiteratureNoteTemplateDocument,
+  LiteratureNoteTemplateErrorCode,
+  LiteratureNoteTemplateManifest,
+  ManagedBlock,
+} from "./literature-note-template";
 
 /** One root-variable read found by static analysis of a registered Liquid template. */
 export interface RootVariableUse {
@@ -36,7 +53,10 @@ export interface RootVariableUse {
   col: number;
 }
 
-export type TemplateLanguage = "liquid" | "eta";
+export interface TemplateSourceOverride {
+  source: string;
+  language: TemplateLanguage;
+}
 
 export interface TemplateFacadeOptions {
   /** Eta-only; same semantics as `TemplateEngine`. @default [false, false] */
@@ -157,8 +177,84 @@ export class TemplateFacade {
     this.#eta.reset();
   }
 
-  render<T extends object>(name: string, data: T): string {
-    return this.#renderByName(name, data);
+  render<T extends object>(
+    name: string,
+    data: T,
+    sourceOverride?: TemplateSourceOverride,
+  ): string {
+    return sourceOverride
+      ? this.#renderSource(name, data, sourceOverride)
+      : this.#renderByName(name, data);
+  }
+
+  parseLiteratureNoteTemplate(source: string): LiteratureNoteTemplateDocument {
+    return parseLiteratureNoteTemplateImpl(source);
+  }
+
+  renderLiteratureNoteTemplateForCreate<T extends object>(
+    document: LiteratureNoteTemplateDocument,
+    data: T,
+  ): string {
+    const block = document.managedBlock;
+    if (!block) {
+      return this.#renderDocumentSource(document, data, {
+        part: "body",
+        source: document.body,
+      });
+    }
+
+    const outerSourceWithoutPlaceholder =
+      document.body.slice(0, block.start) + document.body.slice(block.end);
+    const placeholder = managedBlockPlaceholder(outerSourceWithoutPlaceholder);
+    const outerSource =
+      document.body.slice(0, block.start) +
+      placeholder +
+      document.body.slice(block.end);
+    const outer = this.#renderDocumentSource(document, data, {
+      part: "body",
+      source: outerSource,
+    });
+    const firstPlaceholder = outer.indexOf(placeholder);
+    if (
+      firstPlaceholder === -1 ||
+      firstPlaceholder !== outer.lastIndexOf(placeholder)
+    ) {
+      throw new LiteratureNoteTemplateError(
+        "invalid-managed-block",
+        "Managed Block must render exactly once in the document body",
+        {
+          recovery:
+            "Place the Managed Block at the top level, outside conditionals and loops.",
+        },
+      );
+    }
+    const managed = this.#renderDocumentSource(document, data, {
+      part: "managed",
+      source: block.source,
+    });
+    return outer.replace(placeholder, () => formatManagedRegion(managed));
+  }
+
+  renderLiteratureNoteTemplateForUpdate<T extends object>(
+    document: LiteratureNoteTemplateDocument,
+    data: T,
+  ): string | null {
+    if (!document.managedBlock) return null;
+    const managed = this.#renderDocumentSource(document, data, {
+      part: "managed",
+      source: document.managedBlock.source,
+    });
+    return formatManagedRegion(managed);
+  }
+
+  renderLiteratureNoteTemplateFilename<T extends object>(
+    document: LiteratureNoteTemplateDocument,
+    data: T,
+  ): string {
+    return this.#renderDocumentSource(document, data, {
+      part: "filename",
+      source: document.manifest.filename,
+    });
   }
 
   /** Eta engine only — same semantics as `TemplateEngine#setAutoTrim`. */
@@ -248,6 +344,40 @@ export class TemplateFacade {
     return this.#transform(name, out);
   }
 
+  #renderSource(
+    name: string,
+    data: object,
+    { source, language }: TemplateSourceOverride,
+  ): string {
+    if (language === "liquid") {
+      const templates = this.#liquid.parse(source, name);
+      const out = this.#liquid.renderSync(templates, { zt: data }) as string;
+      return this.#transform(name, out);
+    }
+
+    let template;
+    try {
+      template = this.#eta.compile(source);
+    } catch (error) {
+      throw new TemplateError(`${name}: ${(error as Error).message}`, name, {
+        cause: error,
+      });
+    }
+    const out = this.#etaBaseRender(template, data, { filepath: name });
+    return this.#transform(name, out);
+  }
+
+  #renderDocumentSource(
+    document: LiteratureNoteTemplateDocument,
+    data: object,
+    { part, source }: { part: "body" | "managed" | "filename"; source: string },
+  ): string {
+    return this.render(`${document.manifest.id}:${part}`, data, {
+      source,
+      language: document.manifest.language,
+    });
+  }
+
   /**
    * In-memory `fs` every liquid `{% render %}` / `{% include %}` resolves
    * through. `readSource` is the single existence authority: `existsSync` and
@@ -328,4 +458,15 @@ export class TemplateFacade {
       }
     };
   }
+}
+
+let nextManagedBlockPlaceholder = 0;
+
+function managedBlockPlaceholder(source: string): string {
+  let placeholder: string;
+  do {
+    placeholder = `\uE000zotlit-managed-${nextManagedBlockPlaceholder}\uE001`;
+    nextManagedBlockPlaceholder += 1;
+  } while (source.includes(placeholder));
+  return placeholder;
 }

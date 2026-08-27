@@ -33,7 +33,8 @@
     "arkregex": "catalog:",
     "eta": "catalog:",
     "liquidjs": "^10.27.1",
-    "valibot": "catalog:"
+    "valibot": "catalog:",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",
