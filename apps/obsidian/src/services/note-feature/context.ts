@@ -27,6 +27,7 @@ import type { NoteIndex } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
+import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { resolveFreeNotePath } from "./filename";
@@ -54,7 +55,12 @@ export interface NoteFeatureDeps {
   app: NoteVaultApp;
   template: Pick<
     TemplateService,
-    "ready" | "loaded" | "render" | "renderFilename" | "frontmatterFields"
+    | "ready"
+    | "loaded"
+    | "render"
+    | "renderFilename"
+    | "frontmatterFields"
+    | "getLiteratureNoteTemplate"
   >;
   /**
    * Lease-only. The sync `state`/`client` accessors are omitted so async
@@ -109,6 +115,7 @@ export function resolveNotePath(
     itemCollections: readonly TemplateCollection[];
     settings: Readonly<Settings>;
     forceSuffix?: boolean;
+    document?: Pick<ResolvedLiteratureNoteTemplate, "renderFilename">;
   },
 ): { path: string; canSuffix: boolean } {
   const folderSetting = options.settings["note.literature-folder"];
@@ -118,7 +125,9 @@ export function resolveNotePath(
     collections: options.itemCollections,
     authorsShort: creatorSummary,
   });
-  const rendered = ctx.template.renderFilename(data);
+  const rendered = options.document
+    ? options.document.renderFilename(data)
+    : ctx.template.renderFilename(data);
   const rel = resolveRenderedRelPath(folderSetting, rendered, {
     exists: (path) => ctx.app.vault.getAbstractFileByPath(path) !== null,
     forceSuffix: options.forceSuffix,

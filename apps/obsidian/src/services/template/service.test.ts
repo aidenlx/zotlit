@@ -203,6 +203,35 @@ afterEach(async () => {
 });
 
 describe("TemplateService", () => {
+  it("discovers and reconciles Literature Note Template documents", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/books.md", literatureNoteDocument("Books"));
+    const { service } = await makeHarness({ vault });
+
+    expect(
+      service
+        .getLiteratureNoteTemplate("books.md")
+        ?.renderForCreate({ title: "First" }),
+    ).toContain("# Books First");
+
+    vault.modifyFile(
+      "templates/books.md",
+      literatureNoteDocument("Revised books"),
+    );
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(
+      service
+        .getLiteratureNoteTemplate("books.md")
+        ?.renderForCreate({ title: "Second" }),
+    ).toContain("# Revised books Second");
+
+    vault.deleteFile("templates/books.md");
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(service.getLiteratureNoteTemplate("books.md")).toBeUndefined();
+  });
+
   it("bounds the settle wait while initial settings are still loading", async () => {
     const loaded = deferred<Readonly<Settings>>();
     const vault = new MockVault();
@@ -1316,6 +1345,22 @@ function makeFile(path: string, stat: TFile["stat"], vault: MockVault): TFile {
 
 function basename(path: string): string {
   return path.split("/").at(-1) ?? "";
+}
+
+function literatureNoteDocument(heading: string): string {
+  return `---
+id: books
+name: Books
+version: 1.0.0
+author: ZotLit
+description: Books fixture
+contract: 1
+filename: "{{ zt.title }}"
+---
+# ${heading} {{ zt.title }}
+
+{% managed %}Managed {{ zt.title }}{% endmanaged %}
+`;
 }
 
 async function flushAsync(): Promise<void> {

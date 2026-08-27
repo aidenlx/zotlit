@@ -1,5 +1,5 @@
 import type { Extension } from "@codemirror/state";
-import { dirname } from "node:path/posix";
+import { dirname, join } from "node:path/posix";
 import { TFile } from "obsidian";
 import type { App, EventRef, Plugin, TAbstractFile } from "obsidian";
 
@@ -10,6 +10,8 @@ import type {
 } from "@zotlit/templates/constants";
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
 import type {
+  LiteratureNoteTemplateDocument,
+  LiteratureNoteTemplateManifest,
   RootVariableUse,
   TemplateLanguage,
 } from "@zotlit/templates/facade";
@@ -86,6 +88,22 @@ export interface TemplateFileStatus {
   compileError: string | null;
 }
 
+/** One reconciled Literature Note Template document in the template folder. */
+export interface ResolvedLiteratureNoteTemplate {
+  readonly reference: string;
+  readonly path: string;
+  readonly manifest: LiteratureNoteTemplateManifest;
+  readonly hasManagedBlock: boolean;
+  renderForCreate<T extends object>(data: T): string;
+  renderForUpdate<T extends object>(data: T): string | null;
+  renderFilename<T extends object>(data: T): string;
+}
+
+interface ReconciledLiteratureNoteTemplate {
+  path: string;
+  document: LiteratureNoteTemplateDocument;
+}
+
 /** A recorded compile error: its message, and the liquidjs caret-annotated
  *  source excerpt when the underlying error carried one. */
 export interface CompileError {
@@ -136,6 +154,12 @@ export class TemplateService extends Service<void> {
   readonly #shadowed = new Map<string, string>();
   readonly #inertEta = new Map<string, string>();
   readonly #pendingFlush = new Set<string>();
+  readonly #pendingDocumentFlush = new Set<string>();
+  readonly #literatureNoteDocuments = new Map<
+    string,
+    ReconciledLiteratureNoteTemplate
+  >();
+  readonly #literatureNoteDocumentErrors = new Map<string, Error>();
   readonly #settledWaiters = new Set<SettledWaiter>();
   readonly #autoPairExtensions: Extension[] = [];
 
@@ -216,6 +240,38 @@ export class TemplateService extends Service<void> {
         compileError: this.#compileErrors.get(name)?.message ?? null,
       };
     });
+  }
+
+  /** Resolve one document filename from the configured template folder. */
+  getLiteratureNoteTemplate(
+    reference: string,
+  ): ResolvedLiteratureNoteTemplate | undefined {
+    this.#requireLoaded("getLiteratureNoteTemplate");
+    const error = this.#literatureNoteDocumentErrors.get(reference);
+    if (error) throw error;
+    const entry = this.#literatureNoteDocuments.get(reference);
+    if (!entry) return undefined;
+    const { document, path } = entry;
+    if (
+      document.manifest.language === "eta" &&
+      !this.#javascriptTemplatesEnabled
+    ) {
+      throw new InertTemplateError(m.settings_template_inert_eta({ path }));
+    }
+    return {
+      reference,
+      path,
+      manifest: document.manifest,
+      hasManagedBlock: document.managedBlock !== null,
+      renderForCreate: <T extends object>(data: T) =>
+        this.#facade.renderLiteratureNoteTemplateForCreate(document, data),
+      renderForUpdate: <T extends object>(data: T) =>
+        this.#facade.renderLiteratureNoteTemplateForUpdate(document, data),
+      renderFilename: <T extends object>(data: T) =>
+        toSingleLine(
+          this.#facade.renderLiteratureNoteTemplateFilename(document, data),
+        ),
+    };
   }
 
   /**
@@ -546,11 +602,14 @@ export class TemplateService extends Service<void> {
       const generation = ++this.#folderGeneration;
       this.#cancelFlush();
       this.#pendingFlush.clear();
+      this.#pendingDocumentFlush.clear();
       this.#shadowed.clear();
       this.#inertEta.clear();
       this.#winners.clear();
       this.#facade.reset();
       this.#compileErrors.clear();
+      this.#literatureNoteDocuments.clear();
+      this.#literatureNoteDocumentErrors.clear();
 
       const root =
         folder === ""
@@ -558,11 +617,15 @@ export class TemplateService extends Service<void> {
           : this.#app.vault.getFolderByPath(folder);
 
       const names = new Set<string>();
+      const documentReferences = new Set<string>();
       if (root) {
         for (const child of root.children) {
           if (child instanceof TFile) {
             const parsed = templateFileFromPath(child.path);
             if (parsed) names.add(parsed.name);
+            else if (child.extension === "md") {
+              documentReferences.add(child.name);
+            }
           }
         }
       } else {
@@ -575,9 +638,12 @@ export class TemplateService extends Service<void> {
         if (!names.has(name)) this.#useDefault(name);
       }
 
-      await Promise.all(
-        [...names].map((name) => this.#reconcileName(name, generation)),
-      );
+      await Promise.all([
+        ...[...names].map((name) => this.#reconcileName(name, generation)),
+        ...[...documentReferences].map((reference) =>
+          this.#reconcileDocument(reference, generation),
+        ),
+      ]);
       if (generation !== this.#folderGeneration) return;
 
       this.#emitter.emit("compile-status-changed");
@@ -593,24 +659,30 @@ export class TemplateService extends Service<void> {
 
   #onCreateOrModify(file: TAbstractFile): void {
     if (!(file instanceof TFile)) return;
-    this.#queueTemplateName(file.path);
+    this.#queueTemplatePath(file.path);
   }
 
   #onRename(file: TAbstractFile, oldPathRaw: string): void {
-    this.#queueTemplateName(oldPathRaw);
-    if (file instanceof TFile) this.#queueTemplateName(file.path);
+    this.#queueTemplatePath(oldPathRaw);
+    if (file instanceof TFile) this.#queueTemplatePath(file.path);
   }
 
   #onDelete(file: TAbstractFile): void {
-    this.#queueTemplateName(file.path);
+    this.#queueTemplatePath(file.path);
   }
 
-  #queueTemplateName(path: string): void {
+  #queueTemplatePath(path: string): void {
     const normalized = normalizeVaultPath(path);
-    if (!this.#isWatchedTemplatePath(normalized)) return;
     const parsed = templateFileFromPath(normalized);
-    if (!parsed) return;
-    this.#pendingFlush.add(parsed.name);
+    if (parsed && this.#isWatchedTemplatePath(normalized)) {
+      this.#pendingFlush.add(parsed.name);
+    } else if (
+      isWatchedDocumentPath(normalized, this.#currentTemplateFolder())
+    ) {
+      this.#pendingDocumentFlush.add(normalized.split("/").at(-1)!);
+    } else {
+      return;
+    }
     this.#scheduleFlush();
   }
 
@@ -627,10 +699,15 @@ export class TemplateService extends Service<void> {
     try {
       const generation = this.#folderGeneration;
       const names = [...this.#pendingFlush];
+      const documentReferences = [...this.#pendingDocumentFlush];
       this.#pendingFlush.clear();
-      await Promise.all(
-        names.map((name) => this.#reconcileName(name, generation)),
-      );
+      this.#pendingDocumentFlush.clear();
+      await Promise.all([
+        ...names.map((name) => this.#reconcileName(name, generation)),
+        ...documentReferences.map((reference) =>
+          this.#reconcileDocument(reference, generation),
+        ),
+      ]);
 
       if (generation !== this.#folderGeneration) return;
 
@@ -731,6 +808,38 @@ export class TemplateService extends Service<void> {
       language: winner.language,
       source: { kind: "vault", path: winner.file.path },
     });
+  }
+
+  async #reconcileDocument(
+    reference: string,
+    generation: number,
+  ): Promise<void> {
+    if (generation !== this.#folderGeneration) return;
+    const folder = this.#currentTemplateFolder();
+    const path = folder === "" ? reference : join(folder, reference);
+    const file = this.#app.vault.getFileByPath(path);
+    if (!file) {
+      this.#literatureNoteDocuments.delete(reference);
+      this.#literatureNoteDocumentErrors.delete(reference);
+      return;
+    }
+
+    try {
+      const source = await this.#app.vault.cachedRead(file);
+      if (generation !== this.#folderGeneration) return;
+      const document = this.#facade.parseLiteratureNoteTemplate(source);
+      this.#literatureNoteDocuments.set(reference, { path, document });
+      this.#literatureNoteDocumentErrors.delete(reference);
+    } catch (error) {
+      if (generation !== this.#folderGeneration) return;
+      const failure = Error.isError(error) ? error : new Error(String(error));
+      this.#literatureNoteDocuments.delete(reference);
+      this.#literatureNoteDocumentErrors.set(reference, failure);
+      logger.warn("Failed to reconcile Literature Note Template document", {
+        error: failure,
+        path,
+      });
+    }
   }
 
   /**
@@ -836,7 +945,8 @@ export class TemplateService extends Service<void> {
     return (
       this.#settlingTasks === 0 &&
       this.#flushTimer === null &&
-      this.#pendingFlush.size === 0
+      this.#pendingFlush.size === 0 &&
+      this.#pendingDocumentFlush.size === 0
     );
   }
 
@@ -962,6 +1072,16 @@ function isWatchedTemplatePath(path: string, folder: string): boolean {
   const normalized = normalizeVaultPath(path);
   return (
     templateFileFromPath(normalized) !== null &&
+    normalizeVaultPath(dirname(normalized)) === normalizeVaultPath(folder)
+  );
+}
+
+/** A document is a direct Markdown child of the configured template folder. */
+function isWatchedDocumentPath(path: string, folder: string): boolean {
+  const normalized = normalizeVaultPath(path);
+  return (
+    normalized.endsWith(".md") &&
+    templateFileFromPath(normalized) === null &&
     normalizeVaultPath(dirname(normalized)) === normalizeVaultPath(folder)
   );
 }

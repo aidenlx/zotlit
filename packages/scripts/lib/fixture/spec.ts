@@ -1029,16 +1029,42 @@ export const INSTALLED_STYLES: readonly FixtureStyle[] = [
 
 /**
  * The Fixture's second Literature Note Profile. Together with the built-in
- * default Profile, it provides two target folders for real-vault checks.
+ * default Profile and its built-in document, it provides two document-backed
+ * layouts and two target folders for real-vault checks.
  */
 export const LITERATURE_NOTE_PROFILES = [
   {
     id: "4aef9092-54f7-4f42-9760-9e8195cf924c",
     label: "Books",
+    document: "books.md",
     bindings: {
       "note.literature-folder": "books",
       "citation.references-style": INSTALLED_STYLES[0]!.id,
     },
+  },
+] as const;
+
+/** Literature Note Template documents placed in the Fixture template folder. */
+export const LITERATURE_NOTE_DOCUMENTS = [
+  {
+    filename: "books.md",
+    source: `---
+id: zotlit-fixture-books
+name: Fixture books
+version: 1.0.0
+author: ZotLit
+description: A visibly distinct book layout for the End-to-end Run
+contract: 1
+filename: 'books-{{ zt.citationKey | default: zt.key }}{% suffix %}'
+---
+# Book profile: {{ zt.title }}
+
+{% managed %}
+## Book details
+
+Citation key: {{ zt.citationKey }}
+{% endmanaged %}
+`,
   },
 ] as const;
 

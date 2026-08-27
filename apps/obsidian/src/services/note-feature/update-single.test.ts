@@ -82,6 +82,38 @@ describe("updateNoteToast", () => {
     );
   });
 
+  it("names a missing Profile document and its recovery", () => {
+    const { success } = updateNoteToast("full");
+
+    expect(
+      success({
+        bodyUpdated: false,
+        duplicateRegionCount: 0,
+        diagnostic: {
+          code: "missing-literature-note-template",
+          hint: "Restore the file.",
+          document: "books.md",
+        },
+      }),
+    ).toBe(
+      "The profile document books.md is missing. Restore it in the template folder or clear the profile document reference.",
+    );
+  });
+
+  it("reports a static Profile document separately from a missing Managed Region", () => {
+    const { success } = updateNoteToast("full");
+
+    expect(
+      success({
+        bodyUpdated: false,
+        duplicateRegionCount: 0,
+        noManagedBlock: true,
+      }),
+    ).toBe(
+      "Frontmatter updated. The profile document has no managed block, so the note body stayed unchanged.",
+    );
+  });
+
   it.each(["full", "metadata"] as const)(
     "surfaces an InertTemplateError's own message for the %s scope",
     (scope) => {

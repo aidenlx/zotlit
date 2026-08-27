@@ -70,6 +70,7 @@ describe("schema/defaults invariants", () => {
     const books = {
       id: "36c4f8b4-4f65-4cab-8c51-c921ea616cc8",
       label: "Books",
+      document: "books.md",
       bindings: { "note.literature-folder": "Books" },
     };
 
@@ -77,6 +78,9 @@ describe("schema/defaults invariants", () => {
     expect(v.safeParse(entry, [books]).success).toBe(true);
     expect(v.safeParse(entry, [{ ...books, id: "Books" }]).success).toBe(false);
     expect(v.safeParse(entry, [books, books]).success).toBe(false);
+    expect(v.safeParse(entry, [{ ...books, document: "   " }]).success).toBe(
+      false,
+    );
   });
 
   it("keeps profile bindings sparse and validates each supplied binding", () => {
