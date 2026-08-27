@@ -19,6 +19,7 @@ import type {
 } from "@/services/library-scope/scope";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/service";
 
 import { CitationIndex } from "./service";
 import type { CitekeyRecord, CitekeyStore } from "./service";
@@ -386,10 +387,10 @@ export class SettingsStub {
   >();
 
   constructor(
-    overrides: Partial<Settings> = {},
+    overrides: SettingsOverrides = {},
     options: { readyImmediately?: boolean } = {},
   ) {
-    this.current = { ...defaults, ...overrides };
+    this.current = applySettingsOverrides(defaults, overrides);
     if (options.readyImmediately ?? true) this.#ready.resolve();
   }
 
@@ -409,10 +410,58 @@ export class SettingsStub {
     return () => this.#listeners.delete(listener);
   }
 
-  update(overrides: Partial<Settings>): void {
-    this.current = { ...this.current, ...overrides };
+  update(overrides: SettingsOverrides): void {
+    this.current = applySettingsOverrides(this.current, overrides);
     for (const listener of this.#listeners) listener(this.current);
   }
+}
+
+type SettingsOverrides = Partial<Settings> &
+  Partial<ResolvedLiteratureNoteProfileBindings>;
+
+function applySettingsOverrides(
+  current: Readonly<Settings>,
+  overrides: SettingsOverrides,
+): Settings {
+  const {
+    ["note.literature-folder"]: literatureFolder,
+    ["citation.references-style"]: referencesStyle,
+    ["note.import-folder"]: importFolder,
+    ["note.import-colored-highlights"]: importColoredHighlights,
+    ["note.import-annotations-as-template"]: importAnnotationsAsTemplate,
+    ...persisted
+  } = overrides;
+  const profile = overrides["note.default-profile"];
+  return {
+    ...current,
+    ...persisted,
+    "note.default-profile": {
+      ...current["note.default-profile"],
+      ...profile,
+      bindings: {
+        ...current["note.default-profile"].bindings,
+        ...profile?.bindings,
+        ...(literatureFolder === undefined
+          ? {}
+          : { "note.literature-folder": literatureFolder }),
+        ...(referencesStyle === undefined
+          ? {}
+          : { "citation.references-style": referencesStyle }),
+        ...(importFolder === undefined
+          ? {}
+          : { "note.import-folder": importFolder }),
+        ...(importColoredHighlights === undefined
+          ? {}
+          : { "note.import-colored-highlights": importColoredHighlights }),
+        ...(importAnnotationsAsTemplate === undefined
+          ? {}
+          : {
+              "note.import-annotations-as-template":
+                importAnnotationsAsTemplate,
+            }),
+      },
+    },
+  };
 }
 
 export interface CitationIndexHarness extends AsyncDisposable {

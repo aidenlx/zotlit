@@ -1429,7 +1429,16 @@ describe("the generated Obsidian vault", () => {
       await readFile(layout.pluginDataPath, "utf-8"),
     ) as Record<string, unknown>;
 
-    expect(data.__VERSION__).toBe(9);
+    expect(data.__VERSION__).toBe(10);
+    expect(data["note.default-profile"]).toEqual({
+      bindings: {
+        "note.literature-folder": "literatures",
+        "citation.references-style": null,
+        "note.import-folder": "zotero_notes",
+        "note.import-colored-highlights": false,
+        "note.import-annotations-as-template": false,
+      },
+    });
     expect(data[LIBRARY_SCOPE_SETTING_KEY]).toEqual({ mode: "all" });
   });
 

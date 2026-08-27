@@ -33,6 +33,7 @@ import { CitationText } from "@/services/citation-text/service";
 import { createCitationEngine } from "@/services/pandoc/engine";
 import { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { Settings } from "@/services/settings/schema";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/service";
 import { applyCitationPresentation } from "@/views/citation-presentation/presentation";
 import type { CitationPresentationChoice } from "@/views/citation-presentation/presentation";
 import { runPandocExport } from "@/views/pandoc-export/register";
@@ -169,7 +170,8 @@ export interface CitationVaultOptions {
   /** Every style Zotero has installed here, by the file name it carries. */
   styles: Record<string, string>;
   /** The vault settings every surface renders under. */
-  settings: Partial<Settings>;
+  settings: Partial<Settings> &
+    Partial<ResolvedLiteratureNoteProfileBindings>;
   /** The `zotlit-csl` property both notes carry; `undefined` writes none. */
   documentStyle?: unknown;
   /** The `lang` property both notes carry; `undefined` writes none. */

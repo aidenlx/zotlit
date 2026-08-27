@@ -26,6 +26,8 @@ import type { NoteImport, NoteImporter } from "@/services/note-import/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import { getProfileBinding } from "@/services/settings/service";
+import type { ProfileBindingSettings } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -113,12 +115,15 @@ export function resolveNotePath(
   options: {
     itemTags: readonly ItemTag[];
     itemCollections: readonly TemplateCollection[];
-    settings: Readonly<Settings>;
+    settings: ProfileBindingSettings;
     forceSuffix?: boolean;
     document?: Pick<ResolvedLiteratureNoteTemplate, "renderFilename">;
   },
 ): { path: string; canSuffix: boolean } {
-  const folderSetting = options.settings["note.literature-folder"];
+  const folderSetting = getProfileBinding(
+    options.settings,
+    "note.literature-folder",
+  );
   const data = buildFilenameContext({
     item,
     tags: options.itemTags,
@@ -148,7 +153,7 @@ export function buildNoteResolvers(
   options: {
     attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
     noteImport: Pick<NoteImport, "resolveChildNote">;
-    settings: Readonly<Settings> | null;
+    settings: ProfileBindingSettings | null;
     sourcePath: string;
   },
 ): NoteResolvers {
@@ -243,7 +248,7 @@ function resolveNoteTarget(
   }
   resolvingFallback.add(item.indexedKey);
   try {
-    const folderSetting = settings["note.literature-folder"];
+    const folderSetting = getProfileBinding(settings, "note.literature-folder");
     // A synthetic link target must be deterministic, so drop any `suffix()`
     // marker to the base name (`() => false` = never apply a random suffix).
     const rel = resolveRenderedRelPath(

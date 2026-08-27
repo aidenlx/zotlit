@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { LegacyTemplateConversionError } from "@zotlit/templates/facade";
 
+import { defaults } from "@/services/settings/schema";
+
 import { LiteratureNoteTemplateMigrationService } from "./migration";
 import type { LiteratureNoteTemplateMigrationOptions } from "./migration";
 
@@ -10,9 +12,12 @@ function makeHarness(options?: {
   defaultDocument?: string;
 }) {
   const state = {
-    "note.default-profile": options?.defaultDocument
-      ? { document: options.defaultDocument }
-      : {},
+    "note.default-profile": {
+      ...defaults["note.default-profile"],
+      ...(options?.defaultDocument === undefined
+        ? {}
+        : { document: options.defaultDocument }),
+    },
     "note.template-conversion-pending": options?.pending ?? false,
     "template.folder": "templates",
   };
@@ -40,7 +45,10 @@ function makeHarness(options?: {
     ),
     flush: vi.fn(async () => {}),
     setDefaultLiteratureNoteProfileDocument: vi.fn((document: string) => {
-      state["note.default-profile"] = { document };
+      state["note.default-profile"] = {
+        ...state["note.default-profile"],
+        document,
+      };
     }),
   };
   const template = {

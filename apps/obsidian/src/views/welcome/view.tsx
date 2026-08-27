@@ -86,7 +86,8 @@ export class WelcomeView extends ItemView {
       this.#deps.settings.subscribe((s) => {
         if (s)
           this.#store.setState({
-            literatureFolder: s["note.literature-folder"],
+            literatureFolder:
+              s["note.default-profile"].bindings["note.literature-folder"],
             templateConversionPending: s["note.template-conversion-pending"],
           });
       }),

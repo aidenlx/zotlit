@@ -16,8 +16,11 @@ import type {
   SourceOrigin,
 } from "@/services/attachment-import/service";
 import { defaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
-import type { SettingsService } from "@/services/settings/service";
+import { bindLiteratureNoteProfile } from "@/services/settings/service";
+import type {
+  ResolvedLiteratureNoteProfileBindings,
+  SettingsService,
+} from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 
 import { parseNote } from "./note-parser";
@@ -204,7 +207,7 @@ function makeService(
 
 function makePrepare(
   overrides: Omit<Partial<PrepareNoteImportOptions>, "settings"> & {
-    settings?: Partial<Settings>;
+    settings?: Partial<ResolvedLiteratureNoteProfileBindings>;
   } = {},
 ): PrepareNoteImportOptions {
   const { settings: settingsOverrides, ...rest } = overrides;
@@ -212,7 +215,7 @@ function makePrepare(
     client: {} as any,
     sourcePath: "Literature/Paper.md",
     settings: {
-      ...defaults,
+      ...bindLiteratureNoteProfile(defaults)!,
       "note.import-folder": "Imported",
       ...settingsOverrides,
     },

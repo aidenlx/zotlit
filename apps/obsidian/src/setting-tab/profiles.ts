@@ -14,7 +14,11 @@ import { ensureFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import type { LiteratureNoteProfile } from "@/services/settings/schema";
+import { DEFAULT_LITERATURE_NOTE_PROFILE } from "@/services/settings/schema";
+import type {
+  DefaultLiteratureNoteProfile,
+  LiteratureNoteProfile,
+} from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import { DEFAULT_TEMPLATES } from "@/services/template/defaults";
 import { normalizeVaultPath } from "@/services/template/path";
@@ -29,7 +33,10 @@ type ProfileControlField =
   | "label"
   | "folder"
   | "citation-style-inherit"
-  | "citation-style";
+  | "citation-style"
+  | "import-folder"
+  | "colored-highlights"
+  | "annotations-as-template";
 const PROFILE_CONTROL_PREFIX = "note-profile:";
 const logger = getLogger(["setting-tab", "profiles"]);
 const DEFAULT_DOCUMENT_REFERENCE = "literature-note-default.md";
@@ -38,7 +45,9 @@ export function literatureNoteProfileItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsControlKey>[] {
   const profiles = ctx.settings.current?.["note.profiles"] ?? [];
-  const defaultProfile = ctx.settings.current?.["note.default-profile"] ?? {};
+  const defaultProfile: DefaultLiteratureNoteProfile =
+    ctx.settings.current?.["note.default-profile"] ??
+    DEFAULT_LITERATURE_NOTE_PROFILE;
 
   return [
     {
@@ -368,7 +377,7 @@ function profileDocumentPath(
   );
 }
 
-function profileControlKey(
+export function profileControlKey(
   id: string,
   field: ProfileControlField,
 ): ProfileControlKey {
@@ -384,17 +393,28 @@ export function getProfileControlValue(
   key: ProfileControlKey,
 ): unknown {
   const { id, field } = parseProfileControlKey(key)!;
-  const profile = settings.getLiteratureNoteProfile(id);
-  if (!profile || !("id" in profile)) return undefined;
+  const profile = settings.getLiteratureNoteProfile(
+    id === "default" ? undefined : id,
+  );
+  if (!profile) return undefined;
   switch (field) {
     case "label":
-      return profile.label;
+      return "id" in profile ? profile.label : undefined;
     case "folder":
       return profile.bindings?.["note.literature-folder"] ?? "";
     case "citation-style-inherit":
-      return profile.bindings?.["citation.references-style"] === undefined;
+      return (
+        "id" in profile &&
+        profile.bindings?.["citation.references-style"] === undefined
+      );
     case "citation-style":
       return profile.bindings?.["citation.references-style"] ?? "";
+    case "import-folder":
+      return profile.bindings?.["note.import-folder"] ?? "";
+    case "colored-highlights":
+      return profile.bindings?.["note.import-colored-highlights"] ?? false;
+    case "annotations-as-template":
+      return profile.bindings?.["note.import-annotations-as-template"] ?? false;
   }
 }
 
@@ -404,8 +424,34 @@ export function setProfileControlValue(
   value: unknown,
 ): void {
   const { id, field } = parseProfileControlKey(key)!;
-  const profile = settings.getLiteratureNoteProfile(id);
-  if (!profile || !("id" in profile)) return;
+  const profile = settings.getLiteratureNoteProfile(
+    id === "default" ? undefined : id,
+  );
+  if (!profile) return;
+  if (!("id" in profile)) {
+    if (field === "folder") {
+      settings.updateDefaultLiteratureNoteProfileBindings({
+        "note.literature-folder": String(value),
+      });
+    } else if (field === "citation-style") {
+      settings.updateDefaultLiteratureNoteProfileBindings({
+        "citation.references-style": value === "" ? null : String(value),
+      });
+    } else if (field === "import-folder") {
+      settings.updateDefaultLiteratureNoteProfileBindings({
+        "note.import-folder": String(value),
+      });
+    } else if (field === "colored-highlights") {
+      settings.updateDefaultLiteratureNoteProfileBindings({
+        "note.import-colored-highlights": Boolean(value),
+      });
+    } else if (field === "annotations-as-template") {
+      settings.updateDefaultLiteratureNoteProfileBindings({
+        "note.import-annotations-as-template": Boolean(value),
+      });
+    }
+    return;
+  }
   if (field === "label") {
     settings.updateLiteratureNoteProfile(id, { label: String(value) });
     return;
@@ -444,7 +490,10 @@ function parseProfileControlKey(
     field !== "label" &&
     field !== "folder" &&
     field !== "citation-style-inherit" &&
-    field !== "citation-style"
+    field !== "citation-style" &&
+    field !== "import-folder" &&
+    field !== "colored-highlights" &&
+    field !== "annotations-as-template"
   ) {
     return null;
   }
