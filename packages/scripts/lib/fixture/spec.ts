@@ -1054,8 +1054,23 @@ name: Fixture books
 version: 1.0.0
 author: ZotLit
 description: A visibly distinct book layout for the End-to-end Run
-contract: 1
+contract: 2
 filename: 'books-{{ zt.citationKey | default: zt.key }}{% suffix %}'
+frontmatter:
+  - key: fixture-title
+    expr: zt.title
+    merge: replace
+  - key: fixture-kind
+    value:
+      $if: 'zt.itemType == "journalArticle"'
+      then: reference/article
+      else: reference/other
+    merge: replace
+  - key: fixture-obsolete
+    value:
+      $if: 'zt.itemType == "bookSection"'
+      then: retained
+    merge: replace
 ---
 # Book profile: {{ zt.title }}
 
