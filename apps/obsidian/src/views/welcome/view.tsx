@@ -183,6 +183,14 @@ function templateMigrationNotice(
       });
     case "unsupported-legacy-template":
       return m.notice_literature_note_template_conversion_unsupported();
+    case "legacy-frontmatter-inert":
+      return m.notice_literature_note_template_conversion_frontmatter_inert({
+        fields: result.diagnostic.fields.join(", "),
+      });
+    case "legacy-frontmatter-evaluation":
+      return m.notice_literature_note_template_conversion_frontmatter_evaluation(
+        { fields: result.diagnostic.fields.join(", ") },
+      );
     case "no-verification-item":
       return m.notice_literature_note_template_conversion_no_item();
     case "converted-document-exists":

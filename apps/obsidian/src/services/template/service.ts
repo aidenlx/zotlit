@@ -654,6 +654,11 @@ export class TemplateService extends Service<void> {
       ...this.#facade.convertLegacyLiteratureNoteTemplates(
         { note, content, filename },
         data,
+        {
+          frontmatter:
+            this.#settings.current?.["note.frontmatter-fields"] ?? [],
+          javascript: this.#javascriptTemplatesEnabled,
+        },
       ),
       legacyFiles: this.getLegacyLiteratureNoteTemplateFiles(),
     };

@@ -172,4 +172,35 @@ describe("LiteratureNoteTemplateMigrationService", () => {
     expect(harness.trashFile).not.toHaveBeenCalled();
     expect(harness.settings.update).not.toHaveBeenCalled();
   });
+
+  it("returns affected fields and leaves the vault untouched when the dry run fails", async () => {
+    const harness = makeHarness({ pending: true });
+    await harness.service.ready;
+    harness.template.convertLegacyLiteratureNoteTemplates.mockRejectedValueOnce(
+      new LegacyTemplateConversionError(
+        "legacy-frontmatter-evaluation",
+        "Converted Managed Frontmatter failed for: tags, creators",
+        {
+          difference: "Managed Frontmatter evaluation",
+          recovery: "Correct these fields, then retry conversion.",
+          fields: ["tags", "creators"],
+        },
+      ),
+    );
+
+    const result = await harness.service.convert();
+
+    expect(result).toEqual({
+      outcome: "refused",
+      diagnostic: {
+        code: "legacy-frontmatter-evaluation",
+        difference: "Managed Frontmatter evaluation",
+        message: "Converted Managed Frontmatter failed for: tags, creators",
+        hint: "Correct these fields, then retry conversion.",
+        fields: ["tags", "creators"],
+      },
+    });
+    expect(harness.create).not.toHaveBeenCalled();
+    expect(harness.trashFile).not.toHaveBeenCalled();
+  });
 });

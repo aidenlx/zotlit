@@ -74,7 +74,7 @@ export function renderJsonEFrontmatterValue(
 
   const value = envelope[ENVELOPE_KEY];
   try {
-    assertOutputDomain(value);
+    assertFrontmatterOutputDomain(value);
   } catch (cause) {
     throw new FrontmatterJsonEError(
       key,
@@ -90,8 +90,8 @@ function jsonEHas(...args: unknown[]): boolean {
   const [items, key, value] = args;
   if (!Array.isArray(items)) throw new TypeError("has items must be an array");
   if (typeof key !== "string") throw new TypeError("has key must be a string");
-  assertOutputDomain(items);
-  assertOutputDomain(value);
+  assertFrontmatterOutputDomain(items);
+  assertFrontmatterOutputDomain(value);
   if (!items.every(isPlainMapping)) {
     throw new TypeError("has items must contain mappings");
   }
@@ -107,7 +107,7 @@ function jsonEUniq(...args: unknown[]): FrontmatterJsonValue[] {
   assertArgumentCount("uniq", args, 1);
   const [items] = args;
   if (!Array.isArray(items)) throw new TypeError("uniq items must be an array");
-  assertOutputDomain(items);
+  assertFrontmatterOutputDomain(items);
   return [...new Set(items)];
 }
 
@@ -135,10 +135,16 @@ function assertArgumentCount(
   }
 }
 
+export function assertFrontmatterOutputDomain(
+  value: unknown,
+): asserts value is FrontmatterJsonValue {
+  assertOutputDomain(value, 0, new Set());
+}
+
 function assertOutputDomain(
   value: unknown,
-  depth = 0,
-  ancestors: Set<object> = new Set(),
+  depth: number,
+  ancestors: Set<object>,
 ): asserts value is FrontmatterJsonValue {
   if (depth > MAX_OUTPUT_DEPTH) {
     throw new FrontmatterOutputDomainError(

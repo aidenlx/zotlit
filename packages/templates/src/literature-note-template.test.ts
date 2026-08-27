@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { TemplateFacade } from "./facade";
+import type { FrontmatterField } from "./constants";
+import { convertLegacyFrontmatterFields, TemplateFacade } from "./facade";
 import type { LiteratureNoteTemplateError } from "./facade";
 import { formatManagedRegion } from "./obsidian";
 
@@ -101,6 +102,120 @@ describe("Literature Note Template document", () => {
         recovery: expect.any(String),
       }),
     );
+  });
+
+  it("moves legacy frontmatter fields structurally and evaluates only the converted entries", () => {
+    const facade = new TemplateFacade({
+      transformRender: (name, output) =>
+        name === "content" ? formatManagedRegion(output) : output,
+    });
+    const note = '{% render "content" with zt as zt %}';
+    facade.define("note", note, "liquid");
+    facade.define("content", "Managed", "liquid");
+    facade.define("filename", "note", "liquid");
+    const data = { title: "Paper", count: 1, evaluations: 0 };
+    const fields = [
+      {
+        key: "title",
+        expr: "  zt.title  ",
+        merge: "keep",
+        language: "liquid",
+      },
+      {
+        key: "count",
+        expr: "++zt.evaluations && zt.count + 1",
+        merge: "append",
+        language: "javascript",
+      },
+    ] as const satisfies readonly FrontmatterField[];
+
+    const converted = facade.convertLegacyLiteratureNoteTemplates(
+      {
+        note: { source: note, language: "liquid" },
+        content: { source: "Managed", language: "liquid" },
+        filename: { source: "note", language: "liquid" },
+      },
+      { note: data, filename: {} },
+      { frontmatter: fields, javascript: true },
+    );
+
+    expect(converted.document.manifest.frontmatter).toEqual([
+      { key: "title", expr: "  zt.title  ", merge: "keep" },
+      {
+        key: "count",
+        js: "++zt.evaluations && zt.count + 1",
+        merge: "append",
+      },
+    ]);
+    expect(converted.frontmatterPatch).toEqual({ title: "Paper", count: 2 });
+    expect(data.evaluations).toBe(1);
+  });
+
+  it("maps expression strings without parsing or rewriting them", () => {
+    expect(
+      convertLegacyFrontmatterFields([
+        {
+          key: "liquid",
+          expr: "  invalid | expression: [  ",
+          merge: "replace",
+          language: "liquid",
+        },
+        {
+          key: "javascript",
+          expr: "(()",
+          merge: "keep",
+          language: "javascript",
+        },
+      ]),
+    ).toEqual([
+      {
+        key: "liquid",
+        expr: "  invalid | expression: [  ",
+        merge: "replace",
+      },
+      { key: "javascript", js: "(()", merge: "keep" },
+    ]);
+  });
+
+  it("dry-runs every merge strategy across every frontmatter output kind", () => {
+    const expressions = [
+      ["null", null],
+      ["true", true],
+      ["42", 42],
+      ['"text"', "text"],
+      ['["one", "two"]', ["one", "two"]],
+      ['({ nested: "value" })', { nested: "value" }],
+    ] as const;
+
+    for (const merge of ["replace", "append", "keep"] as const) {
+      for (const [expr, expected] of expressions) {
+        const facade = new TemplateFacade({
+          transformRender: (name, output) =>
+            name === "content" ? formatManagedRegion(output) : output,
+        });
+        const note = '{% render "content" with zt as zt %}';
+        facade.define("note", note, "liquid");
+        facade.define("content", "Managed", "liquid");
+        facade.define("filename", "note", "liquid");
+
+        const converted = facade.convertLegacyLiteratureNoteTemplates(
+          {
+            note: { source: note, language: "liquid" },
+            content: { source: "Managed", language: "liquid" },
+            filename: { source: "note", language: "liquid" },
+          },
+          { note: {}, filename: {} },
+          {
+            frontmatter: [
+              { key: "field", expr, merge, language: "javascript" },
+            ],
+            javascript: true,
+          },
+        );
+
+        expect(converted.frontmatterPatch).toEqual({ field: expected });
+      }
+    }
   });
 
   it("refuses a conversion when note and content use different languages", () => {

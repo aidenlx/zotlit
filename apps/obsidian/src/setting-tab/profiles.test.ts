@@ -2,6 +2,8 @@
 import type { SettingDefinitionList, SettingDefinitionPage } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { TemplateFacade } from "@zotlit/templates/facade";
+
 import { confirm } from "@/lib/confirm";
 import { defaults } from "@/services/settings/schema";
 
@@ -274,6 +276,23 @@ describe("literature note Profile settings", () => {
       `id: zotlit.profile.${BOOKS.id}`,
     );
     expect(create.mock.calls[0]?.[1]).toContain("name: Books");
+    expect(
+      new TemplateFacade().parseLiteratureNoteTemplate(create.mock.calls[0]![1])
+        .manifest.frontmatter,
+    ).toEqual([
+      { key: "title", expr: "zt.title", merge: "replace" },
+      {
+        key: "related",
+        expr: "zt.relatedItems | note_links",
+        merge: "replace",
+      },
+      {
+        key: "collections",
+        expr: "zt.collections | collection_paths",
+        merge: "replace",
+      },
+      { key: "citekey", expr: "zt.citationKey", merge: "replace" },
+    ]);
     expect(updateLiteratureNoteProfile).toHaveBeenCalledWith(BOOKS.id, {
       document: `literature-note-${BOOKS.id}.md`,
     });

@@ -117,6 +117,13 @@ export type LiteratureNoteTemplateMigrationDiagnostic =
       hint: string;
     }
   | {
+      code: "legacy-frontmatter-inert" | "legacy-frontmatter-evaluation";
+      message: string;
+      difference: string;
+      hint: string;
+      fields: readonly string[];
+    }
+  | {
       code:
         | "no-verification-item"
         | "converted-document-exists"
@@ -196,14 +203,27 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
         await this.#template.convertLegacyLiteratureNoteTemplates(data);
     } catch (error) {
       if (error instanceof LegacyTemplateConversionError) {
+        const detail = {
+          difference: error.difference,
+          message: error.message,
+          hint: error.recovery,
+        };
+        if (
+          error.code === "legacy-frontmatter-inert" ||
+          error.code === "legacy-frontmatter-evaluation"
+        ) {
+          return {
+            outcome: "refused",
+            diagnostic: {
+              ...detail,
+              code: error.code,
+              fields: error.fields ?? [],
+            },
+          };
+        }
         return {
           outcome: "refused",
-          diagnostic: {
-            code: error.code,
-            difference: error.difference,
-            message: error.message,
-            hint: error.recovery,
-          },
+          diagnostic: { ...detail, code: error.code },
         };
       }
       throw error;
