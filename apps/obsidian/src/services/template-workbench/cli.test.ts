@@ -2277,7 +2277,12 @@ describe("Template Workbench CLI", () => {
             inert: true,
           },
         ],
-        reservedKeys: ["zotero-key", "zotero-note-key", "zotero-lastmod"],
+        reservedKeys: [
+          "zotero-key",
+          "zotlit-profile",
+          "zotero-note-key",
+          "zotero-lastmod",
+        ],
       });
     });
 

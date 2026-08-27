@@ -26,6 +26,7 @@ import {
   findScopeCase,
   INSTALLED_STYLES,
   ITEMS,
+  LITERATURE_NOTE_PROFILES,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
@@ -50,6 +51,7 @@ export {
   findScopeCase,
   INSTALLED_STYLES,
   ITEMS,
+  LITERATURE_NOTE_PROFILES,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
@@ -819,6 +821,7 @@ async function writeVault(
   await writeJson(layout.pluginDataPath, {
     __VERSION__: SETTINGS_VERSION,
     "note.literature-folder": "literatures",
+    "note.profiles": LITERATURE_NOTE_PROFILES,
     "note.import-folder": "zotero_notes",
     "server.enabled": true,
     ...(options.liveUpdatePort === undefined

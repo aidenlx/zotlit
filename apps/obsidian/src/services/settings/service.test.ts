@@ -1,3 +1,4 @@
+import { regex } from "arkregex";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ServiceContainer, ServiceInitError } from "@/services/service-base";
@@ -13,7 +14,7 @@ import {
   migrateV7ToV8,
   migrateV8ToV9,
 } from "./migrate";
-import { defaults } from "./schema";
+import { DEFAULT_LITERATURE_NOTE_PROFILE, defaults } from "./schema";
 import { RESET_SETTING, SettingsService } from "./service";
 
 type SettingsServiceOptions = ConstructorParameters<typeof SettingsService>[0];
@@ -301,6 +302,91 @@ describe("SettingsService loading", () => {
     await expect(registered.services.settings.ready).rejects.toBeInstanceOf(
       ServiceInitError,
     );
+  });
+});
+
+describe("SettingsService literature note profiles", () => {
+  it("resolves the empty default profile from global settings", async () => {
+    const { service } = makeService();
+    await service.ready;
+
+    expect(service.getLiteratureNoteProfile()).toBe(
+      DEFAULT_LITERATURE_NOTE_PROFILE,
+    );
+    expect(service.resolveLiteratureNoteProfileBindings()).toEqual({
+      "note.literature-folder": defaults["note.literature-folder"],
+      "citation.references-style": defaults["citation.references-style"],
+    });
+  });
+
+  it("creates, edits, and deletes a profile without deriving its id from its label", async () => {
+    const { plugin, service } = makeService();
+    await service.ready;
+
+    const created = service.createLiteratureNoteProfile("Books");
+    expect(created).toMatchObject({ label: "Books" });
+    expect(created.id).not.toBe("Books");
+    expect(created.id).toMatch(
+      regex(
+        "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      ),
+    );
+    const fetched = service.getLiteratureNoteProfile(created.id);
+    if (!fetched || !("id" in fetched)) throw new Error("Profile missing");
+    (fetched as { label: string }).label = "Tampered";
+    expect(service.getLiteratureNoteProfile(created.id)).toMatchObject({
+      label: "Books",
+    });
+
+    const edited = service.updateLiteratureNoteProfile(created.id, {
+      label: "Monographs",
+    });
+    expect(edited).toEqual({ id: created.id, label: "Monographs" });
+    expect(service.getLiteratureNoteProfile(created.id)).toEqual(edited);
+
+    service.deleteLiteratureNoteProfile(created.id);
+    expect(service.getLiteratureNoteProfile(created.id)).toBeUndefined();
+    await service.flush();
+    expect(plugin.__data).toEqual({ __VERSION__: 9, "note.profiles": [] });
+  });
+
+  it("overlays sparse bindings and returns undefined for an unknown profile", async () => {
+    const { service } = makeService();
+    await service.ready;
+    service.update({
+      "note.literature-folder": "Literature",
+      "citation.references-style": "global-style",
+    });
+    const profile = service.createLiteratureNoteProfile("Books");
+
+    service.updateLiteratureNoteProfile(profile.id, {
+      bindings: { "note.literature-folder": "Books" },
+    });
+    expect(service.resolveLiteratureNoteProfileBindings(profile.id)).toEqual({
+      "note.literature-folder": "Books",
+      "citation.references-style": "global-style",
+    });
+
+    service.updateLiteratureNoteProfile(profile.id, {
+      bindings: { "citation.references-style": "profile-style" },
+    });
+    expect(service.resolveLiteratureNoteProfileBindings(profile.id)).toEqual({
+      "note.literature-folder": "Literature",
+      "citation.references-style": "profile-style",
+    });
+
+    service.updateLiteratureNoteProfile(profile.id, {
+      bindings: { "citation.references-style": null },
+    });
+    expect(service.resolveLiteratureNoteProfileBindings(profile.id)).toEqual({
+      "note.literature-folder": "Literature",
+      "citation.references-style": null,
+    });
+    expect(
+      service.resolveLiteratureNoteProfileBindings(
+        "36c4f8b4-4f65-4cab-8c51-c921ea616cc8",
+      ),
+    ).toBeUndefined();
   });
 });
 

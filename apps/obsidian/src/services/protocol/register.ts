@@ -102,7 +102,10 @@ export function registerProtocolHandlers(
   stack.defer(
     deps.liveUpdate.on("update-many", (event) => {
       void toast.promise(
-        runBatchUpdate(deps, event.items, { scope: event.scope }),
+        runBatchUpdate(deps, event.items, {
+          scope: event.scope,
+          profileId: event.profileId,
+        }),
         { success: batchUpdateNotice },
       );
     }),
@@ -139,10 +142,13 @@ async function handleProtocol(
 
   switch (action) {
     case "open":
-      await openNote(deps, ref);
+      await openNote(deps, ref, query.profileId);
       break;
     case "update":
-      await updateNote(deps, ref, query.scope);
+      await updateNote(deps, ref, {
+        scope: query.scope,
+        profileId: query.profileId,
+      });
       break;
   }
 }
@@ -165,7 +171,10 @@ async function handleBatchProtocol(
   if (!query) return;
 
   await toast.promise(
-    runBatchUpdate(deps, query.items, { scope: query.scope }),
+    runBatchUpdate(deps, query.items, {
+      scope: query.scope,
+      profileId: query.profileId,
+    }),
     {
       success: batchUpdateNotice,
     },
@@ -173,7 +182,11 @@ async function handleBatchProtocol(
 }
 
 /** Open existing literature note, or create one if none exists. */
-async function openNote(deps: ProtocolDeps, ref: ItemRef): Promise<void> {
+async function openNote(
+  deps: ProtocolDeps,
+  ref: ItemRef,
+  profileId?: string,
+): Promise<void> {
   const existing = resolveLiteratureNoteWithWarning(
     deps.noteIndex.getNotesByItemKey(ref.indexedKey),
   );
@@ -185,7 +198,7 @@ async function openNote(deps: ProtocolDeps, ref: ItemRef): Promise<void> {
     return;
   }
 
-  await createAndOpen(deps, ref);
+  await createAndOpen(deps, ref, profileId);
 }
 
 function batchUpdateNotice(result: BatchUpdateResult): string | undefined {

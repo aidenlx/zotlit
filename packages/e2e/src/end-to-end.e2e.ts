@@ -15,6 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   findScopeCase,
   ITEMS,
+  LITERATURE_NOTE_PROFILES,
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
 } from "@zotlit/scripts/fixture";
@@ -54,10 +55,13 @@ function runVaultScript(args: string[]) {
 // needing to filter on libraryID too (key "AAAAAAAA" repeats in library 2).
 const targetItem = ITEMS.find((item) => item.itemID === 1)!;
 const createTargetItem = ITEMS.find((item) => item.itemID === 2)!;
+const defaultProfileTargetItem = ITEMS.find((item) => item.itemID === 6)!;
+const booksProfileTargetItem = ITEMS.find((item) => item.itemID === 7)!;
+const booksProfile = LITERATURE_NOTE_PROFILES[0]!;
 
 async function isObsidianReachable(): Promise<boolean> {
   const result = await runVaultScript(["status"]).catch(() => undefined);
-  return result?.stdout.trim() === "running";
+  return result?.stdout.trim().startsWith("ready ") ?? false;
 }
 
 const reachable = await isObsidianReachable();
@@ -108,7 +112,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(removedFromIndex).toBe(true);
 
-    const first = await createFixtureNote(vaultId, createTargetItem.key);
+    const first = await createFixtureNote(vaultId, createTargetItem.itemID);
     expect(first.outcome).toBe("created");
     if (first.outcome !== "created") {
       throw new Error("The first create did not create a Literature Note");
@@ -121,7 +125,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(indexed).toBe(true);
 
-    const second = await createFixtureNote(vaultId, createTargetItem.key);
+    const second = await createFixtureNote(vaultId, createTargetItem.itemID);
     expect(second).toEqual({
       outcome: "refused",
       diagnostic: {
@@ -132,16 +136,51 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       },
     });
 
-    const oneNote = await waitFor(async () => {
-      const total = await cli([
-        `vault=${vaultId}`,
-        "search",
-        `query=zotero-key: ${createTargetItem.key}`,
-        "total",
-      ]);
-      return total === "1";
-    });
+    const oneNote = await hasOneIndexedNote(vaultId, createTargetItem.key);
     expect(oneNote).toBe(true);
+  });
+
+  it("creates one note per Item in two Profile folders", async () => {
+    const defaultResult = await createFixtureNote(
+      vaultId,
+      defaultProfileTargetItem.itemID,
+      null,
+    );
+    const booksResult = await createFixtureNote(
+      vaultId,
+      booksProfileTargetItem.itemID,
+      booksProfile.id,
+    );
+
+    expect(defaultResult.outcome).toBe("created");
+    expect(booksResult.outcome).toBe("created");
+    if (
+      defaultResult.outcome !== "created" ||
+      booksResult.outcome !== "created"
+    ) {
+      throw new Error("The two-Profile scenario did not create both notes");
+    }
+
+    expect(defaultResult.path.startsWith("literatures/")).toBe(true);
+    expect(booksResult.path.startsWith("books/")).toBe(true);
+
+    const defaultContent = await readFile(
+      join(e2eVaultPath, defaultResult.path),
+      "utf-8",
+    );
+    const booksContent = await readFile(
+      join(e2eVaultPath, booksResult.path),
+      "utf-8",
+    );
+    expect(defaultContent).not.toContain("zotlit-profile:");
+    expect(booksContent).toContain(`zotlit-profile: ${booksProfile.id}`);
+    expect(booksContent).toContain(
+      `zotlit-csl: ${booksProfile.bindings["citation.references-style"]}`,
+    );
+
+    for (const result of [defaultResult, booksResult]) {
+      expect(await hasOneIndexedNote(vaultId, result.indexedKey)).toBe(true);
+    }
   });
 
   // Covers both the "rendered literature note" and "batch operation"
@@ -191,13 +230,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(content).toContain("related:");
     expect(content).toContain("collections:");
 
-    const createTargetCount = await cli([
-      `vault=${vaultId}`,
-      "search",
-      `query=zotero-key: ${createTargetItem.key}`,
-      "total",
-    ]);
-    expect(createTargetCount).toBe("1");
+    expect(await hasOneIndexedNote(vaultId, createTargetItem.key)).toBe(true);
   });
 
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
@@ -280,7 +313,7 @@ interface LibraryScopeReport {
 }
 
 type CreateOperationReply =
-  | { outcome: "created"; path: string }
+  | { outcome: "created"; path: string; indexedKey: string }
   | {
       outcome: "refused";
       diagnostic: {
@@ -293,14 +326,25 @@ type CreateOperationReply =
 
 async function createFixtureNote(
   vaultId: string,
-  indexedKey: string,
+  itemID: number,
+  profileId?: string | null,
 ): Promise<CreateOperationReply> {
-  const key = JSON.stringify(indexedKey);
   const response = await obEval(
     vaultId,
-    `(async function(){var services=app.plugins.plugins.zotlit.services;var hits=await services.itemLookup.search('',{limit:100});var hit=hits.find(function(candidate){return candidate.item.indexedKey===${key};});if(!hit){throw new Error('Fixture Item not found');}var result=await services.noteFeature.createNote(hit.item);return JSON.stringify(result.outcome==='created'?{outcome:'created',path:result.file.path}:{outcome:'refused',diagnostic:result.diagnostic});})()`,
+    `(async function(){var services=app.plugins.plugins.zotlit.services;var hits=await services.itemLookup.search('',{limit:100});var hit=hits.find(function(candidate){return candidate.item.itemID===${itemID};});if(!hit){throw new Error('Fixture Item not found');}var result=await services.noteFeature.createNote(hit.item,${JSON.stringify({ profileId })});return JSON.stringify(result.outcome==='created'?{outcome:'created',path:result.file.path,indexedKey:hit.item.indexedKey}:{outcome:'refused',diagnostic:result.diagnostic});})()`,
   );
   return JSON.parse(response) as CreateOperationReply;
+}
+
+function hasOneIndexedNote(
+  vaultId: string,
+  indexedKey: string,
+): Promise<boolean> {
+  return obEvalUntil(
+    vaultId,
+    `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(indexedKey)}).length)`,
+    { expected: "1" },
+  );
 }
 
 /** Maps the Scope Case's stable selectors to the Fixture's libraryIDs. */

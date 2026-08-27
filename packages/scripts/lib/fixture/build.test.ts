@@ -1433,6 +1433,24 @@ describe("the generated Obsidian vault", () => {
     expect(data[LIBRARY_SCOPE_SETTING_KEY]).toEqual({ mode: "all" });
   });
 
+  it("saves the Fixture's bindings-only Literature Note Profile", async () => {
+    const data = JSON.parse(
+      await readFile(layout.pluginDataPath, "utf-8"),
+    ) as Record<string, unknown>;
+
+    expect(data["note.profiles"]).toEqual([
+      {
+        id: "4aef9092-54f7-4f42-9760-9e8195cf924c",
+        label: "Books",
+        bindings: {
+          "note.literature-folder": "books",
+          "citation.references-style":
+            "http://www.zotero.org/styles/chinese-gb7714-1987-numeric",
+        },
+      },
+    ]);
+  });
+
   it("selects the available, partial, and fully unavailable scope cases", async () => {
     for (const scopeCase of SCOPE_CASES) {
       await selectScopeCase(layout, scopeCase.id);

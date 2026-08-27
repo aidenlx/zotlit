@@ -1027,6 +1027,21 @@ export const INSTALLED_STYLES: readonly FixtureStyle[] = [
   },
 ];
 
+/**
+ * The Fixture's second Literature Note Profile. Together with the built-in
+ * default Profile, it provides two target folders for real-vault checks.
+ */
+export const LITERATURE_NOTE_PROFILES = [
+  {
+    id: "4aef9092-54f7-4f42-9760-9e8195cf924c",
+    label: "Books",
+    bindings: {
+      "note.literature-folder": "books",
+      "citation.references-style": INSTALLED_STYLES[0]!.id,
+    },
+  },
+] as const;
+
 const STRESS_ITEM_KEY_ALPHABET = "23456789ABCDEFGHIJKLMNPQRSTUVWXYZ";
 const STRESS_BUILD_SEED = 0x5eed_0000;
 

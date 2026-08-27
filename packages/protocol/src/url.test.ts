@@ -22,6 +22,7 @@ import {
 } from "./url";
 
 const SOURCE = "a1b2c3d4";
+const PROFILE = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
 
 /** Reconstruct the flat record Obsidian decodes from an `obsidian://zotlit/<action>` link. */
 function decode(url: string): Record<string, string> {
@@ -90,6 +91,19 @@ describe("zotlit obsidian protocol", () => {
     expect(() =>
       parseProtocolQuery({ item: "42", "source-id": SOURCE, scope: "body" }),
     ).toThrow();
+  });
+
+  it("round-trips an explicit Literature Note Profile", () => {
+    const url = buildProtocolUrl("update", 42, {
+      sourceId: SOURCE,
+      profileId: PROFILE,
+    });
+    expect(url).toBe(
+      `obsidian://zotlit/update?item=42&source-id=${SOURCE}&profile=${PROFILE}`,
+    );
+    expect(parseProtocolQuery(decode(url))).toMatchObject({
+      profileId: PROFILE,
+    });
   });
 });
 
@@ -183,6 +197,16 @@ describe("zotlit update-many protocol", () => {
       parseProtocolBatchQuery({ items: "1,x,3", "source-id": SOURCE }),
     ).toThrow();
   });
+
+  it("round-trips an explicit Literature Note Profile", () => {
+    const url = buildBatchProtocolUrl([1, 2], {
+      sourceId: SOURCE,
+      profileId: PROFILE,
+    });
+    expect(parseProtocolBatchQuery(decode(url))).toMatchObject({
+      profileId: PROFILE,
+    });
+  });
 });
 
 describe("batchUpdateRequestSchema (HTTP body)", () => {
@@ -197,6 +221,12 @@ describe("batchUpdateRequestSchema (HTTP body)", () => {
     expect(
       v.parse(batchUpdateRequestSchema, { items: [1], scope: "metadata" }),
     ).toEqual({ items: [1], scope: "metadata" });
+  });
+
+  it("parses an explicit Literature Note Profile", () => {
+    expect(
+      v.parse(batchUpdateRequestSchema, { items: [1], profile: PROFILE }),
+    ).toMatchObject({ profileId: PROFILE });
   });
 
   it("rejects an empty item list", () => {

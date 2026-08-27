@@ -38,6 +38,45 @@ const frontmatterFieldsSchema = v.pipe(
   v.readonly(),
 );
 
+const literatureNoteProfileBindingsSchema = v.pipe(
+  v.object({
+    "note.literature-folder": v.optional(v.string()),
+    "citation.references-style": v.optional(v.nullable(v.string())),
+  }),
+  v.readonly(),
+);
+export type LiteratureNoteProfileBindings = v.InferOutput<
+  typeof literatureNoteProfileBindingsSchema
+>;
+
+export const literatureNoteProfileSchema = v.pipe(
+  v.object({
+    id: v.pipe(v.string(), v.uuid()),
+    label: v.pipe(
+      v.string(),
+      v.check((label) => label.trim().length > 0, "Empty profile label"),
+    ),
+    bindings: v.optional(literatureNoteProfileBindingsSchema),
+  }),
+  v.readonly(),
+);
+export type LiteratureNoteProfile = v.InferOutput<
+  typeof literatureNoteProfileSchema
+>;
+
+const literatureNoteProfilesSchema = v.pipe(
+  v.array(literatureNoteProfileSchema),
+  v.checkItems(
+    (profile, index, profiles) =>
+      profiles.findIndex(({ id }) => id === profile.id) === index,
+    "Duplicate profile id",
+  ),
+  v.readonly(),
+);
+
+/** The built-in Profile has no identity or overrides of its own. */
+export const DEFAULT_LITERATURE_NOTE_PROFILE = Object.freeze({});
+
 /** JSON-safe finite number that settings values may take. */
 export const settingsNumber = v.pipe(v.number(), v.finite());
 
@@ -102,6 +141,7 @@ export const schema = v.object({
   "citation.hover-require-mod-reading": v.boolean(),
 
   "note.literature-folder": v.string(),
+  "note.profiles": literatureNoteProfilesSchema,
   "note.frontmatter-fields": frontmatterFieldsSchema,
   "note.import-folder": v.string(),
   "note.import-colored-highlights": v.boolean(),
@@ -159,6 +199,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.hover-require-mod-live-preview": false,
   "citation.hover-require-mod-reading": false,
   "note.literature-folder": "literatures",
+  "note.profiles": [],
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "note.import-folder": "zotero_notes",
   "note.import-colored-highlights": false,

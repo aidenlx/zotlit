@@ -12,7 +12,7 @@ export interface QuickSwitchDeps {
   app: App;
   lookup: ItemLookup;
   noteIndex: NoteIndex;
-  noteFeature: Pick<NoteFeature, "createNote">;
+  noteFeature: Pick<NoteFeature, "createNote" | "switchNoteProfile">;
   settings: SettingsService;
 }
 

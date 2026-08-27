@@ -52,18 +52,36 @@ function noteLessDeps(): SingleUpdateDeps {
 describe("updateNote", () => {
   it("never creates when the metadata scope finds no literature note", async () => {
     await expect(
-      updateNote(noteLessDeps(), REF, "metadata"),
+      updateNote(noteLessDeps(), REF, { scope: "metadata" }),
     ).resolves.toBeUndefined();
   });
 
   it("still creates when the full scope finds no literature note", async () => {
-    await expect(updateNote(noteLessDeps(), REF, "full")).rejects.toThrow(
-      "create path reached",
-    );
+    await expect(
+      updateNote(noteLessDeps(), REF, { scope: "full" }),
+    ).rejects.toThrow("create path reached");
   });
 });
 
 describe("updateNoteToast", () => {
+  it("surfaces a Profile refusal for a metadata-only update", () => {
+    const { success } = updateNoteToast("metadata");
+
+    expect(
+      success({
+        bodyUpdated: false,
+        duplicateRegionCount: 0,
+        diagnostic: {
+          code: "unknown-literature-note-profile",
+          hint: "Re-stamp the note or recreate the Profile with the same ID.",
+          profileId: "deleted-profile",
+        },
+      }),
+    ).toBe(
+      "This literature note uses an unknown profile (deleted-profile). Re-stamp the note or recreate the profile with the same ID.",
+    );
+  });
+
   it.each(["full", "metadata"] as const)(
     "surfaces an InertTemplateError's own message for the %s scope",
     (scope) => {
