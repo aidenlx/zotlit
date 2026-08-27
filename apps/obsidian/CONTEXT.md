@@ -19,7 +19,7 @@ The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered 
 _Avoid_: managed block, template region, synced region
 
 **Managed Frontmatter**:
-Frontmatter fields on a Literature Note whose values are re-evaluated from template expressions on update. `zotero-key` is the system field; the ordered user-configured entries each declare `{key, expression, language, merge strategy}`, and the defaults include a `citekey` field sourced from `zt.citationKey`. Each expression declares its own language — Liquid (the default) or JavaScript — and always evaluates in that language; each field's merge strategy (replace, append arrays, keep existing) governs how the re-evaluated value combines with the value already on the note; JavaScript fields run only while JavaScript Templates is enabled on the device, and are otherwise inert — a note write that consumes the field set fails with an error naming them, existing notes untouched. Unmanaged keys are preserved. The user-configured entries are ordered, and that order is the write order for the fields on a newly created note; on an update, keys already on the note keep their position.
+Frontmatter fields on a Literature Note whose values are re-evaluated from JSON-e templates on update. `zotero-key` is the system field; each ordered user-configured entry declares a static key, one JSON-e value template, and a merge strategy. The value template can return any valid frontmatter scalar, sequence, or mapping and can conditionally make its field absent. Each field's merge strategy (replace, append arrays, keep existing) governs how the result combines with the value already on the note. Unmanaged keys are preserved. Entry order is the write order for fields on a newly created note; on an update, keys already on the note keep their position.
 
 ### Templates
 
@@ -46,7 +46,7 @@ The `{% managed %}` … `{% endmanaged %}` block in a Literature Note Template d
 _Avoid_: managed region (the rendered output in the note, not the template source), content block
 
 **JavaScript Templates**:
-The gated capability to run user-authored JavaScript during rendering — Eta template files and JavaScript-language Managed Frontmatter fields together. Off by default; enabled per device behind an explicit confirmation, and the flag never syncs. While off, `.eta.md` templates and JavaScript frontmatter fields are inert — an operation that requires one fails with an error naming it, never falling back to substitute output — and no user-authored code is compiled or executed anywhere, settings validation included.
+The gated capability to run user-authored JavaScript through Eta template files. Off by default; enabled per device behind an explicit confirmation, and the flag never syncs. While off, `.eta.md` templates are inert — an operation that requires one fails with an error naming it, never falling back to substitute output — and no user-authored JavaScript is compiled or executed anywhere, settings validation included.
 _Avoid_: advanced templates, legacy templates, scripting, user scripts
 
 **Filename Template**:
