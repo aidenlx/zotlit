@@ -101,6 +101,25 @@ describe("mergeFrontmatterFields", () => {
     ).toEqual({ title: "New" });
   });
 
+  it.each(["replace", "append", "keep"] as const)(
+    "treats inherited object names as absent under %s",
+    (merge) => {
+      const evaluated: Record<string, unknown> = Object.create(null);
+      Object.defineProperty(evaluated, "constructor", {
+        value: "safe",
+        enumerable: true,
+      });
+
+      const patch = mergeFrontmatterFields(
+        [{ key: "constructor", merge }],
+        evaluated,
+      );
+
+      expect(Object.hasOwn(patch, "constructor")).toBe(true);
+      expect(patch.constructor).toBe("safe");
+    },
+  );
+
   it("appends arrays with strict identity de-duplication", () => {
     const shared = { key: "A" };
     const equivalent = { key: "A" };

@@ -1,5 +1,6 @@
 import { Context, toValueSync, Value } from "liquidjs";
 import type { Liquid } from "liquidjs";
+import { stringify as stringifyYaml } from "yaml";
 
 import { basename } from "./basename";
 import type {
@@ -110,7 +111,7 @@ export function evalManagedFrontmatterEntries(
   zt: object,
   operationTimestamp: Temporal.Instant,
 ): ManagedFrontmatterEvaluation {
-  const values: Record<string, unknown> = {};
+  const values: Record<string, unknown> = Object.create(null);
   const errors: ManagedFrontmatterEvaluationError[] = [];
   for (const entry of entries) {
     try {
@@ -118,7 +119,7 @@ export function evalManagedFrontmatterEntries(
       if (value !== undefined && value !== FRONTMATTER_ABSENT) {
         assertFrontmatterOutputDomain(value);
       }
-      values[entry.key] = value;
+      defineFrontmatterValue(values, entry.key, value);
     } catch (error) {
       errors.push({ key: entry.key, error });
     }
@@ -241,16 +242,44 @@ export function evalFrontmatterFields(
   zt: object,
   onError?: (key: string, error: unknown) => void,
 ): Record<string, unknown> {
-  const fm: Record<string, unknown> = {};
+  const fm: Record<string, unknown> = Object.create(null);
   for (const field of fields) {
     try {
       const value = field.fn(zt, basename);
-      if (value !== undefined) fm[field.key] = value;
+      if (value !== undefined) defineFrontmatterValue(fm, field.key, value);
     } catch (error) {
       onError?.(field.key, error);
     }
   }
   return fm;
+}
+
+/** Serialize selected keys first, preserving their explicit order. */
+export function stringifyFrontmatterInOrder(
+  values: Readonly<Record<string, unknown>>,
+  keys: readonly string[],
+): string {
+  const ordered = new Map<string, unknown>();
+  for (const key of keys) {
+    if (Object.hasOwn(values, key)) ordered.set(key, values[key]);
+  }
+  for (const key of Object.keys(values)) {
+    if (!ordered.has(key)) ordered.set(key, values[key]);
+  }
+  return stringifyYaml(ordered);
+}
+
+function defineFrontmatterValue(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
 }
 
 export { basename };

@@ -53,7 +53,7 @@ export function renderJsonEFrontmatterValue(
     envelope = renderJsonE(
       { [ENVELOPE_KEY]: template },
       {
-        zt,
+        zt: projectJsonEData(zt),
         now: operationTimestamp.toString(),
         has: jsonEHas,
         uniq: jsonEUniq,
@@ -83,6 +83,63 @@ export function renderJsonEFrontmatterValue(
     );
   }
   return value;
+}
+
+/** Snapshot enumerable data without exposing methods or helper functions. */
+function projectJsonEData(
+  value: unknown,
+  projectedBySource = new WeakMap<object, object>(),
+): unknown {
+  if (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "number" ||
+    typeof value === "string" ||
+    value === undefined
+  ) {
+    return value;
+  }
+  if (typeof value !== "object") return undefined;
+  if (
+    value instanceof Temporal.Instant ||
+    value instanceof Temporal.PlainDate ||
+    value instanceof Temporal.PlainYearMonth
+  ) {
+    return value.toString();
+  }
+  const existing = projectedBySource.get(value);
+  if (existing !== undefined) return existing;
+
+  if (Array.isArray(value)) {
+    const projected: unknown[] = [];
+    projectedBySource.set(value, projected);
+    for (const item of value) {
+      projected.push(projectJsonEData(item, projectedBySource));
+    }
+    return projected;
+  }
+  if (!isPlainMapping(value)) {
+    throw new TypeError("zt data must contain plain objects only");
+  }
+
+  const projected: Record<string, unknown> = {};
+  projectedBySource.set(value, projected);
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") continue;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
+    if (!descriptor.enumerable) continue;
+    const source =
+      "value" in descriptor ? descriptor.value : descriptor.get?.call(value);
+    const item = projectJsonEData(source, projectedBySource);
+    if (item === undefined) continue;
+    Object.defineProperty(projected, key, {
+      value: item,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  }
+  return projected;
 }
 
 function jsonEHas(...args: unknown[]): boolean {

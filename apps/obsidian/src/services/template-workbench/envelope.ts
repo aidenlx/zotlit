@@ -26,10 +26,10 @@ import type { SchemaAsset } from "./schema";
 
 /**
  * The wire format of the `zotlit:template-*` and `zotlit:frontmatter-*`
- * commands, versioned on its own (ADR 0026). The value has stood since
- * Version 3 adds Literature Note Profile/document inspection and rendering.
+ * commands, versioned on its own (ADR 0026). Version 4 removes the retired
+ * reserved-frontmatter-section diagnostic after adding manifest frontmatter.
  */
-export const CONTRACT_VERSION = 3;
+export const CONTRACT_VERSION = 4;
 
 /** Identity of the vault and Zotero source a command answered from. */
 export interface WorkbenchIdentity {
