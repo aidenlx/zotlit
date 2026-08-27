@@ -6,7 +6,11 @@ import { confirm } from "@/lib/confirm";
 import { defaults } from "@/services/settings/schema";
 
 import type { SettingTabContext } from "./context";
-import { literatureNoteProfileItems } from "./profiles";
+import {
+  customizeLiteratureNoteProfile,
+  literatureNoteProfileItems,
+  restoreBuiltInLiteratureNoteProfile,
+} from "./profiles";
 
 vi.mock("@/lib/confirm", () => ({ confirm: vi.fn() }));
 
@@ -22,33 +26,34 @@ const BOOKS = {
 beforeEach(() => vi.clearAllMocks());
 
 describe("literature note Profile settings", () => {
-  it("offers another literature note setup without showing the word Profile", () => {
-    const createLiteratureNoteProfile = vi.fn();
-    const requestUpdate = vi.fn();
+  it("always presents the default Profile and document state", () => {
     const items = literatureNoteProfileItems({
       settings: {
         current: defaults,
-        createLiteratureNoteProfile,
       },
-      requestUpdate,
     } as unknown as SettingTabContext);
 
     expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({
-      name: "Add another literature note setup",
-      desc: "Use a different folder or citation style for some literature notes.",
+    const page = items[0] as SettingDefinitionPage;
+    expect(page).toMatchObject({
+      type: "page",
+      name: "Literature note profiles",
+      items: [
+        {
+          type: "page",
+          name: "Default",
+          displayValue: "Built-in template",
+          items: [
+            {},
+            {
+              name: "Template document",
+              desc: "Uses the built-in Literature Note Template.",
+            },
+          ],
+        },
+        { type: "list", heading: "Profiles" },
+      ],
     });
-    expect(JSON.stringify(items).toLowerCase()).not.toContain("profile");
-
-    const action = "action" in items[0]! ? items[0].action : undefined;
-    if (!action) throw new Error("Add action missing");
-    const blur = vi.fn();
-    const el = { blur } as unknown as HTMLElement;
-    action(el, 0);
-
-    expect(blur).toHaveBeenCalled();
-    expect(createLiteratureNoteProfile).toHaveBeenCalledWith("New profile");
-    expect(requestUpdate).toHaveBeenCalled();
   });
 
   it("shows a Profile list and declarative editor after a second Profile exists", () => {
@@ -78,7 +83,7 @@ describe("literature note Profile settings", () => {
         {
           type: "page",
           name: "Books",
-          displayValue: "Books · apa",
+          displayValue: "Books · apa · Built-in template",
           items: [
             {
               name: "Name",
@@ -101,10 +106,65 @@ describe("literature note Profile settings", () => {
                 key: `note-profile:${BOOKS.id}:citation-style`,
               },
             },
+            {
+              name: "Template document",
+              desc: "Uses the built-in Literature Note Template.",
+            },
           ],
         },
       ],
     });
+  });
+
+  it("reports a missing referenced document in the Profile editor", () => {
+    const settings = {
+      ...defaults,
+      "note.profiles": [{ ...BOOKS, document: "books.md" }],
+    };
+    const page = literatureNoteProfileItems({
+      plugin: {
+        services: {
+          template: { getLiteratureNoteTemplateStatuses: () => [] },
+        },
+      },
+      settings: { current: settings },
+    } as unknown as SettingTabContext)[0] as SettingDefinitionPage;
+    const list = page.items?.[1] as SettingDefinitionList;
+
+    expect(list.items?.[0]).toMatchObject({
+      displayValue: "Books · apa · books.md",
+      items: [
+        {},
+        {},
+        {},
+        {
+          name: "Template document",
+          desc: "The template document books.md is missing.",
+        },
+      ],
+    });
+  });
+
+  it("renders a referenced document while the template service starts", () => {
+    const settings = {
+      ...defaults,
+      "note.profiles": [{ ...BOOKS, document: "books.md" }],
+    };
+
+    expect(() =>
+      literatureNoteProfileItems({
+        plugin: {
+          services: {
+            template: {
+              getLiteratureNoteTemplateStatuses: () => {
+                throw new Error("service is not ready");
+              },
+            },
+          },
+        },
+        settings: { current: settings },
+      } as unknown as SettingTabContext),
+    ).not.toThrow();
   });
 
   it("deletes a Profile only after confirmation", async () => {
@@ -136,5 +196,112 @@ describe("literature note Profile settings", () => {
       {},
     );
     expect(requestUpdate).toHaveBeenCalled();
+  });
+
+  it("seeds a custom document and sets the Profile reference", async () => {
+    const create = vi.fn(async (path: string, source: string) => ({
+      path,
+      source,
+    }));
+    const openFile = vi.fn(async () => {});
+    const updateLiteratureNoteProfile = vi.fn();
+    const requestUpdate = vi.fn();
+    const ctx = {
+      app: {
+        vault: {
+          getFileByPath: () => null,
+          getAbstractFileByPath: () => null,
+          createFolder: vi.fn(async () => ({})),
+          create,
+        },
+        workspace: { getLeaf: () => ({ openFile }) },
+      },
+      settings: {
+        current: { ...defaults, "note.profiles": [BOOKS] },
+        updateLiteratureNoteProfile,
+      },
+      requestUpdate,
+    } as unknown as SettingTabContext;
+
+    await customizeLiteratureNoteProfile(ctx, BOOKS.id);
+
+    expect(create).toHaveBeenCalledWith(
+      `templates/literature-note-${BOOKS.id}.md`,
+      expect.stringContaining("{% managed %}"),
+    );
+    expect(create.mock.calls[0]?.[1]).toContain(
+      `id: zotlit.profile.${BOOKS.id}`,
+    );
+    expect(create.mock.calls[0]?.[1]).toContain("name: Books");
+    expect(updateLiteratureNoteProfile).toHaveBeenCalledWith(BOOKS.id, {
+      document: `literature-note-${BOOKS.id}.md`,
+    });
+    expect(openFile).toHaveBeenCalledOnce();
+    expect(requestUpdate).toHaveBeenCalledOnce();
+  });
+
+  it("states the loss before replacing a colliding customization file", async () => {
+    vi.mocked(confirm).mockResolvedValue(true);
+    const file = { path: `templates/literature-note-${BOOKS.id}.md` };
+    const modify = vi.fn(async () => {});
+    const ctx = {
+      app: {
+        vault: {
+          getFileByPath: () => file,
+          modify,
+        },
+        workspace: { getLeaf: () => ({ openFile: vi.fn(async () => {}) }) },
+      },
+      settings: {
+        current: { ...defaults, "note.profiles": [BOOKS] },
+        updateLiteratureNoteProfile: vi.fn(),
+      },
+      requestUpdate: vi.fn(),
+    } as unknown as SettingTabContext;
+
+    await customizeLiteratureNoteProfile(ctx, BOOKS.id);
+
+    expect(confirm).toHaveBeenCalledWith(
+      {
+        title: `Replace templates/literature-note-${BOOKS.id}.md?`,
+        content:
+          "Replace this file with the built-in Literature Note Template. All custom content in the file will be lost.",
+        action: "Replace file",
+        destructive: true,
+      },
+      ctx.app,
+    );
+    expect(modify).toHaveBeenCalledWith(
+      file,
+      expect.stringContaining("{% managed %}"),
+    );
+  });
+
+  it("moves a custom document to trash before restoring the built-in", async () => {
+    vi.mocked(confirm).mockResolvedValue(true);
+    const file = { path: "templates/books.md" };
+    const trashFile = vi.fn(async () => {});
+    const updateLiteratureNoteProfile = vi.fn();
+    const requestUpdate = vi.fn();
+    const ctx = {
+      app: {
+        vault: { getFileByPath: () => file },
+        fileManager: { trashFile },
+      },
+      settings: {
+        current: defaults,
+        getLiteratureNoteProfile: () => ({ ...BOOKS, document: "books.md" }),
+        updateLiteratureNoteProfile,
+      },
+      requestUpdate,
+    } as unknown as SettingTabContext;
+
+    await restoreBuiltInLiteratureNoteProfile(ctx, BOOKS.id);
+
+    expect(trashFile).toHaveBeenCalledWith(file);
+    expect(updateLiteratureNoteProfile).toHaveBeenCalledWith(BOOKS.id, {
+      document: null,
+    });
+    expect(requestUpdate).toHaveBeenCalledOnce();
   });
 });
