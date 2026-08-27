@@ -481,11 +481,20 @@ async function open(
     }
   }
 
-  const reloaded = await cli([
-    `vault=${registered}`,
-    "plugin:reload",
-    `id=${pluginId}`,
-  ]);
+  // Right after a vault window opens (or resumes), the CLI's own command
+  // registry can lag a beat behind `vault-list`'s `open` flag, so the first
+  // `plugin:reload` sometimes answers "not found" even though the plugin is
+  // enabled. Retry a few times before treating it as a real failure.
+  let reloaded = "";
+  for (let attempt = 0; attempt < 4; attempt++) {
+    reloaded = await cli([
+      `vault=${registered}`,
+      "plugin:reload",
+      `id=${pluginId}`,
+    ]);
+    if (reloaded.toLowerCase().startsWith("reloaded:")) break;
+    await delay(250);
+  }
   if (!reloaded.toLowerCase().startsWith("reloaded:")) {
     throw new Error(`could not reload ZotLit in ${registered}: ${reloaded}`);
   }
