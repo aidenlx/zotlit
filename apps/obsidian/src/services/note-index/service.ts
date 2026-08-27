@@ -87,6 +87,7 @@ export class NoteIndex extends Service<void> {
   readonly #notesByItemKey = new Map<string, Set<TFile>>();
   readonly #notesByNoteKey = new Map<string, Set<TFile>>();
   readonly #contribByFile = new Map<TFile, FileContributions>();
+  readonly #warnedDuplicatePaths = new Map<string, string>();
   #scanned = false;
 
   ready: Promise<void>;
@@ -98,7 +99,21 @@ export class NoteIndex extends Service<void> {
   }
 
   getNotesByItemKey(indexedKey: string): TFile[] {
-    return sortNotes(this.#notesByItemKey.get(indexedKey));
+    const notes = sortNotes(this.#notesByItemKey.get(indexedKey));
+    if (notes.length > 1) {
+      const paths = notes.map((file) => file.path);
+      const signature = paths.join("\0");
+      if (this.#warnedDuplicatePaths.get(indexedKey) !== signature) {
+        this.#warnedDuplicatePaths.set(indexedKey, signature);
+        logger.warn("Indexed Key resolves to multiple Literature Notes", {
+          indexedKey,
+          paths,
+        });
+      }
+    } else {
+      this.#warnedDuplicatePaths.delete(indexedKey);
+    }
+    return notes;
   }
 
   /** Imported-note files carrying `zotero-note-key`; disjoint from lit notes. */
@@ -239,6 +254,7 @@ export class NoteIndex extends Service<void> {
     this.#notesByItemKey.clear();
     this.#notesByNoteKey.clear();
     this.#contribByFile.clear();
+    this.#warnedDuplicatePaths.clear();
   }
 }
 

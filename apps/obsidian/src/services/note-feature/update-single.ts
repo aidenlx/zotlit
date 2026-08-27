@@ -10,6 +10,7 @@ import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
 import type {
+  CreateNoteResult,
   NoteFeature,
   UpdateResult,
   UpdateScope,
@@ -47,7 +48,9 @@ export async function updateNote(
   ref: ItemRef,
   scope: UpdateScope = "full",
 ): Promise<void> {
-  const file = deps.noteIndex.getNotesByItemKey(ref.indexedKey)[0];
+  const file = resolveLiteratureNoteWithWarning(
+    deps.noteIndex.getNotesByItemKey(ref.indexedKey),
+  );
 
   if (!file) {
     if (scope === "metadata") {
@@ -121,16 +124,43 @@ export async function createNoteWithToast(
   item: Item,
 ): Promise<TFile | null> {
   try {
-    return await toast.promise(noteFeature.createNote(item), {
+    const result = await toast.promise(noteFeature.createNote(item), {
       loading: m.notice_creating_note(),
-      success: m.notice_created_note(),
+      success: createNoteNotice,
       error: (_msg, e) =>
         e instanceof EmptyFilenameError || e instanceof InertTemplateError
           ? e.message
           : m.notice_create_note_failed(),
       swallowError: false,
     });
+    return result.outcome === "created" ? result.file : null;
   } catch {
     return null;
   }
+}
+
+export function createNoteNotice(result: CreateNoteResult): string {
+  if (result.outcome === "created") return m.notice_created_note();
+  const { diagnostic } = result;
+  return diagnostic.code === "literature-note-exists"
+    ? m.notice_create_note_exists({ path: diagnostic.paths[0] })
+    : m.notice_create_note_duplicates({ paths: diagnostic.paths.join(", ") });
+}
+
+export function duplicateLiteratureNoteWarning(
+  notes: readonly Pick<TFile, "path">[],
+): string | null {
+  if (notes.length < 2) return null;
+  return m.notice_duplicate_literature_notes({
+    paths: notes.map((file) => file.path).join(", "),
+    selected: notes[0]!.path,
+  });
+}
+
+export function resolveLiteratureNoteWithWarning(
+  notes: readonly TFile[],
+): TFile | undefined {
+  const warning = duplicateLiteratureNoteWarning(notes);
+  if (warning) new BaseNotice(warning);
+  return notes[0];
 }

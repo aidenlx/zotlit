@@ -29,7 +29,10 @@ import type {
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteFeature } from "@/services/note-feature";
-import { createNoteWithToast } from "@/services/note-feature/update-single";
+import {
+  createNoteWithToast,
+  resolveLiteratureNoteWithWarning,
+} from "@/services/note-feature/update-single";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import { defaults } from "@/services/settings/schema";
@@ -360,7 +363,9 @@ export class CitekeyEditor extends Service<void> {
     citekey?: string,
   ): Promise<void> {
     const { workspace } = this.#app;
-    const existing = this.#noteIndex.getNotesByItemKey(item.indexedKey)[0];
+    const existing = resolveLiteratureNoteWithWarning(
+      this.#noteIndex.getNotesByItemKey(item.indexedKey),
+    );
     if (existing) {
       logger.debug("Opened citekey note", {
         indexedKey: item.indexedKey,

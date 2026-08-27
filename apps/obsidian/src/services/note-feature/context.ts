@@ -1,4 +1,4 @@
-import type { FileManager, TFile, Vault } from "obsidian";
+import type { FileManager, MetadataCache, TFile, Vault } from "obsidian";
 
 import { buildFilenameContext } from "@zotlit/db";
 import type {
@@ -40,6 +40,7 @@ interface NoteVaultApp {
     "getAbstractFileByPath" | "getRoot" | "createFolder" | "create" | "process"
   >;
   fileManager: Pick<FileManager, "generateMarkdownLink" | "processFrontMatter">;
+  metadataCache: Pick<MetadataCache, "getFileCache">;
 }
 
 /**

@@ -22,7 +22,12 @@ import { selectorOf } from "@/services/library-scope/scope";
 import { defaults } from "@/services/settings/schema";
 import type { BatchModalOptions, FlatGroupDef } from "@/views/batch-modal";
 
-import { runBatchUpdateAll } from "./update-batch";
+import type { CreateNoteResult } from "./operations";
+import {
+  batchCreateOutcome,
+  BatchCreateRefusedError,
+  runBatchUpdateAll,
+} from "./update-batch";
 import type { BatchUpdateResult } from "./update-batch";
 import type { SingleUpdateDeps } from "./update-single";
 
@@ -179,6 +184,32 @@ beforeEach(() => {
   vi.mocked(getCollectionIDByKey).mockReset().mockReturnValue(100);
   vi.mocked(getIndexedItemIDsByLibrary).mockReset().mockReturnValue([]);
   vi.mocked(getIndexedItemIDsByCollection).mockReset().mockReturnValue([]);
+});
+
+describe("batchCreateOutcome", () => {
+  it("preserves a create refusal as a failed-row error with its diagnostic", () => {
+    const refusal: Extract<CreateNoteResult, { outcome: "refused" }> = {
+      outcome: "refused",
+      diagnostic: {
+        code: "duplicate-literature-notes",
+        hint: "Resolve the duplicate Literature Notes, then run create again.",
+        indexedKey: "ABCD1234",
+        paths: ["Literature/Newer.md", "Archive/Older.md"],
+      },
+    };
+
+    try {
+      batchCreateOutcome(refusal);
+      throw new Error("Expected the batch create to be refused");
+    } catch (error) {
+      expect(error).toBeInstanceOf(BatchCreateRefusedError);
+      expect(error).toMatchObject({
+        message:
+          "Multiple literature notes use this Zotero key: Literature/Newer.md, Archive/Older.md; resolve the duplicates before you create another note.",
+        diagnostic: refusal.diagnostic,
+      });
+    }
+  });
 });
 
 describe("runBatchUpdateAll", () => {

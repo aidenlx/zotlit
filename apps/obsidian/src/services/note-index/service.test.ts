@@ -1,11 +1,16 @@
 import { basename } from "node:path/posix";
 import { TFile } from "obsidian";
 import type { App, CachedMetadata, EventRef, Plugin } from "obsidian";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 
 import { isLiteratureNote, NoteIndex, resolveIndexedKey } from "./service";
+
+const warn = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/log", () => ({
+  getLogger: () => ({ debug: vi.fn(), warn }),
+}));
 
 const ITEM_A = "ABCD2345";
 const ITEM_B = "ZZZ99999";
@@ -147,6 +152,10 @@ afterEach(async () => {
   for (const service of services.splice(0).reverse()) {
     await service[Symbol.asyncDispose]();
   }
+});
+
+beforeEach(() => {
+  warn.mockClear();
 });
 
 describe("NoteIndex", () => {
@@ -301,6 +310,29 @@ describe("NoteIndex", () => {
       "tie-a.md",
       "tie-b.md",
     ]);
+  });
+
+  it("warns with every path when an Indexed Key resolves to multiple literature notes", async () => {
+    const { service } = await makeHarness(
+      {
+        "Literature/Newer.md": cache({ itemKey: ITEM_A }),
+        "Archive/Older.md": cache({ itemKey: ITEM_A }),
+      },
+      { initialized: true },
+    );
+
+    service.getNotesByItemKey(ITEM_A);
+
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      "Indexed Key resolves to multiple Literature Notes",
+      {
+        indexedKey: ITEM_A,
+        paths: ["Archive/Older.md", "Literature/Newer.md"],
+      },
+    );
+
+    service.getNotesByItemKey(ITEM_A);
+    expect(warn).toHaveBeenCalledOnce();
   });
 
   it("drops the item index on delete", async () => {

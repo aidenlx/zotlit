@@ -5,7 +5,11 @@ import type { ItemRef } from "@zotlit/db";
 import * as m from "@/lib/i18n/generated/messages";
 import { InertTemplateError } from "@/services/template/errors";
 
-import { updateNote, updateNoteToast } from "./update-single";
+import {
+  duplicateLiteratureNoteWarning,
+  updateNote,
+  updateNoteToast,
+} from "./update-single";
 import type { SingleUpdateDeps } from "./update-single";
 
 const REF: ItemRef = {
@@ -79,4 +83,17 @@ describe("updateNoteToast", () => {
       );
     },
   );
+});
+
+describe("duplicateLiteratureNoteWarning", () => {
+  it("names every matching note and the note ZotLit selected", () => {
+    expect(
+      duplicateLiteratureNoteWarning([
+        { path: "Literature/Newer.md" },
+        { path: "Archive/Older.md" },
+      ]),
+    ).toBe(
+      "Multiple literature notes use this Zotero key: Literature/Newer.md, Archive/Older.md. ZotLit used Literature/Newer.md; resolve the duplicates.",
+    );
+  });
 });
