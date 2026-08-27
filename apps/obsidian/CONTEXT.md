@@ -11,7 +11,7 @@ An Obsidian Markdown file linked one-to-one with a Zotero Item. Identified by a 
 _Avoid_: note (ambiguous across Zotero/Obsidian boundary), Zotero note (ambiguous with Child Note), document
 
 **Imported Note** _(Obsidian)_:
-An Obsidian Markdown file produced by converting a Zotero Child Note's HTML body to Markdown. Identified by a `zotero-note-key` frontmatter field (disjoint from `zotero-key`, so it never pollutes the Literature Note index). Carries a `zotero-lastmod` frontmatter field (the source Child Note's Zotero `dateModified`) used by batch re-import to skip unchanged notes. Whole-body overwrite on explicit re-import. The Zotero-side source is a Child Note.
+An Obsidian Markdown file produced by converting a Zotero Child Note's HTML body to Markdown. Identified by a `zotero-note-key` frontmatter field (disjoint from `zotero-key`, so it never pollutes the Literature Note index). Carries a `zotero-lastmod` frontmatter field (the source Child Note's Zotero `dateModified`) used by batch re-import to skip unchanged notes, and the same `zotlit-profile` stamp as a Literature Note — written at creation from the creation context (side-effect import: the in-flight operation's Profile; explicit import of an attached note: the parent's Literature Note stamp; otherwise the default Profile), re-emitted on every overwrite, absent meaning the default Profile. Writes follow the stamp; the parent item's Profile is never consulted after creation. Whole-body overwrite on explicit re-import. The Zotero-side source is a Child Note.
 _Avoid_: child note (that's the Zotero-side source), mirror, note (ambiguous)
 
 **Managed Region**:
@@ -27,7 +27,7 @@ Frontmatter fields on a Literature Note whose values are re-evaluated on update.
 A template file in the vault's template folder defining Markdown output — `zotlit-<name>.liquid.md` (Liquid, the default language), or `zotlit-<name>.eta.md` when JavaScript Templates are enabled. The extension names the rendering language; when both files exist for one name, the Liquid file wins and the Eta file is flagged as shadowed. Falls back to the embedded defaults (Liquid only) when no vault file exists. A Template changes language by replacing its file with the other extension's edition — content is never converted between languages. Templates include each other by name, not by file, so one set may mix languages. Named templates:
 - `note` — full Literature Note body on **create** and **overwrite**
 - `content` — Managed Region body on **update** (the rest of the note is preserved)
-- `annotation` — single annotation rendering (drag-insert and optional Annotation Paragraph subsuming)
+- `annotation` — single annotation rendering (drag-insert and optional Annotation Paragraph subsuming); superseded by the Annotation Block
 - `cite` / `cite2` — primary / secondary in-text citation format
 - `filename` — a new Literature Note's filename (see Filename Template)
 
@@ -38,12 +38,16 @@ The single authoring object controlling what Literature Notes look like — one 
 _Avoid_: note template (names only the retired `note` half), unified template (vague), literature note (that is the vault file, not its template)
 
 **Literature Note Profile**:
-A named configuration under which Literature Notes are created and updated. It pairs one Literature Note Template document with the vault-local values a template cannot reach — target folder and citation style. Each Literature Note belongs to exactly one Profile, recorded by a system frontmatter stamp; a note without a stamp belongs to the built-in default Profile. Profiles never multiply notes: one Zotero Item maps to at most one Literature Note vault-wide.
+A named configuration under which ZotLit-written notes are created and updated. It pairs one Literature Note Template document with the vault-local values a template cannot reach — the Literature Note target folder and citation style, and the Imported Note bindings: import folder, colored highlights, and annotations-as-template. A Profile that leaves a binding unset inherits it from the built-in default Profile, whose bindings record is total; no vault-global copies of these values exist. Each Literature Note and each Imported Note belongs to exactly one Profile, recorded by an explicit `zotlit-profile` system frontmatter stamp; a note without a stamp belongs to the default Profile, and writes follow the stamp — membership is never inferred from another note. Profiles never multiply notes: one Zotero Item maps to at most one Literature Note vault-wide.
 _Avoid_: profile (bare — collides with the Zotero application profile), preset (OZI's model, deliberately reshaped), import format
 
 **Managed Block**:
 The `{% managed %}` … `{% endmanaged %}` block in a Literature Note Template document's body — a self-contained sub-template supported in both Liquid and Eta. It renders in isolation: variables assigned outside the block are not visible inside, so an update-time render is identical to a create-time render. On create it renders in place within the body; on update it alone re-renders to refill the note's Managed Region. Role-equivalent to the retired `content` Template.
 _Avoid_: managed region (the rendered output in the note, not the template source), content block
+
+**Annotation Block**:
+The `{% annotation %}` … `{% endannotation %}` block in a Literature Note Template document's body — the Profile's single-annotation template, supported in both Liquid and Eta. Zero or one per document; when absent, the embedded default serves. It contributes nothing to the note body: create-time rendering strips it entirely, and it renders only on demand — drag-insert and Annotation Paragraph subsuming — in isolation against the Annotation Root data. Role-equivalent to the retired `annotation` Template.
+_Avoid_: annotation template (the retired vault-global slot), annotation partial (it is document structure, not a `{% render %}` partial)
 
 **JavaScript Templates**:
 The gated capability to run user-authored JavaScript through Eta template files. Off by default; enabled per device behind an explicit confirmation, and the flag never syncs. While off, `.eta.md` templates are inert — an operation that requires one fails with an error naming it, never falling back to substitute output — and no user-authored JavaScript is compiled or executed anywhere, settings validation included.
@@ -77,7 +81,7 @@ _Avoid_: template expression (a Snippet may be a statement — a loop or guard �
 The Template Data Explorer's default anchor — the full note-template context for the chosen Item, exactly what the `note`/`content` templates receive as `zt`.
 
 **Annotation Root**:
-The Template Data Explorer re-anchored at a single Annotation, exactly what the `annotation` template receives as `zt`; copy paths root at the annotation. Entered from that annotation's node in the Note Root tree, or directly via an annotation-scoped entry point.
+The Template Data Explorer re-anchored at a single Annotation, exactly what the Annotation Block (previously the `annotation` template) receives as `zt`; copy paths root at the annotation. Entered from that annotation's node in the Note Root tree, or directly via an annotation-scoped entry point.
 
 **Template Data Export** _(Obsidian)_:
 The Template Data Explorer's current root, saved as a JSON file for a bug report. Always the whole root the pane is anchored at — the Note Root or the Annotation Root — never the rows an active filter leaves visible. Carries the same data the Agent CLI answers with, under a header naming the plugin version, the contract version, and the Indexed Key and root that reproduce it. Being Explorer data, it records inert placeholders where a real render would write files.
@@ -106,7 +110,7 @@ A frozen snapshot of a Zotero Annotation embedded inline in a Child Note's HTML 
 _Avoid_: annotation (that's the live Zotero entity), mark
 
 **Annotation Paragraph**:
-A `<p>` in a Child Note's HTML whose sole content is a single Annotation Excerpt (optionally followed by a citation). Detected structurally by the note parser; when the `note.import-annotations-as-template` setting is on, the paragraph is subsumed and re-rendered through the `annotation` template from live DB data instead of the frozen excerpt.
+A `<p>` in a Child Note's HTML whose sole content is a single Annotation Excerpt (optionally followed by a citation). Detected structurally by the note parser; when the note's Profile enables annotations-as-template, the paragraph is subsumed and re-rendered through that Profile's Annotation Block from live DB data instead of the frozen excerpt.
 _Avoid_: annotation block, callout
 
 **Colored Highlight Syntax**:
