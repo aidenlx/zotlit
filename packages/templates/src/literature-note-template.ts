@@ -17,6 +17,22 @@ const nonEmptyTemplateSource = v.pipe(
   v.check((source) => source.trim().length > 0, "Empty template source"),
 );
 
+const partialSchema = v.strictObject({
+  name: nonEmptyString,
+  language: v.picklist(["liquid", "eta"]),
+  source: nonEmptyTemplateSource,
+});
+
+const partialsSchema = v.pipe(
+  v.array(partialSchema),
+  v.checkItems(
+    (partial, index, partials) =>
+      partials.findIndex(({ name }) => name === partial.name) === index,
+    "Duplicate partial name",
+  ),
+  v.readonly(),
+);
+
 const manifestSchema = v.strictObject({
   id: nonEmptyString,
   name: nonEmptyString,
@@ -35,7 +51,14 @@ const manifestSchema = v.strictObject({
     {},
   ),
   language: v.optional(v.picklist(["liquid", "eta"]), "liquid"),
+  partials: v.optional(partialsSchema),
 });
+
+export interface LiteratureNoteTemplatePartial {
+  readonly name: string;
+  readonly language: TemplateLanguage;
+  readonly source: string;
+}
 
 export interface LiteratureNoteTemplateManifest {
   id: string;
@@ -52,6 +75,7 @@ export interface LiteratureNoteTemplateManifest {
     citationStyle?: string | null;
   };
   language: TemplateLanguage;
+  partials?: readonly LiteratureNoteTemplatePartial[];
 }
 
 export interface ManagedBlock {

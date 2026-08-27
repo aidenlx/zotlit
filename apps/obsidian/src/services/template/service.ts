@@ -26,6 +26,8 @@ import type {
   CompiledFrontmatterField,
   FrontmatterField,
 } from "@zotlit/templates/frontmatter";
+import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
+import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature-note-pack";
 import { managedRegionTransform } from "@zotlit/templates/obsidian";
 
 import { RESERVED_KEYS } from "@/lib/constants";
@@ -356,23 +358,69 @@ export class TemplateService extends Service<void> {
     this.#requireLoaded("renderLiteratureNoteTemplateSource");
     const document = this.#facade.parseLiteratureNoteTemplate(source);
     if (
-      document.manifest.language === "eta" &&
+      (document.manifest.language === "eta" ||
+        document.manifest.partials?.some(
+          (partial) => partial.language === "eta",
+        )) &&
       !this.#javascriptTemplatesEnabled
     ) {
       throw new InertTemplateError(
         m.settings_template_inert_eta({ path: "source override" }),
       );
     }
+    const facade = document.manifest.partials
+      ? new TemplateFacade({
+          transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
+        })
+      : this.#facade;
+    for (const partial of document.manifest.partials ?? []) {
+      facade.define(partial.name, partial.source, partial.language);
+    }
     return {
-      create: this.#facade.renderLiteratureNoteTemplateForCreate(
-        document,
-        data,
-      ),
-      update: this.#facade.renderLiteratureNoteTemplateForUpdate(
-        document,
-        data,
-      ),
+      create: facade.renderLiteratureNoteTemplateForCreate(document, data),
+      update: facade.renderLiteratureNoteTemplateForUpdate(document, data),
     };
+  }
+
+  /** Export one installed document with all reachable partials embedded. */
+  async exportLiteratureNotePack(reference: string): Promise<string> {
+    this.#requireLoaded("exportLiteratureNotePack");
+    const reconciled = this.#literatureNoteDocuments.get(reference);
+    if (!reconciled) {
+      throw new Error(
+        `Literature Note Template '${reference}' is not installed`,
+      );
+    }
+    const documentFile = this.#app.vault.getFileByPath(reconciled.path);
+    if (!documentFile) {
+      throw new Error(`Literature Note Template '${reference}' is unavailable`);
+    }
+    const partials = (
+      await Promise.all(
+        [...this.#winners.entries()].map(async ([name, winner]) => {
+          if (winner.source.kind === "none") return null;
+          if (winner.source.kind === "embedded-default") {
+            if (!isTemplateName(name)) return null;
+            return {
+              name,
+              language: winner.language,
+              source: DEFAULT_TEMPLATES[name],
+            } satisfies LiteratureNoteTemplatePartial;
+          }
+          const file = this.#app.vault.getFileByPath(winner.source.path);
+          if (!file) return null;
+          return {
+            name,
+            language: winner.language,
+            source: await this.#app.vault.cachedRead(file),
+          } satisfies LiteratureNoteTemplatePartial;
+        }),
+      )
+    ).filter((partial) => partial !== null);
+    return exportLiteratureNotePack(
+      await this.#app.vault.cachedRead(documentFile),
+      partials,
+    );
   }
 
   /**
