@@ -21,12 +21,14 @@ import type {
 import {
   compileFrontmatterFields as compileFrontmatterFieldsImpl,
   compileManagedFrontmatterEntries as compileManagedFrontmatterEntriesImpl,
+  evalManagedFrontmatterEntries,
   validateFrontmatterExpr as validateFrontmatterExprImpl,
 } from "./frontmatter";
 import type {
   CompiledFrontmatter,
   CompiledManagedFrontmatter,
 } from "./frontmatter";
+import { mergeFrontmatterFields } from "./frontmatter-merge";
 import { TemplateEngine } from "./index";
 import { createLiquidEngine } from "./liquid";
 import {
@@ -46,6 +48,7 @@ export type { TemplateLanguage } from "./constants";
 
 export {
   CONVERTED_DEFAULT_PROFILE_DOCUMENT,
+  convertLegacyFrontmatterFields,
   LegacyTemplateConversionError,
   LiteratureNoteTemplateError,
   synthesizeLegacyLiteratureNoteTemplate,
@@ -69,6 +72,13 @@ export interface ConvertedLegacyLiteratureNoteTemplate {
     readonly update: string;
     readonly filename: string;
   };
+  readonly frontmatterPatch: Readonly<Record<string, unknown>>;
+}
+
+export interface ConvertLegacyLiteratureNoteTemplateOptions {
+  readonly frontmatter?: readonly FrontmatterField[];
+  readonly javascript?: boolean;
+  readonly operationTimestamp?: Temporal.Instant;
 }
 
 /** One root-variable read found by static analysis of a registered Liquid template. */
@@ -228,8 +238,11 @@ export class TemplateFacade {
   convertLegacyLiteratureNoteTemplates(
     legacy: LegacyLiteratureNoteTemplates,
     data: { readonly note: object; readonly filename: object },
+    options: ConvertLegacyLiteratureNoteTemplateOptions = {},
   ): ConvertedLegacyLiteratureNoteTemplate {
-    const source = synthesizeLegacyLiteratureNoteTemplate(legacy);
+    const source = synthesizeLegacyLiteratureNoteTemplate(legacy, {
+      frontmatter: options.frontmatter,
+    });
     const document = this.parseLiteratureNoteTemplate(source);
     const legacyRendered = {
       create: this.render("note", data.note),
@@ -261,10 +274,48 @@ export class TemplateFacade {
       legacyRendered.filename,
       rendered.filename,
     );
+    const frontmatter = this.compileManagedFrontmatterEntries(
+      document.manifest.frontmatter ?? [],
+      { javascript: options.javascript ?? false },
+    );
+    if (frontmatter.inertKeys.length > 0) {
+      throw new LegacyTemplateConversionError(
+        "legacy-frontmatter-inert",
+        `Converted Managed Frontmatter requires JavaScript Templates for: ${frontmatter.inertKeys.join(", ")}`,
+        {
+          difference: "Managed Frontmatter gate",
+          recovery:
+            "Enable JavaScript Templates on this device, then retry conversion.",
+          fields: frontmatter.inertKeys,
+        },
+      );
+    }
+    const evaluation = evalManagedFrontmatterEntries(
+      frontmatter.compiled,
+      data.note,
+      options.operationTimestamp ?? Temporal.Now.instant(),
+    );
+    if (evaluation.errors.length > 0) {
+      const keys = evaluation.errors.map(({ key }) => key).join(", ");
+      throw new LegacyTemplateConversionError(
+        "legacy-frontmatter-evaluation",
+        `Converted Managed Frontmatter failed for: ${keys}`,
+        {
+          difference: "Managed Frontmatter evaluation",
+          recovery: `Correct these fields, then retry conversion: ${keys}.`,
+          fields: evaluation.errors.map(({ key }) => key),
+        },
+      );
+    }
+    const frontmatterPatch = mergeFrontmatterFields(
+      frontmatter.compiled,
+      evaluation.values,
+    );
     return {
       source,
       document,
       rendered: { ...rendered, update: rendered.update },
+      frontmatterPatch,
     };
   }
 

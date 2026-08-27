@@ -10,7 +10,7 @@ import {
   frontmatterMergeStrategySchema,
   RESERVED_FRONTMATTER_KEYS,
 } from "./constants";
-import type { TemplateLanguage } from "./constants";
+import type { FrontmatterField, TemplateLanguage } from "./constants";
 
 const OPEN_MANAGED = "{% managed %}";
 const CLOSE_MANAGED = "{% endmanaged %}";
@@ -144,23 +144,32 @@ export interface LegacyLiteratureNoteTemplates {
 
 export type LegacyTemplateConversionErrorCode =
   | "unsupported-legacy-template"
-  | "legacy-render-mismatch";
+  | "legacy-render-mismatch"
+  | "legacy-frontmatter-inert"
+  | "legacy-frontmatter-evaluation";
 
 export class LegacyTemplateConversionError extends Error {
   readonly code: LegacyTemplateConversionErrorCode;
   readonly difference: string;
   readonly recovery: string;
+  readonly fields: readonly string[] | undefined;
 
   constructor(
     code: LegacyTemplateConversionErrorCode,
     message: string,
-    options: ErrorOptions & { difference: string; recovery: string },
+    options: ErrorOptions & {
+      difference: string;
+      recovery: string;
+      fields?: readonly string[];
+    },
   ) {
-    super(message, options);
+    const { difference, fields, recovery, ...errorOptions } = options;
+    super(message, errorOptions);
     this.name = "LegacyTemplateConversionError";
     this.code = code;
-    this.difference = options.difference;
-    this.recovery = options.recovery;
+    this.difference = difference;
+    this.recovery = recovery;
+    this.fields = fields;
   }
 }
 
@@ -170,6 +179,16 @@ export interface SynthesizedLiteratureNoteTemplateManifest {
   readonly id?: string;
   readonly name?: string;
   readonly description?: string;
+  readonly frontmatter?: readonly FrontmatterField[];
+}
+
+/** Map legacy settings fields without parsing or rewriting their expressions. */
+export function convertLegacyFrontmatterFields(
+  fields: readonly FrontmatterField[],
+): ManagedFrontmatterEntry[] {
+  return fields.map(({ key, expr, merge, language }) =>
+    language === "liquid" ? { key, expr, merge } : { key, js: expr, merge },
+  );
 }
 
 /** Synthesize one document from the three legacy Literature Note slots. */
@@ -225,6 +244,13 @@ export function synthesizeLegacyLiteratureNoteTemplate(
       contract: 2,
       filename: legacy.filename.source,
       language,
+      ...(manifestOverrides.frontmatter === undefined
+        ? {}
+        : {
+            frontmatter: convertLegacyFrontmatterFields(
+              manifestOverrides.frontmatter,
+            ),
+          }),
     },
     { lineWidth: 0 },
   );

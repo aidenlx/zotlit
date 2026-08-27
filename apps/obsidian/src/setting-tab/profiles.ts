@@ -16,7 +16,10 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { LiteratureNoteProfile } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
-import { DEFAULT_TEMPLATES } from "@/services/template/defaults";
+import {
+  DEFAULT_FRONTMATTER_FIELDS,
+  DEFAULT_TEMPLATES,
+} from "@/services/template/defaults";
 import { normalizeVaultPath } from "@/services/template/path";
 
 import type {
@@ -307,6 +310,7 @@ function builtInLiteratureNoteTemplate(
       id: profileId ? `zotlit.profile.${profileId}` : "zotlit.default-profile",
       name: label,
       description: m.settings_profile_document_seed_description(),
+      frontmatter: DEFAULT_FRONTMATTER_FIELDS,
     },
   );
 }

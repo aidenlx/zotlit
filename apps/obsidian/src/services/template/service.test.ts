@@ -955,6 +955,20 @@ frontmatter:
     expect(converted.source).toContain(
       "{% managed %}Managed {{ zt.title }}{% endmanaged %}",
     );
+    expect(converted.document.manifest.frontmatter).toEqual([
+      { key: "title", expr: "zt.title", merge: "replace" },
+      {
+        key: "related",
+        expr: "zt.relatedItems | note_links",
+        merge: "replace",
+      },
+      {
+        key: "collections",
+        expr: "zt.collections | collection_paths",
+        merge: "replace",
+      },
+      { key: "citekey", expr: "zt.citationKey", merge: "replace" },
+    ]);
     expect(converted.legacyFiles).toEqual([
       "templates/zotlit-filename.liquid.md",
       "templates/zotlit-note.liquid.md",
