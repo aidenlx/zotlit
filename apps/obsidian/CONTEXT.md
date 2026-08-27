@@ -15,7 +15,7 @@ An Obsidian Markdown file produced by converting a Zotero Child Note's HTML body
 _Avoid_: child note (that's the Zotero-side source), mirror, note (ambiguous)
 
 **Managed Region**:
-The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered from the `content` template on every update. Content outside the markers is user-owned and preserved.
+The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered from the Managed Block (previously the `content` template) on every update. Content outside the markers is user-owned and preserved.
 _Avoid_: managed block, template region, synced region
 
 **Managed Frontmatter**:
@@ -34,8 +34,16 @@ A template file in the vault's template folder defining Markdown output — `zot
 _Avoid_: format, layout, schema
 
 **Literature Note Template**:
-The `note` and `content` Templates presented and edited as one authoring object — the single thing a user changes to control what their Literature Notes look like. Basic surfaces expose only this object: the `content` half appears as the editable **Note body**, the `note` half as the surrounding **Note layout**, and the pair as two files is an advanced-view concern. The unification is presentation-level only; storage remains the two named Templates.
-_Avoid_: note template (names only the `note` half), unified template (vague), literature note (that is the vault file, not its template)
+The single authoring object controlling what Literature Notes look like — one template document per Literature Note Profile: manifest frontmatter plus a note body containing the Managed Block. One rendering language per document; the body may render shared partials by name. Supersedes the `note`/`content` Template pair (whose unification was presentation-level only); old-format template sets migrate to this document format.
+_Avoid_: note template (names only the retired `note` half), unified template (vague), literature note (that is the vault file, not its template)
+
+**Literature Note Profile**:
+A named configuration under which Literature Notes are created and updated. It pairs one Literature Note Template document with the vault-local values a template cannot reach — target folder and citation style. Each Literature Note belongs to exactly one Profile, recorded by a system frontmatter stamp; a note without a stamp belongs to the built-in default Profile. Profiles never multiply notes: one Zotero Item maps to at most one Literature Note vault-wide.
+_Avoid_: profile (bare — collides with the Zotero application profile), preset (OZI's model, deliberately reshaped), import format
+
+**Managed Block**:
+The `{% managed %}` … `{% endmanaged %}` block in a Literature Note Template document's body — a self-contained sub-template supported in both Liquid and Eta. It renders in isolation: variables assigned outside the block are not visible inside, so an update-time render is identical to a create-time render. On create it renders in place within the body; on update it alone re-renders to refill the note's Managed Region. Role-equivalent to the retired `content` Template.
+_Avoid_: managed region (the rendered output in the note, not the template source), content block
 
 **JavaScript Templates**:
 The gated capability to run user-authored JavaScript during rendering — Eta template files and JavaScript-language Managed Frontmatter fields together. Off by default; enabled per device behind an explicit confirmation, and the flag never syncs. While off, `.eta.md` templates and JavaScript frontmatter fields are inert — an operation that requires one fails with an error naming it, never falling back to substitute output — and no user-authored code is compiled or executed anywhere, settings validation included.
