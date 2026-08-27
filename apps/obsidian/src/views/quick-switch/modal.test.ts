@@ -1,9 +1,19 @@
 import { Platform } from "obsidian";
-import type { App, Instruction, Modifier } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import type { App, Instruction, Modifier, TFile } from "obsidian";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { confirm } from "@/lib/confirm";
 
 import { QuickSwitchModal } from "./modal";
+import { chooseLiteratureNoteProfile } from "./profile-picker";
 import type { QuickSwitchDeps } from "./register";
+
+vi.mock("@/lib/confirm", () => ({ confirm: vi.fn() }));
+vi.mock("./profile-picker", () => ({
+  chooseLiteratureNoteProfile: vi.fn(),
+}));
+
+beforeEach(() => vi.clearAllMocks());
 
 function onPlatform(isMacOS: boolean): void {
   vi.spyOn(Platform, "isMacOS", "get").mockReturnValue(isMacOS);
@@ -86,5 +96,60 @@ describe("QuickSwitchModal instructions", () => {
     // The reporter of #644 was on Linux, where a hardcoded ⌘ names a key the
     // keyboard does not have.
     expect(capture(false)).toContain("Ctrl↵");
+  });
+});
+
+describe("QuickSwitchModal Profile conflicts", () => {
+  it("names both the current and requested Profiles in the decision", async () => {
+    const currentId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const requestedId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const file = { path: "Literature/Existing.md" } as TFile;
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
+      id: requestedId,
+      label: "Papers",
+    });
+    vi.mocked(confirm).mockResolvedValue(false);
+    const openLinkText = vi.fn(async () => {});
+    const modal = new QuickSwitchModal({
+      app: {
+        metadataCache: {
+          getFileCache: () => ({
+            frontmatter: { "zotlit-profile": currentId },
+          }),
+        },
+        workspace: { openLinkText },
+      },
+      lookup: { search: vi.fn().mockReturnValue([]) },
+      noteFeature: { createNote: vi.fn(), switchNoteProfile: vi.fn() },
+      noteIndex: { getNotesByItemKey: () => [file] },
+      settings: {
+        current: {
+          "note.profiles": [
+            { id: currentId, label: "Books" },
+            { id: requestedId, label: "Papers" },
+          ],
+        },
+      },
+    } as unknown as QuickSwitchDeps);
+
+    await modal.onChooseSuggestion(
+      { item: { indexedKey: "ABC12345" } } as never,
+      {} as KeyboardEvent,
+    );
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining("Books"),
+        action: "Switch to “Papers”",
+        cancel: "Keep “Books”",
+      }),
+      expect.anything(),
+    );
+    expect(openLinkText).toHaveBeenCalledWith(
+      file.path,
+      "",
+      expect.any(Boolean),
+      { active: true },
+    );
   });
 });

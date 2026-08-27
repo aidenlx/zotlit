@@ -106,12 +106,22 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
       ];
     const stampedId = stamped === undefined ? null : String(stamped);
     if (stampedId === choice.id) return file;
+    const currentLabel =
+      stampedId === null
+        ? m.settings_profile_default_name()
+        : (this.#deps.settings.current?.["note.profiles"].find(
+            (profile) => profile.id === stampedId,
+          )?.label ?? stampedId);
 
     const shouldSwitch = await confirm(
       {
         title: m.modal_profile_switch_title({ label: choice.label }),
-        content: m.modal_profile_switch_desc({ label: choice.label }),
-        action: m.modal_profile_switch_confirm(),
+        content: m.modal_profile_switch_desc({
+          current: currentLabel,
+          requested: choice.label,
+        }),
+        action: m.modal_profile_switch_confirm({ label: choice.label }),
+        cancel: m.modal_profile_switch_keep({ label: currentLabel }),
         destructive: true,
       },
       this.#deps.app,

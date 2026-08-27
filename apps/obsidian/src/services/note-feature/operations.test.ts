@@ -1472,6 +1472,69 @@ describe("updateNote", () => {
     });
   });
 
+  it("removes zotlit-csl when the stamped Profile selects the built-in style", async () => {
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: {
+        [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+        [FIELD_CITATION_STYLE]: "apa",
+      },
+      settings: {
+        "note.profiles": [
+          {
+            id: profileId,
+            label: "Books",
+            bindings: { "citation.references-style": null },
+          },
+        ],
+      },
+    });
+
+    await createNoteFeature(harness.deps).updateNote(
+      makeFile("Books/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(harness.frontmatter()).not.toHaveProperty(FIELD_CITATION_STYLE);
+  });
+
+  it("inherits omitted Profile bindings from the main settings", async () => {
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
+      settings: {
+        "citation.references-style": "apa",
+        "note.profiles": [
+          {
+            id: profileId,
+            label: "Books",
+            bindings: { "note.literature-folder": "Books" },
+          },
+        ],
+      },
+    });
+    const prepare = vi.fn(harness.deps.noteImport.prepare);
+    harness.deps.noteImport.prepare = prepare;
+
+    await createNoteFeature(harness.deps).updateNote(
+      makeFile("Books/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(prepare).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          "note.literature-folder": "Books",
+          "citation.references-style": "apa",
+        }),
+      }),
+    );
+  });
+
   it("renders only the stamped Profile document Managed Block on update", async () => {
     const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
     stubIndexedKeyUpdate(updateContext());
@@ -1635,6 +1698,37 @@ describe("updateNote", () => {
       [FIELD_LITERATURE_NOTE_PROFILE]: newProfileId,
       [FIELD_CITATION_STYLE]: "ieee",
     });
+  });
+
+  it("restores the previous stamp when a Profile switch fails", async () => {
+    const oldProfileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const newProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
+      settings: {
+        "note.profiles": [
+          { id: oldProfileId, label: "Books" },
+          { id: newProfileId, label: "Papers" },
+        ],
+      },
+    });
+    harness.deps.db.acquireRead = vi.fn(async () => {
+      throw new Error("database read failed");
+    });
+
+    await expect(
+      createNoteFeature(harness.deps).switchNoteProfile(
+        makeFile("Books/Root.md"),
+        { indexedKey: "ABC12345", profileId: newProfileId },
+      ),
+    ).rejects.toThrow("database read failed");
+
+    expect(harness.frontmatter()[FIELD_LITERATURE_NOTE_PROFILE]).toBe(
+      oldProfileId,
+    );
+    expect(harness.frontmatterMock).toHaveBeenCalledTimes(2);
   });
 
   it("preserves user content outside the managed region, replacing only the region body", async () => {

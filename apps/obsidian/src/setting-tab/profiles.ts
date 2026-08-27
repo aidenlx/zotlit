@@ -25,7 +25,11 @@ import type {
   SettingTabContext,
 } from "./context";
 
-type ProfileControlField = "label" | "folder" | "citation-style";
+type ProfileControlField =
+  | "label"
+  | "folder"
+  | "citation-style-inherit"
+  | "citation-style";
 const PROFILE_CONTROL_PREFIX = "note-profile:";
 const logger = getLogger(["setting-tab", "profiles"]);
 const DEFAULT_DOCUMENT_REFERENCE = "literature-note-default.md";
@@ -115,8 +119,10 @@ function profilePage(
         profile.bindings?.["note.literature-folder"] ??
         m.settings_profile_inherit(),
       style:
-        profile.bindings?.["citation.references-style"] ??
-        m.settings_profile_inherit(),
+        profile.bindings?.["citation.references-style"] === null
+          ? m.settings_profile_citation_style_default()
+          : (profile.bindings?.["citation.references-style"] ??
+            m.settings_profile_inherit()),
       document: profile.document ?? m.settings_profile_document_builtin(),
     }),
     items: [
@@ -141,13 +147,23 @@ function profilePage(
         },
       },
       {
+        name: m.settings_profile_citation_style_inherit_name(),
+        desc: m.settings_profile_citation_style_inherit_desc(),
+        control: {
+          type: "toggle",
+          key: profileControlKey(profile.id, "citation-style-inherit"),
+        },
+      },
+      {
         name: m.settings_profile_citation_style_name(),
         desc: m.settings_profile_citation_style_desc(),
+        visible: () =>
+          profile.bindings?.["citation.references-style"] !== undefined,
         control: {
           type: "text",
           key: profileControlKey(profile.id, "citation-style"),
           defaultValue: "",
-          placeholder: m.settings_profile_inherit(),
+          placeholder: m.settings_profile_citation_style_default(),
         },
       },
       profileDocumentItem(ctx, profile),
@@ -375,6 +391,8 @@ export function getProfileControlValue(
       return profile.label;
     case "folder":
       return profile.bindings?.["note.literature-folder"] ?? "";
+    case "citation-style-inherit":
+      return profile.bindings?.["citation.references-style"] === undefined;
     case "citation-style":
       return profile.bindings?.["citation.references-style"] ?? "";
   }
@@ -394,10 +412,22 @@ export function setProfileControlValue(
   }
 
   const bindings = { ...profile.bindings };
-  const bindingKey =
-    field === "folder" ? "note.literature-folder" : "citation.references-style";
-  if (value === "") delete bindings[bindingKey];
-  else bindings[bindingKey] = String(value);
+  if (field === "citation-style-inherit") {
+    if (value) delete bindings["citation.references-style"];
+    else if (bindings["citation.references-style"] === undefined) {
+      bindings["citation.references-style"] = null;
+    }
+    settings.updateLiteratureNoteProfile(id, { bindings });
+    return;
+  }
+  if (field === "folder") {
+    if (value === "") delete bindings["note.literature-folder"];
+    else bindings["note.literature-folder"] = String(value);
+  } else if (value === "") {
+    bindings["citation.references-style"] = null;
+  } else {
+    bindings["citation.references-style"] = String(value);
+  }
   settings.updateLiteratureNoteProfile(id, { bindings });
 }
 
@@ -410,7 +440,12 @@ function parseProfileControlKey(
   if (separator < 1) return null;
   const id = value.slice(0, separator);
   const field = value.slice(separator + 1);
-  if (field !== "label" && field !== "folder" && field !== "citation-style") {
+  if (
+    field !== "label" &&
+    field !== "folder" &&
+    field !== "citation-style-inherit" &&
+    field !== "citation-style"
+  ) {
     return null;
   }
   return { id, field };

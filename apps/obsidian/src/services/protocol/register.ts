@@ -22,6 +22,7 @@ import {
 } from "@zotlit/protocol";
 import type { ProtocolAction } from "@zotlit/protocol";
 
+import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -192,6 +193,15 @@ async function openNote(
   );
 
   if (existing) {
+    const stamped =
+      deps.app.metadataCache.getFileCache(existing)?.frontmatter?.[
+        FIELD_LITERATURE_NOTE_PROFILE
+      ];
+    const stampedId = stamped === undefined ? undefined : String(stamped);
+    if (profileId !== undefined && profileId !== stampedId) {
+      new BaseNotice(m.notice_literature_note_profile_conflict());
+      return;
+    }
     await deps.app.workspace.openLinkText(existing.path, "", false, {
       active: true,
     });

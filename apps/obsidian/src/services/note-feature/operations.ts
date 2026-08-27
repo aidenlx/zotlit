@@ -42,6 +42,7 @@ import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { NoteImport } from "@/services/note-import/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
+import { resolveLiteratureNoteProfileBindings } from "@/services/settings/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 
 import {
@@ -58,6 +59,7 @@ const logger = getLogger("note-feature");
 // original line-ending bytes in the `---` delimiters, so a CRLF-authored
 // note must still match here or its frontmatter prefix is dropped.
 const FRONTMATTER_BLOCK = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n+|$)/;
+const MAX_UNINDEXED_CREATES = 256;
 
 export interface UpdateResult {
   bodyUpdated: boolean;
@@ -289,6 +291,13 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
     const task = createNote(ctx, item, {
       ...options,
       onFileCreated: (file) => {
+        if (
+          createdBeforeIndex.size >= MAX_UNINDEXED_CREATES &&
+          !createdBeforeIndex.has(indexedKey)
+        ) {
+          const oldest = createdBeforeIndex.keys().next().value;
+          if (oldest !== undefined) createdBeforeIndex.delete(oldest);
+        }
         createdBeforeIndex.set(indexedKey, file);
       },
     });
@@ -620,13 +629,31 @@ async function switchNoteProfile(
     return refusedUpdateMissingDocument(profile.document!, file.path);
   }
 
+  const previousProfileId = stampedProfileId(ctx, file);
+  await stampNoteProfile(ctx, file, profileId);
+  try {
+    const result = await updateNote(ctx, file, {
+      indexedKey: options.indexedKey,
+      profileOverride: options.profileId,
+    });
+    if (result.diagnostic) {
+      await stampNoteProfile(ctx, file, previousProfileId);
+    }
+    return result;
+  } catch (error) {
+    await stampNoteProfile(ctx, file, previousProfileId);
+    throw error;
+  }
+}
+
+async function stampNoteProfile(
+  ctx: NoteFeatureDeps,
+  file: TFile,
+  profileId: string | undefined,
+): Promise<void> {
   await ctx.app.fileManager.processFrontMatter(file, (fm) => {
     if (profileId === undefined) delete fm[FIELD_LITERATURE_NOTE_PROFILE];
     else fm[FIELD_LITERATURE_NOTE_PROFILE] = profileId;
-  });
-  return updateNote(ctx, file, {
-    indexedKey: options.indexedKey,
-    profileOverride: options.profileId,
   });
 }
 
@@ -1041,7 +1068,7 @@ function applyFrontmatter(
   });
   if (profile.id === undefined) delete fm[FIELD_LITERATURE_NOTE_PROFILE];
   else fm[FIELD_LITERATURE_NOTE_PROFILE] = profile.id;
-  if (profile.citationStyle === undefined) delete fm[FIELD_CITATION_STYLE];
+  if (profile.citationStyle == null) delete fm[FIELD_CITATION_STYLE];
   else fm[FIELD_CITATION_STYLE] = profile.citationStyle;
   if (failed.length > 0) {
     ctx.events.emit("frontmatter-eval-failed", { itemKey, fields: failed });
@@ -1071,21 +1098,15 @@ function resolveLiteratureNoteProfile(
     (candidate) => candidate.id === id,
   );
   if (!profile) return undefined;
-  const bindings = profile.bindings;
+  const bindings = resolveLiteratureNoteProfileBindings(settings, id)!;
   return {
     id,
     document: profile.document,
     settings: {
       ...settings,
-      "note.literature-folder":
-        bindings?.["note.literature-folder"] ??
-        settings["note.literature-folder"],
-      "citation.references-style":
-        bindings?.["citation.references-style"] !== undefined
-          ? bindings["citation.references-style"]
-          : settings["citation.references-style"],
+      ...bindings,
     },
-    citationStyle: bindings?.["citation.references-style"],
+    citationStyle: profile.bindings?.["citation.references-style"],
   };
 }
 

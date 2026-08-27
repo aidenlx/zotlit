@@ -8,8 +8,10 @@ import { defaults } from "@/services/settings/schema";
 import type { SettingTabContext } from "./context";
 import {
   customizeLiteratureNoteProfile,
+  getProfileControlValue,
   literatureNoteProfileItems,
   restoreBuiltInLiteratureNoteProfile,
+  setProfileControlValue,
 } from "./profiles";
 
 vi.mock("@/lib/confirm", () => ({ confirm: vi.fn() }));
@@ -100,6 +102,13 @@ describe("literature note Profile settings", () => {
               },
             },
             {
+              name: "Use main citation style",
+              control: {
+                type: "toggle",
+                key: `note-profile:${BOOKS.id}:citation-style-inherit`,
+              },
+            },
+            {
               name: "Citation style",
               control: {
                 type: "text",
@@ -137,12 +146,44 @@ describe("literature note Profile settings", () => {
         {},
         {},
         {},
+        {},
         {
           name: "Template document",
           desc: "The template document books.md is missing.",
         },
       ],
     });
+  });
+
+  it("preserves inherit, built-in default, and named citation styles", () => {
+    let profile = { ...BOOKS };
+    const updateLiteratureNoteProfile = vi.fn(
+      (_id: string, patch: Partial<typeof BOOKS>) => {
+        profile = { ...profile, ...patch };
+      },
+    );
+    const settings = {
+      getLiteratureNoteProfile: () => profile,
+      updateLiteratureNoteProfile,
+    } as unknown as Parameters<typeof getProfileControlValue>[0];
+    const inheritKey =
+      `note-profile:${BOOKS.id}:citation-style-inherit` as const;
+    const styleKey = `note-profile:${BOOKS.id}:citation-style` as const;
+
+    expect(getProfileControlValue(settings, inheritKey)).toBe(false);
+    expect(getProfileControlValue(settings, styleKey)).toBe("apa");
+
+    setProfileControlValue(settings, inheritKey, true);
+    expect(profile.bindings).not.toHaveProperty("citation.references-style");
+
+    setProfileControlValue(settings, inheritKey, false);
+    expect(profile.bindings?.["citation.references-style"]).toBeNull();
+
+    setProfileControlValue(settings, styleKey, "ieee");
+    expect(profile.bindings?.["citation.references-style"]).toBe("ieee");
+
+    setProfileControlValue(settings, styleKey, "");
+    expect(profile.bindings?.["citation.references-style"]).toBeNull();
   });
 
   it("renders a referenced document while the template service starts", () => {

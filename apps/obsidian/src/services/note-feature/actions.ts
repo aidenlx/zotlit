@@ -28,7 +28,7 @@ import { InertTemplateError } from "@/services/template/errors";
 
 import type { NoteFeature, UpdateScope } from "./operations";
 import type { BatchUpdateResult } from "./update-batch";
-import { updateNoteToast } from "./update-single";
+import { noteProfileDiagnosticNotice, updateNoteToast } from "./update-single";
 
 interface NoteFeatureActionDeps {
   app: App;
@@ -293,7 +293,10 @@ async function handleOverwriteNote(
   if (!yes) return;
   await toast.promise(deps.noteFeature.overwriteNote(file, itemKey), {
     loading: m.notice_overwriting_note(),
-    success: m.notice_overwrote_note(),
+    success: (result) =>
+      result.diagnostic
+        ? noteProfileDiagnosticNotice(result.diagnostic)
+        : m.notice_overwrote_note(),
     error: (_msg, e) =>
       e instanceof InertTemplateError
         ? e.message
