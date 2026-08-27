@@ -34,6 +34,7 @@ import {
 import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
 import {
   createAndOpen,
+  resolveLiteratureNoteWithWarning,
   updateNote,
 } from "@/services/note-feature/update-single";
 import type { SingleUpdateDeps } from "@/services/note-feature/update-single";
@@ -173,7 +174,9 @@ async function handleBatchProtocol(
 
 /** Open existing literature note, or create one if none exists. */
 async function openNote(deps: ProtocolDeps, ref: ItemRef): Promise<void> {
-  const existing = deps.noteIndex.getNotesByItemKey(ref.indexedKey)[0];
+  const existing = resolveLiteratureNoteWithWarning(
+    deps.noteIndex.getNotesByItemKey(ref.indexedKey),
+  );
 
   if (existing) {
     await deps.app.workspace.openLinkText(existing.path, "", false, {

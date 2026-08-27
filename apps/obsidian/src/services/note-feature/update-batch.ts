@@ -17,6 +17,7 @@ import type {
   BatchClassifyControls,
   BatchRunControls,
   BatchRunResult,
+  RunOutcome,
 } from "@/services/batch-run";
 import {
   batchGroupKey,
@@ -30,8 +31,16 @@ import type { Settings } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
 import { BatchModal, FlatManifest } from "@/views/batch-modal";
 
-import type { UpdateScope } from "./operations";
-import { updateNote } from "./update-single";
+import type {
+  CreateNoteDiagnostic,
+  CreateNoteResult,
+  UpdateScope,
+} from "./operations";
+import {
+  createNoteNotice,
+  resolveLiteratureNoteWithWarning,
+  updateNote,
+} from "./update-single";
 import type { SingleUpdateDeps } from "./update-single";
 
 const logger = getLogger("batch-update");
@@ -235,7 +244,9 @@ async function classifyActions(
         });
         continue;
       }
-      const file = deps.noteIndex.getNotesByItemKey(ref.indexedKey)[0];
+      const file = resolveLiteratureNoteWithWarning(
+        deps.noteIndex.getNotesByItemKey(ref.indexedKey),
+      );
       const label = itemLabel(ref.title, itemID);
       const row = { itemID, label, libraryID: ref.libraryID };
       if (file) {
@@ -303,8 +314,7 @@ async function executeBatchActions(
     concurrency: 32,
     run: async (task, client) => {
       if (username === undefined) username = getZoteroIdentity(client).username;
-      await runAction(deps, task, { ...baseContext, client, username });
-      return task.kind === "create" ? "created" : "updated";
+      return runAction(deps, task, { ...baseContext, client, username });
     },
     onTaskFailed: (task, error) => {
       logger.warn("Batch update item failed", {
@@ -335,7 +345,7 @@ async function runAction(
   deps: SingleUpdateDeps,
   action: BatchAction,
   run: RunContext,
-): Promise<void> {
+): Promise<RunOutcome> {
   const [item] = getItemsByID(run.client, [action.itemID], {
     memo: run.groupIdMemo,
   });
@@ -353,14 +363,32 @@ async function runAction(
       groupIdMemo: run.groupIdMemo,
       username: run.username,
     });
-    return;
+    return "updated";
   }
-  await deps.noteFeature.createNote(item, {
+  const result = await deps.noteFeature.createNote(item, {
     collectionCache: run.collectionCache,
     tagMemo: run.tagMemo,
     groupIdMemo: run.groupIdMemo,
     username: run.username,
   });
+  return batchCreateOutcome(result);
+}
+
+export class BatchCreateRefusedError extends Error {
+  readonly diagnostic: CreateNoteDiagnostic;
+
+  constructor(result: Extract<CreateNoteResult, { outcome: "refused" }>) {
+    super(createNoteNotice(result));
+    this.name = "BatchCreateRefusedError";
+    this.diagnostic = result.diagnostic;
+  }
+}
+
+export function batchCreateOutcome(result: CreateNoteResult): "created" {
+  if (result.outcome === "refused") {
+    throw new BatchCreateRefusedError(result);
+  }
+  return "created";
 }
 
 /**

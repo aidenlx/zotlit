@@ -21,7 +21,13 @@ import {
 import type { LibrarySelector } from "@zotlit/scripts/fixture";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import { cliCommand, obEvalUntil, waitFor } from "./obsidian-cli.ts";
+import {
+  cli,
+  cliCommand,
+  obEval,
+  obEvalUntil,
+  waitFor,
+} from "./obsidian-cli.ts";
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const vaultScriptPath = join(
@@ -47,6 +53,7 @@ function runVaultScript(args: string[]) {
 // itemID is unique across every Library, so it names the item without
 // needing to filter on libraryID too (key "AAAAAAAA" repeats in library 2).
 const targetItem = ITEMS.find((item) => item.itemID === 1)!;
+const createTargetItem = ITEMS.find((item) => item.itemID === 2)!;
 
 async function isObsidianReachable(): Promise<boolean> {
   const result = await runVaultScript(["status"]).catch(() => undefined);
@@ -87,6 +94,55 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
     }
   }, 120000);
+
+  it("keeps one Literature Note when create runs twice for one Item", async () => {
+    const noteName =
+      createTargetItem.literatureNoteName ?? createTargetItem.key;
+    const notePath = `literatures/${noteName}.md`;
+    await cli([`vault=${vaultId}`, "delete", `path=${notePath}`]);
+
+    const removedFromIndex = await obEvalUntil(
+      vaultId,
+      `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(createTargetItem.key)}).length)`,
+      { expected: "0" },
+    );
+    expect(removedFromIndex).toBe(true);
+
+    const first = await createFixtureNote(vaultId, createTargetItem.key);
+    expect(first.outcome).toBe("created");
+    if (first.outcome !== "created") {
+      throw new Error("The first create did not create a Literature Note");
+    }
+
+    const indexed = await obEvalUntil(
+      vaultId,
+      `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(createTargetItem.key)}).length)`,
+      { expected: "1" },
+    );
+    expect(indexed).toBe(true);
+
+    const second = await createFixtureNote(vaultId, createTargetItem.key);
+    expect(second).toEqual({
+      outcome: "refused",
+      diagnostic: {
+        code: "literature-note-exists",
+        hint: "Open the existing Literature Note instead of creating another.",
+        indexedKey: createTargetItem.key,
+        paths: [first.path],
+      },
+    });
+
+    const oneNote = await waitFor(async () => {
+      const total = await cli([
+        `vault=${vaultId}`,
+        "search",
+        `query=zotero-key: ${createTargetItem.key}`,
+        "total",
+      ]);
+      return total === "1";
+    });
+    expect(oneNote).toBe(true);
+  });
 
   // Covers both the "rendered literature note" and "batch operation"
   // acceptance-criteria bullets together — a deliberate simplification, not
@@ -134,6 +190,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(content).toContain(`# ${targetItem.title}`);
     expect(content).toContain("related:");
     expect(content).toContain("collections:");
+
+    const createTargetCount = await cli([
+      `vault=${vaultId}`,
+      "search",
+      `query=zotero-key: ${createTargetItem.key}`,
+      "total",
+    ]);
+    expect(createTargetCount).toBe("1");
   });
 
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
@@ -213,6 +277,30 @@ interface LibraryScopeReport {
   invalid?: boolean;
   available?: { selector: unknown; libraryID: number; name: string | null }[];
   unavailable?: unknown[];
+}
+
+type CreateOperationReply =
+  | { outcome: "created"; path: string }
+  | {
+      outcome: "refused";
+      diagnostic: {
+        code: "literature-note-exists" | "duplicate-literature-notes";
+        hint: string;
+        indexedKey: string;
+        paths: string[];
+      };
+    };
+
+async function createFixtureNote(
+  vaultId: string,
+  indexedKey: string,
+): Promise<CreateOperationReply> {
+  const key = JSON.stringify(indexedKey);
+  const response = await obEval(
+    vaultId,
+    `(async function(){var services=app.plugins.plugins.zotlit.services;var hits=await services.itemLookup.search('',{limit:100});var hit=hits.find(function(candidate){return candidate.item.indexedKey===${key};});if(!hit){throw new Error('Fixture Item not found');}var result=await services.noteFeature.createNote(hit.item);return JSON.stringify(result.outcome==='created'?{outcome:'created',path:result.file.path}:{outcome:'refused',diagnostic:result.diagnostic});})()`,
+  );
+  return JSON.parse(response) as CreateOperationReply;
 }
 
 /** Maps the Scope Case's stable selectors to the Fixture's libraryIDs. */

@@ -36,6 +36,7 @@ import { getLogger } from "@/lib/log";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { NoteImport } from "@/services/note-import/service";
+import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
 
 import {
@@ -57,6 +58,17 @@ export interface UpdateResult {
   bodyUpdated: boolean;
   duplicateRegionCount: number;
 }
+
+export interface CreateNoteDiagnostic {
+  code: "literature-note-exists" | "duplicate-literature-notes";
+  hint: string;
+  indexedKey: string;
+  paths: [string, ...string[]];
+}
+
+export type CreateNoteResult =
+  | { outcome: "created"; file: TFile }
+  | { outcome: "refused"; diagnostic: CreateNoteDiagnostic };
 
 // `UpdateScope` is the wire enum obsidian decodes; re-export it so note-feature
 // consumers keep a stable import path without redeclaring the union.
@@ -85,6 +97,10 @@ export interface CreateNoteOptions {
    * resolves it from its own lease when omitted.
    */
   username?: string | null;
+}
+
+interface CreateNoteInternalOptions extends CreateNoteOptions {
+  onFileCreated?: (file: TFile) => void;
 }
 
 /**
@@ -130,7 +146,10 @@ export interface NoteFeature {
    */
   ready: Promise<void>;
   /** @see createNote */
-  createNote(item: Item, options?: CreateNoteOptions): Promise<TFile>;
+  createNote(
+    item: Item,
+    options?: CreateNoteOptions,
+  ): Promise<CreateNoteResult>;
   /** @see updateNote */
   updateNote(
     file: TFile,
@@ -164,18 +183,73 @@ export interface NoteFeature {
 /**
  * Bind the note-feature operations to `deps` once (in `build.ts`). The bound
  * object is the module's external seam — consumers call its methods and never
- * see the collaborators. Holds no state of its own; the closure only captures
- * `deps` and the feature's event emitter, and compiled template artifacts live
- * in {@link TemplateService}.
+ * see the collaborators. The closure serializes creates by Indexed Key and
+ * retains newly created files until the Note Index observes them. Compiled
+ * template artifacts live in {@link TemplateService}.
  */
 export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
   const events = createNanoEvents<NoteFeatureEvents>();
   const ctx: SyncRenderDeps & OpsContext = { ...deps, events };
+  const pendingCreates = new Map<string, Promise<CreateNoteResult>>();
+  const createdBeforeIndex = new Map<string, TFile>();
+
+  const createAtGate = (
+    item: Item,
+    options?: CreateNoteOptions,
+  ): Promise<CreateNoteResult> => {
+    const { indexedKey } = item;
+    const pending = pendingCreates.get(indexedKey);
+    if (pending) {
+      return pending.then((result) =>
+        result.outcome === "created"
+          ? refusedCreate(indexedKey, [result.file])
+          : result,
+      );
+    }
+
+    const recent = createdBeforeIndex.get(indexedKey);
+    if (recent) {
+      const indexed = deps.noteIndex.getNotesByItemKey(indexedKey);
+      if (indexed.length > 0) {
+        createdBeforeIndex.delete(indexedKey);
+        return Promise.resolve(refusedCreate(indexedKey, indexed));
+      }
+      if (deps.app.vault.getAbstractFileByPath(recent.path) === recent) {
+        const cache = deps.app.metadataCache.getFileCache(recent);
+        if (cache === null || itemKeyFromFrontmatter(cache) === indexedKey) {
+          return Promise.resolve(refusedCreate(indexedKey, [recent]));
+        }
+      }
+      createdBeforeIndex.delete(indexedKey);
+    }
+
+    const task = createNote(ctx, item, {
+      ...options,
+      onFileCreated: (file) => {
+        createdBeforeIndex.set(indexedKey, file);
+      },
+    });
+    pendingCreates.set(indexedKey, task);
+    void task.then(
+      () => {
+        if (pendingCreates.get(indexedKey) === task) {
+          pendingCreates.delete(indexedKey);
+        }
+      },
+      () => {
+        if (pendingCreates.get(indexedKey) === task) {
+          pendingCreates.delete(indexedKey);
+        }
+      },
+    );
+    return task;
+  };
+
   return {
     ready: Promise.all([deps.template.ready, deps.noteIndex.ready]).then(
       () => {},
     ),
-    createNote: (item, options) => createNote(ctx, item, options),
+    createNote: createAtGate,
     updateNote: (file, options) => updateNote(ctx, file, options),
     overwriteNote: (file, indexedKey) => overwriteNote(ctx, file, indexedKey),
     writeNoteUpdate: (file, options) => writeNoteUpdate(ctx, file, options),
@@ -189,9 +263,33 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
   };
 }
 
+function refusedCreate(
+  indexedKey: string,
+  existing: readonly TFile[],
+): Extract<CreateNoteResult, { outcome: "refused" }> {
+  const paths = existing.map((file) => file.path) as [string, ...string[]];
+  return {
+    outcome: "refused",
+    diagnostic: {
+      code:
+        existing.length === 1
+          ? "literature-note-exists"
+          : "duplicate-literature-notes",
+      hint:
+        existing.length === 1
+          ? "Open the existing Literature Note instead of creating another."
+          : "Resolve the duplicate Literature Notes, then run create again.",
+      indexedKey,
+      paths,
+    },
+  };
+}
+
 /**
- * `vault.create` is the atomic uniqueness gate: on a collision, the name is
- * re-resolved with a forced `suffix()` and the write retried. Without a
+ * The bound feature serializes calls by Indexed Key before this operation.
+ * This operation checks the settled Note Index before it writes. After that
+ * check, `vault.create` is the atomic filename gate: on a collision, the name
+ * is re-resolved with a forced `suffix()` and the write retried. Without a
  * `suffix()` marker there is nothing to disambiguate, so the collision
  * surfaces to the caller.
  *
@@ -202,8 +300,8 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
 async function createNote(
   ctx: OpsContext,
   item: Item,
-  options: CreateNoteOptions = {},
-): Promise<TFile> {
+  options: CreateNoteInternalOptions = {},
+): Promise<CreateNoteResult> {
   const collectionCache = options.collectionCache ?? new CollectionCache();
   const tagMemo: TagMemo = options.tagMemo ?? new Map();
   const [settings] = await Promise.all([
@@ -211,6 +309,10 @@ async function createNote(
     ctx.noteIndex.whenIndexed(),
     ctx.template.ready,
   ]);
+  const existing = ctx.noteIndex.getNotesByItemKey(item.indexedKey);
+  if (existing.length > 0) {
+    return refusedCreate(item.indexedKey, existing);
+  }
   // Pin the client across the async vault write and the child-note import flush
   // so an auto-refresh swap can't dispose it mid-operation; `lease.client` is
   // threaded through the helpers so they read one stable snapshot.
@@ -232,8 +334,9 @@ async function createNote(
   });
 
   for (let attempt = 0; ; attempt++) {
+    let fileCreated = false;
     try {
-      return await writeNewNote(ctx, item, {
+      const file = await writeNewNote(ctx, item, {
         client: lease.client,
         tagMemo,
         collectionCache,
@@ -241,9 +344,15 @@ async function createNote(
         settings,
         groupIdMemo: options.groupIdMemo,
         username,
+        onFileCreated: (created) => {
+          fileCreated = true;
+          options.onFileCreated?.(created);
+        },
       });
+      return { outcome: "created", file };
     } catch (error) {
       if (
+        fileCreated ||
         !isFileExistsError(error) ||
         !canSuffix ||
         attempt >= MAX_CREATE_RETRIES
@@ -282,6 +391,7 @@ async function writeNewNote(
     settings: Readonly<Settings>;
     groupIdMemo?: GroupIDMemo;
     username: string | null;
+    onFileCreated?: (file: TFile) => void;
   },
 ): Promise<TFile> {
   const { tagMemo, collectionCache, path, settings } = options;
@@ -314,6 +424,7 @@ async function writeNewNote(
   const content = `---\n${stringifyYaml(fm)}---\n${body}`;
 
   const file = await ctx.app.vault.create(path, content);
+  options.onFileCreated?.(file);
   await attachmentImport.flush();
   await noteImport.flush();
   logger.debug("Created literature note", { path, itemKey: item.indexedKey });

@@ -1,6 +1,7 @@
 import { TFile, TFolder } from "obsidian";
 import type { FileManager } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 
 import {
   CollectionCache,
@@ -216,7 +217,7 @@ describe("createNote", () => {
       },
     };
 
-    const file = await createNoteFeature(deps).createNote(root);
+    const file = createdFile(await createNoteFeature(deps).createNote(root));
 
     expect(file.path).toBe("Literature/Root.md");
     expect(app.vault.contentByPath.get("Literature/Root.md")).toContain(
@@ -324,7 +325,7 @@ describe("createNote", () => {
       },
     };
 
-    const file = await createNoteFeature(deps).createNote(root);
+    const file = createdFile(await createNoteFeature(deps).createNote(root));
 
     // Creation path: buildFilenameContext's inert notePath/noteLink stubs
     // render as empty strings.
@@ -377,6 +378,7 @@ describe("createNote", () => {
 
     const deps: SyncRenderDeps = {
       app: {
+        metadataCache: { getFileCache: () => null },
         vault: {
           getAbstractFileByPath: (path) =>
             path === "Literature" ? literature : null,
@@ -422,7 +424,7 @@ describe("createNote", () => {
       },
     };
 
-    const file = await createNoteFeature(deps).createNote(item);
+    const file = createdFile(await createNoteFeature(deps).createNote(item));
 
     expect(file.path).toMatch(/^Literature\/Root_[\w-]{6}\.md$/);
     expect(create).toHaveBeenCalledTimes(2);
@@ -452,7 +454,7 @@ describe("createNote", () => {
     let createCalledBeforeSignal = false;
 
     const app = makeApp();
-    const create = app.vault.create.bind(app.vault);
+    const create = app.vault.create;
     app.vault.create = vi.fn(async (path: string, content: string) => {
       createCalledBeforeSignal = true;
       return create(path, content);
@@ -497,6 +499,285 @@ describe("createNote", () => {
     resolveIndexed();
     await createPromise;
     expect(createCalledBeforeSignal).toBe(true);
+  });
+
+  it("refuses creation after the index settles when the item already has a literature note", async () => {
+    const item = { indexedKey: "ROOT1234" } as Item;
+    const existing = makeFile("Literature/Existing.md");
+    const app = makeApp();
+    let indexed = false;
+    const deps: SyncRenderDeps = {
+      app,
+      template: makeTemplate(),
+      db: makeDb(),
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {
+          indexed = true;
+        },
+        getNotesByItemKey: (indexedKey) => {
+          expect(indexed).toBe(true);
+          return indexedKey === item.indexedKey ? [existing] : [];
+        },
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings(),
+      attachmentImport: blockedAttachmentImport,
+      noteImport: {
+        prepare: async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            indexedKey: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+        }),
+      },
+    };
+    const create = app.vault.create;
+
+    const result = await createNoteFeature(deps).createNote(item);
+
+    expect(result).toEqual({
+      outcome: "refused",
+      diagnostic: {
+        code: "literature-note-exists",
+        hint: "Open the existing Literature Note instead of creating another.",
+        indexedKey: "ROOT1234",
+        paths: ["Literature/Existing.md"],
+      },
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("returns a diagnostic that lists every duplicate literature note", async () => {
+    const item = { indexedKey: "ROOT1234" } as Item;
+    const app = makeApp();
+    const deps: SyncRenderDeps = {
+      app,
+      template: makeTemplate(),
+      db: makeDb(),
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [
+          makeFile("Literature/Newer.md"),
+          makeFile("Archive/Older.md"),
+        ],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings(),
+      attachmentImport: blockedAttachmentImport,
+      noteImport: {
+        prepare: async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            indexedKey: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+        }),
+      },
+    };
+    const create = app.vault.create;
+
+    const result = await createNoteFeature(deps).createNote(item);
+
+    expect(result).toEqual({
+      outcome: "refused",
+      diagnostic: {
+        code: "duplicate-literature-notes",
+        hint: "Resolve the duplicate Literature Notes, then run create again.",
+        indexedKey: "ROOT1234",
+        paths: ["Literature/Newer.md", "Archive/Older.md"],
+      },
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("serializes concurrent creates and refuses the second result", async () => {
+    const item = makeCreateGateItem();
+    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    const app = makeApp();
+    let releaseCreate!: () => void;
+    const createGate = new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    });
+    const create = app.vault.create;
+    const gatedCreate = vi.fn(async (path, content) => {
+      await createGate;
+      return create(path, content);
+    });
+    app.vault.create = gatedCreate;
+    const feature = createNoteFeature({
+      app,
+      template: makeTemplate(),
+      db: makeDb(),
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings(),
+      attachmentImport: blockedAttachmentImport,
+      noteImport: {
+        prepare: async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            indexedKey: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+        }),
+      },
+    });
+
+    const first = feature.createNote(item);
+    const second = feature.createNote(item);
+    releaseCreate();
+
+    const [created, refused] = await Promise.all([first, second]);
+    expect(created.outcome).toBe("created");
+    expect(refused).toEqual({
+      outcome: "refused",
+      diagnostic: {
+        code: "literature-note-exists",
+        hint: "Open the existing Literature Note instead of creating another.",
+        indexedKey: "ROOT1234",
+        paths: ["Literature/Root.md"],
+      },
+    });
+    expect(gatedCreate).toHaveBeenCalledOnce();
+  });
+
+  it("refuses an immediate repeat before the Note Index observes the created file", async () => {
+    const item = makeCreateGateItem();
+    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    const app = makeApp();
+    const create = app.vault.create;
+    const feature = createNoteFeature({
+      app,
+      template: makeTemplate(),
+      db: makeDb(),
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings(),
+      attachmentImport: blockedAttachmentImport,
+      noteImport: {
+        prepare: async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            indexedKey: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+        }),
+      },
+    });
+
+    const created = await feature.createNote(item);
+    const refused = await feature.createNote(item);
+
+    expect(created.outcome).toBe("created");
+    expect(refused.outcome).toBe("refused");
+    expect(create).toHaveBeenCalledOnce();
+  });
+
+  it("allows recreation after the created file loses its Zotero key", async () => {
+    const item = makeCreateGateItem();
+    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    const app = makeApp();
+    const feature = createNoteFeature({
+      app,
+      template: makeTemplate(),
+      db: makeDb(),
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings(),
+      attachmentImport: blockedAttachmentImport,
+      noteImport: {
+        prepare: async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            indexedKey: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+        }),
+      },
+    });
+
+    const first = await feature.createNote(item);
+    vi.mocked(app.metadataCache.getFileCache).mockReturnValue({
+      frontmatter: {},
+    });
+    const second = await feature.createNote(item);
+
+    expect(first.outcome).toBe("created");
+    expect(second.outcome).toBe("created");
+    expect(app.vault.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses a retry when post-create import flushing fails", async () => {
+    const item = makeCreateGateItem();
+    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    const app = makeApp();
+    const template = makeTemplate();
+    template.renderFilename = () => `Root${filenameSuffix()}`;
+    const feature = createNoteFeature({
+      app,
+      template,
+      db: makeDb(),
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings(),
+      attachmentImport: {
+        prepare: async () => ({
+          decide: blockedDecide,
+          resolveLink: () => () => "",
+          flush: async () => {
+            throw new Error("File already exists.");
+          },
+        }),
+      },
+      noteImport: {
+        prepare: async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            indexedKey: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+        }),
+      },
+    });
+
+    await expect(feature.createNote(item)).rejects.toThrow(
+      "File already exists.",
+    );
+    const retry = await feature.createNote(item);
+
+    expect(retry.outcome).toBe("refused");
+    expect(app.vault.create).toHaveBeenCalledOnce();
   });
 
   it("awaits template.ready before writing the note", async () => {
@@ -564,7 +845,7 @@ describe("createNote", () => {
     expect(renderFilenameCalledBeforeSignal).toBe(false);
 
     resolveReady();
-    const file = await createPromise;
+    const file = createdFile(await createPromise);
     expect(renderFilenameCalledBeforeSignal).toBe(true);
     expect(file.path).toBe("Literature/Root.md");
   });
@@ -600,6 +881,7 @@ describe("overwriteNote", () => {
 
     const deps: SyncRenderDeps = {
       app: {
+        metadataCache: { getFileCache: () => null },
         vault: {
           getAbstractFileByPath: () => null,
           getRoot: () => new TFolder(),
@@ -707,6 +989,7 @@ function makeUpdateHarness(options: {
 
   const deps: SyncRenderDeps = {
     app: {
+      metadataCache: { getFileCache: () => null },
       vault: {
         getAbstractFileByPath: () => null,
         getRoot: () => new TFolder(),
@@ -1481,12 +1764,15 @@ function makeSettings(): NoteFeatureDeps["settings"] {
 }
 
 interface MockNoteApp {
+  metadataCache: {
+    getFileCache: Mock<() => { frontmatter?: Record<string, unknown> } | null>;
+  };
   vault: {
     contentByPath: Map<string, string>;
-    getAbstractFileByPath(path: string): TFolder | null;
+    getAbstractFileByPath(path: string): TFile | TFolder | null;
     getRoot(): TFolder;
     createFolder(path: string): Promise<TFolder>;
-    create(path: string, content: string): Promise<TFile>;
+    create: Mock<(path: string, content: string) => Promise<TFile>>;
     process(): Promise<string>;
   };
   fileManager: {
@@ -1502,6 +1788,7 @@ function makeApp(): MockNoteApp {
   const literature = new TFolder();
   literature.path = "Literature";
   const contentByPath = new Map<string, string>();
+  const filesByPath = new Map<string, TFile>();
   const links: {
     path: string;
     sourcePath: string;
@@ -1509,15 +1796,20 @@ function makeApp(): MockNoteApp {
   }[] = [];
 
   return {
+    metadataCache: {
+      getFileCache: vi.fn(() => null),
+    },
     vault: {
       contentByPath,
       getAbstractFileByPath: (path: string) =>
-        path === "Literature" ? literature : null,
+        path === "Literature" ? literature : (filesByPath.get(path) ?? null),
       getRoot: () => root,
       createFolder: vi.fn(),
       create: vi.fn(async (path: string, content: string) => {
         contentByPath.set(path, content);
-        return makeFile(path);
+        const file = makeFile(path);
+        filesByPath.set(path, file);
+        return file;
       }),
       process: vi.fn(async () => ""),
     },
@@ -1547,6 +1839,16 @@ function makeFile(path: string): TFile {
   return file;
 }
 
+function createdFile(
+  result: Awaited<ReturnType<NoteFeature["createNote"]>>,
+): TFile {
+  expect(result.outcome).toBe("created");
+  if (result.outcome !== "created") {
+    throw new Error(`Expected a created note, got ${result.outcome}`);
+  }
+  return result.file;
+}
+
 function makeItem(
   input: Partial<BaseItem> & {
     key: string;
@@ -1572,4 +1874,32 @@ function makeItem(
       citationKey: input.citationKey,
     } as ItemFields,
   };
+}
+
+function makeCreateGateItem(): Item {
+  return {
+    itemID: 1,
+    libraryID: 1,
+    key: "ROOT1234",
+    indexedKey: "ROOT1234",
+    dateAdded: {} as Temporal.Instant,
+    dateModified: {} as Temporal.Instant,
+    creators: [],
+    primaryCreatorType: "author",
+    customFields: new Map(),
+    groupID: null,
+    fields: {
+      itemType: "journalArticle",
+      title: "Root",
+      citationKey: "root",
+    } as ItemFields,
+  };
+}
+
+function createGateContext(): NoteTemplateContext {
+  return {
+    notePath: "Literature/Root.md",
+    noteLink: () => "[[Literature/Root.md]]",
+    relatedItems: [],
+  } as unknown as NoteTemplateContext;
 }
