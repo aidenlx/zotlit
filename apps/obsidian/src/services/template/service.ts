@@ -8,10 +8,15 @@ import type {
   AutoTrim,
   FrontmatterLanguage,
 } from "@zotlit/templates/constants";
-import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
+import {
+  LiteratureNoteTemplateError,
+  TemplateError,
+  TemplateFacade,
+} from "@zotlit/templates/facade";
 import type {
   ConvertedLegacyLiteratureNoteTemplate,
   LiteratureNoteTemplateDocument,
+  LiteratureNoteTemplateErrorCode,
   LiteratureNoteTemplateManifest,
   RootVariableUse,
   TemplateLanguage,
@@ -98,6 +103,26 @@ export interface ResolvedLiteratureNoteTemplate {
   renderForCreate<T extends object>(data: T): string;
   renderForUpdate<T extends object>(data: T): string | null;
   renderFilename<T extends object>(data: T): string;
+}
+
+/** Validation state for one Literature Note Template document in the folder. */
+export interface LiteratureNoteTemplateStatus {
+  readonly reference: string;
+  readonly path: string;
+  readonly validation:
+    | {
+        readonly state: "valid";
+        readonly manifest: LiteratureNoteTemplateManifest;
+        readonly hasManagedBlock: boolean;
+      }
+    | {
+        readonly state: "invalid";
+        readonly error: {
+          readonly code: LiteratureNoteTemplateErrorCode | "unknown";
+          readonly message: string;
+          readonly recovery: string;
+        };
+      };
 }
 
 export interface ConvertedLegacyProfileDocument extends ConvertedLegacyLiteratureNoteTemplate {
@@ -276,6 +301,77 @@ export class TemplateService extends Service<void> {
         toSingleLine(
           this.#facade.renderLiteratureNoteTemplateFilename(document, data),
         ),
+    };
+  }
+
+  /** Report every installed document and its reconciled validation state. */
+  getLiteratureNoteTemplateStatuses(): readonly LiteratureNoteTemplateStatus[] {
+    this.#requireLoaded("getLiteratureNoteTemplateStatuses");
+    const references = new Set([
+      ...this.#literatureNoteDocuments.keys(),
+      ...this.#literatureNoteDocumentErrors.keys(),
+    ]);
+    return [...references].sort().map((reference) => {
+      const entry = this.#literatureNoteDocuments.get(reference);
+      if (entry) {
+        return {
+          reference,
+          path: entry.path,
+          validation: {
+            state: "valid",
+            manifest: entry.document.manifest,
+            hasManagedBlock: entry.document.managedBlock !== null,
+          },
+        };
+      }
+      const error = this.#literatureNoteDocumentErrors.get(reference)!;
+      const path = join(this.#currentTemplateFolder(), reference);
+      return {
+        reference,
+        path,
+        validation: {
+          state: "invalid",
+          error:
+            error instanceof LiteratureNoteTemplateError
+              ? {
+                  code: error.code,
+                  message: error.message,
+                  recovery: error.recovery,
+                }
+              : {
+                  code: "unknown",
+                  message: error.message,
+                  recovery: "Correct the document, then inspect it again.",
+                },
+        },
+      };
+    });
+  }
+
+  /** Parse and render document source in memory without installing it. */
+  renderLiteratureNoteTemplateSource<T extends object>(
+    source: string,
+    data: T,
+  ): { create: string; update: string | null } {
+    this.#requireLoaded("renderLiteratureNoteTemplateSource");
+    const document = this.#facade.parseLiteratureNoteTemplate(source);
+    if (
+      document.manifest.language === "eta" &&
+      !this.#javascriptTemplatesEnabled
+    ) {
+      throw new InertTemplateError(
+        m.settings_template_inert_eta({ path: "source override" }),
+      );
+    }
+    return {
+      create: this.#facade.renderLiteratureNoteTemplateForCreate(
+        document,
+        data,
+      ),
+      update: this.#facade.renderLiteratureNoteTemplateForUpdate(
+        document,
+        data,
+      ),
     };
   }
 
