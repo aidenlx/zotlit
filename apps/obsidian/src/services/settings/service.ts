@@ -146,6 +146,15 @@ export interface ResolvedLiteratureNoteProfileBindings {
 export type ProfileBindingSettings = Readonly<Settings> &
   Partial<ResolvedLiteratureNoteProfileBindings>;
 
+const boundProfileIds = new WeakMap<ProfileBindingSettings, string>();
+
+/** Read the named Profile carried by a bound settings snapshot. */
+export function boundLiteratureNoteProfileId(
+  settings: ProfileBindingSettings,
+): string | undefined {
+  return boundProfileIds.get(settings);
+}
+
 /** Read an effective binding from an optional resolved-Profile overlay. */
 export function getProfileBinding<
   K extends keyof ResolvedLiteratureNoteProfileBindings,
@@ -197,7 +206,10 @@ export function bindLiteratureNoteProfile(
   id?: string,
 ): ProfileBindingSettings | undefined {
   const bindings = resolveLiteratureNoteProfileBindings(current, id);
-  return bindings && { ...current, ...bindings };
+  if (!bindings) return undefined;
+  const settings = { ...current, ...bindings };
+  if (id !== undefined) boundProfileIds.set(settings, id);
+  return settings;
 }
 
 /** Raw values of broken overrides, keyed by the settings key they belong to. */

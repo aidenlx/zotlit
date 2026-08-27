@@ -37,7 +37,12 @@ import type {
 
 import { createBatchImport } from "./batch-import";
 import type { NoteImportDeps } from "./batch-import";
-import { batchImportNotice, childImportToast } from "./batch-import-notices";
+import {
+  batchImportNotice,
+  batchImportToast,
+  childImportToast,
+} from "./batch-import-notices";
+import { NoteImportProfileError } from "./service";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
@@ -918,6 +923,19 @@ describe("runChildImportByKey", () => {
     expect(childImportToast().success({ outcome: "db-unavailable" })).toBe(
       "Open the Zotero database to update notes.",
     );
+  });
+
+  it("surfaces Profile recovery through the single-import toast", () => {
+    const error = batchImportToast().error;
+    expect(error).toBeTypeOf("function");
+    expect(
+      Reflect.apply(error as (...args: unknown[]) => string, null, [
+        "fallback",
+        new NoteImportProfileError("missing-profile", {
+          path: "Imported/Methods.md",
+        }),
+      ]),
+    ).toContain("Re-stamp");
   });
 });
 
