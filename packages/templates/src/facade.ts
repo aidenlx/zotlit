@@ -43,6 +43,7 @@ export {
   CONVERTED_DEFAULT_PROFILE_DOCUMENT,
   LegacyTemplateConversionError,
   LiteratureNoteTemplateError,
+  synthesizeLegacyLiteratureNoteTemplate,
 } from "./literature-note-template";
 export type {
   LegacyLiteratureNoteTemplates,
@@ -51,6 +52,7 @@ export type {
   LiteratureNoteTemplateErrorCode,
   LiteratureNoteTemplateManifest,
   ManagedBlock,
+  SynthesizedLiteratureNoteTemplateManifest,
 } from "./literature-note-template";
 
 export interface ConvertedLegacyLiteratureNoteTemplate {

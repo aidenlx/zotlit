@@ -129,9 +129,16 @@ export class LegacyTemplateConversionError extends Error {
 
 export const CONVERTED_DEFAULT_PROFILE_DOCUMENT = "literature-note-default.md";
 
+export interface SynthesizedLiteratureNoteTemplateManifest {
+  readonly id?: string;
+  readonly name?: string;
+  readonly description?: string;
+}
+
 /** Synthesize one document from the three legacy Literature Note slots. */
 export function synthesizeLegacyLiteratureNoteTemplate(
   legacy: LegacyLiteratureNoteTemplates,
+  manifestOverrides: SynthesizedLiteratureNoteTemplateManifest = {},
 ): string {
   const language = legacy.note.language;
   if (
@@ -171,11 +178,13 @@ export function synthesizeLegacyLiteratureNoteTemplate(
   );
   const manifest = stringifyYaml(
     {
-      id: "zotlit.converted-default",
-      name: "Converted default",
+      id: manifestOverrides.id ?? "zotlit.converted-default",
+      name: manifestOverrides.name ?? "Converted default",
       version: "1.0.0",
       author: "ZotLit",
-      description: "Converted from legacy Literature Note Templates.",
+      description:
+        manifestOverrides.description ??
+        "Converted from legacy Literature Note Templates.",
       contract: 2,
       filename: legacy.filename.source,
       language,
