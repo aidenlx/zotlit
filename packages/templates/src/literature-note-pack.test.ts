@@ -4,6 +4,7 @@ import {
   createLiteratureNotePackInstallRecord,
   diffLiteratureNotePack,
   exportLiteratureNotePack,
+  parseLiteratureNotePack,
   planLiteratureNotePackRevert,
 } from "./literature-note-pack";
 import type {
@@ -34,6 +35,30 @@ describe("Literature Note Pack export", () => {
     );
 
     expect(exportLiteratureNotePack(source, [])).toBe(source);
+  });
+
+  it("preserves an Annotation Block through export and install", () => {
+    const source = DOCUMENT.replace(
+      '{% render "summary" with zt as zt %}',
+      "{{ zt.abstractNote }}",
+    ).replace(
+      "\n{% managed %}",
+      "\n{% annotation %}{{ zt.text }}{% endannotation %}\n{% managed %}",
+    );
+    const exported = exportLiteratureNotePack(source, []);
+    const candidate = parseLiteratureNotePack("books.md", exported);
+    const diff = diffLiteratureNotePack(candidate.files, [
+      { key: "document:books.md", source: null, builtIn: false },
+    ]);
+    const record = createLiteratureNotePackInstallRecord(
+      candidate.pack,
+      candidate.files,
+      diff,
+    );
+
+    expect(exported).toBe(source);
+    expect(candidate.files).toEqual([{ key: "document:books.md", source }]);
+    expect(record.files[0]?.installedSource).toBe(source);
   });
 
   it("bundles transitive partials into the document manifest", () => {
