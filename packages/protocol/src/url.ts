@@ -88,6 +88,7 @@ export function protocolSourceMatches(
 /**
  * Build an `obsidian://zotlit/<action>?item=<id>&source-id=<hash>` link for
  * `Zotero.launchURL`. A non-default {@link UpdateScope} adds `&scope=<scope>`.
+ * A selected literature-note Profile adds `&profile=<profileId>`.
  */
 export function buildProtocolUrl(
   action: ProtocolAction,

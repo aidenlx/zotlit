@@ -140,6 +140,27 @@ export interface ResolvedLiteratureNoteProfileBindings {
   readonly "citation.references-style": string | null;
 }
 
+/** Resolve one Profile's sparse bindings over a settings snapshot. */
+export function resolveLiteratureNoteProfileBindings(
+  current: Readonly<Settings>,
+  id?: string,
+): ResolvedLiteratureNoteProfileBindings | undefined {
+  const profile =
+    id === undefined
+      ? undefined
+      : current["note.profiles"].find((candidate) => candidate.id === id);
+  if (id !== undefined && profile === undefined) return undefined;
+  const bindings = profile?.bindings;
+  return {
+    "note.literature-folder":
+      bindings?.["note.literature-folder"] ?? current["note.literature-folder"],
+    "citation.references-style":
+      bindings?.["citation.references-style"] !== undefined
+        ? bindings["citation.references-style"]
+        : current["citation.references-style"],
+  };
+}
+
 /** Raw values of broken overrides, keyed by the settings key they belong to. */
 type BrokenOverrides = ReadonlyMap<SettingsKey, unknown>;
 
@@ -369,22 +390,7 @@ export class SettingsService extends Service<void> {
     id?: string,
   ): ResolvedLiteratureNoteProfileBindings | undefined {
     this.#requireLoaded("resolveLiteratureNoteProfileBindings");
-    const current = this.#snapshot();
-    const profile =
-      id === undefined
-        ? undefined
-        : current["note.profiles"].find((candidate) => candidate.id === id);
-    if (id !== undefined && profile === undefined) return undefined;
-    const bindings = profile?.bindings;
-    return {
-      "note.literature-folder":
-        bindings?.["note.literature-folder"] ??
-        current["note.literature-folder"],
-      "citation.references-style":
-        bindings?.["citation.references-style"] !== undefined
-          ? bindings["citation.references-style"]
-          : current["citation.references-style"],
-    };
+    return resolveLiteratureNoteProfileBindings(this.#snapshot(), id);
   }
 
   /**
