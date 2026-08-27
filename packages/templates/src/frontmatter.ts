@@ -7,6 +7,8 @@ import type {
   FrontmatterLanguage,
   FrontmatterMergeStrategy,
 } from "./constants";
+import { renderJsonEFrontmatterValue } from "./frontmatter-json-e";
+import type { ManagedFrontmatterEntry } from "./literature-note-template";
 
 export {
   FrontmatterJsonEError,
@@ -28,6 +30,32 @@ export interface CompiledFrontmatterField {
   merge: FrontmatterMergeStrategy;
 }
 
+type ManagedFrontmatterEvaluator = (
+  zt: object,
+  operationTimestamp: Temporal.Instant,
+) => unknown;
+
+export interface CompiledManagedFrontmatterEntry {
+  readonly key: string;
+  readonly merge: FrontmatterMergeStrategy;
+  readonly fn: ManagedFrontmatterEvaluator;
+}
+
+export interface CompiledManagedFrontmatter {
+  readonly compiled: readonly CompiledManagedFrontmatterEntry[];
+  readonly inertKeys: readonly string[];
+}
+
+export interface ManagedFrontmatterEvaluationError {
+  readonly key: string;
+  readonly error: unknown;
+}
+
+export interface ManagedFrontmatterEvaluation {
+  readonly values: Readonly<Record<string, unknown>>;
+  readonly errors: readonly ManagedFrontmatterEvaluationError[];
+}
+
 export interface CompileFrontmatterOptions {
   /** Shared Liquid engine providing the same vocabulary as the templates. */
   liquid: Liquid;
@@ -39,6 +67,55 @@ export interface CompiledFrontmatter {
   compiled: CompiledFrontmatterField[];
   /** Keys of javascript fields skipped (never compiled) because the gate is off. */
   inertKeys: string[];
+}
+
+export function compileManagedFrontmatterEntries(
+  entries: readonly ManagedFrontmatterEntry[],
+  options: CompileFrontmatterOptions,
+): CompiledManagedFrontmatter {
+  const compiled: CompiledManagedFrontmatterEntry[] = [];
+  const inertKeys: string[] = [];
+  for (const entry of entries) {
+    if ("js" in entry && !options.javascript) {
+      inertKeys.push(entry.key);
+      continue;
+    }
+
+    let fn: ManagedFrontmatterEvaluator;
+    if ("expr" in entry) {
+      const evaluator = toLiquidEvaluator(entry.expr, options.liquid);
+      fn = (zt) => evaluator(zt, basename);
+    } else if ("js" in entry) {
+      const evaluator = toEvaluator(entry.js);
+      fn = (zt) => evaluator(zt, basename);
+    } else {
+      fn = (zt, operationTimestamp) =>
+        renderJsonEFrontmatterValue(entry.value, {
+          key: entry.key,
+          zt,
+          operationTimestamp,
+        });
+    }
+    compiled.push({ key: entry.key, merge: entry.merge, fn });
+  }
+  return { compiled, inertKeys };
+}
+
+export function evalManagedFrontmatterEntries(
+  entries: readonly CompiledManagedFrontmatterEntry[],
+  zt: object,
+  operationTimestamp: Temporal.Instant,
+): ManagedFrontmatterEvaluation {
+  const values: Record<string, unknown> = {};
+  const errors: ManagedFrontmatterEvaluationError[] = [];
+  for (const entry of entries) {
+    try {
+      values[entry.key] = entry.fn(zt, operationTimestamp);
+    } catch (error) {
+      errors.push({ key: entry.key, error });
+    }
+  }
+  return { values, errors };
 }
 
 /**

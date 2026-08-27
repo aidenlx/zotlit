@@ -20,7 +20,7 @@ export type FrontmatterJsonValue =
 
 export interface RenderJsonEFrontmatterValueOptions {
   readonly key: string;
-  readonly zt: Readonly<Record<string, unknown>>;
+  readonly zt: object;
   readonly operationTimestamp: Temporal.Instant;
 }
 

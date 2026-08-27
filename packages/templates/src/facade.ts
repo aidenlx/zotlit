@@ -20,9 +20,13 @@ import type {
 } from "./constants";
 import {
   compileFrontmatterFields as compileFrontmatterFieldsImpl,
+  compileManagedFrontmatterEntries as compileManagedFrontmatterEntriesImpl,
   validateFrontmatterExpr as validateFrontmatterExprImpl,
 } from "./frontmatter";
-import type { CompiledFrontmatter } from "./frontmatter";
+import type {
+  CompiledFrontmatter,
+  CompiledManagedFrontmatter,
+} from "./frontmatter";
 import { TemplateEngine } from "./index";
 import { createLiquidEngine } from "./liquid";
 import {
@@ -34,6 +38,7 @@ import {
 import type {
   LegacyLiteratureNoteTemplates,
   LiteratureNoteTemplateDocument,
+  ManagedFrontmatterEntry,
 } from "./literature-note-template";
 import { formatManagedRegion } from "./obsidian";
 
@@ -344,6 +349,16 @@ export class TemplateFacade {
     options: { javascript: boolean },
   ): CompiledFrontmatter {
     return compileFrontmatterFieldsImpl(fields, {
+      ...options,
+      liquid: this.#liquid,
+    });
+  }
+
+  compileManagedFrontmatterEntries(
+    entries: readonly ManagedFrontmatterEntry[],
+    options: { javascript: boolean },
+  ): CompiledManagedFrontmatter {
+    return compileManagedFrontmatterEntriesImpl(entries, {
       ...options,
       liquid: this.#liquid,
     });

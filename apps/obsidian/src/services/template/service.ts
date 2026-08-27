@@ -24,6 +24,7 @@ import type {
 import { evalFrontmatterFields } from "@zotlit/templates/frontmatter";
 import type {
   CompiledFrontmatterField,
+  CompiledManagedFrontmatter,
   FrontmatterField,
 } from "@zotlit/templates/frontmatter";
 import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
@@ -101,6 +102,7 @@ export interface ResolvedLiteratureNoteTemplate {
   readonly reference: string;
   readonly path: string;
   readonly manifest: LiteratureNoteTemplateManifest;
+  readonly frontmatter?: CompiledManagedFrontmatter;
   readonly hasManagedBlock: boolean;
   renderForCreate<T extends object>(data: T): string;
   renderForUpdate<T extends object>(data: T): string | null;
@@ -290,10 +292,17 @@ export class TemplateService extends Service<void> {
     ) {
       throw new InertTemplateError(m.settings_template_inert_eta({ path }));
     }
+    const frontmatter = document.manifest.frontmatter
+      ? this.#facade.compileManagedFrontmatterEntries(
+          document.manifest.frontmatter,
+          { javascript: this.#javascriptTemplatesEnabled },
+        )
+      : undefined;
     return {
       reference,
       path,
       manifest: document.manifest,
+      frontmatter,
       hasManagedBlock: document.managedBlock !== null,
       renderForCreate: <T extends object>(data: T) =>
         this.#facade.renderLiteratureNoteTemplateForCreate(document, data),

@@ -34,12 +34,12 @@ import { BatchModal, FlatManifest } from "@/views/batch-modal";
 import type {
   CreateNoteDiagnostic,
   CreateNoteResult,
-  NoteProfileDiagnostic,
+  NoteOperationDiagnostic,
   UpdateScope,
 } from "./operations";
 import {
   createNoteNotice,
-  noteProfileDiagnosticNotice,
+  noteOperationDiagnosticNotice,
   resolveLiteratureNoteWithWarning,
   updateNote,
 } from "./update-single";
@@ -375,7 +375,7 @@ async function runAction(
       profileId: run.profileId,
     });
     if (result.diagnostic) {
-      throw new BatchProfileRefusedError(result.diagnostic);
+      throw new BatchUpdateRefusedError(result.diagnostic);
     }
     return "updated";
   }
@@ -389,12 +389,12 @@ async function runAction(
   return batchCreateOutcome(result);
 }
 
-export class BatchProfileRefusedError extends Error {
-  readonly diagnostic: NoteProfileDiagnostic;
+export class BatchUpdateRefusedError extends Error {
+  readonly diagnostic: NoteOperationDiagnostic;
 
-  constructor(diagnostic: NoteProfileDiagnostic) {
-    super(noteProfileDiagnosticNotice(diagnostic));
-    this.name = "BatchProfileRefusedError";
+  constructor(diagnostic: NoteOperationDiagnostic) {
+    super(noteOperationDiagnosticNotice(diagnostic));
+    this.name = "BatchUpdateRefusedError";
     this.diagnostic = diagnostic;
   }
 }

@@ -28,7 +28,10 @@ import { InertTemplateError } from "@/services/template/errors";
 
 import type { NoteFeature, UpdateScope } from "./operations";
 import type { BatchUpdateResult } from "./update-batch";
-import { noteProfileDiagnosticNotice, updateNoteToast } from "./update-single";
+import {
+  noteOperationDiagnosticNotice,
+  updateNoteToast,
+} from "./update-single";
 
 interface NoteFeatureActionDeps {
   app: App;
@@ -295,7 +298,7 @@ async function handleOverwriteNote(
     loading: m.notice_overwriting_note(),
     success: (result) =>
       result.diagnostic
-        ? noteProfileDiagnosticNotice(result.diagnostic)
+        ? noteOperationDiagnosticNotice(result.diagnostic)
         : m.notice_overwrote_note(),
     error: (_msg, e) =>
       e instanceof InertTemplateError

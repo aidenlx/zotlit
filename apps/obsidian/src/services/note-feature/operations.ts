@@ -35,6 +35,7 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
 } from "@/lib/constants";
 import { ensureParentFolder } from "@/lib/ensure-folder";
+import * as m from "@/lib/i18n/generated/messages";
 import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
 import { isFileExistsError } from "@/lib/vault-errors";
@@ -51,7 +52,12 @@ import {
   resolveNotePath,
 } from "./context";
 import type { NoteFeatureDeps, SyncRenderDeps } from "./context";
-import { applyManagedFrontmatter } from "./frontmatter";
+import {
+  applyDocumentManagedFrontmatter,
+  applyManagedFrontmatter,
+  prepareManagedFrontmatter,
+} from "./frontmatter";
+import type { PreparedManagedFrontmatter } from "./frontmatter";
 
 const logger = getLogger("note-feature");
 
@@ -65,7 +71,7 @@ export interface UpdateResult {
   bodyUpdated: boolean;
   duplicateRegionCount: number;
   noManagedBlock?: true;
-  diagnostic?: NoteProfileDiagnostic;
+  diagnostic?: NoteOperationDiagnostic;
 }
 
 export interface ExistingNoteDiagnostic {
@@ -108,15 +114,33 @@ export interface LiteratureNoteTemplateConversionRequiredDiagnostic {
   indexedKey?: string;
 }
 
-export type NoteProfileDiagnostic =
+export interface ManagedFrontmatterFailureDiagnostic {
+  field: string;
+  message: string;
+  hint: string;
+}
+
+export interface ManagedFrontmatterRefusalDiagnostic {
+  code: "managed-frontmatter-refused";
+  hint: string;
+  failures: [
+    ManagedFrontmatterFailureDiagnostic,
+    ...ManagedFrontmatterFailureDiagnostic[],
+  ];
+  path?: string;
+  indexedKey?: string;
+}
+
+export type NoteOperationDiagnostic =
   | UnknownNoteProfileDiagnostic
   | NoteProfileConflictDiagnostic
   | MissingLiteratureNoteTemplateDiagnostic
-  | LiteratureNoteTemplateConversionRequiredDiagnostic;
+  | LiteratureNoteTemplateConversionRequiredDiagnostic
+  | ManagedFrontmatterRefusalDiagnostic;
 
 export type CreateNoteDiagnostic =
   | ExistingNoteDiagnostic
-  | NoteProfileDiagnostic;
+  | NoteOperationDiagnostic;
 
 export type CreateNoteResult =
   | { outcome: "created"; file: TFile }
@@ -178,8 +202,8 @@ export interface WriteNoteUpdateOptions {
 /** Events the bound note feature emits; a UI subscriber owns any rendering. */
 export interface NoteFeatureEvents {
   /**
-   * Frontmatter field expressions threw during a write; the write still
-   * completed with those keys skipped.
+   * A legacy settings-held frontmatter expression failed during a write; the
+   * write completed with those keys skipped.
    */
   "frontmatter-eval-failed": (payload: {
     itemKey: string;
@@ -443,7 +467,7 @@ async function createNote(
   for (let attempt = 0; ; attempt++) {
     let fileCreated = false;
     try {
-      const file = await writeNewNote(ctx, item, {
+      const result = await writeNewNote(ctx, item, {
         client: lease.client,
         tagMemo,
         collectionCache,
@@ -458,7 +482,7 @@ async function createNote(
           options.onFileCreated?.(created);
         },
       });
-      return { outcome: "created", file };
+      return result;
     } catch (error) {
       if (
         fileCreated ||
@@ -505,7 +529,7 @@ async function writeNewNote(
     username: string | null;
     onFileCreated?: (file: TFile) => void;
   },
-): Promise<TFile> {
+): Promise<CreateNoteResult> {
   const { tagMemo, collectionCache, path, settings } = options;
   await ensureParentFolder(ctx.app, path);
 
@@ -530,6 +554,15 @@ async function writeNewNote(
     groupIdMemo: options.groupIdMemo,
     username: options.username,
   });
+  const prepared = prepareFrontmatter({
+    context,
+    itemKey: item.indexedKey,
+    document: options.document,
+    diagnosticContext: { indexedKey: item.indexedKey },
+  });
+  if ("diagnostic" in prepared) {
+    return { outcome: "refused", diagnostic: prepared.diagnostic };
+  }
   const body = options.document
     ? options.document.renderForCreate(context)
     : ctx.template.render("note", context);
@@ -538,6 +571,7 @@ async function writeNewNote(
     context,
     itemKey: item.indexedKey,
     profile: options.profile,
+    prepared,
   });
   const content = `---\n${stringifyYaml(fm)}---\n${body}`;
 
@@ -546,7 +580,7 @@ async function writeNewNote(
   await attachmentImport.flush();
   await noteImport.flush();
   logger.debug("Created literature note", { path, itemKey: item.indexedKey });
-  return file;
+  return { outcome: "created", file };
 }
 
 async function updateNote(
@@ -588,8 +622,7 @@ async function updateNote(
   if (conversionRequired(settings, profileId)) {
     return refusedUpdateTemplateConversion(profileId!, file.path);
   }
-  const document =
-    scope === "full" ? resolveProfileDocument(ctx, profile) : undefined;
+  const document = resolveProfileDocument(ctx, profile);
   if (document === null) {
     return refusedUpdateMissingDocument(profile.document!, file.path);
   }
@@ -690,10 +723,7 @@ async function writeNoteUpdate(
   if (conversionRequired(options.settings, profileId)) {
     return refusedUpdateTemplateConversion(profileId!, file.path);
   }
-  const document =
-    options.scope === "metadata"
-      ? undefined
-      : resolveProfileDocument(ctx, profile);
+  const document = resolveProfileDocument(ctx, profile);
   if (document === null) {
     return refusedUpdateMissingDocument(profile.document!, file.path);
   }
@@ -729,8 +759,9 @@ async function writeNoteUpdate(
   });
 }
 
-/** Compose a managed update from its steps: always refresh frontmatter, and for
- *  the `full` scope also replace the managed body region. Shared by
+/** Compose a managed update from its steps: prepare and refresh frontmatter,
+ *  then for the `full` scope replace the managed body region. A document field
+ *  refusal returns before either write. Shared by
  *  {@link updateNote} and {@link writeNoteUpdate}; the caller supplies the
  *  already-built context and its prepared `attachmentImport`. */
 async function applyManagedUpdate(
@@ -755,7 +786,13 @@ async function applyManagedUpdate(
     profile,
     document,
   } = input;
-  await refreshFrontmatter(ctx, file, { context, itemKey, profile });
+  const diagnostic = await refreshFrontmatter(ctx, file, {
+    context,
+    itemKey,
+    profile,
+    document,
+  });
+  if (diagnostic) return { ...NO_BODY_UPDATE, diagnostic };
   const result =
     scope === "full"
       ? document
@@ -866,11 +903,13 @@ async function overwriteNote(
     sourcePath: file.path,
     settings: profile.settings,
   });
-  await refreshFrontmatter(ctx, file, {
+  const diagnostic = await refreshFrontmatter(ctx, file, {
     context,
     itemKey: indexedKey,
     profile,
+    document,
   });
+  if (diagnostic) return { ...NO_BODY_UPDATE, diagnostic };
   const body = document
     ? document.renderForCreate(context)
     : ctx.template.render("note", context);
@@ -1033,18 +1072,70 @@ async function refreshFrontmatter(
     context: NoteTemplateContext;
     itemKey: string;
     profile: ResolvedLiteratureNoteProfile;
+    document: ResolvedLiteratureNoteTemplate | undefined;
   },
-): Promise<void> {
+): Promise<ManagedFrontmatterRefusalDiagnostic | undefined> {
+  const prepared = prepareFrontmatter({
+    context: input.context,
+    itemKey: input.itemKey,
+    document: input.document,
+    diagnosticContext: { path: file.path },
+  });
+  if ("diagnostic" in prepared) return prepared.diagnostic;
   await ctx.app.fileManager.processFrontMatter(file, (fm) => {
-    applyFrontmatter(ctx, fm, input);
+    applyFrontmatter(ctx, fm, { ...input, prepared });
   });
 }
 
-/**
- * Apply managed frontmatter into the target. Field expressions that throw are
- * skipped so the import still completes; the skipped keys are logged and
- * surfaced in one `frontmatter-eval-failed` event.
- */
+function prepareFrontmatter(input: {
+  context: NoteTemplateContext;
+  itemKey: string;
+  document: ResolvedLiteratureNoteTemplate | undefined;
+  diagnosticContext: { path?: string; indexedKey?: string };
+}):
+  | PreparedManagedFrontmatter
+  | { diagnostic: ManagedFrontmatterRefusalDiagnostic } {
+  const frontmatter = input.document?.frontmatter;
+  const result = prepareManagedFrontmatter(
+    frontmatter,
+    input.context,
+    Temporal.Now.instant(),
+  );
+  if ("prepared" in result) return result.prepared;
+
+  const failures = result.failures.map(({ key: field, reason, error }) => {
+    if (reason === "evaluation") {
+      logger.warn("Managed Frontmatter field failed", {
+        key: field,
+        itemKey: input.itemKey,
+        error,
+      });
+      return {
+        field,
+        message: m.managed_frontmatter_eval_failure({ field }),
+        hint: m.managed_frontmatter_eval_recovery({ field }),
+      };
+    }
+    return {
+      field,
+      message: m.managed_frontmatter_inert_failure({ field }),
+      hint: m.managed_frontmatter_inert_recovery({ field }),
+    };
+  }) as [
+    ManagedFrontmatterFailureDiagnostic,
+    ...ManagedFrontmatterFailureDiagnostic[],
+  ];
+  return {
+    diagnostic: {
+      code: "managed-frontmatter-refused",
+      hint: m.managed_frontmatter_refused_recovery(),
+      failures,
+      ...input.diagnosticContext,
+    },
+  };
+}
+
+/** Apply one prepared document patch or the legacy settings-held field set. */
 function applyFrontmatter(
   ctx: OpsContext,
   fm: Record<string, unknown>,
@@ -1052,27 +1143,33 @@ function applyFrontmatter(
     context: NoteTemplateContext;
     itemKey: string;
     profile: ResolvedLiteratureNoteProfile;
+    prepared: PreparedManagedFrontmatter;
   },
 ): void {
-  const { context, itemKey, profile } = input;
+  const { context, itemKey, profile, prepared } = input;
   const failed: string[] = [];
-  applyManagedFrontmatter(fm, context, {
-    compiled: ctx.template.frontmatterFields,
-    onError: (key, error) => {
-      failed.push(key);
-      logger.warn("Frontmatter expression failed", { key, itemKey, error });
-    },
-    onConflict: (key, detail) => {
-      logger.warn("Skipped frontmatter append", { key, itemKey, ...detail });
-    },
-  });
+  const onConflict = (key: string, detail: { reason: "shape-mismatch" }) => {
+    logger.warn("Skipped frontmatter append", { key, itemKey, ...detail });
+  };
+  if (prepared.kind === "document") {
+    applyDocumentManagedFrontmatter(fm, context, { prepared, onConflict });
+  } else {
+    applyManagedFrontmatter(fm, context, {
+      compiled: ctx.template.frontmatterFields,
+      onError: (key, error) => {
+        failed.push(key);
+        logger.warn("Frontmatter expression failed", { key, itemKey, error });
+      },
+      onConflict,
+    });
+  }
+  if (failed.length > 0) {
+    ctx.events.emit("frontmatter-eval-failed", { itemKey, fields: failed });
+  }
   if (profile.id === undefined) delete fm[FIELD_LITERATURE_NOTE_PROFILE];
   else fm[FIELD_LITERATURE_NOTE_PROFILE] = profile.id;
   if (profile.citationStyle == null) delete fm[FIELD_CITATION_STYLE];
   else fm[FIELD_CITATION_STYLE] = profile.citationStyle;
-  if (failed.length > 0) {
-    ctx.events.emit("frontmatter-eval-failed", { itemKey, fields: failed });
-  }
 }
 
 interface ResolvedLiteratureNoteProfile {
