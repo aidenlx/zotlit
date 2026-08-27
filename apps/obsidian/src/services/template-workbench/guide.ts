@@ -230,6 +230,10 @@ ZOTLIT FILTERS
   arr_replace Replace every occurrence of a substring in every element.
               The replacement defaults to an empty string, which deletes it.
               {{ zt.collections | collection_paths | arr_replace: "/", " > " }}
+  flatten     Flatten an array by one level. Pass a non-negative integer for
+              more levels. Order and duplicates stay unchanged; use uniq to
+              deduplicate explicitly.
+              {{ zt.collections | map: "path" | flatten | uniq }}
   obsidian_tag
               Convert text into a valid Obsidian tag, with an optional prefix.
               Accepts an array or one value, and reads the name of a Zotero

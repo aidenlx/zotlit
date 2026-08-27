@@ -38,6 +38,8 @@ export const LIQUID_BUILTIN_TAG_NAMES: readonly string[] = Object.freeze(
   Object.keys(tags).sort(),
 );
 
+const FLATTEN_FILTER_NAME = "flatten";
+
 export const ZOTLIT_FILTER_NAMES: readonly string[] = Object.freeze([
   "embed",
   "file_link",
@@ -48,6 +50,7 @@ export const ZOTLIT_FILTER_NAMES: readonly string[] = Object.freeze([
   "arr_prefix",
   "arr_suffix",
   "arr_replace",
+  FLATTEN_FILTER_NAME,
   "obsidian_tag",
 ]);
 
@@ -273,6 +276,8 @@ export function createLiquidEngine({
     },
   );
 
+  engine.registerFilter(FLATTEN_FILTER_NAME, flatten);
+
   engine.registerFilter("obsidian_tag", (value: unknown, prefix?: string) => {
     const prefixed = (item: unknown): string => {
       const body = normalizeObsidianTag(tagName(item));
@@ -301,6 +306,14 @@ export function createLiquidEngine({
   );
 
   return engine;
+}
+
+function flatten(items: unknown, depth = 1): unknown[] {
+  if (!Array.isArray(items)) throw new TypeError("flatten requires an array");
+  if (!Number.isInteger(depth) || depth < 0) {
+    throw new TypeError("flatten depth must be a non-negative integer");
+  }
+  return items.flat(depth);
 }
 
 /**
