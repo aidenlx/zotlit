@@ -19,7 +19,7 @@ The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered 
 _Avoid_: managed block, template region, synced region
 
 **Managed Frontmatter**:
-Frontmatter fields on a Literature Note whose values are re-evaluated from JSON-e templates on update. `zotero-key` is the system field; each ordered user-configured entry declares a static key, one JSON-e value template, and a merge strategy. The value template can return any valid frontmatter scalar, sequence, or mapping and can conditionally make its field absent. Each field's merge strategy (replace, append arrays, keep existing) governs how the result combines with the value already on the note. Unmanaged keys are preserved. Entry order is the write order for fields on a newly created note; on an update, keys already on the note keep their position.
+Frontmatter fields on a Literature Note whose values are re-evaluated on update. `zotero-key` is the system field; each ordered user-configured entry declares a static key, a merge strategy, and one value in exactly one language tier — a Liquid expression for plain values, a JSON-e template for nested construction and conditional presence, or a JavaScript expression behind JavaScript Templates. A value can return any valid frontmatter scalar, sequence, or mapping; only a JSON-e value can make its field absent, and an absent field is deleted under replace and preserved under append and keep. Each field's merge strategy (replace, append arrays, keep existing) governs how the result combines with the value already on the note. Unmanaged keys are preserved. Entry order is the write order for fields on a newly created note; on an update, keys already on the note keep their position.
 
 ### Templates
 
