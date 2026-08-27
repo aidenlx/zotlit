@@ -52,11 +52,10 @@ export const Route = createRootRoute({
       { rel: "icon", href: "/favicon.ico", sizes: "32x32" },
       { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
       // Serif display paints on essentially every route, so both its latin
-      // faces are fetched eagerly — upright for headlines, italic for the lede
-      // and standfirst lines that ride beside them. Inter and IBM Plex Mono
-      // stay unpreloaded: both swap in from a system fallback of the same
-      // class. The Archivo wordmark needs no entry — it is small enough that
-      // Vite inlines it into the stylesheet.
+      // faces are eager — upright for headlines, italic for the lede and
+      // standfirst lines that ride beside them. Inter and IBM Plex Mono use
+      // metric-adjusted local fallbacks instead. The Archivo wordmark needs no
+      // entry — Vite inlines its small subset into the stylesheet.
       // @see apps/docs/DESIGN.md → Font loading
       ...[gelasioLatin, gelasioLatinItalic].map((href) => ({
         rel: "preload",

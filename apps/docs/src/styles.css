@@ -16,6 +16,37 @@
 @import "@fontsource/ibm-plex-mono/500.css";
 @import "@fontsource/ibm-plex-mono/600.css";
 
+/* Metric-adjusted local fallbacks preserve the shift-free swaps that
+   next/font generated before the TanStack Start migration. The values come
+   from Next.js 16.3.0's font metrics for the same Google Font families.
+   @see apps/docs/DESIGN.md → Font loading */
+@font-face {
+  font-family: "Inter Fallback";
+  src: local("Arial");
+  ascent-override: 90.44%;
+  descent-override: 22.52%;
+  line-gap-override: 0%;
+  size-adjust: 107.12%;
+}
+
+@font-face {
+  font-family: "Gelasio Fallback";
+  src: local("Times New Roman");
+  ascent-override: 84.54%;
+  descent-override: 31.15%;
+  line-gap-override: 0%;
+  size-adjust: 109.74%;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono Fallback";
+  src: local("Arial");
+  ascent-override: 76.16%;
+  descent-override: 20.43%;
+  line-gap-override: 0%;
+  size-adjust: 134.59%;
+}
+
 /* Archivo SemiBold subset to the five "ZotLit" glyphs (~1 KB) — the wordmark,
    and nothing else. @see docs/brand.md */
 @font-face {
@@ -84,19 +115,21 @@
      --default-font-family, which resolves to --font-sans, so Inter reaches
      everywhere — portaled dialogs and the not-found page included. */
   --font-sans:
-    "Inter Variable", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
-    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    "Inter Variable", "Inter Fallback", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --font-brand: "Archivo ZotLit", ui-sans-serif, system-ui, sans-serif;
   /* IBM Plex Mono is the "Machine" voice — overriding --font-mono here reroutes
      both the `font-mono` utility and every var(--font-mono) reference (code,
      kbd, version chips, meta lines, uppercase apparatus labels) onto it. */
   --font-mono:
-    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
-    "Liberation Mono", monospace;
+    "IBM Plex Mono", "IBM Plex Mono Fallback", ui-monospace, SFMono-Regular,
+    Menlo, Consolas, "Liberation Mono", monospace;
   /* Serif is opt-in per surface, so --font-serif names the stack rather than
      riding on <html>; the system-serif tail carries a surface until Gelasio
      swaps in. */
-  --font-serif: "Gelasio Variable", "Iowan Old Style", Charter, Georgia, serif;
+  --font-serif:
+    "Gelasio Variable", "Gelasio Fallback", "Iowan Old Style", Charter, Georgia,
+    serif;
 }
 
 /* Accepted stable-id anchor: the TOC "On this page" h3 ships with this exact
