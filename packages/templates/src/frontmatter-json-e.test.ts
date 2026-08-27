@@ -105,6 +105,48 @@ describe("Managed Frontmatter JSON-e values", () => {
     );
   });
 
+  it("does not expose callable zt properties", () => {
+    let calls = 0;
+
+    expect(() =>
+      render(
+        { $eval: "zt.probe()" },
+        {
+          probe: () => {
+            calls += 1;
+            return "executed";
+          },
+        },
+      ),
+    ).toThrow(FrontmatterJsonEError);
+    expect(calls).toBe(0);
+  });
+
+  it("snapshots accessor-backed zt data", () => {
+    const zt = Object.defineProperty({}, "title", {
+      enumerable: true,
+      get: () => "A Study",
+    });
+
+    expect(render({ $eval: "zt.title" }, zt)).toBe("A Study");
+  });
+
+  it("preserves documented accessor back-references", () => {
+    const zt: Record<string, unknown> = {
+      title: "A Study",
+      annotations: [],
+    };
+    const annotation = Object.defineProperty({}, "parentItem", {
+      enumerable: true,
+      get: () => zt,
+    });
+    (zt.annotations as unknown[]).push(annotation);
+
+    expect(render({ $eval: "zt.annotations[0].parentItem.title" }, zt)).toBe(
+      "A Study",
+    );
+  });
+
   it.each([
     ["a function", () => undefined],
     ["a non-finite number", Number.POSITIVE_INFINITY],

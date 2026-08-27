@@ -100,9 +100,11 @@ export function applyDocumentManagedFrontmatter(
     current: fm,
     onConflict: options.onConflict,
   });
-  for (const [key, value] of Object.entries(patch)) {
+  for (const { key } of prepared.fields) {
+    if (!Object.hasOwn(patch, key)) continue;
+    const value = patch[key];
     if (value === FRONTMATTER_ABSENT) delete fm[key];
-    else fm[key] = value;
+    else defineFrontmatterValue(fm, key, value);
   }
   fm[FIELD_ZOTERO_KEY] = zt.indexedKey;
 }
@@ -121,7 +123,24 @@ export function applyManagedFrontmatter(
     current: fm,
     onConflict: options.onConflict,
   });
-  for (const [key, value] of Object.entries(userPatch)) fm[key] = value;
+  for (const { key } of options.compiled) {
+    if (Object.hasOwn(userPatch, key)) {
+      defineFrontmatterValue(fm, key, userPatch[key]);
+    }
+  }
 
   fm[FIELD_ZOTERO_KEY] = zt.indexedKey;
+}
+
+function defineFrontmatterValue(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
 }

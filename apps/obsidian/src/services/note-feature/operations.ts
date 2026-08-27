@@ -23,6 +23,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import type { UpdateScope } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { Emitter } from "@zotlit/shared/nanoevents";
+import { stringifyFrontmatterInOrder } from "@zotlit/templates/frontmatter";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
 import {
@@ -573,7 +574,14 @@ async function writeNewNote(
     profile: options.profile,
     prepared,
   });
-  const content = `---\n${stringifyYaml(fm)}---\n${body}`;
+  const content = `---\n${
+    prepared.kind === "document"
+      ? stringifyFrontmatterInOrder(
+          fm,
+          prepared.fields.map(({ key }) => key),
+        )
+      : stringifyYaml(fm)
+  }---\n${body}`;
 
   const file = await ctx.app.vault.create(path, content);
   options.onFileCreated?.(file);

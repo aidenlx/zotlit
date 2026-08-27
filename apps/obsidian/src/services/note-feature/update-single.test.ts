@@ -114,7 +114,7 @@ describe("updateNoteToast", () => {
     );
   });
 
-  it("names every Managed Frontmatter field in a refusal", () => {
+  it("reports every Managed Frontmatter failure and recovery action", () => {
     const { success } = updateNoteToast("full");
 
     expect(
@@ -125,13 +125,22 @@ describe("updateNoteToast", () => {
           code: "managed-frontmatter-refused",
           hint: "Correct the named fields, then try again.",
           failures: [
-            { field: "tags", message: "failed", hint: "correct tags" },
-            { field: "creators", message: "failed", hint: "correct creators" },
+            {
+              field: "tags",
+              message: "Managed Frontmatter field 'tags' failed to evaluate.",
+              hint: "Correct 'tags' in the template document.",
+            },
+            {
+              field: "creators",
+              message:
+                "Managed Frontmatter field 'creators' requires JavaScript Templates.",
+              hint: "Enable JavaScript Templates on this device.",
+            },
           ],
         },
       }),
     ).toBe(
-      "Correct these Managed Frontmatter fields, then try again: tags, creators.",
+      "ZotLit kept the existing Managed Frontmatter. Managed Frontmatter field 'tags' failed to evaluate. Correct 'tags' in the template document. Managed Frontmatter field 'creators' requires JavaScript Templates. Enable JavaScript Templates on this device.",
     );
   });
 

@@ -1047,9 +1047,10 @@ describe("createNote", () => {
       createBody: `# Books layout\n\n${formatManagedRegion("BOOK BODY")}`,
       filename: `Book-Root${filenameSuffix()}`,
       frontmatter: compileDocumentFrontmatter([
-        { key: "first", merge: "replace", value: "one" },
+        { key: "2", merge: "replace", value: "two" },
+        { key: "__proto__", merge: "replace", value: "safe" },
         { key: "conditional", merge: "replace", value: { $if: "false" } },
-        { key: "second", merge: "replace", value: ["two"] },
+        { key: "1", merge: "replace", value: "one" },
       ]),
     });
     const template: SyncRenderDeps["template"] = {
@@ -1101,11 +1102,15 @@ describe("createNote", () => {
       `# Books layout\n\n${formatManagedRegion("BOOK BODY")}`,
     );
     const content = app.vault.contentByPath.get(file.path)!;
-    expect(content).toContain("first: one");
-    expect(content).toContain("second: two");
+    expect(content).toContain('"2": two');
+    expect(content).toContain("__proto__: safe");
+    expect(content).toContain('"1": one');
     expect(content).not.toContain("conditional:");
-    expect(content.indexOf("first: one")).toBeLessThan(
-      content.indexOf("second:"),
+    expect(content.indexOf('"2": two')).toBeLessThan(
+      content.indexOf("__proto__: safe"),
+    );
+    expect(content.indexOf("__proto__: safe")).toBeLessThan(
+      content.indexOf('"1": one'),
     );
     expect(content).toContain(`${FIELD_ZOTERO_KEY}: ROOT1234`);
     expect(content).toContain(`${FIELD_LITERATURE_NOTE_PROFILE}: ${profileId}`);

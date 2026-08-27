@@ -196,7 +196,9 @@ export function noteOperationDiagnosticNotice(
       return m.notice_literature_note_template_conversion_required();
     case "managed-frontmatter-refused":
       return m.notice_managed_frontmatter_refused({
-        fields: diagnostic.failures.map(({ field }) => field).join(", "),
+        failures: diagnostic.failures
+          .map(({ message, hint }) => `${message} ${hint}`)
+          .join(" "),
       });
   }
 }
