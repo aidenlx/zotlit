@@ -4,7 +4,10 @@ import type { App, EventRef, Plugin, TAbstractFile } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
-import { evalFrontmatterFields } from "@zotlit/templates/frontmatter";
+import {
+  evalFrontmatterFields,
+  evalManagedFrontmatterEntries,
+} from "@zotlit/templates/frontmatter";
 import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -231,6 +234,47 @@ describe("TemplateService", () => {
     await vi.advanceTimersByTimeAsync(500);
 
     expect(service.getLiteratureNoteTemplate("books.md")).toBeUndefined();
+  });
+
+  it("compiles document frontmatter with the per-device JavaScript gate", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/books.md",
+      literatureNoteDocument("Books").replace(
+        'filename: "{{ zt.title }}"',
+        `filename: "{{ zt.title }}"
+frontmatter:
+  - key: title
+    merge: replace
+    expr: zt.title
+  - key: scripted
+    merge: replace
+    js: zt.title + "!"`,
+      ),
+    );
+    const { service } = await makeHarness({ vault });
+
+    const inert = service.getLiteratureNoteTemplate("books.md")?.frontmatter;
+    expect(inert?.inertKeys).toEqual(["scripted"]);
+    expect(
+      evalManagedFrontmatterEntries(
+        inert?.compiled ?? [],
+        { title: "Paper" },
+        Temporal.Now.instant(),
+      ).values,
+    ).toEqual({ title: "Paper" });
+
+    await service.setJavascriptTemplatesEnabled(true);
+
+    const active = service.getLiteratureNoteTemplate("books.md")?.frontmatter;
+    expect(active?.inertKeys).toEqual([]);
+    expect(
+      evalManagedFrontmatterEntries(
+        active?.compiled ?? [],
+        { title: "Paper" },
+        Temporal.Now.instant(),
+      ).values,
+    ).toEqual({ title: "Paper", scripted: "Paper!" });
   });
 
   it("reports valid and invalid Literature Note Template documents", async () => {

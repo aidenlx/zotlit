@@ -114,6 +114,27 @@ describe("updateNoteToast", () => {
     );
   });
 
+  it("names every Managed Frontmatter field in a refusal", () => {
+    const { success } = updateNoteToast("full");
+
+    expect(
+      success({
+        bodyUpdated: false,
+        duplicateRegionCount: 0,
+        diagnostic: {
+          code: "managed-frontmatter-refused",
+          hint: "Correct the named fields, then try again.",
+          failures: [
+            { field: "tags", message: "failed", hint: "correct tags" },
+            { field: "creators", message: "failed", hint: "correct creators" },
+          ],
+        },
+      }),
+    ).toBe(
+      "Correct these Managed Frontmatter fields, then try again: tags, creators.",
+    );
+  });
+
   it.each(["full", "metadata"] as const)(
     "surfaces an InertTemplateError's own message for the %s scope",
     (scope) => {

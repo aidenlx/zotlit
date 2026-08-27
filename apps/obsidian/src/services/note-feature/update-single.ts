@@ -12,7 +12,7 @@ import { EmptyFilenameError } from "@/services/note-feature/filename";
 import type {
   CreateNoteResult,
   NoteFeature,
-  NoteProfileDiagnostic,
+  NoteOperationDiagnostic,
   UpdateResult,
   UpdateScope,
 } from "@/services/note-feature/operations";
@@ -95,7 +95,7 @@ export function updateNoteToast(scope: UpdateScope): {
       loading: m.notice_updating_note_metadata(),
       success: (result) =>
         result.diagnostic
-          ? noteProfileDiagnosticNotice(result.diagnostic)
+          ? noteOperationDiagnosticNotice(result.diagnostic)
           : m.notice_updated_note_metadata(),
       error,
     };
@@ -104,7 +104,7 @@ export function updateNoteToast(scope: UpdateScope): {
     loading: m.notice_updating_note(),
     success: (result) =>
       result.diagnostic
-        ? noteProfileDiagnosticNotice(result.diagnostic)
+        ? noteOperationDiagnosticNotice(result.diagnostic)
         : result.bodyUpdated
           ? m.notice_updated_note()
           : result.noManagedBlock
@@ -173,12 +173,13 @@ export function createNoteNotice(result: CreateNoteResult): string {
     case "literature-note-profile-conflict":
     case "missing-literature-note-template":
     case "literature-note-template-conversion-required":
-      return noteProfileDiagnosticNotice(diagnostic);
+    case "managed-frontmatter-refused":
+      return noteOperationDiagnosticNotice(diagnostic);
   }
 }
 
-export function noteProfileDiagnosticNotice(
-  diagnostic: NoteProfileDiagnostic,
+export function noteOperationDiagnosticNotice(
+  diagnostic: NoteOperationDiagnostic,
 ): string {
   switch (diagnostic.code) {
     case "unknown-literature-note-profile":
@@ -193,6 +194,10 @@ export function noteProfileDiagnosticNotice(
       });
     case "literature-note-template-conversion-required":
       return m.notice_literature_note_template_conversion_required();
+    case "managed-frontmatter-refused":
+      return m.notice_managed_frontmatter_refused({
+        fields: diagnostic.failures.map(({ field }) => field).join(", "),
+      });
   }
 }
 

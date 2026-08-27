@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { compileFrontmatterFields, evalFrontmatterFields } from "./frontmatter";
+import {
+  compileFrontmatterFields,
+  compileManagedFrontmatterEntries,
+  evalFrontmatterFields,
+  evalManagedFrontmatterEntries,
+} from "./frontmatter";
 import type { FrontmatterField } from "./frontmatter";
 import { createLiquidEngine } from "./liquid";
+import type { ManagedFrontmatterEntry } from "./literature-note-template";
 
 function evalFields(
   fields: readonly FrontmatterField[],
@@ -202,6 +208,76 @@ describe("evalFrontmatterFields (javascript fields)", () => {
       defaultExt: "Smith2024",
       customExt: "Smith2024.md",
     });
+  });
+});
+
+describe("document Managed Frontmatter entries", () => {
+  const operationTimestamp = Temporal.Instant.from("2026-08-28T01:02:03Z");
+
+  function compile(
+    entries: readonly ManagedFrontmatterEntry[],
+    javascript = true,
+  ) {
+    return compileManagedFrontmatterEntries(entries, {
+      liquid: createLiquidEngine(),
+      javascript,
+    });
+  }
+
+  it("evaluates expr, value, and js entries in order", () => {
+    const result = evalManagedFrontmatterEntries(
+      compile([
+        { key: "title", merge: "replace", expr: "zt.title" },
+        {
+          key: "tags",
+          merge: "append",
+          value: { $eval: "zt.tags" },
+        },
+        { key: "label", merge: "keep", js: "zt.title + '!'" },
+      ]).compiled,
+      { title: "A Study", tags: ["paper"] },
+      operationTimestamp,
+    );
+
+    expect(result).toEqual({
+      values: { title: "A Study", tags: ["paper"], label: "A Study!" },
+      errors: [],
+    });
+  });
+
+  it("collects every field error without substitute values", () => {
+    const result = evalManagedFrontmatterEntries(
+      compile([
+        { key: "broken-expr", merge: "replace", expr: "zt.title | flatten" },
+        {
+          key: "broken-value",
+          merge: "replace",
+          value: { $eval: "zt.infinity" },
+        },
+        { key: "working", merge: "replace", expr: "zt.title" },
+      ]).compiled,
+      { title: "A Study", infinity: Number.POSITIVE_INFINITY },
+      operationTimestamp,
+    );
+
+    expect(result.values).toEqual({ working: "A Study" });
+    expect(result.errors.map(({ key }) => key)).toEqual([
+      "broken-expr",
+      "broken-value",
+    ]);
+  });
+
+  it("keeps js entries inert when JavaScript Templates are disabled", () => {
+    const compiled = compile(
+      [
+        { key: "plain", merge: "replace", expr: "zt.title" },
+        { key: "scripted", merge: "replace", js: "zt.title" },
+      ],
+      false,
+    );
+
+    expect(compiled.inertKeys).toEqual(["scripted"]);
+    expect(compiled.compiled.map(({ key }) => key)).toEqual(["plain"]);
   });
 });
 

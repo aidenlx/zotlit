@@ -25,7 +25,10 @@ import defaultCite from "@zotlit/templates/defaults/cite.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import { compileFrontmatterFields } from "@zotlit/templates/frontmatter";
-import type { CompiledFrontmatterField } from "@zotlit/templates/frontmatter";
+import type {
+  CompiledFrontmatterField,
+  CompiledManagedFrontmatter,
+} from "@zotlit/templates/frontmatter";
 import { createLiquidEngine } from "@zotlit/templates/liquid";
 import {
   formatManagedRegion,
@@ -1035,7 +1038,7 @@ describe("createNote", () => {
     expect(document.renderForCreate).toHaveBeenCalledOnce();
   });
 
-  it("renders a Profile document body and manifest filename", async () => {
+  it("creates a Profile note from its document body, filename, and frontmatter", async () => {
     const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
     const item = makeCreateGateItem();
     vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
@@ -1043,6 +1046,11 @@ describe("createNote", () => {
     const document = makeDocumentTemplate({
       createBody: `# Books layout\n\n${formatManagedRegion("BOOK BODY")}`,
       filename: `Book-Root${filenameSuffix()}`,
+      frontmatter: compileDocumentFrontmatter([
+        { key: "first", merge: "replace", value: "one" },
+        { key: "conditional", merge: "replace", value: { $if: "false" } },
+        { key: "second", merge: "replace", value: ["two"] },
+      ]),
     });
     const template: SyncRenderDeps["template"] = {
       ...makeTemplate(),
@@ -1092,9 +1100,71 @@ describe("createNote", () => {
     expect(app.vault.contentByPath.get(file.path)).toContain(
       `# Books layout\n\n${formatManagedRegion("BOOK BODY")}`,
     );
+    const content = app.vault.contentByPath.get(file.path)!;
+    expect(content).toContain("first: one");
+    expect(content).toContain("second: two");
+    expect(content).not.toContain("conditional:");
+    expect(content.indexOf("first: one")).toBeLessThan(
+      content.indexOf("second:"),
+    );
+    expect(content).toContain(`${FIELD_ZOTERO_KEY}: ROOT1234`);
+    expect(content).toContain(`${FIELD_LITERATURE_NOTE_PROFILE}: ${profileId}`);
     expect(document.renderForCreate).toHaveBeenCalledOnce();
     expect(document.renderFilename).toHaveBeenCalled();
     expect(renderLegacy).not.toHaveBeenCalledWith("note", expect.anything());
+  });
+
+  it("refuses create before writing when a document js field is inert", async () => {
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    const app = makeApp();
+    const document = makeDocumentTemplate({
+      frontmatter: compileDocumentFrontmatter(
+        [{ key: "scripted", merge: "replace", js: "zt.title" }],
+        false,
+      ),
+    });
+    const result = await createNoteFeature({
+      app,
+      template: {
+        ...makeTemplate(),
+        getLiteratureNoteTemplate: () => document,
+      },
+      db: makeDb(),
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings({
+        "note.profiles": [
+          { id: profileId, label: "Books", document: "books.md" },
+        ],
+      }),
+      attachmentImport: blockedAttachmentImport,
+      noteImport: {
+        prepare: async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            indexedKey: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+        }),
+      },
+    }).createNote(makeCreateGateItem(), { profileId });
+
+    expect(result).toMatchObject({
+      outcome: "refused",
+      diagnostic: {
+        code: "managed-frontmatter-refused",
+        failures: [{ field: "scripted" }],
+      },
+    });
+    expect(app.vault.create).not.toHaveBeenCalled();
+    expect(document.renderForCreate).not.toHaveBeenCalled();
   });
 
   it("refuses create when a Profile document is missing", async () => {
@@ -1193,6 +1263,51 @@ describe("createNote", () => {
 });
 
 describe("overwriteNote", () => {
+  it("refuses before writing when a document field fails", async () => {
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const item = makeItem({
+      itemID: 1,
+      key: "ROOT1234",
+      indexedKey: "ROOT1234",
+      title: "Root",
+      citationKey: null,
+    });
+    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
+      key: item.key,
+      libraryID: item.libraryID,
+    });
+    vi.mocked(getItemsByKey).mockReturnValue([item]);
+    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    const harness = makeUpdateHarness({
+      content: "Old body content",
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
+      settings: {
+        "note.profiles": [
+          { id: profileId, label: "Books", document: "books.md" },
+        ],
+      },
+    });
+    harness.deps.template.getLiteratureNoteTemplate = () =>
+      makeDocumentTemplate({
+        frontmatter: compileDocumentFrontmatter([
+          { key: "broken", merge: "replace", expr: "zt.title | flatten" },
+        ]),
+      });
+
+    const result = await createNoteFeature(harness.deps).overwriteNote(
+      makeFile("Books/Root.md"),
+      item.indexedKey,
+    );
+
+    expect(result.diagnostic).toMatchObject({
+      code: "managed-frontmatter-refused",
+      failures: [{ field: "broken" }],
+    });
+    expect(harness.content()).toBe("Old body content");
+    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+    expect(harness.processMock).not.toHaveBeenCalled();
+  });
+
   it("preserves a CRLF frontmatter block instead of dropping it", async () => {
     // Obsidian's `processFrontMatter` preserves a note's original `---`
     // delimiter bytes, so a CRLF-authored note still has `\r\n` delimiters
@@ -1569,6 +1684,251 @@ describe("updateNote", () => {
     expect(harness.renderContent).not.toHaveBeenCalled();
     expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
   });
+
+  it("uses document Managed Frontmatter in entry order and preserves other keys", async () => {
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: {
+        unmanaged: "keep",
+        title: "Old title",
+        [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+      },
+      settings: {
+        "note.profiles": [
+          { id: profileId, label: "Books", document: "books.md" },
+        ],
+      },
+    });
+    Object.defineProperty(harness.deps.template, "frontmatterFields", {
+      get: () => {
+        throw new Error("Document fields must not read the legacy field set");
+      },
+    });
+    const document = makeDocumentTemplate({
+      frontmatter: compileDocumentFrontmatter([
+        { key: "title", merge: "replace", expr: "zt.title" },
+        {
+          key: "tags",
+          merge: "replace",
+          value: [{ $eval: "zt.title" }],
+        },
+        { key: "label", merge: "replace", js: "zt.title + '!'" },
+      ]),
+    });
+    harness.deps.template.getLiteratureNoteTemplate = () => document;
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Books/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(result.diagnostic).toBeUndefined();
+    expect(harness.frontmatter()).toEqual({
+      unmanaged: "keep",
+      title: "A Study",
+      [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+      tags: ["A Study"],
+      label: "A Study!",
+      [FIELD_ZOTERO_KEY]: "ABC12345",
+    });
+    expect(harness.frontmatter()).not.toHaveProperty("legacy-only");
+  });
+
+  it("uses document Managed Frontmatter for a metadata-only update", async () => {
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    stubIndexedKeyUpdate(updateContext());
+    const original = `prefix\n${formatManagedRegion("OLD")}\nsuffix`;
+    const harness = makeUpdateHarness({
+      content: original,
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
+      settings: {
+        "note.profiles": [
+          { id: profileId, label: "Books", document: "books.md" },
+        ],
+      },
+    });
+    harness.deps.template.getLiteratureNoteTemplate = () =>
+      makeDocumentTemplate({
+        frontmatter: compileDocumentFrontmatter([
+          { key: "title", merge: "replace", expr: "zt.title" },
+        ]),
+      });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Books/Root.md"),
+      { indexedKey: "ABC12345", scope: "metadata" },
+    );
+
+    expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
+    expect(harness.content()).toBe(original);
+    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.frontmatter()).toMatchObject({
+      title: "A Study",
+      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+    });
+  });
+
+  it("refuses every document field when a js entry is inert", async () => {
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: {
+        status: "reading",
+        [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+      },
+      settings: {
+        "note.profiles": [
+          { id: profileId, label: "Books", document: "books.md" },
+        ],
+      },
+    });
+    harness.deps.template.getLiteratureNoteTemplate = () =>
+      makeDocumentTemplate({
+        frontmatter: compileDocumentFrontmatter(
+          [
+            {
+              key: "broken-expr",
+              merge: "replace",
+              expr: "zt.title | flatten",
+            },
+            { key: "scripted", merge: "replace", js: "zt.title" },
+          ],
+          false,
+        ),
+      });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Books/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(result.diagnostic).toMatchObject({
+      code: "managed-frontmatter-refused",
+      failures: [
+        {
+          field: "broken-expr",
+          message: expect.any(String),
+          hint: expect.any(String),
+        },
+        {
+          field: "scripted",
+          message: expect.any(String),
+          hint: expect.any(String),
+        },
+      ],
+    });
+    expect(harness.frontmatter()).toEqual({
+      status: "reading",
+      [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+    });
+    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+    expect(harness.processMock).not.toHaveBeenCalled();
+  });
+
+  it("collects document field errors and leaves the whole note untouched", async () => {
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    stubIndexedKeyUpdate(updateContext({ infinity: Number.POSITIVE_INFINITY }));
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: {
+        status: "reading",
+        [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+      },
+      settings: {
+        "note.profiles": [
+          { id: profileId, label: "Books", document: "books.md" },
+        ],
+      },
+    });
+    harness.deps.template.getLiteratureNoteTemplate = () =>
+      makeDocumentTemplate({
+        frontmatter: compileDocumentFrontmatter([
+          { key: "broken-expr", merge: "replace", expr: "zt.title | flatten" },
+          {
+            key: "broken-value",
+            merge: "replace",
+            value: { $eval: "zt.infinity" },
+          },
+          { key: "working", merge: "replace", expr: "zt.title" },
+        ]),
+      });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Books/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(result.diagnostic).toMatchObject({
+      code: "managed-frontmatter-refused",
+      failures: [
+        {
+          field: "broken-expr",
+          message: expect.any(String),
+          hint: expect.any(String),
+        },
+        {
+          field: "broken-value",
+          message: expect.any(String),
+          hint: expect.any(String),
+        },
+      ],
+    });
+    expect(harness.frontmatter()).toEqual({
+      status: "reading",
+      [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+    });
+    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+    expect(harness.processMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["replace", false],
+    ["append", true],
+    ["keep", true],
+  ] as const)(
+    "applies an absent document value under %s",
+    async (merge, preserved) => {
+      const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+      stubIndexedKeyUpdate(updateContext());
+      const harness = makeUpdateHarness({
+        content: formatManagedRegion("OLD"),
+        frontmatter: {
+          conditional: "existing",
+          [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+        },
+        settings: {
+          "note.profiles": [
+            { id: profileId, label: "Books", document: "books.md" },
+          ],
+        },
+      });
+      harness.deps.template.getLiteratureNoteTemplate = () =>
+        makeDocumentTemplate({
+          frontmatter: compileDocumentFrontmatter([
+            {
+              key: "conditional",
+              merge,
+              value: { $if: "false" },
+            },
+          ]),
+        });
+
+      const result = await createNoteFeature(harness.deps).updateNote(
+        makeFile("Books/Root.md"),
+        { indexedKey: "ABC12345" },
+      );
+
+      expect(result.diagnostic).toBeUndefined();
+      expect(Object.hasOwn(harness.frontmatter(), "conditional")).toBe(
+        preserved,
+      );
+      if (preserved) expect(harness.frontmatter().conditional).toBe("existing");
+    },
+  );
 
   it("updates only frontmatter for a Profile document without a Managed Block", async () => {
     const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
@@ -2032,6 +2392,43 @@ describe("writeNoteUpdate", () => {
     expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
   });
 
+  it("uses document Managed Frontmatter for a headless metadata update", async () => {
+    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const original = `prefix\n${formatManagedRegion("OLD")}\nsuffix`;
+    const harness = makeUpdateHarness({
+      content: original,
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
+    });
+    harness.deps.template.getLiteratureNoteTemplate = () =>
+      makeDocumentTemplate({
+        frontmatter: compileDocumentFrontmatter([
+          { key: "title", merge: "replace", expr: "zt.title" },
+        ]),
+      });
+    const options = writeOptions("metadata");
+    options.settings = {
+      ...options.settings,
+      "note.profiles": [
+        { id: profileId, label: "Books", document: "books.md" },
+      ],
+    };
+
+    const result = await createNoteFeature(harness.deps).writeNoteUpdate(
+      makeFile("Books/Root.md"),
+      options,
+    );
+
+    expect(result).toEqual({ bodyUpdated: false, duplicateRegionCount: 0 });
+    expect(harness.content()).toBe(original);
+    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.frontmatter()).toMatchObject({
+      title: "A Study",
+      [FIELD_ZOTERO_KEY]: "ABC12345",
+      [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+    });
+  });
+
   it("refuses a conflicting explicit Profile on the headless batch seam", async () => {
     const stampedId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
     const requestedId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
@@ -2449,6 +2846,7 @@ function makeDocumentTemplate(
     updateRegion?: string;
     filename?: string;
     hasManagedBlock?: boolean;
+    frontmatter?: CompiledManagedFrontmatter;
   } = {},
 ): ResolvedLiteratureNoteTemplate & {
   renderForCreate: ReturnType<typeof vi.fn>;
@@ -2469,7 +2867,9 @@ function makeDocumentTemplate(
       filename: "{{ zt.title }}",
       profileDefaults: {},
       language: "liquid",
+      ...(options.frontmatter ? { frontmatter: [] } : {}),
     },
+    frontmatter: options.frontmatter,
     hasManagedBlock,
     renderForCreate: vi.fn(() => options.createBody ?? "DOCUMENT BODY"),
     renderForUpdate: vi.fn(() =>
@@ -2479,6 +2879,15 @@ function makeDocumentTemplate(
     ),
     renderFilename: vi.fn(() => options.filename ?? "Document note"),
   };
+}
+
+function compileDocumentFrontmatter(
+  entries: Parameters<TemplateFacade["compileManagedFrontmatterEntries"]>[0],
+  javascript = true,
+): CompiledManagedFrontmatter {
+  return new TemplateFacade().compileManagedFrontmatterEntries(entries, {
+    javascript,
+  });
 }
 
 function makeDb(): SyncRenderDeps["db"] {
