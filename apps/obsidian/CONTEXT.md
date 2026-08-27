@@ -33,6 +33,10 @@ A template file in the vault's template folder defining Markdown output — `zot
 
 _Avoid_: format, layout, schema
 
+**Literature Note Template**:
+The `note` and `content` Templates presented and edited as one authoring object — the single thing a user changes to control what their Literature Notes look like. Basic surfaces expose only this object: the `content` half appears as the editable **Note body**, the `note` half as the surrounding **Note layout**, and the pair as two files is an advanced-view concern. The unification is presentation-level only; storage remains the two named Templates.
+_Avoid_: note template (names only the `note` half), unified template (vague), literature note (that is the vault file, not its template)
+
 **JavaScript Templates**:
 The gated capability to run user-authored JavaScript during rendering — Eta template files and JavaScript-language Managed Frontmatter fields together. Off by default; enabled per device behind an explicit confirmation, and the flag never syncs. While off, `.eta.md` templates and JavaScript frontmatter fields are inert — an operation that requires one fails with an error naming it, never falling back to substitute output — and no user-authored code is compiled or executed anywhere, settings validation included.
 _Avoid_: advanced templates, legacy templates, scripting, user scripts
