@@ -915,9 +915,6 @@ function literatureNoteDocumentDiagnosticCode(
   if (code === "duplicate-managed-block") {
     return diagnostic("DUPLICATE_MANAGED_BLOCK", message);
   }
-  if (code === "frontmatter-not-supported") {
-    return diagnostic("RESERVED_FRONTMATTER_SECTION", message);
-  }
   return diagnostic("DOCUMENT_INVALID", message);
 }
 

@@ -4,6 +4,33 @@ import { TemplateFacade } from "./facade";
 import type { LiteratureNoteTemplateError } from "./facade";
 import { formatManagedRegion } from "./obsidian";
 
+function documentWithFrontmatter(frontmatter: string): string {
+  return `---
+id: example.frontmatter
+name: Frontmatter note
+version: 1.0.0
+author: Ada Example
+description: Managed Frontmatter test.
+contract: 2
+filename: note
+frontmatter:${frontmatter}
+---
+Body`;
+}
+
+function expectInvalidFrontmatter(frontmatter: string, target: string): void {
+  const facade = new TemplateFacade();
+  expect(() =>
+    facade.parseLiteratureNoteTemplate(documentWithFrontmatter(frontmatter)),
+  ).toThrowError(
+    expect.objectContaining<Partial<LiteratureNoteTemplateError>>({
+      code: "invalid-manifest",
+      message: expect.stringContaining(target),
+      recovery: expect.any(String),
+    }),
+  );
+}
+
 describe("Literature Note Template document", () => {
   it.each([
     {
@@ -340,26 +367,92 @@ filename: note
     );
   });
 
-  it("rejects the reserved frontmatter manifest field", () => {
+  it("parses an ordered Managed Frontmatter section", () => {
     const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(
+      documentWithFrontmatter(`
+  - key: citekey
+    expr: zt.citationKey
+  - key: tags
+    merge: append
+    value: [reference, book]
+  - key: creators
+    merge: keep
+    js: zt.creators.map((creator) => creator.name)`),
+    );
 
-    expect(() =>
-      facade.parseLiteratureNoteTemplate(`---
-id: example.frontmatter
-name: Frontmatter note
-version: 1.0.0
-author: Ada Example
-description: Unsupported frontmatter.
-contract: 2
-filename: note
-frontmatter: []
----
-Body`),
-    ).toThrowError(
-      expect.objectContaining<Partial<LiteratureNoteTemplateError>>({
-        code: "frontmatter-not-supported",
-        recovery: expect.any(String),
-      }),
+    expect(document.manifest.frontmatter).toEqual([
+      { key: "citekey", merge: "replace", expr: "zt.citationKey" },
+      { key: "tags", merge: "append", value: ["reference", "book"] },
+      {
+        key: "creators",
+        merge: "keep",
+        js: "zt.creators.map((creator) => creator.name)",
+      },
+    ]);
+  });
+
+  it("names an invalid Managed Frontmatter section", () => {
+    expectInvalidFrontmatter(" {}", "frontmatter");
+  });
+
+  it.each([
+    ["no value member", ""],
+    ["several value members", "    expr: zt.tags\n    js: zt.tags"],
+  ])("rejects an entry with %s", (_case, members) => {
+    expectInvalidFrontmatter(
+      `
+  - key: tags
+${members}`,
+      "tags",
+    );
+  });
+
+  it("rejects a duplicate Managed Frontmatter key", () => {
+    expectInvalidFrontmatter(
+      `
+  - key: tags
+    expr: zt.tags
+  - key: tags
+    value: []`,
+      "tags",
+    );
+  });
+
+  it.each([
+    "zotero-key",
+    "zotlit-profile",
+    "zotero-note-key",
+    "zotero-lastmod",
+    "zotlit-csl",
+  ])("rejects reserved Managed Frontmatter key %s", (key) => {
+    expectInvalidFrontmatter(
+      `
+  - key: ${key}
+    expr: zt.title`,
+      key,
+    );
+  });
+
+  it.each([
+    ["empty key", 'key: ""'],
+    ["non-string key", "key: 42"],
+  ])("rejects an entry with an %s", (_case, keySource) => {
+    expectInvalidFrontmatter(
+      `
+  - ${keySource}
+    expr: zt.title`,
+      "#1",
+    );
+  });
+
+  it("rejects an invalid merge strategy against its key", () => {
+    expectInvalidFrontmatter(
+      `
+  - key: tags
+    merge: union
+    expr: zt.tags`,
+      "tags",
     );
   });
 

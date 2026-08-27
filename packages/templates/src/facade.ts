@@ -52,6 +52,7 @@ export type {
   LiteratureNoteTemplateErrorCode,
   LiteratureNoteTemplateManifest,
   ManagedBlock,
+  ManagedFrontmatterEntry,
   SynthesizedLiteratureNoteTemplateManifest,
 } from "./literature-note-template";
 

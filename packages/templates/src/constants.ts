@@ -31,6 +31,15 @@ export type FrontmatterMergeStrategy = v.InferOutput<
   typeof frontmatterMergeStrategySchema
 >;
 
+/** System-owned note keys reserved for ZotLit and Zotero metadata. */
+export const RESERVED_FRONTMATTER_KEYS: ReadonlySet<string> = new Set([
+  "zotero-key",
+  "zotlit-profile",
+  "zotero-note-key",
+  "zotero-lastmod",
+  "zotlit-csl",
+]);
+
 /**
  * An expression always evaluates in its declared language — the JavaScript
  * Templates gate never reinterprets an expression, it only decides whether
