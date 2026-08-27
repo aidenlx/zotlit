@@ -36,6 +36,7 @@ import {
   migrateV6ToV7,
   migrateV7ToV8,
   migrateV8ToV9,
+  migrateV9ToV10,
 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
 import {
@@ -80,6 +81,7 @@ export function buildServices(
           migrateV6: migrateV6ToV7,
           migrateV7: migrateV7ToV8,
           migrateV8: migrateV8ToV9,
+          migrateV9: migrateV9ToV10,
         }),
     })
     .use({

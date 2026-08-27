@@ -34,11 +34,12 @@ import {
   maintenancePageItems,
 } from "./maintenance";
 import { noteImportPageItems } from "./note-import";
-import { defaultPlaceholder } from "./placeholder";
+import { defaultProfileBindingPlaceholder } from "./placeholder";
 import {
   getProfileControlValue,
   isProfileControlKey,
   literatureNoteProfileItems,
+  profileControlKey,
   setProfileControlValue,
 } from "./profiles";
 import { resourcesGroup } from "./resources";
@@ -206,8 +207,10 @@ export class ZotLitSettingTab extends PluginSettingTab {
         desc: m.settings_note_folder_desc(),
         control: {
           type: "folder",
-          key: "note.literature-folder",
-          placeholder: defaultPlaceholder("note.literature-folder"),
+          key: profileControlKey("default", "folder"),
+          placeholder: defaultProfileBindingPlaceholder(
+            "note.literature-folder",
+          ),
         },
       },
       ...literatureNoteProfileItems(ctx),

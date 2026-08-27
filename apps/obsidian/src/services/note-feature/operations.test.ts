@@ -49,6 +49,7 @@ import type {
 } from "@/services/attachment-import/service";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 
 import type { NoteFeatureDeps, SyncRenderDeps } from "./context";
@@ -1017,7 +1018,10 @@ describe("createNote", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings({
-        "note.default-profile": { document: "literature-note-default.md" },
+        "note.default-profile": {
+          ...settingsDefaults["note.default-profile"],
+          document: "literature-note-default.md",
+        },
       }),
       attachmentImport: blockedAttachmentImport,
       noteImport: {
@@ -1422,7 +1426,7 @@ function makeUpdateHarness(options: {
    *  engine's transformRender emits. @default a fresh `NEW BODY` region */
   renderedRegion?: string;
   frontmatterFields?: readonly CompiledFrontmatterField[];
-  settings?: Partial<Settings>;
+  settings?: Partial<Settings> & Partial<ResolvedLiteratureNoteProfileBindings>;
 }): UpdateHarness {
   let content = options.content;
   const fm: Record<string, unknown> = { ...options.frontmatter };
@@ -2354,7 +2358,16 @@ describe("writeNoteUpdate", () => {
     }),
     tagMemo: new Map(),
     collectionCache: new CollectionCache(),
-    settings: { ...settingsDefaults, "note.literature-folder": "Literature" },
+    settings: {
+      ...settingsDefaults,
+      "note.default-profile": {
+        ...settingsDefaults["note.default-profile"],
+        bindings: {
+          ...settingsDefaults["note.default-profile"].bindings,
+          "note.literature-folder": "Literature",
+        },
+      },
+    },
     scope,
     username: null,
   });
@@ -2908,13 +2921,45 @@ function makeDb(): SyncRenderDeps["db"] {
 }
 
 function makeSettings(
-  overrides: Partial<Settings> = {},
+  overrides: Partial<Settings> &
+    Partial<ResolvedLiteratureNoteProfileBindings> = {},
 ): NoteFeatureDeps["settings"] {
+  const {
+    ["note.literature-folder"]: literatureFolder,
+    ["citation.references-style"]: referencesStyle,
+    ["note.import-folder"]: importFolder,
+    ["note.import-colored-highlights"]: importColoredHighlights,
+    ["note.import-annotations-as-template"]: importAnnotationsAsTemplate,
+    ...persisted
+  } = overrides;
   return {
     loaded: Promise.resolve({
       ...settingsDefaults,
-      "note.literature-folder": "Literature",
-      ...overrides,
+      ...persisted,
+      "note.default-profile": {
+        ...settingsDefaults["note.default-profile"],
+        ...persisted["note.default-profile"],
+        bindings: {
+          ...settingsDefaults["note.default-profile"].bindings,
+          ...persisted["note.default-profile"]?.bindings,
+          "note.literature-folder": literatureFolder ?? "Literature",
+          ...(referencesStyle === undefined
+            ? {}
+            : { "citation.references-style": referencesStyle }),
+          ...(importFolder === undefined
+            ? {}
+            : { "note.import-folder": importFolder }),
+          ...(importColoredHighlights === undefined
+            ? {}
+            : { "note.import-colored-highlights": importColoredHighlights }),
+          ...(importAnnotationsAsTemplate === undefined
+            ? {}
+            : {
+                "note.import-annotations-as-template":
+                  importAnnotationsAsTemplate,
+              }),
+        },
+      },
     }),
   };
 }
