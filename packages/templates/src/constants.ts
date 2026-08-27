@@ -1,5 +1,7 @@
 import * as v from "valibot";
 
+export type TemplateLanguage = "liquid" | "eta";
+
 /**
  * Eta `autoTrim` mode for one side of a template tag. `"nl"` strips a single
  * newline, `"slurp"` strips all whitespace, `false` keeps it. Single source of
