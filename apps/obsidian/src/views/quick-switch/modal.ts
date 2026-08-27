@@ -10,7 +10,7 @@ import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
 import {
   createNoteWithToast,
-  noteProfileDiagnosticNotice,
+  noteOperationDiagnosticNotice,
   resolveLiteratureNoteWithWarning,
 } from "@/services/note-feature/update-single";
 
@@ -133,7 +133,7 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
       profileId: choice.id,
     });
     if (result.diagnostic) {
-      new BaseNotice(noteProfileDiagnosticNotice(result.diagnostic));
+      new BaseNotice(noteOperationDiagnosticNotice(result.diagnostic));
     }
     return file;
   }
