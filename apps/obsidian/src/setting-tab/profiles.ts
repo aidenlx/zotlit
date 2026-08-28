@@ -23,11 +23,13 @@ import type { SettingsService } from "@/services/settings/service";
 import { DEFAULT_TEMPLATES } from "@/services/template/defaults";
 import { normalizeVaultPath } from "@/services/template/path";
 
+import { referencesStyleDefinition } from "./citations";
 import type {
   ProfileControlKey,
   SettingsControlKey,
   SettingTabContext,
 } from "./context";
+import { defaultProfileBindingPlaceholder } from "./placeholder";
 
 type ProfileControlField =
   | "label"
@@ -111,6 +113,43 @@ function defaultProfilePage(
         name: m.settings_profile_default_name(),
         desc: m.settings_profile_default_desc(),
       },
+      {
+        name: m.settings_profile_folder_name(),
+        desc: m.settings_note_folder_desc(),
+        control: {
+          type: "folder",
+          key: profileControlKey("default", "folder"),
+          placeholder: defaultProfileBindingPlaceholder(
+            "note.literature-folder",
+          ),
+        },
+      },
+      referencesStyleDefinition(ctx),
+      {
+        name: m.settings_note_import_folder_name(),
+        desc: m.settings_note_import_folder_desc(),
+        control: {
+          type: "folder",
+          key: profileControlKey("default", "import-folder"),
+          placeholder: defaultProfileBindingPlaceholder("note.import-folder"),
+        },
+      },
+      {
+        name: m.settings_note_import_colored_highlights_name(),
+        desc: m.settings_note_import_colored_highlights_desc(),
+        control: {
+          type: "toggle",
+          key: profileControlKey("default", "colored-highlights"),
+        },
+      },
+      {
+        name: m.settings_note_import_annotations_template_name(),
+        desc: m.settings_note_import_annotations_template_desc(),
+        control: {
+          type: "toggle",
+          key: profileControlKey("default", "annotations-as-template"),
+        },
+      },
       profileDocumentItem(ctx, { document }),
     ],
   };
@@ -175,8 +214,44 @@ function profilePage(
           placeholder: m.settings_profile_citation_style_default(),
         },
       },
+      {
+        name: m.settings_note_import_folder_name(),
+        desc: m.settings_profile_import_folder_desc(),
+        control: {
+          type: "folder",
+          key: profileControlKey(profile.id, "import-folder"),
+          defaultValue: "",
+          placeholder: m.settings_profile_inherit(),
+        },
+      },
+      {
+        name: m.settings_note_import_colored_highlights_name(),
+        desc: m.settings_note_import_colored_highlights_desc(),
+        control: {
+          type: "dropdown",
+          key: profileControlKey(profile.id, "colored-highlights"),
+          options: inheritedBooleanOptions(),
+        },
+      },
+      {
+        name: m.settings_note_import_annotations_template_name(),
+        desc: m.settings_note_import_annotations_template_desc(),
+        control: {
+          type: "dropdown",
+          key: profileControlKey(profile.id, "annotations-as-template"),
+          options: inheritedBooleanOptions(),
+        },
+      },
       profileDocumentItem(ctx, profile),
     ],
+  };
+}
+
+function inheritedBooleanOptions(): Record<string, string> {
+  return {
+    inherit: m.settings_profile_inherit(),
+    enabled: m.settings_profile_enabled(),
+    disabled: m.settings_profile_disabled(),
   };
 }
 
@@ -412,10 +487,23 @@ export function getProfileControlValue(
     case "import-folder":
       return profile.bindings?.["note.import-folder"] ?? "";
     case "colored-highlights":
-      return profile.bindings?.["note.import-colored-highlights"] ?? false;
+      return "id" in profile
+        ? encodeInheritedBoolean(
+            profile.bindings?.["note.import-colored-highlights"],
+          )
+        : (profile.bindings?.["note.import-colored-highlights"] ?? false);
     case "annotations-as-template":
-      return profile.bindings?.["note.import-annotations-as-template"] ?? false;
+      return "id" in profile
+        ? encodeInheritedBoolean(
+            profile.bindings?.["note.import-annotations-as-template"],
+          )
+        : (profile.bindings?.["note.import-annotations-as-template"] ?? false);
   }
+}
+
+function encodeInheritedBoolean(value: boolean | undefined): string {
+  if (value === undefined) return "inherit";
+  return value ? "enabled" : "disabled";
 }
 
 export function setProfileControlValue(
@@ -469,6 +557,18 @@ export function setProfileControlValue(
   if (field === "folder") {
     if (value === "") delete bindings["note.literature-folder"];
     else bindings["note.literature-folder"] = String(value);
+  } else if (field === "import-folder") {
+    if (value === "") delete bindings["note.import-folder"];
+    else bindings["note.import-folder"] = String(value);
+  } else if (field === "colored-highlights") {
+    if (value === "inherit") delete bindings["note.import-colored-highlights"];
+    else bindings["note.import-colored-highlights"] = value === "enabled";
+  } else if (field === "annotations-as-template") {
+    if (value === "inherit") {
+      delete bindings["note.import-annotations-as-template"];
+    } else {
+      bindings["note.import-annotations-as-template"] = value === "enabled";
+    }
   } else if (value === "") {
     bindings["citation.references-style"] = null;
   } else {

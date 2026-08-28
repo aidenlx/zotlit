@@ -99,11 +99,6 @@ export function citationsPageItems(
       heading: m.settings_citation_references_heading(),
       items: [
         {
-          name: m.settings_citation_references_style_name(),
-          desc: referencesStyleDescription(false),
-          render: (setting) => renderReferencesStyleRow(setting, ctx),
-        },
-        {
           name: m.settings_citation_locale_name(),
           desc: m.settings_citation_locale_desc(),
           control: {
@@ -120,6 +115,17 @@ export function citationsPageItems(
     },
     pandocIntegrationDefinition(ctx),
   ];
+}
+
+/** The default Profile's Citation and References Style control. */
+export function referencesStyleDefinition(
+  ctx: SettingTabContext,
+): SettingDefinitionItem<SettingsKey> {
+  return {
+    name: m.settings_citation_references_style_name(),
+    desc: referencesStyleDescription(false),
+    render: (setting) => renderReferencesStyleRow(setting, ctx),
+  };
 }
 
 /** The Hover Action choices, in the order the select offers them. */
