@@ -233,6 +233,62 @@ describe("TemplateService", () => {
     expect(service.getLiteratureNoteTemplate("books.md")).toBeUndefined();
   });
 
+  it("renders Profile Annotation Blocks, embedded fallback, and the legacy slot", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/books.md",
+      literatureNoteDocument("Books", "PROFILE {{ zt.text }}"),
+    );
+    vault.addFile("templates/plain.md", literatureNoteDocument("Plain"));
+    vault.addFile(
+      "templates/zotlit-annotation.liquid.md",
+      "LEGACY {{ zt.text }}",
+    );
+    const { service } = await makeHarness({ vault });
+    const profiles = [
+      {
+        id: "36c4f8b4-4f65-4cab-8c51-c921ea616cc8",
+        label: "Books",
+        document: "books.md",
+      },
+      {
+        id: "93f0df01-9de9-47e6-aa12-1ff770c1ab86",
+        label: "Plain",
+        document: "plain.md",
+      },
+    ];
+    const data = {
+      pageLabel: "4",
+      imgLink: null,
+      text: "Excerpt",
+      comment: null,
+    };
+    const converted = {
+      ...defaults,
+      "note.template-conversion-pending": false,
+      "note.profiles": profiles,
+    };
+
+    expect(
+      service.renderProfileAnnotation(data, {
+        settings: converted,
+        profileId: profiles[0]!.id,
+      }),
+    ).toBe("PROFILE Excerpt");
+    expect(
+      service.renderProfileAnnotation(data, {
+        settings: converted,
+        profileId: profiles[1]!.id,
+      }),
+    ).toContain("[!note] Page 4");
+    expect(
+      service.renderProfileAnnotation(data, {
+        settings: { ...converted, "note.template-conversion-pending": true },
+        profileId: profiles[0]!.id,
+      }),
+    ).toBe("LEGACY Excerpt");
+  });
+
   it("reports valid and invalid Literature Note Template documents", async () => {
     const vault = new MockVault();
     vault.addFile("templates/books.md", literatureNoteDocument("Books"));
@@ -1469,7 +1525,7 @@ function basename(path: string): string {
   return path.split("/").at(-1) ?? "";
 }
 
-function literatureNoteDocument(heading: string): string {
+function literatureNoteDocument(heading: string, annotation?: string): string {
   return `---
 id: books
 name: Books
@@ -1482,6 +1538,7 @@ filename: "{{ zt.title }}"
 # ${heading} {{ zt.title }}
 
 {% managed %}Managed {{ zt.title }}{% endmanaged %}
+${annotation === undefined ? "" : `{% annotation %}${annotation}{% endannotation %}\n`}
 `;
 }
 

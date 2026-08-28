@@ -931,6 +931,8 @@ function renderAnnotation(
   const { db } = ctx;
   if (db.state !== "ready") return null;
   if (!ctx.template.loaded) return null;
+  const settings = ctx.settings.current;
+  if (!settings) return null;
 
   const [annotation] = getAnnotationsByItemId(db.client, [annotationItemId]);
   if (!annotation) return null;
@@ -940,6 +942,16 @@ function renderAnnotation(
       template: ctx.template,
       zoteroPref: ctx.zoteroPref,
       attachmentImport: options.attachmentImport,
+      renderAnnotation: (data) => {
+        const indexedKey = data.parentItem?.indexedKey;
+        const file = indexedKey
+          ? ctx.noteIndex.getNotesByItemKey(indexedKey)[0]
+          : undefined;
+        return ctx.template.renderProfileAnnotation(data, {
+          settings,
+          profileId: file ? stampedProfileId(ctx, file) : undefined,
+        });
+      },
     }).get(annotation.key) ?? null
   );
 }

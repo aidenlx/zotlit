@@ -104,6 +104,7 @@ export interface ResolvedLiteratureNoteTemplate {
   readonly hasManagedBlock: boolean;
   renderForCreate<T extends object>(data: T): string;
   renderForUpdate<T extends object>(data: T): string | null;
+  renderAnnotation<T extends object>(data: T): string | null;
   renderFilename<T extends object>(data: T): string;
 }
 
@@ -299,11 +300,42 @@ export class TemplateService extends Service<void> {
         this.#facade.renderLiteratureNoteTemplateForCreate(document, data),
       renderForUpdate: <T extends object>(data: T) =>
         this.#facade.renderLiteratureNoteTemplateForUpdate(document, data),
+      renderAnnotation: <T extends object>(data: T) =>
+        this.#facade.renderLiteratureNoteTemplateAnnotation(document, data),
       renderFilename: <T extends object>(data: T) =>
         toSingleLine(
           this.#facade.renderLiteratureNoteTemplateFilename(document, data),
         ),
     };
+  }
+
+  /** Render one annotation through its Profile document or legacy slot. */
+  renderProfileAnnotation<T extends object>(
+    data: T,
+    options: {
+      settings: Readonly<Settings>;
+      profileId: string | undefined;
+    },
+  ): string {
+    if (options.settings["note.template-conversion-pending"]) {
+      return this.render("annotation", data);
+    }
+
+    const profile =
+      options.profileId === undefined
+        ? options.settings["note.default-profile"]
+        : options.settings["note.profiles"].find(
+            (candidate) => candidate.id === options.profileId,
+          );
+    const rendered = profile?.document
+      ? this.getLiteratureNoteTemplate(profile.document)?.renderAnnotation(data)
+      : null;
+    if (rendered != null) return rendered;
+    this.#requireLoaded("renderProfileAnnotation");
+    return this.#facade.render("annotation", data, {
+      source: DEFAULT_TEMPLATES.annotation,
+      language: "liquid",
+    });
   }
 
   /** Report every installed document and its reconciled validation state. */
