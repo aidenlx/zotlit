@@ -185,7 +185,7 @@ export async function switchImportedNoteProfile(
     profileId: choice.id,
   });
   if (result.diagnostic) {
-    new BaseNotice(noteProfileDiagnosticNotice(result.diagnostic));
+    new BaseNotice(noteOperationDiagnosticNotice(result.diagnostic));
   }
 }
 

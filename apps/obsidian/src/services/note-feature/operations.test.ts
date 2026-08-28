@@ -1164,6 +1164,7 @@ describe("createNote", () => {
       noteIndex: {
         ready: Promise.resolve(),
         whenIndexed: async () => {},
+        getImportedNoteByNoteKey: () => [],
         getNotesByItemKey: () => [],
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
