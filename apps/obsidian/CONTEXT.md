@@ -46,7 +46,7 @@ The `{% managed %}` … `{% endmanaged %}` block in a Literature Note Template d
 _Avoid_: managed region (the rendered output in the note, not the template source), content block
 
 **Annotation Block**:
-The `{% annotation %}` … `{% endannotation %}` block in a Literature Note Template document's body — the Profile's single-annotation template, supported in both Liquid and Eta. Zero or one per document; when absent, the embedded default serves. It contributes nothing to the note body: create-time rendering strips it entirely, and it renders only on demand — drag-insert and Annotation Paragraph subsuming — in isolation against the Annotation Root data. Role-equivalent to the retired `annotation` Template.
+The `{% annotation %}` … `{% endannotation %}` block in a Literature Note Template document's body — the Profile's single-annotation template, supported in both Liquid and Eta. Exactly one per document — a document with zero or more than one fails validation before any write; generated documents place it last by convention, though position carries no meaning. It contributes nothing to the note body: create-time rendering strips it entirely, and it renders only on demand — drag-insert and Annotation Paragraph subsuming — in isolation against the Annotation Root data. Role-equivalent to the retired `annotation` Template.
 _Avoid_: annotation template (the retired vault-global slot), annotation partial (it is document structure, not a `{% render %}` partial)
 
 **JavaScript Templates**:
