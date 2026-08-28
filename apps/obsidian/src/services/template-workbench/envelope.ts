@@ -82,6 +82,10 @@ export const DIAGNOSTIC_HINTS = {
     "Re-stamp the note with an existing Profile, or recreate the Profile with the same ID.",
   DUPLICATE_MANAGED_BLOCK:
     "Keep at most one Managed Block in the document, then render it again.",
+  MISSING_ANNOTATION_BLOCK:
+    "Add one {% annotation %} ... {% endannotation %} block at the end of the document body; run template-source template=annotation for the built-in default block source (Liquid).",
+  DUPLICATE_ANNOTATION_BLOCK:
+    "Keep at most one Annotation Block in the document, then render it again.",
   DOCUMENT_INVALID:
     "Correct the document validation error, then inspect or render it again.",
 } as const satisfies Record<string, string>;

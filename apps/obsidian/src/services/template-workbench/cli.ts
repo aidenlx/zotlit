@@ -931,6 +931,12 @@ function literatureNoteDocumentDiagnosticCode(
   if (code === "duplicate-managed-block") {
     return diagnostic("DUPLICATE_MANAGED_BLOCK", message);
   }
+  if (code === "missing-annotation-block") {
+    return diagnostic("MISSING_ANNOTATION_BLOCK", message);
+  }
+  if (code === "duplicate-annotation-block") {
+    return diagnostic("DUPLICATE_ANNOTATION_BLOCK", message);
+  }
   return diagnostic("DOCUMENT_INVALID", message);
 }
 

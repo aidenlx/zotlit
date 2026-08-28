@@ -1,5 +1,7 @@
 // In-memory parsing and validation for one Literature Note Template document.
 
+import annotationEta from "@defaults/annotation.eta?raw";
+import annotationLiquid from "@defaults/annotation.liquid?raw";
 import * as v from "valibot";
 import {
   parseDocument as parseYamlDocument,
@@ -242,14 +244,13 @@ export function synthesizeLegacyLiteratureNoteTemplate(
     );
   }
 
-  const body =
-    legacy.note.source.replace(
-      insertion,
-      () => `{% managed %}${legacy.content.source}{% endmanaged %}`,
-    ) +
-    (legacy.annotation
-      ? `{% annotation %}${legacy.annotation.source}{% endannotation %}`
-      : "");
+  const annotationSource =
+    legacy.annotation?.source ??
+    (language === "liquid" ? annotationLiquid : annotationEta);
+  const body = `${legacy.note.source.replace(
+    insertion,
+    () => `{% managed %}${legacy.content.source}{% endmanaged %}`,
+  )}{% annotation %}${annotationSource}{% endannotation %}`;
   const manifest = stringifyYaml(
     {
       id: manifestOverrides.id ?? "zotlit.converted-default",
@@ -293,7 +294,8 @@ export type LiteratureNoteTemplateErrorCode =
   | "invalid-managed-block"
   | "duplicate-managed-block"
   | "invalid-annotation-block"
-  | "duplicate-annotation-block";
+  | "duplicate-annotation-block"
+  | "missing-annotation-block";
 
 export class LiteratureNoteTemplateError extends Error {
   readonly code: LiteratureNoteTemplateErrorCode;
@@ -309,6 +311,16 @@ export class LiteratureNoteTemplateError extends Error {
     this.code = code;
     this.recovery = recovery;
   }
+}
+
+export function missingAnnotationBlockError(): LiteratureNoteTemplateError {
+  return new LiteratureNoteTemplateError(
+    "missing-annotation-block",
+    `Literature Note Template document has no ${OPEN_ANNOTATION} block`,
+    {
+      recovery: `Add a ${OPEN_ANNOTATION} ... ${CLOSE_ANNOTATION} block at the end of the document body.`,
+    },
+  );
 }
 
 export function parseLiteratureNoteTemplate(
@@ -339,11 +351,16 @@ export function parseLiteratureNoteTemplate(
     );
   }
 
+  const annotationBlock = findAnnotationBlock(body, result.output.language);
+  if (!annotationBlock) {
+    throw missingAnnotationBlockError();
+  }
+
   return {
     manifest: result.output,
     body,
     managedBlock: findManagedBlock(body, result.output.language),
-    annotationBlock: findAnnotationBlock(body, result.output.language),
+    annotationBlock,
   };
 }
 

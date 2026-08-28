@@ -110,7 +110,7 @@ export interface ResolvedLiteratureNoteTemplate {
   readonly hasManagedBlock: boolean;
   renderForCreate<T extends object>(data: T): string;
   renderForUpdate<T extends object>(data: T): string | null;
-  renderAnnotation<T extends object>(data: T): string | null;
+  renderAnnotation<T extends object>(data: T): string;
   renderFilename<T extends object>(data: T): string;
 }
 
@@ -385,18 +385,17 @@ export class TemplateService extends Service<void> {
       return this.render("annotation", data);
     }
 
-    const document = profile.document
-      ? this.getLiteratureNoteTemplate(profile.document)
-      : undefined;
-    if (profile.document && !document) {
-      throw new ProfileAnnotationError({
-        code: "missing-literature-note-template",
-        document: profile.document,
-        hint: "Restore the document in the template folder or clear the Profile document reference.",
-      });
+    if (profile.document) {
+      const document = this.getLiteratureNoteTemplate(profile.document);
+      if (!document) {
+        throw new ProfileAnnotationError({
+          code: "missing-literature-note-template",
+          document: profile.document,
+          hint: "Restore the document in the template folder or clear the Profile document reference.",
+        });
+      }
+      return document.renderAnnotation(data);
     }
-    const rendered = document?.renderAnnotation(data);
-    if (rendered != null) return rendered;
     this.#requireLoaded("renderProfileAnnotation");
     return this.#facade.render("annotation", data, {
       source: DEFAULT_TEMPLATES.annotation,

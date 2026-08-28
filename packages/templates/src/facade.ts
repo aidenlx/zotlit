@@ -34,6 +34,7 @@ import { createLiquidEngine } from "./liquid";
 import {
   LegacyTemplateConversionError,
   LiteratureNoteTemplateError,
+  missingAnnotationBlockError,
   parseLiteratureNoteTemplate as parseLiteratureNoteTemplateImpl,
   synthesizeLegacyLiteratureNoteTemplate,
   withoutAnnotationBlock,
@@ -417,8 +418,10 @@ export class TemplateFacade {
   renderLiteratureNoteTemplateAnnotation<T extends object>(
     document: LiteratureNoteTemplateDocument,
     data: T,
-  ): string | null {
-    if (!document.annotationBlock) return null;
+  ): string {
+    if (!document.annotationBlock) {
+      throw missingAnnotationBlockError();
+    }
     return this.#renderDocumentSource(document, data, {
       part: "annotation",
       source: document.annotationBlock.source,

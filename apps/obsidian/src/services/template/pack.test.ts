@@ -20,6 +20,7 @@ filename: "{{ zt.citationKey }}"
 # {{ zt.title }}
 
 {% managed %}{% render "summary" with zt as zt %}{% endmanaged %}
+{% annotation %}{{ zt.text }}{% endannotation %}
 `;
 
 const PACK = exportLiteratureNotePack(DOCUMENT, [

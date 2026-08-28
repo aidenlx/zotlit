@@ -277,13 +277,28 @@ frontmatter:
     ).toEqual({ title: "Paper", scripted: "Paper!" });
   });
 
-  it("renders Profile Annotation Blocks, embedded fallback, and the legacy slot", async () => {
+  it("renders Profile Annotation Blocks, refuses a blockless document, and keeps the documentless and legacy paths", async () => {
     const vault = new MockVault();
     vault.addFile(
       "templates/books.md",
       literatureNoteDocument("Books", "PROFILE {{ zt.text }}"),
     );
-    vault.addFile("templates/plain.md", literatureNoteDocument("Plain"));
+    vault.addFile(
+      "templates/plain.md",
+      `---
+id: plain
+name: Plain
+version: 1.0.0
+author: ZotLit
+description: Blockless fixture
+contract: 1
+filename: "{{ zt.title }}"
+---
+# Plain {{ zt.title }}
+
+{% managed %}Managed {{ zt.title }}{% endmanaged %}
+`,
+    );
     vault.addFile(
       "templates/zotlit-annotation.liquid.md",
       "LEGACY {{ zt.text }}",
@@ -299,6 +314,10 @@ frontmatter:
         id: "93f0df01-9de9-47e6-aa12-1ff770c1ab86",
         label: "Plain",
         document: "plain.md",
+      },
+      {
+        id: "5b1febe8-2c3d-4e5f-8a9b-0c1d2e3f4a5b",
+        label: "Documentless",
       },
     ];
     const data = {
@@ -319,10 +338,20 @@ frontmatter:
         profileId: profiles[0]!.id,
       }),
     ).toBe("PROFILE Excerpt");
-    expect(
+    // plain.md has no Annotation Block: the document is invalid, and the
+    // render refuses instead of substituting the embedded default.
+    expect(() =>
       service.renderProfileAnnotation(data, {
         settings: converted,
         profileId: profiles[1]!.id,
+      }),
+    ).toThrow(expect.objectContaining({ code: "missing-annotation-block" }));
+    // A documentless Profile predates the required-block rule and keeps the
+    // embedded default through the legacy machinery.
+    expect(
+      service.renderProfileAnnotation(data, {
+        settings: converted,
+        profileId: profiles[2]!.id,
       }),
     ).toContain("[!note] Page 4");
     expect(
@@ -1696,7 +1725,7 @@ filename: "{{ zt.title }}"
 # ${heading} {{ zt.title }}
 
 {% managed %}Managed {{ zt.title }}{% endmanaged %}
-${annotation === undefined ? "" : `{% annotation %}${annotation}{% endannotation %}\n`}
+{% annotation %}${annotation ?? "Annotation"}{% endannotation %}
 `;
 }
 

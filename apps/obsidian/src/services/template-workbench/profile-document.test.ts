@@ -201,6 +201,24 @@ describe("Template Workbench Profile documents", () => {
       code: "DUPLICATE_MANAGED_BLOCK",
     },
     {
+      name: "missing Annotation Block",
+      error: new LiteratureNoteTemplateError(
+        "missing-annotation-block",
+        "Document has no {% annotation %} block",
+        { recovery: "Add an Annotation Block to the document body." },
+      ),
+      code: "MISSING_ANNOTATION_BLOCK",
+    },
+    {
+      name: "duplicate Annotation Block",
+      error: new LiteratureNoteTemplateError(
+        "duplicate-annotation-block",
+        "Duplicate {% annotation %} block",
+        { recovery: "Keep at most one Annotation Block." },
+      ),
+      code: "DUPLICATE_ANNOTATION_BLOCK",
+    },
+    {
       name: "inert Eta document",
       error: new InertTemplateError("JavaScript Templates are disabled"),
       code: "ETA_OPT_IN_REQUIRED",

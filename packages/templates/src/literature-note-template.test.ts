@@ -1,3 +1,5 @@
+import annotationEta from "@defaults/annotation.eta?raw";
+import annotationLiquid from "@defaults/annotation.liquid?raw";
 import { describe, expect, it } from "vitest";
 
 import type { FrontmatterField } from "./constants";
@@ -16,7 +18,7 @@ contract: 2
 filename: note
 frontmatter:${frontmatter}
 ---
-Body`;
+Body{% annotation %}Annotation{% endannotation %}`;
 }
 
 function expectInvalidFrontmatter(frontmatter: string, target: string): void {
@@ -309,28 +311,48 @@ describe("Literature Note Template document", () => {
     );
   });
 
-  it("leaves the Annotation Block absent for an embedded annotation slot", () => {
-    const facade = new TemplateFacade({
-      transformRender: (name, output) =>
-        name === "content" ? formatManagedRegion(output) : output,
-    });
-    const note = '{% render "content" with zt as zt %}';
-    facade.define("note", note, "liquid");
-    facade.define("content", "Managed", "liquid");
-    facade.define("filename", "note", "liquid");
+  it.each([
+    {
+      language: "liquid" as const,
+      note: '{% render "content" with zt as zt %}',
+      defaultAnnotation: annotationLiquid,
+    },
+    {
+      language: "eta" as const,
+      note: '<%~ include("content", zt) %>',
+      defaultAnnotation: annotationEta,
+    },
+  ])(
+    "seeds the embedded default as a trailing $language Annotation Block for an un-ejected annotation slot",
+    ({ language, note, defaultAnnotation }) => {
+      const facade = new TemplateFacade({
+        transformRender: (name, output) =>
+          name === "content" ? formatManagedRegion(output) : output,
+      });
+      facade.define("note", note, language);
+      facade.define("content", "Managed", language);
+      facade.define("filename", "note", language);
 
-    const converted = facade.convertLegacyLiteratureNoteTemplates(
-      {
-        note: { source: note, language: "liquid" },
-        content: { source: "Managed", language: "liquid" },
-        filename: { source: "note", language: "liquid" },
-      },
-      { note: {}, filename: {} },
-    );
+      const converted = facade.convertLegacyLiteratureNoteTemplates(
+        {
+          note: { source: note, language },
+          content: { source: "Managed", language },
+          filename: { source: "note", language },
+        },
+        { note: {}, filename: {} },
+      );
 
-    expect(converted.document.annotationBlock).toBeNull();
-    expect(converted.rendered.annotation).toBeNull();
-  });
+      expect(converted.document.annotationBlock?.source).toBe(
+        defaultAnnotation,
+      );
+      expect(
+        converted.source.endsWith(
+          `{% annotation %}${defaultAnnotation}{% endannotation %}`,
+        ),
+      ).toBe(true);
+      expect(converted.rendered.annotation).toBeNull();
+    },
+  );
 
   it("parses the manifest, body, and Managed Block", () => {
     const facade = new TemplateFacade();
@@ -352,6 +374,7 @@ language: liquid
 # {{ zt.title }}
 
 {% managed %}Managed body{% endmanaged %}
+{% annotation %}Annotation body{% endannotation %}
 `);
 
     expect(document.manifest).toEqual({
@@ -371,7 +394,7 @@ language: liquid
       language: "liquid",
     });
     expect(document.body).toBe(
-      "# {{ zt.title }}\n\n{% managed %}Managed body{% endmanaged %}\n",
+      "# {{ zt.title }}\n\n{% managed %}Managed body{% endmanaged %}\n{% annotation %}Annotation body{% endannotation %}\n",
     );
     expect(document.managedBlock?.source).toBe("Managed body");
   });
@@ -414,9 +437,11 @@ ${outside}Before{% annotation %}${annotation}{% endannotation %}After`);
     },
   );
 
-  it("reports an absent Annotation Block", () => {
+  it("refuses a document without an Annotation Block", () => {
     const facade = new TemplateFacade();
-    const document = facade.parseLiteratureNoteTemplate(`---
+
+    expect(() =>
+      facade.parseLiteratureNoteTemplate(`---
 id: example.no-annotation
 name: No annotation
 version: 1.0.0
@@ -425,12 +450,14 @@ description: Has no Annotation Block.
 contract: 2
 filename: note
 ---
-Body`);
-
-    expect(document.annotationBlock).toBeNull();
-    expect(
-      facade.renderLiteratureNoteTemplateAnnotation(document, {}),
-    ).toBeNull();
+Body`),
+    ).toThrowError(
+      expect.objectContaining<Partial<LiteratureNoteTemplateError>>({
+        code: "missing-annotation-block",
+        message: expect.stringContaining("{% annotation %}"),
+        recovery: expect.any(String),
+      }),
+    );
   });
 
   it("strips an Annotation Block nested in the Managed Block", () => {
@@ -467,7 +494,7 @@ contract: 2
 filename: note
 language: liquid
 ---
-{% assign outside = "leak" %}A{% managed %}{% if outside %}LEAK{% elsif zt.title == "Paper" %}INNER{% endif %}{% endmanaged %}{% if outside == "leak" %}Z{% endif %}`);
+{% assign outside = "leak" %}A{% managed %}{% if outside %}LEAK{% elsif zt.title == "Paper" %}INNER{% endif %}{% endmanaged %}{% if outside == "leak" %}Z{% endif %}{% annotation %}Annotation{% endannotation %}`);
 
     const created = facade.renderLiteratureNoteTemplateForCreate(document, {
       title: "Paper",
@@ -493,7 +520,7 @@ contract: 2
 filename: note
 language: eta
 ---
-<% const outside = "leak" %>A{% managed %}<% if (typeof outside !== "undefined") { %>LEAK<% } else if (zt.title === "Paper") { %>INNER<% } %>{% endmanaged %}<% if (outside === "leak") { %>Z<% } %>`);
+<% const outside = "leak" %>A{% managed %}<% if (typeof outside !== "undefined") { %>LEAK<% } else if (zt.title === "Paper") { %>INNER<% } %>{% endmanaged %}<% if (outside === "leak") { %>Z<% } %>{% annotation %}Annotation{% endannotation %}`);
 
     const created = facade.renderLiteratureNoteTemplateForCreate(document, {
       title: "Paper",
@@ -518,7 +545,7 @@ description: Tests placeholder collisions.
 contract: 2
 filename: note
 ---
-{{ zt.prefix }}{% managed %}Managed{% endmanaged %}`);
+{{ zt.prefix }}{% managed %}Managed{% endmanaged %}{% annotation %}Annotation{% endannotation %}`);
 
     expect(
       facade.renderLiteratureNoteTemplateForCreate(document, {
@@ -540,7 +567,7 @@ filename: note
 ---
 Before{% managed %}
   Managed body
-{% endmanaged %}After`);
+{% endmanaged %}After{% annotation %}Annotation{% endannotation %}`);
 
     const region = formatManagedRegion("Managed body");
     expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
@@ -571,7 +598,7 @@ description: Tests block placement.
 contract: 2
 filename: note
 ---
-${body}`);
+${body}{% annotation %}Annotation{% endannotation %}`);
 
     expect(() =>
       facade.renderLiteratureNoteTemplateForCreate(document, {}),
@@ -595,7 +622,7 @@ contract: 2
 filename: note
 ---
 {% raw %}{% managed %}Raw{% endmanaged %}{% endraw %}
-{% comment %}{% managed %}Comment{% endmanaged %}{% endcomment %}`);
+{% comment %}{% managed %}Comment{% endmanaged %}{% endcomment %}{% annotation %}Annotation{% endannotation %}`);
 
     expect(document.managedBlock).toBeNull();
     expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
@@ -615,9 +642,9 @@ contract: 2
 filename: note
 ---
 {% raw %}{% annotation %}Raw{% endannotation %}{% endraw %}
-{% comment %}{% annotation %}Comment{% endannotation %}{% endcomment %}`);
+{% comment %}{% annotation %}Comment{% endannotation %}{% endcomment %}{% annotation %}Real{% endannotation %}`);
 
-    expect(document.annotationBlock).toBeNull();
+    expect(document.annotationBlock?.source).toBe("Real");
     expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
       "{% annotation %}Raw{% endannotation %}\n",
     );
@@ -634,7 +661,7 @@ description: User-owned body.
 contract: 2
 filename: Static
 ---
-Static body`);
+Static body{% annotation %}Annotation{% endannotation %}`);
 
     expect(document.manifest.language).toBe("liquid");
     expect(document.manifest.profileDefaults).toEqual({});
@@ -660,7 +687,8 @@ contract: 2
 filename: note
 ---
 {% managed %}First{% endmanaged %}
-{% managed %}Second{% endmanaged %}`),
+{% managed %}Second{% endmanaged %}
+{% annotation %}Annotation{% endannotation %}`),
     ).toThrowError(
       expect.objectContaining<Partial<LiteratureNoteTemplateError>>({
         code: "duplicate-managed-block",
@@ -838,7 +866,7 @@ filename: note
 profileDefaults:
   citationStyle: null
 ---
-Body`);
+Body{% annotation %}Annotation{% endannotation %}`);
 
     expect(document.manifest.profileDefaults.citationStyle).toBeNull();
   });
@@ -854,7 +882,7 @@ description: Tests the filename rule.
 contract: 2
 filename: '{% if zt.citationKey == "smith2024" %}smith2024{% endif %}'
 ---
-Body`);
+Body{% annotation %}Annotation{% endannotation %}`);
 
     expect(
       facade.renderLiteratureNoteTemplateFilename(document, {
