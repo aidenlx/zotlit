@@ -50,6 +50,35 @@ describe("literature note Profile settings", () => {
           items: [
             {},
             {
+              name: "Literature note folder",
+              control: {
+                type: "folder",
+                key: "note-profile:default:folder",
+              },
+            },
+            { name: "Citation and references style" },
+            {
+              name: "Imported note folder",
+              control: {
+                type: "folder",
+                key: "note-profile:default:import-folder",
+              },
+            },
+            {
+              name: "Use colored highlight syntax",
+              control: {
+                type: "toggle",
+                key: "note-profile:default:colored-highlights",
+              },
+            },
+            {
+              name: "Render annotations from template",
+              control: {
+                type: "toggle",
+                key: "note-profile:default:annotations-as-template",
+              },
+            },
+            {
               name: "Template document",
               desc: "Uses the built-in Literature Note Template.",
             },
@@ -71,11 +100,11 @@ describe("literature note Profile settings", () => {
     expect(page).toMatchObject({
       type: "page",
       name: "Literature note profiles",
-      desc: "Use profiles to give different literature notes their own folder and citation style.",
+      desc: "Configure literature notes and notes imported from Zotero for each profile.",
     });
     expect(page.items?.[0]).toMatchObject({
       name: "Default",
-      desc: "Uses the main literature note folder and citation style.",
+      desc: "Sets the values that other profiles inherit.",
     });
 
     const list = page.items?.[1] as SettingDefinitionList;
@@ -104,7 +133,7 @@ describe("literature note Profile settings", () => {
               },
             },
             {
-              name: "Use main citation style",
+              name: "Use default profile citation style",
               control: {
                 type: "toggle",
                 key: `note-profile:${BOOKS.id}:citation-style-inherit`,
@@ -115,6 +144,27 @@ describe("literature note Profile settings", () => {
               control: {
                 type: "text",
                 key: `note-profile:${BOOKS.id}:citation-style`,
+              },
+            },
+            {
+              name: "Imported note folder",
+              control: {
+                type: "folder",
+                key: `note-profile:${BOOKS.id}:import-folder`,
+              },
+            },
+            {
+              name: "Use colored highlight syntax",
+              control: {
+                type: "dropdown",
+                key: `note-profile:${BOOKS.id}:colored-highlights`,
+              },
+            },
+            {
+              name: "Render annotations from template",
+              control: {
+                type: "dropdown",
+                key: `note-profile:${BOOKS.id}:annotations-as-template`,
               },
             },
             {
@@ -142,18 +192,13 @@ describe("literature note Profile settings", () => {
     } as unknown as SettingTabContext)[0] as SettingDefinitionPage;
     const list = page.items?.[1] as SettingDefinitionList;
 
-    expect(list.items?.[0]).toMatchObject({
+    const profilePage = list.items?.[0] as SettingDefinitionPage;
+    expect(profilePage).toMatchObject({
       displayValue: "Books · apa · books.md",
-      items: [
-        {},
-        {},
-        {},
-        {},
-        {
-          name: "Template document",
-          desc: "The template document books.md is missing.",
-        },
-      ],
+    });
+    expect(profilePage.items?.at(-1)).toMatchObject({
+      name: "Template document",
+      desc: "The template document books.md is missing.",
     });
   });
 
@@ -186,6 +231,51 @@ describe("literature note Profile settings", () => {
 
     setProfileControlValue(settings, styleKey, "");
     expect(profile.bindings?.["citation.references-style"]).toBeNull();
+  });
+
+  it("edits and clears sparse Imported Note bindings", () => {
+    let profile = {
+      ...BOOKS,
+      bindings: {
+        ...BOOKS.bindings,
+        "note.import-folder": "Books/Imported",
+        "note.import-colored-highlights": true,
+        "note.import-annotations-as-template": false,
+      },
+    };
+    const settings = {
+      getLiteratureNoteProfile: () => profile,
+      updateLiteratureNoteProfile: (
+        _id: string,
+        patch: Partial<typeof profile>,
+      ) => {
+        profile = { ...profile, ...patch };
+      },
+    } as unknown as Parameters<typeof getProfileControlValue>[0];
+    const key = (field: string) =>
+      `note-profile:${BOOKS.id}:${field}` as Parameters<
+        typeof getProfileControlValue
+      >[1];
+
+    expect(getProfileControlValue(settings, key("import-folder"))).toBe(
+      "Books/Imported",
+    );
+    expect(getProfileControlValue(settings, key("colored-highlights"))).toBe(
+      "enabled",
+    );
+    expect(
+      getProfileControlValue(settings, key("annotations-as-template")),
+    ).toBe("disabled");
+
+    setProfileControlValue(settings, key("import-folder"), "");
+    setProfileControlValue(settings, key("colored-highlights"), "inherit");
+    setProfileControlValue(settings, key("annotations-as-template"), "enabled");
+
+    expect(profile.bindings).not.toHaveProperty("note.import-folder");
+    expect(profile.bindings).not.toHaveProperty(
+      "note.import-colored-highlights",
+    );
+    expect(profile.bindings["note.import-annotations-as-template"]).toBe(true);
   });
 
   it("renders a referenced document while the template service starts", () => {

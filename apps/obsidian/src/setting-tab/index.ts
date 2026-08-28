@@ -33,13 +33,10 @@ import {
   LOG_LEVEL_KEY,
   maintenancePageItems,
 } from "./maintenance";
-import { noteImportPageItems } from "./note-import";
-import { defaultProfileBindingPlaceholder } from "./placeholder";
 import {
   getProfileControlValue,
   isProfileControlKey,
   literatureNoteProfileItems,
-  profileControlKey,
   setProfileControlValue,
 } from "./profiles";
 import { resourcesGroup } from "./resources";
@@ -202,17 +199,6 @@ export class ZotLitSettingTab extends PluginSettingTab {
       resourcesGroup(ctx),
 
       // Hub — the most-used settings, no top-level heading (per Obsidian style).
-      {
-        name: m.settings_note_folder_name(),
-        desc: m.settings_note_folder_desc(),
-        control: {
-          type: "folder",
-          key: profileControlKey("default", "folder"),
-          placeholder: defaultProfileBindingPlaceholder(
-            "note.literature-folder",
-          ),
-        },
-      },
       ...literatureNoteProfileItems(ctx),
       // Self-contained domains live on navigable sub-pages, grouped apart
       // from the hub items above so the page rows read as their own section.
@@ -237,12 +223,6 @@ export class ZotLitSettingTab extends PluginSettingTab {
             name: m.settings_page_templates(),
             desc: m.settings_page_templates_desc(),
             items: templatesPageItems(ctx),
-          },
-          {
-            type: "page",
-            name: m.settings_page_note_import(),
-            desc: m.settings_page_note_import_desc(),
-            items: noteImportPageItems(ctx),
           },
           {
             type: "page",
