@@ -18,6 +18,7 @@ import type { AnnotViewItem, Item, ItemRef, Library } from "@zotlit/db";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
 import type {
   AttachmentImport,
   AttachmentImportService,
@@ -165,6 +166,7 @@ export class AnnotationView extends ItemView {
       onDragStart: createDragInsertHandler({
         workspace: this.#deps.app.workspace,
         noteFeature: this.#deps.noteFeature,
+        notify: (message) => void new BaseNotice(message),
         getImportHandle: () => this.#importHandle,
         onSettled: () => this.#syncImportHandle(),
       }),

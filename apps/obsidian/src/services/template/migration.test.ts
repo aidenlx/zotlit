@@ -11,6 +11,7 @@ function makeHarness(options?: {
   pending?: boolean;
   defaultDocument?: string;
   ejectedAnnotation?: boolean;
+  verificationAnnotation?: object | null;
 }) {
   const state = {
     "note.default-profile": {
@@ -95,7 +96,12 @@ function makeHarness(options?: {
     loadVerificationData: async () => ({
       note: { title: "Paper" },
       filename: { citationKey: "doePaper" },
-      annotation: options?.ejectedAnnotation ? { text: "Excerpt" } : null,
+      annotation:
+        options && "verificationAnnotation" in options
+          ? (options.verificationAnnotation ?? null)
+          : options?.ejectedAnnotation
+            ? { text: "Excerpt" }
+            : null,
     }),
     openPrompt,
   });
@@ -242,5 +248,28 @@ describe("LiteratureNoteTemplateMigrationService", () => {
       annotation: { text: "Excerpt" },
     });
     expect(harness.settings.flush).toHaveBeenCalledBefore(harness.trashFile);
+  });
+
+  it("names the missing verification annotation and its recovery", async () => {
+    const harness = makeHarness({
+      pending: true,
+      ejectedAnnotation: true,
+      verificationAnnotation: null,
+    });
+    await harness.service.ready;
+
+    const result = await harness.service.convert();
+
+    expect(result).toEqual({
+      outcome: "refused",
+      diagnostic: {
+        code: "no-verification-annotation",
+        message:
+          "No Zotero annotation is available for conversion verification",
+        hint: "Add an annotation to a Zotero item, then retry conversion.",
+      },
+    });
+    expect(harness.create).not.toHaveBeenCalled();
+    expect(harness.trashFile).not.toHaveBeenCalled();
   });
 });
