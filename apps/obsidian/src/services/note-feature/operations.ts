@@ -7,6 +7,7 @@ import {
   fetchAnnotationsTemplateData,
   fetchNoteContext,
   getAnnotationsByItemId,
+  getChildNotesByParentIDs,
   getZoteroIdentity,
   getItemsByKey,
   resolveIndexedKeyLibrary,
@@ -219,8 +220,19 @@ export interface NoteFeature {
   /** Re-stamp one note after explicit user consent, then refresh it. */
   switchNoteProfile(
     file: TFile,
-    options: { indexedKey: string; profileId: string | null },
+    options: {
+      indexedKey: string;
+      profileId: string | null;
+      importedNotes?: readonly TFile[];
+    },
   ): Promise<UpdateResult>;
+  /** Re-stamp one Imported Note; its next re-import follows this Profile. */
+  switchImportedNoteProfile(
+    file: TFile,
+    options: { profileId: string | null },
+  ): Promise<UpdateResult>;
+  /** Imported Notes currently materialized for one Zotero item. */
+  getImportedNotesForItem(indexedKey: string): Promise<TFile[]>;
   /** @see overwriteNote */
   overwriteNote(file: TFile, indexedKey: string): Promise<UpdateResult>;
   /** @see writeNoteUpdate */
@@ -325,6 +337,10 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
     createNote: createAtGate,
     updateNote: (file, options) => updateNote(ctx, file, options),
     switchNoteProfile: (file, options) => switchNoteProfile(ctx, file, options),
+    switchImportedNoteProfile: (file, options) =>
+      switchImportedNoteProfile(ctx, file, options),
+    getImportedNotesForItem: (indexedKey) =>
+      getImportedNotesForItem(ctx, indexedKey),
     overwriteNote: (file, indexedKey) => overwriteNote(ctx, file, indexedKey),
     writeNoteUpdate: (file, options) => writeNoteUpdate(ctx, file, options),
     renderCitation: (items, secondary = false) =>
@@ -616,7 +632,11 @@ async function updateNote(
 async function switchNoteProfile(
   ctx: OpsContext,
   file: TFile,
-  options: { indexedKey: string; profileId: string | null },
+  options: {
+    indexedKey: string;
+    profileId: string | null;
+    importedNotes?: readonly TFile[];
+  },
 ): Promise<UpdateResult> {
   const settings = await ctx.settings.loaded;
   const profileId = options.profileId ?? undefined;
@@ -629,20 +649,85 @@ async function switchNoteProfile(
   if (document === null) {
     return refusedUpdateMissingDocument(profile.document!, file.path);
   }
-
   const previousProfileId = stampedProfileId(ctx, file);
   await stampNoteProfile(ctx, file, profileId);
+  let result: UpdateResult;
   try {
-    const result = await updateNote(ctx, file, {
+    result = await updateNote(ctx, file, {
       indexedKey: options.indexedKey,
       profileOverride: options.profileId,
     });
     if (result.diagnostic) {
       await stampNoteProfile(ctx, file, previousProfileId);
     }
-    return result;
   } catch (error) {
     await stampNoteProfile(ctx, file, previousProfileId);
+    throw error;
+  }
+  if (result.diagnostic) return result;
+
+  await stampImportedNoteFamily(ctx, options.importedNotes ?? [], profileId);
+  return result;
+}
+
+async function switchImportedNoteProfile(
+  ctx: OpsContext,
+  file: TFile,
+  options: { profileId: string | null },
+): Promise<UpdateResult> {
+  const settings = await ctx.settings.loaded;
+  const profileId = options.profileId ?? undefined;
+  if (!resolveLiteratureNoteProfile(settings, profileId)) {
+    return refusedUpdateProfile(profileId!, file.path);
+  }
+  await stampNoteProfile(ctx, file, profileId);
+  return NO_BODY_UPDATE;
+}
+
+async function getImportedNotesForItem(
+  ctx: NoteFeatureDeps,
+  indexedKey: string,
+): Promise<TFile[]> {
+  await ctx.noteIndex.whenIndexed();
+  using lease = await ctx.db.acquireRead();
+  const parsed = resolveIndexedKeyLibrary(lease.client, indexedKey);
+  if (!parsed) throw new Error(`Zotero item not found: ${indexedKey}`);
+  const item = getItemsByKey(lease.client, parsed.libraryID, [parsed.key])[0];
+  if (!item) throw new Error(`Zotero item not found: ${indexedKey}`);
+  return getChildNotesByParentIDs(lease.client, [item.itemID]).flatMap((note) =>
+    ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey),
+  );
+}
+
+async function stampImportedNoteFamily(
+  ctx: NoteFeatureDeps,
+  files: readonly TFile[],
+  profileId: string | undefined,
+): Promise<void> {
+  const previous = files.map(
+    (file) => [file, stampedProfileId(ctx, file)] as const,
+  );
+  const attempted: typeof previous = [];
+  try {
+    for (const entry of previous) {
+      attempted.push(entry);
+      await stampNoteProfile(ctx, entry[0], profileId);
+    }
+  } catch (error) {
+    const rollbackErrors: unknown[] = [];
+    for (const [file, previousProfileId] of attempted.toReversed()) {
+      try {
+        await stampNoteProfile(ctx, file, previousProfileId);
+      } catch (rollbackError) {
+        rollbackErrors.push(rollbackError);
+      }
+    }
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError(
+        [error, ...rollbackErrors],
+        "Imported Note Profile switch and rollback failed",
+      );
+    }
     throw error;
   }
 }

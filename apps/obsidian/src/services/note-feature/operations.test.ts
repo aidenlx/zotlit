@@ -8,6 +8,7 @@ import {
   fetchAnnotationsTemplateData,
   fetchNoteContext,
   getAnnotationsByItemId,
+  getChildNotesByParentIDs,
   getItemsByKey,
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
@@ -108,6 +109,7 @@ vi.mock("@zotlit/db", async (importOriginal) => {
     // need a real Zotero item table.
     resolveIndexedKeyLibrary: vi.fn(),
     getItemsByKey: vi.fn(),
+    getChildNotesByParentIDs: vi.fn(),
     // renderAnnotation's drag-insert path; stubbed per-test so the annotation
     // template data (parent item + page label) is supplied without a real DB.
     getAnnotationsByItemId: vi.fn(),
@@ -204,6 +206,7 @@ describe("createNote", () => {
       template: makeTemplate(),
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: (key) =>
@@ -315,6 +318,7 @@ describe("createNote", () => {
       },
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -410,6 +414,7 @@ describe("createNote", () => {
       },
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -488,6 +493,7 @@ describe("createNote", () => {
       },
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: () => whenIndexed,
         getNotesByItemKey: () => [],
@@ -529,6 +535,7 @@ describe("createNote", () => {
       template: makeTemplate(),
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {
           indexed = true;
@@ -577,6 +584,7 @@ describe("createNote", () => {
       template: makeTemplate(),
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [
@@ -634,6 +642,7 @@ describe("createNote", () => {
       template: makeTemplate(),
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -682,6 +691,7 @@ describe("createNote", () => {
       template: makeTemplate(),
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -719,6 +729,7 @@ describe("createNote", () => {
       template: makeTemplate(),
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -761,6 +772,7 @@ describe("createNote", () => {
       template,
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -838,6 +850,7 @@ describe("createNote", () => {
       },
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -885,6 +898,7 @@ describe("createNote", () => {
       template: makeTemplate(),
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -939,6 +953,7 @@ describe("createNote", () => {
       template,
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -971,6 +986,7 @@ describe("createNote", () => {
       template: makeTemplate(),
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -1012,6 +1028,7 @@ describe("createNote", () => {
       },
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -1062,6 +1079,7 @@ describe("createNote", () => {
       template,
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -1115,6 +1133,7 @@ describe("createNote", () => {
       },
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -1163,6 +1182,7 @@ describe("createNote", () => {
       template: makeTemplate(),
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [existing],
@@ -1258,6 +1278,7 @@ describe("overwriteNote", () => {
       },
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -1358,6 +1379,7 @@ function makeUpdateHarness(options: {
     template,
     db: makeDb(),
     noteIndex: {
+      getImportedNoteByNoteKey: () => [],
       ready: Promise.resolve(),
       whenIndexed: async () => {},
       getNotesByItemKey: () => [],
@@ -1707,6 +1729,161 @@ describe("updateNote", () => {
       [FIELD_LITERATURE_NOTE_PROFILE]: newProfileId,
       [FIELD_CITATION_STYLE]: "ieee",
     });
+  });
+
+  it("re-stamps an Imported Note without refreshing or moving it", async () => {
+    const newProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const harness = makeUpdateHarness({
+      content: "Imported body",
+      settings: {
+        "note.profiles": [{ id: newProfileId, label: "Papers" }],
+      },
+    });
+    const file = makeFile("Imported/Existing.md");
+
+    const result = await createNoteFeature(
+      harness.deps,
+    ).switchImportedNoteProfile(file, { profileId: newProfileId });
+
+    expect(result.diagnostic).toBeUndefined();
+    expect(harness.frontmatter()).toMatchObject({
+      [FIELD_LITERATURE_NOTE_PROFILE]: newProfileId,
+    });
+    expect(harness.content()).toBe("Imported body");
+    expect(harness.processMock).not.toHaveBeenCalled();
+  });
+
+  it("lists the Imported Notes that belong to one Zotero item", async () => {
+    const first = makeFile("Imported/First.md");
+    const second = makeFile("Imported/Second.md");
+    stubIndexedKeyUpdate(updateContext());
+    vi.mocked(getChildNotesByParentIDs).mockReturnValueOnce([
+      { indexedKey: "NOTE0001" },
+      { indexedKey: "NOTE0002" },
+      { indexedKey: "NOTEGONE" },
+    ] as never);
+    const harness = makeUpdateHarness({ content: formatManagedRegion("OLD") });
+    harness.deps.noteIndex.getImportedNoteByNoteKey = (key) =>
+      key === "NOTE0001" ? [first] : key === "NOTE0002" ? [second] : [];
+
+    await expect(
+      createNoteFeature(harness.deps).getImportedNotesForItem("ABC12345"),
+    ).resolves.toEqual([first, second]);
+  });
+
+  it("re-stamps an opted-in Imported Note family after the Literature Note switch", async () => {
+    const oldProfileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const newProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const imported = [
+      makeFile("Imported/First.md"),
+      makeFile("Imported/Second.md"),
+    ];
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
+      settings: {
+        "note.profiles": [
+          { id: oldProfileId, label: "Books" },
+          { id: newProfileId, label: "Papers" },
+        ],
+      },
+    });
+    const result = await createNoteFeature(harness.deps).switchNoteProfile(
+      makeFile("Books/Root.md"),
+      {
+        indexedKey: "ABC12345",
+        profileId: newProfileId,
+        importedNotes: imported,
+      },
+    );
+
+    expect(result.diagnostic).toBeUndefined();
+    expect(harness.frontmatterMock.mock.calls.map(([file]) => file)).toEqual(
+      expect.arrayContaining(imported),
+    );
+  });
+
+  it("does not re-stamp the Imported Note family when the Literature Note switch is refused", async () => {
+    const newProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const imported = makeFile("Imported/First.md");
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      settings: {
+        "note.profiles": [{ id: newProfileId, label: "Papers" }],
+        "note.template-conversion-pending": true,
+      },
+    });
+
+    const result = await createNoteFeature(harness.deps).switchNoteProfile(
+      makeFile("Literature/Root.md"),
+      {
+        indexedKey: "ABC12345",
+        profileId: newProfileId,
+        importedNotes: [imported],
+      },
+    );
+
+    expect(result.diagnostic?.code).toBe(
+      "literature-note-template-conversion-required",
+    );
+    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+  });
+
+  it("restores Imported Note stamps when one family write fails", async () => {
+    const oldProfileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const newProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const literature = makeFile("Literature/Root.md");
+    const imported = [
+      makeFile("Imported/First.md"),
+      makeFile("Imported/Second.md"),
+    ];
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      settings: {
+        "note.profiles": [
+          { id: oldProfileId, label: "Books" },
+          { id: newProfileId, label: "Papers" },
+        ],
+      },
+    });
+    const frontmatters = new Map(
+      [literature, ...imported].map((file) => [
+        file.path,
+        { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
+      ]),
+    );
+    harness.deps.app.metadataCache.getFileCache = (file) => ({
+      frontmatter: frontmatters.get(file.path),
+    });
+    let failed = false;
+    harness.deps.app.fileManager.processFrontMatter = vi.fn(
+      async (file, callback) => {
+        callback(frontmatters.get(file.path)!);
+        if (file === imported[1] && !failed) {
+          failed = true;
+          throw new Error("frontmatter write failed");
+        }
+      },
+    );
+
+    await expect(
+      createNoteFeature(harness.deps).switchNoteProfile(literature, {
+        indexedKey: "ABC12345",
+        profileId: newProfileId,
+        importedNotes: imported,
+      }),
+    ).rejects.toThrow("frontmatter write failed");
+
+    expect(frontmatters.get(literature.path)).toMatchObject({
+      [FIELD_LITERATURE_NOTE_PROFILE]: newProfileId,
+    });
+    for (const file of imported) {
+      expect(frontmatters.get(file.path)).toMatchObject({
+        [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId,
+      });
+    }
   });
 
   it("restores the previous stamp when a Profile switch fails", async () => {
@@ -2102,6 +2279,7 @@ describe("renderCitation", () => {
       },
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -2174,6 +2352,7 @@ describe("renderCitation", () => {
       },
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -2227,6 +2406,7 @@ describe("renderAnnotation", () => {
       },
       db: makeDb(),
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: () => [],
@@ -2273,6 +2453,7 @@ describe("renderAnnotation", () => {
       ...annotDeps(template),
       app,
       noteIndex: {
+        getImportedNoteByNoteKey: () => [],
         ready: Promise.resolve(),
         whenIndexed: async () => {},
         getNotesByItemKey: (indexedKey: string) =>
@@ -2367,6 +2548,7 @@ function annotDeps(template: SyncRenderDeps["template"]): SyncRenderDeps {
     template,
     db: makeDb(),
     noteIndex: {
+      getImportedNoteByNoteKey: () => [],
       ready: Promise.resolve(),
       whenIndexed: async () => {},
       getNotesByItemKey: () => [],

@@ -72,7 +72,10 @@ export interface NoteFeatureDeps {
    * The synchronous `renderAnnotation` path takes {@link SyncRenderDeps}.
    */
   db: Pick<DatabaseService, "acquireRead">;
-  noteIndex: Pick<NoteIndex, "ready" | "whenIndexed" | "getNotesByItemKey">;
+  noteIndex: Pick<
+    NoteIndex,
+    "ready" | "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
+  >;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   settings: Pick<SettingsService, "current" | "loaded">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
