@@ -27,7 +27,6 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 
 | Command                           | What it does                                                                                                                |
 | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm build`                      | `turbo run build` across the graph.                                                                                         |
 | `pnpm dev`                        | `turbo run dev` (persistent, no cache).                                                                                     |
 | `pnpm test`                       | `turbo run test` across packages that define a `test` script (typecheck + Vitest in each).                                  |
 | `pnpm lint` / `pnpm lint:fix`     | Root-level `oxlint` over the whole tree. Builds deps via turbo caching, then typechecks + lints in one pass. **A clean run verifies types — no separate `tsgo`/`turbo run typecheck` pass.** |
@@ -59,7 +58,7 @@ Write reports to the user in ASD-STE100 Simplified Technical English.
 
 Every changed line traces to the user's request. Leave adjacent code, comments, and formatting as found. Remove only orphans YOUR changes created; mention pre-existing dead code, don't delete it.
 
-## Code conventions
+## Code standard
 
 Authoring conventions live in [`policies/`](policies/), one topic per file:
 
@@ -67,6 +66,7 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 - [deep modules](policies/pure-logic.md) — default to one cohesive module; split only with concrete payoff
 - [comments](policies/comments.md) — JSDoc conventions, module-level comments
 - [function-parameters](policies/function-parameters.md) — max 3 positional, options object for the rest
+- [tautological tests](policies/tautological-tests.md) — assert against hand-derived expectations, not mirrored implementation
 - [resource-disposal](policies/resource-disposal.md) — scope-bound `using`, safe-constructor, destructuring gotcha
 - [regex](policies/regex.md) — arkregex for typed captures; `/arkregex` skill
 - [event-naming](policies/event-naming.md) — nanoevents event names are dash-case, not camelCase
