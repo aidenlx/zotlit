@@ -1079,6 +1079,14 @@ frontmatter:
 
 Citation key: {{ zt.citationKey }}
 {% endmanaged %}
+
+{% annotation %}
+{% bq %}
+[!quote] Fixture page {{ zt.pageLabel }}
+
+{{ zt.text }}
+{% endbq %}
+{% endannotation %}
 `,
   },
 ] as const;

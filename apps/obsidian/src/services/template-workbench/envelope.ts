@@ -83,7 +83,7 @@ export const DIAGNOSTIC_HINTS = {
   DUPLICATE_MANAGED_BLOCK:
     "Keep at most one Managed Block in the document, then render it again.",
   MISSING_ANNOTATION_BLOCK:
-    "Add one {% annotation %} ... {% endannotation %} block at the end of the document body; run template-source template=annotation for the built-in default block source (Liquid).",
+    "Add one {% annotation %} ... {% endannotation %} block to the document body, with each tag alone on its line; run template-source template=annotation for the built-in default block source (Liquid).",
   DUPLICATE_ANNOTATION_BLOCK:
     "Keep at most one Annotation Block in the document, then render it again.",
   DOCUMENT_INVALID:

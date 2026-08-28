@@ -123,6 +123,12 @@ export interface ManagedBlock {
   source: string;
   start: number;
   end: number;
+  /**
+   * The line break a line-owning close tag took with it, or the empty string.
+   * The Managed Block is replaced rather than removed, so the create path puts
+   * this back after the Managed Region to terminate the region's last line.
+   */
+  trailingLineBreak: string;
 }
 
 export interface AnnotationBlock {
@@ -247,10 +253,19 @@ export function synthesizeLegacyLiteratureNoteTemplate(
   const annotationSource =
     legacy.annotation?.source ??
     (language === "liquid" ? annotationLiquid : annotationEta);
+  // Both blocks are written as Line-Owning Tags, so a converted document reads
+  // as blocks while rendering the same bytes the legacy slots rendered. An
+  // indented insertion keeps the glued open tag: a line-owning open tag would
+  // take the author's indentation with it and lose those bytes.
+  const insertionIndex = legacy.note.source.indexOf(insertion);
+  const openManaged =
+    insertionIndex === 0 || legacy.note.source[insertionIndex - 1] === "\n"
+      ? "{% managed %}\n"
+      : "{% managed %}";
   const body = `${legacy.note.source.replace(
     insertion,
-    () => `{% managed %}${legacy.content.source}{% endmanaged %}`,
-  )}{% annotation %}${annotationSource}{% endannotation %}`;
+    () => `${openManaged}${legacy.content.source}{% endmanaged %}`,
+  )}\n{% annotation %}\n${annotationSource}{% endannotation %}\n`;
   const manifest = stringifyYaml(
     {
       id: manifestOverrides.id ?? "zotlit.converted-default",
@@ -318,7 +333,7 @@ export function missingAnnotationBlockError(): LiteratureNoteTemplateError {
     "missing-annotation-block",
     `Literature Note Template document has no ${OPEN_ANNOTATION} block`,
     {
-      recovery: `Add a ${OPEN_ANNOTATION} ... ${CLOSE_ANNOTATION} block at the end of the document body.`,
+      recovery: `Add one ${OPEN_ANNOTATION} ... ${CLOSE_ANNOTATION} block to the document body, with each tag alone on its line.`,
     },
   );
 }
@@ -546,11 +561,49 @@ function findTemplateBlock(
     );
   }
 
+  const afterOpen = firstOpen + open.length;
+  const afterClose = firstClose + close.length;
+  const openOwnsLine = tagOwnsLine(body, firstOpen, afterOpen);
+  const closeOwnsLine = tagOwnsLine(body, firstClose, afterClose);
+  const trailingLineBreak = closeOwnsLine
+    ? body.slice(afterClose, afterClose + lineBreakLength(body, afterClose))
+    : "";
+
   return {
-    source: body.slice(firstOpen + open.length, firstClose),
-    start: firstOpen,
-    end: firstClose + close.length,
+    source: body.slice(
+      afterOpen + (openOwnsLine ? lineBreakLength(body, afterOpen) : 0),
+      closeOwnsLine ? lineStartIndex(body, firstClose) : firstClose,
+    ),
+    start: openOwnsLine ? lineStartIndex(body, firstOpen) : firstOpen,
+    end: afterClose + trailingLineBreak.length,
+    trailingLineBreak,
   };
+}
+
+/** @returns the index just after the line break preceding `index`. */
+function lineStartIndex(body: string, index: number): number {
+  return body.lastIndexOf("\n", index - 1) + 1;
+}
+
+/** @returns the length of the line break at `index`, or 0 when none starts there. */
+function lineBreakLength(body: string, index: number): number {
+  if (body.startsWith("\r\n", index)) return 2;
+  return body[index] === "\n" ? 1 : 0;
+}
+
+/**
+ * A Line-Owning Tag's indentation and trailing line break belong to the tag, so
+ * they leave the block source and travel with the block when it is removed.
+ *
+ * @returns true when only whitespace stands between the line start and the tag,
+ * and a line break (or the document end) follows it.
+ * @see docs/adr/0028-structural-block-tags-trim-by-line-ownership.md
+ */
+function tagOwnsLine(body: string, start: number, end: number): boolean {
+  if (!/^[ \t]*$/.test(body.slice(lineStartIndex(body, start), start))) {
+    return false;
+  }
+  return end === body.length || lineBreakLength(body, end) > 0;
 }
 
 interface SourceRange {

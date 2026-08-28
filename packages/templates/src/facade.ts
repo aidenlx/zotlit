@@ -253,7 +253,9 @@ export class TemplateFacade {
     });
     const document = this.parseLiteratureNoteTemplate(source);
     const legacyRendered = {
-      create: this.render("note", data.note),
+      // The legacy path predates the trailing-line-break rule; normalize its
+      // baseline so parity compares the bytes both paths would now write.
+      create: withOneTrailingLineBreak(this.render("note", data.note)),
       update: this.render("content", data.note),
       filename: this.render("filename", data.filename),
       annotation:
@@ -363,10 +365,12 @@ export class TemplateFacade {
     const renderDocument = withoutAnnotationBlock(document);
     const block = renderDocument.managedBlock;
     if (!block) {
-      return this.#renderDocumentSource(renderDocument, data, {
-        part: "body",
-        source: renderDocument.body,
-      });
+      return withOneTrailingLineBreak(
+        this.#renderDocumentSource(renderDocument, data, {
+          part: "body",
+          source: renderDocument.body,
+        }),
+      );
     }
 
     const outerSourceWithoutPlaceholder =
@@ -399,7 +403,12 @@ export class TemplateFacade {
       part: "managed",
       source: block.source,
     });
-    return outer.replace(placeholder, () => formatManagedRegion(managed));
+    return withOneTrailingLineBreak(
+      outer.replace(
+        placeholder,
+        () => `${formatManagedRegion(managed)}${block.trailingLineBreak}`,
+      ),
+    );
   }
 
   renderLiteratureNoteTemplateForUpdate<T extends object>(
@@ -678,6 +687,16 @@ function assertSameRender(
 }
 
 let nextManagedBlockPlaceholder = 0;
+
+/**
+ * End a created note body with exactly one line break, so that a stripped
+ * Annotation Block leaves no trace wherever the author placed it.
+ */
+function withOneTrailingLineBreak(body: string): string {
+  const trimmed = body.trimEnd();
+  const trailing = body.slice(trimmed.length).includes("\r\n") ? "\r\n" : "\n";
+  return `${trimmed}${trailing}`;
+}
 
 function managedBlockPlaceholder(source: string): string {
   let placeholder: string;

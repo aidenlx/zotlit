@@ -72,10 +72,10 @@ describe("Literature Note Template document", () => {
       );
 
       expect(converted.source).toContain(
-        `{% managed %}${content}{% endmanaged %}`,
+        `{% managed %}\n${content}{% endmanaged %}`,
       );
       expect(converted.rendered).toEqual({
-        create: facade.render("note", { title: "Paper" }),
+        create: `${facade.render("note", { title: "Paper" })}\n`,
         update: facade.render("content", { title: "Paper" }),
         filename: facade.render("filename", { citationKey: "doePaper" }),
         annotation: null,
@@ -347,7 +347,7 @@ describe("Literature Note Template document", () => {
       );
       expect(
         converted.source.endsWith(
-          `{% annotation %}${defaultAnnotation}{% endannotation %}`,
+          `\n{% annotation %}\n${defaultAnnotation}{% endannotation %}\n`,
         ),
       ).toBe(true);
       expect(converted.rendered.annotation).toBeNull();
@@ -428,7 +428,7 @@ ${outside}Before{% annotation %}${annotation}{% endannotation %}After`);
         facade.renderLiteratureNoteTemplateForCreate(document, {
           text: "ROOT",
         }),
-      ).toBe("BeforeAfter");
+      ).toBe("BeforeAfter\n");
       expect(
         facade.renderLiteratureNoteTemplateAnnotation(document, {
           text: "ROOT",
@@ -475,7 +475,7 @@ Before{% managed %}A{% annotation %}ANNOTATION{% endannotation %}B{% endmanaged 
     const managed = formatManagedRegion("AB");
 
     expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
-      `Before${managed}After`,
+      `Before${managed}After\n`,
     );
     expect(facade.renderLiteratureNoteTemplateForUpdate(document, {})).toBe(
       managed,
@@ -504,7 +504,7 @@ language: liquid
     });
 
     const region = formatManagedRegion("INNER");
-    expect(created).toBe(`A${region}Z`);
+    expect(created).toBe(`A${region}Z\n`);
     expect(updated).toBe(region);
   });
 
@@ -530,7 +530,7 @@ language: eta
     });
 
     const region = formatManagedRegion("INNER");
-    expect(created).toBe(`A${region}Z`);
+    expect(created).toBe(`A${region}Z\n`);
     expect(updated).toBe(region);
   });
 
@@ -551,7 +551,7 @@ filename: note
       facade.renderLiteratureNoteTemplateForCreate(document, {
         prefix: "__ZOTLIT_MANAGED_BLOCK_0__",
       }),
-    ).toBe(`__ZOTLIT_MANAGED_BLOCK_0__${formatManagedRegion("Managed")}`);
+    ).toBe(`__ZOTLIT_MANAGED_BLOCK_0__${formatManagedRegion("Managed")}\n`);
   });
 
   it("uses the canonical Managed Region whitespace on create and update", () => {
@@ -571,7 +571,7 @@ Before{% managed %}
 
     const region = formatManagedRegion("Managed body");
     expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
-      `Before${region}After`,
+      `Before${region}After\n`,
     );
     expect(facade.renderLiteratureNoteTemplateForUpdate(document, {})).toBe(
       region,
@@ -666,7 +666,7 @@ Static body{% annotation %}Annotation{% endannotation %}`);
     expect(document.manifest.language).toBe("liquid");
     expect(document.manifest.profileDefaults).toEqual({});
     expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
-      "Static body",
+      "Static body\n",
     );
     expect(
       facade.renderLiteratureNoteTemplateForUpdate(document, {}),
@@ -889,5 +889,221 @@ Body{% annotation %}Annotation{% endannotation %}`);
         citationKey: "smith2024",
       }),
     ).toBe("smith2024");
+  });
+});
+
+function blockDocument(body: string, id: string): string {
+  return `---
+id: ${id}
+name: Line owning note
+version: 1.0.0
+author: Ada Example
+description: Tests line-owning structural tags.
+contract: 2
+filename: note
+---
+${body}`;
+}
+
+describe("Line-Owning Tags", () => {
+  it("drops the line break after a line-owning open tag", () => {
+    const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(
+      blockDocument(
+        "{% annotation %}\n{{ zt.text }}\n{% endannotation %}\n",
+        "example.owning-open",
+      ),
+    );
+
+    expect(document.annotationBlock?.source).toBe("{{ zt.text }}\n");
+  });
+
+  it("drops the indentation before a line-owning close tag", () => {
+    const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(
+      blockDocument(
+        "{% annotation %}\n{{ zt.text }}\n  {% endannotation %}\n",
+        "example.owning-close",
+      ),
+    );
+
+    expect(document.annotationBlock?.source).toBe("{{ zt.text }}\n");
+  });
+
+  it("keeps every byte around an inline block", () => {
+    const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(
+      blockDocument(
+        "Body{% annotation %}{{ zt.text }}{% endannotation %}Tail",
+        "example.inline",
+      ),
+    );
+
+    expect(document.annotationBlock?.source).toBe("{{ zt.text }}");
+    expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
+      "BodyTail\n",
+    );
+  });
+
+  it("leaves no blank line where a line-owning block stood", () => {
+    const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(
+      blockDocument(
+        "Before\n{% annotation %}\n{{ zt.text }}\n{% endannotation %}\nAfter\n",
+        "example.stripped",
+      ),
+    );
+
+    expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
+      "Before\nAfter\n",
+    );
+  });
+
+  it("removes an indented block together with its indentation", () => {
+    const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(
+      blockDocument(
+        "Before\n  {% annotation %}\n  {{ zt.text }}\n  {% endannotation %}\nAfter\n",
+        "example.indented",
+      ),
+    );
+
+    expect(document.annotationBlock?.source).toBe("  {{ zt.text }}\n");
+    expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
+      "Before\nAfter\n",
+    );
+  });
+
+  it("ends the created body with exactly one line break", () => {
+    const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(
+      blockDocument(
+        "Body{% annotation %}A{% endannotation %}\n\n\n",
+        "example.trailing",
+      ),
+    );
+
+    expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
+      "Body\n",
+    );
+  });
+
+  it("renders a line-owning Managed Block onto its own lines", () => {
+    const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(
+      blockDocument(
+        [
+          "Head",
+          "{% managed %}",
+          "{% if true %}",
+          "In",
+          "{% endif %}",
+          "{% endmanaged %}",
+          "",
+          "{% annotation %}",
+          "A",
+          "{% endannotation %}",
+          "",
+        ].join("\n"),
+        "example.owning-managed",
+      ),
+    );
+
+    expect(document.managedBlock?.source).toBe(
+      "{% if true %}\nIn\n{% endif %}\n",
+    );
+    expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
+      `Head\n${formatManagedRegion("In")}\n`,
+    );
+    expect(facade.renderLiteratureNoteTemplateForUpdate(document, {})).toBe(
+      formatManagedRegion("In"),
+    );
+  });
+
+  it("renders the glued and line-owning layouts to the same bytes", () => {
+    const facade = new TemplateFacade();
+    const inner = "{% if true %}\nIn\n{% endif %}\n";
+    const glued = facade.parseLiteratureNoteTemplate(
+      blockDocument(
+        `Head\n{% managed %}${inner}{% endmanaged %}\n{% annotation %}{% bq %}\nA\n{% endbq %}\n{% endannotation %}`,
+        "example.glued",
+      ),
+    );
+    const owning = facade.parseLiteratureNoteTemplate(
+      blockDocument(
+        `Head\n{% managed %}\n${inner}{% endmanaged %}\n\n{% annotation %}\n{% bq %}\nA\n{% endbq %}\n{% endannotation %}\n`,
+        "example.owning-pair",
+      ),
+    );
+
+    for (const document of [glued, owning]) {
+      expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
+        `Head\n${formatManagedRegion("In")}\n`,
+      );
+      expect(facade.renderLiteratureNoteTemplateAnnotation(document, {})).toBe(
+        "> A\n",
+      );
+    }
+  });
+
+  it("terminates the Managed Region line when body text follows the block", () => {
+    const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(
+      blockDocument(
+        "Head\n{% managed %}\nX\n{% endmanaged %}\nTail\n{% annotation %}\nA\n{% endannotation %}\n",
+        "example.mid-document",
+      ),
+    );
+
+    expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
+      `Head\n${formatManagedRegion("X")}\nTail\n`,
+    );
+  });
+
+  it.each([
+    ["a marker at line start", "", "Head\n"],
+    ["an indented marker", "  ", "Head\n  "],
+  ])(
+    "converts a mid-document content insertion with %s",
+    (_name, indent, expectedPrefix) => {
+      const note = `Head\n${indent}{% render "content" with zt as zt %}\nTail\n`;
+      const content = "Managed {{ zt.title }}\n";
+      const facade = new TemplateFacade({
+        transformRender: (name, output) =>
+          name === "content" ? formatManagedRegion(output) : output,
+      });
+      facade.define("note", note, "liquid");
+      facade.define("content", content, "liquid");
+      facade.define("filename", "name", "liquid");
+
+      const converted = facade.convertLegacyLiteratureNoteTemplates(
+        {
+          note: { source: note, language: "liquid" },
+          content: { source: content, language: "liquid" },
+          filename: { source: "name", language: "liquid" },
+        },
+        { note: { title: "Paper" }, filename: {} },
+      );
+
+      expect(converted.rendered.create).toBe(
+        `${expectedPrefix}${formatManagedRegion("Managed Paper")}\nTail\n`,
+      );
+    },
+  );
+
+  it("owns a CRLF line break like a bare line feed", () => {
+    const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(
+      blockDocument(
+        "Head\r\n{% managed %}\r\nX\r\n{% endmanaged %}\r\nTail\r\n{% annotation %}\r\nA\r\n{% endannotation %}\r\n",
+        "example.crlf",
+      ),
+    );
+
+    expect(document.managedBlock?.source).toBe("X\r\n");
+    expect(document.managedBlock?.trailingLineBreak).toBe("\r\n");
+    expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
+      `Head\r\n${formatManagedRegion("X")}\r\nTail\r\n`,
+    );
   });
 });
