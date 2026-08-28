@@ -25,6 +25,7 @@ import type { CitationIndexHarness } from "@/services/citation-index/test-harnes
 import { createCitationEngine } from "@/services/pandoc/engine";
 import type { CitationEngine } from "@/services/pandoc/engine";
 import { inlineText } from "@/services/pandoc/inline-content";
+import { defaults } from "@/services/settings/schema";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { ReferenceEntry } from "@/views/references/entries";
 
@@ -428,6 +429,7 @@ function openText(
     db,
     citationIndex: index,
     noteIndex,
+    settings: { current: defaults },
     bibliographyRender: {
       vaultPresentation: { styleId: null, locale: null },
       renderCitations: (citations, items) =>

@@ -1,8 +1,9 @@
 // The reading-mode surface of the Citekey Editor Treatment: literal citekey citations show formatted in the reading view, and navigate like links.
 
-import { MarkdownView } from "obsidian";
+import { MarkdownView, setTooltip } from "obsidian";
 import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { rerenderReadingViews, sectionRange } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
@@ -206,6 +207,17 @@ export class CitekeyReading extends Service<void> {
         content ?? citation.source,
         themeClasses,
       );
+      const failure = text.presentationFailure;
+      if (failure) {
+        element.dataset["citationPresentationError"] = "profile";
+        setTooltip(
+          element,
+          m.notice_imported_note_profile_unknown({
+            id: failure.profileId,
+            target: failure.target,
+          }),
+        );
+      }
       const navigation: CitationNavigation = {
         works: citedWorks(citation, text),
         // The occurrence this section shows in the citation's place, which is

@@ -43,6 +43,7 @@ import type {
   RenderPresentation,
 } from "@/services/pandoc/render-cache";
 import { Service } from "@/services/service-base";
+import type { SettingsService } from "@/services/settings/service";
 
 import { citationKey } from "./present";
 import type {
@@ -96,6 +97,7 @@ export interface CitationTextDeps {
   >;
   /** What a citekey resolves to, which decides what a Citation can say. */
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
+  settings: Pick<SettingsService, "current">;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<
     BibliographyRenderCache,
@@ -131,6 +133,7 @@ export class CitationText extends Service<void> {
   readonly #db;
   readonly #citationIndex;
   readonly #noteIndex;
+  readonly #settings;
   readonly #bibliographyRender;
   readonly #emitter = createNanoEvents<CitationTextEvents>();
   readonly #documents = new BoundedCache<HeldCitations>(HELD_DOCUMENTS);
@@ -143,6 +146,7 @@ export class CitationText extends Service<void> {
     this.#db = deps.db;
     this.#citationIndex = deps.citationIndex;
     this.#noteIndex = deps.noteIndex;
+    this.#settings = deps.settings;
     this.#bibliographyRender = deps.bibliographyRender;
     this.ready = this.#load();
   }
@@ -312,7 +316,11 @@ export class CitationText extends Service<void> {
     // nothing: its citations keep the source the author wrote, rather than
     // reading as though a vault selection were what the note declared.
     const presented = documentCitationPresentation(
-      documentPresentation(this.#app.metadataCache, file),
+      documentPresentation(
+        this.#app.metadataCache,
+        file,
+        this.#settings.current,
+      ),
       this.#bibliographyRender.vaultPresentation,
       { citations: set.citations, works },
     );
@@ -377,6 +385,9 @@ export class CitationText extends Service<void> {
       ),
     }));
     return {
+      ...(presented.kind === "unusable" && presented.property === "profile"
+        ? { presentationFailure: presented }
+        : {}),
       formatted,
       entrySerials,
       summaries: new Map(

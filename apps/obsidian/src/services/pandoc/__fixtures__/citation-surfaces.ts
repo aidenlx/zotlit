@@ -176,6 +176,8 @@ export interface CitationVaultOptions {
   documentStyle?: unknown;
   /** The `lang` property both notes carry; `undefined` writes none. */
   documentLanguage?: unknown;
+  /** Other frontmatter properties both notes carry. */
+  documentProperties?: Record<string, unknown>;
   /**
    * Whether Zotero holds the works these notes cite; `false` leaves every
    * citation unresolved, so nothing reaches the bibliography.
@@ -251,6 +253,7 @@ export async function openCitationVault({
   settings: overrides,
   documentStyle,
   documentLanguage,
+  documentProperties = {},
   zoteroHoldsWork = true,
 }: CitationVaultOptions): Promise<CitationVault> {
   resetCitationSurfaceMocks();
@@ -287,7 +290,7 @@ export async function openCitationVault({
   };
   /** Those same properties as one record, the way a note carries them. */
   const properties = (): Record<string, unknown> => {
-    const record: Record<string, unknown> = {};
+    const record: Record<string, unknown> = { ...documentProperties };
     if (declared.style !== undefined) record["zotlit-csl"] = declared.style;
     if (declared.language !== undefined) record["lang"] = declared.language;
     return record;
@@ -345,6 +348,7 @@ export async function openCitationVault({
       citationIndex: harness.index,
       noteIndex: harness.noteIndex,
       bibliographyRender: cache,
+      settings,
     }),
   );
   await citationText.ready;
@@ -363,6 +367,7 @@ export async function openCitationVault({
         decline: () => undefined,
       },
       bibliographyRender: cache,
+      settings,
       openSettings: () => undefined,
       openStyleSettings: () => undefined,
     } as unknown as ConstructorParameters<typeof TestReferencesView>[1],
@@ -387,6 +392,7 @@ export async function openCitationVault({
     citationText,
     bibliographyRender: cache,
     libraryScope: harness.libraryScope,
+    settings,
   });
 
   const copyAction = (): HTMLElement =>

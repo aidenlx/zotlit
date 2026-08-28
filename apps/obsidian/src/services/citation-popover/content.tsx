@@ -9,6 +9,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type { Inlines } from "@/services/pandoc/ast";
+import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import { InlineContent } from "@/services/pandoc/inline-content";
 
 import type { CitationPopoverActions } from "./actions";
@@ -28,6 +29,8 @@ export interface CitationPopoverContentProps {
    * inline, which shows its entries instead.
    */
   note?: Inlines;
+  /** The Imported Note Profile diagnostic this popover shows above its works. */
+  profileFailure?: ProfilePresentationFailure;
   actions: CitationPopoverActions;
 }
 
@@ -39,12 +42,33 @@ export interface CitationPopoverContentProps {
 export function CitationPopoverContent({
   blocks,
   note,
+  profileFailure,
   actions,
 }: CitationPopoverContentProps) {
-  if (note?.length) {
-    return <NoteCitation note={note} blocks={blocks} actions={actions} />;
-  }
-  return <EntryStack blocks={blocks} actions={actions} />;
+  return (
+    <>
+      {profileFailure && <ProfileFailure failure={profileFailure} />}
+      {note?.length ? (
+        <NoteCitation note={note} blocks={blocks} actions={actions} />
+      ) : (
+        <EntryStack blocks={blocks} actions={actions} />
+      )}
+    </>
+  );
+}
+
+function ProfileFailure({ failure }: { failure: ProfilePresentationFailure }) {
+  return (
+    <div
+      className={cn(blockClass, "zt:text-destructive")}
+      data-citation-popover-profile-error
+    >
+      {m.notice_imported_note_profile_unknown({
+        id: failure.profileId,
+        target: failure.target,
+      })}
+    </div>
+  );
 }
 
 /**

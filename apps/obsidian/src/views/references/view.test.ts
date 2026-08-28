@@ -8,6 +8,7 @@ import type { DocumentCitationSet } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/present";
 import type { Inline, Inlines } from "@/services/pandoc/ast";
 import type { BibliographyRenderOutcome } from "@/services/pandoc/render-cache";
+import { defaults } from "@/services/settings/schema";
 
 import { ReferencesView } from "./view";
 
@@ -247,6 +248,7 @@ beforeEach(async () => {
           return () => undefined;
         },
       },
+      settings: { current: defaults },
       openSettings: () => undefined,
       openStyleSettings: () => undefined,
     } as unknown as ConstructorParameters<typeof TestReferencesView>[1],

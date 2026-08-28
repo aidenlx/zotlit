@@ -16,9 +16,11 @@ import {
   documentCitationPresentation,
   documentPresentation,
 } from "@/services/pandoc/document-presentation";
+import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import type { BibliographyEntry } from "@/services/pandoc/engine";
 import { noteContent } from "@/services/pandoc/inline-content";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import type { SettingsService } from "@/services/settings/service";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
 
@@ -41,6 +43,7 @@ export interface CitationPopoverDeps {
   libraryScope: Pick<LibraryScopeService, "current">;
   /** The formatted citations of the hovered document, read for this popover. */
   citationText: Pick<CitationText, "load">;
+  settings: Pick<SettingsService, "current">;
   /** The plugin-wide render cache, which the References Sidebar reads its own entries from. */
   bibliographyRender: Pick<
     BibliographyRenderCache,
@@ -101,6 +104,7 @@ interface PopoverRead {
   blocks: CitationPopoverBlock[];
   /** The note a note-class style wrote for the hovered occurrence. */
   note: Inlines | undefined;
+  profileFailure: ProfilePresentationFailure | undefined;
 }
 
 /**
@@ -128,7 +132,7 @@ async function fill(
     return;
   }
   if (!current()) return;
-  const { blocks, note } = read;
+  const { blocks, note, profileFailure } = read;
   // Every work the hover carries becomes a block, so an empty stack means
   // the document itself could not be read — nothing the popover can say.
   if (blocks.length === 0) {
@@ -140,7 +144,12 @@ async function fill(
     hide: () => popover.hide(),
   });
   const shown = popover.render(
-    <CitationPopoverContent blocks={blocks} note={note} actions={actions} />,
+    <CitationPopoverContent
+      blocks={blocks}
+      note={note}
+      profileFailure={profileFailure}
+      actions={actions}
+    />,
   );
   logger.debug("Citation popover entries read", {
     path: request.sourcePath,
@@ -159,7 +168,7 @@ async function readBlocks(
     logger.debug("Hovered citation sits in no note", {
       path: request.sourcePath,
     });
-    return { blocks: [], note: undefined };
+    return { blocks: [], note: undefined, profileFailure: undefined };
   }
   const { citations } = await deps.citationIndex.getDocumentCitationSet(file);
   const { sources } = readReferenceSources(deps.db, citations);
@@ -167,7 +176,7 @@ async function readBlocks(
   // References Sidebar of that note shows — including nothing formatted at all
   // where the note's declared style or language cannot be rendered with.
   const presented = documentCitationPresentation(
-    documentPresentation(deps.app.metadataCache, file),
+    documentPresentation(deps.app.metadataCache, file, deps.settings.current),
     deps.bibliographyRender.vaultPresentation,
     { citations, works: sources },
   );
@@ -207,6 +216,10 @@ async function readBlocks(
       },
     }),
     note: formatted ? noteContent(formatted.text.content) : undefined,
+    profileFailure:
+      presented.kind === "unusable" && presented.property === "profile"
+        ? presented
+        : undefined,
   };
 }
 

@@ -32,11 +32,12 @@ import {
   samePresentation,
 } from "@/services/pandoc/document-presentation";
 import type {
+  DocumentPresentationFailure,
   DocumentPresentation,
-  UnusableProperty,
 } from "@/services/pandoc/document-presentation";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
+import type { SettingsService } from "@/services/settings/service";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
 import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
@@ -87,6 +88,7 @@ export interface ReferencesViewDeps {
     BibliographyRenderCache,
     "render" | "on" | "vaultPresentation"
   >;
+  settings: Pick<SettingsService, "current">;
   /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
   /** Reveals the Citation and References Style row in settings. */
@@ -131,7 +133,7 @@ export class ReferencesView extends ItemView {
    * The note property that put the current minimal list on screen; `null` while
    * the note's own presentation is not what stopped the render.
    */
-  #documentPresentationError: UnusableProperty | null = null;
+  #documentPresentationError: DocumentPresentationFailure | null = null;
   /** Where the current list's render stands, as copy readiness reads it. */
   #formatting: ReferencesFormatting = "pending";
   /** Copy readiness as it was last published, so only a change is logged. */
@@ -223,9 +225,10 @@ export class ReferencesView extends ItemView {
     // for a Zotero change, a Citation and References Style change, or an engine that came or
     // went — is the one signal that makes the formatted entries here stale.
     this.register(
-      bibliographyRender.on("invalidated", () =>
-        this.#reload({ invalidate: true }),
-      ),
+      bibliographyRender.on("invalidated", () => {
+        this.#presentation = this.#readPresentation(this.#file);
+        this.#reload({ invalidate: true });
+      }),
     );
     this.#reload();
     this.#rescan();
@@ -331,7 +334,11 @@ export class ReferencesView extends ItemView {
   #readPresentation(file: TFile | null): DocumentPresentation {
     return file === null
       ? { kind: "read", presentation: {} }
-      : documentPresentation(this.#deps.app.metadataCache, file);
+      : documentPresentation(
+          this.#deps.app.metadataCache,
+          file,
+          this.#deps.settings.current,
+        );
   }
 
   /**
@@ -482,7 +489,7 @@ export class ReferencesView extends ItemView {
       { citations, works: sources },
     );
     if (presented.kind === "unusable") {
-      this.#documentPresentationError = presented.property;
+      this.#documentPresentationError = presented;
       this.#showMinimal(citations, sources, false);
       return;
     }
@@ -500,8 +507,15 @@ export class ReferencesView extends ItemView {
         outcome.kind === "unavailable" &&
         outcome.reason === "style-missing" &&
         declared.kind === "read" &&
-        declared.presentation.styleId !== undefined
-          ? "style"
+        typeof declared.presentation.styleId === "string"
+          ? declared.profileStyle
+            ? {
+                kind: "unusable",
+                property: "profile-style",
+                styleId: declared.presentation.styleId,
+                ...declared.profileStyle,
+              }
+            : { kind: "unusable", property: "style" }
           : null;
       this.#showMinimal(citations, sources, outcome.kind === "failed");
       return;

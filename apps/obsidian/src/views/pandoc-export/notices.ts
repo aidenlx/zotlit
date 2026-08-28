@@ -36,6 +36,8 @@ export type ExportProblem =
   | ExportFailure
   | { kind: "document-style-invalid" }
   | { kind: "document-language-invalid" }
+  | { kind: "document-profile-invalid"; id: string; target: string }
+  | { kind: "profile-style-invalid"; styleId: string }
   | { kind: "destination-unwritable"; detail: string };
 
 /** One message per failure arm, each naming the situation and its fix. */
@@ -102,6 +104,19 @@ export function showExportFailure(failure: ExportProblem): void {
           break;
         case "document-language-invalid":
           renderer.addText(m.pandoc_export_error_document_language());
+          break;
+        case "document-profile-invalid":
+          renderer.addText(
+            m.notice_imported_note_profile_unknown({
+              id: failure.id,
+              target: failure.target,
+            }),
+          );
+          break;
+        case "profile-style-invalid":
+          renderer.addText(
+            m.pandoc_export_error_profile_style({ style: failure.styleId }),
+          );
           break;
         case "destination-unwritable":
           renderer.addText(
