@@ -371,11 +371,16 @@ export function migrateV9ToV10(raw: unknown): Record<string, unknown> {
     ...rest
   } = raw;
   const currentProfile = isPlainObject(defaultProfile) ? defaultProfile : {};
+  const document =
+    typeof currentProfile.document === "string" &&
+    currentProfile.document.trim().length > 0
+      ? currentProfile.document
+      : undefined;
   const base = defaults["note.default-profile"].bindings;
   return {
     ...rest,
     "note.default-profile": {
-      ...currentProfile,
+      ...(document === undefined ? {} : { document }),
       bindings: {
         "citation.references-style":
           citationStyle === null || typeof citationStyle === "string"

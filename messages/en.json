@@ -51,6 +51,7 @@
   "notice_literature_note_template_conversion_mismatch": "ZotLit kept the legacy templates unchanged because the converted {difference} did not match.",
   "notice_literature_note_template_conversion_unsupported": "ZotLit kept the legacy templates unchanged because this layout cannot be converted automatically.",
   "notice_literature_note_template_conversion_no_item": "Connect a Zotero database that contains an item, then try again.",
+  "notice_literature_note_template_conversion_no_annotation": "Add an annotation to a Zotero item, then try again.",
   "notice_literature_note_template_conversion_exists": "The converted profile document already exists. Rename or remove it, then try again.",
   "notice_literature_note_template_conversion_none": "No legacy literature note templates need conversion.",
   "notice_duplicate_literature_notes": "Multiple literature notes use this Zotero key: {paths}. ZotLit used {selected}; resolve the duplicates.",

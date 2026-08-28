@@ -6,6 +6,7 @@ import type { AnnotViewItem } from "@zotlit/db";
 import { getLogger } from "@/lib/log";
 import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { NoteFeature } from "@/services/note-feature";
+import { ProfileAnnotationError } from "@/services/template/service";
 
 const logger = getLogger(["views", "annot-view"]);
 
@@ -15,6 +16,7 @@ const SOURCE_TAG = "zotlit-annot-drag";
 export interface DragInsertDeps {
   workspace: Workspace;
   noteFeature: Pick<NoteFeature, "renderAnnotation">;
+  notify: (message: string) => void;
   /** Pre-prepared attachment-import handle for the active note. */
   getImportHandle: () => AttachmentImport | null;
   /**
@@ -34,14 +36,22 @@ export interface DragInsertDeps {
 export function createDragInsertHandler(deps: DragInsertDeps) {
   return (evt: DragEvent<HTMLElement>, annot: AnnotViewItem): void => {
     const handle = deps.getImportHandle();
-
-    const rendered = handle
-      ? deps.noteFeature.renderAnnotation(annot.itemID, {
-          attachmentImport: handle,
-        })
-      : null;
-
     evt.dataTransfer.dropEffect = "copy";
+
+    let rendered: string | null = null;
+    try {
+      rendered = handle
+        ? deps.noteFeature.renderAnnotation(annot.itemID, {
+            attachmentImport: handle,
+          })
+        : null;
+    } catch (error) {
+      if (!(error instanceof ProfileAnnotationError)) throw error;
+      evt.dataTransfer.setData("text/plain", annot.text ?? annot.key);
+      deps.notify(error.message);
+      deps.onSettled();
+      return;
+    }
 
     if (rendered == null || handle == null) {
       // Fallback: plain text when the template/import isn't ready.

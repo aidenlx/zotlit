@@ -186,6 +186,8 @@ function templateMigrationNotice(
       return m.notice_literature_note_template_conversion_unsupported();
     case "no-verification-item":
       return m.notice_literature_note_template_conversion_no_item();
+    case "no-verification-annotation":
+      return m.notice_literature_note_template_conversion_no_annotation();
     case "converted-document-exists":
       return m.notice_literature_note_template_conversion_exists();
     case "no-legacy-templates":

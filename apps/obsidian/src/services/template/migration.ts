@@ -111,6 +111,9 @@ export async function loadLiteratureNoteTemplateMigrationData(
     templates: deps.templates,
     zoteroPref: deps.zoteroPref,
   };
+  let verificationBase:
+    | { note: object; filename: object; annotation: null }
+    | undefined;
   for (const indexedKey of indexedKeys) {
     const [note, filename] = await Promise.all([
       loadTemplateData(dataDeps, indexedKey, "note"),
@@ -120,6 +123,11 @@ export async function loadLiteratureNoteTemplateMigrationData(
     if (!options.annotation) {
       return { note: note.data, filename: filename.data, annotation: null };
     }
+    verificationBase ??= {
+      note: note.data,
+      filename: filename.data,
+      annotation: null,
+    };
     const annotationKey = firstAnnotationIndexedKey(note.data);
     if (!annotationKey) continue;
     const annotation = await loadTemplateData(
@@ -134,7 +142,7 @@ export async function loadLiteratureNoteTemplateMigrationData(
       annotation: annotation.data,
     };
   }
-  return null;
+  return verificationBase ?? null;
 }
 
 function firstAnnotationIndexedKey(data: object): string | undefined {
@@ -164,6 +172,7 @@ export type LiteratureNoteTemplateMigrationDiagnostic =
   | {
       code:
         | "no-verification-item"
+        | "no-verification-annotation"
         | "converted-document-exists"
         | "no-legacy-templates";
       message: string;
@@ -237,6 +246,13 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
         "no-verification-item",
         "No Zotero item is available for conversion verification",
         "Connect a Zotero database that contains an item, then retry conversion.",
+      );
+    }
+    if (foldsAnnotation && !data.annotation) {
+      return refused(
+        "no-verification-annotation",
+        "No Zotero annotation is available for conversion verification",
+        "Add an annotation to a Zotero item, then retry conversion.",
       );
     }
 
@@ -322,7 +338,10 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
 function refused(
   code: Extract<
     LiteratureNoteTemplateMigrationDiagnostic["code"],
-    "no-verification-item" | "converted-document-exists" | "no-legacy-templates"
+    | "no-verification-item"
+    | "no-verification-annotation"
+    | "converted-document-exists"
+    | "no-legacy-templates"
   >,
   message: string,
   hint: string,

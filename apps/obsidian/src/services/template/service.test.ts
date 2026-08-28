@@ -289,6 +289,46 @@ describe("TemplateService", () => {
     ).toBe("LEGACY Excerpt");
   });
 
+  it("reports unknown Profiles and missing Profile documents instead of falling back", async () => {
+    const { service } = await makeHarness({ vault: new MockVault() });
+    const unknownId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const settings = {
+      ...defaults,
+      "note.template-conversion-pending": false,
+      "note.profiles": [
+        {
+          id: "93f0df01-9de9-47e6-aa12-1ff770c1ab86",
+          label: "Books",
+          document: "missing.md",
+        },
+      ],
+    };
+
+    expect(() =>
+      service.renderProfileAnnotation(
+        { text: "Excerpt" },
+        { settings, profileId: unknownId },
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        diagnostic: expect.objectContaining({ profileId: unknownId }),
+      }),
+    );
+    expect(() =>
+      service.renderProfileAnnotation(
+        { text: "Excerpt" },
+        { settings, profileId: settings["note.profiles"][0]!.id },
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        diagnostic: expect.objectContaining({
+          code: "missing-literature-note-template",
+          document: "missing.md",
+        }),
+      }),
+    );
+  });
+
   it("reports valid and invalid Literature Note Template documents", async () => {
     const vault = new MockVault();
     vault.addFile("templates/books.md", literatureNoteDocument("Books"));

@@ -707,6 +707,31 @@ describe("migrateV9ToV10", () => {
     });
   });
 
+  it("preserves migrated bindings when the old Profile document is malformed", () => {
+    expect(
+      migrateV9ToV10({
+        __VERSION__: 9,
+        "citation.references-style": "apa",
+        "note.literature-folder": "Law",
+        "note.import-folder": "Law/Imported",
+        "note.import-colored-highlights": true,
+        "note.import-annotations-as-template": true,
+        "note.default-profile": { document: "" },
+      }),
+    ).toEqual({
+      __VERSION__: 9,
+      "note.default-profile": {
+        bindings: {
+          "citation.references-style": "apa",
+          "note.literature-folder": "Law",
+          "note.import-folder": "Law/Imported",
+          "note.import-colored-highlights": true,
+          "note.import-annotations-as-template": true,
+        },
+      },
+    });
+  });
+
   it("returns an empty object for non-plain inputs", () => {
     expect(migrateV9ToV10(null)).toEqual({});
     expect(migrateV9ToV10(42)).toEqual({});

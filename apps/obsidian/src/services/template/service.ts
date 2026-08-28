@@ -112,6 +112,35 @@ export interface ResolvedLiteratureNoteTemplate {
   renderFilename<T extends object>(data: T): string;
 }
 
+export type ProfileAnnotationDiagnostic =
+  | {
+      readonly code: "unknown-literature-note-profile";
+      readonly profileId: string;
+      readonly hint: string;
+    }
+  | {
+      readonly code: "missing-literature-note-template";
+      readonly document: string;
+      readonly hint: string;
+    };
+
+/** A stamped Profile cannot supply the requested annotation presentation. */
+export class ProfileAnnotationError extends Error {
+  readonly diagnostic: ProfileAnnotationDiagnostic;
+
+  constructor(diagnostic: ProfileAnnotationDiagnostic) {
+    super(
+      diagnostic.code === "unknown-literature-note-profile"
+        ? m.notice_literature_note_profile_unknown({ id: diagnostic.profileId })
+        : m.notice_literature_note_template_missing({
+            document: diagnostic.document,
+          }),
+    );
+    this.name = "ProfileAnnotationError";
+    this.diagnostic = diagnostic;
+  }
+}
+
 /** Validation state for one Literature Note Template document in the folder. */
 export interface LiteratureNoteTemplateStatus {
   readonly reference: string;
@@ -330,19 +359,34 @@ export class TemplateService extends Service<void> {
       profileId: string | undefined;
     },
   ): string {
-    if (options.settings["note.template-conversion-pending"]) {
-      return this.render("annotation", data);
-    }
-
     const profile =
       options.profileId === undefined
         ? options.settings["note.default-profile"]
         : options.settings["note.profiles"].find(
             (candidate) => candidate.id === options.profileId,
           );
-    const rendered = profile?.document
-      ? this.getLiteratureNoteTemplate(profile.document)?.renderAnnotation(data)
-      : null;
+    if (!profile) {
+      throw new ProfileAnnotationError({
+        code: "unknown-literature-note-profile",
+        profileId: options.profileId!,
+        hint: "Re-stamp the note or recreate the Profile with the same ID.",
+      });
+    }
+    if (options.settings["note.template-conversion-pending"]) {
+      return this.render("annotation", data);
+    }
+
+    const document = profile.document
+      ? this.getLiteratureNoteTemplate(profile.document)
+      : undefined;
+    if (profile.document && !document) {
+      throw new ProfileAnnotationError({
+        code: "missing-literature-note-template",
+        document: profile.document,
+        hint: "Restore the document in the template folder or clear the Profile document reference.",
+      });
+    }
+    const rendered = document?.renderAnnotation(data);
     if (rendered != null) return rendered;
     this.#requireLoaded("renderProfileAnnotation");
     return this.#facade.render("annotation", data, {

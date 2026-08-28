@@ -28,6 +28,7 @@ import type {
 import { selectorOf } from "@/services/library-scope/scope";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import { ProfileAnnotationError } from "@/services/template/service";
 import type {
   BatchClassifyControls,
   BatchModalOptions,
@@ -936,6 +937,20 @@ describe("runChildImportByKey", () => {
         }),
       ]),
     ).toContain("Re-stamp");
+  });
+
+  it("surfaces a missing Profile document through the single-import toast", () => {
+    const error = batchImportToast().error;
+    expect(
+      Reflect.apply(error as (...args: unknown[]) => string, null, [
+        "fallback",
+        new ProfileAnnotationError({
+          code: "missing-literature-note-template",
+          document: "missing.md",
+          hint: "Restore the document.",
+        }),
+      ]),
+    ).toContain("missing.md");
   });
 });
 
