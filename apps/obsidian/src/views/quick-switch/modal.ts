@@ -1,7 +1,7 @@
 import { Keymap, Platform, SuggestModal } from "obsidian";
 import type { TFile } from "obsidian";
 
-import { confirm } from "@/lib/confirm";
+import { confirm, confirmWithCheckbox } from "@/lib/confirm";
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
@@ -106,35 +106,93 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
       ];
     const stampedId = stamped === undefined ? null : String(stamped);
     if (stampedId === choice.id) return file;
-    const currentLabel =
-      stampedId === null
-        ? m.settings_profile_default_name()
-        : (this.#deps.settings.current?.["note.profiles"].find(
-            (profile) => profile.id === stampedId,
-          )?.label ?? stampedId);
+    const currentLabel = profileLabel(this.#deps, stampedId);
 
-    const shouldSwitch = await confirm(
-      {
-        title: m.modal_profile_switch_title({ label: choice.label }),
-        content: m.modal_profile_switch_desc({
-          current: currentLabel,
-          requested: choice.label,
-        }),
-        action: m.modal_profile_switch_confirm({ label: choice.label }),
-        cancel: m.modal_profile_switch_keep({ label: currentLabel }),
-        destructive: true,
-      },
-      this.#deps.app,
+    const options = {
+      title: m.modal_profile_switch_title({ label: choice.label }),
+      content: m.modal_profile_switch_desc({
+        current: currentLabel,
+        requested: choice.label,
+      }),
+      action: m.modal_profile_switch_confirm({ label: choice.label }),
+      cancel: m.modal_profile_switch_keep({ label: currentLabel }),
+      destructive: true,
+    } as const;
+    const importedNotes = await this.#deps.noteFeature.getImportedNotesForItem(
+      hit.item.indexedKey,
     );
-    if (!shouldSwitch) return file;
+    const decision =
+      importedNotes.length === 0
+        ? {
+            confirmed: await confirm(options, this.#deps.app),
+            checked: false,
+          }
+        : await confirmWithCheckbox(
+            {
+              ...options,
+              checkbox: m.modal_profile_switch_imported_notes({
+                count: importedNotes.length,
+              }),
+            },
+            this.#deps.app,
+          );
+    if (!decision.confirmed) return file;
 
     const result = await this.#deps.noteFeature.switchNoteProfile(file, {
       indexedKey: hit.item.indexedKey,
       profileId: choice.id,
+      importedNotes: decision.checked ? importedNotes : undefined,
     });
     if (result.diagnostic) {
       new BaseNotice(noteOperationDiagnosticNotice(result.diagnostic));
     }
     return file;
   }
+}
+
+/** Interactive Imported Note re-stamp; it changes the next re-import only. */
+export async function switchImportedNoteProfile(
+  deps: QuickSwitchDeps,
+  file: TFile,
+): Promise<void> {
+  const choice = await chooseLiteratureNoteProfile(
+    deps.app,
+    deps.settings.current?.["note.profiles"] ?? [],
+  );
+  if (!choice) return;
+  const stamped =
+    deps.app.metadataCache.getFileCache(file)?.frontmatter?.[
+      FIELD_LITERATURE_NOTE_PROFILE
+    ];
+  const stampedId = stamped === undefined ? null : String(stamped);
+  if (stampedId === choice.id) return;
+  const currentLabel = profileLabel(deps, stampedId);
+  const shouldSwitch = await confirm(
+    {
+      title: m.modal_profile_switch_title({ label: choice.label }),
+      content: m.modal_imported_note_profile_switch_desc({
+        current: currentLabel,
+        requested: choice.label,
+      }),
+      action: m.modal_profile_switch_confirm({ label: choice.label }),
+      cancel: m.modal_profile_switch_keep({ label: currentLabel }),
+      destructive: true,
+    },
+    deps.app,
+  );
+  if (!shouldSwitch) return;
+  const result = await deps.noteFeature.switchImportedNoteProfile(file, {
+    profileId: choice.id,
+  });
+  if (result.diagnostic) {
+    new BaseNotice(noteProfileDiagnosticNotice(result.diagnostic));
+  }
+}
+
+function profileLabel(deps: QuickSwitchDeps, profileId: string | null): string {
+  return profileId === null
+    ? m.settings_profile_default_name()
+    : (deps.settings.current?.["note.profiles"].find(
+        (profile) => profile.id === profileId,
+      )?.label ?? profileId);
 }
