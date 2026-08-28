@@ -297,6 +297,7 @@ describe("createNote", () => {
         loaded: true,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
+        renderProfileAnnotation: () => "",
         renderFilename<T extends object>(data: T): string {
           const d = data as {
             title: string | null;
@@ -484,6 +485,7 @@ describe("createNote", () => {
         loaded: true,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
+        renderProfileAnnotation: () => "",
         renderFilename: () => "Root",
         render: () => "body",
       },
@@ -830,6 +832,7 @@ describe("createNote", () => {
         loaded: true,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
+        renderProfileAnnotation: () => "",
         renderFilename: () => {
           renderFilenameCalledBeforeSignal = true;
           return "Root";
@@ -1369,6 +1372,7 @@ describe("overwriteNote", () => {
         loaded: true,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
+        renderProfileAnnotation: () => "",
         renderFilename: () => "",
         render: () => "New body content",
       },
@@ -1450,6 +1454,7 @@ function makeUpdateHarness(options: {
     loaded: true,
     frontmatterFields: options.frontmatterFields ?? [],
     getLiteratureNoteTemplate: () => undefined,
+    renderProfileAnnotation: () => "",
     renderFilename: () => "",
     render: <T extends object>(name: string, _data: T): string =>
       name === "content" ? renderContent() : "",
@@ -2493,6 +2498,7 @@ describe("renderCitation", () => {
         loaded: false,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
+        renderProfileAnnotation: () => "",
         renderFilename: () => "",
         render,
       },
@@ -2559,6 +2565,7 @@ describe("renderCitation", () => {
         loaded: true,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
+        renderProfileAnnotation: () => "",
         renderFilename: () => "",
         render: (_name, data) =>
           (
@@ -2616,6 +2623,7 @@ describe("renderAnnotation", () => {
         loaded: false,
         frontmatterFields: [],
         getLiteratureNoteTemplate: () => undefined,
+        renderProfileAnnotation: vi.fn(),
         renderFilename: () => "",
         render: vi.fn(),
       },
@@ -2647,6 +2655,76 @@ describe("renderAnnotation", () => {
 
     expect(result).toBeNull();
   });
+
+  it("uses the annotation parent item's stamped Profile at drag start", () => {
+    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    vi.mocked(getAnnotationsByItemId).mockReturnValue([
+      { key: "ANN1" } as never,
+    ]);
+    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
+      new Map([["ANN1", annData("Hensher2011", "62", "PARENT1")]]),
+    );
+    const file = makeFile("Literature/Parent.md");
+    const app = makeApp();
+    app.metadataCache.getFileCache.mockReturnValue({
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
+    });
+    const template = citeTemplate();
+    template.renderProfileAnnotation = vi.fn(() => "PROFILE ANNOTATION");
+    const deps = {
+      ...annotDeps(template),
+      app,
+      noteIndex: {
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: (indexedKey: string) =>
+          indexedKey === "PARENT1" ? [file] : [],
+      },
+      settings: makeSettings({
+        "note.profiles": [
+          {
+            id: profileId,
+            label: "Books",
+            document: "books.md",
+          },
+        ],
+      }),
+    };
+
+    const result = createNoteFeature(deps).renderAnnotation(1, {
+      attachmentImport: { decide: blockedDecide, resolveLink: () => () => "" },
+    });
+
+    expect(result).toBe("PROFILE ANNOTATION");
+    expect(template.renderProfileAnnotation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parentItem: expect.objectContaining({ indexedKey: "PARENT1" }),
+      }),
+      expect.objectContaining({ profileId }),
+    );
+  });
+
+  it("uses the default Profile when the annotation parent has no stamped note", () => {
+    vi.mocked(getAnnotationsByItemId).mockReturnValue([
+      { key: "ANN1" } as never,
+    ]);
+    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
+      new Map([["ANN1", annData("Hensher2011", "62", "PARENT1")]]),
+    );
+    const template = citeTemplate();
+    template.renderProfileAnnotation = vi.fn(() => "DEFAULT ANNOTATION");
+    const deps = annotDeps(template);
+
+    const result = createNoteFeature(deps).renderAnnotation(1, {
+      attachmentImport: { decide: blockedDecide, resolveLink: () => () => "" },
+    });
+
+    expect(result).toBe("DEFAULT ANNOTATION");
+    expect(template.renderProfileAnnotation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ profileId: undefined }),
+    );
+  });
 });
 
 /** A template service backed by the real engine, with a `cite` + optional `annotation` pair. */
@@ -2664,6 +2742,8 @@ function citeTemplate(
     loaded: true,
     frontmatterFields: [],
     getLiteratureNoteTemplate: () => undefined,
+    renderProfileAnnotation: <T extends object>(data: T): string =>
+      facade.render("annotation", data),
     renderFilename: () => "",
     render: <T extends object>(name: string, data: T): string =>
       facade.render(name, data),
@@ -2671,11 +2751,16 @@ function citeTemplate(
 }
 
 /** One annotation's template data with a parent item carrying `citekey`. */
-const annData = (citekey: string | null, pageLabel: string | null) =>
+const annData = (
+  citekey: string | null,
+  pageLabel: string | null,
+  indexedKey = "PARENT1",
+) =>
   ({
     key: "ANN1",
     pageLabel,
-    parentItem: citekey === null ? null : { citationKey: citekey, citekey },
+    parentItem:
+      citekey === null ? null : { citationKey: citekey, citekey, indexedKey },
   }) as never;
 
 function annotDeps(template: SyncRenderDeps["template"]): SyncRenderDeps {
@@ -2841,6 +2926,7 @@ function makeTemplate() {
     loaded: true,
     frontmatterFields: [],
     getLiteratureNoteTemplate: () => undefined,
+    renderProfileAnnotation: () => "",
     renderFilename<T extends object>(data: T): string {
       const { title, key } = data as { title: string | null; key: string };
       return title ?? key;
@@ -2895,6 +2981,7 @@ function makeDocumentTemplate(
         ? (options.updateRegion ?? formatManagedRegion("DOCUMENT UPDATE"))
         : null,
     ),
+    renderAnnotation: vi.fn(() => null),
     renderFilename: vi.fn(() => options.filename ?? "Document note"),
   };
 }
@@ -2932,36 +3019,35 @@ function makeSettings(
     ["note.import-annotations-as-template"]: importAnnotationsAsTemplate,
     ...persisted
   } = overrides;
-  return {
-    loaded: Promise.resolve({
-      ...settingsDefaults,
-      ...persisted,
-      "note.default-profile": {
-        ...settingsDefaults["note.default-profile"],
-        ...persisted["note.default-profile"],
-        bindings: {
-          ...settingsDefaults["note.default-profile"].bindings,
-          ...persisted["note.default-profile"]?.bindings,
-          "note.literature-folder": literatureFolder ?? "Literature",
-          ...(referencesStyle === undefined
-            ? {}
-            : { "citation.references-style": referencesStyle }),
-          ...(importFolder === undefined
-            ? {}
-            : { "note.import-folder": importFolder }),
-          ...(importColoredHighlights === undefined
-            ? {}
-            : { "note.import-colored-highlights": importColoredHighlights }),
-          ...(importAnnotationsAsTemplate === undefined
-            ? {}
-            : {
-                "note.import-annotations-as-template":
-                  importAnnotationsAsTemplate,
-              }),
-        },
+  const current = {
+    ...settingsDefaults,
+    ...persisted,
+    "note.default-profile": {
+      ...settingsDefaults["note.default-profile"],
+      ...persisted["note.default-profile"],
+      bindings: {
+        ...settingsDefaults["note.default-profile"].bindings,
+        ...persisted["note.default-profile"]?.bindings,
+        "note.literature-folder": literatureFolder ?? "Literature",
+        ...(referencesStyle === undefined
+          ? {}
+          : { "citation.references-style": referencesStyle }),
+        ...(importFolder === undefined
+          ? {}
+          : { "note.import-folder": importFolder }),
+        ...(importColoredHighlights === undefined
+          ? {}
+          : { "note.import-colored-highlights": importColoredHighlights }),
+        ...(importAnnotationsAsTemplate === undefined
+          ? {}
+          : {
+              "note.import-annotations-as-template":
+                importAnnotationsAsTemplate,
+            }),
       },
-    }),
+    },
   };
+  return { current, loaded: Promise.resolve(current) };
 }
 
 interface MockNoteApp {

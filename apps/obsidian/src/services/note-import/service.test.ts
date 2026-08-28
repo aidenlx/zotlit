@@ -214,6 +214,7 @@ function makeService(
     existing?: TFile[];
     literatureNotes?: TFile[];
     attachmentImport?: Pick<AttachmentImportService, "prepare">;
+    template?: Pick<TemplateService, "render" | "renderProfileAnnotation">;
   } = {},
 ): NoteImporter {
   return createNoteImporter({
@@ -224,10 +225,12 @@ function makeService(
     },
     // `render` is generic (`<T>(name, data) => string`); a concrete mock can't
     // mirror that signature, so this one stub keeps a cast.
-    template: { render: vi.fn(() => "[@cite]") } as Pick<
-      TemplateService,
-      "render"
-    >,
+    template:
+      options.template ??
+      ({
+        render: vi.fn(() => "[@cite]"),
+        renderProfileAnnotation: vi.fn(() => "profile annotation"),
+      } as Pick<TemplateService, "render" | "renderProfileAnnotation">),
     zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
     attachmentImport: options.attachmentImport ?? makeAttachmentImport(),
   });
@@ -544,6 +547,31 @@ describe("createNoteImporter", () => {
       source,
       vaultName: "a.png",
     });
+  });
+
+  it("renders annotation paragraphs through the imported note's Profile", async () => {
+    const renderProfileAnnotation = vi.fn(() => "profile annotation");
+    const template = {
+      render: vi.fn(() => "[@cite]"),
+      renderProfileAnnotation,
+    } as Pick<TemplateService, "render" | "renderProfileAnnotation">;
+    const { app } = makeApp();
+    const settings = bindLiteratureNoteProfile(profileSettings(), PROFILE_B)!;
+    const batch = await makeService(app, { template }).prepare({
+      ...PREPARE,
+      settings,
+    });
+
+    batch.resolveChildNote(makeNote()).noteLink();
+    await batch.flush();
+
+    const render =
+      vi.mocked(renderAnnotations).mock.calls[0]![2].renderAnnotation;
+    expect(render?.({ text: "Excerpt" } as never)).toBe("profile annotation");
+    expect(renderProfileAnnotation).toHaveBeenCalledWith(
+      { text: "Excerpt" },
+      { settings, profileId: PROFILE_B },
+    );
   });
 
   it("passes no annotation renderer to parseNote when the setting is off", async () => {
