@@ -334,7 +334,10 @@ MODEL
   reference must resolve to one document in the configured template folder.
 
   One document contains a YAML manifest, its filename rule, and the note body.
-  A single optional Managed Block marks the body bytes rendered on update.
+  A single optional Managed Block marks the body bytes rendered on update. One
+  required Annotation Block holds the single-annotation template; it renders on
+  demand and contributes nothing to the note body. A block tag alone on its own
+  line owns that line: its indentation and line break belong to the tag.
 
 INSPECTION
   template-status reports Profiles under profiles and the union of installed
