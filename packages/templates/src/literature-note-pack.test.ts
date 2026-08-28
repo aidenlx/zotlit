@@ -29,10 +29,10 @@ filename: "{{ zt.citationKey }}"
 
 describe("Literature Note Pack export", () => {
   it("keeps a partial-free document as one unchanged file", () => {
-    const source = DOCUMENT.replace(
+    const source = `${DOCUMENT.replace(
       '{% render "summary" with zt as zt %}',
       "{{ zt.abstractNote }}",
-    );
+    )}{% annotation %}{{ zt.text }}{% endannotation %}\n`;
 
     expect(exportLiteratureNotePack(source, [])).toBe(source);
   });
@@ -62,7 +62,8 @@ describe("Literature Note Pack export", () => {
   });
 
   it("bundles transitive partials into the document manifest", () => {
-    const source = exportLiteratureNotePack(DOCUMENT, [
+    const document = `${DOCUMENT}{% annotation %}{{ zt.text }}{% endannotation %}\n`;
+    const source = exportLiteratureNotePack(document, [
       {
         name: "summary",
         language: "liquid",

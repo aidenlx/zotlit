@@ -3164,7 +3164,7 @@ function makeDocumentTemplate(
         ? (options.updateRegion ?? formatManagedRegion("DOCUMENT UPDATE"))
         : null,
     ),
-    renderAnnotation: vi.fn(() => null),
+    renderAnnotation: vi.fn(() => "DOCUMENT ANNOTATION"),
     renderFilename: vi.fn(() => options.filename ?? "Document note"),
   };
 }
