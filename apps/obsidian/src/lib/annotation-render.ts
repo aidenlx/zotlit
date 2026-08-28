@@ -11,6 +11,7 @@ import {
 import type {
   Annotation,
   AnnotationResolvers,
+  AnnotationTemplateContext,
   Attachment,
   FallibleTemplateLink,
   GroupIDMemo,
@@ -104,6 +105,7 @@ export function renderAnnotations(
     attachmentImport: Pick<AttachmentImport, "decide" | "resolveLink">;
     groupIdMemo?: GroupIDMemo;
     tagMemo?: TagMemo;
+    renderAnnotation?: (data: AnnotationTemplateContext) => string;
   },
 ): Map<string, string> {
   const resolvers = buildAnnotationResolvers({
@@ -120,7 +122,11 @@ export function renderAnnotations(
     const root = withAnnotationCitation(data, () =>
       annotationCitation(data.parentItem, data.pageLabel, options.template),
     );
-    result.set(key, options.template.render("annotation", root));
+    result.set(
+      key,
+      options.renderAnnotation?.(root) ??
+        options.template.render("annotation", root),
+    );
   }
   return result;
 }

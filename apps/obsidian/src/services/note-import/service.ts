@@ -105,7 +105,7 @@ export type ImportVaultApp = {
 interface NoteImporterDeps {
   app: ImportVaultApp;
   noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey" | "getNotesByItemKey">;
-  template: Pick<TemplateService, "render">;
+  template: Pick<TemplateService, "render" | "renderProfileAnnotation">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
 }
@@ -404,6 +404,11 @@ async function writeNote(
               attachmentImport: batch,
               groupIdMemo: run.groupIdMemo,
               tagMemo: run.tagMemo,
+              renderAnnotation: (data) =>
+                ctx.template.renderProfileAnnotation(data, {
+                  settings: run.settings,
+                  profileId: run.profileId,
+                }),
             },
           )
       : undefined;

@@ -60,6 +60,7 @@ export interface NoteFeatureDeps {
     | "ready"
     | "loaded"
     | "render"
+    | "renderProfileAnnotation"
     | "renderFilename"
     | "frontmatterFields"
     | "getLiteratureNoteTemplate"
@@ -73,7 +74,7 @@ export interface NoteFeatureDeps {
   db: Pick<DatabaseService, "acquireRead">;
   noteIndex: Pick<NoteIndex, "ready" | "whenIndexed" | "getNotesByItemKey">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
-  settings: Pick<SettingsService, "loaded">;
+  settings: Pick<SettingsService, "current" | "loaded">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   noteImport: Pick<NoteImporter, "prepare">;
 }
