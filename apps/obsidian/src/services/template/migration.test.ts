@@ -10,6 +10,7 @@ import type { LiteratureNoteTemplateMigrationOptions } from "./migration";
 function makeHarness(options?: {
   pending?: boolean;
   defaultDocument?: string;
+  ejectedAnnotation?: boolean;
 }) {
   const state = {
     "note.default-profile": {
@@ -21,13 +22,15 @@ function makeHarness(options?: {
     "note.template-conversion-pending": options?.pending ?? false,
     "template.folder": "templates",
   };
-  const files = new Map(
-    [
-      "templates/zotlit-note.liquid.md",
-      "templates/zotlit-content.liquid.md",
-      "templates/zotlit-filename.liquid.md",
-    ].map((path) => [path, { path }]),
-  );
+  const legacyPaths = [
+    "templates/zotlit-note.liquid.md",
+    "templates/zotlit-content.liquid.md",
+    "templates/zotlit-filename.liquid.md",
+  ];
+  if (options?.ejectedAnnotation) {
+    legacyPaths.push("templates/zotlit-annotation.liquid.md");
+  }
+  const files = new Map(legacyPaths.map((path) => [path, { path }]));
   let layoutReady: (() => void) | undefined;
   const create = vi.fn(async (path: string, source: string) => {
     const file = { path, source };
@@ -56,6 +59,9 @@ function makeHarness(options?: {
     getLegacyLiteratureNoteTemplateFiles: vi.fn(() => [
       "templates/zotlit-filename.liquid.md",
       "templates/zotlit-note.liquid.md",
+      ...(options?.ejectedAnnotation
+        ? ["templates/zotlit-annotation.liquid.md"]
+        : []),
       "templates/zotlit-content.liquid.md",
     ]),
     convertLegacyLiteratureNoteTemplates: vi.fn(async () => ({
@@ -63,6 +69,9 @@ function makeHarness(options?: {
       legacyFiles: [
         "templates/zotlit-filename.liquid.md",
         "templates/zotlit-note.liquid.md",
+        ...(options?.ejectedAnnotation
+          ? ["templates/zotlit-annotation.liquid.md"]
+          : []),
         "templates/zotlit-content.liquid.md",
       ],
     })),
@@ -86,6 +95,7 @@ function makeHarness(options?: {
     loadVerificationData: async () => ({
       note: { title: "Paper" },
       filename: { citationKey: "doePaper" },
+      annotation: options?.ejectedAnnotation ? { text: "Excerpt" } : null,
     }),
     openPrompt,
   });
@@ -179,5 +189,27 @@ describe("LiteratureNoteTemplateMigrationService", () => {
     expect(harness.create).not.toHaveBeenCalled();
     expect(harness.trashFile).not.toHaveBeenCalled();
     expect(harness.settings.update).not.toHaveBeenCalled();
+  });
+
+  it("trashes an ejected annotation template after the verified document write", async () => {
+    const harness = makeHarness({ pending: true, ejectedAnnotation: true });
+    await harness.service.ready;
+
+    const result = await harness.service.convert();
+
+    expect(result).toMatchObject({
+      outcome: "converted",
+      trashed: expect.arrayContaining([
+        "templates/zotlit-annotation.liquid.md",
+      ]),
+    });
+    expect(
+      harness.template.convertLegacyLiteratureNoteTemplates,
+    ).toHaveBeenCalledWith({
+      note: { title: "Paper" },
+      filename: { citationKey: "doePaper" },
+      annotation: { text: "Excerpt" },
+    });
+    expect(harness.settings.flush).toHaveBeenCalledBefore(harness.trashFile);
   });
 });

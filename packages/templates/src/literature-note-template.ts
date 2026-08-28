@@ -112,6 +112,10 @@ export interface LegacyLiteratureNoteTemplates {
     readonly source: string;
     readonly language: TemplateLanguage;
   };
+  readonly annotation?: {
+    readonly source: string;
+    readonly language: TemplateLanguage;
+  };
 }
 
 export type LegacyTemplateConversionErrorCode =
@@ -152,15 +156,16 @@ export function synthesizeLegacyLiteratureNoteTemplate(
   const language = legacy.note.language;
   if (
     legacy.content.language !== language ||
-    legacy.filename.language !== language
+    legacy.filename.language !== language ||
+    (legacy.annotation !== undefined && legacy.annotation.language !== language)
   ) {
     throw new LegacyTemplateConversionError(
       "unsupported-legacy-template",
-      "Legacy note, content, and filename templates use different languages",
+      "Legacy Literature Note templates use different languages",
       {
         difference: "template language",
         recovery:
-          "Use one rendering language for the note, content, and filename templates, then retry conversion.",
+          "Use one rendering language for the note, content, filename, and annotation templates, then retry conversion.",
       },
     );
   }
@@ -181,10 +186,14 @@ export function synthesizeLegacyLiteratureNoteTemplate(
     );
   }
 
-  const body = legacy.note.source.replace(
-    insertion,
-    () => `{% managed %}${legacy.content.source}{% endmanaged %}`,
-  );
+  const body =
+    legacy.note.source.replace(
+      insertion,
+      () => `{% managed %}${legacy.content.source}{% endmanaged %}`,
+    ) +
+    (legacy.annotation
+      ? `{% annotation %}${legacy.annotation.source}{% endannotation %}`
+      : "");
   const manifest = stringifyYaml(
     {
       id: manifestOverrides.id ?? "zotlit.converted-default",

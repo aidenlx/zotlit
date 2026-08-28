@@ -1237,6 +1237,55 @@ describe("Template Workbench CLI", () => {
     },
   );
 
+  it("reports a controlled selector diagnostic for retired Literature Note slots", async () => {
+    const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
+    const render = vi.fn(() => "");
+    const getTemplateSource = vi.fn(async () => "");
+    const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadData,
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES.slice(-2),
+        render,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource,
+        waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
+      },
+    });
+
+    const rendered = await handlers[TEMPLATE_RENDER_COMMAND]({
+      key: "ITEM2345",
+      template: "note",
+      format: "json",
+    });
+    const sourced = await handlers[TEMPLATE_SOURCE_COMMAND]({
+      template: "annotation",
+    });
+
+    for (const output of [rendered, sourced]) {
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          details: { parameter: "template" },
+        },
+      });
+    }
+    expect(loadData).not.toHaveBeenCalled();
+    expect(render).not.toHaveBeenCalled();
+    expect(getTemplateSource).not.toHaveBeenCalled();
+  });
+
   it.each(["markdown", "json"] as const)(
     "renders filename through the collapsing render method for format=%s",
     async (format) => {

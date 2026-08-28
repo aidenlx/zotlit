@@ -20,7 +20,6 @@ import {
   DEFAULT_TEMPLATES_ETA,
   templateFileFromPath,
   templatePath,
-  TEMPLATE_NAMES,
 } from "@/services/template/defaults";
 import type { TemplateName } from "@/services/template/defaults";
 import { normalizeVaultPath } from "@/services/template/path";
@@ -123,8 +122,8 @@ export function templatesPageItems(
           desc: m.settings_page_frontmatter_desc(),
           items: frontmatterPageItems(ctx),
         },
-        ...TEMPLATE_NAMES.map(
-          (name): SettingDefinition<SettingsKey> => ({
+        ...ctx.plugin.services.template.getTemplateFileStatuses().map(
+          ({ name }): SettingDefinition<SettingsKey> => ({
             name: TEMPLATE_META[name].title(),
             desc: TEMPLATE_META[name].desc(),
             render: (setting) => renderEjectableRow(setting, ctx, name),
@@ -528,11 +527,14 @@ async function ejectAll(ctx: SettingTabContext): Promise<void> {
   // A name only counts as missing when neither extension's file exists —
   // ejecting a `.liquid.md` on top of a user's `.eta.md` override would
   // silently shadow it.
-  const missing = TEMPLATE_NAMES.filter(
-    (name) =>
-      !ctx.app.vault.getFileByPath(templatePath(folder, name)) &&
-      !ctx.app.vault.getFileByPath(templatePath(folder, name, "eta")),
-  );
+  const missing = ctx.plugin.services.template
+    .getTemplateFileStatuses()
+    .map(({ name }) => name)
+    .filter(
+      (name) =>
+        !ctx.app.vault.getFileByPath(templatePath(folder, name)) &&
+        !ctx.app.vault.getFileByPath(templatePath(folder, name, "eta")),
+    );
   if (missing.length === 0) {
     new BaseNotice(m.notice_template_eject_none());
     return;

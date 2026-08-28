@@ -9,6 +9,7 @@ import type {
   FrontmatterLanguage,
 } from "@zotlit/templates/constants";
 import {
+  LegacyTemplateConversionError,
   LiteratureNoteTemplateError,
   TemplateError,
   TemplateFacade,
@@ -39,6 +40,7 @@ import type { SettingsService } from "@/services/settings/service";
 
 import {
   DEFAULT_TEMPLATES,
+  GLOBAL_TEMPLATE_NAMES,
   isTemplateName,
   MANAGED_CONTENT_TEMPLATE,
   templateFileFromPath,
@@ -53,6 +55,8 @@ import { normalizeVaultPath } from "./path";
 
 const logger = getLogger("template");
 const FLUSH_DEBOUNCE_MS = 500;
+const LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES: ReadonlySet<TemplateName> =
+  new Set(["filename", "note", "annotation", MANAGED_CONTENT_TEMPLATE]);
 
 /** localStorage key for the per-device JavaScript Templates consent flag. */
 const JS_TEMPLATES_STORAGE_KEY = "zotlit-javascript-templates";
@@ -252,9 +256,18 @@ export class TemplateService extends Service<void> {
 
   getTemplateFileStatuses(): readonly TemplateFileStatus[] {
     this.#requireLoaded("getTemplateFileStatuses");
+    const names = this.#settings.current?.["note.template-conversion-pending"]
+      ? TEMPLATE_NAMES
+      : GLOBAL_TEMPLATE_NAMES;
+    return this.#getTemplateFileStatuses(names);
+  }
+
+  #getTemplateFileStatuses(
+    names: readonly TemplateName[],
+  ): readonly TemplateFileStatus[] {
     const folder = this.#currentTemplateFolder();
 
-    return TEMPLATE_NAMES.map((name) => {
+    return names.map((name) => {
       const liquidPath = templatePath(folder, name, "liquid");
       // Every canonical name is written while a folder rebuild walks it; the
       // fallback covers a read taken inside that walk, before the name's own
@@ -639,29 +652,49 @@ export class TemplateService extends Service<void> {
     return DEFAULT_TEMPLATES[name];
   }
 
-  /** Vault files that make the default Profile use the legacy three-slot format. */
+  /** Vault files that make the default Profile use legacy Literature Note slots. */
   getLegacyLiteratureNoteTemplateFiles(): readonly string[] {
-    return this.getTemplateFileStatuses()
-      .filter(
-        (status) =>
-          (status.name === "filename" ||
-            status.name === "note" ||
-            status.name === "content") &&
-          status.winner.source.kind === "vault",
+    return this.#getTemplateFileStatuses(TEMPLATE_NAMES)
+      .filter((status) =>
+        LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES.has(status.name),
       )
-      .map((status) =>
-        status.winner.source.kind === "vault" ? status.winner.source.path : "",
-      );
+      .flatMap((status) => [
+        ...(status.winner.source.kind === "vault"
+          ? [status.winner.source.path]
+          : []),
+        ...status.shadowedFiles,
+        ...status.inertFiles,
+      ]);
   }
 
   /** Build and byte-verify the converted default Profile document in memory. */
   async convertLegacyLiteratureNoteTemplates(data: {
     readonly note: object;
     readonly filename: object;
+    readonly annotation?: object;
   }): Promise<ConvertedLegacyProfileDocument> {
     this.#requireLoaded("convertLegacyLiteratureNoteTemplates");
-    const statuses = this.getTemplateFileStatuses();
-    const source = async (name: "filename" | "note" | "content") => {
+    const statuses = this.#getTemplateFileStatuses(TEMPLATE_NAMES);
+    const inert = statuses.find(
+      (status) =>
+        LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES.has(status.name) &&
+        status.winner.source.kind === "none" &&
+        status.inertFiles.length > 0,
+    );
+    if (inert) {
+      throw new LegacyTemplateConversionError(
+        "unsupported-legacy-template",
+        `Legacy template '${inert.name}' is inert while JavaScript Templates are disabled`,
+        {
+          difference: "inert template",
+          recovery:
+            "Enable JavaScript Templates on this device, then retry conversion.",
+        },
+      );
+    }
+    const source = async (
+      name: "filename" | "note" | "content" | "annotation",
+    ) => {
       const status = statuses.find((candidate) => candidate.name === name)!;
       return {
         source: await this.getTemplateSource(name),
@@ -673,9 +706,16 @@ export class TemplateService extends Service<void> {
       source("content"),
       source("filename"),
     ]);
+    const annotationStatus = statuses.find(
+      (candidate) => candidate.name === "annotation",
+    )!;
+    const annotation =
+      annotationStatus.winner.source.kind === "vault"
+        ? await source("annotation")
+        : undefined;
     return {
       ...this.#facade.convertLegacyLiteratureNoteTemplates(
-        { note, content, filename },
+        { note, content, filename, annotation },
         data,
       ),
       legacyFiles: this.getLegacyLiteratureNoteTemplateFiles(),

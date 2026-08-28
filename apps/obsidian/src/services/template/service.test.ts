@@ -957,11 +957,20 @@ describe("TemplateService", () => {
       "templates/zotlit-filename.liquid.md",
       "{{ zt.citationKey }}",
     );
+    vault.addFile(
+      "templates/zotlit-annotation.liquid.md",
+      "Annotation {{ zt.text }}",
+    );
+    vault.addFile(
+      "templates/zotlit-annotation.eta.md",
+      "Shadowed <%= zt.text %>",
+    );
     const { service } = await makeHarness({ vault });
 
     const converted = await service.convertLegacyLiteratureNoteTemplates({
       note: { title: "Paper" },
       filename: { citationKey: "doePaper" },
+      annotation: { text: "Excerpt" },
     });
 
     expect(converted.source).toContain(
@@ -970,7 +979,57 @@ describe("TemplateService", () => {
     expect(converted.legacyFiles).toEqual([
       "templates/zotlit-filename.liquid.md",
       "templates/zotlit-note.liquid.md",
+      "templates/zotlit-annotation.liquid.md",
+      "templates/zotlit-annotation.eta.md",
       "templates/zotlit-content.liquid.md",
+    ]);
+    expect(converted.document.annotationBlock?.source).toBe(
+      "Annotation {{ zt.text }}",
+    );
+  });
+
+  it("refuses conversion while an Eta Literature Note slot is inert", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-annotation.eta.md",
+      "Annotation <%= zt.text %>",
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(service.getLegacyLiteratureNoteTemplateFiles()).toContain(
+      "templates/zotlit-annotation.eta.md",
+    );
+    await expect(
+      service.convertLegacyLiteratureNoteTemplates({
+        note: { title: "Paper" },
+        filename: { citationKey: "doePaper" },
+        annotation: { text: "Excerpt" },
+      }),
+    ).rejects.toMatchObject({
+      code: "unsupported-legacy-template",
+      difference: "inert template",
+    });
+  });
+
+  it("retires Literature Note slots after conversion", async () => {
+    const { service, settings } = await makeHarness({
+      settings: { "note.template-conversion-pending": true },
+    });
+
+    expect(service.getTemplateFileStatuses().map(({ name }) => name)).toEqual([
+      "filename",
+      "note",
+      "annotation",
+      "content",
+      "cite",
+      "cite2",
+    ]);
+
+    settings.update({ "note.template-conversion-pending": false });
+
+    expect(service.getTemplateFileStatuses().map(({ name }) => name)).toEqual([
+      "cite",
+      "cite2",
     ]);
   });
 
@@ -1466,6 +1525,7 @@ async function makeHarness(options?: {
   } as unknown as Harness["app"];
   const plugin = new PluginStub(app, {
     __VERSION__: 1,
+    "note.template-conversion-pending": true,
     ...options?.settings,
   });
   const settings = new SettingsService({

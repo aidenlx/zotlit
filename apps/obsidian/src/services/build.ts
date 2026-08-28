@@ -158,16 +158,19 @@ export function buildServices(
           app: plugin.app,
           settings,
           template,
-          loadVerificationData: () =>
-            loadLiteratureNoteTemplateMigrationData({
-              app: plugin.app,
-              db,
-              libraryScope,
-              noteIndex,
-              settings,
-              templates: template,
-              zoteroPref,
-            }),
+          loadVerificationData: (options) =>
+            loadLiteratureNoteTemplateMigrationData(
+              {
+                app: plugin.app,
+                db,
+                libraryScope,
+                noteIndex,
+                settings,
+                templates: template,
+                zoteroPref,
+              },
+              options,
+            ),
           openPrompt: () => openWelcomeView(plugin.app, "upgraded"),
         }),
     })
