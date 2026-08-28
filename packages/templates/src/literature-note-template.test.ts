@@ -76,6 +76,7 @@ describe("Literature Note Template document", () => {
         create: facade.render("note", { title: "Paper" }),
         update: facade.render("content", { title: "Paper" }),
         filename: facade.render("filename", { citationKey: "doePaper" }),
+        annotation: null,
       });
     },
   );
@@ -242,6 +243,93 @@ describe("Literature Note Template document", () => {
         difference: "template language",
       }),
     );
+  });
+
+  it("folds an ejected annotation template with byte-identical output", () => {
+    const facade = new TemplateFacade({
+      transformRender: (name, output) =>
+        name === "content" ? formatManagedRegion(output) : output,
+    });
+    const note = '{% render "content" with zt as zt %}';
+    const content = "Managed {{ zt.title }}";
+    const filename = "{{ zt.citationKey }}";
+    const annotation = "Annotation {{ zt.text }}";
+    facade.define("note", note, "liquid");
+    facade.define("content", content, "liquid");
+    facade.define("filename", filename, "liquid");
+    facade.define("annotation", annotation, "liquid");
+
+    const converted = facade.convertLegacyLiteratureNoteTemplates(
+      {
+        note: { source: note, language: "liquid" },
+        content: { source: content, language: "liquid" },
+        filename: { source: filename, language: "liquid" },
+        annotation: { source: annotation, language: "liquid" },
+      },
+      {
+        note: { title: "Paper" },
+        filename: { citationKey: "doePaper" },
+        annotation: { text: "Excerpt" },
+      },
+    );
+
+    expect(converted.document.annotationBlock?.source).toBe(annotation);
+    expect(converted.rendered.annotation).toBe("Annotation Excerpt");
+  });
+
+  it("refuses an annotation fold whose rendered bytes differ", () => {
+    const facade = new TemplateFacade({
+      transformRender: (name, output) =>
+        name === "content" ? formatManagedRegion(output) : output,
+    });
+    const note = '{% render "content" with zt as zt %}';
+    facade.define("note", note, "liquid");
+    facade.define("content", "Managed", "liquid");
+    facade.define("filename", "note", "liquid");
+    facade.define("annotation", "Legacy {{ zt.text }}", "liquid");
+
+    expect(() =>
+      facade.convertLegacyLiteratureNoteTemplates(
+        {
+          note: { source: note, language: "liquid" },
+          content: { source: "Managed", language: "liquid" },
+          filename: { source: "note", language: "liquid" },
+          annotation: {
+            source: "Changed {{ zt.text }}",
+            language: "liquid",
+          },
+        },
+        { note: {}, filename: {}, annotation: { text: "Excerpt" } },
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "legacy-render-mismatch",
+        difference: "annotation output",
+      }),
+    );
+  });
+
+  it("leaves the Annotation Block absent for an embedded annotation slot", () => {
+    const facade = new TemplateFacade({
+      transformRender: (name, output) =>
+        name === "content" ? formatManagedRegion(output) : output,
+    });
+    const note = '{% render "content" with zt as zt %}';
+    facade.define("note", note, "liquid");
+    facade.define("content", "Managed", "liquid");
+    facade.define("filename", "note", "liquid");
+
+    const converted = facade.convertLegacyLiteratureNoteTemplates(
+      {
+        note: { source: note, language: "liquid" },
+        content: { source: "Managed", language: "liquid" },
+        filename: { source: "note", language: "liquid" },
+      },
+      { note: {}, filename: {} },
+    );
+
+    expect(converted.document.annotationBlock).toBeNull();
+    expect(converted.rendered.annotation).toBeNull();
   });
 
   it("parses the manifest, body, and Managed Block", () => {
