@@ -1,6 +1,7 @@
 import * as m from "@/lib/i18n/generated/messages";
 // Pure BatchImportResult → user-facing string mappings for notices and toasts.
 import type { BatchRunResult } from "@/services/batch-run";
+import { ProfileAnnotationError } from "@/services/template/service";
 
 import type { BatchImportResult } from "./batch-import";
 import { NoteImportProfileError } from "./service";
@@ -8,7 +9,10 @@ import { NoteImportProfileError } from "./service";
 export function importedNoteProfileErrorNotice(
   error: unknown,
 ): string | undefined {
-  return error instanceof NoteImportProfileError ? error.message : undefined;
+  return error instanceof NoteImportProfileError ||
+    error instanceof ProfileAnnotationError
+    ? error.message
+    : undefined;
 }
 
 function importErrorNotice(_message: string, error: unknown): string {
