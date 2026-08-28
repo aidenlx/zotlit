@@ -433,6 +433,24 @@ describe("BibliographyRenderCache", () => {
     expect(engine.requests).toHaveLength(1);
   });
 
+  it("drops every render when a named Profile citation style changes", async () => {
+    await using harness = await makeHarness();
+    const { cache, settings, invalidations } = harness;
+
+    await cache.render([item("alpha")]);
+    settings.update({
+      "note.profiles": [
+        {
+          id: "00000000-0000-4000-8000-000000000001",
+          label: "Research",
+          bindings: { "citation.references-style": IEEE },
+        },
+      ],
+    });
+
+    expect(invalidations).toHaveLength(1);
+  });
+
   it("drops every render when the engine comes or goes", async () => {
     await using harness = await makeHarness();
     const { cache, engine, pandocEngine, invalidations } = harness;

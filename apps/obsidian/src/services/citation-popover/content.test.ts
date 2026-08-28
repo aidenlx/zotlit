@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import { ambiguousCandidates } from "@/services/citation-index/__fixtures__/ambiguous-candidates";
 import type { Inlines } from "@/services/pandoc/ast";
+import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 
 import type { CitationPopoverActions } from "./actions";
 import type {
@@ -65,13 +66,19 @@ afterEach(async () => {
 async function render(
   blocks: readonly CitationPopoverBlock[],
   note?: Inlines,
+  profileFailure?: ProfilePresentationFailure,
 ): Promise<HTMLElement> {
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(() => {
     root!.render(
-      createElement(CitationPopoverContent, { blocks, note, actions }),
+      createElement(CitationPopoverContent, {
+        blocks,
+        note,
+        profileFailure,
+        actions,
+      }),
     );
   });
   return container;
@@ -87,6 +94,21 @@ const iconsOf = (block: HTMLElement): (string | null)[] =>
   );
 
 describe("CitationPopoverContent", () => {
+  it("shows an unavailable Imported Note Profile and its recovery", async () => {
+    const container = await render([entry("doe2024")], undefined, {
+      kind: "unusable",
+      property: "profile",
+      profileId: "deleted-profile",
+      target: "Imported/Research.md",
+    });
+
+    const diagnostic = container.querySelector(
+      "[data-citation-popover-profile-error]",
+    );
+    expect(diagnostic?.textContent).toContain("deleted-profile");
+    expect(diagnostic?.textContent).toContain("Re-stamp the note");
+  });
+
   it("stacks one block per work, in the order the citation names them", async () => {
     const container = await render([entry("smith2025"), entry("doe2024")]);
 

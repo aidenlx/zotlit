@@ -57,6 +57,11 @@ export function getIcon(name: IconName): SVGSVGElement | null {
   return svg;
 }
 
+/** Stand-in for Obsidian's delegated tooltip attributes. */
+export function setTooltip(el: HTMLElement, tooltip: string): void {
+  el.setAttribute("aria-label", tooltip);
+}
+
 // Obsidian exposes `sleep` as a runtime global; toast durations await it.
 // Provide it for tests that exercise that code path.
 globalThis.sleep ??= (ms: number) =>

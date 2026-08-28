@@ -10,6 +10,7 @@ import type {
   CitationHoverRequest,
   NavigationPane,
 } from "@/services/citekey-navigation";
+import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -56,12 +57,15 @@ async function harness({
   citekeys,
   sourcePath = "note.md",
   pending,
+  presentationFailure,
   ...overrides
 }: Partial<Settings> & {
   /** The formatted citation the shared text holds, by its {@link held} identity. */
   formatted?: Record<string, string>;
   /** Keep the citation-text read pending. */
   pending?: boolean;
+  /** An unavailable Imported Note Profile held with the document text. */
+  presentationFailure?: ProfilePresentationFailure;
   /** The citekey resolution snapshot's answer for each Indexed Key. */
   citekeys?: Record<string, string>;
   /** The file that owns each rendered section. */
@@ -69,7 +73,11 @@ async function harness({
 } = {}): Promise<Harness> {
   const settings = new SettingsStub(overrides);
   const noteIndex = new NoteIndexStub();
-  const citationText = new CitationTextStub(formatted ?? {}, pending);
+  const citationText = new CitationTextStub(
+    formatted ?? {},
+    pending,
+    presentationFailure,
+  );
   const citationIndex = new CitationIndexStub(
     citekeys ?? { [WANG_KEY]: "wang2020" },
   );
@@ -218,6 +226,27 @@ describe("WikilinkReading rendering", () => {
 
     expect(rendered?.classList.contains("zt-citation")).toBe(true);
     expect(rendered?.classList.contains("zt-literature-note-link")).toBe(true);
+  });
+
+  it("names an unavailable Imported Note Profile with an Obsidian tooltip", async () => {
+    await using harnessed = await harness({
+      "citation.wikilink-citations": true,
+      presentationFailure: {
+        kind: "unusable",
+        property: "profile",
+        profileId: "deleted-profile",
+        target: "Imported/Research.md",
+      },
+    });
+
+    const root = await harnessed.renderSection(WANG);
+    const link = root.querySelector<HTMLElement>(
+      '[data-citation-presentation-error="profile"]',
+    );
+
+    expect(link?.getAttribute("aria-label")).toContain("deleted-profile");
+    expect(link?.getAttribute("aria-label")).toContain("Re-stamp the note");
+    expect(link?.title).toBe("");
   });
 
   it("exposes the combined literal hooks once on a rendered Citation Run", async () => {
@@ -612,19 +641,26 @@ describe("WikilinkReading rerender", () => {
 interface HeldText {
   formatted: Map<string, FormattedOccurrence[]>;
   summaries: Map<string, string>;
+  presentationFailure?: ProfilePresentationFailure;
 }
 
 class CitationTextStub {
   readonly #formatted: Record<string, string>;
   readonly #pending: boolean;
+  readonly #presentationFailure: ProfilePresentationFailure | undefined;
   readonly #listeners: Record<"changed" | "invalidated", Set<() => void>> = {
     changed: new Set(),
     invalidated: new Set(),
   };
 
-  constructor(formatted: Record<string, string>, pending = false) {
+  constructor(
+    formatted: Record<string, string>,
+    pending = false,
+    presentationFailure?: ProfilePresentationFailure,
+  ) {
     this.#formatted = formatted;
     this.#pending = pending;
+    this.#presentationFailure = presentationFailure;
   }
 
   load(): Promise<HeldText> {
@@ -641,7 +677,13 @@ class CitationTextStub {
     for (const [source, text] of Object.entries(this.#formatted)) {
       formatted.set(source, occurrences(rendered(text)));
     }
-    return { formatted, summaries: new Map() };
+    return {
+      formatted,
+      summaries: new Map(),
+      ...(this.#presentationFailure
+        ? { presentationFailure: this.#presentationFailure }
+        : {}),
+    };
   }
 
   on(event: "changed" | "invalidated", cb: () => void): () => void {

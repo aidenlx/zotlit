@@ -492,16 +492,44 @@ describe("References banners", () => {
     [
       "an unusable note style",
       {
-        documentPresentationError: "style",
+        documentPresentationError: { kind: "unusable", property: "style" },
       } satisfies Partial<ReferencesState>,
       "This note's citation and references style is unavailable",
     ],
     [
       "an unusable document language",
       {
-        documentPresentationError: "language",
+        documentPresentationError: {
+          kind: "unusable",
+          property: "language",
+        },
       } satisfies Partial<ReferencesState>,
       "This note's document language is invalid",
+    ],
+    [
+      "an unavailable Imported Note Profile",
+      {
+        documentPresentationError: {
+          kind: "unusable",
+          property: "profile",
+          profileId: "deleted-profile",
+          target: "Imported/Research.md",
+        },
+      } satisfies Partial<ReferencesState>,
+      "This imported note's profile is unavailable",
+    ],
+    [
+      "an unavailable Imported Note Profile style",
+      {
+        documentPresentationError: {
+          kind: "unusable",
+          property: "profile-style",
+          styleId: "missing-profile-style",
+          profileId: "research-profile",
+          target: "Imported/Research.md",
+        },
+      } satisfies Partial<ReferencesState>,
+      "This imported note's profile style is unavailable",
     ],
   ])("keeps %s with the scrolling list region", async (_, state, title) => {
     const container = await render([summaryEntry], { kind: "minimal" }, state);
