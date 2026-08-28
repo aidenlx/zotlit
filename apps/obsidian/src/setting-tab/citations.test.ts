@@ -244,7 +244,7 @@ describe("referencesStyleOptions", () => {
 });
 
 describe("citation formatting settings", () => {
-  it("groups the approved style and engine controls under Formatting", () => {
+  it("groups locale and engine controls under Formatting", () => {
     const ctx = {
       settings: { current: defaults },
       pandocEngine: { getStatus: () => ({ kind: "absent" }) },
@@ -260,13 +260,10 @@ describe("citation formatting settings", () => {
     if (!group || !("items" in group) || !group.items) {
       throw new Error("formatting group missing");
     }
-    expect(group.items[0]).toMatchObject({
-      name: "Citation and references style",
-    });
     expect(referencesStyleDescription(false).textContent).toBe(
       "CSL style used to format in-text citations and the references sidebar. Install and manage styles in Zotero.",
     );
-    expect(group.items[1]).toMatchObject({
+    expect(group.items[0]).toMatchObject({
       name: "Citation locale",
       desc: "Sets the language for citation terms, dates, names, and sorting. Leave empty to use the language the selected style declares.",
       control: {
@@ -277,7 +274,7 @@ describe("citation formatting settings", () => {
       },
     });
     expect(defaults["citation.locale"]).toBeNull();
-    expect(group.items[2]).toMatchObject({
+    expect(group.items[1]).toMatchObject({
       name: "Pandoc engine",
       desc: expect.stringMatching(
         /^Formats in-text citations, references, and exports\. Installation applies to every vault on this device\./,
