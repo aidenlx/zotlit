@@ -2,13 +2,16 @@ import { Platform } from "obsidian";
 import type { App, Instruction, Modifier, TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { confirm } from "@/lib/confirm";
+import { confirm, confirmWithCheckbox } from "@/lib/confirm";
 
-import { QuickSwitchModal } from "./modal";
+import { QuickSwitchModal, switchImportedNoteProfile } from "./modal";
 import { chooseLiteratureNoteProfile } from "./profile-picker";
 import type { QuickSwitchDeps } from "./register";
 
-vi.mock("@/lib/confirm", () => ({ confirm: vi.fn() }));
+vi.mock("@/lib/confirm", () => ({
+  confirm: vi.fn(),
+  confirmWithCheckbox: vi.fn(),
+}));
 vi.mock("./profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
 }));
@@ -120,7 +123,12 @@ describe("QuickSwitchModal Profile conflicts", () => {
         workspace: { openLinkText },
       },
       lookup: { search: vi.fn().mockReturnValue([]) },
-      noteFeature: { createNote: vi.fn(), switchNoteProfile: vi.fn() },
+      noteFeature: {
+        createNote: vi.fn(),
+        getImportedNotesForItem: vi.fn().mockResolvedValue([]),
+        switchImportedNoteProfile: vi.fn(),
+        switchNoteProfile: vi.fn(),
+      },
       noteIndex: { getNotesByItemKey: () => [file] },
       settings: {
         current: {
@@ -151,5 +159,162 @@ describe("QuickSwitchModal Profile conflicts", () => {
       expect.any(Boolean),
       { active: true },
     );
+  });
+
+  it("passes the counted family only when the option is checked", async () => {
+    const currentId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const requestedId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const file = { path: "Literature/Existing.md" } as TFile;
+    const imported = [
+      { path: "Imported/First.md" },
+      { path: "Imported/Second.md" },
+    ] as TFile[];
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
+      id: requestedId,
+      label: "Papers",
+    });
+    vi.mocked(confirmWithCheckbox)
+      .mockResolvedValueOnce({ confirmed: true, checked: true })
+      .mockResolvedValueOnce({ confirmed: true, checked: false });
+    const switchNoteProfile = vi.fn().mockResolvedValue({
+      bodyUpdated: true,
+      duplicateRegionCount: 0,
+    });
+    const modal = new QuickSwitchModal({
+      app: {
+        metadataCache: {
+          getFileCache: () => ({
+            frontmatter: { "zotlit-profile": currentId },
+          }),
+        },
+        workspace: { openLinkText: vi.fn() },
+      },
+      lookup: { search: vi.fn().mockReturnValue([]) },
+      noteFeature: {
+        createNote: vi.fn(),
+        getImportedNotesForItem: vi.fn().mockResolvedValue(imported),
+        switchImportedNoteProfile: vi.fn(),
+        switchNoteProfile,
+      },
+      noteIndex: { getNotesByItemKey: () => [file] },
+      settings: {
+        current: {
+          "note.profiles": [
+            { id: currentId, label: "Books" },
+            { id: requestedId, label: "Papers" },
+          ],
+        },
+      },
+    } as unknown as QuickSwitchDeps);
+
+    await modal.onChooseSuggestion(
+      { item: { indexedKey: "ABC12345" } } as never,
+      {} as KeyboardEvent,
+    );
+
+    expect(confirmWithCheckbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        checkbox: "Also switch this item's 2 imported notes",
+      }),
+      expect.anything(),
+    );
+    expect(switchNoteProfile).toHaveBeenCalledWith(file, {
+      indexedKey: "ABC12345",
+      profileId: requestedId,
+      importedNotes: imported,
+    });
+
+    switchNoteProfile.mockClear();
+    await modal.onChooseSuggestion(
+      { item: { indexedKey: "ABC12345" } } as never,
+      {} as KeyboardEvent,
+    );
+
+    expect(switchNoteProfile).toHaveBeenCalledWith(file, {
+      indexedKey: "ABC12345",
+      profileId: requestedId,
+      importedNotes: undefined,
+    });
+  });
+});
+
+describe("Imported Note Profile switching", () => {
+  it("states that the switch applies on the next re-import", async () => {
+    const currentId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const requestedId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const file = { path: "Imported/Existing.md" } as TFile;
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
+      id: requestedId,
+      label: "Papers",
+    });
+    vi.mocked(confirm).mockResolvedValue(true);
+    const switchProfile = vi.fn().mockResolvedValue({
+      bodyUpdated: false,
+      duplicateRegionCount: 0,
+    });
+    const deps = {
+      app: {
+        metadataCache: {
+          getFileCache: () => ({
+            frontmatter: { "zotlit-profile": currentId },
+          }),
+        },
+      },
+      noteFeature: { switchImportedNoteProfile: switchProfile },
+      settings: {
+        current: {
+          "note.profiles": [
+            { id: currentId, label: "Books" },
+            { id: requestedId, label: "Papers" },
+          ],
+        },
+      },
+    } as unknown as QuickSwitchDeps;
+
+    await switchImportedNoteProfile(deps, file);
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringMatching(/next time.*update.*from Zotero/i),
+      }),
+      expect.anything(),
+    );
+    expect(switchProfile).toHaveBeenCalledWith(file, {
+      profileId: requestedId,
+    });
+  });
+
+  it("leaves the Imported Note unchanged when consent is declined", async () => {
+    const file = { path: "Imported/Existing.md" } as TFile;
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
+      id: "93f0df01-9de9-47e6-aa12-1ff770c1ab86",
+      label: "Papers",
+    });
+    vi.mocked(confirm).mockResolvedValue(false);
+    const switchProfile = vi.fn();
+
+    await switchImportedNoteProfile(
+      {
+        app: {
+          metadataCache: {
+            getFileCache: () => ({ frontmatter: {} }),
+          },
+        },
+        noteFeature: { switchImportedNoteProfile: switchProfile },
+        settings: {
+          current: {
+            "note.profiles": [
+              {
+                id: "93f0df01-9de9-47e6-aa12-1ff770c1ab86",
+                label: "Papers",
+              },
+            ],
+          },
+        },
+      } as unknown as QuickSwitchDeps,
+      file,
+    );
+
+    expect(switchProfile).not.toHaveBeenCalled();
   });
 });

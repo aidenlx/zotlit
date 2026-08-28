@@ -23,6 +23,7 @@
   "notice_library_scope_invalid_explanation": "ZotLit is using My Library until you select a library scope.",
   "notice_library_scope_invalid_action": "Open settings",
   "command_open_lit_note_name": "Open literature note quick switcher",
+  "command_switch_imported_note_profile_name": "Switch imported note profile",
   "command_open_citekey_name": "Open citation key under cursor",
   "command_open_citekey_new_tab_name": "Open citation key under cursor in new tab",
   "command_open_citekey_right_name": "Open citation key under cursor to the right",
@@ -371,11 +372,22 @@
   "settings_profile_delete_confirm_title": "Delete “{label}” profile?",
   "settings_profile_delete_confirm_body": "Literature notes stamped with this profile cannot update until you re-stamp them or recreate this profile with the same ID.",
   "settings_profile_delete": "Delete profile",
-  "modal_profile_choose_placeholder": "Choose a literature note profile…",
+  "modal_profile_choose_placeholder": "Choose a profile…",
   "modal_profile_switch_title": "Switch to “{label}” profile?",
   "modal_profile_switch_desc": "This note uses “{current}”. Switch it to “{requested}” and refresh its managed content. The file stays in its current folder. Text outside the managed region stays unchanged.",
   "modal_profile_switch_confirm": "Switch to “{label}”",
   "modal_profile_switch_keep": "Keep “{label}”",
+  "modal_imported_note_profile_switch_desc": "This imported note uses “{current}”. Switch it to “{requested}”. The file stays in its current folder. The new profile applies the next time you update this note from Zotero.",
+  "modal_profile_switch_imported_notes": [
+    {
+      "declarations": ["input count"],
+      "selectors": ["count"],
+      "match": {
+        "count=1": "Also switch this item's 1 imported note",
+        "count=*": "Also switch this item's {count} imported notes"
+      }
+    }
+  ],
   "settings_note_import_folder_name": "Imported note folder",
   "settings_note_import_folder_desc": "Where notes imported from Zotero are saved.",
   "settings_note_import_colored_highlights_name": "Use colored highlight syntax",
