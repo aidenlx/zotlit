@@ -85,22 +85,19 @@ export function templatesPageItems(
         {
           name: m.settings_template_auto_pair_name(),
           desc: m.settings_template_auto_pair_desc(),
-          visible: () =>
-            ctx.plugin.services.template.javascriptTemplatesEnabled,
+          visible: () => ctx.template.javascriptTemplatesEnabled,
           control: { type: "toggle", key: "template.auto-pair-eta" },
         },
         {
           name: m.settings_template_trim_leading_name(),
           desc: m.settings_template_trim_desc(),
-          visible: () =>
-            ctx.plugin.services.template.javascriptTemplatesEnabled,
+          visible: () => ctx.template.javascriptTemplatesEnabled,
           control: trimControl("template.auto-trim-leading"),
         },
         {
           name: m.settings_template_trim_trailing_name(),
           desc: m.settings_template_trim_desc(),
-          visible: () =>
-            ctx.plugin.services.template.javascriptTemplatesEnabled,
+          visible: () => ctx.template.javascriptTemplatesEnabled,
           control: trimControl("template.auto-trim-trailing"),
         },
       ],
@@ -122,13 +119,19 @@ export function templatesPageItems(
           desc: m.settings_page_frontmatter_desc(),
           items: frontmatterPageItems(ctx),
         },
-        ...ctx.plugin.services.template.getTemplateFileStatuses().map(
-          ({ name }): SettingDefinition<SettingsKey> => ({
-            name: TEMPLATE_META[name].title(),
-            desc: TEMPLATE_META[name].desc(),
-            render: (setting) => renderEjectableRow(setting, ctx, name),
-          }),
-        ),
+        // Structural, so it can't be deferred into a `render` callback the way
+        // the rows' own service reads are. The first `getSettingDefinitions()`
+        // runs from `addSettingTab()`, before TemplateService finishes loading;
+        // the tab re-renders these rows on `ready` — see ZotLitSettingTab.
+        ...(ctx.template.loaded
+          ? ctx.template.getTemplateFileStatuses().map(
+              ({ name }): SettingDefinition<SettingsKey> => ({
+                name: TEMPLATE_META[name].title(),
+                desc: TEMPLATE_META[name].desc(),
+                render: (setting) => renderEjectableRow(setting, ctx, name),
+              }),
+            )
+          : []),
       ],
     },
   ];
@@ -161,7 +164,7 @@ function renderJsTemplatesButton(
   setting: Setting,
   ctx: SettingTabContext,
 ): void {
-  const service = ctx.plugin.services.template;
+  const service = ctx.template;
   const enabled = service.javascriptTemplatesEnabled;
   setting.addButton((btn) => {
     if (enabled) {
@@ -189,7 +192,7 @@ async function applyJsTemplatesFlag(
   ctx: SettingTabContext,
   enabled: boolean,
 ): Promise<void> {
-  const service = ctx.plugin.services.template;
+  const service = ctx.template;
   try {
     if (!enabled) {
       await service.setJavascriptTemplatesEnabled(false);
@@ -230,8 +233,7 @@ function renderEjectableRow(
   );
   const file = liquidFile ?? etaFile;
 
-  const compileError =
-    ctx.plugin.services.template.compileErrors.get(name)?.message;
+  const compileError = ctx.template.compileErrors.get(name)?.message;
   const desc = createFragment();
   desc.append(TEMPLATE_META[name].desc());
   desc.append(createEl("br"));
@@ -242,7 +244,7 @@ function renderEjectableRow(
   } else {
     desc.append(m.settings_template_using_default());
   }
-  const shadowedPath = ctx.plugin.services.template.shadowedFiles.get(name);
+  const shadowedPath = ctx.template.shadowedFiles.get(name);
   if (shadowedPath) {
     const shadowed = createDiv();
     shadowed.className = "zt:mt-2 zt:text-(--text-warning)";
@@ -251,7 +253,7 @@ function renderEjectableRow(
     });
     desc.append(shadowed);
   }
-  const inertPath = ctx.plugin.services.template.inertEtaFiles.get(name);
+  const inertPath = ctx.template.inertEtaFiles.get(name);
   if (inertPath) {
     const inert = createDiv();
     inert.className = "zt:mt-2 zt:text-(--text-warning)";
@@ -263,7 +265,7 @@ function renderEjectableRow(
   }
   setting.setDesc(desc);
 
-  const gate = ctx.plugin.services.template.javascriptTemplatesEnabled;
+  const gate = ctx.template.javascriptTemplatesEnabled;
   const showLanguage = gate || (etaFile !== null && liquidFile === null);
   if (showLanguage) {
     const currentLanguage: TemplateLanguage = liquidFile
@@ -402,7 +404,7 @@ async function switchLanguage(
   const etaPath = templatePath(folder, name, "eta");
   const liquidFile = ctx.app.vault.getFileByPath(templatePath(folder, name));
   const etaFile = ctx.app.vault.getFileByPath(etaPath);
-  const service = ctx.plugin.services.template;
+  const service = ctx.template;
   try {
     if (target === "eta") {
       // Gate-off invariant: never create or reveal an Eta file on a device
@@ -527,7 +529,7 @@ async function ejectAll(ctx: SettingTabContext): Promise<void> {
   // A name only counts as missing when neither extension's file exists —
   // ejecting a `.liquid.md` on top of a user's `.eta.md` override would
   // silently shadow it.
-  const missing = ctx.plugin.services.template
+  const missing = ctx.template
     .getTemplateFileStatuses()
     .map(({ name }) => name)
     .filter(
