@@ -27,7 +27,7 @@ describe("citation source settings", () => {
     const ctx = {
       settings: { current: defaults },
       pandocEngine: { getStatus: () => ({ kind: "absent" }) },
-      plugin: { manifest: { version: "test" } },
+      manifest: { version: "test" },
     } as unknown as SettingTabContext;
     const group = citationsPageItems(ctx).find(
       (item) =>
@@ -64,7 +64,7 @@ describe("in-text citation settings", () => {
     const ctx = {
       settings: { current: defaults },
       pandocEngine: { getStatus: () => ({ kind: "absent" }) },
-      plugin: { manifest: { version: "test" } },
+      manifest: { version: "test" },
     } as unknown as SettingTabContext;
     const group = citationsPageItems(ctx).find(
       (item) =>
@@ -106,7 +106,7 @@ describe("hover settings", () => {
     const ctx = {
       settings: { current: settings },
       pandocEngine: { getStatus: () => ({ kind: "absent" }) },
-      plugin: { manifest: { version: "test" } },
+      manifest: { version: "test" },
     } as unknown as SettingTabContext;
     const items = citationsPageItems(ctx);
     const group = items.find(
@@ -248,7 +248,7 @@ describe("citation formatting settings", () => {
     const ctx = {
       settings: { current: defaults },
       pandocEngine: { getStatus: () => ({ kind: "absent" }) },
-      plugin: { manifest: { version: "test" } },
+      manifest: { version: "test" },
     } as unknown as SettingTabContext;
     const group = citationsPageItems(ctx).find(
       (item) =>

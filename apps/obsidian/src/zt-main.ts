@@ -152,7 +152,17 @@ export default class ZotLitPlugin extends Plugin {
   // Debug/escape-hatch access only. Services should depend on each other via DI.
   #services?: ReturnType<typeof buildServices>["services"];
 
-  get services(): ReturnType<typeof buildServices>["services"] {
+  /**
+   * The service container, for `obsidian eval` callers outside the bundle —
+   * `packages/e2e` and `packages/scripts` reach it through a string, so they
+   * keep working while TypeScript sees nothing to navigate.
+   *
+   * Typed `unknown` on purpose: it stays unset until `onload()` commits, so
+   * anything inside the bundle that reads a service through it gets a value
+   * that throws at exactly the wrong moment. Take the service as an explicit
+   * dependency instead.
+   */
+  get services(): unknown {
     if (!this.#services) throw new Error("Plugin not loaded");
     return this.#services;
   }

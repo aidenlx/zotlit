@@ -69,6 +69,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #zoteroPref: ZoteroPrefService;
   readonly #attachmentImport: AttachmentImportActions;
   readonly #citationIndex: CitationIndexActions;
+  readonly #template: TemplateService;
   readonly #release: ReleaseTabActions;
   readonly #pandocEngine: PandocEngineActions;
   readonly #languagePack: LanguagePackLifecycle;
@@ -94,12 +95,28 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#zoteroPref = zoteroPref;
     this.#attachmentImport = attachmentImport;
     this.#citationIndex = citationIndex;
+    this.#template = template;
     this.#release = release;
     this.#pandocEngine = pandocEngine;
     this.#languagePack = languagePack;
 
     plugin.register(
       template.on("compile-status-changed", () => this.#requestUpdate()),
+    );
+    // Obsidian calls `update()` from `addSettingTab()`, so the first pass runs
+    // while `onload` is still wiring and TemplateService is still loading. The
+    // rows that need it structurally are left out of that pass, so re-render
+    // once the service reports ready. `compile-status-changed` can't stand in:
+    // its load-time emit lands before the service flips to loaded.
+    let unloaded = false;
+    plugin.register(() => {
+      unloaded = true;
+    });
+    void template.ready.then(
+      () => {
+        if (!unloaded) this.#requestUpdate();
+      },
+      () => {},
     );
     plugin.register(languagePack.subscribe(() => this.#requestUpdate()));
     plugin.register(pandocEngine.subscribe(() => this.#requestUpdate()));
@@ -179,13 +196,14 @@ export class ZotLitSettingTab extends PluginSettingTab {
   override getSettingDefinitions(): SettingDefinitionItem[] {
     const ctx: SettingTabContext = {
       app: this.#plugin.app,
-      plugin: this.#plugin,
+      manifest: this.#plugin.manifest,
       settings: this.#settings,
       db: this.#db,
       libraryScope: this.#libraryScope,
       zoteroPref: this.#zoteroPref,
       attachmentImport: this.#attachmentImport,
       citationIndex: this.#citationIndex,
+      template: this.#template,
       release: this.#release,
       pandocEngine: this.#pandocEngine,
       languagePack: this.#languagePack,

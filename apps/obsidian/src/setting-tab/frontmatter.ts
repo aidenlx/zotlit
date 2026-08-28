@@ -89,7 +89,7 @@ function describeField(
   field: FrontmatterField,
 ): string | DocumentFragment {
   const { expr } = field;
-  const service = ctx.plugin.services.template;
+  const service = ctx.template;
   const compileError = service.validateFrontmatterExpr(expr, field.language);
   const inert =
     field.language === "javascript" && !service.javascriptTemplatesEnabled;
@@ -115,7 +115,7 @@ function openFieldModal(ctx: SettingTabContext, index: number | null): void {
   const fields = ctx.settings.current?.["note.frontmatter-fields"] ?? [];
   const field = index === null ? null : (fields[index] ?? null);
   const existingKeys = fields.filter((_, i) => i !== index).map((f) => f.key);
-  const service = ctx.plugin.services.template;
+  const service = ctx.template;
 
   openFrontmatterFieldModal(ctx.app, {
     field,

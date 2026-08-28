@@ -11,7 +11,6 @@ import { BaseNotice } from "@/lib/notice";
 import { requireElectron } from "@/lib/require";
 import { LOG_FILENAME } from "@/services/log/service";
 import type { LogLevel } from "@/services/settings/schema";
-import type ZotLitPlugin from "@/zt-main";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 
@@ -81,13 +80,13 @@ export function maintenancePageItems(
       name: m.settings_log_open_file_name(),
       desc: m.settings_log_open_file_desc(),
       disabled: fileDisabled,
-      action: () => void openLogFile(ctx.plugin),
+      action: () => void openLogFile(ctx),
     },
     {
       name: m.settings_log_export_name(),
       desc: m.settings_log_export_desc(),
       disabled: fileDisabled,
-      action: () => void exportLogArchive(ctx.plugin),
+      action: () => void exportLogArchive(ctx),
     },
     {
       name: m.settings_citation_index_reset_name(),
@@ -145,9 +144,9 @@ async function resetLanguagePacks(ctx: SettingTabContext): Promise<void> {
   new BaseNotice(m.notice_language_pack_reset());
 }
 
-async function openLogFile(plugin: ZotLitPlugin): Promise<void> {
-  const { adapter } = plugin.app.vault;
-  const logPath = `${plugin.manifest.dir}/${LOG_FILENAME}`;
+async function openLogFile(ctx: SettingTabContext): Promise<void> {
+  const { adapter } = ctx.app.vault;
+  const logPath = `${ctx.manifest.dir}/${LOG_FILENAME}`;
   if (!(adapter instanceof FileSystemAdapter)) {
     new BaseNotice(m.notice_open_log_file_failed());
     logger.error("Vault adapter is not a FileSystemAdapter", { logPath });
@@ -164,9 +163,9 @@ async function openLogFile(plugin: ZotLitPlugin): Promise<void> {
   }
 }
 
-async function exportLogArchive(plugin: ZotLitPlugin): Promise<void> {
-  const { adapter } = plugin.app.vault;
-  const logPath = `${plugin.manifest.dir}/${LOG_FILENAME}`;
+async function exportLogArchive(ctx: SettingTabContext): Promise<void> {
+  const { adapter } = ctx.app.vault;
+  const logPath = `${ctx.manifest.dir}/${LOG_FILENAME}`;
   try {
     const text = await adapter.read(logPath);
     const zipBytes = zipSync({ [LOG_FILENAME]: strToU8(text) });

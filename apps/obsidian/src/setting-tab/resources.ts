@@ -107,7 +107,7 @@ function resourcesItems(
   return [
     {
       name: m.settings_resources_whats_new_name({
-        version: ctx.plugin.manifest.version,
+        version: ctx.manifest.version,
       }),
       desc: m.settings_resources_whats_new_desc(),
       render: (setting) => {

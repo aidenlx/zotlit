@@ -183,11 +183,7 @@ describe("literature note Profile settings", () => {
       "note.profiles": [{ ...BOOKS, document: "books.md" }],
     };
     const page = literatureNoteProfileItems({
-      plugin: {
-        services: {
-          template: { getLiteratureNoteTemplateStatuses: () => [] },
-        },
-      },
+      template: { getLiteratureNoteTemplateStatuses: () => [] },
       settings: { current: settings },
     } as unknown as SettingTabContext)[0] as SettingDefinitionPage;
     const list = page.items?.[1] as SettingDefinitionList;
@@ -286,13 +282,9 @@ describe("literature note Profile settings", () => {
 
     expect(() =>
       literatureNoteProfileItems({
-        plugin: {
-          services: {
-            template: {
-              getLiteratureNoteTemplateStatuses: () => {
-                throw new Error("service is not ready");
-              },
-            },
+        template: {
+          getLiteratureNoteTemplateStatuses: () => {
+            throw new Error("service is not ready");
           },
         },
         settings: { current: settings },

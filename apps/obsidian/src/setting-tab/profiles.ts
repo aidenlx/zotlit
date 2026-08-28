@@ -276,7 +276,7 @@ function profileDocumentDescription(
   if (!reference) return m.settings_profile_document_builtin_desc();
   let status;
   try {
-    status = ctx.plugin.services.template
+    status = ctx.template
       .getLiteratureNoteTemplateStatuses()
       .find((candidate) => candidate.reference === reference);
   } catch {
