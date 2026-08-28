@@ -73,6 +73,7 @@ export interface ConvertedLegacyLiteratureNoteTemplate {
     readonly create: string;
     readonly update: string;
     readonly filename: string;
+    readonly annotation: string | null;
   };
   readonly frontmatterPatch: Readonly<Record<string, unknown>>;
 }
@@ -234,12 +235,16 @@ export class TemplateFacade {
 
   /**
    * Synthesize and verify the default Profile document without mutating the
-   * facade. All three legacy outputs must match byte-for-byte before the
+   * facade. Every supplied legacy output must match byte-for-byte before the
    * caller may persist the returned source.
    */
   convertLegacyLiteratureNoteTemplates(
     legacy: LegacyLiteratureNoteTemplates,
-    data: { readonly note: object; readonly filename: object },
+    data: {
+      readonly note: object;
+      readonly filename: object;
+      readonly annotation?: object;
+    },
     options: ConvertLegacyLiteratureNoteTemplateOptions = {},
   ): ConvertedLegacyLiteratureNoteTemplate {
     const source = synthesizeLegacyLiteratureNoteTemplate(legacy, {
@@ -250,6 +255,10 @@ export class TemplateFacade {
       create: this.render("note", data.note),
       update: this.render("content", data.note),
       filename: this.render("filename", data.filename),
+      annotation:
+        legacy.annotation && data.annotation
+          ? this.render("annotation", data.annotation)
+          : null,
     };
     const rendered = {
       create: this.renderLiteratureNoteTemplateForCreate(document, data.note),
@@ -258,6 +267,13 @@ export class TemplateFacade {
         document,
         data.filename,
       ),
+      annotation:
+        legacy.annotation && data.annotation
+          ? this.renderLiteratureNoteTemplateAnnotation(
+              document,
+              data.annotation,
+            )
+          : null,
     };
     if (rendered.update === null) {
       throw new LegacyTemplateConversionError(
@@ -313,6 +329,24 @@ export class TemplateFacade {
       frontmatter.compiled,
       evaluation.values,
     );
+    if (legacy.annotation) {
+      if (legacyRendered.annotation === null || rendered.annotation === null) {
+        throw new LegacyTemplateConversionError(
+          "unsupported-legacy-template",
+          "Annotation conversion requires verification data and an Annotation Block",
+          {
+            difference: "annotation verification data",
+            recovery:
+              "Make one Zotero annotation available, then retry conversion.",
+          },
+        );
+      }
+      assertSameRender(
+        "annotation output",
+        legacyRendered.annotation,
+        rendered.annotation,
+      );
+    }
     return {
       source,
       document,

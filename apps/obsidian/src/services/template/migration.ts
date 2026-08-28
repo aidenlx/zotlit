@@ -17,6 +17,7 @@ import type { SettingsService } from "@/services/settings/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
+import { templateFileFromPath } from "./defaults";
 import type { ConvertedLegacyProfileDocument } from "./service";
 import type { TemplateService } from "./service";
 
@@ -44,6 +45,7 @@ interface MigrationTemplateService {
   convertLegacyLiteratureNoteTemplates(data: {
     readonly note: object;
     readonly filename: object;
+    readonly annotation?: object;
   }): Promise<Pick<ConvertedLegacyProfileDocument, "source" | "legacyFiles">>;
 }
 
@@ -57,9 +59,10 @@ export interface LiteratureNoteTemplateMigrationOptions {
   app: MigrationApp;
   settings: MigrationSettings;
   template: MigrationTemplateService;
-  loadVerificationData: () => Promise<{
+  loadVerificationData: (options: { annotation: boolean }) => Promise<{
     readonly note: object;
     readonly filename: object;
+    readonly annotation: object | null;
   } | null>;
   openPrompt: () => void | Promise<void>;
 }
@@ -77,21 +80,28 @@ export interface LiteratureNoteTemplateMigrationDataDeps {
 /** Load one real in-scope Zotero item through the Workbench's inert render seam. */
 export async function loadLiteratureNoteTemplateMigrationData(
   deps: LiteratureNoteTemplateMigrationDataDeps,
-): Promise<{ note: object; filename: object } | null> {
+  options: { annotation: boolean },
+): Promise<{
+  note: object;
+  filename: object;
+  annotation: object | null;
+} | null> {
   await deps.libraryScope.ready;
   using lease = await deps.db.acquireRead();
   const scope = deps.libraryScope.resolveWith(lease.client);
-  let indexedKey: string | undefined;
+  const indexedKeys: string[] = [];
   for (const library of scope.available) {
-    const itemID = getIndexedItemIDsByLibrary(
+    for (const itemID of getIndexedItemIDsByLibrary(
       lease.client,
       library.libraryID,
-    )[0];
-    if (itemID === undefined) continue;
-    indexedKey = getItemDisplayRefByID(lease.client, itemID)?.indexedKey;
-    if (indexedKey) break;
+    )) {
+      const indexedKey = getItemDisplayRefByID(
+        lease.client,
+        itemID,
+      )?.indexedKey;
+      if (indexedKey) indexedKeys.push(indexedKey);
+    }
   }
-  if (!indexedKey) return null;
 
   const dataDeps = {
     app: deps.app,
@@ -101,12 +111,47 @@ export async function loadLiteratureNoteTemplateMigrationData(
     templates: deps.templates,
     zoteroPref: deps.zoteroPref,
   };
-  const [note, filename] = await Promise.all([
-    loadTemplateData(dataDeps, indexedKey, "note"),
-    loadTemplateData(dataDeps, indexedKey, "filename"),
-  ]);
-  if (note.kind !== "data" || filename.kind !== "data") return null;
-  return { note: note.data, filename: filename.data };
+  for (const indexedKey of indexedKeys) {
+    const [note, filename] = await Promise.all([
+      loadTemplateData(dataDeps, indexedKey, "note"),
+      loadTemplateData(dataDeps, indexedKey, "filename"),
+    ]);
+    if (note.kind !== "data" || filename.kind !== "data") continue;
+    if (!options.annotation) {
+      return { note: note.data, filename: filename.data, annotation: null };
+    }
+    const annotationKey = firstAnnotationIndexedKey(note.data);
+    if (!annotationKey) continue;
+    const annotation = await loadTemplateData(
+      dataDeps,
+      annotationKey,
+      "annotation",
+    );
+    if (annotation.kind !== "data") continue;
+    return {
+      note: note.data,
+      filename: filename.data,
+      annotation: annotation.data,
+    };
+  }
+  return null;
+}
+
+function firstAnnotationIndexedKey(data: object): string | undefined {
+  if (!("annotations" in data) || !Array.isArray(data.annotations)) {
+    return undefined;
+  }
+  for (const annotation of data.annotations) {
+    if (
+      annotation !== null &&
+      typeof annotation === "object" &&
+      "indexedKey" in annotation &&
+      typeof annotation.indexedKey === "string"
+    ) {
+      return annotation.indexedKey;
+    }
+  }
+  return undefined;
 }
 
 export type LiteratureNoteTemplateMigrationDiagnostic =
@@ -188,7 +233,12 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
       );
     }
 
-    const data = await this.#loadVerificationData();
+    const foldsAnnotation = legacyFiles.some(
+      (path) => templateFileFromPath(path)?.name === "annotation",
+    );
+    const data = await this.#loadVerificationData({
+      annotation: foldsAnnotation,
+    });
     if (!data) {
       return refused(
         "no-verification-item",
@@ -199,8 +249,11 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
 
     let converted;
     try {
-      converted =
-        await this.#template.convertLegacyLiteratureNoteTemplates(data);
+      converted = await this.#template.convertLegacyLiteratureNoteTemplates({
+        note: data.note,
+        filename: data.filename,
+        ...(data.annotation ? { annotation: data.annotation } : {}),
+      });
     } catch (error) {
       if (error instanceof LegacyTemplateConversionError) {
         const detail = {

@@ -344,13 +344,22 @@ export function createTemplateWorkbenchHandlers(
       TEMPLATE_RENDER_COMMAND,
       parseRenderRequest,
       async (request, identity) => {
+        const template = templateIdentity(
+          deps.templates.getTemplateFileStatuses(),
+          request.template,
+        );
+        if (!template) {
+          return envelope(TEMPLATE_RENDER_COMMAND, {
+            ok: false,
+            request,
+            identity,
+            diagnostic: inactiveTemplateDiagnostic(request.template),
+          });
+        }
         const echoed = {
           request,
           identity,
-          template: templateIdentity(
-            deps.templates.getTemplateFileStatuses(),
-            request.template,
-          ),
+          template,
           warnings: rootVariableWarnings(
             deps.templates.analyzeRootVariables(request.template),
           ),
@@ -524,6 +533,13 @@ export function createTemplateWorkbenchHandlers(
         deps.templates.getTemplateFileStatuses(),
         request.value,
       );
+      if (!template) {
+        return envelope(TEMPLATE_SOURCE_COMMAND, {
+          ok: false,
+          identity,
+          diagnostic: inactiveTemplateDiagnostic(request.value),
+        });
+      }
       const source = await deps.templates.getTemplateSource(request.value);
       return envelope(TEMPLATE_SOURCE_COMMAND, {
         ok: true,
@@ -1081,19 +1097,28 @@ function rootVariableWarnings(
 /**
  * The active Template a render answered from, as status reports it.
  *
- * @throws when `name` has no status entry. `parseRenderRequest` restricts the
- *   slot to `TEMPLATE_SLOT_ROOTS` keys and `TEMPLATE_NAMES` covers those keys,
- *   so production reaches this only through a hand-built dependency.
+ * @returns the active identity, or `undefined` when conversion retired the
+ *   requested Literature Note slot.
  */
 function templateIdentity(
   statuses: readonly TemplateFileStatus[],
   name: TemplateSlot,
-): {
-  name: TemplateSlot;
-  language: TemplateFileStatus["winner"]["language"];
-  source: TemplateFileStatus["winner"]["source"];
-} {
+):
+  | {
+      name: TemplateSlot;
+      language: TemplateFileStatus["winner"]["language"];
+      source: TemplateFileStatus["winner"]["source"];
+    }
+  | undefined {
   const status = statuses.find((candidate) => candidate.name === name);
-  if (!status) throw new Error(`Template status is missing for '${name}'.`);
+  if (!status) return undefined;
   return { name, ...status.winner };
+}
+
+function inactiveTemplateDiagnostic(name: TemplateSlot): Diagnostic {
+  return diagnostic(
+    "INVALID_SELECTOR",
+    `Template '${name}' is not an active vault-global slot. Use template-status to list active slots and template-document-render for a Literature Note Template document.`,
+    { parameter: "template" },
+  );
 }
