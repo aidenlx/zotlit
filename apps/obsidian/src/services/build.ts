@@ -246,13 +246,20 @@ export function buildServices(
         }),
     })
     .use({
-      citationText: ({ db, citationIndex, noteIndex, bibliographyRender }) =>
+      citationText: ({
+        db,
+        citationIndex,
+        noteIndex,
+        bibliographyRender,
+        settings,
+      }) =>
         new CitationText({
           app: plugin.app,
           db,
           citationIndex,
           noteIndex,
           bibliographyRender,
+          settings,
         }),
     })
     .useValue({
@@ -262,6 +269,7 @@ export function buildServices(
         citationText,
         bibliographyRender,
         libraryScope,
+        settings,
       }): CitationPopover =>
         createCitationPopover({
           app: plugin.app,
@@ -270,6 +278,7 @@ export function buildServices(
           citationText,
           bibliographyRender,
           libraryScope,
+          settings,
         }),
     })
     .use({

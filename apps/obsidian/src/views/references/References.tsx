@@ -8,7 +8,7 @@ import { SidebarToolbar } from "@/components/sidebar-toolbar";
 import * as m from "@/lib/i18n/generated/messages";
 import { cn, tooltipAttrs } from "@/lib/utils";
 import type { ReferenceSource } from "@/services/citation-index/service";
-import type { UnusableProperty } from "@/services/pandoc/document-presentation";
+import type { DocumentPresentationFailure } from "@/services/pandoc/document-presentation";
 import { InlineContent } from "@/services/pandoc/inline-content";
 import type {
   PandocEngineFailure,
@@ -141,16 +141,39 @@ function Toolbar() {
 }
 
 /** The note property a document-scoped presentation failure asks the reader to repair. */
-function documentPresentationTitle(property: UnusableProperty): string {
-  return property === "language"
-    ? m.references_document_language_failed_title()
-    : m.references_document_style_failed_title();
+function documentPresentationTitle(
+  failure: DocumentPresentationFailure,
+): string {
+  switch (failure.property) {
+    case "language":
+      return m.references_document_language_failed_title();
+    case "profile":
+      return m.references_document_profile_failed_title();
+    case "profile-style":
+      return m.references_profile_style_failed_title();
+    case "style":
+      return m.references_document_style_failed_title();
+  }
 }
 
-function documentPresentationBody(property: UnusableProperty): string {
-  return property === "language"
-    ? m.references_document_language_failed_body()
-    : m.references_document_style_failed_body();
+function documentPresentationBody(
+  failure: DocumentPresentationFailure,
+): string {
+  switch (failure.property) {
+    case "language":
+      return m.references_document_language_failed_body();
+    case "profile":
+      return m.notice_imported_note_profile_unknown({
+        id: failure.profileId,
+        target: failure.target,
+      });
+    case "profile-style":
+      return m.references_profile_style_failed_body({
+        style: failure.styleId,
+      });
+    case "style":
+      return m.references_document_style_failed_body();
+  }
 }
 
 /** What the disabled copy action names in its tooltip as the thing to fix. */

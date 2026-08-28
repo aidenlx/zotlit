@@ -117,6 +117,8 @@ export class BibliographyRenderCache extends Service<void> {
   >(HELD_RENDERS);
   /** `undefined` until the first settings snapshot names the vault selections. */
   #vault: EffectivePresentation | undefined;
+  /** Named Profile citation-style bindings in the last settings snapshot. */
+  #profileStyles: string | undefined;
   /** The first unavailable selected style found in this plugin lifecycle. */
   #missingStyle: string | null = null;
 
@@ -265,13 +267,25 @@ export class BibliographyRenderCache extends Service<void> {
   #applySettings(settings: Readonly<Settings>): void {
     const next = vaultPresentation(settings);
     const held = this.#vault;
-    if (held && held.styleId === next.styleId && held.locale === next.locale) {
+    const nextProfileStyles = JSON.stringify(
+      settings["note.profiles"].map(({ id, bindings }) => ({
+        id,
+        styleId: bindings?.["citation.references-style"],
+      })),
+    );
+    if (
+      held &&
+      held.styleId === next.styleId &&
+      held.locale === next.locale &&
+      this.#profileStyles === nextProfileStyles
+    ) {
       return;
     }
     this.#vault = next;
+    this.#profileStyles = nextProfileStyles;
     logger.info(
       held
-        ? "Vault citation presentation changed"
+        ? "Citation presentation settings changed"
         : "Vault citation presentation selected",
       { styleId: next.styleId, locale: next.locale },
     );

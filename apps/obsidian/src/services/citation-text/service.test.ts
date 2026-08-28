@@ -193,11 +193,7 @@ async function makeHarness({
       on: listen("render"),
     },
     settings: {
-      ready: Promise.resolve(),
-      subscribe: (cb: (next: Readonly<Settings>) => void) => {
-        cb({ ...defaults, ...settings });
-        return () => undefined;
-      },
+      current: { ...defaults, ...settings },
     },
   } as never);
   await service.ready;

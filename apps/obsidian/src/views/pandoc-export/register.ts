@@ -83,14 +83,26 @@ export async function runPandocExport(
   }
   // A note whose own presentation property names nothing stops here: a vault
   // selection never stands in for it, in the dialog or in the exported run.
-  const declared = documentPresentation(app.metadataCache, file);
+  const declared = documentPresentation(
+    app.metadataCache,
+    file,
+    settings.current,
+  );
   if (declared.kind === "unusable") {
-    showExportFailure({
-      kind:
-        declared.property === "language"
-          ? "document-language-invalid"
-          : "document-style-invalid",
-    });
+    showExportFailure(
+      declared.property === "profile"
+        ? {
+            kind: "document-profile-invalid",
+            id: declared.profileId,
+            target: declared.target,
+          }
+        : {
+            kind:
+              declared.property === "language"
+                ? "document-language-invalid"
+                : "document-style-invalid",
+          },
+    );
     return;
   }
   // Where this export starts: the document's own effective Citation
@@ -123,7 +135,13 @@ export async function runPandocExport(
     { documentStyle: choices.styleId === declared.presentation.styleId },
   );
   if (style === null) {
-    showExportFailure({ kind: "document-style-invalid" });
+    showExportFailure(
+      declared.profileStyle &&
+        choices.styleId === declared.presentation.styleId &&
+        typeof choices.styleId === "string"
+        ? { kind: "profile-style-invalid", styleId: choices.styleId }
+        : { kind: "document-style-invalid" },
+    );
     return;
   }
 

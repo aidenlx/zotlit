@@ -92,6 +92,7 @@ async function makeHarness({
   formatCitations,
   renderText = (source) => `«${source}»`,
   overrides = {},
+  frontmatter = {},
   ambiguousKeys = [],
 }: {
   body: string;
@@ -107,6 +108,7 @@ async function makeHarness({
   /** The text the render answers for each source, by its place in the request. */
   renderText?: (source: string, index: number) => string;
   overrides?: Partial<Settings>;
+  frontmatter?: Record<string, unknown>;
 }): Promise<Harness> {
   await using stack = new AsyncDisposableStack();
   const citationRequests: { citations: readonly string[] }[] = [];
@@ -122,7 +124,7 @@ async function makeHarness({
         vault: { cachedRead: () => Promise.resolve(body) },
         metadataCache: {
           on: () => ({ e: { offref: () => undefined } }),
-          getFileCache: () => ({}),
+          getFileCache: () => ({ frontmatter }),
         },
       },
       db: { state: "ready", client: {} },
@@ -154,11 +156,7 @@ async function makeHarness({
         on: () => () => undefined,
       },
       settings: {
-        ready: Promise.resolve(),
-        subscribe: (cb: (next: Readonly<Settings>) => void) => {
-          cb(defaults);
-          return () => undefined;
-        },
+        current: { ...defaults, ...overrides },
       },
     } as never),
   );
@@ -279,6 +277,27 @@ describe("CitekeyReading", () => {
 
     expect(el.textContent).toBe(`Blah «[see @${ALPHA_KEY}, p. 3]» blah.`);
     expect(el.querySelector("span.zt-citation")).not.toBeNull();
+  });
+
+  it("names an unavailable Imported Note Profile on its raw citation", async () => {
+    await using harnessed = await makeHarness({
+      body: "Cited @alpha.",
+      frontmatter: {
+        "zotero-note-key": "1/NOTE1234",
+        "zotlit-profile": "deleted-profile",
+      },
+    });
+    const el = section("<p>Cited @alpha.</p>");
+
+    await harnessed.process(el, harnessed.ctx);
+
+    const citation = el.querySelector<HTMLElement>(
+      '[data-citation-presentation-error="profile"]',
+    );
+    expect(citation?.textContent).toBe("@alpha");
+    expect(citation?.getAttribute("aria-label")).toContain("deleted-profile");
+    expect(citation?.getAttribute("aria-label")).toContain("Re-stamp the note");
+    expect(citation?.title).toBe("");
   });
 
   // Stands in for a position-dependent style, whose second occurrence of one
