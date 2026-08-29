@@ -8,7 +8,7 @@ import type { Plugin } from "vite";
 import { analyzer, unstableRolldownAdapter } from "vite-bundle-analyzer";
 
 import { obsidianI18n } from "@zotlit/obsidian-i18n/vite";
-import { getDevVaultDir } from "@zotlit/scripts/dev-vault";
+import { DEV_VAULT_CASE_ENV, getDevVaultDir } from "@zotlit/scripts/dev-vault";
 import {
   parseManifest,
   parseMinElectronVersion,
@@ -38,7 +38,12 @@ console.log(`Pinning Pandoc ${pandocEngine.version}: ${pandocEngine.url}`);
 
 /** `obsidian-vault.ts create` seeds and registers this folder with Obsidian. */
 function getDevVaultPluginDir(pluginId: string) {
-  return join(getDevVaultDir(workspaceRoot), ".obsidian", "plugins", pluginId);
+  return join(
+    getDevVaultDir(workspaceRoot, process.env[DEV_VAULT_CASE_ENV]),
+    ".obsidian",
+    "plugins",
+    pluginId,
+  );
 }
 
 export default defineConfig(({ mode }) => {

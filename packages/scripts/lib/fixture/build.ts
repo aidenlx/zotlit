@@ -23,7 +23,9 @@ import {
   COLLECTIONS,
   createStressItems,
   DEFAULT_SCOPE_CASE,
+  DEFAULT_VAULT_CASE,
   findScopeCase,
+  findVaultCase,
   INSTALLED_STYLES,
   ITEMS,
   LITERATURE_NOTE_DOCUMENTS,
@@ -31,12 +33,18 @@ import {
   LIBRARIES,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
+  UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LEGACY_TEMPLATES,
+  UPGRADER_PLUGIN_VERSION,
+  UPGRADER_SETTINGS_VERSION,
 } from "./spec.ts";
 import type {
   FixtureAttachment,
   FixtureCreator,
   FixtureItem,
+  FixtureLegacyTemplate,
   FixtureNote,
+  FixtureVaultCase,
   PersistedLibraryScope,
 } from "./spec.ts";
 
@@ -49,7 +57,9 @@ export {
   COLLECTIONS,
   createStressItems,
   DEFAULT_SCOPE_CASE,
+  DEFAULT_VAULT_CASE,
   findScopeCase,
+  findVaultCase,
   INSTALLED_STYLES,
   ITEMS,
   LITERATURE_NOTE_DOCUMENTS,
@@ -60,6 +70,11 @@ export {
   PERSONAL_SELECTOR,
   SCOPE_CASES,
   UNAVAILABLE_GROUP_IDS,
+  UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LEGACY_TEMPLATES,
+  UPGRADER_PLUGIN_VERSION,
+  UPGRADER_SETTINGS_VERSION,
+  VAULT_CASES,
 } from "./spec.ts";
 export {
   DEFAULT_STRESS_ITEM_COUNT,
@@ -77,6 +92,7 @@ export type {
   FixtureNote,
   FixtureScopeCase,
   FixtureStyle,
+  FixtureVaultCase,
   LibrarySelector,
   PersistedLibraryScope,
 } from "./spec.ts";
@@ -86,6 +102,11 @@ export type { FixtureLayout } from "./layout.ts";
 export interface BuildOptions {
   /** Scope case the fresh vault starts on. */
   scopeCase?: string;
+  /**
+   * Vault case the vault is written in. `fresh` writes no settings file, so
+   * it accepts only the default Scope Case.
+   */
+  vaultCase?: string;
   /** Number of additive synthetic Items in an on-demand Stress Build. */
   stressItemCount?: number;
   /**
@@ -743,15 +764,57 @@ function writePrefs(
 /** ZotLit's settings version, so the vault loads without a migration pass. */
 const SETTINGS_VERSION = 10;
 
+const LEGACY_TEMPLATE_LANGUAGE = "liquid";
+
 async function writeVault(
+  layout: FixtureLayout,
+  options: BuildOptions,
+): Promise<void> {
+  const vaultCase = findVaultCase(options.vaultCase ?? DEFAULT_VAULT_CASE);
+  const scopeCase = findScopeCase(options.scopeCase ?? DEFAULT_SCOPE_CASE);
+  if (vaultCase.id === "fresh" && scopeCase.id !== DEFAULT_SCOPE_CASE) {
+    throw new Error(
+      `the fresh Vault Case writes no settings file, so it cannot save the "${scopeCase.id}" Scope Case`,
+    );
+  }
+
+  await writeVaultConfig(layout, options);
+  if (vaultCase.id === "fresh") {
+    // A Paired Run passes a Development Vault's plugin folder as the bundle,
+    // and that folder carries the settings ZotLit last saved there. A fresh
+    // vault promises no settings file at all.
+    await rm(layout.pluginDataPath, { force: true });
+    return;
+  }
+
+  await writeVaultNotes(layout, options);
+  if (vaultCase.id === "upgrader") {
+    await writeLegacyTemplates(layout);
+  } else {
+    for (const document of LITERATURE_NOTE_DOCUMENTS) {
+      await writeFile(
+        join(layout.vaultDir, "templates", document.filename),
+        document.source,
+      );
+    }
+  }
+
+  // After the bundle copy: a Paired Run passes a Development Vault's plugin
+  // folder as the bundle, and that folder carries the settings ZotLit last
+  // saved there. The generated settings are the ones this build promises.
+  await writeJson(
+    layout.pluginDataPath,
+    vaultSettings(vaultCase, scopeCase.scope, options.liveUpdatePort),
+  );
+}
+
+/** The `.obsidian` configuration, the Hot Reload plugin, and the ZotLit bundle. */
+async function writeVaultConfig(
   layout: FixtureLayout,
   options: BuildOptions,
 ): Promise<void> {
   const configDir = join(layout.vaultDir, ".obsidian");
   await mkdir(layout.pluginDir, { recursive: true });
-  await mkdir(join(layout.vaultDir, "literatures"), { recursive: true });
-  await mkdir(join(layout.vaultDir, "templates"), { recursive: true });
-  await mkdir(join(layout.vaultDir, "zotero_notes"), { recursive: true });
 
   await writeJson(join(configDir, "app.json"), {});
   // Native menus interfere with automated Paired Run / E2E flows on
@@ -775,22 +838,26 @@ async function writeVault(
     "editor-status": true,
     outline: true,
   });
-  await cp(VAULT_PAGES_DIR, layout.vaultDir, { recursive: true });
   await cp(
     join(VAULT_PLUGINS_DIR, "hot-reload"),
     join(configDir, "plugins", "hot-reload"),
     { recursive: true },
   );
-  for (const document of LITERATURE_NOTE_DOCUMENTS) {
-    await writeFile(
-      join(layout.vaultDir, "templates", document.filename),
-      document.source,
-    );
-  }
 
-  const scope: PersistedLibraryScope = findScopeCase(
-    options.scopeCase ?? DEFAULT_SCOPE_CASE,
-  ).scope;
+  if (options.pluginBundleDir) {
+    await cp(options.pluginBundleDir, layout.pluginDir, { recursive: true });
+  }
+}
+
+/** The committed test pages, the Literature Notes, and the Imported Notes. */
+async function writeVaultNotes(
+  layout: FixtureLayout,
+  options: BuildOptions,
+): Promise<void> {
+  await mkdir(join(layout.vaultDir, "literatures"), { recursive: true });
+  await mkdir(join(layout.vaultDir, "templates"), { recursive: true });
+  await mkdir(join(layout.vaultDir, "zotero_notes"), { recursive: true });
+  await cp(VAULT_PAGES_DIR, layout.vaultDir, { recursive: true });
 
   // Literature Notes for the My Library items give an update batch existing
   // notes to act on and leave every other Fixture item as create work.
@@ -819,15 +886,72 @@ async function writeVault(
       importedNote(note, indexedKey, note.importedNoteBody),
     );
   }
+}
 
-  if (options.pluginBundleDir) {
-    await cp(options.pluginBundleDir, layout.pluginDir, { recursive: true });
+/** Eject the Upgrader vault's legacy slot files, each with its visible edit applied. */
+async function writeLegacyTemplates(layout: FixtureLayout): Promise<void> {
+  for (const template of UPGRADER_LEGACY_TEMPLATES) {
+    await writeFile(
+      join(layout.vaultDir, "templates", legacyTemplateFilename(template)),
+      await legacyTemplateSource(template),
+    );
   }
+}
 
-  // After the bundle copy: a Paired Run passes a Development Vault's plugin
-  // folder as the bundle, and that folder carries the settings ZotLit last
-  // saved there. The generated settings are the ones this build promises.
-  await writeJson(layout.pluginDataPath, {
+/** Vault path of one legacy slot file, in ZotLit's `zotlit-<name>.<language>.md` form. */
+export function legacyTemplateFilename(
+  template: FixtureLegacyTemplate,
+): string {
+  return `zotlit-${template.name}.${LEGACY_TEMPLATE_LANGUAGE}.md`;
+}
+
+/**
+ * The shipped Liquid default for one slot with the Spec's edit applied.
+ * @throws when the default no longer holds the text the edit expects, so a
+ *   drifted default fails the build rather than ejecting an unedited file.
+ */
+export async function legacyTemplateSource(
+  template: FixtureLegacyTemplate,
+): Promise<string> {
+  const source = await readFile(
+    new URL(
+      import.meta.resolve(
+        `@zotlit/templates/defaults/${template.name}.${LEGACY_TEMPLATE_LANGUAGE}`,
+      ),
+    ),
+    "utf-8",
+  );
+  if (!source.includes(template.find)) {
+    throw new Error(
+      `the default ${template.name} template no longer contains ${JSON.stringify(template.find)}; update UPGRADER_LEGACY_TEMPLATES`,
+    );
+  }
+  return source.replace(template.find, template.replace);
+}
+
+function vaultSettings(
+  vaultCase: FixtureVaultCase,
+  scope: PersistedLibraryScope,
+  liveUpdatePort: number | undefined,
+): Record<string, unknown> {
+  const shared = {
+    "server.enabled": true,
+    ...(liveUpdatePort === undefined ? {} : { "server.port": liveUpdatePort }),
+    [LIBRARY_SCOPE_SETTING_KEY]: scope,
+  };
+  if (vaultCase.id === "upgrader") {
+    // The flat v2.1 shape: note bindings still vault-global, no Profiles, and
+    // a recorded launch version so the release check sees a real upgrade.
+    return {
+      __VERSION__: UPGRADER_SETTINGS_VERSION,
+      "note.literature-folder": "literatures",
+      "note.import-folder": "zotero_notes",
+      "note.frontmatter-fields": UPGRADER_FRONTMATTER_FIELDS,
+      "release.previous-version": UPGRADER_PLUGIN_VERSION,
+      ...shared,
+    };
+  }
+  return {
     __VERSION__: SETTINGS_VERSION,
     "note.default-profile": {
       bindings: {
@@ -839,12 +963,8 @@ async function writeVault(
       },
     },
     "note.profiles": LITERATURE_NOTE_PROFILES,
-    "server.enabled": true,
-    ...(options.liveUpdatePort === undefined
-      ? {}
-      : { "server.port": options.liveUpdatePort }),
-    [LIBRARY_SCOPE_SETTING_KEY]: scope,
-  });
+    ...shared,
+  };
 }
 
 function literatureNote(

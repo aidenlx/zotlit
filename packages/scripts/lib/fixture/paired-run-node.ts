@@ -12,7 +12,7 @@ import type {
   PairedRunReady,
 } from "./paired-run.ts";
 
-import { getDevVaultDir } from "#dev-vault";
+import { DEV_VAULT_CASE_ENV, getDevVaultDir } from "#dev-vault";
 import { LIVE_UPDATE_HOSTNAME } from "#fixture";
 import {
   getZoteroBinary,
@@ -39,7 +39,6 @@ export function createNodePairedRunPorts({
     workspaceRoot,
     "apps/zotero/scripts/dev-server/open.ts",
   );
-  const vaultPath = getDevVaultDir(workspaceRoot);
 
   const zoteroEnvironment = async (): Promise<{
     applicationDir: string;
@@ -102,6 +101,7 @@ export function createNodePairedRunPorts({
 
     async prepareDevelopmentVault({
       scopeCase,
+      vaultCase,
       purge,
       liveUpdatePort,
       zoteroHttpPort,
@@ -112,6 +112,7 @@ export function createNodePairedRunPorts({
           vaultScript,
           "open",
           `--scope-case=${scopeCase}`,
+          ...(vaultCase === undefined ? [] : [`--vault-case=${vaultCase}`]),
           `--live-update-port=${liveUpdatePort}`,
           `--zotero-http-port=${zoteroHttpPort}`,
           ...(purge ? ["--purge"] : []),
@@ -121,7 +122,7 @@ export function createNodePairedRunPorts({
       const id = result.stdout.trim().split("\n").at(-1);
       if (!id)
         throw new Error("Obsidian did not return a Development Vault id");
-      return { id, path: vaultPath };
+      return { id, path: getDevVaultDir(workspaceRoot, vaultCase) };
     },
 
     async openPairedZotero() {
@@ -138,9 +139,14 @@ export function createNodePairedRunPorts({
       return { applicationDir, pid: report.pid };
     },
 
-    async startDevelopmentSession() {
+    async startDevelopmentSession({ vaultCase }) {
       const { applicationDir, env } = await zoteroEnvironment();
-      return startDevelopmentSession({ applicationDir, env, workspaceRoot });
+      return startDevelopmentSession({
+        applicationDir,
+        env,
+        workspaceRoot,
+        vaultCase,
+      });
     },
 
     reportReady(result) {
@@ -191,15 +197,25 @@ function startDevelopmentSession({
   applicationDir,
   env,
   workspaceRoot,
+  vaultCase,
 }: {
   applicationDir: string;
   env: NodeJS.ProcessEnv;
   workspaceRoot: string;
+  vaultCase?: string;
 }): DevelopmentSession {
+  // The Vite dev build copies each bundle into the Development Vault of this
+  // run's Vault Case, so hot reload reaches a case vault too.
   const obsidian = spawnWatcher(
     "Obsidian watcher",
     ["--filter", "@zotlit/obsidian", "dev"],
-    { cwd: workspaceRoot, env: process.env },
+    {
+      cwd: workspaceRoot,
+      env:
+        vaultCase === undefined
+          ? process.env
+          : { ...process.env, [DEV_VAULT_CASE_ENV]: vaultCase },
+    },
   );
   const zotero = spawnWatcher(
     "Zotero watcher",

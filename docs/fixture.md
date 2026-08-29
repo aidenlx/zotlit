@@ -100,7 +100,7 @@ Before you start, install Obsidian 1.13.4 or later. Start Obsidian, enable **Set
 
 Each Paired Run takes two free TCP ports. It writes the Live Updates port into the Development Vault as `server.port`, and into the Fixture profile as `extensions.zotlit.notify-url`. It writes the Zotero HTTP port into the Fixture profile as `extensions.zotero.httpServer.port`. Zotero uses that HTTP server for Better BibTeX and the local API. The ready report names both ports. A Paired Run therefore stays clear of the default Live Updates port `9091` and Zotero HTTP port `23119` used by other profiles.
 
-The Scope Case defaults to `all`. You can use `available`, `partial`, or `unavailable` instead. Each command uses the per-worktree Development Vault and keeps files that exist only there. Add `--purge` to restore the exact generated seed.
+The Scope Case defaults to `all`. You can use `available`, `partial`, or `unavailable` instead. Each command uses the per-worktree Development Vault and keeps files that exist only there. Add `--purge` to restore the exact generated seed. Add `--vault-case <id>` to open the Development Vault of a different [Vault Case](#vault-cases).
 
 Both commands check for an existing Paired Zotero before they rebuild the Fixture. Close that instance if the command refuses to start. Both commands also support `ZOTERO_APP` as described in [Run the Paired Zotero](#run-the-paired-zotero).
 
@@ -160,6 +160,47 @@ pnpm fixture partial
 ```
 
 Use `all`, `available`, `partial`, or `unavailable` in each command.
+
+## Vault Cases
+
+A Vault Case is a named, saved Fixture Vault state. The Scope Case selects the saved Library Scope. The Vault Case selects everything else the vault holds: the settings file, the notes, the Profiles, and the template files.
+
+| Vault Case | Saved state |
+| --- | --- |
+| `configured` | Current settings, the Books Profile, generated Literature Notes, and Imported Notes. This is the default. |
+| `fresh` | A vault with no notes, ZotLit installed, and no settings file. This is the new-user path. |
+| `upgrader` | A ZotLit v2.1 vault: version-9 settings, ejected legacy slot files with visible edits, and an edited Managed Frontmatter list. |
+
+Build the complete Fixture directly in a Vault Case:
+
+```sh
+pnpm fixture build --vault-case fresh
+```
+
+Name a Vault Case on a Paired Run:
+
+```sh
+pnpm fixture open --vault-case upgrader
+```
+
+Each Vault Case other than the default opens its own Development Vault, `tests/fixture-vault-<worktree-folder-name>-<case>`, so the cases never overwrite one another. The first open seeds the case vault with the bundle from `apps/obsidian/dist-dev`. The `select` command changes only the Scope Case; rebuild to change the Vault Case.
+
+`pnpm fixture dev --vault-case <id>` sets `ZT_VAULT_CASE` for the Obsidian watcher, so the Vite build copies each bundle into that case's vault and hot reload reaches it. Set `ZT_VAULT_CASE` yourself to point `dev:vault` or a plain `obsidian-vault.ts open` at a case vault:
+
+```sh
+ZT_VAULT_CASE=fresh pnpm --filter @zotlit/obsidian dev:vault
+```
+
+The `fresh` case writes no settings file. It accepts only the default `all` Scope Case, and Live Updates stay off. The Paired Run still points ZotLit at the Fixture database through the Device Overrides, so the first Literature Note needs no Zotero setup.
+
+The `upgrader` case writes the ZotLit 2.1.0 shape:
+
+- Settings version 9, with the note bindings vault-global and no Profiles.
+- `release.previous-version` set to `2.1.0`, so the release check sees a real upgrade.
+- A `note.frontmatter-fields` list of the four shipped defaults plus a visible `year` field.
+- The four legacy slot files `zotlit-filename.liquid.md`, `zotlit-note.liquid.md`, `zotlit-content.liquid.md`, and `zotlit-annotation.liquid.md` in the template folder. Each starts from the shipped Liquid default and carries one visible edit.
+
+On load, ZotLit migrates the settings to the current version, sets `note.template-conversion-pending`, and opens the conversion prompt. Run `pnpm fixture --help` for the exact field list and edits, which come from the Fixture Spec.
 
 ## Run the Paired Zotero
 

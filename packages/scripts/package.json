@@ -35,6 +35,7 @@
     "@types/yargs": "^17.0.35",
     "@zotlit/config": "workspace:*",
     "@zotlit/db": "workspace:*",
+    "@zotlit/templates": "workspace:*",
     "arkregex": "catalog:",
     "get-port": "^7.2.0",
     "semver": "^7.8.0",
