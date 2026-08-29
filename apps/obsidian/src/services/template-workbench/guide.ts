@@ -194,7 +194,14 @@ PRECEDENCE
 
 SECURITY
   Change the gate only through ZotLit settings. Do not change it through eval,
-  local storage, or file edits.`;
+  local storage, or file edits.
+
+HELPERS
+  pandocCite(zt.citations)
+              Produce one complete Pandoc Citation Cluster.
+  pandocCite(zt.citations, "prefer-author-in-text")
+              Prefer an Author-in-text Citation. A first-item Citation Prefix
+              or Suppress Author selects a Citation Cluster.`;
 
 const LIQUID_SECTION = `LIQUID DIALECT
 
@@ -234,6 +241,11 @@ ZOTLIT FILTERS
               more levels. Order and duplicates stay unchanged; use uniq to
               deduplicate explicitly.
               {{ zt.collections | map: "path" | flatten | uniq }}
+  pandoc_cite Produce one complete Pandoc Citation Cluster from zt.citations.
+              {{ zt.citations | pandoc_cite }}
+              Pass "prefer-author-in-text" to prefer an Author-in-text Citation.
+              A first-item Citation Prefix or Suppress Author selects a cluster.
+              {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}
   obsidian_tag
               Convert text into a valid Obsidian tag, with an optional prefix.
               Accepts an array or one value, and reads the name of a Zotero

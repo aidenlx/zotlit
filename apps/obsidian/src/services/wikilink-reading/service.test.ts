@@ -218,7 +218,9 @@ describe("WikilinkReading rendering", () => {
   it("exposes both literal hooks when it renders a Literature Note Citation", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
-      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
+      formatted: {
+        [held("[@wang2020, {p. 7}]")]: "(Wang et al. 2020, p. 7)",
+      },
     });
 
     const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
@@ -253,7 +255,7 @@ describe("WikilinkReading rendering", () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
       formatted: {
-        [held("[@wang2020, p. 7; @wang2020, p. 9]", [WANG_KEY, WANG_KEY])]:
+        [held("[@wang2020, {p. 7}; @wang2020, {p. 9}]", [WANG_KEY, WANG_KEY])]:
           "(Wang et al. 2020, pp. 7, 9)",
       },
     });
@@ -317,7 +319,9 @@ describe("WikilinkReading rendering", () => {
   it("shows the citation a style formatted once the shared text holds one", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
-      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
+      formatted: {
+        [held("[@wang2020, {p. 7}]")]: "(Wang et al. 2020, p. 7)",
+      },
     });
 
     expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
@@ -329,7 +333,9 @@ describe("WikilinkReading rendering", () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
       "citation.show-formatted": false,
-      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
+      formatted: {
+        [held("[@wang2020, {p. 7}]")]: "(Wang et al. 2020, p. 7)",
+      },
     });
 
     const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
@@ -379,7 +385,9 @@ describe("WikilinkReading hover", () => {
   const rendering = (overrides: Parameters<typeof harness>[0] = {}) =>
     harness({
       "citation.wikilink-citations": true,
-      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
+      formatted: {
+        [held("[@wang2020, {p. 7}]")]: "(Wang et al. 2020, p. 7)",
+      },
       ...overrides,
     });
 
@@ -472,7 +480,9 @@ describe("WikilinkReading click", () => {
   const rendering = (overrides: Parameters<typeof harness>[0] = {}) =>
     harness({
       "citation.wikilink-citations": true,
-      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
+      formatted: {
+        [held("[@wang2020, {p. 7}]")]: "(Wang et al. 2020, p. 7)",
+      },
       ...overrides,
     });
 

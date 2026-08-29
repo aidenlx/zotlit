@@ -206,7 +206,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     expect(
       firstText(
         includedText.formatted.get(
-          citationKey({ source: "[@roe2025, p. 4]", works: [KEY_B] }),
+          citationKey({ source: "[@roe2025, {p. 4}]", works: [KEY_B] }),
         ),
       ),
     ).toBe("[2]");
@@ -232,7 +232,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     expect(firstText(excludedText.formatted.get("@doe2024"))).toBe("[1]");
     expect(
       excludedText.formatted.has(
-        citationKey({ source: "[@roe2025, p. 4]", works: [KEY_B] }),
+        citationKey({ source: "[@roe2025, {p. 4}]", works: [KEY_B] }),
       ),
     ).toBe(false);
     expect(

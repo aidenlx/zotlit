@@ -33,6 +33,7 @@ export default defineConfig({
     "./src/facade.ts",
     "./src/liquid.ts",
     "./src/obsidian.ts",
+    "./src/pandoc-citation.ts",
     "./src/frontmatter.ts",
     "./src/frontmatter-merge.ts",
     "./src/literature-note-pack.ts",

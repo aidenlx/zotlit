@@ -1,8 +1,5 @@
 // Citation Fragment parsing and Pandoc Citation derivation for wikilinks.
 
-import { citekeyToken, scanCitations } from "./citation-grammar";
-import type { TextSpan } from "./citation-grammar";
-
 /** The three Pandoc citation modes a Citation Fragment can request. */
 export type CitationMode = "normal" | "author-in-text" | "suppress-author";
 
@@ -268,11 +265,18 @@ export function citationRunItem(
   const citekey =
     source.citationKey || basenameWithoutExtension(source.notePath);
   if (source.fragment === null) {
-    return { citekey, details: NORMAL_CITATION };
+    return { citekey, details: NORMAL_CITATION, labelShort: null };
   }
   const parsed = parseCitationFragment(source.fragment);
   if (!parsed.ok) return null;
-  return { citekey, details: parsed.details };
+  return {
+    citekey,
+    details: parsed.details,
+    labelShort:
+      parsed.details.locator === null
+        ? null
+        : LOCATOR_LABEL_SHORT[parsed.details.label ?? "page"],
+  };
 }
 
 /** A fragment-less wikilink, which is a normal-mode Citation of its note. */
@@ -289,106 +293,8 @@ export interface CitationRunItem {
   /** The citekey the Pandoc source names the work by. */
   citekey: string;
   details: CitationFragment;
-}
-
-/** One `@citekey` of a citation, at its offset within the citation's own source. */
-export interface CitationKey extends TextSpan {
-  citekey: string;
-}
-
-/** One citation as source text, with the keys it names located in it. */
-export interface CitationSource {
-  /** The citation exactly as a note writes it, or as a derivation writes it. */
-  source: string;
-  keys: CitationKey[];
-}
-
-/**
- * The Pandoc source text a standalone Citation or a whole Citation Run is
- * written as — the very text the equivalent Citation Cluster carries, so both
- * citing syntaxes reach one render.
- *
- * A run of several works is one bracketed cluster, which is also the only form
- * the citekey syntax can write a group in: an author-in-text item keeps its
- * textual `@key [locator]` form only while it stands alone. That is where this
- * derivation and export part company — the Lua filter keeps the author-in-text
- * mode of a run's first item — and it parts company on purpose: parity with the
- * equivalent Citation Cluster is what a reader compares the two syntaxes by,
- * and no bracketed cluster can carry an author-in-text item.
- *
- * @see apps/obsidian/src/services/pandoc/filter/zotlit-cite.lua — `build_cite`
- *
- * @param items the works of one Citation, in the order the source names them.
- */
-export function citationRunSource(
-  items: readonly CitationRunItem[],
-): CitationSource {
-  const keys: CitationKey[] = [];
-  const only = items.length === 1 ? items[0]! : null;
-  if (only && only.details.mode === "author-in-text") {
-    let source = citekeyToken(only.citekey);
-    keys.push({ citekey: only.citekey, start: 0, end: source.length });
-    const inside = joinParts([locatorText(only.details), only.details.suffix]);
-    if (inside) source += ` [${inside}]`;
-    return { source, keys };
-  }
-
-  let source = "[";
-  for (const [position, { citekey, details }] of items.entries()) {
-    if (position > 0) source += "; ";
-    if (details.prefix) source += `${details.prefix} `;
-    const start = source.length;
-    // The suppression `-` belongs to the key it marks, so the recorded range
-    // covers the complete citation token.
-    if (details.mode === "suppress-author") source += "-";
-    source += citekeyToken(citekey);
-    keys.push({ citekey, start, end: source.length });
-    const trailing = joinParts([locatorText(details), details.suffix]);
-    if (trailing) source += `, ${trailing}`;
-  }
-  return { source: `${source}]`, keys };
-}
-
-/**
- * Whether a derived source is text the engine reads back as the citation it was
- * derived from.
- *
- * A derivation writes a citekey and a Citation Fragment's own prose into Pandoc
- * source, and neither is guaranteed to survive the trip: a Literature Note
- * filename standing in for an Item with no native citation key may hold a
- * space, which no Pandoc key carries, braced or not; and a prefix or suffix
- * may hold the `;` that ends an item. The shared grammar is the authority on
- * what Pandoc reads, so the check is a round trip through it — a citation
- * that starts where the derivation started and names the same keys in the
- * same order is one the engine will format as meant. Anything else stays out
- * of the render, and the native source stays in place.
- *
- * The span's end is left out: a standalone author-in-text Citation writes its
- * locator in a trailing bracket that the grammar reads as text of its own,
- * exactly as Pandoc's own reader takes it for the citation's suffix.
- */
-export function isRenderableCitation({
-  source,
-  keys,
-}: CitationSource): boolean {
-  const scanned = scanCitations(source);
-  const only = scanned.length === 1 ? scanned[0]! : null;
-  if (only === null || only.start !== 0) return false;
-  if (only.keys.length !== keys.length) return false;
-  return only.keys.every(
-    (key, at) =>
-      key.citekey === keys[at]!.citekey && key.start === keys[at]!.start,
-  );
-}
-
-/** `p. 4`, `chap. 2`, or nothing at all when the Citation names no locator. */
-function locatorText(details: CitationFragment): string | null {
-  if (!details.locator) return null;
-  return `${LOCATOR_LABEL_SHORT[details.label ?? "page"]} ${details.locator}`;
-}
-
-function joinParts(parts: readonly (string | null)[]): string {
-  return parts.filter((part) => part).join(", ");
+  /** Prepared Locator Label for Pandoc source, or null without a Locator. */
+  labelShort: string | null;
 }
 
 function basenameWithoutExtension(path: string): string {

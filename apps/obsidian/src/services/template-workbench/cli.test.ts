@@ -569,8 +569,11 @@ describe("Template Workbench CLI", () => {
     ["data", ["$helper", "$inert", "$ref", ...CONTRACT_ROOT_NAMES]],
     ["render", [...TEMPLATE_SLOT_NAMES]],
     ["editing", ["editablePath", "shadowedFiles"]],
-    ["eta", ["javascriptTemplatesEnabled", "ETA_OPT_IN_REQUIRED"]],
-    ["liquid", ["liquidjs", "zt", "bq", "group_by"]],
+    [
+      "eta",
+      ["javascriptTemplatesEnabled", "ETA_OPT_IN_REQUIRED", "pandocCite"],
+    ],
+    ["liquid", ["liquidjs", "zt", "bq", "group_by", "pandoc_cite"]],
     [
       "frontmatter",
       [

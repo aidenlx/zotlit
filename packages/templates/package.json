@@ -17,6 +17,7 @@
     "./liquid": "./dist/liquid.mjs",
     "./literature-note-pack": "./dist/literature-note-pack.mjs",
     "./obsidian": "./dist/obsidian.mjs",
+    "./pandoc-citation": "./dist/pandoc-citation.mjs",
     "./package.json": "./package.json",
     "./defaults/*.eta": "./defaults/*.eta",
     "./defaults/*.liquid": "./defaults/*.liquid"

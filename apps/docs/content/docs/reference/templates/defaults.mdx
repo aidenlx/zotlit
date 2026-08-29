@@ -103,61 +103,35 @@ The `{% bq %}` / `{% endbq %}` block tag handles the `> ` prefix on every line a
 Filename: `zotlit-cite.liquid.md`
 
 ```liquid
-[{% liquid
-  assign cites = "" | split: ","
-  for c in zt.citations
-    if c.item.citationKey
-      if c.suppressAuthor
-        assign cite = "-@" | append: c.item.citationKey
-      else
-        assign cite = "@" | append: c.item.citationKey
-      endif
-      if c.locator
-        assign cite = cite | append: ", " | append: c.labelShort | append: " " | append: c.locator
-      endif
-      assign cites = cites | push: cite
-    endif
-  endfor
-  echo cites | join: "; "
-%}]
+{{ zt.citations | pandoc_cite }}
 ```
 
-Produces Pandoc-style citations: `[@smith2024, p. 62; -@doe2021]`.
+Produces Pandoc Citation source such as `[@smith2024, {p. 62}; -@doe2021]`.
 
-ZotLit normalizes the rendered output of both citation templates to inline form: leading and trailing whitespace is trimmed, and any whitespace run containing a line break collapses to a single space. This normalization applies everywhere a citation renders — the inline suggester, the command-palette picker, the `zt.citation` annotation field, Copy citation, and citation resolution during note import.
+ZotLit normalizes the rendered output of both citation templates to inline form: leading and trailing whitespace is trimmed, and any whitespace run containing a line break collapses to a single space. This normalization applies to the inline suggester, the command-palette picker, the `zt.citation` annotation field, Copy citation, and citation resolution during note import.
 
-| Behavior             | Detail                                                                            |
-| -------------------- | --------------------------------------------------------------------------------- |
-| Suppress-author      | `c.suppressAuthor` true renders `-@key` instead of `@key`.                        |
-| Locator              | When `c.locator` is present, appends `, <labelShort> <locator>` (e.g. `, p. 62`). |
-| Missing citation key | Items without `c.item.citationKey` are skipped entirely.                          |
-| Brackets             | The outer `[` and `]` wrap the joined citations.                                  |
+| Behavior             | Detail                                                                                          |
+| -------------------- | ----------------------------------------------------------------------------------------------- |
+| Prefix and suffix    | Preserves each item's `prefix` and `suffix`.                                                    |
+| Suppress author      | `suppressAuthor` true renders `-@key`.                                                          |
+| Locator              | Renders an explicit locator such as `, {p. 62}` from `labelShort` and `locator`.                |
+| Complex citation key | Adds braces when Pandoc requires them. For example, `KX67D9YM?` renders as `@{KX67D9YM?}`.      |
+| Missing citation key | Omits items whose `item.citationKey` is null. An empty array or all-null array renders nothing. |
+| Form                 | Uses `normal`, which always produces a bracketed Citation Cluster.                              |
 
 ## Alternate citation template
 
 Filename: `zotlit-cite2.liquid.md`
 
 ```liquid
-{% liquid
-  assign cites = "" | split: ","
-  for c in zt.citations
-    if c.item.citationKey
-      if c.suppressAuthor
-        assign cite = "-@" | append: c.item.citationKey
-      else
-        assign cite = "@" | append: c.item.citationKey
-      endif
-      if c.locator
-        assign cite = cite | append: ", " | append: c.labelShort | append: " " | append: c.locator
-      endif
-      assign cites = cites | push: cite
-    endif
-  endfor
-  echo cites | join: "; "
-%}
+{{ zt.citations | pandoc_cite: "prefer-author-in-text" }}
 ```
 
-The body is identical to the citation template without the surrounding `[` `]` brackets. `cite2` produces the same citation string without enclosing brackets, for use inside existing bracket syntax.
+`cite2` prefers an Author-in-text Citation. One item without a prefix or suppressed author renders as `@smith2024`. A locator stays in a trailing group: `@smith2024 [{p. 62}]`.
+
+The formatter falls back to a normal Citation Cluster when the first retained item has a prefix or suppresses its author. For example, a `"see "` prefix renders `[see @smith2024]`, and `suppressAuthor` renders `[-@smith2024]`.
+
+Later items stay attached to the first Author-in-text Citation. For example, two items render as `@smith2024 [@doe2021]`.
 
 ## Filename template
 
