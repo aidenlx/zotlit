@@ -35,7 +35,11 @@ import { managedRegionTransform } from "@zotlit/templates/obsidian";
 import { RESERVED_KEYS } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import type { ProfileStamp } from "@/lib/profile-stamp";
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import type {
+  ProfileStamp,
+  UnknownProfileDiagnostic,
+} from "@/lib/profile-stamp";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -116,12 +120,7 @@ export interface ResolvedLiteratureNoteTemplate {
 }
 
 export type ProfileAnnotationDiagnostic =
-  | {
-      readonly code: "unknown-literature-note-profile";
-      /** The Profile stamp as the note carries it, printed verbatim. */
-      readonly stamp: string;
-      readonly hint: string;
-    }
+  | UnknownProfileDiagnostic
   | {
       readonly code: "missing-literature-note-template";
       readonly document: string;
@@ -381,11 +380,9 @@ export class TemplateService extends Service<void> {
             (candidate) => candidate.id === stamped.id,
           );
     if (!profile) {
-      throw new ProfileAnnotationError({
-        code: "unknown-literature-note-profile",
-        stamp: stamped!.stamp,
-        hint: "Re-stamp the note or recreate the Profile with the same ID.",
-      });
+      throw new ProfileAnnotationError(
+        unknownProfileDiagnostic(stamped!.stamp),
+      );
     }
     if (options.settings["note.template-conversion-pending"]) {
       return this.render("annotation", data);

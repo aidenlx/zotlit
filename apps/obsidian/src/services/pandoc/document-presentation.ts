@@ -12,7 +12,11 @@ import {
 } from "@/lib/constants";
 import { isLanguageTag } from "@/lib/language-tag";
 import { getLogger } from "@/lib/log";
-import { parseProfileStamp } from "@/lib/profile-stamp";
+import {
+  parseProfileStamp,
+  unknownProfileDiagnostic,
+} from "@/lib/profile-stamp";
+import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { Citation } from "@/services/citation-index/query";
 import type { Settings } from "@/services/settings/schema";
 import { resolveLiteratureNoteProfileBindings } from "@/services/settings/service";
@@ -31,8 +35,7 @@ export type UnusableProperty = "style" | "language";
 export interface ProfilePresentationFailure {
   kind: "unusable";
   property: "profile";
-  /** The Profile stamp as the note carries it. */
-  stamp: string;
+  diagnostic: UnknownProfileDiagnostic;
   target: string;
 }
 
@@ -107,7 +110,7 @@ export function documentPresentation(
       return {
         kind: "unusable",
         property: "profile",
-        stamp: stamped!.stamp,
+        diagnostic: unknownProfileDiagnostic(stamped!.stamp),
         target: file.path,
       };
     }
@@ -264,7 +267,8 @@ export function samePresentation(
       return false;
     }
     return left.property === "profile" && right.property === "profile"
-      ? left.stamp === right.stamp && left.target === right.target
+      ? left.diagnostic.stamp === right.diagnostic.stamp &&
+          left.target === right.target
       : true;
   }
   return (

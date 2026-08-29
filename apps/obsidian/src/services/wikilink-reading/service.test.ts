@@ -236,7 +236,11 @@ describe("WikilinkReading rendering", () => {
       presentationFailure: {
         kind: "unusable",
         property: "profile",
-        stamp: "deleted-profile",
+        diagnostic: {
+          code: "unknown-literature-note-profile",
+          hint: "Re-stamp the note or recreate the Profile with the same ID.",
+          stamp: "deleted-profile",
+        },
         target: "Imported/Research.md",
       },
     });

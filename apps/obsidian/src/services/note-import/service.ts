@@ -34,8 +34,15 @@ import * as m from "@/lib/i18n/generated/messages";
 import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
-import { formatProfileStamp, readProfileStamp } from "@/lib/profile-stamp";
-import type { ProfileStamp } from "@/lib/profile-stamp";
+import {
+  formatProfileStamp,
+  readProfileStamp,
+  unknownProfileDiagnostic,
+} from "@/lib/profile-stamp";
+import type {
+  ProfileStamp,
+  UnknownProfileDiagnostic,
+} from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type {
   AttachmentImport,
@@ -511,25 +518,11 @@ function stampedProfileForExplicitCreate(
     : undefined;
 }
 
-export interface UnknownImportedNoteProfileDiagnostic {
-  readonly code: "unknown-literature-note-profile";
-  readonly hint: string;
-  /** The Profile stamp as the note carries it, printed verbatim. */
-  readonly stamp: string;
-  readonly path?: string;
-  readonly indexedKey?: string;
-}
-
 export class NoteImportProfileError extends Error {
-  readonly diagnostic: UnknownImportedNoteProfileDiagnostic;
+  readonly diagnostic: UnknownProfileDiagnostic;
 
   constructor(stamp: string, context: { path?: string; indexedKey?: string }) {
-    const diagnostic: UnknownImportedNoteProfileDiagnostic = {
-      code: "unknown-literature-note-profile",
-      hint: "Re-stamp the note or recreate the Profile with the same ID.",
-      stamp,
-      ...context,
-    };
+    const diagnostic = unknownProfileDiagnostic(stamp, context);
     super(
       m.notice_imported_note_profile_unknown({
         stamp,

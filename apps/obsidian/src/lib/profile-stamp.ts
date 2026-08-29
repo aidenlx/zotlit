@@ -1,7 +1,8 @@
 // Format and parse of the Profile stamp — the `zotlit-profile` frontmatter
 // value that records which Literature Note Profile a note belongs to. It also
 // owns the one read of that property from a note, so every reader of a stamp
-// parses it the same way.
+// parses it the same way, and the one diagnostic shape for a stamp that names
+// no Profile.
 
 import { regex } from "arkregex";
 import type { MetadataCache, TFile } from "obsidian";
@@ -77,4 +78,31 @@ export function readProfileStamp(
       FIELD_LITERATURE_NOTE_PROFILE
     ],
   );
+}
+
+export const UNKNOWN_PROFILE_HINT =
+  "Re-stamp the note or recreate the Profile with the same ID.";
+
+export interface UnknownProfileDiagnostic {
+  readonly code: "unknown-literature-note-profile";
+  readonly hint: string;
+  /**
+   * The Profile stamp as the note carries it, or the requested Profile ID when
+   * the caller named one. Printed verbatim so the user can find the note.
+   */
+  readonly stamp: string;
+  readonly path?: string;
+  readonly indexedKey?: string;
+}
+
+export function unknownProfileDiagnostic(
+  stamp: string,
+  context: { path?: string; indexedKey?: string } = {},
+): UnknownProfileDiagnostic {
+  return {
+    code: "unknown-literature-note-profile",
+    hint: UNKNOWN_PROFILE_HINT,
+    stamp,
+    ...context,
+  };
 }

@@ -14,6 +14,7 @@ import { TemplateError } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
+import { UNKNOWN_PROFILE_HINT } from "@/lib/profile-stamp";
 import { InertTemplateError } from "@/services/template/errors";
 import { errorContext } from "@/services/template/service";
 import type {
@@ -78,8 +79,7 @@ export const DIAGNOSTIC_HINTS = {
     "Run frontmatter-status to see the configured keys, then use one of them.",
   DOCUMENT_NOT_FOUND:
     "Restore the referenced document, select another document, or provide a source override.",
-  UNKNOWN_PROFILE_STAMP:
-    "Re-stamp the note with an existing Profile, or recreate the Profile with the same ID.",
+  UNKNOWN_PROFILE_STAMP: UNKNOWN_PROFILE_HINT,
   DUPLICATE_MANAGED_BLOCK:
     "Keep at most one Managed Block in the document, then render it again.",
   MISSING_ANNOTATION_BLOCK:

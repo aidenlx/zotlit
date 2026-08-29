@@ -64,7 +64,7 @@ function ProfileFailure({ failure }: { failure: ProfilePresentationFailure }) {
       data-citation-popover-profile-error
     >
       {m.notice_imported_note_profile_unknown({
-        stamp: failure.stamp,
+        stamp: failure.diagnostic.stamp,
         target: failure.target,
       })}
     </div>

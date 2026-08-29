@@ -98,7 +98,11 @@ describe("CitationPopoverContent", () => {
     const container = await render([entry("doe2024")], undefined, {
       kind: "unusable",
       property: "profile",
-      stamp: "Reading notes (Bk3Qn7XvT2Lp)",
+      diagnostic: {
+        code: "unknown-literature-note-profile",
+        hint: "Re-stamp the note or recreate the Profile with the same ID.",
+        stamp: "Reading notes (Bk3Qn7XvT2Lp)",
+      },
       target: "Imported/Research.md",
     });
 

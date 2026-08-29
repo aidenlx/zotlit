@@ -93,7 +93,7 @@ export async function runPandocExport(
       declared.property === "profile"
         ? {
             kind: "document-profile-invalid",
-            stamp: declared.stamp,
+            stamp: declared.diagnostic.stamp,
             target: declared.target,
           }
         : {

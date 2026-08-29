@@ -40,7 +40,12 @@ import { ensureParentFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
-import { formatProfileStamp, readProfileStamp } from "@/lib/profile-stamp";
+import {
+  formatProfileStamp,
+  readProfileStamp,
+  unknownProfileDiagnostic,
+} from "@/lib/profile-stamp";
+import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { NoteImport } from "@/services/note-import/service";
@@ -83,18 +88,6 @@ export interface ExistingNoteDiagnostic {
   hint: string;
   indexedKey: string;
   paths: [string, ...string[]];
-}
-
-export interface UnknownNoteProfileDiagnostic {
-  code: "unknown-literature-note-profile";
-  hint: string;
-  /**
-   * The Profile stamp as the note carries it, or the requested Profile ID when
-   * the caller named one. Printed verbatim so the user can find the note.
-   */
-  stamp: string;
-  path?: string;
-  indexedKey?: string;
 }
 
 export interface NoteProfileConflictDiagnostic {
@@ -140,7 +133,7 @@ export interface ManagedFrontmatterRefusalDiagnostic {
 }
 
 export type NoteOperationDiagnostic =
-  | UnknownNoteProfileDiagnostic
+  | UnknownProfileDiagnostic
   | NoteProfileConflictDiagnostic
   | MissingLiteratureNoteTemplateDiagnostic
   | LiteratureNoteTemplateConversionRequiredDiagnostic
@@ -1355,16 +1348,11 @@ function refusedUnknownProfile(
   context: { path?: string; indexedKey?: string },
 ): {
   outcome: "refused";
-  diagnostic: UnknownNoteProfileDiagnostic;
+  diagnostic: UnknownProfileDiagnostic;
 } {
   return {
     outcome: "refused",
-    diagnostic: {
-      code: "unknown-literature-note-profile",
-      hint: "Re-stamp the note or recreate the Profile with the same ID.",
-      stamp,
-      ...context,
-    },
+    diagnostic: unknownProfileDiagnostic(stamp, context),
   };
 }
 
