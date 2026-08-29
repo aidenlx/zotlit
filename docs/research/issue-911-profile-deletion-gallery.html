@@ -1,0 +1,4166 @@
+<!doctype html>
+<!--
+  Prototype — Profile deletion from the academic user side (ticket #911, map #835)
+
+  DESIGN QUESTION
+  A Literature Note Profile goes away while notes still carry its stamp. What does the
+  academic user experience at that moment, and which deletion semantics follow from that
+  experience — not from the current settings dialog?
+
+  FIRST PRINCIPLES (academic user)
+  A Profile is "a kind of note" to the researcher: folder + citation style + look. A note is
+  their durable work; forty notes outlive any configuration. The stamp is a pointer from the
+  durable thing to the configuration, so deleting the configuration leaves a dangling pointer.
+  The classic resolutions are the same three every system has: RESTRICT (refuse),
+  SET DEFAULT / re-point (move), or soft delete (tombstone).
+
+  Three researchers, three questions — the scenario presets of this prototype:
+    1. FOLD    "Book chapters" (40 notes, 6 Imported Notes) folds back into Default.
+               "What happens to my forty notes?"            → intent is a MOVE.
+    2. RETIRE  "Thesis" (12 notes, 3 Imported Notes) after graduating.
+               "Can I still update them, if I ever need to?" → intent is ARCHIVE.
+    3. OOPS    "Articles" (23 notes) deleted by mistake while tidying settings.
+               "How do I get it back?"                       → intent is UNDO.
+  Consequences:
+    a. Nobody wants a note that "cannot update". A stale stamp is a state the plugin invents.
+       If it must exist it has to be harmless at rest and speak only at use time, in the
+       researcher's words, with the fix one click away.
+    b. "Recreate the profile with the same ID" is not in the researcher's vocabulary and is not
+       doable by hand (UUID). Recovery must be a button, not an instruction.
+    c. "Never change a note's appearance silently" makes folding 40 notes into Default a
+       consented re-stamp with the consequences stated — #904's Switch Profile dialog, batched.
+    d. Obsidian's own idioms (delete a file, delete a folder, disable a plugin) never refuse;
+       all are reversible and show the consequence where the user meets it.
+    e. The count turns an abstract warning into the researcher's own situation, and the search
+       query ["zotlit-profile":<id>] is the researcher-facing "show these notes".
+    f. Six surfaces every variant renders: the settings Profiles list, the delete dialog, the
+       note Properties stamp, "Update from Zotero" on that note, and the Switch Profile picker.
+
+  VARIANTS
+    A  Baseline (today)          — one confirm dialog, no count, no consequence; the stale stamp
+                                   renders as a raw UUID; "Update from Zotero" fails with the
+                                   current notice; recovery: none in the UI.
+    B  Refuse while referenced   — the dialog names the count and offers "Show these notes" and
+                                   "Move 40 notes to…"; Delete stays disabled until the count is
+                                   0; a 0-note Profile deletes at once. Nothing is ever stale.
+    C  Delete, visibly stale     — the dialog names the count and the consequence in note words;
+                                   afterwards a banner on the Profiles page, a danger pill on the
+                                   stamp, and a use-time notice carrying "Switch profile…".
+    D  Delete = move             — the dialog IS the batched Switch Profile consequences dialog;
+                                   CTA "Delete and move 40 notes"; a Notice offers Undo. No stale
+                                   state exists; the template document is never deleted.
+    E  Retire (self-cleaning)    — deleting a referenced Profile retires it: out of the pickers,
+                                   notes keep updating, greyed in settings under "Retired · 40
+                                   notes" with Restore / Move notes to… / Delete anyway. It
+                                   disappears by itself when the last note leaves.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Profile deletion UX</title>
+
+    <!-- Typefaces: IBM Plex Sans (rail display) + IBM Plex Mono (paths, stamps, hotkeys). -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      /* The design plan's tokens, exposed to Tailwind as utilities: bg-ground, text-ink,
+       text-accent, font-display, ... `inline` keeps the var() reference at the use site,
+       so the media-query override below still reaches every utility. */
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-ground-2: var(--ground-2);
+        --color-line: var(--line);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-accent: var(--accent);
+        --color-danger: var(--danger);
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+        --font-mono: var(--font-mono);
+      }
+    </style>
+    <style>
+      :root {
+        --ground: #ffffff;
+        --ground-2: #f5f5f3;
+        --line: #e3e2df;
+        --ink: #222222;
+        --muted: #7b7975;
+        --accent: #7f6df2;
+        --danger: #e93147;
+        --font-display: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+        --font-body:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, ui-sans-serif,
+          system-ui, sans-serif;
+        --font-mono:
+          "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #1e1e1e;
+          --ground-2: #262626;
+          --line: #383838;
+          --ink: #dcddde;
+          --muted: #9c9c98;
+          --accent: #a78bfa;
+          --danger: #fb464c;
+        }
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react",
+          "beautiful-mermaid": "https://esm.sh/beautiful-mermaid@1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- Diagram sources go here: one <script type="text/mermaid" id="..."> per diagram. -->
+
+    <script type="text/jsx" id="app">
+      import React, {
+        useState,
+        useEffect,
+        useMemo,
+        useRef,
+        useSyncExternalStore,
+      } from "react";
+      import { createRoot } from "react-dom/client";
+      import {
+        Search,
+        ChevronDown,
+        ChevronRight,
+        FolderOpen,
+        FileText,
+        Files,
+        Bookmark,
+        PanelLeft,
+        Settings,
+        HelpCircle,
+        X,
+        Plus,
+        Trash2,
+        RotateCcw,
+        ArrowRight,
+        ArrowLeft,
+        AlertTriangle,
+        Archive,
+      } from "lucide-react"; // any lucide icon; <Search size={16} className="text-muted" />
+
+
+      // --- Diagram ---
+      // Diagrams are authored as <script type="text/mermaid" id="..."> blocks in the body —
+      // plain text, no escaping — and rendered with <Diagram src="thatId" />. Indentation is
+      // stripped, so the block can sit at whatever depth reads well. beautiful-mermaid loads
+      // on first mount, so a page with no diagram never fetches it; bg/fg are var() so
+      // diagrams follow the theme instead of re-rendering.
+      function decodeEntities(s) {
+        const el = document.createElement("textarea");
+        el.innerHTML = s;
+        return el.value;
+      }
+
+      function dedent(s) {
+        const lines = s.replace(/\t/g, "  ").split("\n");
+        const widths = lines
+          .filter((l) => l.trim())
+          .map((l) => l.match(/^ */)[0].length);
+        const pad = widths.length ? Math.min(...widths) : 0;
+        return lines
+          .map((l) => l.slice(pad))
+          .join("\n")
+          .trim();
+      }
+
+      let mermaidMod = null;
+      export function Diagram({ src }) {
+        const [mod, setMod] = useState(mermaidMod);
+        useEffect(() => {
+          if (!mod)
+            import("beautiful-mermaid").then((m) => {
+              mermaidMod = m;
+              setMod(m);
+            });
+        }, [mod]);
+        const { svg, error } = useMemo(() => {
+          const el = document.getElementById(src);
+          if (!el)
+            return {
+              svg: null,
+              error: `no <script type="text/mermaid" id="${src}"> in this page`,
+            };
+          if (!mod) return { svg: null, error: null };
+          try {
+            const opts = {
+              bg: "var(--ground)",
+              fg: "var(--ink)",
+              transparent: true,
+            };
+            return {
+              svg: mod.renderMermaidSVG(
+                decodeEntities(dedent(el.textContent)),
+                opts,
+              ),
+              error: null,
+            };
+          } catch (e) {
+            return { svg: null, error: String(e) };
+          }
+        }, [mod, src]);
+        if (error)
+          return (
+            <pre className="text-accent text-sm whitespace-pre-wrap">
+              {error}
+            </pre>
+          );
+        return (
+          <div
+            className="overflow-x-auto"
+            dangerouslySetInnerHTML={{ __html: svg ?? "" }}
+          />
+        );
+      }
+      // --- Diagram END ---
+
+
+      // --- Shared ---
+      // The prototype store: one module-level object, a listener set, and useSyncExternalStore.
+      // Variants never receive props — they read `useProtoState()` and call `actions`.
+
+      const ART = "3f1c8a52-9d47-4b6e-8c21-5a0e7d94b311";
+      const BOOK = "a72e4d19-6c58-4f03-9b7d-1e83c6a2f450";
+      const THESIS = "d5b90c37-2a14-4e8f-b6c9-70f1d8e34a26";
+      const SCRATCH = "6c02f8b4-51de-4a97-83f0-9b2e47c1da85";
+
+      const ALL_PROFILES = [
+        {
+          id: null,
+          label: "Default",
+          folder: "literatures",
+          style: "Built-in default",
+          document: "Built-in template",
+          noteCount: 118,
+          importedCount: 12,
+          status: "active",
+        },
+        {
+          id: ART,
+          label: "Articles",
+          folder: "literatures/articles",
+          style: "apa",
+          document: "templates/articles.md",
+          noteCount: 23,
+          importedCount: 4,
+          status: "active",
+        },
+        {
+          id: BOOK,
+          label: "Book chapters",
+          folder: "literatures/book-chapters",
+          style: "chicago-note",
+          document: "templates/book-chapter.md",
+          noteCount: 40,
+          importedCount: 6,
+          status: "active",
+        },
+        {
+          id: THESIS,
+          label: "Thesis",
+          folder: "projects/thesis/reading",
+          style: "chicago-author-date",
+          document: null, // bindings-only Profile: no template document
+          noteCount: 12,
+          importedCount: 3,
+          status: "active",
+        },
+        {
+          id: SCRATCH,
+          label: "Scratch",
+          folder: "inbox",
+          style: "Built-in default",
+          document: "Built-in template",
+          noteCount: 0,
+          importedCount: 0,
+          status: "active",
+        },
+      ];
+
+      // ~4 sample notes per Profile. The counts on the Profile records are the truth; this
+      // list is only what the file tree, the search pane and the readout can show.
+      const SAMPLE_NOTES = [
+        { key: "kuhnStructure1962", title: "The structure of scientific revolutions", profileId: null, imported: 2 },
+        { key: "latourLaboratory1979", title: "Laboratory life", profileId: null, imported: 0 },
+        { key: "popperLogic1959", title: "The logic of scientific discovery", profileId: null, imported: 1 },
+        { key: "mertonNormative1973", title: "The normative structure of science", profileId: null, imported: 0 },
+
+        { key: "smithCitation2021", title: "Citation practices in the digital humanities", profileId: ART, imported: 1 },
+        { key: "garciaOpenAccess2022", title: "Open access and the long tail of citation", profileId: ART, imported: 0 },
+        { key: "nakamuraPeerReview2020", title: "Peer review at scale", profileId: ART, imported: 2 },
+        { key: "olsenPreprint2023", title: "Preprints and the speed of correction", profileId: ART, imported: 0 },
+
+        { key: "smithChapter2021", title: "Reading machines: a chapter on distant reading", profileId: BOOK, imported: 2 },
+        { key: "weberBureaucracy1978", title: "Bureaucracy, chapter 11", profileId: BOOK, imported: 0 },
+        { key: "ecoOpenWork1989", title: "The poetics of the open work", profileId: BOOK, imported: 1 },
+        { key: "bourdieuField1993", title: "The field of cultural production", profileId: BOOK, imported: 0 },
+
+        { key: "arendtCondition1958", title: "The human condition", profileId: THESIS, imported: 1 },
+        { key: "foucaultArchaeology1969", title: "The archaeology of knowledge", profileId: THESIS, imported: 0 },
+        { key: "harawaySituated1988", title: "Situated knowledges", profileId: THESIS, imported: 1 },
+        { key: "stengersCosmopolitics2010", title: "Cosmopolitics I", profileId: THESIS, imported: 0 },
+      ];
+
+      const SCENARIOS = {
+        fold: { subjectProfileId: BOOK, activeNoteKey: "smithChapter2021" },
+        retire: { subjectProfileId: THESIS, activeNoteKey: "arendtCondition1958" },
+        oops: { subjectProfileId: ART, activeNoteKey: "smithCitation2021" },
+      };
+
+      function stamp() {
+        const d = new Date();
+        return [d.getHours(), d.getMinutes(), d.getSeconds()]
+          .map((n) => String(n).padStart(2, "0"))
+          .join(":");
+      }
+
+      function folderOf(profiles, id) {
+        const p = profiles.find((x) => x.id === (id ?? null));
+        return p ? p.folder : "literatures";
+      }
+
+      function seed(scenario) {
+        const preset = SCENARIOS[scenario] ?? SCENARIOS.fold;
+        const profiles = ALL_PROFILES.map((p) => ({ ...p }));
+        return {
+          scenario,
+          subjectProfileId: preset.subjectProfileId,
+          profiles,
+          deletedProfiles: {},
+          notes: SAMPLE_NOTES.map((n) => ({
+            ...n,
+            path: `${folderOf(profiles, n.profileId)}/${n.key}.md`,
+          })),
+          activeNoteKey: preset.activeNoteKey,
+          search: null,
+          notices: [],
+          log: [],
+        };
+      }
+
+      let state = seed("fold");
+      const listeners = new Set();
+
+      function subscribe(fn) {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      }
+
+      function getSnapshot() {
+        return state;
+      }
+
+      function setState(next) {
+        state = next;
+        for (const fn of listeners) fn();
+      }
+
+      function logged(next, text) {
+        return {
+          ...next,
+          log: [{ t: stamp(), text }, ...next.log].slice(0, 40),
+        };
+      }
+
+      export function useProtoState() {
+        const snapshot = useSyncExternalStore(subscribe, getSnapshot);
+        return { state: snapshot, actions };
+      }
+
+      // Looks in the live Profiles first, then in the tombstones — a deleted record comes
+      // back with status "deleted" so every surface can render it without special-casing.
+      export function profileById(s, id) {
+        const live = s.profiles.find((p) => p.id === (id ?? null));
+        if (live) return live;
+        const gone = s.deletedProfiles[id];
+        if (gone) return { ...gone, id, status: "deleted" };
+        return null;
+      }
+
+      export function stampLabel(s, note) {
+        if (!note) return null;
+        const p = profileById(s, note.profileId);
+        if (!p)
+          return {
+            label: "Unknown profile",
+            secondary: note.profileId,
+            status: "deleted",
+          };
+        return {
+          label: p.label,
+          secondary: p.id ?? "(built-in default)",
+          status: p.status,
+        };
+      }
+
+      export function PROFILE_DISPLAY(profile) {
+        return [
+          profile.folder,
+          profile.style,
+          profile.document ?? "Bindings only",
+        ].join(" · ");
+      }
+
+      export function activeNote(s) {
+        return s.notes.find((n) => n.key === s.activeNoteKey) ?? null;
+      }
+
+      export function notesOf(s, profileId) {
+        return s.notes.filter((n) => n.profileId === (profileId ?? null));
+      }
+
+      export const UNKNOWN_PROFILE_NOTICE = (id) =>
+        `This literature note uses an unknown profile (${id}). Re-stamp the note or recreate the profile with the same ID.`;
+
+      let noticeSeq = 0;
+
+      function pushNotice(s, text, action) {
+        const id = ++noticeSeq;
+        setTimeout(
+          () => actions.dismissNotice(id),
+          action ? 10000 : 6000,
+        );
+        return { ...s, notices: [...s.notices, { id, text, action }] };
+      }
+
+      export const actions = {
+        setScenario(scenario) {
+          setState(logged(seed(scenario), `Scenario: ${scenario}`));
+        },
+
+        // Removes the record and remembers it, so a stale stamp can still say a name (C)
+        // and so Undo has something to put back (D). The notes keep their stamp.
+        deleteProfile(id) {
+          const p = profileById(state, id);
+          if (!p || p.id === null) return;
+          const rest = state.profiles.filter((x) => x.id !== id);
+          setState(
+            logged(
+              {
+                ...state,
+                profiles: rest,
+                deletedProfiles: {
+                  ...state.deletedProfiles,
+                  [id]: {
+                    label: p.label,
+                    folder: p.folder,
+                    style: p.style,
+                    document: p.document,
+                    noteCount: p.noteCount,
+                    importedCount: p.importedCount,
+                    deletedAt: stamp(),
+                  },
+                },
+              },
+              `Deleted the "${p.label}" profile; its ${p.noteCount} notes keep the stamp`,
+            ),
+          );
+        },
+
+        // E: the Profile leaves the pickers but its notes keep updating exactly as before.
+        retireProfile(id) {
+          const p = profileById(state, id);
+          if (!p || p.id === null) return;
+          setState(
+            logged(
+              {
+                ...state,
+                profiles: state.profiles.map((x) =>
+                  x.id === id ? { ...x, status: "retired" } : x,
+                ),
+              },
+              `Retired "${p.label}"; it is out of the pickers, its ${p.noteCount} notes still update`,
+            ),
+          );
+        },
+
+        // Back from retired (E) or back from the tombstone (D undo, A recreate).
+        restoreProfile(id) {
+          const retired = state.profiles.find((x) => x.id === id);
+          if (retired) {
+            setState(
+              logged(
+                {
+                  ...state,
+                  profiles: state.profiles.map((x) =>
+                    x.id === id ? { ...x, status: "active" } : x,
+                  ),
+                },
+                `Restored "${retired.label}"; it is back in the pickers`,
+              ),
+            );
+            return;
+          }
+          const gone = state.deletedProfiles[id];
+          if (!gone) return;
+          const { deletedAt, ...record } = gone;
+          const revived = { ...record, id, status: "active" };
+          const order = ALL_PROFILES.map((p) => p.id);
+          const profiles = [...state.profiles, revived].sort(
+            (a, b) => order.indexOf(a.id) - order.indexOf(b.id),
+          );
+          const deletedProfiles = { ...state.deletedProfiles };
+          delete deletedProfiles[id];
+          setState(
+            logged(
+              { ...state, profiles, deletedProfiles },
+              `Brought "${revived.label}" back with the same ID; its ${revived.noteCount} notes work again`,
+            ),
+          );
+        },
+
+        recreateProfileWithSameId(id) {
+          actions.restoreProfile(id);
+        },
+
+        // Re-stamps every note of `fromId` — counts, samples and paths — and says so in the
+        // researcher's words. A retired Profile that hits zero notes disappears by itself (E).
+        moveNotes(fromId, toId, options) {
+          const { moveFiles = false, includeImported = true } = options ?? {};
+          const from = profileById(state, fromId);
+          const to = profileById(state, toId);
+          if (!from || !to) return;
+          const moved = from.noteCount;
+          const movedImported = includeImported ? from.importedCount : 0;
+
+          const profiles = state.profiles.map((p) => {
+            if (p.id === (toId ?? null))
+              return {
+                ...p,
+                noteCount: p.noteCount + moved,
+                importedCount: p.importedCount + movedImported,
+              };
+            if (p.id === fromId)
+              return {
+                ...p,
+                noteCount: 0,
+                importedCount: p.importedCount - movedImported,
+              };
+            return p;
+          });
+
+          const notes = state.notes.map((n) =>
+            n.profileId === (fromId ?? null)
+              ? {
+                  ...n,
+                  profileId: toId ?? null,
+                  path: moveFiles ? `${to.folder}/${n.key}.md` : n.path,
+                }
+              : n,
+          );
+
+          // A retired source that has nothing left cleans itself up (E); a tombstone that has
+          // nothing left stops haunting the settings page (C).
+          const emptied = profiles.find((p) => p.id === fromId);
+          const nextProfiles =
+            emptied && emptied.status === "retired"
+              ? profiles.filter((p) => p.id !== fromId)
+              : profiles;
+          const deletedProfiles = { ...state.deletedProfiles };
+          if (deletedProfiles[fromId]) delete deletedProfiles[fromId];
+
+          const line = `Moved ${moved} notes from ${from.label} to ${to.label}; files ${
+            moveFiles ? `moved to ${to.folder}/` : "stay in place"
+          }${movedImported ? `; ${movedImported} imported notes moved too` : ""}`;
+
+          setState(
+            logged(
+              { ...state, profiles: nextProfiles, notes, deletedProfiles },
+              line,
+            ),
+          );
+          return { moved, movedImported, line };
+        },
+
+        // The use-time diagnostic. A deleted Profile is the only failure; a retired one
+        // updates like any other (E). `silent` lets a variant word the failure its own way.
+        updateFromZotero(noteKey, options) {
+          const { silent = false } = options ?? {};
+          const note = state.notes.find((n) => n.key === noteKey);
+          if (!note) return { ok: false, kind: "no-note" };
+          const p = profileById(state, note.profileId);
+          if (!p || p.status === "deleted") {
+            const id = note.profileId;
+            const result = { ok: false, kind: "unknown-profile", id };
+            setState(
+              logged(
+                silent
+                  ? state
+                  : pushNotice(state, UNKNOWN_PROFILE_NOTICE(id)),
+                `Update from Zotero on ${note.path} — refused, unknown profile`,
+              ),
+            );
+            return result;
+          }
+          setState(
+            logged(
+              silent ? state : pushNotice(state, `Updated ${note.path} from Zotero`),
+              `Update from Zotero on ${note.path} — done under ${p.label}`,
+            ),
+          );
+          return { ok: true };
+        },
+
+        showNotes(profileId) {
+          const p = profileById(state, profileId);
+          setState(
+            logged(
+              {
+                ...state,
+                search: {
+                  query: `["zotlit-profile":${profileId}]`,
+                  profileId: profileId ?? null,
+                },
+              },
+              `Searched the vault for notes stamped ${p ? p.label : profileId}`,
+            ),
+          );
+        },
+
+        closeSearch() {
+          setState({ ...state, search: null });
+        },
+
+        notify(text, action) {
+          setState(pushNotice(state, text, action));
+        },
+
+        dismissNotice(id) {
+          setState({
+            ...state,
+            notices: state.notices.filter((n) => n.id !== id),
+          });
+        },
+
+        openNote(key) {
+          const note = state.notes.find((n) => n.key === key);
+          setState(
+            logged(
+              { ...state, activeNoteKey: key },
+              `Opened ${note ? note.path : key}`,
+            ),
+          );
+        },
+      };
+
+      // --- Primitives: Obsidian's default theme, rebuilt from the plan's tokens only. ---
+
+      export function Kbd({ children }) {
+        return (
+          <kbd className="font-mono text-[11px] leading-none border-line bg-ground-2 text-muted rounded border px-1 py-[3px]">
+            {children}
+          </kbd>
+        );
+      }
+
+      export function Pill({ tone = "muted", children, className = "" }) {
+        const tint =
+          tone === "accent"
+            ? {
+                color: "var(--accent)",
+                background:
+                  "color-mix(in srgb, var(--accent) 14%, transparent)",
+              }
+            : tone === "danger"
+              ? {
+                  color: "var(--danger)",
+                  background:
+                    "color-mix(in srgb, var(--danger) 14%, transparent)",
+                }
+              : { color: "var(--muted)", background: "var(--ground-2)" };
+        return (
+          <span
+            className={`inline-block rounded-full px-2 py-[2px] text-[11px] leading-none whitespace-nowrap ${className}`}
+            style={tint}
+          >
+            {children}
+          </span>
+        );
+      }
+
+      function TreeFolder({ name, files, activePath, onOpen }) {
+        return (
+          <div className="mb-[2px]">
+            <div className="text-ink/85 flex items-center gap-1 rounded px-1 py-[3px] text-[13px]">
+              <ChevronDown size={12} className="text-muted shrink-0" />
+              <span className="truncate">{name}</span>
+            </div>
+            {files.map((f) => (
+              <div
+                key={f.path}
+                onClick={() => (f.key ? onOpen?.(f.key) : undefined)}
+                className={`flex items-center gap-1 rounded py-[3px] pr-1 pl-[22px] text-[13px] ${
+                  f.key ? "cursor-pointer" : ""
+                }`}
+                style={
+                  f.path === activePath
+                    ? {
+                        background:
+                          "color-mix(in srgb, var(--accent) 12%, transparent)",
+                      }
+                    : undefined
+                }
+              >
+                <span className="truncate">{f.name}</span>
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      export function ObsidianFrame({
+        title,
+        children,
+        overlay = null,
+        statusItems = null,
+        footer = null,
+        stampRender = null,
+        sidePane = null,
+      }) {
+        const { state } = useProtoState();
+        const active = activeNote(state);
+        const activeInfo = stampLabel(state, active);
+        const activeProfile = active ? profileById(state, active.profileId) : null;
+
+        const tree = useMemo(() => {
+          const folders = new Map();
+          for (const note of state.notes) {
+            const cut = note.path.lastIndexOf("/");
+            const dir = note.path.slice(0, cut);
+            const name = note.path.slice(cut + 1);
+            if (!folders.has(dir)) folders.set(dir, []);
+            folders.get(dir).push({ name, path: note.path, key: note.key });
+          }
+          const documents = new Set();
+          for (const p of state.profiles)
+            if (p.document && p.document.includes("/")) documents.add(p.document);
+          for (const p of Object.values(state.deletedProfiles))
+            if (p.document && p.document.includes("/")) documents.add(p.document);
+          folders.set(
+            "templates",
+            [...documents].sort().map((path) => ({
+              name: path.split("/").pop(),
+              path,
+            })),
+          );
+          return [...folders.entries()].sort((a, b) =>
+            a[0].localeCompare(b[0]),
+          );
+        }, [state.notes, state.profiles, state.deletedProfiles]);
+
+        const pane =
+          sidePane ??
+          (state.search ? (
+            <SearchPane
+              query={state.search.query}
+              results={notesOf(state, state.search.profileId)}
+              total={
+                profileById(state, state.search.profileId)?.noteCount ?? 0
+              }
+              onClose={() => actions.closeSearch()}
+            />
+          ) : null);
+
+        const tabTitle =
+          title ?? (active ? active.path.split("/").pop() : "No file open");
+
+        return (
+          <div className="bg-ground text-ink font-body relative flex h-full min-w-0 flex-col overflow-hidden text-sm">
+            <div className="flex min-h-0 flex-1">
+              {/* ribbon */}
+              <div className="border-line bg-ground-2 flex w-[44px] shrink-0 flex-col items-center gap-4 border-r py-3">
+                <FolderOpen size={17} className="text-ink/70" />
+                <Search size={17} className="text-muted" />
+                <Bookmark size={17} className="text-muted" />
+                <Files size={17} className="text-muted" />
+                <div className="flex-1" />
+                <HelpCircle size={16} className="text-muted" />
+                <Settings size={16} className="text-muted" />
+              </div>
+
+              {/* file tree */}
+              <div className="border-line bg-ground-2 text-ink/90 w-[200px] shrink-0 overflow-y-auto border-r px-2 py-2">
+                {tree.map(([folder, files]) => (
+                  <TreeFolder
+                    key={folder}
+                    name={folder}
+                    files={files}
+                    activePath={active?.path}
+                    onOpen={(key) => actions.openNote(key)}
+                  />
+                ))}
+              </div>
+
+              {/* search pane */}
+              {pane}
+
+              {/* main pane */}
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="border-line flex shrink-0 items-center gap-2 border-b px-3 py-[6px]">
+                  <div className="border-line bg-ground flex items-center gap-2 rounded-md border px-3 py-1 text-[13px]">
+                    <FileText size={13} className="text-muted" />
+                    <span className="max-w-[280px] truncate">{tabTitle}</span>
+                    <X size={12} className="text-muted" />
+                  </div>
+                  <Plus size={14} className="text-muted" />
+                  <div className="flex-1" />
+                  <PanelLeft size={14} className="text-muted" />
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto px-10 py-6">
+                  {children ? <div className="mb-6">{children}</div> : null}
+                  {active ? (
+                    <>
+                      <div className="text-muted mb-4 font-mono text-[11px]">
+                        {active.path}
+                      </div>
+                      <table className="mb-6 w-full max-w-[560px] table-fixed text-[13px]">
+                        <tbody>
+                          <tr>
+                            <td className="text-muted w-[130px] py-1 align-top">
+                              zotero-key
+                            </td>
+                            <td className="py-1 font-mono text-[12px] break-all">
+                              {active.key}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="text-muted py-1 align-top">
+                              zotlit-profile
+                            </td>
+                            <td className="py-1 text-[13px] break-all">
+                              {stampRender ? (
+                                stampRender(active, activeInfo)
+                              ) : (
+                                <DefaultStamp info={activeInfo} />
+                              )}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <h1 className="mb-3 text-2xl font-semibold">
+                        {active.title}
+                      </h1>
+                      <div className="text-muted mb-2 font-mono text-[11px]">
+                        %%zt-managed%%
+                      </div>
+                      <p className="text-ink/80 max-w-[60ch] leading-relaxed">
+                        Rendered from{" "}
+                        {activeProfile?.document ?? "the built-in bindings"}
+                        {activeProfile ? ` in ${activeProfile.style}` : ""}. The
+                        text below this region is the researcher's own and is
+                        never touched by an update.
+                      </p>
+                      <div className="text-muted mt-2 font-mono text-[11px]">
+                        %%zt-managed-end%%
+                      </div>
+                      <p className="text-ink/80 mt-4 max-w-[60ch] leading-relaxed">
+                        My reading notes on this chapter, written by hand.
+                      </p>
+                    </>
+                  ) : (
+                    <div className="text-muted pt-10 text-center">
+                      No file is open
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* status bar */}
+            <div className="border-line bg-ground-2 text-muted flex shrink-0 items-center gap-3 border-t px-3 py-[5px] text-[11px]">
+              <span className="truncate">fixture-vault</span>
+              <div className="flex-1" />
+              {footer}
+              {statusItems}
+            </div>
+
+            {/* notices */}
+            <div className="absolute right-3 bottom-8 flex flex-col items-end gap-2">
+              {state.notices.map((n) => (
+                <Notice key={n.id} text={n.text} action={n.action} />
+              ))}
+            </div>
+
+            {overlay ? (
+              <div
+                className="absolute inset-0 flex items-center justify-center"
+                style={{ background: "rgba(0,0,0,0.28)" }}
+              >
+                {overlay}
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+
+      export function DefaultStamp({ info }) {
+        if (!info) return null;
+        return (
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <span>{info.label}</span>
+            <span className="text-muted font-mono text-[11px] break-all">
+              {info.secondary}
+            </span>
+            {info.status === "deleted" ? (
+              <Pill tone="danger">deleted profile</Pill>
+            ) : info.status === "retired" ? (
+              <Pill tone="muted">retired</Pill>
+            ) : null}
+          </span>
+        );
+      }
+
+      export function Notice({ text, action = null }) {
+        return (
+          <div className="border-line bg-ground-2 text-ink max-w-[420px] rounded-md border px-3 py-2 text-[13px] shadow-lg">
+            <div>{text}</div>
+            {action ? (
+              <button
+                onClick={action.onClick}
+                className="border-line bg-ground text-ink mt-2 cursor-pointer rounded border px-2 py-[3px] text-[12px]"
+              >
+                {action.label}
+              </button>
+            ) : null}
+          </div>
+        );
+      }
+
+      export function Prompt({
+        placeholder = "",
+        value = "",
+        onChange,
+        onKeyDown,
+        instructions = [],
+        header = null,
+        children,
+        className = "",
+      }) {
+        const ref = useRef(null);
+        useEffect(() => {
+          ref.current?.focus();
+        }, []);
+        return (
+          <div
+            className={`border-line bg-ground flex max-h-[70%] w-[560px] flex-col overflow-hidden rounded-lg border shadow-2xl ${className}`}
+          >
+            <div className="border-line flex shrink-0 items-center gap-2 border-b px-4 py-[10px]">
+              <input
+                ref={ref}
+                className="text-ink placeholder:text-muted min-w-0 flex-1 bg-transparent text-[15px] outline-none"
+                placeholder={placeholder}
+                value={value}
+                onChange={(e) => onChange?.(e.target.value)}
+                onKeyDown={onKeyDown}
+              />
+            </div>
+            {header ? (
+              <div className="border-line shrink-0 border-b">{header}</div>
+            ) : null}
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">{children}</div>
+            {instructions.length ? (
+              <div className="border-line text-muted flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 border-t px-4 py-2 text-[11px]">
+                {instructions.map((i) => (
+                  <span
+                    key={i.command + i.purpose}
+                    className="flex items-center gap-[6px]"
+                  >
+                    <Kbd>{i.command}</Kbd>
+                    <span>{i.purpose}</span>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+
+      export function SuggestRow({
+        selected = false,
+        onClick,
+        title,
+        aside = null,
+        note = null,
+        badge = null,
+        badgeTone = "accent",
+      }) {
+        return (
+          <div
+            onClick={onClick}
+            className="flex cursor-pointer items-start gap-3 rounded-md px-3 py-2"
+            style={
+              selected
+                ? {
+                    background:
+                      "color-mix(in srgb, var(--accent) 12%, transparent)",
+                  }
+                : undefined
+            }
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-ink truncate text-[14px]">{title}</span>
+                {badge ? <Pill tone={badgeTone}>{badge}</Pill> : null}
+              </div>
+              {note ? (
+                <div className="text-muted mt-[2px] text-[12px]">{note}</div>
+              ) : null}
+            </div>
+            {aside ? (
+              <div className="text-muted shrink-0 text-[12px] whitespace-nowrap">
+                {aside}
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+
+      export function Dialog({
+        title,
+        body = null,
+        actions: buttons = [],
+        checkboxes = [],
+        width = 440,
+      }) {
+        return (
+          <div
+            className="border-line bg-ground overflow-hidden rounded-lg border shadow-2xl"
+            style={{ width }}
+          >
+            <div className="px-5 pt-4 pb-2 text-[17px] font-semibold">
+              {title}
+            </div>
+            <div className="text-ink/85 px-5 pb-3 text-[13px] leading-relaxed">
+              {body}
+            </div>
+            {checkboxes.length ? (
+              <div className="flex flex-col gap-2 px-5 pb-3">
+                {checkboxes.map((c) => (
+                  <label
+                    key={c.label}
+                    className="flex cursor-pointer items-start gap-2 text-[13px]"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-[3px]"
+                      checked={c.checked}
+                      onChange={(e) => c.onChange?.(e.target.checked)}
+                    />
+                    <span>
+                      {c.label}
+                      {c.note ? (
+                        <span className="text-muted block text-[12px]">
+                          {c.note}
+                        </span>
+                      ) : null}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+            <div className="border-line bg-ground-2 flex justify-end gap-2 border-t px-5 py-3">
+              {buttons.map((b) => (
+                <button
+                  key={b.label}
+                  onClick={b.onClick}
+                  disabled={b.disabled}
+                  className="cursor-pointer rounded-md px-3 py-[6px] text-[13px]"
+                  style={{
+                    opacity: b.disabled ? 0.45 : 1,
+                    cursor: b.disabled ? "not-allowed" : "pointer",
+                    ...(b.cta
+                      ? { background: "var(--accent)", color: "#ffffff" }
+                      : b.destructive
+                        ? { background: "var(--danger)", color: "#ffffff" }
+                        : {
+                            background: "var(--ground)",
+                            color: "var(--ink)",
+                            border: "1px solid var(--line)",
+                          }),
+                  }}
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      export function CommandPalette({ open, items = [], onClose }) {
+        const [query, setQuery] = useState("");
+        const [sel, setSel] = useState(0);
+        const hits = items.filter((i) =>
+          i.label.toLowerCase().includes(query.toLowerCase()),
+        );
+        useEffect(() => {
+          setSel(0);
+        }, [query]);
+        if (!open) return null;
+        const onKeyDown = (e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setSel((i) => Math.min(i + 1, hits.length - 1));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setSel((i) => Math.max(i - 1, 0));
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            hits[sel]?.onSelect?.();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onClose?.();
+          }
+        };
+        return (
+          <Prompt
+            placeholder="Select a command..."
+            value={query}
+            onChange={setQuery}
+            onKeyDown={onKeyDown}
+            instructions={[
+              { command: "↑↓", purpose: "navigate" },
+              { command: "↵", purpose: "run command" },
+              { command: "esc", purpose: "dismiss" },
+            ]}
+          >
+            {hits.map((it, i) => (
+              <SuggestRow
+                key={it.label}
+                title={it.label}
+                selected={i === sel}
+                onClick={it.onSelect}
+              />
+            ))}
+          </Prompt>
+        );
+      }
+
+      // --- Settings surfaces -------------------------------------------------
+
+      const SETTINGS_NAV = [
+        { group: "Options", items: ["Editor", "Files and links", "Appearance", "Hotkeys"] },
+        { group: "Community plugins", items: ["ZotLit", "Dataview", "Templater"] },
+      ];
+
+      export function SettingsModal({
+        open,
+        onClose,
+        title = "Literature note profiles",
+        children,
+      }) {
+        if (!open) return null;
+        return (
+          <div className="border-line bg-ground flex h-[74%] w-[860px] overflow-hidden rounded-lg border shadow-2xl">
+            <div className="border-line bg-ground-2 w-[190px] shrink-0 overflow-y-auto border-r px-2 py-3">
+              {SETTINGS_NAV.map((g) => (
+                <div key={g.group} className="mb-3">
+                  <div className="text-muted px-2 pb-1 text-[11px] tracking-[0.06em] uppercase">
+                    {g.group}
+                  </div>
+                  {g.items.map((it) => (
+                    <div
+                      key={it}
+                      className="rounded px-2 py-[5px] text-[13px]"
+                      style={
+                        it === "ZotLit"
+                          ? {
+                              background:
+                                "color-mix(in srgb, var(--accent) 14%, transparent)",
+                              color: "var(--ink)",
+                            }
+                          : { color: "var(--muted)" }
+                      }
+                    >
+                      {it}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div className="border-line flex shrink-0 items-center gap-2 border-b px-5 py-3">
+                <div className="flex-1 text-[16px] font-semibold">{title}</div>
+                <button
+                  onClick={onClose}
+                  className="text-muted cursor-pointer"
+                  aria-label="Close settings"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                {children}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function SettingRow({ name, description, right, onClick = null }) {
+        return (
+          <div
+            onClick={onClick ?? undefined}
+            className={`border-line flex items-center gap-4 border-b py-3 ${
+              onClick ? "cursor-pointer" : ""
+            }`}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="text-[14px]">{name}</div>
+              <div className="text-muted mt-[2px] truncate font-mono text-[11px]">
+                {description}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">{right}</div>
+          </div>
+        );
+      }
+
+      export function IconButton({ label, tone = "muted", onClick, children }) {
+        return (
+          <button
+            onClick={onClick}
+            aria-label={label}
+            title={label}
+            className="border-line bg-ground cursor-pointer rounded border p-[5px]"
+            style={{ color: tone === "danger" ? "var(--danger)" : "var(--muted)" }}
+          >
+            {children}
+          </button>
+        );
+      }
+
+      export function ProfilesPage({
+        onDelete,
+        onOpen,
+        banner = null,
+        retiredSection = null,
+        rowExtras = null,
+      }) {
+        const { state } = useProtoState();
+        const rows = state.profiles.filter((p) => p.status === "active");
+        return (
+          <div>
+            {banner}
+            <p className="text-muted mb-3 text-[13px] leading-relaxed">
+              A profile decides where a literature note lives, which citation
+              style it uses, and which template renders it.
+            </p>
+            {rows.map((p) => (
+              <SettingRow
+                key={p.label}
+                name={p.label}
+                description={PROFILE_DISPLAY(p)}
+                onClick={p.id ? () => onOpen?.(p.id) : null}
+                right={
+                  <>
+                    {rowExtras?.(p)}
+                    <Pill tone="muted">{p.noteCount} notes</Pill>
+                    {p.id ? (
+                      <IconButton
+                        label={`Delete ${p.label}`}
+                        tone="danger"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete?.(p.id);
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </IconButton>
+                    ) : null}
+                  </>
+                }
+              />
+            ))}
+            {retiredSection}
+          </div>
+        );
+      }
+
+      function ReadOnlyField({ label, value }) {
+        return (
+          <div className="border-line flex items-center gap-4 border-b py-3">
+            <div className="w-[190px] shrink-0 text-[14px]">{label}</div>
+            <div className="border-line bg-ground-2 text-ink/85 min-w-0 flex-1 truncate rounded border px-2 py-[5px] font-mono text-[12px]">
+              {value}
+            </div>
+          </div>
+        );
+      }
+
+      export function ProfilePage({ profileId, onBack, onDelete, footer = null }) {
+        const { state } = useProtoState();
+        const p = profileById(state, profileId);
+        if (!p) return <div className="text-muted">This profile is gone.</div>;
+        return (
+          <div>
+            <button
+              onClick={onBack}
+              className="text-muted mb-3 flex cursor-pointer items-center gap-1 text-[13px]"
+            >
+              <ArrowLeft size={13} /> All profiles
+            </button>
+            <ReadOnlyField label="Name" value={p.label} />
+            <ReadOnlyField label="Literature note folder" value={p.folder} />
+            <ReadOnlyField label="Citation style" value={p.style} />
+            <ReadOnlyField
+              label="Template document"
+              value={p.document ?? "Built-in template"}
+            />
+            <div className="mt-5">
+              {footer ?? (
+                <button
+                  onClick={() => onDelete?.(p.id)}
+                  className="cursor-pointer rounded-md px-3 py-[6px] text-[13px]"
+                  style={{ background: "var(--danger)", color: "#ffffff" }}
+                >
+                  Delete profile
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      export function Banner({ tone = "muted", text, action = null }) {
+        const color =
+          tone === "danger"
+            ? "var(--danger)"
+            : tone === "accent"
+              ? "var(--accent)"
+              : "var(--muted)";
+        return (
+          <div
+            className="mb-4 flex items-start gap-3 rounded-md border px-3 py-[10px] text-[13px]"
+            style={{
+              borderColor: color,
+              background: `color-mix(in srgb, ${color} 10%, transparent)`,
+            }}
+          >
+            <AlertTriangle size={15} style={{ color }} className="mt-[2px] shrink-0" />
+            <div className="min-w-0 flex-1 leading-relaxed">{text}</div>
+            {action ? (
+              <button
+                onClick={action.onClick}
+                className="border-line bg-ground text-ink shrink-0 cursor-pointer rounded border px-2 py-[4px] text-[12px]"
+              >
+                {action.label}
+              </button>
+            ) : null}
+          </div>
+        );
+      }
+
+      export function SearchPane({ query, results = [], total = 0, onClose }) {
+        const more = Math.max(0, total - results.length);
+        return (
+          <div className="border-line bg-ground-2 w-[260px] shrink-0 overflow-y-auto border-r px-3 py-3">
+            <div className="mb-2 flex items-center gap-2">
+              <Search size={14} className="text-muted" />
+              <div className="flex-1 text-[12px] font-semibold">Search</div>
+              <button
+                onClick={onClose}
+                aria-label="Close search"
+                className="text-muted cursor-pointer"
+              >
+                <X size={13} />
+              </button>
+            </div>
+            <div className="border-line bg-ground mb-2 rounded border px-2 py-[5px] font-mono text-[11px] break-all">
+              {query}
+            </div>
+            <div className="text-muted mb-2 text-[11px]">{total} results</div>
+            <div className="flex flex-col gap-[2px]">
+              {results.map((n) => (
+                <div
+                  key={n.key}
+                  onClick={() => actions.openNote(n.key)}
+                  className="cursor-pointer rounded px-1 py-[3px] text-[12px]"
+                >
+                  <div className="truncate">{n.title}</div>
+                  <div className="text-muted truncate font-mono text-[10px]">
+                    {n.path}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {more ? (
+              <div className="text-muted mt-2 text-[11px]">… and {more} more</div>
+            ) : null}
+          </div>
+        );
+      }
+
+      export function MoveNotesDialog({
+        from,
+        to,
+        onTo,
+        options,
+        onOptions,
+        onConfirm,
+        onCancel,
+        title,
+        cta,
+        ctaDestructive = false,
+        intro = null,
+      }) {
+        const { state } = useProtoState();
+        const targets = state.profiles.filter(
+          (p) => p.status === "active" && p.id !== from?.id,
+        );
+        const checkboxes = [];
+        if (to && from && from.folder !== to.folder)
+          checkboxes.push({
+            label: `Move files to ${to.folder}/`,
+            note: "The notes keep their names; only the folder changes.",
+            checked: options.moveFiles,
+            onChange: (v) => onOptions({ ...options, moveFiles: v }),
+          });
+        if (from && from.importedCount > 0)
+          checkboxes.push({
+            label: `Also move ${from.importedCount} imported notes`,
+            note: "Imported notes belong to the same Zotero item.",
+            checked: options.includeImported,
+            onChange: (v) => onOptions({ ...options, includeImported: v }),
+          });
+        return (
+          <Dialog
+            width={480}
+            title={title}
+            body={
+              <div className="flex flex-col gap-3">
+                {intro}
+                <label className="flex items-center gap-2">
+                  <span className="text-muted">Move them to</span>
+                  <span className="border-line bg-ground-2 relative inline-flex items-center gap-1 rounded border px-2 py-[4px]">
+                    <select
+                      value={to?.id ?? ""}
+                      onChange={(e) =>
+                        onTo(e.target.value === "" ? null : e.target.value)
+                      }
+                      className="text-ink cursor-pointer appearance-none bg-transparent pr-4 text-[13px] outline-none"
+                    >
+                      {targets.map((p) => (
+                        <option key={p.label} value={p.id ?? ""}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown
+                      size={12}
+                      className="text-muted pointer-events-none absolute right-2"
+                    />
+                  </span>
+                </label>
+                {to ? (
+                  <p className="text-muted leading-relaxed">
+                    Managed content and properties re-render from{" "}
+                    {to.document ?? "the built-in template"} on the next update.
+                    Text outside the managed region stays unchanged.
+                  </p>
+                ) : null}
+              </div>
+            }
+            checkboxes={checkboxes}
+            actions={[
+              { label: "Cancel", onClick: onCancel },
+              {
+                label: cta,
+                onClick: onConfirm,
+                cta: !ctaDestructive,
+                destructive: ctaDestructive,
+              },
+            ]}
+          />
+        );
+      }
+
+      // --- Rail --------------------------------------------------------------
+
+      function RailHeading({ children }) {
+        return (
+          <div className="font-display text-muted mb-2 text-[11px] font-semibold tracking-[0.08em] uppercase">
+            {children}
+          </div>
+        );
+      }
+
+      export function Rail({
+        thesis,
+        answers = [],
+        steps = [],
+        consent = null,
+        extras = null,
+      }) {
+        const { state } = useProtoState();
+        const active = activeNote(state);
+        const info = stampLabel(state, active);
+        const deleted = Object.entries(state.deletedProfiles);
+        return (
+          <aside className="border-line bg-ground-2 text-ink font-body flex h-full min-h-0 flex-col gap-5 overflow-y-auto border-l px-4 py-4 text-[13px]">
+            <div>
+              <RailHeading>Thesis</RailHeading>
+              <p className="leading-relaxed">{thesis}</p>
+            </div>
+
+            {answers.length ? (
+              <div>
+                <RailHeading>Three researchers</RailHeading>
+                <div className="flex flex-col gap-2">
+                  {answers.map((a) => (
+                    <div key={a.q} className="leading-relaxed">
+                      <div className="text-muted">“{a.q}”</div>
+                      <div>{a.a}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {consent ? (
+              <div>
+                <RailHeading>Consent rule</RailHeading>
+                <p className="text-ink/85 leading-relaxed">{consent}</p>
+              </div>
+            ) : null}
+
+            {steps.length ? (
+              <div>
+                <RailHeading>Steps</RailHeading>
+                <ol className="flex flex-col gap-[6px]">
+                  {steps.map((s, i) => (
+                    <li key={i} className="flex gap-2 leading-relaxed">
+                      <span className="text-muted font-mono text-[11px] tabular-nums">
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
+                      <span className="min-w-0 flex-1">{s}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
+
+            {extras}
+
+            <div>
+              <RailHeading>State</RailHeading>
+              <table className="w-full text-[11px]">
+                <tbody>
+                  {state.profiles.map((p) => (
+                    <tr key={p.label} className="align-top">
+                      <td className="py-[2px] pr-2">
+                        {p.label}
+                        {p.id === state.subjectProfileId ? (
+                          <span className="text-accent"> ·</span>
+                        ) : null}
+                      </td>
+                      <td className="py-[2px] pr-2">
+                        {p.status === "retired" ? (
+                          <Pill tone="muted">retired</Pill>
+                        ) : (
+                          <Pill tone="accent">active</Pill>
+                        )}
+                      </td>
+                      <td className="text-muted py-[2px] pr-1 text-right font-mono tabular-nums">
+                        {p.noteCount}
+                      </td>
+                      <td className="text-muted py-[2px] text-right font-mono tabular-nums">
+                        {p.importedCount}i
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {deleted.length ? (
+                <div className="mt-3 flex flex-col gap-1">
+                  {deleted.map(([id, rec]) => (
+                    <div key={id} className="text-[11px] leading-snug">
+                      <Pill tone="danger">deleted</Pill>{" "}
+                      <span>{rec.label}</span>{" "}
+                      <span className="text-muted font-mono break-all">
+                        {id}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {active && info ? (
+                <div className="text-muted mt-3 text-[11px] leading-snug">
+                  <span className="font-mono break-all">{active.path}</span>
+                  {" — "}
+                  {info.label} ({info.status})
+                </div>
+              ) : null}
+            </div>
+
+            <div className="min-h-0">
+              <RailHeading>Log</RailHeading>
+              <div className="flex flex-col gap-[3px]">
+                {state.log.length === 0 ? (
+                  <div className="text-muted text-[11px]">nothing yet</div>
+                ) : (
+                  state.log.slice(0, 12).map((e, i) => (
+                    <div key={i} className="flex gap-2 text-[11px] leading-snug">
+                      <span className="text-muted font-mono tabular-nums">
+                        {e.t}
+                      </span>
+                      <span className="min-w-0 flex-1">{e.text}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </aside>
+        );
+      }
+      // --- Shared END ---
+
+      // --- App ---
+      // --- Variant A ---
+      // --- Variant A ---
+      // Variant A — Baseline: today's plugin, reproduced faithfully.
+      // One confirm dialog in system vocabulary, no note count, no consequence in note words.
+      // The record leaves settings and the plugin forgets the label; the stamp on the note is a
+      // raw UUID; "Update from Zotero" refuses with the current notice; recovery: none in the UI.
+
+      /** Keyboard for every Prompt: ↑↓ move, ↵ choose, Esc close. */
+      function va_navKeys(evt, { count, index, setIndex, onChoose, onClose }) {
+        if (evt.key === "ArrowDown") {
+          evt.preventDefault();
+          setIndex(count === 0 ? 0 : (index + 1) % count);
+        } else if (evt.key === "ArrowUp") {
+          evt.preventDefault();
+          setIndex(count === 0 ? 0 : (index - 1 + count) % count);
+        } else if (evt.key === "Enter") {
+          evt.preventDefault();
+          if (count > 0) onChoose(index);
+        } else if (evt.key === "Escape") {
+          evt.preventDefault();
+          onClose();
+        }
+      }
+
+      /** Profile picker filter — label only, exactly like the real modal. */
+      function va_matchProfiles(profiles, query) {
+        const q = query.trim().toLocaleLowerCase();
+        if (!q) return profiles;
+        return profiles.filter((p) => p.label.toLocaleLowerCase().includes(q));
+      }
+
+      /**
+       * One row of the Profiles list as it stands today: name, the folder · style · document
+       * line, and a trash icon. Nothing counts the notes, so no count can appear on the row.
+       * Called as a function (not a JSX tag) so the `va_` prefix stays intact.
+       */
+      function va_profileRow(profile, { onOpen, onDelete }) {
+        return (
+          <div
+            key={profile.label}
+            onClick={profile.id ? () => onOpen(profile.id) : undefined}
+            className={`border-line flex items-center gap-4 border-b py-3 ${
+              profile.id ? "cursor-pointer" : ""
+            }`}
+          >
+            <div className="min-w-0 flex-1">
+              <div className="text-[14px]">{profile.label}</div>
+              <div className="text-muted mt-[2px] truncate font-mono text-[11px]">
+                {PROFILE_DISPLAY(profile)}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {profile.id ? (
+                <IconButton
+                  label={`Delete ${profile.label}`}
+                  tone="danger"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(profile.id);
+                  }}
+                >
+                  <Trash2 size={14} />
+                </IconButton>
+              ) : null}
+            </div>
+          </div>
+        );
+      }
+
+      /** The Properties stamp today: the raw UUID, no label, no pill. */
+      function va_rawStamp(note) {
+        return (
+          <span className="font-mono text-[12px] break-all">
+            {note.profileId ?? "(empty)"}
+          </span>
+        );
+      }
+
+      function VariantA() {
+        const { state, actions } = useProtoState();
+
+        // Which surface is open: null | "palette" | "picker"
+        const [surface, setSurface] = useState(null);
+        const [settingsOpen, setSettingsOpen] = useState(false);
+        // Settings page: "profiles" | { profileId }
+        const [page, setPage] = useState("profiles");
+        // The pending confirm: null | profile id
+        const [pendingDelete, setPendingDelete] = useState(null);
+        const [query, setQuery] = useState("");
+        const [index, setIndex] = useState(0);
+
+        // The scenario preset reseeds the store, so every local surface goes back to rest.
+        useEffect(() => {
+          setSurface(null);
+          setSettingsOpen(false);
+          setPage("profiles");
+          setPendingDelete(null);
+          setQuery("");
+          setIndex(0);
+        }, [state.scenario]);
+
+        const note = activeNote(state);
+        const pending = pendingDelete ? profileById(state, pendingDelete) : null;
+        const deletedIds = Object.keys(state.deletedProfiles);
+
+        // Label-only rows; a deleted Profile is simply absent from the list.
+        const choices = useMemo(
+          () => va_matchProfiles(state.profiles, query),
+          [state.profiles, query],
+        );
+
+        function closeTop() {
+          if (pendingDelete) {
+            setPendingDelete(null);
+            return;
+          }
+          if (surface) {
+            setSurface(null);
+            setQuery("");
+            setIndex(0);
+            return;
+          }
+          if (settingsOpen) setSettingsOpen(false);
+        }
+
+        useEffect(() => {
+          const onKey = (e) => {
+            if (e.key !== "Escape") return;
+            if (!pendingDelete && !surface && !settingsOpen) return;
+            e.preventDefault();
+            closeTop();
+          };
+          window.addEventListener("keydown", onKey);
+          return () => window.removeEventListener("keydown", onKey);
+        }, [pendingDelete, surface, settingsOpen]);
+
+        function openPalette() {
+          setSurface("palette");
+          setQuery("");
+          setIndex(0);
+        }
+
+        function openPicker() {
+          setSurface("picker");
+          setQuery("");
+          setIndex(0);
+        }
+
+        function openSettings() {
+          setSettingsOpen(true);
+          setPage("profiles");
+          setSurface(null);
+        }
+
+        function confirmDelete() {
+          actions.deleteProfile(pendingDelete);
+          setPendingDelete(null);
+          setPage("profiles");
+        }
+
+        // The use-time diagnostic, in today's words. The Imported Note twin is one extra notice.
+        function runUpdate() {
+          if (!note) return;
+          setSurface(null);
+          const result = actions.updateFromZotero(note.key);
+          if (!result.ok && result.kind === "unknown-profile" && note.imported > 0) {
+            actions.notify(
+              `Profile ${result.id} is unavailable for Imported Note ${note.path}. Re-stamp the note or recreate the Profile with the same ID.`,
+            );
+          }
+        }
+
+        function chooseProfile(i) {
+          const profile = choices[i];
+          if (!profile || !note) return;
+          setSurface(null);
+          setQuery("");
+          setIndex(0);
+          actions.notify(`Switched ${note.path} to “${profile.label}”`);
+        }
+
+        // --- Overlays ----------------------------------------------------------
+        const settingsLayer = (
+          <SettingsModal
+            open={settingsOpen}
+            onClose={() => setSettingsOpen(false)}
+            title="Literature note profiles"
+          >
+            {page === "profiles" ? (
+              <div>
+                <p className="text-muted mb-3 text-[13px] leading-relaxed">
+                  A profile decides where a literature note lives, which citation
+                  style it uses, and which template renders it.
+                </p>
+                {state.profiles.map((p) =>
+                  va_profileRow(p, {
+                    onOpen: (id) => setPage({ profileId: id }),
+                    onDelete: (id) => setPendingDelete(id),
+                  }),
+                )}
+              </div>
+            ) : (
+              <ProfilePage
+                profileId={page.profileId}
+                onBack={() => setPage("profiles")}
+                onDelete={(id) => setPendingDelete(id)}
+              />
+            )}
+          </SettingsModal>
+        );
+
+        let top = null;
+        if (pending) {
+          top = (
+            <Dialog
+              title={`Delete “${pending.label}” profile?`}
+              body="Literature notes stamped with this profile cannot update until you re-stamp them or recreate this profile with the same ID."
+              actions={[
+                { label: "Cancel", onClick: () => setPendingDelete(null) },
+                {
+                  label: "Delete profile",
+                  onClick: confirmDelete,
+                  destructive: true,
+                },
+              ]}
+            />
+          );
+        } else if (surface === "palette") {
+          top = (
+            <CommandPalette
+              open
+              onClose={() => setSurface(null)}
+              items={[
+                {
+                  label: "Open settings → Literature note profiles",
+                  onSelect: openSettings,
+                },
+                {
+                  label: "Update literature note from Zotero",
+                  onSelect: runUpdate,
+                },
+                {
+                  label: "Switch literature note profile…",
+                  onSelect: openPicker,
+                },
+              ]}
+            />
+          );
+        } else if (surface === "picker") {
+          top = (
+            <Prompt
+              placeholder="Choose a profile…"
+              value={query}
+              onChange={(v) => {
+                setQuery(v);
+                setIndex(0);
+              }}
+              onKeyDown={(e) =>
+                va_navKeys(e, {
+                  count: choices.length,
+                  index,
+                  setIndex,
+                  onChoose: chooseProfile,
+                  onClose: () => setSurface(null),
+                })
+              }
+              instructions={[
+                { command: "↑↓", purpose: "to navigate" },
+                { command: "↵", purpose: "to choose" },
+                { command: "esc", purpose: "to dismiss" },
+              ]}
+            >
+              {choices.map((profile, i) => (
+                <SuggestRow
+                  key={profile.label}
+                  selected={i === index}
+                  onClick={() => chooseProfile(i)}
+                  title={profile.label}
+                />
+              ))}
+            </Prompt>
+          );
+        }
+
+        const overlay =
+          settingsOpen || top ? (
+            <>
+              {settingsLayer}
+              {top ? (
+                <div
+                  className="absolute inset-0 flex items-center justify-center"
+                  style={{ background: "rgba(0,0,0,0.28)" }}
+                >
+                  {top}
+                </div>
+              ) : null}
+            </>
+          ) : null;
+
+        const statusItems = (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="border-line text-ink hover:bg-ground-2 cursor-pointer rounded border px-2 py-[2px]"
+              onClick={openSettings}
+            >
+              Settings
+            </button>
+            <button
+              type="button"
+              className="border-line text-muted hover:bg-ground-2 cursor-pointer rounded border px-2 py-[2px]"
+              onClick={openPalette}
+            >
+              ⌘P
+            </button>
+          </div>
+        );
+
+        return (
+          <div
+            className="grid h-full"
+            style={{ gridTemplateColumns: "minmax(0,1fr) 300px" }}
+          >
+            <ObsidianFrame
+              title="ZotLit — baseline (today)"
+              statusItems={statusItems}
+              overlay={overlay}
+              stampRender={(activeNoteRecord) => va_rawStamp(activeNoteRecord)}
+            />
+            <Rail
+              thesis="Today the dialog warns in system vocabulary and the plugin forgets the profile the moment it is deleted; the note carries a UUID nobody can act on."
+              answers={[
+                {
+                  q: "What happens to my forty notes?",
+                  a: "They keep their text and their stamp, and nothing ever tells you there are forty of them.",
+                },
+                {
+                  q: "Can I still update them?",
+                  a: "No. Update from Zotero refuses on every one of them and prints the profile UUID.",
+                },
+                {
+                  q: "How do I get it back?",
+                  a: "No path in the UI. Only a new profile carrying the same UUID, pasted into the settings file by hand.",
+                },
+              ]}
+              consent="One confirm on the profile is the whole consent; the notes are never counted, shown, or asked about."
+              steps={[
+                "Open Settings from the status bar, or ⌘P → “Open settings → Literature note profiles”.",
+                "Read the rows: name, folder · style · document. Nothing counts the notes.",
+                "Press the trash icon on the subject profile — or open its page and press “Delete profile”.",
+                "Read the dialog: it speaks of stamps and IDs, never of your notes. Confirm.",
+                "The row is gone from the list. Nothing else in settings mentions it again.",
+                "Look at the note Properties: zotlit-profile is a bare UUID with no name.",
+                "⌘P → “Update literature note from Zotero”: the notice repeats the UUID; the imported note gets its own notice.",
+                "⌘P → “Switch literature note profile…”: labels only, and the deleted one is simply absent.",
+              ]}
+              extras={
+                <div>
+                  <p className="text-muted leading-relaxed">
+                    The stamp is the raw{" "}
+                    <span className="text-ink font-mono">zotlit-profile</span> UUID,
+                    the way the note reads today — no label memory, no pill.
+                  </p>
+                  {deletedIds.length ? (
+                    <div className="mt-2">
+                      {deletedIds.map((id) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => actions.recreateProfileWithSameId(id)}
+                          className="border-line text-muted hover:bg-ground mt-1 block w-full cursor-pointer rounded border px-2 py-[4px] text-left text-[11px] leading-snug"
+                        >
+                          (simulate: recreate with the same ID — requires pasting the
+                          UUID into settings JSON)
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              }
+            />
+          </div>
+        );
+      }
+      // --- Variant A END ---
+
+      // --- Variant B ---
+      // Variant B — "Refuse while referenced" (referential integrity).
+      // A Profile that notes still point at cannot be deleted. The trash icon opens a dialog that
+      // counts the notes in the researcher's words, shows them, and offers to move them; the Delete
+      // button stays disabled until the count is zero. Nothing is ever stale, so the stamp is the
+      // default stamp, "Update from Zotero" always works, and the picker never has to explain a
+      // missing Profile. The bill for that guarantee is paid by the researcher who only wanted to
+      // tidy: RETIRE has to move 12 finished notes before the Profile can go.
+
+      function vb_notesLine(count) {
+        return count === 1 ? "1 literature note" : `${count} literature notes`;
+      }
+
+      function vb_importedLine(count) {
+        return count === 1 ? "1 imported note" : `${count} imported notes`;
+      }
+
+      /** The dialog body, in note words: the count is the researcher's own situation. */
+      function vb_deleteBody(profile) {
+        if (profile.noteCount === 0)
+          return "No notes use it.";
+        const imported =
+          profile.importedCount > 0
+            ? ` (and ${vb_importedLine(profile.importedCount)})`
+            : "";
+        return `${vb_notesLine(profile.noteCount)}${imported} use this profile. Move them to another profile first, then delete it.`;
+      }
+
+      /** ↑↓ / ↵ / Esc for the Switch Profile picker. */
+      function vb_navKeys(evt, { count, index, setIndex, onChoose, onClose }) {
+        if (evt.key === "ArrowDown") {
+          evt.preventDefault();
+          setIndex(count === 0 ? 0 : (index + 1) % count);
+        } else if (evt.key === "ArrowUp") {
+          evt.preventDefault();
+          setIndex(count === 0 ? 0 : (index - 1 + count) % count);
+        } else if (evt.key === "Enter") {
+          evt.preventDefault();
+          if (count > 0) onChoose(index);
+        } else if (evt.key === "Escape") {
+          evt.preventDefault();
+          onClose();
+        }
+      }
+
+      function VariantB() {
+        const { state, actions } = useProtoState();
+
+        // Settings modal: closed | { page: "profiles" } | { page: "profile", profileId }
+        const [settings, setSettings] = useState(null);
+        // The delete dialog reads the live record every render — { profileId } or null.
+        const [deleteFor, setDeleteFor] = useState(null);
+        // The batched Switch Profile dialog — { fromId } or null.
+        const [moveFor, setMoveFor] = useState(null);
+        const [moveToId, setMoveToId] = useState(null);
+        const [moveOptions, setMoveOptions] = useState({
+          moveFiles: false,
+          includeImported: true,
+        });
+        // null | "palette" | "picker"
+        const [surface, setSurface] = useState(null);
+        const [pickerQuery, setPickerQuery] = useState("");
+        const [pickerIndex, setPickerIndex] = useState(0);
+
+        const subject = profileById(state, state.subjectProfileId);
+        const note = activeNote(state);
+        const noteProfile = note ? profileById(state, note.profileId) : null;
+
+        // The scenario preset reseeds the store; every local surface goes back to closed.
+        useEffect(() => {
+          setSettings(null);
+          setDeleteFor(null);
+          setMoveFor(null);
+          setMoveToId(null);
+          setMoveOptions({ moveFiles: false, includeImported: true });
+          setSurface(null);
+          setPickerQuery("");
+          setPickerIndex(0);
+        }, [state.scenario]);
+
+        // Esc closes the topmost surface, in stacking order.
+        useEffect(() => {
+          const onKey = (e) => {
+            if (e.key !== "Escape") return;
+            if (moveFor) setMoveFor(null);
+            else if (deleteFor) setDeleteFor(null);
+            else if (surface) setSurface(null);
+            else if (settings) setSettings(null);
+          };
+          window.addEventListener("keydown", onKey);
+          return () => window.removeEventListener("keydown", onKey);
+        }, [moveFor, deleteFor, surface, settings]);
+
+        function openSettings(page = { page: "profiles" }) {
+          setSurface(null);
+          setSettings(page);
+        }
+
+        function askDelete(id) {
+          setDeleteFor({ profileId: id });
+        }
+
+        function openMove(fromId) {
+          setMoveToId(null); // Default is the target the fold scenario wants
+          setMoveOptions({ moveFiles: false, includeImported: true });
+          setMoveFor({ fromId });
+        }
+
+        function showNotesOf(id) {
+          const p = profileById(state, id);
+          const back = settings ?? { page: "profiles" };
+          // The search pane lives in the workspace, behind the settings modal: close settings so
+          // the researcher can read the result, and offer the way back in one click.
+          setDeleteFor(null);
+          setSettings(null);
+          actions.showNotes(id);
+          actions.notify(
+            `${vb_notesLine(p.noteCount)} are stamped “${p.label}”.`,
+            {
+              label: "Back to profile settings",
+              onClick: () => {
+                setSettings(back);
+                setDeleteFor({ profileId: id });
+              },
+            },
+          );
+        }
+
+        function confirmMove() {
+          const from = profileById(state, moveFor.fromId);
+          const to = profileById(state, moveToId);
+          const result = actions.moveNotes(moveFor.fromId, moveToId, moveOptions);
+          setMoveFor(null);
+          // Straight back to the delete dialog, which now counts zero notes.
+          setDeleteFor({ profileId: from.id });
+          if (result)
+            actions.notify(
+              `Moved ${result.moved} notes to ${to.label}. “${from.label}” has no notes now.`,
+            );
+        }
+
+        function confirmDelete(id) {
+          const p = profileById(state, id);
+          actions.deleteProfile(id);
+          setDeleteFor(null);
+          setSettings({ page: "profiles" });
+          actions.notify(`Deleted the “${p.label}” profile.`);
+        }
+
+        function updateActiveNote() {
+          if (!note) return;
+          // Nothing is ever stale in this variant, so the plain result is the whole story.
+          actions.updateFromZotero(note.key);
+          if (note.imported > 0)
+            actions.notify(
+              `Its ${vb_importedLine(note.imported)} updated under the same profile, “${
+                noteProfile ? noteProfile.label : "Default"
+              }”.`,
+            );
+        }
+
+        // --- Switch Profile picker ---------------------------------------------
+        const pickerRows = useMemo(() => {
+          const q = pickerQuery.trim().toLocaleLowerCase();
+          const rows = state.profiles.filter((p) => p.status === "active");
+          return q
+            ? rows.filter((p) => p.label.toLocaleLowerCase().includes(q))
+            : rows;
+        }, [state.profiles, pickerQuery]);
+
+        function choosePickerRow(i) {
+          const p = pickerRows[i];
+          if (!p) return;
+          setSurface(null);
+          setPickerQuery("");
+          setPickerIndex(0);
+          actions.notify(
+            `“${p.label}” — a single-note re-stamp is the Switch Profile flow (#904); this deletion prototype leaves the stamp as it is.`,
+          );
+        }
+
+        // --- Overlays ------------------------------------------------------------
+        // The settings modal is the bottom layer; a dialog, the palette or the picker sits on
+        // top of it on its own scrim, the way Obsidian stacks a confirm over an open settings tab.
+        let settingsNode = null;
+        let topNode = null;
+
+        if (settings) {
+          settingsNode = (
+            <SettingsModal
+              open
+              onClose={() => setSettings(null)}
+              title="Literature note profiles"
+            >
+              {settings.page === "profiles" ? (
+                <ProfilesPage
+                  onDelete={askDelete}
+                  onOpen={(id) => setSettings({ page: "profile", profileId: id })}
+                  banner={
+                    <Banner
+                      tone="muted"
+                      text="A profile can be deleted once no note points at it. The note count on each row is what the delete dialog checks."
+                    />
+                  }
+                />
+              ) : (
+                <ProfilePage
+                  profileId={settings.profileId}
+                  onBack={() => setSettings({ page: "profiles" })}
+                  onDelete={askDelete}
+                />
+              )}
+            </SettingsModal>
+          );
+        }
+
+        if (surface === "palette") {
+          topNode = (
+            <CommandPalette
+              open
+              onClose={() => setSurface(null)}
+              items={[
+                {
+                  label: "Open settings → Literature note profiles",
+                  onSelect: () => openSettings(),
+                },
+                {
+                  label: "Update literature note from Zotero",
+                  onSelect: () => {
+                    setSurface(null);
+                    updateActiveNote();
+                  },
+                },
+                {
+                  label: "Switch literature note profile…",
+                  onSelect: () => {
+                    setPickerQuery("");
+                    setPickerIndex(0);
+                    setSurface("picker");
+                  },
+                },
+              ]}
+            />
+          );
+        } else if (surface === "picker") {
+          topNode = (
+            <Prompt
+              placeholder="Choose a profile…"
+              value={pickerQuery}
+              onChange={(v) => {
+                setPickerQuery(v);
+                setPickerIndex(0);
+              }}
+              onKeyDown={(e) =>
+                vb_navKeys(e, {
+                  count: pickerRows.length,
+                  index: pickerIndex,
+                  setIndex: setPickerIndex,
+                  onChoose: choosePickerRow,
+                  onClose: () => setSurface(null),
+                })
+              }
+              instructions={[
+                { command: "↑↓", purpose: "to navigate" },
+                { command: "↵", purpose: "to choose" },
+                { command: "esc", purpose: "to dismiss" },
+              ]}
+              header={
+                <div className="text-muted px-4 py-2 text-[12px] leading-relaxed">
+                  Every profile here is a live one. A deleted profile never appears in
+                  this list, because a profile can only be deleted once no note points
+                  at it.
+                </div>
+              }
+            >
+              {pickerRows.map((p, i) => (
+                <SuggestRow
+                  key={p.id ?? "default"}
+                  selected={i === pickerIndex}
+                  onClick={() => choosePickerRow(i)}
+                  title={p.label}
+                  note={PROFILE_DISPLAY(p)}
+                  badge={
+                    note && (p.id ?? null) === (note.profileId ?? null)
+                      ? "current"
+                      : null
+                  }
+                  aside={`${p.noteCount} notes`}
+                />
+              ))}
+            </Prompt>
+          );
+        }
+
+        if (deleteFor) {
+          const p = profileById(state, deleteFor.profileId);
+          if (p) {
+            const blocked = p.noteCount > 0;
+            const buttons = blocked
+              ? [
+                  { label: "Show these notes", onClick: () => showNotesOf(p.id) },
+                  {
+                    label: `Move ${p.noteCount} notes…`,
+                    onClick: () => openMove(p.id),
+                    cta: true,
+                  },
+                  { label: "Delete profile", destructive: true, disabled: true },
+                  { label: "Cancel", onClick: () => setDeleteFor(null) },
+                ]
+              : [
+                  { label: "Cancel", onClick: () => setDeleteFor(null) },
+                  {
+                    label: "Delete profile",
+                    onClick: () => confirmDelete(p.id),
+                    destructive: true,
+                  },
+                ];
+            topNode = (
+              <Dialog
+                width={blocked ? 540 : 420}
+                title={`Delete “${p.label}” profile?`}
+                body={
+                  <div className="flex flex-col gap-2">
+                    <p className="leading-relaxed">{vb_deleteBody(p)}</p>
+                    {blocked ? (
+                      <p className="text-muted leading-relaxed">
+                        Until then the notes keep working exactly as they do now: they
+                        open, they link, and they update from Zotero.
+                      </p>
+                    ) : null}
+                  </div>
+                }
+                actions={buttons}
+              />
+            );
+          }
+        }
+
+        if (moveFor) {
+          const from = profileById(state, moveFor.fromId);
+          const to = profileById(state, moveToId);
+          topNode = (
+            <MoveNotesDialog
+              from={from}
+              to={to}
+              onTo={setMoveToId}
+              options={moveOptions}
+              onOptions={setMoveOptions}
+              onConfirm={confirmMove}
+              onCancel={() => setMoveFor(null)}
+              title={`Move ${from.noteCount} notes to another profile`}
+              cta={`Move ${from.noteCount} notes`}
+              intro={
+                <p className="leading-relaxed">
+                  {vb_notesLine(from.noteCount)} use “{from.label}”. They keep their
+                  own text; only the stamp changes.
+                </p>
+              }
+            />
+          );
+        }
+
+        const overlay =
+          settingsNode || topNode ? (
+            <>
+              {settingsNode}
+              {topNode ? (
+                <div
+                  className="absolute inset-0 flex items-center justify-center"
+                  style={{ background: "rgba(0,0,0,0.28)" }}
+                >
+                  {topNode}
+                </div>
+              ) : null}
+            </>
+          ) : null;
+
+        const statusItems = (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="border-line text-ink hover:bg-ground-2 cursor-pointer rounded border px-2 py-[2px]"
+              onClick={() => openSettings()}
+            >
+              Settings
+            </button>
+            <button
+              type="button"
+              className="border-line text-muted hover:bg-ground-2 cursor-pointer rounded border px-2 py-[2px]"
+              onClick={() => setSurface("palette")}
+            >
+              ⌘P
+            </button>
+            <button
+              type="button"
+              className="border-line text-muted hover:bg-ground-2 cursor-pointer rounded border px-2 py-[2px]"
+              onClick={updateActiveNote}
+            >
+              Update from Zotero
+            </button>
+          </div>
+        );
+
+        const steps = [
+          "Open Settings from the status bar (or ⌘P → “Open settings → Literature note profiles”).",
+          `Read the row for “${subject ? subject.label : "the profile"}”: the pill counts the notes that point at it.`,
+          "Press its trash icon. The dialog states the count and the Delete button is disabled.",
+          "Press “Show these notes” — settings close and the search pane lists the stamped notes; the notice brings you back.",
+          "Press the “Move … notes” button, pick a target, read the consequences, confirm.",
+          "The delete dialog comes back with no notes left, and Delete is now enabled.",
+          "Run “Update literature note from Zotero” at any point in the flow — it always works, before and after.",
+          "Compare with “Scratch” (0 notes): one short confirm, no move, no tax.",
+          "The tax is real: the RETIRE researcher must move 12 finished notes (and 3 imported) into another profile before the Thesis profile can be tidied away.",
+        ];
+
+        return (
+          <div
+            className="grid h-full"
+            style={{ gridTemplateColumns: "minmax(0,1fr) 300px" }}
+          >
+            <ObsidianFrame
+              title="ZotLit — refuse while referenced"
+              statusItems={statusItems}
+              overlay={overlay}
+            />
+            <Rail
+              thesis="A profile that notes still use cannot be deleted — the dialog counts the notes, shows them, and offers to move them; stale never exists."
+              answers={[
+                {
+                  q: "What happens to my forty notes?",
+                  a: "They must move first; you choose where, with consequences stated.",
+                },
+                {
+                  q: "Can I still update them?",
+                  a: "Always — a note can never point at a missing profile.",
+                },
+                {
+                  q: "How do I get it back?",
+                  a: "Nothing to get back: a referenced profile cannot be deleted; an unreferenced one is one Add away.",
+                },
+              ]}
+              consent="Deletion is refused while the count is above zero; the only way down to zero is a consented batch move that states what it re-renders."
+              steps={steps}
+              extras={
+                <div>
+                  <p className="text-muted leading-relaxed">
+                    The stamp stays the default one: no danger pill, no “(deleted
+                    profile)”, no raw UUID to read, because the state that needs those
+                    words cannot be reached.
+                  </p>
+                  <p className="text-muted mt-2 leading-relaxed">
+                    The cost lands on the tidy-up: RETIRE pays a 12-note move for
+                    housekeeping it never asked to do.
+                  </p>
+                </div>
+              }
+            />
+          </div>
+        );
+      }
+      // --- Variant B END ---
+
+      // --- Variant C ---
+      // Variant C — Delete, visibly stale.
+      // Deletion is allowed and immediate, exactly as today. What changes is that the cost is
+      // named everywhere the researcher meets it: the delete dialog states it in note words, a
+      // danger banner on the Profiles page counts the orphaned notes and offers the batch move,
+      // the Properties stamp carries a "deleted profile" pill plus an inline switch, the
+      // use-time notice carries a "Switch profile…" button, and the picker never lists the
+      // deleted Profile. Recovery = batch move from the banner, or a per-note switch.
+
+      /** Keyboard for every Prompt: ↑↓ move, ↵ choose, Esc close. */
+      function vc_navKeys(evt, { count, index, setIndex, onChoose, onClose }) {
+        if (evt.key === "ArrowDown") {
+          evt.preventDefault();
+          setIndex(count === 0 ? 0 : (index + 1) % count);
+        } else if (evt.key === "ArrowUp") {
+          evt.preventDefault();
+          setIndex(count === 0 ? 0 : (index - 1 + count) % count);
+        } else if (evt.key === "Enter") {
+          evt.preventDefault();
+          if (count > 0) onChoose(index);
+        } else if (evt.key === "Escape") {
+          evt.preventDefault();
+          onClose();
+        }
+      }
+
+      /** "40 literature notes and 6 imported notes" — the researcher's own situation. */
+      function vc_countPhrase(profile) {
+        const notes = `${profile.noteCount} literature note${profile.noteCount === 1 ? "" : "s"}`;
+        if (!profile.importedCount) return notes;
+        return `${notes} and ${profile.importedCount} imported note${
+          profile.importedCount === 1 ? "" : "s"
+        }`;
+      }
+
+      /** The imported-note twin line of the use-time diagnostic. */
+      function vc_importedTwin(count) {
+        return count === 1
+          ? "1 imported note of this item waits for the same switch."
+          : `${count} imported notes of this item wait for the same switch.`;
+      }
+
+      /** The first tombstone that still owns notes — the one the banner speaks for. */
+      function vc_staleTombstone(state) {
+        const entry = Object.entries(state.deletedProfiles).find(
+          ([, rec]) => rec.noteCount > 0,
+        );
+        return entry ? { id: entry[0], ...entry[1] } : null;
+      }
+
+      function VariantC() {
+        const { state, actions } = useProtoState();
+
+        // Settings: null | { page: "profiles" } | { page: "profile", id }
+        const [settings, setSettings] = useState(null);
+        const [palette, setPalette] = useState(false);
+        // Switch Profile picker for the active note.
+        const [picker, setPicker] = useState(false);
+        const [query, setQuery] = useState("");
+        const [index, setIndex] = useState(0);
+        // The topmost modal: null
+        //   | { kind: "delete", id }
+        //   | { kind: "move", fromId, toId, options }
+        //   | { kind: "switch", targetId, moveFile, includeImported }
+        const [dialog, setDialog] = useState(null);
+
+        // The scenario preset reseeds the store, so every local surface goes back to closed.
+        useEffect(() => {
+          setSettings(null);
+          setPalette(false);
+          setPicker(false);
+          setDialog(null);
+          setQuery("");
+          setIndex(0);
+        }, [state.scenario]);
+
+        const note = activeNote(state);
+        const info = stampLabel(state, note);
+        const tombstone = vc_staleTombstone(state);
+        const subject = profileById(state, state.subjectProfileId);
+
+        // Only live Profiles are offered anywhere; a deleted one is never a target.
+        const choices = useMemo(() => {
+          const q = query.trim().toLocaleLowerCase();
+          const live = state.profiles.filter((p) => p.status === "active");
+          return q
+            ? live.filter((p) => p.label.toLocaleLowerCase().includes(q))
+            : live;
+        }, [state.profiles, query]);
+
+        function closeTopmost() {
+          if (dialog) setDialog(null);
+          else if (picker) setPicker(false);
+          else if (palette) setPalette(false);
+          else if (settings) setSettings(null);
+        }
+
+        // Esc closes the topmost modal. The Prompt-based surfaces also close themselves; both
+        // paths land on the same state, so the double handling is harmless.
+        useEffect(() => {
+          const onKey = (e) => {
+            if (e.key !== "Escape") return;
+            closeTopmost();
+          };
+          window.addEventListener("keydown", onKey);
+          return () => window.removeEventListener("keydown", onKey);
+        });
+
+        function openPicker() {
+          setDialog(null);
+          setSettings(null);
+          setPalette(false);
+          setQuery("");
+          setIndex(0);
+          setPicker(true);
+        }
+
+        function openMove(fromId) {
+          setDialog({
+            kind: "move",
+            fromId,
+            toId: null,
+            options: { moveFiles: false, includeImported: true },
+          });
+        }
+
+        function showNotesOf(id) {
+          actions.showNotes(id);
+          setDialog(null);
+          setSettings(null);
+        }
+
+        // --- Use-time diagnostic ------------------------------------------------
+        function updateActiveFromZotero() {
+          if (!note) return;
+          const current = stampLabel(state, note);
+          const result = actions.updateFromZotero(note.key, { silent: true });
+          if (result.ok) {
+            actions.notify(`Updated ${note.path} from Zotero`);
+            return;
+          }
+          actions.notify(
+            `“${current.label}” profile was deleted. Switch this note to another profile to update it.`,
+            { label: "Switch profile…", onClick: openPicker },
+          );
+          if (note.imported > 0) actions.notify(vc_importedTwin(note.imported));
+        }
+
+        // --- Overlays -----------------------------------------------------------
+        let overlay = null;
+
+        if (settings) {
+          const banner = tombstone ? (
+            <Banner
+              tone="danger"
+              text={`${tombstone.noteCount} notes use the deleted profile “${tombstone.label}”. Move them to another profile to resume updates.`}
+              action={{ label: "Move them…", onClick: () => openMove(tombstone.id) }}
+            />
+          ) : null;
+
+          overlay = (
+            <SettingsModal
+              open
+              onClose={() => setSettings(null)}
+              title={
+                settings.page === "profile"
+                  ? profileById(state, settings.id)?.label ?? "Profile"
+                  : "Literature note profiles"
+              }
+            >
+              {settings.page === "profile" ? (
+                <ProfilePage
+                  profileId={settings.id}
+                  onBack={() => setSettings({ page: "profiles" })}
+                  onDelete={(id) => setDialog({ kind: "delete", id })}
+                />
+              ) : (
+                <ProfilesPage
+                  banner={banner}
+                  onOpen={(id) => setSettings({ page: "profile", id })}
+                  onDelete={(id) => setDialog({ kind: "delete", id })}
+                />
+              )}
+            </SettingsModal>
+          );
+        }
+
+        if (palette) {
+          overlay = (
+            <CommandPalette
+              open
+              onClose={() => setPalette(false)}
+              items={[
+                {
+                  label: "Open settings → Literature note profiles",
+                  onSelect: () => {
+                    setPalette(false);
+                    setSettings({ page: "profiles" });
+                  },
+                },
+                {
+                  label: "Update literature note from Zotero",
+                  onSelect: () => {
+                    setPalette(false);
+                    updateActiveFromZotero();
+                  },
+                },
+                {
+                  label: "Switch literature note profile…",
+                  onSelect: openPicker,
+                },
+              ]}
+            />
+          );
+        }
+
+        if (picker) {
+          const current = info;
+          overlay = (
+            <Prompt
+              placeholder="Choose a profile…"
+              value={query}
+              onChange={(v) => {
+                setQuery(v);
+                setIndex(0);
+              }}
+              onKeyDown={(e) =>
+                vc_navKeys(e, {
+                  count: choices.length,
+                  index,
+                  setIndex,
+                  onChoose: (i) =>
+                    setDialog({
+                      kind: "switch",
+                      targetId: choices[i].id,
+                      moveFile: false,
+                      includeImported: true,
+                    }),
+                  onClose: () => setPicker(false),
+                })
+              }
+              header={
+                current ? (
+                  <div
+                    className="px-4 py-[7px] text-[12px]"
+                    style={
+                      current.status === "deleted" ? { color: "var(--danger)" } : undefined
+                    }
+                  >
+                    {current.status === "deleted"
+                      ? `Current: ${current.label} (deleted)`
+                      : `Current: ${current.label}`}
+                  </div>
+                ) : null
+              }
+              instructions={[
+                { command: "↑↓", purpose: "to navigate" },
+                { command: "↵", purpose: "to choose" },
+                { command: "esc", purpose: "to dismiss" },
+              ]}
+            >
+              {choices.map((p, i) => (
+                <SuggestRow
+                  key={p.id ?? "default"}
+                  selected={i === index}
+                  onClick={() =>
+                    setDialog({
+                      kind: "switch",
+                      targetId: p.id,
+                      moveFile: false,
+                      includeImported: true,
+                    })
+                  }
+                  title={p.label}
+                  note={PROFILE_DISPLAY(p)}
+                  badge={note && p.id === note.profileId ? "current" : null}
+                />
+              ))}
+            </Prompt>
+          );
+        }
+
+        if (dialog?.kind === "delete") {
+          const p = profileById(state, dialog.id);
+          const referenced = p && p.noteCount > 0;
+          overlay = (
+            <Dialog
+              width={470}
+              title={`Delete “${p?.label}” profile?`}
+              body={
+                <div className="flex flex-col gap-3">
+                  <p className="leading-relaxed">
+                    {referenced
+                      ? `${vc_countPhrase(p)} use this profile. They keep their text and open normally. Updating them from Zotero pauses until you move them to another profile.`
+                      : "No notes use this profile. Deleting it changes nothing else."}
+                  </p>
+                  {referenced ? (
+                    <button
+                      onClick={() => openMove(dialog.id)}
+                      className="text-muted cursor-pointer self-start border-0 bg-transparent p-0 text-[12px] underline underline-offset-2"
+                    >
+                      Move notes first…
+                    </button>
+                  ) : null}
+                </div>
+              }
+              actions={[
+                { label: "Cancel", onClick: () => setDialog(null) },
+                ...(referenced
+                  ? [{ label: "Show these notes", onClick: () => showNotesOf(dialog.id) }]
+                  : []),
+                {
+                  label: "Delete profile",
+                  destructive: true,
+                  onClick: () => {
+                    actions.deleteProfile(dialog.id);
+                    setDialog(null);
+                    setSettings({ page: "profiles" });
+                  },
+                },
+              ]}
+            />
+          );
+        }
+
+        if (dialog?.kind === "move") {
+          // The source can be a tombstone: profileById returns it with status "deleted", and the
+          // base moveNotes re-stamps its notes and drops the tombstone when it empties.
+          const from = profileById(state, dialog.fromId);
+          const to = profileById(state, dialog.toId);
+          overlay = (
+            <MoveNotesDialog
+              from={from}
+              to={to}
+              onTo={(id) => setDialog({ ...dialog, toId: id })}
+              options={dialog.options}
+              onOptions={(o) => setDialog({ ...dialog, options: o })}
+              onCancel={() => setDialog(null)}
+              onConfirm={() => {
+                const result = actions.moveNotes(dialog.fromId, dialog.toId, dialog.options);
+                setDialog(null);
+                setSettings({ page: "profiles" });
+                if (result) actions.notify(result.line);
+              }}
+              title={
+                from?.status === "deleted"
+                  ? `Move ${from.noteCount} notes from the deleted “${from.label}”`
+                  : `Move ${from?.noteCount} notes from “${from?.label}”`
+              }
+              cta={`Move ${from?.noteCount} notes`}
+              intro={
+                from?.status === "deleted" ? (
+                  <p className="leading-relaxed">
+                    These notes still carry the stamp of a profile that no longer exists. Moving
+                    them puts them back under a live profile and updates resume.
+                  </p>
+                ) : null
+              }
+            />
+          );
+        }
+
+        if (dialog?.kind === "switch" && note) {
+          const target = profileById(state, dialog.targetId);
+          const from = profileById(state, note.profileId);
+          const checkboxes = [];
+          if (from && target && from.folder !== target.folder)
+            checkboxes.push({
+              label: `Move the file to ${target.folder}/`,
+              note: "The note keeps its name; only the folder changes.",
+              checked: dialog.moveFile,
+              onChange: (v) => setDialog({ ...dialog, moveFile: v }),
+            });
+          if (note.imported > 0)
+            checkboxes.push({
+              label: `Also switch ${note.imported} imported note${note.imported === 1 ? "" : "s"}`,
+              note: "Imported notes belong to the same Zotero item.",
+              checked: dialog.includeImported,
+              onChange: (v) => setDialog({ ...dialog, includeImported: v }),
+            });
+          overlay = (
+            <Dialog
+              width={470}
+              title={`Switch this note to “${target?.label}”?`}
+              body={
+                <p className="leading-relaxed">
+                  Managed content and properties re-render from{" "}
+                  {target?.document ?? "the built-in template"} on the next update. Text outside
+                  the managed region stays unchanged.
+                </p>
+              }
+              checkboxes={checkboxes}
+              actions={[
+                { label: "Cancel", onClick: () => setDialog(null) },
+                {
+                  label: `Switch to “${target?.label}”`,
+                  cta: true,
+                  onClick: () => {
+                    // Prototype limitation: the shared store only re-stamps a whole Profile
+                    // (moveNotes moves every note of the source). A single-note switch has no
+                    // store action, so this path reports the outcome through the notice and the
+                    // log instead of mutating the store. The batch move from the banner is the
+                    // path that really changes state.
+                    actions.notify(`Switched ${note.path} to ${target?.label}`);
+                    setDialog(null);
+                    setPicker(false);
+                  },
+                },
+              ]}
+            />
+          );
+        }
+
+        // --- Stamp --------------------------------------------------------------
+        function stampRender(activeNoteRecord, stampInfo) {
+          if (stampInfo?.status !== "deleted") return <DefaultStamp info={stampInfo} />;
+          return (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <span>{stampInfo.label}</span>
+              <span className="text-muted font-mono text-[11px] break-all">
+                {stampInfo.secondary}
+              </span>
+              <Pill tone="danger">deleted profile</Pill>
+              <button
+                onClick={openPicker}
+                className="text-accent cursor-pointer border-0 bg-transparent p-0 text-[12px] underline underline-offset-2"
+              >
+                Switch profile…
+              </button>
+            </span>
+          );
+        }
+
+        const statusItems = (
+          <div className="flex items-center gap-2">
+            {tombstone ? (
+              <span style={{ color: "var(--danger)" }}>
+                {tombstone.noteCount} notes on a deleted profile
+              </span>
+            ) : null}
+            <button
+              type="button"
+              className="border-line text-ink hover:bg-ground-2 cursor-pointer rounded border px-2 py-[2px]"
+              onClick={() => setSettings({ page: "profiles" })}
+            >
+              Settings
+            </button>
+            <button
+              type="button"
+              className="border-line text-muted hover:bg-ground-2 cursor-pointer rounded border px-2 py-[2px]"
+              onClick={() => setPalette(true)}
+            >
+              ⌘P
+            </button>
+          </div>
+        );
+
+        return (
+          <div className="grid h-full" style={{ gridTemplateColumns: "minmax(0,1fr) 300px" }}>
+            <ObsidianFrame
+              title={note ? note.path.split("/").pop() : "No file open"}
+              overlay={overlay}
+              statusItems={statusItems}
+              stampRender={stampRender}
+            />
+            <Rail
+              thesis="Deleting is allowed and immediate; the cost lands on the notes, so every place the researcher meets a stale note names it and offers the fix."
+              consent="Delete asks once and states the consequence in note words; the re-stamp itself is never silent — it happens only through a move or a switch the researcher confirms."
+              answers={[
+                {
+                  q: "What happens to my forty notes?",
+                  a: "They stay as they are; updates pause; a banner and each note tell you and offer the move.",
+                },
+                {
+                  q: "Can I still update them?",
+                  a: "Not until you move the note to another profile — one click from the notice.",
+                },
+                {
+                  q: "How do I get it back?",
+                  a: "No restore: recreate a profile and move the notes into it.",
+                },
+              ]}
+              steps={[
+                "Open Settings from the status bar (or ⌘P → “Open settings → Literature note profiles”).",
+                `Press the trash icon on “${subject?.label ?? "the subject"}”, or open its page and use “Delete profile”.`,
+                "Read the dialog: it counts the notes and says updating pauses. Try “Show these notes” — it runs the vault search.",
+                "Press “Delete profile”. The Profiles list comes back with a danger banner counting the orphaned notes.",
+                "Close settings and look at the note’s Properties: the stamp keeps the name, adds a “deleted profile” pill and a “Switch profile…” link.",
+                "⌘P → “Update literature note from Zotero”. The notice names the deleted profile and carries the fix; the imported notes get their own line.",
+                "Open the picker (stamp link, notice button, or ⌘P). The deleted profile is not listed; the header says it is the current one.",
+                "Re-open Settings and press “Move them…” on the banner to re-stamp all of them at once; the banner disappears.",
+              ]}
+              extras={
+                <p className="text-muted leading-relaxed">
+                  The per-note switch reports through the notice and the log only — the shared
+                  store re-stamps a whole Profile at a time, so the batch move from the banner is
+                  the path that changes state here.
+                </p>
+              }
+            />
+          </div>
+        );
+      }
+      // --- Variant C END ---
+
+      // --- Variant D ---
+      // Variant D — Delete = move.
+      // Deleting a referenced Profile IS the #904 Switch Profile consequences dialog, batched:
+      // pick the target, state the consequences, re-stamp all of its notes, then drop the record.
+      // A stale stamp never comes into existence, so no surface has to render one. A 10-second
+      // Notice offers Undo; this prototype restores the record and says out loud that re-stamping
+      // the notes back is only simulated (see vd_undo).
+
+      function vd_label(p) {
+        return p ? p.label : "Default";
+      }
+
+      /** Keyboard for the Switch Profile picker: ↑↓ move, ↵ choose, Esc close. */
+      function vd_navKeys(evt, { count, index, setIndex, onChoose, onClose }) {
+        if (evt.key === "ArrowDown") {
+          evt.preventDefault();
+          setIndex(count === 0 ? 0 : (index + 1) % count);
+        } else if (evt.key === "ArrowUp") {
+          evt.preventDefault();
+          setIndex(count === 0 ? 0 : (index - 1 + count) % count);
+        } else if (evt.key === "Enter") {
+          evt.preventDefault();
+          if (count > 0) onChoose(index);
+        } else if (evt.key === "Escape") {
+          evt.preventDefault();
+          onClose();
+        }
+      }
+
+      function vd_noteWord(n) {
+        return n === 1 ? "note" : "notes";
+      }
+
+      /** "40 literature notes and 6 imported notes use it." — the researcher's own numbers. */
+      function vd_useLine(p) {
+        const notes = `${p.noteCount} literature ${vd_noteWord(p.noteCount)}`;
+        if (p.importedCount > 0)
+          return `${notes} and ${p.importedCount} imported ${vd_noteWord(p.importedCount)} use it.`;
+        return `${notes} use it.`;
+      }
+
+      function VariantD() {
+        const { state, actions } = useProtoState();
+
+        const [settingsOpen, setSettingsOpen] = useState(false);
+        const [page, setPage] = useState("profiles"); // "profiles" | profileId
+        // null | { kind: "move" | "simple", id }
+        const [dialog, setDialog] = useState(null);
+        const [target, setTarget] = useState(null); // last active choice; Default at first
+        const [options, setOptions] = useState({ moveFiles: false, includeImported: true });
+        const [pickerOpen, setPickerOpen] = useState(false);
+        const [pickerQuery, setPickerQuery] = useState("");
+        const [pickerIndex, setPickerIndex] = useState(0);
+        const [paletteOpen, setPaletteOpen] = useState(false);
+
+        // The scenario preset reseeds the store; drop every piece of local UI state with it.
+        useEffect(() => {
+          setSettingsOpen(false);
+          setPage("profiles");
+          setDialog(null);
+          setTarget(null);
+          setOptions({ moveFiles: false, includeImported: true });
+          setPickerOpen(false);
+          setPickerQuery("");
+          setPickerIndex(0);
+          setPaletteOpen(false);
+        }, [state.scenario]);
+
+        function closeTopmost() {
+          if (dialog) setDialog(null);
+          else if (pickerOpen) setPickerOpen(false);
+          else if (paletteOpen) setPaletteOpen(false);
+          else if (settingsOpen) setSettingsOpen(false);
+        }
+
+        useEffect(() => {
+          const onKey = (e) => {
+            if (e.key !== "Escape") return;
+            if (dialog || pickerOpen || paletteOpen || settingsOpen) {
+              e.preventDefault();
+              closeTopmost();
+            }
+          };
+          window.addEventListener("keydown", onKey);
+          return () => window.removeEventListener("keydown", onKey);
+        });
+
+        const note = activeNote(state);
+
+        // --- Delete ------------------------------------------------------------
+        function openDelete(id) {
+          const p = profileById(state, id);
+          if (!p) return;
+          if (p.noteCount === 0) {
+            setDialog({ kind: "simple", id });
+            return;
+          }
+          // Default target: Default, or the last target the researcher chose.
+          const stillThere = state.profiles.some(
+            (x) => x.status === "active" && x.id === target && x.id !== id,
+          );
+          setTarget(stillThere ? target : null);
+          setOptions({ moveFiles: false, includeImported: true });
+          setDialog({ kind: "move", id });
+        }
+
+        // Restores the tombstoned record. It comes back with 0 notes, because the notes really
+        // did move — the base `moveNotes` re-stamps EVERY note of a Profile, so moving them back
+        // would drag the target's own notes along with them. An honest Undo needs the plugin to
+        // remember which notes this one deletion moved (a per-deletion record); the prototype
+        // says so instead of faking it.
+        function vd_undo(id, moved) {
+          actions.restoreProfile(id);
+          actions.notify(
+            `Undo restored the profile; re-stamping back the ${moved} ${vd_noteWord(moved)} is simulated`,
+          );
+        }
+
+        function confirmDelete() {
+          const id = dialog.id;
+          const from = profileById(state, id);
+          const to = profileById(state, target);
+          if (!from || !to) return;
+          const strandedImported = options.includeImported ? 0 : from.importedCount;
+          const result = actions.moveNotes(id, target, options);
+          actions.deleteProfile(id);
+          const moved = result?.moved ?? from.noteCount;
+          actions.notify(
+            `Deleted “${from.label}”; ${moved} ${vd_noteWord(moved)} moved to ${to.label}.`,
+            { label: "Undo", onClick: () => vd_undo(id, moved) },
+          );
+          if (strandedImported > 0)
+            actions.notify(
+              `${strandedImported} imported ${vd_noteWord(strandedImported)} stayed behind on the deleted profile — leave the checkbox on to keep nothing stale.`,
+            );
+          setDialog(null);
+          setPage("profiles");
+          // The frame paints its overlay above the notices, so a settings modal left open would
+          // bury the Undo button. Deletion closes settings and hands the researcher the notice.
+          setSettingsOpen(false);
+        }
+
+        function confirmSimpleDelete() {
+          const p = profileById(state, dialog.id);
+          actions.deleteProfile(dialog.id);
+          if (p) actions.notify(`Deleted “${p.label}”.`);
+          setDialog(null);
+          setPage("profiles");
+          setSettingsOpen(false);
+        }
+
+        // --- Update from Zotero (always ok in D) + the Imported Note twin -------
+        function runUpdate() {
+          if (!note) {
+            actions.notify("Open a literature note first.");
+            return;
+          }
+          const profile = profileById(state, note.profileId);
+          const result = actions.updateFromZotero(note.key, { silent: true });
+          if (result.ok) {
+            actions.notify(
+              `Updated ${note.path} from Zotero under “${vd_label(profile)}”.`,
+            );
+            if (note.imported > 0)
+              actions.notify(
+                `${note.imported} imported ${vd_noteWord(note.imported)} of this item updated under “${vd_label(profile)}” too.`,
+              );
+          } else {
+            // Unreachable in D: deletion always moves the notes first, so no stamp is ever stale.
+            actions.notify(UNKNOWN_PROFILE_NOTICE(result.id));
+          }
+        }
+
+        // --- Overlays -----------------------------------------------------------
+        const subject = profileById(state, state.subjectProfileId);
+        let overlay = null;
+
+        if (dialog?.kind === "move") {
+          const from = profileById(state, dialog.id);
+          const to = profileById(state, target);
+          const keepsFile = from?.document && from.document.includes("/");
+          overlay = (
+            <MoveNotesDialog
+              from={from}
+              to={to}
+              onTo={setTarget}
+              options={options}
+              onOptions={setOptions}
+              onConfirm={confirmDelete}
+              onCancel={() => setDialog(null)}
+              title={`Delete “${from.label}” profile?`}
+              cta={`Delete and move ${from.noteCount} ${vd_noteWord(from.noteCount)}`}
+              ctaDestructive
+              intro={
+                <div className="flex flex-col gap-2">
+                  <p className="leading-relaxed">
+                    {vd_useLine(from)} Choose the profile they move to.
+                  </p>
+                  <p className="text-muted leading-relaxed">
+                    {keepsFile
+                      ? `The template file ${from.document} stays in your vault.`
+                      : "This profile has no template document of its own; nothing leaves your vault."}
+                  </p>
+                  {from.importedCount > 0 && !options.includeImported ? (
+                    <p className="text-danger leading-relaxed">
+                      Leaving them behind strands {from.importedCount} imported{" "}
+                      {vd_noteWord(from.importedCount)} on a profile that no longer exists.
+                    </p>
+                  ) : null}
+                </div>
+              }
+            />
+          );
+        } else if (dialog?.kind === "simple") {
+          const p = profileById(state, dialog.id);
+          overlay = (
+            <Dialog
+              title={`Delete “${p.label}” profile?`}
+              body="No notes use it."
+              actions={[
+                { label: "Cancel", onClick: () => setDialog(null) },
+                { label: "Delete profile", onClick: confirmSimpleDelete, destructive: true },
+              ]}
+            />
+          );
+        } else if (pickerOpen) {
+          const q = pickerQuery.trim().toLocaleLowerCase();
+          const choices = state.profiles.filter(
+            (p) => p.status === "active" && p.label.toLocaleLowerCase().includes(q),
+          );
+          const tombstones = Object.entries(state.deletedProfiles);
+          const choose = (i) => {
+            const p = choices[i];
+            if (!p) return;
+            if (note && p.id === (note.profileId ?? null)) {
+              actions.notify(`This note already uses “${p.label}”.`);
+            } else {
+              actions.notify(
+                `Switching one note to “${p.label}” is the same consequences dialog, unbatched (ticket #904); this prototype only shows the batched one.`,
+              );
+            }
+            setPickerOpen(false);
+          };
+          overlay = (
+            <Prompt
+              placeholder="Choose a profile…"
+              value={pickerQuery}
+              onChange={(v) => {
+                setPickerQuery(v);
+                setPickerIndex(0);
+              }}
+              onKeyDown={(e) =>
+                vd_navKeys(e, {
+                  count: choices.length,
+                  index: pickerIndex,
+                  setIndex: setPickerIndex,
+                  onChoose: choose,
+                  onClose: () => setPickerOpen(false),
+                })
+              }
+              instructions={[
+                { command: "↑↓", purpose: "to navigate" },
+                { command: "↵", purpose: "to choose" },
+                { command: "esc", purpose: "to dismiss" },
+              ]}
+            >
+              {choices.map((p, i) => (
+                <SuggestRow
+                  key={p.label}
+                  selected={i === pickerIndex}
+                  onClick={() => choose(i)}
+                  title={p.label}
+                  note={PROFILE_DISPLAY(p)}
+                  aside={`${p.noteCount} notes`}
+                  badge={note && p.id === (note.profileId ?? null) ? "current" : null}
+                />
+              ))}
+              {tombstones.length ? (
+                <div className="text-muted border-line mt-2 border-t px-3 pt-2 text-[12px] leading-relaxed">
+                  {tombstones.map(([id, rec]) => (
+                    <div key={id}>
+                      “{rec.label}” was deleted; its notes already moved, so it never appears in
+                      this list.
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </Prompt>
+          );
+        } else if (paletteOpen) {
+          overlay = (
+            <CommandPalette
+              open
+              onClose={() => setPaletteOpen(false)}
+              items={[
+                {
+                  label: "Open settings → Literature note profiles",
+                  onSelect: () => {
+                    setPaletteOpen(false);
+                    setPage("profiles");
+                    setSettingsOpen(true);
+                  },
+                },
+                {
+                  label: "Update literature note from Zotero",
+                  onSelect: () => {
+                    setPaletteOpen(false);
+                    runUpdate();
+                  },
+                },
+                {
+                  label: "Switch literature note profile…",
+                  onSelect: () => {
+                    setPaletteOpen(false);
+                    setPickerQuery("");
+                    setPickerIndex(0);
+                    setPickerOpen(true);
+                  },
+                },
+              ]}
+            />
+          );
+        } else if (settingsOpen) {
+          overlay = (
+            <SettingsModal
+              open
+              onClose={() => setSettingsOpen(false)}
+              title={
+                page === "profiles"
+                  ? "Literature note profiles"
+                  : (profileById(state, page)?.label ?? "Profile")
+              }
+            >
+              {page === "profiles" ? (
+                <ProfilesPage onDelete={openDelete} onOpen={(id) => setPage(id)} />
+              ) : (
+                <ProfilePage
+                  profileId={page}
+                  onBack={() => setPage("profiles")}
+                  onDelete={openDelete}
+                />
+              )}
+            </SettingsModal>
+          );
+        }
+
+        const statusItems = (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="border-line text-ink cursor-pointer rounded border px-2 py-[2px]"
+              onClick={() => {
+                setPage("profiles");
+                setSettingsOpen(true);
+              }}
+            >
+              Settings
+            </button>
+            <button
+              type="button"
+              className="border-line text-muted cursor-pointer rounded border px-2 py-[2px]"
+              onClick={() => setPaletteOpen(true)}
+            >
+              ⌘P
+            </button>
+            <button
+              type="button"
+              className="border-line text-muted cursor-pointer rounded border px-2 py-[2px]"
+              onClick={runUpdate}
+            >
+              Update from Zotero
+            </button>
+          </div>
+        );
+
+        return (
+          <div className="grid h-full" style={{ gridTemplateColumns: "minmax(0,1fr) 300px" }}>
+            <ObsidianFrame
+              title="ZotLit — delete = move"
+              statusItems={statusItems}
+              overlay={overlay}
+              stampRender={(n, info) => <DefaultStamp info={info} />}
+            />
+            <Rail
+              thesis="Deleting a profile is moving its notes; the delete dialog is the Switch Profile dialog, batched, and nothing is ever stale."
+              consent="Every deletion that touches notes is a consented re-stamp: the target, the folder move, the imported notes and the re-render are stated before the button is pressed."
+              answers={[
+                {
+                  q: "What happens to my forty notes?",
+                  a: "They move to the profile you pick, in the same dialog, with the consequences stated.",
+                },
+                {
+                  q: "Can I still update them?",
+                  a: "Yes — under the new profile; the managed part re-renders on the next update, text outside stays.",
+                },
+                {
+                  q: "How do I get it back?",
+                  a: "Undo in the notice for 10 s; after that: Add profile, point it at the kept template file, switch notes back.",
+                },
+              ]}
+              steps={[
+                "Open Settings from the status bar (or ⌘P → “Open settings → Literature note profiles”).",
+                `Press the trash icon on “${subject?.label ?? "the subject profile"}” — the delete dialog IS the Switch Profile dialog, batched.`,
+                "Change the target, toggle “Move files to …/” and “Also move N imported notes”; the consequence line follows the target.",
+                "Press “Delete and move N notes”. Watch the state table: the target gains the notes, the record leaves.",
+                "Press “Update literature note from Zotero” on the note — it works, under the new profile, and the imported notes report in their own notice.",
+                "Open “Switch literature note profile…”: the deleted profile is not in the list, because it has no notes left to point at it.",
+                "Press Undo in the notice: it restores the profile record only. Re-stamping the notes back is SIMULATED — the real Undo needs the plugin to remember which notes this deletion moved (a per-deletion record); without it, moving back would drag the target's own notes along.",
+                "Delete “Scratch” (0 notes) for the other branch: a plain confirm, no target, no consequences.",
+              ]}
+              extras={
+                <div className="text-muted leading-relaxed">
+                  <p>
+                    The stamp is always{" "}
+                    <span className="text-ink">DefaultStamp</span> with an active profile — D
+                    never produces a stale one.
+                  </p>
+                  <p className="mt-2">
+                    The template document file survives the deletion: the file tree keeps{" "}
+                    <span className="text-ink font-mono text-[11px]">
+                      {subject?.document ?? "its template"}
+                    </span>
+                    .
+                  </p>
+                </div>
+              }
+            />
+          </div>
+        );
+      }
+      // --- Variant D END ---
+
+      // --- Variant E ---
+      // Variant E — Retire: a tombstone that cleans itself up.
+      // Deleting a Profile that notes still point at RETIRES it. The record stays alive for the
+      // notes that remember it (they render and update exactly as before) and leaves every
+      // surface that offers a Profile for new work. It is restorable with one click, and it
+      // removes itself the moment its last note moves away. A Profile nobody points at is
+      // deleted outright, with a one-line confirm.
+
+      /** "12 literature notes and 3 imported notes" — the researcher's own situation, in words. */
+      function ve_uses(profile) {
+        const notes = `${profile.noteCount} literature note${profile.noteCount === 1 ? "" : "s"}`;
+        if (!profile.importedCount) return notes;
+        const imported = `${profile.importedCount} imported note${
+          profile.importedCount === 1 ? "" : "s"
+        }`;
+        return `${notes} and ${imported}`;
+      }
+
+      function ve_notesLabel(count) {
+        return `${count} note${count === 1 ? "" : "s"}`;
+      }
+
+      /** Keyboard for every Prompt: ↑↓ move, ↵ choose, Esc close. */
+      function ve_navKeys(evt, { count, index, setIndex, onChoose, onClose }) {
+        if (evt.key === "ArrowDown") {
+          evt.preventDefault();
+          setIndex(count === 0 ? 0 : (index + 1) % count);
+        } else if (evt.key === "ArrowUp") {
+          evt.preventDefault();
+          setIndex(count === 0 ? 0 : (index - 1 + count) % count);
+        } else if (evt.key === "Enter") {
+          evt.preventDefault();
+          if (count > 0) onChoose(index);
+        } else if (evt.key === "Escape") {
+          evt.preventDefault();
+          onClose();
+        }
+      }
+
+      /** A settings row for the Retired group: greyed name, the same description line, actions. */
+      function ve_RetiredRow({ profile, onRestore, onMove, onDelete }) {
+        return (
+          <div className="border-line flex items-center gap-4 border-b py-3">
+            <div className="min-w-0 flex-1">
+              <div className="text-muted text-[14px]">{profile.label}</div>
+              <div className="text-muted mt-[2px] truncate font-mono text-[11px]">
+                {PROFILE_DISPLAY(profile)}
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Pill tone="muted">{ve_notesLabel(profile.noteCount)}</Pill>
+              <button
+                onClick={onRestore}
+                className="border-line bg-ground text-ink cursor-pointer rounded border px-2 py-[4px] text-[12px]"
+              >
+                Restore
+              </button>
+              <button
+                onClick={onMove}
+                className="border-line bg-ground text-ink cursor-pointer rounded border px-2 py-[4px] text-[12px]"
+              >
+                Move notes…
+              </button>
+              <button
+                onClick={onDelete}
+                className="border-line bg-ground cursor-pointer rounded border px-2 py-[4px] text-[12px]"
+                style={{ color: "var(--muted)" }}
+              >
+                Delete anyway
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      function VariantE() {
+        const { state, actions } = useProtoState();
+
+        // Settings surface: closed, the Profiles list, or one Profile's page.
+        const [settingsOpen, setSettingsOpen] = useState(false);
+        const [pageId, setPageId] = useState(null);
+        // Confirmations: { kind: "retire" | "delete-empty" | "delete-anyway", id }
+        const [dialog, setDialog] = useState(null);
+        // Batch move: { fromId, mode: "and-delete" | "retired", toId, options }
+        const [move, setMove] = useState(null);
+        // Modeless overlays: null | "palette" | "switch"
+        const [surface, setSurface] = useState(null);
+        const [query, setQuery] = useState("");
+        const [index, setIndex] = useState(0);
+
+        // The scenario preset reseeds the store, so every local surface goes back to rest.
+        useEffect(() => {
+          setSettingsOpen(false);
+          setPageId(null);
+          setDialog(null);
+          setMove(null);
+          setSurface(null);
+          setQuery("");
+          setIndex(0);
+        }, [state.scenario]);
+
+        const note = activeNote(state);
+        const noteInfo = stampLabel(state, note);
+        const subject = profileById(state, state.subjectProfileId);
+        const retired = state.profiles.filter((p) => p.status === "retired");
+
+        function closeTop() {
+          if (move) return setMove(null);
+          if (dialog) return setDialog(null);
+          if (surface) {
+            setSurface(null);
+            setQuery("");
+            setIndex(0);
+            return;
+          }
+          if (pageId) return setPageId(null);
+          if (settingsOpen) return setSettingsOpen(false);
+        }
+
+        // Esc closes the topmost modal. The Prompts handle their own Esc while focused; this
+        // covers the dialogs and the settings modal, which have no text field.
+        useEffect(() => {
+          const onKey = (e) => {
+            if (e.key !== "Escape") return;
+            if (!(move || dialog || surface || settingsOpen)) return;
+            e.preventDefault();
+            closeTop();
+          };
+          window.addEventListener("keydown", onKey);
+          return () => window.removeEventListener("keydown", onKey);
+        });
+
+        // --- The delete gesture ------------------------------------------------
+        // A Profile no note points at is deleted outright; a used one is offered retirement.
+        function requestDelete(id) {
+          const p = profileById(state, id);
+          if (!p) return;
+          setDialog({ kind: p.noteCount === 0 ? "delete-empty" : "retire", id });
+        }
+
+        function openMove(fromId, mode) {
+          setMove({ fromId, mode, toId: null, options: { moveFiles: false, includeImported: true } });
+          setDialog(null);
+        }
+
+        function confirmMove() {
+          const from = profileById(state, move.fromId);
+          const to = profileById(state, move.toId);
+          if (!from || !to) return;
+          const label = from.label;
+          const moved = from.noteCount;
+          actions.moveNotes(from.id, to.id, move.options);
+          if (move.mode === "and-delete") {
+            actions.deleteProfile(from.id);
+            actions.notify(
+              `Moved ${ve_notesLabel(moved)} to “${to.label}” and deleted “${label}”`,
+            );
+          } else {
+            actions.notify(
+              `Moved ${ve_notesLabel(moved)} to “${to.label}”; “${label}” is gone now that no note uses it`,
+            );
+          }
+          setMove(null);
+          setPageId(null);
+        }
+
+        // --- Use time: a retired Profile updates like any other ------------------
+        function updateActiveNote() {
+          if (!note) return;
+          const result = actions.updateFromZotero(note.key);
+          if (note.imported > 0) {
+            const one = note.imported === 1;
+            const twin = `${note.imported} imported note${one ? "" : "s"}`;
+            actions.notify(
+              result.ok
+                ? `Updated ${twin} of ${note.key} from Zotero`
+                : `${twin} of ${note.key} ${one ? "uses" : "use"} the same unknown profile and ${
+                    one ? "was" : "were"
+                  } left alone`,
+            );
+          }
+          setSurface(null);
+        }
+
+        // --- Overlays ------------------------------------------------------------
+        const switchTargets = state.profiles.filter((p) => p.status === "active");
+        const switchHits = switchTargets.filter((p) =>
+          p.label.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+        );
+
+        function chooseSwitchTarget(i) {
+          const target = switchHits[i];
+          if (!target || !note) return;
+          actions.notify(`Switched ${note.path} to “${target.label}”`);
+          setSurface(null);
+          setQuery("");
+          setIndex(0);
+        }
+
+        let prompt = null;
+        if (surface === "palette") {
+          prompt = (
+            <CommandPalette
+              open
+              onClose={() => setSurface(null)}
+              items={[
+                {
+                  label: "Open settings → Literature note profiles",
+                  onSelect: () => {
+                    setSettingsOpen(true);
+                    setPageId(null);
+                    setSurface(null);
+                  },
+                },
+                {
+                  label: "Update literature note from Zotero",
+                  onSelect: updateActiveNote,
+                },
+                {
+                  label: "Switch literature note profile…",
+                  onSelect: () => {
+                    setSurface("switch");
+                    setQuery("");
+                    setIndex(0);
+                  },
+                },
+              ]}
+            />
+          );
+        } else if (surface === "switch") {
+          prompt = (
+            <Prompt
+              placeholder="Choose a profile…"
+              value={query}
+              onChange={(v) => {
+                setQuery(v);
+                setIndex(0);
+              }}
+              onKeyDown={(e) =>
+                ve_navKeys(e, {
+                  count: switchHits.length,
+                  index,
+                  setIndex,
+                  onChoose: chooseSwitchTarget,
+                  onClose: () => setSurface(null),
+                })
+              }
+              header={
+                <div className="text-muted px-4 py-2 text-[12px]">
+                  Current: {noteInfo ? noteInfo.label : "—"}
+                  {noteInfo && noteInfo.status !== "active"
+                    ? ` (${noteInfo.status})`
+                    : ""}
+                </div>
+              }
+              instructions={[
+                { command: "↑↓", purpose: "to navigate" },
+                { command: "↵", purpose: "to choose" },
+                { command: "esc", purpose: "to dismiss" },
+              ]}
+            >
+              {switchHits.map((p, i) => (
+                <SuggestRow
+                  key={p.id ?? "default"}
+                  selected={i === index}
+                  onClick={() => chooseSwitchTarget(i)}
+                  title={p.label}
+                  note={PROFILE_DISPLAY(p)}
+                  badge={note && p.id === note.profileId ? "current" : null}
+                />
+              ))}
+            </Prompt>
+          );
+        }
+
+        let dialogNode = null;
+        if (dialog) {
+          const p = profileById(state, dialog.id);
+          if (p && dialog.kind === "retire") {
+            dialogNode = (
+              <Dialog
+                width={480}
+                title={`Retire “${p.label}” profile?`}
+                body={`${ve_uses(p)} use it. They keep updating exactly as before. “${p.label}” leaves the profile list for new notes and stays here as retired until its last note moves.`}
+                actions={[
+                  { label: "Cancel", onClick: () => setDialog(null) },
+                  {
+                    label: "Move notes and delete…",
+                    onClick: () => openMove(p.id, "and-delete"),
+                  },
+                  {
+                    label: "Retire",
+                    cta: true,
+                    onClick: () => {
+                      actions.retireProfile(p.id);
+                      setDialog(null);
+                      setPageId(null);
+                    },
+                  },
+                ]}
+              />
+            );
+          } else if (p && dialog.kind === "delete-empty") {
+            dialogNode = (
+              <Dialog
+                title={`Delete “${p.label}” profile?`}
+                body="No notes use it."
+                actions={[
+                  { label: "Cancel", onClick: () => setDialog(null) },
+                  {
+                    label: "Delete",
+                    destructive: true,
+                    onClick: () => {
+                      actions.deleteProfile(p.id);
+                      setDialog(null);
+                      setPageId(null);
+                    },
+                  },
+                ]}
+              />
+            );
+          } else if (p && dialog.kind === "delete-anyway") {
+            dialogNode = (
+              <Dialog
+                width={470}
+                title={`Delete “${p.label}” anyway?`}
+                body={`Its ${ve_notesLabel(p.noteCount)} keep their text and open normally. Update from Zotero pauses for them until you move them to another profile.`}
+                actions={[
+                  { label: "Cancel", onClick: () => setDialog(null) },
+                  {
+                    label: "Delete anyway",
+                    destructive: true,
+                    onClick: () => {
+                      actions.deleteProfile(p.id);
+                      setDialog(null);
+                      setPageId(null);
+                    },
+                  },
+                ]}
+              />
+            );
+          }
+        }
+
+        if (move) {
+          const from = profileById(state, move.fromId);
+          const targets = state.profiles.filter(
+            (p) => p.status === "active" && p.id !== move.fromId,
+          );
+          const to =
+            profileById(state, move.toId) ??
+            targets.find((p) => p.id === null) ??
+            targets[0] ??
+            null;
+          if (from && to) {
+            dialogNode = (
+              <MoveNotesDialog
+                from={from}
+                to={to}
+                onTo={(id) => setMove({ ...move, toId: id })}
+                options={move.options}
+                onOptions={(options) => setMove({ ...move, options })}
+                onConfirm={() => confirmMove()}
+                onCancel={() => setMove(null)}
+                title={
+                  move.mode === "and-delete"
+                    ? `Move ${ve_notesLabel(from.noteCount)} and delete “${from.label}”`
+                    : `Move ${ve_notesLabel(from.noteCount)} from “${from.label}”`
+                }
+                cta={
+                  move.mode === "and-delete"
+                    ? "Move and delete"
+                    : `Move ${ve_notesLabel(from.noteCount)}`
+                }
+                intro={
+                  move.mode === "and-delete" ? (
+                    <p className="leading-relaxed">
+                      “{from.label}” goes away as soon as its notes are somewhere else.
+                    </p>
+                  ) : (
+                    <p className="leading-relaxed">
+                      “{from.label}” disappears by itself once its last note has moved.
+                    </p>
+                  )
+                }
+              />
+            );
+          }
+        }
+
+        // --- Settings ------------------------------------------------------------
+        const retiredSection = retired.length ? (
+          <div className="mt-6">
+            <div className="text-muted mb-1 text-[11px] font-semibold tracking-[0.08em] uppercase">
+              Retired
+            </div>
+            <div className="text-muted mb-2 text-[12px] leading-relaxed">
+              A retired profile disappears when its last note moves.
+            </div>
+            {retired.map((p) => (
+              <div key={p.id}>
+                {ve_RetiredRow({
+                  profile: p,
+                  onRestore: () => actions.restoreProfile(p.id),
+                  onMove: () => openMove(p.id, "retired"),
+                  onDelete: () => setDialog({ kind: "delete-anyway", id: p.id }),
+                })}
+              </div>
+            ))}
+          </div>
+        ) : null;
+
+        const pageProfile = pageId ? profileById(state, pageId) : null;
+
+        const settingsNode = (
+          <SettingsModal
+            open={settingsOpen}
+            onClose={() => {
+              setSettingsOpen(false);
+              setPageId(null);
+            }}
+            title={
+              pageProfile ? `Profile — ${pageProfile.label}` : "Literature note profiles"
+            }
+          >
+            {pageProfile ? (
+              <ProfilePage
+                profileId={pageId}
+                onBack={() => setPageId(null)}
+                onDelete={requestDelete}
+                footer={
+                  pageProfile.status === "retired" ? (
+                    <div className="flex items-center gap-2">
+                      <Pill tone="muted">retired</Pill>
+                      <button
+                        onClick={() => actions.restoreProfile(pageProfile.id)}
+                        className="border-line bg-ground text-ink cursor-pointer rounded border px-3 py-[6px] text-[13px]"
+                      >
+                        Restore
+                      </button>
+                      <button
+                        onClick={() => openMove(pageProfile.id, "retired")}
+                        className="border-line bg-ground text-ink cursor-pointer rounded border px-3 py-[6px] text-[13px]"
+                      >
+                        Move notes…
+                      </button>
+                      <button
+                        onClick={() =>
+                          setDialog({ kind: "delete-anyway", id: pageProfile.id })
+                        }
+                        className="border-line bg-ground cursor-pointer rounded border px-3 py-[6px] text-[13px]"
+                        style={{ color: "var(--muted)" }}
+                      >
+                        Delete anyway
+                      </button>
+                    </div>
+                  ) : null
+                }
+              />
+            ) : (
+              <ProfilesPage
+                onDelete={requestDelete}
+                onOpen={(id) => setPageId(id)}
+                retiredSection={retiredSection}
+              />
+            )}
+          </SettingsModal>
+        );
+
+        // The frame dims the window whenever `overlay` is not null, so an empty stack stays null.
+        const overlay = !(settingsOpen || prompt || dialogNode) ? null : (
+          <>
+            {settingsOpen ? settingsNode : null}
+            {prompt}
+            {dialogNode ? (
+              <div
+                className="absolute inset-0 flex items-center justify-center"
+                style={{ background: "rgba(0,0,0,0.28)" }}
+              >
+                {dialogNode}
+              </div>
+            ) : null}
+          </>
+        );
+
+        const statusItems = (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="border-line text-ink hover:bg-ground-2 cursor-pointer rounded border px-2 py-[2px]"
+              onClick={() => {
+                setSettingsOpen(true);
+                setPageId(null);
+              }}
+            >
+              Settings
+            </button>
+            <button
+              type="button"
+              className="border-line text-muted hover:bg-ground-2 cursor-pointer rounded border px-2 py-[2px]"
+              onClick={() => {
+                setSurface("palette");
+                setQuery("");
+                setIndex(0);
+              }}
+            >
+              ⌘P
+            </button>
+            <button
+              type="button"
+              className="border-line text-muted hover:bg-ground-2 cursor-pointer rounded border px-2 py-[2px]"
+              onClick={updateActiveNote}
+            >
+              Update from Zotero
+            </button>
+          </div>
+        );
+
+        const subjectLabel = subject ? subject.label : "this profile";
+
+        return (
+          <div
+            className="grid h-full"
+            style={{ gridTemplateColumns: "minmax(0,1fr) 300px" }}
+          >
+            <ObsidianFrame
+              title={activeNote(state)?.path.split("/").pop() ?? "No file open"}
+              statusItems={statusItems}
+              overlay={overlay}
+              stampRender={(n, info) =>
+                info ? (
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    <span>{info.label}</span>
+                    <span className="text-muted font-mono text-[11px] break-all">
+                      {info.secondary}
+                    </span>
+                    {info.status === "retired" ? (
+                      <Pill tone="muted">retired</Pill>
+                    ) : info.status === "deleted" ? (
+                      <Pill tone="danger">deleted profile</Pill>
+                    ) : null}
+                  </span>
+                ) : null
+              }
+            />
+            <Rail
+              thesis="A profile cannot really be gone while notes remember it, so deleting a used profile retires it: invisible to new notes, alive for old ones, restorable, and gone by itself when the last note leaves."
+              consent="Retiring asks for nothing beyond the retire dialog, because no note changes; consent is only asked for the move, where the notes do change."
+              answers={[
+                {
+                  q: "What happens to my forty notes?",
+                  a: "Nothing happens to them; retire now, move them whenever you like, or move and delete in one step.",
+                },
+                {
+                  q: "Can I still update them?",
+                  a: "Yes, unchanged — a retired profile still renders its notes.",
+                },
+                {
+                  q: "How do I get it back?",
+                  a: "Restore, one click, as long as any note still uses it.",
+                },
+              ]}
+              steps={[
+                `Open Settings and find “${subjectLabel}” in the profiles list.`,
+                "Press its trash icon: the dialog offers Retire, or Move notes and delete.",
+                "Choose Retire. The row leaves the list and comes back under “Retired”.",
+                "Open the note and read its Properties: the stamp says the name with a muted “retired” pill.",
+                "Run “Update literature note from Zotero”: it updates, and says nothing about the profile.",
+                "Open “Switch literature note profile…”: the retired profile is not a target; the header states it as the current one.",
+                "In Settings, press Restore on the retired row to bring it straight back, or Move notes… to empty it and let it disappear.",
+                "Press “Delete anyway” to see the stale state this design exists to avoid.",
+              ]}
+              extras={
+                <p className="text-muted leading-relaxed">
+                  Creation never offers a retired profile: the informed picker of #904
+                  lists targets for new notes, and a retired profile is not one.
+                </p>
+              }
+            />
+          </div>
+        );
+      }
+      // --- Variant E END ---
+
+      // --- Switcher ---
+      const VARIANTS = [
+        { key: "A", name: "Baseline (today)", component: VariantA },
+        { key: "B", name: "Refuse while referenced", component: VariantB },
+        { key: "C", name: "Delete, visibly stale", component: VariantC },
+        { key: "D", name: "Delete = move", component: VariantD },
+        { key: "E", name: "Retire (self-cleaning)", component: VariantE },
+      ];
+
+      const SCENARIO_PRESETS = [
+        { id: "fold", label: "Fold: Book chapters → Default (40)" },
+        { id: "retire", label: "Retire: Thesis (12 · 3 imported)" },
+        { id: "oops", label: "Oops: Articles deleted by mistake (23)" },
+      ];
+
+      function App() {
+        const { state } = useProtoState();
+        const [idx, setIdx] = useState(() => {
+          const h = location.hash.slice(1);
+          const i = VARIANTS.findIndex((v) => v.key === h);
+          return i >= 0 ? i : 0;
+        });
+
+        useEffect(() => {
+          location.hash = VARIANTS[idx].key;
+          const onHash = () => {
+            const i = VARIANTS.findIndex(
+              (v) => v.key === location.hash.slice(1),
+            );
+            if (i >= 0) setIdx(i);
+          };
+          window.addEventListener("hashchange", onHash);
+          const onKey = (e) => {
+            if (
+              ["INPUT", "TEXTAREA"].includes(e.target.tagName) ||
+              e.target.isContentEditable
+            )
+              return;
+            if (e.key === "ArrowLeft")
+              setIdx((i) => (i - 1 + VARIANTS.length) % VARIANTS.length);
+            if (e.key === "ArrowRight")
+              setIdx((i) => (i + 1) % VARIANTS.length);
+          };
+          window.addEventListener("keydown", onKey);
+          return () => {
+            window.removeEventListener("hashchange", onHash);
+            window.removeEventListener("keydown", onKey);
+          };
+        }, [idx]);
+
+        const V = VARIANTS[idx];
+        return (
+          <div className="h-screen bg-ground text-ink font-body flex flex-col">
+            <div
+              style={{
+                flex: "none",
+                background: "#1e293b",
+                color: "#f8fafc",
+                padding: "0.4rem 1rem",
+                display: "flex",
+                alignItems: "center",
+                gap: "1rem",
+                fontSize: "0.875rem",
+                zIndex: 9999,
+              }}
+            >
+              <button
+                onClick={() =>
+                  setIdx((i) => (i - 1 + VARIANTS.length) % VARIANTS.length)
+                }
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "inherit",
+                  cursor: "pointer",
+                  fontSize: "1.25rem",
+                }}
+              >
+                ←
+              </button>
+              <span>
+                {V.key} — {V.name}
+              </span>
+              <button
+                onClick={() => setIdx((i) => (i + 1) % VARIANTS.length)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "inherit",
+                  cursor: "pointer",
+                  fontSize: "1.25rem",
+                }}
+              >
+                →
+              </button>
+              <span
+                style={{
+                  width: "1px",
+                  alignSelf: "stretch",
+                  background: "rgba(248,250,252,0.25)",
+                }}
+              />
+              {SCENARIO_PRESETS.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => actions.setScenario(p.id)}
+                  style={{
+                    background:
+                      state.scenario === p.id ? "#f8fafc" : "transparent",
+                    color: state.scenario === p.id ? "#1e293b" : "inherit",
+                    border: "1px solid rgba(248,250,252,0.25)",
+                    borderRadius: "9999px",
+                    padding: "0.15rem 0.6rem",
+                    cursor: "pointer",
+                    fontSize: "0.75rem",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <div className="min-h-0 flex-1">
+              <V.component />
+            </div>
+          </div>
+        );
+      }
+      // --- Switcher END ---
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<App />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>
