@@ -856,6 +856,9 @@ importers:
       '@zotlit/db':
         specifier: workspace:*
         version: link:../db
+      '@zotlit/templates':
+        specifier: workspace:*
+        version: link:../templates
       arkregex:
         specifier: 'catalog:'
         version: 0.0.5

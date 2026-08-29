@@ -46,10 +46,15 @@ import {
   getFixtureLayout,
   INSTALLED_STYLES,
   ITEMS,
+  legacyTemplateFilename,
+  legacyTemplateSource,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
   SCOPE_CASES,
   selectScopeCase,
+  UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LEGACY_TEMPLATES,
+  VAULT_CASES,
 } from "./build.ts";
 import type { FixtureLayout } from "./build.ts";
 import { BETTER_BIBTEX_PREFS, QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
@@ -1500,5 +1505,123 @@ describe("the generated Obsidian vault", () => {
       "partial",
       "unavailable",
     ]);
+  });
+});
+
+describe("a Vault Case", () => {
+  async function buildVaultCase(vaultCase: string): Promise<FixtureLayout> {
+    const caseLayout = getFixtureLayout(
+      await mkdtemp(join(dirname(layout.root), `fixture-test-${vaultCase}-`)),
+    );
+    fixture.defer(() => rm(caseLayout.root, { recursive: true, force: true }));
+    // A stale bundle folder stands in for a Development Vault's plugin folder,
+    // whose data.json holds whatever ZotLit last saved there.
+    const bundleDir = await mkdtemp(join(dirname(layout.root), "bundle-"));
+    fixture.defer(() => rm(bundleDir, { recursive: true, force: true }));
+    await writeFile(join(bundleDir, "main.js"), "// stale bundle\n");
+    await writeFile(
+      join(bundleDir, "data.json"),
+      JSON.stringify({ __VERSION__: 10, stale: true }),
+    );
+    await buildFixture(caseLayout, { vaultCase, pluginBundleDir: bundleDir });
+    return caseLayout;
+  }
+
+  it("names the configured, fresh, and upgrader cases", () => {
+    expect(VAULT_CASES.map((vaultCase) => vaultCase.id)).toEqual([
+      "configured",
+      "fresh",
+      "upgrader",
+    ]);
+  });
+
+  it("leaves a fresh vault with ZotLit enabled and nothing else", async () => {
+    const fresh = await buildVaultCase("fresh");
+
+    // `attachments` holds the vault-backed linked-file Attachment the Zotero
+    // data references: a file the user keeps in the vault, not ZotLit state.
+    expect(await readdir(fresh.vaultDir)).toEqual([".obsidian", "attachments"]);
+    expect(
+      JSON.parse(
+        await readFile(
+          join(fresh.vaultDir, ".obsidian", "community-plugins.json"),
+          "utf-8",
+        ),
+      ),
+    ).toEqual(["hot-reload", "zotlit"]);
+    await expect(
+      readFile(join(fresh.pluginDir, "main.js"), "utf-8"),
+    ).resolves.toBe("// stale bundle\n");
+    await expect(stat(fresh.pluginDataPath)).rejects.toThrow("ENOENT");
+  });
+
+  it("refuses a fresh vault with a saved Library Scope", async () => {
+    const caseLayout = getFixtureLayout(
+      await mkdtemp(join(dirname(layout.root), "fixture-test-fresh-scope-")),
+    );
+    fixture.defer(() => rm(caseLayout.root, { recursive: true, force: true }));
+
+    await expect(
+      buildFixture(caseLayout, { vaultCase: "fresh", scopeCase: "partial" }),
+    ).rejects.toThrow('cannot save the "partial" Scope Case');
+  });
+
+  it("writes the v2.1 settings shape into an upgrader vault", async () => {
+    const upgrader = await buildVaultCase("upgrader");
+    const data = JSON.parse(
+      await readFile(upgrader.pluginDataPath, "utf-8"),
+    ) as Record<string, unknown>;
+
+    expect(data).toEqual({
+      __VERSION__: 9,
+      "note.literature-folder": "literatures",
+      "note.import-folder": "zotero_notes",
+      "note.frontmatter-fields": UPGRADER_FRONTMATTER_FIELDS,
+      "release.previous-version": "2.1.0",
+      "server.enabled": true,
+      [LIBRARY_SCOPE_SETTING_KEY]: { mode: "all" },
+    });
+    expect(UPGRADER_FRONTMATTER_FIELDS.map((field) => field.key)).toEqual([
+      "title",
+      "related",
+      "collections",
+      "citekey",
+      "year",
+    ]);
+  });
+
+  it("ejects every legacy slot file with its visible edit, and no Profile document", async () => {
+    const upgrader = await buildVaultCase("upgrader");
+    const templates = join(upgrader.vaultDir, "templates");
+
+    expect((await readdir(templates)).sort()).toEqual(
+      [
+        "zotlit-annotation.liquid.md",
+        "zotlit-content.liquid.md",
+        "zotlit-filename.liquid.md",
+        "zotlit-note.liquid.md",
+      ].sort(),
+    );
+    for (const template of UPGRADER_LEGACY_TEMPLATES) {
+      const source = await readFile(
+        join(templates, legacyTemplateFilename(template)),
+        "utf-8",
+      );
+      expect(source).toBe(await legacyTemplateSource(template));
+      expect(source).toContain(template.replace);
+    }
+    expect(await readdir(join(upgrader.vaultDir, "literatures"))).toEqual(
+      await readdir(join(layout.vaultDir, "literatures")),
+    );
+  });
+
+  it("fails when a shipped default drifts away from its edit", async () => {
+    await expect(
+      legacyTemplateSource({
+        name: "note",
+        find: "text the default note template never held",
+        replace: "",
+      }),
+    ).rejects.toThrow("update UPGRADER_LEGACY_TEMPLATES");
   });
 });

@@ -16,9 +16,15 @@ import {
   SCOPE_CASES,
   STRESS_ITEM_COUNT_CONSTRAINT,
   UNAVAILABLE_GROUP_IDS,
+  UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LEGACY_TEMPLATES,
+  UPGRADER_PLUGIN_VERSION,
+  UPGRADER_SETTINGS_VERSION,
+  VAULT_CASES,
 } from "./spec.ts";
 import type { FixtureItem, FixtureNote } from "./spec.ts";
 
+import { DEV_VAULT_CASE_ENV } from "#dev-vault";
 import { OBSIDIAN_HOST_VAULT_ENV } from "#obsidian-host-readiness";
 
 function libraryName(libraryID: number): string {
@@ -152,6 +158,44 @@ The persisted key and value shape live in LIBRARY_SCOPE_SETTING_KEY
 ("${LIBRARY_SCOPE_SETTING_KEY}") and PersistedLibraryScope in spec.ts. They
 are the one place to update when the Library Scope setting changes shape.`;
 
+const VAULT_CASES_SECTION = `VAULT CASES
+
+${VAULT_CASES.map((c) => `  ${c.id.padEnd(12)} ${c.summary}`).join("\n")}
+
+A Vault Case selects what the Fixture Vault holds beside the Library Scope.
+Build one directly, or name it on a Paired Run:
+
+  pnpm fixture build --vault-case fresh
+  pnpm fixture open --vault-case upgrader
+
+Each Vault Case other than the default opens its own Development Vault,
+tests/fixture-vault-<worktree>-<case>, so the cases never overwrite one
+another. A dev run sets ${DEV_VAULT_CASE_ENV} for the Obsidian watcher, so the
+Vite build copies each bundle into that case's vault and hot reload reaches
+it. Set ${DEV_VAULT_CASE_ENV} yourself to point dev:vault or a plain
+obsidian-vault.ts open at a case vault:
+
+  ${DEV_VAULT_CASE_ENV}=fresh pnpm --filter @zotlit/obsidian dev:vault
+
+The fresh case writes no settings file, so it accepts only the default Scope
+Case and leaves Live Updates off. The Paired Run still points ZotLit at the
+Fixture database through the Device Overrides, so the first Literature Note
+needs no Zotero setup.
+
+The upgrader case writes the ZotLit ${UPGRADER_PLUGIN_VERSION} shape: settings version ${UPGRADER_SETTINGS_VERSION} with
+the note bindings vault-global, no Profiles, release.previous-version
+${UPGRADER_PLUGIN_VERSION}, and this note.frontmatter-fields list:
+
+${UPGRADER_FRONTMATTER_FIELDS.map((f) => `  ${f.key.padEnd(12)} ${f.expr}`).join("\n")}
+
+Its template folder holds these ejected slot files. Each starts from the
+shipped Liquid default and carries one visible edit:
+
+${UPGRADER_LEGACY_TEMPLATES.map((t) => `${`  zotlit-${t.name}.liquid.md`.padEnd(30)}${JSON.stringify(t.find)} -> ${JSON.stringify(t.replace)}`).join("\n")}
+
+On load, ZotLit migrates the settings to the current version, sets
+note.template-conversion-pending, and opens the conversion prompt.`;
+
 const PAIRED_RUN_SECTION = `PAIRED RUN
 
 Confirm that a live host vault answers before changing the Fixture:
@@ -283,6 +327,7 @@ export function renderGuide(): string {
     itemsSection(),
     notesSection(),
     SCOPE_CASES_SECTION,
+    VAULT_CASES_SECTION,
     PAIRED_RUN_SECTION,
     CANCEL_TESTING_SECTION,
     STRESS_BUILD_SECTION,

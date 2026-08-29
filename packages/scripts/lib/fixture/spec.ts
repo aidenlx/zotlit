@@ -1222,3 +1222,123 @@ export function findScopeCase(id: string): FixtureScopeCase {
   }
   return found;
 }
+
+/**
+ * Persisted shape of one Managed Frontmatter field, as ZotLit v2.1 saved it
+ * under `note.frontmatter-fields`.
+ */
+export interface FixtureFrontmatterField {
+  readonly key: string;
+  readonly expr: string;
+  readonly merge: "replace";
+  readonly language: "liquid";
+}
+
+/** One legacy Literature Note Template slot file the Upgrader vault ejects. */
+export interface FixtureLegacyTemplate {
+  /** Slot name; the file is `zotlit-<name>.liquid.md` in the template folder. */
+  readonly name: "filename" | "note" | "content" | "annotation";
+  /** Text present in the shipped default source; the build fails otherwise. */
+  readonly find: string;
+  /** Visible edit that stands in for a user's customization. */
+  readonly replace: string;
+}
+
+export interface FixtureVaultCase {
+  id: "configured" | "fresh" | "upgrader";
+  /** One line for the maintainer choosing a case. */
+  summary: string;
+}
+
+/**
+ * A Vault Case is a named, saved Fixture Vault state. The Scope Case selects
+ * the saved Library Scope; the Vault Case selects everything else the vault
+ * holds: settings file, notes, Profiles, and template files.
+ */
+export const VAULT_CASES: readonly FixtureVaultCase[] = [
+  {
+    id: "configured",
+    summary:
+      "Current settings, the Books Profile, Literature Notes, and Imported Notes. This is the default.",
+  },
+  {
+    id: "fresh",
+    summary:
+      "Vault with no notes, ZotLit installed, and no settings file: the new-user path.",
+  },
+  {
+    id: "upgrader",
+    summary:
+      "A ZotLit v2.1 vault: version-9 settings, ejected legacy slot files with visible edits, an edited Managed Frontmatter list.",
+  },
+];
+
+export const DEFAULT_VAULT_CASE = "configured";
+
+export function findVaultCase(id: string): FixtureVaultCase {
+  const found = VAULT_CASES.find((vaultCase) => vaultCase.id === id);
+  if (!found) {
+    throw new Error(
+      `unknown vault case "${id}". Known: ${VAULT_CASES.map((c) => c.id).join(", ")}`,
+    );
+  }
+  return found;
+}
+
+/** Settings version ZotLit v2.1.0 wrote, before Profiles absorbed the note bindings. */
+export const UPGRADER_SETTINGS_VERSION = 9;
+
+/** Plugin version the Upgrader vault records as its last launch. */
+export const UPGRADER_PLUGIN_VERSION = "2.1.0";
+
+/**
+ * The v2.1 `note.frontmatter-fields` list: the four shipped defaults, plus one
+ * visible addition so the list reads as user-edited.
+ */
+export const UPGRADER_FRONTMATTER_FIELDS: readonly FixtureFrontmatterField[] = [
+  { key: "title", expr: "zt.title", merge: "replace", language: "liquid" },
+  {
+    key: "related",
+    expr: "zt.relatedItems | note_links",
+    merge: "replace",
+    language: "liquid",
+  },
+  {
+    key: "collections",
+    expr: "zt.collections | collection_paths",
+    merge: "replace",
+    language: "liquid",
+  },
+  {
+    key: "citekey",
+    expr: "zt.citationKey",
+    merge: "replace",
+    language: "liquid",
+  },
+  { key: "year", expr: "zt.date.year", merge: "replace", language: "liquid" },
+];
+
+/**
+ * Legacy slot files the Upgrader vault ejects into its template folder. Each
+ * starts from the shipped Liquid default and carries one visible edit, so a
+ * converted document is recognizably the user's own and the trashed files are
+ * easy to tell from the defaults.
+ */
+export const UPGRADER_LEGACY_TEMPLATES: readonly FixtureLegacyTemplate[] = [
+  {
+    name: "filename",
+    find: "{{ zt.citationKey",
+    replace: "lit-{{ zt.citationKey",
+  },
+  {
+    name: "note",
+    find: "# {{ zt.title }}",
+    replace: "# {{ zt.title }} (v2.1 template)",
+  },
+  { name: "content", find: "## Notes", replace: "## Zotero notes" },
+  {
+    name: "annotation",
+    find: "[!note] Page",
+    replace: "[!quote] Page",
+  },
+];

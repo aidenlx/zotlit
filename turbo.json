@@ -12,11 +12,13 @@
     "build:dev": {
       "dependsOn": ["^build"],
       "outputs": ["dist-dev/**"],
-      "outputLogs": "errors-only"
+      "outputLogs": "errors-only",
+      "passThroughEnv": ["ZT_VAULT_CASE"]
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": ["ZT_VAULT_CASE"]
     },
     "typecheck": {
       "dependsOn": ["^build", "transit"]
