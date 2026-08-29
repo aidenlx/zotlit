@@ -787,7 +787,12 @@ async function writeVault(
     return;
   }
 
-  await writeVaultNotes(layout, options);
+  // The v2.1 vault predates Profiles, so it seeds every note unstamped.
+  await writeVaultNotes(
+    layout,
+    options,
+    vaultCase.id === "upgrader" ? [] : LITERATURE_NOTE_PROFILES,
+  );
   if (vaultCase.id === "upgrader") {
     await writeLegacyTemplates(layout);
   } else {
@@ -853,10 +858,17 @@ async function writeVaultConfig(
 async function writeVaultNotes(
   layout: FixtureLayout,
   options: BuildOptions,
+  profiles: readonly (typeof LITERATURE_NOTE_PROFILES)[number][],
 ): Promise<void> {
   await mkdir(join(layout.vaultDir, "literatures"), { recursive: true });
   await mkdir(join(layout.vaultDir, "templates"), { recursive: true });
   await mkdir(join(layout.vaultDir, "zotero_notes"), { recursive: true });
+  for (const profile of profiles) {
+    await mkdir(
+      join(layout.vaultDir, profile.bindings["note.literature-folder"]),
+      { recursive: true },
+    );
+  }
   await cp(VAULT_PAGES_DIR, layout.vaultDir, { recursive: true });
 
   // Literature Notes for the My Library items give an update batch existing
@@ -864,13 +876,19 @@ async function writeVaultNotes(
   for (const item of ITEMS.filter(
     (candidate) => candidate.libraryID === USER_LIBRARY_ID,
   )) {
+    const profile = profiles.find(
+      ({ id }) => id === item.literatureNoteProfile,
+    );
     await writeFile(
       join(
         layout.vaultDir,
-        "literatures",
+        profile?.bindings["note.literature-folder"] ?? "literatures",
         `${item.literatureNoteName ?? item.key}.md`,
       ),
-      literatureNote(item, layout, options.linkedAttachmentVaultDir),
+      literatureNote(item, layout, {
+        profile,
+        linkedAttachmentVaultDir: options.linkedAttachmentVaultDir,
+      }),
     );
   }
 
@@ -970,7 +988,11 @@ function vaultSettings(
 function literatureNote(
   item: FixtureItem,
   layout: FixtureLayout,
-  linkedAttachmentVaultDir?: string,
+  options: {
+    /** Profile the note is stamped with; absent leaves it on the default. */
+    profile?: (typeof LITERATURE_NOTE_PROFILES)[number];
+    linkedAttachmentVaultDir?: string;
+  },
 ): string {
   const attachments = ATTACHMENTS.filter(
     (attachment) =>
@@ -980,14 +1002,19 @@ function literatureNote(
     const path = attachmentFilePath(
       attachment,
       layout,
-      linkedAttachmentVaultDir,
+      options.linkedAttachmentVaultDir,
     )!;
     return `[${attachment.path}](${pathToFileURL(path).href})`;
   });
+  const { profile } = options;
   return [
     "---",
     `title: ${JSON.stringify(item.title)}`,
     `zotero-key: ${item.key}`,
+    // The Profile stamp: the Profile label, then its id in parentheses.
+    ...(profile === undefined
+      ? []
+      : [`zotlit-profile: ${profile.label} (${profile.id})`]),
     // `citekey` is the compatibility frontmatter key ZotLit still reads.
     ...(item.citationKey === null ? [] : [`citekey: ${item.citationKey}`]),
     "---",

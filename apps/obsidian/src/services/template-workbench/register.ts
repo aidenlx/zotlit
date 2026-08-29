@@ -136,7 +136,7 @@ function documentRenderFlags(): CliFlags {
     key: keyFlag(),
     profile: {
       value: "<default|profile-id>",
-      description: "Profile stamp whose document to render",
+      description: "Profile id whose document to render",
     },
     document: {
       value: "<reference>",

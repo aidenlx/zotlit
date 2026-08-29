@@ -34,7 +34,7 @@ function profileSettings(
     },
     "note.profiles": [
       {
-        id: "00000000-0000-4000-8000-000000000001",
+        id: "Bk3Qn7XvT2Lp",
         label: "Research",
         ...(profileStyle === undefined
           ? {}
@@ -100,7 +100,7 @@ describe("documentPresentation", () => {
       documentPresentation(
         cacheOf({
           "zotero-note-key": "1/NOTE1234",
-          "zotlit-profile": "00000000-0000-4000-8000-000000000001",
+          "zotlit-profile": "Bk3Qn7XvT2Lp",
         }),
         FILE,
         settings,
@@ -109,7 +109,7 @@ describe("documentPresentation", () => {
       kind: "read",
       presentation: { styleId: "research-style" },
       profileStyle: {
-        profileId: "00000000-0000-4000-8000-000000000001",
+        profileId: "Bk3Qn7XvT2Lp",
         target: FILE.path,
       },
     });
@@ -122,7 +122,7 @@ describe("documentPresentation", () => {
       documentPresentation(
         cacheOf({
           "zotero-note-key": "1/NOTE1234",
-          "zotlit-profile": "00000000-0000-4000-8000-000000000001",
+          "zotlit-profile": "Bk3Qn7XvT2Lp",
         }),
         FILE,
         settings,
@@ -131,7 +131,7 @@ describe("documentPresentation", () => {
       kind: "read",
       presentation: { styleId: "default-style" },
       profileStyle: {
-        profileId: "00000000-0000-4000-8000-000000000001",
+        profileId: "Bk3Qn7XvT2Lp",
         target: FILE.path,
       },
     });
@@ -160,7 +160,7 @@ describe("documentPresentation", () => {
       documentPresentation(
         cacheOf({
           "zotero-key": "1/ITEM1234",
-          "zotlit-profile": "00000000-0000-4000-8000-000000000001",
+          "zotlit-profile": "Bk3Qn7XvT2Lp",
         }),
         FILE,
         settings,
@@ -175,7 +175,7 @@ describe("documentPresentation", () => {
       documentPresentation(
         cacheOf({
           "zotero-note-key": "1/NOTE1234",
-          "zotlit-profile": "00000000-0000-4000-8000-000000000001",
+          "zotlit-profile": "Bk3Qn7XvT2Lp",
           "zotlit-csl": "document-style",
         }),
         FILE,
@@ -185,7 +185,48 @@ describe("documentPresentation", () => {
       kind: "read",
       presentation: { styleId: "research-style" },
       profileStyle: {
-        profileId: "00000000-0000-4000-8000-000000000001",
+        profileId: "Bk3Qn7XvT2Lp",
+        target: FILE.path,
+      },
+    });
+  });
+
+  it("resolves an Imported Note's Profile from a full-form stamp", () => {
+    const settings = profileSettings("default-style", "research-style");
+
+    expect(
+      documentPresentation(
+        cacheOf({
+          "zotero-note-key": "1/NOTE1234",
+          "zotlit-profile": "Research (Bk3Qn7XvT2Lp)",
+        }),
+        FILE,
+        settings,
+      ),
+    ).toEqual({
+      kind: "read",
+      presentation: { styleId: "research-style" },
+      profileStyle: { profileId: "Bk3Qn7XvT2Lp", target: FILE.path },
+    });
+  });
+
+  it("reads a Profile stamp Obsidian stored as a one-item list", () => {
+    const settings = profileSettings("default-style", "research-style");
+
+    expect(
+      documentPresentation(
+        cacheOf({
+          "zotero-note-key": "1/NOTE1234",
+          "zotlit-profile": ["Bk3Qn7XvT2Lp"],
+        }),
+        FILE,
+        settings,
+      ),
+    ).toEqual({
+      kind: "read",
+      presentation: { styleId: "research-style" },
+      profileStyle: {
+        profileId: "Bk3Qn7XvT2Lp",
         target: FILE.path,
       },
     });
@@ -206,7 +247,7 @@ describe("documentPresentation", () => {
     ).toEqual({
       kind: "unusable",
       property: "profile",
-      profileId: "deleted-profile",
+      stamp: "deleted-profile",
       target: FILE.path,
     });
   });

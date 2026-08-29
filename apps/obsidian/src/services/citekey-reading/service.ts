@@ -213,7 +213,7 @@ export class CitekeyReading extends Service<void> {
         setTooltip(
           element,
           m.notice_imported_note_profile_unknown({
-            id: failure.profileId,
+            stamp: failure.stamp,
             target: failure.target,
           }),
         );

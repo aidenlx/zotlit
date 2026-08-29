@@ -40,6 +40,7 @@ import { ensureParentFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
+import { formatProfileStamp, readProfileStamp } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { NoteImport } from "@/services/note-import/service";
@@ -87,7 +88,11 @@ export interface ExistingNoteDiagnostic {
 export interface UnknownNoteProfileDiagnostic {
   code: "unknown-literature-note-profile";
   hint: string;
-  profileId: string;
+  /**
+   * The Profile stamp as the note carries it, or the requested Profile ID when
+   * the caller named one. Printed verbatim so the user can find the note.
+   */
+  stamp: string;
   path?: string;
   indexedKey?: string;
 }
@@ -439,16 +444,16 @@ async function createNote(
   const existing = ctx.noteIndex.getNotesByItemKey(item.indexedKey);
   if (existing.length > 0) {
     if (existing.length === 1 && options.profileId !== undefined) {
-      const existingProfileId = stampedProfileId(ctx, existing[0]!);
-      if (!resolveLiteratureNoteProfile(settings, existingProfileId)) {
-        return refusedUnknownProfile(existingProfileId!, {
+      const stamped = readProfileStamp(ctx.app.metadataCache, existing[0]!);
+      if (!resolveLiteratureNoteProfile(settings, stamped?.id)) {
+        return refusedUnknownProfile(stamped!.stamp, {
           indexedKey: item.indexedKey,
           path: existing[0]!.path,
         });
       }
-      if (existingProfileId !== requestedProfileId) {
+      if (stamped?.id !== requestedProfileId) {
         return refusedProfileConflict(item.indexedKey, existing[0]!, {
-          existingProfileId,
+          existingProfileId: stamped?.id,
           requestedProfileId,
         });
       }
@@ -627,23 +632,29 @@ async function updateNote(
     ctx.noteIndex.whenIndexed(),
     ctx.template.ready,
   ]);
-  const stampedId = stampedProfileId(ctx, file);
+  const stamped = readProfileStamp(ctx.app.metadataCache, file);
   if (profileOverride === undefined && options.profileId !== undefined) {
     const requestedId = options.profileId ?? undefined;
     if (!resolveLiteratureNoteProfile(settings, requestedId)) {
       return refusedUpdateProfile(requestedId!, file.path);
     }
-    if (requestedId !== stampedId) {
+    if (requestedId !== stamped?.id) {
       return refusedUpdateProfileConflict(indexedKey, file.path, {
-        existingProfileId: stampedId,
+        existingProfileId: stamped?.id,
         requestedProfileId: requestedId,
       });
     }
   }
   const profileId =
-    profileOverride === undefined ? stampedId : (profileOverride ?? undefined);
+    profileOverride === undefined
+      ? stamped?.id
+      : (profileOverride ?? undefined);
   const profile = resolveLiteratureNoteProfile(settings, profileId);
-  if (!profile) return refusedUpdateProfile(profileId!, file.path);
+  // An unresolved Profile means the note carries the stamp at fault, unless
+  // the caller named the Profile itself.
+  if (!profile) {
+    return refusedUpdateProfile(profileOverride ?? stamped!.stamp, file.path);
+  }
   if (conversionRequired(settings, profileId)) {
     return refusedUpdateTemplateConversion(profileId!, file.path);
   }
@@ -690,8 +701,8 @@ async function switchNoteProfile(
   if (document === null) {
     return refusedUpdateMissingDocument(profile.document!, file.path);
   }
-  const previousProfileId = stampedProfileId(ctx, file);
-  await stampNoteProfile(ctx, file, profileId);
+  const previousStamp = readProfileStamp(ctx.app.metadataCache, file)?.stamp;
+  await stampNoteProfile(ctx, file, profile.stamp);
   let result: UpdateResult;
   try {
     result = await updateNote(ctx, file, {
@@ -699,15 +710,19 @@ async function switchNoteProfile(
       profileOverride: options.profileId,
     });
     if (result.diagnostic) {
-      await stampNoteProfile(ctx, file, previousProfileId);
+      await stampNoteProfile(ctx, file, previousStamp);
     }
   } catch (error) {
-    await stampNoteProfile(ctx, file, previousProfileId);
+    await stampNoteProfile(ctx, file, previousStamp);
     throw error;
   }
   if (result.diagnostic) return result;
 
-  await stampImportedNoteFamily(ctx, options.importedNotes ?? [], profileId);
+  await stampImportedNoteFamily(
+    ctx,
+    options.importedNotes ?? [],
+    profile.stamp,
+  );
   return result;
 }
 
@@ -718,10 +733,9 @@ async function switchImportedNoteProfile(
 ): Promise<UpdateResult> {
   const settings = await ctx.settings.loaded;
   const profileId = options.profileId ?? undefined;
-  if (!resolveLiteratureNoteProfile(settings, profileId)) {
-    return refusedUpdateProfile(profileId!, file.path);
-  }
-  await stampNoteProfile(ctx, file, profileId);
+  const profile = resolveLiteratureNoteProfile(settings, profileId);
+  if (!profile) return refusedUpdateProfile(profileId!, file.path);
+  await stampNoteProfile(ctx, file, profile.stamp);
   return NO_BODY_UPDATE;
 }
 
@@ -743,22 +757,23 @@ async function getImportedNotesForItem(
 async function stampImportedNoteFamily(
   ctx: NoteFeatureDeps,
   files: readonly TFile[],
-  profileId: string | undefined,
+  stamp: string | undefined,
 ): Promise<void> {
   const previous = files.map(
-    (file) => [file, stampedProfileId(ctx, file)] as const,
+    (file) =>
+      [file, readProfileStamp(ctx.app.metadataCache, file)?.stamp] as const,
   );
   const attempted: typeof previous = [];
   try {
     for (const entry of previous) {
       attempted.push(entry);
-      await stampNoteProfile(ctx, entry[0], profileId);
+      await stampNoteProfile(ctx, entry[0], stamp);
     }
   } catch (error) {
     const rollbackErrors: unknown[] = [];
-    for (const [file, previousProfileId] of attempted.toReversed()) {
+    for (const [file, previousStamp] of attempted.toReversed()) {
       try {
-        await stampNoteProfile(ctx, file, previousProfileId);
+        await stampNoteProfile(ctx, file, previousStamp);
       } catch (rollbackError) {
         rollbackErrors.push(rollbackError);
       }
@@ -773,14 +788,15 @@ async function stampImportedNoteFamily(
   }
 }
 
+/** Write one note's Profile stamp; `undefined` unstamps it as the default. */
 async function stampNoteProfile(
   ctx: NoteFeatureDeps,
   file: TFile,
-  profileId: string | undefined,
+  stamp: string | undefined,
 ): Promise<void> {
   await ctx.app.fileManager.processFrontMatter(file, (fm) => {
-    if (profileId === undefined) delete fm[FIELD_LITERATURE_NOTE_PROFILE];
-    else fm[FIELD_LITERATURE_NOTE_PROFILE] = profileId;
+    if (stamp === undefined) delete fm[FIELD_LITERATURE_NOTE_PROFILE];
+    else fm[FIELD_LITERATURE_NOTE_PROFILE] = stamp;
   });
 }
 
@@ -799,7 +815,8 @@ async function writeNoteUpdate(
   file: TFile,
   options: WriteNoteUpdateOptions,
 ): Promise<UpdateResult> {
-  const profileId = stampedProfileId(ctx, file);
+  const stamped = readProfileStamp(ctx.app.metadataCache, file);
+  const profileId = stamped?.id;
   if (options.profileId !== undefined) {
     const requestedId = options.profileId ?? undefined;
     if (!resolveLiteratureNoteProfile(options.settings, requestedId)) {
@@ -813,7 +830,7 @@ async function writeNoteUpdate(
     }
   }
   const profile = resolveLiteratureNoteProfile(options.settings, profileId);
-  if (!profile) return refusedUpdateProfile(profileId!, file.path);
+  if (!profile) return refusedUpdateProfile(stamped!.stamp, file.path);
   if (conversionRequired(options.settings, profileId)) {
     return refusedUpdateTemplateConversion(profileId!, file.path);
   }
@@ -979,9 +996,10 @@ async function overwriteNote(
     ctx.noteIndex.whenIndexed(),
     ctx.template.ready,
   ]);
-  const profileId = stampedProfileId(ctx, file);
+  const stamped = readProfileStamp(ctx.app.metadataCache, file);
+  const profileId = stamped?.id;
   const profile = resolveLiteratureNoteProfile(settings, profileId);
-  if (!profile) return refusedUpdateProfile(profileId!, file.path);
+  if (!profile) return refusedUpdateProfile(stamped!.stamp, file.path);
   if (conversionRequired(settings, profileId)) {
     return refusedUpdateTemplateConversion(profileId!, file.path);
   }
@@ -1081,7 +1099,9 @@ function renderAnnotation(
           : undefined;
         return ctx.template.renderProfileAnnotation(data, {
           settings,
-          profileId: file ? stampedProfileId(ctx, file) : undefined,
+          profile: file
+            ? readProfileStamp(ctx.app.metadataCache, file)
+            : undefined,
         });
       },
     }).get(annotation.key) ?? null
@@ -1272,14 +1292,16 @@ function applyFrontmatter(
   if (failed.length > 0) {
     ctx.events.emit("frontmatter-eval-failed", { itemKey, fields: failed });
   }
-  if (profile.id === undefined) delete fm[FIELD_LITERATURE_NOTE_PROFILE];
-  else fm[FIELD_LITERATURE_NOTE_PROFILE] = profile.id;
+  if (profile.stamp === undefined) delete fm[FIELD_LITERATURE_NOTE_PROFILE];
+  else fm[FIELD_LITERATURE_NOTE_PROFILE] = profile.stamp;
   if (profile.citationStyle == null) delete fm[FIELD_CITATION_STYLE];
   else fm[FIELD_CITATION_STYLE] = profile.citationStyle;
 }
 
 interface ResolvedLiteratureNoteProfile {
   id: string | undefined;
+  /** Stamp a note written under this Profile carries; absent for the default. */
+  stamp: string | undefined;
   document: string | undefined;
   settings: ProfileBindingSettings;
   citationStyle: string | null | undefined;
@@ -1292,6 +1314,7 @@ function resolveLiteratureNoteProfile(
   if (id === undefined) {
     return {
       id,
+      stamp: undefined,
       document: settings["note.default-profile"].document,
       settings: bindLiteratureNoteProfile(settings)!,
       citationStyle: undefined,
@@ -1303,6 +1326,7 @@ function resolveLiteratureNoteProfile(
   if (!profile) return undefined;
   return {
     id,
+    stamp: formatProfileStamp(profile),
     document: profile.document,
     settings: bindLiteratureNoteProfile(settings, id)!,
     citationStyle: profile.bindings?.["citation.references-style"],
@@ -1326,19 +1350,8 @@ function resolveProfileDocument(
   return ctx.template.getLiteratureNoteTemplate(profile.document) ?? null;
 }
 
-function stampedProfileId(
-  ctx: NoteFeatureDeps,
-  file: TFile,
-): string | undefined {
-  const value =
-    ctx.app.metadataCache.getFileCache(file)?.frontmatter?.[
-      FIELD_LITERATURE_NOTE_PROFILE
-    ];
-  return value === undefined ? undefined : String(value);
-}
-
 function refusedUnknownProfile(
-  profileId: string,
+  stamp: string,
   context: { path?: string; indexedKey?: string },
 ): {
   outcome: "refused";
@@ -1349,16 +1362,16 @@ function refusedUnknownProfile(
     diagnostic: {
       code: "unknown-literature-note-profile",
       hint: "Re-stamp the note or recreate the Profile with the same ID.",
-      profileId,
+      stamp,
       ...context,
     },
   };
 }
 
-function refusedUpdateProfile(profileId: string, path: string): UpdateResult {
+function refusedUpdateProfile(stamp: string, path: string): UpdateResult {
   return {
     ...NO_BODY_UPDATE,
-    diagnostic: refusedUnknownProfile(profileId, { path }).diagnostic,
+    diagnostic: refusedUnknownProfile(stamp, { path }).diagnostic,
   };
 }
 

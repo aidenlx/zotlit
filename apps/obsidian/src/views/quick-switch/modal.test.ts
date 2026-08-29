@@ -104,8 +104,8 @@ describe("QuickSwitchModal instructions", () => {
 
 describe("QuickSwitchModal Profile conflicts", () => {
   it("names both the current and requested Profiles in the decision", async () => {
-    const currentId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
-    const requestedId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const currentId = "Bk3Qn7XvT2Lp";
+    const requestedId = "Rz9Wm4YfH6Kd";
     const file = { path: "Literature/Existing.md" } as TFile;
     vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
       id: requestedId,
@@ -161,9 +161,97 @@ describe("QuickSwitchModal Profile conflicts", () => {
     );
   });
 
+  it("names the current Profile from a full-form stamp", async () => {
+    const currentId = "Bk3Qn7XvT2Lp";
+    const requestedId = "Rz9Wm4YfH6Kd";
+    const file = { path: "Literature/Existing.md" } as TFile;
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
+      id: requestedId,
+      label: "Papers",
+    });
+    vi.mocked(confirm).mockResolvedValue(false);
+    const modal = new QuickSwitchModal({
+      app: {
+        metadataCache: {
+          getFileCache: () => ({
+            frontmatter: { "zotlit-profile": "Books (Bk3Qn7XvT2Lp)" },
+          }),
+        },
+        workspace: { openLinkText: vi.fn() },
+      },
+      lookup: { search: vi.fn().mockReturnValue([]) },
+      noteFeature: {
+        createNote: vi.fn(),
+        getImportedNotesForItem: vi.fn().mockResolvedValue([]),
+        switchImportedNoteProfile: vi.fn(),
+        switchNoteProfile: vi.fn(),
+      },
+      noteIndex: { getNotesByItemKey: () => [file] },
+      settings: {
+        current: {
+          "note.profiles": [
+            { id: currentId, label: "Books" },
+            { id: requestedId, label: "Papers" },
+          ],
+        },
+      },
+    } as unknown as QuickSwitchDeps);
+
+    await modal.onChooseSuggestion(
+      { item: { indexedKey: "ABC12345" } } as never,
+      {} as KeyboardEvent,
+    );
+
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ cancel: "Keep “Books”" }),
+      expect.anything(),
+    );
+  });
+
+  it("keeps the note when a full-form stamp already names the chosen Profile", async () => {
+    const currentId = "Bk3Qn7XvT2Lp";
+    const file = { path: "Literature/Existing.md" } as TFile;
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
+      id: currentId,
+      label: "Books",
+    });
+    const switchNoteProfile = vi.fn();
+    const modal = new QuickSwitchModal({
+      app: {
+        metadataCache: {
+          getFileCache: () => ({
+            frontmatter: { "zotlit-profile": "Books (Bk3Qn7XvT2Lp)" },
+          }),
+        },
+        workspace: { openLinkText: vi.fn() },
+      },
+      lookup: { search: vi.fn().mockReturnValue([]) },
+      noteFeature: {
+        createNote: vi.fn(),
+        getImportedNotesForItem: vi.fn().mockResolvedValue([]),
+        switchImportedNoteProfile: vi.fn(),
+        switchNoteProfile,
+      },
+      noteIndex: { getNotesByItemKey: () => [file] },
+      settings: {
+        current: {
+          "note.profiles": [{ id: currentId, label: "Books" }],
+        },
+      },
+    } as unknown as QuickSwitchDeps);
+
+    await modal.onChooseSuggestion(
+      { item: { indexedKey: "ABC12345" } } as never,
+      {} as KeyboardEvent,
+    );
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(switchNoteProfile).not.toHaveBeenCalled();
+  });
+
   it("passes the counted family only when the option is checked", async () => {
-    const currentId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
-    const requestedId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const currentId = "Bk3Qn7XvT2Lp";
+    const requestedId = "Rz9Wm4YfH6Kd";
     const file = { path: "Literature/Existing.md" } as TFile;
     const imported = [
       { path: "Imported/First.md" },
@@ -240,8 +328,8 @@ describe("QuickSwitchModal Profile conflicts", () => {
 
 describe("Imported Note Profile switching", () => {
   it("states that the switch applies on the next re-import", async () => {
-    const currentId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
-    const requestedId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const currentId = "Bk3Qn7XvT2Lp";
+    const requestedId = "Rz9Wm4YfH6Kd";
     const file = { path: "Imported/Existing.md" } as TFile;
     vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
       id: requestedId,
@@ -287,7 +375,7 @@ describe("Imported Note Profile switching", () => {
   it("leaves the Imported Note unchanged when consent is declined", async () => {
     const file = { path: "Imported/Existing.md" } as TFile;
     vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
-      id: "93f0df01-9de9-47e6-aa12-1ff770c1ab86",
+      id: "Rz9Wm4YfH6Kd",
       label: "Papers",
     });
     vi.mocked(confirm).mockResolvedValue(false);
@@ -305,7 +393,7 @@ describe("Imported Note Profile switching", () => {
           current: {
             "note.profiles": [
               {
-                id: "93f0df01-9de9-47e6-aa12-1ff770c1ab86",
+                id: "Rz9Wm4YfH6Kd",
                 label: "Papers",
               },
             ],

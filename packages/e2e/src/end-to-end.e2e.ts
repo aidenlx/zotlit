@@ -175,7 +175,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "utf-8",
     );
     expect(defaultContent).not.toContain("zotlit-profile:");
-    expect(booksContent).toContain(`zotlit-profile: ${booksProfile.id}`);
+    expect(booksContent).toContain("zotlit-profile: Books (V1StGXR8Z5jd)");
     expect(booksContent).toContain(
       `zotlit-csl: ${booksProfile.bindings["citation.references-style"]}`,
     );

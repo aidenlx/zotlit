@@ -236,7 +236,7 @@ describe("WikilinkReading rendering", () => {
       presentationFailure: {
         kind: "unusable",
         property: "profile",
-        profileId: "deleted-profile",
+        stamp: "deleted-profile",
         target: "Imported/Research.md",
       },
     });

@@ -98,14 +98,14 @@ describe("CitationPopoverContent", () => {
     const container = await render([entry("doe2024")], undefined, {
       kind: "unusable",
       property: "profile",
-      profileId: "deleted-profile",
+      stamp: "Reading notes (Bk3Qn7XvT2Lp)",
       target: "Imported/Research.md",
     });
 
     const diagnostic = container.querySelector(
       "[data-citation-popover-profile-error]",
     );
-    expect(diagnostic?.textContent).toContain("deleted-profile");
+    expect(diagnostic?.textContent).toContain("Reading notes (Bk3Qn7XvT2Lp)");
     expect(diagnostic?.textContent).toContain("Re-stamp the note");
   });
 

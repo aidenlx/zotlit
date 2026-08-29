@@ -184,7 +184,7 @@ export function noteOperationDiagnosticNotice(
   switch (diagnostic.code) {
     case "unknown-literature-note-profile":
       return m.notice_literature_note_profile_unknown({
-        id: diagnostic.profileId,
+        stamp: diagnostic.stamp,
       });
     case "literature-note-profile-conflict":
       return m.notice_literature_note_profile_conflict();

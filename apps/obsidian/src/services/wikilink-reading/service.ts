@@ -174,7 +174,7 @@ export class WikilinkReading extends Service<void> {
     const failure = text?.presentationFailure;
     if (failure) {
       const diagnostic = m.notice_imported_note_profile_unknown({
-        id: failure.profileId,
+        stamp: failure.stamp,
         target: failure.target,
       });
       for (const { source } of runs.flat()) {

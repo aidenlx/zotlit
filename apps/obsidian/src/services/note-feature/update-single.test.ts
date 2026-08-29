@@ -74,11 +74,11 @@ describe("updateNoteToast", () => {
         diagnostic: {
           code: "unknown-literature-note-profile",
           hint: "Re-stamp the note or recreate the Profile with the same ID.",
-          profileId: "deleted-profile",
+          stamp: "Reading notes (Bk3Qn7XvT2Lp)",
         },
       }),
     ).toBe(
-      "This literature note uses an unknown profile (deleted-profile). Re-stamp the note or recreate the profile with the same ID.",
+      "This literature note uses an unknown profile: Reading notes (Bk3Qn7XvT2Lp). Re-stamp the note or recreate the profile with the same ID.",
     );
   });
 

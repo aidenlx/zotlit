@@ -164,7 +164,7 @@ function documentPresentationBody(
       return m.references_document_language_failed_body();
     case "profile":
       return m.notice_imported_note_profile_unknown({
-        id: failure.profileId,
+        stamp: failure.stamp,
         target: failure.target,
       });
     case "profile-style":

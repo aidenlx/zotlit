@@ -364,7 +364,7 @@ describe("createNote", () => {
   });
 
   it("preserves suffix retries for a Profile document filename", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     const item = makeItem({
       itemID: 1,
       key: "ROOT1234",
@@ -887,7 +887,7 @@ describe("createNote", () => {
   });
 
   it("creates under an explicit Profile with its folder, stamp, and citation style", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     const item = makeItem({
       key: "ROOT1234",
       indexedKey: "ROOT1234",
@@ -939,7 +939,7 @@ describe("createNote", () => {
 
     expect(file.path).toBe("Books/Root.md");
     expect(app.vault.contentByPath.get(file.path)).toContain(
-      `${FIELD_LITERATURE_NOTE_PROFILE}: ${profileId}`,
+      `${FIELD_LITERATURE_NOTE_PROFILE}: Books (Bk3Qn7XvT2Lp)`,
     );
     expect(app.vault.contentByPath.get(file.path)).toContain(
       `${FIELD_CITATION_STYLE}: apa`,
@@ -982,7 +982,7 @@ describe("createNote", () => {
   });
 
   it("gates added Profiles while legacy template conversion is pending", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     const app = makeApp();
     const result = await createNoteFeature({
       app,
@@ -1063,7 +1063,7 @@ describe("createNote", () => {
   });
 
   it("creates a Profile note from its document body, filename, and frontmatter", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     const item = makeCreateGateItem();
     vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
     const app = makeApp();
@@ -1138,14 +1138,16 @@ describe("createNote", () => {
       content.indexOf('"1": one'),
     );
     expect(content).toContain(`${FIELD_ZOTERO_KEY}: ROOT1234`);
-    expect(content).toContain(`${FIELD_LITERATURE_NOTE_PROFILE}: ${profileId}`);
+    expect(content).toContain(
+      `${FIELD_LITERATURE_NOTE_PROFILE}: Books (Bk3Qn7XvT2Lp)`,
+    );
     expect(document.renderForCreate).toHaveBeenCalledOnce();
     expect(document.renderFilename).toHaveBeenCalled();
     expect(renderLegacy).not.toHaveBeenCalledWith("note", expect.anything());
   });
 
   it("refuses create before writing when a document js field is inert", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
     const app = makeApp();
     const document = makeDocumentTemplate({
@@ -1199,7 +1201,7 @@ describe("createNote", () => {
   });
 
   it("refuses create when a Profile document is missing", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     const app = makeApp();
     const deps: SyncRenderDeps = {
       app,
@@ -1246,8 +1248,8 @@ describe("createNote", () => {
   });
 
   it("returns a Profile conflict when an explicit create disagrees with the existing stamp", async () => {
-    const existingProfileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
-    const requestedProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const existingProfileId = "Bk3Qn7XvT2Lp";
+    const requestedProfileId = "Rz9Wm4YfH6Kd";
     const existing = makeFile("Books/Root.md");
     const app = makeApp();
     app.metadataCache.getFileCache.mockReturnValue({
@@ -1296,8 +1298,44 @@ describe("createNote", () => {
 });
 
 describe("overwriteNote", () => {
+  it("re-emits the stamp with the Profile's current label", async () => {
+    const profileId = "Bk3Qn7XvT2Lp";
+    const item = makeItem({
+      itemID: 1,
+      key: "ROOT1234",
+      indexedKey: "ROOT1234",
+      title: "Root",
+      citationKey: null,
+    });
+    vi.mocked(resolveIndexedKeyLibrary).mockReturnValue({
+      key: item.key,
+      libraryID: item.libraryID,
+    });
+    vi.mocked(getItemsByKey).mockReturnValue([item]);
+    vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
+    const harness = makeUpdateHarness({
+      content: "Old body content",
+      frontmatter: {
+        [FIELD_LITERATURE_NOTE_PROFILE]: `Reading notes (${profileId})`,
+      },
+      settings: {
+        "note.profiles": [{ id: profileId, label: "Books" }],
+      },
+    });
+
+    const result = await createNoteFeature(harness.deps).overwriteNote(
+      makeFile("Books/Root.md"),
+      item.indexedKey,
+    );
+
+    expect(result.diagnostic).toBeUndefined();
+    expect(harness.frontmatter()).toMatchObject({
+      [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
+    });
+  });
+
   it("refuses before writing when a document field fails", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     const item = makeItem({
       itemID: 1,
       key: "ROOT1234",
@@ -1563,7 +1601,7 @@ function stubIndexedKeyUpdate(context: NoteTemplateContext): void {
 
 describe("updateNote", () => {
   it("gates a stamped added Profile while legacy conversion is pending", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
@@ -1593,7 +1631,7 @@ describe("updateNote", () => {
   });
 
   it("follows the stamped Profile and refreshes its citation-style binding", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -1619,13 +1657,180 @@ describe("updateNote", () => {
 
     expect(harness.frontmatter()).toMatchObject({
       [FIELD_ZOTERO_KEY]: "ABC12345",
-      [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+      [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
       [FIELD_CITATION_STYLE]: "apa",
     });
   });
 
+  it("resolves a stale hint by its ID and refreshes it to the current label", async () => {
+    const profileId = "Bk3Qn7XvT2Lp";
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: {
+        [FIELD_LITERATURE_NOTE_PROFILE]: `Reading notes (${profileId})`,
+      },
+      settings: {
+        "note.profiles": [
+          {
+            id: profileId,
+            label: "Books",
+            bindings: { "citation.references-style": "apa" },
+          },
+        ],
+      },
+    });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Books/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(result.diagnostic).toBeUndefined();
+    // The renamed Profile still owns the note, and the note now names it.
+    expect(harness.frontmatter()).toMatchObject({
+      [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
+      [FIELD_CITATION_STYLE]: "apa",
+    });
+  });
+
+  it("takes the last parenthesised id when the label ends in one too", async () => {
+    // The worst label a user can write: one that itself ends in something
+    // shaped exactly like a Profile stamp, naming the other Profile.
+    const profileId = "Bk3Qn7XvT2Lp";
+    const otherId = "Rz9Wm4YfH6Kd";
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: {
+        [FIELD_LITERATURE_NOTE_PROFILE]: `Books (${otherId}) (${profileId})`,
+      },
+      settings: {
+        "note.profiles": [
+          {
+            id: profileId,
+            label: `Books (${otherId})`,
+            bindings: { "citation.references-style": "apa" },
+          },
+          {
+            id: otherId,
+            label: "Papers",
+            bindings: { "citation.references-style": "ieee" },
+          },
+        ],
+      },
+    });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Books/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(result.diagnostic).toBeUndefined();
+    expect(harness.frontmatter()).toMatchObject({
+      [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Rz9Wm4YfH6Kd) (Bk3Qn7XvT2Lp)",
+      [FIELD_CITATION_STYLE]: "apa",
+    });
+  });
+
+  it("carries a non-Latin Profile label into the stamp unchanged", async () => {
+    const profileId = "Bk3Qn7XvT2Lp";
+    stubIndexedKeyUpdate(updateContext());
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
+      settings: {
+        "note.profiles": [{ id: profileId, label: "读书笔记" }],
+      },
+    });
+
+    await createNoteFeature(harness.deps).updateNote(
+      makeFile("Books/Root.md"),
+      {
+        indexedKey: "ABC12345",
+      },
+    );
+
+    expect(harness.frontmatter()).toMatchObject({
+      [FIELD_LITERATURE_NOTE_PROFILE]: "读书笔记 (Bk3Qn7XvT2Lp)",
+    });
+  });
+
+  it("refuses a hint-only stamp instead of matching it to a label", async () => {
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: "Reading notes" },
+      settings: {
+        "note.profiles": [{ id: "Bk3Qn7XvT2Lp", label: "Reading notes" }],
+      },
+    });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(result).toEqual({
+      bodyUpdated: false,
+      duplicateRegionCount: 0,
+      diagnostic: {
+        code: "unknown-literature-note-profile",
+        hint: expect.stringContaining("Re-stamp"),
+        stamp: "Reading notes",
+        path: "Literature/Root.md",
+      },
+    });
+    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a stamp whose parenthesised id is malformed", async () => {
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: "Books (nope)" },
+      settings: {
+        "note.profiles": [{ id: "Bk3Qn7XvT2Lp", label: "Books" }],
+      },
+    });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(result.diagnostic).toMatchObject({
+      code: "unknown-literature-note-profile",
+      stamp: "Books (nope)",
+      path: "Literature/Root.md",
+    });
+    expect(harness.processMock).not.toHaveBeenCalled();
+  });
+
+  it("prints an unknown full-form stamp exactly as the note carries it", async () => {
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: {
+        [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Rz9Wm4YfH6Kd)",
+      },
+      settings: {
+        "note.profiles": [{ id: "Bk3Qn7XvT2Lp", label: "Books" }],
+      },
+    });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(result.diagnostic).toMatchObject({
+      code: "unknown-literature-note-profile",
+      stamp: "Books (Rz9Wm4YfH6Kd)",
+      path: "Literature/Root.md",
+    });
+  });
+
   it("removes zotlit-csl when the stamped Profile selects the built-in style", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -1653,7 +1858,7 @@ describe("updateNote", () => {
   });
 
   it("inherits omitted Profile bindings from the main settings", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -1688,7 +1893,7 @@ describe("updateNote", () => {
   });
 
   it("renders only the stamped Profile document Managed Block on update", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: `User prefix\n${formatManagedRegion("OLD")}\nUser suffix`,
@@ -1723,7 +1928,7 @@ describe("updateNote", () => {
   });
 
   it("uses document Managed Frontmatter in entry order and preserves other keys", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -1765,7 +1970,7 @@ describe("updateNote", () => {
     expect(harness.frontmatter()).toEqual({
       unmanaged: "keep",
       title: "A Study",
-      [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+      [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
       tags: ["A Study"],
       label: "A Study!",
       [FIELD_ZOTERO_KEY]: "ABC12345",
@@ -1774,7 +1979,7 @@ describe("updateNote", () => {
   });
 
   it("uses document Managed Frontmatter for a metadata-only update", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     stubIndexedKeyUpdate(updateContext());
     const original = `prefix\n${formatManagedRegion("OLD")}\nsuffix`;
     const harness = makeUpdateHarness({
@@ -1804,12 +2009,12 @@ describe("updateNote", () => {
     expect(harness.frontmatter()).toMatchObject({
       title: "A Study",
       [FIELD_ZOTERO_KEY]: "ABC12345",
-      [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+      [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
     });
   });
 
   it("refuses every document field when a js entry is inert", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -1867,7 +2072,7 @@ describe("updateNote", () => {
   });
 
   it("collects document field errors and leaves the whole note untouched", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     stubIndexedKeyUpdate(updateContext({ infinity: Number.POSITIVE_INFINITY }));
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -1929,7 +2134,7 @@ describe("updateNote", () => {
   ] as const)(
     "applies an absent document value under %s",
     async (merge, preserved) => {
-      const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+      const profileId = "Bk3Qn7XvT2Lp";
       stubIndexedKeyUpdate(updateContext());
       const harness = makeUpdateHarness({
         content: formatManagedRegion("OLD"),
@@ -1968,7 +2173,7 @@ describe("updateNote", () => {
   );
 
   it("updates only frontmatter for a Profile document without a Managed Block", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: "Static user-owned body",
@@ -2005,7 +2210,7 @@ describe("updateNote", () => {
   });
 
   it("refuses a body update when the stamped Profile document is missing", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
@@ -2041,7 +2246,7 @@ describe("updateNote", () => {
   });
 
   it("refuses an unknown Profile stamp without touching the note", async () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
@@ -2058,7 +2263,7 @@ describe("updateNote", () => {
       diagnostic: {
         code: "unknown-literature-note-profile",
         hint: expect.stringContaining("Re-stamp"),
-        profileId,
+        stamp: profileId,
         path: "Literature/Root.md",
       },
     });
@@ -2067,8 +2272,8 @@ describe("updateNote", () => {
   });
 
   it("switches the stamp after consent and refreshes with the new Profile", async () => {
-    const oldProfileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
-    const newProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const oldProfileId = "Bk3Qn7XvT2Lp";
+    const newProfileId = "Rz9Wm4YfH6Kd";
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -2092,13 +2297,13 @@ describe("updateNote", () => {
 
     expect(result.diagnostic).toBeUndefined();
     expect(harness.frontmatter()).toMatchObject({
-      [FIELD_LITERATURE_NOTE_PROFILE]: newProfileId,
+      [FIELD_LITERATURE_NOTE_PROFILE]: "Papers (Rz9Wm4YfH6Kd)",
       [FIELD_CITATION_STYLE]: "ieee",
     });
   });
 
   it("re-stamps an Imported Note without refreshing or moving it", async () => {
-    const newProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const newProfileId = "Rz9Wm4YfH6Kd";
     const harness = makeUpdateHarness({
       content: "Imported body",
       settings: {
@@ -2113,7 +2318,7 @@ describe("updateNote", () => {
 
     expect(result.diagnostic).toBeUndefined();
     expect(harness.frontmatter()).toMatchObject({
-      [FIELD_LITERATURE_NOTE_PROFILE]: newProfileId,
+      [FIELD_LITERATURE_NOTE_PROFILE]: "Papers (Rz9Wm4YfH6Kd)",
     });
     expect(harness.content()).toBe("Imported body");
     expect(harness.processMock).not.toHaveBeenCalled();
@@ -2138,8 +2343,8 @@ describe("updateNote", () => {
   });
 
   it("re-stamps an opted-in Imported Note family after the Literature Note switch", async () => {
-    const oldProfileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
-    const newProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const oldProfileId = "Bk3Qn7XvT2Lp";
+    const newProfileId = "Rz9Wm4YfH6Kd";
     const imported = [
       makeFile("Imported/First.md"),
       makeFile("Imported/Second.md"),
@@ -2171,7 +2376,7 @@ describe("updateNote", () => {
   });
 
   it("does not re-stamp the Imported Note family when the Literature Note switch is refused", async () => {
-    const newProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const newProfileId = "Rz9Wm4YfH6Kd";
     const imported = makeFile("Imported/First.md");
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -2197,8 +2402,8 @@ describe("updateNote", () => {
   });
 
   it("restores Imported Note stamps when one family write fails", async () => {
-    const oldProfileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
-    const newProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const oldProfileId = "Bk3Qn7XvT2Lp";
+    const newProfileId = "Rz9Wm4YfH6Kd";
     const literature = makeFile("Literature/Root.md");
     const imported = [
       makeFile("Imported/First.md"),
@@ -2243,7 +2448,7 @@ describe("updateNote", () => {
     ).rejects.toThrow("frontmatter write failed");
 
     expect(frontmatters.get(literature.path)).toMatchObject({
-      [FIELD_LITERATURE_NOTE_PROFILE]: newProfileId,
+      [FIELD_LITERATURE_NOTE_PROFILE]: "Papers (Rz9Wm4YfH6Kd)",
     });
     for (const file of imported) {
       expect(frontmatters.get(file.path)).toMatchObject({
@@ -2253,8 +2458,8 @@ describe("updateNote", () => {
   });
 
   it("restores the previous stamp when a Profile switch fails", async () => {
-    const oldProfileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
-    const newProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const oldProfileId = "Bk3Qn7XvT2Lp";
+    const newProfileId = "Rz9Wm4YfH6Kd";
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -2595,7 +2800,7 @@ describe("writeNoteUpdate", () => {
 
   it("uses document Managed Frontmatter for a headless metadata update", async () => {
     vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     const original = `prefix\n${formatManagedRegion("OLD")}\nsuffix`;
     const harness = makeUpdateHarness({
       content: original,
@@ -2626,13 +2831,13 @@ describe("writeNoteUpdate", () => {
     expect(harness.frontmatter()).toMatchObject({
       title: "A Study",
       [FIELD_ZOTERO_KEY]: "ABC12345",
-      [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+      [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Bk3Qn7XvT2Lp)",
     });
   });
 
   it("refuses a conflicting explicit Profile on the headless batch seam", async () => {
-    const stampedId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
-    const requestedId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const stampedId = "Bk3Qn7XvT2Lp";
+    const requestedId = "Rz9Wm4YfH6Kd";
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: stampedId },
@@ -2838,7 +3043,7 @@ describe("renderAnnotation", () => {
   });
 
   it("uses the annotation parent item's stamped Profile at drag start", () => {
-    const profileId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const profileId = "Bk3Qn7XvT2Lp";
     vi.mocked(getAnnotationsByItemId).mockReturnValue([
       { key: "ANN1" } as never,
     ]);
@@ -2882,7 +3087,7 @@ describe("renderAnnotation", () => {
       expect.objectContaining({
         parentItem: expect.objectContaining({ indexedKey: "PARENT1" }),
       }),
-      expect.objectContaining({ profileId }),
+      expect.objectContaining({ profile: { id: profileId, stamp: profileId } }),
     );
   });
 
@@ -2904,7 +3109,7 @@ describe("renderAnnotation", () => {
     expect(result).toBe("DEFAULT ANNOTATION");
     expect(template.renderProfileAnnotation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ profileId: undefined }),
+      expect.objectContaining({ profile: undefined }),
     );
   });
 });

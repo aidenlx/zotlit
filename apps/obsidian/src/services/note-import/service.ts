@@ -34,6 +34,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
+import { formatProfileStamp, readProfileStamp } from "@/lib/profile-stamp";
+import type { ProfileStamp } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type {
   AttachmentImport,
@@ -46,6 +48,7 @@ import {
   truncateToByteLimit,
 } from "@/services/note-feature/filename";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { Settings } from "@/services/settings/schema";
 import {
   bindLiteratureNoteProfile,
   boundLiteratureNoteProfileId,
@@ -79,7 +82,8 @@ interface RunContext {
   groupIdMemo?: GroupIDMemo;
   tagMemo?: TagMemo;
   attachmentFolderCache: Map<string, string>;
-  profileId: string | undefined;
+  /** Profile every note this run writes belongs to; absent is the default. */
+  profile: ProfileStamp | undefined;
 }
 
 interface QueuedImport {
@@ -204,7 +208,10 @@ async function prepareImport(
     groupIdMemo: options.groupIdMemo,
     tagMemo: options.tagMemo,
     attachmentFolderCache: new Map(),
-    profileId: boundLiteratureNoteProfileId(settings),
+    profile: importedNoteProfile(
+      settings,
+      boundLiteratureNoteProfileId(settings),
+    ),
   };
   const queue: QueuedImport[] = [];
   logger.debug("Prepared note import", { sourcePath, importFolder });
@@ -226,12 +233,13 @@ async function doImportNote(
         ? ctx.app.vault.getFileByPath(options.targetFile.path)
         : null) ?? ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
 
-    const profileId = existing
-      ? stampedProfileId(ctx, existing)
-      : profileIdForExplicitCreate(ctx, note, options);
+    const stamped = existing
+      ? readProfileStamp(ctx.app.metadataCache, existing)
+      : stampedProfileForExplicitCreate(ctx, note, options);
+    const profileId = stamped?.id;
     const settings = bindLiteratureNoteProfile(options.settings, profileId);
     if (!settings) {
-      throw new NoteImportProfileError(profileId!, {
+      throw new NoteImportProfileError(stamped!.stamp, {
         path: existing?.path,
         indexedKey: note.indexedKey,
       });
@@ -242,7 +250,7 @@ async function doImportNote(
       groupIdMemo: options.groupIdMemo,
       tagMemo: options.tagMemo,
       attachmentFolderCache: options.attachmentFolderCache ?? new Map(),
-      profileId,
+      profile: importedNoteProfile(settings, profileId),
     };
 
     if (existing) {
@@ -407,7 +415,7 @@ async function writeNote(
               renderAnnotation: (data) =>
                 ctx.template.renderProfileAnnotation(data, {
                   settings: run.settings,
-                  profileId: run.profileId,
+                  profile: run.profile,
                 }),
             },
           )
@@ -436,9 +444,9 @@ async function writeNote(
     date: stringifyInstant(note.dateAdded),
     [FIELD_ZOTERO_NOTE_KEY]: note.indexedKey,
     [FIELD_ZOTERO_LASTMOD]: stringifyInstant(note.dateModified),
-    ...(run.profileId === undefined
+    ...(run.profile === undefined
       ? {}
-      : { [FIELD_LITERATURE_NOTE_PROFILE]: run.profileId }),
+      : { [FIELD_LITERATURE_NOTE_PROFILE]: run.profile.stamp }),
   };
   const content = `---\n${stringifyYaml(frontmatter)}---\n${body}`;
 
@@ -471,32 +479,43 @@ async function writeNote(
   return outcome;
 }
 
-function profileIdForExplicitCreate(
+/**
+ * The Profile an Imported Note written under `profileId` belongs to, with its
+ * stamp composed from the Profile's current label.
+ */
+function importedNoteProfile(
+  settings: Readonly<Settings>,
+  profileId: string | undefined,
+): ProfileStamp | undefined {
+  if (profileId === undefined) return undefined;
+  // Both callers bind the Profile through `bindLiteratureNoteProfile` first,
+  // which fails on an id no configured Profile carries.
+  const profile = settings["note.profiles"].find(({ id }) => id === profileId)!;
+  return { id: profileId, stamp: formatProfileStamp(profile) };
+}
+
+/** The parent Literature Note's stamp an explicitly created note inherits. */
+function stampedProfileForExplicitCreate(
   ctx: Ctx,
   note: Note,
   options: ImportNoteOptions,
-): string | undefined {
+): ProfileStamp | undefined {
   if (note.parentItemID === null) return undefined;
   const parent = getItemsByID(options.client, [note.parentItemID], {
     memo: options.groupIdMemo,
   })[0];
   if (!parent) return undefined;
   const literatureNote = ctx.noteIndex.getNotesByItemKey(parent.indexedKey)[0];
-  return literatureNote ? stampedProfileId(ctx, literatureNote) : undefined;
-}
-
-function stampedProfileId(ctx: Ctx, file: TFile): string | undefined {
-  const value =
-    ctx.app.metadataCache.getFileCache(file)?.frontmatter?.[
-      FIELD_LITERATURE_NOTE_PROFILE
-    ];
-  return value === undefined ? undefined : String(value);
+  return literatureNote
+    ? readProfileStamp(ctx.app.metadataCache, literatureNote)
+    : undefined;
 }
 
 export interface UnknownImportedNoteProfileDiagnostic {
   readonly code: "unknown-literature-note-profile";
   readonly hint: string;
-  readonly profileId: string;
+  /** The Profile stamp as the note carries it, printed verbatim. */
+  readonly stamp: string;
   readonly path?: string;
   readonly indexedKey?: string;
 }
@@ -504,20 +523,17 @@ export interface UnknownImportedNoteProfileDiagnostic {
 export class NoteImportProfileError extends Error {
   readonly diagnostic: UnknownImportedNoteProfileDiagnostic;
 
-  constructor(
-    profileId: string,
-    context: { path?: string; indexedKey?: string },
-  ) {
+  constructor(stamp: string, context: { path?: string; indexedKey?: string }) {
     const diagnostic: UnknownImportedNoteProfileDiagnostic = {
       code: "unknown-literature-note-profile",
       hint: "Re-stamp the note or recreate the Profile with the same ID.",
-      profileId,
+      stamp,
       ...context,
     };
     super(
       m.notice_imported_note_profile_unknown({
-        id: profileId,
-        target: context.path ?? context.indexedKey ?? profileId,
+        stamp,
+        target: context.path ?? context.indexedKey ?? stamp,
       }),
     );
     this.name = "NoteImportProfileError";

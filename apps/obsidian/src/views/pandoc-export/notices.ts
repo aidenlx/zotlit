@@ -36,7 +36,7 @@ export type ExportProblem =
   | ExportFailure
   | { kind: "document-style-invalid" }
   | { kind: "document-language-invalid" }
-  | { kind: "document-profile-invalid"; id: string; target: string }
+  | { kind: "document-profile-invalid"; stamp: string; target: string }
   | { kind: "profile-style-invalid"; styleId: string }
   | { kind: "destination-unwritable"; detail: string };
 
@@ -108,7 +108,7 @@ export function showExportFailure(failure: ExportProblem): void {
         case "document-profile-invalid":
           renderer.addText(
             m.notice_imported_note_profile_unknown({
-              id: failure.id,
+              stamp: failure.stamp,
               target: failure.target,
             }),
           );

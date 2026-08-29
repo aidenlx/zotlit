@@ -335,7 +335,7 @@ filename: "{{ zt.title }}"
     expect(
       service.renderProfileAnnotation(data, {
         settings: converted,
-        profileId: profiles[0]!.id,
+        profile: { id: profiles[0]!.id, stamp: profiles[0]!.id },
       }),
     ).toBe("PROFILE Excerpt");
     // plain.md has no Annotation Block: the document is invalid, and the
@@ -343,7 +343,7 @@ filename: "{{ zt.title }}"
     expect(() =>
       service.renderProfileAnnotation(data, {
         settings: converted,
-        profileId: profiles[1]!.id,
+        profile: { id: profiles[1]!.id, stamp: profiles[1]!.id },
       }),
     ).toThrow(expect.objectContaining({ code: "missing-annotation-block" }));
     // A documentless Profile predates the required-block rule and keeps the
@@ -351,13 +351,13 @@ filename: "{{ zt.title }}"
     expect(
       service.renderProfileAnnotation(data, {
         settings: converted,
-        profileId: profiles[2]!.id,
+        profile: { id: profiles[2]!.id, stamp: profiles[2]!.id },
       }),
     ).toContain("[!note] Page 4");
     expect(
       service.renderProfileAnnotation(data, {
         settings: { ...converted, "note.template-conversion-pending": true },
-        profileId: profiles[0]!.id,
+        profile: { id: profiles[0]!.id, stamp: profiles[0]!.id },
       }),
     ).toBe("LEGACY Excerpt");
   });
@@ -380,17 +380,28 @@ filename: "{{ zt.title }}"
     expect(() =>
       service.renderProfileAnnotation(
         { text: "Excerpt" },
-        { settings, profileId: unknownId },
+        {
+          settings,
+          profile: { id: unknownId, stamp: `Deleted (${unknownId})` },
+        },
       ),
     ).toThrow(
       expect.objectContaining({
-        diagnostic: expect.objectContaining({ profileId: unknownId }),
+        diagnostic: expect.objectContaining({
+          stamp: `Deleted (${unknownId})`,
+        }),
       }),
     );
     expect(() =>
       service.renderProfileAnnotation(
         { text: "Excerpt" },
-        { settings, profileId: settings["note.profiles"][0]!.id },
+        {
+          settings,
+          profile: {
+            id: settings["note.profiles"][0]!.id,
+            stamp: settings["note.profiles"][0]!.id,
+          },
+        },
       ),
     ).toThrow(
       expect.objectContaining({

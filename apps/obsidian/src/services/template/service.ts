@@ -35,6 +35,7 @@ import { managedRegionTransform } from "@zotlit/templates/obsidian";
 import { RESERVED_KEYS } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import type { ProfileStamp } from "@/lib/profile-stamp";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -117,7 +118,8 @@ export interface ResolvedLiteratureNoteTemplate {
 export type ProfileAnnotationDiagnostic =
   | {
       readonly code: "unknown-literature-note-profile";
-      readonly profileId: string;
+      /** The Profile stamp as the note carries it, printed verbatim. */
+      readonly stamp: string;
       readonly hint: string;
     }
   | {
@@ -133,7 +135,9 @@ export class ProfileAnnotationError extends Error {
   constructor(diagnostic: ProfileAnnotationDiagnostic) {
     super(
       diagnostic.code === "unknown-literature-note-profile"
-        ? m.notice_literature_note_profile_unknown({ id: diagnostic.profileId })
+        ? m.notice_literature_note_profile_unknown({
+            stamp: diagnostic.stamp,
+          })
         : m.notice_literature_note_template_missing({
             document: diagnostic.document,
           }),
@@ -365,19 +369,21 @@ export class TemplateService extends Service<void> {
     data: T,
     options: {
       settings: Readonly<Settings>;
-      profileId: string | undefined;
+      /** Stamp of the note the annotation renders under; absent is the default. */
+      profile: ProfileStamp | undefined;
     },
   ): string {
+    const stamped = options.profile;
     const profile =
-      options.profileId === undefined
+      stamped === undefined
         ? options.settings["note.default-profile"]
         : options.settings["note.profiles"].find(
-            (candidate) => candidate.id === options.profileId,
+            (candidate) => candidate.id === stamped.id,
           );
     if (!profile) {
       throw new ProfileAnnotationError({
         code: "unknown-literature-note-profile",
-        profileId: options.profileId!,
+        stamp: stamped!.stamp,
         hint: "Re-stamp the note or recreate the Profile with the same ID.",
       });
     }

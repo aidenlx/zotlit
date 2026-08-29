@@ -345,6 +345,12 @@ MODEL
   in template-status. An unset reference means the built-in template. A set
   reference must resolve to one document in the configured template folder.
 
+  A note records its Profile in the zotlit-profile property, written as the
+  Profile label, one space, and the Profile id in parentheses: Reading notes
+  (V1StGXR8Z5jd). ZotLit reads only the id in parentheses; the label is a hint
+  for the reader. A property that holds the bare id is also valid. A note
+  without the property belongs to the default Profile.
+
   One document contains a YAML manifest, its filename rule, and the note body.
   A single optional Managed Block marks the body bytes rendered on update. One
   required Annotation Block holds the single-annotation template; it renders on

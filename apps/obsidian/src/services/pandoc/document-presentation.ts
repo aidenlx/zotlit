@@ -12,6 +12,7 @@ import {
 } from "@/lib/constants";
 import { isLanguageTag } from "@/lib/language-tag";
 import { getLogger } from "@/lib/log";
+import { parseProfileStamp } from "@/lib/profile-stamp";
 import type { Citation } from "@/services/citation-index/query";
 import type { Settings } from "@/services/settings/schema";
 import { resolveLiteratureNoteProfileBindings } from "@/services/settings/service";
@@ -30,7 +31,8 @@ export type UnusableProperty = "style" | "language";
 export interface ProfilePresentationFailure {
   kind: "unusable";
   property: "profile";
-  profileId: string;
+  /** The Profile stamp as the note carries it. */
+  stamp: string;
   target: string;
 }
 
@@ -90,27 +92,28 @@ export function documentPresentation(
     settings && frontmatter?.[FIELD_ZOTERO_NOTE_KEY] !== undefined;
   const declaredStyle = frontmatter?.[FIELD_CITATION_STYLE] as unknown;
   if (importedNote) {
-    const stamp = frontmatter[FIELD_LITERATURE_NOTE_PROFILE] as unknown;
-    const bindings =
-      stamp === undefined || typeof stamp === "string"
-        ? resolveLiteratureNoteProfileBindings(settings, stamp)
-        : undefined;
+    const stamped = parseProfileStamp(
+      frontmatter[FIELD_LITERATURE_NOTE_PROFILE],
+    );
+    const bindings = resolveLiteratureNoteProfileBindings(
+      settings,
+      stamped?.id,
+    );
     if (!bindings) {
-      const profileId = String(stamp);
       logger.debug("The Imported Note Profile is unavailable", {
         path: file.path,
-        profileId,
+        stamp: stamped!.stamp,
       });
       return {
         kind: "unusable",
         property: "profile",
-        profileId,
+        stamp: stamped!.stamp,
         target: file.path,
       };
     }
     presentation.styleId = bindings["citation.references-style"];
     profileStyle = {
-      profileId: typeof stamp === "string" ? stamp : null,
+      profileId: stamped?.id ?? null,
       target: file.path,
     };
   } else if (declaredStyle !== undefined) {
@@ -261,7 +264,7 @@ export function samePresentation(
       return false;
     }
     return left.property === "profile" && right.property === "profile"
-      ? left.profileId === right.profileId && left.target === right.target
+      ? left.stamp === right.stamp && left.target === right.target
       : true;
   }
   return (

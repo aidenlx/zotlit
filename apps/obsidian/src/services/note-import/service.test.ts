@@ -256,8 +256,8 @@ function makePrepare(
 
 const PREPARE = makePrepare();
 
-const PROFILE_A = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
-const PROFILE_B = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+const PROFILE_A = "Bk3Qn7XvT2Lp";
+const PROFILE_B = "Rz9Wm4YfH6Kd";
 
 function profileSettings(): Settings {
   return {
@@ -345,7 +345,7 @@ describe("createNoteImporter", () => {
 
     expect(create.mock.calls[0]![0]).toMatch(/^Law\/Imported\//);
     expect(create.mock.calls[0]![1]).toContain(
-      `${FIELD_LITERATURE_NOTE_PROFILE}: ${PROFILE_A}`,
+      `${FIELD_LITERATURE_NOTE_PROFILE}: Law (Bk3Qn7XvT2Lp)`,
     );
     expect(
       vi.mocked(parseNote).mock.calls[0]![2].useColoredHighlightSyntax,
@@ -570,7 +570,7 @@ describe("createNoteImporter", () => {
     expect(render?.({ text: "Excerpt" } as never)).toBe("profile annotation");
     expect(renderProfileAnnotation).toHaveBeenCalledWith(
       { text: "Excerpt" },
-      { settings, profileId: PROFILE_B },
+      { settings, profile: { id: PROFILE_B, stamp: "History (Rz9Wm4YfH6Kd)" } },
     );
   });
 
@@ -667,12 +667,32 @@ describe("createNoteImporter", () => {
     });
 
     expect(processedContent()).toContain(
-      `${FIELD_LITERATURE_NOTE_PROFILE}: ${PROFILE_A}`,
+      `${FIELD_LITERATURE_NOTE_PROFILE}: Law (Bk3Qn7XvT2Lp)`,
     );
     expect(
       vi.mocked(parseNote).mock.calls[0]![2].useColoredHighlightSyntax,
     ).toBe(true);
     expect(createFolder).not.toHaveBeenCalled();
+  });
+
+  it("refreshes a stale hint to the Profile's current label on re-import", async () => {
+    const target = makeFile("Imported/Existing.md");
+    const { app, processedContent } = makeApp({
+      [target.path]: {
+        [FIELD_LITERATURE_NOTE_PROFILE]: `Statutes (${PROFILE_A})`,
+      },
+    });
+    const service = makeService(app);
+
+    await service.importNote(makeNote(), {
+      client: {} as any,
+      settings: profileSettings(),
+      targetFile: target,
+    });
+
+    expect(processedContent()).toContain(
+      `${FIELD_LITERATURE_NOTE_PROFILE}: Law (Bk3Qn7XvT2Lp)`,
+    );
   });
 
   it("treats a stampless overwrite as the default Profile", async () => {
@@ -741,7 +761,7 @@ describe("createNoteImporter", () => {
 
   it("refuses an unknown Imported Note stamp with a recovery diagnostic", async () => {
     const target = makeFile("Imported/Unknown.md");
-    const unknown = "5b95a240-0af1-4d73-a52e-d3359ed4c410";
+    const unknown = "Qt5Nb8ZcV3Jm";
     const { app, process } = makeApp({
       [target.path]: { [FIELD_LITERATURE_NOTE_PROFILE]: unknown },
     });
@@ -759,7 +779,7 @@ describe("createNoteImporter", () => {
       diagnostic: {
         code: "unknown-literature-note-profile",
         hint: expect.stringContaining("Re-stamp"),
-        profileId: unknown,
+        stamp: unknown,
         path: target.path,
       },
     });
@@ -807,7 +827,7 @@ describe("createNoteImporter", () => {
 
     expect(create.mock.calls[0]![0]).toMatch(/^Law\/Imported\//);
     expect(create.mock.calls[0]![1]).toContain(
-      `${FIELD_LITERATURE_NOTE_PROFILE}: ${PROFILE_A}`,
+      `${FIELD_LITERATURE_NOTE_PROFILE}: Law (Bk3Qn7XvT2Lp)`,
     );
   });
 

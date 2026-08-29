@@ -84,7 +84,7 @@ beforeEach(() => {
 
 describe("single-note protocol links", () => {
   it("refuses to open an existing note with a different explicit Profile", async () => {
-    const requestedProfileId = "93f0df01-9de9-47e6-aa12-1ff770c1ab86";
+    const requestedProfileId = "Rz9Wm4YfH6Kd";
     const existing = { path: "Literature/Existing.md" };
     const openLinkText = vi.fn(async () => {});
     vi.mocked(getItemRefByID).mockReturnValue({
@@ -100,7 +100,7 @@ describe("single-note protocol links", () => {
         metadataCache: {
           getFileCache: () => ({
             frontmatter: {
-              "zotlit-profile": "36c4f8b4-4f65-4cab-8c51-c921ea616cc8",
+              "zotlit-profile": "Books (Bk3Qn7XvT2Lp)",
             },
           }),
         },
@@ -117,6 +117,40 @@ describe("single-note protocol links", () => {
 
     await vi.waitFor(() => expect(BaseNotice).toHaveBeenCalled());
     expect(openLinkText).not.toHaveBeenCalled();
+    expect(createAndOpen).not.toHaveBeenCalled();
+  });
+
+  it("opens an existing note whose stamp names the requested Profile", async () => {
+    const existing = { path: "Literature/Existing.md" };
+    const openLinkText = vi.fn(async () => {});
+    vi.mocked(getItemRefByID).mockReturnValue({
+      indexedKey: "ABC12345",
+    } as ReturnType<typeof getItemRefByID>);
+    using _handlers = register({
+      db: { state: "ready", client: {} },
+      noteIndex: {
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [existing],
+      },
+      app: {
+        metadataCache: {
+          getFileCache: () => ({
+            frontmatter: { "zotlit-profile": "Books (Bk3Qn7XvT2Lp)" },
+          }),
+        },
+        workspace: { openLinkText },
+      },
+    } as unknown as Partial<ProtocolDeps>);
+
+    handlers.get("zotlit/open")?.({
+      action: "zotlit/open",
+      item: "1",
+      profile: "Bk3Qn7XvT2Lp",
+      "source-id": SOURCE_ID,
+    } as ObsidianProtocolData);
+
+    await vi.waitFor(() => expect(openLinkText).toHaveBeenCalled());
+    expect(BaseNotice).not.toHaveBeenCalled();
     expect(createAndOpen).not.toHaveBeenCalled();
   });
 });

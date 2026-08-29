@@ -111,6 +111,11 @@ export interface FixtureItem {
   citationKey: string | null;
   /** Fixture Vault filename stem when a prose page needs a stable target. */
   literatureNoteName?: string;
+  /**
+   * Literature Note Profile the seeded note belongs to, written as a Profile
+   * stamp. An absent value seeds the note under the default Profile, unstamped.
+   */
+  literatureNoteProfile?: string;
   title: string;
   /** Container title, stored under the type-specific field of {@link itemType}. */
   containerTitle: string;
@@ -132,6 +137,9 @@ export interface FixtureCreator {
   /** `1` stores a single-field institutional name in {@link lastName}. */
   fieldMode: 0 | 1;
 }
+
+/** Id of the Fixture's second Literature Note Profile, {@link LITERATURE_NOTE_PROFILES}. */
+const BOOKS_PROFILE_ID = "V1StGXR8Z5jd";
 
 /**
  * The item set every discovery, Citation Key, and batch tracer reads.
@@ -184,6 +192,8 @@ export const ITEMS: readonly FixtureItem[] = [
     key: "BBBB2222",
     itemType: "journalArticle",
     citationKey: "duplicateWithin2020",
+    literatureNoteName: "books-duplicateWithin2020",
+    literatureNoteProfile: BOOKS_PROFILE_ID,
     title: "Within-library duplicate, first item",
     containerTitle: "Journal of Personal Records",
     date: "2020",
@@ -1034,7 +1044,7 @@ export const INSTALLED_STYLES: readonly FixtureStyle[] = [
  */
 export const LITERATURE_NOTE_PROFILES = [
   {
-    id: "V1StGXR8Z5jd",
+    id: BOOKS_PROFILE_ID,
     label: "Books",
     document: "books.md",
     bindings: {
@@ -1259,7 +1269,7 @@ export const VAULT_CASES: readonly FixtureVaultCase[] = [
   {
     id: "configured",
     summary:
-      "Current settings, the Books Profile, Literature Notes, and Imported Notes. This is the default.",
+      "Current settings, the Books Profile, Literature Notes (one stamped under the Books Profile), and Imported Notes. This is the default.",
   },
   {
     id: "fresh",

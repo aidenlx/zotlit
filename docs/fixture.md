@@ -167,7 +167,7 @@ A Vault Case is a named, saved Fixture Vault state. The Scope Case selects the s
 
 | Vault Case | Saved state |
 | --- | --- |
-| `configured` | Current settings, the Books Profile, generated Literature Notes, and Imported Notes. This is the default. |
+| `configured` | Current settings, the Books Profile, generated Literature Notes, and Imported Notes. This is the default. One Literature Note sits in the Books Profile folder and carries the Profile stamp `zotlit-profile: Books (V1StGXR8Z5jd)`; every other note is unstamped and belongs to the default Profile. |
 | `fresh` | A vault with no notes, ZotLit installed, and no settings file. This is the new-user path. |
 | `upgrader` | A ZotLit v2.1 vault: version-9 settings, ejected legacy slot files with visible edits, and an edited Managed Frontmatter list. |
 

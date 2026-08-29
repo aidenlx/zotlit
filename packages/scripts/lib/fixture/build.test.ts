@@ -1155,6 +1155,9 @@ describe("the generated Obsidian vault", () => {
     const items = ITEMS.filter(({ libraryID }) => libraryID === 1);
     expect(await readdir(join(layout.vaultDir, "literatures"))).toEqual(
       items
+        .filter(
+          ({ literatureNoteProfile }) => literatureNoteProfile === undefined,
+        )
         .map(({ key, literatureNoteName }) => `${literatureNoteName ?? key}.md`)
         .sort(),
     );
@@ -1172,7 +1175,7 @@ describe("the generated Obsidian vault", () => {
       const note = await readFile(
         join(
           layout.vaultDir,
-          "literatures",
+          item.literatureNoteProfile === undefined ? "literatures" : "books",
           `${item.literatureNoteName ?? item.key}.md`,
         ),
         "utf-8",
@@ -1183,6 +1186,23 @@ describe("the generated Obsidian vault", () => {
       expect(citationKeys.get(item.itemID) ?? null).toBe(item.citationKey);
       expect(note.includes("\ncitekey:")).toBe(item.citationKey !== null);
     }
+  });
+
+  it("stamps the Books Profile Literature Note and leaves the others bare", async () => {
+    const stamped = await readFile(
+      join(layout.vaultDir, "books", "books-duplicateWithin2020.md"),
+      "utf-8",
+    );
+    const unstamped = await readFile(
+      join(layout.vaultDir, "literatures", "AAAAAAAA.md"),
+      "utf-8",
+    );
+
+    expect(await readdir(join(layout.vaultDir, "books"))).toEqual([
+      "books-duplicateWithin2020.md",
+    ]);
+    expect(stamped).toContain("zotlit-profile: Books (V1StGXR8Z5jd)");
+    expect(unstamped).not.toContain("zotlit-profile:");
   });
 
   it("resolves every positive prose-page target to a generated Item", async () => {
@@ -1610,9 +1630,17 @@ describe("a Vault Case", () => {
       expect(source).toBe(await legacyTemplateSource(template));
       expect(source).toContain(template.replace);
     }
-    expect(await readdir(join(upgrader.vaultDir, "literatures"))).toEqual(
-      await readdir(join(layout.vaultDir, "literatures")),
+    // The v2.1 vault has no Profiles, so the Books Profile note it seeds is
+    // one more unstamped note in the single literature folder.
+    expect(
+      (await readdir(join(upgrader.vaultDir, "literatures"))).sort(),
+    ).toEqual(
+      [
+        ...(await readdir(join(layout.vaultDir, "literatures"))),
+        "books-duplicateWithin2020.md",
+      ].sort(),
     );
+    expect(await readdir(upgrader.vaultDir)).not.toContain("books");
   });
 
   it("fails when a shipped default drifts away from its edit", async () => {

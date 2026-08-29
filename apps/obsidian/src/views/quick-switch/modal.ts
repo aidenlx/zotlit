@@ -2,9 +2,10 @@ import { Keymap, Platform, SuggestModal } from "obsidian";
 import type { TFile } from "obsidian";
 
 import { confirm, confirmWithCheckbox } from "@/lib/confirm";
-import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { readProfileStamp } from "@/lib/profile-stamp";
+import type { ProfileStamp } from "@/lib/profile-stamp";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
@@ -100,13 +101,9 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     file: TFile,
     choice: { id: string | null; label: string },
   ): Promise<TFile> {
-    const stamped =
-      this.#deps.app.metadataCache.getFileCache(file)?.frontmatter?.[
-        FIELD_LITERATURE_NOTE_PROFILE
-      ];
-    const stampedId = stamped === undefined ? null : String(stamped);
-    if (stampedId === choice.id) return file;
-    const currentLabel = profileLabel(this.#deps, stampedId);
+    const stamped = readProfileStamp(this.#deps.app.metadataCache, file);
+    if ((stamped?.id ?? null) === choice.id) return file;
+    const currentLabel = profileLabel(this.#deps, stamped);
 
     const options = {
       title: m.modal_profile_switch_title({ label: choice.label }),
@@ -160,13 +157,9 @@ export async function switchImportedNoteProfile(
     deps.settings.current?.["note.profiles"] ?? [],
   );
   if (!choice) return;
-  const stamped =
-    deps.app.metadataCache.getFileCache(file)?.frontmatter?.[
-      FIELD_LITERATURE_NOTE_PROFILE
-    ];
-  const stampedId = stamped === undefined ? null : String(stamped);
-  if (stampedId === choice.id) return;
-  const currentLabel = profileLabel(deps, stampedId);
+  const stamped = readProfileStamp(deps.app.metadataCache, file);
+  if ((stamped?.id ?? null) === choice.id) return;
+  const currentLabel = profileLabel(deps, stamped);
   const shouldSwitch = await confirm(
     {
       title: m.modal_profile_switch_title({ label: choice.label }),
@@ -189,10 +182,14 @@ export async function switchImportedNoteProfile(
   }
 }
 
-function profileLabel(deps: QuickSwitchDeps, profileId: string | null): string {
-  return profileId === null
+/** Name the Profile a note is stamped with, falling back to the stamp text. */
+function profileLabel(
+  deps: QuickSwitchDeps,
+  stamped: ProfileStamp | undefined,
+): string {
+  return stamped === undefined
     ? m.settings_profile_default_name()
     : (deps.settings.current?.["note.profiles"].find(
-        (profile) => profile.id === profileId,
-      )?.label ?? profileId);
+        (profile) => profile.id === stamped.id,
+      )?.label ?? stamped.stamp);
 }
