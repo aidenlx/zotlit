@@ -12,9 +12,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/profile";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/service";
 
 import { registerPandocExport } from "./register";
 import type { PandocExportDeps } from "./register";

@@ -16,6 +16,7 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { DEFAULT_PROFILE, parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
+import { resolveProfile } from "@/services/settings/profile";
 import { DEFAULT_LITERATURE_NOTE_PROFILE } from "@/services/settings/schema";
 import type {
   DefaultLiteratureNoteProfile,
@@ -382,12 +383,12 @@ function builtInLiteratureNoteTemplate(
   ctx: SettingTabContext,
   profileId: ProfileSelector,
 ): string {
+  const settings = ctx.settings.current;
   const label =
     profileId === DEFAULT_PROFILE
       ? m.settings_profile_default_name()
-      : (ctx.settings.current?.["note.profiles"].find(
-          (profile) => profile.id === profileId,
-        )?.label ?? m.settings_profile_new_label());
+      : ((settings && resolveProfile(settings, profileId)?.label) ??
+        m.settings_profile_new_label());
   return synthesizeLegacyLiteratureNoteTemplate(
     {
       note: { source: DEFAULT_TEMPLATES.note, language: "liquid" },

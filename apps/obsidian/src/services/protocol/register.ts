@@ -27,8 +27,6 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import {
   parseProfileSelector,
-  readProfileStamp,
-  stampedSelector,
   unknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
@@ -51,6 +49,7 @@ import {
   batchImportAllToast,
   batchImportToast,
 } from "@/services/note-import/batch-import-notices";
+import { noteProfileSelector, profileOf } from "@/services/settings/profile";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
@@ -229,8 +228,10 @@ async function openNote(
   );
 
   if (existing) {
-    const stamped = readProfileStamp(deps.app.metadataCache, existing);
-    if (profile !== undefined && profile !== stampedSelector(stamped)) {
+    const settings = await deps.settings.loaded;
+    const resolved = profileOf(deps.app.metadataCache, settings, existing);
+    const existingSelector = noteProfileSelector(resolved);
+    if (profile !== undefined && profile !== existingSelector) {
       new BaseNotice(m.notice_literature_note_profile_conflict());
       return;
     }

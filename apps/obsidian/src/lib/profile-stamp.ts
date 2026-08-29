@@ -65,7 +65,7 @@ export interface ProfileStamp {
  * Read a note's Profile stamp. `undefined` means the property is absent, which
  * selects the built-in default Profile.
  */
-export function parseProfileStamp(value: unknown): ProfileStamp | undefined {
+function parseProfileStamp(value: unknown): ProfileStamp | undefined {
   if (value === undefined) return undefined;
   // A frontmatter value of any shape reads as its text, so a stamp Obsidian
   // stored as a one-item list still names its Profile and anything else falls
@@ -102,18 +102,6 @@ export function readProfileStamp(
       FIELD_LITERATURE_NOTE_PROFILE
     ],
   );
-}
-
-/**
- * The selector a note's stamp names: the default Profile when the note has no
- * stamp, the stamped ID, or `undefined` when the stamp names no Profile ID
- * (membership is never inferred — that stamp is unknown, never the default).
- */
-export function stampedSelector(
-  stamped: ProfileStamp | undefined,
-): ProfileSelector | undefined {
-  if (stamped === undefined) return DEFAULT_PROFILE;
-  return stamped.id;
 }
 
 /**

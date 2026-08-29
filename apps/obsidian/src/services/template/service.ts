@@ -35,16 +35,9 @@ import { managedRegionTransform } from "@zotlit/templates/obsidian";
 import { RESERVED_KEYS } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import {
-  DEFAULT_PROFILE,
-  stampedSelector,
-  unknownProfileDiagnostic,
-} from "@/lib/profile-stamp";
-import type {
-  ProfileStamp,
-  UnknownProfileDiagnostic,
-} from "@/lib/profile-stamp";
+import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { Service } from "@/services/service-base";
+import type { ResolvedProfile } from "@/services/settings/profile";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
@@ -370,31 +363,10 @@ export class TemplateService extends Service<void> {
   /** Render one annotation through its Profile document or legacy slot. */
   renderProfileAnnotation<T extends object>(
     data: T,
-    options: {
-      settings: Readonly<Settings>;
-      /** Stamp of the note the annotation renders under; absent is the default. */
-      profile: ProfileStamp | undefined;
-    },
+    options: { profile: ResolvedProfile },
   ): string {
-    const stamped = options.profile;
-    const selector = stampedSelector(stamped);
-    if (selector === undefined) {
-      throw new ProfileAnnotationError(
-        unknownProfileDiagnostic(stamped!.stamp),
-      );
-    }
-    const profile =
-      selector === DEFAULT_PROFILE
-        ? options.settings["note.default-profile"]
-        : options.settings["note.profiles"].find(
-            (candidate) => candidate.id === selector,
-          );
-    if (!profile) {
-      throw new ProfileAnnotationError(
-        unknownProfileDiagnostic(stamped!.stamp),
-      );
-    }
-    if (options.settings["note.template-conversion-pending"]) {
+    const { profile } = options;
+    if (profile.settings["note.template-conversion-pending"]) {
       return this.render("annotation", data);
     }
 

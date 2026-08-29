@@ -49,9 +49,10 @@ import type {
   AttachmentSource,
   SourceOrigin,
 } from "@/services/attachment-import/service";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/profile";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/service";
+import { ProfileAnnotationError } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 
 import type { NoteFeatureDeps, SyncRenderDeps } from "./context";
@@ -1631,6 +1632,38 @@ describe("updateNote", () => {
     expect(harness.frontmatterMock).not.toHaveBeenCalled();
   });
 
+  it("reports a Profile conflict for a requested Profile against an unconfigured stamped id", async () => {
+    const stampedId = "Rz9Wm4YfH6Kd" as ProfileId;
+    const requestedId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: `Books (${stampedId})` },
+      settings: {
+        "note.profiles": [{ id: requestedId, label: "Papers" }],
+      },
+    });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Books/Root.md"),
+      { indexedKey: "ABC12345", profile: requestedId },
+    );
+
+    expect(result).toEqual({
+      bodyUpdated: false,
+      duplicateRegionCount: 0,
+      diagnostic: {
+        code: "literature-note-profile-conflict",
+        hint: expect.stringContaining("Follow"),
+        indexedKey: "ABC12345",
+        path: "Books/Root.md",
+        existingProfile: stampedId,
+        requestedProfile: requestedId,
+      },
+    });
+    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+  });
+
   it("follows the stamped Profile and refreshes its citation-style binding", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     stubIndexedKeyUpdate(updateContext());
@@ -3141,7 +3174,13 @@ describe("renderAnnotation", () => {
       expect.objectContaining({
         parentItem: expect.objectContaining({ indexedKey: "PARENT1" }),
       }),
-      expect.objectContaining({ profile: { id: profileId, stamp: profileId } }),
+      expect.objectContaining({
+        profile: expect.objectContaining({
+          selector: profileId,
+          label: "Books",
+          stamp: `Books (${profileId})`,
+        }),
+      }),
     );
   });
 
@@ -3163,8 +3202,57 @@ describe("renderAnnotation", () => {
     expect(result).toBe("DEFAULT ANNOTATION");
     expect(template.renderProfileAnnotation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ profile: undefined }),
+      expect.objectContaining({
+        profile: expect.objectContaining({ selector: "default" }),
+      }),
     );
+  });
+
+  it("throws when the annotation parent's stamped Profile names none configured", () => {
+    vi.mocked(getAnnotationsByItemId).mockReturnValue([
+      { key: "ANN1" } as never,
+    ]);
+    vi.mocked(fetchAnnotationsTemplateData).mockReturnValue(
+      new Map([["ANN1", annData("Hensher2011", "62", "PARENT1")]]),
+    );
+    const file = makeFile("Literature/Parent.md");
+    const app = makeApp();
+    app.metadataCache.getFileCache.mockReturnValue({
+      frontmatter: {
+        [FIELD_LITERATURE_NOTE_PROFILE]: "Deleted (Nn4Pp6Qq8Rr0)",
+      },
+    });
+    const template = citeTemplate();
+    template.renderProfileAnnotation = vi.fn(() => "PROFILE ANNOTATION");
+    const deps = {
+      ...annotDeps(template),
+      app,
+      noteIndex: {
+        getImportedNoteByNoteKey: () => [],
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: (indexedKey: string) =>
+          indexedKey === "PARENT1" ? [file] : [],
+      },
+    };
+
+    let thrown: unknown;
+    try {
+      createNoteFeature(deps).renderAnnotation(1, {
+        attachmentImport: {
+          decide: blockedDecide,
+          resolveLink: () => () => "",
+        },
+      });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ProfileAnnotationError);
+    expect((thrown as ProfileAnnotationError).diagnostic).toMatchObject({
+      code: "unknown-literature-note-profile",
+      stamp: "Deleted (Nn4Pp6Qq8Rr0)",
+    });
   });
 });
 

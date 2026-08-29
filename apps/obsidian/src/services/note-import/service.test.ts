@@ -18,13 +18,11 @@ import type {
   AttachmentSource,
   SourceOrigin,
 } from "@/services/attachment-import/service";
+import { resolveProfile } from "@/services/settings/profile";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/profile";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import { bindLiteratureNoteProfile } from "@/services/settings/service";
-import type {
-  ResolvedLiteratureNoteProfileBindings,
-  SettingsService,
-} from "@/services/settings/service";
+import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 
 import { parseNote } from "./note-parser";
@@ -247,7 +245,7 @@ function makePrepare(
     client: {} as any,
     sourcePath: "Literature/Paper.md",
     settings: {
-      ...bindLiteratureNoteProfile(defaults, "default")!,
+      ...resolveProfile(defaults, "default").settings,
       "note.import-folder": "Imported",
       ...settingsOverrides,
     },
@@ -335,7 +333,7 @@ describe("createNoteImporter", () => {
 
   it("stamps a side-effect import with the in-flight Literature Note Profile", async () => {
     const { app, create } = makeApp();
-    const settings = bindLiteratureNoteProfile(profileSettings(), PROFILE_A)!;
+    const settings = resolveProfile(profileSettings(), PROFILE_A)!.settings;
     const batch = await makeService(app).prepare({
       ...PREPARE,
       settings,
@@ -557,7 +555,7 @@ describe("createNoteImporter", () => {
       renderProfileAnnotation,
     } as Pick<TemplateService, "render" | "renderProfileAnnotation">;
     const { app } = makeApp();
-    const settings = bindLiteratureNoteProfile(profileSettings(), PROFILE_B)!;
+    const settings = resolveProfile(profileSettings(), PROFILE_B)!.settings;
     const batch = await makeService(app, { template }).prepare({
       ...PREPARE,
       settings,
@@ -571,7 +569,13 @@ describe("createNoteImporter", () => {
     expect(render?.({ text: "Excerpt" } as never)).toBe("profile annotation");
     expect(renderProfileAnnotation).toHaveBeenCalledWith(
       { text: "Excerpt" },
-      { settings, profile: { id: PROFILE_B, stamp: "History (Rz9Wm4YfH6Kd)" } },
+      {
+        profile: expect.objectContaining({
+          selector: PROFILE_B,
+          label: "History",
+          stamp: "History (Rz9Wm4YfH6Kd)",
+        }),
+      },
     );
   });
 

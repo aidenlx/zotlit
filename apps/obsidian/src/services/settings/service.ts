@@ -89,6 +89,8 @@ import {
   VERSION_KEY,
 } from "./classify";
 import type { HydrationOrigin } from "./classify";
+import { resolveLiteratureNoteProfileBindings } from "./profile";
+import type { ResolvedLiteratureNoteProfileBindings } from "./profile";
 import { defaults, schema } from "./schema";
 import type {
   DefaultLiteratureNoteProfile,
@@ -141,83 +143,6 @@ export interface LiteratureNoteProfilePatch {
   readonly document?: string | null;
   /** Complete sparse binding record. Omitted keys inherit the default Profile. */
   readonly bindings?: LiteratureNoteProfileBindings;
-}
-
-export interface ResolvedLiteratureNoteProfileBindings {
-  readonly "note.literature-folder": string;
-  readonly "citation.references-style": string | null;
-  readonly "note.import-folder": string;
-  readonly "note.import-colored-highlights": boolean;
-  readonly "note.import-annotations-as-template": boolean;
-}
-
-export type ProfileBindingSettings = Readonly<Settings> &
-  Partial<ResolvedLiteratureNoteProfileBindings>;
-
-const boundProfileIds = new WeakMap<ProfileBindingSettings, ProfileId>();
-
-/** Read the named Profile carried by a bound settings snapshot. */
-export function boundLiteratureNoteProfileId(
-  settings: ProfileBindingSettings,
-): ProfileId | undefined {
-  return boundProfileIds.get(settings);
-}
-
-/** Read an effective binding from an optional resolved-Profile overlay. */
-export function getProfileBinding<
-  K extends keyof ResolvedLiteratureNoteProfileBindings,
->(
-  settings: ProfileBindingSettings,
-  key: K,
-): ResolvedLiteratureNoteProfileBindings[K] {
-  const value = settings[key] as
-    | ResolvedLiteratureNoteProfileBindings[K]
-    | undefined;
-  return value === undefined
-    ? settings["note.default-profile"].bindings[key]
-    : value;
-}
-
-/** Resolve one Profile's sparse bindings over the default Profile. */
-export function resolveLiteratureNoteProfileBindings(
-  current: Readonly<Settings>,
-  selector: ProfileSelector,
-): ResolvedLiteratureNoteProfileBindings | undefined {
-  const profile =
-    selector === DEFAULT_PROFILE
-      ? undefined
-      : current["note.profiles"].find((candidate) => candidate.id === selector);
-  if (selector !== DEFAULT_PROFILE && profile === undefined) return undefined;
-  const bindings = profile?.bindings;
-  const base = current["note.default-profile"].bindings;
-  return {
-    "note.literature-folder":
-      bindings?.["note.literature-folder"] ?? base["note.literature-folder"],
-    "citation.references-style":
-      bindings?.["citation.references-style"] !== undefined
-        ? bindings["citation.references-style"]
-        : base["citation.references-style"],
-    "note.import-folder":
-      bindings?.["note.import-folder"] ?? base["note.import-folder"],
-    "note.import-colored-highlights":
-      bindings?.["note.import-colored-highlights"] ??
-      base["note.import-colored-highlights"],
-    "note.import-annotations-as-template":
-      bindings?.["note.import-annotations-as-template"] ??
-      base["note.import-annotations-as-template"],
-  };
-}
-
-/** Add one Profile's effective bindings to a settings snapshot. */
-export function bindLiteratureNoteProfile(
-  current: Readonly<Settings>,
-  selector: ProfileSelector,
-): ProfileBindingSettings | undefined {
-  const bindings = resolveLiteratureNoteProfileBindings(current, selector);
-  if (!bindings) return undefined;
-  const settings = { ...current, ...bindings };
-  if (selector !== DEFAULT_PROFILE) boundProfileIds.set(settings, selector);
-  return settings;
 }
 
 /** Raw values of broken overrides, keyed by the settings key they belong to. */

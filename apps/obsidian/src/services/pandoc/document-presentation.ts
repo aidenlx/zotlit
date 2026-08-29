@@ -7,23 +7,18 @@ import type { CslItemData } from "@zotlit/db";
 import {
   FIELD_CITATION_STYLE,
   FIELD_DOCUMENT_LANGUAGE,
-  FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_NOTE_KEY,
 } from "@/lib/constants";
 import { isLanguageTag } from "@/lib/language-tag";
 import { getLogger } from "@/lib/log";
-import {
-  parseProfileStamp,
-  stampedSelector,
-  unknownProfileDiagnostic,
-} from "@/lib/profile-stamp";
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type {
   ProfileSelector,
   UnknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
 import type { Citation } from "@/services/citation-index/query";
+import { profileOf } from "@/services/settings/profile";
 import type { Settings } from "@/services/settings/schema";
-import { resolveLiteratureNoteProfileBindings } from "@/services/settings/service";
 
 import type { RenderPresentation } from "./render-cache";
 
@@ -94,35 +89,25 @@ export function documentPresentation(
 
   // For other documents, only an absent property leaves a vault selection in
   // charge. A visible property that names no style stops that document.
-  const importedNote =
-    settings && frontmatter?.[FIELD_ZOTERO_NOTE_KEY] !== undefined;
   const declaredStyle = frontmatter?.[FIELD_CITATION_STYLE] as unknown;
-  if (importedNote) {
-    const stamped = parseProfileStamp(
-      frontmatter[FIELD_LITERATURE_NOTE_PROFILE],
-    );
-    const selector = stampedSelector(stamped);
-    const bindings =
-      selector === undefined
-        ? undefined
-        : resolveLiteratureNoteProfileBindings(settings, selector);
-    if (!bindings) {
+  if (settings && frontmatter?.[FIELD_ZOTERO_NOTE_KEY] !== undefined) {
+    const resolved = profileOf(metadataCache, settings, file);
+    if (!resolved.ok) {
       logger.debug("The Imported Note Profile is unavailable", {
         path: file.path,
-        stamp: stamped!.stamp,
+        stamp: resolved.stamped.stamp,
       });
       return {
         kind: "unusable",
         property: "profile",
-        diagnostic: unknownProfileDiagnostic(stamped!.stamp),
+        diagnostic: unknownProfileDiagnostic(resolved.stamped.stamp),
         target: file.path,
       };
     }
-    presentation.styleId = bindings["citation.references-style"];
-    // Resolved bindings mean `selector` was defined (its own undefined branch
-    // above never resolves any).
+    presentation.styleId =
+      resolved.profile.bindings["citation.references-style"];
     profileStyle = {
-      profile: selector!,
+      profile: resolved.profile.selector,
       target: file.path,
     };
   } else if (declaredStyle !== undefined) {

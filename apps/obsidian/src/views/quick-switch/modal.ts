@@ -4,12 +4,8 @@ import type { TFile } from "obsidian";
 import { confirm, confirmWithCheckbox } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import {
-  DEFAULT_PROFILE,
-  readProfileStamp,
-  stampedSelector,
-} from "@/lib/profile-stamp";
-import type { ProfileSelector, ProfileStamp } from "@/lib/profile-stamp";
+import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
+import type { ProfileSelector } from "@/lib/profile-stamp";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
@@ -18,6 +14,8 @@ import {
   noteOperationDiagnosticNotice,
   resolveLiteratureNoteWithWarning,
 } from "@/services/note-feature/update-single";
+import { profileOf } from "@/services/settings/profile";
+import type { NoteProfile } from "@/services/settings/profile";
 
 import { chooseLiteratureNoteProfile } from "./profile-picker";
 import type { QuickSwitchDeps } from "./register";
@@ -64,7 +62,8 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     const existing = resolveLiteratureNoteWithWarning(
       this.#deps.noteIndex.getNotesByItemKey(hit.item.indexedKey),
     );
-    const profiles = this.#deps.settings.current?.["note.profiles"] ?? [];
+    const settings = await this.#deps.settings.loaded;
+    const profiles = settings["note.profiles"];
     if (profiles.length === 0) {
       await this.#open(
         existing ?? (await this.#create(hit, DEFAULT_PROFILE)),
@@ -108,9 +107,10 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     file: TFile,
     choice: { id: ProfileSelector; label: string },
   ): Promise<TFile> {
-    const stamped = readProfileStamp(this.#deps.app.metadataCache, file);
-    if (stampedSelector(stamped) === choice.id) return file;
-    const currentLabel = profileLabel(this.#deps, stamped);
+    const settings = await this.#deps.settings.loaded;
+    const resolved = profileOf(this.#deps.app.metadataCache, settings, file);
+    if (resolved.ok && resolved.profile.selector === choice.id) return file;
+    const currentLabel = profileLabel(resolved);
 
     const options = {
       title: m.modal_profile_switch_title({ label: choice.label }),
@@ -159,14 +159,15 @@ export async function switchImportedNoteProfile(
   deps: QuickSwitchDeps,
   file: TFile,
 ): Promise<void> {
+  const settings = await deps.settings.loaded;
   const choice = await chooseLiteratureNoteProfile(
     deps.app,
-    deps.settings.current?.["note.profiles"] ?? [],
+    settings["note.profiles"],
   );
   if (!choice) return;
-  const stamped = readProfileStamp(deps.app.metadataCache, file);
-  if (stampedSelector(stamped) === choice.id) return;
-  const currentLabel = profileLabel(deps, stamped);
+  const resolved = profileOf(deps.app.metadataCache, settings, file);
+  if (resolved.ok && resolved.profile.selector === choice.id) return;
+  const currentLabel = profileLabel(resolved);
   const shouldSwitch = await confirm(
     {
       title: m.modal_profile_switch_title({ label: choice.label }),
@@ -189,14 +190,9 @@ export async function switchImportedNoteProfile(
   }
 }
 
-/** Name the Profile a note is stamped with, falling back to the stamp text. */
-function profileLabel(
-  deps: QuickSwitchDeps,
-  stamped: ProfileStamp | undefined,
-): string {
-  return stamped === undefined
-    ? m.settings_profile_default_name()
-    : (deps.settings.current?.["note.profiles"].find(
-        (profile) => profile.id === stamped.id,
-      )?.label ?? stamped.stamp);
+/** Name the Profile a note resolves to, falling back to the stamp text. */
+function profileLabel(resolved: NoteProfile): string {
+  return resolved.ok
+    ? (resolved.profile.label ?? m.settings_profile_default_name())
+    : resolved.stamped.stamp;
 }

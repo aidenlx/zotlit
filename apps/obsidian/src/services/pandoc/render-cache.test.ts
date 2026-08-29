@@ -7,9 +7,9 @@ import type { CslItemData } from "@zotlit/db";
 
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { DatabaseEvents } from "@/services/database/service";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/profile";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/service";
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
 
 import type { Inlines } from "./ast";

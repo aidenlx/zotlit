@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { confirm, confirmWithCheckbox } from "@/lib/confirm";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { DEFAULT_LITERATURE_NOTE_PROFILE } from "@/services/settings/schema";
 
 import { QuickSwitchModal, switchImportedNoteProfile } from "./modal";
 import { chooseLiteratureNoteProfile } from "./profile-picker";
@@ -18,6 +19,16 @@ vi.mock("./profile-picker", () => ({
 }));
 
 beforeEach(() => vi.clearAllMocks());
+
+function profileSettings(profiles: { id: ProfileId; label: string }[] = []): {
+  "note.default-profile": typeof DEFAULT_LITERATURE_NOTE_PROFILE;
+  "note.profiles": typeof profiles;
+} {
+  return {
+    "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
+    "note.profiles": profiles,
+  };
+}
 
 function onPlatform(isMacOS: boolean): void {
   vi.spyOn(Platform, "isMacOS", "get").mockReturnValue(isMacOS);
@@ -132,12 +143,12 @@ describe("QuickSwitchModal Profile conflicts", () => {
       },
       noteIndex: { getNotesByItemKey: () => [file] },
       settings: {
-        current: {
-          "note.profiles": [
+        loaded: Promise.resolve(
+          profileSettings([
             { id: currentId, label: "Books" },
             { id: requestedId, label: "Papers" },
-          ],
-        },
+          ]),
+        ),
       },
     } as unknown as QuickSwitchDeps);
 
@@ -189,12 +200,12 @@ describe("QuickSwitchModal Profile conflicts", () => {
       },
       noteIndex: { getNotesByItemKey: () => [file] },
       settings: {
-        current: {
-          "note.profiles": [
+        loaded: Promise.resolve(
+          profileSettings([
             { id: currentId, label: "Books" },
             { id: requestedId, label: "Papers" },
-          ],
-        },
+          ]),
+        ),
       },
     } as unknown as QuickSwitchDeps);
 
@@ -235,9 +246,9 @@ describe("QuickSwitchModal Profile conflicts", () => {
       },
       noteIndex: { getNotesByItemKey: () => [file] },
       settings: {
-        current: {
-          "note.profiles": [{ id: currentId, label: "Books" }],
-        },
+        loaded: Promise.resolve(
+          profileSettings([{ id: currentId, label: "Books" }]),
+        ),
       },
     } as unknown as QuickSwitchDeps);
 
@@ -287,12 +298,12 @@ describe("QuickSwitchModal Profile conflicts", () => {
       },
       noteIndex: { getNotesByItemKey: () => [file] },
       settings: {
-        current: {
-          "note.profiles": [
+        loaded: Promise.resolve(
+          profileSettings([
             { id: currentId, label: "Books" },
             { id: requestedId, label: "Papers" },
-          ],
-        },
+          ]),
+        ),
       },
     } as unknown as QuickSwitchDeps);
 
@@ -351,12 +362,12 @@ describe("Imported Note Profile switching", () => {
       },
       noteFeature: { switchImportedNoteProfile: switchProfile },
       settings: {
-        current: {
-          "note.profiles": [
+        loaded: Promise.resolve(
+          profileSettings([
             { id: currentId, label: "Books" },
             { id: requestedId, label: "Papers" },
-          ],
-        },
+          ]),
+        ),
       },
     } as unknown as QuickSwitchDeps;
 
@@ -391,14 +402,11 @@ describe("Imported Note Profile switching", () => {
         },
         noteFeature: { switchImportedNoteProfile: switchProfile },
         settings: {
-          current: {
-            "note.profiles": [
-              {
-                id: "Rz9Wm4YfH6Kd",
-                label: "Papers",
-              },
-            ],
-          },
+          loaded: Promise.resolve(
+            profileSettings([
+              { id: "Rz9Wm4YfH6Kd" as ProfileId, label: "Papers" },
+            ]),
+          ),
         },
       } as unknown as QuickSwitchDeps,
       file,

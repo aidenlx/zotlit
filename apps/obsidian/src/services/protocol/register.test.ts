@@ -6,6 +6,7 @@ import { getItemRefByID } from "@zotlit/db";
 import { BaseNotice } from "@/lib/notice";
 import { runBatchUpdateAll } from "@/services/note-feature/update-batch";
 import { createAndOpen } from "@/services/note-feature/update-single";
+import { DEFAULT_LITERATURE_NOTE_PROFILE } from "@/services/settings/schema";
 
 import { registerProtocolHandlers } from "./register";
 import type { ProtocolDeps } from "./register";
@@ -35,6 +36,16 @@ vi.mock("@/services/note-feature/update-single", async (importOriginal) => ({
 const SOURCE_ID = "abc12345";
 
 const runBatchImportAll = vi.fn(async () => ({ outcome: "batch-modal" }));
+
+function profileSettings(profiles: { id: string; label: string }[] = []): {
+  "note.default-profile": typeof DEFAULT_LITERATURE_NOTE_PROFILE;
+  "note.profiles": typeof profiles;
+} {
+  return {
+    "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
+    "note.profiles": profiles,
+  };
+}
 
 /** Protocol handlers registered by the plugin, keyed by their action id. */
 const handlers = new Map<string, (data: ObsidianProtocolData) => void>();
@@ -106,6 +117,11 @@ describe("single-note protocol links", () => {
         },
         workspace: { openLinkText },
       },
+      settings: {
+        loaded: Promise.resolve(
+          profileSettings([{ id: "Bk3Qn7XvT2Lp", label: "Books" }]),
+        ),
+      },
     } as unknown as Partial<ProtocolDeps>);
 
     handlers.get("zotlit/open")?.({
@@ -140,12 +156,54 @@ describe("single-note protocol links", () => {
         },
         workspace: { openLinkText },
       },
+      settings: {
+        loaded: Promise.resolve(
+          profileSettings([{ id: "Bk3Qn7XvT2Lp", label: "Books" }]),
+        ),
+      },
     } as unknown as Partial<ProtocolDeps>);
 
     handlers.get("zotlit/open")?.({
       action: "zotlit/open",
       item: "1",
       profile: "Bk3Qn7XvT2Lp",
+      "source-id": SOURCE_ID,
+    } as ObsidianProtocolData);
+
+    await vi.waitFor(() => expect(openLinkText).toHaveBeenCalled());
+    expect(BaseNotice).not.toHaveBeenCalled();
+    expect(createAndOpen).not.toHaveBeenCalled();
+  });
+
+  it("opens an existing note whose stamp names an id the requested Profile matches but no Profile configures", async () => {
+    const existing = { path: "Literature/Existing.md" };
+    const openLinkText = vi.fn(async () => {});
+    vi.mocked(getItemRefByID).mockReturnValue({
+      indexedKey: "ABC12345",
+    } as ReturnType<typeof getItemRefByID>);
+    using _handlers = register({
+      db: { state: "ready", client: {} },
+      noteIndex: {
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [existing],
+      },
+      app: {
+        metadataCache: {
+          getFileCache: () => ({
+            frontmatter: { "zotlit-profile": "Books (Rz9Wm4YfH6Kd)" },
+          }),
+        },
+        workspace: { openLinkText },
+      },
+      settings: {
+        loaded: Promise.resolve(profileSettings()),
+      },
+    } as unknown as Partial<ProtocolDeps>);
+
+    handlers.get("zotlit/open")?.({
+      action: "zotlit/open",
+      item: "1",
+      profile: "Rz9Wm4YfH6Kd",
       "source-id": SOURCE_ID,
     } as ObsidianProtocolData);
 

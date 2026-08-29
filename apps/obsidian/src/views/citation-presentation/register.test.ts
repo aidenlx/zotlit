@@ -3,9 +3,9 @@ import type { App, Command, Plugin, TAbstractFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/profile";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/service";
 
 import type { CitationPresentationModalOptions } from "./modal";
 import type { CitationPresentationChoice } from "./presentation";

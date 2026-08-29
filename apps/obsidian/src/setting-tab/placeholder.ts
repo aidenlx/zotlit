@@ -1,6 +1,6 @@
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/profile";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/service";
 
 /** Settings keys whose stored value is a string or number. */
 type SettingsScalarKey = {

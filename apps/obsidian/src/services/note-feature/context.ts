@@ -24,10 +24,10 @@ import type {
 import type { DatabaseService } from "@/services/database/service";
 import type { NoteImport, NoteImporter } from "@/services/note-import/service";
 import type { NoteIndex } from "@/services/note-index/service";
+import { getProfileBinding } from "@/services/settings/profile";
+import type { ProfileBindingSettings } from "@/services/settings/profile";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
-import { getProfileBinding } from "@/services/settings/service";
-import type { ProfileBindingSettings } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";

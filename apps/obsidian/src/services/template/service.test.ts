@@ -12,6 +12,7 @@ import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { resolveProfile } from "@/services/settings/profile";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import { SettingsService } from "@/services/settings/service";
@@ -335,37 +336,35 @@ filename: "{{ zt.title }}"
 
     expect(
       service.renderProfileAnnotation(data, {
-        settings: converted,
-        profile: { id: profiles[0]!.id, stamp: profiles[0]!.id },
+        profile: resolveProfile(converted, profiles[0]!.id)!,
       }),
     ).toBe("PROFILE Excerpt");
     // plain.md has no Annotation Block: the document is invalid, and the
     // render refuses instead of substituting the embedded default.
     expect(() =>
       service.renderProfileAnnotation(data, {
-        settings: converted,
-        profile: { id: profiles[1]!.id, stamp: profiles[1]!.id },
+        profile: resolveProfile(converted, profiles[1]!.id)!,
       }),
     ).toThrow(expect.objectContaining({ code: "missing-annotation-block" }));
     // A documentless Profile predates the required-block rule and keeps the
     // embedded default through the legacy machinery.
     expect(
       service.renderProfileAnnotation(data, {
-        settings: converted,
-        profile: { id: profiles[2]!.id, stamp: profiles[2]!.id },
+        profile: resolveProfile(converted, profiles[2]!.id)!,
       }),
     ).toContain("[!note] Page 4");
     expect(
       service.renderProfileAnnotation(data, {
-        settings: { ...converted, "note.template-conversion-pending": true },
-        profile: { id: profiles[0]!.id, stamp: profiles[0]!.id },
+        profile: resolveProfile(
+          { ...converted, "note.template-conversion-pending": true },
+          profiles[0]!.id,
+        )!,
       }),
     ).toBe("LEGACY Excerpt");
   });
 
-  it("reports unknown Profiles and missing Profile documents instead of falling back", async () => {
+  it("reports a missing Profile document instead of falling back", async () => {
     const { service } = await makeHarness({ vault: new MockVault() });
-    const unknownId = "Nn4Pp6Qq8Rr0" as ProfileId;
     const settings = {
       ...defaults,
       "note.template-conversion-pending": false,
@@ -382,26 +381,7 @@ filename: "{{ zt.title }}"
       service.renderProfileAnnotation(
         { text: "Excerpt" },
         {
-          settings,
-          profile: { id: unknownId, stamp: `Deleted (${unknownId})` },
-        },
-      ),
-    ).toThrow(
-      expect.objectContaining({
-        diagnostic: expect.objectContaining({
-          stamp: `Deleted (${unknownId})`,
-        }),
-      }),
-    );
-    expect(() =>
-      service.renderProfileAnnotation(
-        { text: "Excerpt" },
-        {
-          settings,
-          profile: {
-            id: settings["note.profiles"][0]!.id,
-            stamp: settings["note.profiles"][0]!.id,
-          },
+          profile: resolveProfile(settings, settings["note.profiles"][0]!.id)!,
         },
       ),
     ).toThrow(
