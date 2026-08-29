@@ -1,6 +1,6 @@
 // How one Citation is presented once its formatted text is known.
 
-import type { CitationSource } from "@/lib/citation-fragment";
+import type { CitationSource } from "@/lib/citation-source";
 import type { SectionRange } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
 import type { CitekeyResolution } from "@/services/citation-index/service";
@@ -11,7 +11,7 @@ import { renderInlineContent } from "@/services/pandoc/inline-content";
 
 // One citation as a surface holds it: the same shape whether a note wrote it or
 // a wikilink derivation did, which is what lets the two syntaxes share a render.
-export type { CitationKey, CitationSource } from "@/lib/citation-fragment";
+export type { CitationKey, CitationSource } from "@/lib/citation-source";
 
 /**
  * One citation as a surface holds it, with the works it names when its own

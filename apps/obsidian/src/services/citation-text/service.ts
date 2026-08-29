@@ -11,11 +11,10 @@ import {
 } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
+import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
 
 import { BoundedCache } from "@/lib/bounded-cache";
-import { isRenderableCitation } from "@/lib/citation-fragment";
-import type { CitationKey } from "@/lib/citation-fragment";
-import type { TextSpan } from "@/lib/citation-grammar";
+import type { CitationKey } from "@/lib/citation-source";
 import { registerEvent } from "@/lib/disposables";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
@@ -484,15 +483,6 @@ export class CitationText extends Service<void> {
         cited.push(citation.indexedKey);
       }
       const citation = citationOfRun(run);
-      // A derivation the engine would read back as something else stays out of
-      // the render and keeps its native wikilink presentation.
-      if (!isRenderableCitation(citation)) {
-        logger.debug("Wikilink citation is not Pandoc source", {
-          path: file.path,
-          source: citation.source,
-        });
-        continue;
-      }
       citations.push({
         start: run[0]!.source.position.start.offset,
         ...citation,

@@ -115,12 +115,12 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
       entrySerials: false,
       formatted: new Map([
         heldText(
-          "[@example, p. 7]",
+          "[@example, {p. 7}]",
           [LITERATURE_NOTE.indexedKey],
           "(Example 2020, p. 7)",
         ),
         heldText(
-          "[@example, p. 7; @other]",
+          "[@example, {p. 7}; @other]",
           [LITERATURE_NOTE.indexedKey, OTHER_NOTE.indexedKey],
           "(Example 2020, p. 7; Other 2021)",
         ),

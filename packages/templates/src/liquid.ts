@@ -15,6 +15,7 @@ import { formatBlockquote } from "./blockquote";
 import { coerceOutput } from "./coerce";
 import { filenameSuffix } from "./filename-suffix";
 import { normalizeObsidianTag } from "./obsidian-tag";
+import { formatTemplatePandocCitation } from "./pandoc-citation-adapter";
 
 /**
  * Minimal structural view of a Zotero multipart date, duck-typed so this
@@ -52,6 +53,7 @@ export const ZOTLIT_FILTER_NAMES: readonly string[] = Object.freeze([
   "arr_replace",
   FLATTEN_FILTER_NAME,
   "obsidian_tag",
+  "pandoc_cite",
 ]);
 
 const ITEM_DATE_KINDS: ReadonlySet<unknown> = new Set([
@@ -287,6 +289,8 @@ export function createLiquidEngine({
       ? value.map(prefixed).filter((tag) => tag !== "")
       : prefixed(value);
   });
+
+  engine.registerFilter("pandoc_cite", formatTemplatePandocCitation);
 
   engine.registerTag("suffix", SuffixTag);
 

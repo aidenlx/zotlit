@@ -8,6 +8,7 @@ import { DEFAULT_AUTO_TRIM } from "./constants";
 import type { AutoTrim } from "./constants";
 import { embed } from "./embed";
 import { filenameSuffix } from "./filename-suffix";
+import { formatTemplatePandocCitation } from "./pandoc-citation-adapter";
 import { replaceHelper } from "./replace-helper";
 
 export interface TemplateEngineOptions {
@@ -42,6 +43,7 @@ export class TemplateEngine extends Eta {
   readonly basenameHelper = basename;
   readonly suffixHelper = filenameSuffix;
   readonly embedHelper = embed;
+  readonly pandocCiteHelper = formatTemplatePandocCitation;
 
   constructor({
     autoTrim = [DEFAULT_AUTO_TRIM.leading, DEFAULT_AUTO_TRIM.trailing],
@@ -57,7 +59,7 @@ export class TemplateEngine extends Eta {
       autoFilter: true,
       filterFunction: coerceOutput,
       functionHeader:
-        "const bq = (fn) => output(this.bqHelper(capture(fn))); const basename = this.basenameHelper; const suffix = this.suffixHelper; const embed = this.embedHelper;",
+        "const bq = (fn) => output(this.bqHelper(capture(fn))); const basename = this.basenameHelper; const suffix = this.suffixHelper; const embed = this.embedHelper; const pandocCite = this.pandocCiteHelper;",
       plugins: [includeDataPlugin],
     });
 

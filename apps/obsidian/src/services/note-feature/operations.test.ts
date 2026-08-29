@@ -2991,7 +2991,7 @@ describe("renderAnnotation — zt.citation (9.2-CSL #05)", () => {
         citeTemplate(defaultCite, { annotation: "<%= zt.citation %>" }),
       ),
     );
-    expect(result).toContain("[@Hensher2011, p. 62]");
+    expect(result).toContain("[@Hensher2011, {p. 62}]");
   });
 
   it("routes the annotation citation through the user's cite template (locator = page label)", () => {
@@ -3047,7 +3047,7 @@ describe("renderAnnotationCitation (9.2-CSL #06)", () => {
       new Map([["ANN1", annData("Hensher2011", "62")]]),
     );
     expect(renderCite(annotDeps(citeTemplate()))).toContain(
-      "[@Hensher2011, p. 62]",
+      "[@Hensher2011, {p. 62}]",
     );
   });
 
@@ -3084,7 +3084,7 @@ describe("renderAnnotationCitation (9.2-CSL #06)", () => {
       new Map([["ANN1", annData("Hensher2011", "62")]]),
     );
     expect(renderCite(annotDeps(citeTemplate(`${defaultCite}\n`)))).toBe(
-      "[@Hensher2011, p. 62]",
+      "[@Hensher2011, {p. 62}]",
     );
   });
 });

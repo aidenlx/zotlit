@@ -375,14 +375,16 @@ describe("CitationText over wikilink Citations", () => {
 
     const { formatted } = await service.load(NOTE);
 
-    expect(citationRequests).toEqual([{ citations: [`[@${LIT_KEY}, p. 4]`] }]);
+    expect(citationRequests).toEqual([
+      { citations: [`[@${LIT_KEY}, {p. 4}]`] },
+    ]);
     expect(
       firstText(
         formatted.get(
-          citationKey({ source: "[@alpha, p. 4]", works: [LIT_KEY] }),
+          citationKey({ source: "[@alpha, {p. 4}]", works: [LIT_KEY] }),
         ),
       ),
-    ).toBe(`«[@${LIT_KEY}, p. 4]»`);
+    ).toBe(`«[@${LIT_KEY}, {p. 4}]»`);
     await dispose();
   });
 
@@ -403,7 +405,7 @@ describe("CitationText over wikilink Citations", () => {
     await service.load(NOTE);
 
     expect(citationRequests).toEqual([
-      { citations: [`[@${LIT_KEY}, p. 4; @${LIT_KEY}]`] },
+      { citations: [`[@${LIT_KEY}, {p. 4}; @${LIT_KEY}]`] },
     ]);
     await dispose();
   });
@@ -470,7 +472,7 @@ describe("CitationText over wikilink Citations", () => {
     await service.load(NOTE);
 
     expect(citationRequests).toEqual([
-      { citations: [`[@${LIT_KEY}, p. 5]`, `[@${ALPHA_KEY}, p. 6]`] },
+      { citations: [`[@${LIT_KEY}, {p. 5}]`, `[@${ALPHA_KEY}, p. 6]`] },
     ]);
     await dispose();
   });

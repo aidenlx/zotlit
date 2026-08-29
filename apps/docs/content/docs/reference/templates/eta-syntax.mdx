@@ -165,6 +165,40 @@ Signature: `embed(link, alias?, subpath?)`
 | `zt.imgLink` renders `"[[excerpt.png]]"` | `"![[excerpt.png]]"` |
 | `zt.imgLink` is `null`                   | `""`                 |
 
+## `pandocCite()`: Pandoc Citation source [#pandoc-cite]
+
+Formats a Citation Item array as Pandoc Citation source. Pass `zt.citations` directly to the helper.
+
+```eta
+<%= pandocCite(zt.citations) %>
+<%= pandocCite(zt.citations, "prefer-author-in-text") %>
+```
+
+Signature: `pandocCite(citations, form?)`
+
+The optional form is `"normal"` by default.
+
+| Form                      | Output for one item | Description                                                                                                                                            |
+| ------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `"normal"`                | `[@smith2024]`      | Produces a bracketed Citation Cluster.                                                                                                                 |
+| `"prefer-author-in-text"` | `@smith2024`        | Produces an Author-in-text Citation when the first retained item has no prefix and does not suppress the author. Otherwise, produces a normal cluster. |
+
+The helper handles all Citation Item properties used in Pandoc source:
+
+| Input                                             | Output                     |
+| ------------------------------------------------- | -------------------------- |
+| Locator `"3"` with `labelShort` `"p."`            | `[@smith2024, {p. 3}]`     |
+| Prefix `"see "` and suffix `", note 4"`           | `[see @smith2024, note 4]` |
+| `suppressAuthor` set to `true`                    | `[-@smith2024]`            |
+| Citation key `"KX67D9YM?"`                        | `[@{KX67D9YM?}]`           |
+| `"prefer-author-in-text"` with locator `"3"`      | `@smith2024 [{p. 3}]`      |
+| `"prefer-author-in-text"` with prefix `"see "`    | `[see @smith2024]`         |
+| Empty array or items with null citation keys only | `""`                       |
+
+Items with a null citation key are omitted. The helper preserves the order of the remaining items and adds braces around complex citation keys when Pandoc requires them.
+
+Input that cannot be represented without changing its citation structure raises a render error.
+
 ## `suffix()`: filename collision guard [#suffix-filename-collision-guard]
 
 For the `filename` template only. Appends a random string when the generated filename collides with an existing note. When the name is free, it renders nothing.
