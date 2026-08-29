@@ -1,4 +1,3 @@
-import { regex } from "arkregex";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ServiceContainer, ServiceInitError } from "@/services/service-base";
@@ -389,18 +388,14 @@ describe("SettingsService literature note profiles", () => {
     );
   });
 
-  it("creates, edits, and deletes a profile without deriving its id from its label", async () => {
+  it("creates, edits, and deletes a profile with a Nano ID identity", async () => {
     const { plugin, service } = makeService();
     await service.ready;
 
     const created = service.createLiteratureNoteProfile("Books");
     expect(created).toMatchObject({ label: "Books" });
     expect(created.id).not.toBe("Books");
-    expect(created.id).toMatch(
-      regex(
-        "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-      ),
-    );
+    expect(created.id).toMatch(/^[A-Za-z0-9]{12}$/);
     const fetched = service.getLiteratureNoteProfile(created.id);
     if (!fetched || !("id" in fetched)) throw new Error("Profile missing");
     (fetched as { label: string }).label = "Tampered";
@@ -465,9 +460,7 @@ describe("SettingsService literature note profiles", () => {
       "citation.references-style": null,
     });
     expect(
-      service.resolveLiteratureNoteProfileBindings(
-        "36c4f8b4-4f65-4cab-8c51-c921ea616cc8",
-      ),
+      service.resolveLiteratureNoteProfileBindings("V1StGXR8Z5jd"),
     ).toBeUndefined();
   });
 });

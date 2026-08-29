@@ -1454,7 +1454,7 @@ describe("the generated Obsidian vault", () => {
 
     expect(data["note.profiles"]).toEqual([
       {
-        id: "4aef9092-54f7-4f42-9760-9e8195cf924c",
+        id: "V1StGXR8Z5jd",
         label: "Books",
         document: "books.md",
         bindings: {

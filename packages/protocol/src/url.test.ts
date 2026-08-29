@@ -22,7 +22,7 @@ import {
 } from "./url";
 
 const SOURCE = "a1b2c3d4";
-const PROFILE = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+const PROFILE = "V1StGXR8Z5jd";
 
 /** Reconstruct the flat record Obsidian decodes from an `obsidian://zotlit/<action>` link. */
 function decode(url: string): Record<string, string> {
@@ -104,6 +104,16 @@ describe("zotlit obsidian protocol", () => {
     expect(parseProtocolQuery(decode(url))).toMatchObject({
       profileId: PROFILE,
     });
+  });
+
+  it.each([
+    "36c4f8b4-4f65-4cab-8c51-c921ea616cc8",
+    "V1StGXR8_Z5j",
+    "V1StGXR8-Z5j",
+  ])("rejects an invalid Literature Note Profile id: %s", (profile) => {
+    expect(() =>
+      parseProtocolQuery({ item: "42", "source-id": SOURCE, profile }),
+    ).toThrow();
   });
 });
 

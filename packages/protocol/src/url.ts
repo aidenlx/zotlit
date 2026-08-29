@@ -53,7 +53,9 @@ const updateScopeValue = v.optional(
   "full",
 );
 
-const literatureNoteProfileValue = v.optional(v.pipe(v.string(), v.uuid()));
+const literatureNoteProfileValue = v.optional(
+  v.pipe(v.string(), v.regex(/^[A-Za-z0-9]{12}$/u)),
+);
 
 /** Query payload for `zotlit/{open,update}` protocol handlers. */
 export const protocolQuerySchema = v.pipe(

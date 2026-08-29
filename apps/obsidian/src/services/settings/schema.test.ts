@@ -68,7 +68,7 @@ describe("schema/defaults invariants", () => {
   it("stores only added literature note profiles and requires stable unique ids", () => {
     const entry = schema.entries["note.profiles"];
     const books = {
-      id: "36c4f8b4-4f65-4cab-8c51-c921ea616cc8",
+      id: "V1StGXR8Z5jd",
       label: "Books",
       document: "books.md",
       bindings: { "note.literature-folder": "Books" },
@@ -76,7 +76,18 @@ describe("schema/defaults invariants", () => {
 
     expect(defaults["note.profiles"]).toEqual([]);
     expect(v.safeParse(entry, [books]).success).toBe(true);
+    expect(
+      v.safeParse(entry, [
+        { ...books, id: "36c4f8b4-4f65-4cab-8c51-c921ea616cc8" },
+      ]).success,
+    ).toBe(false);
     expect(v.safeParse(entry, [{ ...books, id: "Books" }]).success).toBe(false);
+    expect(v.safeParse(entry, [{ ...books, id: "V1StGXR8_Z5j" }]).success).toBe(
+      false,
+    );
+    expect(v.safeParse(entry, [{ ...books, id: "V1StGXR8-Z5j" }]).success).toBe(
+      false,
+    );
     expect(v.safeParse(entry, [books, books]).success).toBe(false);
     expect(v.safeParse(entry, [{ ...books, document: "   " }]).success).toBe(
       false,
@@ -108,7 +119,7 @@ describe("schema/defaults invariants", () => {
   it("keeps profile bindings sparse and validates each supplied binding", () => {
     const entry = schema.entries["note.profiles"];
     const base = {
-      id: "36c4f8b4-4f65-4cab-8c51-c921ea616cc8",
+      id: "V1StGXR8Z5jd",
       label: "Books",
     };
 

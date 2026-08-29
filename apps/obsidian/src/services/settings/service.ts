@@ -73,6 +73,7 @@
  *   `saveData()`.
  */
 
+import { customAlphabet } from "nanoid";
 import { debounce } from "obsidian";
 import type { Plugin } from "obsidian";
 import * as v from "valibot";
@@ -93,6 +94,11 @@ import type {
   LiteratureNoteProfileBindings,
   Settings,
 } from "./schema";
+
+const profileNanoid = customAlphabet(
+  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+  12,
+);
 
 const SAVE_DEBOUNCE_MS = 200;
 const CURRENT_VERSION = 10;
@@ -415,7 +421,7 @@ export class SettingsService extends Service<void> {
   /** Add a Profile with a generated identity and no binding overrides. */
   createLiteratureNoteProfile(label: string): LiteratureNoteProfile {
     this.#requireLoaded("createLiteratureNoteProfile");
-    const profile = { id: crypto.randomUUID(), label };
+    const profile = { id: profileNanoid(), label };
     this.update((current) => ({
       "note.profiles": [...current["note.profiles"], profile],
     }));

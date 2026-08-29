@@ -274,7 +274,7 @@ describe("wire format", () => {
             "source-id",
           ],
         },
-        "version": 7,
+        "version": 8,
         "zoteroNotes": {
           "body": [
             "items",

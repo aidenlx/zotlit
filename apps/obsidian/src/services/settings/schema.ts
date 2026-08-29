@@ -54,7 +54,7 @@ export type LiteratureNoteProfileBindings = v.InferOutput<
 
 export const literatureNoteProfileSchema = v.pipe(
   v.object({
-    id: v.pipe(v.string(), v.uuid()),
+    id: v.pipe(v.string(), v.regex(/^[A-Za-z0-9]{12}$/)),
     label: v.pipe(
       v.string(),
       v.check((label) => label.trim().length > 0, "Empty profile label"),

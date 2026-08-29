@@ -1034,7 +1034,7 @@ export const INSTALLED_STYLES: readonly FixtureStyle[] = [
  */
 export const LITERATURE_NOTE_PROFILES = [
   {
-    id: "4aef9092-54f7-4f42-9760-9e8195cf924c",
+    id: "V1StGXR8Z5jd",
     label: "Books",
     document: "books.md",
     bindings: {
