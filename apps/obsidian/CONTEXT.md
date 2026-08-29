@@ -41,6 +41,18 @@ _Avoid_: note template (names only the retired `note` half), unified template (v
 A named configuration under which ZotLit-written notes are created and updated. It pairs one Literature Note Template document with the vault-local values a template cannot reach — the Literature Note target folder and citation style, and the Imported Note bindings: import folder, colored highlights, and annotations-as-template. A Profile that leaves a binding unset inherits it from the built-in default Profile, whose bindings record is total; no vault-global copies of these values exist. Each Literature Note and each Imported Note belongs to exactly one Profile, recorded by an explicit `zotlit-profile` system frontmatter stamp; a note without a stamp belongs to the default Profile, and writes follow the stamp — membership is never inferred from another note. Profiles never multiply notes: one Zotero Item maps to at most one Literature Note vault-wide.
 _Avoid_: profile (bare — collides with the Zotero application profile), preset (OZI's model, deliberately reshaped), import format
 
+**Profile stamp**:
+The whole `zotlit-profile` system frontmatter value that records a note's Literature Note Profile. It carries a Profile hint followed by the Profile ID in parentheses; a stamp that is a bare Profile ID is also valid. Every ZotLit write of a stamped note re-emits the stamp with the Profile's current label.
+_Avoid_: profile field, profile reference
+
+**Profile ID**:
+The opaque, stable identifier of a Literature Note Profile — the only part of a Profile stamp ZotLit compares. Membership resolves by exact ID match; an unknown ID is a diagnostic, never a fallback to the label.
+_Avoid_: profile key, profile uuid
+
+**Profile hint**:
+The human-readable part of a Profile stamp: the Profile's label at the time of the write, kept so a person can recognise the Profile in a plain-text note. Informational only — a stale or mismatched hint changes nothing.
+_Avoid_: profile name (in a stamp), profile slug
+
 **Managed Block**:
 The `{% managed %}` … `{% endmanaged %}` block in a Literature Note Template document's body — a self-contained sub-template supported in both Liquid and Eta. It renders in isolation: variables assigned outside the block are not visible inside, so an update-time render is identical to a create-time render. On create it renders in place within the body; on update it alone re-renders to refill the note's Managed Region. When its tags are Line-Owning Tags, the Managed Region occupies exactly the lines the block occupied. Role-equivalent to the retired `content` Template.
 _Avoid_: managed region (the rendered output in the note, not the template source), content block
