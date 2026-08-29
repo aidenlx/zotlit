@@ -1,0 +1,1555 @@
+<!--
+VERDICT (2026-08-29, ticket #904): Variant B — "Ask, but informed" — won.
+User's reasoning: chose B outright; the other creation paths (batch import etc.) are deferred to a
+separate wayfinder ticket rather than decided here.
+Model recorded: ask only when a NEW note is created; the picker shows folder · style · template and
+the resulting path, last-used preselected; an existing note opens with no question; re-stamping is
+its own "Switch Profile" command with one consequences dialog (template, folder move, Imported Notes).
+-->
+<!doctype html>
+<!--
+  Prototype — Profile selection UX (ticket #904, map #835)
+
+  DESIGN QUESTION
+  When, where, and how does an academic user choose the Literature Note Profile a new note
+  is created under — and how do they later change the Profile of an existing note (and its
+  Imported Notes)?
+
+  FIRST PRINCIPLES (academic user)
+  A Profile = "which kind of note do I want for this item" (folder + citation style + template look).
+  Why an academic has more than one:
+    · project / course context ("PhD reading" vs "Teaching: HIST-201") → folder differs, SESSION-shaped
+    · item kind (journal article vs book vs dataset) → template differs, ITEM-shaped
+    · library / discipline (law group library vs science personal) → style differs, LIBRARY-shaped
+    · note purpose (quick reading log vs deep review) → template differs, DELIBERATE, rare
+  Consequences:
+    1. The choice is highly predictable from context. Asking a question the system can answer
+       is a tax. The common case is "same as last time" or "whatever the rules say".
+    2. "Create a note for item" and "open the item's note" are one gesture in the Quick Switch
+       (Enter on a hit). If the note exists, the honest action is OPEN — a Profile question there
+       is a category error and is where re-stamping accidents come from.
+    3. Re-stamping is an operation ON A NOTE (like renaming or moving it), so it wants a
+       note-level command with one dialog that states every consequence (template re-render,
+       folder move or not, Imported Notes).
+    4. Imported Notes belong to the item, so they ride along in the same dialog as a checkbox.
+    5. Predictability criterion: the list must show what the choice DOES — folder, style,
+       template, and the resulting file path — not a bare label.
+
+  VARIANTS
+    A  Baseline (today)        — ask on every creation with a label-only picker; existing note +
+                                 different choice → destructive confirm; separate Imported Note
+                                 switch command. Kept so the user compares against reality.
+    B  Ask, but informed       — still ask per creation, but rows show folder · style · template ·
+                                 resulting path; last-used preselected; bindings-only Profile shows
+                                 "Built-in template" chip; existing note → opens directly.
+    C  Current Profile (mode)  — status-bar item "ZotLit · Articles" and a "Set current Profile"
+                                 command; Quick Switch footer shows "Creating under Articles ·
+                                 ⇧↵ choose another"; creation is silent.
+    D  Rules decide (auto)     — each Profile has an "Applies to" rule; each search hit shows a
+                                 Profile badge resolved live; Enter creates silently under the
+                                 badge; ⇧↵ overrides; unmatched → Default.
+    E  Profile in the search box — segmented Profile tabs across the top of the Quick Switch;
+                                 Tab cycles, sticky between openings; rows show the resulting path.
+  Consent rule in B–E: creation NEVER re-stamps; only the note-level "Switch Profile" command
+  does, after one dialog.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Profile selection UX</title>
+
+    <!-- Typefaces: IBM Plex Sans (rail display) + IBM Plex Mono (paths, stamps, hotkeys). -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      /* The design plan's tokens, exposed to Tailwind as utilities: bg-ground, text-ink,
+       text-accent, font-display, ... `inline` keeps the var() reference at the use site,
+       so the media-query override below still reaches every utility. */
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-ground-2: var(--ground-2);
+        --color-line: var(--line);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-accent: var(--accent);
+        --color-danger: var(--danger);
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+        --font-mono: var(--font-mono);
+      }
+    </style>
+    <style>
+      :root {
+        --ground: #ffffff;
+        --ground-2: #f5f5f3;
+        --line: #e3e2df;
+        --ink: #222222;
+        --muted: #7b7975;
+        --accent: #7f6df2;
+        --danger: #e93147;
+        --font-display: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+        --font-body:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, ui-sans-serif,
+          system-ui, sans-serif;
+        --font-mono:
+          "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #1e1e1e;
+          --ground-2: #262626;
+          --line: #383838;
+          --ink: #dcddde;
+          --muted: #9c9c98;
+          --accent: #a78bfa;
+          --danger: #fb464c;
+        }
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react",
+          "beautiful-mermaid": "https://esm.sh/beautiful-mermaid@1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- Diagram sources go here: one <script type="text/mermaid" id="..."> per diagram. -->
+
+    <script type="text/jsx" id="app">
+      import React, {
+        useState,
+        useEffect,
+        useMemo,
+        useRef,
+        useSyncExternalStore,
+      } from "react";
+      import { createRoot } from "react-dom/client";
+      import {
+        Search,
+        ChevronDown,
+        ChevronRight,
+        FolderOpen,
+        FileText,
+        Files,
+        Bookmark,
+        PanelLeft,
+        Settings,
+        HelpCircle,
+        X,
+        Plus,
+      } from "lucide-react"; // any lucide icon; <Search size={16} className="text-muted" />
+
+      // --- Diagram ---
+      // Diagrams are authored as <script type="text/mermaid" id="..."> blocks in the body —
+      // plain text, no escaping — and rendered with <Diagram src="thatId" />. Indentation is
+      // stripped, so the block can sit at whatever depth reads well. beautiful-mermaid loads
+      // on first mount, so a page with no diagram never fetches it; bg/fg are var() so
+      // diagrams follow the theme instead of re-rendering.
+      function decodeEntities(s) {
+        const el = document.createElement("textarea");
+        el.innerHTML = s;
+        return el.value;
+      }
+
+      function dedent(s) {
+        const lines = s.replace(/\t/g, "  ").split("\n");
+        const widths = lines
+          .filter((l) => l.trim())
+          .map((l) => l.match(/^ */)[0].length);
+        const pad = widths.length ? Math.min(...widths) : 0;
+        return lines
+          .map((l) => l.slice(pad))
+          .join("\n")
+          .trim();
+      }
+
+      let mermaidMod = null;
+      export function Diagram({ src }) {
+        const [mod, setMod] = useState(mermaidMod);
+        useEffect(() => {
+          if (!mod)
+            import("beautiful-mermaid").then((m) => {
+              mermaidMod = m;
+              setMod(m);
+            });
+        }, [mod]);
+        const { svg, error } = useMemo(() => {
+          const el = document.getElementById(src);
+          if (!el)
+            return {
+              svg: null,
+              error: `no <script type="text/mermaid" id="${src}"> in this page`,
+            };
+          if (!mod) return { svg: null, error: null };
+          try {
+            const opts = {
+              bg: "var(--ground)",
+              fg: "var(--ink)",
+              transparent: true,
+            };
+            return {
+              svg: mod.renderMermaidSVG(
+                decodeEntities(dedent(el.textContent)),
+                opts,
+              ),
+              error: null,
+            };
+          } catch (e) {
+            return { svg: null, error: String(e) };
+          }
+        }, [mod, src]);
+        if (error)
+          return (
+            <pre className="text-accent text-sm whitespace-pre-wrap">
+              {error}
+            </pre>
+          );
+        return (
+          <div
+            className="overflow-x-auto"
+            dangerouslySetInnerHTML={{ __html: svg ?? "" }}
+          />
+        );
+      }
+      // --- Diagram END ---
+
+      // --- Shared ---
+      // The prototype store: one module-level object, a listener set, and useSyncExternalStore.
+      // Variants never receive props — they read `useProtoState()` and call `actions`.
+
+      const ARTICLES = "9e5b907e-4e61-4c0a-98c7-a7d60dedc8e0";
+      const THESIS = "c1f0a2d4-7b3e-4e51-9a6d-2f8e0b7c5a11";
+
+      const ALL_PROFILES = [
+        {
+          id: null,
+          label: "Default",
+          folder: "literatures",
+          style: "Built-in default",
+          document: "Built-in template",
+          rule: null,
+        },
+        {
+          id: ARTICLES,
+          label: "Articles",
+          folder: "literatures/articles",
+          style: "apa",
+          document: "templates/articles.md",
+          rule: { itemType: "journalArticle" },
+        },
+        {
+          id: THESIS,
+          label: "Thesis",
+          folder: "projects/thesis/reading",
+          style: "chicago-author-date",
+          document: null, // bindings-only Profile: no template document
+          rule: { collection: "PhD reading" },
+        },
+      ];
+
+      const ITEMS = [
+        {
+          key: "personalAlpha2024",
+          title: "Alpha of the personal library",
+          authors: "Alpha, A.",
+          year: 2024,
+          type: "journalArticle",
+          library: "My Library",
+          collections: ["PhD reading"],
+        },
+        {
+          key: "duplicateWithin2020",
+          title: "Duplicate within a library",
+          authors: "Beta, B.; Gamma, C.",
+          year: 2020,
+          type: "journalArticle",
+          library: "My Library",
+          collections: [],
+        },
+        {
+          key: "bookBeta2019",
+          title: "Beta: a book-length study",
+          authors: "Beta, B.",
+          year: 2019,
+          type: "book",
+          library: "Lab group",
+          collections: ["Teaching"],
+        },
+      ];
+
+      const SCENARIOS = ["one-extra", "three-with-noted", "zero-extra"];
+
+      function stamp() {
+        const d = new Date();
+        return [d.getHours(), d.getMinutes(), d.getSeconds()]
+          .map((n) => String(n).padStart(2, "0"))
+          .join(":");
+      }
+
+      function seed(scenario) {
+        const profiles =
+          scenario === "zero-extra"
+            ? ALL_PROFILES.slice(0, 1)
+            : scenario === "one-extra"
+              ? ALL_PROFILES.slice(0, 2)
+              : ALL_PROFILES;
+        const noted = scenario === "three-with-noted";
+        return {
+          scenario,
+          profiles: profiles.map((p) => ({ ...p })),
+          items: ITEMS.map((i) => ({ ...i })),
+          notes: noted
+            ? {
+                duplicateWithin2020: {
+                  path: "literatures/articles/duplicateWithin2020.md",
+                  profileId: ARTICLES,
+                  importedNotes: 2,
+                },
+              }
+            : {},
+          lastUsedProfileId: noted ? ARTICLES : null,
+          currentProfileId: noted ? ARTICLES : null,
+          activeNoteKey: noted ? "duplicateWithin2020" : null,
+          notices: [],
+          log: [],
+        };
+      }
+
+      let state = seed("three-with-noted");
+      const listeners = new Set();
+
+      function subscribe(fn) {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      }
+
+      function getSnapshot() {
+        return state;
+      }
+
+      function setState(next) {
+        state = next;
+        for (const fn of listeners) fn();
+      }
+
+      function logged(next, text) {
+        return {
+          ...next,
+          log: [{ t: stamp(), text }, ...next.log].slice(0, 40),
+        };
+      }
+
+      export function useProtoState() {
+        const snapshot = useSyncExternalStore(subscribe, getSnapshot);
+        return { state: snapshot, actions };
+      }
+
+      export function profileById(s, id) {
+        return s.profiles.find((p) => p.id === (id ?? null)) ?? s.profiles[0];
+      }
+
+      export function notePath(s, itemKey, profileId) {
+        return `${profileById(s, profileId).folder}/${itemKey}.md`;
+      }
+
+      export function PROFILE_DISPLAY(profile) {
+        return [
+          profile.folder,
+          profile.style,
+          profile.document ?? "Bindings only",
+        ].join(" · ");
+      }
+
+      let noticeSeq = 0;
+
+      export const actions = {
+        setScenario(scenario) {
+          setState(logged(seed(scenario), `Scenario: ${scenario}`));
+        },
+        createNote(itemKey, profileId) {
+          const path = notePath(state, itemKey, profileId);
+          const profile = profileById(state, profileId);
+          setState(
+            logged(
+              {
+                ...state,
+                notes: {
+                  ...state.notes,
+                  [itemKey]: {
+                    path,
+                    profileId: profileId ?? null,
+                    importedNotes: 0,
+                  },
+                },
+                lastUsedProfileId: profileId ?? null,
+                activeNoteKey: itemKey,
+              },
+              `Created ${path} under ${profile.label}`,
+            ),
+          );
+          return { path };
+        },
+        openNote(itemKey) {
+          const note = state.notes[itemKey];
+          setState(
+            logged(
+              { ...state, activeNoteKey: itemKey },
+              `Opened ${note ? note.path : itemKey}`,
+            ),
+          );
+        },
+        switchNoteProfile(itemKey, profileId, options) {
+          const { moveFile = true, includeImported = true } = options ?? {};
+          const note = state.notes[itemKey];
+          if (!note) return;
+          const profile = profileById(state, profileId);
+          const path = moveFile
+            ? notePath(state, itemKey, profileId)
+            : note.path;
+          const imported =
+            includeImported && note.importedNotes
+              ? `, ${note.importedNotes} Imported Notes re-stamped`
+              : "";
+          setState(
+            logged(
+              {
+                ...state,
+                notes: {
+                  ...state.notes,
+                  [itemKey]: { ...note, path, profileId: profileId ?? null },
+                },
+                activeNoteKey: itemKey,
+              },
+              `Switched ${itemKey} to ${profile.label}${
+                moveFile ? ` and moved to ${path}` : " in place"
+              }${imported}`,
+            ),
+          );
+        },
+        setCurrentProfile(id) {
+          setState(
+            logged(
+              { ...state, currentProfileId: id ?? null },
+              `Current Profile: ${profileById(state, id).label}`,
+            ),
+          );
+        },
+        setLastUsed(id) {
+          setState(
+            logged(
+              { ...state, lastUsedProfileId: id ?? null },
+              `Last used: ${profileById(state, id).label}`,
+            ),
+          );
+        },
+        setRule(profileId, rule) {
+          setState(
+            logged(
+              {
+                ...state,
+                profiles: state.profiles.map((p) =>
+                  p.id === profileId ? { ...p, rule } : p,
+                ),
+              },
+              `Rule for ${profileById(state, profileId).label}: ${
+                rule
+                  ? Object.entries(rule)
+                      .map(([k, v]) => `${k}=${v}`)
+                      .join(", ")
+                  : "none"
+              }`,
+            ),
+          );
+        },
+        resolveRule(item) {
+          for (const p of state.profiles) {
+            const r = p.rule;
+            if (!r) continue;
+            if (r.itemType && r.itemType !== item.type) continue;
+            if (r.library && r.library !== item.library) continue;
+            if (
+              r.collection &&
+              !(item.collections ?? []).includes(r.collection)
+            )
+              continue;
+            if (r.tag && !(item.tags ?? []).includes(r.tag)) continue;
+            return p.id;
+          }
+          return null;
+        },
+        notify(text) {
+          const id = ++noticeSeq;
+          setState({ ...state, notices: [...state.notices, { id, text }] });
+          setTimeout(() => {
+            setState({
+              ...state,
+              notices: state.notices.filter((n) => n.id !== id),
+            });
+          }, 3000);
+        },
+      };
+
+      // --- Primitives: Obsidian's default theme, rebuilt from the plan's tokens only. ---
+
+      export function Kbd({ children }) {
+        return (
+          <kbd className="font-mono text-[11px] leading-none border-line bg-ground-2 text-muted rounded border px-1 py-[3px]">
+            {children}
+          </kbd>
+        );
+      }
+
+      export function Pill({ tone = "muted", children, className = "" }) {
+        const tint =
+          tone === "accent"
+            ? {
+                color: "var(--accent)",
+                background:
+                  "color-mix(in srgb, var(--accent) 14%, transparent)",
+              }
+            : tone === "danger"
+              ? {
+                  color: "var(--danger)",
+                  background:
+                    "color-mix(in srgb, var(--danger) 14%, transparent)",
+                }
+              : { color: "var(--muted)", background: "var(--ground-2)" };
+        return (
+          <span
+            className={`inline-block rounded-full px-2 py-[2px] text-[11px] leading-none whitespace-nowrap ${className}`}
+            style={tint}
+          >
+            {children}
+          </span>
+        );
+      }
+
+      function TreeFolder({ name, files, activePath }) {
+        return (
+          <div className="mb-[2px]">
+            <div className="text-ink/85 flex items-center gap-1 rounded px-1 py-[3px] text-[13px]">
+              <ChevronDown size={12} className="text-muted shrink-0" />
+              <span className="truncate">{name}</span>
+            </div>
+            {files.map((f) => (
+              <div
+                key={f.path}
+                className="flex items-center gap-1 rounded py-[3px] pr-1 pl-[22px] text-[13px]"
+                style={
+                  f.path === activePath
+                    ? {
+                        background:
+                          "color-mix(in srgb, var(--accent) 12%, transparent)",
+                      }
+                    : undefined
+                }
+              >
+                <span className="truncate">{f.name}</span>
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      export function ObsidianFrame({
+        title,
+        children,
+        overlay = null,
+        statusItems = null,
+        footer = null,
+        stampRender = null,
+      }) {
+        const { state } = useProtoState();
+        const active = state.activeNoteKey
+          ? state.notes[state.activeNoteKey]
+          : null;
+        const activeItem =
+          state.items.find((i) => i.key === state.activeNoteKey) ?? null;
+        const activeProfile = active
+          ? profileById(state, active.profileId)
+          : null;
+
+        const tree = useMemo(() => {
+          const folders = new Map([
+            ["attachments", []],
+            ["literatures", []],
+            [
+              "templates",
+              [{ name: "articles.md", path: "templates/articles.md" }],
+            ],
+            ["zotero_notes", []],
+          ]);
+          for (const [key, note] of Object.entries(state.notes)) {
+            const cut = note.path.lastIndexOf("/");
+            const dir = note.path.slice(0, cut);
+            const name = note.path.slice(cut + 1);
+            if (!folders.has(dir)) folders.set(dir, []);
+            folders.get(dir).push({ name, path: note.path, key });
+            if (note.importedNotes) {
+              folders
+                .get("zotero_notes")
+                .push({
+                  name: `${key}-imported.md`,
+                  path: `zotero_notes/${key}-imported.md`,
+                });
+            }
+          }
+          return [...folders.entries()];
+        }, [state.notes]);
+
+        const tabTitle =
+          title ?? (active ? active.path.split("/").pop() : "No file open");
+
+        return (
+          <div className="bg-ground text-ink font-body relative flex h-full min-w-0 flex-col overflow-hidden text-sm">
+            <div className="flex min-h-0 flex-1">
+              {/* ribbon */}
+              <div className="border-line bg-ground-2 flex w-[44px] shrink-0 flex-col items-center gap-4 border-r py-3">
+                <FolderOpen size={17} className="text-ink/70" />
+                <Search size={17} className="text-muted" />
+                <Bookmark size={17} className="text-muted" />
+                <Files size={17} className="text-muted" />
+                <div className="flex-1" />
+                <HelpCircle size={16} className="text-muted" />
+                <Settings size={16} className="text-muted" />
+              </div>
+
+              {/* file tree */}
+              <div className="border-line bg-ground-2 text-ink/90 w-[200px] shrink-0 overflow-y-auto border-r px-2 py-2">
+                {tree.map(([folder, files]) => (
+                  <TreeFolder
+                    key={folder}
+                    name={folder}
+                    files={files}
+                    activePath={active?.path}
+                  />
+                ))}
+              </div>
+
+              {/* main pane */}
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="border-line flex shrink-0 items-center gap-2 border-b px-3 py-[6px]">
+                  <div className="border-line bg-ground flex items-center gap-2 rounded-md border px-3 py-1 text-[13px]">
+                    <FileText size={13} className="text-muted" />
+                    <span className="max-w-[240px] truncate">{tabTitle}</span>
+                    <X size={12} className="text-muted" />
+                  </div>
+                  <Plus size={14} className="text-muted" />
+                  <div className="flex-1" />
+                  <PanelLeft size={14} className="text-muted" />
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto px-10 py-6">
+                  {children ? <div className="mb-6">{children}</div> : null}
+                  {active && activeItem ? (
+                    <>
+                      <div className="text-muted mb-4 font-mono text-[11px]">
+                        {active.path}
+                      </div>
+                      <table className="mb-6 w-full max-w-[560px] table-fixed text-[13px]">
+                        <tbody>
+                          <tr>
+                            <td className="text-muted w-[130px] py-1 align-top">
+                              title
+                            </td>
+                            <td className="py-1">{activeItem.title}</td>
+                          </tr>
+                          <tr>
+                            <td className="text-muted py-1 align-top">
+                              citekey
+                            </td>
+                            <td className="py-1 font-mono text-[12px]">
+                              {activeItem.key}
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="text-muted py-1 align-top">
+                              zotlit-profile
+                            </td>
+                            <td className="py-1 font-mono text-[12px] break-all">
+                              {stampRender
+                                ? stampRender(active, activeProfile)
+                                : (active.profileId ?? "(unset)")}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                      <h1 className="mb-3 text-2xl font-semibold">
+                        {activeItem.title}
+                      </h1>
+                      <p className="text-ink/80 max-w-[60ch] leading-relaxed">
+                        {activeItem.authors} ({activeItem.year}). Rendered from{" "}
+                        {activeProfile?.document ?? "the built-in bindings"} in{" "}
+                        {activeProfile?.style}.
+                      </p>
+                    </>
+                  ) : (
+                    <div className="text-muted pt-10 text-center">
+                      No file is open
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* status bar */}
+            <div className="border-line bg-ground-2 text-muted flex shrink-0 items-center gap-3 border-t px-3 py-[5px] text-[11px]">
+              <span className="truncate">fixture-vault</span>
+              <div className="flex-1" />
+              {footer}
+              {statusItems}
+            </div>
+
+            {/* notices */}
+            <div className="pointer-events-none absolute right-3 bottom-8 flex flex-col items-end gap-2">
+              {state.notices.map((n) => (
+                <Notice key={n.id} text={n.text} />
+              ))}
+            </div>
+
+            {overlay ? (
+              <div
+                className="absolute inset-0 flex justify-center pt-[10%]"
+                style={{ background: "rgba(0,0,0,0.28)" }}
+              >
+                {overlay}
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+
+      export function Notice({ text }) {
+        return (
+          <div className="border-line bg-ground-2 text-ink rounded-md border px-3 py-2 text-[13px] shadow-lg">
+            {text}
+          </div>
+        );
+      }
+
+      export function Prompt({
+        placeholder = "",
+        value = "",
+        onChange,
+        onKeyDown,
+        instructions = [],
+        header = null,
+        children,
+        className = "",
+      }) {
+        const ref = useRef(null);
+        useEffect(() => {
+          ref.current?.focus();
+        }, []);
+        return (
+          <div
+            className={`border-line bg-ground flex max-h-[70%] w-[560px] flex-col overflow-hidden rounded-lg border shadow-2xl ${className}`}
+          >
+            <div className="border-line flex shrink-0 items-center gap-2 border-b px-4 py-[10px]">
+              <input
+                ref={ref}
+                className="text-ink placeholder:text-muted min-w-0 flex-1 bg-transparent text-[15px] outline-none"
+                placeholder={placeholder}
+                value={value}
+                onChange={(e) => onChange?.(e.target.value)}
+                onKeyDown={onKeyDown}
+              />
+            </div>
+            {header ? (
+              <div className="border-line shrink-0 border-b">{header}</div>
+            ) : null}
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">{children}</div>
+            {instructions.length ? (
+              <div className="border-line text-muted flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 border-t px-4 py-2 text-[11px]">
+                {instructions.map((i) => (
+                  <span
+                    key={i.command + i.purpose}
+                    className="flex items-center gap-[6px]"
+                  >
+                    <Kbd>{i.command}</Kbd>
+                    <span>{i.purpose}</span>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+
+      export function SuggestRow({
+        selected = false,
+        onClick,
+        title,
+        aside = null,
+        note = null,
+        badge = null,
+      }) {
+        return (
+          <div
+            onClick={onClick}
+            className="flex cursor-pointer items-start gap-3 rounded-md px-3 py-2"
+            style={
+              selected
+                ? {
+                    background:
+                      "color-mix(in srgb, var(--accent) 12%, transparent)",
+                  }
+                : undefined
+            }
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-ink truncate text-[14px]">{title}</span>
+                {badge ? <Pill tone="accent">{badge}</Pill> : null}
+              </div>
+              {note ? (
+                <div className="text-muted mt-[2px] text-[12px]">{note}</div>
+              ) : null}
+            </div>
+            {aside ? (
+              <div className="text-muted shrink-0 text-[12px] whitespace-nowrap">
+                {aside}
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+
+      export function Dialog({
+        title,
+        body = null,
+        actions: buttons = [],
+        checkboxes = [],
+      }) {
+        return (
+          <div className="border-line bg-ground w-[440px] overflow-hidden rounded-lg border shadow-2xl">
+            <div className="px-5 pt-4 pb-2 text-[17px] font-semibold">
+              {title}
+            </div>
+            <div className="text-ink/85 px-5 pb-3 text-[13px] leading-relaxed">
+              {body}
+            </div>
+            {checkboxes.length ? (
+              <div className="flex flex-col gap-2 px-5 pb-3">
+                {checkboxes.map((c) => (
+                  <label
+                    key={c.label}
+                    className="flex cursor-pointer items-start gap-2 text-[13px]"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-[3px]"
+                      checked={c.checked}
+                      onChange={(e) => c.onChange?.(e.target.checked)}
+                    />
+                    <span>
+                      {c.label}
+                      {c.note ? (
+                        <span className="text-muted block text-[12px]">
+                          {c.note}
+                        </span>
+                      ) : null}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+            <div className="border-line bg-ground-2 flex justify-end gap-2 border-t px-5 py-3">
+              {buttons.map((b) => (
+                <button
+                  key={b.label}
+                  onClick={b.onClick}
+                  className="cursor-pointer rounded-md px-3 py-[6px] text-[13px]"
+                  style={
+                    b.cta
+                      ? { background: "var(--accent)", color: "#ffffff" }
+                      : b.destructive
+                        ? { background: "var(--danger)", color: "#ffffff" }
+                        : {
+                            background: "var(--ground)",
+                            color: "var(--ink)",
+                            border: "1px solid var(--line)",
+                          }
+                  }
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      export function CommandPalette({ open, items = [], onClose }) {
+        const [query, setQuery] = useState("");
+        const [sel, setSel] = useState(0);
+        const hits = items.filter((i) =>
+          i.label.toLowerCase().includes(query.toLowerCase()),
+        );
+        useEffect(() => {
+          setSel(0);
+        }, [query]);
+        if (!open) return null;
+        const onKeyDown = (e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setSel((i) => Math.min(i + 1, hits.length - 1));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setSel((i) => Math.max(i - 1, 0));
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            hits[sel]?.onSelect?.();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onClose?.();
+          }
+        };
+        return (
+          <Prompt
+            placeholder="Select a command..."
+            value={query}
+            onChange={setQuery}
+            onKeyDown={onKeyDown}
+            instructions={[
+              { command: "↑↓", purpose: "navigate" },
+              { command: "↵", purpose: "run command" },
+              { command: "esc", purpose: "dismiss" },
+            ]}
+          >
+            {hits.map((it, i) => (
+              <SuggestRow
+                key={it.label}
+                title={it.label}
+                selected={i === sel}
+                onClick={it.onSelect}
+              />
+            ))}
+          </Prompt>
+        );
+      }
+
+      function RailHeading({ children }) {
+        return (
+          <div className="font-display text-muted mb-2 text-[11px] font-semibold tracking-[0.08em] uppercase">
+            {children}
+          </div>
+        );
+      }
+
+      export function Rail({
+        thesis,
+        steps = [],
+        consent = null,
+        extras = null,
+      }) {
+        const { state } = useProtoState();
+        const numbered = Array.isArray(steps) && steps.length > 1;
+        return (
+          <aside className="border-line bg-ground-2 text-ink font-body flex h-full min-h-0 flex-col gap-5 overflow-y-auto border-l px-4 py-4 text-[13px]">
+            <div>
+              <RailHeading>Thesis</RailHeading>
+              <p className="leading-relaxed">{thesis}</p>
+            </div>
+
+            {consent ? (
+              <div>
+                <RailHeading>Consent rule</RailHeading>
+                <p className="text-ink/85 leading-relaxed">{consent}</p>
+              </div>
+            ) : null}
+
+            {numbered ? (
+              <div>
+                <RailHeading>Steps</RailHeading>
+                <ol className="flex flex-col gap-[6px]">
+                  {steps.map((s, i) => (
+                    <li key={i} className="flex gap-2 leading-relaxed">
+                      <span className="text-muted font-mono text-[11px] tabular-nums">
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
+                      <span className="min-w-0 flex-1">{s}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
+
+            {extras}
+
+            <div>
+              <RailHeading>State</RailHeading>
+              <table className="w-full text-[11px]">
+                <tbody>
+                  {state.profiles.map((p) => (
+                    <tr key={p.label} className="align-top">
+                      <td className="py-[2px] pr-2 whitespace-nowrap">
+                        {p.label}
+                        {p.id === state.currentProfileId ? (
+                          <span className="text-accent"> ·</span>
+                        ) : null}
+                      </td>
+                      <td className="text-muted py-[2px] font-mono break-all">
+                        {PROFILE_DISPLAY(p)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div className="mt-3 flex flex-col gap-1">
+                {Object.entries(state.notes).length === 0 ? (
+                  <div className="text-muted text-[11px]">no notes yet</div>
+                ) : (
+                  Object.entries(state.notes).map(([key, n]) => (
+                    <div key={key} className="text-[11px] leading-snug">
+                      <span className="font-mono break-all">{n.path}</span>
+                      <span className="text-muted">
+                        {" — "}
+                        {profileById(state, n.profileId).label}
+                        {n.importedNotes
+                          ? ` · ${n.importedNotes} imported`
+                          : ""}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="text-muted mt-3 text-[11px]">
+                current: {profileById(state, state.currentProfileId).label} ·
+                last used: {profileById(state, state.lastUsedProfileId).label}
+              </div>
+            </div>
+
+            <div className="min-h-0">
+              <RailHeading>Log</RailHeading>
+              <div className="flex flex-col gap-[3px]">
+                {state.log.length === 0 ? (
+                  <div className="text-muted text-[11px]">nothing yet</div>
+                ) : (
+                  state.log.map((e, i) => (
+                    <div
+                      key={i}
+                      className="flex gap-2 text-[11px] leading-snug"
+                    >
+                      <span className="text-muted font-mono tabular-nums">
+                        {e.t}
+                      </span>
+                      <span className="min-w-0 flex-1">{e.text}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </aside>
+        );
+      }
+      // --- Shared END ---
+
+      // --- App ---
+      // --- Variant B ---
+      // Variant B — "Ask, but informed".
+      // Creation still asks, but every row states what the choice does (folder · style ·
+      // document, and the resulting path). An item that already has a note just opens.
+      // Re-stamping is its own note-level command behind one consequences dialog.
+
+      function vb_matchItem(item, query) {
+        const q = query.trim().toLowerCase();
+        if (!q) return true;
+        return [item.title, item.authors, item.key, String(item.year)]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+      }
+
+      /** Next selectable index, skipping rows flagged disabled. */
+      function vb_move(rows, from, dir) {
+        const n = rows.length;
+        if (n === 0) return 0;
+        let i = from;
+        for (let step = 0; step < n; step++) {
+          i = (i + dir + n) % n;
+          if (!rows[i].disabled) return i;
+        }
+        return from;
+      }
+
+      /** First selectable index at or after a preferred one. */
+      function vb_firstSelectable(rows, prefer) {
+        if (rows[prefer] && !rows[prefer].disabled) return prefer;
+        const i = rows.findIndex((r) => !r.disabled);
+        return i < 0 ? 0 : i;
+      }
+
+      /** ↑↓ ↵ Esc for any Prompt driven by a row list. */
+      function vb_promptKeys({ rows, sel, setSel, onChoose, onClose }) {
+        return (e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setSel(vb_move(rows, sel, 1));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setSel(vb_move(rows, sel, -1));
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            const row = rows[sel];
+            if (row && !row.disabled) onChoose(row);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onClose();
+          }
+        };
+      }
+
+      /** The walkthrough found the raw UUID opaque: show the label, keep the id as evidence. */
+      function vb_stamp(note, profile) {
+        return (
+          <div className="flex flex-col gap-0.5">
+            <span className="text-ink">
+              {profile ? profile.label : "Unknown profile"}
+            </span>
+            <span
+              className="font-mono text-muted text-[11px]"
+              title={note.profileId ?? "default"}
+            >
+              {note.profileId ?? "default"}
+            </span>
+          </div>
+        );
+      }
+
+      function VariantB() {
+        const { state, actions } = useProtoState();
+
+        const [mode, setMode] = useState(null); // null | "items" | "create" | "switch" | "confirm" | "palette"
+        const [query, setQuery] = useState("");
+        const [itemSel, setItemSel] = useState(0);
+        const [profileSel, setProfileSel] = useState(0);
+        const [paletteSel, setPaletteSel] = useState(0);
+        const [pendingItemKey, setPendingItemKey] = useState(null);
+        const [pendingProfileId, setPendingProfileId] = useState(null);
+        const [moveFile, setMoveFile] = useState(true);
+        const [includeImported, setIncludeImported] = useState(true);
+
+        const profiles = state.profiles;
+        const items = useMemo(
+          () => state.items.filter((i) => vb_matchItem(i, query)),
+          [state.items, query],
+        );
+
+        const closeAll = () => {
+          setMode(null);
+          setQuery("");
+          setPendingItemKey(null);
+          setPendingProfileId(null);
+        };
+
+        // --- Quick Switch over the library -------------------------------------------------
+        const openSearch = () => {
+          setQuery("");
+          setItemSel(0);
+          setMode("items");
+        };
+
+        const itemRows = items.map((item) => {
+          const note = state.notes[item.key];
+          const noteProfile = note ? profileById(state, note.profileId) : null;
+          return { kind: "item", item, note, noteProfile };
+        });
+
+        const chooseItem = (row) => {
+          if (row.note) {
+            actions.openNote(row.item.key);
+            actions.notify(`Opened ${row.note.path}`);
+            closeAll();
+            return;
+          }
+          setPendingItemKey(row.item.key);
+          setProfileSel(
+            Math.max(
+              0,
+              profiles.findIndex((p) => p.id === state.lastUsedProfileId),
+            ),
+          );
+          setMode("create");
+        };
+
+        // --- Informed profile rows ----------------------------------------------------------
+        const profileRows = (itemKey, currentId, markLastUsed) =>
+          profiles.map((profile) => {
+            const isCurrent =
+              currentId !== undefined && profile.id === currentId;
+            const bindingsOnly = !profile.document;
+            return {
+              kind: "profile",
+              profile,
+              disabled: isCurrent,
+              title: (
+                <span className="flex items-center gap-2">
+                  <span>{profile.label}</span>
+                  {markLastUsed && profile.id === state.lastUsedProfileId ? (
+                    <Pill tone="accent">last used</Pill>
+                  ) : null}
+                  {isCurrent ? <Pill tone="muted">current</Pill> : null}
+                </span>
+              ),
+              note: (
+                <span className="flex items-center gap-2">
+                  <span>{PROFILE_DISPLAY(profile)}</span>
+                  {bindingsOnly ? (
+                    <Pill tone="muted">inherits look</Pill>
+                  ) : null}
+                </span>
+              ),
+              aside: (
+                <span className="font-mono">
+                  {notePath(state, itemKey, profile.id)}
+                </span>
+              ),
+            };
+          });
+
+        const createRows = pendingItemKey
+          ? profileRows(pendingItemKey, undefined, true)
+          : [];
+
+        const chooseCreateProfile = (row) => {
+          const itemKey = pendingItemKey;
+          const { path } = actions.createNote(itemKey, row.profile.id);
+          actions.setLastUsed(row.profile.id);
+          actions.openNote(itemKey);
+          actions.notify(`Created ${path} under ${row.profile.label}`);
+          closeAll();
+        };
+
+        // --- Switch Literature Note Profile… (its own command) ------------------------------
+        const activeKey = state.activeNoteKey;
+        const activeNote = activeKey ? state.notes[activeKey] : null;
+        const activeProfile = activeNote
+          ? profileById(state, activeNote.profileId)
+          : null;
+
+        const openSwitch = () => {
+          if (!activeNote) {
+            actions.notify("Open a literature note first.");
+            return;
+          }
+          const rows = profileRows(activeKey, activeNote.profileId, false);
+          setProfileSel(vb_firstSelectable(rows, 0));
+          setQuery("");
+          setMode("switch");
+        };
+
+        const switchRows = activeNote
+          ? profileRows(activeKey, activeNote.profileId, false)
+          : [];
+
+        const chooseSwitchProfile = (row) => {
+          const target = row.profile;
+          setPendingProfileId(target.id);
+          setMoveFile(
+            activeProfile ? target.folder !== activeProfile.folder : false,
+          );
+          setIncludeImported(true);
+          setMode("confirm");
+        };
+
+        const pendingProfile =
+          pendingProfileId !== null || mode === "confirm"
+            ? profileById(state, pendingProfileId)
+            : null;
+        const foldersDiffer =
+          pendingProfile &&
+          activeProfile &&
+          pendingProfile.folder !== activeProfile.folder;
+        const importedCount = activeNote ? (activeNote.importedNotes ?? 0) : 0;
+
+        const confirmSwitch = () => {
+          actions.switchNoteProfile(activeKey, pendingProfileId, {
+            moveFile: Boolean(foldersDiffer && moveFile),
+            includeImported: importedCount > 0 && includeImported,
+          });
+          actions.notify(`Switched to ${pendingProfile.label}`);
+          closeAll();
+        };
+
+        // --- Command palette ----------------------------------------------------------------
+        const paletteItems = [
+          {
+            label: "ZotLit: Open literature note quick switcher",
+            onSelect: openSearch,
+          },
+          {
+            label: "ZotLit: Switch Literature Note Profile…",
+            onSelect: openSwitch,
+          },
+        ];
+
+        // --- Overlays ------------------------------------------------------------------------
+        let overlay = null;
+
+        if (mode === "items") {
+          overlay = (
+            <Prompt
+              placeholder="Search your library"
+              value={query}
+              onChange={(v) => {
+                setQuery(v);
+                setItemSel(0);
+              }}
+              onKeyDown={vb_promptKeys({
+                rows: itemRows,
+                sel: itemSel,
+                setSel: setItemSel,
+                onChoose: chooseItem,
+                onClose: closeAll,
+              })}
+              instructions={[
+                { command: "↑↓", purpose: "navigate" },
+                { command: "↵", purpose: "open or create" },
+                { command: "esc", purpose: "dismiss" },
+              ]}
+            >
+              {itemRows.map((row, i) => (
+                <SuggestRow
+                  key={row.item.key}
+                  selected={i === itemSel}
+                  onClick={() => chooseItem(row)}
+                  title={row.item.title}
+                  note={`${row.item.authors} · ${row.item.year} · ${row.item.key}`}
+                  aside={
+                    row.note
+                      ? `opens note · ${row.noteProfile ? row.noteProfile.label : "unknown profile"}`
+                      : null
+                  }
+                />
+              ))}
+            </Prompt>
+          );
+        } else if (mode === "create") {
+          overlay = (
+            <Prompt
+              placeholder="Create the note under…"
+              value={query}
+              onChange={setQuery}
+              onKeyDown={vb_promptKeys({
+                rows: createRows,
+                sel: profileSel,
+                setSel: setProfileSel,
+                onChoose: chooseCreateProfile,
+                onClose: closeAll,
+              })}
+              instructions={[
+                { command: "↑↓", purpose: "navigate" },
+                { command: "↵", purpose: "create note" },
+                { command: "esc", purpose: "dismiss" },
+              ]}
+            >
+              {createRows.map((row, i) => (
+                <SuggestRow
+                  key={String(row.profile.id)}
+                  selected={i === profileSel}
+                  onClick={() => chooseCreateProfile(row)}
+                  title={row.title}
+                  note={row.note}
+                  aside={row.aside}
+                />
+              ))}
+            </Prompt>
+          );
+        } else if (mode === "switch") {
+          overlay = (
+            <Prompt
+              placeholder="Switch this note to…"
+              value={query}
+              onChange={setQuery}
+              onKeyDown={vb_promptKeys({
+                rows: switchRows,
+                sel: profileSel,
+                setSel: setProfileSel,
+                onChoose: chooseSwitchProfile,
+                onClose: closeAll,
+              })}
+              instructions={[
+                { command: "↑↓", purpose: "navigate" },
+                { command: "↵", purpose: "review the switch" },
+                { command: "esc", purpose: "dismiss" },
+              ]}
+            >
+              {switchRows.map((row, i) => (
+                <SuggestRow
+                  key={String(row.profile.id)}
+                  selected={i === profileSel && !row.disabled}
+                  onClick={() => {
+                    if (!row.disabled) chooseSwitchProfile(row);
+                  }}
+                  title={row.title}
+                  note={row.note}
+                  aside={row.aside}
+                  className={row.disabled ? "opacity-50" : undefined}
+                />
+              ))}
+            </Prompt>
+          );
+        } else if (mode === "confirm" && pendingProfile && activeProfile) {
+          const checkboxes = [];
+          if (foldersDiffer) {
+            checkboxes.push({
+              label: `Folder: move to ${pendingProfile.folder}/`,
+              checked: moveFile,
+              onChange: setMoveFile,
+              note: `Now in ${activeProfile.folder}/. Links to this note keep working either way.`,
+            });
+          }
+          if (importedCount > 0) {
+            checkboxes.push({
+              label: `Imported Notes: also switch ${importedCount} imported note${importedCount === 1 ? "" : "s"}`,
+              checked: includeImported,
+              onChange: setIncludeImported,
+              note: "Imported Notes belong to the item, so they follow this note.",
+            });
+          }
+          overlay = (
+            <Dialog
+              title={`Switch this note to “${pendingProfile.label}”?`}
+              body={
+                <div className="flex flex-col gap-2">
+                  <p className="m-0">
+                    Template: the Managed Block and Managed Frontmatter are
+                    re-rendered from{" "}
+                    <span className="font-mono">
+                      {pendingProfile.document ?? "the built-in template"}
+                    </span>
+                    .
+                  </p>
+                  {foldersDiffer || importedCount > 0 ? null : (
+                    <p className="text-muted m-0">
+                      Same folder, no imported notes. Only the managed content
+                      changes.
+                    </p>
+                  )}
+                  <p className="text-muted m-0">
+                    Text outside the managed region stays unchanged.
+                  </p>
+                </div>
+              }
+              checkboxes={checkboxes}
+              actions={[
+                { label: `Keep “${activeProfile.label}”`, onClick: closeAll },
+                { label: "Switch", cta: true, onClick: confirmSwitch },
+              ]}
+            />
+          );
+        } else if (mode === "palette") {
+          overlay = (
+            <CommandPalette
+              open
+              items={paletteItems}
+              onClose={closeAll}
+              selected={paletteSel}
+              onSelectedChange={setPaletteSel}
+            />
+          );
+        }
+
+        const statusItems = (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={openSearch}
+              className="border-line text-ink hover:bg-ground cursor-pointer rounded border px-2 py-0.5 text-xs"
+            >
+              Search your library
+            </button>
+            <button
+              type="button"
+              onClick={openSwitch}
+              className="border-line text-ink hover:bg-ground cursor-pointer rounded border px-2 py-0.5 text-xs"
+              title="Also in the command palette as “ZotLit: Switch Literature Note Profile…”"
+            >
+              Switch Profile…
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPaletteSel(0);
+                setMode("palette");
+              }}
+              className="text-muted hover:text-ink cursor-pointer font-mono text-xs"
+            >
+              ⌘P
+            </button>
+          </div>
+        );
+
+        return (
+          <div
+            className="grid h-full"
+            style={{ gridTemplateColumns: "minmax(0,1fr) 300px" }}
+          >
+            <ObsidianFrame
+              title="ZotLit — ask, but informed"
+              stampRender={vb_stamp}
+              statusItems={statusItems}
+              overlay={overlay}
+            />
+            <Rail
+              thesis="Ask at creation only when creating; the list shows what the choice does; switching is a deliberate note-level command."
+              consent="Creation never re-stamps. Re-stamping happens only through Switch Profile, after one dialog that states template, folder and Imported Note consequences."
+              steps={[
+                "Open “Search your library” and type an item name.",
+                "A hit with a note reads “opens note · <profile>”. ↵ opens it — no picker, no re-stamp.",
+                "A hit without a note asks once: “Create the note under…”.",
+                "Each profile row states folder · style · document and the exact path the note gets.",
+                "The last-used profile is preselected, so plain ↵ repeats last time.",
+                "A bindings-only profile reads “Built-in template” and is tagged “inherits look”.",
+                "To re-stamp an existing note, run “Switch Profile…” from the toolbar or the command palette.",
+                "The switch picker marks the current profile and disables it; one dialog then states template, folder and Imported Note consequences.",
+              ]}
+            />
+          </div>
+        );
+      }
+      // --- Variant B END ---
+
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<VariantB />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>
