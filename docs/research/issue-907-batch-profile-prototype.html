@@ -1,0 +1,1834 @@
+<!--
+VERDICT (2026-08-29, ticket #907): Variant B — "Decide on the confirm screen" — won, merged with
+Variant A's informed suggest picker as the control ("B, but use A suggest to pick instead of modal
+inline select"). The Companion's Profile is an override-able default: it preselects the chip on
+the confirm screen, and the picker can replace it ("companion input for profile can be overriden
+in confirm dialog. the input will affect default profile selection").
+Model recorded: a run never asks before the batch modal; the confirm screen's Create group carries
+a chip "New notes go to: <Profile>" preselected from the Companion, else last used, else Default;
+clicking the chip opens the informed picker (folder · style · template · resulting folder) over the
+modal; existing notes keep their stamp; a conflicting Companion Profile shows as "Kept as is";
+the summary names the Profile per group; with one Profile the modal is unchanged from today.
+-->
+<!doctype html>
+<!--
+  Prototype — Profile selection in the batch update and import run (ticket #907, map #835)
+
+  DESIGN QUESTION
+  When a run touches many items at once — some with existing notes (their stamps win), some
+  without — where does the Profile for the NEW notes come from, does the user ever see a
+  picker, and what do the run summary and its notice say about the Profile that was used?
+
+  FIRST PRINCIPLES (academic user)
+  A batch run is "bring my vault up to date with Zotero" — a maintenance chore, not an
+  authoring act. Attention is on the count, not on items.
+    1. Per-item questions are unacceptable at N=200; N=3 is not a different feature.
+    2. The only decision in a run is for the CREATE group. It is one decision per run, and it
+       must be visible BEFORE the run writes (the confirm screen already exists for this).
+    3. Existing notes are never re-stamped by a run (consent rule from #904). A headless
+       Profile that conflicts with a stamp is a conflict to SHOW, not a silent failure.
+    4. The summary must name the Profile the new notes got — the one fact the user cannot
+       infer from a count. "Done. 3 created under Articles, 5 updated." Notice carries the
+       same words.
+    5. Import run: Imported Notes follow the parent's Literature Note. Only orphans (parent
+       has no Literature Note) need a Profile — the same "new notes" decision, on the same
+       confirm screen.
+    6. Zero extra Profiles: no Profile UI at all, the modal is byte-identical to today, the
+       summary says "Done. 3 created, 5 updated."
+
+  VARIANTS (3; structurally different answers to "who picks the Profile for the create group")
+    A  Ask up front, one Profile for the run — when the Create group is non-empty and >1
+       Profile exists, the informed picker (#904's rows: folder · style · template · resulting
+       folder, last-used preselected) opens BEFORE the batch modal; the confirm screen then
+       shows "Create (3) → Articles" as the group header; summary "Done. 3 created under
+       Articles, 5 updated, 0 failed."
+    B  Decide on the confirm screen, per-item fallback — no picker modal. The confirm screen's
+       Create group header carries an inline Profile dropdown ("New notes go to: [Articles ▾]"),
+       preselected from the run's Profile (headless) else last-used else Default; each Create
+       row shows its resulting path live; Update rows show their stamp as a muted pill and
+       never change; a headless Profile conflicting with a stamp shows the row under "Kept as
+       is (n)" instead of failing. Summary groups by Profile: "Done. 3 created under Articles,
+       5 updated (4 Articles, 1 Default), 0 failed."
+    C  Last-used, no question — the run never asks; Create rows show the resulting path under
+       the last-used Profile; a one-line footnote on the confirm screen "New notes use Articles
+       (last used) · Change…" opens the informed picker only on click. Summary "Done. 3 created
+       under Articles (last used), 5 updated, 0 failed." Notice identical. Zero extra Profiles:
+       footnote absent.
+  All three: existing stamps win; the run never re-stamps; zero extra Profiles → no Profile UI.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Batch run Profile selection</title>
+
+    <!-- Typefaces: IBM Plex Sans (rail display) + IBM Plex Mono (paths, stamps, hotkeys). -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style type="text/tailwindcss">
+      /* The design plan's tokens, exposed to Tailwind as utilities: bg-ground, text-ink,
+       text-accent, font-display, ... `inline` keeps the var() reference at the use site,
+       so the media-query override below still reaches every utility. */
+      @theme inline {
+        --color-ground: var(--ground);
+        --color-ground-2: var(--ground-2);
+        --color-line: var(--line);
+        --color-ink: var(--ink);
+        --color-muted: var(--muted);
+        --color-accent: var(--accent);
+        --color-danger: var(--danger);
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+        --font-mono: var(--font-mono);
+      }
+    </style>
+    <style>
+      :root {
+        --ground: #ffffff;
+        --ground-2: #f5f5f3;
+        --line: #e3e2df;
+        --ink: #222222;
+        --muted: #7b7975;
+        --accent: #7f6df2;
+        --danger: #e93147;
+        --font-display: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+        --font-body:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, ui-sans-serif,
+          system-ui, sans-serif;
+        --font-mono:
+          "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --ground: #1e1e1e;
+          --ground-2: #262626;
+          --line: #383838;
+          --ink: #dcddde;
+          --muted: #9c9c98;
+          --accent: #a78bfa;
+          --danger: #fb464c;
+        }
+      }
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+      }
+    </style>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@19",
+          "react-dom/client": "https://esm.sh/react-dom@19/client",
+          "react/jsx-runtime": "https://esm.sh/react@19/jsx-runtime",
+          "lucide-react": "https://esm.sh/lucide-react@1?external=react",
+          "beautiful-mermaid": "https://esm.sh/beautiful-mermaid@1"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- Diagram sources go here: one <script type="text/mermaid" id="..."> per diagram. -->
+
+    <script type="text/jsx" id="app">
+      import React, {
+        useState,
+        useEffect,
+        useMemo,
+        useRef,
+        useSyncExternalStore,
+      } from "react";
+      import { createRoot } from "react-dom/client";
+      import {
+        Search,
+        ChevronDown,
+        ChevronRight,
+        FolderOpen,
+        FileText,
+        Files,
+        Bookmark,
+        PanelLeft,
+        Settings,
+        HelpCircle,
+        X,
+        Plus,
+      } from "lucide-react"; // any lucide icon; <Search size={16} className="text-muted" />
+
+      // --- Diagram ---
+      // Diagrams are authored as <script type="text/mermaid" id="..."> blocks in the body —
+      // plain text, no escaping — and rendered with <Diagram src="thatId" />. Indentation is
+      // stripped, so the block can sit at whatever depth reads well. beautiful-mermaid loads
+      // on first mount, so a page with no diagram never fetches it; bg/fg are var() so
+      // diagrams follow the theme instead of re-rendering.
+      function decodeEntities(s) {
+        const el = document.createElement("textarea");
+        el.innerHTML = s;
+        return el.value;
+      }
+
+      function dedent(s) {
+        const lines = s.replace(/\t/g, "  ").split("\n");
+        const widths = lines
+          .filter((l) => l.trim())
+          .map((l) => l.match(/^ */)[0].length);
+        const pad = widths.length ? Math.min(...widths) : 0;
+        return lines
+          .map((l) => l.slice(pad))
+          .join("\n")
+          .trim();
+      }
+
+      let mermaidMod = null;
+      export function Diagram({ src }) {
+        const [mod, setMod] = useState(mermaidMod);
+        useEffect(() => {
+          if (!mod)
+            import("beautiful-mermaid").then((m) => {
+              mermaidMod = m;
+              setMod(m);
+            });
+        }, [mod]);
+        const { svg, error } = useMemo(() => {
+          const el = document.getElementById(src);
+          if (!el)
+            return {
+              svg: null,
+              error: `no <script type="text/mermaid" id="${src}"> in this page`,
+            };
+          if (!mod) return { svg: null, error: null };
+          try {
+            const opts = {
+              bg: "var(--ground)",
+              fg: "var(--ink)",
+              transparent: true,
+            };
+            return {
+              svg: mod.renderMermaidSVG(
+                decodeEntities(dedent(el.textContent)),
+                opts,
+              ),
+              error: null,
+            };
+          } catch (e) {
+            return { svg: null, error: String(e) };
+          }
+        }, [mod, src]);
+        if (error)
+          return (
+            <pre className="text-accent text-sm whitespace-pre-wrap">
+              {error}
+            </pre>
+          );
+        return (
+          <div
+            className="overflow-x-auto"
+            dangerouslySetInnerHTML={{ __html: svg ?? "" }}
+          />
+        );
+      }
+      // --- Diagram END ---
+
+      // --- Shared ---
+      // The prototype store: one module-level object, a listener set, and useSyncExternalStore.
+      // Variants never receive props — they read `useProtoState()` and call `actions`.
+
+      const ARTICLES = "9e5b907e-4e61-4c0a-98c7-a7d60dedc8e0";
+      const THESIS = "c1f0a2d4-7b3e-4e51-9a6d-2f8e0b7c5a11";
+
+      const ALL_PROFILES = [
+        {
+          id: null,
+          label: "Default",
+          folder: "literatures",
+          style: "Built-in default",
+          document: "Built-in template",
+          rule: null,
+          importFolder: "zotero_notes",
+        },
+        {
+          id: ARTICLES,
+          label: "Articles",
+          folder: "literatures/articles",
+          style: "apa",
+          document: "templates/articles.md",
+          rule: { itemType: "journalArticle" },
+          importFolder: "zotero_notes/articles",
+        },
+        {
+          id: THESIS,
+          label: "Thesis",
+          folder: "projects/thesis/reading",
+          style: "chicago-author-date",
+          document: null, // bindings-only Profile: no template document
+          rule: { collection: "PhD reading" },
+          importFolder: "projects/thesis/notes",
+        },
+      ];
+
+      // Canonical pool of items a run can touch. Index order matters: the first four are the
+      // ones stamped Articles in the "noted" scenarios, index 4 is stamped Default, the rest
+      // stay unnoted (or become import orphans).
+      const ITEM_DEFS = [
+        {
+          key: "smith2021deep",
+          title: "Deep learning for citation graphs",
+          authors: "Smith, J.",
+          year: 2021,
+          type: "journalArticle",
+          library: "My Library",
+        },
+        {
+          key: "lee2019corpus",
+          title: "Corpus methods in comparative literature",
+          authors: "Lee, H.",
+          year: 2019,
+          type: "journalArticle",
+          library: "My Library",
+        },
+        {
+          key: "patel2022ethics",
+          title: "Research ethics in the digital humanities",
+          authors: "Patel, R.",
+          year: 2022,
+          type: "journalArticle",
+          library: "My Library",
+        },
+        {
+          key: "nguyen2020algorithmic",
+          title: "Algorithmic bias in peer review",
+          authors: "Nguyen, T.",
+          year: 2020,
+          type: "journalArticle",
+          library: "My Library",
+        },
+        {
+          key: "garcia2018network",
+          title: "Network analysis of citation practices",
+          authors: "Garcia, M.",
+          year: 2018,
+          type: "book",
+          library: "Lab group",
+        },
+        {
+          key: "oconnor2023archive",
+          title: "Archival silences and the digital record",
+          authors: "O'Connor, S.",
+          year: 2023,
+          type: "journalArticle",
+          library: "My Library",
+        },
+        {
+          key: "weber2017structure",
+          title: "Structure and agency in scientific collaboration",
+          authors: "Weber, A.",
+          year: 2017,
+          type: "journalArticle",
+          library: "Lab group",
+        },
+        {
+          key: "ivanov2021thesis",
+          title: "Thesis writing as a genre",
+          authors: "Ivanov, D.",
+          year: 2021,
+          type: "book",
+          library: "My Library",
+        },
+      ];
+
+      function stamp() {
+        const d = new Date();
+        return [d.getHours(), d.getMinutes(), d.getSeconds()]
+          .map((n) => String(n).padStart(2, "0"))
+          .join(":");
+      }
+
+      export function profileById(s, id) {
+        return s.profiles.find((p) => p.id === (id ?? null)) ?? s.profiles[0];
+      }
+
+      export function notePath(s, itemKey, profileId) {
+        return `${profileById(s, profileId).folder}/${itemKey}.md`;
+      }
+
+      export function importPath(s, noteKey, profileId) {
+        return `${profileById(s, profileId).importFolder ?? "zotero_notes"}/${noteKey}.md`;
+      }
+
+      export function PROFILE_DISPLAY(profile) {
+        return [
+          profile.folder,
+          profile.style,
+          profile.document ?? "Bindings only",
+        ].join(" · ");
+      }
+
+      export function summaryText(s) {
+        const r = s.run.result;
+        if (!r) return "";
+        let out = `Done. ${r.created} created`;
+        if (s.profiles.length > 1) {
+          out += ` under ${profileById(s, s.run.createProfileId).label}`;
+        }
+        out += `, ${r.updated} updated, ${r.failed} failed.`;
+        if (r.kept > 0) out += ` ${r.kept} kept as is.`;
+        return out;
+      }
+
+      function seed(scenario) {
+        const profiles =
+          scenario === "zero-extra" ? ALL_PROFILES.slice(0, 1) : ALL_PROFILES;
+        const profileList = profiles.map((p) => ({ ...p }));
+        const tmp = { profiles: profileList };
+
+        const noted =
+          scenario === "mixed" ||
+          scenario === "headless" ||
+          scenario === "import";
+
+        const items = ITEM_DEFS.map((d, idx) => {
+          let note;
+          if (noted) {
+            if (idx < 4)
+              note = { path: notePath(tmp, d.key, ARTICLES), profileId: ARTICLES };
+            else if (idx === 4)
+              note = { path: notePath(tmp, d.key, null), profileId: null };
+          } else if (scenario === "zero-extra" && idx < 5) {
+            note = { path: notePath(tmp, d.key, null), profileId: null };
+          }
+          return { ...d, note };
+        }).slice(0, scenario === "all-new" ? 6 : 8);
+
+        const zoteroNotes =
+          scenario === "import"
+            ? [0, 1, 2, 3, 5, 6].map((idx) => ({
+                key: `${ITEM_DEFS[idx].key}-import`,
+                title: `Reading note — ${ITEM_DEFS[idx].title}`,
+                parentKey: ITEM_DEFS[idx].key,
+                note: undefined,
+              }))
+            : [];
+
+        const kind = scenario === "import" ? "import" : "update";
+        const headlessProfileId = scenario === "headless" ? THESIS : undefined;
+        const lastUsedProfileId = scenario === "zero-extra" ? null : ARTICLES;
+
+        const createSource =
+          headlessProfileId !== undefined
+            ? "headless"
+            : profileList.length === 1
+              ? "bound"
+              : null;
+        const createProfileId =
+          headlessProfileId !== undefined ? headlessProfileId : null;
+
+        return {
+          scenario,
+          profiles: profileList,
+          items,
+          zoteroNotes,
+          run: {
+            kind,
+            headlessProfileId,
+            phase: "idle",
+            createProfileId,
+            createSource,
+            pickerShown: false,
+            progress: 0,
+            result: null,
+          },
+          lastUsedProfileId,
+          notices: [],
+          log: [],
+        };
+      }
+
+      let state = seed("mixed");
+      const listeners = new Set();
+
+      function subscribe(fn) {
+        listeners.add(fn);
+        return () => listeners.delete(fn);
+      }
+
+      function getSnapshot() {
+        return state;
+      }
+
+      function setState(next) {
+        state = next;
+        for (const fn of listeners) fn();
+      }
+
+      function logged(next, text) {
+        return {
+          ...next,
+          log: [{ t: stamp(), text }, ...next.log].slice(0, 40),
+        };
+      }
+
+      export function useProtoState() {
+        const snapshot = useSyncExternalStore(subscribe, getSnapshot);
+        return { state: snapshot, actions };
+      }
+
+      function computeResult(s) {
+        const byProfile = {};
+        const bump = (label) => {
+          byProfile[label] = (byProfile[label] ?? 0) + 1;
+        };
+        let created = 0,
+          updated = 0,
+          kept = 0,
+          failed = 0;
+        const createdLines = [];
+        const createLabel = profileById(s, s.run.createProfileId).label;
+
+        if (s.run.kind === "import") {
+          const zoteroNotes = s.zoteroNotes.map((n) => {
+            const parent = s.items.find((it) => it.key === n.parentKey);
+            const profileId = parent?.note ? parent.note.profileId : s.run.createProfileId;
+            const label = profileById(s, profileId).label;
+            const note = {
+              path: importPath(s, n.key, profileId),
+              profileId: profileId ?? null,
+            };
+            created++;
+            bump(label);
+            createdLines.push(`Created ${note.path} under ${label}`);
+            return { ...n, note };
+          });
+          return {
+            items: s.items,
+            zoteroNotes,
+            result: { created, updated, kept, failed, byProfile },
+            createdLines,
+          };
+        }
+
+        const items = s.items.map((it) => {
+          if (it.note) {
+            const headless = s.run.headlessProfileId;
+            if (headless !== undefined && it.note.profileId !== headless) {
+              kept++;
+              return it; // stamp wins, never re-stamped
+            }
+            updated++;
+            bump(profileById(s, it.note.profileId).label);
+            return it;
+          }
+          const note = {
+            path: notePath(s, it.key, s.run.createProfileId),
+            profileId: s.run.createProfileId ?? null,
+          };
+          created++;
+          bump(createLabel);
+          createdLines.push(`Created ${note.path} under ${createLabel}`);
+          return { ...it, note };
+        });
+        return {
+          items,
+          zoteroNotes: s.zoteroNotes,
+          result: { created, updated, kept, failed, byProfile },
+          createdLines,
+        };
+      }
+
+      let noticeSeq = 0;
+
+      export const actions = {
+        setScenario(scenario) {
+          setState(logged(seed(scenario), `Scenario: ${scenario}`));
+        },
+        startRun() {
+          const n =
+            state.run.kind === "import"
+              ? state.zoteroNotes.length
+              : state.items.length;
+          setState(
+            logged(
+              { ...state, run: { ...state.run, phase: "confirm" } },
+              `Run started (${state.run.kind}), ${n} items`,
+            ),
+          );
+        },
+        showPicker() {
+          setState(
+            logged(
+              {
+                ...state,
+                run: { ...state.run, phase: "picker", pickerShown: true },
+              },
+              "Picker shown",
+            ),
+          );
+        },
+        hidePicker() {
+          setState({ ...state, run: { ...state.run, phase: "confirm" } });
+        },
+        chooseCreateProfile(id, source) {
+          const label = profileById(state, id).label;
+          setState(
+            logged(
+              {
+                ...state,
+                run: {
+                  ...state.run,
+                  createProfileId: id ?? null,
+                  createSource: source,
+                },
+                lastUsedProfileId:
+                  source === "asked" ? (id ?? null) : state.lastUsedProfileId,
+              },
+              `Create profile: ${label} (${source})`,
+            ),
+          );
+        },
+        confirm() {
+          const total = Math.max(
+            state.run.kind === "import"
+              ? state.zoteroNotes.length
+              : state.items.length,
+            1,
+          );
+          setState({
+            ...state,
+            run: { ...state.run, phase: "progress", progress: 0 },
+          });
+          const timer = setInterval(() => {
+            const cur = state;
+            const next = cur.run.progress + 1;
+            if (next >= total) {
+              clearInterval(timer);
+              const { items, zoteroNotes, result, createdLines } =
+                computeResult(cur);
+              const withResult = {
+                ...cur,
+                items,
+                zoteroNotes,
+                run: { ...cur.run, phase: "summary", progress: total, result },
+              };
+              const text = summaryText(withResult);
+              const entries = [...createdLines, `Run summary: ${text}`].map(
+                (t) => ({ t: stamp(), text: t }),
+              );
+              setState({
+                ...withResult,
+                log: [...entries.reverse(), ...withResult.log].slice(0, 40),
+              });
+              actions.notify(text);
+            } else {
+              setState({ ...cur, run: { ...cur.run, progress: next } });
+            }
+          }, 40);
+        },
+        close() {
+          setState({ ...state, run: { ...state.run, phase: "idle" } });
+        },
+        setLastUsed(id) {
+          setState(
+            logged(
+              { ...state, lastUsedProfileId: id ?? null },
+              `Last used: ${profileById(state, id).label}`,
+            ),
+          );
+        },
+        notify(text) {
+          const id = ++noticeSeq;
+          setState({ ...state, notices: [...state.notices, { id, text }] });
+          setTimeout(() => {
+            setState({
+              ...state,
+              notices: state.notices.filter((n) => n.id !== id),
+            });
+          }, 3000);
+        },
+      };
+
+      // --- Primitives: Obsidian's default theme, rebuilt from the plan's tokens only. ---
+
+      export function Kbd({ children }) {
+        return (
+          <kbd className="font-mono text-[11px] leading-none border-line bg-ground-2 text-muted rounded border px-1 py-[3px]">
+            {children}
+          </kbd>
+        );
+      }
+
+      export function Pill({ tone = "muted", children, className = "" }) {
+        const tint =
+          tone === "accent"
+            ? {
+                color: "var(--accent)",
+                background:
+                  "color-mix(in srgb, var(--accent) 14%, transparent)",
+              }
+            : tone === "danger"
+              ? {
+                  color: "var(--danger)",
+                  background:
+                    "color-mix(in srgb, var(--danger) 14%, transparent)",
+                }
+              : { color: "var(--muted)", background: "var(--ground-2)" };
+        return (
+          <span
+            className={`inline-block rounded-full px-2 py-[2px] text-[11px] leading-none whitespace-nowrap ${className}`}
+            style={tint}
+          >
+            {children}
+          </span>
+        );
+      }
+
+      function TreeFolder({ name, files, activePath }) {
+        return (
+          <div className="mb-[2px]">
+            <div className="text-ink/85 flex items-center gap-1 rounded px-1 py-[3px] text-[13px]">
+              <ChevronDown size={12} className="text-muted shrink-0" />
+              <span className="truncate">{name}</span>
+            </div>
+            {files.map((f) => (
+              <div
+                key={f.path}
+                className="flex items-center gap-1 rounded py-[3px] pr-1 pl-[22px] text-[13px]"
+                style={
+                  f.path === activePath
+                    ? {
+                        background:
+                          "color-mix(in srgb, var(--accent) 12%, transparent)",
+                      }
+                    : undefined
+                }
+              >
+                <span className="truncate">{f.name}</span>
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      export function ObsidianFrame({
+        title,
+        children,
+        overlay = null,
+        statusItems = null,
+        footer = null,
+      }) {
+        const { state } = useProtoState();
+
+        const tree = useMemo(() => {
+          const folders = new Map([
+            ["attachments", []],
+            ["literatures", []],
+            [
+              "templates",
+              [{ name: "articles.md", path: "templates/articles.md" }],
+            ],
+            ["zotero_notes", []],
+          ]);
+          const addNote = (key, note) => {
+            if (!note) return;
+            const cut = note.path.lastIndexOf("/");
+            const dir = note.path.slice(0, cut);
+            const name = note.path.slice(cut + 1);
+            if (!folders.has(dir)) folders.set(dir, []);
+            folders.get(dir).push({ name, path: note.path, key });
+          };
+          for (const it of state.items) addNote(it.key, it.note);
+          for (const n of state.zoteroNotes ?? []) addNote(n.key, n.note);
+          return [...folders.entries()];
+        }, [state.items, state.zoteroNotes]);
+
+        return (
+          <div className="bg-ground text-ink font-body relative flex h-full min-w-0 flex-col overflow-hidden text-sm">
+            <div className="flex min-h-0 flex-1">
+              {/* ribbon */}
+              <div className="border-line bg-ground-2 flex w-[44px] shrink-0 flex-col items-center gap-4 border-r py-3">
+                <FolderOpen size={17} className="text-ink/70" />
+                <Search size={17} className="text-muted" />
+                <Bookmark size={17} className="text-muted" />
+                <Files size={17} className="text-muted" />
+                <div className="flex-1" />
+                <HelpCircle size={16} className="text-muted" />
+                <Settings size={16} className="text-muted" />
+              </div>
+
+              {/* file tree */}
+              <div className="border-line bg-ground-2 text-ink/90 w-[200px] shrink-0 overflow-y-auto border-r px-2 py-2">
+                {tree.map(([folder, files]) => (
+                  <TreeFolder key={folder} name={folder} files={files} />
+                ))}
+              </div>
+
+              {/* main pane */}
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="border-line flex shrink-0 items-center gap-2 border-b px-3 py-[6px]">
+                  <div className="border-line bg-ground flex items-center gap-2 rounded-md border px-3 py-1 text-[13px]">
+                    <FileText size={13} className="text-muted" />
+                    <span className="max-w-[240px] truncate">
+                      {title ?? "No file open"}
+                    </span>
+                    <X size={12} className="text-muted" />
+                  </div>
+                  <Plus size={14} className="text-muted" />
+                  <div className="flex-1" />
+                  <PanelLeft size={14} className="text-muted" />
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto px-10 py-6">
+                  {children ?? (
+                    <div className="text-muted pt-10 text-center">
+                      No file is open
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* status bar */}
+            <div className="border-line bg-ground-2 text-muted flex shrink-0 items-center gap-3 border-t px-3 py-[5px] text-[11px]">
+              <span className="truncate">fixture-vault</span>
+              <div className="flex-1" />
+              {footer}
+              {statusItems}
+            </div>
+
+            {/* notices */}
+            <div className="pointer-events-none absolute right-3 bottom-8 flex flex-col items-end gap-2">
+              {state.notices.map((n) => (
+                <Notice key={n.id} text={n.text} />
+              ))}
+            </div>
+
+            {overlay ? (
+              <div
+                className="absolute inset-0 flex justify-center pt-[10%]"
+                style={{ background: "rgba(0,0,0,0.28)" }}
+              >
+                {overlay}
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+
+      export function Notice({ text }) {
+        return (
+          <div className="border-line bg-ground-2 text-ink rounded-md border px-3 py-2 text-[13px] shadow-lg">
+            {text}
+          </div>
+        );
+      }
+
+      export function Prompt({
+        placeholder = "",
+        value = "",
+        onChange,
+        onKeyDown,
+        instructions = [],
+        header = null,
+        children,
+        className = "",
+      }) {
+        const ref = useRef(null);
+        useEffect(() => {
+          ref.current?.focus();
+        }, []);
+        return (
+          <div
+            className={`border-line bg-ground flex max-h-[70%] w-[560px] flex-col overflow-hidden rounded-lg border shadow-2xl ${className}`}
+          >
+            <div className="border-line flex shrink-0 items-center gap-2 border-b px-4 py-[10px]">
+              <input
+                ref={ref}
+                className="text-ink placeholder:text-muted min-w-0 flex-1 bg-transparent text-[15px] outline-none"
+                placeholder={placeholder}
+                value={value}
+                onChange={(e) => onChange?.(e.target.value)}
+                onKeyDown={onKeyDown}
+              />
+            </div>
+            {header ? (
+              <div className="border-line shrink-0 border-b">{header}</div>
+            ) : null}
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">{children}</div>
+            {instructions.length ? (
+              <div className="border-line text-muted flex shrink-0 flex-wrap items-center justify-center gap-x-4 gap-y-1 border-t px-4 py-2 text-[11px]">
+                {instructions.map((i) => (
+                  <span
+                    key={i.command + i.purpose}
+                    className="flex items-center gap-[6px]"
+                  >
+                    <Kbd>{i.command}</Kbd>
+                    <span>{i.purpose}</span>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+
+      export function SuggestRow({
+        selected = false,
+        onClick,
+        title,
+        aside = null,
+        note = null,
+        badge = null,
+      }) {
+        return (
+          <div
+            onClick={onClick}
+            className="flex cursor-pointer items-start gap-3 rounded-md px-3 py-2"
+            style={
+              selected
+                ? {
+                    background:
+                      "color-mix(in srgb, var(--accent) 12%, transparent)",
+                  }
+                : undefined
+            }
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-ink truncate text-[14px]">{title}</span>
+                {badge ? <Pill tone="accent">{badge}</Pill> : null}
+              </div>
+              {note ? (
+                <div className="text-muted mt-[2px] text-[12px]">{note}</div>
+              ) : null}
+            </div>
+            {aside ? (
+              <div className="text-muted shrink-0 text-[12px] whitespace-nowrap">
+                {aside}
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+
+      export function Dialog({
+        title,
+        body = null,
+        actions: buttons = [],
+        checkboxes = [],
+      }) {
+        return (
+          <div className="border-line bg-ground w-[440px] overflow-hidden rounded-lg border shadow-2xl">
+            <div className="px-5 pt-4 pb-2 text-[17px] font-semibold">
+              {title}
+            </div>
+            <div className="text-ink/85 px-5 pb-3 text-[13px] leading-relaxed">
+              {body}
+            </div>
+            {checkboxes.length ? (
+              <div className="flex flex-col gap-2 px-5 pb-3">
+                {checkboxes.map((c) => (
+                  <label
+                    key={c.label}
+                    className="flex cursor-pointer items-start gap-2 text-[13px]"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-[3px]"
+                      checked={c.checked}
+                      onChange={(e) => c.onChange?.(e.target.checked)}
+                    />
+                    <span>
+                      {c.label}
+                      {c.note ? (
+                        <span className="text-muted block text-[12px]">
+                          {c.note}
+                        </span>
+                      ) : null}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+            <div className="border-line bg-ground-2 flex justify-end gap-2 border-t px-5 py-3">
+              {buttons.map((b) => (
+                <button
+                  key={b.label}
+                  onClick={b.onClick}
+                  className="cursor-pointer rounded-md px-3 py-[6px] text-[13px]"
+                  style={
+                    b.cta
+                      ? { background: "var(--accent)", color: "#ffffff" }
+                      : b.destructive
+                        ? { background: "var(--danger)", color: "#ffffff" }
+                        : {
+                            background: "var(--ground)",
+                            color: "var(--ink)",
+                            border: "1px solid var(--line)",
+                          }
+                  }
+                >
+                  {b.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      export function CommandPalette({ open, items = [], onClose }) {
+        const [query, setQuery] = useState("");
+        const [sel, setSel] = useState(0);
+        const hits = items.filter((i) =>
+          i.label.toLowerCase().includes(query.toLowerCase()),
+        );
+        useEffect(() => {
+          setSel(0);
+        }, [query]);
+        if (!open) return null;
+        const onKeyDown = (e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setSel((i) => Math.min(i + 1, hits.length - 1));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setSel((i) => Math.max(i - 1, 0));
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            hits[sel]?.onSelect?.();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            onClose?.();
+          }
+        };
+        return (
+          <Prompt
+            placeholder="Select a command..."
+            value={query}
+            onChange={setQuery}
+            onKeyDown={onKeyDown}
+            instructions={[
+              { command: "↑↓", purpose: "navigate" },
+              { command: "↵", purpose: "run command" },
+              { command: "esc", purpose: "dismiss" },
+            ]}
+          >
+            {hits.map((it, i) => (
+              <SuggestRow
+                key={it.label}
+                title={it.label}
+                selected={i === sel}
+                onClick={it.onSelect}
+              />
+            ))}
+          </Prompt>
+        );
+      }
+
+      function RailHeading({ children }) {
+        return (
+          <div className="font-display text-muted mb-2 text-[11px] font-semibold tracking-[0.08em] uppercase">
+            {children}
+          </div>
+        );
+      }
+
+      export function Rail({
+        thesis,
+        steps = [],
+        consent = null,
+        extras = null,
+      }) {
+        const { state } = useProtoState();
+        const numbered = Array.isArray(steps) && steps.length > 1;
+        const createLabel = profileById(state, state.run.createProfileId).label;
+        return (
+          <aside className="border-line bg-ground-2 text-ink font-body flex h-full min-h-0 flex-col gap-5 overflow-y-auto border-l px-4 py-4 text-[13px]">
+            <div>
+              <RailHeading>Thesis</RailHeading>
+              <p className="leading-relaxed">{thesis}</p>
+            </div>
+
+            {consent ? (
+              <div>
+                <RailHeading>Consent rule</RailHeading>
+                <p className="text-ink/85 leading-relaxed">{consent}</p>
+              </div>
+            ) : null}
+
+            {numbered ? (
+              <div>
+                <RailHeading>Steps</RailHeading>
+                <ol className="flex flex-col gap-[6px]">
+                  {steps.map((s, i) => (
+                    <li key={i} className="flex gap-2 leading-relaxed">
+                      <span className="text-muted font-mono text-[11px] tabular-nums">
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
+                      <span className="min-w-0 flex-1">{s}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
+
+            {extras}
+
+            <div>
+              <RailHeading>Resolution</RailHeading>
+              <p className="font-mono text-[11px] leading-relaxed">
+                source: {state.run.createSource ?? "—"} · picker shown:{" "}
+                {state.run.pickerShown ? "yes" : "no"}
+              </p>
+            </div>
+
+            <div>
+              <RailHeading>Profiles</RailHeading>
+              <table className="w-full text-[11px]">
+                <tbody>
+                  {state.profiles.map((p) => (
+                    <tr key={p.label} className="align-top">
+                      <td className="py-[2px] pr-2 whitespace-nowrap">
+                        {p.label}
+                      </td>
+                      <td className="text-muted py-[2px] font-mono break-all">
+                        {PROFILE_DISPLAY(p)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <RailHeading>Run</RailHeading>
+              <table className="w-full text-[11px]">
+                <tbody>
+                  <tr>
+                    <td className="text-muted py-[2px] pr-2">kind</td>
+                    <td className="py-[2px] font-mono">{state.run.kind}</td>
+                  </tr>
+                  <tr>
+                    <td className="text-muted py-[2px] pr-2">phase</td>
+                    <td className="py-[2px] font-mono">{state.run.phase}</td>
+                  </tr>
+                  <tr>
+                    <td className="text-muted py-[2px] pr-2">
+                      create profile
+                    </td>
+                    <td className="py-[2px] font-mono">{createLabel}</td>
+                  </tr>
+                  <tr>
+                    <td className="text-muted py-[2px] pr-2">
+                      create source
+                    </td>
+                    <td className="py-[2px] font-mono">
+                      {state.run.createSource ?? "—"}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="text-muted py-[2px] pr-2">
+                      picker shown
+                    </td>
+                    <td className="py-[2px] font-mono">
+                      {state.run.pickerShown ? "yes" : "no"}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="min-h-0">
+              <RailHeading>Items</RailHeading>
+              <div className="flex flex-col gap-1">
+                {state.items.map((it) => (
+                  <div key={it.key} className="text-[11px] leading-snug">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate">{it.title}</span>
+                      <span className="text-muted shrink-0">
+                        {it.note
+                          ? profileById(state, it.note.profileId).label
+                          : "—"}
+                      </span>
+                    </div>
+                    {it.note ? (
+                      <div className="text-muted font-mono break-all">
+                        {it.note.path}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+                {(state.zoteroNotes ?? []).map((n) => (
+                  <div key={n.key} className="text-[11px] leading-snug">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate">{n.title}</span>
+                      <span className="text-muted shrink-0">
+                        {n.note
+                          ? profileById(state, n.note.profileId).label
+                          : "—"}
+                      </span>
+                    </div>
+                    {n.note ? (
+                      <div className="text-muted font-mono break-all">
+                        {n.note.path}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="min-h-0">
+              <RailHeading>Log</RailHeading>
+              <div className="flex flex-col gap-[3px]">
+                {state.log.length === 0 ? (
+                  <div className="text-muted text-[11px]">nothing yet</div>
+                ) : (
+                  state.log.map((e, i) => (
+                    <div
+                      key={i}
+                      className="flex gap-2 text-[11px] leading-snug"
+                    >
+                      <span className="text-muted font-mono tabular-nums">
+                        {e.t}
+                      </span>
+                      <span className="min-w-0 flex-1">{e.text}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </aside>
+        );
+      }
+
+      export function Placeholder({ name }) {
+        return (
+          <div className="bg-ground text-muted flex h-screen items-center justify-center text-sm">
+            Variant {name} not assembled yet
+          </div>
+        );
+      }
+
+      export function BatchModal({ title, intro, children, footer, onClose }) {
+        return (
+          <div className="border-line bg-ground flex h-[60vh] w-[560px] flex-col overflow-hidden rounded-lg border shadow-2xl">
+            <div className="border-line flex shrink-0 items-center justify-between border-b px-5 py-3">
+              <div className="text-[17px] font-semibold">{title}</div>
+              {onClose ? (
+                <button
+                  onClick={onClose}
+                  className="text-muted cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              ) : null}
+            </div>
+            {intro ? (
+              <p className="text-ink/85 shrink-0 px-5 pt-3 text-[13px] leading-relaxed">
+                {intro}
+              </p>
+            ) : null}
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
+              {children}
+            </div>
+            {footer ? (
+              <div className="border-line bg-ground-2 flex shrink-0 justify-end gap-2 border-t px-5 py-3">
+                {footer}
+              </div>
+            ) : null}
+          </div>
+        );
+      }
+
+      export function BatchGroup({ header, aside = null, children }) {
+        return (
+          <div className="mb-4">
+            <div className="text-muted mb-1 flex items-center justify-between text-[11px] font-semibold tracking-[0.06em] uppercase">
+              <span>{header}</span>
+              {aside}
+            </div>
+            <div className="flex flex-col">{children}</div>
+          </div>
+        );
+      }
+
+      const STATUS_GLYPH = { done: "✓", failed: "✗", kept: "·", pending: "·" };
+
+      export function BatchRow({ label, aside = null, pill = null, status = null }) {
+        return (
+          <div className="flex items-center gap-2 rounded px-1 py-[6px] text-[13px]">
+            {status ? (
+              <span
+                className="w-[14px] shrink-0 text-center font-mono text-[12px]"
+                style={{
+                  color:
+                    status === "failed"
+                      ? "var(--danger)"
+                      : status === "done"
+                        ? "var(--accent)"
+                        : "var(--muted)",
+                }}
+              >
+                {STATUS_GLYPH[status] ?? "·"}
+              </span>
+            ) : null}
+            <span className="min-w-0 flex-1 truncate">{label}</span>
+            {pill}
+            {aside ? (
+              <span className="text-muted shrink-0 font-mono text-[12px]">
+                {aside}
+              </span>
+            ) : null}
+          </div>
+        );
+      }
+
+      export function ProgressBar({ value, total, label }) {
+        const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+        return (
+          <div>
+            <div className="bg-ground-2 h-[6px] w-full overflow-hidden rounded-full">
+              <div
+                className="h-full rounded-full"
+                style={{ width: `${pct}%`, background: "var(--accent)" }}
+              />
+            </div>
+            <div className="text-muted mt-1 text-[11px]">
+              {label ?? `${value} / ${total} · ${pct}%`}
+            </div>
+          </div>
+        );
+      }
+
+      export function Select({ value, options, onChange }) {
+        return (
+          <select
+            value={value ?? ""}
+            onChange={(e) =>
+              onChange?.(e.target.value === "" ? null : e.target.value)
+            }
+            className="border-line bg-ground text-ink rounded-md border px-2 py-1 text-[12px]"
+          >
+            {options.map((o) => (
+              <option key={o.value ?? "null"} value={o.value ?? ""}>
+                {o.label}
+                {o.note ? ` — ${o.note}` : ""}
+              </option>
+            ))}
+          </select>
+        );
+      }
+      // --- Shared END ---
+
+      // --- App ---
+      // --- Variant B ---
+      function classifyGroupsB(state) {
+        const createId = state.run.createProfileId;
+        if (state.run.kind === "import") {
+          const overwriteRows = [];
+          const importRows = [];
+          state.zoteroNotes.forEach((n, idx) => {
+            const parent = state.items.find((it) => it.key === n.parentKey);
+            if (parent && parent.note) {
+              overwriteRows.push({
+                idx,
+                key: n.key,
+                title: n.title,
+                label: profileById(state, parent.note.profileId).label,
+                path: importPath(state, n.key, parent.note.profileId),
+              });
+            } else {
+              importRows.push({
+                idx,
+                key: n.key,
+                title: n.title,
+                path: importPath(state, n.key, createId),
+              });
+            }
+          });
+          return { kind: "import", overwriteRows, importRows };
+        }
+
+        const headless = state.run.headlessProfileId;
+        const updateRows = [];
+        const keptRows = [];
+        const createRows = [];
+        state.items.forEach((it, idx) => {
+          if (it.note) {
+            const label = profileById(state, it.note.profileId).label;
+            if (headless !== undefined && it.note.profileId !== headless) {
+              keptRows.push({ idx, key: it.key, title: it.title, label });
+            } else {
+              updateRows.push({
+                idx,
+                key: it.key,
+                title: it.title,
+                label,
+                path: it.note.path,
+              });
+            }
+          } else {
+            createRows.push({
+              idx,
+              key: it.key,
+              title: it.title,
+              path: notePath(state, it.key, createId),
+            });
+          }
+        });
+        return { kind: "update", updateRows, keptRows, createRows };
+      }
+
+      function buildSummaryB(state, groups) {
+        const r = state.run.result;
+        if (!r) return "";
+        if (state.profiles.length === 1) {
+          let out = `Done. ${r.created} created, ${r.updated} updated, ${r.failed} failed.`;
+          if (r.kept > 0) out += ` ${r.kept} kept as is.`;
+          return out;
+        }
+        if (state.run.kind === "import") {
+          const byLabel = {};
+          groups.overwriteRows.forEach((row) => {
+            byLabel[row.label] = (byLabel[row.label] ?? 0) + 1;
+          });
+          if (groups.importRows.length) {
+            const createLabel = profileById(state, state.run.createProfileId).label;
+            byLabel[createLabel] =
+              (byLabel[createLabel] ?? 0) + groups.importRows.length;
+          }
+          const parts = Object.entries(byLabel)
+            .map(([label, n]) => `${n} under ${label}`)
+            .join(", ");
+          let createdPart = `${r.created} created`;
+          if (parts) createdPart += ` (${parts})`;
+          return `Done. ${createdPart}, ${r.failed} failed.`;
+        }
+        const createLabel = profileById(state, state.run.createProfileId).label;
+        const updatedByLabel = {};
+        groups.updateRows.forEach((row) => {
+          updatedByLabel[row.label] = (updatedByLabel[row.label] ?? 0) + 1;
+        });
+        const updatedParts = Object.entries(updatedByLabel)
+          .map(([label, n]) => `${n} ${label}`)
+          .join(", ");
+        let updatedPart = `${r.updated} updated`;
+        if (updatedParts) updatedPart += ` (${updatedParts})`;
+        let out = `Done. ${r.created} created under ${createLabel}, ${updatedPart}, ${r.failed} failed.`;
+        if (r.kept > 0) out += ` ${r.kept} kept as is.`;
+        return out;
+      }
+
+      function sourceCaptionB(source) {
+        if (source === "headless") return "from the Companion";
+        if (source === "last-used") return "last used";
+        if (source === "bound") return "default";
+        if (source === "asked") return "chosen";
+        return null;
+      }
+
+      function LauncherCardB({ kind, onStart }) {
+        const title =
+          kind === "import" ? "Import notes" : "Update all literature notes";
+        const note =
+          kind === "import"
+            ? "Triggered by a Companion push that finds new Zotero notes to bring into the vault."
+            : "Triggered from the command palette, a library's Update all command, or a Companion push.";
+        return (
+          <div className="mx-auto max-w-md pt-16 text-center">
+            <div className="border-line bg-ground-2 rounded-lg border p-6">
+              <div className="font-display mb-2 text-[15px] font-semibold">
+                {title}
+              </div>
+              <p className="text-muted mb-4 text-[13px] leading-relaxed">{note}</p>
+              <button
+                onClick={onStart}
+                className="cursor-pointer rounded-md px-4 py-2 text-[13px]"
+                style={{ background: "var(--accent)", color: "#ffffff" }}
+              >
+                {title}
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      // The Create-group header aside: a button-like chip naming the current Profile plus a
+      // muted caption for where it came from. Clicking it is the only way into the picker —
+      // pickerShown stays false until this fires.
+      function CreateChip({ state, label }) {
+        if (state.profiles.length <= 1) return null;
+        const createLabel = profileById(state, state.run.createProfileId).label;
+        const caption = sourceCaptionB(state.run.createSource);
+        return (
+          <div className="flex flex-col items-end gap-[2px]">
+            <button
+              onClick={() => actions.showPicker()}
+              className="border-line bg-ground text-ink flex cursor-pointer items-center gap-1 rounded-md border px-2 py-[3px] text-[11px] font-normal normal-case tracking-normal"
+            >
+              <span className="text-muted">{label}</span>
+              <span className="font-medium">{createLabel}</span>
+              <ChevronDown size={11} className="text-muted" />
+            </button>
+            {caption ? (
+              <span className="text-muted text-[11px]">({caption})</span>
+            ) : null}
+          </div>
+        );
+      }
+
+      // The informed picker — one SuggestRow per Profile, opened over the confirm modal.
+      // Preselects the CURRENT createProfileId (not last-used, unlike the start-of-run
+      // picker in Variant A), since it is reachable only after a selection already exists.
+      function CreatePicker({ state }) {
+        const isImport = state.run.kind === "import";
+        const [sel, setSel] = useState(() => {
+          const i = state.profiles.findIndex(
+            (p) => p.id === (state.run.createProfileId ?? null),
+          );
+          return i >= 0 ? i : 0;
+        });
+
+        function choose(p) {
+          actions.chooseCreateProfile(p.id, "asked");
+          actions.hidePicker();
+        }
+
+        function onKeyDown(e) {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setSel((i) => Math.min(i + 1, state.profiles.length - 1));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setSel((i) => Math.max(i - 1, 0));
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            choose(state.profiles[sel]);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            actions.hidePicker();
+          }
+        }
+
+        return (
+          <Prompt
+            placeholder="New notes in this run: choose a Profile"
+            onKeyDown={onKeyDown}
+            instructions={[
+              { command: "↑↓", purpose: "move" },
+              { command: "↵", purpose: "choose" },
+              { command: "esc", purpose: "back to confirm" },
+            ]}
+          >
+            {state.profiles.map((p, i) => (
+              <SuggestRow
+                key={p.label}
+                selected={i === sel}
+                onClick={() => choose(p)}
+                title={p.label}
+                note={PROFILE_DISPLAY(p)}
+                aside={`${isImport ? (p.importFolder ?? "zotero_notes") : p.folder}/…`}
+                badge={
+                  state.run.headlessProfileId !== undefined &&
+                  p.id === (state.run.headlessProfileId ?? null)
+                    ? "Companion"
+                    : p.id === (state.lastUsedProfileId ?? null)
+                      ? "last used"
+                      : null
+                }
+              />
+            ))}
+          </Prompt>
+        );
+      }
+
+      function VariantB() {
+        const { state } = useProtoState();
+        const groupsRef = useRef(null);
+        const prevPhaseRef = useRef(state.run.phase);
+
+        if (state.run.phase === "confirm" || groupsRef.current === null) {
+          groupsRef.current = classifyGroupsB(state);
+        }
+        const groups = groupsRef.current;
+
+        useEffect(() => {
+          if (
+            state.run.phase === "summary" &&
+            prevPhaseRef.current !== "summary"
+          ) {
+            const bText = buildSummaryB(state, groups);
+            const defaultText = summaryText(state);
+            if (bText && bText !== defaultText) actions.notify(bText);
+          }
+          prevPhaseRef.current = state.run.phase;
+        }, [state.run.phase]);
+
+        function handleStart() {
+          actions.startRun();
+          const headless = state.run.headlessProfileId;
+          if (headless !== undefined) {
+            actions.chooseCreateProfile(headless, "headless");
+          } else if (state.lastUsedProfileId != null) {
+            actions.chooseCreateProfile(state.lastUsedProfileId, "last-used");
+          } else {
+            actions.chooseCreateProfile(null, "bound");
+          }
+        }
+
+        function rowStatus(row, finalStatus) {
+          if (state.run.phase === "progress") {
+            return row.idx < state.run.progress ? finalStatus : "pending";
+          }
+          if (state.run.phase === "summary") return finalStatus;
+          return null;
+        }
+
+        const total =
+          state.run.kind === "import" ? state.zoteroNotes.length : state.items.length;
+
+        let confirmModal = null;
+        if (state.run.phase === "confirm" || state.run.phase === "picker") {
+          confirmModal = (
+            <BatchModal
+              title={
+                state.run.kind === "import" ? "Import notes" : "Update literature notes"
+              }
+              intro={
+                state.run.kind === "import"
+                  ? `Import or update ${total} notes?`
+                  : `Update or create ${total} literature notes?`
+              }
+              footer={
+                <>
+                  <button
+                    onClick={actions.close}
+                    className="border-line cursor-pointer rounded-md border px-3 py-[6px] text-[13px]"
+                    style={{ background: "var(--ground)", color: "var(--ink)" }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={actions.confirm}
+                    className="cursor-pointer rounded-md px-3 py-[6px] text-[13px]"
+                    style={{ background: "var(--accent)", color: "#ffffff" }}
+                  >
+                    {state.run.kind === "import" ? "Import notes" : "Update notes"}
+                  </button>
+                </>
+              }
+            >
+              {groups.kind === "update" ? (
+                <>
+                  {groups.updateRows.length > 0 ? (
+                    <BatchGroup header={`Update (${groups.updateRows.length})`}>
+                      {groups.updateRows.map((row) => (
+                        <BatchRow
+                          key={row.key}
+                          label={row.title}
+                          aside={row.path}
+                          pill={<Pill tone="muted">{row.label}</Pill>}
+                        />
+                      ))}
+                    </BatchGroup>
+                  ) : null}
+                  {groups.keptRows.length > 0 ? (
+                    <BatchGroup header={`Kept as is (${groups.keptRows.length})`}>
+                      {groups.keptRows.map((row) => (
+                        <BatchRow
+                          key={row.key}
+                          label={row.title}
+                          aside={`stamped ${row.label}; the run leaves it`}
+                        />
+                      ))}
+                    </BatchGroup>
+                  ) : null}
+                  {groups.createRows.length > 0 ? (
+                    <BatchGroup
+                      header={`Create (${groups.createRows.length})`}
+                      aside={<CreateChip state={state} label="New notes go to:" />}
+                    >
+                      {groups.createRows.map((row) => (
+                        <BatchRow key={row.key} label={row.title} aside={row.path} />
+                      ))}
+                    </BatchGroup>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  {groups.overwriteRows.length > 0 ? (
+                    <BatchGroup header={`Overwrite (${groups.overwriteRows.length})`}>
+                      {groups.overwriteRows.map((row) => (
+                        <BatchRow
+                          key={row.key}
+                          label={row.title}
+                          aside={row.path}
+                          pill={<Pill tone="muted">{row.label}</Pill>}
+                        />
+                      ))}
+                    </BatchGroup>
+                  ) : null}
+                  {groups.importRows.length > 0 ? (
+                    <BatchGroup
+                      header={`Import (${groups.importRows.length})`}
+                      aside={
+                        <CreateChip
+                          state={state}
+                          label="Notes without a literature note go to:"
+                        />
+                      }
+                    >
+                      {groups.importRows.map((row) => (
+                        <BatchRow key={row.key} label={row.title} aside={row.path} />
+                      ))}
+                    </BatchGroup>
+                  ) : null}
+                </>
+              )}
+            </BatchModal>
+          );
+        }
+
+        let overlay = null;
+        if (state.run.phase === "confirm") {
+          overlay = confirmModal;
+        } else if (state.run.phase === "picker") {
+          overlay = (
+            <div className="relative">
+              {confirmModal}
+              <div
+                className="absolute inset-0 flex items-start justify-center pt-6"
+                style={{ background: "rgba(0,0,0,0.35)" }}
+              >
+                <CreatePicker state={state} />
+              </div>
+            </div>
+          );
+        } else if (state.run.phase === "progress") {
+          overlay = (
+            <BatchModal
+              title={
+                state.run.kind === "import" ? "Import notes" : "Update literature notes"
+              }
+            >
+              <div className="mb-4">
+                <ProgressBar value={state.run.progress} total={total} />
+              </div>
+              {groups.kind === "update" ? (
+                <>
+                  {groups.updateRows.map((row) => (
+                    <BatchRow
+                      key={row.key}
+                      label={row.title}
+                      pill={<Pill tone="muted">{row.label}</Pill>}
+                      status={rowStatus(row, "done")}
+                    />
+                  ))}
+                  {groups.keptRows.map((row) => (
+                    <BatchRow
+                      key={row.key}
+                      label={row.title}
+                      status={rowStatus(row, "kept")}
+                    />
+                  ))}
+                  {groups.createRows.map((row) => (
+                    <BatchRow
+                      key={row.key}
+                      label={row.title}
+                      status={rowStatus(row, "done")}
+                    />
+                  ))}
+                </>
+              ) : (
+                <>
+                  {groups.overwriteRows.map((row) => (
+                    <BatchRow
+                      key={row.key}
+                      label={row.title}
+                      pill={<Pill tone="muted">{row.label}</Pill>}
+                      status={rowStatus(row, "done")}
+                    />
+                  ))}
+                  {groups.importRows.map((row) => (
+                    <BatchRow
+                      key={row.key}
+                      label={row.title}
+                      status={rowStatus(row, "done")}
+                    />
+                  ))}
+                </>
+              )}
+            </BatchModal>
+          );
+        } else if (state.run.phase === "summary") {
+          overlay = (
+            <BatchModal
+              title={
+                state.run.kind === "import" ? "Import notes" : "Update literature notes"
+              }
+              footer={
+                <button
+                  onClick={actions.close}
+                  className="cursor-pointer rounded-md px-3 py-[6px] text-[13px]"
+                  style={{ background: "var(--accent)", color: "#ffffff" }}
+                >
+                  Close
+                </button>
+              }
+            >
+              <p className="text-ink text-[13px] leading-relaxed">
+                {buildSummaryB(state, groups)}
+              </p>
+            </BatchModal>
+          );
+        }
+
+        return (
+          <div
+            className="grid h-full"
+            style={{ gridTemplateColumns: "minmax(0,1fr) 300px" }}
+          >
+            <ObsidianFrame overlay={overlay}>
+              <LauncherCardB kind={state.run.kind} onStart={handleStart} />
+            </ObsidianFrame>
+            <Rail
+              thesis="The confirm screen is already the one place the user reads before a run writes. Put the one decision there, preselected from the Companion or the last run, and open the informed picker only on demand."
+              steps={[
+                "Start",
+                "Confirm (chip + live paths)",
+                "Chip → picker",
+                "Run",
+                "Summary by Profile",
+              ]}
+              consent="Update rows show their stamp and are read-only; the select touches only the Create group."
+            />
+          </div>
+        );
+      }
+      // --- Variant B END ---
+
+      // --- App END ---
+
+      createRoot(document.getElementById("root")).render(<VariantB />);
+    </script>
+    <script type="module">
+      import { transform } from "https://esm.sh/sucrase@3";
+      const src = document.getElementById("app").textContent;
+      const { code } = transform(src, {
+        transforms: ["jsx"],
+        production: true,
+      });
+      const url = URL.createObjectURL(
+        new Blob([code], { type: "text/javascript" }),
+      );
+      await import(url);
+    </script>
+  </body>
+</html>
