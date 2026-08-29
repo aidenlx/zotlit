@@ -12,7 +12,7 @@ import {
 } from "./citation-grammar";
 import type { CitationCluster } from "./citation-grammar";
 
-const packageRoot = getPackageRoot();
+const packageRoot = getPackageRoot(import.meta.filename);
 
 const keys = (text: string) =>
   scanCitekeys(text).map((key) => ({

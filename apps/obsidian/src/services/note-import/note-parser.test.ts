@@ -27,7 +27,7 @@ import type {
 import { parseNote } from "./note-parser";
 import type { ParseNoteDeps } from "./note-parser";
 
-const packageRoot = getPackageRoot();
+const packageRoot = getPackageRoot(import.meta.filename);
 
 // Keep the real DOM-free parsers; only the DB-backed legs are stubbed per test.
 vi.mock("@zotlit/db", async (importOriginal) => {

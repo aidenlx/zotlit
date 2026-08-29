@@ -8,7 +8,7 @@ import { getPackageRoot } from "@zotlit/scripts/package-roots";
 
 import { createNoteTurndown } from "./index";
 
-const packageRoot = getPackageRoot();
+const packageRoot = getPackageRoot(import.meta.filename);
 
 /** Convert an HTML fragment and trim the surrounding block whitespace. */
 function convert(html: string): string {
