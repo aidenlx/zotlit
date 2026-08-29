@@ -213,6 +213,22 @@ _Avoid_: citation map (that's the derived lookup structure)
 One cited Item within a Citation, pairing the pure item data with citation-scoped properties: Locator, locator label, suppress-author, prefix, suffix. The citation-scoped properties never live on the item itself. In the cite-template data: `zt.citations` (Citation Items) alongside `zt.items` (the same items, bare).
 _Avoid_: cite item, citation entry
 
+**Citation Prefix**:
+Text that introduces one Citation Item within Pandoc citation source, before its citation key.
+_Avoid_: prefix (too broad), citation context (a separate source-preview concept)
+
+**Citation Suffix**:
+Text that follows one Citation Item within Pandoc citation source, after its citation key and Locator.
+_Avoid_: suffix (too broad), locator (a pinpoint reference, not trailing text)
+
+**Locator Label**:
+The kind of pinpoint reference a Locator contains, such as page, chapter, or section. Cite-template data exposes both its full value and the abbreviated `labelShort` value used in Pandoc source.
+_Avoid_: locator type, page label (names only one kind)
+
+**Suppress Author**:
+A Citation Item property that asks Pandoc to omit the cited author's name from citation output, represented by `-@` in Pandoc source.
+_Avoid_: omit author, hidden author
+
 **Locator**:
 A pinpoint reference within a cited work (CSL locator), e.g. a page number, with an accompanying label naming its kind (`page` by default). An annotation-derived Citation uses the annotation's page label as its Locator — mirroring Zotero's own annotation citations.
 
@@ -317,6 +333,10 @@ _Avoid_: citation universe, rendered citations (presentation, not membership)
 **Citation Cluster**:
 The bracketed literal-citekey syntax `[see @a, p. 3; @b]` — one `;`-separated item per citekey, each carrying an optional prefix and suffix, and `-@` to suppress the author. It is the source text a Citation Index scan and an editor widget both read; the Citation Run is its wikilink counterpart in Pandoc export.
 _Avoid_: citation group (names the result, not the source syntax), bracketed citation
+
+**Author-in-text Citation**:
+Pandoc citation source that puts the first cited author's name into the surrounding prose, such as `@a [p. 3; @b]`. Later Citation Items and the first item's Locator and Citation Suffix stay in the trailing brackets.
+_Avoid_: bare citation (omits the author behavior), narrative citation (CSL terminology for formatted output)
 
 **Pandoc Citations**:
 The default-on choice to include literal Pandoc citation syntax, such as `@doe2024` and `[@doe2024]`, in the Document Citation Set. Turning it off leaves the source visible and excludes those occurrences from ZotLit's Obsidian citation-aware features without disabling the internal Citation Index or changing citation insertion and export.
