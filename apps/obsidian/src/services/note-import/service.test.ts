@@ -12,6 +12,7 @@ import {
 
 import { renderAnnotations } from "@/lib/annotation-render";
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
+import type { ProfileId } from "@/lib/profile-stamp";
 import { AttachmentImportService } from "@/services/attachment-import/service";
 import type {
   AttachmentSource,
@@ -246,7 +247,7 @@ function makePrepare(
     client: {} as any,
     sourcePath: "Literature/Paper.md",
     settings: {
-      ...bindLiteratureNoteProfile(defaults)!,
+      ...bindLiteratureNoteProfile(defaults, "default")!,
       "note.import-folder": "Imported",
       ...settingsOverrides,
     },
@@ -256,8 +257,8 @@ function makePrepare(
 
 const PREPARE = makePrepare();
 
-const PROFILE_A = "Bk3Qn7XvT2Lp";
-const PROFILE_B = "Rz9Wm4YfH6Kd";
+const PROFILE_A = "Bk3Qn7XvT2Lp" as ProfileId;
+const PROFILE_B = "Rz9Wm4YfH6Kd" as ProfileId;
 
 function profileSettings(): Settings {
   return {

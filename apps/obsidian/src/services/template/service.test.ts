@@ -11,6 +11,7 @@ import {
 import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { ProfileId } from "@/lib/profile-stamp";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import { SettingsService } from "@/services/settings/service";
@@ -306,17 +307,17 @@ filename: "{{ zt.title }}"
     const { service } = await makeHarness({ vault });
     const profiles = [
       {
-        id: "36c4f8b4-4f65-4cab-8c51-c921ea616cc8",
+        id: "Bk3Qn7XvT2Lp" as ProfileId,
         label: "Books",
         document: "books.md",
       },
       {
-        id: "93f0df01-9de9-47e6-aa12-1ff770c1ab86",
+        id: "Rz9Wm4YfH6Kd" as ProfileId,
         label: "Plain",
         document: "plain.md",
       },
       {
-        id: "5b1febe8-2c3d-4e5f-8a9b-0c1d2e3f4a5b",
+        id: "Vv1Ww2Xx3Yy4" as ProfileId,
         label: "Documentless",
       },
     ];
@@ -364,13 +365,13 @@ filename: "{{ zt.title }}"
 
   it("reports unknown Profiles and missing Profile documents instead of falling back", async () => {
     const { service } = await makeHarness({ vault: new MockVault() });
-    const unknownId = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+    const unknownId = "Nn4Pp6Qq8Rr0" as ProfileId;
     const settings = {
       ...defaults,
       "note.template-conversion-pending": false,
       "note.profiles": [
         {
-          id: "93f0df01-9de9-47e6-aa12-1ff770c1ab86",
+          id: "Tt2Uu4Vv6Ww8" as ProfileId,
           label: "Books",
           document: "missing.md",
         },

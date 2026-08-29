@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ProfileId } from "@/lib/profile-stamp";
 import { ServiceContainer, ServiceInitError } from "@/services/service-base";
 
 import {
@@ -136,7 +137,7 @@ describe("SettingsService loading", () => {
 
     await service.ready;
 
-    expect(service.getLiteratureNoteProfile()).toEqual({
+    expect(service.getLiteratureNoteProfile("default")).toEqual({
       document: "law.md",
       bindings: {
         "citation.references-style": "apa",
@@ -146,12 +147,12 @@ describe("SettingsService loading", () => {
         "note.import-annotations-as-template": true,
       },
     });
-    expect(service.resolveLiteratureNoteProfileBindings()).toEqual(
-      service.getLiteratureNoteProfile()?.bindings,
+    expect(service.resolveLiteratureNoteProfileBindings("default")).toEqual(
+      service.getLiteratureNoteProfile("default")?.bindings,
     );
     expect(plugin.__data).toEqual({
       __VERSION__: 10,
-      "note.default-profile": service.getLiteratureNoteProfile(),
+      "note.default-profile": service.getLiteratureNoteProfile("default"),
     });
   });
 
@@ -364,10 +365,10 @@ describe("SettingsService literature note profiles", () => {
     const { service } = makeService();
     await service.ready;
 
-    expect(service.getLiteratureNoteProfile()).toEqual(
+    expect(service.getLiteratureNoteProfile("default")).toEqual(
       DEFAULT_LITERATURE_NOTE_PROFILE,
     );
-    expect(service.resolveLiteratureNoteProfileBindings()).toEqual(
+    expect(service.resolveLiteratureNoteProfileBindings("default")).toEqual(
       defaults["note.default-profile"].bindings,
     );
   });
@@ -377,13 +378,13 @@ describe("SettingsService literature note profiles", () => {
     await service.ready;
 
     service.setDefaultLiteratureNoteProfileDocument("literature-note.md");
-    expect(service.getLiteratureNoteProfile()).toEqual({
+    expect(service.getLiteratureNoteProfile("default")).toEqual({
       document: "literature-note.md",
       bindings: defaults["note.default-profile"].bindings,
     });
 
     service.setDefaultLiteratureNoteProfileDocument(null);
-    expect(service.getLiteratureNoteProfile()).toEqual(
+    expect(service.getLiteratureNoteProfile("default")).toEqual(
       DEFAULT_LITERATURE_NOTE_PROFILE,
     );
   });
@@ -460,7 +461,7 @@ describe("SettingsService literature note profiles", () => {
       "citation.references-style": null,
     });
     expect(
-      service.resolveLiteratureNoteProfileBindings("V1StGXR8Z5jd"),
+      service.resolveLiteratureNoteProfileBindings("V1StGXR8Z5jd" as ProfileId),
     ).toBeUndefined();
   });
 });

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
 
+import type { ProfileId } from "@/lib/profile-stamp";
 import type { DatabaseEvents } from "@/services/database/service";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -441,7 +442,7 @@ describe("BibliographyRenderCache", () => {
     settings.update({
       "note.profiles": [
         {
-          id: "00000000-0000-4000-8000-000000000001",
+          id: "Bk3Qn7XvT2Lp" as ProfileId,
           label: "Research",
           bindings: { "citation.references-style": IEEE },
         },

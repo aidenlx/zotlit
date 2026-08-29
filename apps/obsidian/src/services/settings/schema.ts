@@ -9,6 +9,7 @@ import {
 import type { AutoTrim } from "@zotlit/templates/constants";
 
 import { PROFILE_ID_PATTERN } from "@/lib/profile-stamp";
+import type { ProfileId } from "@/lib/profile-stamp";
 import {
   DEFAULT_LIBRARY_SCOPE,
   libraryScopeSchema,
@@ -55,7 +56,11 @@ export type LiteratureNoteProfileBindings = v.InferOutput<
 
 export const literatureNoteProfileSchema = v.pipe(
   v.object({
-    id: v.pipe(v.string(), v.regex(PROFILE_ID_PATTERN)),
+    id: v.pipe(
+      v.string(),
+      v.regex(PROFILE_ID_PATTERN),
+      v.transform((id) => id as ProfileId),
+    ),
     label: v.pipe(
       v.string(),
       v.check((label) => label.trim().length > 0, "Empty profile label"),

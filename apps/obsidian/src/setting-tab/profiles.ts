@@ -14,6 +14,8 @@ import { ensureFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import { DEFAULT_PROFILE, parseProfileSelector } from "@/lib/profile-stamp";
+import type { ProfileSelector } from "@/lib/profile-stamp";
 import { DEFAULT_LITERATURE_NOTE_PROFILE } from "@/services/settings/schema";
 import type {
   DefaultLiteratureNoteProfile,
@@ -153,7 +155,7 @@ function defaultProfilePage(
           key: profileControlKey("default", "annotations-as-template"),
         },
       },
-      profileDocumentItem(ctx, { document }),
+      profileDocumentItem(ctx, { id: DEFAULT_PROFILE, document }),
     ],
   };
 }
@@ -260,7 +262,7 @@ function inheritedBooleanOptions(): Record<string, string> {
 
 function profileDocumentItem(
   ctx: SettingTabContext,
-  profile: Pick<LiteratureNoteProfile, "document"> & { id?: string },
+  profile: Pick<LiteratureNoteProfile, "document"> & { id: ProfileSelector },
 ): SettingDefinitionItem<SettingsControlKey> {
   return {
     name: m.settings_profile_document_name(),
@@ -295,7 +297,7 @@ function profileDocumentDescription(
 function renderProfileDocument(
   setting: Setting,
   ctx: SettingTabContext,
-  profile: Pick<LiteratureNoteProfile, "document"> & { id?: string },
+  profile: Pick<LiteratureNoteProfile, "document"> & { id: ProfileSelector },
 ): void {
   setting.setDesc(profileDocumentDescription(ctx, profile.document));
   if (!profile.document) {
@@ -335,11 +337,12 @@ function renderProfileDocument(
 
 export async function customizeLiteratureNoteProfile(
   ctx: SettingTabContext,
-  profileId?: string,
+  profileId: ProfileSelector,
 ): Promise<void> {
-  const reference = profileId
-    ? `literature-note-${profileId}.md`
-    : DEFAULT_DOCUMENT_REFERENCE;
+  const reference =
+    profileId === DEFAULT_PROFILE
+      ? DEFAULT_DOCUMENT_REFERENCE
+      : `literature-note-${profileId}.md`;
   const path = profileDocumentPath(ctx, reference);
   try {
     const source = builtInLiteratureNoteTemplate(ctx, profileId);
@@ -377,13 +380,14 @@ export async function customizeLiteratureNoteProfile(
 
 function builtInLiteratureNoteTemplate(
   ctx: SettingTabContext,
-  profileId: string | undefined,
+  profileId: ProfileSelector,
 ): string {
-  const label = profileId
-    ? (ctx.settings.current?.["note.profiles"].find(
-        (profile) => profile.id === profileId,
-      )?.label ?? m.settings_profile_new_label())
-    : m.settings_profile_default_name();
+  const label =
+    profileId === DEFAULT_PROFILE
+      ? m.settings_profile_default_name()
+      : (ctx.settings.current?.["note.profiles"].find(
+          (profile) => profile.id === profileId,
+        )?.label ?? m.settings_profile_new_label());
   return synthesizeLegacyLiteratureNoteTemplate(
     {
       note: { source: DEFAULT_TEMPLATES.note, language: "liquid" },
@@ -391,7 +395,10 @@ function builtInLiteratureNoteTemplate(
       filename: { source: DEFAULT_TEMPLATES.filename, language: "liquid" },
     },
     {
-      id: profileId ? `zotlit.profile.${profileId}` : "zotlit.default-profile",
+      id:
+        profileId === DEFAULT_PROFILE
+          ? "zotlit.default-profile"
+          : `zotlit.profile.${profileId}`,
       name: label,
       description: m.settings_profile_document_seed_description(),
       frontmatter: DEFAULT_FRONTMATTER_FIELDS,
@@ -401,7 +408,7 @@ function builtInLiteratureNoteTemplate(
 
 export async function restoreBuiltInLiteratureNoteProfile(
   ctx: SettingTabContext,
-  profileId?: string,
+  profileId: ProfileSelector,
 ): Promise<void> {
   const profile = ctx.settings.getLiteratureNoteProfile(profileId);
   const reference =
@@ -436,13 +443,13 @@ export async function restoreBuiltInLiteratureNoteProfile(
 
 function setProfileDocument(
   settings: SettingsService,
-  profileId: string | undefined,
+  profileId: ProfileSelector,
   reference: string | null,
 ): void {
-  if (profileId) {
-    settings.updateLiteratureNoteProfile(profileId, { document: reference });
-  } else {
+  if (profileId === DEFAULT_PROFILE) {
     settings.setDefaultLiteratureNoteProfileDocument(reference);
+  } else {
+    settings.updateLiteratureNoteProfile(profileId, { document: reference });
   }
 }
 
@@ -472,9 +479,7 @@ export function getProfileControlValue(
   key: ProfileControlKey,
 ): unknown {
   const { id, field } = parseProfileControlKey(key)!;
-  const profile = settings.getLiteratureNoteProfile(
-    id === "default" ? undefined : id,
-  );
+  const profile = settings.getLiteratureNoteProfile(id);
   if (!profile) return undefined;
   switch (field) {
     case "label":
@@ -516,9 +521,7 @@ export function setProfileControlValue(
   value: unknown,
 ): void {
   const { id, field } = parseProfileControlKey(key)!;
-  const profile = settings.getLiteratureNoteProfile(
-    id === "default" ? undefined : id,
-  );
+  const profile = settings.getLiteratureNoteProfile(id);
   if (!profile) return;
   if (!("id" in profile)) {
     if (field === "folder") {
@@ -583,12 +586,14 @@ export function setProfileControlValue(
 
 function parseProfileControlKey(
   key: string,
-): { id: string; field: ProfileControlField } | null {
+): { id: ProfileSelector; field: ProfileControlField } | null {
   if (!key.startsWith(PROFILE_CONTROL_PREFIX)) return null;
   const value = key.slice(PROFILE_CONTROL_PREFIX.length);
   const separator = value.lastIndexOf(":");
   if (separator < 1) return null;
-  const id = value.slice(0, separator);
+  // Keys are built only from `profileControlKey(DEFAULT_PROFILE | ProfileId, …)`.
+  const id = parseProfileSelector(value.slice(0, separator));
+  if (id === undefined) return null;
   const field = value.slice(separator + 1);
   if (
     field !== "label" &&

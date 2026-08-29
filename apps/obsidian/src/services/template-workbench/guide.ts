@@ -341,9 +341,10 @@ const PROFILES_SECTION = `LITERATURE NOTE PROFILES AND DOCUMENTS
 
 MODEL
   A Literature Note Profile selects one optional Literature Note Template
-  document and vault-local bindings. The built-in default Profile has id=null
-  in template-status. An unset reference means the built-in template. A set
-  reference must resolve to one document in the configured template folder.
+  document and vault-local bindings. The built-in default Profile has
+  id=default in template-status. An unset reference means the built-in
+  template. A set reference must resolve to one document in the configured
+  template folder.
 
   A note records its Profile in the zotlit-profile property, written as the
   Profile label, one space, and the Profile id in parentheses: Reading notes

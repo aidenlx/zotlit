@@ -5,6 +5,7 @@ import type { Item, ItemRef } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
@@ -49,8 +50,8 @@ export async function updateNote(
   ref: ItemRef,
   {
     scope = "full",
-    profileId,
-  }: { scope?: UpdateScope; profileId?: string | null } = {},
+    profile,
+  }: { scope?: UpdateScope; profile?: ProfileSelector } = {},
 ): Promise<void> {
   const file = resolveLiteratureNoteWithWarning(
     deps.noteIndex.getNotesByItemKey(ref.indexedKey),
@@ -61,7 +62,7 @@ export async function updateNote(
       new BaseNotice(m.notice_update_metadata_no_note());
       return;
     }
-    await createAndOpen(deps, ref, profileId);
+    await createAndOpen(deps, ref, profile);
     return;
   }
 
@@ -74,7 +75,7 @@ export async function updateNote(
     deps.noteFeature.updateNote(file, {
       indexedKey: itemKey,
       scope,
-      profileId,
+      profile,
     }),
     updateNoteToast(scope),
   );
@@ -118,12 +119,12 @@ export function updateNoteToast(scope: UpdateScope): {
 export async function createAndOpen(
   deps: SingleUpdateDeps,
   ref: ItemRef,
-  profileId?: string | null,
+  profile?: ProfileSelector,
 ): Promise<void> {
   const [item] = getItemsByID(deps.db.client, [ref.itemID]);
   if (!item) return;
 
-  const file = await createNoteWithToast(deps.noteFeature, item, profileId);
+  const file = await createNoteWithToast(deps.noteFeature, item, profile);
   if (!file) return;
   await deps.app.workspace.openLinkText(file.path, "", false, {
     active: true,
@@ -138,11 +139,11 @@ export async function createAndOpen(
 export async function createNoteWithToast(
   noteFeature: Pick<NoteFeature, "createNote">,
   item: Item,
-  profileId?: string | null,
+  profile?: ProfileSelector,
 ): Promise<TFile | null> {
   try {
     const result = await toast.promise(
-      noteFeature.createNote(item, { profileId }),
+      noteFeature.createNote(item, { profile }),
       {
         loading: m.notice_creating_note(),
         success: createNoteNotice,

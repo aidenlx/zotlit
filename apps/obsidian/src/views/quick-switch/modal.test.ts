@@ -3,6 +3,7 @@ import type { App, Instruction, Modifier, TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { confirm, confirmWithCheckbox } from "@/lib/confirm";
+import type { ProfileId } from "@/lib/profile-stamp";
 
 import { QuickSwitchModal, switchImportedNoteProfile } from "./modal";
 import { chooseLiteratureNoteProfile } from "./profile-picker";
@@ -104,8 +105,8 @@ describe("QuickSwitchModal instructions", () => {
 
 describe("QuickSwitchModal Profile conflicts", () => {
   it("names both the current and requested Profiles in the decision", async () => {
-    const currentId = "Bk3Qn7XvT2Lp";
-    const requestedId = "Rz9Wm4YfH6Kd";
+    const currentId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const requestedId = "Rz9Wm4YfH6Kd" as ProfileId;
     const file = { path: "Literature/Existing.md" } as TFile;
     vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
       id: requestedId,
@@ -162,8 +163,8 @@ describe("QuickSwitchModal Profile conflicts", () => {
   });
 
   it("names the current Profile from a full-form stamp", async () => {
-    const currentId = "Bk3Qn7XvT2Lp";
-    const requestedId = "Rz9Wm4YfH6Kd";
+    const currentId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const requestedId = "Rz9Wm4YfH6Kd" as ProfileId;
     const file = { path: "Literature/Existing.md" } as TFile;
     vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
       id: requestedId,
@@ -209,7 +210,7 @@ describe("QuickSwitchModal Profile conflicts", () => {
   });
 
   it("keeps the note when a full-form stamp already names the chosen Profile", async () => {
-    const currentId = "Bk3Qn7XvT2Lp";
+    const currentId = "Bk3Qn7XvT2Lp" as ProfileId;
     const file = { path: "Literature/Existing.md" } as TFile;
     vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
       id: currentId,
@@ -250,8 +251,8 @@ describe("QuickSwitchModal Profile conflicts", () => {
   });
 
   it("passes the counted family only when the option is checked", async () => {
-    const currentId = "Bk3Qn7XvT2Lp";
-    const requestedId = "Rz9Wm4YfH6Kd";
+    const currentId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const requestedId = "Rz9Wm4YfH6Kd" as ProfileId;
     const file = { path: "Literature/Existing.md" } as TFile;
     const imported = [
       { path: "Imported/First.md" },
@@ -308,7 +309,7 @@ describe("QuickSwitchModal Profile conflicts", () => {
     );
     expect(switchNoteProfile).toHaveBeenCalledWith(file, {
       indexedKey: "ABC12345",
-      profileId: requestedId,
+      profile: requestedId,
       importedNotes: imported,
     });
 
@@ -320,7 +321,7 @@ describe("QuickSwitchModal Profile conflicts", () => {
 
     expect(switchNoteProfile).toHaveBeenCalledWith(file, {
       indexedKey: "ABC12345",
-      profileId: requestedId,
+      profile: requestedId,
       importedNotes: undefined,
     });
   });
@@ -328,8 +329,8 @@ describe("QuickSwitchModal Profile conflicts", () => {
 
 describe("Imported Note Profile switching", () => {
   it("states that the switch applies on the next re-import", async () => {
-    const currentId = "Bk3Qn7XvT2Lp";
-    const requestedId = "Rz9Wm4YfH6Kd";
+    const currentId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const requestedId = "Rz9Wm4YfH6Kd" as ProfileId;
     const file = { path: "Imported/Existing.md" } as TFile;
     vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
       id: requestedId,
@@ -368,14 +369,14 @@ describe("Imported Note Profile switching", () => {
       expect.anything(),
     );
     expect(switchProfile).toHaveBeenCalledWith(file, {
-      profileId: requestedId,
+      profile: requestedId,
     });
   });
 
   it("leaves the Imported Note unchanged when consent is declined", async () => {
     const file = { path: "Imported/Existing.md" } as TFile;
     vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
-      id: "Rz9Wm4YfH6Kd",
+      id: "Rz9Wm4YfH6Kd" as ProfileId,
       label: "Papers",
     });
     vi.mocked(confirm).mockResolvedValue(false);

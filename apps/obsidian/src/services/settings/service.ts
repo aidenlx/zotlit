@@ -78,6 +78,8 @@ import { debounce } from "obsidian";
 import type { Plugin } from "obsidian";
 import * as v from "valibot";
 
+import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
+import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { Service } from "@/services/service-base";
 
 import {
@@ -152,12 +154,12 @@ export interface ResolvedLiteratureNoteProfileBindings {
 export type ProfileBindingSettings = Readonly<Settings> &
   Partial<ResolvedLiteratureNoteProfileBindings>;
 
-const boundProfileIds = new WeakMap<ProfileBindingSettings, string>();
+const boundProfileIds = new WeakMap<ProfileBindingSettings, ProfileId>();
 
 /** Read the named Profile carried by a bound settings snapshot. */
 export function boundLiteratureNoteProfileId(
   settings: ProfileBindingSettings,
-): string | undefined {
+): ProfileId | undefined {
   return boundProfileIds.get(settings);
 }
 
@@ -179,13 +181,13 @@ export function getProfileBinding<
 /** Resolve one Profile's sparse bindings over the default Profile. */
 export function resolveLiteratureNoteProfileBindings(
   current: Readonly<Settings>,
-  id?: string,
+  selector: ProfileSelector,
 ): ResolvedLiteratureNoteProfileBindings | undefined {
   const profile =
-    id === undefined
+    selector === DEFAULT_PROFILE
       ? undefined
-      : current["note.profiles"].find((candidate) => candidate.id === id);
-  if (id !== undefined && profile === undefined) return undefined;
+      : current["note.profiles"].find((candidate) => candidate.id === selector);
+  if (selector !== DEFAULT_PROFILE && profile === undefined) return undefined;
   const bindings = profile?.bindings;
   const base = current["note.default-profile"].bindings;
   return {
@@ -209,12 +211,12 @@ export function resolveLiteratureNoteProfileBindings(
 /** Add one Profile's effective bindings to a settings snapshot. */
 export function bindLiteratureNoteProfile(
   current: Readonly<Settings>,
-  id?: string,
+  selector: ProfileSelector,
 ): ProfileBindingSettings | undefined {
-  const bindings = resolveLiteratureNoteProfileBindings(current, id);
+  const bindings = resolveLiteratureNoteProfileBindings(current, selector);
   if (!bindings) return undefined;
   const settings = { ...current, ...bindings };
-  if (id !== undefined) boundProfileIds.set(settings, id);
+  if (selector !== DEFAULT_PROFILE) boundProfileIds.set(settings, selector);
   return settings;
 }
 
@@ -370,10 +372,10 @@ export class SettingsService extends Service<void> {
 
   /** Get the built-in default Profile, or one added Profile by its stable id. */
   getLiteratureNoteProfile(
-    id?: string,
+    selector: ProfileSelector,
   ): DefaultLiteratureNoteProfile | LiteratureNoteProfile | undefined {
     this.#requireLoaded("getLiteratureNoteProfile");
-    if (id === undefined) {
+    if (selector === DEFAULT_PROFILE) {
       const profile = this.#snapshot()["note.default-profile"];
       return {
         ...(profile.document === undefined
@@ -383,7 +385,7 @@ export class SettingsService extends Service<void> {
       };
     }
     const profile = this.#snapshot()["note.profiles"].find(
-      (profile) => profile.id === id,
+      (profile) => profile.id === selector,
     );
     return profile && cloneLiteratureNoteProfile(profile);
   }
@@ -421,7 +423,7 @@ export class SettingsService extends Service<void> {
   /** Add a Profile with a generated identity and no binding overrides. */
   createLiteratureNoteProfile(label: string): LiteratureNoteProfile {
     this.#requireLoaded("createLiteratureNoteProfile");
-    const profile = { id: profileNanoid(), label };
+    const profile = { id: profileNanoid() as ProfileId, label };
     this.update((current) => ({
       "note.profiles": [...current["note.profiles"], profile],
     }));
@@ -444,7 +446,7 @@ export class SettingsService extends Service<void> {
         ? undefined
         : (patch.document ?? current.document);
     const profile: LiteratureNoteProfile = {
-      id,
+      id: current.id,
       label: patch.label ?? current.label,
       ...(document === undefined ? {} : { document }),
       ...(bindings === undefined ? {} : { bindings }),
@@ -468,10 +470,10 @@ export class SettingsService extends Service<void> {
 
   /** Resolve sparse Profile bindings over the default Profile. */
   resolveLiteratureNoteProfileBindings(
-    id?: string,
+    selector: ProfileSelector,
   ): ResolvedLiteratureNoteProfileBindings | undefined {
     this.#requireLoaded("resolveLiteratureNoteProfileBindings");
-    return resolveLiteratureNoteProfileBindings(this.#snapshot(), id);
+    return resolveLiteratureNoteProfileBindings(this.#snapshot(), selector);
   }
 
   /**

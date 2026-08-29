@@ -14,9 +14,13 @@ import { isLanguageTag } from "@/lib/language-tag";
 import { getLogger } from "@/lib/log";
 import {
   parseProfileStamp,
+  stampedSelector,
   unknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
-import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
+import type {
+  ProfileSelector,
+  UnknownProfileDiagnostic,
+} from "@/lib/profile-stamp";
 import type { Citation } from "@/services/citation-index/query";
 import type { Settings } from "@/services/settings/schema";
 import { resolveLiteratureNoteProfileBindings } from "@/services/settings/service";
@@ -41,8 +45,7 @@ export interface ProfilePresentationFailure {
 
 /** The Imported Note Profile that selected one document's CSL style. */
 export interface ProfileStyleSource {
-  /** `null` means the unstamped note selected the default Profile. */
-  profileId: string | null;
+  profile: ProfileSelector;
   target: string;
 }
 
@@ -98,10 +101,11 @@ export function documentPresentation(
     const stamped = parseProfileStamp(
       frontmatter[FIELD_LITERATURE_NOTE_PROFILE],
     );
-    const bindings = resolveLiteratureNoteProfileBindings(
-      settings,
-      stamped?.id,
-    );
+    const selector = stampedSelector(stamped);
+    const bindings =
+      selector === undefined
+        ? undefined
+        : resolveLiteratureNoteProfileBindings(settings, selector);
     if (!bindings) {
       logger.debug("The Imported Note Profile is unavailable", {
         path: file.path,
@@ -115,8 +119,10 @@ export function documentPresentation(
       };
     }
     presentation.styleId = bindings["citation.references-style"];
+    // Resolved bindings mean `selector` was defined (its own undefined branch
+    // above never resolves any).
     profileStyle = {
-      profileId: stamped?.id ?? null,
+      profile: selector!,
       target: file.path,
     };
   } else if (declaredStyle !== undefined) {
@@ -274,7 +280,7 @@ export function samePresentation(
   return (
     left.presentation.styleId === right.presentation.styleId &&
     left.presentation.locale === right.presentation.locale &&
-    left.profileStyle?.profileId === right.profileStyle?.profileId &&
+    left.profileStyle?.profile === right.profileStyle?.profile &&
     left.profileStyle?.target === right.profileStyle?.target
   );
 }

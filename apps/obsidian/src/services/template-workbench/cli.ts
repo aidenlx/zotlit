@@ -11,6 +11,8 @@ import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { FIELD_ZOTERO_KEY, RESERVED_KEYS } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
+import { DEFAULT_PROFILE, parseProfileSelector } from "@/lib/profile-stamp";
+import type { ProfileId } from "@/lib/profile-stamp";
 import { InertTemplateError } from "@/services/template/errors";
 import type {
   CompileError,
@@ -827,12 +829,14 @@ function literatureNoteAuthoringState(
   const state = literatureNotes.readProfiles();
   const profiles: LiteratureNoteProfileRow[] = [
     {
-      id: null,
+      id: DEFAULT_PROFILE,
       label: "Default",
       document: state.defaultProfile.document ?? null,
     },
     ...state.profiles.map((profile) => ({
-      id: profile.id,
+      // `readProfiles()` structurally mirrors `settings["note.profiles"]`,
+      // whose id already passed `PROFILE_ID_PATTERN` at settings validation.
+      id: profile.id as ProfileId,
       label: profile.label,
       document: profile.document ?? null,
     })),
@@ -880,28 +884,32 @@ function literatureNoteAuthoringState(
   };
 }
 
+/** Parse a `--profile` argument's text, then resolve its document reference. */
 function profileDocumentReference(
   literatureNotes: NonNullable<TemplateWorkbenchDeps["literatureNotes"]>,
-  profileId: string,
+  text: string,
 ): string | Diagnostic {
+  const selector = parseProfileSelector(text);
   const state = literatureNotes.readProfiles();
-  const profile =
-    profileId === "default"
-      ? state.defaultProfile
-      : state.profiles.find((candidate) => candidate.id === profileId);
-  if (!profile) {
+  const found =
+    selector === undefined
+      ? undefined
+      : selector === DEFAULT_PROFILE
+        ? state.defaultProfile
+        : state.profiles.find((candidate) => candidate.id === selector);
+  if (!found) {
     return diagnostic(
       "UNKNOWN_PROFILE_STAMP",
-      `No Literature Note Profile has the stamped ID '${profileId}'.`,
+      `No Literature Note Profile has the stamped ID '${text}'.`,
     );
   }
-  if (!profile.document) {
+  if (!found.document) {
     return diagnostic(
       "DOCUMENT_NOT_FOUND",
-      `Profile '${profileId}' uses the built-in Literature Note Template and has no document reference.`,
+      `Profile '${text}' uses the built-in Literature Note Template and has no document reference.`,
     );
   }
-  return profile.document;
+  return found.document;
 }
 
 function documentNotFoundDiagnostic(reference: string): Diagnostic {

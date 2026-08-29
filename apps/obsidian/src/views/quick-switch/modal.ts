@@ -4,8 +4,12 @@ import type { TFile } from "obsidian";
 import { confirm, confirmWithCheckbox } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import { readProfileStamp } from "@/lib/profile-stamp";
-import type { ProfileStamp } from "@/lib/profile-stamp";
+import {
+  DEFAULT_PROFILE,
+  readProfileStamp,
+  stampedSelector,
+} from "@/lib/profile-stamp";
+import type { ProfileSelector, ProfileStamp } from "@/lib/profile-stamp";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
@@ -62,7 +66,10 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     );
     const profiles = this.#deps.settings.current?.["note.profiles"] ?? [];
     if (profiles.length === 0) {
-      await this.#open(existing ?? (await this.#create(hit)), evt);
+      await this.#open(
+        existing ?? (await this.#create(hit, DEFAULT_PROFILE)),
+        evt,
+      );
       return;
     }
 
@@ -91,18 +98,18 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
   /** Create-arm: no existing note → render one and return it. */
   async #create(
     hit: SearchHit,
-    profileId?: string | null,
+    profile: ProfileSelector,
   ): Promise<TFile | null> {
-    return createNoteWithToast(this.#deps.noteFeature, hit.item, profileId);
+    return createNoteWithToast(this.#deps.noteFeature, hit.item, profile);
   }
 
   async #resolveExisting(
     hit: SearchHit,
     file: TFile,
-    choice: { id: string | null; label: string },
+    choice: { id: ProfileSelector; label: string },
   ): Promise<TFile> {
     const stamped = readProfileStamp(this.#deps.app.metadataCache, file);
-    if ((stamped?.id ?? null) === choice.id) return file;
+    if (stampedSelector(stamped) === choice.id) return file;
     const currentLabel = profileLabel(this.#deps, stamped);
 
     const options = {
@@ -137,7 +144,7 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
 
     const result = await this.#deps.noteFeature.switchNoteProfile(file, {
       indexedKey: hit.item.indexedKey,
-      profileId: choice.id,
+      profile: choice.id,
       importedNotes: decision.checked ? importedNotes : undefined,
     });
     if (result.diagnostic) {
@@ -158,7 +165,7 @@ export async function switchImportedNoteProfile(
   );
   if (!choice) return;
   const stamped = readProfileStamp(deps.app.metadataCache, file);
-  if ((stamped?.id ?? null) === choice.id) return;
+  if (stampedSelector(stamped) === choice.id) return;
   const currentLabel = profileLabel(deps, stamped);
   const shouldSwitch = await confirm(
     {
@@ -175,7 +182,7 @@ export async function switchImportedNoteProfile(
   );
   if (!shouldSwitch) return;
   const result = await deps.noteFeature.switchImportedNoteProfile(file, {
-    profileId: choice.id,
+    profile: choice.id,
   });
   if (result.diagnostic) {
     new BaseNotice(noteOperationDiagnosticNotice(result.diagnostic));

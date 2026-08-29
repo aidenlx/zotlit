@@ -1,6 +1,7 @@
 import type { CachedMetadata, MetadataCache, TFile } from "obsidian";
 import { describe, expect, it } from "vitest";
 
+import type { ProfileId } from "@/lib/profile-stamp";
 import type { Settings } from "@/services/settings/schema";
 import { defaults } from "@/services/settings/schema";
 
@@ -34,7 +35,7 @@ function profileSettings(
     },
     "note.profiles": [
       {
-        id: "Bk3Qn7XvT2Lp",
+        id: "Bk3Qn7XvT2Lp" as ProfileId,
         label: "Research",
         ...(profileStyle === undefined
           ? {}
@@ -109,7 +110,7 @@ describe("documentPresentation", () => {
       kind: "read",
       presentation: { styleId: "research-style" },
       profileStyle: {
-        profileId: "Bk3Qn7XvT2Lp",
+        profile: "Bk3Qn7XvT2Lp",
         target: FILE.path,
       },
     });
@@ -131,7 +132,7 @@ describe("documentPresentation", () => {
       kind: "read",
       presentation: { styleId: "default-style" },
       profileStyle: {
-        profileId: "Bk3Qn7XvT2Lp",
+        profile: "Bk3Qn7XvT2Lp",
         target: FILE.path,
       },
     });
@@ -149,7 +150,7 @@ describe("documentPresentation", () => {
     ).toEqual({
       kind: "read",
       presentation: { styleId: "default-style" },
-      profileStyle: { profileId: null, target: FILE.path },
+      profileStyle: { profile: "default", target: FILE.path },
     });
   });
 
@@ -185,7 +186,7 @@ describe("documentPresentation", () => {
       kind: "read",
       presentation: { styleId: "research-style" },
       profileStyle: {
-        profileId: "Bk3Qn7XvT2Lp",
+        profile: "Bk3Qn7XvT2Lp",
         target: FILE.path,
       },
     });
@@ -206,7 +207,7 @@ describe("documentPresentation", () => {
     ).toEqual({
       kind: "read",
       presentation: { styleId: "research-style" },
-      profileStyle: { profileId: "Bk3Qn7XvT2Lp", target: FILE.path },
+      profileStyle: { profile: "Bk3Qn7XvT2Lp", target: FILE.path },
     });
   });
 
@@ -226,7 +227,7 @@ describe("documentPresentation", () => {
       kind: "read",
       presentation: { styleId: "research-style" },
       profileStyle: {
-        profileId: "Bk3Qn7XvT2Lp",
+        profile: "Bk3Qn7XvT2Lp",
         target: FILE.path,
       },
     });
@@ -251,6 +252,30 @@ describe("documentPresentation", () => {
         code: "unknown-literature-note-profile",
         hint: "Re-stamp the note or recreate the Profile with the same ID.",
         stamp: "deleted-profile",
+      },
+      target: FILE.path,
+    });
+  });
+
+  it("refuses a stamp of the selector text itself, never treating it as the default Profile", () => {
+    const settings = profileSettings("default-style");
+
+    expect(
+      documentPresentation(
+        cacheOf({
+          "zotero-note-key": "1/NOTE1234",
+          "zotlit-profile": "default",
+        }),
+        FILE,
+        settings,
+      ),
+    ).toEqual({
+      kind: "unusable",
+      property: "profile",
+      diagnostic: {
+        code: "unknown-literature-note-profile",
+        hint: "Re-stamp the note or recreate the Profile with the same ID.",
+        stamp: "default",
       },
       target: FILE.path,
     });
@@ -379,7 +404,10 @@ describe("samePresentation", () => {
         {
           kind: "read",
           presentation,
-          profileStyle: { profileId: "research", target: FILE.path },
+          profileStyle: {
+            profile: "Rz9Wm4YfH6Kd" as ProfileId,
+            target: FILE.path,
+          },
         },
         { kind: "read", presentation },
       ),

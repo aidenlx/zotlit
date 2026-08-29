@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TemplateFacade } from "@zotlit/templates/facade";
 
 import { confirm } from "@/lib/confirm";
+import type { ProfileId } from "@/lib/profile-stamp";
 import { defaults } from "@/services/settings/schema";
 
 import type { SettingTabContext } from "./context";
@@ -19,7 +20,7 @@ import {
 vi.mock("@/lib/confirm", () => ({ confirm: vi.fn() }));
 
 const BOOKS = {
-  id: "36c4f8b4-4f65-4cab-8c51-c921ea616cc8",
+  id: "Aa1Bb2Cc3Dd4" as ProfileId,
   label: "Books",
   bindings: {
     "note.literature-folder": "Books",

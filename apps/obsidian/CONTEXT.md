@@ -53,6 +53,9 @@ _Avoid_: profile key, profile uuid
 The human-readable part of a Profile stamp: the Profile's label at the time of the write, kept so a person can recognise the Profile in a plain-text note. Informational only — a stale or mismatched hint changes nothing.
 _Avoid_: profile name (in a stamp), profile slug
 
+**Profile selector**:
+The value a note or an operation resolves its Literature Note Profile against: a Profile ID, or the literal `default` for the default Profile. The one way ZotLit names "no specific Profile" — a stamp read yields the stamped Profile ID, `default` when the note carries no stamp, or nothing when the stamp names no Profile ID (that note is unknown, never the default).
+
 **Managed Block**:
 The `{% managed %}` … `{% endmanaged %}` block in a Literature Note Template document's body — a self-contained sub-template supported in both Liquid and Eta. It renders in isolation: variables assigned outside the block are not visible inside, so an update-time render is identical to a create-time render. On create it renders in place within the body; on update it alone re-renders to refill the note's Managed Region. When its tags are Line-Owning Tags, the Managed Region occupies exactly the lines the block occupied. Role-equivalent to the retired `content` Template.
 _Avoid_: managed region (the rendered output in the note, not the template source), content block

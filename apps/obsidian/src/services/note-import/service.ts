@@ -35,11 +35,14 @@ import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
 import {
+  DEFAULT_PROFILE,
   formatProfileStamp,
   readProfileStamp,
+  stampedSelector,
   unknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
 import type {
+  ProfileSelector,
   ProfileStamp,
   UnknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
@@ -217,7 +220,7 @@ async function prepareImport(
     attachmentFolderCache: new Map(),
     profile: importedNoteProfile(
       settings,
-      boundLiteratureNoteProfileId(settings),
+      boundLiteratureNoteProfileId(settings) ?? DEFAULT_PROFILE,
     ),
   };
   const queue: QueuedImport[] = [];
@@ -243,8 +246,14 @@ async function doImportNote(
     const stamped = existing
       ? readProfileStamp(ctx.app.metadataCache, existing)
       : stampedProfileForExplicitCreate(ctx, note, options);
-    const profileId = stamped?.id;
-    const settings = bindLiteratureNoteProfile(options.settings, profileId);
+    const selector = stampedSelector(stamped);
+    if (selector === undefined) {
+      throw new NoteImportProfileError(stamped!.stamp, {
+        path: existing?.path,
+        indexedKey: note.indexedKey,
+      });
+    }
+    const settings = bindLiteratureNoteProfile(options.settings, selector);
     if (!settings) {
       throw new NoteImportProfileError(stamped!.stamp, {
         path: existing?.path,
@@ -257,7 +266,7 @@ async function doImportNote(
       groupIdMemo: options.groupIdMemo,
       tagMemo: options.tagMemo,
       attachmentFolderCache: options.attachmentFolderCache ?? new Map(),
-      profile: importedNoteProfile(settings, profileId),
+      profile: importedNoteProfile(settings, selector),
     };
 
     if (existing) {
@@ -487,18 +496,18 @@ async function writeNote(
 }
 
 /**
- * The Profile an Imported Note written under `profileId` belongs to, with its
+ * The Profile an Imported Note written under `selector` belongs to, with its
  * stamp composed from the Profile's current label.
  */
 function importedNoteProfile(
   settings: Readonly<Settings>,
-  profileId: string | undefined,
+  selector: ProfileSelector,
 ): ProfileStamp | undefined {
-  if (profileId === undefined) return undefined;
+  if (selector === DEFAULT_PROFILE) return undefined;
   // Both callers bind the Profile through `bindLiteratureNoteProfile` first,
   // which fails on an id no configured Profile carries.
-  const profile = settings["note.profiles"].find(({ id }) => id === profileId)!;
-  return { id: profileId, stamp: formatProfileStamp(profile) };
+  const profile = settings["note.profiles"].find(({ id }) => id === selector)!;
+  return { id: selector, stamp: formatProfileStamp(profile) };
 }
 
 /** The parent Literature Note's stamp an explicitly created note inherits. */

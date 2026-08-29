@@ -10,6 +10,7 @@ import type { App, Command, Plugin } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { ProfileId } from "@/lib/profile-stamp";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -42,7 +43,7 @@ const VAULT_STYLE = {
   title: "Vault prose",
 };
 const MISSING_STYLE_ID = "http://www.zotero.org/styles/missing-profile-style";
-const PROFILE_ID = "00000000-0000-4000-8000-000000000001";
+const PROFILE_ID = "Aa1Bb2Cc3Dd4" as ProfileId;
 
 interface VaultOptions {
   /** The properties the active note carries; `undefined` leaves no note active. */

@@ -2,10 +2,12 @@ import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
+import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { LiteratureNoteProfile } from "@/services/settings/schema";
 
 export interface LiteratureNoteProfileChoice {
-  id: string | null;
+  id: ProfileSelector;
   label: string;
 }
 
@@ -30,7 +32,7 @@ class LiteratureNoteProfileModal extends SuggestModal<LiteratureNoteProfileChoic
   ) {
     super(app);
     this.#choices = [
-      { id: null, label: m.settings_profile_default_name() },
+      { id: DEFAULT_PROFILE, label: m.settings_profile_default_name() },
       ...profiles.map(({ id, label }) => ({ id, label })),
     ];
     this.#resolve = resolve;

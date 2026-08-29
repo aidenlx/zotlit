@@ -25,7 +25,13 @@ import type { ProtocolAction } from "@zotlit/protocol";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import { readProfileStamp } from "@/lib/profile-stamp";
+import {
+  parseProfileSelector,
+  readProfileStamp,
+  stampedSelector,
+  unknownProfileDiagnostic,
+} from "@/lib/profile-stamp";
+import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
 import type { LiveUpdateService } from "@/services/live-update/service";
 import {
@@ -35,6 +41,7 @@ import {
 import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
 import {
   createAndOpen,
+  noteOperationDiagnosticNotice,
   resolveLiteratureNoteWithWarning,
   updateNote,
 } from "@/services/note-feature/update-single";
@@ -102,10 +109,12 @@ export function registerProtocolHandlers(
   // runs the same interactive flow as the `update-many` protocol link.
   stack.defer(
     deps.liveUpdate.on("update-many", (event) => {
+      const requested = resolveRequestedProfile(event.profileId);
+      if (!requested.ok) return;
       void toast.promise(
         runBatchUpdate(deps, event.items, {
           scope: event.scope,
-          profileId: event.profileId,
+          profile: requested.selector,
         }),
         { success: batchUpdateNotice },
       );
@@ -139,19 +148,43 @@ async function handleProtocol(
   const ref = resolveProtocolItem(query, deps, action);
   if (!ref) return;
 
+  const requested = resolveRequestedProfile(query.profileId);
+  if (!requested.ok) return;
+
   await deps.noteIndex.whenIndexed();
 
   switch (action) {
     case "open":
-      await openNote(deps, ref, query.profileId);
+      await openNote(deps, ref, requested.selector);
       break;
     case "update":
       await updateNote(deps, ref, {
         scope: query.scope,
-        profileId: query.profileId,
+        profile: requested.selector,
       });
       break;
   }
+}
+
+/**
+ * A `profileId` param resolved into a selector. `ok: false` means the text
+ * named neither `default` nor a Profile ID — the caller already surfaced the
+ * unknown-Profile notice and must stop rather than fall back to the default.
+ */
+type RequestedProfile =
+  | { readonly ok: true; readonly selector: ProfileSelector | undefined }
+  | { readonly ok: false };
+
+function resolveRequestedProfile(text: string | undefined): RequestedProfile {
+  if (text === undefined) return { ok: true, selector: undefined };
+  const selector = parseProfileSelector(text);
+  if (selector === undefined) {
+    new BaseNotice(
+      noteOperationDiagnosticNotice(unknownProfileDiagnostic(text)),
+    );
+    return { ok: false };
+  }
+  return { ok: true, selector };
 }
 
 /**
@@ -171,10 +204,13 @@ async function handleBatchProtocol(
   });
   if (!query) return;
 
+  const requested = resolveRequestedProfile(query.profileId);
+  if (!requested.ok) return;
+
   await toast.promise(
     runBatchUpdate(deps, query.items, {
       scope: query.scope,
-      profileId: query.profileId,
+      profile: requested.selector,
     }),
     {
       success: batchUpdateNotice,
@@ -186,7 +222,7 @@ async function handleBatchProtocol(
 async function openNote(
   deps: ProtocolDeps,
   ref: ItemRef,
-  profileId?: string,
+  profile?: ProfileSelector,
 ): Promise<void> {
   const existing = resolveLiteratureNoteWithWarning(
     deps.noteIndex.getNotesByItemKey(ref.indexedKey),
@@ -194,7 +230,7 @@ async function openNote(
 
   if (existing) {
     const stamped = readProfileStamp(deps.app.metadataCache, existing);
-    if (profileId !== undefined && profileId !== stamped?.id) {
+    if (profile !== undefined && profile !== stampedSelector(stamped)) {
       new BaseNotice(m.notice_literature_note_profile_conflict());
       return;
     }
@@ -204,7 +240,7 @@ async function openNote(
     return;
   }
 
-  await createAndOpen(deps, ref, profileId);
+  await createAndOpen(deps, ref, profile);
 }
 
 function batchUpdateNotice(result: BatchUpdateResult): string | undefined {

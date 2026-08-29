@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { ProfileId } from "@/lib/profile-stamp";
 
 import {
   EXPORT_BODY,
@@ -15,7 +16,7 @@ import {
 
 const VAULT_STYLE_ID = "http://www.zotero.org/styles/vault-prose";
 const NOTE_STYLE_ID = "http://www.zotero.org/styles/note-numbered";
-const PROFILE_ID = "00000000-0000-4000-8000-000000000001";
+const PROFILE_ID = "Aa1Bb2Cc3Dd4" as ProfileId;
 /** A CSL ID no Zotero install here carries. */
 const UNINSTALLED_STYLE_ID = "http://www.zotero.org/styles/uninstalled";
 

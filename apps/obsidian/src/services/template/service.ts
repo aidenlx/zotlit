@@ -35,7 +35,11 @@ import { managedRegionTransform } from "@zotlit/templates/obsidian";
 import { RESERVED_KEYS } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
-import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import {
+  DEFAULT_PROFILE,
+  stampedSelector,
+  unknownProfileDiagnostic,
+} from "@/lib/profile-stamp";
 import type {
   ProfileStamp,
   UnknownProfileDiagnostic,
@@ -373,11 +377,17 @@ export class TemplateService extends Service<void> {
     },
   ): string {
     const stamped = options.profile;
+    const selector = stampedSelector(stamped);
+    if (selector === undefined) {
+      throw new ProfileAnnotationError(
+        unknownProfileDiagnostic(stamped!.stamp),
+      );
+    }
     const profile =
-      stamped === undefined
+      selector === DEFAULT_PROFILE
         ? options.settings["note.default-profile"]
         : options.settings["note.profiles"].find(
-            (candidate) => candidate.id === stamped.id,
+            (candidate) => candidate.id === selector,
           );
     if (!profile) {
       throw new ProfileAnnotationError(

@@ -15,6 +15,7 @@ import type { TemplateLanguage } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { UNKNOWN_PROFILE_HINT } from "@/lib/profile-stamp";
+import type { ProfileSelector } from "@/lib/profile-stamp";
 import { InertTemplateError } from "@/services/template/errors";
 import { errorContext } from "@/services/template/service";
 import type {
@@ -27,10 +28,11 @@ import type { SchemaAsset } from "./schema";
 
 /**
  * The wire format of the `zotlit:template-*` and `zotlit:frontmatter-*`
- * commands, versioned on its own (ADR 0026). Version 4 removes the retired
- * reserved-frontmatter-section diagnostic after adding manifest frontmatter.
+ * commands, versioned on its own (ADR 0026). Version 5 reports each Profile
+ * row's `id` as a `ProfileSelector` (`"default"` for the built-in default
+ * Profile) instead of `null`.
  */
-export const CONTRACT_VERSION = 4;
+export const CONTRACT_VERSION = 5;
 
 /** Identity of the vault and Zotero source a command answered from. */
 export interface WorkbenchIdentity {
@@ -158,9 +160,9 @@ export interface FrontmatterEvalRow {
   error?: { message: string };
 }
 
-/** One Profile row in template-status. `null` identifies the built-in default. */
+/** One Profile row in template-status. */
 export interface LiteratureNoteProfileRow {
-  id: string | null;
+  id: ProfileSelector;
   label: string;
   document: string | null;
 }

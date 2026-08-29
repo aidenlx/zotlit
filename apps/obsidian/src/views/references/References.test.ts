@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { ProfileId } from "@/lib/profile-stamp";
 import { ambiguousCandidates } from "@/services/citation-index/__fixtures__/ambiguous-candidates";
 import type {
   CitationOccurrence,
@@ -529,7 +530,7 @@ describe("References banners", () => {
           kind: "unusable",
           property: "profile-style",
           styleId: "missing-profile-style",
-          profileId: "research-profile",
+          profile: "research-profile" as ProfileId,
           target: "Imported/Research.md",
         },
       } satisfies Partial<ReferencesState>,

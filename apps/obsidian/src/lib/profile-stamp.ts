@@ -2,7 +2,9 @@
 // value that records which Literature Note Profile a note belongs to. It also
 // owns the one read of that property from a note, so every reader of a stamp
 // parses it the same way, and the one diagnostic shape for a stamp that names
-// no Profile.
+// no Profile. It also owns `ProfileSelector`, the one way code names the
+// Profile a note or an operation resolves against, and the one parse of
+// selector text arriving from outside the plugin.
 
 import { regex } from "arkregex";
 import type { MetadataCache, TFile } from "obsidian";
@@ -31,16 +33,32 @@ export const PROFILE_ID_PATTERN = new RegExp(`^${PROFILE_ID_SOURCE}$`);
  */
 const STAMPED_ID = regex(`\\((?<id>${PROFILE_ID_SOURCE})\\)$`);
 
+declare const PROFILE_ID: unique symbol;
+
+/** A Profile ID that passed {@link PROFILE_ID_PATTERN}. */
+export type ProfileId = string & { readonly [PROFILE_ID]: true };
+
+/** Narrow `value` to {@link ProfileId} by checking its character shape. */
+export function isProfileId(value: string): value is ProfileId {
+  return PROFILE_ID_PATTERN.test(value);
+}
+
+/** The literal selector value naming the built-in default Profile. */
+export const DEFAULT_PROFILE = "default";
+
+/** The Profile a note or an operation resolves against: a Profile ID, or the default Profile. */
+export type ProfileSelector = ProfileId | typeof DEFAULT_PROFILE;
+
 /** One `zotlit-profile` value, as a note carries it or as a write emits it. */
 export interface ProfileStamp {
   /** The value itself, printed verbatim by diagnostics. */
   readonly stamp: string;
   /**
-   * The Profile ID the stamp names — the only part membership resolves by. A
-   * stamp with no parenthesised ID yields its whole value, so a bare-ID stamp
-   * still resolves and any other text reaches the unknown-Profile diagnostic.
+   * The Profile ID the stamp names, or `undefined` when the stamp text is not
+   * one — a bare-ID stamp still resolves; any other text has no id and reaches
+   * the unknown-Profile diagnostic with `stamp` intact.
    */
-  readonly id: string;
+  readonly id: ProfileId | undefined;
 }
 
 /**
@@ -54,7 +72,13 @@ export function parseProfileStamp(value: unknown): ProfileStamp | undefined {
   // through to the unknown-Profile path with its text intact.
   // oxlint-disable-next-line no-base-to-string
   const stamp = String(value);
-  return { stamp, id: STAMPED_ID.exec(stamp)?.groups.id ?? stamp };
+  const parenthesised = STAMPED_ID.exec(stamp)?.groups.id as
+    | ProfileId
+    | undefined;
+  return {
+    stamp,
+    id: parenthesised ?? (isProfileId(stamp) ? stamp : undefined),
+  };
 }
 
 /**
@@ -78,6 +102,30 @@ export function readProfileStamp(
       FIELD_LITERATURE_NOTE_PROFILE
     ],
   );
+}
+
+/**
+ * The selector a note's stamp names: the default Profile when the note has no
+ * stamp, the stamped ID, or `undefined` when the stamp names no Profile ID
+ * (membership is never inferred — that stamp is unknown, never the default).
+ */
+export function stampedSelector(
+  stamped: ProfileStamp | undefined,
+): ProfileSelector | undefined {
+  if (stamped === undefined) return DEFAULT_PROFILE;
+  return stamped.id;
+}
+
+/**
+ * Parse selector text from outside the plugin (a URL parameter, a CLI
+ * argument, a control key). `undefined` when the text is neither `default`
+ * nor a Profile ID.
+ */
+export function parseProfileSelector(
+  text: string,
+): ProfileSelector | undefined {
+  if (text === DEFAULT_PROFILE) return DEFAULT_PROFILE;
+  return isProfileId(text) ? text : undefined;
 }
 
 export const UNKNOWN_PROFILE_HINT =

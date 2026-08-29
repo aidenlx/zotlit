@@ -14,7 +14,7 @@ Follow these steps in order before editing any template or frontmatter configura
 3. `obsidian zotlit:template-guide`
 4. `obsidian zotlit:template-guide topic=liquid`
 
-This skill is written against Template Workbench CLI Contract version 4 — the `contractVersion` every workbench answer carries. When an answer reports another number, run `zotlit:template-guide` again and follow the live guide over this skill.
+This skill is written against Template Workbench CLI Contract version 5 — the `contractVersion` every workbench answer carries. When an answer reports another number, run `zotlit:template-guide` again and follow the live guide over this skill.
 
 ## Literature Note document loop
 

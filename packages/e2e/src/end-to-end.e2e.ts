@@ -145,7 +145,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const defaultResult = await createFixtureNote(
       vaultId,
       defaultProfileTargetItem.itemID,
-      null,
+      "default",
     );
     const booksResult = await createFixtureNote(
       vaultId,
@@ -371,11 +371,11 @@ type CreateOperationReply =
 async function createFixtureNote(
   vaultId: string,
   itemID: number,
-  profileId?: string | null,
+  profile?: string,
 ): Promise<CreateOperationReply> {
   const response = await obEval(
     vaultId,
-    `(async function(){var services=app.plugins.plugins.zotlit.services;var hits=await services.itemLookup.search('',{limit:100});var hit=hits.find(function(candidate){return candidate.item.itemID===${itemID};});if(!hit){throw new Error('Fixture Item not found');}var result=await services.noteFeature.createNote(hit.item,${JSON.stringify({ profileId })});return JSON.stringify(result.outcome==='created'?{outcome:'created',path:result.file.path,indexedKey:hit.item.indexedKey}:{outcome:'refused',diagnostic:result.diagnostic});})()`,
+    `(async function(){var services=app.plugins.plugins.zotlit.services;var hits=await services.itemLookup.search('',{limit:100});var hit=hits.find(function(candidate){return candidate.item.itemID===${itemID};});if(!hit){throw new Error('Fixture Item not found');}var result=await services.noteFeature.createNote(hit.item,${JSON.stringify({ profile })});return JSON.stringify(result.outcome==='created'?{outcome:'created',path:result.file.path,indexedKey:hit.item.indexedKey}:{outcome:'refused',diagnostic:result.diagnostic});})()`,
   );
   return JSON.parse(response) as CreateOperationReply;
 }

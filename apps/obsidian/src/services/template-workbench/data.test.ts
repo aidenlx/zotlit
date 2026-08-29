@@ -71,7 +71,7 @@ describe("zotlit:template-data with the real loader", () => {
     );
 
     expect(result).toMatchObject({
-      contractVersion: 4,
+      contractVersion: 5,
       command: TEMPLATE_DATA_COMMAND,
       ok: true,
       request: {
@@ -115,7 +115,7 @@ describe("zotlit:template-data with the real loader", () => {
       expect(
         await runTemplateData(fixture.deps, "ANNA2345", "annotation"),
       ).toMatchObject({
-        contractVersion: 4,
+        contractVersion: 5,
         command: TEMPLATE_DATA_COMMAND,
         ok: false,
         request: {
@@ -228,7 +228,7 @@ describe("zotlit:template-data with the real loader", () => {
     const result = await runTemplateData(fixture.deps, "MAIN2345", "filename");
 
     expect(result).toMatchObject({
-      contractVersion: 4,
+      contractVersion: 5,
       command: TEMPLATE_DATA_COMMAND,
       ok: true,
       request: {

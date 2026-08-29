@@ -115,7 +115,7 @@ describe("Template Workbench Profile documents", () => {
     expect(JSON.parse(output)).toMatchObject({
       ok: true,
       profiles: [
-        { id: null, label: "Default", document: "default.md" },
+        { id: "default", label: "Default", document: "default.md" },
         { id: BOOKS_ID, label: "Books", document: "books.md" },
       ],
       documents: [
@@ -186,6 +186,23 @@ describe("Template Workbench Profile documents", () => {
       diagnostic: {
         code,
         hint: DIAGNOSTIC_HINTS[code as keyof typeof DIAGNOSTIC_HINTS],
+      },
+    });
+  });
+
+  it("prints an unresolved --profile argument verbatim instead of falling back to the default", async () => {
+    const { handlers } = makeHandlers();
+
+    const output = await handlers[TEMPLATE_DOCUMENT_RENDER_COMMAND]({
+      key: "ITEM2345",
+      profile: "nope",
+    });
+
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "UNKNOWN_PROFILE_STAMP",
+        message: "No Literature Note Profile has the stamped ID 'nope'.",
       },
     });
   });

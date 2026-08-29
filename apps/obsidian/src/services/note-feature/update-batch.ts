@@ -12,6 +12,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import type { ProfileSelector } from "@/lib/profile-stamp";
 import { classifyChunked, runBatchWrite } from "@/services/batch-run";
 import type {
   BatchClassifyControls,
@@ -74,7 +75,7 @@ interface RunContext {
   username: string | null;
   /** How much of each existing note an update refreshes. */
   scope: UpdateScope;
-  profileId?: string | null;
+  profile?: ProfileSelector;
 }
 
 export type BatchUpdateResult =
@@ -96,7 +97,7 @@ export interface BatchUpdateOptions {
    */
   unavailableLibraries?: number;
   /** Headless explicit Profile. Existing notes with another stamp are refused. */
-  profileId?: string | null;
+  profile?: ProfileSelector;
 }
 
 /**
@@ -119,7 +120,7 @@ export async function runBatchUpdate(
   itemIDs: readonly number[],
   opts: BatchUpdateOptions = {},
 ): Promise<BatchUpdateResult> {
-  const { scope = "full", unavailableLibraries = 0, profileId } = opts;
+  const { scope = "full", unavailableLibraries = 0, profile } = opts;
   if (deps.db.state !== "ready") {
     logger.warn("Batch update: database not ready", { count: itemIDs.length });
     return { outcome: "db-unavailable" };
@@ -141,7 +142,7 @@ export async function runBatchUpdate(
     if (!ref) {
       return { outcome: "not-found" };
     }
-    await updateNote(deps, ref, { scope, profileId });
+    await updateNote(deps, ref, { scope, profile });
     return { outcome: "single-update" };
   }
 
@@ -202,7 +203,7 @@ export async function runBatchUpdate(
       });
     },
     onRun: (controls) =>
-      executeBatchActions(deps, { actions, scope, profileId }, controls),
+      executeBatchActions(deps, { actions, scope, profile }, controls),
   }).open();
   return { outcome: "batch-modal" };
 }
@@ -288,11 +289,11 @@ async function executeBatchActions(
   plan: {
     actions: readonly BatchAction[];
     scope: UpdateScope;
-    profileId?: string | null;
+    profile?: ProfileSelector;
   },
   controls: BatchRunControls,
 ): Promise<BatchRunResult> {
-  const { actions, scope, profileId } = plan;
+  const { actions, scope, profile } = plan;
   const [settings] = await Promise.all([
     deps.settings.loaded,
     deps.noteFeature.ready,
@@ -307,7 +308,7 @@ async function executeBatchActions(
     collectionCache: new CollectionCache(),
     tagMemo: new Map(),
     scope,
-    profileId,
+    profile,
   };
 
   // The signed-in username is an account-wide scalar, resolved once under the
@@ -372,7 +373,7 @@ async function runAction(
       scope: run.scope,
       groupIdMemo: run.groupIdMemo,
       username: run.username,
-      profileId: run.profileId,
+      profile: run.profile,
     });
     if (result.diagnostic) {
       throw new BatchUpdateRefusedError(result.diagnostic);
@@ -384,7 +385,7 @@ async function runAction(
     tagMemo: run.tagMemo,
     groupIdMemo: run.groupIdMemo,
     username: run.username,
-    profileId: run.profileId,
+    profile: run.profile,
   });
   return batchCreateOutcome(result);
 }

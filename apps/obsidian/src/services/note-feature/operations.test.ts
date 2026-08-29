@@ -44,6 +44,7 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
+import type { ProfileId } from "@/lib/profile-stamp";
 import type {
   AttachmentSource,
   SourceOrigin,
@@ -364,7 +365,7 @@ describe("createNote", () => {
   });
 
   it("preserves suffix retries for a Profile document filename", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeItem({
       itemID: 1,
       key: "ROOT1234",
@@ -447,7 +448,7 @@ describe("createNote", () => {
     };
 
     const file = createdFile(
-      await createNoteFeature(deps).createNote(item, { profileId }),
+      await createNoteFeature(deps).createNote(item, { profile: profileId }),
     );
 
     expect(file.path).toMatch(/^Literature\/Root_[\w-]{6}\.md$/);
@@ -887,7 +888,7 @@ describe("createNote", () => {
   });
 
   it("creates under an explicit Profile with its folder, stamp, and citation style", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeItem({
       key: "ROOT1234",
       indexedKey: "ROOT1234",
@@ -934,7 +935,7 @@ describe("createNote", () => {
     };
 
     const file = createdFile(
-      await createNoteFeature(deps).createNote(item, { profileId }),
+      await createNoteFeature(deps).createNote(item, { profile: profileId }),
     );
 
     expect(file.path).toBe("Books/Root.md");
@@ -982,7 +983,7 @@ describe("createNote", () => {
   });
 
   it("gates added Profiles while legacy template conversion is pending", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const app = makeApp();
     const result = await createNoteFeature({
       app,
@@ -1001,7 +1002,7 @@ describe("createNote", () => {
       }),
       attachmentImport: { prepare: vi.fn() },
       noteImport: { prepare: vi.fn() },
-    }).createNote(makeCreateGateItem(), { profileId });
+    }).createNote(makeCreateGateItem(), { profile: profileId });
 
     expect(result).toEqual({
       outcome: "refused",
@@ -1063,7 +1064,7 @@ describe("createNote", () => {
   });
 
   it("creates a Profile note from its document body, filename, and frontmatter", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeCreateGateItem();
     vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
     const app = makeApp();
@@ -1119,7 +1120,7 @@ describe("createNote", () => {
     };
 
     const file = createdFile(
-      await createNoteFeature(deps).createNote(item, { profileId }),
+      await createNoteFeature(deps).createNote(item, { profile: profileId }),
     );
 
     expect(file.path).toBe("Books/Book-Root.md");
@@ -1147,7 +1148,7 @@ describe("createNote", () => {
   });
 
   it("refuses create before writing when a document js field is inert", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
     const app = makeApp();
     const document = makeDocumentTemplate({
@@ -1187,7 +1188,7 @@ describe("createNote", () => {
           flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
         }),
       },
-    }).createNote(makeCreateGateItem(), { profileId });
+    }).createNote(makeCreateGateItem(), { profile: profileId });
 
     expect(result).toMatchObject({
       outcome: "refused",
@@ -1201,7 +1202,7 @@ describe("createNote", () => {
   });
 
   it("refuses create when a Profile document is missing", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const app = makeApp();
     const deps: SyncRenderDeps = {
       app,
@@ -1232,7 +1233,7 @@ describe("createNote", () => {
 
     const result = await createNoteFeature(deps).createNote(
       makeCreateGateItem(),
-      { profileId },
+      { profile: profileId },
     );
 
     expect(result).toEqual({
@@ -1248,8 +1249,8 @@ describe("createNote", () => {
   });
 
   it("returns a Profile conflict when an explicit create disagrees with the existing stamp", async () => {
-    const existingProfileId = "Bk3Qn7XvT2Lp";
-    const requestedProfileId = "Rz9Wm4YfH6Kd";
+    const existingProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const requestedProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
     const existing = makeFile("Books/Root.md");
     const app = makeApp();
     app.metadataCache.getFileCache.mockReturnValue({
@@ -1280,7 +1281,7 @@ describe("createNote", () => {
 
     const result = await createNoteFeature(deps).createNote(
       makeCreateGateItem(),
-      { profileId: requestedProfileId },
+      { profile: requestedProfileId },
     );
 
     expect(result).toEqual({
@@ -1290,8 +1291,8 @@ describe("createNote", () => {
         hint: expect.stringContaining("Keep"),
         indexedKey: "ROOT1234",
         path: "Books/Root.md",
-        existingProfileId,
-        requestedProfileId,
+        existingProfile: existingProfileId,
+        requestedProfile: requestedProfileId,
       },
     });
   });
@@ -1299,7 +1300,7 @@ describe("createNote", () => {
 
 describe("overwriteNote", () => {
   it("re-emits the stamp with the Profile's current label", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeItem({
       itemID: 1,
       key: "ROOT1234",
@@ -1335,7 +1336,7 @@ describe("overwriteNote", () => {
   });
 
   it("refuses before writing when a document field fails", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const item = makeItem({
       itemID: 1,
       key: "ROOT1234",
@@ -1601,7 +1602,7 @@ function stubIndexedKeyUpdate(context: NoteTemplateContext): void {
 
 describe("updateNote", () => {
   it("gates a stamped added Profile while legacy conversion is pending", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
@@ -1631,7 +1632,7 @@ describe("updateNote", () => {
   });
 
   it("follows the stamped Profile and refreshes its citation-style binding", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -1663,7 +1664,7 @@ describe("updateNote", () => {
   });
 
   it("resolves a stale hint by its ID and refreshes it to the current label", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -1697,8 +1698,8 @@ describe("updateNote", () => {
   it("takes the last parenthesised id when the label ends in one too", async () => {
     // The worst label a user can write: one that itself ends in something
     // shaped exactly like a Profile stamp, naming the other Profile.
-    const profileId = "Bk3Qn7XvT2Lp";
-    const otherId = "Rz9Wm4YfH6Kd";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const otherId = "Rz9Wm4YfH6Kd" as ProfileId;
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -1734,7 +1735,7 @@ describe("updateNote", () => {
   });
 
   it("carries a non-Latin Profile label into the stamp unchanged", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -1761,7 +1762,9 @@ describe("updateNote", () => {
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: "Reading notes" },
       settings: {
-        "note.profiles": [{ id: "Bk3Qn7XvT2Lp", label: "Reading notes" }],
+        "note.profiles": [
+          { id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Reading notes" },
+        ],
       },
     });
 
@@ -1789,7 +1792,7 @@ describe("updateNote", () => {
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: "Books (nope)" },
       settings: {
-        "note.profiles": [{ id: "Bk3Qn7XvT2Lp", label: "Books" }],
+        "note.profiles": [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }],
       },
     });
 
@@ -1813,7 +1816,7 @@ describe("updateNote", () => {
         [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Rz9Wm4YfH6Kd)",
       },
       settings: {
-        "note.profiles": [{ id: "Bk3Qn7XvT2Lp", label: "Books" }],
+        "note.profiles": [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }],
       },
     });
 
@@ -1830,7 +1833,7 @@ describe("updateNote", () => {
   });
 
   it("removes zotlit-csl when the stamped Profile selects the built-in style", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -1858,7 +1861,7 @@ describe("updateNote", () => {
   });
 
   it("inherits omitted Profile bindings from the main settings", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -1893,7 +1896,7 @@ describe("updateNote", () => {
   });
 
   it("renders only the stamped Profile document Managed Block on update", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: `User prefix\n${formatManagedRegion("OLD")}\nUser suffix`,
@@ -1928,7 +1931,7 @@ describe("updateNote", () => {
   });
 
   it("uses document Managed Frontmatter in entry order and preserves other keys", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -1979,7 +1982,7 @@ describe("updateNote", () => {
   });
 
   it("uses document Managed Frontmatter for a metadata-only update", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     stubIndexedKeyUpdate(updateContext());
     const original = `prefix\n${formatManagedRegion("OLD")}\nsuffix`;
     const harness = makeUpdateHarness({
@@ -2014,7 +2017,7 @@ describe("updateNote", () => {
   });
 
   it("refuses every document field when a js entry is inert", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -2072,7 +2075,7 @@ describe("updateNote", () => {
   });
 
   it("collects document field errors and leaves the whole note untouched", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     stubIndexedKeyUpdate(updateContext({ infinity: Number.POSITIVE_INFINITY }));
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -2134,7 +2137,7 @@ describe("updateNote", () => {
   ] as const)(
     "applies an absent document value under %s",
     async (merge, preserved) => {
-      const profileId = "Bk3Qn7XvT2Lp";
+      const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
       stubIndexedKeyUpdate(updateContext());
       const harness = makeUpdateHarness({
         content: formatManagedRegion("OLD"),
@@ -2173,7 +2176,7 @@ describe("updateNote", () => {
   );
 
   it("updates only frontmatter for a Profile document without a Managed Block", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: "Static user-owned body",
@@ -2210,7 +2213,7 @@ describe("updateNote", () => {
   });
 
   it("refuses a body update when the stamped Profile document is missing", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
@@ -2246,7 +2249,7 @@ describe("updateNote", () => {
   });
 
   it("refuses an unknown Profile stamp without touching the note", async () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
@@ -2271,9 +2274,34 @@ describe("updateNote", () => {
     expect(harness.frontmatterMock).not.toHaveBeenCalled();
   });
 
+  it("refuses a note stamped with the selector text itself, never treating it as the default Profile", async () => {
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: "default" },
+    });
+
+    const result = await createNoteFeature(harness.deps).updateNote(
+      makeFile("Literature/Root.md"),
+      { indexedKey: "ABC12345" },
+    );
+
+    expect(result).toEqual({
+      bodyUpdated: false,
+      duplicateRegionCount: 0,
+      diagnostic: {
+        code: "unknown-literature-note-profile",
+        hint: expect.stringContaining("Re-stamp"),
+        stamp: "default",
+        path: "Literature/Root.md",
+      },
+    });
+    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+  });
+
   it("switches the stamp after consent and refreshes with the new Profile", async () => {
-    const oldProfileId = "Bk3Qn7XvT2Lp";
-    const newProfileId = "Rz9Wm4YfH6Kd";
+    const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -2292,7 +2320,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(harness.deps).switchNoteProfile(
       makeFile("Books/Root.md"),
-      { indexedKey: "ABC12345", profileId: newProfileId },
+      { indexedKey: "ABC12345", profile: newProfileId },
     );
 
     expect(result.diagnostic).toBeUndefined();
@@ -2303,7 +2331,7 @@ describe("updateNote", () => {
   });
 
   it("re-stamps an Imported Note without refreshing or moving it", async () => {
-    const newProfileId = "Rz9Wm4YfH6Kd";
+    const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
     const harness = makeUpdateHarness({
       content: "Imported body",
       settings: {
@@ -2314,7 +2342,7 @@ describe("updateNote", () => {
 
     const result = await createNoteFeature(
       harness.deps,
-    ).switchImportedNoteProfile(file, { profileId: newProfileId });
+    ).switchImportedNoteProfile(file, { profile: newProfileId });
 
     expect(result.diagnostic).toBeUndefined();
     expect(harness.frontmatter()).toMatchObject({
@@ -2343,8 +2371,8 @@ describe("updateNote", () => {
   });
 
   it("re-stamps an opted-in Imported Note family after the Literature Note switch", async () => {
-    const oldProfileId = "Bk3Qn7XvT2Lp";
-    const newProfileId = "Rz9Wm4YfH6Kd";
+    const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
     const imported = [
       makeFile("Imported/First.md"),
       makeFile("Imported/Second.md"),
@@ -2364,7 +2392,7 @@ describe("updateNote", () => {
       makeFile("Books/Root.md"),
       {
         indexedKey: "ABC12345",
-        profileId: newProfileId,
+        profile: newProfileId,
         importedNotes: imported,
       },
     );
@@ -2376,7 +2404,7 @@ describe("updateNote", () => {
   });
 
   it("does not re-stamp the Imported Note family when the Literature Note switch is refused", async () => {
-    const newProfileId = "Rz9Wm4YfH6Kd";
+    const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
     const imported = makeFile("Imported/First.md");
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -2390,7 +2418,7 @@ describe("updateNote", () => {
       makeFile("Literature/Root.md"),
       {
         indexedKey: "ABC12345",
-        profileId: newProfileId,
+        profile: newProfileId,
         importedNotes: [imported],
       },
     );
@@ -2402,8 +2430,8 @@ describe("updateNote", () => {
   });
 
   it("restores Imported Note stamps when one family write fails", async () => {
-    const oldProfileId = "Bk3Qn7XvT2Lp";
-    const newProfileId = "Rz9Wm4YfH6Kd";
+    const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
     const literature = makeFile("Literature/Root.md");
     const imported = [
       makeFile("Imported/First.md"),
@@ -2442,7 +2470,7 @@ describe("updateNote", () => {
     await expect(
       createNoteFeature(harness.deps).switchNoteProfile(literature, {
         indexedKey: "ABC12345",
-        profileId: newProfileId,
+        profile: newProfileId,
         importedNotes: imported,
       }),
     ).rejects.toThrow("frontmatter write failed");
@@ -2458,8 +2486,8 @@ describe("updateNote", () => {
   });
 
   it("restores the previous stamp when a Profile switch fails", async () => {
-    const oldProfileId = "Bk3Qn7XvT2Lp";
-    const newProfileId = "Rz9Wm4YfH6Kd";
+    const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const newProfileId = "Rz9Wm4YfH6Kd" as ProfileId;
     stubIndexedKeyUpdate(updateContext());
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
@@ -2478,7 +2506,7 @@ describe("updateNote", () => {
     await expect(
       createNoteFeature(harness.deps).switchNoteProfile(
         makeFile("Books/Root.md"),
-        { indexedKey: "ABC12345", profileId: newProfileId },
+        { indexedKey: "ABC12345", profile: newProfileId },
       ),
     ).rejects.toThrow("database read failed");
 
@@ -2800,7 +2828,7 @@ describe("writeNoteUpdate", () => {
 
   it("uses document Managed Frontmatter for a headless metadata update", async () => {
     vi.mocked(fetchNoteContext).mockReturnValue(updateContext());
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     const original = `prefix\n${formatManagedRegion("OLD")}\nsuffix`;
     const harness = makeUpdateHarness({
       content: original,
@@ -2836,8 +2864,8 @@ describe("writeNoteUpdate", () => {
   });
 
   it("refuses a conflicting explicit Profile on the headless batch seam", async () => {
-    const stampedId = "Bk3Qn7XvT2Lp";
-    const requestedId = "Rz9Wm4YfH6Kd";
+    const stampedId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const requestedId = "Rz9Wm4YfH6Kd" as ProfileId;
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: stampedId },
@@ -2850,7 +2878,7 @@ describe("writeNoteUpdate", () => {
         { id: requestedId, label: "Papers" },
       ],
     };
-    options.profileId = requestedId;
+    options.profile = requestedId;
 
     const result = await createNoteFeature(harness.deps).writeNoteUpdate(
       makeFile("Books/Root.md"),
@@ -2859,8 +2887,34 @@ describe("writeNoteUpdate", () => {
 
     expect(result.diagnostic).toMatchObject({
       code: "literature-note-profile-conflict",
-      existingProfileId: stampedId,
-      requestedProfileId: requestedId,
+      existingProfile: stampedId,
+      requestedProfile: requestedId,
+    });
+    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unknown stamp on the headless batch seam instead of reporting a conflict", async () => {
+    const requestedId = "Rz9Wm4YfH6Kd" as ProfileId;
+    const harness = makeUpdateHarness({
+      content: formatManagedRegion("OLD"),
+      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: "legacy" },
+    });
+    const options = writeOptions();
+    options.settings = {
+      ...options.settings,
+      "note.profiles": [{ id: requestedId, label: "Papers" }],
+    };
+    options.profile = requestedId;
+
+    const result = await createNoteFeature(harness.deps).writeNoteUpdate(
+      makeFile("Books/Root.md"),
+      options,
+    );
+
+    expect(result.diagnostic).toMatchObject({
+      code: "unknown-literature-note-profile",
+      stamp: "legacy",
     });
     expect(harness.processMock).not.toHaveBeenCalled();
     expect(harness.frontmatterMock).not.toHaveBeenCalled();
@@ -3043,7 +3097,7 @@ describe("renderAnnotation", () => {
   });
 
   it("uses the annotation parent item's stamped Profile at drag start", () => {
-    const profileId = "Bk3Qn7XvT2Lp";
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
     vi.mocked(getAnnotationsByItemId).mockReturnValue([
       { key: "ANN1" } as never,
     ]);
