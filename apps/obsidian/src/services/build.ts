@@ -101,18 +101,19 @@ export function buildServices(
         new TemplateService({ plugin, app: plugin.app, settings }),
     })
     .use({
-      profile: ({ settings, template }) =>
+      noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
+    })
+    .use({
+      profile: ({ settings, template, noteIndex }) =>
         new ProfileService({
           app: plugin.app,
           settings,
           template,
+          noteIndex,
         }),
     })
     .use({
       zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
-    })
-    .use({
-      noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
     })
     .use({
       liveUpdate: ({ settings, zoteroPref, noteIndex }) =>

@@ -57,7 +57,7 @@ interface NoteVaultApp {
 export interface NoteFeatureDeps {
   profile: Pick<
     ProfileService,
-    "ready" | "loaded" | "resolveProfile" | "profileOf"
+    "ready" | "loaded" | "profiles" | "resolveProfile" | "profileOf"
   >;
   app: NoteVaultApp;
   template: Pick<
@@ -82,7 +82,7 @@ export interface NoteFeatureDeps {
     "ready" | "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
   >;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
-  settings: Pick<SettingsService, "current" | "loaded">;
+  settings: Pick<SettingsService, "current" | "loaded" | "update">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
   noteImport: Pick<NoteImporter, "prepare">;
 }

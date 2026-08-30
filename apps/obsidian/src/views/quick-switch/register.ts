@@ -18,6 +18,7 @@ export interface QuickSwitchDeps {
   noteFeature: Pick<
     NoteFeature,
     | "createNote"
+    | "resolveCreationProfile"
     | "getImportedNotesForItem"
     | "switchImportedNoteProfile"
     | "switchNoteProfile"

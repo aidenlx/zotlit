@@ -15,9 +15,13 @@ export interface LiteratureNoteProfileChoice {
 export function chooseLiteratureNoteProfile(
   app: App,
   profiles: readonly LiteratureNoteProfile[],
+  { preselected = DEFAULT_PROFILE }: { preselected?: ProfileSelector } = {},
 ): Promise<LiteratureNoteProfileChoice | undefined> {
   return new Promise((resolve) => {
-    new LiteratureNoteProfileModal(app, profiles, resolve).open();
+    new LiteratureNoteProfileModal(app, profiles, {
+      resolve,
+      preselected,
+    }).open();
   });
 }
 
@@ -29,7 +33,10 @@ class LiteratureNoteProfileModal extends SuggestModal<LiteratureNoteProfileChoic
   constructor(
     app: App,
     profiles: readonly LiteratureNoteProfile[],
-    resolve: (choice: LiteratureNoteProfileChoice | undefined) => void,
+    options: {
+      resolve: (choice: LiteratureNoteProfileChoice | undefined) => void;
+      preselected: ProfileSelector;
+    },
   ) {
     super(app);
     this.#choices = [
@@ -52,7 +59,12 @@ class LiteratureNoteProfileModal extends SuggestModal<LiteratureNoteProfileChoic
         }),
       })),
     ];
-    this.#resolve = resolve;
+    const selectedIndex = this.#choices.findIndex(
+      ({ id }) => id === options.preselected,
+    );
+    if (selectedIndex > 0)
+      this.#choices.unshift(...this.#choices.splice(selectedIndex, 1));
+    this.#resolve = options.resolve;
     this.setPlaceholder(m.modal_profile_choose_placeholder());
   }
 

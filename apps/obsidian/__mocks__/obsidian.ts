@@ -385,6 +385,7 @@ export abstract class SuggestModal<T> {
 
   setPlaceholder(_placeholder: string): void {}
   setInstructions(_instructions: Instruction[]): void {}
+  open(): void {}
   selectActiveSuggestion(_evt: MouseEvent | KeyboardEvent): void {}
 
   abstract getSuggestions(query: string): T[] | Promise<T[]>;

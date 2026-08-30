@@ -152,6 +152,17 @@ export type CreateNoteResult =
   | { outcome: "created"; file: TFile }
   | { outcome: "refused"; diagnostic: CreateNoteDiagnostic };
 
+export interface CreationProfileSources {
+  headless?: ProfileSelector;
+  asked?: ProfileSelector;
+}
+
+export interface CreationProfileSelection {
+  selector: ProfileSelector;
+  source: "headless" | "last-used" | "bound" | "asked";
+  shouldAsk: boolean;
+}
+
 // `UpdateScope` is the wire enum obsidian decodes; re-export it so note-feature
 // consumers keep a stable import path without redeclaring the union.
 export type { UpdateScope };
@@ -235,6 +246,9 @@ export interface NoteFeature {
    * {@link NoteFeature.writeNoteUpdate} loop (which assumes readiness).
    */
   ready: Promise<void>;
+  resolveCreationProfile(
+    sources?: CreationProfileSources,
+  ): Promise<CreationProfileSelection>;
   /** @see createNote */
   createNote(
     item: Item,
@@ -369,6 +383,7 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
       deps.profile.ready,
     ]).then(() => {}),
     createNote: createAtGate,
+    resolveCreationProfile: (sources) => resolveCreationProfile(ctx, sources),
     updateNote: (file, options) => updateNote(ctx, file, options),
     switchNoteProfile: (file, options) => switchNoteProfile(ctx, file, options),
     switchImportedNoteProfile: (file, options) =>
@@ -385,6 +400,44 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
       renderAnnotationCitation(ctx, annotationItemId),
     on: (event, cb) => events.on(event, cb),
   };
+}
+
+async function resolveCreationProfile(
+  ctx: NoteFeatureDeps,
+  sources: CreationProfileSources = {},
+): Promise<CreationProfileSelection> {
+  await Promise.all([ctx.settings.loaded, ctx.profile.ready]);
+  let lastUsed = ctx.settings.current!["note.last-used-profile"];
+  if (lastUsed !== null && !ctx.profile.resolveProfile(lastUsed)) {
+    ctx.settings.update({ "note.last-used-profile": null });
+    logger.debug("Cleared unavailable last-used Profile {selector}", {
+      selector: lastUsed,
+    });
+    lastUsed = null;
+  }
+  const shouldAsk = ctx.profile.profiles.length > 0;
+  let selection: CreationProfileSelection = {
+    selector: DEFAULT_PROFILE,
+    source: "bound",
+    shouldAsk,
+  };
+  if (shouldAsk) {
+    const candidates = [
+      { selector: sources.asked, source: "asked" },
+      { selector: sources.headless, source: "headless" },
+      { selector: lastUsed, source: "last-used" },
+    ] as const;
+    for (const { selector, source } of candidates) {
+      if (selector != null && ctx.profile.resolveProfile(selector)) {
+        selection = { selector, source, shouldAsk };
+        break;
+      }
+    }
+  }
+  logger.debug("Resolved creation Profile {selector} from {source}", {
+    ...selection,
+  });
+  return selection;
 }
 
 function refusedCreate(
@@ -510,6 +563,9 @@ async function createNote(
           options.onFileCreated?.(created);
         },
       });
+      if (result.outcome === "created") {
+        ctx.settings.update({ "note.last-used-profile": requestedProfile });
+      }
       return result;
     } catch (error) {
       if (

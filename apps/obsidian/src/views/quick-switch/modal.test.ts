@@ -120,6 +120,46 @@ describe("QuickSwitchModal instructions", () => {
 });
 
 describe("QuickSwitchModal Profile conflicts", () => {
+  it("passes last-used preselection to the picker before creating a note", async () => {
+    onPlatform(true);
+    const books = "Bk3Qn7XvT2Lp" as ProfileId;
+    const createNote = vi.fn();
+    const openLinkText = vi.fn();
+    const deps = {
+      app: {
+        metadataCache: { getFileCache: () => null },
+        workspace: { openLinkText },
+      },
+      noteIndex: { getNotesByItemKey: () => [] },
+      noteFeature: {
+        createNote,
+        resolveCreationProfile: async () => ({
+          selector: books,
+          source: "last-used",
+          shouldAsk: true,
+        }),
+      },
+      settings: {
+        current: {
+          ...defaults,
+          ...profileSettings([{ id: books, label: "Books" }]),
+          "note.last-used-profile": books,
+        },
+      },
+    } as unknown as QuickSwitchDeps;
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue(undefined);
+    await makeQuickSwitchModal(deps).onChooseSuggestion(
+      { item: { indexedKey: "PAPER234" } } as never,
+      {} as KeyboardEvent,
+    );
+    expect(chooseLiteratureNoteProfile).toHaveBeenCalledWith(
+      deps.app,
+      expect.any(Array),
+      { preselected: books },
+    );
+    expect(createNote).not.toHaveBeenCalled();
+    expect(openLinkText).not.toHaveBeenCalled();
+  });
   it("names both the current and requested Profiles in the decision", async () => {
     const currentId = "Bk3Qn7XvT2Lp" as ProfileId;
     const requestedId = "Rz9Wm4YfH6Kd" as ProfileId;
