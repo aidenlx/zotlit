@@ -20,6 +20,7 @@ import {
 import type { ChildNote, Library, Note } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 
+import * as m from "@/lib/i18n/generated/messages";
 import type {
   AvailableLibrary,
   LibrarySelector,
@@ -936,7 +937,12 @@ describe("runChildImportByKey", () => {
           path: "Imported/Methods.md",
         }),
       ]),
-    ).toContain("Re-stamp");
+    ).toBe(
+      m.notice_imported_note_profile_unknown({
+        stamp: "missing-profile",
+        target: "Imported/Methods.md",
+      }),
+    );
   });
 
   it("surfaces a missing Profile document through the single-import toast", () => {

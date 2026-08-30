@@ -117,11 +117,12 @@ export function parseProfileSelector(
 }
 
 export const UNKNOWN_PROFILE_HINT =
-  "Re-stamp the note or recreate the Profile with the same ID.";
+  "Use Switch profile... to choose an available Profile for this note.";
 
 export interface UnknownProfileDiagnostic {
   readonly code: "unknown-literature-note-profile";
   readonly hint: string;
+  readonly recovery: { readonly action: "switch-profile" };
   /**
    * The Profile stamp as the note carries it, or the requested Profile ID when
    * the caller named one. Printed verbatim so the user can find the note.
@@ -138,6 +139,7 @@ export function unknownProfileDiagnostic(
   return {
     code: "unknown-literature-note-profile",
     hint: UNKNOWN_PROFILE_HINT,
+    recovery: { action: "switch-profile" },
     stamp,
     ...context,
   };

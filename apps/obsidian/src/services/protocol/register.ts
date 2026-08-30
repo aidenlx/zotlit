@@ -125,7 +125,7 @@ export function registerProtocolHandlers(
     deps.liveUpdate.on("import-notes", (event) => {
       void toast.promise(
         deps.batchImport.runBatchImport(event.mode, event.items),
-        batchImportToast(),
+        batchImportToast({ app: deps.app }),
       );
     }),
   );
@@ -270,7 +270,7 @@ async function handleImportProtocol(
 
   await toast.promise(
     deps.batchImport.runBatchImport(query.mode, [query.item]),
-    batchImportToast(),
+    batchImportToast({ app: deps.app }),
   );
 }
 
@@ -288,7 +288,7 @@ async function handleImportManyProtocol(
 
   await toast.promise(
     deps.batchImport.runBatchImport(query.mode, query.items),
-    batchImportToast(),
+    batchImportToast({ app: deps.app }),
   );
 }
 
@@ -347,7 +347,7 @@ async function handleImportAllNotesProtocol(
       groupID: query.groupID,
       collectionKey: query.collectionKey,
     }),
-    batchImportAllToast(),
+    batchImportAllToast({ app: deps.app }),
   );
 }
 

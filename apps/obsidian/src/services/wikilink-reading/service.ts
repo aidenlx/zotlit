@@ -8,6 +8,7 @@ import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { renderProfileRecovery } from "@/lib/profile-recovery";
 import { rerenderReadingViews, sectionRange } from "@/lib/reading-view";
 import {
   WikilinkDisplaySettings,
@@ -172,6 +173,7 @@ export class WikilinkReading extends Service<void> {
     // style shows every one of them the text rendered for its own place.
     const citations = runs.map((run) => citationOfRun(run));
     const failure = text?.presentationFailure;
+    renderProfileRecovery(el, this.#app, { path: failure?.target });
     if (failure) {
       const diagnostic = m.notice_imported_note_profile_unknown({
         stamp: failure.diagnostic.stamp,

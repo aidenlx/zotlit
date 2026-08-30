@@ -12,7 +12,7 @@ import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
 import type { NoteFeature } from "./operations";
-import { noteOperationDiagnosticNotice } from "./update-single";
+import { noteOperationDiagnosticContent } from "./update-single";
 
 const logger = getLogger("note-feature");
 
@@ -31,11 +31,10 @@ export interface ProfileSwitchConsent {
 export async function switchNoteProfileInteractively(
   deps: InteractiveProfileSwitchDeps,
   file: TFile,
-  indexedKey: string,
 ): Promise<void> {
   try {
     const [plan, styles] = await Promise.all([
-      deps.noteFeature.prepareProfileSwitch(file, indexedKey),
+      deps.noteFeature.prepareProfileSwitch(file),
       deps.zoteroPref.dataDir
         ? listInstalledStyles(deps.zoteroPref.dataDir)
         : [],
@@ -59,7 +58,8 @@ export async function switchNoteProfileInteractively(
       current: plan.current.label ?? m.settings_profile_default_name(),
       requested: choice.label,
       moveFolder: target.path === file.path ? undefined : target.folder,
-      importedCount: plan.importedNotes.length,
+      importedCount: plan.importedNotes?.length ?? null,
+      imported: plan.imported,
     });
     if (!consent.confirmed) {
       logger.debug("Cancelled Literature Note Profile switch", {
@@ -71,13 +71,13 @@ export async function switchNoteProfileInteractively(
       deps.noteFeature.switchNoteProfile(file, {
         profile: choice.id,
         move: consent.move,
-        importedNotes: consent.importedNotes ? plan.importedNotes : [],
+        importedNotes: consent.importedNotes ? (plan.importedNotes ?? []) : [],
       }),
       {
         loading: m.notice_profile_switching(),
         success: (result) =>
           result.diagnostic
-            ? noteOperationDiagnosticNotice(result.diagnostic)
+            ? noteOperationDiagnosticContent(deps.app, result.diagnostic)
             : m.notice_profile_switched({ label: choice.label }),
         error: () => m.notice_profile_switch_failed(),
       },
@@ -98,7 +98,8 @@ export function confirmProfileSwitch(
     current: string;
     requested: string;
     moveFolder?: string;
-    importedCount: number;
+    importedCount: number | null;
+    imported?: boolean;
   },
 ): Promise<ProfileSwitchConsent> {
   const { promise, resolve } = Promise.withResolvers<ProfileSwitchConsent>();
@@ -107,7 +108,12 @@ export function confirmProfileSwitch(
   let move = false;
   let importedNotes = false;
   modal.setTitle(m.modal_profile_switch_title({ label: options.requested }));
-  modal.setContent(m.modal_profile_switch_desc(options));
+  const content = `${m.modal_profile_switch_desc(options)} ${options.imported ? m.modal_profile_switch_imported_effects() : m.modal_profile_switch_effects()}`;
+  modal.setContent(
+    !options.imported && options.importedCount === null
+      ? `${content}\n\n${m.modal_profile_switch_imported_unavailable()}`
+      : content,
+  );
   if (options.moveFolder !== undefined) {
     const folder = normalizeFolderPath(options.moveFolder);
     modal.addCheckbox(
@@ -119,12 +125,13 @@ export function confirmProfileSwitch(
       },
     );
   }
-  modal.addCheckbox(
-    m.modal_profile_switch_imported_notes({ count: options.importedCount }),
-    (checked) => {
-      importedNotes = checked;
-    },
-  );
+  if (!options.imported && options.importedCount !== null)
+    modal.addCheckbox(
+      m.modal_profile_switch_imported_notes({ count: options.importedCount }),
+      (checked) => {
+        importedNotes = checked;
+      },
+    );
   modal.addButton((button) => {
     button
       .setButtonText(

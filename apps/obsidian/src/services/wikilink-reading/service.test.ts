@@ -3,6 +3,8 @@ import { Keymap, MarkdownView } from "obsidian";
 import type { MarkdownPostProcessor } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { FormattedOccurrence } from "@/services/citation-text/present";
@@ -40,6 +42,7 @@ interface Harness extends AsyncDisposable {
   renderHtml: (html: string) => Promise<HTMLElement>;
   /** Every Citation Popover the surface asked for. */
   requests: CitationHoverRequest[];
+  switchRequests: string[];
   /** Every Literature Note the popover's own open action reached for. */
   opened: [citekey: string, pane: NavigationPane][];
   /** Every gesture Obsidian's own delegated listeners would have answered. */
@@ -82,6 +85,7 @@ async function harness({
     citekeys ?? { [WANG_KEY]: "wang2020" },
   );
   const requests: CitationHoverRequest[] = [];
+  const switchRequests: string[] = [];
   const opened: [citekey: string, pane: NavigationPane][] = [];
   const native: MouseEvent[] = [];
   let rerenders = 0;
@@ -100,7 +104,11 @@ async function harness({
   });
   const service = new WikilinkReading({
     app: {
-      workspace: { getLeavesOfType: () => [{ view }] },
+      workspace: {
+        getLeavesOfType: () => [{ view }],
+        trigger: (_name: string, request: { path: string }) =>
+          switchRequests.push(request.path),
+      },
       vault: { getFileByPath: (path: string) => ({ path }) },
       metadataCache: {
         getFirstLinkpathDest: (linkpath: string, origin: string) =>
@@ -136,6 +144,7 @@ async function harness({
     citationText,
     citationIndex,
     requests,
+    switchRequests,
     opened,
     native,
     render: async (linktext) => {
@@ -236,11 +245,7 @@ describe("WikilinkReading rendering", () => {
       presentationFailure: {
         kind: "unusable",
         property: "profile",
-        diagnostic: {
-          code: "unknown-literature-note-profile",
-          hint: "Re-stamp the note or recreate the Profile with the same ID.",
-          stamp: "deleted-profile",
-        },
+        diagnostic: unknownProfileDiagnostic("deleted-profile"),
         target: "Imported/Research.md",
       },
     });
@@ -251,7 +256,18 @@ describe("WikilinkReading rendering", () => {
     );
 
     expect(link?.getAttribute("aria-label")).toContain("deleted-profile");
-    expect(link?.getAttribute("aria-label")).toContain("Re-stamp the note");
+    expect(link?.getAttribute("aria-label")).toBe(
+      m.notice_imported_note_profile_unknown({
+        stamp: "deleted-profile",
+        target: "Imported/Research.md",
+      }),
+    );
+    const recovery = root.querySelector<HTMLButtonElement>(
+      "[data-profile-recovery]",
+    );
+    expect(recovery?.textContent).toBe(m.profile_switch_recovery());
+    recovery?.click();
+    expect(harnessed.switchRequests).toEqual(["Imported/Research.md"]);
     expect(link?.title).toBe("");
   });
 

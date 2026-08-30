@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 
+import * as m from "@/lib/i18n/generated/messages";
 import type { Citation } from "@/services/citation-index/service";
 import {
   ALPHA,
@@ -84,6 +85,7 @@ interface Harness extends AsyncDisposable {
   popoverRequests: CitationHoverRequest[];
   /** Every note the rendered citations of this harness asked to open. */
   opened: [citekey: string, pane: unknown][];
+  switchRequests: string[];
 }
 
 async function makeHarness({
@@ -116,6 +118,7 @@ async function makeHarness({
   const views: MarkdownView[] = [];
   const popoverRequests: CitationHoverRequest[] = [];
   const opened: [citekey: string, pane: unknown][] = [];
+  const switchRequests: string[] = [];
   const occurrences = literalOccurrences(body);
   let process: MarkdownPostProcessor | undefined;
 
@@ -175,6 +178,8 @@ async function makeHarness({
         vault: { getFileByPath: (path: string) => ({ path }) as TFile },
         workspace: {
           getLeavesOfType: () => views.map((view) => ({ view })),
+          trigger: (_name: string, request: { path: string }) =>
+            switchRequests.push(request.path),
         },
       },
       plugin: {
@@ -224,6 +229,7 @@ async function makeHarness({
     views,
     popoverRequests,
     opened,
+    switchRequests,
     [Symbol.asyncDispose]: () => resources.disposeAsync(),
   };
 }
@@ -300,7 +306,18 @@ describe("CitekeyReading", () => {
     );
     expect(citation?.textContent).toBe("@alpha");
     expect(citation?.getAttribute("aria-label")).toContain("deleted-profile");
-    expect(citation?.getAttribute("aria-label")).toContain("Re-stamp the note");
+    expect(citation?.getAttribute("aria-label")).toBe(
+      m.notice_imported_note_profile_unknown({
+        stamp: "deleted-profile",
+        target: "note.md",
+      }),
+    );
+    const recovery = el.querySelector<HTMLButtonElement>(
+      "[data-profile-recovery]",
+    );
+    expect(recovery?.textContent).toBe(m.profile_switch_recovery());
+    recovery?.click();
+    expect(harnessed.switchRequests).toEqual(["note.md"]);
     expect(citation?.title).toBe("");
   });
 

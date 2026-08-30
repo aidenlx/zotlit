@@ -32,7 +32,7 @@ import { switchNoteProfileInteractively } from "./switch-view";
 import type { InteractiveProfileSwitchDeps } from "./switch-view";
 import type { BatchUpdateResult } from "./update-batch";
 import {
-  noteOperationDiagnosticNotice,
+  noteOperationDiagnosticContent,
   updateNoteToast,
 } from "./update-single";
 
@@ -63,6 +63,16 @@ export function addNoteFeatureActions(
     }),
   );
 
+  plugin.registerEvent(
+    deps.app.workspace.on("zotlit:switch-profile", ({ path }) => {
+      const file = deps.app.vault.getFileByPath(path);
+      if (!file) return;
+      const cache = deps.app.metadataCache.getFileCache(file);
+      if (itemKeyFromFrontmatter(cache) || noteKeyFromFrontmatter(cache))
+        void switchNoteProfileInteractively(deps, file);
+    }),
+  );
+
   addUpdateCommand(plugin, deps, {
     id: "update-note",
     name: m.command_update_note_name(),
@@ -80,12 +90,7 @@ export function addNoteFeatureActions(
     checkCallback(checking) {
       const file = deps.app.workspace.getActiveFile();
       if (!file || !isLiteratureNote(file, deps.app)) return false;
-      const indexedKey = itemKeyFromFrontmatter(
-        deps.app.metadataCache.getFileCache(file),
-      );
-      if (!indexedKey) return false;
-      if (!checking)
-        void switchNoteProfileInteractively(deps, file, indexedKey);
+      if (!checking) void switchNoteProfileInteractively(deps, file);
       return true;
     },
   });
@@ -134,7 +139,7 @@ export function addNoteFeatureActions(
     callback() {
       void toast.promise(
         deps.batchImport.runBatchImportAll(),
-        batchImportAllToast(),
+        batchImportAllToast({ app: deps.app }),
       );
     },
   });
@@ -232,14 +237,14 @@ async function reimportNote(
 
   await toast.promise(
     deps.batchImport.reimportNoteByKey(noteKey, file),
-    reimportNoteToast(),
+    reimportNoteToast({ app: deps.app, path: file.path }),
   );
 }
 
-function reimportNoteToast(): {
+function reimportNoteToast(options: { app: App; path: string }): {
   loading: string;
   success: (result: ReimportResult) => string | undefined;
-  error: (_msg: string, e: unknown) => string;
+  error: (_msg: string, e: unknown) => string | DocumentFragment;
 } {
   return {
     loading: m.notice_reimporting_note(),
@@ -247,7 +252,7 @@ function reimportNoteToast(): {
     error: (_msg, e) =>
       e instanceof InertTemplateError
         ? e.message
-        : (importedNoteProfileErrorNotice(e) ??
+        : (importedNoteProfileErrorNotice(e, options) ??
           m.notice_reimport_note_failed()),
   };
 }
@@ -298,7 +303,7 @@ function handleUpdateNote(
       indexedKey: opts.itemKey,
       scope: opts.scope,
     }),
-    updateNoteToast(opts.scope),
+    updateNoteToast(opts.scope, { app: deps.app }),
   );
 }
 
@@ -321,7 +326,7 @@ async function handleOverwriteNote(
     loading: m.notice_overwriting_note(),
     success: (result) =>
       result.diagnostic
-        ? noteOperationDiagnosticNotice(result.diagnostic)
+        ? noteOperationDiagnosticContent(deps.app, result.diagnostic)
         : m.notice_overwrote_note(),
     error: (_msg, e) =>
       e instanceof InertTemplateError
@@ -336,7 +341,7 @@ function handleChildImport(
 ): Promise<void> {
   return toast.promise(
     deps.batchImport.runChildImportByKey(itemKey),
-    childImportToast(),
+    childImportToast({ app: deps.app }),
   );
 }
 

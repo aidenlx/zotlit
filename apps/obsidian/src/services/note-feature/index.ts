@@ -1,4 +1,5 @@
 export { type NoteFeatureDeps } from "./context";
+export { noteOperationDiagnosticContent } from "./update-single";
 export {
   confirmProfileSwitch,
   switchNoteProfileInteractively,

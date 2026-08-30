@@ -57,6 +57,11 @@ export function getIcon(name: IconName): SVGSVGElement | null {
   return svg;
 }
 
+export function setIcon(el: HTMLElement, name: IconName): void {
+  const icon = getIcon(name);
+  el.replaceChildren(...(icon ? [icon] : []));
+}
+
 /** Stand-in for Obsidian's delegated tooltip attributes. */
 export function setTooltip(el: HTMLElement, tooltip: string): void {
   el.setAttribute("aria-label", tooltip);
@@ -902,13 +907,18 @@ export class ButtonComponent {
 }
 
 export class ConfirmationButton extends ButtonComponent {
+  setDisabled(_disabled: boolean): this {
+    return this;
+  }
   setDestructive(): this {
     return this;
   }
 }
 
 export class ConfirmationModal {
-  readonly contentEl = { addClass: (_className: string) => {} };
+  readonly contentEl = globalThis.document
+    ? document.createElement("div")
+    : containerElStub();
   #closed: (() => void) | undefined;
   constructor(_app: App) {}
   setTitle(_title: string): this {

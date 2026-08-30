@@ -5,6 +5,8 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { ambiguousCandidates } from "@/services/citation-index/__fixtures__/ambiguous-candidates";
 import type {
@@ -41,6 +43,7 @@ const actions: ReferenceActions = {
   onOpenAttachment: () => undefined,
   onOpenEngineSettings: () => undefined,
   onChangeStyle: vi.fn(),
+  onSwitchProfile: vi.fn(),
   onDismissEngineHint: () => undefined,
   onCopyBibliography: vi.fn(() => Promise.resolve()),
 };
@@ -513,11 +516,7 @@ describe("References banners", () => {
         documentPresentationError: {
           kind: "unusable",
           property: "profile",
-          diagnostic: {
-            code: "unknown-literature-note-profile",
-            hint: "Re-stamp the note or recreate the Profile with the same ID.",
-            stamp: "deleted-profile",
-          },
+          diagnostic: unknownProfileDiagnostic("deleted-profile"),
           target: "Imported/Research.md",
         },
       } satisfies Partial<ReferencesState>,
@@ -738,4 +737,26 @@ describe("References copy action", () => {
       expect(actions.onCopyBibliography).not.toHaveBeenCalled();
     },
   );
+});
+
+it("opens Profile recovery for the note named by the References diagnostic", async () => {
+  const container = await render(
+    [],
+    { kind: "minimal" },
+    {
+      documentPresentationError: {
+        kind: "unusable",
+        property: "profile",
+        diagnostic: unknownProfileDiagnostic("Missing (Qw8Er5Ty2Ui9)"),
+        target: "Imported/Orphan.md",
+      },
+    },
+  );
+  const button = container.querySelector<HTMLButtonElement>(
+    "[data-profile-recovery]",
+  );
+  expect(button).not.toBeNull();
+  expect(button?.textContent).toBe(m.profile_switch_recovery());
+  button?.click();
+  expect(actions.onSwitchProfile).toHaveBeenCalledWith("Imported/Orphan.md");
 });

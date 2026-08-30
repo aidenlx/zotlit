@@ -251,7 +251,8 @@ describe("documentPresentation", () => {
       property: "profile",
       diagnostic: {
         code: "unknown-literature-note-profile",
-        hint: "Re-stamp the note or recreate the Profile with the same ID.",
+        hint: "Use Switch profile... to choose an available Profile for this note.",
+        recovery: { action: "switch-profile" },
         stamp: "deleted-profile",
       },
       target: FILE.path,
@@ -275,7 +276,8 @@ describe("documentPresentation", () => {
       property: "profile",
       diagnostic: {
         code: "unknown-literature-note-profile",
-        hint: "Re-stamp the note or recreate the Profile with the same ID.",
+        hint: "Use Switch profile... to choose an available Profile for this note.",
+        recovery: { action: "switch-profile" },
         stamp: "default",
       },
       target: FILE.path,

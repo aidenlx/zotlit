@@ -5,6 +5,7 @@ import type { Item, ItemRef } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { profileRecoveryNotice } from "@/lib/profile-recovery";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
 import type { DatabaseService } from "@/services/database/service";
@@ -79,18 +80,25 @@ export async function updateNote(
       scope,
       profile,
     }),
-    updateNoteToast(scope),
+    updateNoteToast(scope, { app: deps.app }),
   );
 }
 
 /** Toast copy for a single-note update, framed by `scope`. A `metadata` update
  *  never touches the body, so it reports as "metadata updated" rather than the
  *  full update's region-aware messages. */
-export function updateNoteToast(scope: UpdateScope): {
+export function updateNoteToast(
+  scope: UpdateScope,
+  options: { app?: App } = {},
+): {
   loading: string;
-  success: (result: UpdateResult) => string;
+  success: (result: UpdateResult) => string | DocumentFragment;
   error: (_msg: string, e: unknown) => string;
 } {
+  const diagnosticContent = (diagnostic: NoteOperationDiagnostic) =>
+    options.app
+      ? noteOperationDiagnosticContent(options.app, diagnostic)
+      : noteOperationDiagnosticNotice(diagnostic);
   const error = (_msg: string, e: unknown): string =>
     e instanceof InertTemplateError ? e.message : m.notice_update_note_failed();
   if (scope === "metadata") {
@@ -98,7 +106,7 @@ export function updateNoteToast(scope: UpdateScope): {
       loading: m.notice_updating_note_metadata(),
       success: (result) =>
         result.diagnostic
-          ? noteOperationDiagnosticNotice(result.diagnostic)
+          ? diagnosticContent(result.diagnostic)
           : m.notice_updated_note_metadata(),
       error,
     };
@@ -107,7 +115,7 @@ export function updateNoteToast(scope: UpdateScope): {
     loading: m.notice_updating_note(),
     success: (result) =>
       result.diagnostic
-        ? noteOperationDiagnosticNotice(result.diagnostic)
+        ? diagnosticContent(result.diagnostic)
         : result.bodyUpdated
           ? m.notice_updated_note()
           : result.noManagedBlock
@@ -126,7 +134,10 @@ export async function createAndOpen(
   const [item] = getItemsByID(deps.db.client, [ref.itemID]);
   if (!item) return;
 
-  const file = await createNoteWithToast(deps.noteFeature, item, profile);
+  const file = await createNoteWithToast(deps.noteFeature, item, {
+    profile,
+    app: deps.app,
+  });
   if (!file) return;
   await deps.app.workspace.openLinkText(file.path, "", false, {
     active: true,
@@ -141,21 +152,28 @@ export async function createAndOpen(
 export async function createNoteWithToast(
   noteFeature: Pick<NoteFeature, "createNote">,
   item: Item,
-  profile?: ProfileSelector,
+  options: { profile?: ProfileSelector; app?: App } = {},
 ): Promise<TFile | null> {
-  return createNoteTaskWithToast(() =>
-    noteFeature.createNote(item, { profile }),
+  return createNoteTaskWithToast(
+    () => noteFeature.createNote(item, { profile: options.profile }),
+    { app: options.app },
   );
 }
 
 /** Start the create notice only after the user's Profile decision has settled. */
 export async function createNoteTaskWithToast(
   create: () => Promise<CreateNoteResult>,
+  options: { app?: App } = {},
 ): Promise<TFile | null> {
   try {
     const result = await toast.promise(create(), {
       loading: m.notice_creating_note(),
-      success: createNoteNotice,
+      success: (result) =>
+        result.outcome === "refused" &&
+        result.diagnostic.code === "unknown-literature-note-profile" &&
+        options.app
+          ? profileRecoveryNotice(options.app, result.diagnostic)
+          : createNoteNotice(result),
       error: (_msg, e) =>
         e instanceof EmptyFilenameError || e instanceof InertTemplateError
           ? e.message
@@ -210,6 +228,16 @@ export function noteOperationDiagnosticNotice(
           .join(" "),
       });
   }
+}
+
+/** Actionable rendering stays at the UI seam; core errors keep plain text. */
+export function noteOperationDiagnosticContent(
+  app: App,
+  diagnostic: NoteOperationDiagnostic,
+): string | DocumentFragment {
+  return diagnostic.code === "unknown-literature-note-profile"
+    ? profileRecoveryNotice(app, diagnostic)
+    : noteOperationDiagnosticNotice(diagnostic);
 }
 
 export function duplicateLiteratureNoteWarning(

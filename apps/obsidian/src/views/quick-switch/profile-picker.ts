@@ -74,21 +74,9 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
     super(app);
     this.contentEl.addClass("zt-root");
     this.#choices = options.previews
-      ? options.previews.map((preview) => ({
-          id: preview.selector,
-          label: preview.label ?? m.settings_profile_default_name(),
-          detail: m.settings_profile_display({
-            folder: preview.folder || m.modal_profile_root_folder(),
-            style:
-              options.styles?.find(({ id }) => id === preview.citationStyle)
-                ?.title ??
-              preview.citationStyle ??
-              m.settings_citation_references_style_default(),
-            document: preview.document ?? m.settings_profile_document_builtin(),
-          }),
-          path: preview.path,
-          unavailable: preview.unavailable,
-        }))
+      ? options.previews.map((preview) =>
+          profilePreviewChoice(preview, { styles: options.styles }),
+        )
       : [
           { id: DEFAULT_PROFILE, label: m.settings_profile_default_name() },
           ...profiles.map(({ id, label, document, bindings }) => ({
@@ -135,42 +123,13 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
   }
 
   override renderSuggestion(choice: ProfilePickerRow, el: HTMLElement): void {
-    const label = el.createDiv({
-      text: choice.label,
-      cls: "zt:flex zt:items-center zt:gap-2",
-    });
     if ("action" in choice) {
+      el.createDiv({ text: choice.label });
       el.createDiv({
         text: m.modal_profile_new_stub(),
         cls: "suggestion-note",
       });
-      return;
-    }
-    if (choice.preselected)
-      label.createSpan({
-        text: choice.current
-          ? m.modal_profile_current()
-          : m.modal_profile_preselected(),
-        cls: PROFILE_BADGE_CLASS,
-      });
-    const source =
-      choice.source === "last-used"
-        ? m.modal_profile_source_last_used()
-        : choice.source === "headless"
-          ? m.modal_profile_source_companion()
-          : undefined;
-    if (source) label.createSpan({ text: source, cls: PROFILE_BADGE_CLASS });
-    if (choice.detail)
-      el.createDiv({ text: choice.detail, cls: "suggestion-note" });
-    if (choice.path)
-      el.createDiv({ text: choice.path, cls: "suggestion-note zt:font-mono" });
-    if (choice.unavailable) {
-      el.setAttribute("aria-disabled", "true");
-      el.createDiv({
-        text: choice.unavailable,
-        cls: "suggestion-note zt:text-destructive",
-      });
-    }
+    } else renderProfileChoice(choice, el);
   }
 
   override onChooseSuggestion(choice: ProfilePickerRow): void {
@@ -184,6 +143,65 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
     // Obsidian closes the modal before delivering the selected suggestion.
     queueMicrotask(() => {
       if (!this.#settled) this.#resolve(undefined);
+    });
+  }
+}
+
+/** The same effective Profile details feed picker and embedded target rows. */
+export function profilePreviewChoice(
+  preview: ProfilePreview,
+  options: { styles?: readonly InstalledCslStyle[] } = {},
+): LiteratureNoteProfileChoice {
+  return {
+    id: preview.selector,
+    label: preview.label ?? m.settings_profile_default_name(),
+    detail: m.settings_profile_display({
+      folder: preview.folder || m.modal_profile_root_folder(),
+      style:
+        options.styles?.find(({ id }) => id === preview.citationStyle)?.title ??
+        preview.citationStyle ??
+        m.settings_citation_references_style_default(),
+      document: preview.document ?? m.settings_profile_document_builtin(),
+    }),
+    path: preview.path,
+    unavailable: preview.unavailable,
+  };
+}
+
+export function renderProfileChoice(
+  choice: LiteratureNoteProfileChoice,
+  el: HTMLElement,
+): void {
+  const label = el.createDiv({
+    text: choice.label,
+    cls: "zt:flex zt:items-center zt:gap-2",
+  });
+  if (choice.preselected)
+    label.createSpan({
+      text: choice.current
+        ? m.modal_profile_current()
+        : m.modal_profile_preselected(),
+      cls: PROFILE_BADGE_CLASS,
+    });
+  const source =
+    choice.source === "last-used"
+      ? m.modal_profile_source_last_used()
+      : choice.source === "headless"
+        ? m.modal_profile_source_companion()
+        : undefined;
+  if (source) label.createSpan({ text: source, cls: PROFILE_BADGE_CLASS });
+  if (choice.detail)
+    el.createDiv({ text: choice.detail, cls: "suggestion-note" });
+  if (choice.path)
+    el.createDiv({
+      text: choice.path,
+      cls: "suggestion-note zt:font-mono zt:whitespace-pre-line",
+    });
+  if (choice.unavailable) {
+    el.setAttribute("aria-disabled", "true");
+    el.createDiv({
+      text: choice.unavailable,
+      cls: "suggestion-note zt:text-destructive",
     });
   }
 }

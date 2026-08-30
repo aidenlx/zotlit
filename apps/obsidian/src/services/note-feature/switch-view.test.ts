@@ -40,7 +40,7 @@ it("shows next-update consequences, real Imported Note count and both unchecked 
     importedCount: 3,
   });
   expect(dialog.content).toHaveBeenCalledWith(
-    m.modal_profile_switch_desc({ current: "Books", requested: "Papers" }),
+    `${m.modal_profile_switch_desc({ current: "Books", requested: "Papers" })} ${m.modal_profile_switch_effects()}`,
   );
   expect(dialog.checkbox.mock.calls.map(([label]) => label)).toEqual([
     m.modal_profile_switch_move({ folder: "Papers/" }),
@@ -70,6 +70,41 @@ it("omits the move checkbox for the same folder and cancels without consent", as
   (dialog.opened.mock.instances[0] as ConfirmationModal).close();
   await expect(decision).resolves.toEqual({
     confirmed: false,
+    move: false,
+    importedNotes: false,
+  });
+});
+
+it("states next-reimport consequences for Imported Note recovery without a family checkbox", async () => {
+  using dialog = observeDialog();
+  const decision = confirmProfileSwitch({} as App, {
+    current: "Missing",
+    requested: "Papers",
+    importedCount: 0,
+    imported: true,
+  });
+  expect(dialog.content).toHaveBeenCalledWith(
+    `${m.modal_profile_switch_desc({ current: "Missing", requested: "Papers" })} ${m.modal_profile_switch_imported_effects()}`,
+  );
+  expect(dialog.checkbox).not.toHaveBeenCalled();
+  (dialog.opened.mock.instances[0] as ConfirmationModal).close();
+  await expect(decision).resolves.toMatchObject({ confirmed: false });
+});
+
+it("states the unavailable Imported Note lookup and offers only the Literature Note switch", async () => {
+  using dialog = observeDialog();
+  const decision = confirmProfileSwitch({} as App, {
+    current: "Missing",
+    requested: "Default",
+    importedCount: null,
+  });
+  expect(dialog.content).toHaveBeenCalledWith(
+    `${m.modal_profile_switch_desc({ current: "Missing", requested: "Default" })} ${m.modal_profile_switch_effects()}\n\n${m.modal_profile_switch_imported_unavailable()}`,
+  );
+  expect(dialog.checkbox).not.toHaveBeenCalled();
+  dialog.click.mock.calls[0]![0]({} as MouseEvent);
+  await expect(decision).resolves.toEqual({
+    confirmed: true,
     move: false,
     importedNotes: false,
   });
@@ -105,6 +140,7 @@ it("marks the current Profile and applies the single dialog's move and Imported 
       zoteroPref: { dataDir: "" },
       noteFeature: {
         prepareProfileSwitch: async () => ({
+          imported: false,
           current: { selector: current, label: "Books" },
           profiles,
           importedNotes: [imported],
@@ -113,7 +149,6 @@ it("marks the current Profile and applies the single dialog's move and Imported 
       },
     },
     file,
-    "ABC12345",
   );
   await vi.waitFor(() => expect(dialog.opened).toHaveBeenCalledOnce());
   expect(chooseLiteratureNoteProfile).toHaveBeenCalledWith(expect.anything(), {

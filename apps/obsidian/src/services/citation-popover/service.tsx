@@ -2,6 +2,7 @@ import type { App } from "obsidian";
 // The Citation Popover: the entries one hovered citation shows, read for the document it is written in.
 
 import { getLogger } from "@/lib/log";
+import { requestProfileSwitch } from "@/lib/profile-recovery";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type { CitationIndex } from "@/services/citation-index/service";
@@ -143,6 +144,7 @@ async function fill(
   const actions = createCitationPopoverActions({
     open: request.open,
     hide: () => popover.hide(),
+    switchProfile: (path) => requestProfileSwitch(deps.app, path),
   });
   const shown = popover.render(
     <CitationPopoverContent

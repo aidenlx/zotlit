@@ -42,8 +42,8 @@
   "notice_created_note": "Literature note created.",
   "notice_create_note_exists": "A literature note already exists: {path}.",
   "notice_create_note_duplicates": "Multiple literature notes use this Zotero key: {paths}; resolve the duplicates before you create another note.",
-  "notice_literature_note_profile_unknown": "This literature note uses an unknown profile: {stamp}. Re-stamp the note or recreate the profile with the same ID.",
-  "notice_imported_note_profile_unknown": "Profile {stamp} is unavailable for Imported Note {target}. Re-stamp the note or recreate the Profile with the same ID.",
+  "notice_literature_note_profile_unknown": "Use Switch profile… to replace the unavailable profile “{stamp}” on this literature note.",
+  "notice_imported_note_profile_unknown": "Use Switch profile… to replace the unavailable profile “{stamp}” on imported note “{target}”.",
   "notice_literature_note_profile_conflict": "This literature note uses a different profile. Keep its current profile, or switch it before you update.",
   "notice_literature_note_template_missing": "The profile document {document} is missing. Restore it in the template folder or clear the profile document reference.",
   "notice_literature_note_template_conversion_required": "Convert the legacy literature note templates before you use an added profile.",
@@ -339,7 +339,7 @@
   "settings_profile_duplicate": "Duplicate",
   "settings_profile_copy_name": "{label} copy",
   "settings_profile_duplicate_id": "These files have the same profile ID: {paths}. Keep one file or give the copy a new ID.",
-  "settings_profile_delete_move_desc": "Move this profile’s notes to “{label}”, then trash its profile document.",
+  "settings_profile_delete_move_desc": "The profile document goes to Obsidian’s configured trash after all affected notes have switched.",
   "settings_profile_citation_style_none": "No citation style",
   "settings_profile_id_invalid": "The profile ID must contain twelve letters or digits.",
   "notice_profile_action_failed": "Could not change the profile.",
@@ -378,7 +378,7 @@
   "notice_profile_document_customize_failed": "Could not create the template document.",
   "notice_profile_document_restore_failed": "Could not restore the built-in template.",
   "settings_profile_delete_confirm_title": "Delete “{label}” profile?",
-  "settings_profile_delete_confirm_body": "Literature notes stamped with this profile cannot update until you re-stamp them or recreate this profile with the same ID.",
+  "settings_profile_delete_confirm_body": "The profile document goes to Obsidian’s configured trash.",
   "settings_profile_delete": "Delete profile",
   "modal_profile_choose_placeholder": "Choose a profile…",
   "modal_profile_preselected": "Selected",
@@ -388,8 +388,45 @@
   "modal_profile_new": "New profile…",
   "modal_profile_new_stub": "Create profiles in ZotLit settings.",
   "modal_profile_root_folder": "Vault folder",
+  "profile_switch_recovery": "Switch profile…",
+  "settings_profile_delete_unused": "No notes use it.",
+  "settings_profile_delete_literature_count": [
+    {
+      "declarations": ["input count"],
+      "selectors": ["count"],
+      "match": {
+        "count=1": "1 literature note uses this profile.",
+        "count=*": "{count} literature notes use this profile."
+      }
+    }
+  ],
+  "settings_profile_delete_imported_count": [
+    {
+      "declarations": ["input count"],
+      "selectors": ["count"],
+      "match": {
+        "count=1": "1 imported note uses this profile.",
+        "count=*": "{count} imported notes use this profile."
+      }
+    }
+  ],
+  "settings_profile_delete_move_confirm": [
+    {
+      "declarations": ["input count"],
+      "selectors": ["count"],
+      "match": {
+        "count=1": "Delete and move 1 note",
+        "count=*": "Delete and move {count} notes"
+      }
+    }
+  ],
+  "settings_profile_delete_move_files": "Move files to {folder}",
+  "settings_profile_delete_target": "Move notes to profile",
+  "modal_profile_switch_effects": "The managed block and managed frontmatter will render from the new template on the next update. Text outside the managed region stays unchanged.",
+  "modal_profile_switch_imported_unavailable": "Imported notes could not be checked. Only this literature note will switch.",
+  "modal_profile_switch_imported_effects": "The imported note will use the new profile the next time you update it from Zotero.",
   "modal_profile_switch_title": "Switch to “{label}” profile?",
-  "modal_profile_switch_desc": "This note uses “{current}”. Switch it to “{requested}”. The managed block and managed frontmatter will render from the new template on the next update. Text outside the managed region stays unchanged.",
+  "modal_profile_switch_desc": "This note uses “{current}”. Switch it to “{requested}”.",
   "modal_profile_switch_confirm": "Switch to “{label}”",
   "modal_profile_switch_move": "Move to {folder}",
   "notice_profile_switching": "Switching literature note profile…",

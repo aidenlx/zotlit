@@ -240,8 +240,9 @@ async function doImportNote(
     const resolved = ctx.profile.profileOf(source);
     if (!resolved.ok) {
       throw new NoteImportProfileError(resolved.stamped.stamp, {
-        path: existing?.path,
+        path: source?.path,
         indexedKey: note.indexedKey,
+        imported: existing !== undefined,
       });
     }
     const run: RunContext = {
@@ -494,17 +495,25 @@ function parentLiteratureNote(
 
 export class NoteImportProfileError extends Error {
   readonly diagnostic: UnknownProfileDiagnostic;
+  readonly imported: boolean;
 
-  constructor(stamp: string, context: { path?: string; indexedKey?: string }) {
-    const diagnostic = unknownProfileDiagnostic(stamp, context);
+  constructor(
+    stamp: string,
+    context: { path?: string; indexedKey?: string; imported?: boolean },
+  ) {
+    const { imported = true, ...diagnosticContext } = context;
+    const diagnostic = unknownProfileDiagnostic(stamp, diagnosticContext);
     super(
-      m.notice_imported_note_profile_unknown({
-        stamp,
-        target: context.path ?? context.indexedKey ?? stamp,
-      }),
+      imported
+        ? m.notice_imported_note_profile_unknown({
+            stamp,
+            target: context.path ?? context.indexedKey ?? stamp,
+          })
+        : m.notice_literature_note_profile_unknown({ stamp }),
     );
     this.name = "NoteImportProfileError";
     this.diagnostic = diagnostic;
+    this.imported = imported;
   }
 }
 

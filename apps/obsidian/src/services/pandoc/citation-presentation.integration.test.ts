@@ -197,7 +197,7 @@ describe("document Citation Presentation", { timeout: TIMEOUT }, () => {
     const sidebar = await vault.minimalSidebarText();
     expect(sidebar).toContain(m.references_document_profile_failed_title());
     expect(sidebar).toContain("deleted-profile");
-    expect(sidebar).toContain("Re-stamp the note");
+    expect(sidebar).toContain(m.profile_switch_recovery());
     await expect(vault.exportNote()).resolves.toMatchObject({ html: null });
   });
 

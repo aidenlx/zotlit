@@ -7,8 +7,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { SettingsService } from "@/services/settings/service";
-import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
 import { referencesStyleDefinition } from "./citations";
 import type {
@@ -17,6 +17,11 @@ import type {
   SettingTabContext,
 } from "./context";
 import { CreateProfileModal } from "./create-profile-modal";
+import { confirmProfileDeletion } from "./delete-profile-modal";
+export {
+  confirmProfileDeletion,
+  type ProfileDeletionConsent,
+} from "./delete-profile-modal";
 import { defaultProfileBindingPlaceholder } from "./placeholder";
 
 const logger = getLogger(["setting-tab", "profiles"]);
@@ -142,26 +147,17 @@ async function deleteProfile(
   ctx: SettingTabContext,
   id: ProfileId,
 ): Promise<void> {
-  const source = ctx.profile.profiles.find((profile) => profile.id === id);
-  if (!source) return;
-  const target = await chooseLiteratureNoteProfile(
-    ctx.app,
-    ctx.profile.profiles.filter((profile) => profile.id !== id),
-  );
-  if (!target) return;
-  if (
-    !(await confirm(
-      {
-        title: m.settings_profile_delete_confirm_title({ label: source.label }),
-        content: m.settings_profile_delete_move_desc({ label: target.label }),
-        action: m.settings_profile_delete(),
-        destructive: true,
-      },
-      ctx.app,
-    ))
-  )
-    return;
-  await runAction(() => ctx.profile.delete(id, target.id), ctx);
+  await runAction(async () => {
+    const plan = await ctx.profile.prepareDelete(id);
+    const styles =
+      plan.literatureNotes.length + plan.importedNotes.length &&
+      ctx.zoteroPref.dataDir
+        ? await listInstalledStyles(ctx.zoteroPref.dataDir)
+        : [];
+    const consent = await confirmProfileDeletion(ctx.app, { plan, styles });
+    if (consent)
+      await ctx.profile.delete(id, consent.target, { move: consent.move });
+  }, ctx);
 }
 
 function defaultDocumentItem(

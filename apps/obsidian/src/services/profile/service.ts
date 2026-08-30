@@ -13,7 +13,11 @@ import {
 import type { LiteratureNoteTemplateManifest } from "@zotlit/templates/facade";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
-import { ensureParentFolder } from "@/lib/ensure-folder";
+import {
+  ensureParentFolder,
+  joinFolderPath,
+  normalizeFolderPath,
+} from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import {
@@ -72,6 +76,24 @@ export interface ProfileDiagnostic {
   readonly message: string;
   readonly paths?: readonly string[];
   readonly reason?: "invalid-profile-id";
+}
+
+export interface ProfileDeletionTarget {
+  profile: ResolvedProfile;
+  files: { file: TFile; path: string }[];
+}
+
+export interface ProfileDeletionPlan {
+  source: LiteratureNoteProfile;
+  literatureNotes: TFile[];
+  importedNotes: TFile[];
+  targets: ProfileDeletionTarget[];
+}
+
+export interface ProfileDeletionResult {
+  literatureNotes: number;
+  importedNotes: number;
+  movedFiles: number;
 }
 
 interface ProfileServiceDeps {
@@ -268,28 +290,91 @@ export class ProfileService extends Service {
     await this.#settle();
   }
 
-  async delete(id: ProfileId, target: ProfileSelector): Promise<void> {
+  async prepareDelete(id: ProfileId): Promise<ProfileDeletionPlan> {
     await this.ready;
-    if (id === target)
-      throw new Error("Select another Profile before deleting");
     const source = this.#profiles.find((profile) => profile.id === id);
-    const destination = this.resolveProfile(target);
-    if (!source || !destination)
-      throw new Error("The source or destination Profile is unavailable");
-    const { app } = this.#deps;
+    if (!source) throw new Error("The Profile is unavailable");
     await this.#deps.noteIndex.whenIndexed();
     const { literatureNotes, importedNotes } =
       this.#deps.noteIndex.getNotesByProfile(id);
-    for (const file of [...literatureNotes, ...importedNotes]) {
+    const selectors: ProfileSelector[] = [
+      DEFAULT_PROFILE,
+      ...this.#profiles
+        .filter((profile) => profile.id !== id)
+        .map(({ id }) => id),
+    ];
+    const targets = selectors.flatMap((selector) => {
+      const profile = this.resolveProfile(selector);
+      if (!profile) return [];
+      const files = [
+        ...literatureNotes.map((file) => ({
+          file,
+          path: joinFolderPath(
+            normalizeFolderPath(profile.bindings["note.literature-folder"]),
+            file.name,
+          ),
+        })),
+        ...importedNotes.map((file) => ({
+          file,
+          path: joinFolderPath(
+            normalizeFolderPath(profile.bindings["note.import-folder"]),
+            file.name,
+          ),
+        })),
+      ];
+      return [{ profile, files }];
+    });
+    logger.debug("Prepared Profile deletion", {
+      id,
+      literatureNotes: literatureNotes.length,
+      importedNotes: importedNotes.length,
+    });
+    return { source, literatureNotes, importedNotes, targets };
+  }
+
+  async delete(
+    id: ProfileId,
+    target: ProfileSelector,
+    options: { move?: boolean } = {},
+  ): Promise<ProfileDeletionResult> {
+    const plan = await this.prepareDelete(id);
+    const destination = plan.targets.find(
+      ({ profile }) => profile.selector === target,
+    );
+    if (
+      !destination &&
+      (plan.literatureNotes.length || plan.importedNotes.length)
+    )
+      throw new Error("Select an available target Profile before deleting");
+    const { app } = this.#deps;
+    let movedFiles = 0;
+    const stamp = destination?.profile.stamp;
+    for (const { file, path } of destination?.files ?? []) {
+      if (options.move && path !== file.path) {
+        await ensureParentFolder(app, path);
+        await app.fileManager.renameFile(file, path);
+        movedFiles++;
+      }
       await app.fileManager.processFrontMatter(file, (frontmatter) => {
-        if (destination.stamp === undefined)
+        if (stamp === undefined)
           delete frontmatter[FIELD_LITERATURE_NOTE_PROFILE];
-        else frontmatter[FIELD_LITERATURE_NOTE_PROFILE] = destination.stamp;
+        else frontmatter[FIELD_LITERATURE_NOTE_PROFILE] = stamp;
       });
     }
-    const file = app.vault.getFileByPath(source.path);
+    const file = app.vault.getFileByPath(plan.source.path);
     if (file) await app.fileManager.trashFile(file);
     await this.#settle();
+    const result = {
+      literatureNotes: plan.literatureNotes.length,
+      importedNotes: plan.importedNotes.length,
+      movedFiles,
+    };
+    logger.debug("Deleted Profile after moving its notes", {
+      id,
+      target,
+      ...result,
+    });
+    return result;
   }
 
   async #settle(): Promise<void> {

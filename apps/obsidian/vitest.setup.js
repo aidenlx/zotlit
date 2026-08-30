@@ -139,3 +139,9 @@ if (typeof Element !== "undefined") {
     while (this.firstChild) this.removeChild(this.firstChild);
   };
 }
+
+if (typeof HTMLElement !== "undefined") {
+  HTMLElement.prototype.toggle ??= function (visible) {
+    this.style.display = visible ? "" : "none";
+  };
+}

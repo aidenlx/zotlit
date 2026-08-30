@@ -164,7 +164,7 @@ export class AnnotationView extends ItemView {
       onLinkItem: () => this.#linkItem(),
       onUnlinkItem: () => this.#setFollowMode("note"),
       onDragStart: createDragInsertHandler({
-        workspace: this.#deps.app.workspace,
+        app: this.#deps.app,
         noteFeature: this.#deps.noteFeature,
         notify: (message) => void new BaseNotice(message),
         getImportHandle: () => this.#importHandle,
