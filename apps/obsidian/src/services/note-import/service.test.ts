@@ -478,10 +478,16 @@ describe("createNoteImporter", () => {
     expect(renderAnnotations).not.toHaveBeenCalled();
   });
 
-  it("passes the colored highlight setting to the note parser", async () => {
+  it("passes the colored highlight toggle and mappings to the note parser", async () => {
     const { app } = makeApp();
+    const mappings = { blue: { output: "custom", customEmoji: "👩‍🔬" } } as const;
     const batch = await makeService(app).prepare(
-      makePrepare({ settings: { "note.import-colored-highlights": true } }),
+      makePrepare({
+        settings: {
+          "note.import-colored-highlights": true,
+          "note.import-highlight-mappings": mappings,
+        },
+      }),
     );
 
     batch.resolveChildNote(makeNote()).noteLink();
@@ -490,6 +496,9 @@ describe("createNoteImporter", () => {
     expect(
       vi.mocked(parseNote).mock.calls[0]![2].useColoredHighlightSyntax,
     ).toBe(true);
+    expect(vi.mocked(parseNote).mock.calls[0]![2].highlightMappings).toEqual(
+      mappings,
+    );
   });
 
   it("still writes a note whose embedded images are all blocked, as file:// embeds", async () => {

@@ -690,6 +690,7 @@ export class Setting {
 
   name = "";
   desc = "";
+  errorMessage: string | null = null;
 
   constructor(readonly containerEl: HTMLElement) {
     const rows = settingRows.get(containerEl) ?? [];
@@ -704,6 +705,11 @@ export class Setting {
 
   setDesc(desc: string): this {
     this.desc = desc;
+    return this;
+  }
+
+  setErrorMessage(message: string | null): this {
+    this.errorMessage = message;
     return this;
   }
 

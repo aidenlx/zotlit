@@ -396,6 +396,7 @@ async function writeNote(
         baseAttachmentPath: ctx.zoteroPref.baseAttachmentPath,
       },
       useColoredHighlightSyntax: run.settings["note.import-colored-highlights"],
+      highlightMappings: run.settings["note.import-highlight-mappings"],
       attachmentImport: batch,
       renderAnnotationParagraph,
     });
