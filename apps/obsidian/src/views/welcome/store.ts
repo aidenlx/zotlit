@@ -3,16 +3,21 @@ import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
+import type { Settings } from "@/services/settings/schema";
+
 import type { ConnectionReadout } from "./connection";
 
 export interface WelcomeState {
-  /** `"upgraded"` renders the Migration Prompt banner and hides the footer migration link; `"fresh"` is the plain onboarding state. */
+  /** Upgraded mode changes the Companion guidance and hides the footer migration link. */
   mode: "fresh" | "upgraded";
   connection: ConnectionReadout;
   /** Current `note.literature-folder` setting; seeded once by the view on open. */
   literatureFolder: string;
-  /** The old three-slot Literature Note Template awaits user-consented conversion. */
+  /** The legacy Literature Note Template slots await user-consented conversion. */
   templateConversionPending: boolean;
+  templateFolder: string;
+  templateConversionResult: Settings["note.template-conversion-result"];
+  v1TemplatesPresent: boolean;
 }
 
 export type WelcomeStore = ReturnType<typeof createWelcomeStore>;
@@ -23,6 +28,9 @@ export function createWelcomeStore() {
     connection: { status: "checking" },
     literatureFolder: "",
     templateConversionPending: false,
+    templateFolder: "",
+    templateConversionResult: null,
+    v1TemplatesPresent: false,
   }));
 }
 

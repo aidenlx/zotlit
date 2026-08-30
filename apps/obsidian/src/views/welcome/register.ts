@@ -4,6 +4,7 @@ import type { App, Plugin } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import type { DatabaseService } from "@/services/database/service";
+import type { ReleaseService } from "@/services/release/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -19,6 +20,7 @@ export interface WelcomeRegistrationDeps {
   zoteroPref: ZoteroPrefService;
   settings: SettingsService;
   templateMigration: LiteratureNoteTemplateMigrationService;
+  release: ReleaseService;
 }
 
 export function registerWelcomeView(
@@ -44,6 +46,7 @@ export function registerWelcomeView(
         settings: deps.settings,
         setupActions,
         templateMigration: deps.templateMigration,
+        release: deps.release,
       }),
   );
 

@@ -11,6 +11,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { WelcomeActionsContext } from "./actions";
 import type { WelcomeActions } from "./actions";
 import { WelcomeStoreProvider, createWelcomeStore } from "./store";
+import type { WelcomeState, WelcomeStore } from "./store";
 import { Welcome } from "./Welcome";
 
 vi.mock("zustand", () => import("../__fixtures__/zustand"));
@@ -37,7 +38,10 @@ describe("Welcome Companion setup", () => {
   });
 
   it("offers the user-controlled template conversion in upgraded onboarding", async () => {
-    const { actions, container } = await render("upgraded", true);
+    const { actions, container } = await render("upgraded", {
+      templateConversionPending: true,
+      templateFolder: "Research templates",
+    });
     const button = [...container.querySelectorAll("button")].find(
       (candidate) =>
         candidate.textContent === m.welcome_template_conversion_action(),
@@ -46,6 +50,12 @@ describe("Welcome Companion setup", () => {
     expect(container.textContent).toContain(
       m.welcome_template_conversion_title(),
     );
+    expect(container.textContent).toContain(
+      m.welcome_template_conversion_body({
+        path: "Research templates/zotlit-profile.default.md",
+      }),
+    );
+    expect(container.textContent).not.toContain(m.welcome_migration_title());
     await act(() => button?.click());
     expect(actions.convertLiteratureNoteTemplates).toHaveBeenCalledOnce();
   });
@@ -65,18 +75,83 @@ describe("Welcome Companion setup", () => {
   });
 });
 
+it.each(["fresh", "upgraded"] as const)(
+  "shows the saved conversion result when reopened in %s mode",
+  async (mode) => {
+    const { container } = await render(mode, {
+      templateConversionResult: {
+        document: "Research templates/zotlit-profile.default.md",
+        trashed: 4,
+      },
+    });
+    expect(container.textContent).toContain(
+      m.welcome_template_conversion_completed_title(),
+    );
+    expect(container.textContent).toContain(
+      m.welcome_template_conversion_completed_body({
+        path: "Research templates/zotlit-profile.default.md",
+        count: 4,
+      }),
+    );
+    expect(container.textContent).not.toContain(
+      m.welcome_template_conversion_action(),
+    );
+    expect(container.textContent).not.toContain(m.welcome_migration_title());
+  },
+);
+
+it.each([false, true])(
+  "shows the v1 banner only with v1 evidence (%s)",
+  async (v1TemplatesPresent) => {
+    const { container } = await render("upgraded", { v1TemplatesPresent });
+    expect(container.textContent?.includes(m.welcome_migration_title())).toBe(
+      v1TemplatesPresent,
+    );
+  },
+);
+
+it("replaces the pending prompt with the persisted result after conversion", async () => {
+  const { container, store } = await render("upgraded", {
+    templateConversionPending: true,
+    templateFolder: "templates",
+  });
+  expect(container.textContent).toContain(
+    m.welcome_template_conversion_action(),
+  );
+  await act(() =>
+    store.setState({
+      templateConversionPending: false,
+      templateConversionResult: {
+        document: "templates/zotlit-profile.default.md",
+        trashed: 4,
+      },
+    }),
+  );
+  expect(container.textContent).toContain(
+    m.welcome_template_conversion_completed_body({
+      path: "templates/zotlit-profile.default.md",
+      count: 4,
+    }),
+  );
+  expect(container.textContent).not.toContain(
+    m.welcome_template_conversion_action(),
+  );
+  expect(container.textContent).not.toContain(m.welcome_migration_title());
+});
+
 async function render(
   mode: "fresh" | "upgraded",
-  templateConversionPending = false,
+  state: Partial<WelcomeState> = {},
 ): Promise<{
   actions: WelcomeActions;
   container: HTMLElement;
+  store: WelcomeStore;
 }> {
   const store = createWelcomeStore();
   store.setState({
     mode,
     literatureFolder: "Literature",
-    templateConversionPending,
+    ...state,
   });
   const actions: WelcomeActions = {
     convertLiteratureNoteTemplates: vi.fn(async () => {}),
@@ -102,5 +177,5 @@ async function render(
       ),
     );
   });
-  return { actions, container };
+  return { actions, container, store };
 }

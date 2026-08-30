@@ -1,13 +1,17 @@
 // Headerless resources strip and migration reminder for the declarative (>=1.13) setting tab.
 
+import { join } from "node:path/posix";
 import type {
   Setting,
   SettingDefinition,
   SettingDefinitionGroup,
 } from "obsidian";
 
+import { CONVERTED_DEFAULT_PROFILE_DOCUMENT } from "@zotlit/templates/facade";
+
 import * as m from "@/lib/i18n/generated/messages";
 import { languagePackSettingCopy } from "@/lib/i18n/settings-copy";
+import { defaults } from "@/services/settings/schema";
 import {
   BUG_REPORT,
   COMMUNITY,
@@ -38,13 +42,19 @@ export function migrationReminderItem(
   };
 }
 
-/** Durable reminder for the user-consented three-slot template conversion. */
+/** Durable reminder for the user-consented legacy template conversion. */
 export function templateConversionReminderItem(
   ctx: SettingTabContext,
 ): SettingDefinition<SettingsKey> {
   return {
     name: m.welcome_template_conversion_title(),
-    desc: m.welcome_template_conversion_body(),
+    desc: m.welcome_template_conversion_body({
+      path: join(
+        ctx.settings.current?.["template.folder"] ??
+          defaults["template.folder"],
+        CONVERTED_DEFAULT_PROFILE_DOCUMENT,
+      ),
+    }),
     render: (setting) => {
       setting.addButton((button) =>
         button

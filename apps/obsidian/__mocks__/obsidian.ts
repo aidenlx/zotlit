@@ -378,6 +378,15 @@ export class Scope {
   }
 }
 
+export abstract class FuzzySuggestModal<T> {
+  constructor(readonly app: App) {}
+  setPlaceholder(_placeholder: string): void {}
+  open(): void {}
+  abstract getItems(): T[];
+  abstract getItemText(item: T): string;
+  abstract onChooseItem(item: T): void;
+}
+
 export abstract class SuggestModal<T> {
   limit = 0;
   readonly contentEl = { addClass: (_className: string) => {} };

@@ -18,6 +18,10 @@ function makeHarness(options?: {
       ...defaults["note.default-profile"],
     },
     "note.template-conversion-pending": options?.pending ?? false,
+    "note.template-conversion-result": null as {
+      document: string;
+      trashed: number;
+    } | null,
     "template.folder": "templates",
   };
   const legacyPaths = [
@@ -157,6 +161,52 @@ describe("LiteratureNoteTemplateMigrationService", () => {
     expect(harness.settings.flush).toHaveBeenCalledBefore(harness.trashFile);
     expect(harness.trashFile).toHaveBeenCalledTimes(3);
     expect(harness.files.has("templates/zotlit-profile.default.md")).toBe(true);
+    expect(harness.settings.current["note.template-conversion-result"]).toEqual(
+      {
+        document: "templates/zotlit-profile.default.md",
+        trashed: 3,
+      },
+    );
+    expect(
+      harness.settings.flush.mock.invocationCallOrder.at(-1),
+    ).toBeGreaterThan(harness.trashFile.mock.invocationCallOrder.at(-1)!);
+  });
+
+  it("records only files actually trashed", async () => {
+    const harness = makeHarness({ pending: true, ejectedAnnotation: true });
+    await using service = harness.service;
+    await service.ready;
+    harness.files.delete("templates/zotlit-content.liquid.md");
+    await service.convert();
+    expect(harness.settings.current["note.template-conversion-result"]).toEqual(
+      {
+        document: "templates/zotlit-profile.default.md",
+        trashed: 3,
+      },
+    );
+  });
+
+  it("leaves no receipt when trash fails", async () => {
+    const failed = makeHarness({ pending: true });
+    await using service = failed.service;
+    await service.ready;
+    failed.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
+    await expect(service.convert()).rejects.toThrow("Trash unavailable");
+    expect(
+      failed.settings.current["note.template-conversion-result"],
+    ).toBeNull();
+  });
+
+  it("does not infer a completed conversion from an existing Default document", async () => {
+    const harness = makeHarness({ pending: true, defaultDocument: "existing" });
+    await using service = harness.service;
+    await service.ready;
+    expect(
+      harness.settings.current["note.template-conversion-result"],
+    ).toBeNull();
+    expect(harness.settings.current["note.template-conversion-pending"]).toBe(
+      false,
+    );
   });
 
   it("leaves the vault and settings untouched when parity verification fails", async () => {
