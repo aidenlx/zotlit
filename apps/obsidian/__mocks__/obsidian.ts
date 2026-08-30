@@ -692,6 +692,8 @@ export function settingsOf(containerEl: HTMLElement): Setting[] {
  * TextComponent.type}, and {@link ButtonComponent.click}.
  */
 export class Setting {
+  readonly settingEl = containerElStub();
+  readonly controlEl = containerElStub();
   /** Every component added to this row, in the order it was added. */
   readonly components: (
     | ButtonComponent
@@ -889,6 +891,10 @@ export class ButtonComponent {
 
   setButtonText(text: string): this {
     this.text = text;
+    return this;
+  }
+
+  setDisabled(_disabled: boolean): this {
     return this;
   }
 

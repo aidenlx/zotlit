@@ -71,6 +71,7 @@ import {
   buildNoteResolvers,
   fetchItemCollections,
   resolveNotePath,
+  resolveRenderedNotePath,
 } from "./context";
 import type { NoteFeatureDeps, SyncRenderDeps } from "./context";
 import {
@@ -186,6 +187,19 @@ export interface PreparedCreationProfile extends ProfilePreview {
   create(): Promise<CreateNoteResult>;
 }
 
+export interface ProfileNotePreview {
+  path: string;
+  body: string;
+  properties: Record<string, unknown>;
+  create(): Promise<CreateNoteResult>;
+}
+export interface ProfileNotePreviewOptions {
+  profile: ResolvedProfile;
+  document: ResolvedLiteratureNoteTemplate;
+  note: NoteTemplateContext;
+  filename: object;
+}
+
 export interface PreparedProfileSwitch {
   imported: boolean;
   current: { selector: ProfileSelector | undefined; label: string | undefined };
@@ -282,6 +296,7 @@ export interface NoteFeature {
     sources?: CreationProfileSources,
   ): Promise<CreationProfileSelection>;
   prepareCreationProfiles(item: Item): Promise<PreparedCreationProfile[]>;
+  prepareProfileNote(options: ProfileNotePreviewOptions): ProfileNotePreview;
   prepareProfileSwitch(file: TFile): Promise<PreparedProfileSwitch>;
   /** @see createNote */
   createNote(
@@ -415,6 +430,8 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
     resolveCreationProfile: (sources) => resolveCreationProfile(ctx, sources),
     prepareCreationProfiles: (item) =>
       prepareCreationProfiles(ctx, item, createAtGate),
+    prepareProfileNote: (options) =>
+      prepareProfileNote(ctx, options, createAtGate),
     prepareProfileSwitch: (file) => prepareProfileSwitch(ctx, file),
     updateNote: (file, options) => updateNote(ctx, file, options),
     switchNoteProfile: (file, options) => switchNoteProfile(ctx, file, options),
@@ -853,6 +870,53 @@ async function updateNote(
     profile,
     document,
   });
+}
+
+function prepareProfileNote(
+  ctx: OpsContext,
+  options: ProfileNotePreviewOptions,
+  create: (
+    item: Item,
+    options: CreateNoteInternalOptions,
+  ) => Promise<CreateNoteResult>,
+): ProfileNotePreview {
+  const { profile, document, note, filename } = options;
+  const preparedPath = resolveRenderedNotePath(
+    profile.bindings["note.literature-folder"],
+    document.renderFilename(filename),
+    { exists: (path) => ctx.app.vault.getAbstractFileByPath(path) !== null },
+  );
+  const prepared = prepareManagedFrontmatter(
+    document.frontmatter,
+    note,
+    Temporal.Now.instant(),
+  );
+  if ("failures" in prepared)
+    throw new Error(m.managed_frontmatter_refused_recovery());
+  const properties: Record<string, unknown> = {};
+  applyFrontmatter(ctx, properties, {
+    context: note,
+    itemKey: note.indexedKey,
+    profile,
+    prepared: prepared.prepared,
+  });
+  const body = document.renderForCreate(note);
+  return {
+    path: preparedPath.path,
+    body,
+    properties,
+    create: async () => {
+      let item: Item | undefined;
+      {
+        using lease = await ctx.db.acquireRead();
+        const parsed = resolveIndexedKeyLibrary(lease.client, note.indexedKey);
+        if (parsed)
+          item = getItemsByKey(lease.client, parsed.libraryID, [parsed.key])[0];
+      }
+      if (!item) throw new Error(m.notice_protocol_item_not_found());
+      return create(item, { profile: profile.selector, preparedPath });
+    },
+  };
 }
 
 async function prepareProfileSwitch(

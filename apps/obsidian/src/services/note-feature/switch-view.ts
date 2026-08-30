@@ -7,8 +7,13 @@ import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
+import {
+  itemKeyFromFrontmatter,
+  noteKeyFromFrontmatter,
+} from "@/services/note-index/service";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { CreateProfile } from "@/setting-tab/profiles";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
 import type { NoteFeature } from "./operations";
@@ -17,6 +22,7 @@ import { noteOperationDiagnosticContent } from "./update-single";
 const logger = getLogger("note-feature");
 
 export interface InteractiveProfileSwitchDeps {
+  createProfile: CreateProfile;
   app: App;
   noteFeature: Pick<NoteFeature, "prepareProfileSwitch" | "switchNoteProfile">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
@@ -33,7 +39,7 @@ export async function switchNoteProfileInteractively(
   file: TFile,
 ): Promise<void> {
   try {
-    const [plan, styles] = await Promise.all([
+    let [plan, styles] = await Promise.all([
       deps.noteFeature.prepareProfileSwitch(file),
       deps.zoteroPref.dataDir
         ? listInstalledStyles(deps.zoteroPref.dataDir)
@@ -44,6 +50,19 @@ export async function switchNoteProfileInteractively(
       preselected: plan.current.selector,
       current: plan.current.selector,
       styles,
+      onNew: async () => {
+        const cache = deps.app.metadataCache.getFileCache(file);
+        const created = await deps.createProfile({
+          indexedKey:
+            itemKeyFromFrontmatter(cache) ??
+            noteKeyFromFrontmatter(cache) ??
+            undefined,
+          useForNote: true,
+        });
+        if (!created) return undefined;
+        plan = await deps.noteFeature.prepareProfileSwitch(file);
+        return { id: created.profile.id, label: created.profile.label };
+      },
     });
     if (!choice || choice.id === plan.current.selector) {
       logger.debug("Profile switch dismissed without a change", {

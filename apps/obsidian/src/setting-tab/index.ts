@@ -49,6 +49,7 @@ import {
 } from "./templates";
 
 export interface ZotLitSettingTabOptions {
+  createProfile: SettingTabContext["createProfile"];
   plugin: ZotLitPlugin;
   settings: SettingsService;
   profile: ProfileService;
@@ -64,6 +65,7 @@ export interface ZotLitSettingTabOptions {
 }
 
 export class ZotLitSettingTab extends PluginSettingTab {
+  readonly #createProfile: SettingTabContext["createProfile"];
   readonly #plugin: ZotLitPlugin;
   readonly #settings: SettingsService;
   readonly #db: DatabaseService;
@@ -78,6 +80,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #languagePack: LanguagePackLifecycle;
 
   constructor({
+    createProfile,
     plugin,
     settings,
     db,
@@ -93,6 +96,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   }: ZotLitSettingTabOptions) {
     super(plugin.app, plugin);
     this.#plugin = plugin;
+    this.#createProfile = createProfile;
     this.#settings = settings;
     this.#db = db;
     this.#libraryScope = libraryScope;
@@ -198,6 +202,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   override getSettingDefinitions(): SettingDefinitionItem[] {
     const ctx: SettingTabContext = {
       app: this.#plugin.app,
+      createProfile: this.#createProfile,
       manifest: this.#plugin.manifest,
       settings: this.#settings,
       profile: this.#profile,

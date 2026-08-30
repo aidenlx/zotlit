@@ -2,6 +2,8 @@ import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type {
@@ -10,6 +12,8 @@ import type {
 } from "@/services/note-feature";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
+
+const logger = getLogger(["profile-picker"]);
 
 export interface LiteratureNoteProfileChoice {
   id: ProfileSelector;
@@ -32,6 +36,7 @@ interface ProfilePickerOptions {
   source?: CreationProfileSelection["source"];
   previews?: readonly ProfilePreview[];
   styles?: readonly InstalledCslStyle[];
+  onNew?: () => Promise<LiteratureNoteProfileChoice | undefined>;
 }
 
 const PROFILE_BADGE_CLASS =
@@ -61,6 +66,7 @@ export function chooseLiteratureNoteProfile(
 class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
   readonly #choices: LiteratureNoteProfileChoice[];
   readonly #resolve: (choice: LiteratureNoteProfileChoice | undefined) => void;
+  readonly #onNew: ProfilePickerOptions["onNew"];
   #settled = false;
 
   constructor(
@@ -72,6 +78,7 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
     },
   ) {
     super(app);
+    this.#onNew = options.onNew;
     this.contentEl.addClass("zt-root");
     this.#choices = options.previews
       ? options.previews.map((preview) =>
@@ -125,18 +132,19 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
   override renderSuggestion(choice: ProfilePickerRow, el: HTMLElement): void {
     if ("action" in choice) {
       el.createDiv({ text: choice.label });
-      el.createDiv({
-        text: m.modal_profile_new_stub(),
-        cls: "suggestion-note",
-      });
     } else renderProfileChoice(choice, el);
   }
 
   override onChooseSuggestion(choice: ProfilePickerRow): void {
     this.#settled = true;
-    this.#resolve(
-      "action" in choice || choice.unavailable ? undefined : choice,
-    );
+    if ("action" in choice)
+      void this.#onNew?.().then(this.#resolve, (error) => {
+        logger.error("Failed to open Profile creation", { error });
+        new BaseNotice(m.notice_profile_action_failed());
+        this.#resolve(undefined);
+      });
+    else this.#resolve(choice.unavailable ? undefined : choice);
+    if ("action" in choice && !this.#onNew) this.#resolve(undefined);
   }
 
   override onClose(): void {

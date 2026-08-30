@@ -1,7 +1,6 @@
+import type { Extension } from "@codemirror/state";
 // The citekey editor treatment service: it follows the settings that switch the
 // CodeMirror extension on and owns the click that opens a citekey's note.
-
-import type { Extension } from "@codemirror/state";
 import type { App, Plugin } from "obsidian";
 
 import { getItemsByID } from "@zotlit/db";
@@ -37,12 +36,14 @@ import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { CreateProfile } from "@/setting-tab/profiles";
 
 import { citekeyDecorationsChanged, citekeyEditorExtension } from "./extension";
 
 const logger = getLogger("citekey-editor");
 
 export interface CitekeyEditorDeps {
+  createProfile: CreateProfile;
   app: App;
   plugin: Pick<Plugin, "registerEditorExtension" | "registerHoverLinkSource">;
   noteIndex: NoteIndex;
@@ -87,6 +88,7 @@ interface CitekeyEditorEvents {
  * reconfigure — the mechanism `registerEditorExtension` documents.
  */
 export class CitekeyEditor extends Service<void> {
+  readonly #createProfile;
   readonly #app;
   readonly #plugin;
   readonly #noteIndex;
@@ -114,6 +116,7 @@ export class CitekeyEditor extends Service<void> {
   constructor(deps: CitekeyEditorDeps) {
     super();
     this.#app = deps.app;
+    this.#createProfile = deps.createProfile;
     this.#plugin = deps.plugin;
     this.#noteIndex = deps.noteIndex;
     this.#noteFeature = deps.noteFeature;
@@ -394,6 +397,7 @@ export class CitekeyEditor extends Service<void> {
       {
         app: this.#app,
         noteFeature: this.#noteFeature,
+        createProfile: this.#createProfile,
         zoteroPref: this.#zoteroPref,
       },
       zoteroItem,

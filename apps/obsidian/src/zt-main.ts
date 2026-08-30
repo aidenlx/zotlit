@@ -208,6 +208,7 @@ export default class ZotLitPlugin extends Plugin {
 
     this.addSettingTab(
       new ZotLitSettingTab({
+        createProfile: services.createProfile,
         profile: services.profile,
         plugin: this,
         settings: services.settings,
@@ -229,6 +230,7 @@ export default class ZotLitPlugin extends Plugin {
     addCitekeyEditorActions(this, { citekeyEditor: services.citekeyEditor });
     registerIndexedKeyFileMenu(this);
     addNoteFeatureActions(this, {
+      createProfile: services.createProfile,
       app: this.app,
       noteFeature: services.noteFeature,
       zoteroPref: services.zoteroPref,
@@ -252,6 +254,7 @@ export default class ZotLitPlugin extends Plugin {
       citationIndex: services.citationIndex,
     });
     registerQuickSwitch(this, {
+      createProfile: services.createProfile,
       app: this.app,
       lookup: services.itemLookup,
       noteIndex: services.noteIndex,

@@ -137,6 +137,7 @@ it("marks the current Profile and applies the single dialog's move and Imported 
   const task = switchNoteProfileInteractively(
     {
       app: {} as App,
+      createProfile: async () => undefined,
       zoteroPref: { dataDir: "" },
       noteFeature: {
         prepareProfileSwitch: async () => ({
@@ -156,6 +157,7 @@ it("marks the current Profile and applies the single dialog's move and Imported 
     current,
     preselected: current,
     styles: [],
+    onNew: expect.any(Function),
   });
   expect(switchProfile).not.toHaveBeenCalled();
   for (const [, change] of dialog.checkbox.mock.calls) change(true);

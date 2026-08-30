@@ -145,14 +145,10 @@ export function resolveNotePath(
   const rendered = options.document
     ? options.document.renderFilename(data)
     : ctx.template.renderFilename(data);
-  const rel = resolveRenderedRelPath(folderSetting, rendered, {
+  return resolveRenderedNotePath(folderSetting, rendered, {
     exists: (path) => ctx.app.vault.getAbstractFileByPath(path) !== null,
     forceSuffix: options.forceSuffix,
   });
-  return {
-    path: literatureNotePath(folderSetting, rel),
-    canSuffix: hasSuffixMarker(rendered),
-  };
 }
 
 /**
@@ -213,6 +209,18 @@ export function buildNoteResolvers(
       },
     },
     resolveChildNote: (note) => options.noteImport.resolveChildNote(note),
+  };
+}
+
+export function resolveRenderedNotePath(
+  folder: string,
+  rendered: string,
+  options: { exists: (path: string) => boolean; forceSuffix?: boolean },
+): { path: string; canSuffix: boolean } {
+  const rel = resolveRenderedRelPath(folder, rendered, options);
+  return {
+    path: literatureNotePath(folder, rel),
+    canSuffix: hasSuffixMarker(rendered),
   };
 }
 

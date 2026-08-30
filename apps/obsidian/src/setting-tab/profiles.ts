@@ -16,7 +16,19 @@ import type {
   SettingsControlKey,
   SettingTabContext,
 } from "./context";
-import { CreateProfileModal } from "./create-profile-modal";
+export {
+  createProfileCreator,
+  createProfileDialog,
+  renderProfileCreatedNotice,
+  CreateProfileModal,
+  type CreateProfile,
+  type CreateProfileOptions,
+  type CreatedProfile,
+  type ProfileCreationDeps,
+  type ProfileCreationData,
+} from "./create-profile-modal";
+import { duplicateProfileToEditor } from "./duplicate-profile";
+export { duplicateProfileToEditor } from "./duplicate-profile";
 import { confirmProfileDeletion } from "./delete-profile-modal";
 export {
   confirmProfileDeletion,
@@ -62,7 +74,12 @@ export function literatureNoteProfileItems(
                       "note.template-conversion-pending"
                     ],
                 )
-                .onClick(() => new CreateProfileModal(ctx).open()),
+                .onClick(
+                  () =>
+                    void runAction(async () => {
+                      await ctx.createProfile();
+                    }, ctx),
+                ),
             );
           },
         },
@@ -77,12 +94,15 @@ export function literatureNoteProfileItems(
                   .onClick(() => void openDocument(ctx, profile.path)),
               );
               setting.addButton((button) =>
-                button.setButtonText(m.settings_profile_duplicate()).onClick(
-                  () =>
-                    void runAction(async () => {
-                      await ctx.profile.duplicate(profile.id);
-                    }, ctx),
-                ),
+                button
+                  .setButtonText(m.settings_profile_duplicate())
+                  .onClick(
+                    () =>
+                      void runAction(
+                        () => duplicateProfileToEditor(ctx, profile.id),
+                        ctx,
+                      ),
+                  ),
               );
               setting.addButton((button) =>
                 button
@@ -222,6 +242,23 @@ function defaultProfileItems(
     {
       name: m.settings_profile_default_name(),
       desc: m.settings_profile_default_desc(),
+      render: (setting) => {
+        setting.addButton((button) =>
+          button
+            .setButtonText(m.settings_profile_duplicate())
+            .setDisabled(
+              !ctx.profile.loaded ||
+                !!ctx.settings.current?.["note.template-conversion-pending"],
+            )
+            .onClick(
+              () =>
+                void runAction(
+                  () => duplicateProfileToEditor(ctx, "default"),
+                  ctx,
+                ),
+            ),
+        );
+      },
     },
     {
       name: m.settings_profile_folder_name(),

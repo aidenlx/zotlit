@@ -1,3 +1,4 @@
+import { createProfileCreator } from "@/setting-tab/profiles";
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
@@ -209,6 +210,29 @@ export function buildServices(
         }),
     })
     .useValue({
+      createProfile: ({
+        profile,
+        template,
+        db,
+        noteIndex,
+        zoteroPref,
+        settings,
+        libraryScope,
+        noteFeature,
+      }) =>
+        createProfileCreator({
+          app: plugin.app,
+          profile,
+          template,
+          db,
+          noteIndex,
+          zoteroPref,
+          settings,
+          libraryScope,
+          noteFeature,
+        }),
+    })
+    .useValue({
       batchImport: ({
         db,
         settings,
@@ -301,6 +325,7 @@ export function buildServices(
       citekeyEditor: ({
         noteIndex,
         noteFeature,
+        createProfile,
         zoteroPref,
         db,
         citationText,
@@ -314,6 +339,7 @@ export function buildServices(
           plugin,
           noteIndex,
           noteFeature,
+          createProfile,
           zoteroPref,
           db,
           citationText,

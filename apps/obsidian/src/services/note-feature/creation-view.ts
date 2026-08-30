@@ -6,6 +6,7 @@ import type { Item } from "@zotlit/db";
 import { getLogger } from "@/lib/log";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { CreateProfile, CreatedProfile } from "@/setting-tab/profiles";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
 import type { CreationProfileSources, NoteFeature } from "./operations";
@@ -14,6 +15,7 @@ import { createNoteTaskWithToast, createNoteWithToast } from "./update-single";
 const logger = getLogger("note-feature");
 
 export interface InteractiveCreationDeps {
+  createProfile: CreateProfile;
   app: App;
   noteFeature: Pick<
     NoteFeature,
@@ -38,11 +40,21 @@ export async function createNoteInteractively(
     deps.noteFeature.prepareCreationProfiles(item),
     deps.zoteroPref.dataDir ? listInstalledStyles(deps.zoteroPref.dataDir) : [],
   ]);
+  let created: CreatedProfile | undefined;
   const choice = await chooseLiteratureNoteProfile(deps.app, {
     preselected: selection.selector,
     source: selection.source,
     previews,
     styles,
+    onNew: async () => {
+      created = await deps.createProfile({
+        indexedKey: item.indexedKey,
+        useForNote: true,
+      });
+      return created
+        ? { id: created.profile.id, label: created.profile.label }
+        : undefined;
+    },
   });
   if (!choice) {
     logger.debug("Cancelled Literature Note Profile selection", {
@@ -54,6 +66,8 @@ export async function createNoteInteractively(
     indexedKey: item.indexedKey,
     selector: choice.id,
   });
-  const preview = previews.find(({ selector }) => selector === choice.id)!;
+  const preview =
+    created?.preview ??
+    previews.find(({ selector }) => selector === choice.id)!;
   return createNoteTaskWithToast(() => preview.create(), { app: deps.app });
 }

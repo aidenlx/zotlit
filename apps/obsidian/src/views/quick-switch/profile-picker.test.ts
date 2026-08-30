@@ -122,3 +122,24 @@ it("renders effective folders, style titles, templates, paths and the selected s
   modal.onClose();
   await expect(choice).resolves.toBeUndefined();
 });
+
+it("waits for the shared create dialog when New profile is chosen after native close", async () => {
+  using opened = vi.spyOn(SuggestModal.prototype, "open");
+  const created = Promise.withResolvers<
+    LiteratureNoteProfileChoice | undefined
+  >();
+  const onNew = vi.fn(() => created.promise);
+  const choice = chooseLiteratureNoteProfile({} as App, [books], { onNew });
+  const modal = opened.mock
+    .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
+  const rows = await modal.getSuggestions("");
+  modal.onClose();
+  modal.onChooseSuggestion(rows.at(-1)!, {} as KeyboardEvent);
+  await Promise.resolve();
+  expect(onNew).toHaveBeenCalledOnce();
+  created.resolve({ id: books.id, label: "New reading profile" });
+  await expect(choice).resolves.toEqual({
+    id: books.id,
+    label: "New reading profile",
+  });
+});
