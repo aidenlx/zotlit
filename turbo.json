@@ -2,6 +2,7 @@
   "$schema": "https://turborepo.dev/schema.json",
   "globalDependencies": ["mise.toml"],
   "globalEnv": ["ZOTLIT_TOOLCHAIN"],
+  "globalPassThroughEnv": ["AI_AGENT"],
   "tasks": {
     "transit": {
       "dependsOn": ["^transit"]
