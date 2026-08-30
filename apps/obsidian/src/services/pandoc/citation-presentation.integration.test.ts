@@ -146,7 +146,7 @@ describe("document Citation Presentation", { timeout: TIMEOUT }, () => {
       styles: STYLES,
       settings: {
         "citation.references-style": VAULT_STYLE_ID,
-        "note.profiles": [
+        profiles: [
           {
             id: PROFILE_ID,
             label: "Research",
@@ -170,7 +170,7 @@ describe("document Citation Presentation", { timeout: TIMEOUT }, () => {
     expect(exported.html).toContain(NOTE_WORD);
 
     await vault.setSettings({
-      "note.profiles": [
+      profiles: [
         {
           id: PROFILE_ID,
           label: "Research",
@@ -206,7 +206,7 @@ describe("document Citation Presentation", { timeout: TIMEOUT }, () => {
       styles: STYLES,
       settings: {
         "citation.references-style": VAULT_STYLE_ID,
-        "note.profiles": [
+        profiles: [
           {
             id: PROFILE_ID,
             label: "Research",

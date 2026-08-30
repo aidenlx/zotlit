@@ -13,8 +13,8 @@ import { FIELD_LITERATURE_NOTE_PROFILE } from "./constants";
 
 /**
  * Character shape of a Literature Note Profile ID, the sole source both the
- * settings schema and the stamp parse read it from. It mirrors the Nano ID
- * alphabet and length `profileNanoid` mints in `services/settings/service.ts`.
+ * Profile registry and the stamp parse read it from. It mirrors the Nano ID
+ * alphabet and length `mintId` mints in `services/profile/service.ts`.
  *
  * @see docs/adr/0030-profile-stamp-carries-a-label-hint-beside-the-id.md
  */

@@ -10,6 +10,7 @@ import type {
   DocumentCitationSet,
 } from "@/services/citation-index/service";
 import type { RenderedCitation } from "@/services/pandoc/engine";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -192,6 +193,7 @@ async function makeHarness({
       },
       on: listen("render"),
     },
+    profile: profileReader({ ...defaults, ...settings }),
     settings: {
       current: { ...defaults, ...settings },
     },

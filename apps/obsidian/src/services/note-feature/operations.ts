@@ -54,12 +54,8 @@ import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { NoteImport } from "@/services/note-import/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
-import {
-  noteProfileSelector,
-  profileOf,
-  resolveProfile,
-} from "@/services/settings/profile";
-import type { NoteProfile, ResolvedProfile } from "@/services/settings/profile";
+import { noteProfileSelector } from "@/services/profile/bindings";
+import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
 import type { Settings } from "@/services/settings/schema";
 import { ProfileAnnotationError } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
@@ -367,9 +363,11 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
   };
 
   return {
-    ready: Promise.all([deps.template.ready, deps.noteIndex.ready]).then(
-      () => {},
-    ),
+    ready: Promise.all([
+      deps.template.ready,
+      deps.noteIndex.ready,
+      deps.profile.ready,
+    ]).then(() => {}),
     createNote: createAtGate,
     updateNote: (file, options) => updateNote(ctx, file, options),
     switchNoteProfile: (file, options) => switchNoteProfile(ctx, file, options),
@@ -434,9 +432,10 @@ async function createNote(
     ctx.settings.loaded,
     ctx.noteIndex.whenIndexed(),
     ctx.template.ready,
+    ctx.profile.ready,
   ]);
   const requestedProfile = options.profile ?? DEFAULT_PROFILE;
-  const profile = resolveProfile(settings, requestedProfile);
+  const profile = ctx.profile.resolveProfile(requestedProfile);
   if (!profile) {
     return refusedUnknownProfile(requestedProfile, {
       indexedKey: item.indexedKey,
@@ -450,7 +449,7 @@ async function createNote(
   const existing = ctx.noteIndex.getNotesByItemKey(item.indexedKey);
   if (existing.length > 0) {
     if (existing.length === 1 && options.profile !== undefined) {
-      const result = profileOf(ctx.app.metadataCache, settings, existing[0]!);
+      const result = ctx.profile.profileOf(existing[0]!);
       if (!result.ok) {
         return refusedUnknownProfile(result.stamped.stamp, {
           indexedKey: item.indexedKey,
@@ -637,8 +636,10 @@ async function updateNote(
     ctx.settings.loaded,
     ctx.noteIndex.whenIndexed(),
     ctx.template.ready,
+    ctx.profile.ready,
   ]);
-  const existing = profileOf(ctx.app.metadataCache, settings, file);
+  await ctx.profile.ready;
+  const existing = ctx.profile.profileOf(file);
   const existingSelector = noteProfileSelector(existing);
   if (
     profileOverride === undefined &&
@@ -646,7 +647,7 @@ async function updateNote(
     existingSelector !== undefined
   ) {
     const requestedProfile = options.profile;
-    if (!resolveProfile(settings, requestedProfile)) {
+    if (!ctx.profile.resolveProfile(requestedProfile)) {
       return refusedUpdateProfile(requestedProfile, file.path);
     }
     if (requestedProfile !== existingSelector) {
@@ -660,7 +661,7 @@ async function updateNote(
   // the caller named the Profile itself.
   let profile: ResolvedProfile | undefined;
   if (profileOverride !== undefined) {
-    profile = resolveProfile(settings, profileOverride);
+    profile = ctx.profile.resolveProfile(profileOverride);
     if (!profile) return refusedUpdateProfile(profileOverride, file.path);
   } else {
     if (!existing.ok) {
@@ -703,9 +704,10 @@ async function switchNoteProfile(
     importedNotes?: readonly TFile[];
   },
 ): Promise<UpdateResult> {
+  await ctx.profile.ready;
   const settings = await ctx.settings.loaded;
   const selector = options.profile;
-  const profile = resolveProfile(settings, selector);
+  const profile = ctx.profile.resolveProfile(selector);
   if (!profile) return refusedUpdateProfile(selector, file.path);
   if (conversionRequired(settings, selector)) {
     return refusedUpdateTemplateConversion(selector, file.path);
@@ -744,9 +746,9 @@ async function switchImportedNoteProfile(
   file: TFile,
   options: { profile: ProfileSelector },
 ): Promise<UpdateResult> {
-  const settings = await ctx.settings.loaded;
+  await ctx.profile.ready;
   const selector = options.profile;
-  const profile = resolveProfile(settings, selector);
+  const profile = ctx.profile.resolveProfile(selector);
   if (!profile) return refusedUpdateProfile(selector, file.path);
   await stampNoteProfile(ctx, file, profile.stamp);
   return NO_BODY_UPDATE;
@@ -828,11 +830,12 @@ async function writeNoteUpdate(
   file: TFile,
   options: WriteNoteUpdateOptions,
 ): Promise<UpdateResult> {
-  const existing = profileOf(ctx.app.metadataCache, options.settings, file);
+  await ctx.profile.ready;
+  const existing = ctx.profile.profileOf(file);
   const existingSelector = noteProfileSelector(existing);
   if (options.profile !== undefined && existingSelector !== undefined) {
     const requestedProfile = options.profile;
-    if (!resolveProfile(options.settings, requestedProfile)) {
+    if (!ctx.profile.resolveProfile(requestedProfile)) {
       return refusedUpdateProfile(requestedProfile, file.path);
     }
     if (requestedProfile !== existingSelector) {
@@ -1010,8 +1013,9 @@ async function overwriteNote(
     ctx.settings.loaded,
     ctx.noteIndex.whenIndexed(),
     ctx.template.ready,
+    ctx.profile.ready,
   ]);
-  const result = profileOf(ctx.app.metadataCache, settings, file);
+  const result = ctx.profile.profileOf(file);
   if (!result.ok) return refusedUpdateProfile(result.stamped.stamp, file.path);
   const profile = result.profile;
   if (conversionRequired(settings, profile.selector)) {
@@ -1067,7 +1071,7 @@ function renderCitation(
   items: readonly CiteRef[],
   secondary = false,
 ): string | null {
-  if (!ctx.template.loaded) return null;
+  if (!ctx.template.loaded || !ctx.profile.loaded) return null;
   return inlineCitation(
     ctx.template.render(
       secondary ? "cite2" : "cite",
@@ -1094,7 +1098,7 @@ function renderAnnotation(
 ): string | null {
   const { db } = ctx;
   if (db.state !== "ready") return null;
-  if (!ctx.template.loaded) return null;
+  if (!ctx.template.loaded || !ctx.profile.loaded) return null;
   const settings = ctx.settings.current;
   if (!settings) return null;
 
@@ -1112,8 +1116,8 @@ function renderAnnotation(
           ? ctx.noteIndex.getNotesByItemKey(indexedKey)[0]
           : undefined;
         const resolved: NoteProfile = file
-          ? profileOf(ctx.app.metadataCache, settings, file)
-          : { ok: true, profile: resolveProfile(settings, DEFAULT_PROFILE) };
+          ? ctx.profile.profileOf(file)
+          : ctx.profile.profileOf();
         if (!resolved.ok) {
           throw new ProfileAnnotationError(
             unknownProfileDiagnostic(resolved.stamped.stamp),
@@ -1141,7 +1145,7 @@ function renderAnnotationCitation(
 ): string | null {
   const { db } = ctx;
   if (db.state !== "ready") return null;
-  if (!ctx.template.loaded) return null;
+  if (!ctx.template.loaded || !ctx.profile.loaded) return null;
 
   const [annotation] = getAnnotationsByItemId(db.client, [annotationItemId]);
   if (!annotation) return null;

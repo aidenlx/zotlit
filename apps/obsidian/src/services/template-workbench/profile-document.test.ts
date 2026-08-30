@@ -16,7 +16,7 @@ const IDENTITY = {
   source: { id: "a1b2c3d4", databasePath: "/Zotero/zotero.sqlite" },
 } as const;
 
-const BOOKS_ID = "36c4f8b4-4f65-4cab-8c51-c921ea616cc8";
+const BOOKS_ID = "Bk3Qn7XvT2Lp";
 
 function makeHandlers(options?: {
   renderSource?: (
@@ -27,7 +27,11 @@ function makeHandlers(options?: {
     update: string | null;
   };
 }) {
-  const readProfiles = vi.fn(() => ({
+  const readProfiles = vi.fn<
+    NonNullable<
+      Parameters<typeof createTemplateWorkbenchHandlers>[0]["literatureNotes"]
+    >["readProfiles"]
+  >(() => ({
     defaultProfile: { document: "default.md" },
     profiles: [{ id: BOOKS_ID, label: "Books", document: "books.md" }],
   }));
@@ -45,7 +49,6 @@ function makeHandlers(options?: {
           description: "Default",
           contract: 2,
           filename: "{{ zt.citekey }}",
-          profileDefaults: {},
           language: "liquid" as const,
         },
         hasManagedBlock: true,
@@ -137,6 +140,29 @@ describe("Template Workbench Profile documents", () => {
         },
       ],
     });
+  });
+
+  it("reports an excluded Default only through its diagnostics", async () => {
+    const { handlers, readProfiles } = makeHandlers();
+    const diagnostics = [
+      {
+        code: "duplicate-profile-id" as const,
+        path: "templates/zotlit-profile.default.md",
+        paths: [
+          "templates/zotlit-profile.default.md",
+          "templates/zotlit-profile.copy.md",
+        ],
+        message: "Duplicate default ID",
+      },
+    ];
+    readProfiles.mockReturnValue({
+      defaultProfile: undefined,
+      profiles: [],
+      diagnostics,
+    });
+    const output = JSON.parse(await handlers[TEMPLATE_STATUS_COMMAND]({}));
+    expect(output.profiles).toEqual([]);
+    expect(output.profileDiagnostics).toEqual(diagnostics);
   });
 
   it("renders an uninstalled source override against real item data without writes", async () => {

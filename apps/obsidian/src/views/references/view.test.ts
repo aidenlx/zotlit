@@ -8,6 +8,7 @@ import type { DocumentCitationSet } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/present";
 import type { Inline, Inlines } from "@/services/pandoc/ast";
 import type { BibliographyRenderOutcome } from "@/services/pandoc/render-cache";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 
 import { ReferencesView } from "./view";
@@ -201,6 +202,12 @@ beforeEach(async () => {
     },
   } as unknown as App;
 
+  const profileReady = Promise.withResolvers<void>();
+  const profile = {
+    ...profileReader(defaults, app.metadataCache),
+    loaded: false,
+    ready: profileReady.promise,
+  };
   view = new TestReferencesView(
     {} as WorkspaceLeaf,
     {
@@ -248,6 +255,7 @@ beforeEach(async () => {
           return () => undefined;
         },
       },
+      profile,
       settings: { current: defaults },
       openSettings: () => undefined,
       openStyleSettings: () => undefined,
@@ -255,7 +263,14 @@ beforeEach(async () => {
   );
 
   document.body.append(view.contentEl);
-  await act(() => view!.open());
+  await act(async () => {
+    const opening = view!.open();
+    await Promise.resolve();
+    expect(scans).toHaveLength(0);
+    profile.loaded = true;
+    profileReady.resolve();
+    await opening;
+  });
   await finishScan();
 });
 

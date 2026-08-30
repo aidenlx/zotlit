@@ -24,6 +24,7 @@ import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
 import { BibliographyRenderCache } from "./pandoc/render-cache";
 import { createPandocEngineService } from "./pandoc/service";
+import { ProfileService } from "./profile/service";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import {
@@ -43,7 +44,6 @@ import {
   LiteratureNoteTemplateMigrationService,
   loadLiteratureNoteTemplateMigrationData,
 } from "./template/migration";
-import { LiteratureNotePackService } from "./template/pack";
 import { TemplateService } from "./template/service";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
@@ -101,8 +101,8 @@ export function buildServices(
         new TemplateService({ plugin, app: plugin.app, settings }),
     })
     .use({
-      templatePack: ({ settings, template }) =>
-        new LiteratureNotePackService({
+      profile: ({ settings, template }) =>
+        new ProfileService({
           app: plugin.app,
           settings,
           template,
@@ -128,12 +128,14 @@ export function buildServices(
     })
     .useValue({
       noteImport: ({
+        profile,
         noteIndex,
         template,
         zoteroPref,
         attachmentImport,
       }): NoteImporter =>
         createNoteImporter({
+          profile,
           app: plugin.app,
           noteIndex,
           template,
@@ -184,6 +186,7 @@ export function buildServices(
     })
     .useValue({
       noteFeature: ({
+        profile,
         template,
         db,
         noteIndex,
@@ -193,6 +196,7 @@ export function buildServices(
         noteImport,
       }): NoteFeature =>
         createNoteFeature({
+          profile,
           app: plugin.app,
           template,
           db,
@@ -237,8 +241,15 @@ export function buildServices(
       pandocEngine: () => createPandocEngineService(plugin.app),
     })
     .use({
-      bibliographyRender: ({ db, pandocEngine, zoteroPref, settings }) =>
+      bibliographyRender: ({
+        db,
+        pandocEngine,
+        zoteroPref,
+        settings,
+        profile,
+      }) =>
         new BibliographyRenderCache({
+          profile,
           db,
           pandocEngine,
           zoteroPref,
@@ -247,6 +258,7 @@ export function buildServices(
     })
     .use({
       citationText: ({
+        profile,
         db,
         citationIndex,
         noteIndex,
@@ -254,6 +266,7 @@ export function buildServices(
         settings,
       }) =>
         new CitationText({
+          profile,
           app: plugin.app,
           db,
           citationIndex,
@@ -264,6 +277,7 @@ export function buildServices(
     })
     .useValue({
       citationPopover: ({
+        profile,
         db,
         citationIndex,
         citationText,
@@ -272,6 +286,7 @@ export function buildServices(
         settings,
       }): CitationPopover =>
         createCitationPopover({
+          profile,
           app: plugin.app,
           db,
           citationIndex,

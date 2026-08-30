@@ -185,6 +185,9 @@ catalogs:
     vitest:
       specifier: ^4.0.13
       version: 4.1.6
+    yaml:
+      specifier: ^2.9.0
+      version: 2.9.0
     zx:
       specifier: ^8.8.5
       version: 8.8.5
@@ -452,6 +455,9 @@ importers:
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
+      yaml:
+        specifier: 'catalog:'
+        version: 2.9.0
       zustand:
         specifier: ^5.0.14
         version: 5.0.14(@types/react@19.2.17)(react@19.2.7)(use-sync-external-store@1.6.0(react@19.2.7))
@@ -927,7 +933,7 @@ importers:
         specifier: 'catalog:'
         version: 1.4.2(typescript@7.0.2)
       yaml:
-        specifier: ^2.9.0
+        specifier: 'catalog:'
         version: 2.9.0
     devDependencies:
       '@types/node':

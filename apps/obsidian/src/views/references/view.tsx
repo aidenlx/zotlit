@@ -37,6 +37,7 @@ import type {
 } from "@/services/pandoc/document-presentation";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
+import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
@@ -89,6 +90,7 @@ export interface ReferencesViewDeps {
     "render" | "on" | "vaultPresentation"
   >;
   settings: Pick<SettingsService, "current">;
+  profile: ProfileReader;
   /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
   /** Reveals the Citation and References Style row in settings. */
@@ -232,7 +234,8 @@ export class ReferencesView extends ItemView {
     );
     this.#reload();
     this.#rescan();
-    await db.ready;
+    await Promise.all([db.ready, this.#deps.profile.ready]);
+    this.#rescan();
     this.#reload();
   }
 
@@ -255,6 +258,7 @@ export class ReferencesView extends ItemView {
    * all the same, and the copy it offers names the note now on screen.
    */
   #rescan(): void {
+    if (!this.#deps.profile.loaded) return;
     const scan = ++this.#scan;
     // A presentation change makes the entries on screen stale the moment it is
     // read, and the read that follows lands a turn later at the earliest, so
@@ -337,7 +341,7 @@ export class ReferencesView extends ItemView {
       : documentPresentation(
           this.#deps.app.metadataCache,
           file,
-          this.#deps.settings.current,
+          this.#deps.profile,
         );
   }
 

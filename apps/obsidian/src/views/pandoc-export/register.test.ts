@@ -12,9 +12,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/profile";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
 
 import { registerPandocExport } from "./register";
 import type { PandocExportDeps } from "./register";
@@ -108,6 +109,9 @@ function openVault({
       },
       zoteroPref: { ready: Promise.resolve(), dataDir: DATA_DIR },
       settings: { current: resolvedSettings },
+      profile: profileReader(resolvedSettings, {
+        getFileCache: () => ({ frontmatter }),
+      }),
       openSettings: () => undefined,
     } as unknown as PandocExportDeps,
   );
@@ -252,7 +256,7 @@ describe("the Export note with citations command", () => {
         "zotlit-profile": PROFILE_ID,
       },
       settings: {
-        "note.profiles": [
+        profiles: [
           {
             id: PROFILE_ID,
             label: "Research",

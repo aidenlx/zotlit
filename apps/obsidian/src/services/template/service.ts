@@ -36,8 +36,8 @@ import { RESERVED_KEYS } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
+import type { ResolvedProfile } from "@/services/profile/bindings";
 import { Service } from "@/services/service-base";
-import type { ResolvedProfile } from "@/services/settings/profile";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
@@ -155,6 +155,7 @@ export interface LiteratureNoteTemplateStatus {
       }
     | {
         readonly state: "invalid";
+        readonly manifestId?: string;
         readonly error: {
           readonly code: LiteratureNoteTemplateErrorCode | "unknown";
           readonly message: string;
@@ -415,6 +416,10 @@ export class TemplateService extends Service<void> {
         path,
         validation: {
           state: "invalid",
+          ...(error instanceof LiteratureNoteTemplateError &&
+          error.manifestId !== undefined
+            ? { manifestId: error.manifestId }
+            : {}),
           error:
             error instanceof LiteratureNoteTemplateError
               ? {

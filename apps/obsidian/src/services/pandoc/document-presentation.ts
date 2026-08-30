@@ -17,7 +17,7 @@ import type {
   UnknownProfileDiagnostic,
 } from "@/lib/profile-stamp";
 import type { Citation } from "@/services/citation-index/query";
-import { profileOf } from "@/services/settings/profile";
+import type { ProfileService } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 
 import type { RenderPresentation } from "./render-cache";
@@ -81,7 +81,7 @@ export type DocumentPresentation =
 export function documentPresentation(
   metadataCache: Pick<MetadataCache, "getFileCache">,
   file: TFile,
-  settings?: Readonly<Settings> | null,
+  profiles?: Pick<ProfileService, "loaded" | "profileOf">,
 ): DocumentPresentation {
   const frontmatter = metadataCache.getFileCache(file)?.frontmatter;
   const presentation: RenderPresentation = {};
@@ -90,8 +90,17 @@ export function documentPresentation(
   // For other documents, only an absent property leaves a vault selection in
   // charge. A visible property that names no style stops that document.
   const declaredStyle = frontmatter?.[FIELD_CITATION_STYLE] as unknown;
-  if (settings && frontmatter?.[FIELD_ZOTERO_NOTE_KEY] !== undefined) {
-    const resolved = profileOf(metadataCache, settings, file);
+  if (profiles && frontmatter?.[FIELD_ZOTERO_NOTE_KEY] !== undefined) {
+    if (!profiles.loaded)
+      return {
+        kind: "unusable",
+        property: "profile",
+        diagnostic: unknownProfileDiagnostic(
+          String(frontmatter["zotlit-profile"] ?? "default"),
+        ),
+        target: file.path,
+      };
+    const resolved = profiles.profileOf(file);
     if (!resolved.ok) {
       logger.debug("The Imported Note Profile is unavailable", {
         path: file.path,

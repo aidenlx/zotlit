@@ -19,6 +19,7 @@ import type {
 } from "@/services/note-feature/operations";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
 
@@ -28,6 +29,7 @@ import { InertTemplateError } from "@/services/template/errors";
  * batch runner's one-actionable fast path so all three behave identically.
  */
 export interface SingleUpdateDeps {
+  profile: ProfileReader;
   app: App;
   db: DatabaseService;
   settings: SettingsService;

@@ -367,20 +367,15 @@ export function migrateV9ToV10(raw: unknown): Record<string, unknown> {
     "note.import-folder": importFolder,
     "note.import-colored-highlights": coloredHighlights,
     "note.import-annotations-as-template": annotationsAsTemplate,
-    "note.default-profile": defaultProfile,
+    "note.default-profile": _defaultProfile,
+    "note.profiles": _profiles,
+    "note.template-pack-installs": _packs,
     ...rest
   } = raw;
-  const currentProfile = isPlainObject(defaultProfile) ? defaultProfile : {};
-  const document =
-    typeof currentProfile.document === "string" &&
-    currentProfile.document.trim().length > 0
-      ? currentProfile.document
-      : undefined;
   const base = defaults["note.default-profile"].bindings;
   return {
     ...rest,
     "note.default-profile": {
-      ...(document === undefined ? {} : { document }),
       bindings: {
         "citation.references-style":
           citationStyle === null || typeof citationStyle === "string"

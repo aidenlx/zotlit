@@ -1,7 +1,6 @@
+import { writeFile } from "node:fs/promises";
 // Registers the built-in export command and drives one export end to end:
 // modal → resolution → bibliography → engine → chosen destination.
-
-import { writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { requestUrl } from "obsidian";
 import type { App, FileSystemAdapter, Plugin, TFile } from "obsidian";
@@ -32,6 +31,7 @@ import type { ExportPorts } from "@/services/pandoc/export";
 import type { PandocEngineService } from "@/services/pandoc/service";
 import { resolveInstalledStyle } from "@/services/pandoc/styles";
 import type { CslStyleRequest } from "@/services/pandoc/styles";
+import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -46,6 +46,7 @@ export interface PandocExportDeps {
   pandocEngine: Pick<PandocEngineService, "getStatus" | "getEngine">;
   zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir" | "httpPort" | "get">;
   settings: Pick<SettingsService, "current">;
+  profile: ProfileReader;
   /** Opens the settings page the engine install lives on. */
   openSettings: () => void;
 }
@@ -76,6 +77,7 @@ export async function runPandocExport(
   file: TFile,
   deps: PandocExportDeps,
 ): Promise<void> {
+  await deps.profile.ready;
   const { app, pandocEngine, zoteroPref, settings } = deps;
   if (pandocEngine.getStatus().kind !== "installed") {
     showEngineMissing(deps.openSettings);
@@ -83,11 +85,7 @@ export async function runPandocExport(
   }
   // A note whose own presentation property names nothing stops here: a vault
   // selection never stands in for it, in the dialog or in the exported run.
-  const declared = documentPresentation(
-    app.metadataCache,
-    file,
-    settings.current,
-  );
+  const declared = documentPresentation(app.metadataCache, file, deps.profile);
   if (declared.kind === "unusable") {
     showExportFailure(
       declared.property === "profile"

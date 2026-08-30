@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ProfileId } from "@/lib/profile-stamp";
 import { ServiceContainer, ServiceInitError } from "@/services/service-base";
 
 import {
@@ -15,7 +14,7 @@ import {
   migrateV8ToV9,
   migrateV9ToV10,
 } from "./migrate";
-import { DEFAULT_LITERATURE_NOTE_PROFILE, defaults } from "./schema";
+import { defaults } from "./schema";
 import { RESET_SETTING, SettingsService } from "./service";
 
 type SettingsServiceOptions = ConstructorParameters<typeof SettingsService>[0];
@@ -137,8 +136,7 @@ describe("SettingsService loading", () => {
 
     await service.ready;
 
-    expect(service.getLiteratureNoteProfile("default")).toEqual({
-      document: "law.md",
+    expect(service.current?.["note.default-profile"]).toEqual({
       bindings: {
         "citation.references-style": "apa",
         "note.literature-folder": "Law",
@@ -147,12 +145,9 @@ describe("SettingsService loading", () => {
         "note.import-annotations-as-template": true,
       },
     });
-    expect(service.resolveLiteratureNoteProfileBindings("default")).toEqual(
-      service.getLiteratureNoteProfile("default")?.bindings,
-    );
     expect(plugin.__data).toEqual({
       __VERSION__: 10,
-      "note.default-profile": service.getLiteratureNoteProfile("default"),
+      "note.default-profile": service.current?.["note.default-profile"],
     });
   });
 
@@ -360,109 +355,26 @@ describe("SettingsService loading", () => {
   });
 });
 
-describe("SettingsService literature note profiles", () => {
-  it("resolves every default Profile binding from its total record", async () => {
-    const { service } = makeService();
-    await service.ready;
-
-    expect(service.getLiteratureNoteProfile("default")).toEqual(
-      DEFAULT_LITERATURE_NOTE_PROFILE,
-    );
-    expect(service.resolveLiteratureNoteProfileBindings("default")).toEqual(
-      defaults["note.default-profile"].bindings,
-    );
-  });
-
-  it("sets and clears the default profile document", async () => {
-    const { service } = makeService();
-    await service.ready;
-
-    service.setDefaultLiteratureNoteProfileDocument("literature-note.md");
-    expect(service.getLiteratureNoteProfile("default")).toEqual({
-      document: "literature-note.md",
-      bindings: defaults["note.default-profile"].bindings,
-    });
-
-    service.setDefaultLiteratureNoteProfileDocument(null);
-    expect(service.getLiteratureNoteProfile("default")).toEqual(
-      DEFAULT_LITERATURE_NOTE_PROFILE,
-    );
-  });
-
-  it("creates, edits, and deletes a profile with a Nano ID identity", async () => {
-    const { plugin, service } = makeService();
-    await service.ready;
-
-    const created = service.createLiteratureNoteProfile("Books");
-    expect(created).toMatchObject({ label: "Books" });
-    expect(created.id).not.toBe("Books");
-    expect(created.id).toMatch(/^[A-Za-z0-9]{12}$/);
-    const fetched = service.getLiteratureNoteProfile(created.id);
-    if (!fetched || !("id" in fetched)) throw new Error("Profile missing");
-    (fetched as { label: string }).label = "Tampered";
-    expect(service.getLiteratureNoteProfile(created.id)).toMatchObject({
-      label: "Books",
-    });
-
-    const edited = service.updateLiteratureNoteProfile(created.id, {
-      label: "Monographs",
-      document: "books.md",
-    });
-    expect(edited).toEqual({
-      id: created.id,
-      label: "Monographs",
-      document: "books.md",
-    });
-    expect(service.getLiteratureNoteProfile(created.id)).toEqual(edited);
-
-    expect(
-      service.updateLiteratureNoteProfile(created.id, { document: null }),
-    ).toEqual({ id: created.id, label: "Monographs" });
-
-    service.deleteLiteratureNoteProfile(created.id);
-    expect(service.getLiteratureNoteProfile(created.id)).toBeUndefined();
-    await service.flush();
-    expect(plugin.__data).toEqual({ __VERSION__: 10, "note.profiles": [] });
-  });
-
-  it("overlays sparse bindings and returns undefined for an unknown profile", async () => {
-    const { service } = makeService();
+describe("SettingsService default Profile", () => {
+  it("stores only the total default bindings", async () => {
+    const { service, plugin } = makeService();
     await service.ready;
     service.updateDefaultLiteratureNoteProfileBindings({
-      "note.literature-folder": "Literature",
-      "citation.references-style": "global-style",
+      "note.literature-folder": "Reading",
     });
-    const profile = service.createLiteratureNoteProfile("Books");
-
-    service.updateLiteratureNoteProfile(profile.id, {
-      bindings: { "note.literature-folder": "Books" },
+    await service.flush();
+    expect(plugin.__data).toEqual({
+      __VERSION__: 10,
+      "note.default-profile": {
+        bindings: {
+          "note.literature-folder": "Reading",
+          "citation.references-style": null,
+          "note.import-folder": "zotero_notes",
+          "note.import-colored-highlights": false,
+          "note.import-annotations-as-template": false,
+        },
+      },
     });
-    expect(service.resolveLiteratureNoteProfileBindings(profile.id)).toEqual({
-      ...defaults["note.default-profile"].bindings,
-      "note.literature-folder": "Books",
-      "citation.references-style": "global-style",
-    });
-
-    service.updateLiteratureNoteProfile(profile.id, {
-      bindings: { "citation.references-style": "profile-style" },
-    });
-    expect(service.resolveLiteratureNoteProfileBindings(profile.id)).toEqual({
-      ...defaults["note.default-profile"].bindings,
-      "note.literature-folder": "Literature",
-      "citation.references-style": "profile-style",
-    });
-
-    service.updateLiteratureNoteProfile(profile.id, {
-      bindings: { "citation.references-style": null },
-    });
-    expect(service.resolveLiteratureNoteProfileBindings(profile.id)).toEqual({
-      ...defaults["note.default-profile"].bindings,
-      "note.literature-folder": "Literature",
-      "citation.references-style": null,
-    });
-    expect(
-      service.resolveLiteratureNoteProfileBindings("V1StGXR8Z5jd" as ProfileId),
-    ).toBeUndefined();
   });
 });
 

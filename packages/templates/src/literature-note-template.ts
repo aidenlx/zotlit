@@ -68,27 +68,37 @@ const managedFrontmatterSchema = v.pipe(
   v.readonly(),
 );
 
-const manifestSchema = v.strictObject({
-  id: nonEmptyString,
-  name: nonEmptyString,
-  version: nonEmptyString,
-  author: nonEmptyString,
-  description: nonEmptyString,
-  contract: v.pipe(v.number(), v.integer(), v.minValue(1)),
-  minAppVersion: v.optional(nonEmptyString),
-  sampleItemType: v.optional(nonEmptyString),
-  filename: nonEmptyTemplateSource,
-  profileDefaults: v.optional(
-    v.strictObject({
-      folder: v.optional(nonEmptyString),
-      citationStyle: v.optional(v.nullable(nonEmptyString)),
-    }),
-    {},
+const profileBindingEntries = {
+  folder: v.optional(v.string()),
+  citationStyle: v.optional(v.nullable(nonEmptyString)),
+  importFolder: v.optional(v.string()),
+  importColoredHighlights: v.optional(v.boolean()),
+  importAnnotationsAsTemplate: v.optional(v.boolean()),
+};
+
+const manifestSchema = v.pipe(
+  v.strictObject({
+    id: nonEmptyString,
+    name: nonEmptyString,
+    version: nonEmptyString,
+    author: v.optional(nonEmptyString),
+    description: v.optional(nonEmptyString),
+    contract: v.pipe(v.number(), v.integer(), v.minValue(1)),
+    minAppVersion: v.optional(nonEmptyString),
+    sampleItemType: v.optional(nonEmptyString),
+    filename: nonEmptyTemplateSource,
+    ...profileBindingEntries,
+    language: v.optional(v.picklist(["liquid", "eta"]), "liquid"),
+    partials: v.optional(partialsSchema),
+    frontmatter: v.optional(managedFrontmatterSchema),
+  }),
+  v.check(
+    (manifest) =>
+      manifest.id !== "default" ||
+      Object.keys(profileBindingEntries).every((key) => !(key in manifest)),
+    "Default Profile bindings belong in settings",
   ),
-  language: v.optional(v.picklist(["liquid", "eta"]), "liquid"),
-  partials: v.optional(partialsSchema),
-  frontmatter: v.optional(managedFrontmatterSchema),
-});
+);
 
 export type ManagedFrontmatterEntry = v.InferOutput<
   typeof managedFrontmatterEntrySchema
@@ -104,16 +114,17 @@ export interface LiteratureNoteTemplateManifest {
   id: string;
   name: string;
   version: string;
-  author: string;
-  description: string;
+  author?: string;
+  description?: string;
   contract: number;
   minAppVersion?: string;
   sampleItemType?: string;
   filename: string;
-  profileDefaults: {
-    folder?: string;
-    citationStyle?: string | null;
-  };
+  folder?: string;
+  citationStyle?: string | null;
+  importFolder?: string;
+  importColoredHighlights?: boolean;
+  importAnnotationsAsTemplate?: boolean;
   language: TemplateLanguage;
   partials?: readonly LiteratureNoteTemplatePartial[];
   frontmatter?: readonly ManagedFrontmatterEntry[];
@@ -194,7 +205,7 @@ export class LegacyTemplateConversionError extends Error {
   }
 }
 
-export const CONVERTED_DEFAULT_PROFILE_DOCUMENT = "literature-note-default.md";
+export const CONVERTED_DEFAULT_PROFILE_DOCUMENT = "zotlit-profile.default.md";
 
 export interface SynthesizedLiteratureNoteTemplateManifest {
   readonly id?: string;
@@ -268,7 +279,7 @@ export function synthesizeLegacyLiteratureNoteTemplate(
   )}\n{% annotation %}\n${annotationSource}{% endannotation %}\n`;
   const manifest = stringifyYaml(
     {
-      id: manifestOverrides.id ?? "zotlit.converted-default",
+      id: manifestOverrides.id ?? "default",
       name: manifestOverrides.name ?? "Converted default",
       version: "1.0.0",
       author: "ZotLit",
@@ -315,16 +326,23 @@ export type LiteratureNoteTemplateErrorCode =
 export class LiteratureNoteTemplateError extends Error {
   readonly code: LiteratureNoteTemplateErrorCode;
   readonly recovery: string;
+  /** Readable manifest identity for diagnostics, even when the document is invalid. */
+  readonly manifestId?: string;
 
   constructor(
     code: LiteratureNoteTemplateErrorCode,
     message: string,
-    { recovery, ...options }: ErrorOptions & { recovery: string },
+    {
+      recovery,
+      manifestId,
+      ...options
+    }: ErrorOptions & { recovery: string; manifestId?: string },
   ) {
     super(message, options);
     this.name = "LiteratureNoteTemplateError";
     this.code = code;
     this.recovery = recovery;
+    this.manifestId = manifestId;
   }
 }
 
@@ -344,39 +362,49 @@ export function parseLiteratureNoteTemplate(
   const { manifestSource, body } = splitDocument(source);
   const rawManifest = parseManifestYaml(manifestSource);
 
-  const result = v.safeParse(manifestSchema, rawManifest);
-  if (!result.success) {
-    const issue = result.issues[0]!;
-    const frontmatter = frontmatterIssueContext(rawManifest, issue);
-    throw new LiteratureNoteTemplateError(
-      "invalid-manifest",
-      frontmatter?.entry
-        ? `Invalid Managed Frontmatter entry ${frontmatter.entry}: ${issue.message}`
-        : frontmatter
-          ? `Invalid Literature Note Template manifest field 'frontmatter': ${issue.message}`
-          : `Invalid Literature Note Template manifest: ${issue.message}`,
-      {
-        recovery: frontmatter?.entry
-          ? "Correct the named Managed Frontmatter entry."
+  try {
+    const result = v.safeParse(manifestSchema, rawManifest);
+    if (!result.success) {
+      const issue = result.issues[0]!;
+      const frontmatter = frontmatterIssueContext(rawManifest, issue);
+      throw new LiteratureNoteTemplateError(
+        "invalid-manifest",
+        frontmatter?.entry
+          ? `Invalid Managed Frontmatter entry ${frontmatter.entry}: ${issue.message}`
           : frontmatter
-            ? "Correct the Managed Frontmatter section."
-            : "Correct the manifest field named by the validation error.",
-        cause: issue,
-      },
-    );
-  }
+            ? `Invalid Literature Note Template manifest field 'frontmatter': ${issue.message}`
+            : `Invalid Literature Note Template manifest: ${issue.message}`,
+        {
+          recovery: frontmatter?.entry
+            ? "Correct the named Managed Frontmatter entry."
+            : frontmatter
+              ? "Correct the Managed Frontmatter section."
+              : "Correct the manifest field named by the validation error.",
+          cause: issue,
+        },
+      );
+    }
 
-  const annotationBlock = findAnnotationBlock(body, result.output.language);
-  if (!annotationBlock) {
-    throw missingAnnotationBlockError();
-  }
+    const annotationBlock = findAnnotationBlock(body, result.output.language);
+    if (!annotationBlock) {
+      throw missingAnnotationBlockError();
+    }
 
-  return {
-    manifest: result.output,
-    body,
-    managedBlock: findManagedBlock(body, result.output.language),
-    annotationBlock,
-  };
+    return {
+      manifest: result.output,
+      body,
+      managedBlock: findManagedBlock(body, result.output.language),
+      annotationBlock,
+    };
+  } catch (error) {
+    if (!(error instanceof LiteratureNoteTemplateError)) throw error;
+    const id = readOwn(rawManifest, "id");
+    throw new LiteratureNoteTemplateError(error.code, error.message, {
+      recovery: error.recovery,
+      manifestId: typeof id === "string" ? id : undefined,
+      cause: error,
+    });
+  }
 }
 
 /** Return a render-only document whose Annotation Block contributes no bytes. */

@@ -1,9 +1,3 @@
-// Registers the Workbench commands with Obsidian's CLI.
-//
-// Command, flag, guide, and diagnostic text is all hardcoded English: an
-// agent-facing contract surface, not localized UI. See
-// apps/obsidian/policies/cli-text.md.
-
 import type {
   App,
   CliFlag,
@@ -11,9 +5,15 @@ import type {
   FileSystemAdapter,
   Plugin,
 } from "obsidian";
+// Registers the Workbench commands with Obsidian's CLI.
+//
+// Command, flag, guide, and diagnostic text is all hardcoded English: an
+// agent-facing contract surface, not localized UI. See
+// apps/obsidian/policies/cli-text.md.
 
 import type { DatabaseService } from "@/services/database/service";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
@@ -59,6 +59,7 @@ interface TemplateWorkbenchRegistrationDeps {
   db: DatabaseService;
   noteIndex: NoteIndex;
   settings: SettingsService;
+  profile: ProfileService;
   templates: TemplateService;
   zoteroPref: ZoteroPrefService;
 }
@@ -230,7 +231,7 @@ export function registerTemplateWorkbench(
   const handlers = createTemplateWorkbenchHandlers({
     pluginVersion: plugin.manifest.version,
     getIdentity: async () => {
-      await deps.zoteroPref.ready;
+      await Promise.all([deps.zoteroPref.ready, deps.profile.ready]);
       return {
         vault: {
           name: deps.app.vault.getName(),
@@ -250,8 +251,12 @@ export function registerTemplateWorkbench(
         const settings = deps.settings.current;
         if (!settings) throw new Error("Settings are not loaded");
         return {
-          defaultProfile: settings["note.default-profile"],
-          profiles: settings["note.profiles"],
+          defaultProfile: deps.profile.resolveProfile("default"),
+          profiles: deps.profile.profiles.map((entry) => ({
+            ...entry,
+            bindings: deps.profile.resolveProfile(entry.id)!.bindings,
+          })),
+          diagnostics: deps.profile.diagnostics,
         };
       },
       getDocumentStatuses: () =>

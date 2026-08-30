@@ -48,17 +48,12 @@ import {
   truncateToByteLimit,
 } from "@/services/note-feature/filename";
 import type { NoteIndex } from "@/services/note-index/service";
-import {
-  boundLiteratureNoteProfileId,
-  getProfileBinding,
-  profileOf,
-  resolveProfile,
-} from "@/services/settings/profile";
+import { boundProfile, getProfileBinding } from "@/services/profile/bindings";
 import type {
-  NoteProfile,
   ProfileBindingSettings,
   ResolvedProfile,
-} from "@/services/settings/profile";
+} from "@/services/profile/bindings";
+import type { ProfileService } from "@/services/profile/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -111,6 +106,7 @@ export type ImportVaultApp = {
 };
 
 interface NoteImporterDeps {
+  profile: Pick<ProfileService, "ready" | "resolveProfile" | "profileOf">;
   app: ImportVaultApp;
   noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey" | "getNotesByItemKey">;
   template: Pick<TemplateService, "render" | "renderProfileAnnotation">;
@@ -202,23 +198,22 @@ async function prepareImport(
   ctx: Ctx,
   options: PrepareNoteImportOptions,
 ): Promise<NoteImport> {
+  await ctx.profile.ready;
   const { settings, sourcePath } = options;
   const importFolder = normalizeFolderPath(
     normalizePath(getProfileBinding(settings, "note.import-folder")),
   );
+  const profile =
+    boundProfile(settings) ?? ctx.profile.resolveProfile(DEFAULT_PROFILE);
+  if (!profile)
+    throw new NoteImportProfileError(DEFAULT_PROFILE, { path: sourcePath });
   const run: RunContext = {
     client: options.client,
     settings,
     groupIdMemo: options.groupIdMemo,
     tagMemo: options.tagMemo,
     attachmentFolderCache: new Map(),
-    // The bound Profile id, if any, always names a configured Profile —
-    // `resolveProfile` returns undefined on any id that doesn't, and this id
-    // was only ever bound from a successful resolution.
-    profile: resolveProfile(
-      settings,
-      boundLiteratureNoteProfileId(settings) ?? DEFAULT_PROFILE,
-    )!,
+    profile,
   };
   const queue: QueuedImport[] = [];
   logger.debug("Prepared note import", { sourcePath, importFolder });
@@ -234,6 +229,7 @@ async function doImportNote(
   note: Note,
   options: ImportNoteOptions,
 ): Promise<WriteOutcome> {
+  await ctx.profile.ready;
   return ctx.limit(async () => {
     const existing =
       (options.targetFile
@@ -241,12 +237,7 @@ async function doImportNote(
         : null) ?? ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
 
     const source = existing ?? parentLiteratureNote(ctx, note, options);
-    const resolved: NoteProfile = source
-      ? profileOf(ctx.app.metadataCache, options.settings, source)
-      : {
-          ok: true,
-          profile: resolveProfile(options.settings, DEFAULT_PROFILE),
-        };
+    const resolved = ctx.profile.profileOf(source);
     if (!resolved.ok) {
       throw new NoteImportProfileError(resolved.stamped.stamp, {
         path: existing?.path,

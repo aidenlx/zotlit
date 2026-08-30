@@ -354,6 +354,46 @@ describe("Literature Note Template document", () => {
     },
   );
 
+  it.each([
+    "folder: Books",
+    "citationStyle: null",
+    "importFolder: Notes",
+    "importColoredHighlights: false",
+    "importAnnotationsAsTemplate: true",
+  ])("rejects default Profile bindings: %s", (binding) => {
+    expect(() =>
+      new TemplateFacade().parseLiteratureNoteTemplate(`---
+id: default
+name: Default
+version: 1.0.0
+contract: 2
+filename: note
+${binding}
+---
+Body{% annotation %}Annotation{% endannotation %}`),
+    ).toThrowError(expect.objectContaining({ code: "invalid-manifest" }));
+  });
+
+  it("accepts optional envelope fields and rejects retired profileDefaults", () => {
+    const source = `---
+id: Bk3Qn7XvT2Lp
+name: Books
+version: 1.0.0
+contract: 2
+filename: note
+---
+Body{% annotation %}Annotation{% endannotation %}`;
+    const facade = new TemplateFacade();
+    expect(facade.parseLiteratureNoteTemplate(source).manifest.name).toBe(
+      "Books",
+    );
+    expect(() =>
+      facade.parseLiteratureNoteTemplate(
+        source.replace("contract: 2", "contract: 2\nprofileDefaults: {}"),
+      ),
+    ).toThrowError(expect.objectContaining({ code: "invalid-manifest" }));
+  });
+
   it("parses the manifest, body, and Managed Block", () => {
     const facade = new TemplateFacade();
     const document = facade.parseLiteratureNoteTemplate(`---
@@ -366,9 +406,11 @@ contract: 2
 minAppVersion: 2.3.0
 sampleItemType: journalArticle
 filename: "{{ zt.citationKey }}"
-profileDefaults:
-  folder: Literature
-  citationStyle: apa
+folder: Literature
+citationStyle: apa
+importFolder: Imported
+importColoredHighlights: true
+importAnnotationsAsTemplate: false
 language: liquid
 ---
 # {{ zt.title }}
@@ -387,10 +429,11 @@ language: liquid
       minAppVersion: "2.3.0",
       sampleItemType: "journalArticle",
       filename: "{{ zt.citationKey }}",
-      profileDefaults: {
-        folder: "Literature",
-        citationStyle: "apa",
-      },
+      folder: "Literature",
+      citationStyle: "apa",
+      importFolder: "Imported",
+      importColoredHighlights: true,
+      importAnnotationsAsTemplate: false,
       language: "liquid",
     });
     expect(document.body).toBe(
@@ -664,7 +707,7 @@ filename: Static
 Static body{% annotation %}Annotation{% endannotation %}`);
 
     expect(document.manifest.language).toBe("liquid");
-    expect(document.manifest.profileDefaults).toEqual({});
+    expect(document.manifest.citationStyle).toBeUndefined();
     expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
       "Static body\n",
     );
@@ -863,12 +906,11 @@ author: Ada Example
 description: Disables the inherited citation style.
 contract: 2
 filename: note
-profileDefaults:
-  citationStyle: null
+citationStyle: null
 ---
 Body{% annotation %}Annotation{% endannotation %}`);
 
-    expect(document.manifest.profileDefaults.citationStyle).toBeNull();
+    expect(document.manifest.citationStyle).toBeNull();
   });
 
   it("renders the filename rule in the document language", () => {

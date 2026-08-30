@@ -6,6 +6,7 @@ import type { CitationIndex } from "@/services/citation-index/service";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { PandocEngineService } from "@/services/pandoc/service";
+import type { ProfileService } from "@/services/profile/service";
 import type { ReleaseService } from "@/services/release/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -15,7 +16,7 @@ import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 /** Settings keys, used to type declarative `control` bindings against the schema. */
 export type SettingsKey = keyof Settings;
 export type ProfileControlKey =
-  `note-profile:${string}:${"label" | "folder" | "citation-style-inherit" | "citation-style" | "import-folder" | "colored-highlights" | "annotations-as-template"}`;
+  `note-profile:default:${"folder" | "citation-style" | "import-folder" | "colored-highlights" | "annotations-as-template"}`;
 export type SettingsControlKey = SettingsKey | ProfileControlKey;
 
 /** The release-service surface the setting tab needs — reused by both render paths. */
@@ -55,6 +56,7 @@ export interface SettingTabContext {
    */
   manifest: PluginManifest;
   settings: SettingsService;
+  profile: ProfileService;
   db: DatabaseService;
   /** The live Library Scope the Library scope rows read and repair. */
   libraryScope: LibraryScopeService;

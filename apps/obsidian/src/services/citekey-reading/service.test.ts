@@ -20,6 +20,7 @@ import {
 import { CitationText } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -120,6 +121,9 @@ async function makeHarness({
 
   const citationText = stack.use(
     new CitationText({
+      profile: profileReader(defaults, {
+        getFileCache: () => ({ frontmatter }),
+      }),
       app: {
         vault: { cachedRead: () => Promise.resolve(body) },
         metadataCache: {

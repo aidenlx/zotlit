@@ -17,7 +17,7 @@ import type {
   AvailableLibrary,
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/profile";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 

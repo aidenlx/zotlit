@@ -12,6 +12,7 @@ allowBuilds:
   sharp: false
 
 catalog:
+  yaml: ^2.9.0
   "@logtape/logtape": ^2.0.7
   "@pnpm/find-workspace-dir": ^1000.1.5
   "@std/collections": jsr:1.2.0

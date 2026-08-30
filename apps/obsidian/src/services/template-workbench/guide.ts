@@ -340,11 +340,19 @@ FIELD ROWS
 const PROFILES_SECTION = `LITERATURE NOTE PROFILES AND DOCUMENTS
 
 MODEL
-  A Literature Note Profile selects one optional Literature Note Template
-  document and vault-local bindings. The built-in default Profile has
-  id=default in template-status. An unset reference means the built-in
-  template. A set reference must resolve to one document in the configured
-  template folder.
+  A Literature Note Profile is a zotlit-profile.<slug>.md document directly
+  inside the template folder. Its manifest id is the stable twelve-character
+  Profile ID; name is its label. Rename the file freely while keeping the
+  zotlit-profile. prefix. Edit the file to change its look or bindings.
+
+  The flat manifest keys folder, citationStyle, importFolder,
+  importColoredHighlights, and importAnnotationsAsTemplate override the
+  default Profile bindings. An absent key inherits; citationStyle: null
+  selects no style. Leave folder keys absent when sharing a Profile.
+
+  The default Profile has id=default. Its bindings live in settings. Its
+  built-in look can be ejected to zotlit-profile.default.md, whose manifest
+  has id: default and carries no bindings. Restore trashes that document.
 
   A note records its Profile in the zotlit-profile property, written as the
   Profile label, one space, and the Profile id in parentheses: Reading notes
@@ -359,9 +367,11 @@ MODEL
   line owns that line: its indentation and line break belong to the tag.
 
 INSPECTION
-  template-status reports Profiles under profiles and the union of installed
-  and referenced documents under documents. Each document has a valid, invalid,
-  or missing validation state. A failed state carries diagnostic.hint.
+  template-status reports Profiles and their resolved bindings under profiles,
+  documents under documents, and excluded files under profileDiagnostics.
+  invalid-profile-document names a broken file. duplicate-profile-id names all
+  paths claiming one ID; each is excluded until the collision is fixed.
+  Duplicate labels remain usable. Identity comes from the manifest ID.
 
 RENDER
   ${DOCUMENT_RENDER_SYNOPSIS}
