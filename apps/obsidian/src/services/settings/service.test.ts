@@ -98,6 +98,25 @@ function migratedSettings(
 let warnSpy: ReturnType<typeof vi.spyOn>;
 let errorSpy: ReturnType<typeof vi.spyOn>;
 
+it("preserves the completed template conversion across a settings reload", async () => {
+  const plugin = new PluginStub({ __VERSION__: 10 });
+  await using service = makeService({ plugin }).service;
+  await service.loaded;
+  service.update({
+    "note.template-conversion-result": {
+      document: "Research templates/zotlit-profile.default.md",
+      trashed: 4,
+    },
+  });
+  await service.flush();
+
+  await using reopened = makeService({ plugin }).service;
+  expect((await reopened.loaded)["note.template-conversion-result"]).toEqual({
+    document: "Research templates/zotlit-profile.default.md",
+    trashed: 4,
+  });
+});
+
 beforeEach(() => {
   warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});

@@ -986,7 +986,22 @@
   "welcome_migration_title": "Upgrading from ZotLit v1",
   "welcome_migration_body": "Custom Eta templates are not loaded until you rename them and enable the JavaScript Templates gate.",
   "welcome_template_conversion_title": "Convert your literature note templates",
-  "welcome_template_conversion_body": "ZotLit will combine your current note, content, and filename templates into one profile document. It verifies identical output before it changes any files.",
+  "welcome_template_conversion_body": "ZotLit will combine your note, content, filename, and annotation templates into {path}. It verifies byte-identical output before writing the profile document, then moves the old files to Obsidian’s configured trash.",
+  "welcome_template_conversion_completed_title": "Literature note templates converted",
+  "welcome_template_conversion_completed_body": [
+    {
+      "declarations": [
+        "input path",
+        "input count",
+        "local category = count: plural"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "Created {path} and moved one old template file to Obsidian’s configured trash.",
+        "category=*": "Created {path} and moved {count} old template files to Obsidian’s configured trash."
+      }
+    }
+  ],
   "welcome_template_conversion_action": "Convert templates",
   "welcome_action_open_migration_guide": "Open migration guide",
   "creator_summary": [

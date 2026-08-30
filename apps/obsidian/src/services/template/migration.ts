@@ -308,6 +308,13 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
       await this.#app.fileManager.trashFile(file);
       trashed.push(path);
     }
+    this.#settings.update({
+      "note.template-conversion-result": {
+        document: targetPath,
+        trashed: trashed.length,
+      },
+    });
+    await this.#settings.flush();
     logger.info("Converted legacy Literature Note Templates", {
       document: targetPath,
       trashed,

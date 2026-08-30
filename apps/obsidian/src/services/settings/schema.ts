@@ -140,6 +140,12 @@ export const schema = v.object({
     ),
   ),
   "note.template-conversion-pending": v.boolean(),
+  "note.template-conversion-result": v.nullable(
+    v.object({
+      document: v.pipe(v.string(), v.nonEmpty()),
+      trashed: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
+    }),
+  ),
   "note.frontmatter-fields": frontmatterFieldsSchema,
 
   "server.enabled": v.boolean(),
@@ -195,6 +201,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
   "note.last-used-profile": null,
   "note.template-conversion-pending": false,
+  "note.template-conversion-result": null,
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "server.enabled": false,
   "server.port": 9091,

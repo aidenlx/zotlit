@@ -1,7 +1,10 @@
-// Presentational tree for the Welcome View: fresh-state onboarding timeline with doc chips and footer links, plus the upgraded-state Migration Prompt banner.
+// Welcome onboarding timeline with conversion status and evidence-backed v1 guidance.
+import { join } from "node:path/posix";
 import type { IconName } from "obsidian";
 import type { ReactNode } from "react";
 import { useState } from "react";
+
+import { CONVERTED_DEFAULT_PROFILE_DOCUMENT } from "@zotlit/templates/facade";
 
 import { Button } from "@/components/obsidian/button";
 import { Icon } from "@/components/obsidian/icon";
@@ -333,6 +336,11 @@ function MigrationBanner() {
   const templateConversionPending = useWelcomeStore(
     (state) => state.templateConversionPending,
   );
+  const templateFolder = useWelcomeStore((state) => state.templateFolder);
+  const result = useWelcomeStore((state) => state.templateConversionResult);
+  const v1TemplatesPresent = useWelcomeStore(
+    (state) => state.v1TemplatesPresent,
+  );
   const [converting, setConverting] = useState(false);
   if (templateConversionPending) {
     return (
@@ -346,7 +354,9 @@ function MigrationBanner() {
         <div className="zt:min-w-0 zt:flex-1 zt:basis-[220px]">
           <StepHeading>{m.welcome_template_conversion_title()}</StepHeading>
           <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
-            {m.welcome_template_conversion_body()}
+            {m.welcome_template_conversion_body({
+              path: join(templateFolder, CONVERTED_DEFAULT_PROFILE_DOCUMENT),
+            })}
           </p>
         </div>
         <Button
@@ -366,6 +376,22 @@ function MigrationBanner() {
       </div>
     );
   }
+  if (result) {
+    return (
+      <div className="zt:relative zt:mt-6 zt:rounded-lg zt:border zt:border-border zt:bg-muted zt:px-6 zt:py-5.5">
+        <StepHeading>
+          {m.welcome_template_conversion_completed_title()}
+        </StepHeading>
+        <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
+          {m.welcome_template_conversion_completed_body({
+            path: result.document,
+            count: result.trashed,
+          })}
+        </p>
+      </div>
+    );
+  }
+  if (!v1TemplatesPresent) return null;
   return (
     <div
       className="zt:relative zt:mt-6 zt:flex zt:flex-wrap zt:items-center zt:gap-4.5 zt:rounded-lg zt:border zt:px-6 zt:py-5.5"
@@ -396,7 +422,7 @@ export function Welcome() {
   return (
     <div className="zt:mx-auto zt:max-w-160 zt:px-8 zt:pt-6 zt:pb-2">
       <Header />
-      {mode === "upgraded" ? <MigrationBanner /> : null}
+      <MigrationBanner />
       <div className="zt:mt-9">
         <StepConnect />
         <StepCompanion />

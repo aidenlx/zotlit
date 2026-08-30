@@ -393,6 +393,7 @@ export default class ZotLitPlugin extends Plugin {
       zoteroPref: services.zoteroPref,
       settings: services.settings,
       templateMigration: services.templateMigration,
+      release: services.release,
     });
 
     stack.defer(
