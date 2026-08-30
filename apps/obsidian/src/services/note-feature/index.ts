@@ -17,6 +17,8 @@ export {
   type CreationProfileSources,
   type CreationProfileSelection,
   type PreparedCreationProfile,
+  type ProfileNotePreview,
+  type ProfileNotePreviewOptions,
   type ProfilePreview,
   type PreparedProfileSwitch,
   type NoteFeature,

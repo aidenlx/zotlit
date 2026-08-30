@@ -181,6 +181,56 @@ function stubNoteContext(
 }
 
 describe("Profile source selection", () => {
+  it("previews the draft stamp and document Properties, then creates at the same suffixed path", async () => {
+    const id = "Bk3Qn7XvT2Lp" as ProfileId;
+    const { deps } = makeUpdateHarness({
+      content: "",
+      settings: {
+        profiles: [
+          {
+            id,
+            label: "Reading",
+            document: "reading.md",
+            bindings: { "note.literature-folder": "Reading" },
+          },
+        ],
+      },
+    });
+    const app = makeApp();
+    deps.app = app;
+    const document = makeDocumentTemplate({
+      filename: `Paper${filenameSuffix()}`,
+      createBody: "# A Study",
+      frontmatter: compileDocumentFrontmatter([
+        { key: "topic", merge: "replace", value: "Research" },
+      ]),
+    });
+    deps.template = {
+      ...makeTemplate(),
+      getLiteratureNoteTemplate: () => document,
+    };
+    stubIndexedKeyUpdate(updateContext());
+    await app.vault.create("Reading/Paper.md", "Occupied");
+    const feature = createNoteFeature(deps);
+    const preview = feature.prepareProfileNote({
+      profile: profileReader(deps.settings.current!).resolveProfile(id)!,
+      document,
+      note: updateContext(),
+      filename: {},
+    });
+    expect(preview.path).not.toBe("Reading/Paper.md");
+    expect(preview.properties).toEqual({
+      "zotero-key": "ABC12345",
+      "zotlit-profile": "Reading (Bk3Qn7XvT2Lp)",
+      topic: "Research",
+    });
+    expect(preview.body).toBe("# A Study");
+    expect(app.vault.create).toHaveBeenCalledTimes(1);
+    const file = createdFile(await preview.create());
+    expect(file.path).toBe(preview.path);
+    expect(app.vault.contentByPath.get("Reading/Paper.md")).toBe("Occupied");
+  });
+
   it("keeps the preview's random suffix and retries safely if another file takes that path", async () => {
     const { deps } = makeUpdateHarness({ content: "" });
     const app = makeApp();

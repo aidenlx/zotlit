@@ -1,6 +1,7 @@
 import type { App, Plugin } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { NoteIndex } from "@/services/note-index/service";
 import { SettingsService } from "@/services/settings/service";
@@ -163,7 +164,10 @@ describe("ProfileService", () => {
   it("creates shareable documents with fresh IDs and refuses repeated or reserved labels", async () => {
     await using fixture = await harness();
     const { profile, vault } = fixture;
-    const created = profile.create({ label: "Reading group" });
+    const created = profile.create({
+      label: "Reading group",
+      bindings: { folder: "Reading" },
+    });
     await vi.advanceTimersByTimeAsync(500);
     const entry = await created;
     expect(entry.id).toMatch(/^[A-Za-z0-9]{12}$/);
@@ -171,8 +175,13 @@ describe("ProfileService", () => {
     expect(vault.contents.get(entry.path)).toContain(`id: ${entry.id}`);
     expect(
       profile.resolveProfile(entry.id)?.bindings["note.literature-folder"],
-    ).toBe("literatures");
-    await expect(profile.create({ label: "Reading group" })).rejects.toThrow();
+    ).toBe("Reading");
+    await expect(
+      profile.create({
+        label: "Reading group",
+        bindings: { folder: "Reading" },
+      }),
+    ).rejects.toThrow();
     await expect(profile.create({ label: "Default" })).rejects.toThrow();
   });
 
@@ -188,11 +197,104 @@ describe("ProfileService", () => {
       );
       vault.deleteFile(`templates/zotlit-profile.${name}.md`);
       await vi.advanceTimersByTimeAsync(500);
-      const pending = profile.create({ label: name });
+      const pending = profile.create({
+        label: name,
+        bindings: { folder: "Reading" },
+      });
       await vi.advanceTimersByTimeAsync(500);
       expect((await pending).document).toBe(`zotlit-profile.${name}.md`);
     },
   );
+
+  it("explains an unavailable look and a missing source document with recovery text", async () => {
+    await using fixture = await harness({
+      "templates/zotlit-profile.books.md": document(),
+    });
+    const unknown = "Qw8Er5Ty2Ui9" as ProfileId;
+    await expect(fixture.profile.getSource(unknown)).rejects.toThrow(
+      m.settings_profile_source_unavailable({ profile: unknown }),
+    );
+    fixture.vault.deleteFile("templates/zotlit-profile.books.md");
+    await expect(fixture.profile.getSource(BOOKS)).rejects.toThrow(
+      m.settings_profile_source_missing({
+        document: "zotlit-profile.books.md",
+      }),
+    );
+  });
+
+  it("prepares the effective Default look and writes only differing bindings with the previewed stamp", async () => {
+    await using fixture = await harness({
+      "templates/zotlit-profile.default.md": document("default").replace(
+        "# {{",
+        "# Default {{",
+      ),
+    });
+    const { profile, vault } = fixture;
+    const draft = await profile.prepareCreate({
+      label: "Reading",
+      bindings: {
+        folder: "Reading",
+        citationStyle:
+          profile.resolveProfile("default")!.bindings[
+            "citation.references-style"
+          ],
+      },
+    });
+    expect(draft.source).toContain("# Default {{");
+    expect(draft.source).not.toContain("citationStyle:");
+    expect(draft.profile.stamp).toBe(`Reading (${draft.profile.selector})`);
+    expect(vault.files.has("templates/zotlit-profile.reading.md")).toBe(false);
+    const pending = draft.create();
+    await vi.advanceTimersByTimeAsync(500);
+    const created = await pending;
+    expect(created.id).toBe(draft.profile.selector);
+    expect(vault.contents.get(created.path)).toBe(draft.source);
+  });
+
+  it("refuses creation when explicit choices still equal Default", async () => {
+    await using fixture = await harness();
+    const base = fixture.profile.resolveProfile("default")!;
+    await expect(
+      fixture.profile.create({
+        label: "Same",
+        bindings: {
+          folder: base.bindings["note.literature-folder"],
+          citationStyle: base.bindings["citation.references-style"],
+        },
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("refuses a copied look identical to Default even when its source Profile has bindings", async () => {
+    await using fixture = await harness({
+      "templates/zotlit-profile.default.md": document("default"),
+      "templates/zotlit-profile.books.md": document(BOOKS, "folder: Books"),
+    });
+    const draft = await fixture.profile.prepareCreate({
+      label: "Same",
+      look: BOOKS,
+    });
+    expect(draft.inherited).toEqual(["folder", "citationStyle", "look"]);
+    await expect(draft.create()).rejects.toThrow();
+    expect(fixture.vault.files.has("templates/zotlit-profile.same.md")).toBe(
+      false,
+    );
+  });
+
+  it("duplicates the built-in Default body without ejecting Default", async () => {
+    await using fixture = await harness();
+    const source = await fixture.profile.getSource("default");
+    const pending = fixture.profile.duplicate("default");
+    await vi.advanceTimersByTimeAsync(500);
+    const copied = await pending;
+    expect(copied.id).not.toBe("default");
+    expect(fixture.vault.contents.get(copied.path)?.split("---").at(-1)).toBe(
+      source.split("---").at(-1),
+    );
+    expect(fixture.vault.files.has("templates/zotlit-profile.default.md")).toBe(
+      false,
+    );
+  });
 
   it("uses the dialog bindings as a replacement while inheriting omitted values", async () => {
     await using fixture = await harness();

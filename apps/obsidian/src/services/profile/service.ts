@@ -70,6 +70,21 @@ export interface LiteratureNoteProfile {
   readonly bindings: Partial<ResolvedLiteratureNoteProfileBindings>;
 }
 
+export interface ProfileCreateOptions {
+  label: string;
+  look?: ProfileSelector;
+  source?: string;
+  bindings?: ProfileBindings;
+}
+
+export interface PreparedProfileCreation {
+  profile: ResolvedProfile;
+  source: string;
+  inherited: ("folder" | "citationStyle" | "look")[];
+  reason?: string;
+  create(): Promise<LiteratureNoteProfile>;
+}
+
 export interface ProfileDiagnostic {
   readonly code: "invalid-profile-document" | "duplicate-profile-id";
   readonly path: string;
@@ -176,90 +191,187 @@ export class ProfileService extends Service {
         };
   }
 
-  create(options: {
-    label: string;
-    source?: string;
-    bindings?: ProfileBindings;
-  }): Promise<LiteratureNoteProfile> {
-    return this.#mutate(async () => {
-      await this.ready;
-      const label = options.label.trim();
-      const slug = profileSlug(label);
+  async prepareCreate(
+    options: ProfileCreateOptions,
+  ): Promise<PreparedProfileCreation> {
+    await this.ready;
+    const requestedLabel = options.label.trim();
+    const label = requestedLabel || m.settings_profile_new_name();
+    const base = this.resolveProfile(DEFAULT_PROFILE);
+    if (!base) throw new Error(m.notice_profile_action_failed());
+    const baseline = await this.getSource(DEFAULT_PROFILE);
+    const source =
+      options.source ??
+      (options.look === undefined || options.look === DEFAULT_PROFILE
+        ? baseline
+        : await this.getSource(options.look));
+    const facade = new TemplateFacade();
+    const defaultLook = facade.parseLiteratureNoteTemplate(baseline);
+    const look =
+      source === baseline
+        ? defaultLook
+        : facade.parseLiteratureNoteTemplate(source);
+    const differs =
+      look.body !== defaultLook.body ||
+      (["filename", "language", "frontmatter", "partials"] as const).some(
+        (key) =>
+          JSON.stringify(look.manifest[key]) !==
+          JSON.stringify(defaultLook.manifest[key]),
+      );
+    const bindings = { ...options.bindings };
+    for (const [key, binding] of Object.entries(PROFILE_BINDING_KEYS)) {
+      const name = key as keyof ProfileBindings;
+      const value = bindings[name];
+      const inherited = base.bindings[binding];
       if (
-        !slug ||
-        slug === DEFAULT_PROFILE ||
+        value === undefined ||
+        value === inherited ||
+        ((name === "folder" || name === "importFolder") &&
+          typeof value === "string" &&
+          normalizeFolderPath(value) ===
+            normalizeFolderPath(inherited as string))
+      )
+        delete bindings[name];
+    }
+    let reason =
+      !differs && Object.keys(bindings).length === 0
+        ? m.settings_profile_create_no_difference()
+        : undefined;
+    try {
+      this.#validateLabel(requestedLabel);
+    } catch (error) {
+      if (requestedLabel || !reason)
+        reason = Error.isError(error)
+          ? error.message
+          : m.settings_profile_name_invalid();
+    }
+    const id = mintId() as ProfileId;
+    const content = profileSource(source, { id, label, bindings });
+    const folder = this.#deps.settings.current!["template.folder"];
+    const plainDocument = `zotlit-profile.${profileSlug(label)}.md`;
+    const document = this.#deps.app.vault.getAbstractFileByPath(
+      join(folder, plainDocument),
+    )
+      ? `zotlit-profile.${profileSlug(label)}-${id}.md`
+      : plainDocument;
+    const entry: LiteratureNoteProfile = {
+      id,
+      label,
+      document,
+      path: join(folder, document),
+      bindings: Object.fromEntries(
+        Object.entries(bindings).map(([key, value]) => [
+          PROFILE_BINDING_KEYS[key as keyof ProfileBindings],
+          value,
+        ]),
+      ),
+    };
+    const inherited: PreparedProfileCreation["inherited"] = [];
+    if (bindings.folder === undefined) inherited.push("folder");
+    if (bindings.citationStyle === undefined) inherited.push("citationStyle");
+    if (!differs) inherited.push("look");
+    const profile = bindProfile(this.#deps.settings.current!, {
+      selector: id,
+      document: entry.document,
+      entry,
+    });
+    logger.debug("Prepared Profile creation", { id, label, inherited });
+    return {
+      profile,
+      source: content,
+      inherited,
+      reason,
+      create: () =>
+        this.#mutate(() => {
+          if (reason) throw new Error(reason);
+          return this.#persist(label, id, content);
+        }),
+    };
+  }
+
+  async create(options: ProfileCreateOptions): Promise<LiteratureNoteProfile> {
+    return (await this.prepareCreate(options)).create();
+  }
+
+  /** Read the effective look without ejecting the built-in Default document. */
+  async getSource(selector: ProfileSelector): Promise<string> {
+    await this.ready;
+    const profile = this.resolveProfile(selector);
+    if (!profile)
+      throw new Error(
+        m.settings_profile_source_unavailable({ profile: selector }),
+      );
+    if (profile.document) {
+      const file = this.#deps.app.vault.getFileByPath(
+        join(this.#deps.settings.current!["template.folder"], profile.document),
+      );
+      if (!file)
+        throw new Error(
+          m.settings_profile_source_missing({ document: profile.document }),
+        );
+      return this.#deps.app.vault.cachedRead(file);
+    }
+    return builtInDocument(DEFAULT_PROFILE, m.settings_profile_default_name());
+  }
+
+  async duplicate(selector: ProfileSelector): Promise<LiteratureNoteProfile> {
+    await this.ready;
+    return this.#mutate(async () => {
+      const profile = this.resolveProfile(selector);
+      if (!profile) throw new Error(`Unknown Profile: ${selector}`);
+      const label = profile.label ?? m.settings_profile_default_name();
+      let copyLabel = m.settings_profile_copy_name({ label });
+      let number = 2;
+      while (
         this.#profiles.some(
-          (profile) =>
-            profile.label.toLocaleLowerCase() === label.toLocaleLowerCase(),
+          (entry) =>
+            entry.label.toLocaleLowerCase() === copyLabel.toLocaleLowerCase(),
         )
-      ) {
-        throw new Error(m.settings_profile_name_invalid());
-      }
+      )
+        copyLabel = `${m.settings_profile_copy_name({ label })} ${number++}`;
       const id = mintId() as ProfileId;
-      const source = options.source ?? builtInDocument(id, label);
-      new TemplateFacade().parseLiteratureNoteTemplate(source);
-      const headerEnd = source.indexOf("\n---", source.indexOf("---") + 3);
-      const header = parseDocument(source.slice(4, headerEnd));
-      header.set("id", id);
-      header.set("name", label);
-      if (options.bindings !== undefined) {
-        for (const key of [
-          "folder",
-          "citationStyle",
-          "importFolder",
-          "importColoredHighlights",
-          "importAnnotationsAsTemplate",
-        ] as const)
-          header.delete(key);
-        for (const [key, value] of Object.entries(options.bindings))
-          header.set(key, value);
-      }
-      const content = `---\n${header.toString()}---${source.slice(headerEnd + 4)}`;
-      // Validate the edited manifest before creating a vault file.
-      new TemplateFacade().parseLiteratureNoteTemplate(content);
-      const folder = this.#deps.settings.current!["template.folder"];
-      let path = join(folder, `zotlit-profile.${slug}.md`);
-      await ensureParentFolder(this.#deps.app, path);
-      try {
-        await this.#deps.app.vault.create(path, content);
-      } catch (error) {
-        if (!isFileExistsError(error)) throw error;
-        path = join(folder, `zotlit-profile.${slug}-${id}.md`);
-        await this.#deps.app.vault.create(path, content);
-      }
-      await this.#settle();
-      const entry = this.#profiles.find((profile) => profile.id === id);
-      if (!entry)
-        throw new Error(`Profile document could not be registered: ${path}`);
-      return entry;
+      return this.#persist(
+        copyLabel,
+        id,
+        profileSource(await this.getSource(selector), { id, label: copyLabel }),
+      );
     });
   }
 
-  async duplicate(id: ProfileSelector): Promise<LiteratureNoteProfile> {
-    await this.ready;
-    const profile = this.resolveProfile(id);
-    if (!profile) throw new Error(`Unknown Profile: ${id}`);
-    const label = profile.label ?? m.settings_profile_default_name();
-    let copyLabel = m.settings_profile_copy_name({ label });
-    let number = 2;
-    while (
+  #validateLabel(label: string): void {
+    const slug = profileSlug(label);
+    if (
+      !slug ||
+      slug === DEFAULT_PROFILE ||
       this.#profiles.some(
-        (entry) =>
-          entry.label.toLocaleLowerCase() === copyLabel.toLocaleLowerCase(),
+        (profile) =>
+          profile.label.toLocaleLowerCase() === label.toLocaleLowerCase(),
       )
     )
-      copyLabel = `${m.settings_profile_copy_name({ label })} ${number++}`;
-    const file =
-      profile.document &&
-      this.#deps.app.vault.getFileByPath(
-        join(this.#deps.settings.current!["template.folder"], profile.document),
-      );
-    return this.create({
-      label: copyLabel,
-      source: file
-        ? await this.#deps.app.vault.cachedRead(file)
-        : builtInDocument(id, label),
-    });
+      throw new Error(m.settings_profile_name_invalid());
+  }
+
+  async #persist(
+    label: string,
+    id: ProfileId,
+    content: string,
+  ): Promise<LiteratureNoteProfile> {
+    this.#validateLabel(label);
+    const folder = this.#deps.settings.current!["template.folder"];
+    let path = join(folder, `zotlit-profile.${profileSlug(label)}.md`);
+    await ensureParentFolder(this.#deps.app, path);
+    try {
+      await this.#deps.app.vault.create(path, content);
+    } catch (error) {
+      if (!isFileExistsError(error)) throw error;
+      path = join(folder, `zotlit-profile.${profileSlug(label)}-${id}.md`);
+      await this.#deps.app.vault.create(path, content);
+    }
+    await this.#settle();
+    const entry = this.#profiles.find((profile) => profile.id === id);
+    if (!entry)
+      throw new Error(`Profile document could not be registered: ${path}`);
+    return entry;
   }
 
   async ejectDefault(): Promise<TFile> {
@@ -544,4 +656,32 @@ function builtInDocument(id: ProfileSelector, label: string): string {
     },
     { id, name: label, frontmatter: DEFAULT_FRONTMATTER_FIELDS },
   );
+}
+
+const PROFILE_BINDING_KEYS = {
+  folder: "note.literature-folder",
+  citationStyle: "citation.references-style",
+  importFolder: "note.import-folder",
+  importColoredHighlights: "note.import-colored-highlights",
+  importAnnotationsAsTemplate: "note.import-annotations-as-template",
+} as const;
+
+function profileSource(
+  source: string,
+  options: { id: ProfileId; label: string; bindings?: ProfileBindings },
+): string {
+  const facade = new TemplateFacade();
+  facade.parseLiteratureNoteTemplate(source);
+  const headerEnd = source.indexOf("\n---", source.indexOf("---") + 3);
+  const header = parseDocument(source.slice(4, headerEnd));
+  header.set("id", options.id);
+  header.set("name", options.label);
+  if (options.bindings !== undefined) {
+    for (const key of Object.keys(PROFILE_BINDING_KEYS)) header.delete(key);
+    for (const [key, value] of Object.entries(options.bindings))
+      header.set(key, value);
+  }
+  const content = `---\n${header.toString()}---${source.slice(headerEnd + 4)}`;
+  facade.parseLiteratureNoteTemplate(content);
+  return content;
 }

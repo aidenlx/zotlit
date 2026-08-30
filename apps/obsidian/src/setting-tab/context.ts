@@ -13,6 +13,8 @@ import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
+import type { CreateProfile } from "./create-profile-modal";
+
 /** Settings keys, used to type declarative `control` bindings against the schema. */
 export type SettingsKey = keyof Settings;
 export type ProfileControlKey =
@@ -48,6 +50,7 @@ export type AttachmentImportActions = Pick<
  */
 export interface SettingTabContext {
   app: App;
+  createProfile: CreateProfile;
   /**
    * The plugin's own manifest — its version and its folder in the vault. The
    * plugin object itself stays out of this context: its `services` getter is a
