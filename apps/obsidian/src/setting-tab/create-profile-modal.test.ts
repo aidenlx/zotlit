@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { ButtonComponent, TextComponent } from "obsidian";
+import { ButtonComponent, TextComponent, settingsOf } from "@mock/obsidian";
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
@@ -61,8 +61,15 @@ function fixture() {
 }
 
 it("shows the preview while refusing a no-op and a colliding label, then enables a differing draft", async () => {
-  using changed = vi.spyOn(TextComponent.prototype, "onChange");
   using disabled = vi.spyOn(ButtonComponent.prototype, "setDisabled");
+  const saveDisabled = () =>
+    disabled.mock.calls.findLast((_, index) => {
+      const button = disabled.mock.instances[index];
+      return (
+        button instanceof ButtonComponent &&
+        button.text === m.settings_profile_add()
+      );
+    })?.[0];
   const f = fixture();
   f.prepareCreate.mockResolvedValueOnce({
     ...f.draft,
@@ -80,7 +87,7 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
       m.settings_profile_create_no_difference(),
     ),
   );
-  expect(disabled).toHaveBeenLastCalledWith(true);
+  expect(saveDisabled()).toBe(true);
   expect(modal.contentEl.textContent).toContain("Reading/Paper-7cx.md");
   expect(modal.contentEl.textContent).toContain("Reading (Bk3Qn7XvT2Lp)");
   expect(modal.contentEl.textContent).toContain("Default look marker.");
@@ -88,15 +95,24 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
     ...f.draft,
     reason: m.settings_profile_name_invalid(),
   });
-  changed.mock.calls[0]![0]("Books");
+  const rows = Array.from(
+    modal.contentEl.querySelectorAll<HTMLElement>("*"),
+  ).flatMap(settingsOf);
+  rows
+    .find(({ name }) => name === m.settings_profile_name_name())!
+    .components.find((control) => control instanceof TextComponent)!
+    .type("Books");
   await vi.waitFor(() =>
     expect(modal.contentEl.textContent).toContain(
       m.settings_profile_name_invalid(),
     ),
   );
-  expect(disabled).toHaveBeenLastCalledWith(true);
-  changed.mock.calls[1]![0]("Reading");
-  await vi.waitFor(() => expect(disabled).toHaveBeenLastCalledWith(false));
+  expect(saveDisabled()).toBe(true);
+  rows
+    .find(({ name }) => name === m.settings_profile_folder_name())!
+    .components.find((control) => control instanceof TextComponent)!
+    .type("Reading");
+  await vi.waitFor(() => expect(saveDisabled()).toBe(false));
   expect(f.prepareCreate).toHaveBeenLastCalledWith({
     label: "Books",
     look: "default",
@@ -118,9 +134,16 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
 it.each([false, true])(
   "keeps the prepared note handoff and offers last-used only from settings (context=%s)",
   async (useForNote) => {
-    using clicked = vi.spyOn(ButtonComponent.prototype, "onClick");
     using label = vi.spyOn(ButtonComponent.prototype, "setButtonText");
     using disabled = vi.spyOn(ButtonComponent.prototype, "setDisabled");
+    const saveLabel = useForNote
+      ? m.settings_profile_create_use()
+      : m.settings_profile_add();
+    const saveDisabled = () =>
+      disabled.mock.calls.findLast((_, index) => {
+        const button = disabled.mock.instances[index];
+        return button instanceof ButtonComponent && button.text === saveLabel;
+      })?.[0];
     const f = fixture();
     const modal = new CreateProfileModal(f.deps, {
       data: { note: {} as never, filename: {} },
@@ -129,11 +152,12 @@ it.each([false, true])(
     });
     modal.contentEl = document.createElement("div");
     modal.onOpen();
-    await vi.waitFor(() => expect(disabled).toHaveBeenLastCalledWith(false));
-    expect(label).toHaveBeenCalledWith(
-      useForNote ? m.settings_profile_create_use() : m.settings_profile_add(),
-    );
-    await clicked.mock.calls[0]![0]({} as MouseEvent);
+    await vi.waitFor(() => expect(saveDisabled()).toBe(false));
+    expect(label).toHaveBeenCalledWith(saveLabel);
+    label.mock.instances
+      .filter((button) => button instanceof ButtonComponent)
+      .find((button) => button.text === saveLabel)!
+      .click();
     await expect(modal.result).resolves.toMatchObject({
       profile: { id },
       preview: f.preview,
@@ -141,17 +165,19 @@ it.each([false, true])(
     expect(f.create).toHaveBeenCalledOnce();
     expect(f.preview.create).not.toHaveBeenCalled();
     if (useForNote) {
-      expect(clicked).toHaveBeenCalledTimes(1);
+      expect(label).not.toHaveBeenCalledWith(m.profile_use_next_note());
     } else {
       expect(label).toHaveBeenCalledWith(m.profile_use_next_note());
-      clicked.mock.calls[1]![0]({} as MouseEvent);
+      label.mock.instances
+        .filter((button) => button instanceof ButtonComponent)
+        .find((button) => button.text === m.profile_use_next_note())!
+        .click();
       expect(f.update).toHaveBeenCalledWith({ "note.last-used-profile": id });
     }
   },
 );
 
 it("renders the creation notice and applies its Use next action without opening the dialog", () => {
-  using clicked = vi.spyOn(ButtonComponent.prototype, "onClick");
   using labeled = vi.spyOn(ButtonComponent.prototype, "setButtonText");
   const update = vi.fn();
   const fragment = renderProfileCreatedNotice(
@@ -163,6 +189,9 @@ it("renders the creation notice and applies its Use next action without opening 
   );
   expect(labeled).toHaveBeenCalledWith(m.profile_use_next_note());
   expect(update).not.toHaveBeenCalled();
-  clicked.mock.calls[0]![0]({} as MouseEvent);
+  labeled.mock.instances
+    .filter((button) => button instanceof ButtonComponent)
+    .find((button) => button.text === m.profile_use_next_note())!
+    .click();
   expect(update).toHaveBeenCalledWith({ "note.last-used-profile": id });
 });

@@ -1,6 +1,10 @@
 // @vitest-environment happy-dom
-import { ButtonComponent, MenuItem, Setting } from "obsidian";
-import type { SettingDefinitionPage, TFile } from "obsidian";
+import { ButtonComponent, MenuItem, Setting } from "@mock/obsidian";
+import type {
+  Setting as ObsidianSetting,
+  SettingDefinitionPage,
+  TFile,
+} from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import * as confirmation from "@/lib/confirm";
@@ -128,8 +132,6 @@ describe("Profile settings", () => {
 });
 
 it("has one generic collision banner and Open/Delete actions for each excluded file", async () => {
-  using buttons = vi.spyOn(ButtonComponent.prototype, "onClick");
-  using names = vi.spyOn(ButtonComponent.prototype, "setButtonText");
   using confirm = vi.spyOn(confirmation, "confirm").mockResolvedValue(true);
   const ctx = context();
   const paths = [
@@ -168,21 +170,36 @@ it("has one generic collision banner and Open/Delete actions for each excluded f
   )!;
   expect(banner).not.toHaveProperty("render");
   expect(banner).not.toHaveProperty("action");
+  const rows = new Map<string, Setting>();
   for (const path of paths) {
     const row = page.items!.find((row) => "name" in row && row.name === path)!;
     if (!("render" in row) || !row.render)
       throw new Error("Expected file action row");
-    row.render(new Setting(document.createElement("div")), {} as never);
+    const setting = new Setting(document.createElement("div"));
+    row.render(setting as unknown as ObsidianSetting, {} as never);
+    rows.set(path, setting);
+    const buttons = setting.components.filter(
+      (control) => control instanceof ButtonComponent,
+    );
+    expect(buttons).toHaveLength(2);
+    expect(buttons.map((button) => button.text)).toEqual(
+      expect.arrayContaining([
+        m.settings_profile_document_open(),
+        m.settings_profile_delete(),
+      ]),
+    );
   }
-  expect(names.mock.calls.map(([name]) => name)).toEqual([
-    m.settings_profile_document_open(),
-    m.settings_profile_delete(),
-    m.settings_profile_document_open(),
-    m.settings_profile_delete(),
-  ]);
-  buttons.mock.calls[0]![0]({} as MouseEvent);
+  rows
+    .get(paths[0]!)!
+    .components.filter((control) => control instanceof ButtonComponent)
+    .find((button) => button.text === m.settings_profile_document_open())!
+    .click();
   expect(open).toHaveBeenCalledWith({ path: paths[0] });
-  buttons.mock.calls[3]![0]({} as MouseEvent);
+  rows
+    .get(paths[1]!)!
+    .components.filter((control) => control instanceof ButtonComponent)
+    .find((button) => button.text === m.settings_profile_delete())!
+    .click();
   await vi.waitFor(() =>
     expect(trash).toHaveBeenCalledWith({ path: paths[1] }),
   );
@@ -210,7 +227,10 @@ it("opens the shared create and import flows from the Add profile menu", async (
   )!;
   if (!("render" in row) || !row.render)
     throw new Error("Expected Add menu row");
-  row.render(new Setting(document.createElement("div")), {} as never);
+  row.render(
+    new Setting(document.createElement("div")) as unknown as ObsidianSetting,
+    {} as never,
+  );
   const addButton =
     buttonLabels.mock.instances[
       buttonLabels.mock.calls.findIndex(
