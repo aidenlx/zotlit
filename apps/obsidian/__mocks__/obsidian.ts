@@ -375,6 +375,7 @@ export class Scope {
 
 export abstract class SuggestModal<T> {
   limit = 0;
+  readonly contentEl = { addClass: (_className: string) => {} };
   emptyStateText = "";
   readonly app: App;
   readonly scope = new Scope();

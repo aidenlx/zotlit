@@ -6,12 +6,15 @@ import { describe, expect, it, vi } from "vitest";
 import { getItemsByID } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
+import type { ProfileId } from "@/lib/profile-stamp";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
+import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
+import type { LiteratureNoteProfileChoice } from "@/views/quick-switch/profile-picker";
 
 import { CitekeyEditor } from "./service";
 import type { AmbiguousCitekey } from "./service";
@@ -19,6 +22,122 @@ import type { AmbiguousCitekey } from "./service";
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
   return { ...actual, getItemsByID: vi.fn(() => []) };
+});
+
+vi.mock("@/views/quick-switch/profile-picker", () => ({
+  chooseLiteratureNoteProfile: vi.fn(),
+}));
+
+describe("CitekeyEditor Profile creation", () => {
+  const books = "Bk3Qn7XvT2Lp" as ProfileId;
+  const item = {
+    itemID: 11,
+    libraryID: 1,
+    indexedKey: "PAPER234",
+    key: "PAPER234",
+  };
+  function fixture() {
+    const create = vi.fn(async () => ({
+      outcome: "created",
+      file: { path: "Books/Paper.md" },
+    }));
+    const openLinkText = vi.fn(async () => {});
+    const citationIndex = new CitationIndexStub({
+      paper2024: { kind: "unique", item },
+    });
+    const service = new CitekeyEditor({
+      app: {
+        workspace: {
+          updateOptions: () => {},
+          getLeavesOfType: () => [],
+          openLinkText,
+        },
+      },
+      plugin: {
+        registerEditorExtension: () => {},
+        registerHoverLinkSource: () => {},
+      },
+      settings: new SettingsStub(),
+      noteIndex: new NoteIndexStub(),
+      citationIndex,
+      citationText: new CitationTextStub(),
+      zoteroPref: { dataDir: null },
+      db: { state: "ready", client: {} },
+      noteFeature: {
+        resolveCreationProfile: async () => ({
+          selector: books,
+          source: "last-used",
+          shouldAsk: true,
+        }),
+        prepareCreationProfiles: async () => [
+          {
+            selector: books,
+            label: "Books",
+            folder: "Books",
+            citationStyle: null,
+            document: undefined,
+            path: "Books/Paper.md",
+            create,
+          },
+        ],
+      },
+    } as never);
+    vi.mocked(getItemsByID).mockReturnValue([item as Item]);
+    return { service, create, openLinkText, citationIndex };
+  }
+
+  it("waits for the Profile choice before creating and preserves the requested pane", async () => {
+    const h = fixture();
+    await using service = h.service;
+    await service.ready;
+    const choice = Promise.withResolvers<
+      LiteratureNoteProfileChoice | undefined
+    >();
+    vi.mocked(chooseLiteratureNoteProfile).mockReturnValue(choice.promise);
+    const opening = service.openCitekey("paper2024", "tab");
+    await vi.waitFor(() =>
+      expect(chooseLiteratureNoteProfile).toHaveBeenCalledOnce(),
+    );
+    expect(h.create).not.toHaveBeenCalled();
+    expect(h.openLinkText).not.toHaveBeenCalled();
+    choice.resolve({ id: books, label: "Books" });
+    await opening;
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.openLinkText).toHaveBeenCalledWith("Books/Paper.md", "", "tab", {
+      active: true,
+    });
+  });
+
+  it("keeps hover read-only and dismissal silent", async () => {
+    const h = fixture();
+    await using service = h.service;
+    await service.ready;
+    expect(service.hoverNotePath("paper2024")).toBeNull();
+    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue(undefined);
+    await service.openCitekey("paper2024", false);
+    expect(h.create).not.toHaveBeenCalled();
+    expect(h.openLinkText).not.toHaveBeenCalled();
+  });
+
+  it("asks for a Profile after an exact ambiguous-citekey candidate is selected", async () => {
+    const h = fixture();
+    await using service = h.service;
+    await service.ready;
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
+      id: books,
+      label: "Books",
+    });
+    await service.openCandidate(
+      { ...item, summary: "A study of citations", library: null },
+      true,
+    );
+    expect(h.citationIndex.citekeysResolved).toEqual([]);
+    expect(chooseLiteratureNoteProfile).toHaveBeenCalledOnce();
+    expect(h.openLinkText).toHaveBeenCalledWith("Books/Paper.md", "", true, {
+      active: true,
+    });
+  });
 });
 
 describe("CitekeyEditor settings lifecycle", () => {

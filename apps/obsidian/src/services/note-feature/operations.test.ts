@@ -44,6 +44,7 @@ import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
+import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type {
   AttachmentSource,
@@ -180,6 +181,135 @@ function stubNoteContext(
 }
 
 describe("Profile source selection", () => {
+  it("keeps the preview's random suffix and retries safely if another file takes that path", async () => {
+    const { deps } = makeUpdateHarness({ content: "" });
+    const app = makeApp();
+    const write = app.vault.create.getMockImplementation()!;
+    app.vault.create.mockImplementation(async (path, content) => {
+      if (app.vault.getAbstractFileByPath(path))
+        throw new Error("File already exists.");
+      return write(path, content);
+    });
+    deps.app = app;
+    deps.template = {
+      ...makeTemplate(),
+      renderFilename: () => `Root${filenameSuffix()}`,
+    };
+    vi.mocked(fetchNoteContext).mockImplementation(
+      (_client, current, options) =>
+        stubNoteContext(current, [], options!.resolvers),
+    );
+    await app.vault.create("Literature/Root.md", "Occupied");
+    const feature = createNoteFeature(deps);
+    const [preview] =
+      await feature.prepareCreationProfiles(makeCreateGateItem());
+    expect(preview!.path).not.toBe("Literature/Root.md");
+    const created = createdFile(await preview!.create());
+    expect(created.path).toBe(preview!.path);
+    expect(app.vault.contentByPath.get("Literature/Root.md")).toBe("Occupied");
+
+    const otherItem = { ...makeCreateGateItem(), indexedKey: "PAPER234" };
+    const [second] = await feature.prepareCreationProfiles(otherItem);
+    await app.vault.create(second!.path!, "Arrived after preview");
+    const otherCreated = createdFile(await second!.create());
+    expect(otherCreated.path).not.toBe(second!.path);
+    expect(app.vault.contentByPath.get(second!.path!)).toBe(
+      "Arrived after preview",
+    );
+  });
+
+  it("keeps usable Profiles available when another Profile's filename cannot render", async () => {
+    const books = "Bk3Qn7XvT2Lp" as ProfileId;
+    const { deps } = makeUpdateHarness({
+      content: "",
+      settings: {
+        profiles: [{ id: books, label: "Books", document: "books.md" }],
+      },
+    });
+    deps.template = {
+      ...makeTemplate(),
+      getLiteratureNoteTemplate: () => makeDocumentTemplate({ filename: "" }),
+    };
+    const profiles =
+      await createNoteFeature(deps).prepareCreationProfiles(
+        makeCreateGateItem(),
+      );
+    expect(profiles).toMatchObject([
+      { selector: "default", path: "Literature/Root.md" },
+      {
+        selector: books,
+        path: undefined,
+        unavailable: m.notice_empty_filename(),
+      },
+    ]);
+  });
+  it("prepares each Profile's effective folder and filename and creates at the displayed path", async () => {
+    const books = "Bk3Qn7XvT2Lp" as ProfileId;
+    const item = makeCreateGateItem();
+    const { deps } = makeUpdateHarness({
+      content: "",
+      settings: {
+        profiles: [
+          {
+            id: books,
+            label: "Books",
+            document: "books.md",
+            bindings: {
+              "note.literature-folder": "Reading",
+              "citation.references-style": "apa",
+            },
+          },
+        ],
+      },
+    });
+    deps.app = makeApp();
+    const document = makeDocumentTemplate({ filename: "Shelf/Root" });
+    deps.template = {
+      ...makeTemplate(),
+      getLiteratureNoteTemplate: (reference) =>
+        reference === "books.md" ? document : undefined,
+    };
+    vi.mocked(fetchNoteContext).mockImplementation(
+      (_client, current, options) =>
+        stubNoteContext(current, [], options!.resolvers),
+    );
+    const feature = createNoteFeature(deps);
+    const profiles = await feature.prepareCreationProfiles(item);
+    expect(
+      profiles.map(({ selector, folder, citationStyle, document, path }) => ({
+        selector,
+        folder,
+        citationStyle,
+        document,
+        path,
+      })),
+    ).toEqual([
+      {
+        selector: "default",
+        folder: "Literature",
+        citationStyle: null,
+        document: undefined,
+        path: "Literature/Root.md",
+      },
+      {
+        selector: books,
+        folder: "Reading",
+        citationStyle: "apa",
+        document: "books.md",
+        path: "Reading/Shelf/Root.md",
+      },
+    ]);
+    const result = await profiles[1]!.create();
+    expect(result).toMatchObject({
+      outcome: "created",
+      file: { path: "Reading/Shelf/Root.md" },
+    });
+    expect(deps.settings.current!["note.last-used-profile"]).toBe(books);
+    expect(await profiles[1]!.create()).toMatchObject({
+      outcome: "refused",
+      diagnostic: { code: "literature-note-exists" },
+    });
+  });
   it("preselects headless before last-used and lets an asked choice override both", async () => {
     const books = "Bk3Qn7XvT2Lp" as ProfileId;
     const papers = "Rz9Wm4YfH6Kd" as ProfileId;

@@ -143,19 +143,25 @@ export async function createNoteWithToast(
   item: Item,
   profile?: ProfileSelector,
 ): Promise<TFile | null> {
+  return createNoteTaskWithToast(() =>
+    noteFeature.createNote(item, { profile }),
+  );
+}
+
+/** Start the create notice only after the user's Profile decision has settled. */
+export async function createNoteTaskWithToast(
+  create: () => Promise<CreateNoteResult>,
+): Promise<TFile | null> {
   try {
-    const result = await toast.promise(
-      noteFeature.createNote(item, { profile }),
-      {
-        loading: m.notice_creating_note(),
-        success: createNoteNotice,
-        error: (_msg, e) =>
-          e instanceof EmptyFilenameError || e instanceof InertTemplateError
-            ? e.message
-            : m.notice_create_note_failed(),
-        swallowError: false,
-      },
-    );
+    const result = await toast.promise(create(), {
+      loading: m.notice_creating_note(),
+      success: createNoteNotice,
+      error: (_msg, e) =>
+        e instanceof EmptyFilenameError || e instanceof InertTemplateError
+          ? e.message
+          : m.notice_create_note_failed(),
+      swallowError: false,
+    });
     return result.outcome === "created" ? result.file : null;
   } catch {
     return null;

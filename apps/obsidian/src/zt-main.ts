@@ -257,6 +257,7 @@ export default class ZotLitPlugin extends Plugin {
       noteIndex: services.noteIndex,
       noteFeature: services.noteFeature,
       settings: services.settings,
+      zoteroPref: services.zoteroPref,
     });
 
     void stack.use(

@@ -2,6 +2,7 @@ import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 
@@ -16,7 +17,7 @@ const books: LiteratureNoteProfile = {
   bindings: {},
 };
 
-it("places the preselected Profile at the initial keyboard choice", async () => {
+it("keeps the preselected choice when Obsidian closes before choosing it", async () => {
   using opened = vi.spyOn(SuggestModal.prototype, "open");
   const choice = chooseLiteratureNoteProfile({} as App, [books], {
     preselected: books.id,
@@ -24,7 +25,12 @@ it("places the preselected Profile at the initial keyboard choice", async () => 
   const modal = opened.mock
     .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
   const rows = await modal.getSuggestions("");
-  expect(rows.map(({ id }) => id)).toEqual([books.id, "default"]);
+  expect(rows).toMatchObject([
+    { id: books.id },
+    { id: "default" },
+    { action: "new", label: m.modal_profile_new() },
+  ]);
+  modal.onClose();
   modal.onChooseSuggestion(rows[0]!, {} as KeyboardEvent);
   await expect(choice).resolves.toMatchObject({ id: books.id });
 });
@@ -35,7 +41,87 @@ it("keeps Default first without preselection and resolves dismissal without a ch
   const modal = opened.mock
     .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
   const rows = await modal.getSuggestions("");
-  expect(rows.map(({ id }) => id)).toEqual(["default", books.id]);
+  expect(rows).toMatchObject([
+    { id: "default" },
+    { id: books.id },
+    { action: "new", label: m.modal_profile_new() },
+  ]);
+  modal.onClose();
+  await expect(choice).resolves.toBeUndefined();
+});
+
+it("renders effective folders, style titles, templates, paths and the selected source for every Profile", async () => {
+  using opened = vi.spyOn(SuggestModal.prototype, "open");
+  const create = async () => {
+    throw new Error("A preview does not create a note");
+  };
+  const choice = chooseLiteratureNoteProfile({} as App, {
+    preselected: books.id,
+    source: "headless",
+    styles: [{ id: "apa", title: "American Psychological Association" }],
+    previews: [
+      {
+        selector: "default",
+        label: undefined,
+        folder: "Literature",
+        citationStyle: null,
+        document: undefined,
+        path: "Literature/Paper.md",
+        create,
+      },
+      {
+        selector: books.id,
+        label: "Books",
+        folder: "Reading",
+        citationStyle: "apa",
+        document: "books.md",
+        path: "Reading/2024/Paper.md",
+        create,
+      },
+    ],
+  });
+  const modal = opened.mock
+    .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
+  const rows = await modal.getSuggestions("");
+  expect(rows).toMatchObject([
+    {
+      id: books.id,
+      preselected: true,
+      source: "headless",
+      path: "Reading/2024/Paper.md",
+      detail: m.settings_profile_display({
+        folder: "Reading",
+        style: "American Psychological Association",
+        document: "books.md",
+      }),
+    },
+    {
+      id: "default",
+      preselected: false,
+      path: "Literature/Paper.md",
+      detail: m.settings_profile_display({
+        folder: "Literature",
+        style: m.settings_citation_references_style_default(),
+        document: m.settings_profile_document_builtin(),
+      }),
+    },
+    { action: "new", label: m.modal_profile_new() },
+  ]);
+  const text: string[] = [];
+  const el = {
+    createDiv: ({ text: value }: { text: string }) => {
+      text.push(value);
+      return {
+        createSpan: ({ text: value }: { text: string }) => text.push(value),
+      };
+    },
+  } as unknown as HTMLElement;
+  modal.renderSuggestion(rows[0]!, el);
+  expect(text).toContain(m.modal_profile_preselected());
+  expect(text).toContain(m.modal_profile_source_companion());
+  expect(text).toContain("Reading/2024/Paper.md");
+  modal.renderSuggestion({ ...rows[0]!, source: "last-used" }, el);
+  expect(text).toContain(m.modal_profile_source_last_used());
   modal.onClose();
   await expect(choice).resolves.toBeUndefined();
 });
