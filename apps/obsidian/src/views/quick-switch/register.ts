@@ -6,12 +6,13 @@ import type { NoteFeature } from "@/services/note-feature";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { CreateProfile } from "@/setting-tab/profiles";
+import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 
 import { QuickSwitchModal } from "./modal";
 
 export interface QuickSwitchDeps {
   createProfile: CreateProfile;
+  importProfile: ImportProfile;
   app: App;
   lookup: ItemLookup;
   noteIndex: NoteIndex;

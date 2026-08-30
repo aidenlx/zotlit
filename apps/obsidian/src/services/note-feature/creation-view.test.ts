@@ -54,3 +54,32 @@ it("creates a note from the New profile dialog's prepared callback without re-re
   expect(deps.noteFeature.prepareCreationProfiles).toHaveBeenCalledOnce();
   expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
 });
+
+it("imports from the contextual picker without creating a note", async () => {
+  const importProfile = vi.fn(async () => undefined);
+  const deps = {
+    app: {} as App,
+    importProfile,
+    zoteroPref: { dataDir: null },
+    noteFeature: {
+      resolveCreationProfile: async () => ({
+        selector: "default",
+        source: "bound",
+        shouldAsk: true,
+      }),
+      prepareCreationProfiles: async () => [],
+      createNote: vi.fn(),
+    },
+  } as unknown as InteractiveCreationDeps;
+  vi.mocked(chooseLiteratureNoteProfile).mockImplementation(
+    async (_app, options) => {
+      if ("onImport" in options) await options.onImport?.();
+      return undefined;
+    },
+  );
+  await expect(
+    createNoteInteractively(deps, { indexedKey: "ABCD2345" } as Item),
+  ).resolves.toBeNull();
+  expect(importProfile).toHaveBeenCalledWith({ indexedKey: "ABCD2345" });
+  expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
+});

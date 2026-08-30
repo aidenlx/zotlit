@@ -161,6 +161,136 @@ describe("ProfileService", () => {
     expect(profile.profiles).toEqual([]);
   });
 
+  it("imports one file with its incoming identity, metadata, and embedded partials, without touching notes", async () => {
+    await using f = await harness();
+    using stamp = vi.spyOn(f.app.fileManager, "processFrontMatter");
+    const source = document(
+      BOOKS,
+      "folder: Sender\nimportFolder: Sender notes\npartials:\n  - name: shared\n    language: liquid\n    source: Shared body",
+    );
+    const plan = await f.profile.prepareImport(source, {
+      folder: "Reading",
+      stripFolders: true,
+      citationStyle: null,
+    });
+    expect(plan.kind).toBe("fresh");
+    expect(plan.manifest).toMatchObject({
+      id: BOOKS,
+      name: "Books",
+      version: "1.0.0",
+      folder: "Reading",
+      citationStyle: null,
+      partials: [{ name: "shared", source: "Shared body" }],
+    });
+    expect(plan.manifest.importFolder).toBeUndefined();
+    expect(f.vault.files.size).toBe(0);
+    const pending = plan.import();
+    await vi.advanceTimersByTimeAsync(500);
+    const imported = await pending;
+    expect(imported.id).toBe(BOOKS);
+    expect([...f.vault.files.keys()]).toEqual([
+      "templates/zotlit-profile.books.md",
+    ]);
+    expect(f.vault.contents.get(imported.path)).toContain("Shared body");
+    expect(stamp).not.toHaveBeenCalled();
+  });
+
+  it("offers Replace with the held version and real note counts, then changes only that document", async () => {
+    await using f = await harness({
+      "templates/zotlit-profile.renamed.md": document(),
+      "Books/Paper.md": "Paper",
+      "Imports/Note.md": "Note",
+    });
+    using stamp = vi.spyOn(f.app.fileManager, "processFrontMatter");
+    using _cache = vi
+      .spyOn(f.app.metadataCache, "getFileCache")
+      .mockImplementation((file) => ({
+        frontmatter:
+          file.path === "Books/Paper.md"
+            ? { "zotero-key": "PAPER234", "zotlit-profile": BOOKS }
+            : file.path === "Imports/Note.md"
+              ? { "zotero-note-key": "NTE23456", "zotlit-profile": BOOKS }
+              : undefined,
+      }));
+    f.indexNotes();
+    const source = document(BOOKS, "folder: New", "Books revised").replace(
+      "version: 1.0.0",
+      "version: 2.0.0",
+    );
+    const plan = await f.profile.prepareImport(source);
+    expect(plan.kind).toBe("replace");
+    if (plan.kind !== "replace") throw new Error("Expected replacement");
+    expect(plan.held).toMatchObject({
+      label: "Books",
+      version: "1.0.0",
+      literatureNotes: 1,
+      importedNotes: 1,
+    });
+    expect(f.vault.contents.get(plan.path)).toContain("version: 1.0.0");
+    const pending = plan.import();
+    await vi.advanceTimersByTimeAsync(500);
+    await pending;
+    expect(plan.path).toBe("templates/zotlit-profile.renamed.md");
+    expect(f.vault.contents.get(plan.path)).toContain("version: 2.0.0");
+    expect(f.vault.contents.get("Books/Paper.md")).toBe("Paper");
+    expect(f.vault.contents.get("Imports/Note.md")).toBe("Note");
+    expect(stamp).not.toHaveBeenCalled();
+  });
+
+  it("preserves included folders, supports clearing a folder, and refuses reserved or excluded IDs", async () => {
+    await using f = await harness();
+    const source = document(
+      BOOKS,
+      "folder: Sender\nimportFolder: Sender notes",
+    );
+    expect((await f.profile.prepareImport(source)).manifest).toMatchObject({
+      folder: "Sender",
+      importFolder: "Sender notes",
+    });
+    expect(
+      (await f.profile.prepareImport(source, { folder: null })).manifest.folder,
+    ).toBeUndefined();
+    await expect(f.profile.prepareImport(document("default"))).rejects.toThrow(
+      m.profile_import_default(),
+    );
+    f.vault.createFile("templates/zotlit-profile.one.md", document());
+    f.vault.createFile("templates/zotlit-profile.two.md", document());
+    await vi.advanceTimersByTimeAsync(500);
+    await expect(f.profile.prepareImport(source)).rejects.toThrow(
+      m.profile_import_excluded(),
+    );
+    expect(f.profile.profiles).toEqual([]);
+  });
+
+  it("refuses a stale Replace decision without overwriting a newer file", async () => {
+    await using f = await harness({
+      "templates/zotlit-profile.books.md": document(),
+    });
+    const plan = await f.profile.prepareImport(
+      document().replace("1.0.0", "2.0.0"),
+    );
+    const newer = document().replace("1.0.0", "3.0.0");
+    f.vault.modifyFile(plan.path, newer);
+    const rejected = expect(plan.import()).rejects.toThrow(
+      m.profile_import_changed(),
+    );
+    await Promise.all([vi.advanceTimersByTimeAsync(500), rejected]);
+    expect(f.vault.contents.get(plan.path)).toBe(newer);
+  });
+
+  it("refuses a fresh import if its ID arrived while consent was open", async () => {
+    await using f = await harness();
+    const plan = await f.profile.prepareImport(document());
+    f.vault.createFile("templates/zotlit-profile.arrived.md", document());
+    const rejected = expect(plan.import()).rejects.toThrow(
+      m.profile_import_changed(),
+    );
+    await Promise.all([vi.advanceTimersByTimeAsync(500), rejected]);
+    expect([...f.vault.files.keys()]).toEqual([
+      "templates/zotlit-profile.arrived.md",
+    ]);
+  });
+
   it("creates shareable documents with fresh IDs and refuses repeated or reserved labels", async () => {
     await using fixture = await harness();
     const { profile, vault } = fixture;

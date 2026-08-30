@@ -319,6 +319,86 @@ filename: "{{ zt.title }}"
     ).toMatchObject({ create: expect.stringContaining("Summary Paper") });
   });
 
+  it("keeps installed bundled partials local to their Profile for every render", async () => {
+    const vault = new MockVault();
+    const partial = '{% render "summary" with zt as zt %}';
+    const source = exportLiteratureNotePack(
+      literatureNoteDocument("Shared", partial)
+        .replace("Managed {{ zt.title }}", partial)
+        .replace('filename: "{{ zt.title }}"', `filename: '${partial}'`),
+      [
+        {
+          name: "summary",
+          language: "liquid",
+          source: "Bundled {{ zt.title }}",
+        },
+      ],
+    );
+    vault.addFile("templates/shared.md", source);
+    vault.addFile("templates/zotlit-summary.liquid.md", "Local {{ zt.title }}");
+    vault.addFile(
+      "templates/local.md",
+      literatureNoteDocument("Local").replace(
+        "Managed {{ zt.title }}",
+        partial,
+      ),
+    );
+    const { service } = await makeHarness({ vault });
+    const paths = [...vault.files.keys()];
+    const document = service.getLiteratureNoteTemplate("shared.md")!;
+
+    expect(document.renderForCreate({ title: "Paper" })).toContain(
+      "Bundled Paper",
+    );
+    expect(document.renderForUpdate({ title: "Paper" })).toContain(
+      "Bundled Paper",
+    );
+    expect(document.renderFilename({ title: "Paper" })).toBe("Bundled Paper");
+    expect(document.renderAnnotation({ title: "Paper" })).toBe("Bundled Paper");
+    expect(
+      service
+        .getLiteratureNoteTemplate("local.md")!
+        .renderForCreate({ title: "Paper" }),
+    ).toContain("Local Paper");
+    expect([...vault.files.keys()]).toEqual(paths);
+    expect(
+      await vault.cachedRead(
+        vault.getFileByPath("templates/zotlit-summary.liquid.md")!,
+      ),
+    ).toBe("Local {{ zt.title }}");
+  });
+
+  it("keeps an installed bundled Eta partial behind the JavaScript consent gate", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/shared.md",
+      exportLiteratureNotePack(
+        literatureNoteDocument("Shared").replace(
+          "Managed {{ zt.title }}",
+          '{% render "summary" with zt as zt %}',
+        ),
+        [
+          {
+            name: "summary",
+            language: "eta",
+            source: "Bundled <%= zt.title %>",
+          },
+        ],
+      ),
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(() => service.getLiteratureNoteTemplate("shared.md")).toThrow(
+      m.settings_template_inert_eta({ path: "templates/shared.md" }),
+    );
+    await service.setJavascriptTemplatesEnabled(true);
+    expect(
+      service
+        .getLiteratureNoteTemplate("shared.md")!
+        .renderForCreate({ title: "Paper" }),
+    ).toContain("Bundled Paper");
+  });
+
   it("bounds the settle wait while initial settings are still loading", async () => {
     const loaded = deferred<Readonly<Settings>>();
     const vault = new MockVault();

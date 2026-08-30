@@ -13,7 +13,7 @@ import {
 } from "@/services/note-index/service";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { CreateProfile } from "@/setting-tab/profiles";
+import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
 import type { NoteFeature } from "./operations";
@@ -23,6 +23,7 @@ const logger = getLogger("note-feature");
 
 export interface InteractiveProfileSwitchDeps {
   createProfile: CreateProfile;
+  importProfile: ImportProfile;
   app: App;
   noteFeature: Pick<NoteFeature, "prepareProfileSwitch" | "switchNoteProfile">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
@@ -50,6 +51,15 @@ export async function switchNoteProfileInteractively(
       preselected: plan.current.selector,
       current: plan.current.selector,
       styles,
+      onImport: async () => {
+        const cache = deps.app.metadataCache.getFileCache(file);
+        await deps.importProfile({
+          indexedKey:
+            itemKeyFromFrontmatter(cache) ??
+            noteKeyFromFrontmatter(cache) ??
+            undefined,
+        });
+      },
       onNew: async () => {
         const cache = deps.app.metadataCache.getFileCache(file);
         const created = await deps.createProfile({

@@ -59,43 +59,43 @@ export interface ProfileCreationDeps {
   }) => Promise<ProfileCreationData | null>;
 }
 
-export function createProfileCreator(
-  deps: Omit<LiteratureNoteTemplateMigrationDataDeps, "templates"> & {
-    template: TemplateService;
-    profile: ProfileService;
-    noteFeature: Pick<NoteFeature, "prepareProfileNote">;
-  },
-): CreateProfile {
+export type ProfileDialogServices = Omit<
+  LiteratureNoteTemplateMigrationDataDeps,
+  "templates"
+> & {
+  template: TemplateService;
+  profile: ProfileService;
+  noteFeature: Pick<NoteFeature, "prepareProfileNote">;
+};
+
+export async function loadProfilePreviewData(
+  deps: ProfileDialogServices,
+  options: { indexedKey?: string } = {},
+): Promise<ProfileCreationData | null> {
   const dataDeps = { ...deps, templates: deps.template };
+  if (!options.indexedKey) {
+    const data = await loadLiteratureNoteTemplateMigrationData(dataDeps, {
+      annotation: false,
+    });
+    return data
+      ? { note: data.note as NoteTemplateContext, filename: data.filename }
+      : null;
+  }
+  const [note, filename] = await Promise.all([
+    loadTemplateData(dataDeps, options.indexedKey, "note"),
+    loadTemplateData(dataDeps, options.indexedKey, "filename"),
+  ]);
+  return note.kind === "data" && filename.kind === "data"
+    ? { note: note.data as NoteTemplateContext, filename: filename.data }
+    : null;
+}
+
+export function createProfileCreator(
+  deps: ProfileDialogServices,
+): CreateProfile {
   return (options = {}) =>
     createProfileDialog(
-      {
-        ...deps,
-        loadData: async ({ indexedKey } = {}) => {
-          if (!indexedKey) {
-            const data = await loadLiteratureNoteTemplateMigrationData(
-              dataDeps,
-              { annotation: false },
-            );
-            return data
-              ? {
-                  note: data.note as NoteTemplateContext,
-                  filename: data.filename,
-                }
-              : null;
-          }
-          const [note, filename] = await Promise.all([
-            loadTemplateData(dataDeps, indexedKey, "note"),
-            loadTemplateData(dataDeps, indexedKey, "filename"),
-          ]);
-          return note.kind === "data" && filename.kind === "data"
-            ? {
-                note: note.data as NoteTemplateContext,
-                filename: filename.data,
-              }
-            : null;
-        },
-      },
+      { ...deps, loadData: (options) => loadProfilePreviewData(deps, options) },
       options,
     );
 }

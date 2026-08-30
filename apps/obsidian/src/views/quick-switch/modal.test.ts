@@ -199,6 +199,7 @@ describe("QuickSwitchModal Profile creation", () => {
     expect(chooseLiteratureNoteProfile).toHaveBeenCalledWith(deps.app, {
       preselected: books,
       onNew: expect.any(Function),
+      onImport: expect.any(Function),
       source: "last-used",
       previews: [preview],
       styles: [],
