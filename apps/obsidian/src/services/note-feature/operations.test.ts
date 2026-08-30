@@ -180,6 +180,120 @@ function stubNoteContext(
   } as unknown as NoteTemplateContext;
 }
 
+describe("Companion note target", () => {
+  it.each([undefined, "default"] as const)(
+    "opens an existing unknown stamp with recovery data for URL Profile %s",
+    async (profile) => {
+      const harness = makeUpdateHarness({
+        content: "Unchanged",
+        frontmatter: { "zotlit-profile": "Missing (Rz9Wm4YfH6Kd)" },
+      });
+      const file = makeFile("Paper.md");
+      harness.deps.noteIndex.getNotesByItemKey = () => [file];
+      await expect(
+        createNoteFeature(harness.deps).resolveCompanionNote("ABC12345", {
+          profile,
+        }),
+      ).resolves.toMatchObject({
+        outcome: "existing",
+        files: [file],
+        diagnostic: {
+          code: "unknown-literature-note-profile",
+          stamp: "Missing (Rz9Wm4YfH6Kd)",
+          path: "Paper.md",
+          recovery: { action: "switch-profile" },
+        },
+      });
+    },
+  );
+
+  it("returns a matching or unqualified existing note without a kept-Profile notice", async () => {
+    const books = "Bk3Qn7XvT2Lp" as ProfileId;
+    const harness = makeUpdateHarness({
+      content: "Unchanged",
+      frontmatter: { "zotlit-profile": `Books (${books})` },
+      settings: { profiles: [{ id: books, label: "Books" }] },
+    });
+    const file = makeFile("Books/Paper.md");
+    const duplicate = makeFile("Other/Paper.md");
+    harness.deps.noteIndex.getNotesByItemKey = () => [file, duplicate];
+    const feature = createNoteFeature(harness.deps);
+    for (const profile of [undefined, books]) {
+      await expect(
+        feature.resolveCompanionNote("ABC12345", { profile }),
+      ).resolves.toEqual({
+        outcome: "existing",
+        files: [file, duplicate],
+        keptProfile: undefined,
+      });
+    }
+  });
+
+  it("offers creation only when there is no existing note and the requested Profile resolves", async () => {
+    const { deps } = makeUpdateHarness({ content: "" });
+    await expect(
+      createNoteFeature(deps).resolveCompanionNote("ABC12345", {
+        profile: "default",
+      }),
+    ).resolves.toEqual({ outcome: "create" });
+  });
+
+  it.each([false, true])(
+    "refuses an unknown URL Profile before fallback, including a matching stamp (existing: %s)",
+    async (existing) => {
+      const missing = "Rz9Wm4YfH6Kd" as ProfileId;
+      const harness = makeUpdateHarness({
+        content: "Unchanged",
+        frontmatter: { "zotlit-profile": `Missing (${missing})` },
+      });
+      harness.deps.noteIndex.getNotesByItemKey = () =>
+        existing ? [makeFile("Paper.md")] : [];
+      await expect(
+        createNoteFeature(harness.deps).resolveCompanionNote("ABC12345", {
+          profile: missing,
+        }),
+      ).resolves.toMatchObject({
+        outcome: "refused",
+        diagnostic: {
+          code: "unknown-literature-note-profile",
+          stamp: missing,
+          indexedKey: "ABC12345",
+        },
+      });
+      expect(harness.processMock).not.toHaveBeenCalled();
+      expect(harness.frontmatterMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps the stamped Profile and returns the existing note for a conflicting link", async () => {
+    const books = "Bk3Qn7XvT2Lp" as ProfileId;
+    const papers = "Rz9Wm4YfH6Kd" as ProfileId;
+    const harness = makeUpdateHarness({
+      content: "An unchanged note",
+      frontmatter: { "zotlit-profile": `Old name (${books})` },
+      settings: {
+        profiles: [
+          { id: books, label: "Books" },
+          { id: papers, label: "Papers" },
+        ],
+      },
+    });
+    const file = makeFile("Books/Paper.md");
+    harness.deps.noteIndex.getNotesByItemKey = () => [file];
+    const feature = createNoteFeature(harness.deps);
+
+    await expect(
+      feature.resolveCompanionNote("ABC12345", { profile: papers }),
+    ).resolves.toEqual({
+      outcome: "existing",
+      files: [file],
+      keptProfile: { selector: books, label: "Books" },
+    });
+    expect(harness.processMock).not.toHaveBeenCalled();
+    expect(harness.frontmatterMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("Profile source selection", () => {
   it("previews the draft stamp and document Properties, then creates at the same suffixed path", async () => {
     const id = "Bk3Qn7XvT2Lp" as ProfileId;

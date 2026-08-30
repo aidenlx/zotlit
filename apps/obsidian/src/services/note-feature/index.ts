@@ -1,4 +1,9 @@
 export { type NoteFeatureDeps } from "./context";
+export {
+  openCompanionNote,
+  companionNoteNotice,
+  type CompanionNoteDeps,
+} from "./companion-view";
 export { noteOperationDiagnosticContent } from "./update-single";
 export {
   confirmProfileSwitch,
@@ -12,6 +17,7 @@ export {
 } from "./creation-view";
 export {
   createNoteFeature,
+  type CompanionNoteTarget,
   type CreateNoteDiagnostic,
   type CreateNoteResult,
   type CreationProfileSources,

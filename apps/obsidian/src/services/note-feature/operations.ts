@@ -103,6 +103,17 @@ export interface ExistingNoteDiagnostic {
   paths: [string, ...string[]];
 }
 
+/** A Companion link chooses creation only after existing stamps have won. */
+export type CompanionNoteTarget =
+  | { outcome: "create" }
+  | {
+      outcome: "existing";
+      files: readonly [TFile, ...TFile[]];
+      keptProfile?: Pick<ResolvedProfile, "selector" | "label">;
+      diagnostic?: UnknownProfileDiagnostic;
+    }
+  | { outcome: "refused"; diagnostic: UnknownProfileDiagnostic };
+
 export interface NoteProfileConflictDiagnostic {
   code: "literature-note-profile-conflict";
   hint: string;
@@ -292,6 +303,10 @@ export interface NoteFeature {
    * {@link NoteFeature.writeNoteUpdate} loop (which assumes readiness).
    */
   ready: Promise<void>;
+  resolveCompanionNote(
+    indexedKey: string,
+    options?: { profile?: ProfileSelector },
+  ): Promise<CompanionNoteTarget>;
   resolveCreationProfile(
     sources?: CreationProfileSources,
   ): Promise<CreationProfileSelection>;
@@ -427,6 +442,8 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
       deps.profile.ready,
     ]).then(() => {}),
     createNote: createAtGate,
+    resolveCompanionNote: (indexedKey, options) =>
+      resolveCompanionNote(ctx, indexedKey, options),
     resolveCreationProfile: (sources) => resolveCreationProfile(ctx, sources),
     prepareCreationProfiles: (item) =>
       prepareCreationProfiles(ctx, item, createAtGate),
@@ -447,6 +464,62 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
       renderAnnotationCitation(ctx, annotationItemId),
     on: (event, cb) => events.on(event, cb),
   };
+}
+
+async function resolveCompanionNote(
+  ctx: NoteFeatureDeps,
+  indexedKey: string,
+  options: { profile?: ProfileSelector } = {},
+): Promise<CompanionNoteTarget> {
+  await Promise.all([ctx.profile.ready, ctx.noteIndex.whenIndexed()]);
+  if (
+    options.profile !== undefined &&
+    !ctx.profile.resolveProfile(options.profile)
+  ) {
+    logger.debug("Refused unknown Companion Profile", {
+      indexedKey,
+      requestedProfile: options.profile,
+    });
+    return {
+      outcome: "refused",
+      diagnostic: unknownProfileDiagnostic(options.profile, { indexedKey }),
+    };
+  }
+  const files = ctx.noteIndex.getNotesByItemKey(indexedKey);
+  const file = files[0];
+  if (!file) {
+    logger.debug("Companion target needs a Literature Note", { indexedKey });
+    return { outcome: "create" };
+  }
+  const resolved = ctx.profile.profileOf(file);
+  if (!resolved.ok) {
+    logger.debug("Resolved Companion target with unknown stamp", {
+      indexedKey,
+      path: file.path,
+      stamp: resolved.stamped.stamp,
+    });
+    return {
+      outcome: "existing",
+      files: [file, ...files.slice(1)],
+      diagnostic: unknownProfileDiagnostic(resolved.stamped.stamp, {
+        indexedKey,
+        path: file.path,
+      }),
+    };
+  }
+  const { selector, label } = resolved.profile;
+  const keptProfile =
+    options.profile !== undefined && options.profile !== selector
+      ? { selector, label }
+      : undefined;
+  logger.debug("Resolved existing Companion note", {
+    indexedKey,
+    path: file.path,
+    selector,
+    requestedProfile: options.profile,
+    kept: keptProfile !== undefined,
+  });
+  return { outcome: "existing", files: [file, ...files.slice(1)], keptProfile };
 }
 
 async function prepareCreationProfiles(

@@ -1,4 +1,4 @@
-// Shared interactive creation prompt for Quick Switch and citation navigation.
+// Shared creation prompt for Quick Switch, citation navigation, and Companion links.
 import type { App, TFile } from "obsidian";
 
 import type { Item } from "@zotlit/db";
