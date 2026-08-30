@@ -3,12 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getItemRefByID } from "@zotlit/db";
 
-import { BaseNotice } from "@/lib/notice";
+import { openCompanionNote } from "@/services/note-feature";
 import { runBatchUpdateAll } from "@/services/note-feature/update-batch";
-import { createAndOpen } from "@/services/note-feature/update-single";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
-import { DEFAULT_LITERATURE_NOTE_PROFILE } from "@/services/settings/schema";
 
 import { registerProtocolHandlers } from "./register";
 import type { ProtocolDeps } from "./register";
@@ -23,31 +21,14 @@ vi.mock("@zotlit/db", async (importOriginal) => ({
   getItemRefByID: vi.fn(),
 }));
 
-vi.mock("@/lib/notice", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/notice")>()),
-  BaseNotice: vi.fn(),
-}));
-
-vi.mock("@/services/note-feature/update-single", async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import("@/services/note-feature/update-single")
-  >()),
-  createAndOpen: vi.fn(),
+vi.mock("@/services/note-feature", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/services/note-feature")>()),
+  openCompanionNote: vi.fn(),
 }));
 
 const SOURCE_ID = "abc12345";
 
 const runBatchImportAll = vi.fn(async () => ({ outcome: "batch-modal" }));
-
-function profileSettings(profiles: { id: string; label: string }[] = []): {
-  "note.default-profile": typeof DEFAULT_LITERATURE_NOTE_PROFILE;
-  profiles: typeof profiles;
-} {
-  return {
-    "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
-    profiles: profiles,
-  };
-}
 
 /** Protocol handlers registered by the plugin, keyed by their action id. */
 const handlers = new Map<string, (data: ObsidianProtocolData) => void>();
@@ -95,128 +76,35 @@ beforeEach(() => {
   vi.mocked(runBatchUpdateAll).mockClear();
   runBatchImportAll.mockClear();
   vi.mocked(getItemRefByID).mockReset();
-  vi.mocked(createAndOpen).mockReset();
-  vi.mocked(BaseNotice).mockClear();
+  vi.mocked(openCompanionNote).mockReset();
 });
 
 describe("single-note protocol links", () => {
-  it("refuses to open an existing note with a different explicit Profile", async () => {
-    const requestedProfileId = "Rz9Wm4YfH6Kd";
-    const existing = { path: "Literature/Existing.md" };
-    const openLinkText = vi.fn(async () => {});
-    vi.mocked(getItemRefByID).mockReturnValue({
-      indexedKey: "ABC12345",
-    } as ReturnType<typeof getItemRefByID>);
-    using _handlers = register({
-      db: { state: "ready", client: {} },
-      noteIndex: {
-        whenIndexed: async () => {},
-        getNotesByItemKey: () => [existing],
-      },
-      app: {
-        metadataCache: {
-          getFileCache: () => ({
-            frontmatter: {
-              "zotlit-profile": "Books (Bk3Qn7XvT2Lp)",
-            },
-          }),
-        },
-        workspace: { openLinkText },
-      },
-      settings: {
-        loaded: Promise.resolve(
-          profileSettings([{ id: "Bk3Qn7XvT2Lp", label: "Books" }]),
+  it.each(["open", "update"] as const)(
+    "routes %s through the shared Companion flow with its URL Profile",
+    async (action) => {
+      const ref = { indexedKey: "ABCD2345", itemID: 1 } as NonNullable<
+        ReturnType<typeof getItemRefByID>
+      >;
+      vi.mocked(getItemRefByID).mockReturnValue(ref);
+      using _handlers = register({
+        db: { state: "ready", client: {} },
+      } as unknown as Partial<ProtocolDeps>);
+      handlers.get(`zotlit/${action}`)?.({
+        action: `zotlit/${action}`,
+        item: "1",
+        profile: "Bk3Qn7XvT2Lp",
+        "source-id": SOURCE_ID,
+      } as ObsidianProtocolData);
+      await vi.waitFor(() =>
+        expect(openCompanionNote).toHaveBeenCalledExactlyOnceWith(
+          expect.anything(),
+          ref,
+          { action, profile: "Bk3Qn7XvT2Lp", scope: "full" },
         ),
-      },
-    } as unknown as Partial<ProtocolDeps>);
-
-    handlers.get("zotlit/open")?.({
-      action: "zotlit/open",
-      item: "1",
-      profile: requestedProfileId,
-      "source-id": SOURCE_ID,
-    } as ObsidianProtocolData);
-
-    await vi.waitFor(() => expect(BaseNotice).toHaveBeenCalled());
-    expect(openLinkText).not.toHaveBeenCalled();
-    expect(createAndOpen).not.toHaveBeenCalled();
-  });
-
-  it("opens an existing note whose stamp names the requested Profile", async () => {
-    const existing = { path: "Literature/Existing.md" };
-    const openLinkText = vi.fn(async () => {});
-    vi.mocked(getItemRefByID).mockReturnValue({
-      indexedKey: "ABC12345",
-    } as ReturnType<typeof getItemRefByID>);
-    using _handlers = register({
-      db: { state: "ready", client: {} },
-      noteIndex: {
-        whenIndexed: async () => {},
-        getNotesByItemKey: () => [existing],
-      },
-      app: {
-        metadataCache: {
-          getFileCache: () => ({
-            frontmatter: { "zotlit-profile": "Books (Bk3Qn7XvT2Lp)" },
-          }),
-        },
-        workspace: { openLinkText },
-      },
-      settings: {
-        loaded: Promise.resolve(
-          profileSettings([{ id: "Bk3Qn7XvT2Lp", label: "Books" }]),
-        ),
-      },
-    } as unknown as Partial<ProtocolDeps>);
-
-    handlers.get("zotlit/open")?.({
-      action: "zotlit/open",
-      item: "1",
-      profile: "Bk3Qn7XvT2Lp",
-      "source-id": SOURCE_ID,
-    } as ObsidianProtocolData);
-
-    await vi.waitFor(() => expect(openLinkText).toHaveBeenCalled());
-    expect(BaseNotice).not.toHaveBeenCalled();
-    expect(createAndOpen).not.toHaveBeenCalled();
-  });
-
-  it("opens an existing note whose stamp names an id the requested Profile matches but no Profile configures", async () => {
-    const existing = { path: "Literature/Existing.md" };
-    const openLinkText = vi.fn(async () => {});
-    vi.mocked(getItemRefByID).mockReturnValue({
-      indexedKey: "ABC12345",
-    } as ReturnType<typeof getItemRefByID>);
-    using _handlers = register({
-      db: { state: "ready", client: {} },
-      noteIndex: {
-        whenIndexed: async () => {},
-        getNotesByItemKey: () => [existing],
-      },
-      app: {
-        metadataCache: {
-          getFileCache: () => ({
-            frontmatter: { "zotlit-profile": "Books (Rz9Wm4YfH6Kd)" },
-          }),
-        },
-        workspace: { openLinkText },
-      },
-      settings: {
-        loaded: Promise.resolve(profileSettings()),
-      },
-    } as unknown as Partial<ProtocolDeps>);
-
-    handlers.get("zotlit/open")?.({
-      action: "zotlit/open",
-      item: "1",
-      profile: "Rz9Wm4YfH6Kd",
-      "source-id": SOURCE_ID,
-    } as ObsidianProtocolData);
-
-    await vi.waitFor(() => expect(openLinkText).toHaveBeenCalled());
-    expect(BaseNotice).not.toHaveBeenCalled();
-    expect(createAndOpen).not.toHaveBeenCalled();
-  });
+      );
+    },
+  );
 });
 
 describe("library-wide protocol links", () => {

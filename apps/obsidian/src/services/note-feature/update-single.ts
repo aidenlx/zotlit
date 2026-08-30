@@ -25,9 +25,8 @@ import type { SettingsService } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
 
 /**
- * The slice of a protocol handler's dependencies needed to create / update a
- * single literature note. Shared by the `update` / `open` URL actions and the
- * batch runner's one-actionable fast path so all three behave identically.
+ * Dependencies for the batch runner's single-action create / update path.
+ * Companion links use the separate interactive navigation flow.
  */
 export interface SingleUpdateDeps {
   profile: ProfileReader;

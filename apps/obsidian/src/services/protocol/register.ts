@@ -32,30 +32,28 @@ import {
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
 import type { LiveUpdateService } from "@/services/live-update/service";
+import { openCompanionNote } from "@/services/note-feature";
+import type { CompanionNoteDeps } from "@/services/note-feature";
 import {
   runBatchUpdate,
   runBatchUpdateAll,
 } from "@/services/note-feature/update-batch";
 import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
-import {
-  createAndOpen,
-  noteOperationDiagnosticNotice,
-  resolveLiteratureNoteWithWarning,
-  updateNote,
-} from "@/services/note-feature/update-single";
+import { noteOperationDiagnosticNotice } from "@/services/note-feature/update-single";
 import type { SingleUpdateDeps } from "@/services/note-feature/update-single";
 import type { BatchImport } from "@/services/note-import/batch-import";
 import {
   batchImportAllToast,
   batchImportToast,
 } from "@/services/note-import/batch-import-notices";
-import { noteProfileSelector } from "@/services/profile/bindings";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
 const logger = getLogger("protocol");
 
 export interface ProtocolDeps extends SingleUpdateDeps {
+  createProfile: CompanionNoteDeps["createProfile"];
+  importProfile: CompanionNoteDeps["importProfile"];
   batchImport: Pick<BatchImport, "runBatchImport" | "runBatchImportAll">;
   zoteroPref: ZoteroPrefService;
   liveUpdate: LiveUpdateService;
@@ -150,19 +148,11 @@ async function handleProtocol(
   const requested = resolveRequestedProfile(query.profileId);
   if (!requested.ok) return;
 
-  await deps.noteIndex.whenIndexed();
-
-  switch (action) {
-    case "open":
-      await openNote(deps, ref, requested.selector);
-      break;
-    case "update":
-      await updateNote(deps, ref, {
-        scope: query.scope,
-        profile: requested.selector,
-      });
-      break;
-  }
+  await openCompanionNote(deps, ref, {
+    action,
+    scope: query.scope,
+    profile: requested.selector,
+  });
 }
 
 /**
@@ -215,33 +205,6 @@ async function handleBatchProtocol(
       success: batchUpdateNotice,
     },
   );
-}
-
-/** Open existing literature note, or create one if none exists. */
-async function openNote(
-  deps: ProtocolDeps,
-  ref: ItemRef,
-  profile?: ProfileSelector,
-): Promise<void> {
-  const existing = resolveLiteratureNoteWithWarning(
-    deps.noteIndex.getNotesByItemKey(ref.indexedKey),
-  );
-
-  if (existing) {
-    await deps.profile.ready;
-    const resolved = deps.profile.profileOf(existing);
-    const existingSelector = noteProfileSelector(resolved);
-    if (profile !== undefined && profile !== existingSelector) {
-      new BaseNotice(m.notice_literature_note_profile_conflict());
-      return;
-    }
-    await deps.app.workspace.openLinkText(existing.path, "", false, {
-      active: true,
-    });
-    return;
-  }
-
-  await createAndOpen(deps, ref, profile);
 }
 
 function batchUpdateNotice(result: BatchUpdateResult): string | undefined {

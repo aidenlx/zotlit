@@ -270,6 +270,8 @@ export default class ZotLitPlugin extends Plugin {
 
     void stack.use(
       registerProtocolHandlers(this, {
+        createProfile: services.createProfile,
+        importProfile: services.importProfile,
         profile: services.profile,
         app: this.app,
         settings: services.settings,

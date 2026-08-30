@@ -225,7 +225,7 @@ export function renderProfileChoice(
     choice.source === "last-used"
       ? m.modal_profile_source_last_used()
       : choice.source === "headless"
-        ? m.modal_profile_source_companion()
+        ? m.modal_profile_source_link()
         : undefined;
   if (source) label.createSpan({ text: source, cls: PROFILE_BADGE_CLASS });
   if (choice.detail)
