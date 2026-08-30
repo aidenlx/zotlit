@@ -1,5 +1,6 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
+  "globalPassThroughEnv": ["AI_AGENT"],
   "tasks": {
     "transit": {
       "dependsOn": ["^transit"]
