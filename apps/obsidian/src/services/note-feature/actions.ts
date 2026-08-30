@@ -28,13 +28,18 @@ import {
 import { InertTemplateError } from "@/services/template/errors";
 
 import type { NoteFeature, UpdateScope } from "./operations";
+import { switchNoteProfileInteractively } from "./switch-view";
+import type { InteractiveProfileSwitchDeps } from "./switch-view";
 import type { BatchUpdateResult } from "./update-batch";
 import {
   noteOperationDiagnosticNotice,
   updateNoteToast,
 } from "./update-single";
 
-interface NoteFeatureActionDeps {
+interface NoteFeatureActionDeps extends Pick<
+  InteractiveProfileSwitchDeps,
+  "zoteroPref"
+> {
   app: App;
   noteFeature: NoteFeature;
   batchImport: Pick<
@@ -67,6 +72,22 @@ export function addNoteFeatureActions(
     id: "update-note-metadata",
     name: m.command_update_note_metadata_name(),
     scope: "metadata",
+  });
+
+  plugin.addCommand({
+    id: "switch-literature-note-profile",
+    name: m.command_switch_literature_note_profile_name(),
+    checkCallback(checking) {
+      const file = deps.app.workspace.getActiveFile();
+      if (!file || !isLiteratureNote(file, deps.app)) return false;
+      const indexedKey = itemKeyFromFrontmatter(
+        deps.app.metadataCache.getFileCache(file),
+      );
+      if (!indexedKey) return false;
+      if (!checking)
+        void switchNoteProfileInteractively(deps, file, indexedKey);
+      return true;
+    },
   });
 
   plugin.addCommand({

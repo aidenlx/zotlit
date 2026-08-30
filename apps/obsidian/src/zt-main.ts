@@ -231,6 +231,7 @@ export default class ZotLitPlugin extends Plugin {
     addNoteFeatureActions(this, {
       app: this.app,
       noteFeature: services.noteFeature,
+      zoteroPref: services.zoteroPref,
       batchImport: services.batchImport,
       updateAll: () =>
         runBatchUpdateAll({
@@ -251,7 +252,6 @@ export default class ZotLitPlugin extends Plugin {
       citationIndex: services.citationIndex,
     });
     registerQuickSwitch(this, {
-      profile: services.profile,
       app: this.app,
       lookup: services.itemLookup,
       noteIndex: services.noteIndex,

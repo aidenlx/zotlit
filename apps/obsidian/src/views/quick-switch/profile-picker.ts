@@ -6,7 +6,7 @@ import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type {
   CreationProfileSelection,
-  PreparedCreationProfile,
+  ProfilePreview,
 } from "@/services/note-feature";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
@@ -18,6 +18,7 @@ export interface LiteratureNoteProfileChoice {
   path?: string;
   unavailable?: string;
   preselected?: boolean;
+  current?: boolean;
   source?: CreationProfileSelection["source"];
 }
 
@@ -27,8 +28,9 @@ type ProfilePickerRow =
 
 interface ProfilePickerOptions {
   preselected?: ProfileSelector;
+  current?: ProfileSelector;
   source?: CreationProfileSelection["source"];
-  previews?: readonly PreparedCreationProfile[];
+  previews?: readonly ProfilePreview[];
   styles?: readonly InstalledCslStyle[];
 }
 
@@ -40,7 +42,7 @@ export function chooseLiteratureNoteProfile(
   profilesOrOptions:
     | readonly LiteratureNoteProfile[]
     | (ProfilePickerOptions & {
-        previews: readonly PreparedCreationProfile[];
+        previews: readonly ProfilePreview[];
       }),
   options: ProfilePickerOptions = {},
 ): Promise<LiteratureNoteProfileChoice | undefined> {
@@ -110,6 +112,7 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
         ];
     for (const choice of this.#choices) {
       choice.preselected = choice.id === options.preselected;
+      choice.current = choice.id === options.current;
       choice.source = choice.preselected ? options.source : undefined;
     }
     const selectedIndex = this.#choices.findIndex(
@@ -145,7 +148,9 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
     }
     if (choice.preselected)
       label.createSpan({
-        text: m.modal_profile_preselected(),
+        text: choice.current
+          ? m.modal_profile_current()
+          : m.modal_profile_preselected(),
         cls: PROFILE_BADGE_CLASS,
       });
     const source =

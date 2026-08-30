@@ -1,20 +1,13 @@
 import { Keymap, Platform, SuggestModal } from "obsidian";
 import type { TFile } from "obsidian";
 
-import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
-import { BaseNotice } from "@/lib/notice";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
 import { createNoteInteractively } from "@/services/note-feature";
-import {
-  noteOperationDiagnosticNotice,
-  resolveLiteratureNoteWithWarning,
-} from "@/services/note-feature/update-single";
-import type { NoteProfile } from "@/services/profile/bindings";
+import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
 
-import { chooseLiteratureNoteProfile } from "./profile-picker";
 import type { QuickSwitchDeps } from "./register";
 
 /** Glyph for the `Mod` modifier, matching how Obsidian labels its own hotkeys. */
@@ -80,47 +73,4 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
       { active: true },
     );
   }
-}
-
-/** Interactive Imported Note re-stamp; it changes the next re-import only. */
-export async function switchImportedNoteProfile(
-  deps: QuickSwitchDeps,
-  file: TFile,
-): Promise<void> {
-  await deps.profile.ready;
-  const choice = await chooseLiteratureNoteProfile(
-    deps.app,
-    deps.profile.profiles,
-  );
-  if (!choice) return;
-  const resolved = deps.profile.profileOf(file);
-  if (resolved.ok && resolved.profile.selector === choice.id) return;
-  const currentLabel = profileLabel(resolved);
-  const shouldSwitch = await confirm(
-    {
-      title: m.modal_profile_switch_title({ label: choice.label }),
-      content: m.modal_imported_note_profile_switch_desc({
-        current: currentLabel,
-        requested: choice.label,
-      }),
-      action: m.modal_profile_switch_confirm({ label: choice.label }),
-      cancel: m.modal_profile_switch_keep({ label: currentLabel }),
-      destructive: true,
-    },
-    deps.app,
-  );
-  if (!shouldSwitch) return;
-  const result = await deps.noteFeature.switchImportedNoteProfile(file, {
-    profile: choice.id,
-  });
-  if (result.diagnostic) {
-    new BaseNotice(noteOperationDiagnosticNotice(result.diagnostic));
-  }
-}
-
-/** Name the Profile a note resolves to, falling back to the stamp text. */
-function profileLabel(resolved: NoteProfile): string {
-  return resolved.ok
-    ? (resolved.profile.label ?? m.settings_profile_default_name())
-    : resolved.stamped.stamp;
 }
