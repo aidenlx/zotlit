@@ -43,7 +43,10 @@ interface NoteVaultApp {
     Vault,
     "getAbstractFileByPath" | "getRoot" | "createFolder" | "create" | "process"
   >;
-  fileManager: Pick<FileManager, "generateMarkdownLink" | "processFrontMatter">;
+  fileManager: Pick<
+    FileManager,
+    "generateMarkdownLink" | "processFrontMatter" | "renameFile"
+  >;
   metadataCache: Pick<MetadataCache, "getFileCache">;
 }
 

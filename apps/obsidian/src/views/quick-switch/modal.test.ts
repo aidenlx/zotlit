@@ -2,23 +2,14 @@ import { Keymap, Platform } from "obsidian";
 import type { App, Instruction, Modifier, TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { confirm } from "@/lib/confirm";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import { DEFAULT_LITERATURE_NOTE_PROFILE } from "@/services/settings/schema";
 
-import {
-  QuickSwitchModal,
-  switchImportedNoteProfile as switchProfile,
-} from "./modal";
+import { QuickSwitchModal } from "./modal";
 import { chooseLiteratureNoteProfile } from "./profile-picker";
 import type { QuickSwitchDeps } from "./register";
 
-vi.mock("@/lib/confirm", () => ({
-  confirm: vi.fn(),
-  confirmWithCheckbox: vi.fn(),
-}));
 vi.mock("./profile-picker", () => ({
   chooseLiteratureNoteProfile: vi.fn(),
 }));
@@ -195,7 +186,6 @@ describe("QuickSwitchModal Profile creation", () => {
     expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
     expect(deps.noteFeature.resolveCreationProfile).not.toHaveBeenCalled();
     expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
-    expect(confirm).not.toHaveBeenCalled();
   });
 
   it("passes prepared rows and last-used selection to the picker and cancels silently", async () => {
@@ -260,99 +250,6 @@ describe("QuickSwitchModal Profile creation", () => {
   });
 });
 
-describe("Imported Note Profile switching", () => {
-  it("states that the switch applies on the next re-import", async () => {
-    const currentId = "Bk3Qn7XvT2Lp" as ProfileId;
-    const requestedId = "Rz9Wm4YfH6Kd" as ProfileId;
-    const file = { path: "Imported/Existing.md" } as TFile;
-    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
-      id: requestedId,
-      label: "Papers",
-    });
-    vi.mocked(confirm).mockResolvedValue(true);
-    const switchProfile = vi.fn().mockResolvedValue({
-      bodyUpdated: false,
-      duplicateRegionCount: 0,
-    });
-    const deps = {
-      app: {
-        metadataCache: {
-          getFileCache: () => ({
-            frontmatter: { "zotlit-profile": currentId },
-          }),
-        },
-      },
-      noteFeature: { switchImportedNoteProfile: switchProfile },
-      settings: {
-        loaded: Promise.resolve(
-          profileSettings([
-            { id: currentId, label: "Books" },
-            { id: requestedId, label: "Papers" },
-          ]),
-        ),
-      },
-    } as unknown as QuickSwitchDeps;
-
-    await switchImportedNoteProfile(deps, file);
-
-    expect(confirm).toHaveBeenCalledWith(
-      expect.objectContaining({
-        content: expect.stringMatching(/next time.*update.*from Zotero/i),
-      }),
-      expect.anything(),
-    );
-    expect(switchProfile).toHaveBeenCalledWith(file, {
-      profile: requestedId,
-    });
-  });
-
-  it("leaves the Imported Note unchanged when consent is declined", async () => {
-    const file = { path: "Imported/Existing.md" } as TFile;
-    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
-      id: "Rz9Wm4YfH6Kd" as ProfileId,
-      label: "Papers",
-    });
-    vi.mocked(confirm).mockResolvedValue(false);
-    const switchProfile = vi.fn();
-
-    await switchImportedNoteProfile(
-      {
-        app: {
-          metadataCache: {
-            getFileCache: () => ({ frontmatter: {} }),
-          },
-        },
-        noteFeature: { switchImportedNoteProfile: switchProfile },
-        settings: {
-          loaded: Promise.resolve(
-            profileSettings([
-              { id: "Rz9Wm4YfH6Kd" as ProfileId, label: "Papers" },
-            ]),
-          ),
-        },
-      } as unknown as QuickSwitchDeps,
-      file,
-    );
-
-    expect(switchProfile).not.toHaveBeenCalled();
-  });
-});
-
-function readerFor(deps: QuickSwitchDeps) {
-  let settings = { ...defaults, ...deps.settings.current };
-  const reader = profileReader(() => settings, deps.app.metadataCache);
-  return Object.assign(reader, {
-    ready:
-      deps.settings.loaded?.then((value) => {
-        settings = { ...defaults, ...value };
-      }) ?? Promise.resolve(),
-  });
-}
 function makeQuickSwitchModal(deps: QuickSwitchDeps): QuickSwitchModal {
-  return new QuickSwitchModal({ ...deps, profile: readerFor(deps) });
-}
-function switchImportedNoteProfile(
-  ...[deps, file]: Parameters<typeof switchProfile>
-) {
-  return switchProfile({ ...deps, profile: readerFor(deps) }, file);
+  return new QuickSwitchModal(deps);
 }

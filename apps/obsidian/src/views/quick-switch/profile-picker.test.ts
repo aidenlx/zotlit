@@ -52,9 +52,6 @@ it("keeps Default first without preselection and resolves dismissal without a ch
 
 it("renders effective folders, style titles, templates, paths and the selected source for every Profile", async () => {
   using opened = vi.spyOn(SuggestModal.prototype, "open");
-  const create = async () => {
-    throw new Error("A preview does not create a note");
-  };
   const choice = chooseLiteratureNoteProfile({} as App, {
     preselected: books.id,
     source: "headless",
@@ -67,7 +64,6 @@ it("renders effective folders, style titles, templates, paths and the selected s
         citationStyle: null,
         document: undefined,
         path: "Literature/Paper.md",
-        create,
       },
       {
         selector: books.id,
@@ -76,7 +72,6 @@ it("renders effective folders, style titles, templates, paths and the selected s
         citationStyle: "apa",
         document: "books.md",
         path: "Reading/2024/Paper.md",
-        create,
       },
     ],
   });
@@ -122,6 +117,8 @@ it("renders effective folders, style titles, templates, paths and the selected s
   expect(text).toContain("Reading/2024/Paper.md");
   modal.renderSuggestion({ ...rows[0]!, source: "last-used" }, el);
   expect(text).toContain(m.modal_profile_source_last_used());
+  modal.renderSuggestion({ ...rows[0]!, current: true }, el);
+  expect(text).toContain(m.modal_profile_current());
   modal.onClose();
   await expect(choice).resolves.toBeUndefined();
 });

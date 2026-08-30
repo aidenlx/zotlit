@@ -23,7 +23,7 @@
   "notice_library_scope_invalid_explanation": "ZotLit is using My Library until you select a library scope.",
   "notice_library_scope_invalid_action": "Open settings",
   "command_open_lit_note_name": "Open literature note quick switcher",
-  "command_switch_imported_note_profile_name": "Switch imported note profile",
+  "command_switch_literature_note_profile_name": "Switch literature note profile",
   "command_open_citekey_name": "Open citation key under cursor",
   "command_open_citekey_new_tab_name": "Open citation key under cursor in new tab",
   "command_open_citekey_right_name": "Open citation key under cursor to the right",
@@ -382,23 +382,26 @@
   "settings_profile_delete": "Delete profile",
   "modal_profile_choose_placeholder": "Choose a profile…",
   "modal_profile_preselected": "Selected",
+  "modal_profile_current": "Current",
   "modal_profile_source_last_used": "Last used",
   "modal_profile_source_companion": "From the Companion",
   "modal_profile_new": "New profile…",
   "modal_profile_new_stub": "Create profiles in ZotLit settings.",
   "modal_profile_root_folder": "Vault folder",
   "modal_profile_switch_title": "Switch to “{label}” profile?",
-  "modal_profile_switch_desc": "This note uses “{current}”. Switch it to “{requested}” and refresh its managed content. The file stays in its current folder. Text outside the managed region stays unchanged.",
+  "modal_profile_switch_desc": "This note uses “{current}”. Switch it to “{requested}”. The managed block and managed frontmatter will render from the new template on the next update. Text outside the managed region stays unchanged.",
   "modal_profile_switch_confirm": "Switch to “{label}”",
-  "modal_profile_switch_keep": "Keep “{label}”",
-  "modal_imported_note_profile_switch_desc": "This imported note uses “{current}”. Switch it to “{requested}”. The file stays in its current folder. The new profile applies the next time you update this note from Zotero.",
+  "modal_profile_switch_move": "Move to {folder}",
+  "notice_profile_switching": "Switching literature note profile…",
+  "notice_profile_switched": "Switched to “{label}” for the next update.",
+  "notice_profile_switch_failed": "Could not switch the literature note profile.",
   "modal_profile_switch_imported_notes": [
     {
       "declarations": ["input count"],
       "selectors": ["count"],
       "match": {
-        "count=1": "Also switch this item's 1 imported note",
-        "count=*": "Also switch this item's {count} imported notes"
+        "count=1": "Also switch 1 imported note",
+        "count=*": "Also switch {count} imported notes"
       }
     }
   ],

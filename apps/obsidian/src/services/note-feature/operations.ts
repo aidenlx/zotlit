@@ -36,7 +36,11 @@ import {
   FIELD_CITATION_STYLE,
   FIELD_LITERATURE_NOTE_PROFILE,
 } from "@/lib/constants";
-import { ensureParentFolder } from "@/lib/ensure-folder";
+import {
+  ensureParentFolder,
+  joinFolderPath,
+  normalizeFolderPath,
+} from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
@@ -163,7 +167,8 @@ export interface CreationProfileSelection {
   shouldAsk: boolean;
 }
 
-export interface PreparedCreationProfile {
+/** Effective Profile bindings and the path relevant to the pending action. */
+export interface ProfilePreview {
   selector: ProfileSelector;
   label: string | undefined;
   folder: string;
@@ -171,8 +176,17 @@ export interface PreparedCreationProfile {
   document: string | undefined;
   path: string | undefined;
   unavailable?: string;
+}
+
+export interface PreparedCreationProfile extends ProfilePreview {
   /** Re-enters the create gate; the preview holds no database lease. */
   create(): Promise<CreateNoteResult>;
+}
+
+export interface PreparedProfileSwitch {
+  current: { selector: ProfileSelector | undefined; label: string | undefined };
+  profiles: ProfilePreview[];
+  importedNotes: TFile[];
 }
 
 // `UpdateScope` is the wire enum obsidian decodes; re-export it so note-feature
@@ -263,6 +277,10 @@ export interface NoteFeature {
     sources?: CreationProfileSources,
   ): Promise<CreationProfileSelection>;
   prepareCreationProfiles(item: Item): Promise<PreparedCreationProfile[]>;
+  prepareProfileSwitch(
+    file: TFile,
+    indexedKey: string,
+  ): Promise<PreparedProfileSwitch>;
   /** @see createNote */
   createNote(
     item: Item,
@@ -277,19 +295,14 @@ export interface NoteFeature {
       profile?: ProfileSelector;
     },
   ): Promise<UpdateResult>;
-  /** Re-stamp one note after explicit user consent, then refresh it. */
+  /** Re-stamp after consent; the next update renders with the target Profile. */
   switchNoteProfile(
     file: TFile,
     options: {
-      indexedKey: string;
       profile: ProfileSelector;
       importedNotes?: readonly TFile[];
+      move?: boolean;
     },
-  ): Promise<UpdateResult>;
-  /** Re-stamp one Imported Note; its next re-import follows this Profile. */
-  switchImportedNoteProfile(
-    file: TFile,
-    options: { profile: ProfileSelector },
   ): Promise<UpdateResult>;
   /** Imported Notes currently materialized for one Zotero item. */
   getImportedNotesForItem(indexedKey: string): Promise<TFile[]>;
@@ -400,10 +413,10 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
     resolveCreationProfile: (sources) => resolveCreationProfile(ctx, sources),
     prepareCreationProfiles: (item) =>
       prepareCreationProfiles(ctx, item, createAtGate),
+    prepareProfileSwitch: (file, indexedKey) =>
+      prepareProfileSwitch(ctx, file, indexedKey),
     updateNote: (file, options) => updateNote(ctx, file, options),
     switchNoteProfile: (file, options) => switchNoteProfile(ctx, file, options),
-    switchImportedNoteProfile: (file, options) =>
-      switchImportedNoteProfile(ctx, file, options),
     getImportedNotesForItem: (indexedKey) =>
       getImportedNotesForItem(ctx, indexedKey),
     overwriteNote: (file, indexedKey) => overwriteNote(ctx, file, indexedKey),
@@ -439,13 +452,8 @@ async function prepareCreationProfiles(
     lease.client,
     item,
   );
-  const selectors: ProfileSelector[] = [
-    DEFAULT_PROFILE,
-    ...ctx.profile.profiles.map(({ id }) => id),
-  ];
-  return selectors.flatMap((selector) => {
-    const profile = ctx.profile.resolveProfile(selector);
-    if (!profile) return [];
+  return selectableProfiles(ctx).map((profile) => {
+    const { selector } = profile;
     let preparedPath: { path: string; canSuffix: boolean } | undefined;
     let unavailable: string | undefined;
     try {
@@ -475,19 +483,37 @@ async function prepareCreationProfiles(
         error,
       });
     }
-    return [
-      {
-        selector,
-        label: profile.label,
-        folder: profile.bindings["note.literature-folder"],
-        citationStyle: profile.bindings["citation.references-style"],
-        document: profile.document,
-        path: preparedPath?.path,
-        unavailable,
-        create: () => create(item, { profile: selector, preparedPath }),
-      },
-    ];
+    return {
+      ...profilePreview(profile, preparedPath?.path),
+      unavailable,
+      create: () => create(item, { profile: selector, preparedPath }),
+    };
   });
+}
+
+function selectableProfiles(ctx: NoteFeatureDeps): ResolvedProfile[] {
+  const selectors: ProfileSelector[] = [
+    DEFAULT_PROFILE,
+    ...ctx.profile.profiles.map(({ id }) => id),
+  ];
+  return selectors.flatMap((selector) => {
+    const profile = ctx.profile.resolveProfile(selector);
+    return profile ? [profile] : [];
+  });
+}
+
+function profilePreview(
+  profile: ResolvedProfile,
+  path: string | undefined,
+): ProfilePreview {
+  return {
+    selector: profile.selector,
+    label: profile.label,
+    folder: profile.bindings["note.literature-folder"],
+    citationStyle: profile.bindings["citation.references-style"],
+    document: profile.document,
+    path,
+  };
 }
 
 async function resolveCreationProfile(
@@ -771,10 +797,9 @@ async function updateNote(
     indexedKey: string;
     scope?: UpdateScope;
     profile?: ProfileSelector;
-    profileOverride?: ProfileSelector;
   },
 ): Promise<UpdateResult> {
-  const { indexedKey, scope = "full", profileOverride } = options;
+  const { indexedKey, scope = "full" } = options;
   // Settle readiness and prepare the attachment handle before pinning the
   // client, so the lease (an auto-refresh gate) spans only the DB reads, the
   // vault writes, and the child-note import flush — not the warm-up awaits.
@@ -787,11 +812,7 @@ async function updateNote(
   await ctx.profile.ready;
   const existing = ctx.profile.profileOf(file);
   const existingSelector = noteProfileSelector(existing);
-  if (
-    profileOverride === undefined &&
-    options.profile !== undefined &&
-    existingSelector !== undefined
-  ) {
+  if (options.profile !== undefined && existingSelector !== undefined) {
     const requestedProfile = options.profile;
     if (!ctx.profile.resolveProfile(requestedProfile)) {
       return refusedUpdateProfile(requestedProfile, file.path);
@@ -803,18 +824,10 @@ async function updateNote(
       });
     }
   }
-  // An unresolved Profile means the note carries the stamp at fault, unless
-  // the caller named the Profile itself.
-  let profile: ResolvedProfile | undefined;
-  if (profileOverride !== undefined) {
-    profile = ctx.profile.resolveProfile(profileOverride);
-    if (!profile) return refusedUpdateProfile(profileOverride, file.path);
-  } else {
-    if (!existing.ok) {
-      return refusedUpdateProfile(existing.stamped.stamp, file.path);
-    }
-    profile = existing.profile;
+  if (!existing.ok) {
+    return refusedUpdateProfile(existing.stamped.stamp, file.path);
   }
+  const profile = existing.profile;
   if (conversionRequired(settings, profile.selector)) {
     return refusedUpdateTemplateConversion(profile.selector, file.path);
   }
@@ -841,17 +854,45 @@ async function updateNote(
   });
 }
 
+async function prepareProfileSwitch(
+  ctx: NoteFeatureDeps,
+  file: TFile,
+  indexedKey: string,
+): Promise<PreparedProfileSwitch> {
+  await Promise.all([ctx.profile.ready, ctx.settings.loaded]);
+  const current = ctx.profile.profileOf(file);
+  const profiles = selectableProfiles(ctx).map((profile) =>
+    profilePreview(profile, profileSwitchPath(file, profile)),
+  );
+  const importedNotes = await getImportedNotesForItem(ctx, indexedKey);
+  logger.debug("Prepared Literature Note Profile switch", {
+    path: file.path,
+    profiles: profiles.length,
+    importedNotes: importedNotes.length,
+  });
+  return {
+    current: current.ok
+      ? { selector: current.profile.selector, label: current.profile.label }
+      : { selector: undefined, label: current.stamped.stamp },
+    profiles,
+    importedNotes,
+  };
+}
+
 async function switchNoteProfile(
   ctx: OpsContext,
   file: TFile,
   options: {
-    indexedKey: string;
     profile: ProfileSelector;
     importedNotes?: readonly TFile[];
+    move?: boolean;
   },
 ): Promise<UpdateResult> {
-  await ctx.profile.ready;
-  const settings = await ctx.settings.loaded;
+  const [, settings] = await Promise.all([
+    ctx.profile.ready,
+    ctx.settings.loaded,
+    ctx.template.ready,
+  ]);
   const selector = options.profile;
   const profile = ctx.profile.resolveProfile(selector);
   if (!profile) return refusedUpdateProfile(selector, file.path);
@@ -862,42 +903,47 @@ async function switchNoteProfile(
   if (document === null) {
     return refusedUpdateMissingDocument(profile.document!, file.path);
   }
-  const previousStamp = readProfileStamp(ctx.app.metadataCache, file)?.stamp;
-  await stampNoteProfile(ctx, file, profile.stamp);
-  let result: UpdateResult;
+  const previousPath = file.path;
+  const targetPath = profileSwitchPath(file, profile);
+  const move = options.move && targetPath !== previousPath;
+  if (move) {
+    await ensureParentFolder(ctx.app, targetPath);
+    await ctx.app.fileManager.renameFile(file, targetPath);
+  }
   try {
-    result = await updateNote(ctx, file, {
-      indexedKey: options.indexedKey,
-      profileOverride: selector,
-    });
-    if (result.diagnostic) {
-      await stampNoteProfile(ctx, file, previousStamp);
-    }
+    await stampNoteFamily(
+      ctx,
+      [file, ...(options.importedNotes ?? [])],
+      profile.stamp,
+    );
   } catch (error) {
-    await stampNoteProfile(ctx, file, previousStamp);
+    if (move) {
+      try {
+        await ctx.app.fileManager.renameFile(file, previousPath);
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          "Profile switch and folder move rollback failed",
+        );
+      }
+    }
     throw error;
   }
-  if (result.diagnostic) return result;
-
-  await stampImportedNoteFamily(
-    ctx,
-    options.importedNotes ?? [],
-    profile.stamp,
-  );
-  return result;
+  logger.debug("Switched Literature Note Profile for the next update", {
+    path: file.path,
+    selector,
+    importedNotes: options.importedNotes?.length ?? 0,
+    moved: !!move,
+  });
+  return NO_BODY_UPDATE;
 }
 
-async function switchImportedNoteProfile(
-  ctx: OpsContext,
-  file: TFile,
-  options: { profile: ProfileSelector },
-): Promise<UpdateResult> {
-  await ctx.profile.ready;
-  const selector = options.profile;
-  const profile = ctx.profile.resolveProfile(selector);
-  if (!profile) return refusedUpdateProfile(selector, file.path);
-  await stampNoteProfile(ctx, file, profile.stamp);
-  return NO_BODY_UPDATE;
+/** A switch keeps the existing name; only the target folder can change. */
+function profileSwitchPath(file: TFile, profile: ResolvedProfile): string {
+  return joinFolderPath(
+    normalizeFolderPath(profile.bindings["note.literature-folder"]),
+    file.name,
+  );
 }
 
 async function getImportedNotesForItem(
@@ -915,7 +961,7 @@ async function getImportedNotesForItem(
   );
 }
 
-async function stampImportedNoteFamily(
+async function stampNoteFamily(
   ctx: NoteFeatureDeps,
   files: readonly TFile[],
   stamp: string | undefined,
@@ -942,7 +988,7 @@ async function stampImportedNoteFamily(
     if (rollbackErrors.length > 0) {
       throw new AggregateError(
         [error, ...rollbackErrors],
-        "Imported Note Profile switch and rollback failed",
+        "Note Profile switch and rollback failed",
       );
     }
     throw error;

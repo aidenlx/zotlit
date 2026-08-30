@@ -900,3 +900,39 @@ export class ButtonComponent {
     this.#clicked?.({} as MouseEvent);
   }
 }
+
+export class ConfirmationButton extends ButtonComponent {
+  setDestructive(): this {
+    return this;
+  }
+}
+
+export class ConfirmationModal {
+  readonly contentEl = { addClass: (_className: string) => {} };
+  #closed: (() => void) | undefined;
+  constructor(_app: App) {}
+  setTitle(_title: string): this {
+    return this;
+  }
+  setContent(_content: string): this {
+    return this;
+  }
+  addCheckbox(_label: string, _changed: (value: boolean) => void): this {
+    return this;
+  }
+  addButton(cb: (button: ConfirmationButton) => unknown): this {
+    cb(new ConfirmationButton(noticeElStub));
+    return this;
+  }
+  addCancelButton(_label: string): this {
+    return this;
+  }
+  setCloseCallback(callback: () => void): this {
+    this.#closed = callback;
+    return this;
+  }
+  open(): void {}
+  close(): void {
+    this.#closed?.();
+  }
+}
