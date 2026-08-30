@@ -14,8 +14,7 @@ import {
   noteOperationDiagnosticNotice,
   resolveLiteratureNoteWithWarning,
 } from "@/services/note-feature/update-single";
-import { profileOf } from "@/services/settings/profile";
-import type { NoteProfile } from "@/services/settings/profile";
+import type { NoteProfile } from "@/services/profile/bindings";
 
 import { chooseLiteratureNoteProfile } from "./profile-picker";
 import type { QuickSwitchDeps } from "./register";
@@ -62,8 +61,8 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     const existing = resolveLiteratureNoteWithWarning(
       this.#deps.noteIndex.getNotesByItemKey(hit.item.indexedKey),
     );
-    const settings = await this.#deps.settings.loaded;
-    const profiles = settings["note.profiles"];
+    await this.#deps.profile.ready;
+    const profiles = this.#deps.profile.profiles;
     if (profiles.length === 0) {
       await this.#open(
         existing ?? (await this.#create(hit, DEFAULT_PROFILE)),
@@ -107,8 +106,8 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     file: TFile,
     choice: { id: ProfileSelector; label: string },
   ): Promise<TFile> {
-    const settings = await this.#deps.settings.loaded;
-    const resolved = profileOf(this.#deps.app.metadataCache, settings, file);
+    await this.#deps.profile.ready;
+    const resolved = this.#deps.profile.profileOf(file);
     if (resolved.ok && resolved.profile.selector === choice.id) return file;
     const currentLabel = profileLabel(resolved);
 
@@ -159,13 +158,13 @@ export async function switchImportedNoteProfile(
   deps: QuickSwitchDeps,
   file: TFile,
 ): Promise<void> {
-  const settings = await deps.settings.loaded;
+  await deps.profile.ready;
   const choice = await chooseLiteratureNoteProfile(
     deps.app,
-    settings["note.profiles"],
+    deps.profile.profiles,
   );
   if (!choice) return;
-  const resolved = profileOf(deps.app.metadataCache, settings, file);
+  const resolved = deps.profile.profileOf(file);
   if (resolved.ok && resolved.profile.selector === choice.id) return;
   const currentLabel = profileLabel(resolved);
   const shouldSwitch = await confirm(

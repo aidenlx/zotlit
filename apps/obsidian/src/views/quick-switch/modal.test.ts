@@ -4,9 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { confirm, confirmWithCheckbox } from "@/lib/confirm";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { defaults } from "@/services/settings/schema";
 import { DEFAULT_LITERATURE_NOTE_PROFILE } from "@/services/settings/schema";
 
-import { QuickSwitchModal, switchImportedNoteProfile } from "./modal";
+import {
+  QuickSwitchModal,
+  switchImportedNoteProfile as switchProfile,
+} from "./modal";
 import { chooseLiteratureNoteProfile } from "./profile-picker";
 import type { QuickSwitchDeps } from "./register";
 
@@ -22,11 +27,11 @@ beforeEach(() => vi.clearAllMocks());
 
 function profileSettings(profiles: { id: ProfileId; label: string }[] = []): {
   "note.default-profile": typeof DEFAULT_LITERATURE_NOTE_PROFILE;
-  "note.profiles": typeof profiles;
+  profiles: typeof profiles;
 } {
   return {
     "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
-    "note.profiles": profiles,
+    profiles: profiles,
   };
 }
 
@@ -42,7 +47,7 @@ function makeModal(): QuickSwitchModal {
     noteIndex: { getNotesByItemKey: vi.fn().mockReturnValue([]) },
     settings: { current: {} },
   } as unknown as QuickSwitchDeps;
-  return new QuickSwitchModal(deps);
+  return makeQuickSwitchModal(deps);
 }
 
 function findHandler(
@@ -125,7 +130,7 @@ describe("QuickSwitchModal Profile conflicts", () => {
     });
     vi.mocked(confirm).mockResolvedValue(false);
     const openLinkText = vi.fn(async () => {});
-    const modal = new QuickSwitchModal({
+    const modal = makeQuickSwitchModal({
       app: {
         metadataCache: {
           getFileCache: () => ({
@@ -182,7 +187,7 @@ describe("QuickSwitchModal Profile conflicts", () => {
       label: "Papers",
     });
     vi.mocked(confirm).mockResolvedValue(false);
-    const modal = new QuickSwitchModal({
+    const modal = makeQuickSwitchModal({
       app: {
         metadataCache: {
           getFileCache: () => ({
@@ -228,7 +233,7 @@ describe("QuickSwitchModal Profile conflicts", () => {
       label: "Books",
     });
     const switchNoteProfile = vi.fn();
-    const modal = new QuickSwitchModal({
+    const modal = makeQuickSwitchModal({
       app: {
         metadataCache: {
           getFileCache: () => ({
@@ -280,7 +285,7 @@ describe("QuickSwitchModal Profile conflicts", () => {
       bodyUpdated: true,
       duplicateRegionCount: 0,
     });
-    const modal = new QuickSwitchModal({
+    const modal = makeQuickSwitchModal({
       app: {
         metadataCache: {
           getFileCache: () => ({
@@ -415,3 +420,22 @@ describe("Imported Note Profile switching", () => {
     expect(switchProfile).not.toHaveBeenCalled();
   });
 });
+
+function readerFor(deps: QuickSwitchDeps) {
+  let settings = { ...defaults, ...deps.settings.current };
+  const reader = profileReader(() => settings, deps.app.metadataCache);
+  return Object.assign(reader, {
+    ready:
+      deps.settings.loaded?.then((value) => {
+        settings = { ...defaults, ...value };
+      }) ?? Promise.resolve(),
+  });
+}
+function makeQuickSwitchModal(deps: QuickSwitchDeps): QuickSwitchModal {
+  return new QuickSwitchModal({ ...deps, profile: readerFor(deps) });
+}
+function switchImportedNoteProfile(
+  ...[deps, file]: Parameters<typeof switchProfile>
+) {
+  return switchProfile({ ...deps, profile: readerFor(deps) }, file);
+}

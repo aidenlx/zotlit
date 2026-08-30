@@ -4,11 +4,12 @@ import type { App } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { LiteratureNoteProfile } from "@/services/settings/schema";
+import type { LiteratureNoteProfile } from "@/services/profile/service";
 
 export interface LiteratureNoteProfileChoice {
   id: ProfileSelector;
   label: string;
+  detail?: string;
 }
 
 export function chooseLiteratureNoteProfile(
@@ -33,7 +34,23 @@ class LiteratureNoteProfileModal extends SuggestModal<LiteratureNoteProfileChoic
     super(app);
     this.#choices = [
       { id: DEFAULT_PROFILE, label: m.settings_profile_default_name() },
-      ...profiles.map(({ id, label }) => ({ id, label })),
+      ...profiles.map(({ id, label, document, bindings }) => ({
+        id,
+        label:
+          profiles.filter((profile) => profile.label === label).length > 1
+            ? `${label} (${document})`
+            : label,
+        detail: m.settings_profile_display({
+          folder:
+            bindings["note.literature-folder"] ?? m.settings_profile_inherit(),
+          style:
+            bindings["citation.references-style"] === null
+              ? m.settings_profile_citation_style_none()
+              : (bindings["citation.references-style"] ??
+                m.settings_profile_inherit()),
+          document,
+        }),
+      })),
     ];
     this.#resolve = resolve;
     this.setPlaceholder(m.modal_profile_choose_placeholder());
@@ -52,7 +69,9 @@ class LiteratureNoteProfileModal extends SuggestModal<LiteratureNoteProfileChoic
     choice: LiteratureNoteProfileChoice,
     el: HTMLElement,
   ): void {
-    el.setText(choice.label);
+    el.createDiv({ text: choice.label });
+    if (choice.detail)
+      el.createDiv({ text: choice.detail, cls: "suggestion-note" });
   }
 
   override onChooseSuggestion(choice: LiteratureNoteProfileChoice): void {

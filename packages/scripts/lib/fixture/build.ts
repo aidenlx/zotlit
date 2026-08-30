@@ -980,7 +980,6 @@ function vaultSettings(
         "note.import-annotations-as-template": false,
       },
     },
-    "note.profiles": LITERATURE_NOTE_PROFILES,
     ...shared,
   };
 }

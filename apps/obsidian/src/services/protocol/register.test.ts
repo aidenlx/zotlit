@@ -6,6 +6,8 @@ import { getItemRefByID } from "@zotlit/db";
 import { BaseNotice } from "@/lib/notice";
 import { runBatchUpdateAll } from "@/services/note-feature/update-batch";
 import { createAndOpen } from "@/services/note-feature/update-single";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { defaults } from "@/services/settings/schema";
 import { DEFAULT_LITERATURE_NOTE_PROFILE } from "@/services/settings/schema";
 
 import { registerProtocolHandlers } from "./register";
@@ -39,11 +41,11 @@ const runBatchImportAll = vi.fn(async () => ({ outcome: "batch-modal" }));
 
 function profileSettings(profiles: { id: string; label: string }[] = []): {
   "note.default-profile": typeof DEFAULT_LITERATURE_NOTE_PROFILE;
-  "note.profiles": typeof profiles;
+  profiles: typeof profiles;
 } {
   return {
     "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
-    "note.profiles": profiles,
+    profiles: profiles,
   };
 }
 
@@ -65,6 +67,10 @@ function register(overrides: Partial<ProtocolDeps> = {}): Disposable {
     liveUpdate: { on: () => () => {} },
     ...overrides,
   } as unknown as ProtocolDeps;
+  deps.profile = profileReader(
+    () => ({ ...defaults, ...deps.settings?.current }),
+    deps.app?.metadataCache,
+  );
   return registerProtocolHandlers(plugin, deps);
 }
 

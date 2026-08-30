@@ -65,33 +65,15 @@ describe("schema/defaults invariants", () => {
     ).toBe(false);
   });
 
-  it("stores only added literature note profiles and requires stable unique ids", () => {
-    const entry = schema.entries["note.profiles"];
-    const books = {
-      id: "V1StGXR8Z5jd",
-      label: "Books",
-      document: "books.md",
-      bindings: { "note.literature-folder": "Books" },
-    };
-
-    expect(defaults["note.profiles"]).toEqual([]);
-    expect(v.safeParse(entry, [books]).success).toBe(true);
+  it("keeps Profile documents and Pack records out of settings", () => {
+    expect(schema.entries).not.toHaveProperty("note.profiles");
+    expect(schema.entries).not.toHaveProperty("note.template-pack-installs");
     expect(
-      v.safeParse(entry, [
-        { ...books, id: "36c4f8b4-4f65-4cab-8c51-c921ea616cc8" },
-      ]).success,
-    ).toBe(false);
-    expect(v.safeParse(entry, [{ ...books, id: "Books" }]).success).toBe(false);
-    expect(v.safeParse(entry, [{ ...books, id: "V1StGXR8_Z5j" }]).success).toBe(
-      false,
-    );
-    expect(v.safeParse(entry, [{ ...books, id: "V1StGXR8-Z5j" }]).success).toBe(
-      false,
-    );
-    expect(v.safeParse(entry, [books, books]).success).toBe(false);
-    expect(v.safeParse(entry, [{ ...books, document: "   " }]).success).toBe(
-      false,
-    );
+      v.parse(schema.entries["note.default-profile"], {
+        ...defaults["note.default-profile"],
+        document: "old.md",
+      }),
+    ).not.toHaveProperty("document");
   });
 
   it("keeps every built-in default Profile binding total", () => {
@@ -114,45 +96,5 @@ describe("schema/defaults invariants", () => {
       }).success,
     ).toBe(true);
     expect(v.safeParse(entry, { document: "   " }).success).toBe(false);
-  });
-
-  it("keeps profile bindings sparse and validates each supplied binding", () => {
-    const entry = schema.entries["note.profiles"];
-    const base = {
-      id: "V1StGXR8Z5jd",
-      label: "Books",
-    };
-
-    expect(v.safeParse(entry, [base]).success).toBe(true);
-    expect(
-      v.safeParse(entry, [
-        {
-          ...base,
-          bindings: {
-            "citation.references-style": "apa",
-            "note.import-folder": "Imported",
-            "note.import-colored-highlights": true,
-            "note.import-annotations-as-template": true,
-          },
-        },
-      ]).success,
-    ).toBe(true);
-    expect(
-      v.safeParse(entry, [
-        {
-          ...base,
-          bindings: { "citation.references-style": null },
-        },
-      ]).success,
-    ).toBe(true);
-    expect(v.safeParse(entry, [{ ...base, label: "   " }]).success).toBe(false);
-    expect(
-      v.safeParse(entry, [
-        {
-          ...base,
-          bindings: { "note.literature-folder": 42 },
-        },
-      ]).success,
-    ).toBe(false);
   });
 });

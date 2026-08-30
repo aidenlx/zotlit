@@ -25,6 +25,7 @@ import type { CitationIndexHarness } from "@/services/citation-index/test-harnes
 import { createCitationEngine } from "@/services/pandoc/engine";
 import type { CitationEngine } from "@/services/pandoc/engine";
 import { inlineText } from "@/services/pandoc/inline-content";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { ReferenceEntry } from "@/views/references/entries";
@@ -425,6 +426,7 @@ function openText(
   styleXml: string,
 ): CitationText {
   return new CitationText({
+    profile: profileReader(),
     app,
     db,
     citationIndex: index,

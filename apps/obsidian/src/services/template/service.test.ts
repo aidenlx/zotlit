@@ -1,6 +1,4 @@
-import { dirname } from "node:path/posix";
-import { TFile, TFolder } from "obsidian";
-import type { App, EventRef, Plugin, TAbstractFile } from "obsidian";
+import type { App, Plugin } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
@@ -12,177 +10,15 @@ import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { resolveProfile } from "@/services/settings/profile";
+import { resolveProfile } from "@/services/profile/__fixtures__/reader";
+import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
 import { SettingsService } from "@/services/settings/service";
 
 import { DEFAULT_TEMPLATES, templatePath } from "./defaults";
 import { InertTemplateError } from "./errors";
 import { TemplateService } from "./service";
-
-type VaultEvent = "create" | "modify" | "rename" | "delete";
-type VaultCallback = (...args: unknown[]) => void;
-
-class MockVault {
-  readonly root = makeFolder("", null, this);
-  readonly files = new Map<string, TFile>();
-  readonly folders = new Map<string, TFolder>([["", this.root]]);
-  readonly contents = new Map<string, string>();
-  readonly cachedRead = vi.fn(async (file: TFile) => {
-    return this.contents.get(file.path) ?? "";
-  });
-
-  #mtime = 1;
-  readonly #listeners: Record<VaultEvent, Set<VaultCallback>> = {
-    create: new Set(),
-    modify: new Set(),
-    rename: new Set(),
-    delete: new Set(),
-  };
-
-  getRoot(): TFolder {
-    return this.root;
-  }
-
-  getFolderByPath(path: string): TFolder | null {
-    return this.folders.get(path) ?? null;
-  }
-
-  getFileByPath(path: string): TFile | null {
-    return this.files.get(path) ?? null;
-  }
-
-  getConfig(name: "autoPairBrackets" | "autoPairMarkdown"): boolean {
-    return name === "autoPairBrackets" || name === "autoPairMarkdown";
-  }
-
-  on(name: VaultEvent, callback: VaultCallback): EventRef {
-    this.#listeners[name].add(callback);
-    return { e: this, name, callback } as unknown as EventRef;
-  }
-
-  offref(ref: EventRef): void {
-    const eventRef = ref as unknown as {
-      name: VaultEvent;
-      callback: VaultCallback;
-    };
-    this.#listeners[eventRef.name].delete(eventRef.callback);
-  }
-
-  addFile(path: string, content: string): TFile {
-    const file = makeFile(path, this.#nextStat(content), this);
-    this.files.set(path, file);
-    this.contents.set(path, content);
-    this.#ensureFolder(dirname(path)).children.push(file);
-    return file;
-  }
-
-  createFile(path: string, content: string): TFile {
-    const file = this.addFile(path, content);
-    this.#emit("create", file);
-    return file;
-  }
-
-  modifyFile(path: string, content: string): void {
-    const file = this.files.get(path);
-    if (!file) throw new Error(`Missing file: ${path}`);
-    file.stat = this.#nextStat(content);
-    this.contents.set(path, content);
-    this.#emit("modify", file);
-  }
-
-  renameFile(oldPath: string, newPath: string): void {
-    const file = this.files.get(oldPath);
-    const content = this.contents.get(oldPath);
-    if (!file || content === undefined)
-      throw new Error(`Missing file: ${oldPath}`);
-
-    this.#detach(file);
-    this.files.delete(oldPath);
-    this.contents.delete(oldPath);
-
-    file.path = newPath;
-    file.name = basename(newPath);
-    file.basename = file.name.replace(/\.[^.]+$/, "");
-    file.extension = file.name.split(".").at(-1) ?? "";
-    file.parent = this.#ensureFolder(dirname(newPath));
-    file.parent.children.push(file);
-    this.files.set(newPath, file);
-    this.contents.set(newPath, content);
-    this.#emit("rename", file, oldPath);
-  }
-
-  deleteFile(path: string): void {
-    const file = this.files.get(path);
-    if (!file) throw new Error(`Missing file: ${path}`);
-    this.#detach(file);
-    this.files.delete(path);
-    this.contents.delete(path);
-    this.#emit("delete", file);
-  }
-
-  #ensureFolder(path: string): TFolder {
-    const normalized = path === "." ? "" : path;
-    const existing = this.folders.get(normalized);
-    if (existing) return existing;
-
-    const parent = this.#ensureFolder(dirname(normalized));
-    const folder = makeFolder(normalized, parent, this);
-    parent.children.push(folder);
-    this.folders.set(normalized, folder);
-    return folder;
-  }
-
-  #detach(file: TAbstractFile): void {
-    const siblings = file.parent?.children;
-    if (!siblings) return;
-    const index = siblings.indexOf(file);
-    if (index >= 0) siblings.splice(index, 1);
-  }
-
-  #nextStat(content: string) {
-    const now = this.#mtime++;
-    return {
-      type: "file" as const,
-      ctime: now,
-      mtime: now,
-      size: content.length,
-    };
-  }
-
-  #emit(name: VaultEvent, ...args: unknown[]): void {
-    for (const callback of this.#listeners[name]) {
-      callback(...args);
-    }
-  }
-}
-
-class PluginStub {
-  readonly editorExtensions: unknown[] = [];
-  readonly editorSuggests: unknown[] = [];
-
-  constructor(
-    readonly app: App,
-    public data: unknown,
-  ) {}
-
-  loadData(): Promise<unknown> {
-    return Promise.resolve(this.data);
-  }
-
-  async saveData(data: unknown): Promise<void> {
-    this.data = data;
-  }
-
-  registerEditorExtension(extension: unknown): void {
-    this.editorExtensions.push(extension);
-  }
-
-  registerEditorSuggest(suggest: unknown): void {
-    this.editorSuggests.push(suggest);
-  }
-}
+import { MockVault, PluginStub } from "./test-vault";
 
 interface Harness {
   app: App & { workspace: { updateOptions: ReturnType<typeof vi.fn> } };
@@ -331,7 +167,7 @@ filename: "{{ zt.title }}"
     const converted = {
       ...defaults,
       "note.template-conversion-pending": false,
-      "note.profiles": profiles,
+      profiles: profiles,
     };
 
     expect(
@@ -368,7 +204,7 @@ filename: "{{ zt.title }}"
     const settings = {
       ...defaults,
       "note.template-conversion-pending": false,
-      "note.profiles": [
+      profiles: [
         {
           id: "Tt2Uu4Vv6Ww8" as ProfileId,
           label: "Books",
@@ -381,7 +217,7 @@ filename: "{{ zt.title }}"
       service.renderProfileAnnotation(
         { text: "Excerpt" },
         {
-          profile: resolveProfile(settings, settings["note.profiles"][0]!.id)!,
+          profile: resolveProfile(settings, settings.profiles[0]!.id)!,
         },
       ),
     ).toThrow(
@@ -1672,36 +1508,6 @@ async function makeHarness(options?: {
   const harness = { app, plugin, service, settings, vault, localStorage };
   harnesses.push(harness);
   return harness;
-}
-
-function makeFolder(
-  path: string,
-  parent: TFolder | null,
-  vault: unknown,
-): TFolder {
-  const folder = new TFolder();
-  folder.vault = vault as never;
-  folder.path = path;
-  folder.name = basename(path);
-  folder.parent = parent;
-  folder.children = [];
-  return folder;
-}
-
-function makeFile(path: string, stat: TFile["stat"], vault: MockVault): TFile {
-  const file = new TFile();
-  file.vault = vault as never;
-  file.path = path;
-  file.name = basename(path);
-  file.basename = file.name.replace(/\.[^.]+$/, "");
-  file.extension = file.name.split(".").at(-1) ?? "";
-  file.parent = vault.getFolderByPath(dirname(path)) ?? vault.getRoot();
-  file.stat = stat;
-  return file;
-}
-
-function basename(path: string): string {
-  return path.split("/").at(-1) ?? "";
 }
 
 function literatureNoteDocument(heading: string, annotation?: string): string {

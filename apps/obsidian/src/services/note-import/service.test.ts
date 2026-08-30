@@ -18,10 +18,13 @@ import type {
   AttachmentSource,
   SourceOrigin,
 } from "@/services/attachment-import/service";
-import { resolveProfile } from "@/services/settings/profile";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/profile";
+import {
+  profileReader,
+  resolveProfile,
+} from "@/services/profile/__fixtures__/reader";
+import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 
@@ -216,7 +219,9 @@ function makeService(
     template?: Pick<TemplateService, "render" | "renderProfileAnnotation">;
   } = {},
 ): NoteImporter {
-  return createNoteImporter({
+  let current: Settings = defaults;
+  const importer = createNoteImporter({
+    profile: profileReader(() => current, app.metadataCache),
     app,
     noteIndex: {
       getImportedNoteByNoteKey: () => options.existing ?? [],
@@ -233,6 +238,16 @@ function makeService(
     zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
     attachmentImport: options.attachmentImport ?? makeAttachmentImport(),
   });
+  return {
+    prepare: (options) => {
+      current = options.settings;
+      return importer.prepare(options);
+    },
+    importNote: (note, options) => {
+      current = options.settings;
+      return importer.importNote(note, options);
+    },
+  };
 }
 
 function makePrepare(
@@ -261,7 +276,7 @@ const PROFILE_B = "Rz9Wm4YfH6Kd" as ProfileId;
 function profileSettings(): Settings {
   return {
     ...defaults,
-    "note.profiles": [
+    profiles: [
       {
         id: PROFILE_A,
         label: "Law",

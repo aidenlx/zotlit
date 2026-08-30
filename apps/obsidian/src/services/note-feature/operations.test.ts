@@ -49,14 +49,31 @@ import type {
   AttachmentSource,
   SourceOrigin,
 } from "@/services/attachment-import/service";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/profile";
+import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults as settingsDefaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
 import { ProfileAnnotationError } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 
-import type { NoteFeatureDeps, SyncRenderDeps } from "./context";
-import { createNoteFeature } from "./operations";
+import type {
+  NoteFeatureDeps,
+  SyncRenderDeps as RuntimeSyncRenderDeps,
+} from "./context";
+type SyncRenderDeps = Omit<RuntimeSyncRenderDeps, "profile"> &
+  Partial<Pick<RuntimeSyncRenderDeps, "profile">>;
+import { createNoteFeature as createFeature } from "./operations";
+function createNoteFeature(deps: SyncRenderDeps) {
+  return createFeature({
+    ...deps,
+    profile:
+      deps.profile ??
+      profileReader(
+        () => deps.settings.current ?? settingsDefaults,
+        deps.app.metadataCache,
+      ),
+  });
+}
 import type { NoteFeature, UpdateScope } from "./operations";
 
 /** Stand-in decision port: every source blocks, so no test copies a file. */
@@ -426,7 +443,7 @@ describe("createNote", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings({
-        "note.profiles": [
+        profiles: [
           {
             id: profileId,
             label: "Books",
@@ -815,78 +832,81 @@ describe("createNote", () => {
     expect(app.vault.create).toHaveBeenCalledOnce();
   });
 
-  it("awaits template.ready before writing the note", async () => {
-    // Regression #10: createNote's readiness gate omitted `ctx.template.ready`
-    // (only `settings.loaded` + `noteIndex.whenIndexed`), so a protocol-driven
-    // create during cold launch could reach `resolveNotePath -> renderFilename`
-    // before TemplateService finished loading and throw "service is not
-    // ready" instead of creating the note.
-    const item = makeItem({
-      itemID: 1,
-      key: "ROOT1234",
-      indexedKey: "ROOT1234",
-      title: "Root",
-      citationKey: null,
-    });
-    vi.mocked(fetchNoteContext).mockReturnValue({
-      relatedItems: [],
-    } as unknown as NoteTemplateContext);
+  it.each(["template", "profile"] as const)(
+    "awaits %s.ready before writing the note",
+    async (service) => {
+      // Protocol-driven creation waits for both document compilation and Profile discovery.
+      const item = makeItem({
+        itemID: 1,
+        key: "ROOT1234",
+        indexedKey: "ROOT1234",
+        title: "Root",
+        citationKey: null,
+      });
+      vi.mocked(fetchNoteContext).mockReturnValue({
+        relatedItems: [],
+      } as unknown as NoteTemplateContext);
 
-    let resolveReady!: () => void;
-    const templateReady = new Promise<void>((resolve) => {
-      resolveReady = resolve;
-    });
-    let renderFilenameCalledBeforeSignal = false;
+      let resolveReady!: () => void;
+      const templateReady = new Promise<void>((resolve) => {
+        resolveReady = resolve;
+      });
+      let renderFilenameCalledBeforeSignal = false;
 
-    const app = makeApp();
-    const deps: SyncRenderDeps = {
-      app,
-      template: {
-        ready: templateReady,
-        loaded: true,
-        frontmatterFields: [],
-        getLiteratureNoteTemplate: () => undefined,
-        renderProfileAnnotation: () => "",
-        renderFilename: () => {
-          renderFilenameCalledBeforeSignal = true;
-          return "Root";
+      const app = makeApp();
+      const deps: SyncRenderDeps = {
+        app,
+        profile: {
+          ...profileReader(makeSettings().current!),
+          ready: service === "profile" ? templateReady : Promise.resolve(),
         },
-        render: () => "body",
-      },
-      db: makeDb(),
-      noteIndex: {
-        getImportedNoteByNoteKey: () => [],
-        ready: Promise.resolve(),
-        whenIndexed: async () => {},
-        getNotesByItemKey: () => [],
-      },
-      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-      settings: makeSettings(),
-      attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
+        template: {
+          ready: service === "template" ? templateReady : Promise.resolve(),
+          loaded: true,
+          frontmatterFields: [],
+          getLiteratureNoteTemplate: () => undefined,
+          renderProfileAnnotation: () => "",
+          renderFilename: () => {
+            renderFilenameCalledBeforeSignal = true;
+            return "Root";
+          },
+          render: () => "body",
+        },
+        db: makeDb(),
+        noteIndex: {
+          getImportedNoteByNoteKey: () => [],
+          ready: Promise.resolve(),
+          whenIndexed: async () => {},
+          getNotesByItemKey: () => [],
+        },
+        zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+        settings: makeSettings(),
+        attachmentImport: blockedAttachmentImport,
+        noteImport: {
+          prepare: async () => ({
+            resolveChildNote: () => ({
+              key: "",
+              indexedKey: "",
+              title: null,
+              noteLink: () => "",
+            }),
+            flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
           }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
-        }),
-      },
-    };
+        },
+      };
 
-    const createPromise = createNoteFeature(deps).createNote(item);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(renderFilenameCalledBeforeSignal).toBe(false);
+      const createPromise = createNoteFeature(deps).createNote(item);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(renderFilenameCalledBeforeSignal).toBe(false);
 
-    resolveReady();
-    const file = createdFile(await createPromise);
-    expect(renderFilenameCalledBeforeSignal).toBe(true);
-    expect(file.path).toBe("Literature/Root.md");
-  });
+      resolveReady();
+      const file = createdFile(await createPromise);
+      expect(renderFilenameCalledBeforeSignal).toBe(true);
+      expect(file.path).toBe("Literature/Root.md");
+    },
+  );
 
   it("creates under an explicit Profile with its folder, stamp, and citation style", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
@@ -910,7 +930,7 @@ describe("createNote", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings({
-        "note.profiles": [
+        profiles: [
           {
             id: profileId,
             label: "Books",
@@ -999,7 +1019,7 @@ describe("createNote", () => {
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings({
         "note.template-conversion-pending": true,
-        "note.profiles": [{ id: profileId, label: "Books" }],
+        profiles: [{ id: profileId, label: "Books" }],
       }),
       attachmentImport: { prepare: vi.fn() },
       noteImport: { prepare: vi.fn() },
@@ -1029,7 +1049,7 @@ describe("createNote", () => {
       template: {
         ...makeTemplate(),
         getLiteratureNoteTemplate: (reference) =>
-          reference === "literature-note-default.md" ? document : undefined,
+          reference === "zotlit-profile.default.md" ? document : undefined,
       },
       db: makeDb(),
       noteIndex: {
@@ -1040,10 +1060,7 @@ describe("createNote", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings({
-        "note.default-profile": {
-          ...settingsDefaults["note.default-profile"],
-          document: "literature-note-default.md",
-        },
+        defaultDocument: "zotlit-profile.default.md",
       }),
       attachmentImport: blockedAttachmentImport,
       noteImport: {
@@ -1097,7 +1114,7 @@ describe("createNote", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings({
-        "note.profiles": [
+        profiles: [
           {
             id: profileId,
             label: "Books",
@@ -1173,9 +1190,7 @@ describe("createNote", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings({
-        "note.profiles": [
-          { id: profileId, label: "Books", document: "books.md" },
-        ],
+        profiles: [{ id: profileId, label: "Books", document: "books.md" }],
       }),
       attachmentImport: blockedAttachmentImport,
       noteImport: {
@@ -1220,7 +1235,7 @@ describe("createNote", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings({
-        "note.profiles": [
+        profiles: [
           {
             id: profileId,
             label: "Books",
@@ -1269,7 +1284,7 @@ describe("createNote", () => {
       },
       zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
       settings: makeSettings({
-        "note.profiles": [
+        profiles: [
           { id: existingProfileId, label: "Books" },
           { id: requestedProfileId, label: "Papers" },
         ],
@@ -1321,7 +1336,7 @@ describe("overwriteNote", () => {
         [FIELD_LITERATURE_NOTE_PROFILE]: `Reading notes (${profileId})`,
       },
       settings: {
-        "note.profiles": [{ id: profileId, label: "Books" }],
+        profiles: [{ id: profileId, label: "Books" }],
       },
     });
 
@@ -1355,9 +1370,7 @@ describe("overwriteNote", () => {
       content: "Old body content",
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
       settings: {
-        "note.profiles": [
-          { id: profileId, label: "Books", document: "books.md" },
-        ],
+        profiles: [{ id: profileId, label: "Books", document: "books.md" }],
       },
     });
     harness.deps.template.getLiteratureNoteTemplate = () =>
@@ -1609,7 +1622,7 @@ describe("updateNote", () => {
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
       settings: {
         "note.template-conversion-pending": true,
-        "note.profiles": [{ id: profileId, label: "Books" }],
+        profiles: [{ id: profileId, label: "Books" }],
       },
     });
 
@@ -1639,7 +1652,7 @@ describe("updateNote", () => {
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: `Books (${stampedId})` },
       settings: {
-        "note.profiles": [{ id: requestedId, label: "Papers" }],
+        profiles: [{ id: requestedId, label: "Papers" }],
       },
     });
 
@@ -1671,7 +1684,7 @@ describe("updateNote", () => {
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
       settings: {
-        "note.profiles": [
+        profiles: [
           {
             id: profileId,
             label: "Books",
@@ -1705,7 +1718,7 @@ describe("updateNote", () => {
         [FIELD_LITERATURE_NOTE_PROFILE]: `Reading notes (${profileId})`,
       },
       settings: {
-        "note.profiles": [
+        profiles: [
           {
             id: profileId,
             label: "Books",
@@ -1740,7 +1753,7 @@ describe("updateNote", () => {
         [FIELD_LITERATURE_NOTE_PROFILE]: `Books (${otherId}) (${profileId})`,
       },
       settings: {
-        "note.profiles": [
+        profiles: [
           {
             id: profileId,
             label: `Books (${otherId})`,
@@ -1774,7 +1787,7 @@ describe("updateNote", () => {
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
       settings: {
-        "note.profiles": [{ id: profileId, label: "读书笔记" }],
+        profiles: [{ id: profileId, label: "读书笔记" }],
       },
     });
 
@@ -1795,9 +1808,7 @@ describe("updateNote", () => {
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: "Reading notes" },
       settings: {
-        "note.profiles": [
-          { id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Reading notes" },
-        ],
+        profiles: [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Reading notes" }],
       },
     });
 
@@ -1825,7 +1836,7 @@ describe("updateNote", () => {
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: "Books (nope)" },
       settings: {
-        "note.profiles": [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }],
+        profiles: [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }],
       },
     });
 
@@ -1849,7 +1860,7 @@ describe("updateNote", () => {
         [FIELD_LITERATURE_NOTE_PROFILE]: "Books (Rz9Wm4YfH6Kd)",
       },
       settings: {
-        "note.profiles": [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }],
+        profiles: [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }],
       },
     });
 
@@ -1875,7 +1886,7 @@ describe("updateNote", () => {
         [FIELD_CITATION_STYLE]: "apa",
       },
       settings: {
-        "note.profiles": [
+        profiles: [
           {
             id: profileId,
             label: "Books",
@@ -1901,7 +1912,7 @@ describe("updateNote", () => {
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
       settings: {
         "citation.references-style": "apa",
-        "note.profiles": [
+        profiles: [
           {
             id: profileId,
             label: "Books",
@@ -1935,7 +1946,7 @@ describe("updateNote", () => {
       content: `User prefix\n${formatManagedRegion("OLD")}\nUser suffix`,
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
       settings: {
-        "note.profiles": [
+        profiles: [
           {
             id: profileId,
             label: "Books",
@@ -1974,9 +1985,7 @@ describe("updateNote", () => {
         [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
       },
       settings: {
-        "note.profiles": [
-          { id: profileId, label: "Books", document: "books.md" },
-        ],
+        profiles: [{ id: profileId, label: "Books", document: "books.md" }],
       },
     });
     Object.defineProperty(harness.deps.template, "frontmatterFields", {
@@ -2022,9 +2031,7 @@ describe("updateNote", () => {
       content: original,
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
       settings: {
-        "note.profiles": [
-          { id: profileId, label: "Books", document: "books.md" },
-        ],
+        profiles: [{ id: profileId, label: "Books", document: "books.md" }],
       },
     });
     harness.deps.template.getLiteratureNoteTemplate = () =>
@@ -2059,9 +2066,7 @@ describe("updateNote", () => {
         [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
       },
       settings: {
-        "note.profiles": [
-          { id: profileId, label: "Books", document: "books.md" },
-        ],
+        profiles: [{ id: profileId, label: "Books", document: "books.md" }],
       },
     });
     harness.deps.template.getLiteratureNoteTemplate = () =>
@@ -2117,9 +2122,7 @@ describe("updateNote", () => {
         [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
       },
       settings: {
-        "note.profiles": [
-          { id: profileId, label: "Books", document: "books.md" },
-        ],
+        profiles: [{ id: profileId, label: "Books", document: "books.md" }],
       },
     });
     harness.deps.template.getLiteratureNoteTemplate = () =>
@@ -2179,9 +2182,7 @@ describe("updateNote", () => {
           [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
         },
         settings: {
-          "note.profiles": [
-            { id: profileId, label: "Books", document: "books.md" },
-          ],
+          profiles: [{ id: profileId, label: "Books", document: "books.md" }],
         },
       });
       harness.deps.template.getLiteratureNoteTemplate = () =>
@@ -2215,7 +2216,7 @@ describe("updateNote", () => {
       content: "Static user-owned body",
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
       settings: {
-        "note.profiles": [
+        profiles: [
           {
             id: profileId,
             label: "Books",
@@ -2251,7 +2252,7 @@ describe("updateNote", () => {
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: profileId },
       settings: {
-        "note.profiles": [
+        profiles: [
           {
             id: profileId,
             label: "Books",
@@ -2340,7 +2341,7 @@ describe("updateNote", () => {
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
       settings: {
-        "note.profiles": [
+        profiles: [
           { id: oldProfileId, label: "Books" },
           {
             id: newProfileId,
@@ -2368,7 +2369,7 @@ describe("updateNote", () => {
     const harness = makeUpdateHarness({
       content: "Imported body",
       settings: {
-        "note.profiles": [{ id: newProfileId, label: "Papers" }],
+        profiles: [{ id: newProfileId, label: "Papers" }],
       },
     });
     const file = makeFile("Imported/Existing.md");
@@ -2415,7 +2416,7 @@ describe("updateNote", () => {
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
       settings: {
-        "note.profiles": [
+        profiles: [
           { id: oldProfileId, label: "Books" },
           { id: newProfileId, label: "Papers" },
         ],
@@ -2442,7 +2443,7 @@ describe("updateNote", () => {
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
       settings: {
-        "note.profiles": [{ id: newProfileId, label: "Papers" }],
+        profiles: [{ id: newProfileId, label: "Papers" }],
         "note.template-conversion-pending": true,
       },
     });
@@ -2474,7 +2475,7 @@ describe("updateNote", () => {
     const harness = makeUpdateHarness({
       content: formatManagedRegion("OLD"),
       settings: {
-        "note.profiles": [
+        profiles: [
           { id: oldProfileId, label: "Books" },
           { id: newProfileId, label: "Papers" },
         ],
@@ -2526,7 +2527,7 @@ describe("updateNote", () => {
       content: formatManagedRegion("OLD"),
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: oldProfileId },
       settings: {
-        "note.profiles": [
+        profiles: [
           { id: oldProfileId, label: "Books" },
           { id: newProfileId, label: "Papers" },
         ],
@@ -2874,12 +2875,14 @@ describe("writeNoteUpdate", () => {
         ]),
       });
     const options = writeOptions("metadata");
-    options.settings = {
+    const profileSettings: Settings = {
       ...options.settings,
-      "note.profiles": [
-        { id: profileId, label: "Books", document: "books.md" },
-      ],
+      profiles: [{ id: profileId, label: "Books", document: "books.md" }],
     };
+    harness.deps.profile = profileReader(
+      profileSettings,
+      harness.deps.app.metadataCache,
+    );
 
     const result = await createNoteFeature(harness.deps).writeNoteUpdate(
       makeFile("Books/Root.md"),
@@ -2904,13 +2907,17 @@ describe("writeNoteUpdate", () => {
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: stampedId },
     });
     const options = writeOptions();
-    options.settings = {
+    const profileSettings: Settings = {
       ...options.settings,
-      "note.profiles": [
+      profiles: [
         { id: stampedId, label: "Books" },
         { id: requestedId, label: "Papers" },
       ],
     };
+    harness.deps.profile = profileReader(
+      profileSettings,
+      harness.deps.app.metadataCache,
+    );
     options.profile = requestedId;
 
     const result = await createNoteFeature(harness.deps).writeNoteUpdate(
@@ -2934,10 +2941,14 @@ describe("writeNoteUpdate", () => {
       frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: "legacy" },
     });
     const options = writeOptions();
-    options.settings = {
+    const profileSettings: Settings = {
       ...options.settings,
-      "note.profiles": [{ id: requestedId, label: "Papers" }],
+      profiles: [{ id: requestedId, label: "Papers" }],
     };
+    harness.deps.profile = profileReader(
+      profileSettings,
+      harness.deps.app.metadataCache,
+    );
     options.profile = requestedId;
 
     const result = await createNoteFeature(harness.deps).writeNoteUpdate(
@@ -3155,7 +3166,7 @@ describe("renderAnnotation", () => {
           indexedKey === "PARENT1" ? [file] : [],
       },
       settings: makeSettings({
-        "note.profiles": [
+        profiles: [
           {
             id: profileId,
             label: "Books",
@@ -3499,7 +3510,6 @@ function makeDocumentTemplate(
       description: "Books fixture",
       contract: 1,
       filename: "{{ zt.title }}",
-      profileDefaults: {},
       language: "liquid",
       ...(options.frontmatter ? { frontmatter: [] } : {}),
     },

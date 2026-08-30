@@ -1,21 +1,22 @@
+import type { ContractRoot, TemplateSlot } from "@zotlit/db";
+import type {
+  FrontmatterLanguage,
+  FrontmatterMergeStrategy,
+} from "@zotlit/templates/constants";
 // The JSON envelope every Workbench command answers with, and its diagnostics.
 //
 // Diagnostic `message` and `hint` text stays literal English: `code` is the
 // stable machine surface agent scripts read, the message is context for a human
 // reading the transcript, and the hint is the recovery action the agent acts on.
 // Command and flag help text is localized (see `register.ts`).
-
-import type { ContractRoot, TemplateSlot } from "@zotlit/db";
-import type {
-  FrontmatterLanguage,
-  FrontmatterMergeStrategy,
-} from "@zotlit/templates/constants";
 import { TemplateError } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
 import { UNKNOWN_PROFILE_HINT } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
+import type { ProfileDiagnostic } from "@/services/profile/service";
 import { InertTemplateError } from "@/services/template/errors";
 import { errorContext } from "@/services/template/service";
 import type {
@@ -165,6 +166,7 @@ export interface LiteratureNoteProfileRow {
   id: ProfileSelector;
   label: string;
   document: string | null;
+  bindings?: ResolvedLiteratureNoteProfileBindings;
 }
 
 /** One installed or referenced Literature Note Template document. */
@@ -206,6 +208,7 @@ export type EnvelopeTail =
       javascriptTemplatesEnabled?: boolean;
       templates?: readonly TemplateFileStatus[];
       profiles?: readonly LiteratureNoteProfileRow[];
+      profileDiagnostics?: readonly ProfileDiagnostic[];
       documents?: readonly LiteratureNoteDocumentRow[];
       /** The object a Template reads as `zt`. */
       zt?: unknown;

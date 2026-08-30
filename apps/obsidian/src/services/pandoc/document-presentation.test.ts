@@ -2,12 +2,13 @@ import type { CachedMetadata, MetadataCache, TFile } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import type { ProfileId } from "@/lib/profile-stamp";
-import type { Settings } from "@/services/settings/schema";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 
 import {
   documentCitationPresentation,
-  documentPresentation,
+  documentPresentation as readPresentation,
   samePresentation,
 } from "./document-presentation";
 
@@ -33,7 +34,7 @@ function profileSettings(
         "citation.references-style": defaultStyle,
       },
     },
-    "note.profiles": [
+    profiles: [
       {
         id: "Bk3Qn7XvT2Lp" as ProfileId,
         label: "Research",
@@ -422,4 +423,16 @@ function cacheOf(
     getFileCache: () =>
       frontmatter === null ? null : ({ frontmatter } as CachedMetadata),
   };
+}
+
+function documentPresentation(
+  cache: Pick<MetadataCache, "getFileCache">,
+  file: TFile,
+  settings?: Settings | null,
+) {
+  return readPresentation(
+    cache,
+    file,
+    settings ? profileReader(settings, cache) : undefined,
+  );
 }

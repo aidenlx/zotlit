@@ -1472,23 +1472,22 @@ describe("the generated Obsidian vault", () => {
       await readFile(layout.pluginDataPath, "utf-8"),
     ) as Record<string, unknown>;
 
-    expect(data["note.profiles"]).toEqual([
-      {
-        id: "V1StGXR8Z5jd",
-        label: "Books",
-        document: "books.md",
-        bindings: {
-          "note.literature-folder": "books",
-          "citation.references-style":
-            "http://www.zotero.org/styles/chinese-gb7714-1987-numeric",
-        },
-      },
-    ]);
+    expect(data).not.toHaveProperty("note.profiles");
+    const source = await readFile(
+      join(layout.vaultDir, "templates", "zotlit-profile.books.md"),
+      "utf-8",
+    );
+    expect(source).toContain("id: V1StGXR8Z5jd");
+    expect(source).toContain("name: Books");
+    expect(source).toContain("folder: books");
+    expect(source).toContain(
+      "citationStyle: http://www.zotero.org/styles/chinese-gb7714-1987-numeric",
+    );
   });
 
   it("writes Managed Frontmatter into the Fixture Profile document", async () => {
     const document = await readFile(
-      join(layout.vaultDir, "templates", "books.md"),
+      join(layout.vaultDir, "templates", "zotlit-profile.books.md"),
       "utf-8",
     );
 

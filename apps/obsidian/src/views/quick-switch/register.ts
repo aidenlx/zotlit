@@ -5,11 +5,13 @@ import type { ItemLookup } from "@/services/item-lookup/service";
 import type { NoteFeature } from "@/services/note-feature";
 import type { NoteIndex } from "@/services/note-index/service";
 import { noteKeyFromFrontmatter } from "@/services/note-index/service";
+import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 
 import { QuickSwitchModal, switchImportedNoteProfile } from "./modal";
 
 export interface QuickSwitchDeps {
+  profile: ProfileReader;
   app: App;
   lookup: ItemLookup;
   noteIndex: NoteIndex;

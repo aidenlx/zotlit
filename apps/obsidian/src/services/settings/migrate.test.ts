@@ -655,7 +655,6 @@ describe("migrateV9ToV10", () => {
     ).toEqual({
       __VERSION__: 9,
       "note.default-profile": {
-        document: "law.md",
         bindings: {
           "citation.references-style": "apa",
           "note.literature-folder": "Law",

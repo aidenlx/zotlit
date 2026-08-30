@@ -24,8 +24,9 @@ import type {
 import type { DatabaseService } from "@/services/database/service";
 import type { NoteImport, NoteImporter } from "@/services/note-import/service";
 import type { NoteIndex } from "@/services/note-index/service";
-import { getProfileBinding } from "@/services/settings/profile";
-import type { ProfileBindingSettings } from "@/services/settings/profile";
+import { getProfileBinding } from "@/services/profile/bindings";
+import type { ProfileBindingSettings } from "@/services/profile/bindings";
+import type { ProfileService } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
@@ -54,6 +55,10 @@ interface NoteVaultApp {
  * template artifacts live in {@link TemplateService}.
  */
 export interface NoteFeatureDeps {
+  profile: Pick<
+    ProfileService,
+    "ready" | "loaded" | "resolveProfile" | "profileOf"
+  >;
   app: NoteVaultApp;
   template: Pick<
     TemplateService,

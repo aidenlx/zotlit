@@ -37,7 +37,7 @@
     "json-e": "^4.8.4",
     "liquidjs": "^10.27.1",
     "valibot": "catalog:",
-    "yaml": "^2.9.0"
+    "yaml": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",

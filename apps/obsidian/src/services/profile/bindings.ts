@@ -1,21 +1,10 @@
-// Literature Note Profile resolution: the one place a Profile selector or a
-// note's Profile stamp becomes the Profile an operation runs under, with its
-// bindings merged over the default Profile.
+// Resolved Profile values and the binding overlay used by note rendering.
 
-import type { MetadataCache, TFile } from "obsidian";
+import { formatProfileStamp } from "@/lib/profile-stamp";
+import type { ProfileSelector, ProfileStamp } from "@/lib/profile-stamp";
+import type { Settings } from "@/services/settings/schema";
 
-import {
-  DEFAULT_PROFILE,
-  formatProfileStamp,
-  readProfileStamp,
-} from "@/lib/profile-stamp";
-import type {
-  ProfileId,
-  ProfileSelector,
-  ProfileStamp,
-} from "@/lib/profile-stamp";
-
-import type { LiteratureNoteProfile, Settings } from "./schema";
+import type { LiteratureNoteProfile } from "./service";
 
 export interface ResolvedLiteratureNoteProfileBindings {
   readonly "note.literature-folder": string;
@@ -28,13 +17,13 @@ export interface ResolvedLiteratureNoteProfileBindings {
 export type ProfileBindingSettings = Readonly<Settings> &
   Partial<ResolvedLiteratureNoteProfileBindings>;
 
-const boundProfileIds = new WeakMap<ProfileBindingSettings, ProfileId>();
+const boundProfiles = new WeakMap<ProfileBindingSettings, ResolvedProfile>();
 
-/** Read the named Profile carried by a bound settings snapshot. */
-export function boundLiteratureNoteProfileId(
+/** Keep an in-flight operation on the Profile snapshot it resolved before its writes. */
+export function boundProfile(
   settings: ProfileBindingSettings,
-): ProfileId | undefined {
-  return boundProfileIds.get(settings);
+): ResolvedProfile | undefined {
+  return boundProfiles.get(settings);
 }
 
 /** Read an effective binding from an optional resolved-Profile overlay. */
@@ -50,13 +39,6 @@ export function getProfileBinding<
   return value === undefined
     ? settings["note.default-profile"].bindings[key]
     : value;
-}
-
-function findLiteratureNoteProfile(
-  settings: Readonly<Settings>,
-  id: ProfileId,
-): LiteratureNoteProfile | undefined {
-  return settings["note.profiles"].find((candidate) => candidate.id === id);
 }
 
 /** Merge one Profile's sparse bindings over the default Profile. `profile`
@@ -85,17 +67,6 @@ function mergeBindings(
   };
 }
 
-/** Resolve one Profile's sparse bindings over the default Profile. */
-export function resolveLiteratureNoteProfileBindings(
-  current: Readonly<Settings>,
-  selector: ProfileSelector,
-): ResolvedLiteratureNoteProfileBindings | undefined {
-  if (selector === DEFAULT_PROFILE) return mergeBindings(current, undefined);
-  const profile = findLiteratureNoteProfile(current, selector);
-  if (profile === undefined) return undefined;
-  return mergeBindings(current, profile);
-}
-
 /** One Literature Note Profile as an operation runs under it. */
 export interface ResolvedProfile {
   readonly selector: ProfileSelector;
@@ -108,71 +79,41 @@ export interface ResolvedProfile {
   /**
    * Settings snapshot with this Profile's effective bindings overlaid.
    *
-   * @see boundLiteratureNoteProfileId
+   * @see boundProfile
    */
   readonly settings: ProfileBindingSettings;
   /** The Profile's own `citation.references-style` override, `undefined` when it inherits. Feeds the note's `citation-style` frontmatter, which states only what the Profile declares. */
   readonly citationStyle: string | null | undefined;
 }
 
-export function resolveProfile(
+export function bindProfile(
   settings: Readonly<Settings>,
-  selector: typeof DEFAULT_PROFILE,
-): ResolvedProfile;
-export function resolveProfile(
-  settings: Readonly<Settings>,
-  selector: ProfileSelector,
-): ResolvedProfile | undefined;
-export function resolveProfile(
-  settings: Readonly<Settings>,
-  selector: ProfileSelector,
-): ResolvedProfile | undefined {
-  const profile =
-    selector === DEFAULT_PROFILE
-      ? undefined
-      : findLiteratureNoteProfile(settings, selector);
-  if (selector !== DEFAULT_PROFILE && profile === undefined) return undefined;
-  const bindings = mergeBindings(settings, profile);
+  profile: {
+    selector: ProfileSelector;
+    document?: string;
+    entry?: LiteratureNoteProfile;
+  },
+): ResolvedProfile {
+  const { selector, entry } = profile;
+  const bindings = mergeBindings(settings, entry);
   const boundSettings: ProfileBindingSettings = { ...settings, ...bindings };
-  if (profile) boundProfileIds.set(boundSettings, profile.id);
-  return {
+  const resolved: ResolvedProfile = {
     selector,
-    label: profile?.label,
-    stamp: profile && formatProfileStamp(profile),
-    document: profile
-      ? profile.document
-      : settings["note.default-profile"].document,
+    label: entry?.label,
+    stamp: entry && formatProfileStamp(entry),
+    document: profile.document,
     bindings,
     settings: boundSettings,
-    citationStyle: profile?.bindings?.["citation.references-style"],
+    citationStyle: entry?.bindings?.["citation.references-style"],
   };
+  boundProfiles.set(boundSettings, resolved);
+  return resolved;
 }
 
 /** The Profile a note belongs to, or the parsed stamp that names no Profile. */
 export type NoteProfile =
   | { readonly ok: true; readonly profile: ResolvedProfile }
   | { readonly ok: false; readonly stamped: ProfileStamp };
-
-/**
- * Resolve the Profile a note belongs to from its `zotlit-profile` stamp. A
- * note with no stamp resolves to the default Profile; a stamp that names no
- * Profile resolves to `ok: false` carrying the parsed stamp — never to the
- * default Profile, since membership is never inferred.
- */
-export function profileOf(
-  metadataCache: Pick<MetadataCache, "getFileCache">,
-  settings: Readonly<Settings>,
-  file: TFile,
-): NoteProfile {
-  const stamped = readProfileStamp(metadataCache, file);
-  if (stamped === undefined) {
-    return { ok: true, profile: resolveProfile(settings, DEFAULT_PROFILE) };
-  }
-  if (stamped.id === undefined) return { ok: false, stamped };
-  const profile = resolveProfile(settings, stamped.id);
-  if (!profile) return { ok: false, stamped };
-  return { ok: true, profile };
-}
 
 /**
  * The selector a note's stamp names — a parsed ID even when no Profile

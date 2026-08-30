@@ -73,13 +73,11 @@
  *   `saveData()`.
  */
 
-import { customAlphabet } from "nanoid";
 import { debounce } from "obsidian";
 import type { Plugin } from "obsidian";
 import * as v from "valibot";
 
-import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
-import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { Service } from "@/services/service-base";
 
 import {
@@ -89,20 +87,8 @@ import {
   VERSION_KEY,
 } from "./classify";
 import type { HydrationOrigin } from "./classify";
-import { resolveLiteratureNoteProfileBindings } from "./profile";
-import type { ResolvedLiteratureNoteProfileBindings } from "./profile";
 import { defaults, schema } from "./schema";
-import type {
-  DefaultLiteratureNoteProfile,
-  LiteratureNoteProfile,
-  LiteratureNoteProfileBindings,
-  Settings,
-} from "./schema";
-
-const profileNanoid = customAlphabet(
-  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
-  12,
-);
+import type { Settings } from "./schema";
 
 const SAVE_DEBOUNCE_MS = 200;
 const CURRENT_VERSION = 10;
@@ -135,14 +121,6 @@ export interface SettingsDiagnostic {
   readonly key: keyof Settings;
   /** The rejected value as persisted, kept until that key is updated or reset. */
   readonly value: unknown;
-}
-
-export interface LiteratureNoteProfilePatch {
-  readonly label?: string;
-  /** Document filename, or `null` to use the built-in document. */
-  readonly document?: string | null;
-  /** Complete sparse binding record. Omitted keys inherit the default Profile. */
-  readonly bindings?: LiteratureNoteProfileBindings;
 }
 
 /** Raw values of broken overrides, keyed by the settings key they belong to. */
@@ -295,41 +273,7 @@ export class SettingsService extends Service<void> {
     };
   }
 
-  /** Get the built-in default Profile, or one added Profile by its stable id. */
-  getLiteratureNoteProfile(
-    selector: ProfileSelector,
-  ): DefaultLiteratureNoteProfile | LiteratureNoteProfile | undefined {
-    this.#requireLoaded("getLiteratureNoteProfile");
-    if (selector === DEFAULT_PROFILE) {
-      const profile = this.#snapshot()["note.default-profile"];
-      return {
-        ...(profile.document === undefined
-          ? {}
-          : { document: profile.document }),
-        bindings: { ...profile.bindings },
-      };
-    }
-    const profile = this.#snapshot()["note.profiles"].find(
-      (profile) => profile.id === selector,
-    );
-    return profile && cloneLiteratureNoteProfile(profile);
-  }
-
-  /** Set the built-in default Profile document, or clear it to use built-in rendering. */
-  setDefaultLiteratureNoteProfileDocument(reference: string | null): void {
-    this.#requireLoaded("setDefaultLiteratureNoteProfileDocument");
-    this.update({
-      "note.default-profile":
-        reference === null
-          ? { bindings: this.#snapshot()["note.default-profile"].bindings }
-          : {
-              document: reference,
-              bindings: this.#snapshot()["note.default-profile"].bindings,
-            },
-    });
-  }
-
-  /** Update base binding values while preserving the default Profile document. */
+  /** Update the default Profile bindings. */
   updateDefaultLiteratureNoteProfileBindings(
     patch: Partial<ResolvedLiteratureNoteProfileBindings>,
   ): void {
@@ -343,62 +287,6 @@ export class SettingsService extends Service<void> {
         },
       },
     }));
-  }
-
-  /** Add a Profile with a generated identity and no binding overrides. */
-  createLiteratureNoteProfile(label: string): LiteratureNoteProfile {
-    this.#requireLoaded("createLiteratureNoteProfile");
-    const profile = { id: profileNanoid() as ProfileId, label };
-    this.update((current) => ({
-      "note.profiles": [...current["note.profiles"], profile],
-    }));
-    return cloneLiteratureNoteProfile(profile);
-  }
-
-  /** Edit one Profile while preserving its identity. */
-  updateLiteratureNoteProfile(
-    id: string,
-    patch: LiteratureNoteProfilePatch,
-  ): LiteratureNoteProfile {
-    this.#requireLoaded("updateLiteratureNoteProfile");
-    const profiles = this.#snapshot()["note.profiles"];
-    const index = profiles.findIndex((profile) => profile.id === id);
-    if (index === -1) throw new Error(`Unknown literature note Profile: ${id}`);
-    const current = profiles[index]!;
-    const bindings = patch.bindings ?? current.bindings;
-    const document =
-      patch.document === null
-        ? undefined
-        : (patch.document ?? current.document);
-    const profile: LiteratureNoteProfile = {
-      id: current.id,
-      label: patch.label ?? current.label,
-      ...(document === undefined ? {} : { document }),
-      ...(bindings === undefined ? {} : { bindings }),
-    };
-    const next = [...profiles];
-    next[index] = profile;
-    this.update({ "note.profiles": next });
-    return cloneLiteratureNoteProfile(profile);
-  }
-
-  /** Delete one added Profile. The built-in empty Profile is not stored. */
-  deleteLiteratureNoteProfile(id: string): void {
-    this.#requireLoaded("deleteLiteratureNoteProfile");
-    const profiles = this.#snapshot()["note.profiles"];
-    const next = profiles.filter((profile) => profile.id !== id);
-    if (next.length === profiles.length) {
-      throw new Error(`Unknown literature note Profile: ${id}`);
-    }
-    this.update({ "note.profiles": next });
-  }
-
-  /** Resolve sparse Profile bindings over the default Profile. */
-  resolveLiteratureNoteProfileBindings(
-    selector: ProfileSelector,
-  ): ResolvedLiteratureNoteProfileBindings | undefined {
-    this.#requireLoaded("resolveLiteratureNoteProfileBindings");
-    return resolveLiteratureNoteProfileBindings(this.#snapshot(), selector);
   }
 
   /**
@@ -902,19 +790,6 @@ function assertWritableKey(key: string, op: string): void {
   if (!isSettingsKey(key)) {
     throw new Error(`SettingsService.${op}(): unknown settings key '${key}'`);
   }
-}
-
-function cloneLiteratureNoteProfile(
-  profile: LiteratureNoteProfile,
-): LiteratureNoteProfile {
-  return {
-    id: profile.id,
-    label: profile.label,
-    ...(profile.document === undefined ? {} : { document: profile.document }),
-    ...(profile.bindings === undefined
-      ? {}
-      : { bindings: { ...profile.bindings } }),
-  };
 }
 
 /**

@@ -16,9 +16,6 @@ function makeHarness(options?: {
   const state = {
     "note.default-profile": {
       ...defaults["note.default-profile"],
-      ...(options?.defaultDocument === undefined
-        ? {}
-        : { document: options.defaultDocument }),
     },
     "note.template-conversion-pending": options?.pending ?? false,
     "template.folder": "templates",
@@ -32,6 +29,10 @@ function makeHarness(options?: {
     legacyPaths.push("templates/zotlit-annotation.liquid.md");
   }
   const files = new Map(legacyPaths.map((path) => [path, { path }]));
+  if (options?.defaultDocument)
+    files.set("templates/zotlit-profile.default.md", {
+      path: "templates/zotlit-profile.default.md",
+    });
   let layoutReady: (() => void) | undefined;
   const create = vi.fn(async (path: string, source: string) => {
     const file = { path, source };
@@ -48,12 +49,6 @@ function makeHarness(options?: {
       Object.assign(state, patch),
     ),
     flush: vi.fn(async () => {}),
-    setDefaultLiteratureNoteProfileDocument: vi.fn((document: string) => {
-      state["note.default-profile"] = {
-        ...state["note.default-profile"],
-        document,
-      };
-    }),
   };
   const template = {
     ready: Promise.resolve(),
@@ -142,7 +137,7 @@ describe("LiteratureNoteTemplateMigrationService", () => {
 
     expect(result).toEqual({
       outcome: "converted",
-      document: "literature-note-default.md",
+      document: "zotlit-profile.default.md",
       trashed: [
         "templates/zotlit-filename.liquid.md",
         "templates/zotlit-note.liquid.md",
@@ -150,20 +145,18 @@ describe("LiteratureNoteTemplateMigrationService", () => {
       ],
     });
     expect(harness.create).toHaveBeenCalledWith(
-      "templates/literature-note-default.md",
+      "templates/zotlit-profile.default.md",
       "converted source",
     );
-    expect(
-      harness.settings.setDefaultLiteratureNoteProfileDocument,
-    ).toHaveBeenCalledWith("literature-note-default.md");
+    expect(harness.settings.current["note.default-profile"]).not.toHaveProperty(
+      "document",
+    );
     expect(harness.settings.update).toHaveBeenCalledWith({
       "note.template-conversion-pending": false,
     });
     expect(harness.settings.flush).toHaveBeenCalledBefore(harness.trashFile);
     expect(harness.trashFile).toHaveBeenCalledTimes(3);
-    expect(harness.files.has("templates/literature-note-default.md")).toBe(
-      true,
-    );
+    expect(harness.files.has("templates/zotlit-profile.default.md")).toBe(true);
   });
 
   it("leaves the vault and settings untouched when parity verification fails", async () => {

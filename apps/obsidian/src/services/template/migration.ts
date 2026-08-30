@@ -36,7 +36,6 @@ interface MigrationSettings {
   >;
   update(patch: Partial<Settings>): void;
   flush(): Promise<void>;
-  setDefaultLiteratureNoteProfileDocument(reference: string | null): void;
 }
 
 interface MigrationTemplateService {
@@ -299,9 +298,6 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
     }
 
     await this.#app.vault.create(targetPath, converted.source);
-    this.#settings.setDefaultLiteratureNoteProfileDocument(
-      CONVERTED_DEFAULT_PROFILE_DOCUMENT,
-    );
     this.#settings.update({ "note.template-conversion-pending": false });
     await this.#settings.flush();
 
@@ -334,7 +330,10 @@ export class LiteratureNoteTemplateMigrationService extends Service<void> {
     });
 
     const legacyFiles = this.#template.getLegacyLiteratureNoteTemplateFiles();
-    const converted = settings["note.default-profile"].document !== undefined;
+    const converted =
+      this.#app.vault.getFileByPath(
+        join(settings["template.folder"], CONVERTED_DEFAULT_PROFILE_DOCUMENT),
+      ) !== null;
     if (converted || legacyFiles.length === 0) {
       if (settings["note.template-conversion-pending"]) {
         this.#settings.update({ "note.template-conversion-pending": false });

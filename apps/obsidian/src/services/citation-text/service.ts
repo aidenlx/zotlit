@@ -1,6 +1,5 @@
-// The formatted text of one document's Citations, held for every surface that shows them.
-
 import type { App, TFile } from "obsidian";
+// The formatted text of one document's Citations, held for every surface that shows them.
 
 import {
   getItemsByKey,
@@ -41,6 +40,7 @@ import type {
   BibliographyRenderCache,
   RenderPresentation,
 } from "@/services/pandoc/render-cache";
+import type { ProfileReader } from "@/services/profile/service";
 import { Service } from "@/services/service-base";
 import type { SettingsService } from "@/services/settings/service";
 
@@ -97,6 +97,7 @@ export interface CitationTextDeps {
   /** What a citekey resolves to, which decides what a Citation can say. */
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
   settings: Pick<SettingsService, "current">;
+  profile: ProfileReader;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<
     BibliographyRenderCache,
@@ -132,6 +133,7 @@ export class CitationText extends Service<void> {
   readonly #db;
   readonly #citationIndex;
   readonly #noteIndex;
+  readonly #profile: ProfileReader;
   readonly #settings;
   readonly #bibliographyRender;
   readonly #emitter = createNanoEvents<CitationTextEvents>();
@@ -146,6 +148,7 @@ export class CitationText extends Service<void> {
     this.#citationIndex = deps.citationIndex;
     this.#noteIndex = deps.noteIndex;
     this.#settings = deps.settings;
+    this.#profile = deps.profile;
     this.#bibliographyRender = deps.bibliographyRender;
     this.ready = this.#load();
   }
@@ -279,6 +282,7 @@ export class CitationText extends Service<void> {
   async #readDocument(file: TFile): Promise<DocumentCitations> {
     await Promise.all([
       this.#noteIndex.whenIndexed(),
+      this.#profile.ready,
       this.#citationIndex.whenResolved(),
     ]);
     const body = await this.#app.vault.cachedRead(file);
@@ -315,11 +319,7 @@ export class CitationText extends Service<void> {
     // nothing: its citations keep the source the author wrote, rather than
     // reading as though a vault selection were what the note declared.
     const presented = documentCitationPresentation(
-      documentPresentation(
-        this.#app.metadataCache,
-        file,
-        this.#settings.current,
-      ),
+      documentPresentation(this.#app.metadataCache, file, this.#profile),
       this.#bibliographyRender.vaultPresentation,
       { citations: set.citations, works },
     );

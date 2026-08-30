@@ -1,3 +1,4 @@
+import { profileReader } from "@/services/profile/__fixtures__/reader";
 // One vault, read at once through every Citation Presentation surface: the
 // Document Citation Text, the References Sidebar, the Citation Popover, the
 // Copied Bibliography, and the built-in export.
@@ -32,8 +33,8 @@ import { firstText } from "@/services/citation-text/__fixtures__";
 import { CitationText } from "@/services/citation-text/service";
 import { createCitationEngine } from "@/services/pandoc/engine";
 import { BibliographyRenderCache } from "@/services/pandoc/render-cache";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/profile";
-import type { Settings } from "@/services/settings/schema";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
+import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import { applyCitationPresentation } from "@/views/citation-presentation/presentation";
 import type { CitationPresentationChoice } from "@/views/citation-presentation/presentation";
 import { runPandocExport } from "@/views/pandoc-export/register";
@@ -323,6 +324,7 @@ export async function openCitationVault({
   );
   const cache = stack.use(
     new BibliographyRenderCache({
+      profile: { ...profileReader(), on: (_event, callback) => { let first = true; return settings.subscribe(() => { if (!first) callback(); first = false; }); } },
       db: harness.db,
       pandocEngine: {
         getStatus: () => ({ kind: "installed", version: "test" }),
@@ -343,6 +345,7 @@ export async function openCitationVault({
 
   const citationText = stack.use(
     new CitationText({
+      profile: profileReader(() => settings.current, harness.metadataCache),
       app: harness.app,
       db: harness.db,
       citationIndex: harness.index,
@@ -357,6 +360,7 @@ export async function openCitationVault({
     {} as WorkspaceLeaf,
     {
       app: sidebarApp(harness),
+      profile: profileReader(() => settings.current, harness.metadataCache),
       db: harness.db,
       citationIndex: harness.index,
       citationText,
@@ -380,6 +384,7 @@ export async function openCitationVault({
   });
 
   const popover = createCitationPopover({
+    profile: profileReader(() => settings.current, harness.metadataCache),
     app: {
       metadataCache: harness.metadataCache,
       vault: {
@@ -579,6 +584,7 @@ function exportAdapter({
   settings: SettingsStub;
 }): PandocExportDeps {
   return {
+    profile: profileReader(() => settings.current, harness.metadataCache),
     app: {
       metadataCache: harness.metadataCache,
       vault: {

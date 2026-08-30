@@ -1,6 +1,5 @@
-// The Citation Popover: the entries one hovered citation shows, read for the document it is written in.
-
 import type { App } from "obsidian";
+// The Citation Popover: the entries one hovered citation shows, read for the document it is written in.
 
 import { getLogger } from "@/lib/log";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
@@ -20,6 +19,7 @@ import type { ProfilePresentationFailure } from "@/services/pandoc/document-pres
 import type { BibliographyEntry } from "@/services/pandoc/engine";
 import { noteContent } from "@/services/pandoc/inline-content";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
@@ -44,6 +44,7 @@ export interface CitationPopoverDeps {
   /** The formatted citations of the hovered document, read for this popover. */
   citationText: Pick<CitationText, "load">;
   settings: Pick<SettingsService, "current">;
+  profile: ProfileReader;
   /** The plugin-wide render cache, which the References Sidebar reads its own entries from. */
   bibliographyRender: Pick<
     BibliographyRenderCache,
@@ -163,6 +164,7 @@ async function readBlocks(
   deps: CitationPopoverDeps,
   request: CitationHoverRequest,
 ): Promise<PopoverRead> {
+  await deps.profile.ready;
   const file = deps.app.vault.getFileByPath(request.sourcePath);
   if (!file) {
     logger.debug("Hovered citation sits in no note", {
@@ -176,7 +178,7 @@ async function readBlocks(
   // References Sidebar of that note shows — including nothing formatted at all
   // where the note's declared style or language cannot be rendered with.
   const presented = documentCitationPresentation(
-    documentPresentation(deps.app.metadataCache, file, deps.settings.current),
+    documentPresentation(deps.app.metadataCache, file, deps.profile),
     deps.bibliographyRender.vaultPresentation,
     { citations, works: sources },
   );

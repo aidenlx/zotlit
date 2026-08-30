@@ -1,6 +1,5 @@
-// The plugin-wide cache of whole-bibliography renders every consumer of rendered citation text reads.
-
 import { createHash } from "node:crypto";
+// The plugin-wide cache of whole-bibliography renders every consumer of rendered citation text reads.
 
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -8,6 +7,7 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import { BoundedCache } from "@/lib/bounded-cache";
 import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
+import type { ProfileService } from "@/services/profile/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
@@ -44,6 +44,7 @@ interface BibliographyRenderEvents {
 }
 
 export interface BibliographyRenderCacheOptions {
+  profile: Pick<ProfileService, "ready" | "on">;
   db: Pick<DatabaseService, "on">;
   pandocEngine: Pick<
     PandocEngineService,
@@ -105,6 +106,7 @@ export class BibliographyRenderCache extends Service<void> {
   readonly #engine;
   readonly #zoteroPref;
   readonly #settings;
+  readonly #profile;
   readonly #emitter = createNanoEvents<BibliographyRenderEvents>();
   readonly #styles = new InstalledStyleCache();
   /** Bibliography renders by {@link renderKey}. */
@@ -118,7 +120,6 @@ export class BibliographyRenderCache extends Service<void> {
   /** `undefined` until the first settings snapshot names the vault selections. */
   #vault: EffectivePresentation | undefined;
   /** Named Profile citation-style bindings in the last settings snapshot. */
-  #profileStyles: string | undefined;
   /** The first unavailable selected style found in this plugin lifecycle. */
   #missingStyle: string | null = null;
 
@@ -130,6 +131,7 @@ export class BibliographyRenderCache extends Service<void> {
     this.#engine = options.pandocEngine;
     this.#zoteroPref = options.zoteroPref;
     this.#settings = options.settings;
+    this.#profile = options.profile;
     this.ready = this.#load();
   }
 
@@ -243,7 +245,8 @@ export class BibliographyRenderCache extends Service<void> {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#settings.ready;
+    await Promise.all([this.#settings.ready, this.#profile.ready]);
+    stack.defer(this.#profile.on("changed", () => this.#invalidate()));
 
     stack.defer(this.#db.on("changed", () => this.#invalidate()));
     stack.defer(this.#engine.subscribe(() => this.#invalidate()));
@@ -267,22 +270,10 @@ export class BibliographyRenderCache extends Service<void> {
   #applySettings(settings: Readonly<Settings>): void {
     const next = vaultPresentation(settings);
     const held = this.#vault;
-    const nextProfileStyles = JSON.stringify(
-      settings["note.profiles"].map(({ id, bindings }) => ({
-        id,
-        styleId: bindings?.["citation.references-style"],
-      })),
-    );
-    if (
-      held &&
-      held.styleId === next.styleId &&
-      held.locale === next.locale &&
-      this.#profileStyles === nextProfileStyles
-    ) {
+    if (held && held.styleId === next.styleId && held.locale === next.locale) {
       return;
     }
     this.#vault = next;
-    this.#profileStyles = nextProfileStyles;
     logger.info(
       held
         ? "Citation presentation settings changed"

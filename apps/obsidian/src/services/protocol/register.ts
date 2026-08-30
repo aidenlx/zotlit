@@ -49,7 +49,7 @@ import {
   batchImportAllToast,
   batchImportToast,
 } from "@/services/note-import/batch-import-notices";
-import { noteProfileSelector, profileOf } from "@/services/settings/profile";
+import { noteProfileSelector } from "@/services/profile/bindings";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
@@ -228,8 +228,8 @@ async function openNote(
   );
 
   if (existing) {
-    const settings = await deps.settings.loaded;
-    const resolved = profileOf(deps.app.metadataCache, settings, existing);
+    await deps.profile.ready;
+    const resolved = deps.profile.profileOf(existing);
     const existingSelector = noteProfileSelector(resolved);
     if (profile !== undefined && profile !== existingSelector) {
       new BaseNotice(m.notice_literature_note_profile_conflict());

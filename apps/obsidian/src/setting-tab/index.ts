@@ -5,6 +5,7 @@ import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { ProfileService } from "@/services/profile/service";
 import type {
   SettingsPatch,
   SettingsService,
@@ -50,6 +51,7 @@ import {
 export interface ZotLitSettingTabOptions {
   plugin: ZotLitPlugin;
   settings: SettingsService;
+  profile: ProfileService;
   db: DatabaseService;
   libraryScope: LibraryScopeService;
   zoteroPref: ZoteroPrefService;
@@ -69,6 +71,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #zoteroPref: ZoteroPrefService;
   readonly #attachmentImport: AttachmentImportActions;
   readonly #citationIndex: CitationIndexActions;
+  readonly #profile: ProfileService;
   readonly #template: TemplateService;
   readonly #release: ReleaseTabActions;
   readonly #pandocEngine: PandocEngineActions;
@@ -83,6 +86,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     attachmentImport,
     citationIndex,
     template,
+    profile,
     release,
     pandocEngine,
     languagePack,
@@ -96,6 +100,8 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#attachmentImport = attachmentImport;
     this.#citationIndex = citationIndex;
     this.#template = template;
+    this.#profile = profile;
+    plugin.register(profile.on("changed", () => this.#requestUpdate()));
     this.#release = release;
     this.#pandocEngine = pandocEngine;
     this.#languagePack = languagePack;
@@ -112,7 +118,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     plugin.register(() => {
       unloaded = true;
     });
-    void template.ready.then(
+    void profile.ready.then(
       () => {
         if (!unloaded) this.#requestUpdate();
       },
@@ -131,27 +137,23 @@ export class ZotLitSettingTab extends PluginSettingTab {
     // The migration-pending flag is tracked the same way, so the resources
     // reminder appears/disappears reactively on both render paths.
     let lastFields = settings.current?.["note.frontmatter-fields"];
-    let lastProfiles = settings.current?.["note.profiles"];
     let lastPending = settings.current?.["release.migration-pending"];
     let lastTemplateConversionPending =
       settings.current?.["note.template-conversion-pending"];
     plugin.register(
       settings.subscribe((value) => {
         const fields = value?.["note.frontmatter-fields"];
-        const profiles = value?.["note.profiles"];
         const pending = value?.["release.migration-pending"];
         const templateConversionPending =
           value?.["note.template-conversion-pending"];
         if (
           fields === lastFields &&
-          profiles === lastProfiles &&
           pending === lastPending &&
           templateConversionPending === lastTemplateConversionPending
         ) {
           return;
         }
         lastFields = fields;
-        lastProfiles = profiles;
         lastPending = pending;
         lastTemplateConversionPending = templateConversionPending;
         this.#requestUpdate();
@@ -198,6 +200,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
       app: this.#plugin.app,
       manifest: this.#plugin.manifest,
       settings: this.#settings,
+      profile: this.#profile,
       db: this.#db,
       libraryScope: this.#libraryScope,
       zoteroPref: this.#zoteroPref,

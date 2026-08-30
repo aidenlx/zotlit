@@ -108,6 +108,7 @@ export function templateFileFromPath(
   path: string,
 ): { name: string; language: TemplateLanguage } | null {
   const filename = basename(normalizeVaultPath(path));
+  if (filename.startsWith("zotlit-profile.")) return null;
   const match = TEMPLATE_FILE.exec(filename);
   if (!match) return null;
   return { name: match.groups.name, language: match.groups.language };

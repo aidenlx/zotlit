@@ -1,8 +1,7 @@
-// The Template Workbench commands and their response boundaries.
-
 import type { CliData, CliHandler } from "obsidian";
 
 import { TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
+// The Template Workbench commands and their response boundaries.
 import type { ContractRoot, TemplateSlot } from "@zotlit/db";
 import type { FrontmatterLanguage } from "@zotlit/templates/constants";
 import { LiteratureNoteTemplateError } from "@zotlit/templates/facade";
@@ -13,6 +12,8 @@ import { FIELD_ZOTERO_KEY, RESERVED_KEYS } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
 import { DEFAULT_PROFILE, parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
+import type { ProfileDiagnostic } from "@/services/profile/service";
 import { InertTemplateError } from "@/services/template/errors";
 import type {
   CompileError,
@@ -155,11 +156,18 @@ interface TemplateWorkbenchDeps {
   };
   literatureNotes?: {
     readProfiles: () => {
-      defaultProfile: { readonly document?: string };
+      defaultProfile:
+        | {
+            readonly document?: string;
+            readonly bindings?: ResolvedLiteratureNoteProfileBindings;
+          }
+        | undefined;
+      diagnostics?: readonly ProfileDiagnostic[];
       profiles: readonly {
         readonly id: string;
         readonly label: string;
         readonly document?: string;
+        readonly bindings?: ResolvedLiteratureNoteProfileBindings;
       }[];
     };
     getDocumentStatuses: () => readonly LiteratureNoteTemplateStatus[];
@@ -825,20 +833,25 @@ function literatureNoteAuthoringState(
 ): {
   profiles: readonly LiteratureNoteProfileRow[];
   documents: readonly LiteratureNoteDocumentRow[];
+  profileDiagnostics: readonly ProfileDiagnostic[];
 } {
   const state = literatureNotes.readProfiles();
   const profiles: LiteratureNoteProfileRow[] = [
-    {
-      id: DEFAULT_PROFILE,
-      label: "Default",
-      document: state.defaultProfile.document ?? null,
-    },
+    ...(state.defaultProfile
+      ? [
+          {
+            id: DEFAULT_PROFILE,
+            label: "Default",
+            document: state.defaultProfile.document ?? null,
+            bindings: state.defaultProfile.bindings,
+          } satisfies LiteratureNoteProfileRow,
+        ]
+      : []),
     ...state.profiles.map((profile) => ({
-      // `readProfiles()` structurally mirrors `settings["note.profiles"]`,
-      // whose id already passed `PROFILE_ID_PATTERN` at settings validation.
       id: profile.id as ProfileId,
       label: profile.label,
       document: profile.document ?? null,
+      bindings: profile.bindings,
     })),
   ];
   const documents = new Map<string, LiteratureNoteDocumentRow>();
@@ -878,6 +891,7 @@ function literatureNoteAuthoringState(
   }
   return {
     profiles,
+    profileDiagnostics: state.diagnostics ?? [],
     documents: [...documents.values()].sort((a, b) =>
       a.reference.localeCompare(b.reference),
     ),

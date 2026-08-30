@@ -8,8 +8,6 @@ import {
 } from "@zotlit/templates/constants";
 import type { AutoTrim } from "@zotlit/templates/constants";
 
-import { PROFILE_ID_PATTERN } from "@/lib/profile-stamp";
-import type { ProfileId } from "@/lib/profile-stamp";
 import {
   DEFAULT_LIBRARY_SCOPE,
   libraryScopeSchema,
@@ -40,69 +38,8 @@ const frontmatterFieldsSchema = v.pipe(
   v.readonly(),
 );
 
-const literatureNoteProfileBindingsSchema = v.pipe(
-  v.object({
-    "note.literature-folder": v.optional(v.string()),
-    "citation.references-style": v.optional(v.nullable(v.string())),
-    "note.import-folder": v.optional(v.string()),
-    "note.import-colored-highlights": v.optional(v.boolean()),
-    "note.import-annotations-as-template": v.optional(v.boolean()),
-  }),
-  v.readonly(),
-);
-export type LiteratureNoteProfileBindings = v.InferOutput<
-  typeof literatureNoteProfileBindingsSchema
->;
-
-export const literatureNoteProfileSchema = v.pipe(
-  v.object({
-    id: v.pipe(
-      v.string(),
-      v.regex(PROFILE_ID_PATTERN),
-      v.transform((id) => id as ProfileId),
-    ),
-    label: v.pipe(
-      v.string(),
-      v.check((label) => label.trim().length > 0, "Empty profile label"),
-    ),
-    document: v.optional(
-      v.pipe(
-        v.string(),
-        v.check(
-          (document) => document.trim().length > 0,
-          "Empty profile document reference",
-        ),
-      ),
-    ),
-    bindings: v.optional(literatureNoteProfileBindingsSchema),
-  }),
-  v.readonly(),
-);
-export type LiteratureNoteProfile = v.InferOutput<
-  typeof literatureNoteProfileSchema
->;
-
-const literatureNoteProfilesSchema = v.pipe(
-  v.array(literatureNoteProfileSchema),
-  v.checkItems(
-    (profile, index, profiles) =>
-      profiles.findIndex(({ id }) => id === profile.id) === index,
-    "Duplicate profile id",
-  ),
-  v.readonly(),
-);
-
 const defaultLiteratureNoteProfileSchema = v.pipe(
   v.object({
-    document: v.optional(
-      v.pipe(
-        v.string(),
-        v.check(
-          (document) => document.trim().length > 0,
-          "Empty profile document reference",
-        ),
-      ),
-    ),
     bindings: v.pipe(
       v.object({
         "note.literature-folder": v.string(),
@@ -117,40 +54,6 @@ const defaultLiteratureNoteProfileSchema = v.pipe(
   v.readonly(),
 );
 
-const literatureNotePackPreviousStateSchema = v.union([
-  v.strictObject({ kind: v.picklist(["absent", "built-in"]) }),
-  v.strictObject({
-    kind: v.picklist(["user-file", "prior-pack"]),
-    source: v.string(),
-  }),
-]);
-
-const literatureNotePackInstallRecordSchema = v.strictObject({
-  pack: v.strictObject({ id: nonEmptyString(), version: nonEmptyString() }),
-  files: v.pipe(
-    v.array(
-      v.strictObject({
-        key: nonEmptyString(),
-        installedSource: v.string(),
-        previous: literatureNotePackPreviousStateSchema,
-      }),
-    ),
-    v.readonly(),
-  ),
-});
-
-function nonEmptyString() {
-  return v.pipe(v.string(), v.trim(), v.nonEmpty());
-}
-
-export type LiteratureNotePackInstallRecord = v.InferOutput<
-  typeof literatureNotePackInstallRecordSchema
->;
-
-const literatureNotePackInstallRecordsSchema = v.pipe(
-  v.array(literatureNotePackInstallRecordSchema),
-  v.readonly(),
-);
 export type DefaultLiteratureNoteProfile = v.InferOutput<
   typeof defaultLiteratureNoteProfileSchema
 >;
@@ -228,9 +131,7 @@ export const schema = v.object({
   "citation.hover-require-mod-reading": v.boolean(),
 
   "note.default-profile": defaultLiteratureNoteProfileSchema,
-  "note.profiles": literatureNoteProfilesSchema,
   "note.template-conversion-pending": v.boolean(),
-  "note.template-pack-installs": literatureNotePackInstallRecordsSchema,
   "note.frontmatter-fields": frontmatterFieldsSchema,
 
   "server.enabled": v.boolean(),
@@ -284,9 +185,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.hover-require-mod-live-preview": false,
   "citation.hover-require-mod-reading": false,
   "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
-  "note.profiles": [],
   "note.template-conversion-pending": false,
-  "note.template-pack-installs": [],
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "server.enabled": false,
   "server.port": 9091,

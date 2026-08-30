@@ -208,6 +208,7 @@ export default class ZotLitPlugin extends Plugin {
 
     this.addSettingTab(
       new ZotLitSettingTab({
+        profile: services.profile,
         plugin: this,
         settings: services.settings,
         db: services.db,
@@ -233,6 +234,7 @@ export default class ZotLitPlugin extends Plugin {
       batchImport: services.batchImport,
       updateAll: () =>
         runBatchUpdateAll({
+          profile: services.profile,
           app: this.app,
           db: services.db,
           settings: services.settings,
@@ -249,6 +251,7 @@ export default class ZotLitPlugin extends Plugin {
       citationIndex: services.citationIndex,
     });
     registerQuickSwitch(this, {
+      profile: services.profile,
       app: this.app,
       lookup: services.itemLookup,
       noteIndex: services.noteIndex,
@@ -258,6 +261,7 @@ export default class ZotLitPlugin extends Plugin {
 
     void stack.use(
       registerProtocolHandlers(this, {
+        profile: services.profile,
         app: this.app,
         settings: services.settings,
         db: services.db,
@@ -302,6 +306,7 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
     registerReferencesView(this, {
+      profile: services.profile,
       app: this.app,
       db: services.db,
       citationIndex: services.citationIndex,
@@ -334,6 +339,7 @@ export default class ZotLitPlugin extends Plugin {
     }
 
     registerTemplateWorkbench(this, {
+      profile: services.profile,
       app: this.app,
       db: services.db,
       noteIndex: services.noteIndex,
@@ -349,6 +355,7 @@ export default class ZotLitPlugin extends Plugin {
     });
 
     registerPandocExport(this, {
+      profile: services.profile,
       app: this.app,
       db: services.db,
       pandocEngine: services.pandocEngine,

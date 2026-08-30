@@ -1046,7 +1046,7 @@ export const LITERATURE_NOTE_PROFILES = [
   {
     id: BOOKS_PROFILE_ID,
     label: "Books",
-    document: "books.md",
+    document: "zotlit-profile.books.md",
     bindings: {
       "note.literature-folder": "books",
       "citation.references-style": INSTALLED_STYLES[0]!.id,
@@ -1057,10 +1057,12 @@ export const LITERATURE_NOTE_PROFILES = [
 /** Literature Note Template documents placed in the Fixture template folder. */
 export const LITERATURE_NOTE_DOCUMENTS = [
   {
-    filename: "books.md",
+    filename: "zotlit-profile.books.md",
     source: `---
-id: zotlit-fixture-books
-name: Fixture books
+id: ${BOOKS_PROFILE_ID}
+name: Books
+folder: books
+citationStyle: ${INSTALLED_STYLES[0]!.id}
 version: 1.0.0
 author: ZotLit
 description: A visibly distinct book layout for the End-to-end Run

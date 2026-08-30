@@ -4,12 +4,12 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import type { ProfileId } from "@/lib/profile-stamp";
 import type { DatabaseEvents } from "@/services/database/service";
-import type { ResolvedLiteratureNoteProfileBindings } from "@/services/settings/profile";
+import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
 
 import type { Inlines } from "./ast";
@@ -208,6 +208,7 @@ interface Harness extends AsyncDisposable {
   settings: SettingsStub;
   /** Every `invalidated` the cache announced. */
   invalidations: number[];
+  profileEvents: ReturnType<typeof createNanoEvents<{ changed: () => void }>>;
   /** Unavailable selected styles announced during this plugin lifecycle. */
   missingStyles: string[];
 }
@@ -224,8 +225,13 @@ async function makeHarness(
     "citation.references-style": null,
     ...overrides,
   });
+  const profileEvents = createNanoEvents<{ changed: () => void }>();
   const cache = stack.use(
     new BibliographyRenderCache({
+      profile: {
+        ready: Promise.resolve(),
+        on: (event, callback) => profileEvents.on(event, callback),
+      },
       db,
       pandocEngine,
       zoteroPref,
@@ -248,6 +254,7 @@ async function makeHarness(
     zoteroPref,
     settings,
     invalidations,
+    profileEvents,
     missingStyles,
     [Symbol.asyncDispose]: () => held[Symbol.asyncDispose](),
   };
@@ -436,18 +443,10 @@ describe("BibliographyRenderCache", () => {
 
   it("drops every render when a named Profile citation style changes", async () => {
     await using harness = await makeHarness();
-    const { cache, settings, invalidations } = harness;
+    const { cache, invalidations } = harness;
 
     await cache.render([item("alpha")]);
-    settings.update({
-      "note.profiles": [
-        {
-          id: "Bk3Qn7XvT2Lp" as ProfileId,
-          label: "Research",
-          bindings: { "citation.references-style": IEEE },
-        },
-      ],
-    });
+    harness.profileEvents.emit("changed");
 
     expect(invalidations).toHaveLength(1);
   });

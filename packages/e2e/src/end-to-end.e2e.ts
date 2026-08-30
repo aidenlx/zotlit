@@ -103,7 +103,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   it("keeps one Literature Note when create runs twice for one Item", async () => {
     const noteName =
       createTargetItem.literatureNoteName ?? createTargetItem.key;
-    const notePath = `literatures/${noteName}.md`;
+    const profile = LITERATURE_NOTE_PROFILES.find(
+      ({ id }) => id === createTargetItem.literatureNoteProfile,
+    );
+    const folder = profile?.bindings["note.literature-folder"] ?? "literatures";
+    const notePath = `${folder}/${noteName}.md`;
     await cli([`vault=${vaultId}`, "delete", `path=${notePath}`]);
 
     const removedFromIndex = await obEvalUntil(
