@@ -248,6 +248,10 @@ function makeService(
       current = options.settings;
       return importer.importNote(note, options);
     },
+    prepareExplicitImport: (note, options) => {
+      current = profileSettings();
+      return importer.prepareExplicitImport(note, options);
+    },
   };
 }
 
@@ -309,6 +313,159 @@ beforeEach(() => {
 });
 
 describe("createNoteImporter", () => {
+  it("skips when an existing note changes Profile after its import preview", async () => {
+    const target = makeFile("Imported/Existing.md");
+    const frontmatter = { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_A };
+    const { app, process } = makeApp({ [target.path]: frontmatter });
+    const service = makeService(app, { existing: [target] });
+    const prepared = await service.prepareExplicitImport(makeNote(), {
+      client: {} as never,
+    });
+    frontmatter[FIELD_LITERATURE_NOTE_PROFILE] = PROFILE_B;
+
+    await expect(
+      prepared.import(makeNote(), {
+        client: {} as never,
+        settings: profileSettings(),
+      }),
+    ).resolves.toBe("skipped");
+    expect(process).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unknown orphan Profile before preparing any writes", async () => {
+    const { app, create, createFolder } = makeApp();
+    await expect(
+      makeService(app).prepareExplicitImport(makeNote(), {
+        client: {} as never,
+        orphanProfile: "Qt5Nb8ZcV3Jm" as ProfileId,
+      }),
+    ).rejects.toMatchObject({
+      name: "NoteImportProfileError",
+      diagnostic: { stamp: "Qt5Nb8ZcV3Jm", indexedKey: "NOTE1234" },
+    });
+    expect(create).not.toHaveBeenCalled();
+    expect(createFolder).not.toHaveBeenCalled();
+  });
+
+  it("skips a collision at the previewed path without overwriting or copying attachments", async () => {
+    const { app, create, process } = makeApp();
+    const attachmentImport = makeAttachmentImport();
+    const prepared = await makeService(app, {
+      attachmentImport,
+    }).prepareExplicitImport(makeNote(), {
+      client: {} as never,
+      orphanProfile: PROFILE_A,
+    });
+    create.mockRejectedValueOnce(new Error("File already exists."));
+
+    await expect(
+      prepared.import(makeNote(), {
+        client: {} as never,
+        settings: profileSettings(),
+      }),
+    ).resolves.toBe("skipped");
+    expect(process).not.toHaveBeenCalled();
+    expect(attachmentImport.flush).not.toHaveBeenCalled();
+  });
+
+  it.each(["existing", "parent"] as const)(
+    "skips a prepared orphan if a %s note appears before confirmation",
+    async (source) => {
+      const { app, create, process } = makeApp();
+      const existing: TFile[] = [];
+      const literatureNotes: TFile[] = [];
+      vi.mocked(getItemsByID).mockReturnValue([
+        { indexedKey: "PARENT123" },
+      ] as never);
+      const service = makeService(app, { existing, literatureNotes });
+      const note = makeNote();
+      const prepared = await service.prepareExplicitImport(note, {
+        client: {} as never,
+        orphanProfile: PROFILE_A,
+      });
+      (source === "existing" ? existing : literatureNotes).push(
+        makeFile("Arrived.md"),
+      );
+
+      await expect(
+        prepared.import(note, {
+          client: {} as never,
+          settings: profileSettings(),
+        }),
+      ).resolves.toBe("skipped");
+      expect(create).not.toHaveBeenCalled();
+      expect(process).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["existing", "parent"] as const)(
+    "keeps the %s Profile when an orphan choice is supplied",
+    async (source) => {
+      const target = makeFile("History/Existing.md");
+      const { app, create, processedContent } = makeApp({
+        [target.path]: { [FIELD_LITERATURE_NOTE_PROFILE]: PROFILE_B },
+      });
+      vi.mocked(getItemsByID).mockReturnValue([
+        { indexedKey: "PARENT123" },
+      ] as never);
+      const service = makeService(
+        app,
+        source === "existing"
+          ? { existing: [target] }
+          : { literatureNotes: [target] },
+      );
+      const prepared = await service.prepareExplicitImport(makeNote(), {
+        client: {} as never,
+        orphanProfile: PROFILE_A,
+      });
+
+      expect(prepared.source).toBe(source);
+      expect(prepared.profile.selector).toBe(PROFILE_B);
+      await prepared.import(makeNote(), {
+        client: {} as never,
+        settings: profileSettings(),
+      });
+      if (source === "existing") {
+        expect(prepared.path).toBe(target.path);
+        expect(create).not.toHaveBeenCalled();
+        expect(processedContent()).toContain("History (Rz9Wm4YfH6Kd)");
+      } else {
+        expect(prepared.path.startsWith("History/Imported/Methods_")).toBe(
+          true,
+        );
+        expect(create.mock.calls[0]![0]).toBe(prepared.path);
+        expect(create.mock.calls[0]![1]).toContain("History (Rz9Wm4YfH6Kd)");
+      }
+    },
+  );
+
+  it("prepares an orphan under its chosen Profile without writes and imports at the previewed path", async () => {
+    const { app, create, createFolder } = makeApp();
+    const service = makeService(app);
+    const note = { ...makeNote(), parentItemID: null };
+    const prepared = await service.prepareExplicitImport(note, {
+      client: {} as never,
+      orphanProfile: PROFILE_A,
+    });
+
+    expect(prepared.source).toBe("orphan");
+    expect(prepared.profile.selector).toBe(PROFILE_A);
+    expect(prepared.path.startsWith("Law/Imported/Methods_")).toBe(true);
+    expect(create).not.toHaveBeenCalled();
+    expect(createFolder).not.toHaveBeenCalled();
+
+    await expect(
+      prepared.import(note, {
+        client: {} as never,
+        settings: profileSettings(),
+      }),
+    ).resolves.toBe("created");
+    expect(create.mock.calls[0]![0]).toBe(prepared.path);
+    expect(create.mock.calls[0]![1]).toContain(
+      `${FIELD_LITERATURE_NOTE_PROFILE}: Law (Bk3Qn7XvT2Lp)`,
+    );
+  });
+
   it("mints a flat path, renders the title alias, and creates the mirror on flush", async () => {
     const { app, create, createFolder } = makeApp();
     const attachmentImport = makeAttachmentImport();

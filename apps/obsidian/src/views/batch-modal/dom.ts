@@ -2,9 +2,56 @@
 import { setIcon } from "obsidian";
 import type { App } from "obsidian";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
 import { cn } from "@/lib/utils";
 import type { BatchFailure } from "@/services/batch-run";
+
+import type { BatchListControls, BatchProfileChoice } from "./types";
+
+export interface BatchRow {
+  label: string;
+  path?: string;
+  profile?: string;
+  reason?: string;
+}
+
+export function profileChoiceControl(
+  parent: HTMLElement,
+  choice: BatchProfileChoice,
+  controls?: BatchListControls,
+): void {
+  const container = parent.createDiv({
+    cls: "zt:flex zt:flex-wrap zt:items-center zt:gap-2 zt:normal-case zt:tracking-normal zt:font-normal",
+  });
+  const text = m.batch_profile_destination({ label: choice.label });
+  if (controls) {
+    const button = container.createEl("button", {
+      text,
+      attr: { type: "button", "data-profile-choice": "" },
+    });
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void controls.chooseProfile(choice);
+    });
+  } else {
+    container.createSpan({ text });
+  }
+  const source =
+    choice.source === "headless"
+      ? m.batch_profile_source_companion()
+      : choice.source === "last-used"
+        ? m.modal_profile_source_last_used()
+        : choice.source === "asked"
+          ? m.batch_profile_source_chosen()
+          : undefined;
+  if (source)
+    container.createSpan({
+      text: source,
+      cls: "zt:text-xs zt:text-(--text-muted)",
+    });
+}
 
 export type RowStatus = "pending" | "done" | "skipped" | "failed";
 
@@ -65,17 +112,35 @@ export function section(
 export function row(
   ul: HTMLElement,
   label: string,
-  opts?: { indent?: boolean },
+  opts?: { indent?: boolean } & Omit<BatchRow, "label">,
 ): HTMLElement {
   const li = ul.createEl("li", {
     cls: cn(ROW_CLS, opts?.indent && "zt:pl-6"),
   });
   const icon = li.createSpan({ cls: ICON_CLS });
-  li.createSpan({
+  const detailed = opts?.profile || opts?.path || opts?.reason;
+  const content = detailed ? li.createDiv({ cls: "zt:flex-1 zt:min-w-0" }) : li;
+  const title = detailed
+    ? content.createDiv({ cls: "zt:flex zt:items-center zt:gap-2 zt:min-w-0" })
+    : li;
+  title.createSpan({
     text: label,
     cls: ROW_LABEL_CLS,
     attr: { "aria-label": label },
   });
+  if (opts?.profile)
+    title.createSpan({
+      text: opts.profile,
+      cls: "zt:shrink-0 zt:rounded-sm zt:bg-(--background-modifier-hover) zt:px-1 zt:text-xs zt:text-(--text-muted)",
+      attr: { "data-profile-stamp": "" },
+    });
+  for (const text of [opts?.path, opts?.reason]) {
+    if (text)
+      content.createDiv({
+        text,
+        cls: "zt:text-xs zt:text-(--text-muted) zt:break-all",
+      });
+  }
   return icon;
 }
 
@@ -87,7 +152,7 @@ export function setRowIcon(icon: HTMLElement, status: RowStatus): void {
 
 export interface StaticGroup {
   header: string;
-  items: readonly { label: string }[];
+  items: readonly BatchRow[];
   icon: string;
   colorCls: string;
 }
@@ -101,9 +166,35 @@ export function listGroup(parent: HTMLElement, group: StaticGroup): void {
     group.items.length <= SECTION_OPEN_MAX,
   );
   for (const item of group.items) {
-    const icon = row(ul, item.label);
+    const icon = row(ul, item.label, item);
     icon.addClass(group.colorCls);
     setIcon(icon, group.icon);
+  }
+}
+
+/** Completed rows retain their confirmed Profile in each summary group. */
+export function profileListGroup(
+  parent: HTMLElement,
+  group: StaticGroup & { profileHeader: (args: { count: number }) => string },
+): void {
+  if (!group.items.some((item) => item.profile)) {
+    listGroup(parent, group);
+    return;
+  }
+  for (const [profile, items] of Map.groupBy(
+    group.items,
+    (item) => item.profile,
+  )) {
+    listGroup(parent, {
+      ...group,
+      items,
+      header: profile
+        ? m.batch_profile_group({
+            group: group.profileHeader({ count: items.length }),
+            profile,
+          })
+        : group.header,
+    });
   }
 }
 

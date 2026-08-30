@@ -295,6 +295,58 @@ describe("Companion note target", () => {
 });
 
 describe("Profile source selection", () => {
+  it("reserves batch filename suffixes before creation so two rows have distinct exact paths", async () => {
+    const id = "Bk3Qn7XvT2Lp" as ProfileId;
+    const { deps } = makeUpdateHarness({
+      content: "",
+      settings: {
+        profiles: [
+          {
+            id,
+            label: "Reading",
+            document: "reading.md",
+            bindings: { "note.literature-folder": "Reading" },
+          },
+        ],
+      },
+    });
+    const app = makeApp();
+    deps.app = app;
+    deps.template = {
+      ...makeTemplate(),
+      getLiteratureNoteTemplate: () =>
+        makeDocumentTemplate({
+          filename: `Paper${filenameSuffix()}`,
+          createBody: "Body",
+        }),
+    };
+    stubIndexedKeyUpdate(updateContext());
+    const feature = createNoteFeature(deps);
+    const plans = await feature.prepareBatchCreationProfiles([
+      makeItem({
+        itemID: 1,
+        key: "ABCD2345",
+        indexedKey: "ABCD2345",
+        title: "One",
+        citationKey: null,
+      }),
+      makeItem({
+        itemID: 2,
+        key: "EFGH6789",
+        indexedKey: "EFGH6789",
+        title: "Two",
+        citationKey: null,
+      }),
+    ]);
+    const first = plans.get(1)!.find((plan) => plan.selector === id)!;
+    const second = plans.get(2)!.find((plan) => plan.selector === id)!;
+    expect(first.path).toBe("Reading/Paper.md");
+    expect(second.path).not.toBe(first.path);
+    expect(app.vault.create).not.toHaveBeenCalled();
+    expect(createdFile(await first.create()).path).toBe(first.path);
+    expect(createdFile(await second.create()).path).toBe(second.path);
+  });
+
   it("previews the draft stamp and document Properties, then creates at the same suffixed path", async () => {
     const id = "Bk3Qn7XvT2Lp" as ProfileId;
     const { deps } = makeUpdateHarness({

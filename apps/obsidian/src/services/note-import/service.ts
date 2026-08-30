@@ -35,7 +35,10 @@ import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
 import { DEFAULT_PROFILE, unknownProfileDiagnostic } from "@/lib/profile-stamp";
-import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
+import type {
+  ProfileSelector,
+  UnknownProfileDiagnostic,
+} from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type {
   AttachmentImport,
@@ -137,7 +140,7 @@ export interface NoteImport {
   flush(): Promise<{ created: number; skipped: number; failed: number }>;
 }
 
-interface ImportNoteOptions {
+export interface ImportNoteOptions {
   client: NodeDatabaseClient;
   settings: ProfileBindingSettings;
   groupIdMemo?: GroupIDMemo;
@@ -147,6 +150,20 @@ interface ImportNoteOptions {
   targetFile?: TFile;
 }
 
+interface PrepareExplicitImportOptions {
+  client: NodeDatabaseClient;
+  groupIdMemo?: GroupIDMemo;
+  orphanProfile?: ProfileSelector;
+}
+
+export interface PreparedExplicitImport {
+  source: "existing" | "parent" | "orphan";
+  profile: ResolvedProfile;
+  path: string;
+  /** Execute the previewed import using a fresh, caller-held database lease. */
+  import(note: Note, options: ImportNoteOptions): Promise<WriteOutcome>;
+}
+
 /**
  * Stateless note-import surface: lazy child-note batching via `prepare` and
  * explicit single-note writes via `importNote`. Deps are captured once; a
@@ -154,6 +171,11 @@ interface ImportNoteOptions {
  */
 export interface NoteImporter {
   prepare(options: PrepareNoteImportOptions): Promise<NoteImport>;
+  /** Freeze the Profile and path for explicit-import confirmation without writing. */
+  prepareExplicitImport(
+    note: ChildNote,
+    options: PrepareExplicitImportOptions,
+  ): Promise<PreparedExplicitImport>;
   /**
    * Explicitly import a single note (create or overwrite). Used by the batch
    * runner and the single "Update imported note" command. Wraps the write in
@@ -190,6 +212,8 @@ export function createNoteImporter(deps: NoteImporterDeps): NoteImporter {
   };
   return {
     prepare: (options) => prepareImport(ctx, options),
+    prepareExplicitImport: (note, options) =>
+      prepareExplicitImport(ctx, note, options),
     importNote: (note, options) => doImportNote(ctx, note, options),
   };
 }
@@ -231,27 +255,14 @@ async function doImportNote(
 ): Promise<WriteOutcome> {
   await ctx.profile.ready;
   return ctx.limit(async () => {
-    const existing =
-      (options.targetFile
-        ? ctx.app.vault.getFileByPath(options.targetFile.path)
-        : null) ?? ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
-
-    const source = existing ?? parentLiteratureNote(ctx, note, options);
-    const resolved = ctx.profile.profileOf(source);
-    if (!resolved.ok) {
-      throw new NoteImportProfileError(resolved.stamped.stamp, {
-        path: source?.path,
-        indexedKey: note.indexedKey,
-        imported: existing !== undefined,
-      });
-    }
+    const { existing, profile } = explicitImportTarget(ctx, note, options);
     const run: RunContext = {
       client: options.client,
-      settings: resolved.profile.settings,
+      settings: profile.settings,
       groupIdMemo: options.groupIdMemo,
       tagMemo: options.tagMemo,
       attachmentFolderCache: options.attachmentFolderCache ?? new Map(),
-      profile: resolved.profile,
+      profile,
     };
 
     if (existing) {
@@ -269,6 +280,117 @@ async function doImportNote(
       run,
     });
   });
+}
+
+async function prepareExplicitImport(
+  ctx: Ctx,
+  note: ChildNote,
+  options: PrepareExplicitImportOptions,
+): Promise<PreparedExplicitImport> {
+  await ctx.profile.ready;
+  const { existing, profile, source, sourcePath } = explicitImportTarget(
+    ctx,
+    note,
+    options,
+  );
+  const { orphanProfile } = options;
+  const path =
+    existing?.path ??
+    mintImportPath(
+      ctx.app,
+      getProfileBinding(profile.settings, "note.import-folder"),
+      note,
+    );
+  logger.debug("Prepared explicit note import", {
+    indexedKey: note.indexedKey,
+    path,
+    profile: profile.selector,
+  });
+  return {
+    source,
+    profile,
+    path,
+    import: (current, runOptions) =>
+      ctx.limit(async () => {
+        const target = explicitImportTarget(ctx, current, {
+          client: runOptions.client,
+          groupIdMemo: runOptions.groupIdMemo,
+          orphanProfile,
+        });
+        if (
+          target.source !== source ||
+          target.sourcePath !== sourcePath ||
+          target.profile.selector !== profile.selector
+        ) {
+          logger.debug("Explicit note import source changed; skipped", {
+            indexedKey: current.indexedKey,
+            path,
+            source,
+            currentSource: target.source,
+            profile: profile.selector,
+            currentProfile: target.profile.selector,
+          });
+          return "skipped";
+        }
+        if (!existing)
+          await ensureImportFolder(
+            ctx.app,
+            getProfileBinding(profile.settings, "note.import-folder"),
+          );
+        return writeNote(ctx, current, {
+          mode: existing
+            ? { action: "overwrite", file: existing }
+            : { action: "create", path },
+          run: {
+            client: runOptions.client,
+            settings: profile.settings,
+            groupIdMemo: runOptions.groupIdMemo,
+            tagMemo: runOptions.tagMemo,
+            attachmentFolderCache:
+              runOptions.attachmentFolderCache ?? new Map(),
+            profile,
+          },
+        });
+      }),
+  };
+}
+
+function explicitImportTarget(
+  ctx: Ctx,
+  note: ChildNote,
+  options: PrepareExplicitImportOptions & { targetFile?: TFile },
+) {
+  const existing =
+    (options.targetFile
+      ? ctx.app.vault.getFileByPath(options.targetFile.path)
+      : null) ?? ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
+  const file = existing ?? parentLiteratureNote(ctx, note, options);
+  const source: PreparedExplicitImport["source"] = existing
+    ? "existing"
+    : file
+      ? "parent"
+      : "orphan";
+  if (!file && options.orphanProfile !== undefined) {
+    const profile = ctx.profile.resolveProfile(options.orphanProfile);
+    if (!profile)
+      throw new NoteImportProfileError(options.orphanProfile, {
+        indexedKey: note.indexedKey,
+      });
+    return { existing, profile, source, sourcePath: undefined };
+  }
+  const resolved = ctx.profile.profileOf(file);
+  if (!resolved.ok)
+    throw new NoteImportProfileError(resolved.stamped.stamp, {
+      path: file?.path,
+      indexedKey: note.indexedKey,
+      imported: existing !== undefined,
+    });
+  return {
+    existing,
+    profile: resolved.profile,
+    source,
+    sourcePath: file?.path,
+  };
 }
 
 function resolveChildNote(
@@ -482,8 +604,8 @@ async function writeNote(
 /** The parent Literature Note an explicitly created note inherits its Profile from. */
 function parentLiteratureNote(
   ctx: Ctx,
-  note: Note,
-  options: ImportNoteOptions,
+  note: ChildNote,
+  options: Pick<ImportNoteOptions, "client" | "groupIdMemo">,
 ): TFile | undefined {
   if (note.parentItemID === null) return undefined;
   const parent = getItemsByID(options.client, [note.parentItemID], {

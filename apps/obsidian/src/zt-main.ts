@@ -241,6 +241,9 @@ export default class ZotLitPlugin extends Plugin {
       batchImport: services.batchImport,
       updateAll: () =>
         runBatchUpdateAll({
+          createProfile: services.createProfile,
+          importProfile: services.importProfile,
+          zoteroPref: services.zoteroPref,
           profile: services.profile,
           app: this.app,
           db: services.db,
