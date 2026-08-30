@@ -4,6 +4,7 @@ import type { App, CachedMetadata, EventRef, Plugin } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
+import type { ProfileId } from "@/lib/profile-stamp";
 
 import { isLiteratureNote, NoteIndex, resolveIndexedKey } from "./service";
 
@@ -14,6 +15,45 @@ vi.mock("@/lib/log", () => ({
 
 const ITEM_A = "ABCD2345";
 const ITEM_B = "ZZZ99999";
+
+it("returns Literature and Imported Notes separately by Profile ID, following stamp edits", async () => {
+  const profile = "Bk3Qn7XvT2Lp" as ProfileId;
+  const { service, metadataCache, vault } = await makeHarness(
+    {
+      "Book.md": {
+        frontmatter: {
+          "zotero-key": ITEM_A,
+          "zotlit-profile": `Old label (${profile})`,
+        },
+      },
+      "Import.md": {
+        frontmatter: { "zotero-note-key": ITEM_B, "zotlit-profile": profile },
+      },
+      "Default.md": { frontmatter: { "zotero-key": "DFLT2345" } },
+      "Scratch.md": { frontmatter: { "zotlit-profile": profile } },
+      "Unknown.md": {
+        frontmatter: {
+          "zotero-key": "UNKN2345",
+          "zotlit-profile": "unrecognized",
+        },
+      },
+    },
+    { initialized: true },
+  );
+  const notes = service.getNotesByProfile(profile);
+  expect(paths(notes.literatureNotes)).toEqual(["Book.md"]);
+  expect(paths(notes.importedNotes)).toEqual(["Import.md"]);
+  expect(paths(service.getNotesByProfile("default").literatureNotes)).toEqual([
+    "Default.md",
+  ]);
+  metadataCache.change(vault.files.get("Book.md")!, {
+    frontmatter: { "zotero-key": ITEM_A },
+  });
+  expect(service.getNotesByProfile(profile).literatureNotes).toEqual([]);
+  expect(
+    paths(service.getNotesByProfile("default").literatureNotes).sort(),
+  ).toEqual(["Book.md", "Default.md"]);
+});
 
 type Callback = (...args: unknown[]) => void;
 type MetadataEvent = "changed" | "deleted" | "resolved";

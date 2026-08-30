@@ -4,7 +4,6 @@ import type { TFile } from "obsidian";
 import { confirm, confirmWithCheckbox } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
@@ -63,15 +62,21 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     );
     await this.#deps.profile.ready;
     const profiles = this.#deps.profile.profiles;
-    if (profiles.length === 0) {
+    const selection = existing
+      ? undefined
+      : await this.#deps.noteFeature.resolveCreationProfile();
+    const shouldAsk = selection?.shouldAsk ?? profiles.length > 0;
+    if (!shouldAsk) {
       await this.#open(
-        existing ?? (await this.#create(hit, DEFAULT_PROFILE)),
+        existing ?? (await this.#create(hit, selection!.selector)),
         evt,
       );
       return;
     }
 
-    const choice = await chooseLiteratureNoteProfile(this.#deps.app, profiles);
+    const choice = await chooseLiteratureNoteProfile(this.#deps.app, profiles, {
+      preselected: selection?.selector,
+    });
     if (!choice) return;
     const file = existing
       ? await this.#resolveExisting(hit, existing, choice)

@@ -12,11 +12,7 @@ import {
 } from "@zotlit/templates/facade";
 import type { LiteratureNoteTemplateManifest } from "@zotlit/templates/facade";
 
-import {
-  FIELD_LITERATURE_NOTE_PROFILE,
-  FIELD_ZOTERO_KEY,
-  FIELD_ZOTERO_NOTE_KEY,
-} from "@/lib/constants";
+import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import { ensureParentFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -27,6 +23,7 @@ import {
 } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
+import type { NoteIndex } from "@/services/note-index/service";
 import { bindProfile } from "@/services/profile/bindings";
 import type {
   NoteProfile,
@@ -81,6 +78,7 @@ interface ProfileServiceDeps {
   app: App;
   settings: SettingsService;
   template: TemplateService;
+  noteIndex: Pick<NoteIndex, "whenIndexed" | "getNotesByProfile">;
 }
 
 export type ProfileReader = Pick<
@@ -279,23 +277,10 @@ export class ProfileService extends Service {
     if (!source || !destination)
       throw new Error("The source or destination Profile is unavailable");
     const { app } = this.#deps;
-    // Metadata must be indexed before deciding which Literature and Imported Notes need a new stamp.
-    if (app.metadataCache.initialized === false)
-      await new Promise<void>((resolve) => {
-        const ref = app.metadataCache.on("resolved", () => {
-          app.metadataCache.offref(ref);
-          resolve();
-        });
-      });
-    for (const file of app.vault.getMarkdownFiles()) {
-      const fm = app.metadataCache.getFileCache(file)?.frontmatter;
-      if (
-        !fm ||
-        (fm[FIELD_ZOTERO_KEY] === undefined &&
-          fm[FIELD_ZOTERO_NOTE_KEY] === undefined)
-      )
-        continue;
-      if (readProfileStamp(app.metadataCache, file)?.id !== id) continue;
+    await this.#deps.noteIndex.whenIndexed();
+    const { literatureNotes, importedNotes } =
+      this.#deps.noteIndex.getNotesByProfile(id);
+    for (const file of [...literatureNotes, ...importedNotes]) {
       await app.fileManager.processFrontMatter(file, (frontmatter) => {
         if (destination.stamp === undefined)
           delete frontmatter[FIELD_LITERATURE_NOTE_PROFILE];
@@ -425,6 +410,17 @@ export class ProfileService extends Service {
                   manifest.importAnnotationsAsTemplate,
               }),
         },
+      });
+    }
+    const lastUsed = this.#deps.settings.current!["note.last-used-profile"];
+    if (
+      lastUsed !== null &&
+      lastUsed !== DEFAULT_PROFILE &&
+      !this.#profiles.some(({ id }) => id === lastUsed)
+    ) {
+      this.#deps.settings.update({ "note.last-used-profile": null });
+      logger.debug("Cleared unavailable last-used Profile {selector}", {
+        selector: lastUsed,
       });
     }
     logger.debug(

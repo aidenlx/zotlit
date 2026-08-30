@@ -2,6 +2,7 @@ import type { App, Plugin } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProfileId } from "@/lib/profile-stamp";
+import { NoteIndex } from "@/services/note-index/service";
 import { SettingsService } from "@/services/settings/service";
 import { TemplateService } from "@/services/template/service";
 import { MockVault, PluginStub } from "@/services/template/test-vault";
@@ -30,13 +31,21 @@ ${bindings}
 async function harness(files: Record<string, string> = {}) {
   await using stack = new AsyncDisposableStack();
   const vault = new MockVault();
+  const metadataListeners = new Map<string, () => void>();
   for (const [path, source] of Object.entries(files))
     vault.addFile(path, source);
   const app = {
     vault,
     workspace: { updateOptions: vi.fn() },
     loadLocalStorage: () => null,
-    metadataCache: { initialized: true, getFileCache: vi.fn(() => null) },
+    metadataCache: {
+      initialized: true,
+      getFileCache: vi.fn(() => null),
+      on: (name: string, callback: () => void) => {
+        metadataListeners.set(name, callback);
+        return { e: { offref: () => metadataListeners.delete(name) } };
+      },
+    },
     fileManager: {
       processFrontMatter: vi.fn(),
       trashFile: async (file: { path: string }) => vault.deleteFile(file.path),
@@ -61,7 +70,12 @@ async function harness(files: Record<string, string> = {}) {
   const template = stack.use(
     new TemplateService({ app, plugin: plugin as unknown as Plugin, settings }),
   );
-  const profile = stack.use(new ProfileService({ app, settings, template }));
+  const noteIndex = stack.use(
+    new NoteIndex({ app, plugin: plugin as unknown as Plugin }),
+  );
+  const profile = stack.use(
+    new ProfileService({ app, settings, template, noteIndex }),
+  );
   await profile.ready;
   const cleanup = stack.move();
   return {
@@ -70,6 +84,7 @@ async function harness(files: Record<string, string> = {}) {
     settings,
     template,
     profile,
+    indexNotes: () => metadataListeners.get("resolved")!(),
     [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
   };
 }
@@ -107,6 +122,7 @@ describe("ProfileService", () => {
       "templates/zotlit-profile.books.md": document(),
     });
     const { vault, profile } = fixture;
+    fixture.settings.update({ "note.last-used-profile": BOOKS });
     vault.renameFile(
       "templates/zotlit-profile.books.md",
       "templates/zotlit-profile.reading.md",
@@ -118,6 +134,7 @@ describe("ProfileService", () => {
     vault.createFile("templates/zotlit-profile.copy.md", document());
     await vi.advanceTimersByTimeAsync(500);
     expect(profile.resolveProfile(BOOKS)).toBeUndefined();
+    expect(fixture.settings.current!["note.last-used-profile"]).toBeNull();
     expect(profile.diagnostics).toEqual([
       expect.objectContaining({
         code: "duplicate-profile-id",
@@ -358,11 +375,11 @@ describe("ProfileService", () => {
     const { profile, vault, app } = fixture;
     const frontmatters: Record<string, Record<string, unknown>> = {
       "Books/Paper.md": {
-        "zotero-key": "PAPER001",
+        "zotero-key": "PAPER234",
         "zotlit-profile": "Books (Bk3Qn7XvT2Lp)",
       },
       "Imports/Note.md": {
-        "zotero-note-key": "NOTE0001",
+        "zotero-note-key": "NTE23456",
         "zotlit-profile": BOOKS,
       },
       "Scratch.md": { "zotlit-profile": BOOKS },
@@ -375,17 +392,20 @@ describe("ProfileService", () => {
         edit(frontmatters[file.path]!);
       },
     );
+    fixture.indexNotes();
+    fixture.settings.update({ "note.last-used-profile": BOOKS });
     const pending = profile.delete(BOOKS, "default");
     await vi.advanceTimersByTimeAsync(500);
     await pending;
     expect(frontmatters["Books/Paper.md"]).toEqual({
-      "zotero-key": "PAPER001",
+      "zotero-key": "PAPER234",
     });
     expect(frontmatters["Imports/Note.md"]).toEqual({
-      "zotero-note-key": "NOTE0001",
+      "zotero-note-key": "NTE23456",
     });
     expect(frontmatters["Scratch.md"]).toEqual({ "zotlit-profile": BOOKS });
     expect(vault.files.has("templates/zotlit-profile.books.md")).toBe(false);
+    expect(fixture.settings.current!["note.last-used-profile"]).toBeNull();
   });
 
   it("keeps the document when a note cannot be re-stamped", async () => {
@@ -395,11 +415,12 @@ describe("ProfileService", () => {
     });
     const { profile, vault, app } = fixture;
     vi.mocked(app.metadataCache.getFileCache).mockReturnValue({
-      frontmatter: { "zotero-key": "PAPER001", "zotlit-profile": BOOKS },
+      frontmatter: { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
     });
     vi.mocked(app.fileManager.processFrontMatter).mockRejectedValue(
       new Error("Read-only note"),
     );
+    fixture.indexNotes();
     await expect(profile.delete(BOOKS, "default")).rejects.toThrow(
       "Read-only note",
     );
