@@ -192,3 +192,34 @@ through `actions`, and its Rail carries: the thesis; the four researchers' quest
 variant's one-line answer each; the numbered steps to try for the current scenario; the store
 readout (files in `templates/`, derived Profiles with counts and exclusions, the incoming text,
 the trash) and the log.
+
+## Round 1 verdict and round 2 (2026-08-30)
+
+Verdict: **B "Import sheet" won.** The user's words: "we want B, but the conflict resolution
+in sync and edition case worth prototyping. in general follow KISS and YAGNI." The gallery
+was trimmed to B (`issue-913-profile-sharing-gallery.html`); the export entry, the shareable
+copy as plain text, and the import seam (paste → consent → write) are settled by that pick.
+
+What stays open is narrower: **when the arriving Profile ID is one the vault already holds,
+how much does ZotLit do?** SYNC (in place, no seam, both files excluded, 40 notes stale) and
+EDITION (at the seam, the held file has a local edit) are the two cases. SEND and TAKE stay in
+the switcher only so the store seeds work.
+
+Round 2 lives in `issue-913-profile-conflict-gallery.html`: the same B shell, the Share and
+Import sheets byte-identical, and three sub-variants that form a KISS / YAGNI ladder on the
+conflict surfaces alone:
+
+| Rung | Bet | SYNC (in place) | EDITION (at the seam) | Going back |
+| --- | --- | --- | --- | --- |
+| **B1 Report only** | ZotLit names the collision and stops | banner + `Show files`; the researcher deletes one file with the file explorer | a one-line "Replace Reading group?" confirm; overwrite | Obsidian trash (SYNC) / File recovery (EDITION) |
+| **B2 One question** | one sheet, two answers, from both doors | `Replace mine` / `Keep mine` with the held → arriving diff | the same sheet; Replace = trash mine + write theirs on the freed path, held bindings kept | restore from the Obsidian trash |
+| **B3 Full ledger** | every outcome has a door | Replace / Keep mine / Keep both (fresh ID) | Replace (previous kept as `Reading group (before 1.1).md` out of the registry) / Add as separate profile; `Restore previous` row | the kept sibling file |
+
+Honesty rule for all three: ZotLit holds no record of which lines the researcher edited. It can
+show the diff between the held file and the arriving one; it must never say "this line was
+yours". Round 1's B claimed that; round 2 drops the claim.
+
+Argument carried into the ruling: an automatic in-place resolution (mint a fresh ID for the
+second file without asking) is unsafe under sync — each device would mint its own fresh ID for
+the same path and the two vaults diverge. Every rung therefore leaves the in-place choice to
+the researcher.
