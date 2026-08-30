@@ -94,6 +94,73 @@ describe("Literature Note Pack export", () => {
       },
     ]);
   });
+
+  it.each([false, true])(
+    "exports a partial-free Profile with includeFolders=%s",
+    (includeFolders) => {
+      const body = `# {{ zt.title }}\n{% managed %}{{ zt.abstractNote }}{% endmanaged %}\n{% annotation %}{{ zt.text }}{% endannotation %}\n`;
+      const source = `---
+id: example.books
+name: Books
+version: 1.0.0
+contract: 2
+filename: "{{ zt.citationKey }}"
+folder: Research/Books
+importFolder: Research/Imported notes
+citationStyle: apa
+---
+${body}`;
+
+      const exported = parseLiteratureNoteTemplate(
+        exportLiteratureNotePack(source, [], { includeFolders }),
+      );
+
+      expect(exported.manifest.folder).toBe(
+        includeFolders ? "Research/Books" : undefined,
+      );
+      expect(exported.manifest.importFolder).toBe(
+        includeFolders ? "Research/Imported notes" : undefined,
+      );
+      expect(exported.manifest.citationStyle).toBe("apa");
+      expect(exported.body).toBe(body);
+    },
+  );
+
+  it("keeps document partials ahead of global partials when sharing again", () => {
+    const source =
+      `${DOCUMENT}{% annotation %}{{ zt.text }}{% endannotation %}\n`.replace(
+        "contract: 2\n",
+        `contract: 2
+folder: Research
+importFolder: Imports
+partials:
+  - name: summary
+    language: liquid
+    source: 'Shared summary: {% render "authors" %}'
+  - name: authors
+    language: liquid
+    source: Shared authors
+`,
+      );
+    const exported = parseLiteratureNoteTemplate(
+      exportLiteratureNotePack(source, [
+        { name: "summary", language: "liquid", source: "Local summary" },
+        { name: "authors", language: "liquid", source: "Local authors" },
+        { name: "unused", language: "liquid", source: "Unused" },
+      ]),
+    );
+
+    expect(exported.manifest).not.toHaveProperty("folder");
+    expect(exported.manifest).not.toHaveProperty("importFolder");
+    expect(exported.manifest.partials).toEqual([
+      { name: "authors", language: "liquid", source: "Shared authors" },
+      {
+        name: "summary",
+        language: "liquid",
+        source: 'Shared summary: {% render "authors" %}',
+      },
+    ]);
+  });
 });
 
 describe("Literature Note Pack install lifecycle", () => {

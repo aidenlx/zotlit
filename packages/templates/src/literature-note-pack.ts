@@ -87,14 +87,17 @@ export interface LiteratureNotePackDiffRow {
   readonly candidateSource: string;
 }
 
-/** Export one document, embedding only its reachable transitive partials. */
+/** Export reachable partials, keeping folder bindings only when requested. */
 export function exportLiteratureNotePack(
   source: string,
   availablePartials: readonly LiteratureNoteTemplatePartial[],
+  options: { readonly includeFolders?: boolean } = {},
 ): string {
   const document = parseLiteratureNoteTemplate(source);
   const available = new Map(
-    availablePartials.map((partial) => [partial.name, partial]),
+    [...availablePartials, ...(document.manifest.partials ?? [])].map(
+      (partial) => [partial.name, partial],
+    ),
   );
   const bundled = new Map<string, LiteratureNoteTemplatePartial>();
   const pending = referencedPartialNames(
@@ -116,15 +119,22 @@ export function exportLiteratureNotePack(
     bundled.set(name, partial);
     pending.push(...referencedPartialNames(partial.source));
   }
-  if (bundled.size === 0) return source;
+  const stripFolders =
+    !options.includeFolders &&
+    (document.manifest.folder !== undefined ||
+      document.manifest.importFolder !== undefined);
+  if (bundled.size === 0 && !stripFolders) return source;
 
   const partials = [...bundled.values()].sort((a, b) =>
     a.name.localeCompare(b.name),
   );
-  const manifest = stringifyYaml(
-    { ...document.manifest, partials },
-    { lineWidth: 0 },
-  );
+  const exported = { ...document.manifest };
+  if (stripFolders) {
+    delete exported.folder;
+    delete exported.importFolder;
+  }
+  if (bundled.size > 0) exported.partials = partials;
+  const manifest = stringifyYaml(exported, { lineWidth: 0 });
   return `---\n${manifest}---\n${document.body}`;
 }
 
