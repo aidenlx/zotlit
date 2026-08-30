@@ -311,6 +311,10 @@ export interface NoteFeature {
     sources?: CreationProfileSources,
   ): Promise<CreationProfileSelection>;
   prepareCreationProfiles(item: Item): Promise<PreparedCreationProfile[]>;
+  prepareBatchCreationProfiles(
+    items: readonly Item[],
+    options?: { signal?: AbortSignal },
+  ): Promise<ReadonlyMap<number, readonly PreparedCreationProfile[]>>;
   prepareProfileNote(options: ProfileNotePreviewOptions): ProfileNotePreview;
   prepareProfileSwitch(file: TFile): Promise<PreparedProfileSwitch>;
   /** @see createNote */
@@ -446,7 +450,12 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
       resolveCompanionNote(ctx, indexedKey, options),
     resolveCreationProfile: (sources) => resolveCreationProfile(ctx, sources),
     prepareCreationProfiles: (item) =>
-      prepareCreationProfiles(ctx, item, createAtGate),
+      prepareCreationProfiles(ctx, item, { create: createAtGate }),
+    prepareBatchCreationProfiles: (items, options) =>
+      prepareBatchCreationProfiles(ctx, items, {
+        create: createAtGate,
+        ...options,
+      }),
     prepareProfileNote: (options) =>
       prepareProfileNote(ctx, options, createAtGate),
     prepareProfileSwitch: (file) => prepareProfileSwitch(ctx, file),
@@ -525,10 +534,13 @@ async function resolveCompanionNote(
 async function prepareCreationProfiles(
   ctx: NoteFeatureDeps,
   item: Item,
-  create: (
-    item: Item,
-    options: CreateNoteInternalOptions,
-  ) => Promise<CreateNoteResult>,
+  options: {
+    create: (
+      item: Item,
+      options: CreateNoteInternalOptions,
+    ) => Promise<CreateNoteResult>;
+    reservedPaths?: Map<ProfileSelector, Set<string>>;
+  },
 ): Promise<PreparedCreationProfile[]> {
   await Promise.all([
     ctx.settings.loaded,
@@ -548,6 +560,11 @@ async function prepareCreationProfiles(
     let preparedPath: { path: string; canSuffix: boolean } | undefined;
     let unavailable: string | undefined;
     try {
+      let reserved = options.reservedPaths?.get(selector);
+      if (options.reservedPaths && !reserved) {
+        reserved = new Set();
+        options.reservedPaths.set(selector, reserved);
+      }
       const document = resolveProfileDocument(ctx, profile);
       if (document === null)
         throw new Error(
@@ -560,7 +577,9 @@ async function prepareCreationProfiles(
         itemCollections,
         settings: profile.settings,
         document,
+        reservedPaths: reserved,
       });
+      reserved?.add(preparedPath.path);
       logger.debug("Prepared Profile creation path", {
         indexedKey: item.indexedKey,
         selector,
@@ -577,9 +596,35 @@ async function prepareCreationProfiles(
     return {
       ...profilePreview(profile, preparedPath?.path),
       unavailable,
-      create: () => create(item, { profile: selector, preparedPath }),
+      create: () => options.create(item, { profile: selector, preparedPath }),
     };
   });
+}
+
+async function prepareBatchCreationProfiles(
+  ctx: NoteFeatureDeps,
+  items: readonly Item[],
+  options: {
+    create: (
+      item: Item,
+      options: CreateNoteInternalOptions,
+    ) => Promise<CreateNoteResult>;
+    signal?: AbortSignal;
+  },
+): Promise<ReadonlyMap<number, readonly PreparedCreationProfile[]>> {
+  const reservedPaths = new Map<ProfileSelector, Set<string>>();
+  const plans = new Map<number, readonly PreparedCreationProfile[]>();
+  for (const item of items) {
+    options.signal?.throwIfAborted();
+    plans.set(
+      item.itemID,
+      await prepareCreationProfiles(ctx, item, {
+        create: options.create,
+        reservedPaths,
+      }),
+    );
+  }
+  return plans;
 }
 
 function selectableProfiles(ctx: NoteFeatureDeps): ResolvedProfile[] {

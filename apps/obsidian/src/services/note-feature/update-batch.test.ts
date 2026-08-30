@@ -1,3 +1,4 @@
+import type { TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -6,6 +7,7 @@ import {
   getIndexedItemIDsByLibrary,
   getItemDisplayRefByID,
   getItemRefByID,
+  getItemsByID,
   getLibraries,
   getLibraryByGroupID,
   USER_LIBRARY_ID,
@@ -13,12 +15,17 @@ import {
 import type { Library } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 
+import * as m from "@/lib/i18n/generated/messages";
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import type { ProfileId } from "@/lib/profile-stamp";
+import { chooseBatchProfile } from "@/services/batch-profile-choice";
 import type {
   AvailableLibrary,
   LibrarySelector,
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import { selectorOf } from "@/services/library-scope/scope";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type { BatchModalOptions, FlatGroupDef } from "@/views/batch-modal";
 
@@ -27,8 +34,9 @@ import {
   batchCreateOutcome,
   BatchCreateRefusedError,
   runBatchUpdateAll,
+  runBatchUpdate,
 } from "./update-batch";
-import type { BatchUpdateResult } from "./update-batch";
+import type { BatchUpdateResult, BatchUpdateDeps } from "./update-batch";
 import type { SingleUpdateDeps } from "./update-single";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
@@ -39,11 +47,17 @@ vi.mock("@zotlit/db", async (importOriginal) => {
     getLibraryByGroupID: vi.fn(),
     getItemDisplayRefByID: vi.fn(),
     getItemRefByID: vi.fn(),
+    getItemsByID: vi.fn(),
+    getZoteroIdentity: vi.fn(() => ({ username: null })),
     getCollectionIDByKey: vi.fn(),
     getIndexedItemIDsByLibrary: vi.fn(),
     getIndexedItemIDsByCollection: vi.fn(),
   };
 });
+
+vi.mock("@/services/batch-profile-choice", () => ({
+  chooseBatchProfile: vi.fn(),
+}));
 
 /** Captured options of every batch modal the runner opened. */
 const openedModals: BatchModalOptions[] = [];
@@ -111,23 +125,37 @@ function scopeOf(
 
 let currentScope: ResolvedLibraryScope = scopeOf([PERSONAL_LIBRARY]);
 
-function makeDeps(dbState: "loading" | "ready" = "ready"): SingleUpdateDeps {
+function makeDeps(dbState: "loading" | "ready" = "ready"): BatchUpdateDeps {
   const client = createClient(":memory:");
   return {
+    profile: profileReader(),
     app: {} as SingleUpdateDeps["app"],
     db: {
       state: dbState,
       client,
       acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
     },
-    settings: { loaded: Promise.resolve({ ...defaults }) },
+    settings: {
+      current: defaults,
+      loaded: Promise.resolve({ ...defaults }),
+      update: vi.fn(),
+    },
     libraryScope: { resolveWith: () => currentScope },
-    noteFeature: {} as SingleUpdateDeps["noteFeature"],
+    noteFeature: {
+      resolveCreationProfile: async () => ({
+        selector: "default",
+        source: "bound",
+        shouldAsk: false,
+      }),
+    },
+    createProfile: vi.fn(),
+    importProfile: vi.fn(),
+    zoteroPref: { dataDir: null },
     noteIndex: {
       whenIndexed: async () => {},
       getNotesByItemKey: () => [],
     },
-  } as unknown as SingleUpdateDeps;
+  } as unknown as BatchUpdateDeps;
 }
 
 /** Drive the last opened modal's loading phase and return its manifest options. */
@@ -211,6 +239,219 @@ describe("batchCreateOutcome", () => {
     }
   });
 });
+
+it("classifies conflicting Companion Profiles as kept rows before any write or picker", async () => {
+  const books = "Bk3Qn7XvT2Lp" as ProfileId;
+  const deps = makeDeps();
+  deps.profile = profileReader(
+    { ...defaults, profiles: [{ id: books, label: "Books" }] },
+    {
+      getFileCache: (file) => ({
+        frontmatter: file.path.startsWith("Books/")
+          ? { "zotlit-profile": `Books (${books})` }
+          : {},
+      }),
+    },
+  );
+  const create = vi.fn(async () => ({
+    outcome: "created" as const,
+    file: { path: "Books/New.md" } as TFile,
+  }));
+  const createDefault = vi.fn(async () => ({
+    outcome: "created" as const,
+    file: { path: "Literature/New.md" } as TFile,
+  }));
+  const writeNoteUpdate = vi.fn(async () => ({
+    bodyUpdated: true,
+    duplicateRegionCount: 0,
+  }));
+  deps.noteFeature.writeNoteUpdate = writeNoteUpdate;
+  using settingsUpdate = vi.spyOn(deps.settings, "update");
+  deps.noteFeature.resolveCreationProfile = vi.fn(async () => ({
+    selector: books,
+    source: "headless" as const,
+    shouldAsk: true,
+  }));
+  deps.noteFeature.prepareBatchCreationProfiles = vi.fn<
+    typeof deps.noteFeature.prepareBatchCreationProfiles
+  >(
+    async () =>
+      new Map([
+        [
+          1,
+          [
+            {
+              selector: books,
+              label: "Books",
+              folder: "Books",
+              citationStyle: null,
+              document: undefined,
+              path: "Books/New.md",
+              create,
+            },
+            {
+              selector: "default" as const,
+              label: undefined,
+              folder: "Literature",
+              citationStyle: null,
+              document: undefined,
+              path: "Literature/New.md",
+              create: createDefault,
+            },
+          ],
+        ],
+      ]),
+  );
+  deps.noteIndex.getNotesByItemKey = (key) =>
+    key === "ITEM2"
+      ? [{ path: "Books/Old.md" } as any]
+      : key === "ITEM3"
+        ? [{ path: "Literature/Other.md" } as any]
+        : [];
+  itemsIn(
+    new Map([
+      [1, USER_LIBRARY_ID],
+      [2, USER_LIBRARY_ID],
+      [3, USER_LIBRARY_ID],
+    ]),
+  );
+  vi.mocked(getItemsByID).mockReturnValue([
+    { itemID: 1, indexedKey: "ITEM1" } as any,
+  ]);
+  vi.mocked(chooseBatchProfile).mockClear();
+  await runBatchUpdate(deps, [1, 2, 3], { profile: books });
+  const modal = openedModals.at(-1)!;
+  const manifest = (await modal.onClassify({
+    onProgress: vi.fn(),
+    signal: new AbortController().signal,
+  })) as any;
+  expect(manifest.options.tasks).toMatchObject([
+    { id: 1, profile: "Books", path: "Books/New.md" },
+    { id: 2, profile: "Books" },
+  ]);
+  expect(manifest.options.kept).toEqual([
+    {
+      label: "Item 3",
+      profile: m.settings_profile_default_name(),
+      reason: m.batch_profile_kept_reason({
+        label: m.settings_profile_default_name(),
+        requested: "Books",
+      }),
+    },
+  ]);
+  expect(manifest.counts.actionable).toBe(2);
+  expect(chooseBatchProfile).not.toHaveBeenCalled();
+  expect(create).not.toHaveBeenCalled();
+  expect(settingsUpdate).not.toHaveBeenCalled();
+  const choice = manifest.options.groups.find(
+    (group: FlatGroupDef) => group.profileChoice,
+  )!.profileChoice!;
+  vi.mocked(chooseBatchProfile)
+    .mockResolvedValueOnce(undefined)
+    .mockResolvedValueOnce("default");
+  await choice.choose();
+  expect(manifest.options.tasks[0].path).toBe("Books/New.md");
+  await choice.choose();
+  expect(manifest.options.tasks[0]).toMatchObject({
+    profile: m.settings_profile_default_name(),
+    path: "Literature/New.md",
+  });
+  expect(choice.source).toBe("asked");
+  expect(settingsUpdate).not.toHaveBeenCalled();
+  const result = await modal.onRun({
+    onItemSettled: vi.fn(),
+    signal: new AbortController().signal,
+  });
+  expect(result).toMatchObject({
+    created: 1,
+    updated: 1,
+    failed: 0,
+    skipped: 0,
+  });
+  expect(settingsUpdate).toHaveBeenCalledExactlyOnceWith({
+    "note.last-used-profile": "default",
+  });
+  expect(create).not.toHaveBeenCalled();
+  expect(createDefault).toHaveBeenCalledOnce();
+  expect(writeNoteUpdate).toHaveBeenCalledOnce();
+  expect(writeNoteUpdate.mock.calls[0]).not.toHaveProperty("1.profile");
+  expect(
+    modal.text.runSummary(result, { cancelled: false, aborted: false }),
+  ).toBe(
+    m.batch_profile_summary({
+      created: m.batch_profile_created({
+        count: 1,
+        label: m.settings_profile_default_name(),
+      }),
+      updated: m.batch_profile_updated({ count: 1, label: "Books" }),
+      kept: 1,
+      failed: 0,
+      skipped: 0,
+      notFound: 0,
+    }),
+  );
+});
+
+it.each([true, false])(
+  "shows an unknown Literature Note stamp and preserves recovery (additional Profiles: %s)",
+  async (additionalProfiles) => {
+    const stamp = "Retired (Qw8Er5Ty2Ui9)";
+    const file = { path: "Reading/Paper.md" } as TFile;
+    const deps = makeDeps();
+    deps.profile = profileReader(
+      {
+        ...defaults,
+        profiles: additionalProfiles
+          ? [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }]
+          : [],
+      },
+      {
+        getFileCache: () => ({ frontmatter: { "zotlit-profile": stamp } }),
+      },
+    );
+    deps.noteIndex.getNotesByItemKey = () => [file];
+    itemsIn(new Map([[1, USER_LIBRARY_ID]]));
+    vi.mocked(getItemsByID).mockReturnValue([
+      { itemID: 1, indexedKey: "ITEM1" } as any,
+    ]);
+    deps.noteFeature.writeNoteUpdate = async () => ({
+      bodyUpdated: false,
+      duplicateRegionCount: 0,
+      diagnostic: unknownProfileDiagnostic(stamp, { path: file.path }),
+    });
+    await runBatchUpdate(deps, [1, 2]);
+    const options = openedModals.at(-1)!;
+    const manifest = (await options.onClassify({
+      onProgress: vi.fn(),
+      signal: new AbortController().signal,
+    })) as any;
+    expect(manifest.options.tasks).toMatchObject([{ id: 1 }]);
+    expect(manifest.options.tasks[0].profile).toBe(
+      additionalProfiles ? stamp : undefined,
+    );
+    expect(
+      manifest.options.groups.some(
+        (group: FlatGroupDef) => group.profileChoice,
+      ),
+    ).toBe(false);
+    const onItemSettled = vi.fn();
+    expect(
+      await options.onRun({
+        onItemSettled,
+        signal: new AbortController().signal,
+      }),
+    ).toMatchObject({ created: 0, updated: 0, failed: 1 });
+    expect(onItemSettled).toHaveBeenCalledExactlyOnceWith({
+      id: 1,
+      status: "failed",
+      failure: {
+        label: "Item 1",
+        message: m.notice_literature_note_profile_unknown({ stamp }),
+        recovery: { action: "switch-profile", path: file.path },
+      },
+    });
+  },
+);
 
 describe("runBatchUpdateAll", () => {
   it("returns db-unavailable when the database is closed", async () => {

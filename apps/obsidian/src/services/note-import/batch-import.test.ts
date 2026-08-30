@@ -21,12 +21,14 @@ import type { ChildNote, Library, Note } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { ProfileId } from "@/lib/profile-stamp";
 import type {
   AvailableLibrary,
   LibrarySelector,
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import { selectorOf } from "@/services/library-scope/scope";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import { ProfileAnnotationError } from "@/services/template/service";
@@ -45,6 +47,7 @@ import {
   childImportToast,
 } from "./batch-import-notices";
 import { NoteImportProfileError } from "./service";
+import type { NoteImporter } from "./service";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
@@ -56,6 +59,7 @@ vi.mock("@zotlit/db", async (importOriginal) => {
     getItemDisplayRefByID: vi.fn(),
     getNoteByItemID: vi.fn(),
     getItemsByKey: vi.fn(),
+    getItemsByID: vi.fn(() => []),
     getNoteByKey: vi.fn(),
     getLibraries: vi.fn(),
     getLibraryByGroupID: vi.fn(),
@@ -207,14 +211,28 @@ function makeDeps(
     async () => options.importNoteResult ?? ("created" as const),
   );
   const deps: NoteImportDeps = {
+    profile: profileReader(),
+    noteFeature: {
+      resolveCreationProfile: async () => ({
+        selector: "default",
+        source: "bound",
+        shouldAsk: false,
+      }),
+    },
     db: {
       state: options.dbState ?? "ready",
       client,
       acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
     },
-    settings: { loaded: Promise.resolve({ ...defaults, ...settings }) },
+    settings: {
+      loaded: Promise.resolve({ ...defaults, ...settings }),
+      update: vi.fn(),
+    },
     libraryScope: { resolveWith: () => currentScope },
-    noteImport: { importNote },
+    noteImport: {
+      importNote,
+      prepareExplicitImport: vi.fn<NoteImporter["prepareExplicitImport"]>(),
+    },
     noteIndex: {
       whenIndexed: async () => {},
       getImportedNoteByNoteKey: () => options.existing ?? [],
@@ -230,11 +248,211 @@ function makeDeps(
         openedModals.push(opts);
       },
       confirm: confirmMock,
+      chooseProfile: vi.fn(),
     },
     template: { ready: options.templateReady ?? Promise.resolve() },
   };
   return { deps, importNote };
 }
+
+it("lets the batch chip change only orphans while existing and parent stamps remain fixed", async () => {
+  const books = "Bk3Qn7XvT2Lp" as ProfileId;
+  const papers = "Rz9Wm4YfH6Kd" as ProfileId;
+  const { deps } = makeDeps({});
+  deps.profile = profileReader({
+    ...defaults,
+    profiles: [
+      { id: books, label: "Books" },
+      { id: papers, label: "Papers" },
+    ],
+  });
+  deps.noteFeature.resolveCreationProfile = async () => ({
+    selector: papers,
+    source: "last-used",
+    shouldAsk: true,
+  });
+  const existing = { path: "Books/Imported.md" } as TFile;
+  deps.noteIndex.getImportedNoteByNoteKey = (key) =>
+    key === makeRef(1).indexedKey ? [existing] : [];
+  vi.mocked(getNoteRefsByItemIDs).mockReturnValue([
+    makeRef(1),
+    makeRef(2),
+    makeRef(3),
+  ]);
+  const imports = vi.fn(async (note: Note) =>
+    note.itemID === 1 ? ("overwritten" as const) : ("created" as const),
+  );
+  vi.mocked(deps.noteImport.prepareExplicitImport).mockImplementation(
+    async (note, options) => {
+      const source =
+        note.itemID === 1
+          ? "existing"
+          : note.itemID === 2
+            ? "parent"
+            : "orphan";
+      const selector =
+        source === "existing"
+          ? books
+          : source === "parent"
+            ? papers
+            : options.orphanProfile!;
+      const profile = deps.profile.resolveProfile(selector)!;
+      return {
+        source,
+        profile,
+        path: `${profile.label}/Note${note.itemID}.md`,
+        import: imports,
+      };
+    },
+  );
+  using chooseProfile = vi
+    .spyOn(deps.view, "chooseProfile")
+    .mockResolvedValue(books);
+  using settingsUpdate = vi.spyOn(deps.settings, "update");
+  await createBatchImport(deps).runBatchImport("note", [1, 2, 3]);
+  const options = openedModals.at(-1)!;
+  const manifest = (await options.onClassify(classifyControls())) as any;
+  const choice = manifest.options.groups.find(
+    (group: any) => group.profileChoice,
+  )?.profileChoice;
+  expect(choice.label).toBe("Papers");
+  expect(settingsUpdate).not.toHaveBeenCalled();
+  await choice.choose();
+  expect(manifest.options.tasks).toMatchObject([
+    { id: 1, profile: "Books" },
+    { id: 2, profile: "Papers", path: "Papers/Note2.md" },
+    { id: 3, profile: "Books", path: "Books/Note3.md" },
+  ]);
+  expect(choice.source).toBe("asked");
+  expect(chooseProfile).toHaveBeenCalledOnce();
+  expect(imports).not.toHaveBeenCalled();
+  expect(
+    manifest.options.groups.filter((group: any) => group.profileChoice),
+  ).toHaveLength(1);
+  expect(manifest.options.tasks[2].kind).not.toBe(
+    manifest.options.tasks[1].kind,
+  );
+  expect(settingsUpdate).not.toHaveBeenCalled();
+  vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
+    makeNote(itemID),
+  );
+  const result = await options.onRun({
+    onItemSettled: vi.fn(),
+    signal: new AbortController().signal,
+  });
+  expect(result).toMatchObject({
+    created: 2,
+    updated: 1,
+    failed: 0,
+    skipped: 0,
+  });
+  expect(settingsUpdate).toHaveBeenCalledExactlyOnceWith({
+    "note.last-used-profile": books,
+  });
+  expect(
+    options.text.runSummary(result, { cancelled: false, aborted: false }),
+  ).toBe(
+    m.batch_profile_summary({
+      created: `${m.batch_profile_created({ count: 1, label: "Books" })}, ${m.batch_profile_created({ count: 1, label: "Papers" })}`,
+      updated: m.batch_profile_updated({ count: 1, label: "Books" }),
+      failed: 0,
+      skipped: 0,
+      kept: 0,
+      notFound: 0,
+    }),
+  );
+});
+
+it("keeps parent-only imports read-only and leaves last-used unchanged", async () => {
+  const books = "Bk3Qn7XvT2Lp" as ProfileId;
+  const { deps } = makeDeps({});
+  deps.profile = profileReader({
+    ...defaults,
+    profiles: [{ id: books, label: "Books" }],
+  });
+  vi.mocked(getChildNotesByParentIDs).mockReturnValue([makeRef(1), makeRef(2)]);
+  vi.mocked(deps.noteImport.prepareExplicitImport).mockImplementation(
+    async (note) => ({
+      source: "parent",
+      profile: deps.profile.resolveProfile(books)!,
+      path: `Books/Note${note.itemID}.md`,
+      import: async () => "created",
+    }),
+  );
+  using chooseProfile = vi.spyOn(deps.view, "chooseProfile");
+  using settingsUpdate = vi.spyOn(deps.settings, "update");
+  await createBatchImport(deps).runBatchImport("child", [10]);
+  const options = openedModals.at(-1)!;
+  const manifest = (await options.onClassify(classifyControls())) as any;
+  expect(manifest.options.parents[0].profileChoice).toBeUndefined();
+  expect(manifest.options.parents[0].children).toMatchObject([
+    { profile: "Books" },
+    { profile: "Books" },
+  ]);
+  vi.mocked(getNoteByItemID).mockImplementation((_client, itemID) =>
+    makeNote(itemID),
+  );
+  expect(
+    await options.onRun({
+      onItemSettled: vi.fn(),
+      signal: new AbortController().signal,
+    }),
+  ).toMatchObject({ created: 2, failed: 0 });
+  expect(chooseProfile).not.toHaveBeenCalled();
+  expect(settingsUpdate).not.toHaveBeenCalled();
+});
+
+it.each([true, false])(
+  "shows an unknown Imported Note stamp and keeps recovery (additional Profiles: %s)",
+  async (additionalProfiles) => {
+    const stamp = "Retired (Qw8Er5Ty2Ui9)";
+    const file = { path: "Imported/Methods.md" } as TFile;
+    const { deps, importNote } = makeDeps({}, { existing: [file] });
+    deps.profile = profileReader(
+      {
+        ...defaults,
+        profiles: additionalProfiles
+          ? [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }]
+          : [],
+      },
+      { getFileCache: () => ({ frontmatter: { "zotlit-profile": stamp } }) },
+    );
+    const error = new NoteImportProfileError(stamp, { path: file.path });
+    vi.mocked(deps.noteImport.prepareExplicitImport).mockRejectedValue(error);
+    importNote.mockRejectedValue(error);
+    vi.mocked(getNoteRefsByItemIDs).mockReturnValue([makeRef(1)]);
+    vi.mocked(getNoteByItemID).mockReturnValue(makeNote(1));
+    await createBatchImport(deps).runBatchImport("note", [1, 2]);
+    const options = openedModals.at(-1)!;
+    const manifest = (await options.onClassify(classifyControls())) as any;
+    expect(manifest.options.tasks).toMatchObject([{ id: 1 }]);
+    expect(manifest.options.tasks[0].profile).toBe(
+      additionalProfiles ? stamp : undefined,
+    );
+    expect(
+      manifest.options.groups.some((group: any) => group.profileChoice),
+    ).toBe(false);
+    const onItemSettled = vi.fn();
+    expect(
+      await options.onRun({
+        onItemSettled,
+        signal: new AbortController().signal,
+      }),
+    ).toMatchObject({ created: 0, updated: 0, failed: 1 });
+    expect(onItemSettled).toHaveBeenCalledExactlyOnceWith({
+      id: 1,
+      status: "failed",
+      failure: {
+        label: "Note 1",
+        message: m.notice_imported_note_profile_unknown({
+          stamp,
+          target: file.path,
+        }),
+        recovery: { action: "switch-profile", path: file.path },
+      },
+    });
+  },
+);
 
 beforeEach(() => {
   openedModals.length = 0;

@@ -24,6 +24,18 @@ export interface BatchCounts {
   notFound: number;
 }
 
+/** One shared creation destination; the runner owns its current selection. */
+export interface BatchProfileChoice {
+  readonly label: string;
+  readonly source: "headless" | "last-used" | "bound" | "asked";
+  choose(): Promise<void>;
+}
+
+/** Only the confirm phase supplies controls; progress rows remain read-only. */
+export interface BatchListControls {
+  chooseProfile(choice: BatchProfileChoice): Promise<void>;
+}
+
 /**
  * The variable body of a batch modal. The shell owns the loading → confirm →
  * progress → summary lifecycle, the bar, the buttons, and the live failures
@@ -37,7 +49,7 @@ export interface BatchManifest {
    * shows the list (confirm body, then the progress disclosure), rebuilding the
    * row-icon registry each time since the prior phase's DOM was discarded.
    */
-  renderList(parent: HTMLElement): void;
+  renderList(parent: HTMLElement, controls?: BatchListControls): void;
   /** Flip a row's terminal status in place; no-op if the row isn't mounted. */
   setRowStatus(id: number, status: "done" | "skipped" | "failed"): void;
   /**

@@ -260,6 +260,11 @@ export function buildServices(
     })
     .useValue({
       batchImport: ({
+        profile,
+        noteFeature,
+        createProfile,
+        importProfile,
+        zoteroPref,
         db,
         settings,
         libraryScope,
@@ -268,7 +273,13 @@ export function buildServices(
         template,
       }): BatchImport =>
         createBatchImport({
-          view: createNoteImportView(plugin.app),
+          view: createNoteImportView(plugin.app, {
+            createProfile,
+            importProfile,
+            zoteroPref,
+          }),
+          profile,
+          noteFeature,
           db,
           settings,
           libraryScope,

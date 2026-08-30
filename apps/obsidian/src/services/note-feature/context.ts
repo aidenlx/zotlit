@@ -130,6 +130,7 @@ export function resolveNotePath(
     settings: ProfileBindingSettings;
     forceSuffix?: boolean;
     document?: Pick<ResolvedLiteratureNoteTemplate, "renderFilename">;
+    reservedPaths?: ReadonlySet<string>;
   },
 ): { path: string; canSuffix: boolean } {
   const folderSetting = getProfileBinding(
@@ -146,7 +147,9 @@ export function resolveNotePath(
     ? options.document.renderFilename(data)
     : ctx.template.renderFilename(data);
   return resolveRenderedNotePath(folderSetting, rendered, {
-    exists: (path) => ctx.app.vault.getAbstractFileByPath(path) !== null,
+    exists: (path) =>
+      options.reservedPaths?.has(path) === true ||
+      ctx.app.vault.getAbstractFileByPath(path) !== null,
     forceSuffix: options.forceSuffix,
   });
 }
