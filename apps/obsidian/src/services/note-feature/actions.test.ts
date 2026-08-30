@@ -15,9 +15,11 @@ it("offers Profile switching only for the active Literature Note and opens its c
   let active: TFile | null = file;
   let frontmatter: Record<string, string> = { "zotero-key": "ABCD2345" };
   const commands: Command[] = [];
+  const on = vi.fn();
   const deps = {
     app: {
-      workspace: { getActiveFile: () => active, on: vi.fn() },
+      workspace: { getActiveFile: () => active, on },
+      vault: { getFileByPath: () => file },
       metadataCache: { getFileCache: () => ({ frontmatter }) },
     },
     noteFeature: { on: () => () => {} },
@@ -41,13 +43,15 @@ it("offers Profile switching only for the active Literature Note and opens its c
   expect(command.checkCallback?.(true)).toBe(true);
   expect(switchNoteProfileInteractively).not.toHaveBeenCalled();
   command.checkCallback?.(false);
-  expect(switchNoteProfileInteractively).toHaveBeenCalledWith(
-    deps,
-    file,
-    "ABCD2345",
-  );
+  expect(switchNoteProfileInteractively).toHaveBeenCalledWith(deps, file);
   frontmatter = { "zotero-note-key": "NOTE0001" };
   expect(command.checkCallback?.(true)).toBe(false);
+  frontmatter = { "zotero-note-key": "NTE23456" };
+  const recover = on.mock.calls.find(
+    ([event]) => event === "zotlit:switch-profile",
+  )![1] as (payload: { path: string }) => void;
+  recover({ path: file.path });
+  expect(switchNoteProfileInteractively).toHaveBeenNthCalledWith(2, deps, file);
   active = null;
   expect(command.checkCallback?.(true)).toBe(false);
 });

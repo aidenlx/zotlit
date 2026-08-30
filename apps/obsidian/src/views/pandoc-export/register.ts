@@ -11,6 +11,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
+import { requestProfileSwitch } from "@/lib/profile-recovery";
 import type { DatabaseService } from "@/services/database/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import {
@@ -93,6 +94,7 @@ export async function runPandocExport(
             kind: "document-profile-invalid",
             stamp: declared.diagnostic.stamp,
             target: declared.target,
+            recover: () => requestProfileSwitch(app, declared.target),
           }
         : {
             kind:

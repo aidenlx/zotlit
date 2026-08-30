@@ -27,6 +27,7 @@ import type { ReferencesCopyBlock } from "./store";
  * entries already carry.
  */
 export function References() {
+  const actions = useReferenceActions();
   const entries = useReferencesStore((s) => s.entries);
   const listMode = useReferencesStore((s) => s.listMode);
   const engine = useReferencesStore((s) => s.engine);
@@ -61,6 +62,16 @@ export function References() {
             title={documentPresentationTitle(documentPresentationError)}
           >
             {documentPresentationBody(documentPresentationError)}
+            {documentPresentationError.property === "profile" && (
+              <Button
+                data-profile-recovery
+                onClick={() =>
+                  actions.onSwitchProfile(documentPresentationError.target)
+                }
+              >
+                {m.profile_switch_recovery()}
+              </Button>
+            )}
           </Banner>
         )}
         {formattingFailed && engine.kind === "installed" && (

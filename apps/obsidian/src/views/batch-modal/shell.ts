@@ -228,7 +228,7 @@ export class BatchModal extends Modal {
   #addFailure(failure: BatchFailure): void {
     this.#failures.push(failure);
     if (!this.#failedPanel || !this.#failedPanelList) return;
-    failureRow(this.#failedPanelList, failure);
+    failureRow(this.#failedPanelList, failure, this.app);
     this.#failedPanel.toggle(true);
     this.#failedPanelSummary?.setText(
       (this.#options.text.failedHeader ?? m.batch_update_group_failed)({
@@ -388,7 +388,7 @@ export class BatchModal extends Modal {
         }),
         true,
       );
-      for (const failure of this.#failures) failureRow(ul, failure);
+      for (const failure of this.#failures) failureRow(ul, failure, this.app);
     }
     this.#manifestOrThrow.renderSummary(details, this.#finalStatus);
 

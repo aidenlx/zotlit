@@ -426,4 +426,95 @@ describe("ProfileService", () => {
     );
     expect(vault.files.has("templates/zotlit-profile.books.md")).toBe(true);
   });
+
+  it("reports deletion counts and moves both note kinds before trashing only the Profile document", async () => {
+    const papers = "Rz9Wm4YfH6Kd" as ProfileId;
+    await using fixture = await harness({
+      "templates/zotlit-profile.books.md": document(),
+      "templates/zotlit-profile.papers.md": document(
+        papers,
+        "folder: Papers\nimportFolder: Imported/Papers",
+        "Papers",
+      ),
+      "templates/shared.liquid.md": "Shared partial",
+      "Books/My title.md": "My reading text",
+      "Imports/Child.md": "Imported text",
+    });
+    const { profile, vault, app } = fixture;
+    const literature = vault.getFileByPath("Books/My title.md")!;
+    const imported = vault.getFileByPath("Imports/Child.md")!;
+    const frontmatters = new Map([
+      [literature, { "zotero-key": "PAPER234", "zotlit-profile": BOOKS }],
+      [imported, { "zotero-note-key": "NTE23456", "zotlit-profile": BOOKS }],
+    ]);
+    using _cache = vi
+      .spyOn(app.metadataCache, "getFileCache")
+      .mockImplementation((file) => ({ frontmatter: frontmatters.get(file) }));
+    using _write = vi
+      .spyOn(app.fileManager, "processFrontMatter")
+      .mockImplementation(async (file, edit) => edit(frontmatters.get(file)!));
+    const order: string[] = [];
+    app.fileManager.renameFile = async (file, path) => {
+      order.push(path);
+      vault.renameFile(file.path, path);
+    };
+    using _trash = vi
+      .spyOn(app.fileManager, "trashFile")
+      .mockImplementation(async (file) => {
+        order.push(file.path);
+        vault.deleteFile(file.path);
+      });
+    fixture.indexNotes();
+    const plan = await profile.prepareDelete(BOOKS);
+    expect(plan.literatureNotes).toEqual([literature]);
+    expect(plan.importedNotes).toEqual([imported]);
+    expect(plan.targets.map(({ profile }) => profile.selector)).toEqual([
+      "default",
+      papers,
+    ]);
+    const pending = profile.delete(BOOKS, papers, { move: true });
+    await vi.advanceTimersByTimeAsync(500);
+    await expect(pending).resolves.toEqual({
+      literatureNotes: 1,
+      importedNotes: 1,
+      movedFiles: 2,
+    });
+    expect(order).toEqual([
+      "Papers/My title.md",
+      "Imported/Papers/Child.md",
+      "templates/zotlit-profile.books.md",
+    ]);
+    expect(frontmatters.get(literature)?.["zotlit-profile"]).toBe(
+      "Papers (Rz9Wm4YfH6Kd)",
+    );
+    expect(frontmatters.get(imported)?.["zotlit-profile"]).toBe(
+      "Papers (Rz9Wm4YfH6Kd)",
+    );
+    expect(vault.contents.get("Papers/My title.md")).toBe("My reading text");
+    expect(vault.contents.get("templates/shared.liquid.md")).toBe(
+      "Shared partial",
+    );
+  });
+
+  it("keeps the Profile document when a requested note move fails", async () => {
+    await using fixture = await harness({
+      "templates/zotlit-profile.books.md": document(),
+      "Books/Paper.md": "User text",
+    });
+    const { profile, vault, app } = fixture;
+    using _cache = vi.spyOn(app.metadataCache, "getFileCache").mockReturnValue({
+      frontmatter: { "zotero-key": "PAPER234", "zotlit-profile": BOOKS },
+    });
+    app.fileManager.renameFile = async () => {
+      throw new Error("Destination occupied");
+    };
+    fixture.indexNotes();
+    await expect(
+      profile.delete(BOOKS, "default", { move: true }),
+    ).rejects.toThrow("Destination occupied");
+    expect(vault.contents.get("templates/zotlit-profile.books.md")).toBe(
+      document(),
+    );
+    expect(vault.contents.get("Books/Paper.md")).toBe("User text");
+  });
 });

@@ -30,6 +30,13 @@ declare global {
 }
 
 declare module "obsidian" {
+  interface Workspace {
+    on(
+      name: "zotlit:switch-profile",
+      callback: (request: { path: string }) => void,
+      ctx?: any,
+    ): EventRef;
+  }
   interface MetadataCache {
     initialized: boolean;
     on(name: "initialized", callback: () => any, ctx?: any): EventRef;

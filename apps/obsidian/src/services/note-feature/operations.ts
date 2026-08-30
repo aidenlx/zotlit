@@ -57,7 +57,10 @@ import type {
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { NoteImport } from "@/services/note-import/service";
-import { itemKeyFromFrontmatter } from "@/services/note-index/service";
+import {
+  itemKeyFromFrontmatter,
+  noteKeyFromFrontmatter,
+} from "@/services/note-index/service";
 import { noteProfileSelector } from "@/services/profile/bindings";
 import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
 import type { Settings } from "@/services/settings/schema";
@@ -184,9 +187,11 @@ export interface PreparedCreationProfile extends ProfilePreview {
 }
 
 export interface PreparedProfileSwitch {
+  imported: boolean;
   current: { selector: ProfileSelector | undefined; label: string | undefined };
   profiles: ProfilePreview[];
-  importedNotes: TFile[];
+  /** Null when the source item or database could not supply the family lookup. */
+  importedNotes: TFile[] | null;
 }
 
 // `UpdateScope` is the wire enum obsidian decodes; re-export it so note-feature
@@ -277,10 +282,7 @@ export interface NoteFeature {
     sources?: CreationProfileSources,
   ): Promise<CreationProfileSelection>;
   prepareCreationProfiles(item: Item): Promise<PreparedCreationProfile[]>;
-  prepareProfileSwitch(
-    file: TFile,
-    indexedKey: string,
-  ): Promise<PreparedProfileSwitch>;
+  prepareProfileSwitch(file: TFile): Promise<PreparedProfileSwitch>;
   /** @see createNote */
   createNote(
     item: Item,
@@ -413,8 +415,7 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
     resolveCreationProfile: (sources) => resolveCreationProfile(ctx, sources),
     prepareCreationProfiles: (item) =>
       prepareCreationProfiles(ctx, item, createAtGate),
-    prepareProfileSwitch: (file, indexedKey) =>
-      prepareProfileSwitch(ctx, file, indexedKey),
+    prepareProfileSwitch: (file) => prepareProfileSwitch(ctx, file),
     updateNote: (file, options) => updateNote(ctx, file, options),
     switchNoteProfile: (file, options) => switchNoteProfile(ctx, file, options),
     getImportedNotesForItem: (indexedKey) =>
@@ -857,20 +858,41 @@ async function updateNote(
 async function prepareProfileSwitch(
   ctx: NoteFeatureDeps,
   file: TFile,
-  indexedKey: string,
 ): Promise<PreparedProfileSwitch> {
   await Promise.all([ctx.profile.ready, ctx.settings.loaded]);
   const current = ctx.profile.profileOf(file);
-  const profiles = selectableProfiles(ctx).map((profile) =>
-    profilePreview(profile, profileSwitchPath(file, profile)),
-  );
-  const importedNotes = await getImportedNotesForItem(ctx, indexedKey);
-  logger.debug("Prepared Literature Note Profile switch", {
+  const cache = ctx.app.metadataCache.getFileCache(file);
+  const imported = noteKeyFromFrontmatter(cache) !== null;
+  const indexedKey = itemKeyFromFrontmatter(cache);
+  if (!imported && !indexedKey)
+    throw new Error("The file is not a ZotLit note");
+  const profiles = selectableProfiles(ctx).map((profile) => ({
+    ...profilePreview(profile, profileSwitchPath(file, profile, { imported })),
+    folder:
+      profile.bindings[
+        imported ? "note.import-folder" : "note.literature-folder"
+      ],
+  }));
+  let importedNotes: TFile[] | null = [];
+  if (!imported) {
+    try {
+      importedNotes = await getImportedNotesForItem(ctx, indexedKey!);
+    } catch (error) {
+      importedNotes = null;
+      logger.debug(
+        "Could not check Imported Notes while preparing a Profile switch",
+        { path: file.path, indexedKey, error },
+      );
+    }
+  }
+  logger.debug("Prepared note Profile switch", {
     path: file.path,
+    imported,
     profiles: profiles.length,
-    importedNotes: importedNotes.length,
+    importedNotes: importedNotes?.length ?? null,
   });
   return {
+    imported,
     current: current.ok
       ? { selector: current.profile.selector, label: current.profile.label }
       : { selector: undefined, label: current.stamped.stamp },
@@ -904,7 +926,9 @@ async function switchNoteProfile(
     return refusedUpdateMissingDocument(profile.document!, file.path);
   }
   const previousPath = file.path;
-  const targetPath = profileSwitchPath(file, profile);
+  const imported =
+    noteKeyFromFrontmatter(ctx.app.metadataCache.getFileCache(file)) !== null;
+  const targetPath = profileSwitchPath(file, profile, { imported });
   const move = options.move && targetPath !== previousPath;
   if (move) {
     await ensureParentFolder(ctx.app, targetPath);
@@ -939,9 +963,17 @@ async function switchNoteProfile(
 }
 
 /** A switch keeps the existing name; only the target folder can change. */
-function profileSwitchPath(file: TFile, profile: ResolvedProfile): string {
+function profileSwitchPath(
+  file: TFile,
+  profile: ResolvedProfile,
+  options: { imported: boolean },
+): string {
   return joinFolderPath(
-    normalizeFolderPath(profile.bindings["note.literature-folder"]),
+    normalizeFolderPath(
+      profile.bindings[
+        options.imported ? "note.import-folder" : "note.literature-folder"
+      ],
+    ),
     file.name,
   );
 }
@@ -1312,7 +1344,10 @@ function renderAnnotation(
           : ctx.profile.profileOf();
         if (!resolved.ok) {
           throw new ProfileAnnotationError(
-            unknownProfileDiagnostic(resolved.stamped.stamp),
+            unknownProfileDiagnostic(resolved.stamped.stamp, {
+              path: file?.path,
+              indexedKey,
+            }),
           );
         }
         return ctx.template.renderProfileAnnotation(data, {

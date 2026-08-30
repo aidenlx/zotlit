@@ -1,6 +1,8 @@
 // Shared DOM primitives for the batch-modal shell and its manifest bodies.
 import { setIcon } from "obsidian";
+import type { App } from "obsidian";
 
+import { renderProfileRecovery } from "@/lib/profile-recovery";
 import { cn } from "@/lib/utils";
 import type { BatchFailure } from "@/services/batch-run";
 
@@ -108,7 +110,11 @@ export function listGroup(parent: HTMLElement, group: StaticGroup): void {
 /** A failed-item row: an x-icon + truncated label, with the error message on a
  * second muted line indented under the label. Shared by the live run-phase
  * panel and the summary's Failed group. */
-export function failureRow(ul: HTMLElement, failure: BatchFailure): void {
+export function failureRow(
+  ul: HTMLElement,
+  failure: BatchFailure,
+  app: App,
+): void {
   const li = ul.createEl("li", {
     cls: "zt:py-0.5 zt:min-w-0 zt:[content-visibility:auto] zt:[contain-intrinsic-size:auto_2.5rem]",
   });
@@ -125,4 +131,5 @@ export function failureRow(ul: HTMLElement, failure: BatchFailure): void {
     text: failure.message,
     cls: "zt:text-xs zt:text-(--text-muted) zt:pl-6",
   });
+  if (failure.recovery) renderProfileRecovery(li, app, failure.recovery);
 }

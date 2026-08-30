@@ -13,6 +13,7 @@ import type { DatabaseService } from "@/services/database/service";
 export interface BatchFailure {
   label: string;
   message: string;
+  recovery?: { action: "switch-profile"; path: string };
 }
 
 export interface BatchClassifyControls {
@@ -129,12 +130,14 @@ export async function executeBatchRun<T extends BatchRunTask>(opts: {
             throw new AbortError("halted");
           }
           if (!AbortError.test(error)) {
+            const recovery = profileRecovery(error);
             controls.onItemSettled({
               id: task.id,
               status: "failed",
               failure: {
                 label: task.label,
                 message: formatErrorMessage(error),
+                ...(recovery ? { recovery } : {}),
               },
             });
           }
@@ -157,6 +160,23 @@ export async function executeBatchRun<T extends BatchRunTask>(opts: {
   if (haltError !== undefined) throw haltError;
   result.cancelled = controls.signal.aborted && completed < tasks.length;
   return result;
+}
+
+/** Preserve only actionable diagnostic data across the generic failure boundary. */
+function profileRecovery(error: unknown): BatchFailure["recovery"] {
+  if (!Error.isError(error) || !("diagnostic" in error)) return undefined;
+  const diagnostic = error.diagnostic;
+  if (
+    typeof diagnostic !== "object" ||
+    diagnostic === null ||
+    !("code" in diagnostic) ||
+    diagnostic.code !== "unknown-literature-note-profile" ||
+    !("path" in diagnostic) ||
+    typeof diagnostic.path !== "string" ||
+    !diagnostic.path
+  )
+    return undefined;
+  return { action: "switch-profile", path: diagnostic.path };
 }
 
 /**

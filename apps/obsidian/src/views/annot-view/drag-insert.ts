@@ -1,9 +1,10 @@
-import type { Workspace } from "obsidian";
+import type { App } from "obsidian";
 import type { DragEvent } from "react";
 
 import type { AnnotViewItem } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
+import { profileRecoveryNotice } from "@/lib/profile-recovery";
 import type { AttachmentImport } from "@/services/attachment-import/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { ProfileAnnotationError } from "@/services/template/service";
@@ -14,9 +15,9 @@ const logger = getLogger(["views", "annot-view"]);
 const SOURCE_TAG = "zotlit-annot-drag";
 
 export interface DragInsertDeps {
-  workspace: Workspace;
+  app: App;
   noteFeature: Pick<NoteFeature, "renderAnnotation">;
-  notify: (message: string) => void;
+  notify: (message: string | DocumentFragment) => void;
   /** Pre-prepared attachment-import handle for the active note. */
   getImportHandle: () => AttachmentImport | null;
   /**
@@ -48,7 +49,11 @@ export function createDragInsertHandler(deps: DragInsertDeps) {
     } catch (error) {
       if (!(error instanceof ProfileAnnotationError)) throw error;
       evt.dataTransfer.setData("text/plain", annot.text ?? annot.key);
-      deps.notify(error.message);
+      deps.notify(
+        error.diagnostic.code === "unknown-literature-note-profile"
+          ? profileRecoveryNotice(deps.app, error.diagnostic)
+          : error.message,
+      );
       deps.onSettled();
       return;
     }
@@ -63,7 +68,7 @@ export function createDragInsertHandler(deps: DragInsertDeps) {
     evt.dataTransfer.setData("text/plain", rendered);
     evt.dataTransfer.setData(SOURCE_TAG, timestamp);
 
-    const { workspace } = deps;
+    const { workspace } = deps.app;
     const win = (evt.target as HTMLElement).win;
 
     const cleanup = () => {

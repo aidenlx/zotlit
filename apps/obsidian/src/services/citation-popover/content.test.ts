@@ -6,6 +6,7 @@ import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { ambiguousCandidates } from "@/services/citation-index/__fixtures__/ambiguous-candidates";
 import type { Inlines } from "@/services/pandoc/ast";
 import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
@@ -31,6 +32,7 @@ const actions: CitationPopoverActions = {
   onOpenInZotero: vi.fn(),
   onOpenAttachment: vi.fn(),
   onDone: vi.fn(),
+  onSwitchProfile: vi.fn(),
 };
 
 const entry = (
@@ -98,11 +100,7 @@ describe("CitationPopoverContent", () => {
     const container = await render([entry("doe2024")], undefined, {
       kind: "unusable",
       property: "profile",
-      diagnostic: {
-        code: "unknown-literature-note-profile",
-        hint: "Re-stamp the note or recreate the Profile with the same ID.",
-        stamp: "Reading notes (Bk3Qn7XvT2Lp)",
-      },
+      diagnostic: unknownProfileDiagnostic("Reading notes (Bk3Qn7XvT2Lp)"),
       target: "Imported/Research.md",
     });
 
@@ -110,7 +108,14 @@ describe("CitationPopoverContent", () => {
       "[data-citation-popover-profile-error]",
     );
     expect(diagnostic?.textContent).toContain("Reading notes (Bk3Qn7XvT2Lp)");
-    expect(diagnostic?.textContent).toContain("Re-stamp the note");
+    const recovery = diagnostic?.querySelector("button");
+    expect(recovery).not.toBeNull();
+    expect(recovery?.textContent).toBe(m.profile_switch_recovery());
+    recovery?.click();
+    expect(actions.onSwitchProfile).toHaveBeenCalledWith(
+      "Imported/Research.md",
+    );
+    expect(actions.onDone).toHaveBeenCalled();
   });
 
   it("stacks one block per work, in the order the citation names them", async () => {

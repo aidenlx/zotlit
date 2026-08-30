@@ -4,6 +4,7 @@ import type { IconName } from "obsidian";
 import type { MouseEvent, ReactNode } from "react";
 
 import { AmbiguousCandidates } from "@/components/ambiguous-candidates";
+import { Button } from "@/components/obsidian/button";
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
@@ -47,7 +48,9 @@ export function CitationPopoverContent({
 }: CitationPopoverContentProps) {
   return (
     <>
-      {profileFailure && <ProfileFailure failure={profileFailure} />}
+      {profileFailure && (
+        <ProfileFailure failure={profileFailure} actions={actions} />
+      )}
       {note?.length ? (
         <NoteCitation note={note} blocks={blocks} actions={actions} />
       ) : (
@@ -57,7 +60,13 @@ export function CitationPopoverContent({
   );
 }
 
-function ProfileFailure({ failure }: { failure: ProfilePresentationFailure }) {
+function ProfileFailure({
+  failure,
+  actions,
+}: {
+  failure: ProfilePresentationFailure;
+  actions: CitationPopoverActions;
+}) {
   return (
     <div
       className={cn(blockClass, "zt:text-destructive")}
@@ -67,6 +76,15 @@ function ProfileFailure({ failure }: { failure: ProfilePresentationFailure }) {
         stamp: failure.diagnostic.stamp,
         target: failure.target,
       })}
+      <Button
+        data-profile-recovery
+        onClick={() => {
+          actions.onDone();
+          actions.onSwitchProfile(failure.target);
+        }}
+      >
+        {m.profile_switch_recovery()}
+      </Button>
     </div>
   );
 }

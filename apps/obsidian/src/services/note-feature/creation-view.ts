@@ -29,7 +29,10 @@ export async function createNoteInteractively(
 ): Promise<TFile | null> {
   const selection = await deps.noteFeature.resolveCreationProfile(sources);
   if (!selection.shouldAsk)
-    return createNoteWithToast(deps.noteFeature, item, selection.selector);
+    return createNoteWithToast(deps.noteFeature, item, {
+      profile: selection.selector,
+      app: deps.app,
+    });
 
   const [previews, styles] = await Promise.all([
     deps.noteFeature.prepareCreationProfiles(item),
@@ -52,5 +55,5 @@ export async function createNoteInteractively(
     selector: choice.id,
   });
   const preview = previews.find(({ selector }) => selector === choice.id)!;
-  return createNoteTaskWithToast(() => preview.create());
+  return createNoteTaskWithToast(() => preview.create(), { app: deps.app });
 }

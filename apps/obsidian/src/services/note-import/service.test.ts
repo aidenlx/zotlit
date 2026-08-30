@@ -12,6 +12,7 @@ import {
 
 import { renderAnnotations } from "@/lib/annotation-render";
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
+import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { AttachmentImportService } from "@/services/attachment-import/service";
 import type {
@@ -795,14 +796,41 @@ describe("createNoteImporter", () => {
       }),
     ).rejects.toMatchObject({
       name: "NoteImportProfileError",
-      message: expect.stringMatching(/Imported\/Unknown\.md.*Re-stamp/),
+      message: m.notice_imported_note_profile_unknown({
+        stamp: unknown,
+        target: target.path,
+      }),
       diagnostic: {
         code: "unknown-literature-note-profile",
-        hint: expect.stringContaining("Re-stamp"),
+        hint: expect.stringContaining("Switch profile..."),
+        recovery: { action: "switch-profile" },
         stamp: unknown,
         path: target.path,
       },
     });
+    expect(process).not.toHaveBeenCalled();
+  });
+
+  it("keeps the parent Literature Note path and kind when a new child inherits an unavailable Profile", async () => {
+    const parent = makeFile("Literature/Parent.md");
+    const { app, create, process } = makeApp({
+      [parent.path]: { [FIELD_LITERATURE_NOTE_PROFILE]: "Missing" },
+    });
+    vi.mocked(getItemsByID).mockReturnValue([
+      { indexedKey: "PARENT23" },
+    ] as never);
+    const service = makeService(app, { literatureNotes: [parent] });
+    await expect(
+      service.importNote(makeNote(), {
+        client: {} as never,
+        settings: profileSettings(),
+      }),
+    ).rejects.toMatchObject({
+      imported: false,
+      message: m.notice_literature_note_profile_unknown({ stamp: "Missing" }),
+      diagnostic: { path: parent.path, recovery: { action: "switch-profile" } },
+    });
+    expect(create).not.toHaveBeenCalled();
     expect(process).not.toHaveBeenCalled();
   });
 

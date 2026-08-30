@@ -5,6 +5,7 @@ import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { renderProfileRecovery } from "@/lib/profile-recovery";
 import { rerenderReadingViews, sectionRange } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
 import type { CitationIndex } from "@/services/citation-index/service";
@@ -186,6 +187,9 @@ export class CitekeyReading extends Service<void> {
       void this.#citationText.load(file);
       return;
     }
+    renderProfileRecovery(el, this.#app, {
+      path: text.presentationFailure?.target,
+    });
     const stateOf = literalKeyStateOf(text, (citekey) =>
       citekeyState(this.#citationIndex.resolveCitekey(citekey)),
     );

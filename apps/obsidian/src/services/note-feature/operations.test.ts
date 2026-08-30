@@ -2015,7 +2015,8 @@ describe("updateNote", () => {
       duplicateRegionCount: 0,
       diagnostic: {
         code: "unknown-literature-note-profile",
-        hint: expect.stringContaining("Re-stamp"),
+        recovery: { action: "switch-profile" },
+        hint: expect.stringContaining("Switch profile..."),
         stamp: "Reading notes",
         path: "Literature/Root.md",
       },
@@ -2040,6 +2041,7 @@ describe("updateNote", () => {
 
     expect(result.diagnostic).toMatchObject({
       code: "unknown-literature-note-profile",
+      recovery: { action: "switch-profile" },
       stamp: "Books (nope)",
       path: "Literature/Root.md",
     });
@@ -2064,6 +2066,7 @@ describe("updateNote", () => {
 
     expect(result.diagnostic).toMatchObject({
       code: "unknown-literature-note-profile",
+      recovery: { action: "switch-profile" },
       stamp: "Books (Rz9Wm4YfH6Kd)",
       path: "Literature/Root.md",
     });
@@ -2492,7 +2495,8 @@ describe("updateNote", () => {
       duplicateRegionCount: 0,
       diagnostic: {
         code: "unknown-literature-note-profile",
-        hint: expect.stringContaining("Re-stamp"),
+        recovery: { action: "switch-profile" },
+        hint: expect.stringContaining("Switch profile..."),
         stamp: profileId,
         path: "Literature/Root.md",
       },
@@ -2517,7 +2521,8 @@ describe("updateNote", () => {
       duplicateRegionCount: 0,
       diagnostic: {
         code: "unknown-literature-note-profile",
-        hint: expect.stringContaining("Re-stamp"),
+        recovery: { action: "switch-profile" },
+        hint: expect.stringContaining("Switch profile..."),
         stamp: "default",
         path: "Literature/Root.md",
       },
@@ -2630,7 +2635,10 @@ describe("updateNote", () => {
     ] as never);
     const harness = makeUpdateHarness({
       content: "My content",
-      frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: books },
+      frontmatter: {
+        [FIELD_LITERATURE_NOTE_PROFILE]: books,
+        "zotero-key": "ABCD2345",
+      },
       settings: {
         profiles: [
           {
@@ -2653,7 +2661,6 @@ describe("updateNote", () => {
       key === "NOTE0001" ? [imported] : [];
     const plan = await createNoteFeature(harness.deps).prepareProfileSwitch(
       makeFile("Books/My title.md"),
-      "ABC12345",
     );
     expect(plan.current).toMatchObject({ selector: books, label: "Books" });
     expect(plan.importedNotes).toEqual([imported]);
@@ -2673,6 +2680,43 @@ describe("updateNote", () => {
     ]);
     expect(harness.frontmatterMock).not.toHaveBeenCalled();
   });
+
+  it.each(["missing item", "unavailable database"])(
+    "recovers the existing Literature Note with %s",
+    async (failure) => {
+      const target = "Rz9Wm4YfH6Kd" as ProfileId;
+      stubIndexedKeyUpdate(updateContext());
+      const harness = makeUpdateHarness({
+        content: "My preserved reading notes",
+        frontmatter: {
+          "zotero-key": "ABCD2345",
+          [FIELD_LITERATURE_NOTE_PROFILE]: "Missing profile (Qw8Er5Ty2Ui9)",
+        },
+        settings: { profiles: [{ id: target, label: "Papers" }] },
+      });
+      if (failure === "missing item")
+        vi.mocked(getItemsByKey).mockReturnValueOnce([]);
+      else
+        harness.deps.db.acquireRead = async () => {
+          throw new Error("Database unavailable");
+        };
+      const file = makeFile("Literature/Paper.md");
+      const feature = createNoteFeature(harness.deps);
+      const plan = await feature.prepareProfileSwitch(file);
+      expect(plan.importedNotes).toBeNull();
+      expect(plan.current.selector).toBeUndefined();
+      expect(plan.profiles.map(({ selector }) => selector)).toEqual([
+        "default",
+        target,
+      ]);
+      const result = await feature.switchNoteProfile(file, { profile: target });
+      expect(result.diagnostic).toBeUndefined();
+      expect(harness.frontmatter()[FIELD_LITERATURE_NOTE_PROFILE]).toBe(
+        "Papers (Rz9Wm4YfH6Kd)",
+      );
+      expect(harness.content()).toBe("My preserved reading notes");
+    },
+  );
 
   it("re-stamps an opted-in Imported Note family after the Literature Note switch", async () => {
     const oldProfileId = "Bk3Qn7XvT2Lp" as ProfileId;
@@ -2704,6 +2748,52 @@ describe("updateNote", () => {
     expect(harness.frontmatterMock.mock.calls.map(([file]) => file)).toEqual(
       expect.arrayContaining(imported),
     );
+  });
+
+  it("recovers an Imported Note directly with its import folder and no parent Literature Note", async () => {
+    const target = "Rz9Wm4YfH6Kd" as ProfileId;
+    const harness = makeUpdateHarness({
+      content: "Imported body",
+      frontmatter: {
+        "zotero-note-key": "NTE23456",
+        [FIELD_LITERATURE_NOTE_PROFILE]: "Missing profile (Qw8Er5Ty2Ui9)",
+      },
+      settings: {
+        profiles: [
+          {
+            id: target,
+            label: "Papers",
+            bindings: {
+              "note.import-folder": "Imported/Papers",
+              "note.literature-folder": "Literature/Papers",
+            },
+          },
+        ],
+      },
+    });
+    harness.deps.db.acquireRead = async () => {
+      throw new Error("Recovery must not need a parent lookup");
+    };
+    const file = makeFile("Imports/Child.md");
+    harness.deps.app.fileManager.renameFile = async (_file, path) => {
+      file.path = path;
+    };
+    const feature = createNoteFeature(harness.deps);
+    const plan = await feature.prepareProfileSwitch(file);
+    expect(plan.imported).toBe(true);
+    expect(plan.importedNotes).toEqual([]);
+    expect(
+      plan.profiles.find(({ selector }) => selector === target),
+    ).toMatchObject({
+      folder: "Imported/Papers",
+      path: "Imported/Papers/Child.md",
+    });
+    await feature.switchNoteProfile(file, { profile: target, move: true });
+    expect(file.path).toBe("Imported/Papers/Child.md");
+    expect(harness.frontmatter()[FIELD_LITERATURE_NOTE_PROFILE]).toBe(
+      "Papers (Rz9Wm4YfH6Kd)",
+    );
+    expect(harness.content()).toBe("Imported body");
   });
 
   it("does not re-stamp the Imported Note family when the Literature Note switch is refused", async () => {
@@ -3239,6 +3329,7 @@ describe("writeNoteUpdate", () => {
 
     expect(result.diagnostic).toMatchObject({
       code: "unknown-literature-note-profile",
+      recovery: { action: "switch-profile" },
       stamp: "legacy",
     });
     expect(harness.processMock).not.toHaveBeenCalled();
@@ -3543,7 +3634,9 @@ describe("renderAnnotation", () => {
     expect(thrown).toBeInstanceOf(ProfileAnnotationError);
     expect((thrown as ProfileAnnotationError).diagnostic).toMatchObject({
       code: "unknown-literature-note-profile",
+      recovery: { action: "switch-profile" },
       stamp: "Deleted (Nn4Pp6Qq8Rr0)",
+      path: "Literature/Parent.md",
     });
   });
 });

@@ -75,12 +75,15 @@ describe("updateNoteToast", () => {
         duplicateRegionCount: 0,
         diagnostic: {
           code: "unknown-literature-note-profile",
-          hint: "Re-stamp the note or recreate the Profile with the same ID.",
+          hint: "Use Switch profile... to choose an available Profile for this note.",
+          recovery: { action: "switch-profile" },
           stamp: "Reading notes (Bk3Qn7XvT2Lp)",
         },
       }),
     ).toBe(
-      "This literature note uses an unknown profile: Reading notes (Bk3Qn7XvT2Lp). Re-stamp the note or recreate the profile with the same ID.",
+      m.notice_literature_note_profile_unknown({
+        stamp: "Reading notes (Bk3Qn7XvT2Lp)",
+      }),
     );
   });
 
