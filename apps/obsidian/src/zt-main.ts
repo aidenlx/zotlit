@@ -31,6 +31,7 @@ import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { registerCitationStyleNotice } from "./services/pandoc/notices";
 import { reapCslStore } from "./services/pandoc/reap-temps";
 import { registerPandocResolve } from "./services/pandoc/register";
+import { addProfileActions } from "./services/profile/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
@@ -209,6 +210,7 @@ export default class ZotLitPlugin extends Plugin {
     this.addSettingTab(
       new ZotLitSettingTab({
         createProfile: services.createProfile,
+        importProfile: services.importProfile,
         profile: services.profile,
         plugin: this,
         settings: services.settings,
@@ -224,6 +226,7 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
 
+    addProfileActions(this, { importProfile: services.importProfile });
     addDatabaseActions(this, { db: services.db });
     addReleaseActions(this, { release: services.release });
     addIndexedKeyActions(this);
@@ -231,6 +234,7 @@ export default class ZotLitPlugin extends Plugin {
     registerIndexedKeyFileMenu(this);
     addNoteFeatureActions(this, {
       createProfile: services.createProfile,
+      importProfile: services.importProfile,
       app: this.app,
       noteFeature: services.noteFeature,
       zoteroPref: services.zoteroPref,
@@ -255,6 +259,7 @@ export default class ZotLitPlugin extends Plugin {
     });
     registerQuickSwitch(this, {
       createProfile: services.createProfile,
+      importProfile: services.importProfile,
       app: this.app,
       lookup: services.itemLookup,
       noteIndex: services.noteIndex,

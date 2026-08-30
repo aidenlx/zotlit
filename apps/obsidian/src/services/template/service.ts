@@ -329,7 +329,7 @@ export class TemplateService extends Service<void> {
     if (error) throw error;
     const entry = this.#literatureNoteDocuments.get(reference);
     if (!entry) return undefined;
-    return this.#resolveLiteratureDocument(entry, reference, this.#facade);
+    return this.#resolveLiteratureDocument(entry, reference);
   }
 
   /** Compile a draft against the installed partials without installing or writing it. */
@@ -338,15 +338,26 @@ export class TemplateService extends Service<void> {
   ): ResolvedLiteratureNoteTemplate {
     this.#requireLoaded("prepareLiteratureNoteTemplateSource");
     const document = this.#facade.parseLiteratureNoteTemplate(source);
+    return this.#resolveLiteratureDocument(
+      { document, path: "source override" },
+      "source override",
+    );
+  }
+
+  #resolveLiteratureDocument(
+    entry: ReconciledLiteratureNoteTemplate,
+    reference: string,
+  ): ResolvedLiteratureNoteTemplate {
+    const { document, path } = entry;
     if (
-      document.manifest.partials?.some(
-        (partial) => partial.language === "eta",
-      ) &&
+      (document.manifest.language === "eta" ||
+        document.manifest.partials?.some(
+          (partial) => partial.language === "eta",
+        )) &&
       !this.#javascriptTemplatesEnabled
-    )
-      throw new InertTemplateError(
-        m.settings_template_inert_eta({ path: "source override" }),
-      );
+    ) {
+      throw new InertTemplateError(m.settings_template_inert_eta({ path }));
+    }
     const facade = document.manifest.partials
       ? new TemplateFacade({
           transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
@@ -354,25 +365,6 @@ export class TemplateService extends Service<void> {
       : this.#facade;
     for (const partial of document.manifest.partials ?? [])
       facade.define(partial.name, partial.source, partial.language);
-    return this.#resolveLiteratureDocument(
-      { document, path: "source override" },
-      "source override",
-      facade,
-    );
-  }
-
-  #resolveLiteratureDocument(
-    entry: ReconciledLiteratureNoteTemplate,
-    reference: string,
-    facade: TemplateFacade,
-  ): ResolvedLiteratureNoteTemplate {
-    const { document, path } = entry;
-    if (
-      document.manifest.language === "eta" &&
-      !this.#javascriptTemplatesEnabled
-    ) {
-      throw new InertTemplateError(m.settings_template_inert_eta({ path }));
-    }
     const frontmatter = document.manifest.frontmatter
       ? facade.compileManagedFrontmatterEntries(document.manifest.frontmatter, {
           javascript: this.#javascriptTemplatesEnabled,

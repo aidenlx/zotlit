@@ -38,7 +38,7 @@ import {
 
 interface NoteFeatureActionDeps extends Pick<
   InteractiveProfileSwitchDeps,
-  "zoteroPref" | "createProfile"
+  "zoteroPref" | "createProfile" | "importProfile"
 > {
   app: App;
   noteFeature: NoteFeature;

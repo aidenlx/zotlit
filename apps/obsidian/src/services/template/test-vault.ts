@@ -84,6 +84,17 @@ export class MockVault {
     return file;
   }
 
+  async process(
+    file: TFile,
+    transform: (source: string) => string,
+  ): Promise<string> {
+    const source = this.contents.get(file.path);
+    if (source === undefined) throw new Error(`Missing file: ${file.path}`);
+    const result = transform(source);
+    this.modifyFile(file.path, result);
+    return result;
+  }
+
   modifyFile(path: string, content: string): void {
     const file = this.files.get(path);
     if (!file) throw new Error(`Missing file: ${path}`);

@@ -37,6 +37,7 @@ interface ProfilePickerOptions {
   previews?: readonly ProfilePreview[];
   styles?: readonly InstalledCslStyle[];
   onNew?: () => Promise<LiteratureNoteProfileChoice | undefined>;
+  onImport?: () => Promise<void>;
 }
 
 const PROFILE_BADGE_CLASS =
@@ -67,6 +68,7 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
   readonly #choices: LiteratureNoteProfileChoice[];
   readonly #resolve: (choice: LiteratureNoteProfileChoice | undefined) => void;
   readonly #onNew: ProfilePickerOptions["onNew"];
+  readonly #onImport: ProfilePickerOptions["onImport"];
   #settled = false;
 
   constructor(
@@ -79,6 +81,7 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
   ) {
     super(app);
     this.#onNew = options.onNew;
+    this.#onImport = options.onImport;
     this.contentEl.addClass("zt-root");
     this.#choices = options.previews
       ? options.previews.map((preview) =>
@@ -131,7 +134,34 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
 
   override renderSuggestion(choice: ProfilePickerRow, el: HTMLElement): void {
     if ("action" in choice) {
-      el.createDiv({ text: choice.label });
+      const row = el.createDiv({
+        text: choice.label,
+        cls: "zt:flex zt:items-center zt:gap-2",
+      });
+      if (this.#onImport) {
+        const button = row.createEl("button", {
+          text: m.profile_import_from_text_file(),
+          cls: "zt:ml-auto",
+        });
+        button.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ")
+            event.stopPropagation();
+        });
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.#settled = true;
+          this.close();
+          void this.#onImport!().then(
+            () => this.#resolve(undefined),
+            (error) => {
+              logger.error("Failed to open Profile import", { error });
+              new BaseNotice(m.notice_profile_action_failed());
+              this.#resolve(undefined);
+            },
+          );
+        });
+      }
     } else renderProfileChoice(choice, el);
   }
 

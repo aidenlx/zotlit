@@ -36,7 +36,7 @@ import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { CreateProfile } from "@/setting-tab/profiles";
+import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 
 import { citekeyDecorationsChanged, citekeyEditorExtension } from "./extension";
 
@@ -44,6 +44,7 @@ const logger = getLogger("citekey-editor");
 
 export interface CitekeyEditorDeps {
   createProfile: CreateProfile;
+  importProfile: ImportProfile;
   app: App;
   plugin: Pick<Plugin, "registerEditorExtension" | "registerHoverLinkSource">;
   noteIndex: NoteIndex;
@@ -89,6 +90,7 @@ interface CitekeyEditorEvents {
  */
 export class CitekeyEditor extends Service<void> {
   readonly #createProfile;
+  readonly #importProfile;
   readonly #app;
   readonly #plugin;
   readonly #noteIndex;
@@ -117,6 +119,7 @@ export class CitekeyEditor extends Service<void> {
     super();
     this.#app = deps.app;
     this.#createProfile = deps.createProfile;
+    this.#importProfile = deps.importProfile;
     this.#plugin = deps.plugin;
     this.#noteIndex = deps.noteIndex;
     this.#noteFeature = deps.noteFeature;
@@ -398,6 +401,7 @@ export class CitekeyEditor extends Service<void> {
         app: this.#app,
         noteFeature: this.#noteFeature,
         createProfile: this.#createProfile,
+        importProfile: this.#importProfile,
         zoteroPref: this.#zoteroPref,
       },
       zoteroItem,

@@ -392,6 +392,10 @@ export abstract class SuggestModal<T> {
   setPlaceholder(_placeholder: string): void {}
   setInstructions(_instructions: Instruction[]): void {}
   open(): void {}
+  close(): void {
+    this.onClose();
+  }
+  onClose(): void {}
   selectActiveSuggestion(_evt: MouseEvent | KeyboardEvent): void {}
 
   abstract getSuggestions(query: string): T[] | Promise<T[]>;
@@ -875,6 +879,9 @@ export class ExtraButtonComponent {
 }
 
 export class ButtonComponent {
+  setDestructive(): this {
+    return this;
+  }
   buttonEl: HTMLElement = noticeElStub;
 
   /** The label the button carries, as the user reads it. */

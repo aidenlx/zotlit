@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
@@ -142,4 +143,23 @@ it("waits for the shared create dialog when New profile is chosen after native c
     id: books.id,
     label: "New reading profile",
   });
+});
+
+it("imports from the secondary action without choosing a Profile or starting creation", async () => {
+  using opened = vi.spyOn(SuggestModal.prototype, "open");
+  const onImport = vi.fn(async () => {});
+  const onNew = vi.fn(async () => undefined);
+  const choice = chooseLiteratureNoteProfile({} as App, [books], {
+    onImport,
+    onNew,
+  });
+  const modal = opened.mock
+    .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
+  const rows = await modal.getSuggestions("");
+  const el = document.createElement("div");
+  modal.renderSuggestion(rows.at(-1)!, el);
+  el.querySelector("button")!.click();
+  await expect(choice).resolves.toBeUndefined();
+  expect(onImport).toHaveBeenCalledOnce();
+  expect(onNew).not.toHaveBeenCalled();
 });

@@ -1,5 +1,6 @@
 // Settings for the default Profile and file actions for Profile documents.
 import { basename } from "node:path/posix";
+import { Menu } from "obsidian";
 import type { SettingDefinitionItem } from "obsidian";
 
 import { confirm } from "@/lib/confirm";
@@ -18,6 +19,8 @@ import type {
 } from "./context";
 export {
   createProfileCreator,
+  loadProfilePreviewData,
+  type ProfileDialogServices,
   createProfileDialog,
   renderProfileCreatedNotice,
   CreateProfileModal,
@@ -27,6 +30,14 @@ export {
   type ProfileCreationDeps,
   type ProfileCreationData,
 } from "./create-profile-modal";
+export {
+  createProfileImporter,
+  importProfileDialog,
+  ImportProfileModal,
+  profileImportNotice,
+  type ImportProfile,
+  type ImportProfileDeps,
+} from "./import-profile-modal";
 import { duplicateProfileToEditor } from "./duplicate-profile";
 export { duplicateProfileToEditor } from "./duplicate-profile";
 import { confirmProfileDeletion } from "./delete-profile-modal";
@@ -55,6 +66,12 @@ export function literatureNoteProfileItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsControlKey>[] {
   const profiles = ctx.profile.profiles;
+  const diagnostics = [
+    ...Map.groupBy(ctx.profile.diagnostics, ({ path }) => path).values(),
+  ].map(
+    (group) =>
+      group.find(({ code }) => code === "duplicate-profile-id") ?? group[0]!,
+  );
   return [
     {
       type: "page",
@@ -67,19 +84,41 @@ export function literatureNoteProfileItems(
           render: (setting) => {
             setting.addButton((button) =>
               button
-                .setButtonText(m.settings_profile_add())
+                .setButtonText(m.settings_profile_add_menu())
                 .setDisabled(
                   !ctx.profile.loaded ||
                     !!ctx.settings.current?.[
                       "note.template-conversion-pending"
                     ],
                 )
-                .onClick(
-                  () =>
-                    void runAction(async () => {
-                      await ctx.createProfile();
-                    }, ctx),
-                ),
+                .onClick((event) => {
+                  new Menu()
+                    .addItem((item) =>
+                      item.setTitle(m.settings_profile_add()).onClick(
+                        () =>
+                          void runAction(async () => {
+                            await ctx.createProfile();
+                          }, ctx),
+                      ),
+                    )
+                    .addItem((item) =>
+                      item.setTitle(m.profile_import_clipboard()).onClick(
+                        () =>
+                          void runAction(async () => {
+                            await ctx.importProfile({ source: "clipboard" });
+                          }, ctx),
+                      ),
+                    )
+                    .addItem((item) =>
+                      item.setTitle(m.profile_import_file()).onClick(
+                        () =>
+                          void runAction(async () => {
+                            await ctx.importProfile({ source: "file" });
+                          }, ctx),
+                      ),
+                    )
+                    .showAtMouseEvent(event);
+                }),
             );
           },
         },
@@ -113,14 +152,15 @@ export function literatureNoteProfileItems(
             },
           }),
         ),
-        ...ctx.profile.diagnostics.map(
+        ...(diagnostics.some(({ code }) => code === "duplicate-profile-id")
+          ? [{ name: m.settings_profile_duplicate_banner() }]
+          : []),
+        ...diagnostics.map(
           (diagnostic): SettingDefinitionItem<SettingsControlKey> => ({
             name: diagnostic.path,
             desc:
               diagnostic.code === "duplicate-profile-id"
-                ? m.settings_profile_duplicate_id({
-                    paths: diagnostic.paths!.join(", "),
-                  })
+                ? undefined
                 : m.settings_profile_document_invalid({
                     path: diagnostic.path,
                     error:
@@ -134,12 +174,43 @@ export function literatureNoteProfileItems(
                   .setButtonText(m.settings_profile_document_open())
                   .onClick(() => void openDocument(ctx, diagnostic.path)),
               );
+              setting.addButton((button) =>
+                button
+                  .setButtonText(m.settings_profile_delete())
+                  .setDestructive()
+                  .onClick(
+                    () =>
+                      void deleteExcludedProfileDocument(ctx, diagnostic.path),
+                  ),
+              );
             },
           }),
         ),
       ],
     },
   ];
+}
+
+async function deleteExcludedProfileDocument(
+  ctx: SettingTabContext,
+  path: string,
+): Promise<void> {
+  const accepted = await confirm(
+    {
+      title: m.settings_profile_excluded_delete(),
+      content: m.settings_profile_delete_confirm_body(),
+      action: m.settings_profile_delete(),
+      destructive: true,
+    },
+    ctx.app,
+  );
+  if (!accepted) return;
+  await runAction(async () => {
+    if (!ctx.profile.diagnostics.some((diagnostic) => diagnostic.path === path))
+      throw new Error(m.profile_import_changed());
+    const file = ctx.app.vault.getFileByPath(path);
+    if (file) await ctx.app.fileManager.trashFile(file);
+  }, ctx);
 }
 
 async function openDocument(

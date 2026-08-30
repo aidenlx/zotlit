@@ -6,7 +6,11 @@ import type { Item } from "@zotlit/db";
 import { getLogger } from "@/lib/log";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type { CreateProfile, CreatedProfile } from "@/setting-tab/profiles";
+import type {
+  ImportProfile,
+  CreateProfile,
+  CreatedProfile,
+} from "@/setting-tab/profiles";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
 import type { CreationProfileSources, NoteFeature } from "./operations";
@@ -16,6 +20,7 @@ const logger = getLogger("note-feature");
 
 export interface InteractiveCreationDeps {
   createProfile: CreateProfile;
+  importProfile: ImportProfile;
   app: App;
   noteFeature: Pick<
     NoteFeature,
@@ -46,6 +51,9 @@ export async function createNoteInteractively(
     source: selection.source,
     previews,
     styles,
+    onImport: async () => {
+      await deps.importProfile({ indexedKey: item.indexedKey });
+    },
     onNew: async () => {
       created = await deps.createProfile({
         indexedKey: item.indexedKey,

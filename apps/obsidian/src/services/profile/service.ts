@@ -3,7 +3,7 @@ import { customAlphabet } from "nanoid";
 import { join } from "node:path/posix";
 import type { App, TFile } from "obsidian";
 import pLimit from "p-limit";
-import { parseDocument } from "yaml";
+import { parseDocument, stringify as stringifyYaml } from "yaml";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import {
@@ -84,6 +84,32 @@ export interface PreparedProfileCreation {
   reason?: string;
   create(): Promise<LiteratureNoteProfile>;
 }
+
+export interface ProfileImportOptions {
+  inheritCitationStyle?: boolean;
+  folder?: string | null;
+  citationStyle?: string | null;
+  stripFolders?: boolean;
+}
+
+export type PreparedProfileImport = {
+  manifest: LiteratureNoteTemplateManifest;
+  profile: ResolvedProfile;
+  source: string;
+  path: string;
+  import(): Promise<LiteratureNoteProfile>;
+} & (
+  | { kind: "fresh" }
+  | {
+      kind: "replace";
+      held: {
+        label: string;
+        version: string;
+        literatureNotes: number;
+        importedNotes: number;
+      };
+    }
+);
 
 export interface ProfileDiagnostic {
   readonly code: "invalid-profile-document" | "duplicate-profile-id";
@@ -372,6 +398,144 @@ export class ProfileService extends Service {
     if (!entry)
       throw new Error(`Profile document could not be registered: ${path}`);
     return entry;
+  }
+
+  async prepareImport(
+    source: string,
+    options: ProfileImportOptions = {},
+  ): Promise<PreparedProfileImport> {
+    await this.ready;
+    await this.#settle();
+    let parsed;
+    try {
+      parsed = new TemplateFacade().parseLiteratureNoteTemplate(source);
+    } catch (error) {
+      throw new Error(m.profile_import_invalid(), { cause: error });
+    }
+    if (parsed.manifest.id === DEFAULT_PROFILE)
+      throw new Error(m.profile_import_default());
+    if (!isProfileId(parsed.manifest.id))
+      throw new Error(m.settings_profile_id_invalid());
+    const id = parsed.manifest.id;
+    const held = this.#importTarget(id);
+    const manifest = { ...parsed.manifest };
+    if (options.stripFolders) {
+      delete manifest.folder;
+      delete manifest.importFolder;
+    }
+    if (options.folder === null) delete manifest.folder;
+    else if (options.folder !== undefined) manifest.folder = options.folder;
+    if (options.inheritCitationStyle) delete manifest.citationStyle;
+    else if (options.citationStyle !== undefined)
+      manifest.citationStyle = options.citationStyle;
+    const content = `---\n${stringifyYaml(manifest, { lineWidth: 0 })}---\n${parsed.body}`;
+    const folder = this.#deps.settings.current!["template.folder"];
+    const slug = profileSlug(manifest.name);
+    const plain = `zotlit-profile.${slug}.md`;
+    const document =
+      held?.document ??
+      (!slug ||
+      slug === DEFAULT_PROFILE ||
+      this.#deps.app.vault.getAbstractFileByPath(join(folder, plain))
+        ? `zotlit-profile.${slug || "profile"}-${id}.md`
+        : plain);
+    const path = held?.path ?? join(folder, document);
+    const entry: LiteratureNoteProfile = {
+      id,
+      label: manifest.name,
+      document,
+      path,
+      bindings: Object.fromEntries(
+        Object.entries(PROFILE_BINDING_KEYS).flatMap(([key, value]) =>
+          manifest[key as keyof ProfileBindings] === undefined
+            ? []
+            : [[value, manifest[key as keyof ProfileBindings]]],
+        ),
+      ),
+    };
+    const heldSource = held ? await this.getSource(id) : undefined;
+    let decision:
+      | Pick<
+          Extract<PreparedProfileImport, { kind: "replace" }>,
+          "kind" | "held"
+        >
+      | { kind: "fresh" } = { kind: "fresh" };
+    if (held) {
+      await this.#deps.noteIndex.whenIndexed();
+      const notes = this.#deps.noteIndex.getNotesByProfile(id);
+      const heldManifest = new TemplateFacade().parseLiteratureNoteTemplate(
+        heldSource!,
+      ).manifest;
+      decision = {
+        kind: "replace",
+        held: {
+          label: held.label,
+          version: heldManifest.version,
+          literatureNotes: notes.literatureNotes.length,
+          importedNotes: notes.importedNotes.length,
+        },
+      };
+    }
+    logger.debug("Prepared Profile import", { id, path, kind: decision.kind });
+    return {
+      ...decision,
+      manifest,
+      source: content,
+      path,
+      profile: bindProfile(this.#deps.settings.current!, {
+        selector: id,
+        document,
+        entry,
+      }),
+      import: () =>
+        this.#mutate(async () => {
+          await this.#settle();
+          const current = this.#importTarget(id);
+          if (current?.path !== held?.path)
+            throw new Error(m.profile_import_changed());
+          if (held) {
+            const file = this.#deps.app.vault.getFileByPath(path);
+            if (!file) throw new Error(m.profile_import_changed());
+            await this.#deps.app.vault.process(file, (currentSource) => {
+              if (currentSource !== heldSource)
+                throw new Error(m.profile_import_changed());
+              return content;
+            });
+          } else {
+            await ensureParentFolder(this.#deps.app, path);
+            try {
+              await this.#deps.app.vault.create(path, content);
+            } catch (error) {
+              if (isFileExistsError(error))
+                throw new Error(m.profile_import_changed(), { cause: error });
+              throw error;
+            }
+          }
+          await this.#settle();
+          const imported = this.#profiles.find((profile) => profile.id === id);
+          if (!imported) throw new Error(m.profile_import_excluded());
+          logger.debug("Imported Profile document", {
+            id,
+            path,
+            replaced: !!held,
+          });
+          return imported;
+        }),
+    };
+  }
+
+  #importTarget(id: ProfileId): LiteratureNoteProfile | undefined {
+    const matches = this.#deps.template
+      .getLiteratureNoteTemplateStatuses()
+      .filter(
+        (status) =>
+          status.reference.startsWith("zotlit-profile.") &&
+          documentId(status) === id,
+      );
+    const held = this.#profiles.find((profile) => profile.id === id);
+    if (matches.length > 1 || (matches.length && !held))
+      throw new Error(m.profile_import_excluded());
+    return held;
   }
 
   async ejectDefault(): Promise<TFile> {
