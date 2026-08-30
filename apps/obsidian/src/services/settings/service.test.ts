@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { highlightEmoji } from "@/lib/highlight-mapping";
 import { ServiceContainer, ServiceInitError } from "@/services/service-base";
 
 import {
@@ -84,6 +85,55 @@ afterEach(() => {
 });
 
 describe("SettingsService loading", () => {
+  it.each([false, true])(
+    "keeps an existing colored highlight toggle: %s",
+    async (enabled) => {
+      const plugin = new PluginStub({
+        __VERSION__: 9,
+        "note.import-colored-highlights": enabled,
+      });
+      await using service = makeService({ plugin }).service;
+      const settings = await service.loaded;
+
+      expect(settings["note.import-colored-highlights"]).toBe(enabled);
+      expect(
+        highlightEmoji("blue", settings["note.import-highlight-mappings"]),
+      ).toBe("🔵");
+      expect(
+        highlightEmoji("magenta", settings["note.import-highlight-mappings"]),
+      ).toBeNull();
+      expect(plugin.__data).toEqual({
+        __VERSION__: 9,
+        "note.import-colored-highlights": enabled,
+      });
+    },
+  );
+
+  it("keeps custom mappings on disk while the toggle is off", async () => {
+    const { plugin, service } = makeService();
+    await using store = service;
+    await store.ready;
+    const mappings = { blue: { output: "custom", customEmoji: "👩‍🔬" } } as const;
+    store.update({
+      "note.import-colored-highlights": true,
+      "note.import-highlight-mappings": mappings,
+    });
+    store.update({ "note.import-colored-highlights": false });
+    await store.flush();
+
+    await using reloaded = makeService({ plugin }).service;
+    const saved = await reloaded.loaded;
+    expect(saved["note.import-colored-highlights"]).toBe(false);
+    expect(saved["note.import-highlight-mappings"]).toEqual(mappings);
+    reloaded.update({ "note.import-colored-highlights": true });
+    expect(
+      highlightEmoji(
+        "blue",
+        reloaded.current!["note.import-highlight-mappings"],
+      ),
+    ).toBe("👩‍🔬");
+  });
+
   it("returns null current before ready and snapshot after", async () => {
     const { service } = makeService();
     expect(service.current).toBeNull();

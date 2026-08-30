@@ -8,6 +8,7 @@ import {
 } from "@zotlit/templates/constants";
 import type { AutoTrim } from "@zotlit/templates/constants";
 
+import { highlightMappingsSchema } from "@/lib/highlight-mapping";
 import {
   DEFAULT_LIBRARY_SCOPE,
   libraryScopeSchema,
@@ -105,6 +106,7 @@ export const schema = v.object({
   "note.frontmatter-fields": frontmatterFieldsSchema,
   "note.import-folder": v.string(),
   "note.import-colored-highlights": v.boolean(),
+  "note.import-highlight-mappings": highlightMappingsSchema,
   "note.import-annotations-as-template": v.boolean(),
 
   "server.enabled": v.boolean(),
@@ -162,6 +164,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "note.import-folder": "zotero_notes",
   "note.import-colored-highlights": false,
+  "note.import-highlight-mappings": {},
   "note.import-annotations-as-template": false,
   "server.enabled": false,
   "server.port": 9091,

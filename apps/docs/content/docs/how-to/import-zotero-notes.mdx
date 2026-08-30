@@ -180,13 +180,21 @@ If every cited reference within a single citation is unresolvable (no citation k
 
 ## Use colored highlight syntax
 
-Turn on **Settings > {m.settings_page_note_import()} > {m.settings_note_import_colored_highlights_name()}** before you import or re-import a note.
+1. Turn on **Settings > {m.settings_page_note_import()} > {m.settings_note_import_colored_highlights_name()}**.
+2. Open **{m.settings_note_import_highlight_mappings_name()}** to set the output for each Zotero color.
+3. Choose **{m.settings_note_import_highlight_mark()}**, a circle emoji (🔴 🟠 🟡 🟢 🔵 🟣), or **{m.settings_note_import_highlight_custom()}**.
+4. For **{m.settings_note_import_highlight_custom()}**, enter one emoji in the field below. Combined emoji such as 👩‍🔬 are supported.
+5. Import or re-import the note to apply your mappings.
 
-ZotLit converts six colors to Colored Highlight Syntax: red, orange, yellow, green, blue, and purple. A circle emoji at the start of a highlight sets its color:
+By default, red, orange, yellow, green, blue, and purple use matching circle emoji. Magenta, gray, and plum use colored HTML marks. You can change any of these nine mappings.
+
+An emoji mapping adds the selected emoji at the start of Colored Highlight Syntax:
 
 ```markdown
 ==🔵Highlighted text==
 ```
+
+Your theme or another plugin must support the selected emoji to render its highlight color. Choosing a custom emoji does not add that rendering support.
 
 The setting applies to highlights created in Zotero's note editor and inline Annotation Excerpts. Annotation Excerpts keep their Zotero backlinks:
 
@@ -194,9 +202,11 @@ The setting applies to highlights created in Zotero's note editor and inline Ann
 [==🔵Highlighted text==](zotero://...)
 ```
 
-Highlights with unsupported, missing, or custom colors remain HTML. ZotLit also keeps HTML when the text contains `==` because it conflicts with the Markdown delimiter.
+Highlights with unrecognized or missing source colors remain HTML. Empty or invalid custom emoji also use HTML marks. ZotLit keeps HTML when the text contains `==` because it conflicts with the Markdown delimiter.
 
-The setting affects later imports and re-imports. It does not rewrite imported notes immediately. When **{m.settings_note_import_annotations_template_name()}** is on, annotation-template output stays unchanged.
+The setting is off by default. Turning it off uses HTML marks and keeps your saved mappings.
+
+Changes affect later imports and re-imports; existing files stay unchanged until re-imported. When **{m.settings_note_import_annotations_template_name()}** is on, annotation-template output stays unchanged.
 
 ## Render annotations from template
 

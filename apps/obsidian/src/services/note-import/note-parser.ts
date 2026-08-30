@@ -33,7 +33,10 @@ import {
   encodeCalloutAttr,
 } from "@/lib/turndown";
 import { renderColorMark, renderHighlight } from "@/lib/turndown/color-mark";
-import type { ColorMarkKind } from "@/lib/turndown/color-mark";
+import type {
+  ColorMarkKind,
+  HighlightOptions,
+} from "@/lib/turndown/color-mark";
 import type {
   AttachmentImport,
   SourceOrigin,
@@ -53,11 +56,10 @@ const logger = getLogger(["note-import", "note-parser"]);
 
 /** Per-note dependencies wiring every DB/link-backed resolver in
  * {@link createNoteParser}. */
-export interface NoteParserDeps {
+export interface NoteParserDeps extends HighlightOptions {
   client: NodeDatabaseClient;
   /** The note's library, scoping DB citekey and attachment lookups. */
   libraryID: number;
-  useColoredHighlightSyntax: boolean;
   /**
    * The note's embedded `data-citation-items` snapshot, read off the schema
    * container by {@link parseNote} and closed over by the
@@ -123,9 +125,13 @@ export function createNoteParser(
   Turndown: typeof TurndownService,
   deps: NoteParserDeps,
 ): TurndownService {
-  return createNoteTurndown(Turndown, {
+  const highlightOptions: HighlightOptions = {
     useColoredHighlightSyntax: deps.useColoredHighlightSyntax,
-    annotationExcerpt: resolveAnnotationExcerpt(deps.useColoredHighlightSyntax),
+    highlightMappings: deps.highlightMappings,
+  };
+  return createNoteTurndown(Turndown, {
+    ...highlightOptions,
+    annotationExcerpt: resolveAnnotationExcerpt(highlightOptions),
     citation: resolveCitation(deps),
     embeddedImage: resolveEmbeddedImage(deps),
   });
@@ -396,7 +402,7 @@ function citedLibraryID(
  * keeps the converted text.
  */
 function resolveAnnotationExcerpt(
-  useColoredHighlightSyntax: boolean,
+  options: HighlightOptions,
 ): TurndownService.ReplacementFunction {
   return (content, node) => {
     const el = node as Element;
@@ -410,7 +416,7 @@ function resolveAnnotationExcerpt(
     const kind = el.classList.contains("underline") ? "underline" : "highlight";
     return renderAnnotationMark(info, content, {
       kind,
-      useColoredHighlightSyntax,
+      ...options,
     });
   };
 }
@@ -483,15 +489,15 @@ function attachmentPathOrigin(attachment: Attachment): SourceOrigin {
 function renderAnnotationMark(
   info: NoteAnnotation,
   text: string,
-  options: { kind: ColorMarkKind; useColoredHighlightSyntax: boolean },
+  options: { kind: ColorMarkKind } & HighlightOptions,
 ): string {
-  const { kind, useColoredHighlightSyntax } = options;
+  const { kind } = options;
   const color = info.color
     ? { raw: info.color, name: annotationColorToName(info.color) }
     : null;
   const mark =
     kind === "highlight"
-      ? renderHighlight(text, color, useColoredHighlightSyntax)
+      ? renderHighlight(text, color, options)
       : renderColorMark(kind, text, color);
   const href = annotationHref(info);
   return href ? `[${mark}](${href})` : mark;

@@ -258,6 +258,29 @@ describe("Zotero note formats", () => {
     expect(md).not.toContain("==🟡");
   });
 
+  it("applies per-color mappings to note-editor highlights only while enabled", () => {
+    const highlightMappings = {
+      red: { output: "mark", customEmoji: "" },
+      blue: { output: "🟠", customEmoji: "" },
+      magenta: { output: "custom", customEmoji: "👩‍🔬" },
+    } as const;
+    const html =
+      '<p><span style="background-color: #ff666680">Red</span> ' +
+      '<span style="background-color: #2ea8e580">Blue</span> ' +
+      '<span style="background-color: #e56eee80">Magenta</span></p>';
+    const convertWith = (enabled: boolean) =>
+      createNoteTurndown(TurndownService, {
+        useColoredHighlightSyntax: enabled,
+        highlightMappings,
+      }).turndown(html);
+
+    const md = convertWith(true);
+    expect(md).toContain('<mark class="zotlit-hl" data-color="red"');
+    expect(md).toContain("==🟠Blue== ==👩‍🔬Magenta==");
+    expect(convertWith(false)).toBe(convert(html));
+    expect(convertWith(true)).toBe(md);
+  });
+
   it("embedded attachment image keeps its key for later import", () => {
     const md = convert('<p><img data-attachment-key="U5WTYIJK" alt=""></p>');
     expect(md).toContain('data-attachment-key="U5WTYIJK"');
