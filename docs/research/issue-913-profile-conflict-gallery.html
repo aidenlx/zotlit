@@ -2739,7 +2739,7 @@
       // Obsidian confirms an overwrite — no diff preview, no keep-both, no "restore previous"; going
       // back is Obsidian's own File recovery.
 
-      function B_Btn({
+      function B1_Btn({
         label,
         tone = "muted",
         cta = false,
@@ -2768,7 +2768,7 @@
         );
       }
 
-      function B_Field({ label, value, onChange, mono = true, area = false }) {
+      function B1_Field({ label, value, onChange, mono = true, area = false }) {
         const cls = `border-line bg-ground-2 text-ink w-full rounded border px-2 py-[4px] text-[12px] outline-none ${
           mono ? "font-mono" : ""
         }`;
@@ -2795,7 +2795,7 @@
 
       // One choice in the second-edition sheet: a heading and the sentence that states the
       // consequence in notes, not in files.
-      function B_Choice({ label, line, tone = "muted", onClick }) {
+      function B1_Choice({ label, line, tone = "muted", onClick }) {
         return (
           <button
             onClick={onClick}
@@ -2816,14 +2816,14 @@
         );
       }
 
-      function B_bump(v) {
+      function B1_bump(v) {
         const parts = String(v ?? "1.0").split(".");
         const i = parts.length > 1 ? 1 : 0;
         parts[i] = String(Number(parts[i] ?? 0) + 1);
         return parts.join(".");
       }
 
-      function B_partials(body) {
+      function B1_partials(body) {
         return [...(body ?? "").matchAll(/\{%\s*render\s+"([^"]+)"/g)].map(
           (m) => m[1],
         );
@@ -2922,7 +2922,7 @@
         const openShare = (p) => {
           setMenuOpen(false);
           setShare({
-            version: B_bump(p.manifest?.version ?? "1.0"),
+            version: B1_bump(p.manifest?.version ?? "1.0"),
             author: p.manifest?.author ?? state.persona.name,
             description: p.manifest?.description ?? "",
             includeFolders: false,
@@ -2964,7 +2964,7 @@
         const shareSheet = () => {
           const p = profileById(state, sheet.id);
           if (!p) return null;
-          const names = B_partials(p.body);
+          const names = B1_partials(p.body);
           if (!p.manifest) {
             return (
               <Dialog
@@ -3019,13 +3019,13 @@
               title={`Share ${p.name}`}
               body={
                 <div className="flex max-h-[46vh] flex-col gap-1 overflow-y-auto pr-1">
-                  <B_Field
+                  <B1_Field
                     label="Name"
                     value={p.name}
                     onChange={() => {}}
                     mono={false}
                   />
-                  <B_Field
+                  <B1_Field
                     label="Version"
                     value={share.version}
                     onChange={(v) => setShare({ ...share, version: v })}
@@ -3034,13 +3034,13 @@
                     The version tells recipients this is a newer edition. Yours
                     is v{p.manifest.version}.
                   </div>
-                  <B_Field
+                  <B1_Field
                     label="Author"
                     value={share.author}
                     onChange={(v) => setShare({ ...share, author: v })}
                     mono={false}
                   />
-                  <B_Field
+                  <B1_Field
                     label="Description"
                     value={share.description}
                     onChange={(v) => setShare({ ...share, description: v })}
@@ -3153,7 +3153,7 @@
             ? inc.manifest.folder
             : "left out — your folders stay";
           const fields = (inc.manifest.frontmatter ?? []).map((f) => f.key);
-          const names = B_partials(inc.body);
+          const names = B1_partials(inc.body);
           return (
             <Dialog
               width={640}
@@ -3190,7 +3190,7 @@
                           {styleDraft} is not installed — notes render with the
                           built-in style until you add it.
                         </span>
-                        <B_Btn
+                        <B1_Btn
                           label="Install…"
                           onClick={() => actions.installStyle(styleDraft)}
                         />
@@ -3293,9 +3293,9 @@
         const rowActions = (p) => (
           <>
             {p.excluded ? (
-              <B_Btn label="Show files" onClick={() => showFiles(p.id)} />
+              <B1_Btn label="Show files" onClick={() => showFiles(p.id)} />
             ) : (
-              <B_Btn label="Share…" onClick={() => openShare(p)} />
+              <B1_Btn label="Share…" onClick={() => openShare(p)} />
             )}
           </>
         );
@@ -3375,7 +3375,7 @@
                       ID.
                     </div>
                   </div>
-                  <B_Btn label="Share…" onClick={() => openShare(dflt)} />
+                  <B1_Btn label="Share…" onClick={() => openShare(dflt)} />
                 </div>
               }
             />
@@ -3578,7 +3578,7 @@
       // so it never claims to. Going back is restoring the replaced file from the Obsidian
       // trash; there is no in-app "Restore previous" row.
 
-      function B_Btn({
+      function B2_Btn({
         label,
         tone = "muted",
         cta = false,
@@ -3607,7 +3607,7 @@
         );
       }
 
-      function B_Field({ label, value, onChange, mono = true, area = false }) {
+      function B2_Field({ label, value, onChange, mono = true, area = false }) {
         const cls = `border-line bg-ground-2 text-ink w-full rounded border px-2 py-[4px] text-[12px] outline-none ${
           mono ? "font-mono" : ""
         }`;
@@ -3634,7 +3634,7 @@
 
       // One choice in the second-edition sheet: a heading and the sentence that states the
       // consequence in notes, not in files.
-      function B_Choice({ label, line, tone = "muted", onClick }) {
+      function B2_Choice({ label, line, tone = "muted", onClick }) {
         return (
           <button
             onClick={onClick}
@@ -3655,14 +3655,14 @@
         );
       }
 
-      function B_bump(v) {
+      function B2_bump(v) {
         const parts = String(v ?? "1.0").split(".");
         const i = parts.length > 1 ? 1 : 0;
         parts[i] = String(Number(parts[i] ?? 0) + 1);
         return parts.join(".");
       }
 
-      function B_partials(body) {
+      function B2_partials(body) {
         return [...(body ?? "").matchAll(/\{%\s*render\s+"([^"]+)"/g)].map(
           (m) => m[1],
         );
@@ -3726,7 +3726,7 @@
         const openShare = (p) => {
           setMenuOpen(false);
           setShare({
-            version: B_bump(p.manifest?.version ?? "1.0"),
+            version: B2_bump(p.manifest?.version ?? "1.0"),
             author: p.manifest?.author ?? state.persona.name,
             description: p.manifest?.description ?? "",
             includeFolders: false,
@@ -3768,7 +3768,7 @@
         const shareSheet = () => {
           const p = profileById(state, sheet.id);
           if (!p) return null;
-          const names = B_partials(p.body);
+          const names = B2_partials(p.body);
           if (!p.manifest) {
             return (
               <Dialog
@@ -3823,13 +3823,13 @@
               title={`Share ${p.name}`}
               body={
                 <div className="flex max-h-[46vh] flex-col gap-1 overflow-y-auto pr-1">
-                  <B_Field
+                  <B2_Field
                     label="Name"
                     value={p.name}
                     onChange={() => {}}
                     mono={false}
                   />
-                  <B_Field
+                  <B2_Field
                     label="Version"
                     value={share.version}
                     onChange={(v) => setShare({ ...share, version: v })}
@@ -3838,13 +3838,13 @@
                     The version tells recipients this is a newer edition. Yours
                     is v{p.manifest.version}.
                   </div>
-                  <B_Field
+                  <B2_Field
                     label="Author"
                     value={share.author}
                     onChange={(v) => setShare({ ...share, author: v })}
                     mono={false}
                   />
-                  <B_Field
+                  <B2_Field
                     label="Description"
                     value={share.description}
                     onChange={(v) => setShare({ ...share, description: v })}
@@ -3957,7 +3957,7 @@
             ? inc.manifest.folder
             : "left out — your folders stay";
           const fields = (inc.manifest.frontmatter ?? []).map((f) => f.key);
-          const names = B_partials(inc.body);
+          const names = B2_partials(inc.body);
           return (
             <Dialog
               width={640}
@@ -3994,7 +3994,7 @@
                           {styleDraft} is not installed — notes render with the
                           built-in style until you add it.
                         </span>
-                        <B_Btn
+                        <B2_Btn
                           label="Install…"
                           onClick={() => actions.installStyle(styleDraft)}
                         />
@@ -4141,7 +4141,7 @@
                   ) : null}
                   <div className="flex flex-col gap-2">
                     {choices.map((c) => (
-                      <B_Choice key={c.label} {...c} />
+                      <B2_Choice key={c.label} {...c} />
                     ))}
                   </div>
                 </div>
@@ -4167,14 +4167,14 @@
         const rowActions = (p) => (
           <>
             {p.excluded ? (
-              <B_Btn
+              <B2_Btn
                 label="Resolve…"
                 onClick={() =>
                   setSheet({ kind: "second", id: p.id, mode: "collision" })
                 }
               />
             ) : (
-              <B_Btn label="Share…" onClick={() => openShare(p)} />
+              <B2_Btn label="Share…" onClick={() => openShare(p)} />
             )}
           </>
         );
@@ -4259,7 +4259,7 @@
                       ID.
                     </div>
                   </div>
-                  <B_Btn label="Share…" onClick={() => openShare(dflt)} />
+                  <B2_Btn label="Share…" onClick={() => openShare(dflt)} />
                 </div>
               }
             />
@@ -4447,7 +4447,7 @@
       // second-edition sheet with a fourth choice. ZotLit holds no record of which lines the
       // researcher edited, so the sheet shows the diff without claiming to know their edits.
 
-      function B_Btn({
+      function B3_Btn({
         label,
         tone = "muted",
         cta = false,
@@ -4476,7 +4476,7 @@
         );
       }
 
-      function B_Field({ label, value, onChange, mono = true, area = false }) {
+      function B3_Field({ label, value, onChange, mono = true, area = false }) {
         const cls = `border-line bg-ground-2 text-ink w-full rounded border px-2 py-[4px] text-[12px] outline-none ${
           mono ? "font-mono" : ""
         }`;
@@ -4503,7 +4503,7 @@
 
       // One choice in the second-edition sheet: a heading and the sentence that states the
       // consequence in notes, not in files.
-      function B_Choice({ label, line, tone = "muted", onClick }) {
+      function B3_Choice({ label, line, tone = "muted", onClick }) {
         return (
           <button
             onClick={onClick}
@@ -4524,14 +4524,14 @@
         );
       }
 
-      function B_bump(v) {
+      function B3_bump(v) {
         const parts = String(v ?? "1.0").split(".");
         const i = parts.length > 1 ? 1 : 0;
         parts[i] = String(Number(parts[i] ?? 0) + 1);
         return parts.join(".");
       }
 
-      function B_partials(body) {
+      function B3_partials(body) {
         return [...(body ?? "").matchAll(/\{%\s*render\s+"([^"]+)"/g)].map(
           (m) => m[1],
         );
@@ -4597,7 +4597,7 @@
         const openShare = (p) => {
           setMenuOpen(false);
           setShare({
-            version: B_bump(p.manifest?.version ?? "1.0"),
+            version: B3_bump(p.manifest?.version ?? "1.0"),
             author: p.manifest?.author ?? state.persona.name,
             description: p.manifest?.description ?? "",
             includeFolders: false,
@@ -4639,7 +4639,7 @@
         const shareSheet = () => {
           const p = profileById(state, sheet.id);
           if (!p) return null;
-          const names = B_partials(p.body);
+          const names = B3_partials(p.body);
           if (!p.manifest) {
             return (
               <Dialog
@@ -4694,13 +4694,13 @@
               title={`Share ${p.name}`}
               body={
                 <div className="flex max-h-[46vh] flex-col gap-1 overflow-y-auto pr-1">
-                  <B_Field
+                  <B3_Field
                     label="Name"
                     value={p.name}
                     onChange={() => {}}
                     mono={false}
                   />
-                  <B_Field
+                  <B3_Field
                     label="Version"
                     value={share.version}
                     onChange={(v) => setShare({ ...share, version: v })}
@@ -4709,13 +4709,13 @@
                     The version tells recipients this is a newer edition. Yours
                     is v{p.manifest.version}.
                   </div>
-                  <B_Field
+                  <B3_Field
                     label="Author"
                     value={share.author}
                     onChange={(v) => setShare({ ...share, author: v })}
                     mono={false}
                   />
-                  <B_Field
+                  <B3_Field
                     label="Description"
                     value={share.description}
                     onChange={(v) => setShare({ ...share, description: v })}
@@ -4828,7 +4828,7 @@
             ? inc.manifest.folder
             : "left out — your folders stay";
           const fields = (inc.manifest.frontmatter ?? []).map((f) => f.key);
-          const names = B_partials(inc.body);
+          const names = B3_partials(inc.body);
           return (
             <Dialog
               width={640}
@@ -4865,7 +4865,7 @@
                           {styleDraft} is not installed — notes render with the
                           built-in style until you add it.
                         </span>
-                        <B_Btn
+                        <B3_Btn
                           label="Install…"
                           onClick={() => actions.installStyle(styleDraft)}
                         />
@@ -5024,7 +5024,7 @@
                   ) : null}
                   <div className="flex flex-col gap-2">
                     {choices.map((c) => (
-                      <B_Choice key={c.label} {...c} />
+                      <B3_Choice key={c.label} {...c} />
                     ))}
                   </div>
                 </div>
@@ -5059,14 +5059,14 @@
         const rowActions = (p) => (
           <>
             {p.excluded ? (
-              <B_Btn
+              <B3_Btn
                 label="Resolve…"
                 onClick={() =>
                   setSheet({ kind: "second", id: p.id, mode: "collision" })
                 }
               />
             ) : (
-              <B_Btn label="Share…" onClick={() => openShare(p)} />
+              <B3_Btn label="Share…" onClick={() => openShare(p)} />
             )}
             {restored && restored.id === p.id ? (
               <>
@@ -5074,7 +5074,7 @@
                   Replaced v{restored.from} → v{restored.to} · previous file:{" "}
                   {restored.prevPath.split("/").pop()}
                 </span>
-                <B_Btn label="Restore previous" onClick={restorePrevious} />
+                <B3_Btn label="Restore previous" onClick={restorePrevious} />
               </>
             ) : null}
           </>
@@ -5160,7 +5160,7 @@
                       ID.
                     </div>
                   </div>
-                  <B_Btn label="Share…" onClick={() => openShare(dflt)} />
+                  <B3_Btn label="Share…" onClick={() => openShare(dflt)} />
                 </div>
               }
             />
