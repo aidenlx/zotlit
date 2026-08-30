@@ -713,6 +713,7 @@ export class Setting {
     | DropdownComponent
     | ExtraButtonComponent
     | TextComponent
+    | ToggleComponent
   )[] = [];
 
   name = "";
@@ -742,6 +743,14 @@ export class Setting {
     return this.#add(new TextComponent(this.containerEl), cb);
   }
 
+  addTextArea(cb: (text: TextAreaComponent) => unknown): this {
+    return this.#add(new TextAreaComponent(this.containerEl), cb);
+  }
+
+  addToggle(cb: (toggle: ToggleComponent) => unknown): this {
+    return this.#add(new ToggleComponent(this.containerEl), cb);
+  }
+
   addButton(cb: (button: ButtonComponent) => unknown): this {
     return this.#add(new ButtonComponent(this.containerEl), cb);
   }
@@ -755,7 +764,8 @@ export class Setting {
       | ButtonComponent
       | DropdownComponent
       | ExtraButtonComponent
-      | TextComponent,
+      | TextComponent
+      | ToggleComponent,
   >(component: T, cb: (component: T) => unknown): this {
     this.components.push(component);
     cb(component);
@@ -810,6 +820,7 @@ export class DropdownComponent {
 function inputElStub(): HTMLInputElement {
   const input = {
     value: "",
+    addClass: (_className: string) => {},
     placeholder: "",
     validationMessage: "",
     setCustomValidity: (message: string) => {
@@ -848,6 +859,30 @@ export class TextComponent {
 
   /** Test helper: type a value, as the user does. */
   type(value: string): void {
+    this.setValue(value);
+    this.#changed?.(value);
+  }
+}
+
+export class TextAreaComponent extends TextComponent {}
+
+export class ToggleComponent {
+  #value = false;
+  #changed: ((value: boolean) => unknown) | undefined;
+  constructor(readonly containerEl: HTMLElement) {}
+  getValue(): boolean {
+    return this.#value;
+  }
+  setValue(value: boolean): this {
+    this.#value = value;
+    return this;
+  }
+  onChange(callback: (value: boolean) => unknown): this {
+    this.#changed = callback;
+    return this;
+  }
+  /** Test helper: change the checked state, as the user does. */
+  toggle(value: boolean): void {
     this.setValue(value);
     this.#changed?.(value);
   }

@@ -46,6 +46,8 @@ export {
   type ProfileDeletionConsent,
 } from "./delete-profile-modal";
 import { defaultProfileBindingPlaceholder } from "./placeholder";
+import { shareProfile } from "./share-profile-modal";
+export { shareProfile, ShareProfileModal } from "./share-profile-modal";
 
 const logger = getLogger(["setting-tab", "profiles"]);
 type ProfileControlField =
@@ -141,6 +143,14 @@ export function literatureNoteProfileItems(
                         () => duplicateProfileToEditor(ctx, profile.id),
                         ctx,
                       ),
+                  ),
+              );
+              setting.addButton((button) =>
+                button
+                  .setButtonText(m.settings_profile_share())
+                  .onClick(
+                    () =>
+                      void runAction(() => shareProfile(ctx, profile.id), ctx),
                   ),
               );
               setting.addButton((button) =>
@@ -314,6 +324,17 @@ function defaultProfileItems(
       name: m.settings_profile_default_name(),
       desc: m.settings_profile_default_desc(),
       render: (setting) => {
+        setting.addButton((button) =>
+          button
+            .setButtonText(m.settings_profile_share())
+            .setDisabled(
+              !ctx.profile.loaded ||
+                !!ctx.settings.current?.["note.template-conversion-pending"],
+            )
+            .onClick(
+              () => void runAction(() => shareProfile(ctx, "default"), ctx),
+            ),
+        );
         setting.addButton((button) =>
           button
             .setButtonText(m.settings_profile_duplicate())

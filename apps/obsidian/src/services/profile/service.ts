@@ -11,6 +11,7 @@ import {
   synthesizeLegacyLiteratureNoteTemplate,
 } from "@zotlit/templates/facade";
 import type { LiteratureNoteTemplateManifest } from "@zotlit/templates/facade";
+import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import {
@@ -90,6 +91,20 @@ export interface ProfileImportOptions {
   folder?: string | null;
   citationStyle?: string | null;
   stripFolders?: boolean;
+}
+
+export interface ProfileShareOptions {
+  version: string;
+  author: string;
+  description: string;
+  includeFolders?: boolean;
+}
+
+export interface PreparedProfileShare {
+  readonly manifest: LiteratureNoteTemplateManifest;
+  readonly partials: readonly string[];
+  readonly filename: string;
+  render(options: ProfileShareOptions): string;
 }
 
 export type PreparedProfileImport = {
@@ -362,6 +377,56 @@ export class ProfileService extends Service {
         profileSource(await this.getSource(selector), { id, label: copyLabel }),
       );
     });
+  }
+
+  /** Freeze one export identity, effective bindings and partials for a Share sheet. */
+  async prepareShare(selector: ProfileSelector): Promise<PreparedProfileShare> {
+    await this.ready;
+    await this.#settle();
+    const profile = this.resolveProfile(selector);
+    if (!profile)
+      throw new Error(
+        m.settings_profile_source_unavailable({ profile: selector }),
+      );
+    const id =
+      selector === DEFAULT_PROFILE ? (mintId() as ProfileId) : selector;
+    const label = profile.label ?? m.settings_profile_default_name();
+    const bindings = Object.fromEntries(
+      Object.entries(PROFILE_BINDING_KEYS).map(([key, binding]) => [
+        key,
+        profile.bindings[binding],
+      ]),
+    ) as ProfileBindings;
+    const source = await this.#deps.template.exportLiteratureNotePackSource(
+      profileSource(await this.getSource(selector), { id, label, bindings }),
+      { includeFolders: true },
+    );
+    const facade = new TemplateFacade();
+    const { manifest } = facade.parseLiteratureNoteTemplate(source);
+    const partials = manifest.partials?.map(({ name }) => name) ?? [];
+    logger.debug("Prepared Profile sharing", { selector, id, partials });
+    return {
+      manifest,
+      partials,
+      filename: `zotlit-profile.${profileSlug(label)}${selector === DEFAULT_PROFILE ? `-${id}` : ""}.md`,
+      render: (options) => {
+        const version = options.version.trim();
+        if (!version) throw new Error(m.profile_share_version_required());
+        const headerEnd = source.indexOf("\n---", source.indexOf("---") + 3);
+        const header = parseDocument(source.slice(4, headerEnd));
+        header.set("version", version);
+        for (const key of ["author", "description"] as const) {
+          const value = options[key].trim();
+          if (value) header.set(key, value);
+          else header.delete(key);
+        }
+        return exportLiteratureNotePack(
+          `---\n${header.toString()}---${source.slice(headerEnd + 4)}`,
+          [],
+          { includeFolders: options.includeFolders },
+        );
+      },
+    };
   }
 
   #validateLabel(label: string): void {

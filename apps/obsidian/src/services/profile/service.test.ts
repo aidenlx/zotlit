@@ -1,16 +1,15 @@
-import type { App, Plugin } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { TemplateFacade } from "@zotlit/templates/facade";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { NoteIndex } from "@/services/note-index/service";
-import { SettingsService } from "@/services/settings/service";
-import { TemplateService } from "@/services/template/service";
-import { MockVault, PluginStub } from "@/services/template/test-vault";
 
-import { ProfileService } from "./service";
+import { profileServiceFixture as harness } from "./__fixtures__/service";
 
 const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
+const parseLiteratureNoteTemplate = (source: string) =>
+  new TemplateFacade().parseLiteratureNoteTemplate(source);
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
@@ -29,68 +28,95 @@ ${bindings}
 `;
 }
 
-async function harness(files: Record<string, string> = {}) {
-  await using stack = new AsyncDisposableStack();
-  const vault = new MockVault();
-  const metadataListeners = new Map<string, () => void>();
-  for (const [path, source] of Object.entries(files))
-    vault.addFile(path, source);
-  const app = {
-    vault,
-    workspace: { updateOptions: vi.fn() },
-    loadLocalStorage: () => null,
-    metadataCache: {
-      initialized: true,
-      getFileCache: vi.fn(() => null),
-      on: (name: string, callback: () => void) => {
-        metadataListeners.set(name, callback);
-        return { e: { offref: () => metadataListeners.delete(name) } };
-      },
-    },
-    fileManager: {
-      processFrontMatter: vi.fn(),
-      trashFile: async (file: { path: string }) => vault.deleteFile(file.path),
-    },
-  } as unknown as App;
-  const plugin = new PluginStub(app, { __VERSION__: 10 });
-  const settings = stack.use(
-    new SettingsService({
-      plugin,
-      migrateLegacy: (raw) => raw,
-      migrateV1: (raw) => raw,
-      migrateV2: (raw) => raw,
-      migrateV3: (raw) => raw,
-      migrateV4: (raw) => raw,
-      migrateV5: (raw) => raw,
-      migrateV6: (raw) => raw,
-      migrateV7: (raw) => raw,
-      migrateV8: (raw) => raw,
-      migrateV9: (raw) => raw,
-    }),
-  );
-  const template = stack.use(
-    new TemplateService({ app, plugin: plugin as unknown as Plugin, settings }),
-  );
-  const noteIndex = stack.use(
-    new NoteIndex({ app, plugin: plugin as unknown as Plugin }),
-  );
-  const profile = stack.use(
-    new ProfileService({ app, settings, template, noteIndex }),
-  );
-  await profile.ready;
-  const cleanup = stack.move();
-  return {
-    app,
-    vault,
-    settings,
-    template,
-    profile,
-    indexNotes: () => metadataListeners.get("resolved")!(),
-    [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
-  };
-}
-
 describe("ProfileService", () => {
+  it("prepares Default sharing with one fresh identity and frozen effective bindings, without writing", async () => {
+    await using f = await harness();
+    f.settings.updateDefaultLiteratureNoteProfileBindings({
+      "note.literature-folder": "Reading",
+      "note.import-folder": "Imported",
+      "citation.references-style": "http://www.zotero.org/styles/apa",
+    });
+    const before = new Map(f.vault.contents);
+    const plan = await f.profile.prepareShare("default");
+    const options = {
+      version: "1.0.1",
+      author: "Research group",
+      description: "Reading notes",
+    };
+    const output = plan.render(options);
+    const exported = parseLiteratureNoteTemplate(output);
+    expect(exported.manifest.id).not.toBe("default");
+    expect(exported.manifest.id).toHaveLength(12);
+    expect(plan.filename).toBe(
+      `zotlit-profile.default-${exported.manifest.id}.md`,
+    );
+    expect(exported.manifest).toMatchObject({
+      version: "1.0.1",
+      author: "Research group",
+      description: "Reading notes",
+      citationStyle: "http://www.zotero.org/styles/apa",
+    });
+    expect(exported.manifest.folder).toBeUndefined();
+    expect(exported.manifest.importFolder).toBeUndefined();
+    f.settings.updateDefaultLiteratureNoteProfileBindings({
+      "note.literature-folder": "Later",
+    });
+    expect(plan.render(options)).toBe(output);
+    expect(
+      parseLiteratureNoteTemplate(
+        plan.render({ ...options, includeFolders: true }),
+      ).manifest,
+    ).toMatchObject({
+      id: exported.manifest.id,
+      folder: "Reading",
+      importFolder: "Imported",
+    });
+    expect(f.vault.contents).toEqual(before);
+    expect((await f.profile.prepareShare("default")).manifest.id).not.toBe(
+      exported.manifest.id,
+    );
+  });
+
+  it("shares an ejected Default and an installed Profile's own body, partials and identity", async () => {
+    const defaultSource = document("default", "", "Default look");
+    const booksSource = document(BOOKS).replace(
+      "Managed",
+      '{% render "summary" %}',
+    );
+    await using f = await harness({
+      "templates/zotlit-profile.default.md": defaultSource,
+      "templates/zotlit-profile.books.md": booksSource,
+      "templates/zotlit-summary.liquid.md": "Shared partial",
+    });
+    const before = new Map(f.vault.contents);
+    const plan = await f.profile.prepareShare(BOOKS);
+    expect(plan.manifest.id).toBe(BOOKS);
+    expect(plan.partials).toEqual(["summary"]);
+    const output = plan.render({
+      version: "2.0.0",
+      author: "",
+      description: "",
+    });
+    expect(parseLiteratureNoteTemplate(output)).toMatchObject({
+      manifest: {
+        id: BOOKS,
+        version: "2.0.0",
+        partials: [{ name: "summary", source: "Shared partial" }],
+      },
+      body: parseLiteratureNoteTemplate(booksSource).body,
+    });
+    expect(
+      parseLiteratureNoteTemplate(
+        (await f.profile.prepareShare("default")).render({
+          version: "1.0.0",
+          author: "",
+          description: "",
+        }),
+      ).body,
+    ).toBe(parseLiteratureNoteTemplate(defaultSource).body);
+    expect(f.vault.contents).toEqual(before);
+  });
+
   it("discovers direct Profile documents, inherits absent bindings, and preserves explicit null", async () => {
     await using fixture = await harness({
       "templates/zotlit-profile.books.md": document(

@@ -478,7 +478,10 @@ export class TemplateService extends Service<void> {
   }
 
   /** Export one installed document with all reachable partials embedded. */
-  async exportLiteratureNotePack(reference: string): Promise<string> {
+  async exportLiteratureNotePack(
+    reference: string,
+    options: { includeFolders?: boolean } = {},
+  ): Promise<string> {
     this.#requireLoaded("exportLiteratureNotePack");
     const reconciled = this.#literatureNoteDocuments.get(reference);
     if (!reconciled) {
@@ -490,6 +493,18 @@ export class TemplateService extends Service<void> {
     if (!documentFile) {
       throw new Error(`Literature Note Template '${reference}' is unavailable`);
     }
+    return this.exportLiteratureNotePackSource(
+      await this.#app.vault.cachedRead(documentFile),
+      options,
+    );
+  }
+
+  /** Export a Profile snapshot, including a built-in Default that has no file. */
+  async exportLiteratureNotePackSource(
+    source: string,
+    options: { includeFolders?: boolean } = {},
+  ): Promise<string> {
+    this.#requireLoaded("exportLiteratureNotePackSource");
     const partials = (
       await Promise.all(
         [...this.#winners.entries()].map(async ([name, winner]) => {
@@ -512,10 +527,7 @@ export class TemplateService extends Service<void> {
         }),
       )
     ).filter((partial) => partial !== null);
-    return exportLiteratureNotePack(
-      await this.#app.vault.cachedRead(documentFile),
-      partials,
-    );
+    return exportLiteratureNotePack(source, partials, options);
   }
 
   /**
