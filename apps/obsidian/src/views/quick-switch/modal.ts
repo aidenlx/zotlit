@@ -1,15 +1,14 @@
 import { Keymap, Platform, SuggestModal } from "obsidian";
 import type { TFile } from "obsidian";
 
-import { confirm, confirmWithCheckbox } from "@/lib/confirm";
+import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import type { ProfileSelector } from "@/lib/profile-stamp";
 import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
 import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
 import type { SearchHit } from "@/services/item-lookup/service";
+import { createNoteInteractively } from "@/services/note-feature";
 import {
-  createNoteWithToast,
   noteOperationDiagnosticNotice,
   resolveLiteratureNoteWithWarning,
 } from "@/services/note-feature/update-single";
@@ -57,31 +56,15 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
     hit: SearchHit,
     evt: MouseEvent | KeyboardEvent,
   ): Promise<void> {
+    await this.#deps.noteIndex.whenIndexed();
     const existing = resolveLiteratureNoteWithWarning(
       this.#deps.noteIndex.getNotesByItemKey(hit.item.indexedKey),
     );
-    await this.#deps.profile.ready;
-    const profiles = this.#deps.profile.profiles;
-    const selection = existing
-      ? undefined
-      : await this.#deps.noteFeature.resolveCreationProfile();
-    const shouldAsk = selection?.shouldAsk ?? profiles.length > 0;
-    if (!shouldAsk) {
-      await this.#open(
-        existing ?? (await this.#create(hit, selection!.selector)),
-        evt,
-      );
+    if (existing) {
+      await this.#open(existing, evt);
       return;
     }
-
-    const choice = await chooseLiteratureNoteProfile(this.#deps.app, profiles, {
-      preselected: selection?.selector,
-    });
-    if (!choice) return;
-    const file = existing
-      ? await this.#resolveExisting(hit, existing, choice)
-      : await this.#create(hit, choice.id);
-    await this.#open(file, evt);
+    await this.#open(await createNoteInteractively(this.#deps, hit.item), evt);
   }
 
   async #open(
@@ -96,65 +79,6 @@ export class QuickSwitchModal extends SuggestModal<SearchHit> {
       Keymap.isModEvent(evt),
       { active: true },
     );
-  }
-
-  /** Create-arm: no existing note → render one and return it. */
-  async #create(
-    hit: SearchHit,
-    profile: ProfileSelector,
-  ): Promise<TFile | null> {
-    return createNoteWithToast(this.#deps.noteFeature, hit.item, profile);
-  }
-
-  async #resolveExisting(
-    hit: SearchHit,
-    file: TFile,
-    choice: { id: ProfileSelector; label: string },
-  ): Promise<TFile> {
-    await this.#deps.profile.ready;
-    const resolved = this.#deps.profile.profileOf(file);
-    if (resolved.ok && resolved.profile.selector === choice.id) return file;
-    const currentLabel = profileLabel(resolved);
-
-    const options = {
-      title: m.modal_profile_switch_title({ label: choice.label }),
-      content: m.modal_profile_switch_desc({
-        current: currentLabel,
-        requested: choice.label,
-      }),
-      action: m.modal_profile_switch_confirm({ label: choice.label }),
-      cancel: m.modal_profile_switch_keep({ label: currentLabel }),
-      destructive: true,
-    } as const;
-    const importedNotes = await this.#deps.noteFeature.getImportedNotesForItem(
-      hit.item.indexedKey,
-    );
-    const decision =
-      importedNotes.length === 0
-        ? {
-            confirmed: await confirm(options, this.#deps.app),
-            checked: false,
-          }
-        : await confirmWithCheckbox(
-            {
-              ...options,
-              checkbox: m.modal_profile_switch_imported_notes({
-                count: importedNotes.length,
-              }),
-            },
-            this.#deps.app,
-          );
-    if (!decision.confirmed) return file;
-
-    const result = await this.#deps.noteFeature.switchNoteProfile(file, {
-      indexedKey: hit.item.indexedKey,
-      profile: choice.id,
-      importedNotes: decision.checked ? importedNotes : undefined,
-    });
-    if (result.diagnostic) {
-      new BaseNotice(noteOperationDiagnosticNotice(result.diagnostic));
-    }
-    return file;
   }
 }
 

@@ -163,6 +163,18 @@ export interface CreationProfileSelection {
   shouldAsk: boolean;
 }
 
+export interface PreparedCreationProfile {
+  selector: ProfileSelector;
+  label: string | undefined;
+  folder: string;
+  citationStyle: string | null;
+  document: string | undefined;
+  path: string | undefined;
+  unavailable?: string;
+  /** Re-enters the create gate; the preview holds no database lease. */
+  create(): Promise<CreateNoteResult>;
+}
+
 // `UpdateScope` is the wire enum obsidian decodes; re-export it so note-feature
 // consumers keep a stable import path without redeclaring the union.
 export type { UpdateScope };
@@ -200,6 +212,7 @@ export interface CreateNoteOptions {
 
 interface CreateNoteInternalOptions extends CreateNoteOptions {
   onFileCreated?: (file: TFile) => void;
+  preparedPath?: { path: string; canSuffix: boolean };
 }
 
 /**
@@ -249,6 +262,7 @@ export interface NoteFeature {
   resolveCreationProfile(
     sources?: CreationProfileSources,
   ): Promise<CreationProfileSelection>;
+  prepareCreationProfiles(item: Item): Promise<PreparedCreationProfile[]>;
   /** @see createNote */
   createNote(
     item: Item,
@@ -319,7 +333,7 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
 
   const createAtGate = (
     item: Item,
-    options?: CreateNoteOptions,
+    options?: CreateNoteInternalOptions,
   ): Promise<CreateNoteResult> => {
     const { indexedKey } = item;
     const pending = pendingCreates.get(indexedKey);
@@ -384,6 +398,8 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
     ]).then(() => {}),
     createNote: createAtGate,
     resolveCreationProfile: (sources) => resolveCreationProfile(ctx, sources),
+    prepareCreationProfiles: (item) =>
+      prepareCreationProfiles(ctx, item, createAtGate),
     updateNote: (file, options) => updateNote(ctx, file, options),
     switchNoteProfile: (file, options) => switchNoteProfile(ctx, file, options),
     switchImportedNoteProfile: (file, options) =>
@@ -400,6 +416,78 @@ export function createNoteFeature(deps: SyncRenderDeps): NoteFeature {
       renderAnnotationCitation(ctx, annotationItemId),
     on: (event, cb) => events.on(event, cb),
   };
+}
+
+async function prepareCreationProfiles(
+  ctx: NoteFeatureDeps,
+  item: Item,
+  create: (
+    item: Item,
+    options: CreateNoteInternalOptions,
+  ) => Promise<CreateNoteResult>,
+): Promise<PreparedCreationProfile[]> {
+  await Promise.all([
+    ctx.settings.loaded,
+    ctx.profile.ready,
+    ctx.template.ready,
+    ctx.noteIndex.whenIndexed(),
+  ]);
+  using lease = await ctx.db.acquireRead();
+  const itemTags = resolveItemTags(lease.client, item.itemID, new Map());
+  const itemCollections = fetchItemCollections(
+    new CollectionCache(),
+    lease.client,
+    item,
+  );
+  const selectors: ProfileSelector[] = [
+    DEFAULT_PROFILE,
+    ...ctx.profile.profiles.map(({ id }) => id),
+  ];
+  return selectors.flatMap((selector) => {
+    const profile = ctx.profile.resolveProfile(selector);
+    if (!profile) return [];
+    let preparedPath: { path: string; canSuffix: boolean } | undefined;
+    let unavailable: string | undefined;
+    try {
+      const document = resolveProfileDocument(ctx, profile);
+      if (document === null)
+        throw new Error(
+          m.notice_literature_note_template_missing({
+            document: profile.document!,
+          }),
+        );
+      preparedPath = resolveNotePath(ctx, item, {
+        itemTags,
+        itemCollections,
+        settings: profile.settings,
+        document,
+      });
+      logger.debug("Prepared Profile creation path", {
+        indexedKey: item.indexedKey,
+        selector,
+        path: preparedPath.path,
+      });
+    } catch (error) {
+      unavailable = error instanceof Error ? error.message : String(error);
+      logger.debug("Profile creation preview is unavailable", {
+        indexedKey: item.indexedKey,
+        selector,
+        error,
+      });
+    }
+    return [
+      {
+        selector,
+        label: profile.label,
+        folder: profile.bindings["note.literature-folder"],
+        citationStyle: profile.bindings["citation.references-style"],
+        document: profile.document,
+        path: preparedPath?.path,
+        unavailable,
+        create: () => create(item, { profile: selector, preparedPath }),
+      },
+    ];
+  });
 }
 
 async function resolveCreationProfile(
@@ -538,12 +626,14 @@ async function createNote(
     lease.client,
     item,
   );
-  let { path, canSuffix } = resolveNotePath(ctx, item, {
-    itemTags,
-    itemCollections,
-    settings: profile.settings,
-    document,
-  });
+  let { path, canSuffix } =
+    options.preparedPath ??
+    resolveNotePath(ctx, item, {
+      itemTags,
+      itemCollections,
+      settings: profile.settings,
+      document,
+    });
 
   for (let attempt = 0; ; attempt++) {
     let fileCreated = false;

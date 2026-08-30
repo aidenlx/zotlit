@@ -4,28 +4,59 @@ import type { App } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
+import type {
+  CreationProfileSelection,
+  PreparedCreationProfile,
+} from "@/services/note-feature";
+import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import type { LiteratureNoteProfile } from "@/services/profile/service";
 
 export interface LiteratureNoteProfileChoice {
   id: ProfileSelector;
   label: string;
   detail?: string;
+  path?: string;
+  unavailable?: string;
+  preselected?: boolean;
+  source?: CreationProfileSelection["source"];
 }
+
+type ProfilePickerRow =
+  | LiteratureNoteProfileChoice
+  | { action: "new"; label: string };
+
+interface ProfilePickerOptions {
+  preselected?: ProfileSelector;
+  source?: CreationProfileSelection["source"];
+  previews?: readonly PreparedCreationProfile[];
+  styles?: readonly InstalledCslStyle[];
+}
+
+const PROFILE_BADGE_CLASS =
+  "zt:rounded-sm zt:bg-muted zt:px-1.5 zt:py-0.5 zt:text-xs zt:text-muted-foreground";
 
 export function chooseLiteratureNoteProfile(
   app: App,
-  profiles: readonly LiteratureNoteProfile[],
-  { preselected = DEFAULT_PROFILE }: { preselected?: ProfileSelector } = {},
+  profilesOrOptions:
+    | readonly LiteratureNoteProfile[]
+    | (ProfilePickerOptions & {
+        previews: readonly PreparedCreationProfile[];
+      }),
+  options: ProfilePickerOptions = {},
 ): Promise<LiteratureNoteProfileChoice | undefined> {
+  const profiles = "previews" in profilesOrOptions ? [] : profilesOrOptions;
+  const selectedOptions =
+    "previews" in profilesOrOptions ? profilesOrOptions : options;
   return new Promise((resolve) => {
     new LiteratureNoteProfileModal(app, profiles, {
       resolve,
-      preselected,
+      ...selectedOptions,
+      preselected: selectedOptions.preselected ?? DEFAULT_PROFILE,
     }).open();
   });
 }
 
-class LiteratureNoteProfileModal extends SuggestModal<LiteratureNoteProfileChoice> {
+class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
   readonly #choices: LiteratureNoteProfileChoice[];
   readonly #resolve: (choice: LiteratureNoteProfileChoice | undefined) => void;
   #settled = false;
@@ -33,32 +64,54 @@ class LiteratureNoteProfileModal extends SuggestModal<LiteratureNoteProfileChoic
   constructor(
     app: App,
     profiles: readonly LiteratureNoteProfile[],
-    options: {
+    options: ProfilePickerOptions & {
       resolve: (choice: LiteratureNoteProfileChoice | undefined) => void;
       preselected: ProfileSelector;
     },
   ) {
     super(app);
-    this.#choices = [
-      { id: DEFAULT_PROFILE, label: m.settings_profile_default_name() },
-      ...profiles.map(({ id, label, document, bindings }) => ({
-        id,
-        label:
-          profiles.filter((profile) => profile.label === label).length > 1
-            ? `${label} (${document})`
-            : label,
-        detail: m.settings_profile_display({
-          folder:
-            bindings["note.literature-folder"] ?? m.settings_profile_inherit(),
-          style:
-            bindings["citation.references-style"] === null
-              ? m.settings_profile_citation_style_none()
-              : (bindings["citation.references-style"] ??
-                m.settings_profile_inherit()),
-          document,
-        }),
-      })),
-    ];
+    this.contentEl.addClass("zt-root");
+    this.#choices = options.previews
+      ? options.previews.map((preview) => ({
+          id: preview.selector,
+          label: preview.label ?? m.settings_profile_default_name(),
+          detail: m.settings_profile_display({
+            folder: preview.folder || m.modal_profile_root_folder(),
+            style:
+              options.styles?.find(({ id }) => id === preview.citationStyle)
+                ?.title ??
+              preview.citationStyle ??
+              m.settings_citation_references_style_default(),
+            document: preview.document ?? m.settings_profile_document_builtin(),
+          }),
+          path: preview.path,
+          unavailable: preview.unavailable,
+        }))
+      : [
+          { id: DEFAULT_PROFILE, label: m.settings_profile_default_name() },
+          ...profiles.map(({ id, label, document, bindings }) => ({
+            id,
+            label:
+              profiles.filter((profile) => profile.label === label).length > 1
+                ? `${label} (${document})`
+                : label,
+            detail: m.settings_profile_display({
+              folder:
+                bindings["note.literature-folder"] ??
+                m.settings_profile_inherit(),
+              style:
+                bindings["citation.references-style"] === null
+                  ? m.settings_profile_citation_style_none()
+                  : (bindings["citation.references-style"] ??
+                    m.settings_profile_inherit()),
+              document,
+            }),
+          })),
+        ];
+    for (const choice of this.#choices) {
+      choice.preselected = choice.id === options.preselected;
+      choice.source = choice.preselected ? options.source : undefined;
+    }
     const selectedIndex = this.#choices.findIndex(
       ({ id }) => id === options.preselected,
     );
@@ -68,30 +121,64 @@ class LiteratureNoteProfileModal extends SuggestModal<LiteratureNoteProfileChoic
     this.setPlaceholder(m.modal_profile_choose_placeholder());
   }
 
-  override getSuggestions(query: string): LiteratureNoteProfileChoice[] {
+  override getSuggestions(query: string): ProfilePickerRow[] {
     const normalized = query.trim().toLocaleLowerCase();
-    return normalized
+    const profiles = normalized
       ? this.#choices.filter(({ label }) =>
           label.toLocaleLowerCase().includes(normalized),
         )
       : this.#choices;
+    return [...profiles, { action: "new", label: m.modal_profile_new() }];
   }
 
-  override renderSuggestion(
-    choice: LiteratureNoteProfileChoice,
-    el: HTMLElement,
-  ): void {
-    el.createDiv({ text: choice.label });
+  override renderSuggestion(choice: ProfilePickerRow, el: HTMLElement): void {
+    const label = el.createDiv({
+      text: choice.label,
+      cls: "zt:flex zt:items-center zt:gap-2",
+    });
+    if ("action" in choice) {
+      el.createDiv({
+        text: m.modal_profile_new_stub(),
+        cls: "suggestion-note",
+      });
+      return;
+    }
+    if (choice.preselected)
+      label.createSpan({
+        text: m.modal_profile_preselected(),
+        cls: PROFILE_BADGE_CLASS,
+      });
+    const source =
+      choice.source === "last-used"
+        ? m.modal_profile_source_last_used()
+        : choice.source === "headless"
+          ? m.modal_profile_source_companion()
+          : undefined;
+    if (source) label.createSpan({ text: source, cls: PROFILE_BADGE_CLASS });
     if (choice.detail)
       el.createDiv({ text: choice.detail, cls: "suggestion-note" });
+    if (choice.path)
+      el.createDiv({ text: choice.path, cls: "suggestion-note zt:font-mono" });
+    if (choice.unavailable) {
+      el.setAttribute("aria-disabled", "true");
+      el.createDiv({
+        text: choice.unavailable,
+        cls: "suggestion-note zt:text-destructive",
+      });
+    }
   }
 
-  override onChooseSuggestion(choice: LiteratureNoteProfileChoice): void {
+  override onChooseSuggestion(choice: ProfilePickerRow): void {
     this.#settled = true;
-    this.#resolve(choice);
+    this.#resolve(
+      "action" in choice || choice.unavailable ? undefined : choice,
+    );
   }
 
   override onClose(): void {
-    if (!this.#settled) this.#resolve(undefined);
+    // Obsidian closes the modal before delivering the selected suggestion.
+    queueMicrotask(() => {
+      if (!this.#settled) this.#resolve(undefined);
+    });
   }
 }

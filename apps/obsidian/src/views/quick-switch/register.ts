@@ -7,6 +7,7 @@ import type { NoteIndex } from "@/services/note-index/service";
 import { noteKeyFromFrontmatter } from "@/services/note-index/service";
 import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { QuickSwitchModal, switchImportedNoteProfile } from "./modal";
 
@@ -19,11 +20,13 @@ export interface QuickSwitchDeps {
     NoteFeature,
     | "createNote"
     | "resolveCreationProfile"
+    | "prepareCreationProfiles"
     | "getImportedNotesForItem"
     | "switchImportedNoteProfile"
     | "switchNoteProfile"
   >;
   settings: SettingsService;
+  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
 }
 
 export function registerQuickSwitch(

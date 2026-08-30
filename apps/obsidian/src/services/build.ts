@@ -301,6 +301,7 @@ export function buildServices(
       citekeyEditor: ({
         noteIndex,
         noteFeature,
+        zoteroPref,
         db,
         citationText,
         citationPopover,
@@ -313,6 +314,7 @@ export function buildServices(
           plugin,
           noteIndex,
           noteFeature,
+          zoteroPref,
           db,
           citationText,
           citationPopover,

@@ -29,15 +29,14 @@ import type {
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteFeature } from "@/services/note-feature";
-import {
-  createNoteWithToast,
-  resolveLiteratureNoteWithWarning,
-} from "@/services/note-feature/update-single";
+import { createNoteInteractively } from "@/services/note-feature";
+import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { citekeyDecorationsChanged, citekeyEditorExtension } from "./extension";
 
@@ -48,6 +47,7 @@ export interface CitekeyEditorDeps {
   plugin: Pick<Plugin, "registerEditorExtension" | "registerHoverLinkSource">;
   noteIndex: NoteIndex;
   noteFeature: NoteFeature;
+  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   db: DatabaseService;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "peek" | "load" | "on">;
@@ -91,6 +91,7 @@ export class CitekeyEditor extends Service<void> {
   readonly #plugin;
   readonly #noteIndex;
   readonly #noteFeature;
+  readonly #zoteroPref;
   readonly #db;
   readonly #citationText;
   readonly #citationPopover;
@@ -116,6 +117,7 @@ export class CitekeyEditor extends Service<void> {
     this.#plugin = deps.plugin;
     this.#noteIndex = deps.noteIndex;
     this.#noteFeature = deps.noteFeature;
+    this.#zoteroPref = deps.zoteroPref;
     this.#db = deps.db;
     this.#citationText = deps.citationText;
     this.#citationPopover = deps.citationPopover;
@@ -388,7 +390,14 @@ export class CitekeyEditor extends Service<void> {
       return;
     }
 
-    const file = await createNoteWithToast(this.#noteFeature, zoteroItem);
+    const file = await createNoteInteractively(
+      {
+        app: this.#app,
+        noteFeature: this.#noteFeature,
+        zoteroPref: this.#zoteroPref,
+      },
+      zoteroItem,
+    );
     if (!file) {
       logger.debug("Citekey note creation cancelled", {
         indexedKey: item.indexedKey,
