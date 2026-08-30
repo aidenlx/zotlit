@@ -38,8 +38,16 @@ The single authoring object controlling what Literature Notes look like — one 
 _Avoid_: note template (names only the retired `note` half), unified template (vague), literature note (that is the vault file, not its template)
 
 **Literature Note Profile**:
-A named configuration under which ZotLit-written notes are created and updated. It pairs one Literature Note Template document with the vault-local values a template cannot reach — the Literature Note target folder and citation style, and the Imported Note bindings: import folder, colored highlights, and annotations-as-template. A Profile that leaves a binding unset inherits it from the built-in default Profile, whose bindings record is total; no vault-global copies of these values exist. Each Literature Note and each Imported Note belongs to exactly one Profile, recorded by an explicit `zotlit-profile` system frontmatter stamp; a note without a stamp belongs to the default Profile, and writes follow the stamp — membership is never inferred from another note. Profiles never multiply notes: one Zotero Item maps to at most one Literature Note vault-wide.
+A named configuration under which ZotLit-written notes are created and updated. A Profile *is* its Literature Note Template document: the document's manifest carries the Profile ID, the label, and the Profile's bindings — the Literature Note target folder and citation style, and the Imported Note bindings: import folder, colored highlights, and annotations-as-template. A Profile that leaves a binding unset inherits it from the default Profile, whose bindings record is total; no vault-global copies of these values exist. Every Profile document in the template folder is a Profile — nothing else registers, points at, or installs one. Each Literature Note and each Imported Note belongs to exactly one Profile, recorded by an explicit `zotlit-profile` system frontmatter stamp; a note without a stamp belongs to the default Profile, and writes follow the stamp — membership is never inferred from another note. Profiles never multiply notes: one Zotero Item maps to at most one Literature Note vault-wide.
 _Avoid_: profile (bare — collides with the Zotero application profile), preset (OZI's model, deliberately reshaped), import format
+
+**Profile document**:
+The vault file that is a Literature Note Profile: a Literature Note Template document named `zotlit-profile.<slug>.md` in the template folder — the slug is the normalized label, with the Profile ID appended when two labels collide. The `zotlit-profile.` prefix is what makes the file a Profile; the Profile ID is read from the manifest, never from the filename, so renaming the file changes nothing.
+_Avoid_: profile file, profile record, profile settings
+
+**Default Profile**:
+The built-in Literature Note Profile every vault has. Its bindings record is total and lives in plugin settings, and its look is the built-in template until the user ejects `zotlit-profile.default.md` (manifest `id: default`, which carries no bindings); it is the one Profile that is a settings record rather than a Profile document.
+_Avoid_: global settings, vault settings
 
 **Profile stamp**:
 The whole `zotlit-profile` system frontmatter value that records a note's Literature Note Profile. It carries a Profile hint followed by the Profile ID in parentheses; a stamp that is a bare Profile ID is also valid. Every ZotLit write of a stamped note re-emits the stamp with the Profile's current label.

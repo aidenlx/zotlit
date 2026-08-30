@@ -1,4 +1,10 @@
+---
+status: amended by ADR-0031
+---
+
 # The Profile stamp carries a label hint beside the ID
+
+> **Amended by ADR 0031.** The Scope paragraph's ID-only document filename is superseded: a Profile document is `zotlit-profile.<slug of label>.md` (ID appended only on collision), and the Profile ID is read from the manifest, so a rename carries no link consequences for ZotLit. Stamp grammar, ID alphabet, and the Companion URL parameter are unchanged.
 
 ADR 0025 and ADR 0027 record a note's Literature Note Profile in the `zotlit-profile` system frontmatter stamp, and the stamp held only the Profile ID — an opaque 12-character Nano ID. A person reading the note as plain text, in Obsidian's Properties pane or in any editor, cannot tell which Profile `V1StGXR8Z5jd` is, and the one place that could tell them (the settings tab) is exactly where they are not looking.
 

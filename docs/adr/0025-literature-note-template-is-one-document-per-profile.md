@@ -1,6 +1,12 @@
+---
+status: amended by ADR-0031
+---
+
 # The Literature Note Template is one document per Profile
 
-ZotLit v2.1 stored a Literature Note's template as two files — `note` (whole body on create and overwrite) and `content` (the Managed Region body on update) — plus a `filename` slot file and a settings-held frontmatter field list. An earlier edition of this ADR unified the pair at the presentation layer only, because zero migration was a hard constraint (aidenlx/zotlit#839). Adopting Literature Note Profiles lifted that constraint: each Profile carries its own template set, a per-Profile file pair would multiply the fragment files, and a one-time format migration was accepted (aidenlx/zotlit#841 grilling). We decided the Literature Note Template becomes **one template document per Literature Note Profile**: manifest frontmatter (identity and configuration defaults, including the filename rule) plus a note body containing the Managed Block.
+> **Amended by ADR 0031.** The document is the Profile itself, not a file a Profile points at: its manifest carries the Profile ID, label, and the five bindings as values, and the Template Pack install lifecycle is deleted — a Profile document is discovered in place, never installed.
+
+ZotLit v2.1 stored a Literature Note's template as two files — `note` (whole body on create and overwrite) and `content` (the Managed Region body on update) — plus a `filename` slot file and a settings-held frontmatter field list. An earlier edition of this ADR unified the pair at the presentation layer only, because zero migration was a hard constraint (aidenlx/zotlit#839). Adopting Literature Note Profiles lifted that constraint: each Profile carries its own template set, a per-Profile file pair would multiply the fragment files, and a one-time format migration was accepted (aidenlx/zotlit#841 grilling). We decided the Literature Note Template becomes **one template document per Literature Note Profile**: manifest frontmatter (identity and configuration defaults, including the filename rule — since ADR 0031, the Profile ID, label, and bindings themselves) plus a note body containing the Managed Block.
 
 ## The Managed Block
 
