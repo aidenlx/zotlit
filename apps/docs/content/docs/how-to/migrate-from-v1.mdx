@@ -9,15 +9,16 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 import { zotlitLegacyUrl } from "@/lib/shared";
 
-ZotLit v2 replaces v1 in place. Settings migrate automatically on first load, but if you customized your Eta templates, they are not loaded until you rename them, update the data vocabulary, and enable the JavaScript Templates gate. Notes you created with v1 still appear in the index. Overwrite them when you want incremental body updates.
+ZotLit v2 replaces v1 in place. Settings migrate automatically on first load, but if you customized your Eta templates, they are not loaded until you rename them, update the data vocabulary, and enable the {m.settings_template_js_enable_name()} gate. Notes you created with v1 still appear in the index. Overwrite them when you want incremental body updates.
 
 <Callout type="info" title="What needs your attention">
 
-- **Required to restore note generation:** Rename template files to the v2 pattern, replace `it.*` with `zt.*`, and [enable the JavaScript Templates gate](/docs/how-to/enable-javascript-templates). Without these steps, v2 falls back to built-in defaults that do not reflect your customizations.
+- **Required to restore note generation:** Rename template files to the v2 pattern, replace `it.*` with `zt.*`, and [enable the {m.settings_template_js_enable_name()} gate](/docs/how-to/enable-javascript-templates). Without these steps, v2 falls back to built-in defaults that do not reflect your customizations.
 - **Automatic (no action):** Settings, including folder paths and custom frontmatter fields. Migrated on first load.
-- **Optional:** Run <Command inline>ZotLit: Overwrite literature note</Command> on v1 notes to add the managed region for incremental body updates.
+- **Optional:** Run <Command inline name={m.command_overwrite_note_name()} /> on v1 notes to add the managed region for incremental body updates.
 
 </Callout>
 
@@ -51,18 +52,18 @@ What carries over:
 - Embedded template sources (such as the filename template body) are not migrated because v2 uses a different data vocabulary (`zt.*` instead of v1's `it.*`). V2 reads templates from vault files instead.
 
 <Callout type="info" title="JavaScript-language fields need the gate">
-  Custom frontmatter fields migrated as JavaScript require the **JavaScript
-  Templates** gate to evaluate. Until you enable it, those fields are skipped
-  during note updates with a notice listing the skipped fields. See [Enable
-  JavaScript templates](/docs/how-to/enable-javascript-templates) for the opt-in
-  steps.
+  Custom frontmatter fields migrated as JavaScript require the
+  <strong>{m.settings_template_js_enable_name()}</strong> gate to evaluate.
+  Until you enable it, those fields are skipped during note updates with a
+  notice listing the skipped fields. See [Enable JavaScript
+  templates](/docs/how-to/enable-javascript-templates) for the opt-in steps.
 </Callout>
 
 ## Migrate templates
 
 V2 template files use the naming pattern `zotlit-<name>.(liquid|eta).md`. V1 files used the `zt-` prefix (for example, `zt-note.eta.md`) and do not match the v2 pattern. Until you rename them, v2 does not load your custom templates and falls back to the built-in defaults.
 
-V1 templates were written in Eta (JavaScript). In v2, Eta templates require the **JavaScript Templates** gate: a per-device opt-in stored outside synced settings, disabled by default. Until the gate is on:
+V1 templates were written in Eta (JavaScript). In v2, Eta templates require the **{m.settings_template_js_enable_name()}** gate: a per-device opt-in stored outside synced settings, disabled by default. Until the gate is on:
 
 - Eta template files (`.eta.md`) that match the v2 naming pattern are inert. A notice names the file and explains that JavaScript templates are disabled.
 - JavaScript-language frontmatter fields are also inert. A notice lists the skipped fields when you update a note.
@@ -71,20 +72,22 @@ If you customized your Eta templates, these three steps are required to restore 
 
 1. **Rename** your template files to the v2 pattern (`zt-` to `zotlit-`, `annots` to `content`).
 2. **Replace `it.*` with `zt.*`** throughout your templates.
-3. **Enable the JavaScript Templates gate** on each device where you use ZotLit.
+3. **Enable the {m.settings_template_js_enable_name()} gate** on each device where you use ZotLit.
 
 Follow [Migrate v1 Eta templates](/docs/how-to/migrate-v1-eta-templates) for the full procedure, including field-by-field mappings and an optional Liquid conversion path.
 
 <Callout type="info" title="Never customized your templates?">
   If you used only the v1 defaults, no action is needed. V2 ships updated
-  defaults in Liquid that work without the JavaScript Templates gate.
+  defaults in Liquid that work without the{" "}
+  {m.settings_template_js_enable_name()}
+  gate.
 </Callout>
 
 ## Annotations in imported notes
 
 When you import a Zotero note into your vault, v2 converts the annotation content already in the note directly. Highlights and underlines become inline marks with a `zotero://` backlink, image excerpts become embeds, and your typed comments are kept as written. If you edited an annotation paragraph inside Zotero before importing, those edits are preserved. V1 re-rendered every annotation through the annotation template instead, which discarded in-place edits.
 
-To restore v1-style rendering, open **Settings &rarr; ZotLit &rarr; Note import** and enable **Render annotations from template**. The toggle is off by default. When on, annotation paragraphs are re-rendered through your annotation template with data pulled fresh from Zotero.
+To restore v1-style rendering, open **Settings &rarr; ZotLit &rarr; {m.settings_page_note_import()}** and enable **{m.settings_note_import_annotations_template_name()}**. The toggle is off by default. When on, annotation paragraphs are re-rendered through your annotation template with data pulled fresh from Zotero.
 
 <Callout
   type="warn"
@@ -98,7 +101,7 @@ To restore v1-style rendering, open **Settings &rarr; ZotLit &rarr; Note import*
 
 ## Refresh v1 notes [#refresh-v1-notes]
 
-V2 recognizes your existing literature notes by their `zotero-key` frontmatter value. They appear in the note index, and <Command inline>ZotLit: Update literature note metadata</Command> refreshes their frontmatter. However, v1 notes lack a managed region (the `%%zt-managed%%` markers that v2 uses to separate generated content from your writing), so incremental body updates cannot target them.
+V2 recognizes your existing literature notes by their `zotero-key` frontmatter value. They appear in the note index, and <Command inline name={m.command_update_note_metadata_name()} /> refreshes their frontmatter. However, v1 notes lack a managed region (the `%%zt-managed%%` markers that v2 uses to separate generated content from your writing), so incremental body updates cannot target them.
 
 Adding the managed region is optional. You do not need to do it immediately or for every note. When you are ready:
 
@@ -114,15 +117,15 @@ Adding the managed region is optional. You do not need to do it immediately or f
 
     Open the command palette and run:
 
-    <Command>ZotLit: Overwrite literature note</Command>
+    <Command name={m.command_overwrite_note_name()} />
 
-    A confirmation modal appears. Select **Overwrite** to proceed. ZotLit regenerates the entire note body from the current note template. Managed frontmatter keys are refreshed; other frontmatter keys you added are kept.
+    A confirmation modal appears. Select **{m.modal_overwrite_note_confirm()}** to proceed. ZotLit regenerates the entire note body from the current note template. Managed frontmatter keys are refreshed; other frontmatter keys you added are kept.
 
   </Step>
   <Step>
     ### Verify the managed region
 
-    After overwriting, the note contains `%%zt-managed%%` markers. It now responds to <Command inline>ZotLit: Update literature note</Command> for incremental updates going forward.
+    After overwriting, the note contains `%%zt-managed%%` markers. It now responds to <Command inline name={m.command_update_note_name()} /> for incremental updates going forward.
 
   </Step>
 </Steps>

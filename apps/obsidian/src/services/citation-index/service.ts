@@ -244,6 +244,7 @@ export class CitationIndex extends Service<void> {
    */
   async getDocumentCitationSet(file: TFile): Promise<DocumentCitationSet> {
     await this.ready;
+    this.#revalidateIfDegraded();
     const { citekeys, links } = this.#admitted(
       file,
       await this.#coverFile(file),
@@ -437,12 +438,26 @@ export class CitationIndex extends Service<void> {
    * synchronously: no Item, exactly one, or several candidates.
    */
   resolveCitekey(citekey: string): CitekeyResolution {
+    this.#revalidateIfDegraded();
     return this.#snapshot.resolve(citekey);
   }
 
   /** The native citation key of an Item — the wikilink display text. */
   citekeyOf(indexedKey: string): string | null {
+    this.#revalidateIfDegraded();
     return this.#snapshot.citekeyOf(indexedKey);
+  }
+
+  /**
+   * A degraded snapshot serves whatever its maps hold, and nothing else
+   * retries for it: the triggers are all change events, which an idle library
+   * never fires. A read is therefore the moment it can heal — answer stale
+   * now, rebuild in the background. Single-flight: the rebuild's own
+   * `resolving` state suppresses the next trigger until it settles.
+   */
+  #revalidateIfDegraded(): void {
+    if (this.#stopped || this.#resolution !== "degraded") return;
+    void this.#rebuildSnapshot();
   }
 
   /**

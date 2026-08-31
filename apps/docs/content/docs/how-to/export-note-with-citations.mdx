@@ -9,6 +9,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
 Export the active Markdown note as a Word document or web page with formatted citations and a bibliography.
 
@@ -19,7 +20,7 @@ For a guided comparison with native Pandoc, follow [Build a Pandoc citation work
 You need:
 
 - Obsidian Desktop with a Markdown note open.
-- The **Pandoc engine** installed under **Settings > ZotLit > Citations > Formatting**.
+- The **{m.settings_citation_engine_name()}** installed under **Settings > ZotLit > {m.settings_page_citations()} > {m.settings_citation_references_heading()}**.
 - Zotero running so ZotLit can collect bibliography data.
 
 ZotLit uses Better BibTeX when it is available. Otherwise, it uses the Zotero local API.
@@ -32,7 +33,7 @@ ZotLit uses Better BibTeX when it is available. Otherwise, it uses the Zotero lo
 
     Open the command palette and run:
 
-    <Command>ZotLit: Export note with citations</Command>
+    <Command name={m.command_pandoc_export_name()} />
 
   </Step>
   <Step>
@@ -40,9 +41,9 @@ ZotLit uses Better BibTeX when it is available. Otherwise, it uses the Zotero lo
 
     Review these fields:
 
-    - **Format** starts with **Word document**. Select **Web page** for HTML output.
-    - **Citation style** starts with your current **Citation and references style**.
-    - **Save to** starts with the source note's path and filename stem.
+    - **{m.pandoc_export_format_name()}** starts with **{m.pandoc_export_format_docx()}**. Select **{m.pandoc_export_format_html()}** for HTML output.
+    - **{m.pandoc_export_style_name()}** starts with your current **{m.settings_citation_references_style_name()}**.
+    - **{m.pandoc_export_destination_name()}** starts with the source note's path and filename stem.
 
     Change the format, style, or destination as needed.
 
@@ -50,7 +51,7 @@ ZotLit uses Better BibTeX when it is available. Otherwise, it uses the Zotero lo
   <Step>
     ### Run the export
 
-    Select **Export**. ZotLit resolves the citations, retrieves bibliography data, and converts the complete note.
+    Select **{m.pandoc_export_confirm()}**. ZotLit resolves the citations, retrieves bibliography data, and converts the complete note.
 
   </Step>
 </Steps>
@@ -63,10 +64,10 @@ Export leaves the source note unchanged. The bibliography is generated in the ex
 
 Built-in export uses its own citation membership. The following settings do not change export content:
 
-- **Pandoc citations**
-- **Wikilink citations**
-- **Show formatted citations**
-- **Open citations as links**
+- **{m.settings_citation_pandoc_citations_name()}**
+- **{m.settings_citation_wikilink_citations_name()}**
+- **{m.settings_citation_show_formatted_name()}**
+- **{m.settings_citation_open_as_links_name()}**
 
 All wikilinks to Literature Notes are export members. A valid Citation Fragment such as `#cite:locator=33` adds its citation details.
 
@@ -79,22 +80,22 @@ Literal Pandoc keys such as `@doe2024` also work. Each key must exist in the bib
 
 ## Fix an export error
 
-| Symptom                                                                                                       | Recovery                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| ZotLit asks you to install the Pandoc engine                                                                  | Open **Settings > ZotLit > Citations > Formatting**, then install the engine.                                                |
-| A `#cite:` fragment is malformed, points to a note that is not a Literature Note, or has an unresolved target | Correct the fragment or link target.                                                                                         |
-| ZotLit cannot read the Zotero database                                                                        | Check the **Zotero database** settings, then run the export again.                                                           |
-| Zotero holds no item for a Literature Note                                                                    | Restore the missing item or update the Literature Note's `zotero-key`.                                                       |
-| Better BibTeX holds no citation key for a Literature Note                                                     | Assign a citation key in Better BibTeX, then run the export again.                                                           |
-| ZotLit asks you to start Zotero                                                                               | Start Zotero and keep it running during export.                                                                              |
-| The Zotero local API is disabled                                                                              | In Zotero, open **Settings > Advanced** and enable **Allow other applications on this computer to communicate with Zotero**. |
-| Better BibTeX or the Zotero local API refuses the request                                                     | Check the named source in the error, then retry after it responds normally.                                                  |
-| Pandoc stops the conversion                                                                                   | Correct the source or style problem named in the error, then run the export again.                                           |
-| ZotLit cannot write the exported document                                                                     | Select a writable destination and run the export again.                                                                      |
+| Symptom                                                                                                       | Recovery                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| ZotLit asks you to install the Pandoc engine                                                                  | Open **Settings > ZotLit > {m.settings_page_citations()} > {m.settings_citation_references_heading()}**, then install the engine. |
+| A `#cite:` fragment is malformed, points to a note that is not a Literature Note, or has an unresolved target | Correct the fragment or link target.                                                                                              |
+| ZotLit cannot read the Zotero database                                                                        | Check the **{m.settings_page_database()}** settings, then run the export again.                                                   |
+| Zotero holds no item for a Literature Note                                                                    | Restore the missing item or update the Literature Note's `zotero-key`.                                                            |
+| Better BibTeX holds no citation key for a Literature Note                                                     | Assign a citation key in Better BibTeX, then run the export again.                                                                |
+| ZotLit asks you to start Zotero                                                                               | Start Zotero and keep it running during export.                                                                                   |
+| The Zotero local API is disabled                                                                              | In Zotero, open **Settings > Advanced** and enable **Allow other applications on this computer to communicate with Zotero**.      |
+| Better BibTeX or the Zotero local API refuses the request                                                     | Check the named source in the error, then retry after it responds normally.                                                       |
+| Pandoc stops the conversion                                                                                   | Correct the source or style problem named in the error, then run the export again.                                                |
+| ZotLit cannot write the exported document                                                                     | Select a writable destination and run the export again.                                                                           |
 
 Each failure stops the complete export. ZotLit does not write a document with a partial bibliography.
 
-For conversion with a user-installed Pandoc CLI, see [Native Pandoc workflow](/docs/reference/settings#native-pandoc). That workflow uses the Pandoc integration pair instead of this command.
+For conversion with a user-installed Pandoc CLI, see [Native Pandoc workflow](/docs/reference/settings#native-pandoc). That workflow uses the {m.settings_citation_pandoc_files_name()} instead of this command.
 
 ## See also
 

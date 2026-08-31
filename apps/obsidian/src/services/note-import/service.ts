@@ -557,6 +557,7 @@ async function writeNote(
         run.settings,
         "note.import-colored-highlights",
       ),
+      highlightMappings: run.settings["note.import-highlight-mappings"],
       attachmentImport: batch,
       renderAnnotationParagraph,
     });

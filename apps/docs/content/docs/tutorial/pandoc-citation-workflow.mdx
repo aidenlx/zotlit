@@ -8,6 +8,7 @@ updated: "2.1.0"
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
 This tutorial takes one note through ZotLit's built-in export and a native Pandoc export.
 
@@ -37,7 +38,7 @@ Enable Obsidian's **Command line interface** and keep Obsidian open during the n
 
     Open each item and replace its **Citation Key** with the value in the table.
 
-    In Obsidian, run <Command inline>ZotLit: Open literature note quick switcher</Command>. Select each sample item to create its Literature Note.
+    In Obsidian, run <Command inline name={m.command_open_lit_note_name()} />. Select each sample item to create its Literature Note.
 
     Confirm that ZotLit creates `zotlitTutorialIoannidis2005.md` and `zotlitTutorialNosek2015.md`. Create one ordinary Obsidian note named `Reading plan`.
 
@@ -47,11 +48,11 @@ Enable Obsidian's **Command line interface** and keep Obsidian open during the n
   <Step>
     ### Configure both citation sources
 
-    Open **Settings > ZotLit > Citations**. Turn on **Pandoc citations** and **Wikilink citations**.
+    Open **Settings > ZotLit > {m.settings_page_citations()}**. Turn on **{m.settings_citation_pandoc_citations_name()}** and **{m.settings_citation_wikilink_citations_name()}**.
 
-    Under **Formatting**, install the **Pandoc engine**. This managed engine formats the References Sidebar and powers built-in export.
+    Under **{m.settings_citation_references_heading()}**, install the **{m.settings_citation_engine_name()}**. This managed engine formats the {m.references_view_name()} Sidebar and powers built-in export.
 
-    Select **APA Style 7th edition** as the **Citation and references style**. Its author-date output makes locators and author modes easy to compare.
+    Select **APA Style 7th edition** as the **{m.settings_citation_references_style_name()}**. Its author-date output makes locators and author modes easy to compare.
 
   </Step>
   <Step>
@@ -59,9 +60,9 @@ Enable Obsidian's **Command line interface** and keep Obsidian open during the n
 
     Create a Markdown note named `Citation workflow check`. Run:
 
-    <Command>ZotLit: Set citation presentation</Command>
+    <Command name={m.command_set_citation_presentation_name()} />
 
-    Select **APA Style 7th edition** and set **Document language** to `en-US`. Select **Save** so the native workflow uses this note's style too.
+    Select **APA Style 7th edition** and set **{m.citation_presentation_language_name()}** to `en-US`. Select **{m.citation_presentation_confirm()}** so the native workflow uses this note's style too.
 
     Paste this body into the note:
 
@@ -91,9 +92,9 @@ Enable Obsidian's **Command line interface** and keep Obsidian open during the n
 
     Switch to Live Preview, then run:
 
-    <Command>ZotLit: Open references</Command>
+    <Command name={m.command_open_references_view_name()} />
 
-    The References Sidebar shows two entries. Each source appears once, even though the note cites it several times.
+    The {m.references_view_name()} Sidebar shows two entries. Each source appears once, even though the note cites it several times.
 
     Check the rendered note and sidebar:
 
@@ -113,9 +114,9 @@ Enable Obsidian's **Command line interface** and keep Obsidian open during the n
 
     Run:
 
-    <Command>ZotLit: Export note with citations</Command>
+    <Command name={m.command_pandoc_export_name()} />
 
-    Keep **Format** set to **Word document**, choose your `ZotLit Pandoc tutorial` folder, and select **Export**. Open the resulting `.docx` file and repeat the checks from the References Sidebar.
+    Keep **{m.pandoc_export_format_name()}** set to **{m.pandoc_export_format_docx()}**, choose your `ZotLit Pandoc tutorial` folder, and select **{m.pandoc_export_confirm()}**. Open the resulting `.docx` file and repeat the checks from the {m.references_view_name()} Sidebar.
 
     Built-in export uses Better BibTeX to fetch current bibliography data from Zotero.
 
@@ -123,7 +124,7 @@ Enable Obsidian's **Command line interface** and keep Obsidian open during the n
   <Step>
     ### Save the version-matched integration pair
 
-    Open **Settings > ZotLit > Citations > Formatting**. Under **Native Pandoc workflow**, find **Pandoc integration pair** and select **Save integration files**.
+    Open **Settings > ZotLit > {m.settings_page_citations()} > {m.settings_citation_references_heading()}**. Under **{m.settings_citation_native_pandoc_heading()}**, find **{m.settings_citation_pandoc_files_name()}** and select **{m.settings_citation_pandoc_files_save()}**.
 
     Choose your `ZotLit Pandoc tutorial` folder. ZotLit saves `zotlit-cite.lua` and `zotlit.yaml` there. The pair matches your installed ZotLit version; save a fresh pair after each ZotLit update.
 
@@ -174,7 +175,7 @@ You now have one Markdown note that you can review in Obsidian and export throug
 | Built-in export succeeds, but native Pandoc warns that a citation is not found in the bibliography              | Add the missing item to the Better BibTeX export source, update `references.json`, and run the command again. |
 | Native output changes after a ZotLit update or the filter reports a contract mismatch                           | Save both integration files again and replace the old pair together.                                          |
 
-For native error-code definitions, open **Pandoc CLI guide** under **Settings > ZotLit > Citations > Formatting**. The [Settings reference](/docs/reference/settings#native-pandoc) identifies the local guide and integration controls.
+For native error-code definitions, open **{m.settings_citation_pandoc_guide_name()}** under **Settings > ZotLit > {m.settings_page_citations()} > {m.settings_citation_references_heading()}**. The [Settings reference](/docs/reference/settings#native-pandoc) identifies the local guide and integration controls.
 
 ## Next steps
 

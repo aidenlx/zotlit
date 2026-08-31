@@ -9,17 +9,19 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
 Custom v1 Eta templates need renamed files and updated variables to run in v2. If you never customized your templates (using only the defaults), no action is needed. V2 ships updated defaults.
 
 Two migration paths:
 
-- **Keep Eta**: rename files, update the data vocabulary, enable the [JavaScript Templates gate](/docs/how-to/enable-javascript-templates). The rest of this page covers this path.
+- **Keep Eta**: rename files, update the data vocabulary, enable the [{m.settings_template_js_enable_name()} gate](/docs/how-to/enable-javascript-templates). The rest of this page covers this path.
 - **Convert to Liquid**: rewrite each template in v2's default Liquid engine. No gate needed. See [Eta to Liquid translations](#eta-to-liquid-translations) at the end.
 
 <Callout type="info" title="JavaScript Templates gate required for Eta">
-  Eta templates require the JavaScript Templates gate. See [Enable JavaScript
-  templates](/docs/how-to/enable-javascript-templates) for the opt-in procedure.
+  Eta templates require the {m.settings_template_js_enable_name()} gate. See
+  [Enable JavaScript templates](/docs/how-to/enable-javascript-templates) for
+  the opt-in procedure.
 </Callout>
 
 <Steps>
@@ -275,43 +277,43 @@ Two migration paths:
   <Step>
     ### Migrate frontmatter fields
 
-    If you customized `zt-field.eta.md`, delete it and recreate the fields in **Settings > ZotLit > Templates > Frontmatter**:
+    If you customized `zt-field.eta.md`, delete it and recreate the fields in **Settings > ZotLit > {m.settings_page_templates()} > {m.settings_page_frontmatter()}**:
 
     For each field, configure:
 
-    - **Key**: the YAML property name.
-    - **Expression**: a JavaScript or Liquid expression evaluated against `zt`.
-    - **Language**: select JavaScript to use JS expressions (requires the JavaScript Templates gate), or Liquid for Liquid expressions.
-    - **Merge strategy**: Replace, Append arrays, or Keep existing.
+    - **{m.settings_frontmatter_key_name()}**: the YAML property name.
+    - **{m.settings_frontmatter_expr_name()}**: a JavaScript or Liquid expression evaluated against `zt`.
+    - **{m.settings_frontmatter_language_name()}**: select {m.settings_frontmatter_language_javascript()} to use JS expressions (requires the {m.settings_template_js_enable_name()} gate), or {m.settings_frontmatter_language_liquid()} for Liquid expressions.
+    - **{m.settings_frontmatter_merge_name()}**: {m.settings_frontmatter_merge_replace()}, {m.settings_frontmatter_merge_append()}, or {m.settings_frontmatter_merge_keep()}.
 
     | v1 template line | v2 frontmatter field |
     |-----------------|---------------------|
-    | `title: "<%= it.title %>"` | Key: `title`, Expr: `zt.title`, Merge: Replace |
-    | `authors: ...` | Key: `authors`, Expr: `zt.authors.map(c => c.fullName)`, Merge: Replace |
-    | `year: "<%= it.date %>"` | Key: `year`, Expr: `zt.date?.year`, Merge: Replace |
-    | `tags: ...` | Key: `tags`, Expr: `zt.tags.map(t => t.name)`, Merge: Append arrays |
+    | `title: "<%= it.title %>"` | {m.settings_frontmatter_key_name()}: `title`, {m.settings_frontmatter_expr_name()}: `zt.title`, {m.settings_frontmatter_merge_name()}: {m.settings_frontmatter_merge_replace()} |
+    | `authors: ...` | {m.settings_frontmatter_key_name()}: `authors`, {m.settings_frontmatter_expr_name()}: `zt.authors.map(c => c.fullName)`, {m.settings_frontmatter_merge_name()}: {m.settings_frontmatter_merge_replace()} |
+    | `year: "<%= it.date %>"` | {m.settings_frontmatter_key_name()}: `year`, {m.settings_frontmatter_expr_name()}: `zt.date?.year`, {m.settings_frontmatter_merge_name()}: {m.settings_frontmatter_merge_replace()} |
+    | `tags: ...` | {m.settings_frontmatter_key_name()}: `tags`, {m.settings_frontmatter_expr_name()}: `zt.tags.map(t => t.name)`, {m.settings_frontmatter_merge_name()}: {m.settings_frontmatter_merge_append()} |
 
     YAML escaping is handled automatically.
 
     ZotLit manages reserved frontmatter keys that you cannot target from a user field. For Literature Notes, only `zotero-key` is reserved. For imported notes, `zotero-note-key` and `zotero-lastmod` are reserved. The default `citekey` entry is an ordinary Managed Frontmatter field. See [Frontmatter reference](/docs/reference/templates/frontmatter) for details.
 
     <Callout type="info" title="Language selector">
-      JavaScript expressions (like `zt.authors.map(...)`) require selecting **JavaScript** in the Language dropdown for that field. The JavaScript Templates gate must be on.
+      JavaScript expressions (like `zt.authors.map(...)`) require selecting **{m.settings_frontmatter_language_javascript()}** in the {m.settings_frontmatter_language_name()} dropdown for that field. The {m.settings_template_js_enable_name()} gate must be on.
     </Callout>
 
   </Step>
   <Step>
     ### Overwrite v1 notes to add the managed region
 
-    v1 notes lack the `%%zt-managed%%` / `%%/zt-managed%%` markers that v2 uses to isolate generated content. Incremental update cannot target their body. Running <Command inline>ZotLit: Update literature note</Command> on a v1 note refreshes frontmatter only.
+    v1 notes lack the `%%zt-managed%%` / `%%/zt-managed%%` markers that v2 uses to isolate generated content. Incremental update cannot target their body. Running <Command inline name={m.command_update_note_name()} /> on a v1 note refreshes frontmatter only.
 
     To add the managed region, run the overwrite command on each note you want refreshed:
 
-    <Command>ZotLit: Overwrite literature note</Command>
+    <Command name={m.command_overwrite_note_name()} />
 
-    A confirmation modal appears. Click **Overwrite** to proceed. ZotLit regenerates the entire note body from the current templates, inserting the managed-region markers.
+    A confirmation modal appears. Click **{m.modal_overwrite_note_confirm()}** to proceed. ZotLit regenerates the entire note body from the current templates, inserting the managed-region markers.
 
-    After overwriting, the note responds to <Command inline>ZotLit: Update literature note</Command> for incremental updates going forward. You do not need to overwrite every note at once. Leave notes untouched until you are ready.
+    After overwriting, the note responds to <Command inline name={m.command_update_note_name()} /> for incremental updates going forward. You do not need to overwrite every note at once. Leave notes untouched until you are ready.
 
     See [Refresh v1 notes](/docs/how-to/migrate-from-v1#refresh-v1-notes) for the full procedure.
 
@@ -328,7 +330,7 @@ After completing these steps, your custom Eta templates render with v2 field nam
 
 ## Eta to Liquid translations
 
-v2's default engine is Liquid. Converting your templates to Liquid removes the need for the JavaScript Templates gate entirely. For each construct, the table below shows the Liquid equivalent and links to the relevant syntax reference section.
+v2's default engine is Liquid. Converting your templates to Liquid removes the need for the {m.settings_template_js_enable_name()} gate entirely. For each construct, the table below shows the Liquid equivalent and links to the relevant syntax reference section.
 
 | Eta construct                                         | Liquid equivalent                                 | Reference                                                                      |
 | ----------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------ |

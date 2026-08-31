@@ -65,9 +65,17 @@ describe("Profile settings", () => {
         }),
       ]),
     );
-    expect(
-      page.items?.some((item) => "type" in item && item.type === "page"),
-    ).toBe(false);
+    expect(page.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "page",
+          name: m.settings_note_import_highlight_mappings_name(),
+          items: expect.arrayContaining([
+            expect.objectContaining({ name: "Blue" }),
+          ]),
+        }),
+      ]),
+    );
   });
 
   it("lists repeated labels with filenames and excluded documents with diagnostics", () => {

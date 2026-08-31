@@ -9,6 +9,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
 Use this guide to move your citation workflow to ZotLit without assuming feature parity.
 
@@ -20,12 +21,12 @@ The [Pandoc Reference List repository](https://github.com/community-archive/obsi
 
 | Classification              | Existing behavior                                                                                                           | ZotLit destination                                                                       |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Works unchanged             | Literal citations such as `@doe2024`, `[@doe2024]`, and `[@doe2024, p. 33]`                                                 | Keep the Markdown source. Enable **Pandoc citations**.                                   |
+| Works unchanged             | Literal citations such as `@doe2024`, `[@doe2024]`, and `[@doe2024, p. 33]`                                                 | Keep the Markdown source. Enable **{m.settings_citation_pandoc_citations_name()}**.      |
 | Change settings or syntax   | Zotero library selection, live rendering, suggestions, tooltips, CSL selection, citation language, and `[[@citekey]]` links | Configure ZotLit and audit the affected metadata and links.                              |
 | Continue with native Pandoc | `bibliography`, bibliography files, multiple bibliography inputs, and standard `csl` or `citation-style` paths and URLs     | Keep these inputs in a [native Pandoc workflow](/docs/how-to/export-with-native-pandoc). |
 | No ZotLit equivalent        | In-app bibliography-file source, tooltip delay, hidden links in references, and click-one-entry-to-copy                     | Use ZotLit's Zotero-backed controls described below.                                     |
 
-ZotLit reads Zotero Items for its in-app citation features. A bibliography file remains useful for native Pandoc, but it does not supply the References Sidebar.
+ZotLit reads Zotero Items for its in-app citation features. A bibliography file remains useful for native Pandoc, but it does not supply the {m.references_view_name()} Sidebar.
 
 ## Migrate the workflow
 
@@ -58,9 +59,9 @@ ZotLit reads Zotero Items for its in-app citation features. A bibliography file 
   <Step>
     ### Connect the Zotero database
 
-    Open **Settings > ZotLit > Zotero database**. Confirm that **Zotero database** points to the profile that contains your cited items.
+    Open **Settings > ZotLit > {m.settings_page_database()}**. Confirm that **{m.settings_db_file_name()}** points to the profile that contains your cited items.
 
-    Return to the ZotLit settings hub. Set **Library scope** to **All libraries**, or choose **Selected libraries** and add the same personal and group libraries you used before.
+    Return to the ZotLit settings hub. Set **{m.settings_library_scope_name()}** to **{m.settings_library_scope_all()}**, or choose **{m.settings_library_scope_selected()}** and add the same personal and group libraries you used before.
 
     ZotLit searches the complete scope at once. When one citation key matches several items, ZotLit reports an Ambiguous Citation Key. It does not choose an item by library order.
 
@@ -68,16 +69,16 @@ ZotLit reads Zotero Items for its in-app citation features. A bibliography file 
   <Step>
     ### Configure in-app formatting
 
-    Open **Settings > ZotLit > Citations**.
+    Open **Settings > ZotLit > {m.settings_page_citations()}**.
 
-    1. Keep **Pandoc citations** on.
-    2. Keep **Show formatted citations** on.
-    3. Under **Formatting**, install the **Pandoc engine**.
+    1. Keep **{m.settings_citation_pandoc_citations_name()}** on.
+    2. Keep **{m.settings_citation_show_formatted_name()}** on.
+    3. Under **{m.settings_citation_references_heading()}**, install the **{m.settings_citation_engine_name()}**.
     4. Install your former CSL style in Zotero.
-    5. Select that style under **Citation and references style**.
-    6. Set **Citation locale**, or leave it at **Style default**.
+    5. Select that style under **{m.settings_citation_references_style_name()}**.
+    6. Set **{m.settings_citation_locale_name()}**, or leave it at **{m.settings_citation_locale_default()}**.
 
-    Set **Hover action** to **Citation popover** when you previously used citekey tooltips. ZotLit has modifier-key controls for each editing mode, but no tooltip-delay setting.
+    Set **{m.settings_citation_hover_action_name()}** to **{m.settings_citation_hover_action_popover()}** when you previously used citekey tooltips. ZotLit has modifier-key controls for each editing mode, but no tooltip-delay setting.
 
   </Step>
   <Step>
@@ -91,13 +92,13 @@ ZotLit reads Zotero Items for its in-app citation features. A bibliography file 
     | `csl` or `citation-style` | Keep one of these for a Pandoc-owned style. Do not add `zotlit-csl` to the same note. |
     | `zotlit-csl` | Use this instead when ZotLit should resolve a style installed in Zotero. Remove `csl` and `citation-style` first. |
     | `lang` | Keep it when it is a valid document language, such as `en-US`, `de`, or `zh-CN`. ZotLit also uses it for that note's citations. |
-    | `citation-language` | Convert it to `lang` only when the value describes the complete document. Otherwise, set the vault **Citation locale** and remove this property. |
+    | `citation-language` | Convert it to `lang` only when the value describes the complete document. Otherwise, set the vault **{m.settings_citation_locale_name()}** and remove this property. |
 
     To set a Zotero-installed style and document language together, run:
 
-    <Command>ZotLit: Set citation presentation</Command>
+    <Command name={m.command_set_citation_presentation_name()} />
 
-    The same action appears in the active note's **More options** menu. Its **Document language** value becomes Pandoc `lang` for the complete exported document.
+    The same action appears in the active note's **More options** menu. Its **{m.citation_presentation_language_name()}** value becomes Pandoc `lang` for the complete exported document.
 
     <Callout type="warn" title="Choose one style owner">
       A native Pandoc document can use standard `csl` or `citation-style`, or
@@ -110,7 +111,7 @@ ZotLit reads Zotero Items for its in-app citation features. A bibliography file 
   <Step>
     ### Audit citekey links one at a time
 
-    Pandoc Reference List can treat `[[@doe2024]]` as a citation. ZotLit's **Wikilink citations** setting has a different contract.
+    Pandoc Reference List can treat `[[@doe2024]]` as a citation. ZotLit's **{m.settings_citation_wikilink_citations_name()}** setting has a different contract.
 
     Review every `[[@citekey]]` occurrence and choose its intended result:
 
@@ -119,7 +120,7 @@ ZotLit reads Zotero Items for its in-app citation features. A bibliography file 
 
     For example, use `[[Doe 2020]]` only when `Doe 2020.md` is the Literature Note for that item. Add `#cite:locator=33` when the link cites a locator: `[[Doe 2020#cite:locator=33]]`.
 
-    Enable **Wikilink citations** after the Literature Note links are valid. Do not use a bulk replacement because link intent and note names differ by occurrence.
+    Enable **{m.settings_citation_wikilink_citations_name()}** after the Literature Note links are valid. Do not use a bulk replacement because link intent and note names differ by occurrence.
 
   </Step>
   <Step>
@@ -136,18 +137,18 @@ ZotLit reads Zotero Items for its in-app citation features. A bibliography file 
     Open a note that contains the syntax and metadata you migrated.
 
     1. Confirm that its literal citations format in Live Preview.
-    2. Run <Command inline>ZotLit: Open references</Command>.
-    3. Hover a citation and inspect the Citation Popover.
+    2. Run <Command inline name={m.command_open_references_view_name()} />.
+    3. Hover a citation and inspect the {m.settings_citation_hover_action_popover()}.
     4. Open its Literature Note, Zotero item, and attachment where available.
-    5. Select **Copy bibliography** in the References Sidebar.
+    5. Select **{m.references_copy_bibliography()}** in the {m.references_view_name()} Sidebar.
 
-    Resolve every Reference Error before you continue. In particular, change duplicate citation keys or narrow **Library scope** when a key is ambiguous.
+    Resolve every Reference Error before you continue. In particular, change duplicate citation keys or narrow **{m.settings_library_scope_name()}** when a key is ambiguous.
 
   </Step>
   <Step>
     ### Choose an export workflow
 
-    Use <Command inline>ZotLit: Export note with citations</Command> for ZotLit's built-in DOCX or HTML export.
+    Use <Command inline name={m.command_pandoc_export_name()} /> for ZotLit's built-in DOCX or HTML export.
 
     Continue with [native Pandoc](/docs/how-to/export-with-native-pandoc) when you need bibliography files, multiple inputs, standard CSL paths or URLs, or other Pandoc options.
 
@@ -158,7 +159,7 @@ ZotLit reads Zotero Items for its in-app citation features. A bibliography file 
 
 - **Bibliography file for in-app references:** connect ZotLit to the matching Zotero database instead.
 - **Arbitrary CSL path or URL in Obsidian:** install the style in Zotero. Keep the path or URL for native Pandoc when required.
-- **Tooltip delay:** choose **Citation popover**, **Page preview**, or **Off**. Configure modifier-key requirements by editing mode.
+- **Tooltip delay:** choose **{m.settings_citation_hover_action_popover()}**, **{m.settings_citation_hover_action_page_preview()}**, or **{m.settings_citation_hover_action_off()}**. Configure modifier-key requirements by editing mode.
 - **Hide links in references:** ZotLit has no matching citation setting.
 - **Click one reference to copy it:** select the entry text and use your normal copy shortcut. The row click targets citation navigation and item actions.
 
@@ -167,7 +168,7 @@ ZotLit reads Zotero Items for its in-app citation features. A bibliography file 
 <Cards>
   <Card
     title="Review, copy, and troubleshoot references"
-    description="Use the References Sidebar and resolve its exact error states."
+    description={`Use the ${m.references_view_name()} Sidebar and resolve its exact error states.`}
     href="/docs/how-to/review-copy-troubleshoot-references"
   />
   <Card
@@ -177,7 +178,7 @@ ZotLit reads Zotero Items for its in-app citation features. A bibliography file 
   />
   <Card
     title="Settings"
-    description="Check Library scope, citation sources, formatting, and hover controls."
+    description={`Check ${m.settings_library_scope_name()}, citation sources, formatting, and hover controls.`}
     href="/docs/reference/settings"
   />
 </Cards>

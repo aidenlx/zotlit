@@ -68,7 +68,13 @@ afterEach(async () => {
 async function render(
   blocks: readonly CitationPopoverBlock[],
   note?: Inlines,
-  profileFailure?: ProfilePresentationFailure,
+  {
+    profileFailure,
+    pending,
+  }: {
+    profileFailure?: ProfilePresentationFailure;
+    pending?: boolean;
+  } = {},
 ): Promise<HTMLElement> {
   const container = document.createElement("div");
   document.body.append(container);
@@ -80,6 +86,7 @@ async function render(
         note,
         profileFailure,
         actions,
+        pending,
       }),
     );
   });
@@ -98,10 +105,12 @@ const iconsOf = (block: HTMLElement): (string | null)[] =>
 describe("CitationPopoverContent", () => {
   it("shows an unavailable Imported Note Profile and its recovery", async () => {
     const container = await render([entry("doe2024")], undefined, {
-      kind: "unusable",
-      property: "profile",
-      diagnostic: unknownProfileDiagnostic("Reading notes (Bk3Qn7XvT2Lp)"),
-      target: "Imported/Research.md",
+      profileFailure: {
+        kind: "unusable",
+        property: "profile",
+        diagnostic: unknownProfileDiagnostic("Reading notes (Bk3Qn7XvT2Lp)"),
+        target: "Imported/Research.md",
+      },
     });
 
     const diagnostic = container.querySelector(
@@ -227,6 +236,20 @@ describe("CitationPopoverContent", () => {
       m.references_citekey_unresolved({ citekey: "typo2024" }),
     );
     expect(iconsOf(unresolved!)).toEqual([]);
+  });
+
+  it("reads an unresolved citekey as a lookup in progress while resolution is pending", async () => {
+    const container = await render(
+      [{ kind: "unresolved", citekey: "doe2024" }],
+      undefined,
+      { pending: true },
+    );
+
+    const [block] = blocksOf(container);
+    expect(block!.textContent).toBe(
+      m.references_citekey_pending({ citekey: "doe2024" }),
+    );
+    expect(block!.querySelector(".zt\\:text-destructive")).toBeNull();
   });
 
   it("explains an ambiguous citekey by the candidates it names", async () => {

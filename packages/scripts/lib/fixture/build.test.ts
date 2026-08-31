@@ -1118,7 +1118,7 @@ describe("the generated Obsidian vault", () => {
   it("carries the prose test pages verbatim from committed assets", async () => {
     for (const name of [
       "citekey-smoke-test.md",
-      "pandoc-citation-test.md",
+      "literature-note-citation-test.md",
       "pandoc-export-error-intent.md",
       "pandoc-export-missing-bibliography.md",
       "pandoc-export-success.md",
@@ -1148,7 +1148,7 @@ describe("the generated Obsidian vault", () => {
       "[[literatures/wallgren-petterssonDistalMyopathyCaused2007]]; [[literatures/yinClinicopathologicalFeaturesMutational2021#cite:locator=3]]",
     );
     expect(note).toContain("[@wittNebulinRegulatesThin2006, p. 4]");
-    expect(note).toContain("[[pandoc-citation-test]]");
+    expect(note).toContain("[[literature-note-citation-test]]");
   });
 
   it("resolves every generated Literature Note through the database", async () => {

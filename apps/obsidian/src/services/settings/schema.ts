@@ -8,6 +8,7 @@ import {
 } from "@zotlit/templates/constants";
 import type { AutoTrim } from "@zotlit/templates/constants";
 
+import { highlightMappingsSchema } from "@/lib/highlight-mapping";
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import {
@@ -147,6 +148,7 @@ export const schema = v.object({
     }),
   ),
   "note.frontmatter-fields": frontmatterFieldsSchema,
+  "note.import-highlight-mappings": highlightMappingsSchema,
 
   "server.enabled": v.boolean(),
   "server.port": serverPort,
@@ -203,6 +205,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "note.template-conversion-pending": false,
   "note.template-conversion-result": null,
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
+  "note.import-highlight-mappings": {},
   "server.enabled": false,
   "server.port": 9091,
   "server.hostname": "127.0.0.1",

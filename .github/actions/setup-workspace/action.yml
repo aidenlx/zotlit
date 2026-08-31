@@ -1,0 +1,40 @@
+name: Set up workspace
+description: Set up the pinned toolchain and restore pnpm and Turborepo caches.
+
+inputs:
+  bootstrap:
+    description: Run the full workspace bootstrap after cache restoration.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - uses: jdx/mise-action@v4
+
+    # Mise activates the packageManager version. This action restores its store.
+    - uses: pnpm/action-setup@v6
+      with:
+        cache: true
+
+    # Each job writes its own immutable entry and can restore compatible task
+    # results written by any workflow on the same runner OS.
+    - name: Restore Turborepo cache
+      uses: actions/cache@v5
+      with:
+        path: .turbo
+        key: turbo-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-${{ github.sha }}-${{ github.run_attempt }}
+        restore-keys: |
+          turbo-${{ runner.os }}-${{ github.workflow }}-${{ github.job }}-
+          turbo-${{ runner.os }}-
+
+    # The effective runtime participates in Turbo's global hash. mise.toml can
+    # select a newer Node release without changing a package source file.
+    - name: Record toolchain identity
+      shell: bash
+      run: echo "ZOTLIT_TOOLCHAIN=node-$(node --version)-pnpm-$(pnpm --version)" >> "$GITHUB_ENV"
+
+    - name: Bootstrap workspace
+      if: inputs.bootstrap == 'true'
+      shell: bash
+      run: mise run init --no-submodules

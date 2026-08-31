@@ -24,4 +24,4 @@ A literal citation remains part of the same bibliography [@wittNebulinRegulatesT
 
 ## Ordinary Link
 
-The export keeps this ordinary vault link as a link to [[pandoc-citation-test]].
+The export keeps this ordinary vault link as a link to [[literature-note-citation-test]].

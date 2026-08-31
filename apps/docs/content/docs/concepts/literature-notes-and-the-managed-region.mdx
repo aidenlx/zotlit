@@ -8,6 +8,7 @@ updated: "2.0.0"
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
 A literature note is an Obsidian Markdown file linked one-to-one with a Zotero item. ZotLit uses a marked region inside the note to keep Zotero-derived content up to date without overwriting anything you write yourself.
 
@@ -43,20 +44,19 @@ The title heading, Zotero backlink, and attachment file links are placed above t
 
 ### How updates use the region
 
-<Command inline>ZotLit: Update literature note</Command> refreshes the
-frontmatter with current Zotero metadata, then re-renders the `content` template
-and replaces the managed region with the new output. Everything outside the
-markers stays exactly as you left it. This is how ZotLit can pull in new
-annotations or updated metadata without disturbing your own notes, links, or
-tags.
+<Command inline name={m.command_update_note_name()} /> refreshes the frontmatter
+with current Zotero metadata, then re-renders the `content` template and
+replaces the managed region with the new output. Everything outside the markers
+stays exactly as you left it. This is how ZotLit can pull in new annotations or
+updated metadata without disturbing your own notes, links, or tags.
 
-<Command inline>ZotLit: Update literature note metadata</Command> is a lighter
+<Command inline name={m.command_update_note_metadata_name()} /> is a lighter
 operation. It refreshes frontmatter only and never touches the note body.
 
 ## Notes without a managed region
 
 <Callout type="info" title="Notes created with ZotLit v1">
-  Literature notes created with ZotLit v1 have a `zotero-key` and are recognized as literature notes, but they contain no managed region markers. Running <Command inline>ZotLit: Update literature note</Command> on a v1 note refreshes its frontmatter but leaves the body untouched, showing the notice "Frontmatter updated. No managed region found."
+  Literature notes created with ZotLit v1 have a `zotero-key` and are recognized as literature notes, but they contain no managed region markers. Running <Command inline name={m.command_update_note_name()} /> on a v1 note refreshes its frontmatter but leaves the body untouched, showing the notice "Frontmatter updated. No managed region found."
 
 To recover the full update workflow on a v1 note, see [Keep notes up to date](/docs/how-to/keep-notes-updated).
 
@@ -64,7 +64,7 @@ To recover the full update workflow on a v1 note, see [Keep notes up to date](/d
 
 ## Overwrite versus update
 
-<Command inline>ZotLit: Overwrite literature note</Command> is a separate,
+<Command inline name={m.command_overwrite_note_name()} /> is a separate,
 destructive command. It regenerates the entire note body from the `note`
 template, discarding everything below the frontmatter block. Frontmatter keys
 managed by ZotLit are refreshed; other frontmatter keys you added are kept. A

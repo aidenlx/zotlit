@@ -9,6 +9,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
 Use this guide when you need your own Pandoc installation, bibliography file, CSL options, or command-line workflow.
 
@@ -33,7 +34,7 @@ This workflow uses your installed Pandoc CLI. It is separate from ZotLit's manag
   <Step>
     ### Save the ZotLit integration pair
 
-    Open **Settings > ZotLit > Citations > Formatting**. Under **Native Pandoc workflow**, find **Pandoc integration pair** and select **Save integration files**.
+    Open **Settings > ZotLit > {m.settings_page_citations()} > {m.settings_citation_references_heading()}**. Under **{m.settings_citation_native_pandoc_heading()}**, find **{m.settings_citation_pandoc_files_name()}** and select **{m.settings_citation_pandoc_files_save()}**.
 
     Choose a user-owned workflow folder. ZotLit saves `zotlit-cite.lua` and `zotlit.yaml` there.
 
@@ -71,9 +72,9 @@ This workflow uses your installed Pandoc CLI. It is separate from ZotLit's manag
 
     Open the input note and run:
 
-    <Command>ZotLit: Set citation presentation</Command>
+    <Command name={m.command_set_citation_presentation_name()} />
 
-    Select a CSL style installed in Zotero. Enter the complete document's language, then select **Save**.
+    Select a CSL style installed in Zotero. Enter the complete document's language, then select **{m.citation_presentation_confirm()}**.
 
     The note frontmatter now contains a Zotero style ID and a Pandoc language tag:
 
@@ -118,7 +119,7 @@ This workflow uses your installed Pandoc CLI. It is separate from ZotLit's manag
 
 ## Fix a failed run
 
-Open **Pandoc CLI guide** under **Settings > ZotLit > Citations > Formatting** for the full error reference.
+Open **{m.settings_citation_pandoc_guide_name()}** under **Settings > ZotLit > {m.settings_page_citations()} > {m.settings_citation_references_heading()}** for the full error reference.
 
 | Error code                   | Recovery                                                                    |
 | ---------------------------- | --------------------------------------------------------------------------- |

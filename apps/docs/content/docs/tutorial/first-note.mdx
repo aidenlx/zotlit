@@ -9,6 +9,7 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
 This tutorial walks you through creating your first literature note in Obsidian from a Zotero library item. By the end, you will have a Markdown note with the item's title, a link back to Zotero, and any annotations you have already made on the PDF.
 
@@ -30,7 +31,7 @@ ZotLit finds your Zotero database automatically from your Zotero profile.
 
     Open the Obsidian command palette (`Ctrl+P` on Windows/Linux, `Cmd+P` on macOS) and run:
 
-    <Command>ZotLit: Open literature note quick switcher</Command>
+    <Command name={m.command_open_lit_note_name()} />
 
     A search modal appears, connected to your Zotero library.
 

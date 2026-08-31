@@ -1,7 +1,7 @@
 # ZotLit docs site — design spec
 
 Theme: **"Manuscript & Machine"** — cream ground, navy ink, deep-orange accent.
-One token system (`--color-fd-*` overrides in `app/global.css`) drives all
+One token system (`--color-fd-*` overrides in `src/styles.css`) drives all
 surfaces: landing, changelog, blog, docs.
 
 ## Mechanism
@@ -17,17 +17,17 @@ surface is identical, and the CLI's `base-ui` registry serves it first-class.)
 
 Owned layout slots:
 
-- `layouts/home/slots/header.tsx` — home nav: IBM Plex Mono uppercase links, double hairline.
-- `layouts/docs/slots/sidebar.tsx` — docs sidebar: orange rubric on folder
+- `src/layouts/home/slots/header.tsx` — home nav: IBM Plex Mono uppercase links, double hairline.
+- `src/layouts/docs/slots/sidebar.tsx` — docs sidebar: orange rubric on folder
   rows, muted small-caps `links`-prop entries, near-ink page links.
-- `layouts/docs/page/slots/footer.tsx` — prev/next cards: muted direction
+- `src/layouts/docs/page/slots/footer.tsx` — prev/next cards: muted direction
   label over the title. Exports `FooterCards` for reuse on blog posts.
-- `components/docs-subnav.tsx` — mobile docs header with the hairline
+- `src/components/docs-subnav.tsx` — mobile docs header with the hairline
   signature (`DocsLayout slots.header`).
-- `components/banner.tsx` — vendored fumadocs `Banner`: `height` is a floor
+- `src/components/banner.tsx` — vendored fumadocs `Banner`: `height` is a floor
   (`min-height`), so the strip wraps instead of overflowing on narrow
   viewports, and a resize-synced `--fd-banner-height` keeps sticky offsets
-  tracking the wrapped height. Consumed by `components/legacy-banner.tsx`.
+  tracking the wrapped height. Consumed by `src/components/legacy-banner.tsx`.
 
 ## Type system
 
@@ -36,8 +36,8 @@ Four faces, four roles:
 | Face | Role |
 | --- | --- |
 | **Gelasio** (serif) | Content & display: headings, titles, descriptions/ledes/standfirsts, feature descriptions, editorial annotations |
-| **Inter** (sans, `preload: false`) | Prose body & chrome: markdown running text, sidebar, TOC, buttons, search |
-| **IBM Plex Mono** (Google, weights 400/500/600, `preload: false`) | The **"Machine" voice**: code, version chips, the hero note card, meta lines, and every UPPERCASE apparatus label (home nav, landing eyebrow/feature terms, blog & changelog dates). Drives `--font-mono`. |
+| **Inter** (sans, unpreloaded) | Prose body & chrome: markdown running text, sidebar, TOC, buttons, search |
+| **IBM Plex Mono** (weights 400/500/600, unpreloaded) | The **"Machine" voice**: code, version chips, the hero note card, meta lines, and every UPPERCASE apparatus label (home nav, landing eyebrow/feature terms, blog & changelog dates). Drives `--font-mono`. |
 | **Archivo** (subset woff2) | Wordmark only — subset to exactly the "ZotLit" glyphs |
 
 Serif carries the editorial voice at **weight 500** for display headings and
@@ -46,11 +46,11 @@ running paragraphs in docs, blog, and the changelog — whose display headings s
 in serif. Inter loads both upright and italic for true `<em>`s beside Gelasio's.
 
 Serif is **opt-in**, not blanket-inherited: the app-wide default is sans, and
-each editorial surface opts its display type into serif. Shared `(home)` chrome
+each editorial surface opts its display type into serif. Shared `_home` chrome
 — nav, banner, search — stays sans/mono. A sans prose body inside a serif
 surface stays sans; only its display headings take the serif.
 
-The `ztProse` heading scale (`lib/prose.ts`) sits one notch above Fumadocs'
+The `ztProse` heading scale (`src/lib/prose.ts`) sits one notch above Fumadocs'
 stock sizes to compensate for Gelasio's smaller x-height (~0.48em vs Inter's
 ~0.55em). Blockquotes at 1.125em put Gelasio at optical parity with the
 surrounding sans body.
@@ -87,27 +87,35 @@ wordmark likewise stays outside label treatment.
 
 ## Font loading
 
-All loaders sit in the root layout; families are assigned in the `@theme
-inline` block in `app/global.css`. Gelasio preloads app-wide (serif display
-paints on essentially every route). Inter is `preload: false` — sans is the
-app-wide body default, but its metric-adjusted fallback swaps shift-free, so an
-eager fetch buys little.
+Fontsource serves all four faces from the package's own assets: the `@import`s
+at the top of `src/styles.css` register them, and the `@theme inline` block in
+the same file assigns the roles. Metric-adjusted local fallback faces in that
+stylesheet preserve the shift-free swaps that `next/font` generated before the
+TanStack Start migration. Their overrides come from Next.js 16.3.0's metrics
+for these Google Font families.
+
+Gelasio's upright and italic latin faces preload in `src/routes/__root.tsx`
+because serif display paints on essentially every route. Inter stays
+unpreloaded because its adjusted fallback stabilizes the app-wide body and
+chrome until the real face loads.
 
 IBM Plex Mono loads three explicit weights (400/500/600 — Plex Mono isn't a
-variable font on Google Fonts) with `preload: false`, swapping shift-free from a
-system-mono fallback. Its `@theme inline` `--font-mono` override reroutes both
-the `font-mono` utility and every `var(--font-mono)` reference onto it in one
-lever.
+variable font), unpreloaded, swapping from its adjusted local fallback.
+Its `@theme inline` `--font-mono` override reroutes both the `font-mono` utility
+and every `var(--font-mono)` reference onto it in one lever.
+
+The Archivo wordmark subset needs no preload — it sits under Vite's
+`assetsInlineLimit`, so the build inlines it into the stylesheet.
 
 ## Per-surface
 
-### Landing (`app/(home)/page.tsx`)
+### Landing (`src/routes/_home/index.tsx`)
 
 Serif content throughout (the landing is hero + feature index, no markdown
 body):
 
 - **Hero, two columns.** Left: orange mono-uppercase eyebrow, serif headline,
-  italic lede, the **repo datum** (`components/repo-datum.tsx`) — a 2px accent
+  italic lede, the **repo datum** (`src/components/repo-datum.tsx`) — a 2px accent
   left bar (no box) with the official Invertocat mark in accent orange and one
   muted mono line showing slug, stars, and downloads (each stat drops out when
   its fetch is unavailable) — then a "Get started" button + underlined "Read
@@ -117,16 +125,16 @@ body):
 - **Features as an index**: four rows — mono-uppercase term, dotted
   leader, mono-uppercase orange link into the docs — with a one-line
   description under each.
-- **Shared copyright footer** (`components/site-footer.tsx`): hairline-topped
-  "© year AidenLx · AGPL-3.0 Licensed" line, shared across all `(home)` index
+- **Shared copyright footer** (`src/components/site-footer.tsx`): hairline-topped
+  "© year AidenLx · AGPL-3.0 Licensed" line, shared across all `_home` index
   surfaces (landing, blog index, changelog index).
 
 ### Changelog (`/changelog`)
 
-List/detail pages in the `(home)` route group styled with Tailwind over fd
+List/detail pages in the `_home` route group styled with Tailwind over fd
 tokens. Each release: right-aligned gutter (mono-uppercase date, mono version
 badge; latest badge orange-bordered), a serif release title, an optional
-companion note (`components/companion-note.tsx`) — a leading accent `Puzzle`
+companion note (`src/components/companion-note.tsx`) — a leading accent `Puzzle`
 mark on a muted italic line — then the release notes at digest density.
 
 Both views render the release notes with a **sans body**. The `##` category
@@ -142,7 +150,7 @@ Changelog is not indexed in search.
 
 ### Blog (`/blog`)
 
-The changelog's sibling in the `(home)` route group:
+The changelog's sibling in the `_home` route group:
 
 - **Index**: two-column annals grammar — gutter with date/byline; body with
   serif title, italic deck, orange "Read the post →" link. Closes on the
@@ -159,7 +167,7 @@ The changelog's sibling in the `(home)` route group:
   scale, h4 as a mono-uppercase label, inline code square-cornered, `kbd` mono.
 - Blockquotes and figcaptions carry the serif-italic editorial register.
 - Lists run tighter than paragraphs (0.75em block margins, 0.25em item gaps).
-- **Command references** (`components/command.tsx`): leading Lucide `Terminal`
+- **Command references** (`src/components/command.tsx`): leading Lucide `Terminal`
   glyph (accent) + command name in serif display voice + a mono-uppercase
   `Copy →` link.
   Block form rules a hairline; inline form is glyph + underlined name only.
@@ -202,14 +210,14 @@ while before the next release assigns it.
 ### Comments
 
 Mounted via the docs page footer slot after prev/next cards.
-`components/comment.tsx` renders a lazy Giscus mount (theme follows color
+`src/components/comments.tsx` renders a lazy Giscus mount (theme follows color
 scheme) with no heading of its own — Giscus's live comment-count header is
 sufficient.
 
 ## CSS architecture
 
 Structural chrome overrides live in the owned layout slots. CSS in
-`app/global.css` is reduced to what CSS alone must do:
+`src/styles.css` is reduced to what CSS alone must do:
 
 - **Tokens** — the `--color-fd-*` palette and `@theme inline` font wiring.
 - **`#toc-title`** — the one accepted Fumadocs-shipped anchor (ships with this
@@ -218,9 +226,9 @@ Structural chrome overrides live in the owned layout slots. CSS in
 The docs/blog prose restyle is **not** here. Customize Fumadocs prose through
 its **typography element modifiers** (`prose-h2:…`, `prose-blockquote:…`) — the
 plugin's own customization surface — never hand-written `.prose`-descendant CSS
-in `global.css`. Modifiers carry the `not-prose` escape hatch and win over base
+in `src/styles.css`. Modifiers carry the `not-prose` escape hatch and win over base
 `prose` by layer order, so no unlayered override is needed. The shared set lives
-in `lib/prose.ts` (`ztProse`), applied on `<DocsBody>` and the blog post. The
+in `src/lib/prose.ts` (`ztProse`), applied on `<DocsBody>` and the blog post. The
 fork's modifiers are single-element only; a descendant compound with no modifier
 (`li p`, nested lists) uses a Tailwind arbitrary variant (`[&_li_p]:…`) — still
-inline, still not `global.css`.
+inline, still not `src/styles.css`.

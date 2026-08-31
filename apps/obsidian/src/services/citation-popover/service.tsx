@@ -38,7 +38,7 @@ export interface CitationPopoverDeps {
   db: Pick<DatabaseService, "state" | "client">;
   citationIndex: Pick<
     CitationIndex,
-    "getDocumentCitationSet" | "resolveCitekey"
+    "getDocumentCitationSet" | "resolveCitekey" | "resolution"
   >;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
@@ -107,6 +107,11 @@ interface PopoverRead {
   /** The note a note-class style wrote for the hovered occurrence. */
   note: Inlines | undefined;
   profileFailure: ProfilePresentationFailure | undefined;
+  /**
+   * The citekey resolution snapshot could not answer when this read ran, so
+   * an unresolved block is a lookup in progress rather than a missing Item.
+   */
+  pending: boolean;
 }
 
 /**
@@ -134,7 +139,7 @@ async function fill(
     return;
   }
   if (!current()) return;
-  const { blocks, note, profileFailure } = read;
+  const { blocks, note, profileFailure, pending } = read;
   // Every work the hover carries becomes a block, so an empty stack means
   // the document itself could not be read — nothing the popover can say.
   if (blocks.length === 0) {
@@ -152,6 +157,7 @@ async function fill(
       note={note}
       profileFailure={profileFailure}
       actions={actions}
+      pending={pending}
     />,
   );
   logger.debug("Citation popover entries read", {
@@ -172,9 +178,17 @@ async function readBlocks(
     logger.debug("Hovered citation sits in no note", {
       path: request.sourcePath,
     });
-    return { blocks: [], note: undefined, profileFailure: undefined };
+    return {
+      blocks: [],
+      note: undefined,
+      profileFailure: undefined,
+      pending: false,
+    };
   }
   const { citations } = await deps.citationIndex.getDocumentCitationSet(file);
+  // Read beside the citations it qualifies: this read resolved against the
+  // snapshot as it stood here, and the popover redraws on the next hover.
+  const pending = deps.citationIndex.resolution !== "ready";
   const { sources } = readReferenceSources(deps.db, citations);
   // The hovered note's own Citation Presentation, so the popover shows what the
   // References Sidebar of that note shows — including nothing formatted at all
@@ -224,6 +238,7 @@ async function readBlocks(
       presented.kind === "unusable" && presented.property === "profile"
         ? presented
         : undefined,
+    pending,
   };
 }
 

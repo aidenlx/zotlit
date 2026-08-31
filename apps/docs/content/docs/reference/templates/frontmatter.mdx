@@ -8,6 +8,7 @@ updated: "2.0.0"
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
 This page documents how ZotLit manages YAML frontmatter on literature notes: system-managed fields, user-configured fields, merge strategies, and the behavior during note updates.
 
@@ -23,25 +24,25 @@ ZotLit always writes `zotero-key`. User configuration cannot override it.
 
 ## User-configured fields
 
-Configured at **Settings > Templates > Frontmatter**. Each field has four parts:
+Configured at **Settings > {m.settings_page_templates()} > {m.settings_page_frontmatter()}**. Each field has four parts:
 
-| Part           | Description                                             |
-| -------------- | ------------------------------------------------------- |
-| Key            | The YAML property name written to frontmatter           |
-| Expression     | Produces the value (evaluated in the declared language) |
-| Language       | `liquid` or `javascript`                                |
-| Merge strategy | How the field behaves when refreshing an existing note  |
+| Part                                     | Description                                             |
+| ---------------------------------------- | ------------------------------------------------------- |
+| {m.settings_frontmatter_key_name()}      | The YAML property name written to frontmatter           |
+| {m.settings_frontmatter_expr_name()}     | Produces the value (evaluated in the declared language) |
+| {m.settings_frontmatter_language_name()} | `liquid` or `javascript`                                |
+| {m.settings_frontmatter_merge_name()}    | How the field behaves when refreshing an existing note  |
 
 ### Default fields
 
 Out of the box, ZotLit configures:
 
-| Key           | Expression                           | Language | Merge   |
-| ------------- | ------------------------------------ | -------- | ------- |
-| `title`       | `zt.title`                           | Liquid   | Replace |
-| `related`     | `zt.relatedItems \| note_links`      | Liquid   | Replace |
-| `collections` | `zt.collections \| collection_paths` | Liquid   | Replace |
-| `citekey`     | `zt.citationKey`                     | Liquid   | Replace |
+| {m.settings_frontmatter_key_name()} | {m.settings_frontmatter_expr_name()} | {m.settings_frontmatter_language_name()}   | {m.settings_frontmatter_merge_name()}    |
+| ----------------------------------- | ------------------------------------ | ------------------------------------------ | ---------------------------------------- |
+| `title`                             | `zt.title`                           | {m.settings_frontmatter_language_liquid()} | {m.settings_frontmatter_merge_replace()} |
+| `related`                           | `zt.relatedItems \| note_links`      | {m.settings_frontmatter_language_liquid()} | {m.settings_frontmatter_merge_replace()} |
+| `collections`                       | `zt.collections \| collection_paths` | {m.settings_frontmatter_language_liquid()} | {m.settings_frontmatter_merge_replace()} |
+| `citekey`                           | `zt.citationKey`                     | {m.settings_frontmatter_language_liquid()} | {m.settings_frontmatter_merge_replace()} |
 
 The default `citekey` field has this definition:
 
@@ -80,15 +81,15 @@ The return value is serialized to YAML automatically.
 
 Each user field selects one of three merge strategies that control what happens when the note is updated:
 
-| Strategy  | UI label      | Behavior                                                                                                                                                                                                                                                                                            |
-| --------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `replace` | Replace       | Writes the generated value unconditionally. The existing value is overwritten                                                                                                                                                                                                                       |
-| `append`  | Append arrays | Appends new generated values not already present to the existing array. Manual additions remain. If existing is blank, writes the generated value. Both the existing and generated values must be arrays; when either side is not an array (and existing is not blank), the field is left unchanged |
-| `keep`    | Keep existing | Writes the generated value only when the existing field is blank. Once the field has a value, it is never overwritten                                                                                                                                                                               |
+| Strategy  | UI label                                 | Behavior                                                                                                                                                                                                                                                                                            |
+| --------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `replace` | {m.settings_frontmatter_merge_replace()} | Writes the generated value unconditionally. The existing value is overwritten                                                                                                                                                                                                                       |
+| `append`  | {m.settings_frontmatter_merge_append()}  | Appends new generated values not already present to the existing array. Manual additions remain. If existing is blank, writes the generated value. Both the existing and generated values must be arrays; when either side is not an array (and existing is not blank), the field is left unchanged |
+| `keep`    | {m.settings_frontmatter_merge_keep()}    | Writes the generated value only when the existing field is blank. Once the field has a value, it is never overwritten                                                                                                                                                                               |
 
 ### What counts as blank
 
-A value is blank (and treated as absent by `Append arrays` and `Keep existing`) when it is:
+A value is blank (and treated as absent by <code>{m.settings_frontmatter_merge_append()}</code> and <code>{m.settings_frontmatter_merge_keep()}</code>) when it is:
 
 - `null` or undefined
 - An empty string (`""`)
@@ -101,17 +102,17 @@ When an expression returns `undefined`, the field is untouched regardless of the
 
 ### Append arrays detail
 
-The `Append arrays` strategy preserves existing items verbatim (including any duplicates already present) and appends only generated items not already in the array.
+The <code>{m.settings_frontmatter_merge_append()}</code> strategy preserves existing items verbatim (including any duplicates already present) and appends only generated items not already in the array.
 
 ## Reserved keys
 
 The following keys cannot be used in user field configuration:
 
-| Key               | Owner                                     |
-| ----------------- | ----------------------------------------- |
-| `zotero-key`      | System-managed (literature note identity) |
-| `zotero-note-key` | Imported notes                            |
-| `zotero-lastmod`  | Imported notes                            |
+| {m.settings_frontmatter_key_name()} | Owner                                     |
+| ----------------------------------- | ----------------------------------------- |
+| `zotero-key`                        | System-managed (literature note identity) |
+| `zotero-note-key`                   | Imported notes                            |
+| `zotero-lastmod`                    | Imported notes                            |
 
 Attempting to use a reserved key is rejected in both the settings modal and the CLI.
 
@@ -128,14 +129,14 @@ Expression syntax errors are detected when saving. Runtime errors (e.g. accessin
 
 ## Merge on update
 
-When you run <Command inline>ZotLit: Update literature note</Command> or <Command inline>ZotLit: Update literature note metadata</Command>, ZotLit refreshes frontmatter:
+When you run <Command inline name={m.command_update_note_name()} /> or <Command inline name={m.command_update_note_metadata_name()} />, ZotLit refreshes frontmatter:
 
 1. **User-configured fields** are re-evaluated and applied using their merge strategy.
 2. **System identity** (`zotero-key`) is refreshed.
 3. **Unmanaged keys:** any frontmatter key not in the managed set (e.g. `aliases`, `tags`, `cssclasses`) is preserved. ZotLit never touches keys it does not own.
 
-<Command inline>ZotLit: Overwrite literature note</Command> replaces the note
-body but applies the same frontmatter behavior: managed keys are refreshed and
+<Command inline name={m.command_overwrite_note_name()} /> replaces the note body
+but applies the same frontmatter behavior: managed keys are refreshed and
 unmanaged keys are kept.
 
 ZotLit writes frontmatter through Obsidian's `processFrontMatter` API, which preserves key ordering and formatting for unmanaged keys. On a newly created note, user-configured fields are written in the order they appear in the Frontmatter settings list, followed by system fields.

@@ -148,6 +148,10 @@ export class MockVault {
     );
   }
 
+  getFileByPath(path: string): TFile | null {
+    return this.metadataCache.files.get(path) ?? null;
+  }
+
   cachedRead(file: TFile): Promise<string> {
     this.reads.push(file.path);
     const failure = this.#failures.get(file.path);

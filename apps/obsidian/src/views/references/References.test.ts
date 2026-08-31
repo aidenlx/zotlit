@@ -86,10 +86,15 @@ async function render(
     documentPresentationError = null,
     engine = { kind: "installed", version: "test" },
     copy = { kind: "blocked", reason: "pending" },
+    citekeyResolution = "ready",
   }: Partial<
     Pick<
       ReferencesState,
-      "formattingFailed" | "documentPresentationError" | "engine" | "copy"
+      | "formattingFailed"
+      | "documentPresentationError"
+      | "engine"
+      | "copy"
+      | "citekeyResolution"
     >
   > = {},
 ): Promise<HTMLElement> {
@@ -100,6 +105,7 @@ async function render(
     formattingFailed,
     documentPresentationError,
     dbReady: true,
+    citekeyResolution,
     copy,
   };
   const container = document.createElement("div");
@@ -153,6 +159,30 @@ describe("References", () => {
         el.classList.contains("zt:break-words"),
       ),
     ).toBe(true);
+  });
+
+  it("reads an unresolved row as a lookup in progress while resolution is pending", async () => {
+    const container = await render(
+      [
+        {
+          id: "@doe2024",
+          refNumber: 1,
+          occurrences: [occurrence],
+          kind: "unresolved",
+          citekey: "doe2024",
+        },
+      ],
+      { kind: "minimal" },
+      { citekeyResolution: "resolving" },
+    );
+
+    expect(container.textContent).toContain(
+      m.references_citekey_pending({ citekey: "doe2024" }),
+    );
+    expect(container.textContent).not.toContain(
+      m.references_citekey_unresolved({ citekey: "doe2024" }),
+    );
+    expect(container.textContent).not.toContain("⚠");
   });
 
   it("shares a numeric style's gutter with an unrendered Reference Error", async () => {

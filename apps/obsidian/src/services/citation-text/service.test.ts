@@ -132,7 +132,10 @@ async function makeHarness({
 
   const service = new CitationText({
     app: {
-      vault: { cachedRead: () => Promise.resolve(body) },
+      vault: {
+        cachedRead: () => Promise.resolve(body),
+        getFileByPath: (path: string) => (path === NOTE.path ? NOTE : null),
+      },
       metadataCache: {
         on: (name: string, cb: () => void) => {
           listeners.set(`metadata:${name}`, cb);
@@ -594,7 +597,7 @@ describe("CitationText staleness", () => {
     await dispose();
   });
 
-  it("drops every document when the renders go stale, and says so", async () => {
+  it("keeps every document's text when the renders go stale, and says so", async () => {
     const { service, rendersInvalidated, dispose } = await makeHarness({
       body: "Blah [@alpha].",
     });
@@ -604,8 +607,120 @@ describe("CitationText staleness", () => {
 
     rendersInvalidated();
 
-    expect(service.peek(NOTE.path)).toBeNull();
+    expect(service.peek(NOTE.path)?.formatted.get("[@alpha]")).toBeDefined();
     expect(invalidated).toBe(1);
+    await dispose();
+  });
+
+  it("serves the stale text until the fresh read lands", async () => {
+    let generation = 0;
+    let finishFresh: ((value: readonly RenderedCitation[]) => void) | undefined;
+    const { service, rendersInvalidated, dispose } = await makeHarness({
+      body: "Blah [@alpha].",
+      formatCitations: () => {
+        generation += 1;
+        if (generation === 1) return Promise.resolve([rendered("stale")]);
+        return new Promise((resolve) => {
+          finishFresh = resolve;
+        });
+      },
+    });
+    await service.load(NOTE);
+    const changed: string[] = [];
+    service.on("changed", (path) => changed.push(path));
+
+    rendersInvalidated();
+    // The peek that serves the stale text is also what starts the fresh read.
+    expect(firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]"))).toBe(
+      "stale",
+    );
+    await vi.waitFor(() => expect(finishFresh).toBeDefined());
+    expect(firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]"))).toBe(
+      "stale",
+    );
+
+    finishFresh!([rendered("fresh")]);
+    await vi.waitFor(() => expect(changed).toEqual([NOTE.path]));
+    expect(firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]"))).toBe(
+      "fresh",
+    );
+    await dispose();
+  });
+
+  // The second invalidation lands while the fresh read runs, so what that read
+  // commits already predates it; the stale mark it leaves is what makes the
+  // next peek read once more, and the last read is the one that stands.
+  it("revalidates again when a second invalidation lands mid-read", async () => {
+    let generation = 0;
+    const gates: ((value: readonly RenderedCitation[]) => void)[] = [];
+    const { service, citationRequests, rendersInvalidated, dispose } =
+      await makeHarness({
+        body: "Blah [@alpha].",
+        formatCitations: () => {
+          generation += 1;
+          if (generation === 1) return Promise.resolve([rendered("v1")]);
+          return new Promise((resolve) => {
+            gates.push(resolve);
+          });
+        },
+      });
+    await service.load(NOTE);
+
+    rendersInvalidated();
+    service.peek(NOTE.path);
+    await vi.waitFor(() => expect(citationRequests).toHaveLength(2));
+    rendersInvalidated();
+    gates[0]!([rendered("v2")]);
+    await vi.waitFor(() =>
+      expect(
+        firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]")),
+      ).toBe("v2"),
+    );
+
+    await vi.waitFor(() => expect(citationRequests).toHaveLength(3));
+    gates[1]!([rendered("v3")]);
+    await vi.waitFor(() =>
+      expect(
+        firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]")),
+      ).toBe("v3"),
+    );
+    await dispose();
+  });
+
+  it("revalidates a stale document once, however many surfaces peek", async () => {
+    const { service, citationRequests, rendersInvalidated, dispose } =
+      await makeHarness({ body: "Blah [@alpha]." });
+    await service.load(NOTE);
+
+    rendersInvalidated();
+    service.peek(NOTE.path);
+    service.peek(NOTE.path);
+
+    await vi.waitFor(() => expect(citationRequests).toHaveLength(2));
+    expect(service.peek(NOTE.path)).not.toBeNull();
+    expect(citationRequests).toHaveLength(2);
+    await dispose();
+  });
+
+  it("answers a load after invalidation with a fresh read", async () => {
+    let generation = 0;
+    const { service, rendersInvalidated, dispose } = await makeHarness({
+      body: "Blah [@alpha].",
+      formatCitations: (sources) => {
+        generation += 1;
+        const text = generation === 1 ? "stale" : "fresh";
+        return Promise.resolve(sources.map(() => rendered(text)));
+      },
+    });
+    await service.load(NOTE);
+
+    rendersInvalidated();
+    const text = await service.load(NOTE);
+
+    expect(firstText(text.formatted.get("[@alpha]"))).toBe("fresh");
+    expect(firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]"))).toBe(
+      "fresh",
+    );
     await dispose();
   });
 
@@ -645,7 +760,7 @@ describe("CitationText staleness", () => {
 
   // Which Literature Note a wikilink resolves to decides what a citekey here
   // reaches, so a moved mapping makes every document's text stale.
-  it("drops every document when a Literature Note moves", async () => {
+  it("keeps every document's text when a Literature Note moves, and says so", async () => {
     const { service, resolutionChanged, dispose } = await makeHarness({
       body: "Blah [@alpha].",
     });
@@ -655,7 +770,7 @@ describe("CitationText staleness", () => {
 
     resolutionChanged();
 
-    expect(service.peek(NOTE.path)).toBeNull();
+    expect(service.peek(NOTE.path)).not.toBeNull();
     expect(invalidated).toBe(1);
     await dispose();
   });
@@ -663,7 +778,7 @@ describe("CitationText staleness", () => {
   // The citekey resolution snapshot decides what a literal `@citekey` reaches
   // and whether a wikilink's Item carries a native citation key, so a rebuild
   // makes every document's text stale.
-  it("drops every document when the citekey resolution snapshot rebuilds", async () => {
+  it("keeps every document's text when the citekey resolution snapshot rebuilds", async () => {
     const { service, citekeyResolutionChanged, dispose } = await makeHarness({
       body: "Blah [@alpha].",
     });
@@ -673,7 +788,7 @@ describe("CitationText staleness", () => {
 
     citekeyResolutionChanged();
 
-    expect(service.peek(NOTE.path)).toBeNull();
+    expect(service.peek(NOTE.path)).not.toBeNull();
     expect(invalidated).toBe(1);
     await dispose();
   });

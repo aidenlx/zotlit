@@ -9,6 +9,7 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
 When your Zotero metadata or annotations change, you can refresh your literature notes to match. ZotLit preserves your own writing by updating only the parts it manages.
 
@@ -30,7 +31,7 @@ These commands are available from the command palette and from the right-click c
 
     Open the command palette (`Ctrl+P` on Windows/Linux, `Cmd+P` on macOS) and run:
 
-    <Command>ZotLit: Update literature note</Command>
+    <Command name={m.command_update_note_name()} />
 
     ZotLit refreshes the frontmatter and re-renders the content inside the managed region (`%%zt-managed%%` ... `%%/zt-managed%%`). Your writing outside the managed region stays untouched.
 
@@ -43,13 +44,13 @@ These commands are available from the command palette and from the right-click c
 
 To refresh frontmatter without touching the note body, run:
 
-<Command>ZotLit: Update literature note metadata</Command>
+<Command name={m.command_update_note_metadata_name()} />
 
 A notice confirms: "Metadata updated." The note body is not changed.
 
 ### Context menu
 
-You can also right-click a literature note file in the file explorer. The **ZotLit** section of the context menu offers **Update literature note**, **Update literature note metadata**, **Overwrite literature note**, and **Copy item key**.
+You can also right-click a literature note file in the file explorer. The **ZotLit** section of the context menu offers **{m.command_update_note_name()}**, **{m.command_update_note_metadata_name()}**, **{m.command_overwrite_note_name()}**, and **{m.command_copy_item_key_name()}**.
 
 ## Update notes in batch
 
@@ -65,9 +66,9 @@ ZotLit Companion, the Zotero add-on, starts batch updates from Zotero.
   <Step>
     ### Confirm in Obsidian
 
-    Obsidian opens a confirmation dialog titled **Update literature notes**. It shows how many notes will be created or updated, grouped by status (Update, Create, Not found).
+    Obsidian opens a confirmation dialog titled **{m.batch_update_title()}**. It shows how many notes will be created or updated, grouped by status: **{m.batch_update_group_update({ count: "…" })}**, **{m.batch_update_group_create({ count: "…" })}**, and **{m.batch_update_group_not_found({ count: "…" })}**.
 
-    Click **Update notes** to proceed.
+    Click **{m.batch_update_confirm_button()}** to proceed.
 
   </Step>
   <Step>
@@ -78,7 +79,7 @@ ZotLit Companion, the Zotero add-on, starts batch updates from Zotero.
   </Step>
 </Steps>
 
-To update every note at once, run <Command inline>ZotLit: Create or update all literature notes</Command> from the Obsidian command palette. This skips the Zotero selection step and covers every library in your [library scope](/docs/reference/settings#library-scope).
+To update every note at once, run <Command inline name={m.command_update_all_notes_name()} /> from the Obsidian command palette. This skips the Zotero selection step and covers every library in your [library scope](/docs/reference/settings#library-scope).
 
 While more than one library contributes items, the confirmation names the library beside each status heading, so identical statuses stay apart. One contributing library keeps the plain headings.
 
@@ -96,7 +97,7 @@ You can also open a single note from Zotero by right-clicking one item and choos
 
 ## Overwrite a note
 
-<Command inline>ZotLit: Overwrite literature note</Command> is a separate,
+<Command inline name={m.command_overwrite_note_name()} /> is a separate,
 destructive command. It replaces the entire note body with the re-rendered note
 template. Frontmatter keys managed by ZotLit are refreshed; other frontmatter
 keys you added are kept.
@@ -104,9 +105,9 @@ keys you added are kept.
 A confirmation dialog appears before the overwrite proceeds.
 
 <Callout type="warn" title="Notes created with ZotLit v1">
-  Literature notes created with ZotLit v1 do not have a managed region. Running **Update literature note** on a v1 note refreshes its frontmatter but leaves the body untouched, showing the notice "Frontmatter updated. No managed region found."
+  Literature notes created with ZotLit v1 do not have a managed region. Running **{m.command_update_note_name()}** on a v1 note refreshes its frontmatter but leaves the body untouched, showing the notice "Frontmatter updated. No managed region found."
 
-To fully refresh a v1 note's body, use <Command inline>ZotLit: Overwrite literature note</Command>. This replaces the entire body with the current note template.
+To fully refresh a v1 note's body, use <Command inline name={m.command_overwrite_note_name()} />. This replaces the entire body with the current note template.
 
 </Callout>
 

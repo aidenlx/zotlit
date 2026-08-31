@@ -8,6 +8,7 @@ updated: "2.1.0"
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
 Use this guide when Zotero changes do not appear after you update a literature note in Obsidian.
 
@@ -39,7 +40,7 @@ Use this guide when Zotero changes do not appear after you update a literature n
   <Step>
     ### Update the literature note
 
-    Return to the literature note in Obsidian. Run <Command inline>ZotLit: Update literature note</Command>.
+    Return to the literature note in Obsidian. Run <Command inline name={m.command_update_note_name()} />.
 
     The missing Zotero change should now appear in the note.
 
@@ -47,20 +48,20 @@ Use this guide when Zotero changes do not appear after you update a literature n
   <Step>
     ### Refresh ZotLit
 
-    If the note still shows old data, run <Command inline>ZotLit: Refresh Zotero database</Command>. Then update the literature note again.
+    If the note still shows old data, run <Command inline name={m.command_refresh_db_name()} />. Then update the literature note again.
 
   </Step>
 </Steps>
 
 ## Advanced: Use Full copy as a last resort [#read-mode]
 
-If the problem continues, open **Settings → ZotLit → Zotero database**. Set **Read mode** to **Full copy**, refresh the database, and update the literature note again.
+If the problem continues, open **Settings → ZotLit → {m.settings_page_database()}**. Set **{m.settings_db_read_mode_name()}** to **{m.settings_db_read_mode_copy()}**, refresh the database, and update the literature note again.
 
-**Full copy** copies the entire database on every refresh. Large Zotero libraries take longer to refresh and use more disk space.
+**{m.settings_db_read_mode_copy()}** copies the entire database on every refresh. Large Zotero libraries take longer to refresh and use more disk space.
 
 ## Report a remaining problem
 
-If Full copy also fails, [collect debug logs](/docs/how-to/collect-debug-logs). Then [file a bug report](https://github.com/aidenlx/zotlit/discussions/new?category=bug-reports) with your ZotLit version, operating system, and reproduction steps.
+If {m.settings_db_read_mode_copy()} also fails, [collect debug logs](/docs/how-to/collect-debug-logs). Then [file a bug report](https://github.com/aidenlx/zotlit/discussions/new?category=bug-reports) with your ZotLit version, operating system, and reproduction steps.
 
 ## See also
 

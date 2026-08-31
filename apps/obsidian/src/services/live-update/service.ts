@@ -225,7 +225,17 @@ export class LiveUpdateService extends Service<void> {
     });
 
     const server = serve(
-      { fetch: app.fetch, port: this.#port, hostname: this.#hostname },
+      {
+        fetch: app.fetch,
+        port: this.#port,
+        hostname: this.#hostname,
+        // The listener swaps its own `Request`/`Response` classes into the
+        // globals unless told otherwise, and those globals belong to the whole
+        // Obsidian window. WebAssembly streaming brand-checks the native
+        // `Response`, so a swapped-in class stops the Pandoc engine from
+        // instantiating. The listener keeps the native classes instead.
+        overrideGlobalObjects: false,
+      },
       (info) => {
         this.#listening = true;
         this.#refreshAvailability();

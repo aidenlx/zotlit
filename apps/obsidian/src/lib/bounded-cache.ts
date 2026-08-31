@@ -43,6 +43,11 @@ export class BoundedCache<T> {
     return this.#held.get(key);
   }
 
+  /** Iterates in eviction order; deleting while iterating is safe. */
+  entries(): MapIterator<[string, T]> {
+    return this.#held.entries();
+  }
+
   delete(key: string): void {
     this.#held.delete(key);
   }

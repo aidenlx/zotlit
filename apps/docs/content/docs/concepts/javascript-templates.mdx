@@ -7,12 +7,13 @@ updated: "2.0.0"
 
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { m } from "@/paraglide/messages.js";
 
-JavaScript Templates is a per-device gate that controls whether Eta templates (`.eta.md` files) compile and execute. It is disabled by default.
+{m.settings_template_js_enable_name()} is a per-device gate that controls whether Eta templates (`.eta.md` files) compile and execute. It is disabled by default.
 
 ## What the gate enables
 
-When JavaScript Templates is on:
+When {m.settings_template_js_enable_name()} is on:
 
 - `.eta.md` template files compile and execute using the Eta engine (full JavaScript).
 - Frontmatter fields declared with the `javascript` language evaluate their expressions.
@@ -61,7 +62,7 @@ If you sync your vault across devices, only devices where the owner has explicit
 When the gate is off and you have an `.eta.md` file that would otherwise be active (no Liquid file shadows it), ZotLit treats that template as **inert**:
 
 - The operation that needs the template (create note, update note, insert citation) fails with an error naming the cause. There is no silent fallback to the built-in default.
-- **Settings > Templates** shows a warning: "The Eta template at `{path}` is inactive because JavaScript templates are disabled on this device."
+- **Settings > {m.settings_page_templates()}** shows a warning: "The Eta template at `{path}` is inactive because JavaScript templates are disabled on this device."
 - The `.eta.md` file remains in your vault untouched, never compiled.
 
 The same applies to frontmatter fields declared as `javascript`: any note write that consumes such a field fails with an error naming the inactive fields, and existing notes are not modified.
@@ -85,7 +86,12 @@ Both `zotlit-note.liquid.md` and `zotlit-note.eta.md` can exist for the same tem
   />
   <Card
     title="Settings reference"
-    description="Full option list including the JavaScript templates setting."
+    description={
+      <>
+        Full option list including the {m.settings_template_js_enable_name()}{" "}
+        setting.
+      </>
+    }
     href="/docs/reference/settings"
   />
 </Cards>
