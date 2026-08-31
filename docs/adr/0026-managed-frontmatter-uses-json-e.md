@@ -10,6 +10,21 @@ usage, and `js` holds one JavaScript expression as the escape hatch behind the
 per-device JavaScript Templates gate. The format has no `language` or `when`
 member.
 
+An entry may instead omit `key` — a spread entry: its `value` or `js` member
+evaluates to a string-keyed mapping, and every produced key becomes a field
+at the entry's position under the entry's single merge strategy. `expr` stays
+single-value, so a keyless `expr` entry is a validation error. Inside a
+spread mapping, JSON-e's native object semantics carry conditional presence
+(a false `$if` omits the key) and dynamic key names (`${}` interpolation),
+and a top-level `$let` shares one computation across every produced field.
+An omitted key is left untouched; deleting a field stays a static-key
+capability. Entries apply as a fold in list order — each entry's merge
+strategy combines with the note's value overlaid by the pending patch, so a
+later entry wins the value while the first producing entry sets a new note's
+key position. A produced key that is reserved or empty refuses the whole
+patch; duplicate static keys stay a document-validation error. Diagnostics
+name a spread entry by its 1-based list position.
+
 JSON-e is the sole engine for structural construction and conditional absence.
 The evaluator renders each JSON-e value under an engine-owned envelope
 property, where an omitted property means absent and an own property
@@ -34,6 +49,15 @@ operators.
   the JSON-e tier's job.
 - Five host functions (adding `map` and `flatten`) mirror the Liquid filter
   pipeline, but the `$map` and `$flatten` operators already cover both.
+- A whole-mapping slot beside the field list carries the list's ordering and
+  merge vocabulary into a second subsystem; a keyless entry in the one list
+  subsumes it, and a single spread entry as the whole list is that slot.
+- Refusing every evaluation-time duplicate key forces a spread template to
+  hand-exclude each overridden key; the ordered fold keeps the all-or-nothing
+  patch and lets spread defaults compose with targeted static overrides.
+- Dynamic-key deletion — a delete sentinel in the mapping, or tracked
+  ownership of previously written keys — adds state and rules without a
+  motivating case; a static-key JSON-e entry already deletes on absence.
 
 ## Consequences
 
@@ -47,4 +71,11 @@ operators.
   operation is refused with the inert keys named, never partially applied.
 - The JSON-e adapter owns the omission envelope, the shared output-domain
   validation (a depth-capped walk that doubles as the cycle check), the
-  pinned `now`, and the three host functions.
+  pinned `now`, and the three host functions. A spread entry renders under
+  the same envelope: a missing envelope property makes the whole entry an
+  empty patch, and a present non-mapping result refuses the operation.
+- A `js` spread entry with the JavaScript Templates gate off refuses by entry
+  position, since its keys are unknowable while inert.
+- Conversion is untouched: legacy settings fields convert to static-key
+  entries only, and the built-in default document ships static `expr`
+  entries.
