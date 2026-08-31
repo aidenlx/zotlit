@@ -24,6 +24,7 @@ import {
   createStressItems,
   DEFAULT_SCOPE_CASE,
   findScopeCase,
+  FIXTURE_ITEM_TYPES,
   INSTALLED_STYLES,
   ITEMS,
   LIBRARIES,
@@ -48,6 +49,7 @@ export {
   createStressItems,
   DEFAULT_SCOPE_CASE,
   findScopeCase,
+  FIXTURE_ITEM_TYPES,
   INSTALLED_STYLES,
   ITEMS,
   LIBRARIES,
@@ -295,17 +297,22 @@ interface SchemaIDs {
     number
   >;
   fields: Record<
-    | "title"
-    | "citationKey"
-    | "date"
-    | "publicationTitle"
-    | "bookTitle"
-    | "url"
-    | "accessDate",
+    "title" | "citationKey" | "date" | "url" | "accessDate",
     number
   >;
+  /**
+   * Per-Item-type field ids for the two Venue roles, read from Zotero's own
+   * base-field mappings rather than named by the Spec, so adding an Item type
+   * never asks the Spec author to know Zotero's base-field table.
+   */
+  roleFields: Record<FixtureItem["itemType"], VenueRoleFields>;
   charsets: Record<"utf-8", number>;
   creatorTypes: Record<FixtureCreator["creatorType"], number>;
+}
+
+interface VenueRoleFields {
+  container: number | null;
+  publisher: number | null;
 }
 
 function readSchemaIDs(db: DatabaseSync): SchemaIDs {
@@ -329,25 +336,25 @@ function readSchemaIDs(db: DatabaseSync): SchemaIDs {
     ) as Record<T, number>;
   };
 
+  const itemTypes = lookup(
+    "select itemTypeID from itemTypesCombined where typeName = ?",
+    "itemTypeID",
+    [...FIXTURE_ITEM_TYPES, "note", "attachment", "annotation"],
+  );
+
   return {
-    itemTypes: lookup(
-      "select itemTypeID from itemTypesCombined where typeName = ?",
-      "itemTypeID",
-      ["journalArticle", "bookSection", "note", "attachment", "annotation"],
-    ),
+    itemTypes,
     fields: lookup(
       "select fieldID from fieldsCombined where fieldName = ?",
       "fieldID",
-      [
-        "title",
-        "citationKey",
-        "date",
-        "publicationTitle",
-        "bookTitle",
-        "url",
-        "accessDate",
-      ],
+      ["title", "citationKey", "date", "url", "accessDate"],
     ),
+    roleFields: Object.fromEntries(
+      FIXTURE_ITEM_TYPES.map((itemType) => [
+        itemType,
+        readVenueRoleFields(db, itemTypes[itemType]),
+      ]),
+    ) as Record<FixtureItem["itemType"], VenueRoleFields>,
     charsets: lookup(
       "select charsetID from charsets where charset = ?",
       "charsetID",
@@ -361,13 +368,60 @@ function readSchemaIDs(db: DatabaseSync): SchemaIDs {
   };
 }
 
-function containerFieldID(
-  ids: SchemaIDs,
-  itemType: FixtureItem["itemType"],
-): number {
-  return itemType === "bookSection"
-    ? ids.fields.bookTitle
-    : ids.fields.publicationTitle;
+/**
+ * The Item type's own field for a Venue role: the field it aliases onto the
+ * role's base field, or the base field itself where the type carries it under
+ * its canonical name (`journalArticle.publicationTitle`, `book.publisher`).
+ */
+function readVenueRoleFields(
+  db: DatabaseSync,
+  itemTypeID: number,
+): VenueRoleFields {
+  const aliased = db.prepare(
+    "select fieldID from baseFieldMappingsCombined where itemTypeID = ?" +
+      " and baseFieldID = (select fieldID from fieldsCombined where fieldName = ?)",
+  );
+  const native = db.prepare(
+    "select itf.fieldID as fieldID from itemTypeFieldsCombined itf" +
+      " join fieldsCombined f on f.fieldID = itf.fieldID" +
+      " where itf.itemTypeID = ? and f.fieldName = ?",
+  );
+  const roleFieldID = (baseFieldName: string): number | null => {
+    const row = (aliased.get(itemTypeID, baseFieldName) ??
+      native.get(itemTypeID, baseFieldName)) as { fieldID: number } | undefined;
+    return row?.fieldID ?? null;
+  };
+  return {
+    container: roleFieldID("publicationTitle"),
+    publisher: roleFieldID("publisher"),
+  };
+}
+
+/**
+ * Where an Item's Venue is stored: its container-role field, or its
+ * publisher-role field for a type with no container. A Spec entry naming a
+ * Venue its type cannot hold fails the build rather than dropping the value.
+ */
+function venueFieldID(ids: SchemaIDs, item: FixtureItem): number {
+  const roles = ids.roleFields[item.itemType];
+  const fieldID = roles.container ?? roles.publisher;
+  if (fieldID === null) {
+    throw new Error(
+      `item "${item.key}" names a Venue, which item type "${item.itemType}" cannot hold.`,
+    );
+  }
+  return fieldID;
+}
+
+/** Where an Item's publisher-role value is stored, alongside its container-role Venue. */
+function publisherFieldID(ids: SchemaIDs, item: FixtureItem): number {
+  const roles = ids.roleFields[item.itemType];
+  if (roles.container === null || roles.publisher === null) {
+    throw new Error(
+      `item "${item.key}" names a publisher, which item type "${item.itemType}" cannot hold beside a Venue.`,
+    );
+  }
+  return roles.publisher;
 }
 
 function seedDatabase(
@@ -645,11 +699,24 @@ function seedItemData(
     ...items.flatMap((item) => [
       { itemID: item.itemID, fieldID: ids.fields.title, value: item.title },
       { itemID: item.itemID, fieldID: ids.fields.date, value: item.date },
-      {
-        itemID: item.itemID,
-        fieldID: containerFieldID(ids, item.itemType),
-        value: item.containerTitle,
-      },
+      ...(item.venue === undefined
+        ? []
+        : [
+            {
+              itemID: item.itemID,
+              fieldID: venueFieldID(ids, item),
+              value: item.venue,
+            },
+          ]),
+      ...(item.publisher === undefined
+        ? []
+        : [
+            {
+              itemID: item.itemID,
+              fieldID: publisherFieldID(ids, item),
+              value: item.publisher,
+            },
+          ]),
       ...(item.citationKey === null
         ? []
         : [

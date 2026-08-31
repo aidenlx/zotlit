@@ -1,5 +1,12 @@
+import { itemBaseFields, resolveVenue } from "@zotlit/db";
 import type { BaseItem, Creator, IndexedItem, Item } from "@zotlit/db";
 import type { ItemFields, JournalArticleFields } from "@zotlit/zotero-types";
+
+/** The fields Zotero records for one item type, minus its discriminant. */
+type FieldsOf<TType extends ItemFields["itemType"]> = Omit<
+  Extract<ItemFields, { itemType: TType }>,
+  "itemType"
+>;
 
 export interface ItemFixtureOptions {
   key: string;
@@ -26,6 +33,23 @@ export interface ItemFixtureOptions {
   pages?: string | null;
 }
 
+/**
+ * {@link makeItem} options that also carry raw per-type fields. Naming the
+ * fields obliges the caller to name the item type, and the type admits only
+ * the fields Zotero records for it, so a fixture cannot state a shape the
+ * query never emits.
+ */
+export type TypedItemFixtureOptions<TType extends ItemFields["itemType"]> =
+  ItemFixtureOptions & {
+    itemType: TType;
+    /**
+     * Fields named as Zotero names them for {@link TypedItemFixtureOptions.itemType} —
+     * `{ repository: "arXiv" }` on a Preprint, `{ bookTitle: "..." }` on a Book
+     * Section. The base-field view and the Venue derive from them.
+     */
+    fields?: FieldsOf<TType>;
+  };
+
 export function makeIndexedItem(options: ItemFixtureOptions): IndexedItem {
   const creators = options.creators ?? [];
   return {
@@ -49,7 +73,15 @@ export function makeIndexedItem(options: ItemFixtureOptions): IndexedItem {
   };
 }
 
-export function makeItem(options: ItemFixtureOptions): Item {
+export function makeItem(options: ItemFixtureOptions): Item;
+export function makeItem<TType extends ItemFields["itemType"]>(
+  options: TypedItemFixtureOptions<TType>,
+): Item;
+export function makeItem(
+  options: ItemFixtureOptions & {
+    fields?: Readonly<Record<string, string | null>>;
+  },
+): Item {
   const itemType = options.itemType ?? "book";
   const base: BaseItem = {
     itemID: options.itemID ?? options.key.charCodeAt(0),
@@ -66,30 +98,32 @@ export function makeItem(options: ItemFixtureOptions): Item {
     primaryCreatorType: options.primaryCreatorType ?? null,
     customFields: new Map<string, string | null>(),
   };
-  const fields = {
+  const common = {
     title: options.title ?? null,
     citationKey: options.citationKey ?? null,
     date: options.date ?? null,
     language: options.language ?? null,
   };
-  if (itemType === "journalArticle") {
-    return {
-      ...base,
-      groupID: null,
-      fields: {
-        itemType: "journalArticle",
-        ...fields,
-        publicationTitle: options.publicationTitle ?? null,
-        volume: options.volume ?? null,
-        issue: options.issue ?? null,
-        pages: options.pages ?? null,
-      } satisfies JournalArticleFields,
-    };
-  }
+  const fields = (
+    itemType === "journalArticle"
+      ? ({
+          itemType: "journalArticle",
+          ...common,
+          publicationTitle: options.publicationTitle ?? null,
+          volume: options.volume ?? null,
+          issue: options.issue ?? null,
+          pages: options.pages ?? null,
+          ...options.fields,
+        } satisfies JournalArticleFields)
+      : { itemType, ...common, ...options.fields }
+  ) as ItemFields;
+  const baseFields = itemBaseFields(fields);
   return {
     ...base,
     groupID: null,
-    fields: { itemType, ...fields } as ItemFields,
+    fields,
+    baseFields,
+    venue: resolveVenue(baseFields),
   };
 }
 

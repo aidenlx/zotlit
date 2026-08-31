@@ -5,6 +5,8 @@ import type { NodeDatabaseClient } from "@/client/node";
 import type { CreatorFieldMode } from "@/lib/zt-creator";
 import { formatIndexedKey } from "@/lib/zt-key";
 
+import { getBaseFieldTable } from "./_base-fields";
+import type { BaseFieldTable } from "./_base-fields";
 import { groupsQuery, resolveGroupID } from "./_groups";
 import type { GroupIDMemo } from "./_groups";
 import { CHILD_ITEM_TYPES, defineQuery } from "./_shared";
@@ -45,38 +47,6 @@ const INDEXED_FIELD_NAMES = [
 ] as const;
 
 type IndexedFieldName = (typeof INDEXED_FIELD_NAMES)[number];
-
-const canonicalFieldsQuery = defineQuery<void>()((db) =>
-  db.query.fieldsCombined.findMany({
-    where: { fieldName: { in: [...INDEXED_FIELD_NAMES] } },
-    columns: { fieldID: true, fieldName: true },
-  }),
-);
-
-const aliasFieldsQuery = defineQuery<void>()((db) =>
-  db.query.baseFieldMappingsCombined.findMany({
-    where: { baseField: { fieldName: { in: [...INDEXED_FIELD_NAMES] } } },
-    columns: { itemTypeID: true, fieldID: true },
-    with: { baseField: { columns: { fieldName: true } } },
-  }),
-);
-
-/**
- * Resolution table for the canonical/actual fieldName split. RQB v2 can't
- * express the join inline because `baseFieldMappingsCombined` must match on
- * the parent `items.itemTypeID` plus the child `itemData.fieldID`, and v2
- * `where` clauses can't reference the parent. Precomputed once per client.
- */
-interface FieldMapping {
-  /** fieldIDs to fetch — union of canonical IDs and per-itemType alias IDs. */
-  indexedFieldIDs: readonly number[];
-  /** Direct match: a field whose own name is one of `INDEXED_FIELD_NAMES`. */
-  canonicalByFieldID: ReadonlyMap<number, IndexedFieldName>;
-  /** Per-itemType alias: `${itemTypeID}:${fieldID}` → canonical name. */
-  aliasByTypeAndField: ReadonlyMap<string, IndexedFieldName>;
-}
-
-const mappingByClient = new WeakMap<NodeDatabaseClient, FieldMapping>();
 
 /**
  * Shared `columns` + `with` projection for the indexed-item queries (by library
@@ -169,12 +139,12 @@ export function getIndexedItemsByLibrary(
   db: NodeDatabaseClient,
   libraryID: number,
 ): IndexedItem[] {
-  const mapping = getMappingSync(db);
+  const table = getBaseFieldTable(db, INDEXED_FIELD_NAMES);
   const rows = indexedItemsQuery
-    .prepared(db, { indexedFieldIDs: mapping.indexedFieldIDs })
+    .prepared(db, { indexedFieldIDs: table.fieldIDs })
     .all({ libraryID });
   const groupID = groupsQuery.prepared(db).get({ libraryID })?.groupID ?? null;
-  return rows.map((row) => toIndexedItem(row, groupID, mapping));
+  return rows.map((row) => toIndexedItem(row, groupID, table));
 }
 
 /**
@@ -201,16 +171,16 @@ export function getIndexedItemsByID(
   itemIDs: readonly number[],
 ): IndexedItem[] {
   if (itemIDs.length === 0) return [];
-  const mapping = getMappingSync(db);
+  const table = getBaseFieldTable(db, INDEXED_FIELD_NAMES);
   const stmt = indexedItemByIdQuery.prepared(db, {
-    indexedFieldIDs: mapping.indexedFieldIDs,
+    indexedFieldIDs: table.fieldIDs,
   });
   const memo: GroupIDMemo = new Map();
   return itemIDs.flatMap((itemID) =>
     stmt
       .all({ itemID })
       .map((row) =>
-        toIndexedItem(row, resolveGroupID(db, row.libraryID, memo), mapping),
+        toIndexedItem(row, resolveGroupID(db, row.libraryID, memo), table),
       ),
   );
 }
@@ -275,54 +245,10 @@ export function getIndexSignature(
   };
 }
 
-function getMappingSync(db: NodeDatabaseClient): FieldMapping {
-  const cached = mappingByClient.get(db);
-  if (cached) return cached;
-  const canonicalRows = canonicalFieldsQuery.prepared(db).all();
-  const aliasRows = aliasFieldsQuery.prepared(db).all();
-  const mapping = buildMapping(canonicalRows, aliasRows);
-  mappingByClient.set(db, mapping);
-  return mapping;
-}
-
-type CanonicalFieldRow = QueryRow<typeof canonicalFieldsQuery>;
-type AliasFieldRow = QueryRow<typeof aliasFieldsQuery>;
-
-function buildMapping(
-  canonicalRows: readonly CanonicalFieldRow[],
-  aliasRows: readonly AliasFieldRow[],
-): FieldMapping {
-  const canonicalByFieldID = new Map<number, IndexedFieldName>();
-  for (const row of canonicalRows) {
-    if (isIndexedFieldName(row.fieldName)) {
-      canonicalByFieldID.set(row.fieldID, row.fieldName);
-    }
-  }
-  const aliasByTypeAndField = new Map<string, IndexedFieldName>();
-  const indexedFieldIDs = new Set<number>(canonicalByFieldID.keys());
-  for (const row of aliasRows) {
-    if (row.fieldID == null) continue;
-    indexedFieldIDs.add(row.fieldID);
-    if (row.itemTypeID == null) continue;
-    const canonical = row.baseField?.fieldName;
-    if (!canonical || !isIndexedFieldName(canonical)) continue;
-    aliasByTypeAndField.set(`${row.itemTypeID}:${row.fieldID}`, canonical);
-  }
-  return {
-    indexedFieldIDs: [...indexedFieldIDs],
-    canonicalByFieldID,
-    aliasByTypeAndField,
-  };
-}
-
-function isIndexedFieldName(value: string): value is IndexedFieldName {
-  return INDEXED_FIELD_NAMES.includes(value as IndexedFieldName);
-}
-
 function toIndexedItem(
   row: IndexedItemRow,
   groupID: number | null,
-  mapping: FieldMapping,
+  table: BaseFieldTable<IndexedFieldName>,
 ): IndexedItem {
   const item: IndexedItem = {
     itemID: row.itemID,
@@ -343,7 +269,7 @@ function toIndexedItem(
   };
 
   for (const data of row.itemData) {
-    const name = resolveIndexedFieldName(row.itemTypeID, data.fieldID, mapping);
+    const name = table.resolve(row.itemTypeID, data.fieldID);
     if (!name) continue;
     item[name] = data.itemDataValue?.value ?? null;
   }
@@ -370,15 +296,4 @@ function toIndexedItem(
   item.creators = creators;
   item.primaryCreator = primaryCreator;
   return item;
-}
-
-function resolveIndexedFieldName(
-  itemTypeID: number,
-  fieldID: number | null,
-  mapping: FieldMapping,
-): IndexedFieldName | null {
-  if (fieldID == null) return null;
-  const alias = mapping.aliasByTypeAndField.get(`${itemTypeID}:${fieldID}`);
-  if (alias) return alias;
-  return mapping.canonicalByFieldID.get(fieldID) ?? null;
 }

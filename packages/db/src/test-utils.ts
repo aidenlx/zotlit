@@ -2,6 +2,7 @@
 import type { ItemFields } from "@zotlit/zotero-types";
 
 import { USER_LIBRARY_ID } from "./lib/constants";
+import { itemBaseFields, resolveVenue } from "./lib/zt-venue";
 import type { BaseItem, Item } from "./queries/items";
 
 /**
@@ -187,6 +188,7 @@ export function makeItem(
   fields: { itemType: string } & Record<string, string | null>,
   base?: Partial<BaseItem>,
 ): Item {
+  const baseFields = itemBaseFields(fields as ItemFields);
   return {
     itemID: 1,
     libraryID: USER_LIBRARY_ID,
@@ -207,5 +209,7 @@ export function makeItem(
     groupID: null,
     ...base,
     fields: fields as ItemFields,
+    baseFields,
+    venue: resolveVenue(baseFields),
   };
 }

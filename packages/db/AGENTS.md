@@ -19,6 +19,8 @@ See [policies/integer-domains.md](policies/integer-domains.md) for Zotero intege
 
 Field naming follows type-specific names — `BookSectionFields.bookTitle`, not `publicationTitle`. Use `FIELD_ALIASES` from `@zotlit/zotero-types` for type-specific → base-field resolution.
 
+`item.baseFields` carries the same values under their canonical base-field names, resolved against the connected database's own mapping rows so custom item types and custom fields resolve too, and `item.venue` derives the **Venue** from it. `src/queries/_base-fields.ts` owns that mapping for every query that needs it. See [ADR 0026](../../docs/adr/0026-venue-resolves-the-container-role-before-the-publisher-role.md).
+
 `fieldsCombined.custom` drives categorization: `0` = built-in (typed property under `item.fields`), `1` = user-defined or newer (entry in `item.customFields`). See `src/queries/items.ts`.
 
 ## Date and language parsing
