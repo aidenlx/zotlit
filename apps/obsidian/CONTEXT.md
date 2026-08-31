@@ -118,6 +118,10 @@ The Template Data Explorer re-anchored at a single Annotation, exactly what the 
 The Template Data Explorer's current root, saved as a JSON file for a bug report. Always the whole root the pane is anchored at — the Note Root or the Annotation Root — never the rows an active filter leaves visible. Carries the same data the Agent CLI answers with, under a header naming the plugin version, the contract version, and the Indexed Key and root that reproduce it. Being Explorer data, it records inert placeholders where a real render would write files.
 _Avoid_: template export (suggests rendered note output), data dump (the file follows the published contract, it is not raw state)
 
+**Item Snapshot** _(web Workbench)_:
+The fixed template data for one selected Item, shared by the web Workbench's preview and field palette until an explicit refresh. It includes permitted local link targets and explicit unavailable values where private local data is omitted.
+_Avoid_: Template Data Export (the separate inspection artifact), live Item data (a snapshot remains fixed)
+
 ### Agent CLI
 
 **CLI Contract**:
