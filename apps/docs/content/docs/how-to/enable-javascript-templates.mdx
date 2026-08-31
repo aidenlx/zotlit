@@ -8,8 +8,9 @@ updated: "2.0.0"
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { m } from "@/paraglide/messages.js";
 
-JavaScript Templates is a per-device gate that lets Eta templates (`.eta.md` files) and JavaScript-language frontmatter fields execute. It is disabled by default.
+{m.settings_template_js_enable_name()} is a per-device gate that lets Eta templates (`.eta.md` files) and JavaScript-language frontmatter fields execute. It is disabled by default.
 
 <Callout type="info" title="Understand the implications first">
   Eta templates run JavaScript with the same access as ZotLit itself: they can
@@ -24,17 +25,17 @@ JavaScript Templates is a per-device gate that lets Eta templates (`.eta.md` fil
   <Step>
     ### Open template settings
 
-    In Obsidian, open **Settings > ZotLit > Templates**. Locate the **JavaScript templates** group.
+    In Obsidian, open **Settings > ZotLit > {m.settings_page_templates()}**. Locate the **{m.settings_template_js_enable_name()}** group.
 
   </Step>
   <Step>
     ### Click Turn on
 
-    Click the **Turn on** button. A confirmation modal titled **Enable JavaScript templates?** appears with the following warning:
+    Click the **{m.settings_template_js_turn_on()}** button. A confirmation modal titled **{m.settings_template_js_confirm_title()}** appears with the following warning:
 
     > Eta templates run JavaScript with the same access as ZotLit itself: they can read and modify your vault, connect to the internet, and on desktop, access your system. Only enable this if you trust every template file in your vault.
 
-    Click **Enable** to confirm.
+    Click **{m.settings_template_js_confirm_action()}** to confirm.
 
   </Step>
 </Steps>
@@ -43,7 +44,7 @@ The gate takes effect immediately. ZotLit recompiles the template folder in plac
 
 ## Turn off
 
-In the same **JavaScript templates** group, click **Turn off**. The gate disables immediately with no confirmation modal. All `.eta.md` templates become inert and JavaScript frontmatter fields stop evaluating until the gate is re-enabled.
+In the same **{m.settings_template_js_enable_name()}** group, click **{m.settings_template_js_turn_off()}**. The gate disables immediately with no confirmation modal. All `.eta.md` templates become inert and JavaScript frontmatter fields stop evaluating until the gate is re-enabled.
 
 ## Per-device scope
 

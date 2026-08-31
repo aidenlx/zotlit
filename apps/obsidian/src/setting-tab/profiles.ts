@@ -45,6 +45,7 @@ export {
   confirmProfileDeletion,
   type ProfileDeletionConsent,
 } from "./delete-profile-modal";
+import { highlightMappingItems } from "./note-import";
 import { defaultProfileBindingPlaceholder } from "./placeholder";
 import { shareProfile } from "./share-profile-modal";
 export { shareProfile, ShareProfileModal } from "./share-profile-modal";
@@ -81,6 +82,12 @@ export function literatureNoteProfileItems(
       desc: m.settings_page_profiles_desc(),
       items: [
         ...defaultProfileItems(ctx),
+        {
+          type: "page",
+          name: m.settings_note_import_highlight_mappings_name(),
+          desc: m.settings_note_import_highlight_mappings_desc(),
+          items: highlightMappingItems(ctx),
+        },
         {
           name: m.settings_profile_heading(),
           render: (setting) => {

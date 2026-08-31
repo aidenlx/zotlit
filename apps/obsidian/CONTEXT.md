@@ -145,8 +145,11 @@ A `<p>` in a Child Note's HTML whose sole content is a single Annotation Excerpt
 _Avoid_: annotation block, callout
 
 **Colored Highlight Syntax**:
-The opt-in Markdown representation for red, orange, yellow, green, blue, and purple highlights in an Imported Note. A colored-circle emoji at the start of `==...==` selects the color; highlights outside that set retain their HTML representation.
+An opt-in Markdown representation of a highlight in an Imported Note, with a selected emoji at the start of `==...==`. The emoji comes from the Highlight Mapping for the source color.
 _Avoid_: Bear highlight, emoji highlight
+
+**Highlight Mapping**:
+A per-color choice of representation for highlights converted during Note Import: a colored HTML mark or Colored Highlight Syntax with a selected emoji. Each mapping corresponds to a recognized Zotero palette color.
 
 ### Integration processes
 

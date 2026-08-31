@@ -1,7 +1,8 @@
 /* "Manuscript & Machine" giscus theme — dark. Inherits giscus' Primer dark
    base then overrides the surface variables with the site palette from
-   app/global.css .dark. Served with CORS from /giscus/ (see next.config.ts)
-   because giscus loads it cross-origin. */
+   src/styles.css .dark. Served with CORS from /giscus/ (the header comes from
+   renderHeadersFile in src/lib/v1-redirects.ts) because giscus loads it
+   cross-origin. */
 @import url("https://giscus.app/themes/dark.css");
 
 main {

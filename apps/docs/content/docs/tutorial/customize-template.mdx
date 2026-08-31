@@ -9,8 +9,9 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
-This tutorial picks up where [Create your first literature note](/docs/tutorial/first-note) left off. You will change how annotation callouts look in that note by editing a template file, then use the Template data explorer to find new data you can add.
+This tutorial picks up where [Create your first literature note](/docs/tutorial/first-note) left off. You will change how annotation callouts look in that note by editing a template file, then use the {m.template_data_explorer_view_name()} to find new data you can add.
 
 <Callout type="info" title="Before you start">
   You need the literature note you created in [the first
@@ -28,9 +29,9 @@ Each annotation in your note renders as a callout block. The built-in template u
   <Step>
     ### Create the editable template file
 
-    Open ZotLit's settings in Obsidian (**Settings > ZotLit**) and go to the **Templates** sub-page. Under the **Template files** group, find the row labeled **Annotation**.
+    Open ZotLit's settings in Obsidian (**Settings > ZotLit**) and go to the **{m.settings_page_templates()}** sub-page. Under the **{m.settings_template_files_heading()}** group, find the row labeled **{m.settings_template_name_annotation()}**.
 
-    Click the pen icon button to the right of the row. Its tooltip reads "Create editable template file."
+    Click the pen icon button to the right of the row. Its tooltip reads "{m.settings_template_eject()}."
 
     A notice confirms the file was saved: **Template saved to templates/zotlit-annotation.liquid.md** (the exact path depends on your template folder setting).
 
@@ -66,12 +67,12 @@ Each annotation in your note renders as a callout block. The built-in template u
 
     Open the command palette and run:
 
-    <Command>ZotLit: Update literature note</Command>
+    <Command name={m.command_update_note_name()} />
 
     The managed region re-renders with your new template. Every annotation callout in the note now shows `[!quote]` instead of `[!note]`. You will see a notice: "Literature note updated." Your own writing above or below the managed region stays untouched.
 
     <Callout type="warn" title="Use the right command">
-      A similarly named <Command inline>ZotLit: Update literature note metadata</Command> refreshes frontmatter only. It does not re-render annotation callouts. If your callouts did not change, check that you ran <Command inline>ZotLit: Update literature note</Command> (without "metadata").
+      A similarly named <Command inline name={m.command_update_note_metadata_name()} /> refreshes frontmatter only. It does not re-render annotation callouts. If your callouts did not change, check that you ran <Command inline name={m.command_update_note_name()} /> (without "metadata").
     </Callout>
 
   </Step>
@@ -79,7 +80,7 @@ Each annotation in your note renders as a callout block. The built-in template u
 
 ## Add annotation color to the title
 
-The annotation template has access to data from each annotation in your Zotero library. One useful property is `colorName`, which holds the highlight color as a word (such as "yellow", "red", or "green"). You can discover properties like this in the Template data explorer.
+The annotation template has access to data from each annotation in your Zotero library. One useful property is `colorName`, which holds the highlight color as a word (such as "yellow", "red", or "green"). You can discover properties like this in the {m.template_data_explorer_view_name()}.
 
 <Steps>
   <Step>
@@ -87,7 +88,7 @@ The annotation template has access to data from each annotation in your Zotero l
 
     With your literature note open, run the command palette and choose:
 
-    <Command>ZotLit: Open template data explorer</Command>
+    <Command name={m.command_open_template_data_explorer_name()} />
 
     A panel opens showing the data tree for the current note.
 
@@ -95,9 +96,9 @@ The annotation template has access to data from each annotation in your Zotero l
   <Step>
     ### Find the color property
 
-    In the explorer, expand the **annotations** list and find an annotation entry. Right-click that annotation row and choose **Explore as annotation template data**. This re-roots the tree so that each property's path matches what you write in the annotation template.
+    In the explorer, expand the **annotations** list and find an annotation entry. Right-click that annotation row and choose **{m.template_data_explorer_menu_explore_annotation()}**. This re-roots the tree so that each property's path matches what you write in the annotation template.
 
-    Look for the `colorName` row. Right-click it and choose **Copy output**. The clipboard now contains `{{ zt.colorName }}`, ready to paste into your template.
+    Look for the `colorName` row. Right-click it and choose **{m.template_data_explorer_menu_copy_output()}**. The clipboard now contains `{{ zt.colorName }}`, ready to paste into your template.
 
   </Step>
   <Step>
@@ -115,14 +116,14 @@ The annotation template has access to data from each annotation in your Zotero l
   <Step>
     ### Update again
 
-    Run <Command inline>ZotLit: Update literature note</Command> once more. Each callout title now includes the annotation's highlight color, such as "Page 12, yellow."
+    Run <Command inline name={m.command_update_note_name()} /> once more. Each callout title now includes the annotation's highlight color, such as "Page 12, yellow."
 
   </Step>
 </Steps>
 
 ## Restoring the default template
 
-If you want to undo your changes, delete the `templates/zotlit-annotation.liquid.md` file from your vault. The next time you run **Update literature note**, ZotLit renders annotations with the original built-in template.
+If you want to undo your changes, delete the `templates/zotlit-annotation.liquid.md` file from your vault. The next time you run **{m.command_update_note_name()}**, ZotLit renders annotations with the original built-in template.
 
 ## What's next
 
@@ -131,7 +132,7 @@ From here you can adjust any template file in the same way.
 <Cards>
   <Card
     title="Explore template data"
-    description="Use the Template data explorer to find any property available in your templates."
+    description={`Use the ${m.template_data_explorer_view_name()} to find any property available in your templates.`}
     href="/docs/how-to/explore-template-data"
   />
   <Card

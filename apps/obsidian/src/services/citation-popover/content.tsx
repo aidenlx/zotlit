@@ -33,6 +33,12 @@ export interface CitationPopoverContentProps {
   /** The Imported Note Profile diagnostic this popover shows above its works. */
   profileFailure?: ProfilePresentationFailure;
   actions: CitationPopoverActions;
+  /**
+   * The citekey resolution snapshot could not answer at read time — it is
+   * still resolving or a rebuild is healing it — so an unresolved block means
+   * "not answered yet", never "matches no item".
+   */
+  pending?: boolean;
 }
 
 /**
@@ -45,6 +51,7 @@ export function CitationPopoverContent({
   note,
   profileFailure,
   actions,
+  pending = false,
 }: CitationPopoverContentProps) {
   return (
     <>
@@ -52,9 +59,14 @@ export function CitationPopoverContent({
         <ProfileFailure failure={profileFailure} actions={actions} />
       )}
       {note?.length ? (
-        <NoteCitation note={note} blocks={blocks} actions={actions} />
+        <NoteCitation
+          note={note}
+          blocks={blocks}
+          actions={actions}
+          pending={pending}
+        />
       ) : (
-        <EntryStack blocks={blocks} actions={actions} />
+        <EntryStack blocks={blocks} actions={actions} pending={pending} />
       )}
     </>
   );
@@ -100,9 +112,11 @@ function ProfileFailure({
 function EntryStack({
   blocks,
   actions,
+  pending,
 }: {
   blocks: readonly CitationPopoverBlock[];
   actions: CitationPopoverActions;
+  pending: boolean;
 }) {
   return (
     <>
@@ -121,7 +135,7 @@ function EntryStack({
               <EntryActions block={block} actions={actions} />
             </>
           ) : (
-            <Broken block={block} />
+            <Broken block={block} pending={pending} />
           )}
         </div>
       ))}
@@ -144,10 +158,12 @@ function NoteCitation({
   note,
   blocks,
   actions,
+  pending,
 }: {
   note: Inlines;
   blocks: readonly CitationPopoverBlock[];
   actions: CitationPopoverActions;
+  pending: boolean;
 }) {
   return (
     <div className={blockClass} data-citation-popover-note>
@@ -166,12 +182,12 @@ function NoteCitation({
                 it mirrors as one. A work the bibliography rendered no entry
                 for reads ⚠ in both places. */}
             <span className={cn(gutterClass, themeHook.entrySerial)}>
-              {serialLabel(block)}
+              {serialLabel(block, pending)}
             </span>
             {block.kind === "entry" ? (
               <EntryActions block={block} actions={actions} />
             ) : (
-              <Broken block={block} />
+              <Broken block={block} pending={pending} />
             )}
           </div>
         ))}
@@ -184,13 +200,26 @@ function NoteCitation({
  * A citekey no entry stands for, explained in that work's place: one reaching
  * no Zotero Item at all, or an Ambiguous Citation Key, which names the Items it
  * matches so the reader can tell them apart in Zotero.
+ *
+ * While the resolution snapshot is `pending`, an unresolved citekey has not
+ * been answered yet, so the block reads as a lookup in progress rather than a
+ * verdict. An ambiguous block always carries snapshot data, so it stands as-is.
  */
 function Broken({
   block,
+  pending,
 }: {
   block: UnresolvedCitationBlock | AmbiguousCitationBlock;
+  pending: boolean;
 }) {
   if (block.kind === "unresolved") {
+    if (pending) {
+      return (
+        <div className={cn(entryTextClass, "zt:text-muted-foreground")}>
+          {m.references_citekey_pending({ citekey: block.citekey })}
+        </div>
+      );
+    }
     return (
       <div className={cn(entryTextClass, "zt:text-destructive")}>
         {m.references_citekey_unresolved({ citekey: block.citekey })}
@@ -211,8 +240,12 @@ function Broken({
 }
 
 /** The digit standing for this work in the run the hovered citation shows. */
-function serialLabel(block: CitationPopoverBlock): ReactNode {
-  return (block.kind === "entry" ? block.serial : undefined) ?? NO_ENTRY;
+function serialLabel(block: CitationPopoverBlock, pending: boolean): ReactNode {
+  const serial = block.kind === "entry" ? block.serial : undefined;
+  // A lookup still in progress has no verdict to warn about.
+  return (
+    serial ?? (pending && block.kind === "unresolved" ? PENDING : NO_ENTRY)
+  );
 }
 
 const blockClass =
@@ -227,6 +260,9 @@ const gutterClass =
 
 /** The slot of a cited work the bibliography rendered no entry for. */
 const NO_ENTRY = "⚠";
+
+/** The slot of a work whose citekey lookup has not answered yet. */
+const PENDING = "…";
 
 /**
  * The References Sidebar's entry presentation: the gutter beside the entry

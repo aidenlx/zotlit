@@ -1,27 +1,12 @@
-# deps
-/node_modules
-
-# generated content
+node_modules
 .source
-
-# test & build
-/coverage
-/.next/
-/out/
-/build
-*.tsbuildinfo
-.wrangler
-
-# misc
 .DS_Store
-*.pem
-/.pnp
-.pnp.js
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# others
-.env*.local
-.vercel
-next-env.d.ts
+dist
+dist-ssr
+*.local
+.env
+.tanstack
+.wrangler
+.vinxi
+__unconfig*
+todos.json

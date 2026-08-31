@@ -69,7 +69,7 @@ export interface ReferencesViewDeps {
   db: Pick<DatabaseService, "state" | "client" | "ready" | "on">;
   citationIndex: Pick<
     CitationIndex,
-    "getDocumentCitationSet" | "resolveCitekey" | "on"
+    "getDocumentCitationSet" | "resolveCitekey" | "resolution" | "on"
   >;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
@@ -211,7 +211,21 @@ export class ReferencesView extends ItemView {
     // differently, so the active document's Citations may resolve to a
     // different Item — or a citekey that resolved before now resolves to
     // none — regardless of which document changed to trigger the rebuild.
-    this.register(citationIndex.on("resolution-changed", () => this.#rescan()));
+    // The resolution state is published on its own, because a settle that
+    // leaves the Citations identical — every key still unresolved — skips the
+    // reload, and the pending label must still give way to the verdict.
+    this.register(
+      citationIndex.on("resolution-changed", () => {
+        this.#publishResolution();
+        this.#rescan();
+      }),
+    );
+    // A rebuild that settles with the maps unchanged emits no
+    // resolution-changed — only cited-by-invalidated announces the state
+    // flip — so this is what returns the pending label to a verdict.
+    this.register(
+      citationIndex.on("cited-by-invalidated", () => this.#publishResolution()),
+    );
     this.register(citationIndex.on("membership-changed", () => this.#rescan()));
     this.registerEvent(app.metadataCache.on("changed", () => this.#rescan()));
     // What the document's own citations show decides what this gutter shows,
@@ -224,12 +238,15 @@ export class ReferencesView extends ItemView {
     this.register(db.on("changed", () => this.#reload()));
     this.register(pandocEngine.subscribe(() => this.#reload()));
     // What the cache holds is what this pane shows, so its wholesale drop —
-    // for a Zotero change, a Citation and References Style change, or an engine that came or
-    // went — is the one signal that makes the formatted entries here stale.
+    // for a Zotero change, a Citation and References Style change, or an engine
+    // that came or went — keeps entries on screen while the reload runs. A
+    // changed Profile presentation clears entries from the previous style.
     this.register(
       bibliographyRender.on("invalidated", () => {
-        this.#presentation = this.#readPresentation(this.#file);
-        this.#reload({ invalidate: true });
+        const presentation = this.#readPresentation(this.#file);
+        const invalidate = !samePresentation(this.#presentation, presentation);
+        this.#presentation = presentation;
+        this.#reload({ invalidate });
       }),
     );
     this.#reload();
@@ -381,9 +398,18 @@ export class ReferencesView extends ItemView {
       formattingFailed: this.#formattingFailed,
       documentPresentationError: this.#documentPresentationError,
       dbReady: this.#deps.db.state === "ready",
+      citekeyResolution: this.#deps.citationIndex.resolution,
       copy: this.#trackCopy(entries),
     });
     void this.#render(generation, citations, sources);
+  }
+
+  /** Republish the resolution state alone, for a settle the list survives. */
+  #publishResolution(): void {
+    const citekeyResolution = this.#deps.citationIndex.resolution;
+    if (this.#store.getState().citekeyResolution !== citekeyResolution) {
+      this.#store.setState({ citekeyResolution });
+    }
   }
 
   /**

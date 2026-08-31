@@ -698,6 +698,51 @@ describe("CitationIndex resolution", () => {
     expect(index.resolveCitekey("doe2024")).toEqual({ kind: "missing" });
   });
 
+  it("revalidates a degraded snapshot on the next citekey read", async () => {
+    const db = new DatabaseStub({ readyImmediately: false });
+    const { index, citekeys } = await makeHarness({}, { db, notes: false });
+
+    // The first rebuild reads a torn database exactly once and settles degraded
+    // with the maps still empty.
+    citekeys.error = new Error("torn read");
+    db.settle();
+    await index.whenResolved();
+    expect(index.resolution).toBe("degraded");
+
+    // The database answers again; the stale answer is served and the read
+    // schedules the background rebuild that heals the snapshot.
+    citekeys.error = null;
+    expect(index.resolveCitekey("doe2024").kind).toBe("missing");
+    await yieldToMain();
+
+    expect(index.resolution).toBe("ready");
+    expect(index.resolveCitekey("doe2024").kind).toBe("unique");
+  });
+
+  it("revalidates a degraded snapshot through a document read", async () => {
+    const db = new DatabaseStub({ readyImmediately: false });
+    const { index, citekeys, draft } = await makeHarness(
+      { "draft.md": "As @doe2024 wrote." },
+      { db, notes: false },
+    );
+
+    citekeys.error = new Error("torn read");
+    db.settle();
+    await index.whenResolved();
+    expect(index.resolution).toBe("degraded");
+
+    citekeys.error = null;
+    // The read schedules the heal; whether it lands inside this read's own
+    // awaits or after them is timing, so only the settled outcome is asserted.
+    await citationsOf(index, draft);
+    await yieldToMain();
+
+    expect(await citationsOf(index, draft)).toMatchObject([
+      { indexedKey: KEY_A },
+    ]);
+    expect(index.resolution).toBe("ready");
+  });
+
   it("settles whenResolved when disposal interrupts the first rebuild", async () => {
     const db = new DatabaseStub({ readyImmediately: false });
     const { index } = await makeHarness({}, { db, notes: false });
