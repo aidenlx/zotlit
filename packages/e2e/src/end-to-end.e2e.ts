@@ -217,6 +217,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(defaultContent).not.toContain("# Book profile:");
     expect(booksContent).toContain("# Book profile:");
     expect(booksContent).toContain("## Book details");
+    expect(booksContent).toContain(
+      `fixture-spread-title: ${booksProfileTargetItem.title}`,
+    );
+    expect(booksContent).toContain("fixture-spread-kind: journalArticle");
 
     expect(managedRegion(booksContent)).toContain(
       `Citation key: ${booksProfileTargetItem.citationKey}`,
@@ -244,7 +248,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     const staleFieldSeeded = await obEvalUntil(
       vaultId,
-      `(async function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});if(!file||file.extension!=='md'){return 'missing';}await app.fileManager.processFrontMatter(file,function(frontmatter){frontmatter['fixture-obsolete']='stale';});return 'seeded';})()`,
+      `(async function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});if(!file||file.extension!=='md'){return 'missing';}await app.fileManager.processFrontMatter(file,function(frontmatter){frontmatter['fixture-obsolete']='stale';frontmatter['fixture-spread-title']='stale';frontmatter['fixture-spread-kind']='stale';frontmatter['fixture-manual']='mine';});return 'seeded';})()`,
       { expected: "seeded" },
     );
     expect(staleFieldSeeded).toBe(true);
@@ -327,13 +331,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const managedFrontmatterApplied = await waitFor(async () => {
       const response = await obEval(
         vaultId,
-        `(function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});var frontmatter=file&&app.metadataCache.getFileCache(file)?.frontmatter;return JSON.stringify({title:frontmatter?.['fixture-title'],kind:frontmatter?.['fixture-kind'],obsolete:frontmatter?Object.prototype.hasOwnProperty.call(frontmatter,'fixture-obsolete'):false});})()`,
+        `(function(){var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});var frontmatter=file&&app.metadataCache.getFileCache(file)?.frontmatter;return JSON.stringify({title:frontmatter?.['fixture-title'],kind:frontmatter?.['fixture-kind'],spreadTitle:frontmatter?.['fixture-spread-title'],spreadKind:frontmatter?.['fixture-spread-kind'],manual:frontmatter?.['fixture-manual'],obsolete:frontmatter?Object.prototype.hasOwnProperty.call(frontmatter,'fixture-obsolete'):false});})()`,
       ).catch(() => "");
       if (response === "") return false;
       managedFrontmatter = JSON.parse(response) as ManagedFrontmatterReport;
       return (
         managedFrontmatter.title === booksProfileTargetItem.title &&
         managedFrontmatter.kind === "reference/article" &&
+        managedFrontmatter.spreadTitle === booksProfileTargetItem.title &&
+        managedFrontmatter.spreadKind === "journalArticle" &&
         !managedFrontmatter.obsolete
       );
     }, 40);
@@ -342,6 +348,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(managedFrontmatter).toEqual({
       title: booksProfileTargetItem.title,
       kind: "reference/article",
+      spreadTitle: booksProfileTargetItem.title,
+      spreadKind: "journalArticle",
+      manual: "mine",
       obsolete: false,
     });
 
@@ -565,6 +574,9 @@ interface LibraryScopeReport {
 interface ManagedFrontmatterReport {
   title?: unknown;
   kind?: unknown;
+  spreadTitle?: unknown;
+  spreadKind?: unknown;
+  manual?: unknown;
   obsolete: boolean;
 }
 

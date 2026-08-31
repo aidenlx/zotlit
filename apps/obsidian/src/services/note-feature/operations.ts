@@ -911,10 +911,7 @@ async function writeNewNote(
   });
   const content = `---\n${
     prepared.kind === "document"
-      ? stringifyFrontmatterInOrder(
-          fm,
-          prepared.fields.map(({ key }) => key),
-        )
+      ? stringifyFrontmatterInOrder(fm, prepared.keys)
       : stringifyYaml(fm)
   }---\n${body}`;
 

@@ -287,6 +287,52 @@ DESCRIPTION
   settings service, so the settings modal, compilation, and sync all observe
   the same change.
 
+PROFILE DOCUMENTS
+  A Profile document stores Managed Frontmatter in its ordered frontmatter list.
+  Each entry has exactly one value member: expr for a Liquid value expression,
+  value for a JSON-e template, or js for a gated JavaScript expression.
+  A static-key entry declares key. Static keys must be unique and non-reserved.
+  merge is replace (default), append, or keep.
+
+SPREAD ENTRIES
+  Omit key to produce several fields from one value or js entry. The result must
+  be a string-keyed mapping. A keyless expr is a document-validation error.
+  One spread entry can supply the whole frontmatter list, inside the shared
+  Profile file. Its merge strategy applies to every produced key.
+
+  Use a top-level $let to share a calculation across fields, and \${} interpolation
+  to compute key names. A false $if inside the mapping omits that key and leaves
+  its existing note value untouched. A false $if at the root contributes an
+  empty patch. Explicit null, arrays, and scalar root results refuse the operation.
+
+  Entries evaluate independently against the same zt context and pinned now.
+  Merge follows list order against the note overlaid by the pending patch.
+  Later replace entries win; append and keep compose with pending values.
+  On create, the first entry that produces a key sets its position. On update,
+  existing keys keep their position. Unproduced keys remain untouched.
+
+  Delete a field with a static-key value entry whose JSON-e result is absent
+  under replace. Spread omission preserves the field. No deletion sentinel
+  or ownership tracking is part of a spread mapping.
+
+  A produced reserved or empty key refuses the whole operation. Diagnostics
+  name the key and the producing entry's 1-based list position, with a recovery
+  hint. Other spread failures name the entry position. A js spread entry with
+  JavaScript Templates off refuses by position, before compilation.
+  Values use the same plain-frontmatter output domain and has, uniq, basename
+  host functions as static JSON-e entries.
+
+  Example:
+    frontmatter:
+      - value:
+          title: { $eval: zt.title }
+          "zotero/\${zt.itemType}": true
+      - key: title
+        expr: zt.title | upcase
+
+  The frontmatter-* commands below edit legacy settings fields. Edit the Profile
+  document's text to author or repair its static-key and spread entries.
+
 EXPRESSIONS
   Field expressions are value expressions (filter chains), not template blocks.
   Tags such as {% assign %}, {% for %}, and {% if %} are not supported.

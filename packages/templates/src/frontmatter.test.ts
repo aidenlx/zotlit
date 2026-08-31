@@ -240,7 +240,12 @@ describe("document Managed Frontmatter entries", () => {
     );
 
     expect(result).toEqual({
-      values: { title: "A Study", tags: ["paper"], label: "A Study!" },
+      values: [
+        { key: "title", merge: "replace", value: "A Study", position: 1 },
+        { key: "tags", merge: "append", value: ["paper"], position: 2 },
+        { key: "label", merge: "keep", value: "A Study!", position: 3 },
+      ],
+      keys: ["title", "tags", "label"],
       errors: [],
     });
   });
@@ -260,7 +265,9 @@ describe("document Managed Frontmatter entries", () => {
       operationTimestamp,
     );
 
-    expect(result.values).toEqual({ working: "A Study" });
+    expect(result.values).toEqual([
+      { key: "working", merge: "replace", value: "A Study", position: 3 },
+    ]);
     expect(result.errors.map(({ key }) => key)).toEqual([
       "broken-expr",
       "broken-value",

@@ -1,6 +1,7 @@
 import jsonE from "json-e";
 
 import { basename } from "./basename";
+import { RESERVED_FRONTMATTER_KEYS } from "./constants";
 import { FRONTMATTER_ABSENT } from "./frontmatter-merge";
 
 const ENVELOPE_KEY = "value";
@@ -18,23 +19,36 @@ export type FrontmatterJsonValue =
   | FrontmatterJsonValue[]
   | { [key: string]: FrontmatterJsonValue };
 
-export interface RenderJsonEFrontmatterValueOptions {
-  readonly key: string;
+type FrontmatterTarget =
+  | { readonly key: string; readonly position?: number }
+  | { readonly key?: undefined; readonly position: number };
+
+export type RenderJsonEFrontmatterValueOptions = FrontmatterTarget & {
   readonly zt: object;
   readonly operationTimestamp: Temporal.Instant;
-}
+};
 
-export class FrontmatterJsonEError extends Error {
-  readonly key: string;
+export class ManagedFrontmatterError extends Error {
+  readonly key: string | undefined;
   readonly recovery: string;
 
-  constructor(key: string, message: string, options: ErrorOptions = {}) {
-    super(`Managed Frontmatter field '${key}' ${message}`, options);
-    this.name = "FrontmatterJsonEError";
+  constructor(
+    { key, position }: FrontmatterTarget,
+    message: string,
+    options: ErrorOptions = {},
+  ) {
+    const target =
+      key === undefined
+        ? `entry #${position}`
+        : `field '${key}'${position === undefined ? "" : ` (entry #${position})`}`;
+    super(`Managed Frontmatter ${target} ${message}`, options);
+    this.name = "ManagedFrontmatterError";
     this.key = key;
-    this.recovery = `Correct the JSON-e value for Managed Frontmatter field '${key}'.`;
+    this.recovery = `Correct the value for Managed Frontmatter ${target}.`;
   }
 }
+
+export { ManagedFrontmatterError as FrontmatterJsonEError };
 
 class FrontmatterOutputDomainError extends Error {
   constructor(message: string) {
@@ -46,8 +60,17 @@ class FrontmatterOutputDomainError extends Error {
 /** Render one JSON-e value and distinguish generated null from field absence. */
 export function renderJsonEFrontmatterValue(
   template: unknown,
-  { key, zt, operationTimestamp }: RenderJsonEFrontmatterValueOptions,
+  options: RenderJsonEFrontmatterValueOptions & { key?: undefined },
+): Record<string, FrontmatterJsonValue> | typeof FRONTMATTER_ABSENT;
+export function renderJsonEFrontmatterValue(
+  template: unknown,
+  options: RenderJsonEFrontmatterValueOptions,
+): FrontmatterJsonValue | typeof FRONTMATTER_ABSENT;
+export function renderJsonEFrontmatterValue(
+  template: unknown,
+  options: RenderJsonEFrontmatterValueOptions,
 ): FrontmatterJsonValue | typeof FRONTMATTER_ABSENT {
+  const { zt, operationTimestamp } = options;
   let envelope: unknown;
   try {
     envelope = renderJsonE(
@@ -61,8 +84,8 @@ export function renderJsonEFrontmatterValue(
       },
     );
   } catch (cause) {
-    throw new FrontmatterJsonEError(
-      key,
+    throw new ManagedFrontmatterError(
+      options,
       `failed JSON-e evaluation: ${errorMessage(cause)}`,
       { cause },
     );
@@ -73,16 +96,56 @@ export function renderJsonEFrontmatterValue(
   }
 
   const value = envelope[ENVELOPE_KEY];
+  if (options.key === undefined) {
+    assertFrontmatterSpreadOutput(value, options.position);
+    return value;
+  }
   try {
     assertFrontmatterOutputDomain(value);
   } catch (cause) {
-    throw new FrontmatterJsonEError(
-      key,
+    throw new ManagedFrontmatterError(
+      options,
       `produced an invalid frontmatter value: ${errorMessage(cause)}`,
       { cause },
     );
   }
   return value;
+}
+
+export function assertFrontmatterSpreadOutput(
+  value: unknown,
+  position: number,
+): asserts value is Record<string, FrontmatterJsonValue> {
+  if (!isPlainMapping(value)) {
+    throw new ManagedFrontmatterError({ position }, "must produce a mapping");
+  }
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string") {
+      throw new ManagedFrontmatterError(
+        { position },
+        "mapping keys must be strings",
+      );
+    }
+    if (key === "" || RESERVED_FRONTMATTER_KEYS.has(key)) {
+      throw new ManagedFrontmatterError(
+        { key, position },
+        key === "" ? "must be non-empty" : "is reserved",
+      );
+    }
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
+      if (!descriptor.enumerable || !("value" in descriptor)) {
+        throw new TypeError("mapping entries must be enumerable values");
+      }
+      assertFrontmatterOutputDomain(descriptor.value);
+    } catch (cause) {
+      throw new ManagedFrontmatterError(
+        { key, position },
+        `produced an invalid frontmatter value: ${errorMessage(cause)}`,
+        { cause },
+      );
+    }
+  }
 }
 
 /** Snapshot enumerable data without exposing methods or helper functions. */

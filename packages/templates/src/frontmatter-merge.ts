@@ -11,8 +11,15 @@ export interface FrontmatterFieldMergeSpec {
   merge: FrontmatterMergeStrategy;
 }
 
+export interface EvaluatedFrontmatterField extends FrontmatterFieldMergeSpec {
+  readonly value: unknown;
+  readonly position?: number;
+}
+
 export interface FrontmatterMergeConflict {
   reason: "shape-mismatch";
+  position?: number;
+  recovery?: string;
 }
 
 export type FrontmatterMergeConflictHandler = (
@@ -29,6 +36,19 @@ export interface MergeFrontmatterOptions {
 export function mergeFrontmatterFields(
   fields: readonly FrontmatterFieldMergeSpec[],
   evaluated: Record<string, unknown>,
+  options: MergeFrontmatterOptions = {},
+): Record<string, unknown> {
+  return mergeManagedFrontmatterEntries(
+    fields
+      .filter(({ key }) => Object.hasOwn(evaluated, key))
+      .map((field) => ({ ...field, value: evaluated[field.key] })),
+    options,
+  );
+}
+
+/** Resolve each contribution against the note overlaid by the pending patch. */
+export function mergeManagedFrontmatterEntries(
+  fields: readonly EvaluatedFrontmatterField[],
   { current = {}, onConflict }: MergeFrontmatterOptions = {},
 ): Record<string, unknown> {
   const patch: Record<string, unknown> = Object.create(null);
@@ -43,19 +63,23 @@ export function mergeFrontmatterFields(
   };
 
   for (const field of fields) {
-    if (!Object.hasOwn(evaluated, field.key)) continue;
-
-    const generated = evaluated[field.key];
+    const generated = field.value;
     if (generated === undefined) continue;
+    const pending = Object.hasOwn(patch, field.key)
+      ? patch[field.key]
+      : Object.hasOwn(current, field.key)
+        ? current[field.key]
+        : undefined;
+    const existing = pending === FRONTMATTER_ABSENT ? undefined : pending;
     if (generated === FRONTMATTER_ABSENT) {
-      if (field.merge === "replace" && Object.hasOwn(current, field.key)) {
+      if (
+        field.merge === "replace" &&
+        (Object.hasOwn(patch, field.key) || Object.hasOwn(current, field.key))
+      ) {
         setPatch(field.key, FRONTMATTER_ABSENT);
       }
       continue;
     }
-    const existing = Object.hasOwn(current, field.key)
-      ? current[field.key]
-      : undefined;
     switch (field.merge) {
       case "replace":
         setPatch(field.key, generated);
@@ -66,7 +90,15 @@ export function mergeFrontmatterFields(
         } else if (isBlank(existing)) {
           setPatch(field.key, generated);
         } else {
-          onConflict?.(field.key, { reason: "shape-mismatch" });
+          onConflict?.(field.key, {
+            reason: "shape-mismatch",
+            ...(field.position === undefined
+              ? {}
+              : {
+                  position: field.position,
+                  recovery: `Use arrays for field '${field.key}' in entry #${field.position}, or use replace.`,
+                }),
+          });
         }
         break;
       case "keep":

@@ -1083,6 +1083,9 @@ frontmatter:
       $if: 'zt.itemType == "bookSection"'
       then: retained
     merge: replace
+  - value:
+      fixture-spread-title: { $eval: zt.title }
+      fixture-spread-kind: { $eval: zt.itemType }
 ---
 # Book profile: {{ zt.title }}
 

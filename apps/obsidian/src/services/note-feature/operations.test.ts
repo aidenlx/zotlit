@@ -1572,57 +1572,69 @@ describe("createNote", () => {
     expect(renderLegacy).not.toHaveBeenCalledWith("note", expect.anything());
   });
 
-  it("refuses create before writing when a document js field is inert", async () => {
-    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
-    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
-    const app = makeApp();
-    const document = makeDocumentTemplate({
-      frontmatter: compileDocumentFrontmatter(
-        [{ key: "scripted", merge: "replace", js: "zt.title" }],
-        false,
-      ),
-    });
-    const result = await createNoteFeature({
-      app,
-      template: {
-        ...makeTemplate(),
-        getLiteratureNoteTemplate: () => document,
-      },
-      db: makeDb(),
-      noteIndex: {
-        ready: Promise.resolve(),
-        whenIndexed: async () => {},
-        getImportedNoteByNoteKey: () => [],
-        getNotesByItemKey: () => [],
-      },
-      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
-      settings: makeSettings({
-        profiles: [{ id: profileId, label: "Books", document: "books.md" }],
-      }),
-      attachmentImport: blockedAttachmentImport,
-      noteImport: {
-        prepare: async () => ({
-          resolveChildNote: () => ({
-            key: "",
-            indexedKey: "",
-            title: null,
-            noteLink: () => "",
-          }),
-          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+  it.each([
+    { entry: { key: "scripted", js: "zt.title" }, field: "scripted" },
+    { entry: { js: "({ title: zt.title })" }, field: "entry #1" },
+  ])(
+    "refuses create before writing when document $field is inert",
+    async ({ entry, field }) => {
+      const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
+      vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+      const app = makeApp();
+      const document = makeDocumentTemplate({
+        frontmatter: compileDocumentFrontmatter(
+          [{ ...entry, merge: "replace" }],
+          false,
+        ),
+      });
+      const result = await createNoteFeature({
+        app,
+        template: {
+          ...makeTemplate(),
+          getLiteratureNoteTemplate: () => document,
+        },
+        db: makeDb(),
+        noteIndex: {
+          ready: Promise.resolve(),
+          whenIndexed: async () => {},
+          getImportedNoteByNoteKey: () => [],
+          getNotesByItemKey: () => [],
+        },
+        zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+        settings: makeSettings({
+          profiles: [{ id: profileId, label: "Books", document: "books.md" }],
         }),
-      },
-    }).createNote(makeCreateGateItem(), { profile: profileId });
+        attachmentImport: blockedAttachmentImport,
+        noteImport: {
+          prepare: async () => ({
+            resolveChildNote: () => ({
+              key: "",
+              indexedKey: "",
+              title: null,
+              noteLink: () => "",
+            }),
+            flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+          }),
+        },
+      }).createNote(makeCreateGateItem(), { profile: profileId });
 
-    expect(result).toMatchObject({
-      outcome: "refused",
-      diagnostic: {
-        code: "managed-frontmatter-refused",
-        failures: [{ field: "scripted" }],
-      },
-    });
-    expect(app.vault.create).not.toHaveBeenCalled();
-    expect(document.renderForCreate).not.toHaveBeenCalled();
-  });
+      expect(result).toMatchObject({
+        outcome: "refused",
+        diagnostic: {
+          code: "managed-frontmatter-refused",
+          failures: [
+            {
+              field,
+              message: expect.stringContaining(field),
+              hint: expect.any(String),
+            },
+          ],
+        },
+      });
+      expect(app.vault.create).not.toHaveBeenCalled();
+      expect(document.renderForCreate).not.toHaveBeenCalled();
+    },
+  );
 
   it("refuses create when a Profile document is missing", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
@@ -2547,6 +2559,9 @@ describe("updateNote", () => {
             value: { $eval: "zt.infinity" },
           },
           { key: "working", merge: "replace", expr: "zt.title" },
+          { merge: "replace", value: { "${'zotero-key'}": "bad" } },
+          { merge: "replace", value: null },
+          { merge: "replace", js: "({ invalid: undefined })" },
         ]),
       });
 
@@ -2566,6 +2581,21 @@ describe("updateNote", () => {
         {
           field: "broken-value",
           message: expect.any(String),
+          hint: expect.any(String),
+        },
+        {
+          field: "'zotero-key' (entry #4)",
+          message: expect.stringContaining("'zotero-key' (entry #4)"),
+          hint: expect.any(String),
+        },
+        {
+          field: "entry #5",
+          message: expect.stringContaining("entry #5"),
+          hint: expect.any(String),
+        },
+        {
+          field: "'invalid' (entry #6)",
+          message: expect.stringContaining("'invalid' (entry #6)"),
           hint: expect.any(String),
         },
       ],
