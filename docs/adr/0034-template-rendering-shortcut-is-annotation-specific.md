@@ -1,5 +1,7 @@
 # The template rendering shortcut is annotation-specific
 
+> **Amended by [ADR 0035](0035-profile-annotation-section.md).** During Profile rendering, the shortcut and native annotation calls use the Profile's final Annotation Section. Generic named-template rendering retains the lookup recorded here.
+
 ZotLit provides a shortcut for rendering one annotation with its data bound to
 `zt`, so template authors supply the annotation without choosing a variable
 name. Default annotation call sites use the shortcut, and the documentation

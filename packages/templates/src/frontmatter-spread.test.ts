@@ -33,7 +33,7 @@ function render(
       contract: 2,
       filename: "note",
       frontmatter: entries,
-    })}---\n{% annotation %}Annotation{% endannotation %}`,
+    })}---\n--- zotlit:annotation ---\nAnnotation`,
   );
   const compiled = facade.compileManagedFrontmatterEntries(
     document.manifest.frontmatter!,

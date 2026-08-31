@@ -198,10 +198,11 @@ SECURITY
 
 HELPERS
   renderAnnotation(annotation)
-              Render the named annotation partial with the argument as zt.
+              Render one annotation with the argument as zt.
               Missing or null data is an error. Equivalent to
-              include("annotation", annotation); the Profile's Annotation Block
-              remains a separate target.
+              include("annotation", annotation). Both use the Profile's
+              Annotation Section during Profile rendering; generic named
+              rendering keeps its existing lookup.
   pandocCite(zt.citations)
               Produce one complete Pandoc Citation Cluster.
   pandocCite(zt.citations, "prefer-author-in-text")
@@ -228,9 +229,11 @@ ERRORS
 
 ZOTLIT TAGS
   {% render_annotation annotation %}
-              Render the named annotation partial with the argument as zt.
+              Render one annotation with the argument as zt.
               Requires one argument; missing or null data is an error.
               Equivalent to {% render "annotation" with annotation as zt %}.
+              Both use the Profile's Annotation Section during Profile rendering;
+              generic named rendering keeps its existing lookup.
               Native render remains available for general partial composition.
   {% bq %}...{% endbq %}
               Render the body as a Markdown blockquote.
@@ -416,11 +419,43 @@ MODEL
   for the reader. A property that holds the bare id is also valid. A note
   without the property belongs to the default Profile.
 
-  One document contains a YAML manifest, its filename rule, and the note body.
-  A single optional Managed Block marks the body bytes rendered on update. One
-  required Annotation Block holds the single-annotation template; it renders on
-  demand and contributes nothing to the note body. A block tag alone on its own
-  line owns that line: its indentation and line break belong to the tag.
+  One document contains a YAML manifest with its filename rule, the note source,
+  and a required final Annotation Section. Both sources use one language, Liquid
+  or Eta. The note source starts immediately after the manifest. The exact,
+  unindented standalone line --- zotlit:annotation --- ends the note source and
+  starts the Annotation Section, which continues to EOF. An empty section is
+  valid, including a header at EOF. Duplicate and unknown --- zotlit: headers,
+  including an explicit note header, fail validation.
+
+  The section boundary is parsed before either engine, including inside Markdown
+  fences, Liquid raw/comment blocks, and Eta code. Splitting consumes only the
+  header and its following line break, when present. Surrounding bytes, blank
+  lines, and LF or CRLF line endings stay unchanged. Source ranges refer to the
+  original document. Rendered-output whitespace rules remain separate.
+
+  The note source can contain zero or one Managed Block. Zero gives a static
+  note; one renders in place on creation and supplies the update scope. Duplicate
+  blocks fail validation. The block renders with isolated data. A Managed Block
+  tag alone on its own line owns its indentation and line break.
+
+  The Annotation Section renders only when called. Shortcuts, native Liquid
+  render and Eta include calls to annotation, and calls from shared partials
+  use this section with isolated Annotation Root data. Creation, managed updates,
+  direct insertion, and Imported Notes use their applicable Profile's section.
+  The binding stays local to each Profile render. Generic named-template rendering
+  and other partial lookup keep their existing behavior. A manifest partial named
+  annotation fails validation; rename that partial.
+
+  Export retains both sources and bundles reachable shared partials from them and
+  the filename rule. The local section satisfies annotation calls, so export does
+  not bundle an unrelated global annotation partial.
+
+EDITING CONTRACT
+  The web Workbench UI remains work under #863. Its first annotation render call
+  offers the annotation editor; later calls link to it, as agreed in #933.
+  Edits target the final section in one source buffer and undo history, preserving
+  unrelated bytes. ADR 0032 retains invalid drafts in memory and blocks Save on
+  document or Profile validation errors.
 
 INSPECTION
   template-status reports Profiles and their resolved bindings under profiles,

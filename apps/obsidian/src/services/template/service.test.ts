@@ -120,7 +120,7 @@ frontmatter:
     ]);
   });
 
-  it("renders Profile Annotation Blocks, refuses a blockless document, and keeps the documentless and legacy paths", async () => {
+  it("renders Profile Annotation Sections, refuses a blockless document, and keeps the documentless and legacy paths", async () => {
     const vault = new MockVault();
     vault.addFile(
       "templates/books.md",
@@ -180,13 +180,13 @@ filename: "{{ zt.title }}"
         profile: resolveProfile(converted, profiles[0]!.id)!,
       }),
     ).toBe("PROFILE Excerpt");
-    // plain.md has no Annotation Block: the document is invalid, and the
+    // plain.md has no Annotation Section: the document is invalid, and the
     // render refuses instead of substituting the embedded default.
     expect(() =>
       service.renderProfileAnnotation(data, {
         profile: resolveProfile(converted, profiles[1]!.id)!,
       }),
-    ).toThrow(expect.objectContaining({ code: "missing-annotation-block" }));
+    ).toThrow(expect.objectContaining({ code: "missing-annotation-section" }));
     // A documentless Profile predates the required-block rule and keeps the
     // embedded default through the legacy machinery.
     expect(
@@ -233,6 +233,106 @@ filename: "{{ zt.title }}"
         }),
       }),
     );
+  });
+
+  it.each(["liquid", "eta"] as const)(
+    "keeps %s Profile annotation calls aligned after source changes",
+    async (language) => {
+      const vault = new MockVault();
+      const call =
+        language === "liquid"
+          ? "{% render_annotation zt.annotation %}"
+          : "<%~ renderAnnotation(zt.annotation) %>";
+      const annotation =
+        language === "liquid"
+          ? "PROFILE {{ zt.text }}"
+          : "PROFILE <%= zt.text %>";
+      const source = literatureNoteDocument("Books", annotation)
+        .replace(
+          'filename: "{{ zt.title }}"',
+          `filename: note\nlanguage: ${language}`,
+        )
+        .replace("Managed {{ zt.title }}", call);
+      vault.addFile("templates/books.md", source);
+      vault.addFile(
+        "templates/zotlit-annotation.liquid.md",
+        "GLOBAL {{ zt.text }}",
+      );
+      const { service } = await makeHarness({
+        vault,
+        javascriptTemplates: true,
+      });
+      const profile = resolveProfile(
+        {
+          ...defaults,
+          "note.template-conversion-pending": false,
+          profiles: [
+            {
+              id: "Bk3Qn7XvT2Lp" as ProfileId,
+              label: "Books",
+              document: "books.md",
+            },
+          ],
+        },
+        "Bk3Qn7XvT2Lp" as ProfileId,
+      )!;
+      const data = { annotation: { text: "A" } };
+      const original = service.getLiteratureNoteTemplate("books.md")!;
+      expect(original.renderForUpdate(data)).toBe(
+        "%%zt-managed%%\nPROFILE A\n%%/zt-managed%%",
+      );
+      expect(original.renderForCreate(data)).toContain("PROFILE A");
+      expect(
+        service.renderProfileAnnotation(data.annotation, { profile }),
+      ).toBe("PROFILE A");
+      const exported = await service.exportLiteratureNotePack("books.md");
+      expect(
+        new TemplateFacade().parseLiteratureNoteTemplate(exported).manifest
+          .partials,
+      ).toBeUndefined();
+      expect(
+        service
+          .prepareLiteratureNoteTemplateSource(exported)
+          .renderAnnotation(data.annotation),
+      ).toBe("PROFILE A");
+      vault.modifyFile(
+        "templates/books.md",
+        source.replace("PROFILE", "CHANGED"),
+      );
+      await vi.advanceTimersByTimeAsync(500);
+      expect(
+        service.renderProfileAnnotation(data.annotation, { profile }),
+      ).toBe("CHANGED A");
+      expect(
+        service.getLiteratureNoteTemplate("books.md")!.renderForUpdate(data),
+      ).toBe("%%zt-managed%%\nCHANGED A\n%%/zt-managed%%");
+      expect(original.renderAnnotation(data.annotation)).toBe("PROFILE A");
+      expect(service.render("annotation", data.annotation)).toBe("GLOBAL A");
+    },
+  );
+
+  it("uses bundled partial calls with the Profile's Annotation Section in write-free preview", async () => {
+    const { service, vault } = await makeHarness();
+    const source = literatureNoteDocument("Draft", "Local {{ zt.text }}")
+      .replace(
+        "contract: 1",
+        `contract: 1
+partials:
+  - name: summary
+    language: liquid
+    source: '{% render_annotation zt.annotation %}'`,
+      )
+      .replace(
+        "Managed {{ zt.title }}",
+        '{% render "summary" with zt as zt %}',
+      );
+    const paths = [...vault.files.keys()];
+    const document = service.prepareLiteratureNoteTemplateSource(source);
+    expect(document.renderForUpdate({ annotation: { text: "A" } })).toBe(
+      "%%zt-managed%%\nLocal A\n%%/zt-managed%%",
+    );
+    expect(document.renderAnnotation({ text: "A" })).toBe("Local A");
+    expect([...vault.files.keys()]).toEqual(paths);
   });
 
   it("reports valid and invalid Literature Note Template documents", async () => {
@@ -1023,7 +1123,7 @@ filename: "{{ zt.title }}"
       "templates/zotlit-annotation.eta.md",
       "templates/zotlit-content.liquid.md",
     ]);
-    expect(converted.document.annotationBlock?.source).toBe(
+    expect(converted.document.annotationSection.source).toBe(
       "Annotation {{ zt.text }}",
     );
   });
@@ -1608,8 +1708,7 @@ filename: "{{ zt.title }}"
 # ${heading} {{ zt.title }}
 
 {% managed %}Managed {{ zt.title }}{% endmanaged %}
-{% annotation %}${annotation ?? "Annotation"}{% endannotation %}
-`;
+--- zotlit:annotation ---\n${annotation ?? "Annotation"}`;
 }
 
 async function flushAsync(): Promise<void> {

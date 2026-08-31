@@ -34,10 +34,8 @@ import { createLiquidEngine } from "./liquid";
 import {
   LegacyTemplateConversionError,
   LiteratureNoteTemplateError,
-  missingAnnotationBlockError,
   parseLiteratureNoteTemplate as parseLiteratureNoteTemplateImpl,
   synthesizeLegacyLiteratureNoteTemplate,
-  withoutAnnotationBlock,
 } from "./literature-note-template";
 import type {
   LegacyLiteratureNoteTemplates,
@@ -56,7 +54,7 @@ export {
   synthesizeLegacyLiteratureNoteTemplate,
 } from "./literature-note-template";
 export type {
-  AnnotationBlock,
+  AnnotationSection,
   LegacyLiteratureNoteTemplates,
   LegacyTemplateConversionErrorCode,
   LiteratureNoteTemplateDocument,
@@ -154,6 +152,7 @@ export class TemplateFacade {
   readonly #eta: TemplateEngine;
   readonly #liquid: Liquid;
   readonly #etaBaseRender: OmitThisParameter<TemplateEngine["render"]>;
+  #annotationSource: TemplateSourceOverride | undefined;
 
   constructor({ autoTrim, transformRender }: TemplateFacadeOptions = {}) {
     this.#transform = transformRender ?? ((_name, output) => output);
@@ -225,9 +224,15 @@ export class TemplateFacade {
     data: T,
     sourceOverride?: TemplateSourceOverride,
   ): string {
-    return sourceOverride
-      ? this.#renderSource(name, data, sourceOverride)
-      : this.#renderByName(name, data);
+    const previous = this.#annotationSource;
+    this.#annotationSource = undefined;
+    try {
+      return sourceOverride
+        ? this.#renderSource(name, data, sourceOverride)
+        : this.#renderByName(name, data);
+    } finally {
+      this.#annotationSource = previous;
+    }
   }
 
   parseLiteratureNoteTemplate(source: string): LiteratureNoteTemplateDocument {
@@ -333,7 +338,7 @@ export class TemplateFacade {
       if (legacyRendered.annotation === null || rendered.annotation === null) {
         throw new LegacyTemplateConversionError(
           "unsupported-legacy-template",
-          "Annotation conversion requires verification data and an Annotation Block",
+          "Annotation conversion requires verification data and an Annotation Section",
           {
             difference: "annotation verification data",
             recovery:
@@ -359,26 +364,24 @@ export class TemplateFacade {
     document: LiteratureNoteTemplateDocument,
     data: T,
   ): string {
-    const renderDocument = withoutAnnotationBlock(document);
-    const block = renderDocument.managedBlock;
+    const block = document.managedBlock;
     if (!block) {
       return withOneTrailingLineBreak(
-        this.#renderDocumentSource(renderDocument, data, {
+        this.#renderDocumentSource(document, data, {
           part: "body",
-          source: renderDocument.body,
+          source: document.body,
         }),
       );
     }
 
     const outerSourceWithoutPlaceholder =
-      renderDocument.body.slice(0, block.start) +
-      renderDocument.body.slice(block.end);
+      document.body.slice(0, block.start) + document.body.slice(block.end);
     const placeholder = managedBlockPlaceholder(outerSourceWithoutPlaceholder);
     const outerSource =
-      renderDocument.body.slice(0, block.start) +
+      document.body.slice(0, block.start) +
       placeholder +
-      renderDocument.body.slice(block.end);
-    const outer = this.#renderDocumentSource(renderDocument, data, {
+      document.body.slice(block.end);
+    const outer = this.#renderDocumentSource(document, data, {
       part: "body",
       source: outerSource,
     });
@@ -396,7 +399,7 @@ export class TemplateFacade {
         },
       );
     }
-    const managed = this.#renderDocumentSource(renderDocument, data, {
+    const managed = this.#renderDocumentSource(document, data, {
       part: "managed",
       source: block.source,
     });
@@ -412,11 +415,10 @@ export class TemplateFacade {
     document: LiteratureNoteTemplateDocument,
     data: T,
   ): string | null {
-    const renderDocument = withoutAnnotationBlock(document);
-    if (!renderDocument.managedBlock) return null;
-    const managed = this.#renderDocumentSource(renderDocument, data, {
+    if (!document.managedBlock) return null;
+    const managed = this.#renderDocumentSource(document, data, {
       part: "managed",
-      source: renderDocument.managedBlock.source,
+      source: document.managedBlock.source,
     });
     return formatManagedRegion(managed);
   }
@@ -425,12 +427,9 @@ export class TemplateFacade {
     document: LiteratureNoteTemplateDocument,
     data: T,
   ): string {
-    if (!document.annotationBlock) {
-      throw missingAnnotationBlockError();
-    }
     return this.#renderDocumentSource(document, data, {
       part: "annotation",
-      source: document.annotationBlock.source,
+      source: document.annotationSection.source,
     });
   }
 
@@ -532,6 +531,9 @@ export class TemplateFacade {
    * `renderSync`; both paths apply `transformRender` identically.
    */
   #renderByName(name: string, data: object): string {
+    if (name === "annotation" && this.#annotationSource) {
+      return this.#renderSource(name, data, this.#annotationSource);
+    }
     const slot = this.#registry.get(name);
     if (!slot) throw new TemplateError(`Template "${name}" not found`, name);
 
@@ -575,10 +577,19 @@ export class TemplateFacade {
       source: string;
     },
   ): string {
-    return this.render(`${document.manifest.id}:${part}`, data, {
-      source,
+    const previous = this.#annotationSource;
+    this.#annotationSource = {
+      source: document.annotationSection.source,
       language: document.manifest.language,
-    });
+    };
+    try {
+      return this.#renderSource(`${document.manifest.id}:${part}`, data, {
+        source,
+        language: document.manifest.language,
+      });
+    } finally {
+      this.#annotationSource = previous;
+    }
   }
 
   /**
@@ -598,7 +609,10 @@ export class TemplateFacade {
     // required, not optional — see fs.d.ts — so both sync and async paths
     // must be implemented, not just the sync one).
     const readSource = (name: string): string => {
-      if (!registry.has(name)) {
+      if (
+        !registry.has(name) &&
+        !(name === "annotation" && this.#annotationSource)
+      ) {
         throw new TemplateError(`Template "${name}" not found`, name);
       }
       return bridgeSource(name);
@@ -644,13 +658,20 @@ export class TemplateFacade {
         emitter: Emitter,
       ): Generator<unknown, void, unknown> {
         const name = (yield evalToken(this.#nameToken, ctx)) as string;
+        const binding =
+          name === "annotation" ? self.#annotationSource : undefined;
         const slot = self.#registry.get(name);
-        if (!slot)
+        if (!slot && !binding)
           throw new TemplateError(`Template "${name}" not found`, name);
+        const templates = binding
+          ? binding.language === "liquid"
+            ? self.#liquid.parse(binding.source, name)
+            : undefined
+          : slot?.liquid;
 
-        if (slot.liquid) {
+        if (templates) {
           const out = (yield self.#liquid.renderer.renderTemplates(
-            slot.liquid,
+            templates,
             ctx,
           )) as string;
           emitter.write(self.#transform(name, out));
@@ -686,8 +707,7 @@ function assertSameRender(
 let nextManagedBlockPlaceholder = 0;
 
 /**
- * End a created note body with exactly one line break, so that a stripped
- * Annotation Block leaves no trace wherever the author placed it.
+ * Keep the established rendered-output convention separate from source splitting.
  */
 function withOneTrailingLineBreak(body: string): string {
   const trimmed = body.trimEnd();

@@ -172,7 +172,7 @@ ZotLit registers a small set of tags and filters for literature-note tasks.
 
 ### `{% render_annotation %}`: annotation rendering [#render-annotation]
 
-Renders the named `annotation` template with one annotation available as `zt` inside that template.
+Renders one annotation, available as `zt` inside the annotation template.
 
 ```liquid
 {% render_annotation annotation %}
@@ -188,7 +188,9 @@ For an annotation value, the equivalent native Liquid syntax is:
 
 The named-parameter form, `{% render "annotation", zt: annotation %}`, is also equivalent.
 
-The shortcut uses the same named-template lookup as [`{% render %}`](#includes-with-render). A Profile's Annotation Block remains a separate rendering target. Native Liquid syntax remains available for custom variable names and other template composition.
+In a Literature Note Profile, the shortcut and native calls to `annotation` use the Profile's Annotation Section. This required final section starts after the exact standalone line `--- zotlit:annotation ---` and continues to the end of the document. It uses the Profile's language and can be empty.
+
+Calls from shared partials use the calling Profile's section, with isolated annotation data. Direct annotation insertion and Imported Notes use the same section for their applicable Profile. Outside Profile rendering, the shortcut keeps the existing named-template lookup.
 
 ### `{% bq %}`: blockquote block [#bq-blockquote-block]
 
@@ -440,7 +442,7 @@ This coercion applies only to `{{ }}` outputs. `{% echo %}` inside a `{% liquid 
 
 `with <value> as zt` binds the value to `zt` inside the child template. The child sees only what you pass. Parent variables are not inherited.
 
-The name resolves to a registered template: `"annotation"` looks up `zotlit-annotation.liquid.md`. It is a name, not a file path.
+The name resolves to a registered template. During Profile rendering, `"annotation"` selects the Profile's Annotation Section. Outside Profile rendering, it looks up `zotlit-annotation.liquid.md`. Other names keep their existing lookup; each is a name, not a file path.
 
 ## Template file naming
 

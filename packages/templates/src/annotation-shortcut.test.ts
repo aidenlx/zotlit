@@ -75,10 +75,28 @@ describe.each(callers)("$language annotation shortcut", (caller) => {
     },
   );
 
-  it("keeps the named partial separate from the Profile Annotation Block", () => {
+  it("uses the Profile section for shortcuts, native calls, and shared partials", () => {
     const facade = new TemplateFacade();
-    facade.define("annotation", "Named {{ zt.text }}", "liquid");
-    const document = facade.parseLiteratureNoteTemplate(`---
+    facade.define("annotation", "Global {{ zt.text }}", "liquid");
+    facade.define(
+      "shared",
+      `${caller.source}|${caller.native}`,
+      caller.language,
+    );
+    facade.define("generic", caller.source, caller.language);
+    const sharedCall =
+      caller.language === "liquid"
+        ? '{% render "shared" with zt as zt %}'
+        : '<%~ include("shared", zt) %>';
+    const annotation =
+      caller.language === "liquid"
+        ? "{{ outside }}{{ zt.text }}{{ zt.title }}"
+        : '<%= typeof outside === "undefined" ? "" : outside %><%= zt.text %><%= zt.title ?? "" %>';
+    const outside =
+      caller.language === "liquid"
+        ? '{% assign outside = "LEAK" %}'
+        : '<% const outside = "LEAK"; %>';
+    const source = `---
 id: example
 name: Example
 version: 1.0.0
@@ -86,17 +104,104 @@ contract: 2
 language: ${caller.language}
 filename: note
 ---
-{% managed %}${caller.source}{% endmanaged %}
-{% annotation %}Profile block{% endannotation %}`);
+${outside}${caller.source}|${caller.native}|${sharedCall}
+{% managed %}${outside}${caller.source}|${caller.native}|${sharedCall}{% endmanaged %}
+--- zotlit:annotation ---
+Profile ${annotation}`;
+    const a = facade.parseLiteratureNoteTemplate(source);
+    const b = facade.parseLiteratureNoteTemplate(
+      source.replace("Profile ", "Other "),
+    );
+    const data = { title: "LEAK", annotation: { text: "A" } };
 
+    for (const document of [a, b, a]) {
+      const expected = document === b ? "Other A" : "Profile A";
+      expect(facade.renderLiteratureNoteTemplateForUpdate(document, data)).toBe(
+        `%%zt-managed%%\n${expected}|${expected}|${expected}|${expected}\n%%/zt-managed%%`,
+      );
+      expect(facade.renderLiteratureNoteTemplateForCreate(document, data)).toBe(
+        `${expected}|${expected}|${expected}|${expected}\n%%zt-managed%%\n${expected}|${expected}|${expected}|${expected}\n%%/zt-managed%%\n`,
+      );
+      expect(
+        facade.renderLiteratureNoteTemplateAnnotation(document, { text: "A" }),
+      ).toBe(expected);
+      expect(facade.render("generic", data)).toBe("Global A");
+    }
+  });
+
+  it("renders an empty Profile section and needs no global annotation partial", () => {
+    const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(`---
+id: empty
+name: Empty
+version: 1.0.0
+contract: 2
+language: ${caller.language}
+filename: note
+---
+${caller.source}|${caller.native}
+--- zotlit:annotation ---`);
     expect(
-      facade.renderLiteratureNoteTemplateForUpdate(document, {
+      facade.renderLiteratureNoteTemplateForCreate(document, {
         annotation: { text: "A" },
       }),
-    ).toBe("%%zt-managed%%\nNamed A\n%%/zt-managed%%");
+    ).toBe("|\n");
     expect(
       facade.renderLiteratureNoteTemplateAnnotation(document, { text: "A" }),
-    ).toBe("Profile block");
+    ).toBe("");
+  });
+
+  it.each(callers)(
+    "keeps the Profile source through a $language shared partial",
+    (shared) => {
+      const facade = new TemplateFacade();
+      facade.define("shared", shared.source, shared.language);
+      const call =
+        caller.language === "liquid"
+          ? '{% render "shared" with zt as zt %}'
+          : '<%~ include("shared", zt) %>';
+      const document = facade.parseLiteratureNoteTemplate(`---
+id: mixed
+name: Mixed
+version: 1.0.0
+contract: 2
+language: ${caller.language}
+filename: note
+---
+${call}
+--- zotlit:annotation ---
+Local ${caller.language === "liquid" ? "{{ zt.text }}" : "<%= zt.text %>"}`);
+      expect(
+        facade.renderLiteratureNoteTemplateForCreate(document, {
+          annotation: { text: "A" },
+        }),
+      ).toBe("Local A\n");
+    },
+  );
+
+  it("restores generic lookup after a Profile render fails", () => {
+    const facade = new TemplateFacade();
+    facade.define("annotation", "Global {{ zt.text }}", "liquid");
+    facade.define("generic", caller.source, caller.language);
+    const document = facade.parseLiteratureNoteTemplate(`---
+id: failure
+name: Failure
+version: 1.0.0
+contract: 2
+language: ${caller.language}
+filename: note
+---
+${caller.source}
+--- zotlit:annotation ---
+${caller.source}`);
+    expect(() =>
+      facade.renderLiteratureNoteTemplateForCreate(document, {
+        annotation: { text: "A" },
+      }),
+    ).toThrow("requires an annotation");
+    expect(facade.render("generic", { annotation: { text: "A" } })).toBe(
+      "Global A",
+    );
   });
 });
 
@@ -195,5 +300,35 @@ describe("Eta annotation shortcut", () => {
     await expect(engine.renderAsync("caller", data)).resolves.toBe(
       "**A**\n> B",
     );
+  });
+});
+
+describe("Nested Profile rendering", () => {
+  it("restores each Profile binding across a nested render and generic render", () => {
+    const facade = new TemplateFacade();
+    facade.define("annotation", "Global <%= zt.text %>", "eta");
+    const source = `---
+id: nested
+name: Nested
+version: 1.0.0
+contract: 2
+language: eta
+filename: note
+---
+<%~ renderAnnotation(zt.annotation) %>|<%~ zt.nested() %>|<%~ zt.generic() %>|<%~ renderAnnotation(zt.annotation) %>
+--- zotlit:annotation ---
+Outer <%= zt.text %>`;
+    const outer = facade.parseLiteratureNoteTemplate(source);
+    const inner = facade.parseLiteratureNoteTemplate(
+      source.replace("Outer ", "Inner "),
+    );
+    expect(
+      facade.renderLiteratureNoteTemplateForCreate(outer, {
+        annotation: { text: "A" },
+        nested: () =>
+          facade.renderLiteratureNoteTemplateAnnotation(inner, { text: "B" }),
+        generic: () => facade.render("annotation", { text: "C" }),
+      }),
+    ).toBe("Outer A|Inner B|Global C|Outer A\n");
   });
 });

@@ -1,5 +1,7 @@
 # Structural block tags trim by line ownership
 
+> **Amended by [ADR 0035](0035-profile-annotation-section.md).** Line ownership applies to Managed Block tags. The Annotation Section uses a fixed document header and preserves surrounding source bytes.
+
 ADR 0025 and ADR 0027 gave the Literature Note Template document two structural block tags — `{% managed %}` … `{% endmanaged %}` and `{% annotation %}` … `{% endannotation %}` — and ADR 0027 states that the Annotation Block "contributes nothing to the note body". The implementation made that claim false in a whitespace-shaped way: block ranges were sliced byte-exactly, so a block written on its own lines left a blank line where it stood, and the Annotation Block's own newline entered every drag-insert. Generated documents therefore glued the tags to their contents (`{% managed %}{% if … %}`), which renders correctly and reads badly.
 
 **A structural tag that owns its line contributes no bytes.** A tag is *line-owning* when only whitespace stands between the line start and the tag and a newline follows it directly; then its indentation and its trailing newline belong to the tag and are removed on extraction and on stripping. A tag written inline keeps every surrounding byte, so an inline block behaves exactly as it did before. A block owns exactly its own lines and never a neighbour's blank line; the created note body is normalized once, at the end of create-time rendering, to a single trailing line break, which is what finally makes ADR 0027's claim true wherever the author puts the block.

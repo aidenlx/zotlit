@@ -24,8 +24,7 @@ ${bindings}
 ---
 # {{ zt.title }}
 {% managed %}Managed{% endmanaged %}
-{% annotation %}Annotation{% endannotation %}
-`;
+--- zotlit:annotation ---\nAnnotation`;
 }
 
 describe("ProfileService", () => {
@@ -437,6 +436,26 @@ describe("ProfileService", () => {
     );
   });
 
+  it("accepts a look whose Annotation Section alone differs from Default", async () => {
+    await using fixture = await harness({
+      "templates/zotlit-profile.default.md": document("default"),
+    });
+    const source = document("default");
+    const section = parseLiteratureNoteTemplate(source).annotationSection;
+    const draft = await fixture.profile.prepareCreate({
+      label: "Annotations",
+      source: `${source.slice(0, section.start)}Custom annotation`,
+    });
+    expect(draft.inherited).not.toContain("look");
+    const pending = draft.create();
+    await vi.advanceTimersByTimeAsync(500);
+    const created = await pending;
+    expect(
+      parseLiteratureNoteTemplate(fixture.vault.contents.get(created.path)!)
+        .annotationSection.source,
+    ).toBe("Custom annotation");
+  });
+
   it("duplicates the built-in Default body without ejecting Default", async () => {
     await using fixture = await harness();
     const source = await fixture.profile.getSource("default");
@@ -590,10 +609,7 @@ describe("ProfileService", () => {
 
   it.each([
     document("default", "folder: Books"),
-    document("default").replace(
-      "{% annotation %}Annotation{% endannotation %}",
-      "",
-    ),
+    document("default").replace("\n--- zotlit:annotation ---\nAnnotation", ""),
   ])("excludes an invalid renamed Default from a cold scan", async (source) => {
     await using fixture = await harness({
       "templates/zotlit-profile.custom.md": source,

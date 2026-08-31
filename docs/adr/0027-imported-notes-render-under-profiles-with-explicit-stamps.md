@@ -4,6 +4,8 @@ status: amended by ADR-0031
 
 # Imported Notes render under Profiles with explicit stamps
 
+> **Amended by [ADR 0035](0035-profile-annotation-section.md).** The required final Annotation Section replaces the Annotation Block and supplies all annotation rendering under its Profile. Profile inheritance and stamps remain unchanged.
+
 > **Amended by ADR 0031.** The inheritance model stands; ADR 0031 names the root's home: the default Profile's total bindings record is the one settings record, and every other Profile's sparse bindings live in its document's manifest. A documentless Profile no longer exists except the default itself, so the "deferred default-Profile-document work" is the eject of `zotlit-profile.default.md`.
 
 Spec #865 kept Imported Notes outside the Profile system (one global folder; "Profiles for Imported Notes" out of scope). The #876 grilling overturned that: an Imported Note is created and re-imported under a Literature Note Profile, and the Profile — not vault-global settings — supplies its import folder, colored-highlights and annotations-as-template behavior, display-layer citation style, and annotation template.
