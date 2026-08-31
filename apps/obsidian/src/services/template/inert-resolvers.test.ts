@@ -7,6 +7,8 @@ import {
   CollectionCache,
   fetchNoteContext,
   getItemsByKey,
+  itemBaseFields,
+  resolveVenue,
   USER_LIBRARY_ID,
 } from "@zotlit/db";
 import type {
@@ -37,6 +39,7 @@ function makeItem(
   fields: { itemType: string } & Record<string, string | null>,
   base?: Partial<BaseItem> & Pick<Partial<Item>, "groupID">,
 ): Item {
+  const baseFields = itemBaseFields(fields as ItemFields);
   return {
     itemID: 1,
     libraryID: USER_LIBRARY_ID,
@@ -50,6 +53,8 @@ function makeItem(
     groupID: null,
     ...base,
     fields: fields as ItemFields,
+    baseFields,
+    venue: resolveVenue(baseFields),
   };
 }
 
