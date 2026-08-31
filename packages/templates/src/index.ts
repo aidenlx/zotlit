@@ -59,7 +59,8 @@ export class TemplateEngine extends Eta {
       autoFilter: true,
       filterFunction: coerceOutput,
       functionHeader:
-        "const bq = (fn) => output(this.bqHelper(capture(fn))); const basename = this.basenameHelper; const suffix = this.suffixHelper; const embed = this.embedHelper; const pandocCite = this.pandocCiteHelper;",
+        "const bq = (fn) => output(this.bqHelper(capture(fn))); const basename = this.basenameHelper; const suffix = this.suffixHelper; const embed = this.embedHelper; const pandocCite = this.pandocCiteHelper;" +
+        "const renderAnnotation = (annotation) => { if (annotation == null) throw new TypeError('renderAnnotation requires an annotation'); return include('annotation', annotation); };",
       plugins: [includeDataPlugin],
     });
 

@@ -95,6 +95,51 @@ describe("Literature Note Pack export", () => {
     ]);
   });
 
+  it.each([
+    { language: "liquid", source: "{% render_annotation zt.annotations[0] %}" },
+    {
+      language: "liquid",
+      source: "{% liquid\n render_annotation zt.annotations[0]\n%}",
+    },
+    { language: "eta", source: "<%~ renderAnnotation (zt.annotations[0]) %>" },
+  ] as const)(
+    "bundles the $language shortcut's annotation dependency",
+    (partial) => {
+      const annotation = {
+        name: "annotation",
+        language: "liquid",
+        source: 'A {% render "label" with zt as zt %}',
+      } as const;
+      const label = {
+        name: "label",
+        language: "liquid",
+        source: "{{ zt.text }}",
+      } as const;
+      const summary = { name: "summary", ...partial };
+      const exported = exportLiteratureNotePack(
+        `${DOCUMENT}{% annotation %}Profile block{% endannotation %}`,
+        [summary, annotation, label],
+      );
+
+      expect(parseLiteratureNoteTemplate(exported).manifest.partials).toEqual([
+        annotation,
+        label,
+        summary,
+      ]);
+    },
+  );
+
+  it("reports a missing annotation partial referenced through the shortcut", () => {
+    const source = `${DOCUMENT.replace(
+      '{% render "summary" with zt as zt %}',
+      "{% render_annotation zt.annotations[0] %}",
+    )}{% annotation %}Profile block{% endannotation %}`;
+
+    expect(() => exportLiteratureNotePack(source, [])).toThrow(
+      "Literature Note Template references missing partial 'annotation'",
+    );
+  });
+
   it.each([false, true])(
     "exports a partial-free Profile with includeFolders=%s",
     (includeFolders) => {
