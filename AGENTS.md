@@ -20,6 +20,7 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 - `mise` pins to Node 26 version (see `mise.toml`). Its `idiomatic_version_file_enable_tools = ["pnpm"]` setting also activates pnpm at the version declared in root `package.json`'s `packageManager` field.
 - `mise run init` initializes git submodules, including `packages/obsidian-api` and `packages/zotero-types/zotero-schema`.
 - Resolve tool availability from the current workspace environment. Use `pnpm exec` for workspace binaries; use the Mise-managed toolchain defined by `mise.toml`.
+- `agent-browser` (>= 0.31.1) — browser automation via CDP. Run `agent-browser skills get core` once per session for the version-matched usage guide. Session conventions and gotchas: [`docs/agents/agent-browser.md`](docs/agents/agent-browser.md).
 
 ## Commands
 
