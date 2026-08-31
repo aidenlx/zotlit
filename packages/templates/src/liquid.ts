@@ -1,10 +1,11 @@
 // Liquid engine core: fixed engine config plus the ZotLit tag/filter vocabulary.
 
-import { evalToken, filters, Liquid, Tag, tags } from "liquidjs";
+import { evalToken, filters, Liquid, Tag, tags, toValue } from "liquidjs";
 import type {
   Context,
   Emitter,
   FS,
+  PartialScope,
   TagToken,
   Template,
   TopLevelToken,
@@ -192,6 +193,56 @@ class SuffixTag extends Tag {
   }
 }
 
+class RenderAnnotationTag extends Tag {
+  readonly #annotation: ValueToken;
+
+  constructor(
+    tagToken: TagToken,
+    remainTokens: TopLevelToken[],
+    liquid: Liquid,
+  ) {
+    super(tagToken, remainTokens, liquid);
+    const annotation = this.tokenizer.readValue();
+    if (!annotation || this.tokenizer.remaining().trim() !== "") {
+      throw new Error("render_annotation requires one annotation argument");
+    }
+    this.#annotation = annotation;
+  }
+
+  *render(ctx: Context, emitter: Emitter): Generator<unknown, void, unknown> {
+    const annotation = toValue(yield evalToken(this.#annotation, ctx));
+    if (annotation == null) {
+      throw new TypeError("render_annotation requires an annotation");
+    }
+    const childCtx = ctx.spawn();
+    childCtx.bottom().zt = annotation;
+    const templates = (yield this.liquid._parsePartialFile(
+      "annotation",
+      childCtx.sync,
+      this.token.file,
+    )) as Template[];
+    yield this.liquid.renderer.renderTemplates(templates, childCtx, emitter);
+  }
+
+  arguments(): ValueToken[] {
+    return [this.#annotation];
+  }
+
+  *children(partials: boolean, sync: boolean): Generator<unknown, Template[]> {
+    return partials
+      ? yield this.liquid._parsePartialFile("annotation", sync, this.token.file)
+      : [];
+  }
+
+  partialScope(): PartialScope {
+    return {
+      name: "annotation",
+      isolated: true,
+      scope: [["zt", this.#annotation]],
+    };
+  }
+}
+
 export interface CreateLiquidEngineOptions {
   /**
    * Overrides the file-system module backing `{% render %}`/`{% include %}`
@@ -231,6 +282,7 @@ export function createLiquidEngine({
   });
 
   engine.registerTag("bq", BqTag);
+  engine.registerTag("render_annotation", RenderAnnotationTag);
 
   engine.registerFilter("embed", (link: unknown): string =>
     typeof link === "string" && link !== "" ? `!${link}` : "",

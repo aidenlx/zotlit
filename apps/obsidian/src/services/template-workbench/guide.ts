@@ -197,6 +197,11 @@ SECURITY
   local storage, or file edits.
 
 HELPERS
+  renderAnnotation(annotation)
+              Render the named annotation partial with the argument as zt.
+              Missing or null data is an error. Equivalent to
+              include("annotation", annotation); the Profile's Annotation Block
+              remains a separate target.
   pandocCite(zt.citations)
               Produce one complete Pandoc Citation Cluster.
   pandocCite(zt.citations, "prefer-author-in-text")
@@ -222,6 +227,11 @@ ERRORS
   An unknown filter is a render error.
 
 ZOTLIT TAGS
+  {% render_annotation annotation %}
+              Render the named annotation partial with the argument as zt.
+              Requires one argument; missing or null data is an error.
+              Equivalent to {% render "annotation" with annotation as zt %}.
+              Native render remains available for general partial composition.
   {% bq %}...{% endbq %}
               Render the body as a Markdown blockquote.
   {% suffix length, prepend, append %}

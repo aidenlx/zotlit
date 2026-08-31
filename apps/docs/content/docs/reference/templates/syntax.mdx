@@ -170,6 +170,26 @@ Filters transform a value with `|` and accept arguments after `:`.
 
 ZotLit registers a small set of tags and filters for literature-note tasks.
 
+### `{% render_annotation %}`: annotation rendering [#render-annotation]
+
+Renders the named `annotation` template with one annotation available as `zt` inside that template.
+
+```liquid
+{% render_annotation annotation %}
+```
+
+The annotation argument is required. A missing or null value raises an error.
+
+For an annotation value, the equivalent native Liquid syntax is:
+
+```liquid
+{% render "annotation" with annotation as zt %}
+```
+
+The named-parameter form, `{% render "annotation", zt: annotation %}`, is also equivalent.
+
+The shortcut uses the same named-template lookup as [`{% render %}`](#includes-with-render). A Profile's Annotation Block remains a separate rendering target. Native Liquid syntax remains available for custom variable names and other template composition.
+
 ### `{% bq %}`: blockquote block [#bq-blockquote-block]
 
 Wraps its content in a Markdown blockquote. Every line is prefixed with `> `. The content is trimmed first. Consecutive blank lines inside the block collapse into a single bare `>`.

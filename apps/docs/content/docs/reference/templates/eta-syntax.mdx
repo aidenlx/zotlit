@@ -103,6 +103,24 @@ The editor autocomplete inserts `= zt. ` when you select the interpolation hint 
 
 `zt` replaces v1's `it` variable. See [Migrate v1 Eta templates](/docs/how-to/migrate-v1-eta-templates) for the full property mapping.
 
+## `renderAnnotation()`: annotation rendering [#render-annotation]
+
+Renders the named `annotation` template with one annotation available as `zt` inside that template.
+
+```eta
+<%~ renderAnnotation(annotation) %>
+```
+
+The annotation argument is required. A missing or null value raises an error.
+
+For an annotation value, the equivalent native Eta syntax is:
+
+```eta
+<%~ include("annotation", annotation) %>
+```
+
+The shortcut uses the same named-template lookup as `include()`. A Profile's Annotation Block remains a separate rendering target. Native `include()` remains available for other template composition.
+
 ## `include()`: composing templates
 
 `include()` renders another template inline. Pass the template name and an optional data argument:
