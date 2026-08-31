@@ -100,7 +100,9 @@ frontmatter:
         { title: "Paper" },
         Temporal.Now.instant(),
       ).values,
-    ).toEqual({ title: "Paper" });
+    ).toEqual([
+      { key: "title", value: "Paper", merge: "replace", position: 1 },
+    ]);
 
     await service.setJavascriptTemplatesEnabled(true);
 
@@ -112,7 +114,10 @@ frontmatter:
         { title: "Paper" },
         Temporal.Now.instant(),
       ).values,
-    ).toEqual({ title: "Paper", scripted: "Paper!" });
+    ).toEqual([
+      { key: "title", value: "Paper", merge: "replace", position: 1 },
+      { key: "scripted", value: "Paper!", merge: "replace", position: 2 },
+    ]);
   });
 
   it("renders Profile Annotation Blocks, refuses a blockless document, and keeps the documentless and legacy paths", async () => {

@@ -42,18 +42,22 @@ const partialsSchema = v.pipe(
 );
 
 const managedFrontmatterEntryBase = {
-  key: nonEmptyString,
+  key: v.optional(nonEmptyString),
   merge: v.optional(frontmatterMergeStrategySchema, "replace"),
 };
 
 const managedFrontmatterEntrySchema = v.pipe(
   v.union([
-    v.strictObject({ ...managedFrontmatterEntryBase, expr: v.string() }),
+    v.strictObject({
+      ...managedFrontmatterEntryBase,
+      key: nonEmptyString,
+      expr: v.string(),
+    }),
     v.strictObject({ ...managedFrontmatterEntryBase, value: v.unknown() }),
     v.strictObject({ ...managedFrontmatterEntryBase, js: v.string() }),
   ]),
   v.check(
-    ({ key }) => !RESERVED_FRONTMATTER_KEYS.has(key),
+    ({ key }) => key === undefined || !RESERVED_FRONTMATTER_KEYS.has(key),
     ({ input }) => `Managed Frontmatter key '${input.key}' is reserved`,
   ),
 );
@@ -62,6 +66,7 @@ const managedFrontmatterSchema = v.pipe(
   v.array(managedFrontmatterEntrySchema),
   v.checkItems(
     (entry, index, entries) =>
+      entry.key === undefined ||
       entries.findIndex(({ key }) => key === entry.key) === index,
     ({ input }) => `Duplicate Managed Frontmatter key '${input.key}'`,
   ),

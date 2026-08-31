@@ -28,7 +28,7 @@ import type {
   CompiledFrontmatter,
   CompiledManagedFrontmatter,
 } from "./frontmatter";
-import { mergeFrontmatterFields } from "./frontmatter-merge";
+import { mergeManagedFrontmatterEntries } from "./frontmatter-merge";
 import { TemplateEngine } from "./index";
 import { createLiquidEngine } from "./liquid";
 import {
@@ -328,10 +328,7 @@ export class TemplateFacade {
         },
       );
     }
-    const frontmatterPatch = mergeFrontmatterFields(
-      frontmatter.compiled,
-      evaluation.values,
-    );
+    const frontmatterPatch = mergeManagedFrontmatterEntries(evaluation.values);
     if (legacy.annotation) {
       if (legacyRendered.annotation === null || rendered.annotation === null) {
         throw new LegacyTemplateConversionError(

@@ -6,13 +6,16 @@ import {
 import type {
   CompiledFrontmatterField,
   CompiledManagedFrontmatter,
-  CompiledManagedFrontmatterEntry,
 } from "@zotlit/templates/frontmatter";
 import {
   FRONTMATTER_ABSENT,
   mergeFrontmatterFields,
+  mergeManagedFrontmatterEntries,
 } from "@zotlit/templates/frontmatter-merge";
-import type { FrontmatterMergeConflictHandler } from "@zotlit/templates/frontmatter-merge";
+import type {
+  EvaluatedFrontmatterField,
+  FrontmatterMergeConflictHandler,
+} from "@zotlit/templates/frontmatter-merge";
 
 import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 
@@ -26,8 +29,8 @@ export type PreparedManagedFrontmatter =
   | { readonly kind: "legacy" }
   | {
       readonly kind: "document";
-      readonly fields: readonly CompiledManagedFrontmatterEntry[];
-      readonly values: Readonly<Record<string, unknown>>;
+      readonly fields: readonly EvaluatedFrontmatterField[];
+      readonly keys: readonly string[];
     };
 
 export interface ApplyDocumentManagedFrontmatterOptions {
@@ -84,8 +87,8 @@ export function prepareManagedFrontmatter(
   return {
     prepared: {
       kind: "document",
-      fields: frontmatter.compiled,
-      values: evaluation.values,
+      fields: evaluation.values,
+      keys: evaluation.keys,
     },
   };
 }
@@ -96,7 +99,7 @@ export function applyDocumentManagedFrontmatter(
   options: ApplyDocumentManagedFrontmatterOptions,
 ): void {
   const { prepared } = options;
-  const patch = mergeFrontmatterFields(prepared.fields, prepared.values, {
+  const patch = mergeManagedFrontmatterEntries(prepared.fields, {
     current: fm,
     onConflict: options.onConflict,
   });
