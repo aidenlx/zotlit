@@ -85,10 +85,14 @@ export const DIAGNOSTIC_HINTS = {
   UNKNOWN_PROFILE_STAMP: UNKNOWN_PROFILE_HINT,
   DUPLICATE_MANAGED_BLOCK:
     "Keep at most one Managed Block in the document, then render it again.",
-  MISSING_ANNOTATION_BLOCK:
-    "Add one {% annotation %} ... {% endannotation %} block to the document body, with each tag alone on its line; run template-source template=annotation for the built-in default block source (Liquid).",
-  DUPLICATE_ANNOTATION_BLOCK:
-    "Keep at most one Annotation Block in the document, then render it again.",
+  MISSING_ANNOTATION_SECTION:
+    "Add one standalone --- zotlit:annotation --- line after the note source. Its annotation source extends to EOF and can be empty; template-source template=annotation provides the built-in Liquid source.",
+  DUPLICATE_ANNOTATION_SECTION:
+    "Keep one --- zotlit:annotation --- header, followed by the annotation source through EOF.",
+  UNKNOWN_SECTION_HEADER:
+    "Use the exact standalone --- zotlit:annotation --- header. The note source starts after the manifest.",
+  RESERVED_ANNOTATION_PARTIAL:
+    "Rename the manifest partial named 'annotation' and update its calls. The Annotation Section supplies Profile annotation rendering.",
   DOCUMENT_INVALID:
     "Correct the document validation error, then inspect or render it again.",
 } as const satisfies Record<string, string>;

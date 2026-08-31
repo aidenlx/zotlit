@@ -953,11 +953,17 @@ function literatureNoteDocumentDiagnosticCode(
   if (code === "duplicate-managed-block") {
     return diagnostic("DUPLICATE_MANAGED_BLOCK", message);
   }
-  if (code === "missing-annotation-block") {
-    return diagnostic("MISSING_ANNOTATION_BLOCK", message);
+  if (code === "missing-annotation-section") {
+    return diagnostic("MISSING_ANNOTATION_SECTION", message);
   }
-  if (code === "duplicate-annotation-block") {
-    return diagnostic("DUPLICATE_ANNOTATION_BLOCK", message);
+  if (code === "duplicate-annotation-section") {
+    return diagnostic("DUPLICATE_ANNOTATION_SECTION", message);
+  }
+  if (code === "unknown-section-header") {
+    return diagnostic("UNKNOWN_SECTION_HEADER", message);
+  }
+  if (code === "reserved-annotation-partial") {
+    return diagnostic("RESERVED_ANNOTATION_PARTIAL", message);
   }
   return diagnostic("DOCUMENT_INVALID", message);
 }

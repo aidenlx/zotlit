@@ -254,6 +254,7 @@ export class ProfileService extends Service {
         : facade.parseLiteratureNoteTemplate(source);
     const differs =
       look.body !== defaultLook.body ||
+      look.annotationSection.source !== defaultLook.annotationSection.source ||
       (["filename", "language", "frontmatter", "partials"] as const).some(
         (key) =>
           JSON.stringify(look.manifest[key]) !==
@@ -493,7 +494,7 @@ export class ProfileService extends Service {
     if (options.inheritCitationStyle) delete manifest.citationStyle;
     else if (options.citationStyle !== undefined)
       manifest.citationStyle = options.citationStyle;
-    const content = `---\n${stringifyYaml(manifest, { lineWidth: 0 })}---\n${parsed.body}`;
+    const content = `---\n${stringifyYaml(manifest, { lineWidth: 0 })}---\n${source.slice(parsed.bodyStart)}`;
     const folder = this.#deps.settings.current!["template.folder"];
     const slug = profileSlug(manifest.name);
     const plain = `zotlit-profile.${slug}.md`;

@@ -103,13 +103,16 @@ export function exportLiteratureNotePack(
     ),
   );
   const bundled = new Map<string, LiteratureNoteTemplatePartial>();
-  const pending = referencedPartialNames(
-    `${document.body}\n${document.manifest.filename}`,
-    document.manifest.language,
+  const pending = [
+    document.body,
+    document.annotationSection.source,
+    document.manifest.filename,
+  ].flatMap((template) =>
+    referencedPartialNames(template, document.manifest.language),
   );
   while (pending.length > 0) {
     const name = pending.pop()!;
-    if (bundled.has(name)) continue;
+    if (name === "annotation" || bundled.has(name)) continue;
     const partial = available.get(name);
     if (!partial) {
       throw new LiteratureNotePackError(
@@ -139,7 +142,7 @@ export function exportLiteratureNotePack(
   }
   if (bundled.size > 0) exported.partials = partials;
   const manifest = stringifyYaml(exported, { lineWidth: 0 });
-  return `---\n${manifest}---\n${document.body}`;
+  return `---\n${manifest}---\n${source.slice(document.bodyStart)}`;
 }
 
 /** Compare candidate bytes with effective files and prior Pack ownership. */

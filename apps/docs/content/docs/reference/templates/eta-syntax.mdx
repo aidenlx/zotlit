@@ -105,7 +105,7 @@ The editor autocomplete inserts `= zt. ` when you select the interpolation hint 
 
 ## `renderAnnotation()`: annotation rendering [#render-annotation]
 
-Renders the named `annotation` template with one annotation available as `zt` inside that template.
+Renders one annotation, available as `zt` inside the annotation template.
 
 ```eta
 <%~ renderAnnotation(annotation) %>
@@ -119,7 +119,9 @@ For an annotation value, the equivalent native Eta syntax is:
 <%~ include("annotation", annotation) %>
 ```
 
-The shortcut uses the same named-template lookup as `include()`. A Profile's Annotation Block remains a separate rendering target. Native `include()` remains available for other template composition.
+In a Literature Note Profile, the shortcut and native calls to `annotation` use the Profile's Annotation Section. This required final section starts after the exact standalone line `--- zotlit:annotation ---` and continues to the end of the document. It uses the Profile's language and can be empty.
+
+Calls from shared partials use the calling Profile's section, with isolated annotation data. Direct annotation insertion and Imported Notes use the same section for their applicable Profile. Outside Profile rendering, the shortcut keeps the existing named-template lookup.
 
 ## `include()`: composing templates
 
@@ -132,7 +134,7 @@ The shortcut uses the same named-template lookup as `include()`. A Profile's Ann
 
 The data argument becomes the child template's `zt` variable, direct passthrough not merged with the parent's data. When omitted, the child inherits the parent's `zt`.
 
-The name resolves to a registered template: `"annotation"` finds `zotlit-annotation.eta.md`. It is a name, not a file path.
+The name resolves to a registered template. During Profile rendering, `"annotation"` selects the Profile's Annotation Section. Outside Profile rendering, it finds `zotlit-annotation.eta.md`. Other names keep their existing lookup; each is a name, not a file path.
 
 ### The `content` include
 

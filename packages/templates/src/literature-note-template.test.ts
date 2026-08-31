@@ -18,7 +18,7 @@ contract: 2
 filename: note
 frontmatter:${frontmatter}
 ---
-Body{% annotation %}Annotation{% endannotation %}`;
+Body\n--- zotlit:annotation ---\nAnnotation`;
 }
 
 function expectInvalidFrontmatter(frontmatter: string, target: string): void {
@@ -35,6 +35,34 @@ function expectInvalidFrontmatter(frontmatter: string, target: string): void {
 }
 
 describe("Literature Note Template document", () => {
+  it.each(["liquid", "eta"] as const)(
+    "splits the final %s Annotation Section without changing source bytes",
+    (language) => {
+      const facade = new TemplateFacade();
+      const source = `---\r\nid: section\r\nname: Section\r\nversion: 1.0.0\r\ncontract: 2\r\nfilename: note\r\nlanguage: ${language}\r\n---\r\nNote\r\n\r\n--- zotlit:annotation ---\r\n\r\nAnnotation\r\n`;
+      const document = facade.parseLiteratureNoteTemplate(source);
+
+      expect(document.body).toBe("Note\r\n\r\n");
+      expect(document.annotationSection.source).toBe("\r\nAnnotation\r\n");
+      expect(
+        source.slice(
+          document.bodyStart,
+          document.annotationSection.headerStart,
+        ),
+      ).toBe("Note\r\n\r\n");
+      expect(
+        source.slice(
+          document.annotationSection.start,
+          document.annotationSection.end,
+        ),
+      ).toBe("\r\nAnnotation\r\n");
+      const edited = `${source.slice(0, document.annotationSection.start)}Changed${source.slice(document.annotationSection.end)}`;
+      expect(
+        facade.parseLiteratureNoteTemplate(edited).annotationSection.source,
+      ).toBe("Changed");
+    },
+  );
+
   it.each([
     {
       language: "liquid" as const,
@@ -275,9 +303,70 @@ describe("Literature Note Template document", () => {
       },
     );
 
-    expect(converted.document.annotationBlock?.source).toBe(annotation);
+    expect(converted.document.annotationSection.source).toBe(annotation);
     expect(converted.rendered.annotation).toBe("Annotation Excerpt");
   });
+
+  it.each(["liquid", "eta"] as const)(
+    "checks the %s conversion baseline with generic annotation lookup",
+    (language) => {
+      const facade = new TemplateFacade({
+        transformRender: (name, output) =>
+          name === "content" ? formatManagedRegion(output) : output,
+      });
+      const legacy = {
+        note: {
+          source:
+            language === "liquid"
+              ? '{% render "content" with zt as zt %}'
+              : '<%~ include("content", zt) %>',
+          language,
+        },
+        content: {
+          source:
+            language === "liquid"
+              ? "{% render_annotation zt.annotation %}"
+              : "<%~ renderAnnotation(zt.annotation) %>",
+          language,
+        },
+        filename: { source: "note", language },
+        annotation: {
+          source:
+            language === "liquid"
+              ? "Legacy {{ zt.text }}"
+              : "Legacy <%= zt.text %>",
+          language,
+        },
+      };
+      for (const [name, template] of Object.entries(legacy))
+        facade.define(name, template.source, template.language);
+      const data = {
+        note: { annotation: { text: "A" } },
+        filename: {},
+        annotation: { text: "A" },
+      };
+      expect(
+        facade.convertLegacyLiteratureNoteTemplates(legacy, data).rendered,
+      ).toEqual({
+        create: "%%zt-managed%%\nLegacy A\n%%/zt-managed%%\n",
+        update: "%%zt-managed%%\nLegacy A\n%%/zt-managed%%",
+        filename: "note",
+        annotation: "Legacy A",
+      });
+      expect(() =>
+        facade.convertLegacyLiteratureNoteTemplates(
+          { ...legacy, annotation: { source: "Changed", language } },
+          data,
+        ),
+      ).toThrowError(
+        expect.objectContaining({
+          code: "legacy-render-mismatch",
+          difference: "create output",
+        }),
+      );
+      expect(facade.render("annotation", { text: "A" })).toBe("Legacy A");
+    },
+  );
 
   it("refuses an annotation fold whose rendered bytes differ", () => {
     const facade = new TemplateFacade({
@@ -323,7 +412,7 @@ describe("Literature Note Template document", () => {
       defaultAnnotation: annotationEta,
     },
   ])(
-    "seeds the embedded default as a trailing $language Annotation Block for an un-ejected annotation slot",
+    "seeds the embedded default as a trailing $language Annotation Section for an un-ejected annotation slot",
     ({ language, note, defaultAnnotation }) => {
       const facade = new TemplateFacade({
         transformRender: (name, output) =>
@@ -342,12 +431,12 @@ describe("Literature Note Template document", () => {
         { note: {}, filename: {} },
       );
 
-      expect(converted.document.annotationBlock?.source).toBe(
+      expect(converted.document.annotationSection.source).toBe(
         defaultAnnotation,
       );
       expect(
         converted.source.endsWith(
-          `\n{% annotation %}\n${defaultAnnotation}{% endannotation %}\n`,
+          `\n--- zotlit:annotation ---\n${defaultAnnotation}`,
         ),
       ).toBe(true);
       expect(converted.rendered.annotation).toBeNull();
@@ -370,7 +459,7 @@ contract: 2
 filename: note
 ${binding}
 ---
-Body{% annotation %}Annotation{% endannotation %}`),
+Body\n--- zotlit:annotation ---\nAnnotation`),
     ).toThrowError(expect.objectContaining({ code: "invalid-manifest" }));
   });
 
@@ -382,7 +471,7 @@ version: 1.0.0
 contract: 2
 filename: note
 ---
-Body{% annotation %}Annotation{% endannotation %}`;
+Body\n--- zotlit:annotation ---\nAnnotation`;
     const facade = new TemplateFacade();
     expect(facade.parseLiteratureNoteTemplate(source).manifest.name).toBe(
       "Books",
@@ -416,8 +505,7 @@ language: liquid
 # {{ zt.title }}
 
 {% managed %}Managed body{% endmanaged %}
-{% annotation %}Annotation body{% endannotation %}
-`);
+--- zotlit:annotation ---\nAnnotation body`);
 
     expect(document.manifest).toEqual({
       id: "example.paper-note",
@@ -437,13 +525,13 @@ language: liquid
       language: "liquid",
     });
     expect(document.body).toBe(
-      "# {{ zt.title }}\n\n{% managed %}Managed body{% endmanaged %}\n{% annotation %}Annotation body{% endannotation %}\n",
+      "# {{ zt.title }}\n\n{% managed %}Managed body{% endmanaged %}\n",
     );
     expect(document.managedBlock?.source).toBe("Managed body");
   });
 
   it.each(["liquid", "eta"] as const)(
-    "parses and renders an isolated %s Annotation Block",
+    "parses and renders an isolated %s Annotation Section",
     (language) => {
       const facade = new TemplateFacade();
       const outside =
@@ -459,14 +547,14 @@ id: example.annotation-${language}
 name: Annotation note
 version: 1.0.0
 author: Ada Example
-description: Tests Annotation Block rendering.
+description: Tests Annotation Section rendering.
 contract: 2
 filename: note
 language: ${language}
 ---
-${outside}Before{% annotation %}${annotation}{% endannotation %}After`);
+${outside}BeforeAfter\n--- zotlit:annotation ---\n${annotation}`);
 
-      expect(document.annotationBlock?.source).toBe(annotation);
+      expect(document.annotationSection.source).toBe(annotation);
       expect(
         facade.renderLiteratureNoteTemplateForCreate(document, {
           text: "ROOT",
@@ -480,7 +568,7 @@ ${outside}Before{% annotation %}${annotation}{% endannotation %}After`);
     },
   );
 
-  it("refuses a document without an Annotation Block", () => {
+  it("refuses a document without an Annotation Section", () => {
     const facade = new TemplateFacade();
 
     expect(() =>
@@ -489,32 +577,32 @@ id: example.no-annotation
 name: No annotation
 version: 1.0.0
 author: Ada Example
-description: Has no Annotation Block.
+description: Has no Annotation Section.
 contract: 2
 filename: note
 ---
 Body`),
     ).toThrowError(
       expect.objectContaining<Partial<LiteratureNoteTemplateError>>({
-        code: "missing-annotation-block",
-        message: expect.stringContaining("{% annotation %}"),
+        code: "missing-annotation-section",
+        message: expect.stringContaining("--- zotlit:annotation ---"),
         recovery: expect.any(String),
       }),
     );
   });
 
-  it("strips an Annotation Block nested in the Managed Block", () => {
+  it("keeps the Annotation Section out of the Managed Block", () => {
     const facade = new TemplateFacade();
     const document = facade.parseLiteratureNoteTemplate(`---
 id: example.nested-annotation
 name: Nested annotation
 version: 1.0.0
 author: Ada Example
-description: Keeps Annotation Block bytes out of note renders.
+description: Keeps Annotation Section bytes out of note renders.
 contract: 2
 filename: note
 ---
-Before{% managed %}A{% annotation %}ANNOTATION{% endannotation %}B{% endmanaged %}After`);
+Before{% managed %}AB{% endmanaged %}After\n--- zotlit:annotation ---\nANNOTATION`);
     const managed = formatManagedRegion("AB");
 
     expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
@@ -537,7 +625,7 @@ contract: 2
 filename: note
 language: liquid
 ---
-{% assign outside = "leak" %}A{% managed %}{% if outside %}LEAK{% elsif zt.title == "Paper" %}INNER{% endif %}{% endmanaged %}{% if outside == "leak" %}Z{% endif %}{% annotation %}Annotation{% endannotation %}`);
+{% assign outside = "leak" %}A{% managed %}{% if outside %}LEAK{% elsif zt.title == "Paper" %}INNER{% endif %}{% endmanaged %}{% if outside == "leak" %}Z{% endif %}\n--- zotlit:annotation ---\nAnnotation`);
 
     const created = facade.renderLiteratureNoteTemplateForCreate(document, {
       title: "Paper",
@@ -563,7 +651,7 @@ contract: 2
 filename: note
 language: eta
 ---
-<% const outside = "leak" %>A{% managed %}<% if (typeof outside !== "undefined") { %>LEAK<% } else if (zt.title === "Paper") { %>INNER<% } %>{% endmanaged %}<% if (outside === "leak") { %>Z<% } %>{% annotation %}Annotation{% endannotation %}`);
+<% const outside = "leak" %>A{% managed %}<% if (typeof outside !== "undefined") { %>LEAK<% } else if (zt.title === "Paper") { %>INNER<% } %>{% endmanaged %}<% if (outside === "leak") { %>Z<% } %>\n--- zotlit:annotation ---\nAnnotation`);
 
     const created = facade.renderLiteratureNoteTemplateForCreate(document, {
       title: "Paper",
@@ -588,7 +676,7 @@ description: Tests placeholder collisions.
 contract: 2
 filename: note
 ---
-{{ zt.prefix }}{% managed %}Managed{% endmanaged %}{% annotation %}Annotation{% endannotation %}`);
+{{ zt.prefix }}{% managed %}Managed{% endmanaged %}\n--- zotlit:annotation ---\nAnnotation`);
 
     expect(
       facade.renderLiteratureNoteTemplateForCreate(document, {
@@ -610,7 +698,7 @@ filename: note
 ---
 Before{% managed %}
   Managed body
-{% endmanaged %}After{% annotation %}Annotation{% endannotation %}`);
+{% endmanaged %}After\n--- zotlit:annotation ---\nAnnotation`);
 
     const region = formatManagedRegion("Managed body");
     expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
@@ -641,7 +729,7 @@ description: Tests block placement.
 contract: 2
 filename: note
 ---
-${body}{% annotation %}Annotation{% endannotation %}`);
+${body}\n--- zotlit:annotation ---\nAnnotation`);
 
     expect(() =>
       facade.renderLiteratureNoteTemplateForCreate(document, {}),
@@ -665,31 +753,11 @@ contract: 2
 filename: note
 ---
 {% raw %}{% managed %}Raw{% endmanaged %}{% endraw %}
-{% comment %}{% managed %}Comment{% endmanaged %}{% endcomment %}{% annotation %}Annotation{% endannotation %}`);
+{% comment %}{% managed %}Comment{% endmanaged %}{% endcomment %}\n--- zotlit:annotation ---\nAnnotation`);
 
     expect(document.managedBlock).toBeNull();
     expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
       "{% managed %}Raw{% endmanaged %}\n",
-    );
-  });
-
-  it("treats Annotation Block tags inside Liquid raw and comment blocks as literals", () => {
-    const facade = new TemplateFacade();
-    const document = facade.parseLiteratureNoteTemplate(`---
-id: example.annotation-literal
-name: Literal annotation tags
-version: 1.0.0
-author: Ada Example
-description: Tests literal Annotation Block tags.
-contract: 2
-filename: note
----
-{% raw %}{% annotation %}Raw{% endannotation %}{% endraw %}
-{% comment %}{% annotation %}Comment{% endannotation %}{% endcomment %}{% annotation %}Real{% endannotation %}`);
-
-    expect(document.annotationBlock?.source).toBe("Real");
-    expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
-      "{% annotation %}Raw{% endannotation %}\n",
     );
   });
 
@@ -704,7 +772,7 @@ description: User-owned body.
 contract: 2
 filename: Static
 ---
-Static body{% annotation %}Annotation{% endannotation %}`);
+Static body\n--- zotlit:annotation ---\nAnnotation`);
 
     expect(document.manifest.language).toBe("liquid");
     expect(document.manifest.citationStyle).toBeUndefined();
@@ -731,7 +799,7 @@ filename: note
 ---
 {% managed %}First{% endmanaged %}
 {% managed %}Second{% endmanaged %}
-{% annotation %}Annotation{% endannotation %}`),
+--- zotlit:annotation ---\nAnnotation`),
     ).toThrowError(
       expect.objectContaining<Partial<LiteratureNoteTemplateError>>({
         code: "duplicate-managed-block",
@@ -740,7 +808,7 @@ filename: note
     );
   });
 
-  it("rejects a duplicate Annotation Block before rendering", () => {
+  it("rejects a duplicate Annotation Section before rendering", () => {
     const facade = new TemplateFacade();
 
     expect(() =>
@@ -749,16 +817,15 @@ id: example.duplicate-annotation
 name: Duplicate annotation
 version: 1.0.0
 author: Ada Example
-description: Invalid duplicate Annotation Blocks.
+description: Invalid duplicate Annotation Sections.
 contract: 2
 filename: note
 ---
-{% annotation %}First{% endannotation %}
-{% annotation %}Second{% endannotation %}`),
+--- zotlit:annotation ---\nFirst\n--- zotlit:annotation ---\nSecond`),
     ).toThrowError(
       expect.objectContaining<Partial<LiteratureNoteTemplateError>>({
-        code: "duplicate-annotation-block",
-        message: expect.stringContaining("Duplicate {% annotation %} block"),
+        code: "duplicate-annotation-section",
+        message: expect.stringContaining("Duplicate Annotation Section"),
       }),
     );
   });
@@ -908,7 +975,7 @@ contract: 2
 filename: note
 citationStyle: null
 ---
-Body{% annotation %}Annotation{% endannotation %}`);
+Body\n--- zotlit:annotation ---\nAnnotation`);
 
     expect(document.manifest.citationStyle).toBeNull();
   });
@@ -924,7 +991,7 @@ description: Tests the filename rule.
 contract: 2
 filename: '{% if zt.citationKey == "smith2024" %}smith2024{% endif %}'
 ---
-Body{% annotation %}Annotation{% endannotation %}`);
+Body\n--- zotlit:annotation ---\nAnnotation`);
 
     expect(
       facade.renderLiteratureNoteTemplateFilename(document, {
@@ -947,80 +1014,152 @@ filename: note
 ${body}`;
 }
 
+describe("Annotation Section boundary", () => {
+  const facade = new TemplateFacade();
+
+  it.each(["liquid", "eta"] as const)(
+    "accepts an empty %s section at EOF or after a line break",
+    (language) => {
+      for (const ending of ["", "\n", "\r\n"]) {
+        const document = facade.parseLiteratureNoteTemplate(
+          blockDocument(
+            `Static\n--- zotlit:annotation ---${ending}`,
+            "empty",
+          ).replace("filename: note", `filename: note\nlanguage: ${language}`),
+        );
+        expect(document.body).toBe("Static\n");
+        expect(document.annotationSection.source).toBe("");
+        expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
+          "Static\n",
+        );
+        expect(
+          facade.renderLiteratureNoteTemplateForUpdate(document, {}),
+        ).toBeNull();
+        expect(
+          facade.renderLiteratureNoteTemplateAnnotation(document, {}),
+        ).toBe("");
+      }
+    },
+  );
+
+  it.each(["\n", "\r\n"])(
+    "preserves blank lines and %j line endings",
+    (eol) => {
+      const source = blockDocument(
+        `Note${eol}${eol}--- zotlit:annotation ---${eol}${eol}  Annotation${eol}${eol}`,
+        "bytes",
+      );
+      const document = facade.parseLiteratureNoteTemplate(source);
+      expect(document.body).toBe(`Note${eol}${eol}`);
+      expect(document.annotationSection.source).toBe(
+        `${eol}  Annotation${eol}${eol}`,
+      );
+      expect(
+        source.slice(
+          document.annotationSection.headerStart,
+          document.annotationSection.start,
+        ),
+      ).toBe(`--- zotlit:annotation ---${eol}`);
+    },
+  );
+
+  it.each([
+    " --- zotlit:annotation ---",
+    "\t--- zotlit:annotation ---",
+    "Text --- zotlit:annotation ---",
+  ])("keeps a non-standalone header as source: %s", (line) => {
+    const document = facade.parseLiteratureNoteTemplate(
+      blockDocument(`${line}\n--- zotlit:annotation ---\nA`, "exact"),
+    );
+    expect(document.body).toBe(`${line}\n`);
+    expect(() =>
+      facade.parseLiteratureNoteTemplate(blockDocument(line, "missing")),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "missing-annotation-section",
+        manifestId: "missing",
+      }),
+    );
+  });
+
+  it.each([
+    "--- zotlit:note ---",
+    "--- zotlit:unknown ---",
+    "--- zotlit:annotation --- ",
+    "--- zotlit:annotation --- suffix",
+    "--- zotlit:annotation ---\r",
+  ])("reports an unknown namespace header: %s", (header) => {
+    expect(() =>
+      facade.parseLiteratureNoteTemplate(
+        blockDocument(`--- zotlit:annotation ---\n${header}`, "unknown"),
+      ),
+    ).toThrowError(
+      expect.objectContaining({
+        code: "unknown-section-header",
+        manifestId: "unknown",
+        recovery: expect.stringContaining("exact standalone"),
+      }),
+    );
+  });
+
+  it.each([
+    { language: "liquid", before: "```markdown\n", after: "\n```" },
+    { language: "liquid", before: "{% raw %}\n", after: "\n{% endraw %}" },
+    {
+      language: "liquid",
+      before: "{% comment %}\n",
+      after: "\n{% endcomment %}",
+    },
+    { language: "eta", before: "<% const example = `\n", after: "\n`; %>" },
+  ])(
+    "splits before parsing $language code in $before",
+    ({ language, before, after }) => {
+      const source = blockDocument(
+        `${before}--- zotlit:annotation ---\nA${after}`,
+        "syntax",
+      ).replace("filename: note", `filename: note\nlanguage: ${language}`);
+      const document = facade.parseLiteratureNoteTemplate(source);
+      expect(document.body).toBe(before);
+      expect(document.annotationSection.source).toBe(`A${after}`);
+      expect(() =>
+        facade.parseLiteratureNoteTemplate(
+          `${source}\n--- zotlit:annotation ---`,
+        ),
+      ).toThrowError(
+        expect.objectContaining({ code: "duplicate-annotation-section" }),
+      );
+      if (language === "liquid" && before.startsWith("{%")) {
+        expect(() =>
+          facade.renderLiteratureNoteTemplateForCreate(document, {}),
+        ).toThrow();
+      }
+    },
+  );
+
+  it("reports the reserved annotation partial with a rename hint", () => {
+    const source = blockDocument(
+      "Note\n--- zotlit:annotation ---",
+      "reserved",
+    ).replace(
+      "filename: note",
+      "filename: note\npartials:\n  - name: annotation\n    language: liquid\n    source: Global",
+    );
+    expect(() => facade.parseLiteratureNoteTemplate(source)).toThrowError(
+      expect.objectContaining({
+        code: "reserved-annotation-partial",
+        manifestId: "reserved",
+        recovery: expect.stringContaining("Rename"),
+      }),
+    );
+  });
+});
+
 describe("Line-Owning Tags", () => {
-  it("drops the line break after a line-owning open tag", () => {
-    const facade = new TemplateFacade();
-    const document = facade.parseLiteratureNoteTemplate(
-      blockDocument(
-        "{% annotation %}\n{{ zt.text }}\n{% endannotation %}\n",
-        "example.owning-open",
-      ),
-    );
-
-    expect(document.annotationBlock?.source).toBe("{{ zt.text }}\n");
-  });
-
-  it("drops the indentation before a line-owning close tag", () => {
-    const facade = new TemplateFacade();
-    const document = facade.parseLiteratureNoteTemplate(
-      blockDocument(
-        "{% annotation %}\n{{ zt.text }}\n  {% endannotation %}\n",
-        "example.owning-close",
-      ),
-    );
-
-    expect(document.annotationBlock?.source).toBe("{{ zt.text }}\n");
-  });
-
-  it("keeps every byte around an inline block", () => {
-    const facade = new TemplateFacade();
-    const document = facade.parseLiteratureNoteTemplate(
-      blockDocument(
-        "Body{% annotation %}{{ zt.text }}{% endannotation %}Tail",
-        "example.inline",
-      ),
-    );
-
-    expect(document.annotationBlock?.source).toBe("{{ zt.text }}");
-    expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
-      "BodyTail\n",
-    );
-  });
-
-  it("leaves no blank line where a line-owning block stood", () => {
-    const facade = new TemplateFacade();
-    const document = facade.parseLiteratureNoteTemplate(
-      blockDocument(
-        "Before\n{% annotation %}\n{{ zt.text }}\n{% endannotation %}\nAfter\n",
-        "example.stripped",
-      ),
-    );
-
-    expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
-      "Before\nAfter\n",
-    );
-  });
-
-  it("removes an indented block together with its indentation", () => {
-    const facade = new TemplateFacade();
-    const document = facade.parseLiteratureNoteTemplate(
-      blockDocument(
-        "Before\n  {% annotation %}\n  {{ zt.text }}\n  {% endannotation %}\nAfter\n",
-        "example.indented",
-      ),
-    );
-
-    expect(document.annotationBlock?.source).toBe("  {{ zt.text }}\n");
-    expect(facade.renderLiteratureNoteTemplateForCreate(document, {})).toBe(
-      "Before\nAfter\n",
-    );
-  });
-
   it("ends the created body with exactly one line break", () => {
     const facade = new TemplateFacade();
     const document = facade.parseLiteratureNoteTemplate(
       blockDocument(
-        "Body{% annotation %}A{% endannotation %}\n\n\n",
+        "Body\n--- zotlit:annotation ---\nA\n\n",
         "example.trailing",
       ),
     );
@@ -1042,9 +1181,8 @@ describe("Line-Owning Tags", () => {
           "{% endif %}",
           "{% endmanaged %}",
           "",
-          "{% annotation %}",
+          "--- zotlit:annotation ---",
           "A",
-          "{% endannotation %}",
           "",
         ].join("\n"),
         "example.owning-managed",
@@ -1067,13 +1205,13 @@ describe("Line-Owning Tags", () => {
     const inner = "{% if true %}\nIn\n{% endif %}\n";
     const glued = facade.parseLiteratureNoteTemplate(
       blockDocument(
-        `Head\n{% managed %}${inner}{% endmanaged %}\n{% annotation %}{% bq %}\nA\n{% endbq %}\n{% endannotation %}`,
+        `Head\n{% managed %}${inner}{% endmanaged %}\n--- zotlit:annotation ---\n{% bq %}\nA\n{% endbq %}\n`,
         "example.glued",
       ),
     );
     const owning = facade.parseLiteratureNoteTemplate(
       blockDocument(
-        `Head\n{% managed %}\n${inner}{% endmanaged %}\n\n{% annotation %}\n{% bq %}\nA\n{% endbq %}\n{% endannotation %}\n`,
+        `Head\n{% managed %}\n${inner}{% endmanaged %}\n\n--- zotlit:annotation ---\n{% bq %}\nA\n{% endbq %}\n`,
         "example.owning-pair",
       ),
     );
@@ -1092,7 +1230,7 @@ describe("Line-Owning Tags", () => {
     const facade = new TemplateFacade();
     const document = facade.parseLiteratureNoteTemplate(
       blockDocument(
-        "Head\n{% managed %}\nX\n{% endmanaged %}\nTail\n{% annotation %}\nA\n{% endannotation %}\n",
+        "Head\n{% managed %}\nX\n{% endmanaged %}\nTail\n--- zotlit:annotation ---\nA\n",
         "example.mid-document",
       ),
     );
@@ -1137,7 +1275,7 @@ describe("Line-Owning Tags", () => {
     const facade = new TemplateFacade();
     const document = facade.parseLiteratureNoteTemplate(
       blockDocument(
-        "Head\r\n{% managed %}\r\nX\r\n{% endmanaged %}\r\nTail\r\n{% annotation %}\r\nA\r\n{% endannotation %}\r\n",
+        "Head\r\n{% managed %}\r\nX\r\n{% endmanaged %}\r\nTail\r\n--- zotlit:annotation ---\r\nA\r\n",
         "example.crlf",
       ),
     );

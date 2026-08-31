@@ -16,8 +16,7 @@ import type { FrontmatterField, TemplateLanguage } from "./constants";
 
 const OPEN_MANAGED = "{% managed %}";
 const CLOSE_MANAGED = "{% endmanaged %}";
-const OPEN_ANNOTATION = "{% annotation %}";
-const CLOSE_ANNOTATION = "{% endannotation %}";
+const ANNOTATION_HEADER = "--- zotlit:annotation ---";
 
 const nonEmptyString = v.pipe(v.string(), v.trim(), v.nonEmpty());
 const nonEmptyTemplateSource = v.pipe(
@@ -147,17 +146,21 @@ export interface ManagedBlock {
   trailingLineBreak: string;
 }
 
-export interface AnnotationBlock {
+export interface AnnotationSection {
   source: string;
+  /** UTF-16 offsets into the original document; end is exclusive. */
   start: number;
   end: number;
+  headerStart: number;
 }
 
 export interface LiteratureNoteTemplateDocument {
   manifest: LiteratureNoteTemplateManifest;
   body: string;
+  /** Offset of the implicit note source in the original document. */
+  bodyStart: number;
   managedBlock: ManagedBlock | null;
-  annotationBlock: AnnotationBlock | null;
+  annotationSection: AnnotationSection;
 }
 
 export interface LegacyLiteratureNoteTemplates {
@@ -269,9 +272,7 @@ export function synthesizeLegacyLiteratureNoteTemplate(
   const annotationSource =
     legacy.annotation?.source ??
     (language === "liquid" ? annotationLiquid : annotationEta);
-  // Both blocks are written as Line-Owning Tags, so a converted document reads
-  // as blocks while rendering the same bytes the legacy slots rendered. An
-  // indented insertion keeps the glued open tag: a line-owning open tag would
+  // An indented insertion keeps the glued open tag: a line-owning open tag would
   // take the author's indentation with it and lose those bytes.
   const insertionIndex = legacy.note.source.indexOf(insertion);
   const openManaged =
@@ -281,7 +282,7 @@ export function synthesizeLegacyLiteratureNoteTemplate(
   const body = `${legacy.note.source.replace(
     insertion,
     () => `${openManaged}${legacy.content.source}{% endmanaged %}`,
-  )}\n{% annotation %}\n${annotationSource}{% endannotation %}\n`;
+  )}\n${ANNOTATION_HEADER}\n${annotationSource}`;
   const manifest = stringifyYaml(
     {
       id: manifestOverrides.id ?? "default",
@@ -324,9 +325,10 @@ export type LiteratureNoteTemplateErrorCode =
   | "invalid-manifest"
   | "invalid-managed-block"
   | "duplicate-managed-block"
-  | "invalid-annotation-block"
-  | "duplicate-annotation-block"
-  | "missing-annotation-block";
+  | "unknown-section-header"
+  | "duplicate-annotation-section"
+  | "missing-annotation-section"
+  | "reserved-annotation-partial";
 
 export class LiteratureNoteTemplateError extends Error {
   readonly code: LiteratureNoteTemplateErrorCode;
@@ -351,20 +353,10 @@ export class LiteratureNoteTemplateError extends Error {
   }
 }
 
-export function missingAnnotationBlockError(): LiteratureNoteTemplateError {
-  return new LiteratureNoteTemplateError(
-    "missing-annotation-block",
-    `Literature Note Template document has no ${OPEN_ANNOTATION} block`,
-    {
-      recovery: `Add one ${OPEN_ANNOTATION} ... ${CLOSE_ANNOTATION} block to the document body, with each tag alone on its line.`,
-    },
-  );
-}
-
 export function parseLiteratureNoteTemplate(
   source: string,
 ): LiteratureNoteTemplateDocument {
-  const { manifestSource, body } = splitDocument(source);
+  const { manifestSource, bodyStart } = splitDocument(source);
   const rawManifest = parseManifestYaml(manifestSource);
 
   try {
@@ -390,16 +382,25 @@ export function parseLiteratureNoteTemplate(
       );
     }
 
-    const annotationBlock = findAnnotationBlock(body, result.output.language);
-    if (!annotationBlock) {
-      throw missingAnnotationBlockError();
+    if (result.output.partials?.some(({ name }) => name === "annotation")) {
+      throw new LiteratureNoteTemplateError(
+        "reserved-annotation-partial",
+        "The partial name 'annotation' is reserved for the Annotation Section",
+        {
+          recovery:
+            "Rename the manifest partial named 'annotation' and update its calls.",
+        },
+      );
     }
+    const annotationSection = findAnnotationSection(source, bodyStart);
+    const body = source.slice(bodyStart, annotationSection.headerStart);
 
     return {
       manifest: result.output,
       body,
+      bodyStart,
       managedBlock: findManagedBlock(body, result.output.language),
-      annotationBlock,
+      annotationSection,
     };
   } catch (error) {
     if (!(error instanceof LiteratureNoteTemplateError)) throw error;
@@ -410,21 +411,6 @@ export function parseLiteratureNoteTemplate(
       cause: error,
     });
   }
-}
-
-/** Return a render-only document whose Annotation Block contributes no bytes. */
-export function withoutAnnotationBlock(
-  document: LiteratureNoteTemplateDocument,
-): LiteratureNoteTemplateDocument {
-  if (!document.annotationBlock) return document;
-  const { start, end } = document.annotationBlock;
-  const body = document.body.slice(0, start) + document.body.slice(end);
-  return {
-    ...document,
-    body,
-    managedBlock: findManagedBlock(body, document.manifest.language),
-    annotationBlock: null,
-  };
 }
 
 function frontmatterIssueContext(
@@ -453,7 +439,7 @@ function frontmatterIssueContext(
 
 function splitDocument(source: string): {
   manifestSource: string;
-  body: string;
+  bodyStart: number;
 } {
   const firstLineEnd = source.indexOf("\n");
   if (
@@ -477,7 +463,7 @@ function splitDocument(source: string): {
     if (trimCarriageReturn(source.slice(lineStart, end)) === "---") {
       return {
         manifestSource: source.slice(firstLineEnd + 1, lineStart),
-        body: lineEnd === -1 ? "" : source.slice(lineEnd + 1),
+        bodyStart: lineEnd === -1 ? source.length : lineEnd + 1,
       };
     }
     if (lineEnd === -1) break;
@@ -504,98 +490,112 @@ function parseManifestYaml(source: string): unknown {
   return document.toJS();
 }
 
+/** The document boundary is independent of Markdown and template syntax. */
+function findAnnotationSection(
+  source: string,
+  bodyStart: number,
+): AnnotationSection {
+  let section: AnnotationSection | undefined;
+  let lineStart = bodyStart;
+  while (lineStart <= source.length) {
+    const lineEnd = source.indexOf("\n", lineStart);
+    const end = lineEnd === -1 ? source.length : lineEnd;
+    const rawLine = source.slice(lineStart, end);
+    const line = lineEnd === -1 ? rawLine : trimCarriageReturn(rawLine);
+    if (line.startsWith("--- zotlit:")) {
+      if (line !== ANNOTATION_HEADER) {
+        throw new LiteratureNoteTemplateError(
+          "unknown-section-header",
+          `Unknown Profile section header at line ${lineAt(source, lineStart)}: ${line}`,
+          {
+            recovery: `Use only the exact standalone ${ANNOTATION_HEADER} header; the note source starts after the manifest.`,
+          },
+        );
+      }
+      if (section) {
+        throw new LiteratureNoteTemplateError(
+          "duplicate-annotation-section",
+          `Duplicate Annotation Section at line ${lineAt(source, lineStart)}`,
+          {
+            recovery: `Keep one ${ANNOTATION_HEADER} header, followed by the annotation source through the end of the document.`,
+          },
+        );
+      }
+      const start = lineEnd === -1 ? source.length : lineEnd + 1;
+      section = {
+        source: source.slice(start),
+        start,
+        end: source.length,
+        headerStart: lineStart,
+      };
+    }
+    if (lineEnd === -1) break;
+    lineStart = lineEnd + 1;
+  }
+  if (!section) {
+    throw new LiteratureNoteTemplateError(
+      "missing-annotation-section",
+      `Literature Note Template document has no ${ANNOTATION_HEADER} header`,
+      {
+        recovery: `Add one standalone ${ANNOTATION_HEADER} line after the note source. The annotation source extends to the end of the document and can be empty.`,
+      },
+    );
+  }
+  return section;
+}
+
 function findManagedBlock(
   body: string,
   language: TemplateLanguage,
 ): ManagedBlock | null {
-  return findTemplateBlock(body, language, {
-    open: OPEN_MANAGED,
-    close: CLOSE_MANAGED,
-    invalidCode: "invalid-managed-block",
-    duplicateCode: "duplicate-managed-block",
-    label: "Managed Block",
-  });
-}
-
-function findAnnotationBlock(
-  body: string,
-  language: TemplateLanguage,
-): AnnotationBlock | null {
-  return findTemplateBlock(body, language, {
-    open: OPEN_ANNOTATION,
-    close: CLOSE_ANNOTATION,
-    invalidCode: "invalid-annotation-block",
-    duplicateCode: "duplicate-annotation-block",
-    label: "Annotation Block",
-  });
-}
-
-function findTemplateBlock(
-  body: string,
-  language: TemplateLanguage,
-  options: {
-    open: string;
-    close: string;
-    invalidCode: Extract<
-      LiteratureNoteTemplateErrorCode,
-      "invalid-managed-block" | "invalid-annotation-block"
-    >;
-    duplicateCode: Extract<
-      LiteratureNoteTemplateErrorCode,
-      "duplicate-managed-block" | "duplicate-annotation-block"
-    >;
-    label: string;
-  },
-): ManagedBlock | null {
-  const { open, close, invalidCode, duplicateCode, label } = options;
   const literalRanges =
     language === "liquid" ? findLiquidLiteralRanges(body) : [];
-  const firstOpen = findFormatTag(body, open, { literalRanges });
-  const firstClose = findFormatTag(body, close, { literalRanges });
+  const firstOpen = findFormatTag(body, OPEN_MANAGED, { literalRanges });
+  const firstClose = findFormatTag(body, CLOSE_MANAGED, { literalRanges });
   if (firstOpen === -1 && firstClose === -1) return null;
   if (firstOpen === -1 || (firstClose !== -1 && firstClose < firstOpen)) {
     throw new LiteratureNoteTemplateError(
-      invalidCode,
-      `Unexpected ${close} tag`,
+      "invalid-managed-block",
+      `Unexpected ${CLOSE_MANAGED} tag`,
       {
-        recovery: `Remove the unmatched tag or add ${open} before it.`,
+        recovery: `Remove the unmatched tag or add ${OPEN_MANAGED} before it.`,
       },
     );
   }
 
-  const secondOpen = findFormatTag(body, open, {
-    from: firstOpen + open.length,
+  const secondOpen = findFormatTag(body, OPEN_MANAGED, {
+    from: firstOpen + OPEN_MANAGED.length,
     literalRanges,
   });
   if (secondOpen !== -1) {
     throw new LiteratureNoteTemplateError(
-      duplicateCode,
-      `Duplicate ${open} block at line ${lineAt(body, secondOpen)}`,
-      { recovery: `Keep at most one ${label} in the document body.` },
+      "duplicate-managed-block",
+      `Duplicate ${OPEN_MANAGED} block at line ${lineAt(body, secondOpen)}`,
+      { recovery: "Keep at most one Managed Block in the document body." },
     );
   }
   if (firstClose === -1) {
     throw new LiteratureNoteTemplateError(
-      invalidCode,
-      `${open} block is not closed`,
-      { recovery: `Add ${close} after the ${label} body.` },
+      "invalid-managed-block",
+      `${OPEN_MANAGED} block is not closed`,
+      { recovery: `Add ${CLOSE_MANAGED} after the Managed Block body.` },
     );
   }
 
-  const extraClose = findFormatTag(body, close, {
-    from: firstClose + close.length,
+  const extraClose = findFormatTag(body, CLOSE_MANAGED, {
+    from: firstClose + CLOSE_MANAGED.length,
     literalRanges,
   });
   if (extraClose !== -1) {
     throw new LiteratureNoteTemplateError(
-      invalidCode,
-      `Unexpected ${close} tag at line ${lineAt(body, extraClose)}`,
-      { recovery: `Keep exactly one closing tag for the ${label}.` },
+      "invalid-managed-block",
+      `Unexpected ${CLOSE_MANAGED} tag at line ${lineAt(body, extraClose)}`,
+      { recovery: "Keep exactly one closing tag for the Managed Block." },
     );
   }
 
-  const afterOpen = firstOpen + open.length;
-  const afterClose = firstClose + close.length;
+  const afterOpen = firstOpen + OPEN_MANAGED.length;
+  const afterClose = firstClose + CLOSE_MANAGED.length;
   const openOwnsLine = tagOwnsLine(body, firstOpen, afterOpen);
   const closeOwnsLine = tagOwnsLine(body, firstClose, afterClose);
   const trailingLineBreak = closeOwnsLine

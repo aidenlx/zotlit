@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { TemplateFacade } from "./facade";
 import {
   createLiteratureNotePackInstallRecord,
   diffLiteratureNotePack,
@@ -32,19 +33,16 @@ describe("Literature Note Pack export", () => {
     const source = `${DOCUMENT.replace(
       '{% render "summary" with zt as zt %}',
       "{{ zt.abstractNote }}",
-    )}{% annotation %}{{ zt.text }}{% endannotation %}\n`;
+    )}\n--- zotlit:annotation ---\n{{ zt.text }}`;
 
     expect(exportLiteratureNotePack(source, [])).toBe(source);
   });
 
-  it("preserves an Annotation Block through export and install", () => {
-    const source = DOCUMENT.replace(
+  it("preserves an Annotation Section through export and install", () => {
+    const source = `${DOCUMENT.replace(
       '{% render "summary" with zt as zt %}',
       "{{ zt.abstractNote }}",
-    ).replace(
-      "\n{% managed %}",
-      "\n{% annotation %}{{ zt.text }}{% endannotation %}\n{% managed %}",
-    );
+    )}--- zotlit:annotation ---\n{{ zt.text }}`;
     const exported = exportLiteratureNotePack(source, []);
     const candidate = parseLiteratureNotePack("books.md", exported);
     const diff = diffLiteratureNotePack(candidate.files, [
@@ -62,7 +60,7 @@ describe("Literature Note Pack export", () => {
   });
 
   it("bundles transitive partials into the document manifest", () => {
-    const document = `${DOCUMENT}{% annotation %}{{ zt.text }}{% endannotation %}\n`;
+    const document = `${DOCUMENT}\n--- zotlit:annotation ---\n{{ zt.text }}`;
     const source = exportLiteratureNotePack(document, [
       {
         name: "summary",
@@ -103,7 +101,7 @@ describe("Literature Note Pack export", () => {
     },
     { language: "eta", source: "<%~ renderAnnotation (zt.annotations[0]) %>" },
   ] as const)(
-    "bundles the $language shortcut's annotation dependency",
+    "uses the Profile section for the $language shortcut's dependency",
     (partial) => {
       const annotation = {
         name: "annotation",
@@ -117,33 +115,97 @@ describe("Literature Note Pack export", () => {
       } as const;
       const summary = { name: "summary", ...partial };
       const exported = exportLiteratureNotePack(
-        `${DOCUMENT}{% annotation %}Profile block{% endannotation %}`,
+        `${DOCUMENT}\n--- zotlit:annotation ---\nProfile section`,
         [summary, annotation, label],
       );
 
       expect(parseLiteratureNoteTemplate(exported).manifest.partials).toEqual([
-        annotation,
-        label,
         summary,
       ]);
     },
   );
 
-  it("reports a missing annotation partial referenced through the shortcut", () => {
+  it("exports annotation shortcuts without a global annotation partial", () => {
     const source = `${DOCUMENT.replace(
       '{% render "summary" with zt as zt %}',
       "{% render_annotation zt.annotations[0] %}",
-    )}{% annotation %}Profile block{% endannotation %}`;
+    )}\n--- zotlit:annotation ---\nProfile section`;
 
-    expect(() => exportLiteratureNotePack(source, [])).toThrow(
-      "Literature Note Template references missing partial 'annotation'",
-    );
+    expect(exportLiteratureNotePack(source, [])).toBe(source);
   });
+
+  it.each(["liquid", "eta"] as const)(
+    "reloads exported %s sources with all reachable partials",
+    (language) => {
+      const call = (name: string) =>
+        language === "liquid"
+          ? `{% render "${name}" with zt as zt %}`
+          : `<%~ include("${name}", zt) %>`;
+      const shortcut =
+        language === "liquid"
+          ? "{% render_annotation zt.annotation %}"
+          : "<%~ renderAnnotation(zt.annotation) %>";
+      const source = `---
+id: shared
+name: Shared
+version: 1.0.0
+contract: 2
+language: ${language}
+filename: '${call("filename-label")}'
+---
+${call("summary")}
+--- zotlit:annotation ---
+\r\nProfile ${call("annotation-label")}\r\n`;
+      const partials = [
+        { name: "summary", source: shortcut },
+        { name: "filename-label", source: "Filename" },
+        { name: "annotation-label", source: `Label ${call("text")}` },
+        {
+          name: "text",
+          source: language === "liquid" ? "{{ zt.text }}" : "<%= zt.text %>",
+        },
+        { name: "annotation", source: call("unrelated-global") },
+      ].map((partial) => ({ ...partial, language }));
+      const exported = exportLiteratureNotePack(source, partials);
+      const facade = new TemplateFacade();
+      const document = facade.parseLiteratureNoteTemplate(exported);
+      for (const partial of document.manifest.partials ?? []) {
+        facade.define(partial.name, partial.source, partial.language);
+      }
+      expect(document.manifest.partials?.map(({ name }) => name)).toEqual([
+        "annotation-label",
+        "filename-label",
+        "summary",
+        "text",
+      ]);
+      expect(document.annotationSection.source).toBe(
+        `\r\nProfile ${call("annotation-label")}\r\n`,
+      );
+      expect(exported.slice(document.bodyStart)).toBe(
+        source.slice(facade.parseLiteratureNoteTemplate(source).bodyStart),
+      );
+      const expected =
+        language === "liquid"
+          ? "\r\nProfile Label A\r\n"
+          : "\nProfile Label A\n";
+      expect(
+        facade.renderLiteratureNoteTemplateForCreate(document, {
+          annotation: { text: "A" },
+        }),
+      ).toBe(expected);
+      expect(
+        facade.renderLiteratureNoteTemplateAnnotation(document, { text: "A" }),
+      ).toBe(expected);
+      expect(facade.renderLiteratureNoteTemplateFilename(document, {})).toBe(
+        "Filename",
+      );
+    },
+  );
 
   it.each([false, true])(
     "exports a partial-free Profile with includeFolders=%s",
     (includeFolders) => {
-      const body = `# {{ zt.title }}\n{% managed %}{{ zt.abstractNote }}{% endmanaged %}\n{% annotation %}{{ zt.text }}{% endannotation %}\n`;
+      const body = `# {{ zt.title }}\n{% managed %}{{ zt.abstractNote }}{% endmanaged %}\n--- zotlit:annotation ---\n{{ zt.text }}`;
       const source = `---
 id: example.books
 name: Books
@@ -167,13 +229,16 @@ ${body}`;
         includeFolders ? "Research/Imported notes" : undefined,
       );
       expect(exported.manifest.citationStyle).toBe("apa");
-      expect(exported.body).toBe(body);
+      expect(exported.body).toBe(
+        "# {{ zt.title }}\n{% managed %}{{ zt.abstractNote }}{% endmanaged %}\n",
+      );
+      expect(exported.annotationSection.source).toBe("{{ zt.text }}");
     },
   );
 
   it("keeps document partials ahead of global partials when sharing again", () => {
     const source =
-      `${DOCUMENT}{% annotation %}{{ zt.text }}{% endannotation %}\n`.replace(
+      `${DOCUMENT}\n--- zotlit:annotation ---\n{{ zt.text }}`.replace(
         "contract: 2\n",
         `contract: 2
 folder: Research

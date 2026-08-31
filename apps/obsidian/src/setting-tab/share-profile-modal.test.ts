@@ -36,8 +36,7 @@ folder: Books
 importFolder: Imported
 ---
 {% managed %}{% render "summary" %}{% endmanaged %}
-{% annotation %}Annotation{% endannotation %}
-`;
+--- zotlit:annotation ---\nAnnotation`;
 
 function observeControls(container: HTMLElement) {
   using stack = new DisposableStack();

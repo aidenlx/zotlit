@@ -244,22 +244,40 @@ describe("Template Workbench Profile documents", () => {
       code: "DUPLICATE_MANAGED_BLOCK",
     },
     {
-      name: "missing Annotation Block",
+      name: "missing Annotation Section",
       error: new LiteratureNoteTemplateError(
-        "missing-annotation-block",
-        "Document has no {% annotation %} block",
-        { recovery: "Add an Annotation Block to the document body." },
+        "missing-annotation-section",
+        "Document has no --- zotlit:annotation --- header",
+        { recovery: "Add a final Annotation Section." },
       ),
-      code: "MISSING_ANNOTATION_BLOCK",
+      code: "MISSING_ANNOTATION_SECTION",
     },
     {
-      name: "duplicate Annotation Block",
+      name: "duplicate Annotation Section",
       error: new LiteratureNoteTemplateError(
-        "duplicate-annotation-block",
-        "Duplicate {% annotation %} block",
-        { recovery: "Keep at most one Annotation Block." },
+        "duplicate-annotation-section",
+        "Duplicate Annotation Section",
+        { recovery: "Keep one Annotation Section." },
       ),
-      code: "DUPLICATE_ANNOTATION_BLOCK",
+      code: "DUPLICATE_ANNOTATION_SECTION",
+    },
+    {
+      name: "unknown section header",
+      error: new LiteratureNoteTemplateError(
+        "unknown-section-header",
+        "Unknown Profile section header",
+        { recovery: "Use the annotation header." },
+      ),
+      code: "UNKNOWN_SECTION_HEADER",
+    },
+    {
+      name: "reserved annotation partial",
+      error: new LiteratureNoteTemplateError(
+        "reserved-annotation-partial",
+        "Reserved annotation partial",
+        { recovery: "Rename the partial." },
+      ),
+      code: "RESERVED_ANNOTATION_PARTIAL",
     },
     {
       name: "inert Eta document",
