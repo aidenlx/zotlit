@@ -2,7 +2,7 @@ import { renderMatches } from "obsidian";
 import type { SearchMatches } from "obsidian";
 
 import { isChildItemFields } from "@zotlit/db";
-import type { JournalArticleFields } from "@zotlit/zotero-types";
+import type { Item } from "@zotlit/db";
 
 import { itemSummary } from "@/lib/item-summary";
 import { libraryLabel } from "@/services/library-scope/label";
@@ -39,9 +39,7 @@ export function renderSuggestion(
     contentEl.createDiv({ cls: "citekey", text: citationKey });
   }
 
-  if (hit.item.fields.itemType === "journalArticle") {
-    appendJournalMeta(contentEl, summary.subtitle, hit.item.fields);
-  }
+  appendMeta(contentEl, summary.subtitle, hit.item);
 
   // Present only while several Libraries can contribute; see ItemLookup.
   // My Library is the implicit source, so only a group earns a label. The aux
@@ -54,21 +52,30 @@ export function renderSuggestion(
   }
 }
 
-function appendJournalMeta(
+/**
+ * The meta line belongs to every item type: the Author Summary and year, the
+ * Venue, and whichever locator fields the type records. The Venue keeps the
+ * `publication` class the journal-article publication had, so theme CSS
+ * written against this row still matches.
+ *
+ * @see docs/adr/0026-venue-resolves-the-container-role-before-the-publisher-role.md
+ */
+function appendMeta(
   contentEl: HTMLElement,
   subtitle: string,
-  fields: JournalArticleFields,
+  item: Item,
 ): void {
-  const { publicationTitle, volume, issue, pages } = fields;
+  const { venue } = item;
+  const { volume, issue, pages } = item.baseFields;
 
-  if (!subtitle && !publicationTitle && !volume && !issue && !pages) return;
+  if (!subtitle && !venue && !volume && !issue && !pages) return;
 
   const metaEl = contentEl.createDiv("meta");
   if (subtitle) {
     metaEl.createSpan({ cls: "author-year", text: subtitle });
   }
-  if (publicationTitle) {
-    metaEl.createSpan({ cls: "publication", text: publicationTitle });
+  if (venue) {
+    metaEl.createSpan({ cls: "publication", text: venue });
   }
   if (volume || issue) {
     const vi = metaEl.createSpan("vol-issue");
