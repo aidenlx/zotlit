@@ -175,9 +175,40 @@ describe("schema gate", () => {
     expect(parseNote(TurndownService, "", deps)).toBe("");
   });
 
-  it("returns an empty string when no schema container is present", () => {
-    expect(parseNote(TurndownService, "<p>plain note</p>", deps)).toBe("");
+  it("converts a Plain HTML Child Note with basic formatting", () => {
+    const html = `
+      <h2>Summary of a Research Article</h2>
+      <p><strong>Source:</strong> Academic literature review</p>
+      <div>
+        <h3>Key findings</h3>
+        <ul>
+          <li>The method improves consistency.</li>
+          <li>The approach scales to large areas.</li>
+        </ul>
+      </div>
+    `;
+
+    expect(parseNote(TurndownService, html, deps)).toBe(
+      "## Summary of a Research Article\n\n" +
+        "**Source:** Academic literature review\n\n" +
+        "### Key findings\n\n" +
+        "- The method improves consistency.\n" +
+        "- The approach scales to large areas.",
+    );
   });
+
+  it.each(["6invalid", "0x6", "6e0"])(
+    "uses basic formatting when schema marker %s is malformed",
+    (schemaVersion) => {
+      expect(
+        parseNote(
+          TurndownService,
+          `<div data-schema-version="${schemaVersion}"><p><span style="color: red">Summary</span></p></div>`,
+          deps,
+        ),
+      ).toBe("Summary");
+    },
+  );
 
   it("sees through the zotero-note znv1 storage wrapper", () => {
     const md = parseNote(
