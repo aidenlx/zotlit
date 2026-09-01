@@ -14,6 +14,10 @@ _Avoid_: note (ambiguous across Zotero/Obsidian boundary), Zotero note (ambiguou
 An Obsidian Markdown file produced by converting a Zotero Child Note's HTML body to Markdown. Identified by a `zotero-note-key` frontmatter field (disjoint from `zotero-key`, so it never pollutes the Literature Note index). Carries a `zotero-lastmod` frontmatter field (the source Child Note's Zotero `dateModified`) used by batch re-import to skip unchanged notes. Whole-body overwrite on explicit re-import. The Zotero-side source is a Child Note.
 _Avoid_: child note (that's the Zotero-side source), mirror, note (ambiguous)
 
+**Plain HTML Child Note** _(Zotero)_:
+A Child Note whose stored HTML has no usable Zotero note schema marker. Note Import preserves its general document structure and visible formatting without assigning Zotero-specific semantics to citations, annotation excerpts, or embedded attachments.
+_Avoid_: non-standard Zotero note, schema-less note
+
 **Managed Region**:
 The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered from the `content` template on every update. Content outside the markers is user-owned and preserved.
 _Avoid_: managed block, template region, synced region
