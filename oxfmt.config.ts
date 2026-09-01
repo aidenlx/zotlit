@@ -9,6 +9,7 @@ export default defineConfig({
   ignorePatterns: [
     ...baseConfig.ignorePatterns,
     ".scratch/**",
+    "docs/research/**/*.html",
     "tests/fixture-vault-*/**",
     "packages/scripts/lib/fixture/vault-plugins/**",
     "packages/obsidian-api/**",

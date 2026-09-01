@@ -1,0 +1,363 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;1,400&amp;family=Gelasio:ital,wght@0,500;1,400&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Archivo:wght@600&amp;display=swap">
+  <style>
+    /* Manuscript & Machine — apps/docs/DESIGN.md tokens, light theme, resolved hex from src/styles.css */
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; background: #f9f6ee; color: #22354d; font-family: Inter, "Inter Fallback", ui-sans-serif, system-ui, sans-serif; font-size: 13px; line-height: 1.5; text-wrap: pretty; -webkit-font-smoothing: antialiased; }
+    a { color: #c94d15; text-decoration: underline; text-underline-offset: 2px; } a:hover { color: #22354d; }
+    /* faces */
+    .serif { font-family: Gelasio, "Iowan Old Style", Charter, Georgia, serif; }
+    .mono  { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .brand { font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-weight: 600; letter-spacing: -0.01em; line-height: 1; }
+    /* the label voice: mono uppercase apparatus labels */
+    .label { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; font-size: 10.5px; color: #5d6d82; white-space: nowrap; }
+    .label.rubric { color: #c94d15; }
+    /* controls: 6px radius buttons; the primary CTA is square-cornered, ink on cream (landing CTA) */
+    .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; color: #22354d; font: 500 12.5px/1 Inter, system-ui, sans-serif; white-space: nowrap; }
+    .btn.quiet { border-color: transparent; background: transparent; color: #5d6d82; }
+    .btn.cta { border-radius: 0; border-color: #22354d; background: #22354d; color: #f9f6ee; padding: 0 16px; font-weight: 600; }
+    .btn.danger { color: #c94d15; }
+    .seg { display: inline-flex; border: 1px solid #d8d2c2; border-radius: 6px; overflow: hidden; background: #fffdf7; }
+    .seg > div { padding: 0 10px; height: 26px; display: flex; align-items: center; font: 500 12px/1 Inter, system-ui, sans-serif; color: #5d6d82; }
+    .seg > div.on { background: #f1eee4; color: #22354d; }
+    .kbd { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 11px; border: 1px solid #d8d2c2; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: #5d6d82; background: #fffdf7; }
+    /* panes */
+    .pane { background: #fffdf7; border: 1px solid #d8d2c2; }
+    .pane-head { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-bottom: 1px solid #d8d2c2; }
+    .strip { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; background: #f1eee4; border: 1px solid #d8d2c2; border-top: 0; white-space: nowrap; overflow: hidden; }
+    /* the paper sheet — the landing note mock, straightened for an app pane */
+    .sheet { position: relative; background: #fffdf7; border: 1px solid #d8d2c2; box-shadow: 6px 6px 0 0 #d8d2c2; }
+    .sheet::after { content: ""; position: absolute; top: -1px; right: 22px; width: 14px; height: 26px; background: #c94d15; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%); }
+    /* code */
+    .code { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; line-height: 1.6; color: #22354d; white-space: pre; tab-size: 2; }
+    .ln { display: inline-block; width: 28px; margin-right: 12px; text-align: right; color: #b3ac9c; user-select: none; }
+    .hole { color: #c94d15; background: #f9ece1; border-radius: 2px; padding: 0 2px; }
+    .tag { color: #5d6d82; }
+    .kw { color: #1e3a5f; font-weight: 500; }
+    .str { color: #3d6b3a; }
+    .cm { color: #8a9099; font-style: italic; }
+    .yk { color: #1e3a5f; }
+    .hdr { color: #c94d15; font-weight: 600; }
+    /* the Managed Block inside the body: accent rule + tint band; boundary widgets in the label voice */
+    .managed { position: relative; border-left: 3px solid #e8622c; background: #fcf4ee; margin: 6px 0; }
+    .managed-edge { display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 10px; white-space: nowrap; overflow: hidden; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; color: #c94d15; }
+    /* the nested highlight editor at the first render call */
+    .nested { margin: 6px 10px 6px 40px; background: #fffdf7; border: 1px solid #d8d2c2; box-shadow: 3px 3px 0 0 #e9e3d4; }
+    /* problems */
+    .problem { display: grid; grid-template-columns: 14px 1fr; gap: 8px; padding: 8px 10px; border-top: 1px solid #d8d2c2; font-size: 12px; }
+    .dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: #c94d15; }
+    .dot.ok { background: #5f9b62; }
+    /* explorer rows */
+    .row { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 10px; border-bottom: 1px solid #efeadc; }
+    .row .name { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12px; color: #22354d; }
+    .row .val { font-size: 12px; color: #5d6d82; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+    .row.sel { background: #f9ece1; }
+    .chev { width: 16px; height: 16px; color: #b3ac9c; }
+    .field-input { height: 30px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; padding: 0 10px; display: flex; align-items: center; font-size: 12.5px; }
+    .field-input.off { background: #f1eee4; color: #8a9099; }
+    .muted { color: #5d6d82; }
+    .ink { color: #1e3a5f; }
+    .orange { color: #c94d15; }
+    /* the Details form: a bordered group, a two-column form grid, and origin chips */
+    .group { border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; padding: 12px; }
+    .form { display: grid; grid-template-columns: 108px minmax(0, 1fr); align-items: center; column-gap: 12px; row-gap: 8px; }
+    .chip { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 9px; border: 1px solid #d8d2c2; background: #f1eee4; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; color: #5d6d82; white-space: nowrap; }
+    .chip.own { border-color: #e8622c; background: #f9ece1; color: #c94d15; }
+    .switch { width: 34px; height: 20px; border-radius: 10px; border: 1px solid #d8d2c2; background: #f1eee4; position: relative; flex-shrink: 0; }
+    .switch > i { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fffdf7; border: 1px solid #d8d2c2; }
+    .switch.on { background: #f9ece1; border-color: #e8622c; }
+    .switch.on > i { left: auto; right: 2px; border-color: #e8622c; }
+  </style>
+</helmet>
+<div style="width: 1440px; height: 1000px; display: flex; flex-direction: column; background: #f9f6ee; overflow: hidden;">
+
+  <!-- header: 56px, double hairline -->
+  <div style="display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 20px; background: #f9f6ee; border-bottom: 1px solid #d8d2c2;">
+    <div style="display: flex; align-items: center; gap: 6px; line-height: 1;">
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 3.5 H17 V7 L8.75 16.5 H20.5 V20 H4 V16.5 L12.25 7 H4 Z" fill="#1E3A5F"></path><path d="M17 3.5 H20.5 V16.5 L18.75 14.75 L17 16.5 Z" fill="#E8622C"></path></svg>
+      <div class="brand" style="font-size: 18px;"><span style="color: #1e3a5f;">Zot</span><span style="color: #e8622c;">Lit</span></div>
+    </div>
+    <div style="width: 1px; height: 18px; background: #d8d2c2;"></div>
+    <div class="label" style="font-size: 12px; color: #22354d;">Template Workbench</div>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #5d6d82;">
+      <span style="width: 8px; height: 8px; border-radius: 50%; background: #5f9b62;"></span>
+      <span>Connected to Obsidian · Research vault</span>
+    </div>
+    <div style="width: 1px; height: 18px; background: #d8d2c2;"></div>
+    <div style="font-size: 12px; color: #5d6d82;">No unsaved changes</div>
+    <div class="btn quiet" style="height: 28px;">Undo <span class="kbd">⌘Z</span></div>
+    <div class="btn cta" style="height: 32px;">Save to vault</div>
+  </div>
+  <div style="height: 3px; margin-top: 2px; background: #d8d2c2;"></div>
+
+  <!-- title row: which template, which paper -->
+  <div style="display: flex; align-items: flex-end; gap: 24px; padding: 14px 20px 12px;">
+    <div style="display: flex; align-items: baseline; gap: 12px;">
+      <div class="serif" style="font-size: 24px; font-weight: 500; line-height: 1.1; color: #22354d;">Default</div>
+      <div class="serif" style="font-size: 14px; font-style: italic; color: #5d6d82; white-space: nowrap;">The template ZotLit uses to write every literature note.</div>
+    </div>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <div class="label">Showing</div>
+      <div style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 12px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; white-space: nowrap;">
+        <span style="font-weight: 500;">Ten Simple Rules for Better Figures</span>
+        <span class="muted" style="font-size: 12px;">Rougier et al., 2014</span>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
+      </div>
+      <div class="muted" style="font-size: 12px; white-space: nowrap;">one paper, on screen throughout</div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <div class="label">Advanced</div>
+      <div style="width: 34px; height: 20px; border-radius: 10px; border: 1px solid #d8d2c2; background: #f1eee4; position: relative;"><div style="position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fffdf7; border: 1px solid #d8d2c2;"></div></div>
+    </div>
+  </div>
+
+  <!-- three columns -->
+  <div style="display: grid; grid-template-columns: 296px minmax(0, 1fr) 464px; gap: 16px; padding: 0 20px 20px; flex-grow: 1; min-height: 0;">
+
+    <!-- column 1: fields from this paper, scoped to the note name -->
+    <div class="pane" style="display: flex; flex-direction: column; min-height: 0;">
+      <div class="pane-head" style="padding: 0 10px; gap: 8px;">
+        <div class="label rubric">Fields from this paper</div>
+        <div style="flex-grow: 1;"></div>
+        <div class="label" style="font-size: 9.5px; letter-spacing: 0.02em; font-weight: 500;">for the note name</div>
+      </div>
+      <div style="padding: 10px 10px 6px;">
+        <div class="field-input" style="gap: 8px; color: #8a9099;">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#8a9099" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg>
+          Search fields
+        </div>
+        <div class="muted" style="font-size: 11.5px; padding: 6px 2px 0;">Select one to add it where your cursor is.</div>
+      </div>
+      <div style="overflow: hidden;">
+        <div class="row sel" style="grid-template-columns: 16px 1fr; height: auto; padding-top: 6px; padding-bottom: 8px; border-left: 3px solid #e8622c; padding-left: 7px;">
+          <svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4l4 4-4 4"></path></svg>
+          <div>
+            <div style="display: flex; align-items: baseline; gap: 8px;"><div class="name">citationKey</div><div class="val">rougier2014figures</div></div>
+            <div style="display: flex; gap: 6px; margin-top: 8px;">
+              <div class="btn" style="height: 24px; padding: 0 9px; font-size: 11.5px; background: #22354d; color: #f9f6ee; border-color: #22354d; border-radius: 4px;">Insert</div>
+              <div class="btn" style="height: 24px; padding: 0 9px; font-size: 11.5px; border-radius: 4px;">Copy</div>
+              <div class="btn" style="height: 24px; padding: 0 9px; font-size: 11.5px; border-radius: 4px;">Output ▾</div>
+            </div>
+          </div>
+        </div>
+        <div class="row"><span></span><div class="name">DOI</div><div class="val">10.1371/journal.pcbi.1003833</div></div>
+        <div class="row"><span></span><div class="name">title</div><div class="val">Ten Simple Rules for Better Figures</div></div>
+        <div class="row"><span></span><div class="name">key</div><div class="val">8QK4ZP2M</div></div>
+        <div class="row"><span></span><div class="name">itemType</div><div class="val">journalArticle</div></div>
+        <div class="row" style="border-bottom: 0;"><span></span><div class="name">date</div><div class="val">2014-09-11</div></div>
+      </div>
+      <div style="margin: 12px 10px 0; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; padding: 10px;">
+        <div class="label" style="color: #22354d; margin-bottom: 6px;">In the note name now</div>
+        <div style="display: grid; grid-template-columns: 18px 1fr; row-gap: 5px; align-items: baseline; font-size: 12px;">
+          <div class="mono muted" style="font-size: 11px;">1</div><div class="mono" style="font-size: 12px;">citationKey</div>
+          <div class="mono muted" style="font-size: 11px;">2</div><div class="mono" style="font-size: 12px;">DOI</div>
+          <div class="mono muted" style="font-size: 11px;">3</div><div class="mono" style="font-size: 12px;">title</div>
+          <div class="mono muted" style="font-size: 11px;">4</div><div class="mono" style="font-size: 12px;">key</div>
+        </div>
+        <div class="muted" style="font-size: 11.5px; margin-top: 8px;">The first one that has a value becomes the name.</div>
+      </div>
+      <div style="flex-grow: 1;"></div>
+      <div style="margin: 0 10px 10px; border: 1px solid #d8d2c2; border-radius: 6px; background: #f1eee4; padding: 9px 10px;">
+        <div class="label" style="margin-bottom: 5px;">Why this short list</div>
+        <div class="muted" style="font-size: 11.5px;">A note name is one line of plain text, so the list keeps the fields that read well as a name.</div>
+      </div>
+      <div style="padding: 8px 12px; border-top: 1px solid #d8d2c2; font-size: 11.5px; color: #5d6d82;">Typing <span class="mono">{{</span> in the note name opens the same list.</div>
+    </div>
+
+    <!-- column 2: the body folded, Properties folded, Details open -->
+    <div style="display: flex; flex-direction: column; min-height: 0;">
+      <div class="strip" style="border-top: 1px solid #d8d2c2;">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true"><path d="M6 4l4 4-4 4"></path></svg>
+        <div class="label" style="color: #22354d;">Your note</div>
+        <div class="muted" style="font-size: 12px;">folded away for now · select it to write the note again</div>
+      </div>
+      <div class="strip">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true"><path d="M6 4l4 4-4 4"></path></svg>
+        <div class="label" style="color: #22354d;">Properties</div>
+        <div class="muted" style="font-size: 12px;">the fields at the top of the note · <span class="mono">title, citekey, tags</span> and one rule</div>
+      </div>
+
+      <div class="pane" style="display: flex; flex-direction: column; flex-grow: 1; min-height: 0; border-top: 0;">
+        <div class="pane-head">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#c94d15" stroke-width="1.5" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
+          <div class="label rubric">Details</div>
+          <div class="muted" style="font-size: 12px;">who this template is, and where its notes go</div>
+        </div>
+
+        <div style="flex-grow: 1; min-height: 0; overflow: hidden; padding: 10px 14px 8px; display: flex; flex-direction: column; gap: 8px;">
+
+          <!-- identity -->
+          <div class="group">
+            <div class="form">
+              <div class="label">Name</div>
+              <div class="field-input" style="font-weight: 500;">Default</div>
+              <div class="label" style="align-self: start; padding-top: 8px;">Description</div>
+              <div style="min-height: 42px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; padding: 7px 10px; font-size: 12.5px; color: #8a9099;">A short line you write for yourself</div>
+              <div class="label">Version</div>
+              <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px;">
+                <div class="field-input mono" style="font-size: 12px;">1.0.0</div>
+                <div class="label">Author</div>
+                <div class="field-input" style="color: #8a9099;">Optional</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- note name -->
+          <div class="group">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+              <div class="label" style="color: #22354d;">Note name</div>
+              <div class="muted" style="font-size: 11.5px;">Use fields for the note name. ZotLit adds the file extension.</div>
+            </div>
+            <div style="border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; padding: 7px 10px; overflow: hidden;">
+              <div class="code" style="font-size: 11.5px; line-height: 1.4;"><span class="hole">{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}</span></div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 10px; border-left: 3px solid #e8622c; background: #f9ece1;">
+              <span class="label" style="font-size: 9.5px;">For this paper</span>
+              <span class="mono" style="font-size: 12px;">rougier2014figures.md</span>
+            </div>
+            <div class="muted" style="font-size: 11.5px; margin-top: 7px;">Type <span class="mono">zt.</span> inside a tag for suggestions.</div>
+          </div>
+
+          <!-- folders and imports -->
+          <div class="group" style="padding-bottom: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div class="label" style="color: #22354d;">Folders and imports</div>
+              <div style="flex-grow: 1;"></div>
+              <div class="chip">Overrides</div>
+            </div>
+            <div class="muted" style="font-size: 11.5px; margin-top: 6px; margin-bottom: 8px;">Use default follows the receiving vault. Override writes a value into this template.</div>
+
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+
+              <div style="display: grid; grid-template-columns: 152px minmax(0, 1fr) 92px; align-items: center; column-gap: 10px; row-gap: 4px;">
+                <div style="font-size: 12.5px;">Literature note folder</div>
+                <div class="field-input off" style="height: 28px;">Literature</div>
+                <div class="btn" style="height: 28px; font-size: 12px; justify-content: center;">Override</div>
+                <div style="grid-column: 1 / 4; display: flex; align-items: center; gap: 6px;"><span class="chip">From default</span><span class="muted" style="font-size: 11.5px;">· Literature</span></div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 152px minmax(0, 1fr) 92px; align-items: center; column-gap: 10px; row-gap: 4px;">
+                <div style="font-size: 12.5px;">Citation style</div>
+                <div class="field-input" style="height: 28px; justify-content: space-between;">
+                  <span>APA 7th edition</span>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
+                </div>
+                <div class="btn" style="height: 28px; font-size: 12px; justify-content: center;">Use default</div>
+                <div style="grid-column: 1 / 4; display: flex; align-items: center; gap: 6px;"><span class="chip own">This template</span><span class="muted" style="font-size: 11.5px;">· APA 7th edition</span></div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 152px minmax(0, 1fr) 92px; align-items: center; column-gap: 10px; row-gap: 4px;">
+                <div style="font-size: 12.5px;">Imported note folder</div>
+                <div class="field-input off" style="height: 28px;">Imported notes</div>
+                <div class="btn" style="height: 28px; font-size: 12px; justify-content: center;">Override</div>
+                <div style="grid-column: 1 / 4; display: flex; align-items: center; gap: 6px;"><span class="chip">From default</span><span class="muted" style="font-size: 11.5px;">· Imported notes</span></div>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 152px minmax(0, 1fr) 92px; align-items: center; column-gap: 10px; row-gap: 4px;">
+                <div style="font-size: 12.5px;">Colored highlights</div>
+                <div style="display: flex; align-items: center; gap: 8px; height: 28px;">
+                  <div class="switch on"><i></i></div>
+                  <span class="muted" style="font-size: 12.5px;">On</span>
+                </div>
+                <div class="btn" style="height: 28px; font-size: 12px; justify-content: center;">Override</div>
+                <div style="grid-column: 1 / 4; display: flex; align-items: center; gap: 6px;"><span class="chip">From default</span><span class="muted" style="font-size: 11.5px;">· On</span></div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- advanced details, folded -->
+          <div style="border: 1px solid #d8d2c2; border-radius: 6px; background: #f1eee4; padding: 9px 12px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true"><path d="M6 4l4 4-4 4"></path></svg>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6" rx="1.5"></rect><path d="M5.75 7V5.25a2.25 2.25 0 0 1 4.5 0V7"></path></svg>
+              <div class="label" style="color: #22354d;">Advanced details</div>
+            </div>
+            <div class="muted" style="font-size: 11.5px; margin-top: 5px; padding-left: 22px;">Profile ID, contract, and minimum app version are locked here and shown in Advanced.</div>
+          </div>
+
+          <!-- the pointer to the highlight format -->
+          <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-left: 3px solid #e8622c; background: #fcf4ee;">
+            <span class="label" style="font-size: 9.5px; color: #c94d15;">How one highlight looks</span>
+            <span class="muted" style="font-size: 11.5px;">edited in the note, where the highlights appear</span>
+            <span class="muted" style="font-size: 11.5px;">·</span>
+            <a href="#" style="font-size: 11.5px;">Show me</a>
+          </div>
+
+          <div class="muted" style="font-size: 11px;">The built-in Default keeps folders and style in Obsidian's ZotLit settings; they show here read-only.</div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- column 3: the result -->
+    <div style="display: flex; flex-direction: column; min-height: 0; gap: 12px;">
+      <div style="display: flex; align-items: center; gap: 10px; height: 36px;">
+        <div class="label rubric">The result</div>
+        <div class="muted" style="font-size: 12px; white-space: nowrap;">for this paper</div>
+        <div style="flex-grow: 1;"></div>
+        <div class="mono muted" style="font-size: 10.5px; white-space: nowrap;">Current</div>
+        <div class="seg"><div class="on">Note</div><div>Markdown</div></div>
+        <div class="btn" style="height: 26px; font-size: 12px;">New note ▾</div>
+      </div>
+      <div class="sheet" style="flex-grow: 1; min-height: 0; overflow: hidden; margin-right: 6px; display: flex; flex-direction: column;">
+        <div style="padding: 9px 16px 8px; border-bottom: 1px solid #d8d2c2; background: #f9ece1; border-left: 3px solid #e8622c;">
+          <div style="display: flex; align-items: center; gap: 8px; padding-right: 46px;">
+            <span class="label" style="font-size: 9.5px; color: #c94d15;">Note name</span>
+            <span class="mono" style="font-size: 12px;">rougier2014figures.md</span>
+            <span class="muted" style="font-size: 11px;">in Literature/</span>
+          </div>
+          <div class="muted" style="font-size: 11px; font-style: italic; margin-top: 3px;">changes as you type the note name</div>
+        </div>
+        <div style="padding: 12px 16px; border-bottom: 1px solid #d8d2c2; background: #fbf9f3;">
+          <div class="label" style="font-size: 9.5px; margin-bottom: 6px;">Properties · 4</div>
+          <div style="display: grid; grid-template-columns: 96px 1fr; row-gap: 3px; font-size: 12px;">
+            <div class="mono muted">title</div><div>Ten Simple Rules for Better Figures</div>
+            <div class="mono muted">citekey</div><div class="mono">rougier2014figures</div>
+            <div class="mono muted">tags</div><div>figures, research</div>
+            <div class="mono muted">status</div><div>reading</div>
+          </div>
+        </div>
+        <div style="padding: 16px 18px; font-size: 13px; line-height: 1.55; flex-grow: 1; overflow: hidden;">
+          <div class="serif" style="font-size: 20px; font-weight: 500; line-height: 1.2; margin-bottom: 8px;">Ten Simple Rules for Better Figures</div>
+          <div style="margin-bottom: 14px;"><a href="#">Open in Zotero</a> · <a href="#">Rougier et al. - 2014 - Ten Simple Rules for Better Figures.pdf</a></div>
+          <div style="border-left: 3px solid #e8622c; background: #fcf4ee; padding: 10px 12px; margin: 0 -12px;">
+            <div class="label" style="font-size: 9.5px; color: #c94d15; margin-bottom: 6px;">Kept up to date</div>
+            <div class="serif" style="font-size: 16px; font-weight: 500; margin-bottom: 8px;">Highlights</div>
+            <div style="border-left: 2px solid #d8d2c2; padding: 4px 10px; margin-bottom: 8px; background: #fffdf7;">
+              <div class="label" style="font-size: 9.5px; margin-bottom: 2px;">Quote · Page 4</div>
+              <div>Figures should be self-explanatory: a reader looking at the figure alone should understand its message.</div>
+              <div class="muted" style="font-style: italic;">Worth checking against my figure 2.</div>
+            </div>
+            <div style="border-left: 2px solid #d8d2c2; padding: 4px 10px; background: #fffdf7;">
+              <div class="label" style="font-size: 9.5px; margin-bottom: 2px;">Quote · Page 6</div>
+              <div>Do not trust the defaults. Adapt the figure to its medium and its audience.</div>
+            </div>
+          </div>
+          <div class="serif" style="font-size: 16px; font-weight: 500; margin: 14px 0 6px;">My reading notes</div>
+          <div class="muted" style="font-style: italic;">Anything you write here stays yours.</div>
+        </div>
+      </div>
+      <div class="pane" style="margin-right: 6px;">
+        <div style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px;">
+          <div class="label">Problems</div>
+          <span class="dot ok" style="margin-top: 0;"></span>
+          <span class="muted" style="font-size: 12px;">None. Nothing is written to your vault until you Save.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

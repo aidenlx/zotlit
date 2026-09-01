@@ -12,6 +12,10 @@ _Avoid_: ZotLit for Obsidian, the Obsidian plugin (as a standing name; fine as a
 The required Zotero add-on. Write “ZotLit Companion, the Zotero add-on” on first use in a page and “the Companion” later. It installs under the display name “ZotLit” in Zotero's add-on manager, so docs never call it by its displayed name alone.
 _Avoid_: Zotero companion, ZotLit Zotero companion, companion plugin, Zotero plugin (v1 term), zotero-obsidian-note (v1 product), ZotLit for Zotero
 
+**Template Workbench** _(web)_:
+The human-facing surface at `/workbench` where a Literature Note Profile's document is edited as one object: three columns (fields from this paper, your note, the result), the note body open and everything else one select away, Advanced for the whole file. The term is one with the Obsidian glossary's Template Workbench; the host qualifies it ("the web Workbench", "the agent CLI") only where the difference matters. Its beginner face prints "template" and the Profile's name, never Profile, manifest, or frontmatter.
+_Avoid_: note layout (the #938 draft's placeholder, retired by #945), web template editor, Profile editor
+
 **UI Label**:
 A stable, untranslated name that identifies a product control or choice in the English base catalog, such as a command, setting, menu item, button, or tooltip. Documentation quotes it from its Message instead of restating its text.
 _Avoid_: UI text, product copy
