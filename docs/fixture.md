@@ -42,7 +42,15 @@ pnpm fixture paths
 
 ## Use the Fixture Vault
 
-The Fixture Vault contains generated Literature Notes, imported-note mirrors, and committed test pages. Its Literature Notes reference only Items in the generated Zotero data.
+The Fixture Vault contains generated Literature Notes, imported-note mirrors, committed test pages, and Profile import examples. Its Literature Notes reference only Items in the generated Zotero data.
+
+The configured Fixture keeps these source documents in `profile-examples/`, outside the template folder. You can select them with **Choose file…** without adding them to the installed Profiles:
+
+| File | Purpose |
+| --- | --- |
+| `profile-import-replacement-v1.md` | First version of a Profile import example. |
+| `profile-import-replacement-v2.md` | Second version of the same Profile. It has the same ID and a later version, for replacement checks. |
+| `profile-import-unavailable-style.md` | Profile import example that declares an unavailable citation style. |
 
 For plugin development, use the per-worktree Development Vault:
 

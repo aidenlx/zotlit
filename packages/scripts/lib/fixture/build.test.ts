@@ -1122,6 +1122,9 @@ describe("the generated Obsidian vault", () => {
       "pandoc-export-error-intent.md",
       "pandoc-export-missing-bibliography.md",
       "pandoc-export-success.md",
+      "profile-examples/profile-import-replacement-v1.md",
+      "profile-examples/profile-import-replacement-v2.md",
+      "profile-examples/profile-import-unavailable-style.md",
       "wikilink-display-test.md",
       "wikilink-parity-test.md",
     ]) {
@@ -1132,6 +1135,32 @@ describe("the generated Obsidian vault", () => {
 
       expect(await readFile(join(layout.vaultDir, name), "utf-8")).toBe(asset);
     }
+  });
+
+  it("carries descriptive Profile import examples outside the template folder", async () => {
+    const examples = await Promise.all(
+      [
+        "profile-import-replacement-v1.md",
+        "profile-import-replacement-v2.md",
+        "profile-import-unavailable-style.md",
+      ].map((name) =>
+        readFile(join(layout.vaultDir, "profile-examples", name), "utf-8"),
+      ),
+    );
+
+    expect(examples).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("id: ImportV1Abc1"),
+        expect.stringContaining(
+          "Fixture sample for testing Profile import and replacement.",
+        ),
+        expect.stringContaining("id: AbsentStyle1"),
+        expect.stringContaining(
+          "Fixture sample for testing Profile import with an unavailable citation style.",
+        ),
+      ]),
+    );
+    expect(examples.join("\n")).not.toMatch(/smoke/i);
   });
 
   it("carries every tutorial citation form in the Pandoc success case", async () => {
