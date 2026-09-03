@@ -325,6 +325,7 @@ interface SchemaIDs {
     | "date"
     | "publicationTitle"
     | "bookTitle"
+    | "publisher"
     | "url"
     | "accessDate",
     number
@@ -358,7 +359,16 @@ function readSchemaIDs(db: DatabaseSync): SchemaIDs {
     itemTypes: lookup(
       "select itemTypeID from itemTypesCombined where typeName = ?",
       "itemTypeID",
-      ["journalArticle", "bookSection", "note", "attachment", "annotation"],
+      [
+        "journalArticle",
+        "bookSection",
+        "conferencePaper",
+        "book",
+        "thesis",
+        "note",
+        "attachment",
+        "annotation",
+      ],
     ),
     fields: lookup(
       "select fieldID from fieldsCombined where fieldName = ?",
@@ -369,6 +379,7 @@ function readSchemaIDs(db: DatabaseSync): SchemaIDs {
         "date",
         "publicationTitle",
         "bookTitle",
+        "publisher",
         "url",
         "accessDate",
       ],
@@ -390,9 +401,16 @@ function containerFieldID(
   ids: SchemaIDs,
   itemType: FixtureItem["itemType"],
 ): number {
-  return itemType === "bookSection"
-    ? ids.fields.bookTitle
-    : ids.fields.publicationTitle;
+  switch (itemType) {
+    case "bookSection":
+      return ids.fields.bookTitle;
+    case "book":
+    case "thesis":
+      return ids.fields.publisher;
+    case "conferencePaper":
+    case "journalArticle":
+      return ids.fields.publicationTitle;
+  }
 }
 
 function seedDatabase(

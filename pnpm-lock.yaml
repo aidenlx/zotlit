@@ -914,6 +914,9 @@ importers:
       '@zotlit/templates':
         specifier: workspace:*
         version: link:../templates
+      '@zotlit/workbench':
+        specifier: workspace:*
+        version: link:../workbench
       arkregex:
         specifier: 'catalog:'
         version: 0.0.5
@@ -1058,6 +1061,9 @@ importers:
       '@zotlit/zotero-types':
         specifier: workspace:*
         version: link:../zotero-types
+      ajv:
+        specifier: 'catalog:'
+        version: 8.20.0
       happy-dom:
         specifier: 'catalog:'
         version: 20.9.0

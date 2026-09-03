@@ -47,6 +47,7 @@
     "@types/node": "catalog:",
     "@zotlit/config": "workspace:*",
     "@zotlit/zotero-types": "workspace:*",
+    "ajv": "catalog:",
     "happy-dom": "catalog:",
     "oxlint": "catalog:",
     "tsdown": "catalog:",
