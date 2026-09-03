@@ -45,6 +45,7 @@ export const ogTypes = [
   "blog",
   "changelog",
   "docs",
+  "workbench",
 ] as const;
 export type OgType = (typeof ogTypes)[number];
 

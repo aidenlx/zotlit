@@ -52,6 +52,7 @@ export function renderSitemap(): string {
     "/changelog": [{}],
     "/community": [{}],
     "/docs": [{}],
+    "/workbench": [{}],
     "/blog/$slug": blog.getPages().map((page) => ({
       pathname: page.url,
       lastModified: page.data.date,

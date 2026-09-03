@@ -29,6 +29,7 @@
     "generate:eta": "lezer-generator src/language/eta.grammar -o src/language/eta-parser.ts --typeScript"
   },
   "dependencies": {
+    "@codemirror/commands": "6.11.0",
     "@codemirror/lang-javascript": "6.2.5",
     "@codemirror/lang-liquid": "6.3.2",
     "@codemirror/lang-markdown": "6.5.2",
@@ -38,7 +39,8 @@
     "@zotlit/db": "workspace:*",
     "@zotlit/templates": "workspace:*",
     "arkregex": "catalog:",
-    "valibot": "catalog:"
+    "valibot": "catalog:",
+    "yaml": "catalog:"
   },
   "devDependencies": {
     "@codemirror/language": "catalog:",

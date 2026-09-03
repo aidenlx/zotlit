@@ -337,6 +337,13 @@ export class LiteratureNoteTemplateError extends Error {
   readonly recovery: string;
   /** Readable manifest identity for diagnostics, even when the document is invalid. */
   readonly manifestId?: string;
+  /** UTF-16 offset of the responsible text, so a host can point at it. */
+  readonly offset?: number;
+  /**
+   * Path of the responsible manifest node, so a host that reads the manifest
+   * YAML can point at the field itself rather than the manifest's first line.
+   */
+  readonly manifestPath?: readonly (string | number)[];
 
   constructor(
     code: LiteratureNoteTemplateErrorCode,
@@ -344,22 +351,31 @@ export class LiteratureNoteTemplateError extends Error {
     {
       recovery,
       manifestId,
+      offset,
+      manifestPath,
       ...options
-    }: ErrorOptions & { recovery: string; manifestId?: string },
+    }: ErrorOptions & {
+      recovery: string;
+      manifestId?: string;
+      offset?: number;
+      manifestPath?: readonly (string | number)[];
+    },
   ) {
     super(message, options);
     this.name = "LiteratureNoteTemplateError";
     this.code = code;
     this.recovery = recovery;
     this.manifestId = manifestId;
+    this.offset = offset;
+    this.manifestPath = manifestPath;
   }
 }
 
 export function parseLiteratureNoteTemplate(
   source: string,
 ): LiteratureNoteTemplateDocument {
-  const { manifestSource, bodyStart } = splitDocument(source);
-  const rawManifest = parseManifestYaml(manifestSource);
+  const { manifestSource, manifestStart, bodyStart } = splitDocument(source);
+  const rawManifest = parseManifestYaml(manifestSource, manifestStart);
 
   try {
     const result = v.safeParse(manifestSchema, rawManifest);
@@ -379,18 +395,25 @@ export function parseLiteratureNoteTemplate(
             : frontmatter
               ? "Correct the Managed Frontmatter section."
               : "Correct the manifest field named by the validation error.",
+          offset: manifestStart,
+          manifestPath: manifestNodePath(issue),
           cause: issue,
         },
       );
     }
 
-    if (result.output.partials?.some(({ name }) => name === "annotation")) {
+    const reserved = result.output.partials?.findIndex(
+      ({ name }) => name === "annotation",
+    );
+    if (reserved !== undefined && reserved !== -1) {
       throw new LiteratureNoteTemplateError(
         "reserved-annotation-partial",
         "The partial name 'annotation' is reserved for the Annotation Section",
         {
           recovery:
             "Rename the manifest partial named 'annotation' and update its calls.",
+          offset: manifestStart,
+          manifestPath: ["partials", reserved, "name"],
         },
       );
     }
@@ -401,7 +424,7 @@ export function parseLiteratureNoteTemplate(
       manifest: result.output,
       body,
       bodyStart,
-      managedBlock: findManagedBlock(body, result.output.language),
+      managedBlock: findManagedBlock(body, result.output.language, bodyStart),
       annotationSection,
     };
   } catch (error) {
@@ -410,9 +433,25 @@ export function parseLiteratureNoteTemplate(
     throw new LiteratureNoteTemplateError(error.code, error.message, {
       recovery: error.recovery,
       manifestId: typeof id === "string" ? id : undefined,
+      offset: error.offset,
+      manifestPath: error.manifestPath,
       cause: error,
     });
   }
+}
+
+/**
+ * The manifest node a validation issue is about, in the shape a YAML lookup
+ * takes. An issue that names no node keeps the whole manifest as its subject.
+ */
+function manifestNodePath(issue: {
+  path?: readonly { key: unknown }[];
+}): readonly (string | number)[] | undefined {
+  const path = issue.path?.map(({ key }) => key) ?? [];
+  return path.length > 0 &&
+    path.every((key) => typeof key === "string" || typeof key === "number")
+    ? (path as readonly (string | number)[])
+    : undefined;
 }
 
 function frontmatterIssueContext(
@@ -441,6 +480,7 @@ function frontmatterIssueContext(
 
 function splitDocument(source: string): {
   manifestSource: string;
+  manifestStart: number;
   bodyStart: number;
 } {
   const firstLineEnd = source.indexOf("\n");
@@ -454,6 +494,7 @@ function splitDocument(source: string): {
       {
         recovery:
           'Add a YAML manifest between opening and closing "---" lines.',
+        offset: 0,
       },
     );
   }
@@ -465,6 +506,7 @@ function splitDocument(source: string): {
     if (trimCarriageReturn(source.slice(lineStart, end)) === "---") {
       return {
         manifestSource: source.slice(firstLineEnd + 1, lineStart),
+        manifestStart: firstLineEnd + 1,
         bodyStart: lineEnd === -1 ? source.length : lineEnd + 1,
       };
     }
@@ -475,18 +517,39 @@ function splitDocument(source: string): {
   throw new LiteratureNoteTemplateError(
     "invalid-document",
     "Literature Note Template manifest is not closed",
-    { recovery: 'Add a closing "---" line before the template body.' },
+    {
+      recovery: 'Add a closing "---" line before the template body.',
+      offset: source.length,
+    },
   );
 }
 
-function parseManifestYaml(source: string): unknown {
+/**
+ * UTF-16 offsets of the manifest YAML between the document's two fence lines,
+ * so a host can patch one manifest node in place instead of re-serializing the
+ * whole manifest.
+ * @throws LiteratureNoteTemplateError when the document carries no closed manifest.
+ */
+export function literatureNoteTemplateManifestRange(source: string): {
+  from: number;
+  to: number;
+} {
+  const { manifestSource, manifestStart } = splitDocument(source);
+  return { from: manifestStart, to: manifestStart + manifestSource.length };
+}
+
+function parseManifestYaml(source: string, start: number): unknown {
   const document = parseYamlDocument(source, { uniqueKeys: true });
   if (document.errors.length > 0) {
     const error = document.errors[0]!;
     throw new LiteratureNoteTemplateError(
       "invalid-manifest",
       `Invalid Literature Note Template manifest: ${error.message}`,
-      { recovery: "Correct the YAML syntax in the manifest.", cause: error },
+      {
+        recovery: "Correct the YAML syntax in the manifest.",
+        offset: start + error.pos[0],
+        cause: error,
+      },
     );
   }
   return document.toJS();
@@ -511,6 +574,7 @@ function findAnnotationSection(
           `Unknown Profile section header at line ${lineAt(source, lineStart)}: ${line}`,
           {
             recovery: `Use only the exact standalone ${ANNOTATION_HEADER} header; the note source starts after the manifest.`,
+            offset: lineStart,
           },
         );
       }
@@ -520,6 +584,7 @@ function findAnnotationSection(
           `Duplicate Annotation Section at line ${lineAt(source, lineStart)}`,
           {
             recovery: `Keep one ${ANNOTATION_HEADER} header, followed by the annotation source through the end of the document.`,
+            offset: lineStart,
           },
         );
       }
@@ -540,6 +605,7 @@ function findAnnotationSection(
       `Literature Note Template document has no ${ANNOTATION_HEADER} header`,
       {
         recovery: `Add one standalone ${ANNOTATION_HEADER} line after the note source. The annotation source extends to the end of the document and can be empty.`,
+        offset: source.length,
       },
     );
   }
@@ -549,6 +615,7 @@ function findAnnotationSection(
 function findManagedBlock(
   body: string,
   language: TemplateLanguage,
+  bodyStart: number,
 ): ManagedBlock | null {
   const literalRanges =
     language === "liquid" ? findLiquidLiteralRanges(body) : [];
@@ -561,6 +628,7 @@ function findManagedBlock(
       `Unexpected ${CLOSE_MANAGED} tag`,
       {
         recovery: `Remove the unmatched tag or add ${OPEN_MANAGED} before it.`,
+        offset: bodyStart + firstClose,
       },
     );
   }
@@ -573,14 +641,20 @@ function findManagedBlock(
     throw new LiteratureNoteTemplateError(
       "duplicate-managed-block",
       `Duplicate ${OPEN_MANAGED} block at line ${lineAt(body, secondOpen)}`,
-      { recovery: "Keep at most one Managed Block in the document body." },
+      {
+        recovery: "Keep at most one Managed Block in the document body.",
+        offset: bodyStart + secondOpen,
+      },
     );
   }
   if (firstClose === -1) {
     throw new LiteratureNoteTemplateError(
       "invalid-managed-block",
       `${OPEN_MANAGED} block is not closed`,
-      { recovery: `Add ${CLOSE_MANAGED} after the Managed Block body.` },
+      {
+        recovery: `Add ${CLOSE_MANAGED} after the Managed Block body.`,
+        offset: bodyStart + firstOpen,
+      },
     );
   }
 
@@ -592,7 +666,10 @@ function findManagedBlock(
     throw new LiteratureNoteTemplateError(
       "invalid-managed-block",
       `Unexpected ${CLOSE_MANAGED} tag at line ${lineAt(body, extraClose)}`,
-      { recovery: "Keep exactly one closing tag for the Managed Block." },
+      {
+        recovery: "Keep exactly one closing tag for the Managed Block.",
+        offset: bodyStart + extraClose,
+      },
     );
   }
 

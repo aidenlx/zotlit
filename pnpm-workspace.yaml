@@ -20,6 +20,7 @@ catalog:
   "@lezer/common": 1.5.2
   "@lezer/highlight": 1.2.3
   "@lezer/lr": 1.4.10
+  "@js-temporal/polyfill": ^0.5.1
   happy-dom: ^20.9.0
   hono: ^4.13.0
   yaml: ^2.9.0

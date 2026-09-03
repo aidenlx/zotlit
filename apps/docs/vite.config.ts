@@ -135,6 +135,11 @@ export default defineConfig({
   optimizeDeps: {
     include: ["@base-ui/react > use-sync-external-store/shim/with-selector"],
   },
+  // The Workbench's render Worker is a module Worker: it awaits the Temporal
+  // polyfill before it takes its first message, and top-level await needs an
+  // ES bundle rather than Vite's default IIFE.
+  // @see src/lib/workbench/render-worker.ts
+  worker: { format: "es" },
   // Both aliases are declared here rather than through
   // `resolve.tsconfigPaths`, which under Vite 8 leaves the `paths` in
   // `tsconfig.app.json` unresolved.

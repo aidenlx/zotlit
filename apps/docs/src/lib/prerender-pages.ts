@@ -63,8 +63,8 @@ function machineRoutePages(
 }
 
 /**
- * The HTML pages: the landing and community pages, the whole docs tree, the
- * blog and its posts, and the changelog index with its versions.
+ * The HTML pages: the landing, community, and Workbench pages, the whole docs
+ * tree, the blog and its posts, and the changelog index with its versions.
  */
 function htmlPages(
   content: Record<MarkdownSection, { slugs: string[] }[]>,
@@ -82,6 +82,7 @@ function htmlPages(
   return [
     { path: "/" },
     { path: "/community" },
+    { path: "/workbench" },
     ...docs,
     ...blog,
     ...changelog,

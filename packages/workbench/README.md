@@ -5,6 +5,35 @@ Subpath exports: `bridge`, `document`, `explorer`, `language`, `render`, and the
 Node-only `snapshot`. The package has no React dependency and targets
 CodeMirror at the versions Obsidian pins.
 
+## Document
+
+`@zotlit/workbench/document` owns one Profile document and its editing rules.
+The complete source is the authority ([ADR 0032](../../docs/adr/0032-web-workbench-edits-one-source-document.md)):
+
+- `WorkbenchDocumentController` — a headless master `EditorState` holding the
+  only undo history. It re-derives the slice ranges and the Problems list from
+  the source after every change, keeps a draft that does not parse editable, and
+  quarantines the focused slice from an edit computed elsewhere. It reads and
+  writes the line break the document arrived with.
+- `workbenchSlice(controller, id)` — the editor extension for one pane, in the
+  shape Obsidian uses for Live Preview table cells: its own state over its own
+  small document, no history of its own, an echo-guard annotation across the
+  boundary, the child's user event forwarded so keystrokes group into one undo
+  step, undo and redo routed to the master, and a wholesale child refresh.
+- `manifestValueEdit(source, path, value)` — the one targeted YAML patch, so a
+  form control changes a single manifest node and every other byte survives.
+
+## Render
+
+`@zotlit/workbench/render` renders a Profile against an Item Snapshot and
+schedules those renders:
+
+- `renderProfile(source, snapshot)` — the six-part result set with diagnostics,
+  stamped with the source and snapshot revisions.
+- `createRenderScheduler(options)` — one debounce (300 ms), one Worker per
+  render terminated on its deadline, and a revision check that drops a result
+  the reader has already typed past. The host supplies the Worker factory.
+
 ## Language
 
 `@zotlit/workbench/language` holds the editor support for Liquid and Eta
