@@ -37,7 +37,8 @@
     "@lezer/lr": "catalog:",
     "@zotlit/db": "workspace:*",
     "@zotlit/templates": "workspace:*",
-    "arkregex": "catalog:"
+    "arkregex": "catalog:",
+    "valibot": "catalog:"
   },
   "devDependencies": {
     "@codemirror/language": "catalog:",
