@@ -59,6 +59,16 @@
     .prow .pval { margin-left: auto; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
     .prow .sub { margin-top: 3px; color: #5d6d82; font-size: 13px; }
     .ro { display: inline-block; padding: 1px 8px; border-radius: 4px; background: #f1eee4; color: #5d6d82; font-size: 13px; white-space: nowrap; }
+    .prow.sel { background: #fdf6f1; box-shadow: inset 3px 0 0 0 #e8622c; }
+    .prow .chev { margin-left: 10px; display: flex; align-items: center; flex: none; }
+    .btn.mini { height: 26px; padding: 0 10px; font-size: 12px; border-radius: 5px; }
+    .mono { font-family: "SF Mono", Menlo, ui-monospace, monospace; font-size: 13px; }
+    .inp { display: flex; align-items: center; height: 30px; padding: 0 10px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; font-size: 14px; white-space: nowrap; }
+    .seg { display: inline-flex; border: 1px solid #d8d2c2; border-radius: 6px; overflow: hidden; white-space: nowrap; }
+    .seg span { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; font-size: 12px; color: #5d6d82; background: #fffdf7; }
+    .seg span.on { background: #f9ece1; color: #c94d15; font-weight: 500; }
+    .ed { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border: 1px solid #e8622c; border-radius: 6px; background: #fff; white-space: nowrap; overflow: hidden; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #5f9b62; flex: none; }
   </style>
 </helmet>
 <div style="width: 1440px; height: 900px; display: flex; flex-direction: column; background: #f9f6ee; overflow: hidden;">
@@ -108,33 +118,35 @@
     <div style="display: flex; flex-direction: column; min-height: 0;">
       <div style="margin-bottom: 6px;"><a href="#" class="small">&larr; Back to your note</a></div>
       <div class="col-title" style="margin-bottom: 4px;">Properties</div>
-      <div class="muted small" style="margin-bottom: 10px;">The fields at the top of every note.</div>
+      <div class="muted small" style="margin-bottom: 10px;">The fields at the top of every note. Select one to edit it.</div>
       <div class="pane" style="flex: 1;">
         <div style="flex: 1; overflow: hidden;">
 
           <div class="prow">
-            <div class="top"><span class="pname">title</span><span class="pval"><span class="chip">Title</span></span></div>
+            <div class="top"><span class="pname">title</span><span class="pval"><span class="chip">Title</span></span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b3ac9c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg></span></div>
             <div class="sub">Ten Simple Rules for Better Figures</div>
           </div>
 
           <div class="prow">
-            <div class="top"><span class="pname">citekey</span><span class="pval"><span class="chip">Citation key</span></span></div>
+            <div class="top"><span class="pname">citekey</span><span class="pval"><span class="chip">Citation key</span></span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b3ac9c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg></span></div>
             <div class="sub">rougier2014figures</div>
           </div>
 
-          <div class="prow">
-            <div class="top"><span class="pname">tags</span><span class="pval"><span class="chip">Tags</span></span></div>
-            <div class="sub">figures, research</div>
+          <div class="prow sel">
+            <div class="top" style="gap: 10px;"><span class="inp" style="width: 150px;">tags</span><div class="seg" style="margin-left: auto;"><span class="on">Value &middot; Liquid</span><span>Rule &middot; JSON-e</span></div></div>
+            <div class="ed" style="margin-top: 10px;"><span class="mono">{{ zt.tags | join: ", " }}</span><span class="muted small" style="margin-left: auto;"><span class="mono">{{</span> opens the field list</span><span class="btn mini">Fields</span></div>
+            <div class="sub" style="display: flex; align-items: center; gap: 8px;"><span class="muted">For this paper</span><span class="dot"></span><span>figures, research</span><span class="muted">&middot; list</span></div>
+            <div class="facts" style="display: flex; align-items: center; gap: 8px; margin-top: 10px;"><span class="btn mini quiet">Done</span><span class="btn mini quiet">Remove</span></div>
           </div>
 
           <div class="prow">
-            <div class="top"><span class="pname">status</span><span class="pval">reading</span></div>
+            <div class="top"><span class="pname">status</span><span class="pval">reading</span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b3ac9c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg></span></div>
             <div class="sub">the same for every note</div>
           </div>
 
           <div class="prow">
-            <div class="top"><span class="pname">Several from a rule</span></div>
-            <div class="sub">adds year and journal &middot; see Advanced to edit the rule</div>
+            <div class="top"><span class="pname">Several from a rule</span><span class="pval"><span class="ro">read-only</span></span></div>
+            <div class="sub">adds year and journal &middot; edit the rule in Advanced</div>
             <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
               <div style="display: flex; align-items: center; gap: 12px;"><span class="ro">year</span><span class="muted small">2014</span></div>
               <div style="display: flex; align-items: center; gap: 12px;"><span class="ro">journal</span><span class="muted small">PLOS Computational Biology</span></div>
@@ -142,7 +154,7 @@
           </div>
 
         </div>
-        <div style="padding: 10px 14px; border-top: 1px solid #f1eee4;"><div class="btn quiet">+ Add property</div></div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid #f1eee4;"><div class="btn quiet">+ Add property</div><span class="muted small" style="white-space: nowrap;">A new property starts as a Value in Liquid.</span></div>
       </div>
     </div>
 
@@ -156,7 +168,7 @@
           <div class="props">
             <div><b>title</b><span>Ten Simple Rules for Better Figures</span></div>
             <div><b>citekey</b><span>rougier2014figures</span></div>
-            <div><b>tags</b><span>figures, research</span></div>
+            <div style="background: #f9ece1; border-radius: 4px; margin: 0 -6px; padding: 2px 6px;"><b>tags</b><span>figures, research</span></div>
             <div><b>status</b><span>reading</span></div>
             <div><b>year</b><span>2014</span></div>
             <div><b>journal</b><span>PLOS Computational Biology</span></div>

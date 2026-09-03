@@ -130,3 +130,8 @@ Switch, create, share, and delete stay in Obsidian (#918).
 Static boards; no editor runs. Chip decorations over Liquid are a design ruling; the CodeMirror
 extension that draws them is implementation work under #863. The Properties board shows the
 "Several from a rule" entry read-only; its YAML editor is in Advanced per #930's amendment.
+The Properties board shows one entry open for editing (name, `Value · Liquid` or
+`Rule · JSON-e`, one-line source, the result for this paper, Done and Remove), per #934: a new
+property starts as a Value in Liquid, and changing the language swaps the editor without
+translating the text. The Filename board is the "Name and folder" form: the folder, the
+one-line filename template with chips, the path this paper gets, and three ready-made names.

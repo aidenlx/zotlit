@@ -51,15 +51,20 @@
     .props b { font-weight: 500; color: #5d6d82; width: 60px; flex: none; }
     .quote { border-left: 3px solid #e8622c; background: #fdf6f1; padding: 8px 12px; margin: 8px 0; }
     .quote .q { color: #5d6d82; font-size: 12px; font-weight: 600; }
-    /* short form */
+    /* name and folder form */
     .flabel { font-weight: 500; font-size: 14px; margin-bottom: 6px; white-space: nowrap; }
-    .field { display: flex; align-items: center; height: 38px; padding: 0 12px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; font-size: 14px; white-space: nowrap; overflow: hidden; }
+    .field { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 12px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; font-size: 14px; white-space: nowrap; overflow: hidden; }
     .field.sel { justify-content: space-between; }
     .fhint { color: #5d6d82; font-size: 12px; margin-top: 6px; white-space: nowrap; }
-    .fgroup { margin-bottom: 22px; }
+    .fgroup { margin-bottom: 20px; }
+    .mono { font-family: "SF Mono", Menlo, ui-monospace, monospace; font-size: 13px; }
+    .btn.mini { height: 26px; padding: 0 10px; font-size: 12px; border-radius: 5px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #5f9b62; flex: none; }
+    .exrow { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid #f1eee4; white-space: nowrap; }
+    .exrow .exn { width: 130px; flex: none; font-size: 13px; }
   </style>
 </helmet>
-<div style="width: 1440px; height: 900px; display: flex; flex-direction: column; background: #f9f6ee; overflow: hidden;">
+<div style="width: 1440px; height: 1000px; display: flex; flex-direction: column; background: #f9f6ee; overflow: hidden;">
 
   <!-- header: one row. name · the paper on screen · save -->
   <div style="height: 60px; display: flex; align-items: center; gap: 18px; padding: 0 24px; border-bottom: 1px solid #d8d2c2; background: #fffdf7;">
@@ -104,36 +109,50 @@
 
     <!-- name and folder -->
     <div style="display: flex; flex-direction: column; min-height: 0;">
+      <div style="margin-bottom: 6px;"><a href="#" class="small">&larr; Back to your note</a></div>
       <div class="col-title" style="margin-bottom: 4px;">Name and folder</div>
-      <div class="muted small" style="margin-bottom: 10px;">Where the note is saved and what it is called.</div>
+      <div class="muted small" style="margin-bottom: 10px;">Where a new note goes and what it is called.</div>
       <div class="pane" style="flex: 1;">
-        <div style="padding: 14px 20px 0;"><a href="#" class="small" style="white-space: nowrap;">← Back to your note</a></div>
         <div style="flex: 1; padding: 18px 20px 0; overflow: hidden;">
-
-          <div class="fgroup">
-            <div class="flabel">Template name</div>
-            <div class="field">Default</div>
-          </div>
 
           <div class="fgroup">
             <div class="flabel">Folder</div>
             <div class="field">Literature/</div>
+            <div class="fhint">Inside your vault. Made if missing.</div>
           </div>
 
           <div class="fgroup">
-            <div class="flabel">Note name</div>
-            <div class="field"><span class="chip">Citation key</span></div>
-            <div class="fhint">For this paper: rougier2014figures.md · falls back to the title when there is no citation key</div>
+            <div class="flabel">File name</div>
+            <div class="field"><span class="chip">Citation key</span><span class="btn mini quiet" style="margin-left: auto;">Fields</span></div>
+            <div class="fhint">Type <span class="mono">{{</span> to add a field. One line; ZotLit adds <span class="mono">.md</span>.</div>
+          </div>
+
+          <div class="fgroup">
+            <div class="flabel">For this paper</div>
+            <div class="field"><span class="dot"></span><span class="mono">Literature/rougier2014figures.md</span></div>
+            <div class="fhint">No note with this name yet.</div>
           </div>
 
           <div class="fgroup">
             <div class="flabel">Citation style</div>
-            <div class="field sel"><span>APA 7th edition</span><span class="muted">▾</span></div>
+            <div class="field sel"><span>APA 7th edition</span><span class="muted">&#9662;</span></div>
+            <div class="fhint">Used by the Citation field and copied links.</div>
+          </div>
+
+          <div class="fgroup">
+            <div class="muted small" style="white-space: nowrap;">If a note with this name exists, ZotLit opens it instead of making a second one.</div>
+          </div>
+
+          <div class="fgroup">
+            <div class="flabel">Other ways people name notes</div>
+            <div class="exrow"><span class="exn">Citation key</span><span class="mono muted">rougier2014figures.md</span><span class="btn mini quiet" style="margin-left: auto;">Use</span></div>
+            <div class="exrow"><span class="exn">Year &middot; Short title</span><span class="mono muted">2014 - Ten Simple Rules.md</span><span class="btn mini quiet" style="margin-left: auto;">Use</span></div>
+            <div class="exrow"><span class="exn">First author &middot; Year</span><span class="mono muted">Rougier 2014.md</span><span class="btn mini quiet" style="margin-left: auto;">Use</span></div>
           </div>
 
         </div>
         <div style="padding: 12px 20px; border-top: 1px solid #f1eee4; background: #f9f6ee;">
-          <span class="muted small" style="white-space: nowrap;">More settings in Advanced</span>
+          <span class="muted small" style="white-space: nowrap;">Advanced shows this as <span class="mono">filename</span> in the file's manifest.</span>
         </div>
       </div>
     </div>
@@ -144,7 +163,7 @@
       <div class="muted small" style="margin-bottom: 10px;">For the paper above. Nothing is written until you save.</div>
       <div style="flex: 1; overflow: hidden; padding: 2px 8px 8px 2px;">
         <div class="sheet">
-          <div class="muted small" style="margin-bottom: 10px;">Literature/rougier2014figures.md</div>
+          <div class="muted small" style="margin-bottom: 10px;"><span style="background: #f9ece1; border-radius: 4px; padding: 2px 6px;">Literature/rougier2014figures.md</span></div>
           <div class="props">
             <div><b>title</b><span>Ten Simple Rules for Better Figures</span></div>
             <div><b>citekey</b><span>rougier2014figures</span></div>

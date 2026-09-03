@@ -1,22 +1,117 @@
 {
   "pages": [
-    { "id": "page-1", "name": "Screens" },
-    { "id": "page-2", "name": "Boards" }
+    {
+      "id": "page-1",
+      "name": "Screens"
+    },
+    {
+      "id": "page-2",
+      "name": "Boards"
+    }
   ],
   "artboards": [
-    { "file": "Main.dc.html", "title": "First open", "x": 0, "y": 0, "w": 1440, "h": 900, "page": "page-1" },
-    { "file": "Insert.dc.html", "title": "Adding a field", "x": 1560, "y": 0, "w": 1440, "h": 900, "page": "page-1" },
-    { "file": "Highlights.dc.html", "title": "Where the highlight format opens", "x": 3120, "y": 0, "w": 1440, "h": 900, "page": "page-1" },
-    { "file": "Properties.dc.html", "title": "Properties, opened", "x": 0, "y": 1040, "w": 1440, "h": 900, "page": "page-1" },
-    { "file": "Details.dc.html", "title": "Name and folder, opened", "x": 1560, "y": 1040, "w": 1440, "h": 900, "page": "page-1" },
-    { "file": "Problems.dc.html", "title": "When something is wrong", "x": 3120, "y": 1040, "w": 1440, "h": 900, "page": "page-1" },
-    { "file": "Advanced.dc.html", "title": "Advanced", "x": 0, "y": 2080, "w": 1440, "h": 900, "page": "page-1" },
-    { "file": "Handoff.dc.html", "title": "Standalone, and a template that needs Obsidian", "x": 1560, "y": 2080, "w": 1440, "h": 900, "page": "page-1" },
-    { "file": "Narrow.dc.html", "title": "Narrow fallback", "x": 3120, "y": 2080, "w": 390, "h": 844, "page": "page-1" },
-    { "file": "Rulings.dc.html", "title": "The rulings", "x": 0, "y": 0, "w": 900, "h": 1600, "page": "page-2" }
+    {
+      "file": "Main.dc.html",
+      "title": "First open",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "page-1"
+    },
+    {
+      "file": "Insert.dc.html",
+      "title": "Adding a field",
+      "x": 1560,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "page-1"
+    },
+    {
+      "file": "Highlights.dc.html",
+      "title": "Where the highlight format opens",
+      "x": 3120,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "page": "page-1"
+    },
+    {
+      "file": "Properties.dc.html",
+      "title": "Properties, opened",
+      "x": 0,
+      "y": 1040,
+      "w": 1440,
+      "h": 900,
+      "page": "page-1"
+    },
+    {
+      "file": "Filename.dc.html",
+      "title": "Name and folder, opened",
+      "x": 1560,
+      "y": 1040,
+      "w": 1440,
+      "h": 1000,
+      "page": "page-1"
+    },
+    {
+      "file": "Problems.dc.html",
+      "title": "When something is wrong",
+      "x": 3120,
+      "y": 1040,
+      "w": 1440,
+      "h": 900,
+      "page": "page-1"
+    },
+    {
+      "file": "Advanced.dc.html",
+      "title": "Advanced",
+      "x": 0,
+      "y": 2180,
+      "w": 1440,
+      "h": 900,
+      "page": "page-1"
+    },
+    {
+      "file": "Handoff.dc.html",
+      "title": "Standalone, and a template that needs Obsidian",
+      "x": 1560,
+      "y": 2180,
+      "w": 1440,
+      "h": 900,
+      "page": "page-1"
+    },
+    {
+      "file": "Narrow.dc.html",
+      "title": "Narrow fallback",
+      "x": 3120,
+      "y": 2180,
+      "w": 390,
+      "h": 844,
+      "page": "page-1"
+    },
+    {
+      "file": "Rulings.dc.html",
+      "title": "The rulings",
+      "x": 0,
+      "y": 0,
+      "w": 900,
+      "h": 1600,
+      "page": "page-2"
+    }
   ],
   "annotations": [
-    { "id": "job", "x": 0, "y": -140, "w": 300, "text": "Revision 2. The job: change what my literature notes look like, see it, keep it. Three concepts on the first screen, code only in Advanced." }
+    {
+      "id": "job",
+      "x": 0,
+      "y": -140,
+      "w": 300,
+      "text": "Revision 2. The job: change what my literature notes look like, see it, keep it. Three concepts on the first screen, code only in Advanced."
+    }
   ],
-  "launch": { "view": "canvas", "page": "page-1" }
+  "launch": {
+    "view": "canvas",
+    "page": "page-1"
+  }
 }
