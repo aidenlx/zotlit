@@ -1,7 +1,7 @@
 // The standalone Template Workbench: one master Profile document behind a
 // header, three columns, and the result the reader would get.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import type { WorkbenchSliceRange } from "@zotlit/workbench/document";
@@ -14,12 +14,41 @@ import type { ProfileRenderResult } from "@zotlit/workbench/render";
 
 import { m } from "@/paraglide/messages.js";
 
-import { PaperFields } from "./paper-fields";
-import type { SampleItem } from "./paper-fields";
+import { FieldList } from "./field-list";
+import {
+  insertSnippet,
+  rootData,
+  templateRootAt,
+  triggerHoldsCaret,
+} from "./fields";
+import type { SampleItem } from "./fields";
 import { ResultSheet } from "./reading-view";
 import { startRenderWorker } from "./render-client";
 import { SliceEditor } from "./slice-editor";
+import type { FieldTrigger } from "./slice-editor";
 import { ensureTemporal } from "./temporal";
+
+/** The `{{` popup's own box: the size it is drawn at, and its margin. */
+const POPUP_WIDTH = 320;
+const POPUP_HEIGHT = 384;
+const POPUP_MARGIN = 8;
+
+/**
+ * Keeps the popup inside the window the `{{` was typed in: a trigger near an
+ * edge slides the panel back until it fits, and a window too short for the
+ * whole panel leaves it as tall as the window allows, with its list scrolling.
+ */
+function popupPosition(trigger: FieldTrigger) {
+  const room = (extent: number, size: number) =>
+    Math.max(POPUP_MARGIN, extent - size - POPUP_MARGIN);
+  const left = Math.min(trigger.left, room(window.innerWidth, POPUP_WIDTH));
+  const top = Math.min(trigger.top, room(window.innerHeight, POPUP_HEIGHT));
+  return {
+    left,
+    top,
+    maxHeight: Math.min(POPUP_HEIGHT, window.innerHeight - top - POPUP_MARGIN),
+  };
+}
 
 export function Workbench() {
   const [controller] = useState(
@@ -38,6 +67,13 @@ export function Workbench() {
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
+  const [caret, setCaret] = useState<WorkbenchSliceRange>({ from: 0, to: 0 });
+  const [trigger, setTrigger] = useState<FieldTrigger | null>(null);
+  // The field list restores the snapshot the way the renderer does, so it waits
+  // for the same Temporal the restoration needs.
+  const [temporal, setTemporal] = useState(
+    () => globalThis.Temporal !== undefined,
+  );
   const [profile, setProfile] = useState<{
     name: string;
     description: string;
@@ -49,8 +85,16 @@ export function Workbench() {
   );
   useEffect(() => () => scheduler[Symbol.dispose](), [scheduler]);
   useEffect(() => {
-    void ensureTemporal();
+    void ensureTemporal().then(() => setTemporal(true));
   }, []);
+  useEffect(() => {
+    if (!trigger) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setTrigger(null);
+    };
+    document.addEventListener("keydown", close);
+    return () => document.removeEventListener("keydown", close);
+  }, [trigger]);
 
   useEffect(() => {
     scheduler.request({ source: controller.source, snapshot: sample });
@@ -70,6 +114,37 @@ export function Workbench() {
 
   const problem = controller.problems[0];
   const previewProblem = result?.diagnostics[0];
+  const slice = advanced ? "advanced" : "note";
+
+  // The field list follows the editor: the Annotation Section renders one
+  // highlight, the manifest's filename value renders the note name. A caret in
+  // the manifest parses YAML, so the answer is held until the caret moves.
+  const root = useMemo(
+    () => templateRootAt(controller.document, controller.source, caret.from),
+    [controller.document, controller.source, caret.from],
+  );
+  const fields = useMemo(
+    () => (temporal ? rootData(sample, root) : null),
+    [temporal, sample, root],
+  );
+
+  /** Puts a snippet where the reader left the caret, then hands focus back. */
+  function insert(snippet: string) {
+    const head = insertSnippet(controller, slice, {
+      target: trigger?.range ?? caret,
+      snippet,
+    });
+    setTrigger(null);
+    setReveal({ from: head, to: head });
+  }
+
+  /** A caret that leaves the `{{` it opened on closes the popup that `{{` opened. */
+  function trackSelection(selection: WorkbenchSliceRange) {
+    setCaret(selection);
+    setTrigger((current) =>
+      current && triggerHoldsCaret(current.range, selection) ? current : null,
+    );
+  }
 
   function download() {
     const url = URL.createObjectURL(
@@ -184,7 +259,7 @@ export function Workbench() {
       </header>
 
       <main className="grid min-h-0 flex-1 gap-5 px-6 py-5 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)_minmax(0,26rem)]">
-        <PaperFields snapshot={sample} />
+        <FieldList key={root} root={root} data={fields} onInsert={insert} />
 
         <section className="flex min-h-0 flex-col">
           {advanced ? (
@@ -233,17 +308,37 @@ export function Workbench() {
           )}
           <div className="flex min-h-0 flex-1 flex-col border border-fd-border bg-fd-card">
             <SliceEditor
-              key={advanced ? "advanced" : "note"}
+              key={slice}
               controller={controller}
-              slice={advanced ? "advanced" : "note"}
+              slice={slice}
               label={
                 advanced
                   ? m.workbench_advanced_heading()
                   : m.workbench_tab_note()
               }
-              reveal={advanced ? reveal : null}
+              reveal={reveal}
+              onSelection={trackSelection}
+              onFieldTrigger={setTrigger}
             />
           </div>
+          {/* Next to the editor in tab order, because that is where it opens. */}
+          {trigger && (
+            <div
+              role="dialog"
+              aria-label={m.workbench_fields_heading()}
+              style={popupPosition(trigger)}
+              className="fixed z-20 flex w-80 flex-col border border-fd-border bg-fd-card p-3 shadow-[4px_4px_0_0_var(--color-fd-border)]"
+            >
+              <FieldList root={root} data={fields} onInsert={insert} />
+              <button
+                type="button"
+                onClick={() => setTrigger(null)}
+                className="mt-2 cursor-pointer self-start border border-fd-border px-2 py-1 text-xs"
+              >
+                {m.workbench_fields_close()}
+              </button>
+            </div>
+          )}
         </section>
 
         <section className="flex min-h-0 flex-col">

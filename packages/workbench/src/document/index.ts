@@ -7,5 +7,5 @@ export type {
   WorkbenchSliceRange,
   WorkbenchUpdate,
 } from "./controller";
-export { manifestValueEdit } from "./manifest-patch";
+export { manifestNodeRange, manifestValueEdit } from "./manifest-patch";
 export { workbenchSlice } from "./slice";
