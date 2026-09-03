@@ -21,6 +21,7 @@ import {
 } from "fumadocs-ui/layouts/docs/page";
 
 import { DocsAvailability } from "@/components/docs-availability";
+import { DocsLastUpdated } from "@/components/docs-last-updated";
 import { DocsPageFooter } from "@/components/docs-page-footer";
 import { getMDXComponents } from "@/components/mdx";
 import { RedirectNotice } from "@/components/redirect-notice";
@@ -86,7 +87,7 @@ interface DocsBodyProps {
 export const docsBody = collections.docs.createClientLoader<DocsBodyProps>({
   id: "docs",
   component: (
-    { toc, frontmatter, default: MDX },
+    { toc, frontmatter, lastModified, default: MDX },
     { availability, changelogUrl, githubUrl, markdownUrl },
   ) => (
     <DocsPage
@@ -112,6 +113,7 @@ export const docsBody = collections.docs.createClientLoader<DocsBodyProps>({
       <DocsBody className={ztProse}>
         <MDX components={getMDXComponents()} />
       </DocsBody>
+      <DocsLastUpdated date={lastModified} />
     </DocsPage>
   ),
 });

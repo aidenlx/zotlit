@@ -5,6 +5,7 @@ import {
   defineConfig,
   defineDocs,
 } from "fumadocs-mdx/config";
+import lastModified from "fumadocs-mdx/plugins/last-modified";
 import { valid as isValidSemVer } from "semver";
 import * as v from "valibot";
 
@@ -154,6 +155,17 @@ export const blogs = defineCollections({
 });
 
 export default defineConfig({
+  // Each docs page and blog post carries its file's last commit date, read
+  // from git history at build time. A changelog entry is fixed at its release
+  // `date`, so the plugin leaves that collection alone. The date rides with
+  // the compiled body, so an `async` collection reaches it through `load()`,
+  // never off the frontmatter head. The deploy workflow checks out full
+  // history for it.
+  plugins: [
+    lastModified({
+      filter: (collection) => collection === "docs" || collection === "blogs",
+    }),
+  ],
   mdxOptions: {
     rehypeCodeOptions: {
       ...rehypeCodeDefaultOptions,

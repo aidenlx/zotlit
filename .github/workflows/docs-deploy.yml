@@ -91,7 +91,11 @@ jobs:
       # Docs, empty for the production line, which is the top-level config.
       WRANGLER_ENV: ${{ github.ref_name == 'next' && 'beta' || '' }}
     steps:
+      # The docs build reads each page's last commit date from git history
+      # (fumadocs-mdx's last-modified plugin), so the clone cannot be shallow.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       # The docs build installs its own dependency closure below, so the
       # workspace-wide bootstrap stays off.
