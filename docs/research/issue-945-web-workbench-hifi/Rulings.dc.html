@@ -7,161 +7,131 @@
 <body>
 <x-dc>
 <helmet>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;1,400&amp;family=Gelasio:ital,wght@0,500;1,400&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Archivo:wght@600&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;1,400&amp;family=Gelasio:ital,wght@0,500;1,400&amp;family=Archivo:wght@600&amp;display=swap">
   <style>
-    /* Manuscript & Machine — apps/docs/DESIGN.md tokens, light theme, resolved hex from src/styles.css */
     *, *::before, *::after { box-sizing: border-box; }
-    body { margin: 0; background: #f9f6ee; color: #22354d; font-family: Inter, "Inter Fallback", ui-sans-serif, system-ui, sans-serif; font-size: 13px; line-height: 1.5; text-wrap: pretty; -webkit-font-smoothing: antialiased; }
-    a { color: #c94d15; text-decoration: underline; text-underline-offset: 2px; } a:hover { color: #22354d; }
-    /* faces */
+    body { margin: 0; background: #f9f6ee; color: #22354d; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+    a { color: #c94d15; text-decoration: underline; text-underline-offset: 2px; }
     .serif { font-family: Gelasio, "Iowan Old Style", Charter, Georgia, serif; }
-    .mono  { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .brand { font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-weight: 600; letter-spacing: -0.01em; line-height: 1; }
-    /* the label voice: mono uppercase apparatus labels */
-    .label { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; font-size: 10.5px; color: #5d6d82; white-space: nowrap; }
-    .label.rubric { color: #c94d15; }
-    /* controls: 6px radius buttons; the primary CTA is square-cornered, ink on cream (landing CTA) */
-    .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; color: #22354d; font: 500 12.5px/1 Inter, system-ui, sans-serif; white-space: nowrap; }
-    .btn.quiet { border-color: transparent; background: transparent; color: #5d6d82; }
-    .btn.cta { border-radius: 0; border-color: #22354d; background: #22354d; color: #f9f6ee; padding: 0 16px; font-weight: 600; }
-    .btn.danger { color: #c94d15; }
-    .seg { display: inline-flex; border: 1px solid #d8d2c2; border-radius: 6px; overflow: hidden; background: #fffdf7; }
-    .seg > div { padding: 0 10px; height: 26px; display: flex; align-items: center; font: 500 12px/1 Inter, system-ui, sans-serif; color: #5d6d82; }
-    .seg > div.on { background: #f1eee4; color: #22354d; }
-    .kbd { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 11px; border: 1px solid #d8d2c2; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: #5d6d82; background: #fffdf7; }
-    /* panes */
-    .pane { background: #fffdf7; border: 1px solid #d8d2c2; }
-    .pane-head { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-bottom: 1px solid #d8d2c2; }
-    .strip { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; background: #f1eee4; border: 1px solid #d8d2c2; border-top: 0; white-space: nowrap; overflow: hidden; }
-    /* the paper sheet — the landing note mock, straightened for an app pane */
-    .sheet { position: relative; background: #fffdf7; border: 1px solid #d8d2c2; box-shadow: 6px 6px 0 0 #d8d2c2; }
-    .sheet::after { content: ""; position: absolute; top: -1px; right: 22px; width: 14px; height: 26px; background: #c94d15; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%); }
-    /* code */
-    .code { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; line-height: 1.6; color: #22354d; white-space: pre; tab-size: 2; }
-    .ln { display: inline-block; width: 28px; margin-right: 12px; text-align: right; color: #b3ac9c; user-select: none; }
-    .hole { color: #c94d15; background: #f9ece1; border-radius: 2px; padding: 0 2px; }
-    .tag { color: #5d6d82; }
-    .kw { color: #1e3a5f; font-weight: 500; }
-    .str { color: #3d6b3a; }
-    .cm { color: #8a9099; font-style: italic; }
-    .yk { color: #1e3a5f; }
-    .hdr { color: #c94d15; font-weight: 600; }
-    /* the Managed Block inside the body: accent rule + tint band; boundary widgets in the label voice */
-    .managed { position: relative; border-left: 3px solid #e8622c; background: #fcf4ee; margin: 6px 0; }
-    .managed-edge { display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 10px; white-space: nowrap; overflow: hidden; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; color: #c94d15; }
-    /* the nested highlight editor at the first render call */
-    .nested { margin: 6px 10px 6px 40px; background: #fffdf7; border: 1px solid #d8d2c2; box-shadow: 3px 3px 0 0 #e9e3d4; }
-    /* problems */
-    .problem { display: grid; grid-template-columns: 14px 1fr; gap: 8px; padding: 8px 10px; border-top: 1px solid #d8d2c2; font-size: 12px; }
-    .dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: #c94d15; }
-    .dot.ok { background: #5f9b62; }
-    /* explorer rows */
-    .row { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 10px; border-bottom: 1px solid #efeadc; }
-    .row .name { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12px; color: #22354d; }
-    .row .val { font-size: 12px; color: #5d6d82; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
-    .row.sel { background: #f9ece1; }
-    .chev { width: 16px; height: 16px; color: #b3ac9c; }
-    .field-input { height: 30px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; padding: 0 10px; display: flex; align-items: center; font-size: 12.5px; }
     .muted { color: #5d6d82; }
-    .ink { color: #1e3a5f; }
-    .orange { color: #c94d15; }
-    /* rule: mono-uppercase section label with a trailing hairline, for the report boards */
-    .rule { display: flex; align-items: center; gap: 10px; }
-    .rule .line { flex-grow: 1; height: 1px; background: #d8d2c2; }
-    /* ruling entry: numeral column + bold serif lead-in followed by body copy */
-    .ruling { display: flex; gap: 12px; }
-    .ruling .num { flex-shrink: 0; width: 24px; padding-top: 1px; font-size: 11px; }
-    .ruling p { margin: 0; font-size: 12px; line-height: 1.5; }
-    .ruling p .lead { font-weight: 600; color: #22354d; }
+    .small { font-size: 12px; }
+    h2.sec { font-family: Gelasio, Georgia, serif; font-weight: 500; font-size: 19px; color: #1e3a5f; margin: 0 0 10px; padding-top: 4px; border-top: 1px solid #e8e2d2; padding-top: 18px; }
+    .board > h2.sec:first-child { border-top: none; padding-top: 0; }
+    ul.b { margin: 0 0 4px; padding-left: 18px; }
+    ul.b li { margin-bottom: 6px; }
+    table.t { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 6px; }
+    table.t th { text-align: left; font-family: Gelasio, Georgia, serif; font-weight: 500; font-size: 14px; color: #1e3a5f; padding: 6px 12px 8px 0; border-bottom: 1px solid #d8d2c2; }
+    table.t td { text-align: left; vertical-align: top; padding: 8px 12px 8px 0; border-bottom: 1px solid #f1eee4; }
+    table.t td.term { color: #c94d15; font-weight: 500; white-space: nowrap; }
+    .tier-head { background: #fdf6f1; }
+    .lead { margin: 0 0 10px; }
+    .sect { margin-bottom: 6px; }
   </style>
 </helmet>
-<div class="serif" style="width: 900px; height: 1280px; overflow: hidden; background: #f9f6ee; padding: 32px 44px; display: flex; flex-direction: column; gap: 14px;">
+<div id="root" style="width: 900px; height: 1600px; display: flex; flex-direction: column; background: #f9f6ee; overflow: hidden;">
 
-  <div class="mono muted" style="font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; color: #c94d15;">Issue 945 · whole-surface design</div>
-  <div class="serif" style="font-size: 28px; font-weight: 500; line-height: 1.15; color: #22354d;">One surface, from six pictures</div>
-  <div class="serif" style="font-size: 13.5px; font-style: italic; color: #5d6d82; margin-top: -6px;">Six accepted trials and the #938 frame, carried into one Template Workbench.</div>
-
-  <!-- Item 1 -->
-  <div class="rule" style="margin-top: 6px;"><div class="label rubric">Item 1 · Composition</div><div class="line"></div></div>
-
-  <div style="display: flex; flex-direction: column; gap: 8px;">
-    <div class="ruling">
-      <div class="num mono muted">1.1</div>
-      <p><span class="lead">The middle column holds one open pane; the others are strips.</span> The three panes — note body, Properties, Details — are always mounted; opening one folds the others into one-line strips, and the result column never moves.</p>
-    </div>
-    <div class="ruling">
-      <div class="num mono muted">1.2</div>
-      <p><span class="lead">The field rail is the explorer, in value-first form.</span> One panel, open by default, shows name and this paper's value on every row with a filter box; a row click inspects Insert, Copy, and the snippet kind, Insert primary.</p>
-    </div>
-    <div class="ruling">
-      <div class="num mono muted">1.3</div>
-      <p><span class="lead">The header carries the surface, the document, and the paper.</span> Row one holds the wordmark, connection state, unsaved state, Undo, and Save; row two holds the Profile name, its lede, the "Showing" paper picker, and the Advanced switch. There is no Revert — Undo is the way back.</p>
-    </div>
-    <div class="ruling">
-      <div class="num mono muted">1.4</div>
-      <p><span class="lead">The result column is the note as a paper sheet.</span> Controls sit above it — preview status, the Note / Markdown toggle, the operation picker — and Problems sits below it on every screen, empty by default.</p>
-    </div>
-    <div class="ruling">
-      <div class="num mono muted">1.5</div>
-      <p><span class="lead">The responsive fallback is Direction C.</span> Under 780 px the columns stack in source order: fields collapse above the editor, Editor / Preview buttons switch the middle and result columns, and the preview keeps its own scroll.</p>
-    </div>
+  <!-- header -->
+  <div style="height: 56px; display: flex; align-items: center; gap: 14px; padding: 0 28px; border-bottom: 1px solid #d8d2c2; background: #fffdf7; flex: none;">
+    <div class="brand" style="font-size: 17px; color: #1e3a5f;">ZotLit</div>
+    <div style="width: 1px; height: 20px; background: #d8d2c2;"></div>
+    <div class="serif" style="font-size: 19px;">Rulings · web Workbench, revision 2</div>
   </div>
 
-  <!-- Tier table -->
-  <div style="display: flex; flex-direction: column; margin-top: 4px; border: 1px solid #d8d2c2; background: #fffdf7;">
-    <div style="display: grid; grid-template-columns: 138px 1fr; gap: 14px; padding: 8px 12px;">
-      <div class="label" style="font-size: 9.5px; color: #22354d;">First screen, open</div>
-      <div style="font-size: 11px; line-height: 1.45; color: #22354d;">Field rail with filter and values; the note body editor with its Managed Block boundary widgets and the nested "How one highlight looks" editor; Properties and Details strips with summaries; the paper picker; the result sheet with note name, Properties, body, and Managed Region band; view toggle; operation picker; Problems (empty); Save; Undo; Advanced switch; connection state.</div>
-    </div>
-    <div style="display: grid; grid-template-columns: 138px 1fr; gap: 14px; padding: 8px 12px; border-top: 1px solid #efeadc;">
-      <div class="label" style="font-size: 9.5px;">One select away</div>
-      <div style="font-size: 11px; line-height: 1.45; color: #22354d;">Properties pane entries with Value/Rule editors, the produced-fields table, If it exists (Replace · Append · Keep), Several properties from one rule; Details pane (Name, Description, Version, Author, Note name, Folders &amp; imports, Citation style); the One highlight and Kept-up-to-date result views; the existing-note fixture; the cadence menu; the Markdown view.</div>
-    </div>
-    <div style="display: grid; grid-template-columns: 138px 1fr; gap: 14px; padding: 8px 12px; border-top: 1px solid #efeadc;">
-      <div class="label" style="font-size: 9.5px;">Advanced</div>
-      <div style="font-size: 11px; line-height: 1.45; color: #22354d;">The whole document, named in canonical words; the Annotation Section header and its bar (line, through end of file, Remove section); raw <span class="mono">{% managed %}</span> tags; the language row (Liquid · JSON-e; Eta and JavaScript are Obsidian-only); locked identity and the sample item type; YAML the forms cannot edit safely; canonical field paths in the rail; move/delete of the Managed Block; missing-section repair.</div>
-    </div>
-    <div style="display: grid; grid-template-columns: 138px 1fr; gap: 14px; padding: 8px 12px; border-top: 1px solid #efeadc;">
-      <div class="label" style="font-size: 9.5px;">Not on the web</div>
-      <div style="font-size: 11px; line-height: 1.45; color: #22354d;">Eta editing and execution, <span class="mono">js</span> Properties, the JavaScript Templates gate; the trials' scenario navs, snapshot inspectors, and Run Eta controls.</div>
-    </div>
-  </div>
+  <div class="board" style="flex: 1; overflow: hidden; padding: 22px 28px 26px;">
 
-  <!-- Item 2 -->
-  <div class="rule" style="margin-top: 4px;"><div class="label rubric">Item 2 · The final section everywhere</div><div class="line"></div></div>
-  <ul style="margin: 0; padding-left: 16px; font-size: 12px; line-height: 1.5; color: #22354d; display: flex; flex-direction: column; gap: 5px;">
-    <li>The note body shows "How one highlight looks" at the first render call and a link at every later call; the box edits the final section of the file, fixed at the end.</li>
-    <li>The Details strip and the Properties pane keep a pointer: "How one highlight looks — edited in the note, where the highlights appear · Show me."</li>
-    <li>With no render call, the pointer opens the section in Advanced instead.</li>
-    <li>Advanced shows the whole file with the header line highlighted and a section bar: "Annotation Section · line 24 · through end of file · Remove section." Repair appends the header.</li>
-    <li>Problems carries the parser's own recovery sentences — missing, duplicate, and unknown sections; a broken Managed Block; an invalid manifest; an unknown partial — and names the entry position and key for Properties engine errors.</li>
-  </ul>
+    <h2 class="sec">The job</h2>
+    <p class="lead">Change what my literature notes look like, see it, keep it. Three concepts and no more: this is my note; the orange chips fill in from Zotero, I add one from the list; Save keeps it.</p>
 
-  <!-- Item 3 -->
-  <div class="rule" style="margin-top: 4px;"><div class="label rubric">Item 3 · Words and owned flows</div><div class="line"></div></div>
-  <div style="display: flex; flex-direction: column; gap: 8px;">
-    <div class="ruling">
-      <div class="num mono muted">3.1</div>
-      <p><span class="lead">The surface is the Template Workbench, and "template" is a printed word.</span> The header names it on every screen; the lede reads "The template ZotLit uses to write every literature note." "Note layout" is retired, and the Obsidian glossary entry now covers both hosts — the agent-facing CLI in Obsidian and the human-facing web surface at <span class="mono">/workbench</span>. The other beginner labels from #938 stand; the surface still never prints Profile, manifest, frontmatter, Managed Block, or partial. "Reusable piece" is dropped — partials have no control here.</p>
-    </div>
-    <div class="ruling">
-      <div class="num mono muted">3.2</div>
-      <p><span class="lead">The web surface owns three flows.</span> Open, Save, and the unsupported-language handoff; Switch, Create, Share, and Delete stay with Obsidian. A flow prototyped on the web ports as the shared editing core — editor extensions, source mapping, the Properties and Details forms — while dialogs, file access, and transport stay host-owned.</p>
-    </div>
-  </div>
-
-  <!-- Closing -->
-  <div style="margin-top: 6px; padding-top: 10px; border-top: 1px solid #d8d2c2;">
-    <div class="muted serif" style="font-style: italic; font-size: 12.5px; margin-bottom: 6px;">What the trial assets left behind</div>
-    <ul style="margin: 0; padding-left: 16px; font-size: 11.5px; line-height: 1.45; color: #5d6d82; display: flex; flex-direction: column; gap: 4px;">
-      <li>The <span class="mono">{% annotation %}</span> block layout (#938, #933) is replaced by the final section everywhere on this canvas.</li>
-      <li>#938's five-column Properties table becomes #934's entry list with the keyless "Several properties" entry; "If it exists" gains Append.</li>
-      <li>#938's vault-path banner and JavaScript-off notice become the connection state and the Obsidian-only language row.</li>
-      <li>#935's compact one-line Note name editor replaces #938's taller one; the live result sits beside it.</li>
-      <li>The trials' Run Eta, JavaScript gate, and scenario controls are not part of the web surface.</li>
+    <h2 class="sec">Composition</h2>
+    <ul class="b">
+      <li>One header row: name, the paper shown, ···, Save.</li>
+      <li>Three columns: From this paper · Your note · The note you get.</li>
+      <li>The note is the only open pane; Properties and Name and folder are two links under it.</li>
+      <li>Fields are chips with human names; the Liquid source lives under the chips (one buffer, one undo, ADR 0032) and shows only in Advanced.</li>
+      <li>The kept-up-to-date part is a tinted band; the highlight format is a dashed box inside it.</li>
+      <li>Empty states are hidden: no Problems line when there are none, no connection line when connected.</li>
+      <li>Advanced, Download, and Undo sit behind ···.</li>
+      <li>Under 780px, the note fills the screen with a tab for the result and a bottom "Add a field" button.</li>
     </ul>
-  </div>
 
+    <h2 class="sec">First-screen tier table</h2>
+    <table class="t">
+      <tr class="tier-head"><th>On the first screen</th><th>One select away</th><th>Advanced</th></tr>
+      <tr>
+        <td>Template name</td>
+        <td>Put in note and Copy on a field row</td>
+        <td>Raw file with manifest</td>
+      </tr>
+      <tr>
+        <td>Paper shown</td>
+        <td>Properties list</td>
+        <td>Section header <span class="muted">--- zotlit:annotation ---</span></td>
+      </tr>
+      <tr>
+        <td>Field list with values</td>
+        <td>Name and folder form</td>
+        <td>YAML rules for several properties</td>
+      </tr>
+      <tr>
+        <td>Note body with chips</td>
+        <td>The paper picker</td>
+        <td>Language</td>
+      </tr>
+      <tr>
+        <td>Band</td>
+        <td>Everything else from Zotero</td>
+        <td>IDs</td>
+      </tr>
+      <tr>
+        <td>Highlight box</td>
+        <td>Download</td>
+        <td>Diagnostics with parser codes</td>
+      </tr>
+      <tr>
+        <td>Result sheet</td>
+        <td>Undo</td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>Save</td>
+        <td></td>
+        <td></td>
+      </tr>
+    </table>
+
+    <h2 class="sec">Final section on every board</h2>
+    <ul class="b">
+      <li>The file ends with the required highlight section.</li>
+      <li>The first place highlights render is where it is edited; later places link back.</li>
+      <li>A file without it shows one calm strip with "Add the highlight format".</li>
+      <li>Advanced shows the header line as text.</li>
+    </ul>
+
+    <h2 class="sec">Words</h2>
+    <table class="t">
+      <tr class="tier-head"><th>Beginner word</th><th>Canonical term</th></tr>
+      <tr><td class="term">Default template</td><td>Literature Note Profile document</td></tr>
+      <tr><td class="term">Your note</td><td>document body</td></tr>
+      <tr><td class="term">Kept up to date</td><td>Managed Block</td></tr>
+      <tr><td class="term">One highlight looks like</td><td>Annotation Section</td></tr>
+      <tr><td class="term">From this paper</td><td>template data (zt)</td></tr>
+      <tr><td class="term">Properties</td><td>Managed Frontmatter</td></tr>
+      <tr><td class="term">Several from a rule</td><td>spread entry</td></tr>
+      <tr><td class="term">Name and folder</td><td>manifest filename and folder</td></tr>
+      <tr><td class="term">Showing</td><td>example Item</td></tr>
+      <tr><td class="term">Advanced</td><td>raw Profile document</td></tr>
+      <tr><td class="term">The note you get</td><td>rendered preview</td></tr>
+    </table>
+    <p class="lead">The surface is the Template Workbench and prints the word "template"; "note layout" is retired.</p>
+
+    <h2 class="sec">Flows the web owns</h2>
+    <ul class="b">
+      <li>Open, Save (connected) or Download (standalone), handoff to Obsidian for JavaScript templates.</li>
+      <li>Switch, create, share, delete stay in Obsidian (#918).</li>
+    </ul>
+
+  </div>
 </div>
 </x-dc>
 </body>

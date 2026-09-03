@@ -7,183 +7,74 @@
 <body>
 <x-dc>
 <helmet>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;1,400&amp;family=Gelasio:ital,wght@0,500;1,400&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Archivo:wght@600&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;1,400&amp;family=Gelasio:ital,wght@0,500;1,400&amp;family=Archivo:wght@600&amp;display=swap">
   <style>
-    /* Manuscript & Machine — apps/docs/DESIGN.md tokens, light theme, resolved hex from src/styles.css */
+    /* Manuscript & Machine tokens (apps/docs/DESIGN.md), light theme. Narrow fallback: one column, tabs instead of side panes. */
     *, *::before, *::after { box-sizing: border-box; }
-    body { margin: 0; background: #f9f6ee; color: #22354d; font-family: Inter, "Inter Fallback", ui-sans-serif, system-ui, sans-serif; font-size: 13px; line-height: 1.5; text-wrap: pretty; -webkit-font-smoothing: antialiased; }
-    a { color: #c94d15; text-decoration: underline; text-underline-offset: 2px; } a:hover { color: #22354d; }
-    /* faces */
+    body { margin: 0; background: #f9f6ee; color: #22354d; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+    a { color: #c94d15; text-decoration: underline; text-underline-offset: 2px; }
     .serif { font-family: Gelasio, "Iowan Old Style", Charter, Georgia, serif; }
-    .mono  { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .brand { font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-weight: 600; letter-spacing: -0.01em; line-height: 1; }
-    /* the label voice: mono uppercase apparatus labels */
-    .label { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; font-size: 10.5px; color: #5d6d82; white-space: nowrap; }
-    .label.rubric { color: #c94d15; }
-    /* controls: 6px radius buttons; the primary CTA is square-cornered, ink on cream (landing CTA) */
-    .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; color: #22354d; font: 500 12.5px/1 Inter, system-ui, sans-serif; white-space: nowrap; }
-    .btn.quiet { border-color: transparent; background: transparent; color: #5d6d82; }
-    .btn.cta { border-radius: 0; border-color: #22354d; background: #22354d; color: #f9f6ee; padding: 0 16px; font-weight: 600; }
-    .btn.danger { color: #c94d15; }
-    .seg { display: inline-flex; border: 1px solid #d8d2c2; border-radius: 6px; overflow: hidden; background: #fffdf7; }
-    .seg > div { padding: 0 10px; height: 26px; display: flex; align-items: center; font: 500 12px/1 Inter, system-ui, sans-serif; color: #5d6d82; }
-    .seg > div.on { background: #f1eee4; color: #22354d; }
-    .kbd { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 11px; border: 1px solid #d8d2c2; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: #5d6d82; background: #fffdf7; }
-    /* panes */
-    .pane { background: #fffdf7; border: 1px solid #d8d2c2; }
-    .pane-head { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-bottom: 1px solid #d8d2c2; }
-    .strip { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; background: #f1eee4; border: 1px solid #d8d2c2; border-top: 0; white-space: nowrap; overflow: hidden; }
-    /* the paper sheet — the landing note mock, straightened for an app pane */
-    .sheet { position: relative; background: #fffdf7; border: 1px solid #d8d2c2; box-shadow: 6px 6px 0 0 #d8d2c2; }
-    .sheet::after { content: ""; position: absolute; top: -1px; right: 22px; width: 14px; height: 26px; background: #c94d15; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%); }
-    /* code */
-    .code { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; line-height: 1.6; color: #22354d; white-space: pre-wrap; tab-size: 2; }
-    .ln { display: inline-block; width: 28px; margin-right: 12px; text-align: right; color: #b3ac9c; user-select: none; }
-    .hole { color: #c94d15; background: #f9ece1; border-radius: 2px; padding: 0 2px; }
-    .tag { color: #5d6d82; }
-    .kw { color: #1e3a5f; font-weight: 500; }
-    .str { color: #3d6b3a; }
-    .cm { color: #8a9099; font-style: italic; }
-    .yk { color: #1e3a5f; }
-    .hdr { color: #c94d15; font-weight: 600; }
-    /* narrow: the code column wraps instead of scrolling sideways, on a slimmer gutter */
-    .code.wrap { white-space: pre-wrap; font-size: 10.5px; line-height: 1.5; }
-    .code.wrap .ln { width: 16px; margin-right: 8px; }
-    /* narrow: the rail root, printed as a pill in the panel corner */
-    .chip { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border: 1px solid #d8d2c2; border-radius: 10px; background: #f1eee4; }
-    /* the Managed Block inside the body: accent rule + tint band; boundary widgets in the label voice */
-    .managed { position: relative; border-left: 3px solid #e8622c; background: #fcf4ee; margin: 6px 0; }
-    .managed-edge { display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 10px; white-space: nowrap; overflow: hidden; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; color: #c94d15; }
-    /* the nested highlight editor at the first render call */
-    .nested { margin: 6px 10px 6px 40px; background: #fffdf7; border: 1px solid #d8d2c2; box-shadow: 3px 3px 0 0 #e9e3d4; }
-    /* problems */
-    .problem { display: grid; grid-template-columns: 14px 1fr; gap: 8px; padding: 8px 10px; border-top: 1px solid #d8d2c2; font-size: 12px; }
-    .dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: #c94d15; }
-    .dot.ok { background: #5f9b62; }
-    /* explorer rows */
-    .row { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 10px; border-bottom: 1px solid #efeadc; }
-    .row .name { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12px; color: #22354d; }
-    .row .val { font-size: 12px; color: #5d6d82; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
-    .row.sel { background: #f9ece1; }
-    .chev { width: 16px; height: 16px; color: #b3ac9c; }
-    .field-input { height: 30px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; padding: 0 10px; display: flex; align-items: center; font-size: 12.5px; }
     .muted { color: #5d6d82; }
-    .ink { color: #1e3a5f; }
-    .orange { color: #c94d15; }
+    .small { font-size: 12px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 14px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; color: #22354d; font: 500 14px Inter, sans-serif; white-space: nowrap; }
+    .btn.cta { background: #1e3a5f; color: #fff; border-color: #1e3a5f; border-radius: 0; padding: 0 16px; }
+    /* two-tab bar */
+    .tabs { display: flex; background: #fffdf7; border-bottom: 1px solid #d8d2c2; }
+    .tab { flex: 1; height: 42px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 500; color: #5d6d82; white-space: nowrap; border-bottom: 2px solid transparent; }
+    .tab.on { color: #22354d; border-bottom-color: #e8622c; }
+    /* paper line */
+    .paper { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 16px; background: #f1eee4; border-bottom: 1px solid #d8d2c2; font-size: 13px; color: #5d6d82; }
+    .paper .t { color: #22354d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* note editor: prose, chips for fields */
+    .note { font-size: 15px; line-height: 1.7; padding: 18px 18px 24px; white-space: pre-wrap; }
+    .note .h1 { font-weight: 600; font-size: 20px; line-height: 1.3; }
+    .note .h2 { font-weight: 600; font-size: 16px; }
+    .chip { display: inline-block; padding: 0 7px; margin: 0 1px; border-radius: 4px; background: #f9ece1; color: #c94d15; font-weight: 500; font-size: 14px; line-height: 22px; vertical-align: baseline; white-space: nowrap; }
+    .band { margin: 8px -18px; padding: 8px 18px 12px 14px; border-left: 4px solid #e8622c; background: #fdf6f1; }
+    .band .bl { color: #c94d15; font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+    .band .bl span:last-child { display: block; font-weight: 400; color: #5d6d82; }
+    .hl { margin: 6px 0; padding: 8px 12px; border: 1px dashed #e0b9a0; border-radius: 6px; background: #fffdf7; }
+    .hl .bl { color: #5d6d82; font-weight: 600; font-size: 12px; margin-bottom: 2px; }
+    .placeholder { color: #b3ac9c; font-style: italic; }
   </style>
 </helmet>
-<div style="width: 390px; height: 844px; display: flex; flex-direction: column; background: #f9f6ee; overflow: hidden;">
+<div style="width: 390px; height: 844px; display: flex; flex-direction: column; background: #fffdf7; overflow: hidden;">
 
-  <!-- top bar: 48px, mark + wordmark, the compact save, the overflow menu -->
-  <div style="display: flex; align-items: center; gap: 8px; height: 48px; padding: 0 12px; background: #f9f6ee; border-bottom: 1px solid #d8d2c2;">
-    <div style="display: flex; align-items: center; gap: 6px; line-height: 1;">
-      <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path d="M4 3.5 H17 V7 L8.75 16.5 H20.5 V20 H4 V16.5 L12.25 7 H4 Z" fill="#1E3A5F"></path><path d="M17 3.5 H20.5 V16.5 L18.75 14.75 L17 16.5 Z" fill="#E8622C"></path></svg>
-      <div class="brand" style="font-size: 17px;"><span style="color: #1e3a5f;">Zot</span><span style="color: #e8622c;">Lit</span></div>
-    </div>
-    <div style="flex-grow: 1;"></div>
-    <div class="btn cta" style="height: 30px; padding: 0 14px;">Save</div>
-    <div class="btn" style="height: 30px; width: 30px; padding: 0; justify-content: center;">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.6" aria-hidden="true"><circle cx="3.2" cy="8" r="1"></circle><circle cx="8" cy="8" r="1"></circle><circle cx="12.8" cy="8" r="1"></circle></svg>
-    </div>
+  <!-- compact header: template name · save -->
+  <div style="height: 52px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid #d8d2c2; background: #fffdf7;">
+    <div class="serif" style="font-size: 18px; white-space: nowrap;">Default template</div>
+    <div style="flex: 1;"></div>
+    <div class="btn cta">Save</div>
   </div>
-  <div style="height: 2px; margin-top: 2px; background: #d8d2c2;"></div>
 
-  <!-- one column, stacked in source order -->
-  <div style="display: flex; flex-direction: column; gap: 8px; padding: 8px 12px 10px; flex-grow: 1; min-height: 0;">
+  <!-- two tabs -->
+  <div class="tabs" style="flex: none;">
+    <div class="tab on">Your note</div>
+    <div class="tab">The note you get</div>
+  </div>
 
-    <!-- which template, which paper -->
-    <div style="display: flex; flex-direction: column; gap: 2px;">
-      <div class="serif" style="font-size: 20px; font-weight: 500; line-height: 1.15; color: #22354d;">Default</div>
-      <div class="serif" style="font-size: 13px; font-style: italic; color: #5d6d82; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">The template ZotLit uses to write every literature note.</div>
-    </div>
-    <div style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 11px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7;">
-      <div class="label">Showing</div>
-      <div style="flex-grow: 1; min-width: 0; font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Ten Simple Rules for Better Figures</div>
-      <div class="muted" style="font-size: 11.5px; white-space: nowrap;">2014</div>
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
-    </div>
+  <!-- the paper on screen, one grey row -->
+  <div class="paper" style="flex: none;">
+    <span style="white-space: nowrap;">Showing:</span>
+    <span class="t">Ten Simple Rules for Better Figures · Rougier et al., 2014</span>
+    <span class="muted">▾</span>
+  </div>
 
-    <!-- the two columns become two views -->
-    <div class="seg" style="display: flex; width: 100%;">
-      <div class="on" style="flex-grow: 1; justify-content: center; height: 28px;">Editor</div>
-      <div style="flex-grow: 1; justify-content: center; height: 28px; border-left: 1px solid #d8d2c2;">Preview</div>
-    </div>
+  <!-- note body fills the screen -->
+  <div class="note" style="flex: 1; overflow: hidden;"><span class="h1"># <span class="chip">Title</span></span>
 
-    <!-- fields: the rail, folded to a strip above the editor, open -->
-    <div class="pane" style="display: flex; flex-direction: column;">
-      <div class="pane-head" style="height: 32px; padding: 0 10px; gap: 8px;">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
-        <div class="label rubric">Fields from this paper</div>
-        <div style="flex-grow: 1;"></div>
-        <div class="chip"><span class="label" style="letter-spacing: 0.06em; font-weight: 500; font-size: 9.5px;">for your note</span></div>
-      </div>
-      <div style="position: relative; height: 142px; overflow: hidden;">
-        <div style="padding: 7px 10px 5px;">
-          <div class="field-input" style="gap: 8px; color: #8a9099; font-size: 12px;">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#8a9099" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg>
-            Search fields
-          </div>
-        </div>
-        <div class="row" style="height: 26px;"><svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4l4 4-4 4"></path></svg><div class="name">title</div><div class="val" style="max-width: 176px;">Ten Simple Rules for Better Figures</div></div>
-        <div class="row" style="height: 26px;"><svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4l4 4-4 4"></path></svg><div class="name">creators</div><div class="val" style="max-width: 176px;">Rougier, Droettboom, Bourne</div></div>
-        <div class="row" style="height: 26px;"><span></span><div class="name">citationKey</div><div class="val" style="max-width: 176px;">rougier2014figures</div></div>
-        <div class="row" style="height: 26px; border-bottom: 0;"><svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4l4 4-4 4"></path></svg><div class="name">annotations</div><div class="val" style="max-width: 176px;">2 highlights</div></div>
-        <div style="position: absolute; top: 48px; right: 3px; width: 3px; height: 58px; border-radius: 2px; background: #d8d2c2;"></div>
-      </div>
-    </div>
+<span class="chip">Open in Zotero</span> · <span class="chip">PDF</span>
+<div class="band"><div class="bl">Kept up to date<span>ZotLit refreshes this part. The rest stays yours.</span></div><span class="h2">## Highlights</span>
+<span class="muted">For each highlight:</span><div class="hl"><div class="bl">One highlight looks like</div>&gt; [!quote] Page <span class="chip">Page</span>
+&gt; <span class="chip">Highlighted text</span>
+&gt; <span class="chip">My comment</span></div></div>
+<span class="h2">## My reading notes</span>
+<span class="placeholder">Anything you write here stays yours.</span></div>
 
-    <!-- the note body -->
-    <div class="pane" style="display: flex; flex-direction: column; flex-grow: 1; min-height: 0;">
-      <div class="pane-head" style="height: 28px; padding: 0 10px; gap: 8px;">
-        <div class="label rubric">Your note</div>
-        <div class="muted" style="font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">The orange parts fill in from Zotero.</div>
-      </div>
-      <div style="flex-grow: 1; min-height: 0; padding: 6px 0 6px 6px; overflow: hidden;">
-<div class="code wrap"><span class="ln">1</span><span class="kw"># </span><span class="hole">{{ zt.title }}</span><br><span class="ln">2</span><br><span class="ln">3</span>[Open in Zotero](<span class="hole">{{ zt.backlink }}</span>) · <span class="hole">{{ zt.fileLink }}</span></div>
-        <div class="managed" style="margin: 4px 8px 4px 0;">
-          <div class="managed-edge" style="border-bottom: 1px dashed #efc9b3; height: 20px; padding: 0 8px; gap: 6px;">
-            <span>Kept up to date</span>
-            <span style="flex-grow: 1;"></span>
-            <a href="#" style="font-weight: 400; text-transform: none; letter-spacing: 0; font-family: Inter, system-ui, sans-serif; font-size: 11px;">About scope</a>
-          </div>
-<div class="code wrap"><span class="ln">5</span><span class="kw">## Highlights</span><br><span class="ln">6</span><span class="tag">{% for </span>annotation<span class="tag"> in </span><span class="hole">zt.annotations</span><span class="tag"> %}</span></div>
-          <div class="nested" style="margin: 5px 8px 5px 20px;">
-            <div class="managed-edge" style="color: #1e3a5f; border-bottom: 1px solid #d8d2c2; height: 22px; padding: 0 8px;">
-              <span>How one highlight looks</span>
-              <span style="flex-grow: 1;"></span>
-              <span style="font-weight: 400; text-transform: none; letter-spacing: 0; font-family: Inter, system-ui, sans-serif; font-size: 10.5px; color: #5d6d82;">you are editing it here</span>
-            </div>
-<div class="code wrap" style="padding: 4px 6px 4px 6px;"><span class="ln" style="width: 18px;">a1</span>&gt; [!quote] Page <span class="hole">{{ zt.pageLabel }}</span><br><span class="ln" style="width: 18px;">a2</span>&gt; <span class="hole">{{ zt.text }}</span><br><span class="ln" style="width: 18px;">a3</span>&gt; <span class="hole">{{ zt.comment }}</span></div>
-            <div style="display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-top: 1px dashed #d8d2c2; font-size: 11px; color: #5d6d82;">
-              <span class="label" style="font-size: 9px;">For this paper</span>
-              <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Page 4 · “Figures should be self-explanatory…”</span>
-            </div>
-          </div>
-<div class="code wrap"><span class="ln">8</span><span class="tag">{% endfor %}</span></div>
-          <div class="managed-edge" style="border-top: 1px dashed #efc9b3; color: #b3ac9c; height: 20px; padding: 0 8px;"><span>End of the kept-up-to-date part</span></div>
-        </div>
-<div class="code wrap"><span class="ln">10</span><br><span class="ln">11</span><span class="kw">## My reading notes</span><br><span class="ln">12</span><span style="color: #b3ac9c;">Anything you write here stays yours.</span></div>
-      </div>
-    </div>
-
-    <!-- the folded panes and the diagnostics strip -->
-    <div style="display: flex; flex-direction: column;">
-      <div class="strip" style="height: 32px; border-top: 1px solid #d8d2c2; gap: 8px;">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true"><path d="M6 4l4 4-4 4"></path></svg>
-        <div class="label" style="color: #22354d;">Properties</div>
-        <div class="muted" style="font-size: 11.5px; overflow: hidden; text-overflow: ellipsis;"><span class="mono">title, citekey, tags</span> and one rule</div>
-      </div>
-      <div class="strip" style="height: 32px; gap: 8px;">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true"><path d="M6 4l4 4-4 4"></path></svg>
-        <div class="label" style="color: #22354d;">Details</div>
-        <div class="muted" style="font-size: 11.5px; overflow: hidden; text-overflow: ellipsis;"><span class="mono">Literature/</span> · <span class="mono">rougier2014figures.md</span></div>
-      </div>
-      <div class="strip" style="height: 32px; gap: 8px; background: #fffdf7;">
-        <div class="label">Problems</div>
-        <span class="dot ok" style="margin-top: 0;"></span>
-        <div class="muted" style="font-size: 11.5px; overflow: hidden; text-overflow: ellipsis;">None. Nothing is written until you Save.</div>
-      </div>
-    </div>
+  <!-- bottom bar: opens the field rail as a sheet -->
+  <div style="flex: none; padding: 12px 14px 18px; border-top: 1px solid #d8d2c2; background: #f9f6ee;">
+    <div class="btn" style="width: 100%; height: 44px; font-size: 15px;">+ Add a field</div>
   </div>
 </div>
 </x-dc>

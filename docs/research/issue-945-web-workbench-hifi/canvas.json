@@ -1,168 +1,22 @@
 {
   "pages": [
-    {
-      "id": "page-1",
-      "name": "Screens"
-    },
-    {
-      "id": "page-2",
-      "name": "Boards"
-    }
+    { "id": "page-1", "name": "Screens" },
+    { "id": "page-2", "name": "Boards" }
   ],
   "artboards": [
-    {
-      "file": "Main.dc.html",
-      "title": "First open",
-      "x": 0,
-      "y": 0,
-      "w": 1440,
-      "h": 900,
-      "page": "page-1"
-    },
-    {
-      "file": "Insert.dc.html",
-      "title": "Adding a field",
-      "x": 1560,
-      "y": 0,
-      "w": 1440,
-      "h": 900,
-      "page": "page-1"
-    },
-    {
-      "file": "Highlights.dc.html",
-      "title": "Where the highlight format opens",
-      "x": 3120,
-      "y": 0,
-      "w": 1440,
-      "h": 900,
-      "page": "page-1"
-    },
-    {
-      "file": "Advanced.dc.html",
-      "title": "Advanced",
-      "x": 4680,
-      "y": 0,
-      "w": 1440,
-      "h": 900,
-      "page": "page-1"
-    },
-    {
-      "file": "Properties.dc.html",
-      "title": "Properties, opened",
-      "x": 0,
-      "y": 1080,
-      "w": 1440,
-      "h": 1000,
-      "page": "page-1"
-    },
-    {
-      "file": "Details.dc.html",
-      "title": "Details, opened",
-      "x": 1560,
-      "y": 1080,
-      "w": 1440,
-      "h": 1000,
-      "page": "page-1"
-    },
-    {
-      "file": "Handoff.dc.html",
-      "title": "Standalone, and a template that needs Obsidian",
-      "x": 3120,
-      "y": 1080,
-      "w": 1440,
-      "h": 900,
-      "page": "page-1"
-    },
-    {
-      "file": "Narrow.dc.html",
-      "title": "Narrow, the fallback",
-      "x": 4680,
-      "y": 1080,
-      "w": 390,
-      "h": 844,
-      "page": "page-1"
-    },
-    {
-      "file": "Rulings.dc.html",
-      "title": "The rulings",
-      "x": 0,
-      "y": 0,
-      "w": 900,
-      "h": 1280,
-      "page": "page-2"
-    },
-    {
-      "file": "Words.dc.html",
-      "title": "The words",
-      "x": 1020,
-      "y": 0,
-      "w": 860,
-      "h": 820,
-      "page": "page-2"
-    },
-    {
-      "file": "Flows.dc.html",
-      "title": "Owned flows",
-      "x": 2000,
-      "y": 0,
-      "w": 860,
-      "h": 660,
-      "page": "page-2"
-    },
-    {
-      "file": "Problems.dc.html",
-      "title": "Diagnostics, current",
-      "x": 2980,
-      "y": 0,
-      "w": 1100,
-      "h": 1240,
-      "page": "page-2"
-    }
+    { "file": "Main.dc.html", "title": "First open", "x": 0, "y": 0, "w": 1440, "h": 900, "page": "page-1" },
+    { "file": "Insert.dc.html", "title": "Adding a field", "x": 1560, "y": 0, "w": 1440, "h": 900, "page": "page-1" },
+    { "file": "Highlights.dc.html", "title": "Where the highlight format opens", "x": 3120, "y": 0, "w": 1440, "h": 900, "page": "page-1" },
+    { "file": "Properties.dc.html", "title": "Properties, opened", "x": 0, "y": 1040, "w": 1440, "h": 900, "page": "page-1" },
+    { "file": "Details.dc.html", "title": "Name and folder, opened", "x": 1560, "y": 1040, "w": 1440, "h": 900, "page": "page-1" },
+    { "file": "Problems.dc.html", "title": "When something is wrong", "x": 3120, "y": 1040, "w": 1440, "h": 900, "page": "page-1" },
+    { "file": "Advanced.dc.html", "title": "Advanced", "x": 0, "y": 2080, "w": 1440, "h": 900, "page": "page-1" },
+    { "file": "Handoff.dc.html", "title": "Standalone, and a template that needs Obsidian", "x": 1560, "y": 2080, "w": 1440, "h": 900, "page": "page-1" },
+    { "file": "Narrow.dc.html", "title": "Narrow fallback", "x": 3120, "y": 2080, "w": 390, "h": 844, "page": "page-1" },
+    { "file": "Rulings.dc.html", "title": "The rulings", "x": 0, "y": 0, "w": 900, "h": 1600, "page": "page-2" }
   ],
   "annotations": [
-    {
-      "id": "note-1",
-      "x": 0,
-      "y": -220,
-      "w": 1440,
-      "page": "page-1",
-      "text": "Whole-surface design for issue 945: the #938 frame with the five accepted trials folded in, on the final Annotation Section format, drawn in the docs site's own design system.\n\nTop row: the screen in the order a researcher meets it. Second row: the two strips opened, the standalone handoff, and the narrow fallback."
-    },
-    {
-      "id": "note-2",
-      "x": 0,
-      "y": 940,
-      "w": 560,
-      "page": "page-1",
-      "text": "Ruling 1.1 to 1.4 are read off the first screen: one open pane in the middle column, the explorer as the value-first rail, one header row for the surface and one for the document, the result as a paper sheet with Problems beneath it."
-    },
-    {
-      "id": "note-3",
-      "x": 3120,
-      "y": 940,
-      "w": 560,
-      "page": "page-1",
-      "text": "Item 2: the highlight format opens at the first place it renders and links back from every later one. The section itself lives at the end of the file, shown only in Advanced."
-    },
-    {
-      "id": "note-4",
-      "x": 3120,
-      "y": 2020,
-      "w": 560,
-      "page": "page-1",
-      "text": "Ruling 3.2: the web surface owns Open, Save, and the handoff. Switch, create, share, and delete stay in Obsidian."
-    },
-    {
-      "id": "note-5",
-      "x": 0,
-      "y": -200,
-      "w": 900,
-      "page": "page-2",
-      "text": "The rulings for the three items in #945, the words board with 'template' printed and 'note layout' retired, the owned-flow matrix, and the current diagnostics catalogue."
-    }
+    { "id": "job", "x": 0, "y": -140, "w": 300, "text": "Revision 2. The job: change what my literature notes look like, see it, keep it. Three concepts on the first screen, code only in Advanced." }
   ],
-  "launch": {
-    "view": "canvas",
-    "page": "page-1"
-  }
+  "launch": { "view": "canvas", "page": "page-1" }
 }

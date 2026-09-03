@@ -1,4 +1,4 @@
-# Web Workbench, whole-surface design (#945)
+# Web Workbench, whole-surface design (#945), revision 2
 
 ## The question
 
@@ -7,21 +7,35 @@ How do the #938 frame and the five accepted focused trials (#933 blocks, #934 Pr
 surface, on the final Annotation Section format (#940, ADR 0035), so the spec is carved from
 one picture instead of six?
 
+Revision 2 re-asks it from the target user's side: a researcher who has never edited a template
+and who leaves at the first sight of code. The first revision put the trials' machinery on the
+first screen (Liquid syntax, `zt.` keys, line numbers, mono apparatus labels, four toggles, a
+Problems strip that says "none"). It was correct and too much. This revision keeps every
+ruling that came from the trials and moves everything that is not the job off the first screen.
+
+## The job, from first principles
+
+The user's job is one sentence: **change what my literature notes look like, see it, keep it.**
+Everything on the first screen serves one of those three verbs. Everything else is one select
+away or in Advanced. The #938 three-concept ceiling holds and is the test for every board:
+
+1. this is my note;
+2. the orange parts fill in from Zotero, and I add one from the list;
+3. Save keeps it.
+
 ## The asset
 
 - `issue-945-web-workbench-hifi.html` — the canvas. Open it in a browser: one page of screens
-  in the order a researcher meets them, and a second page of boards (rulings, words, flows,
-  diagnostics).
+  in the order a researcher meets them, and a second page with the rulings board.
 - `issue-945-web-workbench-hifi/` — the artboard sources (`*.dc.html`) and `canvas.json`. The
-  canvas is regenerated from these by the Claude Design canvas helper; the sources are the
-  editable form. Every artboard is static markup; nothing is wired.
-- This file — the rulings, the tier table, and what the trials' assets left behind.
+  canvas is regenerated from these by the Claude Design canvas helper. Every artboard is
+  static markup; nothing is wired.
+- This file — the rulings, the tier table, and limits.
 
-The earlier trial assets were read for their logic, vocabulary, and rulings only. Their visual
-style was set aside; the design here matches the docs site the surface will ship in
-(`apps/docs/DESIGN.md`, "Manuscript & Machine": cream ground, navy ink, deep-orange primary,
-Inter for chrome, Gelasio for display, IBM Plex Mono for code and apparatus labels, square
-primary action, the landing note mock's paper sheet with its hard offset shadow and bookmark tab).
+The trial assets were read for their logic, vocabulary, and rulings only. Their visual style
+was set aside. The design matches the docs site the surface ships in (`apps/docs/DESIGN.md`):
+cream ground, navy ink, deep-orange primary, Inter for chrome, Gelasio for headings, the
+landing note mock's paper sheet. Mono type appears on the Advanced board only.
 
 ## Fixed inputs
 
@@ -33,119 +47,83 @@ shortcut `{% render_annotation annotation %}` (ADR 0034); CodeMirror 6 at the Ob
 
 ## Item 1 — Composition
 
-**Ruling 1.1 — the middle column holds one open pane; the others are strips.** The three panes
-of the middle column are the note body, Properties, and Details, in that order. The body is
-open on the first screen; Properties and Details are folded strips beneath it, each carrying a
-one-line summary of its contents. Opening a strip makes it the open pane and folds the body
-into a strip above it. The result column never moves. This is the #938 Unfold behaviour and
-the #934 focused artboard, stated once. #935's "separate tabs" ruling is honoured by the same
-rule: Profile details and the note are alternate panes of one column, both mounted, sharing
-the source and the undo history.
+**Ruling 1.1 — fields are chips, and the source lives under them.** On the beginner face a
+field reads as a chip with a human name: Title, Authors, Page, Highlighted text. The chip is a
+CodeMirror decoration over the real Liquid expression in the one source buffer (ADR 0032), so
+undo, Save, and Advanced all see the same text. The raw `{{ zt.title }}` appears on the Advanced
+board only. This is the one change that removes code from the first screen without a second
+document model.
 
-**Ruling 1.2 — the field rail is the #937 explorer in the #938 value-first form.** One panel,
-open by default, showing name and this paper's value on every row, with a filter box. A row
-click inspects: the row expands to show Insert, Copy, and the snippet kind (Output · If present
-· Loop · Joined) with Insert primary; Enter or a second click on the row inserts the Output
-form at the saved cursor. That keeps #938's one-gesture insert for a beginner and #937's
-explicit actions for everyone else. The root follows editor focus and is named in the panel's
-corner ("for your note" · "for one highlight" · "for the note name"); the panel remounts on a
-root change, so the filter resets. Typing `{{` in the note opens the same list.
+**Ruling 1.2 — one header row.** Template name, the paper shown, a `···` menu, Save. The
+connection state prints only when it is not the normal one ("Not connected to Obsidian"). Save
+reads "Save" when connected and "Download" when standalone. Undo, Download, and Advanced sit
+behind `···`. There is no Revert, no unsaved-changes counter, no Advanced toggle on the bar.
 
-**Ruling 1.3 — the header carries the surface, the document, and the paper.** Row one: the
-wordmark, "Template Workbench", the connection state, the unsaved state, Undo, and Save. Row
-two: the Profile name in display type with a one-line lede, the "Showing" paper picker, and
-the Advanced switch. Save reads "Save to vault" when connected and "Download" when standalone;
-one button whose meaning follows the connection. There is no Revert: ADR 0032's single undo
-history is the way back, and Undo sits beside Save.
+**Ruling 1.3 — the middle column holds one open pane.** The note body is open on the first
+screen. Properties and Name and folder are two plain links under it; selecting one swaps the
+pane's content and offers "Back to your note". The result column never moves.
 
-**Ruling 1.4 — the result column is the note as a paper sheet, with its controls above it and
-Problems below it.** Above the sheet: the preview status word, the view toggle
-(Note · Markdown), and the operation picker ("New note" · "Updating an existing note"). The
-sheet shows the note name, the final Properties as a list, and the body in reading view with
-the Managed Region banded and labelled "Kept up to date". The single-highlight and
-kept-up-to-date-only views are entries of the view toggle, one select away. Cadence (Live ·
-On demand · Run · Stop) is a menu on the status word. Problems is a strip under the sheet on
-every screen, per ADR 0032, empty by default.
+**Ruling 1.4 — the field list shows values first, in human names.** Eleven common rows with
+this paper's value under each, a search box, and "Everything else from Zotero · 41 more" at
+the foot. Selecting a row reveals "Put in note" and "Copy". Typing `{{` in the note opens the
+same list. Keys such as `zt.publicationTitle` stay in Advanced.
 
-**Tier table — where each trial's controls live**
+**Ruling 1.5 — the kept-up-to-date part is a tinted band; the highlight format is a dashed box
+inside it.** One label each, one short sentence on the band ("ZotLit refreshes this part. The
+rest stays yours."), no end marker, no scope link.
 
-| Tier | Controls |
-| --- | --- |
-| First screen, open | Field rail with filter, values, Insert · Copy · kind on the inspected row (#937); note body editor with the Managed Block boundary widgets "Kept up to date" / "End of the kept-up-to-date part" and About scope (#933); the nested "How one highlight looks" editor at the first render call with its one-highlight line (#933/#940); later-call links "the same one, open above · Take me there"; Properties and Details strips with summaries; the paper picker; the result sheet with note name, Properties, body, Managed Region band; view toggle; operation picker; preview status; Problems (empty); Save; Undo; Advanced switch; connection state |
-| One select away (strips, menus, view entries) | Properties pane: entries with Value/Rule editors, produced-fields table, If it exists (Replace · Append · Keep), Add a property, More ways to add → Several properties from one rule, Entry options → Written as · Add an override after this, move/duplicate/remove (#934); Details pane: Name, Description, Version, Author, Note name (one-line template editor with live result), Folders & imports with Override / Use default and From default · This template origin chips, Citation style (#935); result views One highlight and Kept-up-to-date part; the existing-note fixture behind "Updating an existing note"; cadence menu; Markdown view (#936) |
-| Advanced | The whole document with the three parts named in canonical words; the `--- zotlit:annotation ---` header and section bar (line, through end of file, Remove section); raw `{% managed %}` tags; the language row (Liquid · JSON-e; Eta and JavaScript are Obsidian-only); locked identity (Profile ID, Contract, Minimum app version) and Sample item type; YAML the forms cannot edit safely (anchors, flow style, block scalars); canonical field paths in the rail; move/delete of the Managed Block; missing-section repair (#933/#935/#940) |
-| Not on the web surface | Eta editing and execution, `js` Properties, the JavaScript Templates gate (ADR 0033); the trials' scenario navs, snapshot inspectors, and Run Eta controls |
+**Ruling 1.6 — the result is the note as a paper sheet, and nothing else.** No view toggles,
+no cadence menu, no operation picker on the first screen. The property box, the body, and the
+highlights render for the paper shown. A Problems strip appears only when there is a problem.
 
-**Ruling 1.5 — the responsive fallback is Direction C.** Under 780 px the columns stack in
-source order: fields above the editor as a collapsible strip, Editor / Preview buttons switch
-the middle and result columns, and the preview keeps its own scroll (#936/#937 narrow-width
-rulings). The three-concept budget is not claimed on a phone.
+**Ruling 1.7 — under 780px the note fills the screen**, with a tab for the result and a bottom
+"Add a field" button that opens the field list as a sheet.
+
+### Tier table
+
+| On the first screen | One select away | Advanced | Not on the web |
+| --- | --- | --- | --- |
+| Template name; the paper shown; field list with values; note body with chips; kept-up-to-date band; highlight box; result sheet; Save | Put in note and Copy; Properties list; Name and folder form; paper picker; everything else from Zotero; Download; Undo | Raw file with manifest; `--- zotlit:annotation ---` header; YAML for "Several from a rule"; language; IDs and compatibility; parser codes | Switch, create, share, delete a template (#918); JavaScript templates (ADR 0033) |
 
 ## Item 2 — The final-section format on every screen
 
-- The note body shows the render call's box "How one highlight looks" at the first
-  `{% render_annotation annotation %}` and a link at every later call. The box edits the final
-  section of the same file; its footer shows one highlight from this paper. The section itself
-  is not shown in the body view; its position is fixed at the end of the file.
-- The Details strip and the Properties pane keep a pointer strip "How one highlight looks —
-  edited in the note, where the highlights appear · Show me".
-- With no render call, the pointer opens the section in Advanced ("This highlight format has
-  no visible render call. Its definition is open in Advanced.").
-- Advanced shows the whole file with the header line highlighted and a section bar:
-  "Annotation Section · line 24 · through end of file · Remove section". The repair action for
-  a missing section is "Add the highlight section" and appends the header at the end of the
-  file.
-- Problems carries the current parser diagnostics with the parser's own recovery sentences:
-  missing, duplicate, and unknown section headers; duplicate or broken Managed Block; invalid
-  manifest; a partial named `annotation`. Properties engine errors name the entry position and
-  key; preview errors are separate from Save.
-
-This closes the four "Prototype refresh required after #940" items in #863 as design evidence.
-The trials' code branches stay on their earlier layouts.
+- The file ends with the required highlight section (ADR 0035). The beginner face never prints
+  the header; it prints "One highlight looks like".
+- The first place highlights render is where the box is edited. A later place shows one grey
+  line, "Highlights look the same as above · Edit them there".
+- A file without the section shows one calm strip above the result, "Highlights have no format
+  yet", with one button, "Add the highlight format". The same button sits in the empty box.
+- Advanced shows the header line as text, tinted so it maps to the box.
+- Diagnostics keep the parser codes (`missing-annotation-section`, `duplicate-annotation-section`,
+  `unknown-section-header`, `duplicate-managed-block`, `invalid-managed-block`,
+  `invalid-document`, `invalid-manifest`, `reserved-annotation-partial`) in small grey text
+  after a plain-language line; the Problems board carries the catalogue.
 
 ## Item 3 — Words and owned flows
 
 **Ruling 3.1 — the surface is the Template Workbench, and "template" is a printed word.** The
-header names the surface "Template Workbench" on every screen; the lede under the Profile name
-reads "The template ZotLit uses to write every literature note." "Note layout" is retired. The
-Obsidian glossary entry extends to cover both hosts: the agent-facing CLI in Obsidian and the
-human-facing web surface at `/workbench`. Recorded in `apps/docs/CONTEXT.md`. The other
-beginner labels from #938 stand (Your note · Kept up to date · Properties · How one highlight
-looks · Fields from this paper · Showing · Details · Note name · Advanced); the surface still
-never prints Profile, manifest, frontmatter, Managed Block, or partial. "Reusable piece" is
-dropped from the words board: partials have no control on this surface.
+first screen says "Default template · what every literature note starts from". "Note layout"
+is retired. The glossary entry in `apps/docs/CONTEXT.md` covers both hosts.
 
-**Ruling 3.2 — the web surface owns three flows.** Open, Save, and the unsupported-language
-handoff.
+| Beginner word | Canonical term |
+| --- | --- |
+| Default template | Literature Note Profile document |
+| Your note | the document body |
+| Kept up to date | Managed Block |
+| One highlight looks like | Annotation Section |
+| From this paper | template data (`zt`) |
+| Properties | Managed Frontmatter |
+| Several from a rule | spread entry |
+| Name and folder | manifest `filename` and folder |
+| Showing | the example Item |
+| Advanced | the raw Profile document |
+| The note you get | the rendered preview |
 
-| Flow | Web surface | Obsidian |
-| --- | --- | --- |
-| Open | Three doors: from Obsidian through an approved connection (the Profile row, the current note); "Open a template file…" or paste for standalone use; "Start from the built-in Default" | Entry actions (#931) |
-| Save | "Save to vault" when connected — validates, checks the loaded revision, keeps the draft on refusal; "Download" when standalone; Default's first Save creates its document | The vault write (#931) |
-| Handoff | A template that needs Eta or JavaScript: read-only source, "Download source", "Continue in Obsidian" | Editing, rendering, the JavaScript Templates gate |
-| Switch | Not owned. One document per connection; the header names it; another Profile is opened from Obsidian or as another file | Informed picker (#918) |
-| Create | Not owned. "Start from Default" is a file, not a vault Profile | Create dialog (#918) |
-| Share | Not owned. Download emits the plain document; bundling partials stays with Share… | Share… (#918) |
-| Delete | Not owned | Delete dialog (#918) |
-
-A flow prototyped on the web ports as the shared editing core (ADR 0032): editor extensions,
-source mapping, the Properties and Details forms. Dialogs, file access, and transport stay
-host-owned; nothing here asks Obsidian to re-implement a web dialog.
-
-## What the trial assets left behind
-
-- The `{% annotation %}` block layout (#938, #933 at the accepted checkpoint) is replaced by
-  the final section everywhere on this canvas.
-- #938's five-column Properties table becomes #934's entry list with the keyless "Several
-  properties" entry; "If it exists" gains Append.
-- #938's "This layout lives at … in your vault" banner and "JavaScript layouts are off on
-  this device" become the connection state and the Obsidian-only language row (ADR 0033).
-- #935's compact one-line Note name editor replaces #938's taller one; the live result sits
-  beside it.
-- The trials' Run Eta, JavaScript gate, and scenario controls are not part of the web surface.
+**Ruling 3.2 — the web surface owns Open, Save or Download, and the Obsidian handoff.**
+Switch, create, share, and delete stay in Obsidian (#918).
 
 ## Limits
 
-Static artboards, not a running editor: completion popups, hover documentation, and undo are
-described, not wired. Sample data is the #936 bundled journal article. Connection, conflict,
-and revision states are shown as they are ruled in #931, not verified against a bridge.
+Static boards; no editor runs. Chip decorations over Liquid are a design ruling; the CodeMirror
+extension that draws them is implementation work under #863. The Properties board shows the
+"Several from a rule" entry read-only; its YAML editor is in Advanced per #930's amendment.

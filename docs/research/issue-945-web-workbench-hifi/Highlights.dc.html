@@ -7,250 +7,146 @@
 <body>
 <x-dc>
 <helmet>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;1,400&amp;family=Gelasio:ital,wght@0,500;1,400&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Archivo:wght@600&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;1,400&amp;family=Gelasio:ital,wght@0,500;1,400&amp;family=Archivo:wght@600&amp;display=swap">
   <style>
-    /* Manuscript & Machine — apps/docs/DESIGN.md tokens, light theme, resolved hex from src/styles.css */
+    /* Manuscript & Machine tokens (apps/docs/DESIGN.md), light theme. The beginner face: sans chrome, no code syntax, chips for fields. */
     *, *::before, *::after { box-sizing: border-box; }
-    body { margin: 0; background: #f9f6ee; color: #22354d; font-family: Inter, "Inter Fallback", ui-sans-serif, system-ui, sans-serif; font-size: 13px; line-height: 1.5; text-wrap: pretty; -webkit-font-smoothing: antialiased; }
-    a { color: #c94d15; text-decoration: underline; text-underline-offset: 2px; } a:hover { color: #22354d; }
-    /* faces */
+    body { margin: 0; background: #f9f6ee; color: #22354d; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+    a { color: #c94d15; text-decoration: underline; text-underline-offset: 2px; }
     .serif { font-family: Gelasio, "Iowan Old Style", Charter, Georgia, serif; }
-    .mono  { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .brand { font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-weight: 600; letter-spacing: -0.01em; line-height: 1; }
-    /* the label voice: mono uppercase apparatus labels */
-    .label { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; font-size: 10.5px; color: #5d6d82; white-space: nowrap; }
-    .label.rubric { color: #c94d15; }
-    /* controls: 6px radius buttons; the primary CTA is square-cornered, ink on cream (landing CTA) */
-    .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; color: #22354d; font: 500 12.5px/1 Inter, system-ui, sans-serif; white-space: nowrap; }
-    .btn.quiet { border-color: transparent; background: transparent; color: #5d6d82; }
-    .btn.cta { border-radius: 0; border-color: #22354d; background: #22354d; color: #f9f6ee; padding: 0 16px; font-weight: 600; }
-    .btn.danger { color: #c94d15; }
-    .seg { display: inline-flex; border: 1px solid #d8d2c2; border-radius: 6px; overflow: hidden; background: #fffdf7; }
-    .seg > div { padding: 0 10px; height: 26px; display: flex; align-items: center; font: 500 12px/1 Inter, system-ui, sans-serif; color: #5d6d82; }
-    .seg > div.on { background: #f1eee4; color: #22354d; }
-    .kbd { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 11px; border: 1px solid #d8d2c2; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: #5d6d82; background: #fffdf7; }
-    /* panes */
-    .pane { background: #fffdf7; border: 1px solid #d8d2c2; }
-    .pane-head { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-bottom: 1px solid #d8d2c2; }
-    .strip { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; background: #f1eee4; border: 1px solid #d8d2c2; border-top: 0; }
-    /* the paper sheet — the landing note mock, straightened for an app pane */
-    .sheet { position: relative; background: #fffdf7; border: 1px solid #d8d2c2; box-shadow: 6px 6px 0 0 #d8d2c2; }
-    .sheet::after { content: ""; position: absolute; top: -1px; right: 22px; width: 14px; height: 26px; background: #c94d15; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%); }
-    /* code */
-    .code { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; line-height: 1.6; color: #22354d; white-space: pre-wrap; tab-size: 2; }
-    .ln { display: inline-block; width: 28px; margin-right: 12px; text-align: right; color: #b3ac9c; user-select: none; }
-    .hole { color: #c94d15; background: #f9ece1; border-radius: 2px; padding: 0 2px; }
-    .tag { color: #5d6d82; }
-    .kw { color: #1e3a5f; font-weight: 500; }
-    .str { color: #3d6b3a; }
-    .cm { color: #8a9099; font-style: italic; }
-    .yk { color: #1e3a5f; }
-    .hdr { color: #c94d15; font-weight: 600; }
-    /* the Managed Block inside the body: accent rule + tint band; boundary widgets in the label voice */
-    .managed { position: relative; border-left: 3px solid #e8622c; background: #fcf4ee; margin: 6px 0; }
-    .managed-edge { display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 10px; white-space: nowrap; overflow: hidden; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; color: #c94d15; }
-    /* the nested highlight editor at the first render call */
-    .nested { margin: 6px 10px 6px 40px; background: #fffdf7; border: 1px solid #d8d2c2; box-shadow: 3px 3px 0 0 #e9e3d4; }
-    /* problems */
-    .problem { display: grid; grid-template-columns: 14px 1fr; gap: 8px; padding: 8px 10px; border-top: 1px solid #d8d2c2; font-size: 12px; }
-    .dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: #c94d15; }
-    .dot.ok { background: #5f9b62; }
-    /* explorer rows */
-    .row { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 10px; border-bottom: 1px solid #efeadc; }
-    .row .name { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12px; color: #22354d; }
-    .row .val { font-size: 12px; color: #5d6d82; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
-    .row.sel { background: #f9ece1; }
-    .chev { width: 16px; height: 16px; color: #b3ac9c; }
-    .field-input { height: 30px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; padding: 0 10px; display: flex; align-items: center; font-size: 12.5px; }
     .muted { color: #5d6d82; }
-    .ink { color: #1e3a5f; }
-    .orange { color: #c94d15; }
+    .small { font-size: 12px; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; color: #22354d; font: 500 14px Inter, sans-serif; white-space: nowrap; }
+    .btn.cta { background: #1e3a5f; color: #fff; border-color: #1e3a5f; border-radius: 0; padding: 0 18px; }
+    .btn.quiet { border-color: transparent; background: transparent; color: #5d6d82; }
+    .col-title { font-family: Gelasio, Georgia, serif; font-weight: 500; font-size: 17px; color: #22354d; }
+    .pane { background: #fffdf7; border: 1px solid #d8d2c2; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+    /* field rail */
+    .frow { display: flex; flex-direction: column; gap: 1px; padding: 8px 14px; border-bottom: 1px solid #f1eee4; cursor: default; }
+    .frow .n { font-weight: 500; font-size: 14px; }
+    .frow .v { color: #5d6d82; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .frow:hover { background: #f9f6ee; }
+    /* note editor: prose, chips for fields */
+    .note { font-size: 15px; line-height: 1.7; padding: 22px 26px; white-space: pre-wrap; }
+    .note .h1 { font-weight: 600; font-size: 22px; line-height: 1.3; }
+    .note .h2 { font-weight: 600; font-size: 17px; }
+    .chip { display: inline-block; padding: 0 7px; margin: 0 1px; border-radius: 4px; background: #f9ece1; color: #c94d15; font-weight: 500; font-size: 14px; line-height: 22px; vertical-align: baseline; white-space: nowrap; }
+    .band { margin: 8px -26px 8px -26px; padding: 8px 26px 12px 22px; border-left: 4px solid #e8622c; background: #fdf6f1; }
+    .band .bl { display: flex; gap: 12px; align-items: baseline; color: #c94d15; font-weight: 600; font-size: 12px; margin-bottom: 4px; white-space: nowrap; }
+    .band .bl span:last-child { font-weight: 400; color: #5d6d82; }
+    .hl { margin: 6px 0; padding: 8px 12px; border: 1px dashed #e0b9a0; border-radius: 6px; background: #fffdf7; }
+    .hl .bl { color: #5d6d82; font-weight: 600; font-size: 12px; margin-bottom: 2px; }
+    /* the one open box: focused for editing */
+    .hl.open { border: 1px solid #e8622c; box-shadow: 0 0 0 3px #f9e0d1; }
+    .caret { display: inline-block; width: 2px; height: 17px; background: #22354d; vertical-align: -3px; margin: 0 1px; }
+    .ghost { color: #b3ac9c; font-size: 13px; line-height: 1.6; }
+    .linkline { margin: 6px 0; padding: 7px 12px; border: 1px solid #ece8dc; border-radius: 6px; background: #f4f1e8; color: #5d6d82; font-size: 13px; white-space: nowrap; }
+    .placeholder { color: #b3ac9c; font-style: italic; }
+    /* result: paper sheet */
+    .sheet { position: relative; background: #fffdf7; border: 1px solid #d8d2c2; box-shadow: 6px 6px 0 0 #d8d2c2; padding: 18px 30px 12px; font-size: 15px; line-height: 1.6; }
+    .sheet::after { content: ""; position: absolute; top: -1px; right: 22px; width: 14px; height: 30px; background: #e8622c; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%); }
+    .props { border: 1px solid #f1eee4; background: #f9f6ee; border-radius: 6px; padding: 6px 12px; margin-bottom: 14px; font-size: 13px; }
+    .props div { display: flex; gap: 12px; padding: 1px 0; }
+    .props b { font-weight: 500; color: #5d6d82; width: 60px; flex: none; }
+    .quote { border-left: 3px solid #e8622c; background: #fdf6f1; padding: 5px 12px; margin: 4px 0; font-size: 13px; line-height: 1.5; }
+    .quote .q { color: #5d6d82; font-size: 12px; font-weight: 600; }
   </style>
 </helmet>
 <div style="width: 1440px; height: 900px; display: flex; flex-direction: column; background: #f9f6ee; overflow: hidden;">
-  <!-- Artboard: Where the highlight format opens -->
 
-  <!-- header: 56px, double hairline -->
-  <div style="display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 20px; background: #f9f6ee; border-bottom: 1px solid #d8d2c2;">
-    <div style="display: flex; align-items: center; gap: 6px; line-height: 1;">
-      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 3.5 H17 V7 L8.75 16.5 H20.5 V20 H4 V16.5 L12.25 7 H4 Z" fill="#1E3A5F"></path><path d="M17 3.5 H20.5 V16.5 L18.75 14.75 L17 16.5 Z" fill="#E8622C"></path></svg>
-      <div class="brand" style="font-size: 18px;"><span style="color: #1e3a5f;">Zot</span><span style="color: #e8622c;">Lit</span></div>
-    </div>
-    <div style="width: 1px; height: 18px; background: #d8d2c2;"></div>
-    <div class="label" style="font-size: 12px; color: #22354d;">Template Workbench</div>
-    <div style="flex-grow: 1;"></div>
-    <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #5d6d82;">
-      <span style="width: 8px; height: 8px; border-radius: 50%; background: #5f9b62;"></span>
-      <span>Connected to Obsidian · Research vault</span>
-    </div>
-    <div style="width: 1px; height: 18px; background: #d8d2c2;"></div>
-    <div style="font-size: 12px; color: #5d6d82;">No unsaved changes</div>
-    <div class="btn quiet" style="height: 28px;">Undo <span class="kbd">⌘Z</span></div>
-    <div class="btn cta" style="height: 32px;">Save to vault</div>
-  </div>
-  <div style="height: 3px; margin-top: 2px; background: #d8d2c2;"></div>
-
-  <!-- title row: which template, which paper -->
-  <div style="display: flex; align-items: flex-end; gap: 24px; padding: 14px 20px 12px;">
-    <div style="display: flex; align-items: baseline; gap: 12px;">
-      <div class="serif" style="font-size: 24px; font-weight: 500; line-height: 1.1; color: #22354d;">Default</div>
-      <div class="serif" style="font-size: 14px; font-style: italic; color: #5d6d82; white-space: nowrap;">The template ZotLit uses to write every literature note.</div>
-    </div>
-    <div style="flex-grow: 1;"></div>
-    <div style="display: flex; align-items: center; gap: 10px;">
-      <div class="label">Showing</div>
-      <div style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px 0 12px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; white-space: nowrap;">
-        <span style="font-weight: 500;">Ten Simple Rules for Better Figures</span>
-        <span class="muted" style="font-size: 12px;">Rougier et al., 2014</span>
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
-      </div>
-      <div class="muted" style="font-size: 12px; white-space: nowrap;">one paper, on screen throughout</div>
-    </div>
-    <div style="display: flex; align-items: center; gap: 8px;">
-      <div class="label">Advanced</div>
-      <div style="width: 34px; height: 20px; border-radius: 10px; border: 1px solid #d8d2c2; background: #f1eee4; position: relative;"><div style="position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fffdf7; border: 1px solid #d8d2c2;"></div></div>
-    </div>
+  <!-- header: one row. name · the paper on screen · save -->
+  <div style="height: 60px; display: flex; align-items: center; gap: 18px; padding: 0 24px; border-bottom: 1px solid #d8d2c2; background: #fffdf7;">
+    <div class="brand" style="font-size: 18px; color: #1e3a5f;">ZotLit</div>
+    <div style="width: 1px; height: 22px; background: #d8d2c2;"></div>
+    <div class="serif" style="font-size: 20px;">Default template</div>
+    <div class="muted">what every literature note starts from</div>
+    <div style="flex: 1;"></div>
+    <div class="muted">Showing</div>
+    <div class="btn" style="max-width: 420px;"><span style="overflow: hidden; text-overflow: ellipsis;">Ten Simple Rules for Better Figures · Rougier et al., 2014</span> <span class="muted">▾</span></div>
+    <div class="btn quiet" title="More">···</div>
+    <div class="btn cta">Save</div>
   </div>
 
   <!-- three columns -->
-  <div style="display: grid; grid-template-columns: 296px minmax(0, 1fr) 464px; gap: 16px; padding: 0 20px 20px; flex-grow: 1; min-height: 0;">
+  <div style="flex: 1; display: grid; grid-template-columns: 300px 1fr 460px; gap: 20px; padding: 20px 24px 24px; min-height: 0;">
 
-    <!-- column 1: fields from this paper, on the Annotation root -->
-    <div class="pane" style="display: flex; flex-direction: column; min-height: 0;">
-      <div class="pane-head">
-        <div class="label rubric">Fields from this paper</div>
-        <div style="flex-grow: 1;"></div>
-        <div class="label" style="letter-spacing: 0.06em; font-weight: 500;">for one highlight</div>
-      </div>
-      <div style="padding: 10px 10px 6px;">
-        <div class="field-input" style="gap: 8px; color: #8a9099;">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#8a9099" stroke-width="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5L14 14"></path></svg>
-          Search fields
-        </div>
-        <div class="muted" style="font-size: 11.5px; padding: 6px 2px 0;">Select one to add it where your cursor is.</div>
-      </div>
-      <div style="flex-grow: 1; overflow: hidden;">
-        <div class="row"><span></span><div class="name">pageLabel</div><div class="val">4</div></div>
-        <div class="row"><span></span><div class="name">text</div><div class="val">Figures should be self-explanatory…</div></div>
-        <div class="row"><span></span><div class="name">comment</div><div class="val">Worth checking against my figure 2.</div></div>
-        <div class="row"><span></span><div class="name">colorName</div><div class="val">yellow</div></div>
-        <div class="row"><span></span><div class="name">colorHex</div><div class="val">#ffd400</div></div>
-        <div class="row"><span></span><div class="name">type</div><div class="val">highlight</div></div>
-        <div class="row"><span></span><div class="name">page</div><div class="val">4</div></div>
-        <div class="row"><span></span><div class="name">citation</div><div class="val">(Rougier et al., 2014, p. 4)</div></div>
-        <div class="row"><span></span><div class="name">fileLink</div><div class="val">Rougier et al. - 2014 - Ten Simple.pdf</div></div>
-        <div class="row"><span></span><div class="name">backlink</div><div class="val">Open in Zotero</div></div>
-        <div class="row"><span></span><div class="name">imgLink</div><div class="val">none on a highlight</div></div>
-        <div class="row"><span></span><div class="name">key</div><div class="val">K9F2M7QD</div></div>
-        <div class="row"><svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4l4 4-4 4"></path></svg><div class="name">tags</div><div class="val">none on this highlight</div></div>
-        <div class="row"><svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4l4 4-4 4"></path></svg><div class="name">parentItem</div><div class="val">Ten Simple Rules for Better Figures</div></div>
-        <div class="row" style="border-bottom: 0;"><svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4l4 4-4 4"></path></svg><div class="name muted">Everything else</div><div class="val">8 more</div></div>
-      </div>
-      <div style="padding: 8px 12px; border-top: 1px solid #d8d2c2; font-size: 11.5px; color: #5d6d82;">Typing <span class="mono">{{</span> in the note opens the same list.</div>
-    </div>
-
-    <!-- column 2: your note, with two places that render highlights -->
+    <!-- fields -->
     <div style="display: flex; flex-direction: column; min-height: 0;">
-      <div class="pane" style="display: flex; flex-direction: column; flex-grow: 1; min-height: 0;">
-        <div class="pane-head">
-          <div class="label rubric">Your note</div>
-          <div class="muted" style="font-size: 12px;">Write it like any note. The orange parts fill in from Zotero.</div>
+      <div class="col-title" style="margin-bottom: 4px;">From this paper</div>
+      <div class="muted small" style="margin-bottom: 10px;">Select one to put it in your note.</div>
+      <div class="pane" style="flex: 1;">
+        <div style="padding: 10px 12px; border-bottom: 1px solid #f1eee4;">
+          <div style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid #d8d2c2; border-radius: 6px; color: #b3ac9c;">⌕ Search</div>
         </div>
-        <div style="flex-grow: 1; padding: 10px 0 10px 8px; overflow: hidden;">
-<div class="code"><span class="ln">1</span><span class="kw"># </span><span class="hole">{{ zt.title }}</span><br><span class="ln">2</span><br><span class="ln">3</span>[Open in Zotero](<span class="hole">{{ zt.backlink }}</span>) · <span class="hole">{{ zt.fileLink }}</span><br><span class="ln">4</span></div>
-          <div class="managed" style="margin-right: 10px;">
-            <div class="managed-edge" style="border-bottom: 1px dashed #efc9b3;">
-              <span>Kept up to date</span>
-              <span style="font-weight: 400; text-transform: none; letter-spacing: 0; font-family: Inter, system-ui, sans-serif; font-size: 11.5px; color: #5d6d82;">rewritten on every refresh · everything outside it is yours</span>
-              <span style="flex-grow: 1;"></span>
-              <a href="#" style="font-weight: 400; text-transform: none; letter-spacing: 0; font-family: Inter, system-ui, sans-serif; font-size: 11.5px;">About scope</a>
-            </div>
-<div class="code"><span class="ln">5</span><span class="kw">## Key quotes</span><br><span class="ln">6</span><span class="tag">{% for </span>annotation<span class="tag"> in </span><span class="hole">zt.annotations</span><span class="tag"> | </span><span class="kw">where</span><span class="tag">: </span><span class="str">"colorName", "yellow"</span><span class="tag"> %}</span></div>
-            <div class="nested">
-              <div class="managed-edge" style="color: #1e3a5f; border-bottom: 1px solid #d8d2c2; height: 24px;">
-                <span>How one highlight looks</span>
-                <span style="flex-grow: 1;"></span>
-                <span style="font-weight: 400; text-transform: none; letter-spacing: 0; font-family: Inter, system-ui, sans-serif; font-size: 11.5px; color: #5d6d82;">you are editing it here</span>
-              </div>
-<div class="code" style="padding: 6px 0 6px 8px;"><span class="ln" style="width: 22px;">a1</span>&gt; [!quote] Page <span class="hole">{{ zt.pageLabel }}</span><br><span class="ln" style="width: 22px;">a2</span>&gt; <span class="hole">{{ zt.text }}</span><br><span class="ln" style="width: 22px;">a3</span>&gt; <span class="hole">{{ zt.comment }}</span></div>
-              <div style="display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-top: 1px dashed #d8d2c2; font-size: 11.5px; color: #5d6d82;">
-                <span class="label" style="font-size: 9.5px;">For this paper</span>
-                <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Page 4 · “Figures should be self-explanatory: a reader looking at the figure alone…”</span>
-              </div>
-            </div>
-<div class="code"><span class="ln">8</span><span class="tag">{% endfor %}</span><br><span class="ln">9</span><br><span class="ln">10</span><span class="kw">## Everything I highlighted</span><br><span class="ln">11</span><span class="tag">{% for </span>annotation<span class="tag"> in </span><span class="hole">zt.annotations</span><span class="tag"> %}</span></div>
-            <div style="display: flex; align-items: center; gap: 10px; height: 30px; margin: 6px 10px 6px 40px; padding: 0 10px; background: #f6f2e8; border: 1px solid #d8d2c2; border-left: 3px solid #b3ac9c;">
-              <span class="label" style="font-size: 10px; color: #1e3a5f;">How one highlight looks</span>
-              <span class="muted" style="font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">· the same one, open above</span>
-              <span style="flex-grow: 1;"></span>
-              <a href="#" style="font-size: 11.5px; white-space: nowrap;">Take me there</a>
-            </div>
-<div class="code"><span class="ln">13</span><span class="tag">{% endfor %}</span></div>
-            <div class="managed-edge" style="border-top: 1px dashed #efc9b3; color: #b3ac9c;"><span>End of the kept-up-to-date part</span></div>
-          </div>
-<div class="code"><span class="ln">15</span><br><span class="ln">16</span><span class="kw">## My reading notes</span><br><span class="ln">17</span><span style="color: #b3ac9c;">Anything you write here stays yours.</span></div>
+        <div style="flex: 1; overflow: hidden;">
+          <div class="frow"><span class="n">Title</span><span class="v">Ten Simple Rules for Better Figures</span></div>
+          <div class="frow"><span class="n">Authors</span><span class="v">Rougier, Droettboom, Bourne</span></div>
+          <div class="frow"><span class="n">Year</span><span class="v">2014</span></div>
+          <div class="frow"><span class="n">Journal</span><span class="v">PLOS Computational Biology</span></div>
+          <div class="frow"><span class="n">Abstract</span><span class="v">Scientific visualization is classically defined as the process of…</span></div>
+          <div class="frow"><span class="n">Tags</span><span class="v">figures, research</span></div>
+          <div class="frow"><span class="n">Highlights</span><span class="v">2 highlights from the PDF</span></div>
+          <div class="frow"><span class="n">Open in Zotero</span><span class="v">a link back to the item</span></div>
+          <div class="frow"><span class="n">PDF</span><span class="v">Rougier et al. - 2014 - Ten Simple Rules.pdf</span></div>
+          <div class="frow"><span class="n">Citation key</span><span class="v">rougier2014figures</span></div>
+          <div class="frow"><span class="n">DOI</span><span class="v">10.1371/journal.pcbi.1003833</span></div>
         </div>
-      </div>
-      <div class="strip">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true"><path d="M6 4l4 4-4 4"></path></svg>
-        <div class="label" style="color: #22354d;">Properties</div>
-        <div class="muted" style="font-size: 12px;">the fields at the top of the note · <span class="mono">title, citekey, tags</span> and one rule</div>
-      </div>
-      <div class="strip">
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true"><path d="M6 4l4 4-4 4"></path></svg>
-        <div class="label" style="color: #22354d;">Details</div>
-        <div class="muted" style="font-size: 12px;">Default · <span class="mono">Literature/</span> · <span class="mono">rougier2014figures.md</span> · APA 7th edition</div>
+        <div style="padding: 10px 14px; border-top: 1px solid #f1eee4;"><a href="#" class="small">Everything else from Zotero · 41 more</a></div>
       </div>
     </div>
 
-    <!-- column 3: the result, on the one-highlight view -->
-    <div style="display: flex; flex-direction: column; min-height: 0; gap: 12px;">
-      <div style="display: flex; align-items: center; gap: 10px; height: 30px;">
-        <div class="label rubric">The result</div>
-        <div class="muted" style="font-size: 12px; white-space: nowrap;">for this paper</div>
-        <div style="flex-grow: 1;"></div>
-        <div class="mono muted" style="font-size: 10.5px; white-space: nowrap;">Current</div>
+    <!-- your note -->
+    <div style="display: flex; flex-direction: column; min-height: 0;">
+      <div class="col-title" style="margin-bottom: 4px;">Your note</div>
+      <div class="muted small" style="margin-bottom: 10px;">Write it like any note. The orange parts fill in from Zotero.</div>
+      <div class="pane" style="flex: 1;">
+        <div class="note" style="flex: 1; overflow: hidden;"><span class="h1"># <span class="chip">Title</span></span>
+
+<span class="chip">Open in Zotero</span> · <span class="chip">PDF</span>
+<div class="band"><div class="bl"><span>Kept up to date</span><span>ZotLit refreshes this part. The rest stays yours.</span></div><span class="h2">## Highlights</span>
+<span class="muted">For each highlight:</span><div class="hl open"><div class="bl">One highlight looks like</div>&gt; [!quote] Page <span class="chip">Page</span>
+&gt; <span class="chip">Highlighted text</span>
+&gt; <span class="chip">My comment</span><span class="caret"></span>
+<span class="ghost">Add a field from the left, or type</span></div><div class="muted small" style="margin-top: 2px;">For this paper: page 4, “Figures should be self-explanatory…”</div></div>
+<div class="band"><div class="bl"><span>Kept up to date</span><span>ZotLit refreshes this part. The rest stays yours.</span></div><span class="h2">## Key quotes</span>
+<span class="muted">For each highlight:</span><div class="linkline">Highlights look the same as above · <a href="#">Edit them there</a></div></div>
+<span class="h2">## My reading notes</span>
+<span class="placeholder">Anything you write here stays yours.</span></div>
+        <div style="display: flex; gap: 22px; padding: 12px 20px; border-top: 1px solid #f1eee4; background: #f9f6ee;">
+          <a href="#" class="small" style="color: #22354d; white-space: nowrap;">Properties <span class="muted">· title, citekey, tags, status</span></a>
+          <a href="#" class="small" style="color: #22354d; white-space: nowrap;">Name and folder <span class="muted">· Literature/…</span></a>
+        </div>
       </div>
-      <div style="display: flex; align-items: center; gap: 10px; height: 28px;">
-        <div class="seg"><div>Note</div><div>Markdown</div><div class="on">One highlight</div></div>
-        <div style="flex-grow: 1;"></div>
-        <div class="btn" style="height: 26px; font-size: 12px;">New note ▾</div>
-      </div>
-      <div class="sheet" style="flex-grow: 1; min-height: 0; overflow: hidden; margin-right: 6px; display: flex; flex-direction: column;">
-        <div style="display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid #d8d2c2;">
-          <span class="label" style="font-size: 9.5px;">One highlight</span>
-          <div style="display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px 0 10px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; font-size: 12px;">
-            <span>Page 4</span>
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true"><path d="M4 6l4 4 4-4"></path></svg>
+    </div>
+
+    <!-- the result -->
+    <div style="display: flex; flex-direction: column; min-height: 0;">
+      <div class="col-title" style="margin-bottom: 4px;">The note you get</div>
+      <div class="muted small" style="margin-bottom: 10px;">For the paper above. Nothing is written until you save.</div>
+      <div style="flex: 1; overflow: hidden; padding: 2px 8px 8px 2px;">
+        <div class="sheet">
+          <div class="muted small" style="margin-bottom: 8px;">Literature/rougier2014figures.md</div>
+          <div class="props">
+            <div><b>title</b><span>Ten Simple Rules for Better Figures</span></div>
+            <div><b>citekey</b><span>rougier2014figures</span></div>
+            <div><b>tags</b><span>figures, research</span></div>
+            <div><b>status</b><span>reading</span></div>
+            </div>
+          <div class="serif" style="font-size: 21px; font-weight: 500; line-height: 1.25; margin-bottom: 6px;">Ten Simple Rules for Better Figures</div>
+          <div style="margin-bottom: 12px; font-size: 14px;"><a href="#">Open in Zotero</a> · <a href="#">Rougier et al. - 2014 - Ten Simple Rules.pdf</a></div>
+          <div style="border-left: 4px solid #e8622c; background: #fdf6f1; margin: 0 -30px; padding: 7px 26px 8px 22px;">
+            <div class="serif" style="font-size: 17px; font-weight: 500; margin-bottom: 4px;">Highlights</div>
+            <div class="quote"><div class="q">Page 4</div>Figures should be self-explanatory: a reader looking at the figure alone should understand its message.<div style="font-style: italic; color: #5d6d82;">Worth checking against my figure 2.</div></div>
+            <div class="quote"><div class="q">Page 6</div>Do not trust the defaults. Adapt the figure to its medium and its audience.</div>
           </div>
-        </div>
-        <div style="padding: 16px 18px; font-size: 13px; line-height: 1.55; flex-grow: 1; overflow: hidden; display: flex; flex-direction: column; gap: 10px;">
-          <div style="border-left: 3px solid #e8622c; background: #fcf4ee; padding: 8px 12px;">
-            <div class="label" style="font-size: 9.5px; color: #c94d15; margin-bottom: 4px;">Quote · Page 4</div>
-            <div>Figures should be self-explanatory: a reader looking at the figure alone should understand its message.</div>
-            <div class="muted" style="font-style: italic;">Worth checking against my figure 2.</div>
+          <div style="border-left: 4px solid #e8622c; background: #fdf6f1; margin: 8px -30px 0; padding: 7px 26px 8px 22px;">
+            <div class="serif" style="font-size: 17px; font-weight: 500; margin-bottom: 4px;">Key quotes</div>
+            <div class="quote"><div class="q">Page 4</div>Figures should be self-explanatory: a reader looking at the figure alone should understand its message.</div>
+            <div class="quote"><div class="q">Page 6</div>Do not trust the defaults. Adapt the figure to its medium and its audience.</div>
           </div>
-          <div style="flex-grow: 1;"></div>
-          <div class="muted" style="font-size: 11.5px; padding-top: 10px; border-top: 1px dashed #d8d2c2;">one highlight, rendered with the format above</div>
-        </div>
-      </div>
-      <div class="pane" style="margin-right: 6px; padding: 12px 14px;">
-        <div class="serif" style="font-size: 16px; font-weight: 500; margin-bottom: 6px;">Why only one opens</div>
-        <div class="serif" style="font-size: 13.5px; line-height: 1.55; color: #22354d;">The template holds one highlight format, used everywhere. The first place highlights appear is the one that opens; the others carry its name and a way back to it. In Advanced the format is the last part of the file.</div>
-      </div>
-      <div class="pane" style="margin-right: 6px; padding: 12px 14px;">
-        <div class="serif" style="font-size: 16px; font-weight: 500; margin-bottom: 8px;">With no place that shows highlights</div>
-        <div style="display: flex; align-items: flex-start; gap: 10px; padding: 9px 12px; background: #f1eee4; border: 1px solid #d8d2c2;">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#5d6d82" stroke-width="1.5" aria-hidden="true" style="margin-top: 2px; flex-shrink: 0;"><path d="M6 4l4 4-4 4"></path></svg>
-          <div class="label" style="color: #22354d; margin-top: 2px;">Details</div>
-          <div class="muted" style="font-size: 12px; line-height: 1.45;">How one highlight looks — not shown in this note · <a href="#">Open in Advanced</a></div>
-        </div>
-      </div>
-      <div class="pane" style="margin-right: 6px;">
-        <div style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px;">
-          <div class="label">Problems</div>
-          <span class="dot ok" style="margin-top: 0;"></span>
-          <span class="muted" style="font-size: 12px;">None. Nothing is written to your vault until you Save.</span>
+          <div class="serif" style="font-size: 17px; font-weight: 500; margin: 10px 0 3px;">My reading notes</div>
+          <div class="placeholder">Anything you write here stays yours.</div>
         </div>
       </div>
     </div>

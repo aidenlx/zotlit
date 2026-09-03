@@ -7,289 +7,143 @@
 <body>
 <x-dc>
 <helmet>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;1,400&amp;family=Gelasio:ital,wght@0,500;1,400&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Archivo:wght@600&amp;display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;1,400&amp;family=Gelasio:ital,wght@0,500;1,400&amp;family=Archivo:wght@600&amp;display=swap">
   <style>
-    /* Manuscript & Machine — apps/docs/DESIGN.md tokens, light theme, resolved hex from src/styles.css */
+    /* Manuscript & Machine tokens (apps/docs/DESIGN.md), light theme. The beginner face: sans chrome, no code syntax, chips for fields. */
     *, *::before, *::after { box-sizing: border-box; }
-    body { margin: 0; background: #f9f6ee; color: #22354d; font-family: Inter, "Inter Fallback", ui-sans-serif, system-ui, sans-serif; font-size: 13px; line-height: 1.5; text-wrap: pretty; -webkit-font-smoothing: antialiased; }
-    a { color: #c94d15; text-decoration: underline; text-underline-offset: 2px; } a:hover { color: #22354d; }
-    /* faces */
+    body { margin: 0; background: #f9f6ee; color: #22354d; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+    a { color: #c94d15; text-decoration: underline; text-underline-offset: 2px; }
     .serif { font-family: Gelasio, "Iowan Old Style", Charter, Georgia, serif; }
-    .mono  { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     .brand { font-family: Archivo, ui-sans-serif, system-ui, sans-serif; font-weight: 600; letter-spacing: -0.01em; line-height: 1; }
-    /* the label voice: mono uppercase apparatus labels */
-    .label { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; font-size: 10.5px; color: #5d6d82; white-space: nowrap; }
-    .label.rubric { color: #c94d15; }
-    /* controls: 6px radius buttons; the primary CTA is square-cornered, ink on cream (landing CTA) */
-    .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; color: #22354d; font: 500 12.5px/1 Inter, system-ui, sans-serif; white-space: nowrap; }
-    .btn.quiet { border-color: transparent; background: transparent; color: #5d6d82; }
-    .btn.cta { border-radius: 0; border-color: #22354d; background: #22354d; color: #f9f6ee; padding: 0 16px; font-weight: 600; }
-    .btn.danger { color: #c94d15; }
-    .seg { display: inline-flex; border: 1px solid #d8d2c2; border-radius: 6px; overflow: hidden; background: #fffdf7; }
-    .seg > div { padding: 0 10px; height: 26px; display: flex; align-items: center; font: 500 12px/1 Inter, system-ui, sans-serif; color: #5d6d82; }
-    .seg > div.on { background: #f1eee4; color: #22354d; }
-    .kbd { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 11px; border: 1px solid #d8d2c2; border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: #5d6d82; background: #fffdf7; }
-    /* panes */
-    .pane { background: #fffdf7; border: 1px solid #d8d2c2; }
-    .pane-head { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; border-bottom: 1px solid #d8d2c2; }
-    .strip { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; background: #f1eee4; border: 1px solid #d8d2c2; border-top: 0; white-space: nowrap; overflow: hidden; }
-    /* the paper sheet — the landing note mock, straightened for an app pane */
-    .sheet { position: relative; background: #fffdf7; border: 1px solid #d8d2c2; box-shadow: 6px 6px 0 0 #d8d2c2; }
-    .sheet::after { content: ""; position: absolute; top: -1px; right: 22px; width: 14px; height: 26px; background: #c94d15; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%); }
-    /* code */
-    .code { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; line-height: 1.6; color: #22354d; white-space: pre; tab-size: 2; }
-    .ln { display: inline-block; width: 28px; margin-right: 12px; text-align: right; color: #b3ac9c; user-select: none; }
-    .hole { color: #c94d15; background: #f9ece1; border-radius: 2px; padding: 0 2px; }
-    .tag { color: #5d6d82; }
-    .kw { color: #1e3a5f; font-weight: 500; }
-    .str { color: #3d6b3a; }
-    .cm { color: #8a9099; font-style: italic; }
-    .yk { color: #1e3a5f; }
-    .hdr { color: #c94d15; font-weight: 600; }
-    /* the Managed Block inside the body: accent rule + tint band; boundary widgets in the label voice */
-    .managed { position: relative; border-left: 3px solid #e8622c; background: #fcf4ee; margin: 6px 0; }
-    .managed-edge { display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 10px; white-space: nowrap; overflow: hidden; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; color: #c94d15; }
-    /* the nested highlight editor at the first render call */
-    .nested { margin: 6px 10px 6px 40px; background: #fffdf7; border: 1px solid #d8d2c2; box-shadow: 3px 3px 0 0 #e9e3d4; }
-    /* problems */
-    .problem { display: grid; grid-template-columns: 14px 1fr; gap: 8px; padding: 8px 10px; border-top: 1px solid #d8d2c2; font-size: 12px; }
-    .dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: #c94d15; }
-    .dot.ok { background: #5f9b62; }
-    /* explorer rows */
-    .row { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 10px; border-bottom: 1px solid #efeadc; }
-    .row .name { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12px; color: #22354d; }
-    .row .val { font-size: 12px; color: #5d6d82; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
-    .row.sel { background: #f9ece1; }
-    .chev { width: 16px; height: 16px; color: #b3ac9c; }
-    .field-input { height: 30px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; padding: 0 10px; display: flex; align-items: center; font-size: 12.5px; }
     .muted { color: #5d6d82; }
-    .ink { color: #1e3a5f; }
-    .orange { color: #c94d15; }
-    /* reference-board table: one grid, hairline rows, mono uppercase column labels */
-    .th { padding: 4px 8px; background: #f1eee4; border-bottom: 1px solid #d8d2c2; }
-    .td { padding: 2.5px 8px; border-top: 1px solid #efeadc; border-left: 1px solid #f4f0e5; font-size: 10px; line-height: 1.34; color: #22354d; }
-    .td.c1 { border-left: 0; }
-    .td .sub { display: block; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 9.5px; line-height: 1.25; color: #8a9099; }
-    .td .say { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 9.5px; line-height: 1.36; color: #1e3a5f; }
-    .grp { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 10px; padding: 3px 8px; background: #f9f6ee; border-top: 1px solid #d8d2c2; border-bottom: 1px solid #d8d2c2; }
-    .grp .note { font-size: 10px; line-height: 1.35; color: #5d6d82; }
+    .small { font-size: 12px; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border: 1px solid #d8d2c2; border-radius: 6px; background: #fffdf7; color: #22354d; font: 500 14px Inter, sans-serif; white-space: nowrap; }
+    .btn.cta { background: #1e3a5f; color: #fff; border-color: #1e3a5f; border-radius: 0; padding: 0 18px; }
+    .btn.quiet { border-color: transparent; background: transparent; color: #5d6d82; }
+    .btn.fix { height: 30px; padding: 0 12px; font-size: 13px; background: #fffdf7; border-color: #d8c58a; }
+    .col-title { font-family: Gelasio, Georgia, serif; font-weight: 500; font-size: 17px; color: #22354d; }
+    .pane { background: #fffdf7; border: 1px solid #d8d2c2; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
+    /* field rail */
+    .frow { display: flex; flex-direction: column; gap: 1px; padding: 8px 14px; border-bottom: 1px solid #f1eee4; cursor: default; }
+    .frow .n { font-weight: 500; font-size: 14px; }
+    .frow .v { color: #5d6d82; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .frow:hover { background: #f9f6ee; }
+    /* note editor: prose, chips for fields */
+    .note { font-size: 15px; line-height: 1.7; padding: 22px 26px; white-space: pre-wrap; }
+    .note .h1 { font-weight: 600; font-size: 22px; line-height: 1.3; }
+    .note .h2 { font-weight: 600; font-size: 17px; }
+    .chip { display: inline-block; padding: 0 7px; margin: 0 1px; border-radius: 4px; background: #f9ece1; color: #c94d15; font-weight: 500; font-size: 14px; line-height: 22px; vertical-align: baseline; white-space: nowrap; }
+    .band { margin: 8px -26px 8px -26px; padding: 8px 26px 12px 22px; border-left: 4px solid #e8622c; background: #fdf6f1; }
+    .band .bl { display: flex; gap: 12px; align-items: baseline; color: #c94d15; font-weight: 600; font-size: 12px; margin-bottom: 4px; white-space: nowrap; }
+    .band .bl span:last-child { font-weight: 400; color: #5d6d82; }
+    .hl { margin: 6px 0; padding: 8px 12px; border: 1px dashed #e0b9a0; border-radius: 6px; background: #fffdf7; }
+    .hl .bl { color: #5d6d82; font-weight: 600; font-size: 12px; margin-bottom: 2px; }
+    .placeholder { color: #b3ac9c; font-style: italic; }
+    /* result: paper sheet */
+    .sheet { position: relative; background: #fffdf7; border: 1px solid #d8d2c2; box-shadow: 6px 6px 0 0 #d8d2c2; padding: 26px 30px 30px; font-size: 15px; line-height: 1.6; }
+    .sheet::after { content: ""; position: absolute; top: -1px; right: 22px; width: 14px; height: 30px; background: #e8622c; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%); }
+    .props { border: 1px solid #f1eee4; background: #f9f6ee; border-radius: 6px; padding: 8px 12px; margin-bottom: 18px; font-size: 13px; }
+    .props div { display: flex; gap: 12px; padding: 2px 0; }
+    .props b { font-weight: 500; color: #5d6d82; width: 60px; flex: none; }
+    .quote { border-left: 3px solid #e8622c; background: #fdf6f1; padding: 8px 12px; margin: 8px 0; }
+    .quote .q { color: #5d6d82; font-size: 12px; font-weight: 600; }
+    /* one problem, said calmly */
+    .notice { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border: 1px solid #e3cf92; border-left: 4px solid #d8a72c; background: #fdf8e7; border-radius: 6px; padding: 12px 16px; margin-bottom: 12px; }
+    .notice .t { font-weight: 600; font-size: 14px; white-space: nowrap; }
+    .notice .s { color: #5d6d82; font-size: 13px; white-space: nowrap; }
+    .empty { border: 1px dashed #d8a72c; border-radius: 6px; background: #fdf8e7; padding: 12px 14px; display: flex; align-items: center; gap: 12px; }
+    /* legend */
+    .lrow { padding: 9px 10px; border-bottom: 1px solid #f1eee4; }
+    .lrow .n { font-size: 12px; white-space: nowrap; }
+    .lrow .c { display: block; color: #8b93a1; font-size: 11px; margin-top: 1px; white-space: nowrap; }
   </style>
 </helmet>
-<div style="width: 1100px; height: 1240px; display: flex; flex-direction: column; gap: 8px; padding: 24px 32px 18px; background: #f9f6ee; overflow: hidden;">
+<div style="width: 1440px; height: 900px; display: flex; flex-direction: column; background: #f9f6ee; overflow: hidden;">
 
-  <!-- masthead: eyebrow, display title, lede -->
-  <div style="display: flex; flex-direction: column; gap: 4px;">
-    <div class="label rubric">Item 2 · the current diagnostics</div>
-    <div class="serif" style="font-size: 26px; font-weight: 500; line-height: 1.1; color: #22354d;">What a broken template says, and where</div>
-    <div class="serif" style="font-size: 13px; font-style: italic; color: #5d6d82;">Beginner words in the strip, the parser’s own recovery sentence beneath, canonical terms in Advanced.</div>
+  <!-- header: one row. name · the paper on screen · save -->
+  <div style="height: 60px; display: flex; align-items: center; gap: 18px; padding: 0 24px; border-bottom: 1px solid #d8d2c2; background: #fffdf7;">
+    <div class="brand" style="font-size: 18px; color: #1e3a5f;">ZotLit</div>
+    <div style="width: 1px; height: 22px; background: #d8d2c2;"></div>
+    <div class="serif" style="font-size: 20px;">Default template</div>
+    <div class="muted">what every literature note starts from</div>
+    <div style="flex: 1;"></div>
+    <div class="muted">Showing</div>
+    <div class="btn" style="max-width: 420px;"><span style="overflow: hidden; text-overflow: ellipsis;">Ten Simple Rules for Better Figures · Rougier et al., 2014</span> <span class="muted">▾</span></div>
+    <div class="btn quiet" title="More">···</div>
+    <div class="btn cta">Save</div>
   </div>
 
-  <!-- the diagnostics table -->
-  <div class="pane" style="display: grid; grid-template-columns: 176px 240px 330px 192px 96px; align-content: start;">
+  <!-- three columns -->
+  <div style="flex: 1; display: grid; grid-template-columns: 300px 1fr 460px; gap: 20px; padding: 20px 24px 24px; min-height: 0;">
 
-    <div class="th label c1" style="border-left: 0;">Situation</div>
-    <div class="th label">What Problems says</div>
-    <div class="th label">Recovery</div>
-    <div class="th label">Where it also shows</div>
-    <div class="th label">Blocks</div>
-
-    <!-- group 1 -->
-    <div class="grp">
-      <div class="label" style="color: #22354d;">Structure</div>
-      <div class="note">blocks Save and preview · the strip carries the code, the message, the recovery sentence, and <span style="color: #c94d15;">Show source</span></div>
-    </div>
-
-    <div class="td c1">Missing highlight section<div class="sub">missing-annotation-section</div></div>
-    <div class="td"><div class="say">Add the required Annotation Section to edit how one highlight looks. An empty section is valid.</div></div>
-    <div class="td">“Add one standalone <span class="mono" style="font-size: 9.5px;">--- zotlit:annotation ---</span> line after the note source. The annotation source extends to the end of the document and can be empty.”</div>
-    <div class="td">Repair panel <span class="orange">Add the highlight section</span> · marked line 1 · Advanced</div>
-    <div class="td">Save + preview</div>
-
-    <div class="td c1">Duplicate section header<div class="sub">duplicate-annotation-section</div></div>
-    <div class="td"><div class="say">Two annotation section headers in one document.</div></div>
-    <div class="td">“Keep one <span class="mono" style="font-size: 9.5px;">--- zotlit:annotation ---</span> header, followed by the annotation source through the end of the document.”</div>
-    <div class="td">Marked line at the second header · Advanced</div>
-    <div class="td">Save + preview</div>
-
-    <div class="td c1">Unknown section header<div class="sub">unknown-section-header</div></div>
-    <div class="td"><div class="say">The header line is not the annotation header.</div></div>
-    <div class="td">“Use only the exact standalone <span class="mono" style="font-size: 9.5px;">--- zotlit:annotation ---</span> header; the note source starts after the manifest.”</div>
-    <div class="td">Advanced, caret at the header line</div>
-    <div class="td">Save + preview</div>
-
-    <div class="td c1">Duplicate Managed Block<div class="sub">duplicate-managed-block</div></div>
-    <div class="td"><div class="say">More than one Managed Block in the document body.</div></div>
-    <div class="td">“Keep at most one Managed Block in the document body.”</div>
-    <div class="td">Marked line at the second <span class="mono" style="font-size: 9.5px;">{% managed %}</span> · Advanced</div>
-    <div class="td">Save + preview</div>
-
-    <div class="td c1">Unclosed Managed Block<div class="sub">invalid-managed-block</div></div>
-    <div class="td"><div class="say">The Managed Block is never closed.</div></div>
-    <div class="td">“Add <span class="mono" style="font-size: 9.5px;">{% endmanaged %}</span> after the Managed Block body.”</div>
-    <div class="td">Marked line at the opening tag · Advanced</div>
-    <div class="td">Save + preview</div>
-
-    <div class="td c1">Stray closing tag<div class="sub">invalid-managed-block</div></div>
-    <div class="td"><div class="say">An unmatched closing tag.</div></div>
-    <div class="td">“Remove the unmatched tag or add <span class="mono" style="font-size: 9.5px;">{% managed %}</span> before it.”</div>
-    <div class="td">Marked line at the stray tag · Advanced</div>
-    <div class="td">Save + preview</div>
-
-    <div class="td c1">Invalid manifest YAML<div class="sub">invalid-manifest</div></div>
-    <div class="td"><div class="say">The manifest could not be read.</div></div>
-    <div class="td">“Correct the YAML syntax in the manifest.”</div>
-    <div class="td">Properties freezes · Advanced, line 1</div>
-    <div class="td">Save + preview</div>
-
-    <div class="td c1">Missing manifest fences<div class="sub">invalid-document</div></div>
-    <div class="td"><div class="say">The document has no manifest.</div></div>
-    <div class="td">“Add a YAML manifest between opening and closing "---" lines.” · “Add a closing "---" line before the template body.”</div>
-    <div class="td">Advanced, line 1</div>
-    <div class="td">Save + preview</div>
-
-    <div class="td c1">A partial named <span class="mono" style="font-size: 10px;">annotation</span><div class="sub">reserved-annotation-partial</div></div>
-    <div class="td"><div class="say">The name annotation is reserved for the highlight section.</div></div>
-    <div class="td muted" style="font-style: italic;">No recovery sentence captured in the trials. Rename the partial in Advanced.</div>
-    <div class="td">Advanced, at the manifest entry</div>
-    <div class="td">Save + preview</div>
-
-    <!-- group 2 -->
-    <div class="grp">
-      <div class="label" style="color: #22354d;">Properties</div>
-      <div class="note">blocks Save when it is validation — <span style="color: #22354d;">Fix the document to save</span> · refuses the preview when it is evaluation — <span style="color: #22354d;">Operation refused</span>, “The source is valid and can still be saved.”</div>
-    </div>
-
-    <div class="td c1">Duplicate property name<div class="sub">validation</div></div>
-    <div class="td"><div class="say">Duplicate Managed Frontmatter key 'tags'</div></div>
-    <div class="td">“Correct the source, then try again.” <span class="muted">(the fallback; the engine carries none)</span></div>
-    <div class="td">Entry 3, in place of its result · <span class="orange">Go to entry 3</span></div>
-    <div class="td">Save</div>
-
-    <div class="td c1">Empty property name<div class="sub">evaluation</div></div>
-    <div class="td"><div class="say">Managed Frontmatter field '' (entry #1) must be non-empty</div></div>
-    <div class="td">“Correct the value for Managed Frontmatter field '' (entry #1).”</div>
-    <div class="td">Entry 1 · <span class="orange">Go to entry 1</span></div>
-    <div class="td">Preview</div>
-
-    <div class="td c1">Reserved property name<div class="sub">zotero-key</div></div>
-    <div class="td"><div class="say">Managed Frontmatter field 'zotero-key' (entry #2) is reserved</div></div>
-    <div class="td">“Correct the value for Managed Frontmatter field 'zotero-key' (entry #2).”</div>
-    <div class="td">Entry 2 · <span class="orange">Go to entry 2</span></div>
-    <div class="td">Preview</div>
-
-    <div class="td c1">A rule that does not produce several properties<div class="sub">non-mapping</div></div>
-    <div class="td"><div class="say">Managed Frontmatter entry #2 must produce a mapping</div></div>
-    <div class="td">“Correct the value for Managed Frontmatter entry #2.”</div>
-    <div class="td">Entry 2 · <span class="orange">Go to entry 2</span></div>
-    <div class="td">Preview</div>
-
-    <div class="td c1">Invalid value<div class="sub">Infinity</div></div>
-    <div class="td"><div class="say">Managed Frontmatter field 'score' (entry #1) produced an invalid frontmatter value: …</div></div>
-    <div class="td">“Correct the value for Managed Frontmatter field 'score' (entry #1).”</div>
-    <div class="td">Entry 1 · <span class="orange">Go to entry 1</span></div>
-    <div class="td">Preview</div>
-
-    <div class="td c1">Append conflict, text against list<div class="sub">merge</div></div>
-    <div class="td"><div class="say">Cannot append 'tags' in entry #3: the pending value and the result must both be lists.</div></div>
-    <div class="td">“Use arrays for field 'tags' in entry #3, or use replace.”</div>
-    <div class="td">Entry 3 and the strip together · If it exists → Replace</div>
-    <div class="td">Preview</div>
-
-    <div class="td c1">Incomplete YAML while typing<div class="sub">not an error</div></div>
-    <div class="td"><div class="say">Nothing in Problems. The panel reads Keep editing this draft.</div></div>
-    <div class="td">“YAML is incomplete. The list will refresh when it is valid. Undo or Advanced can also repair it.”</div>
-    <div class="td">The list freezes on its last valid state; the other entry actions wait</div>
-    <div class="td">Nothing</div>
-
-    <!-- group 3 -->
-    <div class="grp">
-      <div class="label" style="color: #22354d;">Preview only</div>
-      <div class="note">never blocks Save · the result pauses and the sheet clears; nothing is written to your vault until you Save</div>
-    </div>
-
-    <div class="td c1">Liquid error with line and column</div>
-    <div class="td"><div class="say">Preview unavailable · the engine message · Template, line 12, column 5</div></div>
-    <div class="td">“Correct the source, then run preview again.” <span class="muted">(when the engine carries none)</span></div>
-    <div class="td"><span class="orange">Show source</span> opens Advanced with the caret at the offset</div>
-    <div class="td">Nothing</div>
-
-    <div class="td c1">Missing highlight data<div class="sub">render_annotation nil</div></div>
-    <div class="td"><div class="say">Preview unavailable · the render failure, with no code</div></div>
-    <div class="td">“Correct the source, then run preview again.”</div>
-    <div class="td">Caret falls back to the start of the highlight section</div>
-    <div class="td">Nothing</div>
-
-    <div class="td c1">The preview stopped after 2 seconds<div class="sub">deadline</div></div>
-    <div class="td"><div class="say">Preview stopped after 2 seconds.</div></div>
-    <div class="td">“Reduce loops or recursive partial calls, then run again.”</div>
-    <div class="td">Status reads Preview unavailable · {n} ms · Run again</div>
-    <div class="td">Nothing</div>
-
-    <div class="td c1">This paper has no highlights<div class="sub">one-highlight view</div></div>
-    <div class="td"><div class="say">This item has no annotations.</div></div>
-    <div class="td muted" style="font-style: italic;">No recovery sentence: the view is empty, not broken. Select another paper.</div>
-    <div class="td">Only in the One highlight view</div>
-    <div class="td">Nothing</div>
-
-    <div class="td c1">The template needs JavaScript<div class="sub">unsupported</div></div>
-    <div class="td"><div class="say">Open in Obsidian · This Profile requires JavaScript Templates.</div></div>
-    <div class="td">“Open the Profile in Obsidian. The web source remains available for inspection and download.”</div>
-    <div class="td">Source read-only · Undo off · Download draft stays</div>
-    <div class="td">Nothing · read-only</div>
-
-    <!-- group 4 -->
-    <div class="grp">
-      <div class="label" style="color: #22354d;">Save</div>
-      <div class="note">checked at the moment you select Save · one button whose meaning follows the connection</div>
-    </div>
-
-    <div class="td c1">The loaded revision no longer matches<div class="sub">connected</div></div>
-    <div class="td"><div class="say">Changed in the vault since you opened it</div></div>
-    <div class="td">Your draft is kept. Reload the vault copy, or download this draft. <span class="muted">(#931 ruling)</span></div>
-    <div class="td">Connection state in the header · the Save button</div>
-    <div class="td">Save</div>
-
-    <div class="td c1">Not connected<div class="sub">standalone</div></div>
-    <div class="td"><div class="say">Save reads Download.</div></div>
-    <div class="td">Download the document, then open it in Obsidian. <span class="muted">(#931 ruling)</span></div>
-    <div class="td">Connection state in the header</div>
-    <div class="td">Nothing</div>
-  </div>
-
-  <div class="muted" style="font-size: 10px;">Text in quotation marks is the parser’s or the engine’s own sentence. The two Save rows follow the #931 ruling and are not parser text.</div>
-
-  <!-- two reference cards -->
-  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-
-    <div class="pane" style="padding: 9px 12px 10px; display: flex; flex-direction: column; gap: 6px;">
-      <div class="label rubric">Where a problem lands</div>
-      <div style="display: grid; grid-template-columns: 14px 1fr 14px 1fr; row-gap: 4px; column-gap: 7px; font-size: 11px; line-height: 1.35;">
-        <div class="mono muted" style="font-size: 10px;">1</div><div>The Problems strip under the result, on every screen</div>
-        <div class="mono muted" style="font-size: 10px;">2</div><div>The responsible Properties entry, in place of its result</div>
-        <div class="mono muted" style="font-size: 10px;">3</div><div>The note body’s marked line</div>
-        <div class="mono muted" style="font-size: 10px;">4</div><div>Advanced, with the caret at the line</div>
-      </div>
-      <div style="display: flex; align-items: center; gap: 8px; padding-top: 5px; border-top: 1px solid #efeadc;">
-        <div class="btn" style="height: 24px; padding: 0 9px; font-size: 11.5px; border-radius: 4px;">Show source</div>
-        <div class="btn" style="height: 24px; padding: 0 9px; font-size: 11.5px; border-radius: 4px;">Go to entry 3</div>
-        <div class="muted" style="font-size: 11px;">one problem, one way back</div>
+    <!-- left rail: the legend of what other problems say -->
+    <div style="display: flex; flex-direction: column; min-height: 0;">
+      <div class="col-title" style="margin-bottom: 4px;">From this paper</div>
+      <div class="muted small" style="margin-bottom: 10px;">Select one to put it in your note.</div>
+      <div class="pane" style="flex: 1;">
+        <div style="padding: 10px 12px; border-bottom: 1px solid #f1eee4;">
+          <div style="display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid #d8d2c2; border-radius: 6px; color: #b3ac9c;">⌕ Search</div>
+        </div>
+        <div style="flex: 1;"></div>
+        <div style="border-top: 1px solid #f1eee4; background: #f9f6ee;">
+          <div class="col-title" style="font-size: 15px; padding: 12px 10px 8px;">Other problems say</div>
+          <div class="lrow"><span class="n">Two highlight formats · keep one</span><span class="c">duplicate-annotation-section</span></div>
+          <div class="lrow"><span class="n">Two kept-up-to-date parts · keep one</span><span class="c">duplicate-managed-block</span></div>
+          <div class="lrow"><span class="n">A line ZotLit does not understand · see Advanced</span><span class="c">unknown-section-header / invalid-document</span></div>
+          <div class="lrow"><span class="n">Settings need a fix · see Advanced</span><span class="c">invalid-manifest</span></div>
+          <div class="lrow" style="border-bottom: none;"><span class="n">A property value has a mistake · fix it in Properties</span></div>
+        </div>
       </div>
     </div>
 
-    <div class="pane" style="padding: 9px 12px 10px; display: flex; flex-direction: column; gap: 6px;">
-      <div class="label rubric">What Save checks</div>
-      <div style="display: flex; flex-wrap: wrap; gap: 5px;">
-        <div class="label" style="font-size: 9.5px; color: #22354d; padding: 3px 7px; background: #f1eee4; border: 1px solid #d8d2c2; border-radius: 4px;">Structure</div>
-        <div class="label" style="font-size: 9.5px; color: #22354d; padding: 3px 7px; background: #f1eee4; border: 1px solid #d8d2c2; border-radius: 4px;">Manifest</div>
-        <div class="label" style="font-size: 9.5px; color: #22354d; padding: 3px 7px; background: #f1eee4; border: 1px solid #d8d2c2; border-radius: 4px;">Identity</div>
-        <div class="label" style="font-size: 9.5px; color: #22354d; padding: 3px 7px; background: #f1eee4; border: 1px solid #d8d2c2; border-radius: 4px;">Supported language</div>
-        <div class="label" style="font-size: 9.5px; color: #22354d; padding: 3px 7px; background: #f1eee4; border: 1px solid #d8d2c2; border-radius: 4px;">Dependencies</div>
-        <div class="label" style="font-size: 9.5px; color: #22354d; padding: 3px 7px; background: #f1eee4; border: 1px solid #d8d2c2; border-radius: 4px;">Versions</div>
-        <div class="label" style="font-size: 9.5px; color: #22354d; padding: 3px 7px; background: #fcf4ee; border: 1px solid #efc9b3; border-radius: 4px;">Loaded revision · connected</div>
+    <!-- your note -->
+    <div style="display: flex; flex-direction: column; min-height: 0;">
+      <div class="col-title" style="margin-bottom: 4px;">Your note</div>
+      <div class="muted small" style="margin-bottom: 10px;">Write it like any note. The orange parts fill in from Zotero.</div>
+      <div class="pane" style="flex: 1;">
+        <div class="note" style="flex: 1; overflow: hidden;"><span class="h1"># <span class="chip">Title</span></span>
+
+<span class="chip">Open in Zotero</span> · <span class="chip">PDF</span>
+<div class="band"><div class="bl"><span>Kept up to date</span><span>ZotLit refreshes this part. The rest stays yours.</span></div><span class="h2">## Highlights</span>
+<div class="empty"><div><div style="font-weight: 600; font-size: 13px; white-space: nowrap;">No highlight format yet</div><div class="muted small" style="white-space: nowrap;">Highlights cannot show without one.</div></div><div style="flex: 1;"></div><div class="btn fix">Add the highlight format</div></div></div>
+<span class="h2">## My reading notes</span>
+<span class="placeholder">Anything you write here stays yours.</span></div>
+        <div style="display: flex; gap: 22px; padding: 12px 20px; border-top: 1px solid #f1eee4; background: #f9f6ee;">
+          <a href="#" class="small" style="color: #22354d; white-space: nowrap;">Properties <span class="muted">· title, citekey, tags, status</span></a>
+          <a href="#" class="small" style="color: #22354d; white-space: nowrap;">Name and folder <span class="muted">· Literature/…</span></a>
+        </div>
       </div>
-      <div style="display: flex; align-items: flex-start; gap: 8px; padding-top: 5px; border-top: 1px solid #efeadc; font-size: 11px; line-height: 1.35;">
-        <span class="dot ok" style="margin-top: 5px;"></span>
-        <div>Preview failures stay separate: a document that parses but fails to render still saves.</div>
+    </div>
+
+    <!-- the result -->
+    <div style="display: flex; flex-direction: column; min-height: 0;">
+      <div class="col-title" style="margin-bottom: 4px;">The note you get</div>
+      <div class="muted small" style="margin-bottom: 10px;">For the paper above. Nothing is written until you save.</div>
+      <div style="flex: 1; overflow: hidden; padding: 2px 8px 8px 2px;">
+
+        <div class="notice">
+          <div class="t">Highlights have no format yet.</div>
+          <div class="s">Add one to show highlights in your notes.</div>
+          <div class="btn fix">Add the highlight format</div>
+        </div>
+
+        <div class="sheet">
+          <div class="muted small" style="margin-bottom: 10px;">Literature/rougier2014figures.md</div>
+          <div class="props">
+            <div><b>title</b><span>Ten Simple Rules for Better Figures</span></div>
+            <div><b>citekey</b><span>rougier2014figures</span></div>
+            <div><b>tags</b><span>figures, research</span></div>
+            <div><b>status</b><span>reading</span></div>
+          </div>
+          <div class="serif" style="font-size: 22px; font-weight: 500; line-height: 1.25; margin-bottom: 8px;">Ten Simple Rules for Better Figures</div>
+          <div style="margin-bottom: 14px;"><a href="#">Open in Zotero</a> · <a href="#">Rougier et al. - 2014 - Ten Simple Rules.pdf</a></div>
+          <div style="border-left: 4px solid #e8622c; background: #fdf6f1; margin: 0 -30px; padding: 10px 26px 12px 22px;">
+            <div class="serif" style="font-size: 17px; font-weight: 500; margin-bottom: 4px;">Highlights</div>
+            <div class="placeholder">2 highlights are waiting for a format.</div>
+          </div>
+          <div class="serif" style="font-size: 17px; font-weight: 500; margin: 16px 0 4px;">My reading notes</div>
+          <div class="placeholder">Anything you write here stays yours.</div>
+        </div>
       </div>
     </div>
   </div>
