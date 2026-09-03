@@ -31,7 +31,7 @@
   "devDependencies": {
     "@clack/prompts": "^0.11.0",
     "@hono/node-server": "catalog:",
-    "@js-temporal/polyfill": "^0.5.1",
+    "@js-temporal/polyfill": "catalog:",
     "@pnpm/find-workspace-dir": "catalog:",
     "@types/node": "catalog:",
     "@types/semver": "^7.7.1",

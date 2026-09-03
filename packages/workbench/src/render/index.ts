@@ -12,8 +12,24 @@ import thesis from "@/samples/thesis.json" with { type: "json" };
 import type { ItemSnapshot } from "@/snapshot/index";
 
 import { restoreTemplateData } from "./restore-template-data";
+import { failedRender, profileSourceRevision } from "./result";
+import type { ProfileRenderResult, RenderDiagnostic } from "./result";
 
 export { DEFAULT_PROFILE_SOURCE } from "./default-profile";
+export { failedRender, profileSourceRevision } from "./result";
+export type {
+  ProfileRenderResult,
+  RenderDiagnostic,
+  RenderedProperty,
+  RenderIdentity,
+} from "./result";
+export { createRenderScheduler } from "./scheduler";
+export type {
+  RenderRequest,
+  RenderScheduler,
+  RenderSchedulerOptions,
+  RenderWorkerHandle,
+} from "./scheduler";
 export { restoreTemplateData } from "./restore-template-data";
 
 export const SAMPLE_ITEMS = [
@@ -23,39 +39,12 @@ export const SAMPLE_ITEMS = [
   thesis,
 ] as unknown as readonly ItemSnapshot[];
 
-export interface RenderDiagnostic {
-  readonly code:
-    | "contract-version-mismatch"
-    | "invalid-profile"
-    | "property-error"
-    | "render-error";
-  readonly message: string;
-  readonly part?: "profile" | "properties" | "render";
-}
-
-export interface RenderedProperty {
-  readonly key: string;
-  readonly value?: unknown;
-  readonly missing: boolean;
-}
-
-export interface ProfileRenderResult {
-  readonly sourceRevision: string;
-  readonly snapshotRevision: string;
-  readonly filename: string | null;
-  readonly properties: readonly RenderedProperty[];
-  readonly creationBody: string | null;
-  readonly managedRegion: string | null;
-  readonly annotation: string | null;
-  readonly diagnostics: readonly RenderDiagnostic[];
-}
-
 export function renderProfile(
   source: string,
   snapshot: ItemSnapshot,
 ): ProfileRenderResult {
   const identity = {
-    sourceRevision: sourceHash(source),
+    sourceRevision: profileSourceRevision(source),
     snapshotRevision: snapshot.revision,
   };
   if (snapshot.contractVersion !== CONTRACT_VERSION) {
@@ -156,30 +145,6 @@ export function renderProfile(
   }
 }
 
-function failedRender(
-  identity: Pick<ProfileRenderResult, "sourceRevision" | "snapshotRevision">,
-  diagnostic: RenderDiagnostic,
-): ProfileRenderResult {
-  return {
-    ...identity,
-    filename: null,
-    properties: [],
-    creationBody: null,
-    managedRegion: null,
-    annotation: null,
-    diagnostics: [diagnostic],
-  };
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function sourceHash(source: string): string {
-  let hash = 2_166_136_261;
-  for (let index = 0; index < source.length; index++) {
-    hash ^= source.charCodeAt(index);
-    hash = Math.imul(hash, 16_777_619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }

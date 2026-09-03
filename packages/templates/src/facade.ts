@@ -50,7 +50,9 @@ export {
   CONVERTED_DEFAULT_PROFILE_DOCUMENT,
   convertLegacyFrontmatterFields,
   LegacyTemplateConversionError,
+  literatureNoteTemplateManifestRange,
   LiteratureNoteTemplateError,
+  parseLiteratureNoteTemplate,
   synthesizeLegacyLiteratureNoteTemplate,
 } from "./literature-note-template";
 export type {
