@@ -41,11 +41,25 @@ const semverSchema = v.pipe(
 );
 
 /**
- * The generated reference page carries its tables as `<ContractTable>`, which
- * the Markdown edition would otherwise emit as JSX. Replace each one with the
- * GFM table rendered from the same page model the component reads.
+ * Every collection's Markdown edition compiles to a `_markdown` component
+ * rather than a string: prose is still stringified at build time, while a JSX
+ * element keeps its evaluated props and resolves from the components map
+ * `src/lib/markdown-editions.tsx` hands it. A component that calls
+ * `asMarkdown()` there decides its own Markdown form; one that does not is
+ * serialized as JSX, the way the whole page once was.
  */
 const markdownEdition: LLMsOptions = {
+  output: "function",
+};
+
+/**
+ * The generated reference page carries its tables as `<ContractTable>`, which
+ * the Markdown edition would otherwise emit as JSX. Replace each one with the
+ * GFM table rendered from the same page model the component reads. `stringify`
+ * runs ahead of the JSX collection step, so the table lands as build-time text.
+ */
+const docsMarkdownEdition: LLMsOptions = {
+  ...markdownEdition,
   stringify(node) {
     if (node.type !== "mdxJsxFlowElement" || node.name !== "ContractTable") {
       return undefined;
@@ -89,7 +103,7 @@ export const docs = defineDocs({
     // pattern with `./`, which turns `!**/_*.mdx` into the inert `./!**/_*.mdx`.
     files: ["**/[!_]*.mdx"],
     postprocess: {
-      includeProcessedMarkdown: markdownEdition,
+      includeProcessedMarkdown: docsMarkdownEdition,
     },
   },
   meta: {
@@ -102,7 +116,7 @@ export const changelogs = defineCollections({
   dir: "content/changelog",
   async: true,
   postprocess: {
-    includeProcessedMarkdown: true,
+    includeProcessedMarkdown: markdownEdition,
   },
   schema: v.object({
     title: v.optional(v.string()),
@@ -119,7 +133,7 @@ export const blogs = defineCollections({
   dir: "content/blog",
   async: true,
   postprocess: {
-    includeProcessedMarkdown: true,
+    includeProcessedMarkdown: markdownEdition,
   },
   schema: v.object({
     title: v.string(),
