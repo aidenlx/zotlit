@@ -16,6 +16,10 @@ catalog:
   "@codemirror/language": 6.12.3
   "@codemirror/state": 6.5.0
   "@codemirror/view": 6.38.6
+  "@lezer/common": 1.5.2
+  "@lezer/highlight": 1.2.3
+  "@lezer/lr": 1.4.10
+  happy-dom: ^20.9.0
   yaml: ^2.9.0
   "@logtape/logtape": ^2.0.7
   "@pnpm/find-workspace-dir": ^1000.1.5

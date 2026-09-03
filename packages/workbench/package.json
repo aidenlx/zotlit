@@ -25,18 +25,29 @@
     "typecheck": "tsc --noEmit -p tsconfig.lib.json",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "generate:eta": "lezer-generator src/language/eta.grammar -o src/language/eta-parser.ts --typeScript"
   },
   "dependencies": {
-    "@zotlit/db": "workspace:*"
+    "@codemirror/lang-javascript": "6.2.5",
+    "@codemirror/lang-liquid": "6.3.2",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@lezer/common": "catalog:",
+    "@lezer/highlight": "catalog:",
+    "@lezer/lr": "catalog:",
+    "@zotlit/db": "workspace:*",
+    "@zotlit/templates": "workspace:*",
+    "arkregex": "catalog:"
   },
   "devDependencies": {
     "@codemirror/language": "catalog:",
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:",
+    "@lezer/generator": "1.8.0",
     "@types/node": "catalog:",
     "@zotlit/config": "workspace:*",
     "@zotlit/zotero-types": "workspace:*",
+    "happy-dom": "catalog:",
     "oxlint": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
