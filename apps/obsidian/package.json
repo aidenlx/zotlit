@@ -8,7 +8,7 @@
   "scripts": {
     "build": "vite build && npm run typecheck",
     "build:dev": "vite build --mode development",
-    "generate:language-packs": "obsidian-i18n compile --project ../../project.inlang --output src/lib/i18n/generated --exclude-prefix docs_ --target-locale-prefix notice_language_pack_ --target-locale-prefix settings_language_pack_",
+    "generate:language-packs": "obsidian-i18n compile --project ../../project.inlang --output src/lib/i18n/generated --exclude-prefix docs_ --exclude-prefix zotero. --include-message zotero.prefs_notify_section --include-message zotero.prefs_notify_enable.label --include-message zotero.prefs_notify_url --target-locale-prefix notice_language_pack_ --target-locale-prefix settings_language_pack_",
     "dev": "vite build --watch --mode development",
     "dev:vault": "npm run build:dev && ../../packages/scripts/scripts/obsidian-vault.ts open && npm run dev",
     "dev:i18n": "I18N_DEV_SERVER=true vite build --watch --mode development",

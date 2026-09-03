@@ -35,10 +35,10 @@ Reloads the Zotero database from disk. Use this after making changes in Zotero w
 
 Creates or updates a literature note for every item in every library of your [library scope](/docs/reference/settings#library-scope). Opens the same batch confirmation modal as a multi-item update from Zotero.
 
-| Entry point     | Details                                                                              |
-| --------------- | ------------------------------------------------------------------------------------ |
-| Command palette | Always available                                                                     |
-| Zotero          | Right-click a library or collection > **ZotLit > Create or Update Literature Notes** |
+| Entry point     | Details                                                                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Always available                                                                                                                                              |
+| Zotero          | Right-click a library or collection > <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} /> |
 
 The Zotero entry scopes the batch to the row you right-click: a library covers every item in it, a collection covers that collection and its subcollections. That target is exact, so it runs whether or not the row is in your library scope.
 
@@ -48,10 +48,10 @@ The Zotero entry scopes the batch to the row you right-click: a library covers e
 
 Imports all child notes attached to regular items and all standalone notes in every library of your [library scope](/docs/reference/settings#library-scope). Opens the same batch confirmation modal as a multi-note import from Zotero.
 
-| Entry point     | Details                                                                              |
-| --------------- | ------------------------------------------------------------------------------------ |
-| Command palette | Always available                                                                     |
-| Zotero          | Right-click a library or collection > **ZotLit > Import Child and Standalone Notes** |
+| Entry point     | Details                                                                                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette | Always available                                                                                                                                                    |
+| Zotero          | Right-click a library or collection > <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_import_all_notes.label"]()} /> |
 
 The Zotero entry scopes the import to the row you right-click, subcollections included. That target is exact, so it runs whether or not the row is in your library scope.
 

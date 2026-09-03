@@ -81,9 +81,9 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 
 ### i18n
 
-User-facing strings are sourced from `messages/{locale}.json` and consumed through the generated Language Pack facade. Run `/inlang-i18n` for message-format and runtime mechanics. Wording follows Obsidian's developer-guideline style (sentence case, terminology, phrasing) — run `/i18n-ui-text` before authoring or editing a string.
+User-facing strings are sourced from `messages/{locale}.json` and consumed through the generated Language Pack facade; ZotLit Companion copy lives in the same catalogs under the `zotero` object and compiles to Fluent at Companion build time. Run `/inlang-i18n` for message-format and runtime mechanics. Wording follows Obsidian's developer-guideline style (sentence case, terminology, phrasing) — run `/i18n-ui-text` before authoring or editing a string.
 
-User- and agent-facing copy has four sources: MDX under `apps/docs/content/`, i18n messages under `messages/`, Zotero companion locale files under `apps/zotero/locale/`, and the Template Workbench CLI guide at `apps/obsidian/src/services/template-workbench/guide.ts`. Use the canonical terms in [policies/vocabulary.md](policies/vocabulary.md).
+User- and agent-facing copy has three sources: MDX under `apps/docs/content/`, i18n messages under `messages/` (Obsidian, Companion, and docs alike), and the Template Workbench CLI guide at `apps/obsidian/src/services/template-workbench/guide.ts`. Use the canonical terms in [policies/vocabulary.md](policies/vocabulary.md).
 
 ## Conventions worth knowing
 

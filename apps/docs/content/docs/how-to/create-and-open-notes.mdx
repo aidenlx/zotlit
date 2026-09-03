@@ -106,13 +106,13 @@ Open the command palette and run:
 
 Obsidian opens a confirmation modal that lists what will be created and what will be updated. Review the list, then confirm to start the batch.
 
-In Zotero, right-click **My Library** or a group library in the sidebar. Choose **ZotLit > Create or Update Literature Notes**.
+In Zotero, right-click **My Library** or a group library in the sidebar. Choose <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} />.
 
 The Obsidian command covers every library in your <UiLabel name={m.settings_library_scope_name()} /> (set in <SettingsPath />). The Zotero entry covers the library you right-clicked, whatever your library scope is.
 
 ### Update one collection at once [#collection-wide]
 
-In Zotero, right-click a collection in the sidebar and choose **ZotLit > Create or Update Literature Notes**. Obsidian opens the same confirmation modal, scoped to that collection.
+In Zotero, right-click a collection in the sidebar and choose <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_update_all.label"]()} />. Obsidian opens the same confirmation modal, scoped to that collection.
 
 Items in nested subcollections are included, so you do not need to repeat the action on each child collection.
 
@@ -120,7 +120,7 @@ If the collection no longer exists in your Zotero database, Obsidian reports "Co
 
 ### Open or update a single item from Zotero
 
-When exactly one regular item is selected in the Zotero library, the top-level context menu shows **Open Literature Note in Obsidian**. This creates the note if none exists, or opens the existing one. The behavior matches the quick switcher.
+When exactly one regular item is selected in the Zotero library, the top-level context menu shows <UiLabel name={m["zotero.menu_item_open.label"]()} />. This creates the note if none exists, or opens the existing one. The behavior matches the quick switcher.
 
 ### Update multiple items at once
 
@@ -134,14 +134,14 @@ When exactly one regular item is selected in the Zotero library, the top-level c
   <Step>
     ### Open the ZotLit submenu
 
-    Right-click the selection, then open the **ZotLit** submenu.
+    Right-click the selection, then open the <UiLabel name={m["zotero.menu_submenu.label"]()} /> submenu.
 
   </Step>
   <Step>
     ### Choose an update action
 
-    - **Create or Update Literature Notes** creates a note for each item that does not have one yet, and refreshes existing notes with current Zotero data.
-    - **Update Literature Note Metadata** refreshes only the frontmatter of existing notes, leaving the note body unchanged. Items without an existing literature note are skipped.
+    - <UiLabel name={m["zotero.menu_item_update.label"]({ count: 2 })} /> creates a note for each item that does not have one yet, and refreshes existing notes with current Zotero data.
+    - <UiLabel name={m["zotero.menu_item_update_metadata.label"]()} /> refreshes only the frontmatter of existing notes, leaving the note body unchanged. Items without an existing literature note are skipped.
 
   </Step>
   <Step>

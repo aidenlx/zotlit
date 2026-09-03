@@ -629,11 +629,11 @@
   "settings_page_live_updates_desc": "Receive live updates from Zotero as you read and annotate, and refresh Zotero data the moment it changes.",
   "settings_live_updates_enabled_name": "Receive updates from Zotero",
   "settings_live_updates_enabled_desc": "Run a local listener so ZotLit Companion, the Zotero add-on, can signal reader activity and new database changes.",
-  "settings_live_updates_companion_desc": "Enable Obsidian notifications in the Companion to complete the connection.",
+  "settings_live_updates_companion_desc": "Under {section} in the Companion, turn on {label} to complete the connection.",
   "settings_live_updates_companion_install": "Install ZotLit Companion",
   "settings_live_updates_companion_setup": "Set up live updates",
   "settings_live_updates_port_name": "Port",
-  "settings_live_updates_port_desc": "Point the Companion at http://127.0.0.1:<port> to connect it.",
+  "settings_live_updates_port_desc": "Set the Companion's {label} to http://127.0.0.1:<port> to connect it.",
   "settings_live_updates_advanced": "Advanced",
   "settings_live_updates_hostname_name": "Hostname",
   "settings_live_updates_hostname_desc": "Address the listener binds to. Keep on 127.0.0.1 unless you know you need network access.",
@@ -800,5 +800,185 @@
         "count=*": "{first} et al."
       }
     }
-  ]
+  ],
+  "zotero": {
+    "prefs_pane_label": "ZotLit",
+    "prefs_notify_section": "Obsidian Notifications",
+    "prefs_notify_enable": {
+      "label": "Enable"
+    },
+    "prefs_notify_description": "Notifies ZotLit in Obsidian as you read and annotate, and when the database file has new changes.",
+    "prefs_notify_url": "Notify URL",
+    "prefs_database_section": "Database",
+    "prefs_wal_checkpoint": {
+      "label": "Keep the database file up to date for Obsidian"
+    },
+    "prefs_wal_checkpoint_description": "Writes recent changes from the write-ahead log to the main database file so ZotLit reads current data.",
+    "prefs_logging_section": "Logging",
+    "prefs_logging_level": "Console log level",
+    "prefs_log_level_trace": {
+      "label": "Trace"
+    },
+    "prefs_log_level_debug": {
+      "label": "Debug"
+    },
+    "prefs_log_level_info": {
+      "label": "Info"
+    },
+    "prefs_log_level_warning": {
+      "label": "Warning"
+    },
+    "prefs_log_level_error": {
+      "label": "Error"
+    },
+    "prefs_log_level_fatal": {
+      "label": "Fatal"
+    },
+    "menu_item_open": {
+      "label": "Open Literature Note in Obsidian"
+    },
+    "menu_submenu": {
+      "label": "ZotLit"
+    },
+    "menu_item_update": {
+      "label": [
+        {
+          "declarations": ["input count", "local countPlural = count: plural"],
+          "selectors": ["countPlural"],
+          "match": {
+            "countPlural=one": "Create or Update Literature Note",
+            "countPlural=*": "Create or Update Literature Notes"
+          }
+        }
+      ]
+    },
+    "menu_item_update_metadata": {
+      "label": "Update Literature Note Metadata"
+    },
+    "menu_item_import_child_notes": {
+      "label": "Import Child Notes"
+    },
+    "menu_item_import_notes": {
+      "label": [
+        {
+          "declarations": ["input count", "local countPlural = count: plural"],
+          "selectors": ["countPlural"],
+          "match": {
+            "countPlural=one": "Import Selected Note",
+            "countPlural=*": "Import Selected Notes"
+          }
+        }
+      ]
+    },
+    "menu_item_explore": {
+      "label": "Explore Template Data"
+    },
+    "menu_collection_update_all": {
+      "label": "Create or Update Literature Notes"
+    },
+    "menu_collection_import_all_notes": {
+      "label": "Import Child and Standalone Notes"
+    },
+    "menu_item_copy_key": {
+      "label": [
+        {
+          "declarations": [
+            "input count",
+            "input kind",
+            "local countPlural = count: plural"
+          ],
+          "selectors": ["countPlural", "kind"],
+          "match": {
+            "countPlural=one, kind=attachment": "Copy Attachment Key",
+            "countPlural=one, kind=childNote": "Copy Child Note Key",
+            "countPlural=one, kind=note": "Copy Note Key",
+            "countPlural=one, kind=*": "Copy Item Key",
+            "countPlural=*, kind=attachment": "Copy Attachment Keys",
+            "countPlural=*, kind=childNote": "Copy Child Note Keys",
+            "countPlural=*, kind=note": "Copy Note Keys",
+            "countPlural=*, kind=item": "Copy Item Keys",
+            "countPlural=*, kind=*": "Copy Selected Keys"
+          }
+        }
+      ]
+    },
+    "menu_reader_annot_explore": "Explore Annotation in Obsidian",
+    "menu_reader_annot_copy_key": "Copy Annotation Key",
+    "menu_reader_page_open": "Open Literature Note in Obsidian",
+    "batch_update_server_needed_title": "Can't update literature notes in Obsidian",
+    "batch_update_server_needed_message": "This selection is too large to send through a link. Enable the ZotLit server in Obsidian's settings, or select fewer items, and try again.",
+    "batch_update_sending_title": "Asking Obsidian to update literature notes…",
+    "batch_update_failed_title": "Couldn't reach Obsidian",
+    "batch_update_failed_message": "Make sure Obsidian is running with the ZotLit server enabled, then try again.",
+    "batch_update_sent_title": "Continue in Obsidian",
+    "batch_update_sent_message": [
+      {
+        "declarations": ["input count", "local countPlural = count: plural"],
+        "selectors": ["countPlural"],
+        "match": {
+          "countPlural=one": "Asked Obsidian to update 1 literature note. Switch to Obsidian to continue.",
+          "countPlural=*": "Asked Obsidian to update {count} literature notes. Switch to Obsidian to continue."
+        }
+      }
+    ],
+    "protocol_incompatible_title": "Update required",
+    "protocol_incompatible_message": "The ZotLit Obsidian plugin is on an incompatible version. Update both the Zotero and Obsidian plugins to matching versions and try again.",
+    "batch_import_sending_title": "Asking Obsidian to import notes…",
+    "batch_import_failed_title": "Couldn't reach Obsidian",
+    "batch_import_failed_message": "Make sure Obsidian is running with the ZotLit server enabled, then try again.",
+    "batch_import_sent_title": "Continue in Obsidian",
+    "batch_import_sent_message": [
+      {
+        "declarations": ["input count", "local countPlural = count: plural"],
+        "selectors": ["countPlural"],
+        "match": {
+          "countPlural=one": "Asked Obsidian to import 1 note. Switch to Obsidian to continue.",
+          "countPlural=*": "Asked Obsidian to import {count} notes. Switch to Obsidian to continue."
+        }
+      }
+    ],
+    "column_obsidian_note": "Literature Note",
+    "menu_tools_refresh_note_status": {
+      "label": "ZotLit: Refresh Literature Note Status"
+    },
+    "note_status_refreshing_title": "Refreshing literature note status…",
+    "note_status_refreshed_title": "Literature note status refreshed",
+    "note_status_refreshed_message": [
+      {
+        "declarations": ["input count", "local countPlural = count: plural"],
+        "selectors": ["countPlural"],
+        "match": {
+          "countPlural=one": "1 item has a literature note in Obsidian.",
+          "countPlural=*": "{count} items have literature notes in Obsidian."
+        }
+      }
+    ],
+    "note_status_refresh_failed_title": "Couldn't refresh literature note status",
+    "note_status_refresh_failed_message": "Make sure Obsidian is running with the ZotLit server enabled, then try again.",
+    "database_status": {
+      "tooltiptext": "Database Status"
+    },
+    "database_status_icon_off": {
+      "tooltiptext": "Database Status — automatic writes off"
+    },
+    "database_status_icon_failed": {
+      "tooltiptext": "Database Status — last write failed"
+    },
+    "database_status_working": "Changes are being written to the database file for Obsidian.",
+    "database_status_automatic_off": "Automatic writes to the database file are off. You can still write changes manually.",
+    "database_status_no_wal": "This database does not use a write-ahead log. Changes are already in the database file.",
+    "database_status_failed": "The last attempt to write changes to the database file failed.",
+    "database_status_never_written": "Nothing has been written yet.",
+    "database_status_last_written": "Last wrote changes {time}.",
+    "database_status_last_attempt": "Last attempt was {time}.",
+    "database_status_write_now": "Write Changes to Database File Now",
+    "database_status_guide": "Fix Stale Data…",
+    "database_write_running_title": "Writing changes to the database file…",
+    "database_write_done_title": "Database file updated",
+    "database_write_done_message": "Recent changes are now available to Obsidian.",
+    "database_write_in_use_title": "Database file is in use",
+    "database_write_in_use_message": "Wait a moment, then try again.",
+    "database_write_failed_title": "Couldn't write changes to the database file",
+    "database_write_failed_message": "Collect <a href=\"{debugLogsUrl}\" tooltiptext=\"{debugLogsUrl}\">Zotero debug logs</a>, then report the problem."
+  }
 }

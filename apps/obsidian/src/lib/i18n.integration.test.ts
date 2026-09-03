@@ -59,7 +59,12 @@ async function compileRealProject(): Promise<{
     root: workspaceRoot,
     project: "project.inlang",
     output,
-    excludeMessagePrefixes: ["docs_"],
+    excludeMessagePrefixes: ["docs_", "zotero."],
+    includeMessages: [
+      "zotero.prefs_notify_section",
+      "zotero.prefs_notify_enable.label",
+      "zotero.prefs_notify_url",
+    ],
     targetLocaleMessagePrefixes: [
       "notice_language_pack_",
       "settings_language_pack_",

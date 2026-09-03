@@ -588,11 +588,11 @@
   "settings_page_live_updates_desc": "在阅读和标注时接收 Zotero 的实时更新，并在 Zotero 数据变化时立即刷新。",
   "settings_live_updates_enabled_name": "接收来自 Zotero 的更新",
   "settings_live_updates_enabled_desc": "运行本地侦听器，使 ZotLit Companion（Zotero 扩展）可以发送阅读活动和数据库更改通知。",
-  "settings_live_updates_companion_desc": "在 Companion 中启用 Obsidian 通知以完成连接。",
+  "settings_live_updates_companion_desc": "在 Companion 的{section}下启用{label}以完成连接。",
   "settings_live_updates_companion_install": "安装 ZotLit Companion",
   "settings_live_updates_companion_setup": "设置实时更新",
   "settings_live_updates_port_name": "端口",
-  "settings_live_updates_port_desc": "将 Companion 指向 http://127.0.0.1:'<port>' 进行连接。",
+  "settings_live_updates_port_desc": "将 Companion 的{label}设为 http://127.0.0.1:'<port>' 以连接。",
   "settings_live_updates_advanced": "高级",
   "settings_live_updates_hostname_name": "主机名",
   "settings_live_updates_hostname_desc": "侦听器绑定到的地址。除非您知道需要网络访问，否则请保留 127.0.0.1。",
@@ -758,5 +758,132 @@
         "count=*": "{first}等"
       }
     }
-  ]
+  ],
+  "zotero": {
+    "prefs_pane_label": "ZotLit",
+    "prefs_notify_section": "Obsidian 通知",
+    "prefs_notify_enable": {
+      "label": "启用"
+    },
+    "prefs_notify_description": "在您阅读和标注时，以及数据库文件有新更改时，通知 Obsidian 中的 ZotLit。",
+    "prefs_notify_url": "通知 URL",
+    "prefs_database_section": "数据库",
+    "prefs_wal_checkpoint": {
+      "label": "为 Obsidian 保持数据库文件最新"
+    },
+    "prefs_wal_checkpoint_description": "将预写日志中的最新更改写入主数据库文件，使 ZotLit 读取到最新数据。",
+    "prefs_logging_section": "日志",
+    "prefs_logging_level": "控制台日志级别",
+    "prefs_log_level_trace": {
+      "label": "Trace"
+    },
+    "prefs_log_level_debug": {
+      "label": "Debug"
+    },
+    "prefs_log_level_info": {
+      "label": "Info"
+    },
+    "prefs_log_level_warning": {
+      "label": "Warning"
+    },
+    "prefs_log_level_error": {
+      "label": "Error"
+    },
+    "prefs_log_level_fatal": {
+      "label": "Fatal"
+    },
+    "menu_item_open": {
+      "label": "在 Obsidian 中打开文献笔记"
+    },
+    "menu_submenu": {
+      "label": "ZotLit"
+    },
+    "menu_item_update": {
+      "label": "创建或更新文献笔记"
+    },
+    "menu_item_update_metadata": {
+      "label": "更新文献笔记元数据"
+    },
+    "menu_item_import_child_notes": {
+      "label": "导入子笔记"
+    },
+    "menu_item_import_notes": {
+      "label": "导入所选笔记"
+    },
+    "menu_item_explore": {
+      "label": "探索模板数据"
+    },
+    "menu_collection_update_all": {
+      "label": "创建或更新文献笔记"
+    },
+    "menu_collection_import_all_notes": {
+      "label": "导入子笔记与独立笔记"
+    },
+    "menu_item_copy_key": {
+      "label": [
+        {
+          "declarations": ["input kind"],
+          "selectors": ["kind"],
+          "match": {
+            "kind=attachment": "复制附件标识符",
+            "kind=childNote": "复制子笔记标识符",
+            "kind=note": "复制笔记标识符",
+            "kind=item": "复制条目标识符",
+            "kind=*": "复制所选标识符"
+          }
+        }
+      ]
+    },
+    "menu_reader_annot_explore": "在 Obsidian 中探索标注",
+    "menu_reader_annot_copy_key": "复制标注标识符",
+    "menu_reader_page_open": "在 Obsidian 中打开文献笔记",
+    "batch_update_server_needed_title": "无法在 Obsidian 中更新文献笔记",
+    "batch_update_server_needed_message": "所选条目过多，无法通过链接发送。请在 Obsidian 设置中启用 ZotLit 服务器，或减少所选条目后重试。",
+    "batch_update_sending_title": "正在请求 Obsidian 更新文献笔记…",
+    "batch_update_failed_title": "无法连接到 Obsidian",
+    "batch_update_failed_message": "请确认 Obsidian 正在运行且已启用 ZotLit 服务器，然后重试。",
+    "batch_update_sent_title": "请在 Obsidian 中继续",
+    "batch_update_sent_message": "已请求 Obsidian 更新 {count} 条文献笔记。请切换到 Obsidian 继续。",
+    "protocol_incompatible_title": "需要更新",
+    "protocol_incompatible_message": "ZotLit Obsidian 插件版本不兼容。请将 Zotero 和 Obsidian 插件都更新到匹配的版本后重试。",
+    "batch_import_sending_title": "正在请求 Obsidian 导入笔记…",
+    "batch_import_failed_title": "无法连接到 Obsidian",
+    "batch_import_failed_message": "请确认 Obsidian 正在运行且已启用 ZotLit 服务器，然后重试。",
+    "batch_import_sent_title": "请在 Obsidian 中继续",
+    "batch_import_sent_message": "已请求 Obsidian 导入 {count} 条笔记。请切换到 Obsidian 继续。",
+    "column_obsidian_note": "文献笔记",
+    "menu_tools_refresh_note_status": {
+      "label": "ZotLit：刷新文献笔记状态"
+    },
+    "note_status_refreshing_title": "正在刷新文献笔记状态…",
+    "note_status_refreshed_title": "文献笔记状态已刷新",
+    "note_status_refreshed_message": "{count} 个条目在 Obsidian 中有文献笔记。",
+    "note_status_refresh_failed_title": "无法刷新文献笔记状态",
+    "note_status_refresh_failed_message": "请确认 Obsidian 正在运行且已启用 ZotLit 服务器，然后重试。",
+    "database_status": {
+      "tooltiptext": "数据库状态"
+    },
+    "database_status_icon_off": {
+      "tooltiptext": "数据库状态 — 自动写入已关闭"
+    },
+    "database_status_icon_failed": {
+      "tooltiptext": "数据库状态 — 上次写入失败"
+    },
+    "database_status_working": "正在为 Obsidian 将更改写入数据库文件。",
+    "database_status_automatic_off": "已关闭自动写入数据库文件。您仍可手动写入更改。",
+    "database_status_no_wal": "此数据库未使用预写日志。更改已直接写入数据库文件。",
+    "database_status_failed": "上次尝试将更改写入数据库文件时失败。",
+    "database_status_never_written": "尚未写入任何更改。",
+    "database_status_last_written": "上次写入时间：{time}。",
+    "database_status_last_attempt": "上次尝试时间：{time}。",
+    "database_status_write_now": "立即将更改写入数据库文件",
+    "database_status_guide": "修复陈旧数据…",
+    "database_write_running_title": "正在将更改写入数据库文件…",
+    "database_write_done_title": "数据库文件已更新",
+    "database_write_done_message": "Obsidian 现在可以读取最新更改。",
+    "database_write_in_use_title": "数据库文件正在使用中",
+    "database_write_in_use_message": "请稍候片刻，然后重试。",
+    "database_write_failed_title": "无法将更改写入数据库文件",
+    "database_write_failed_message": "请收集 <a href=\"{debugLogsUrl}\" tooltiptext=\"{debugLogsUrl}\">Zotero 调试日志</a>，然后报告此问题。"
+  }
 }
