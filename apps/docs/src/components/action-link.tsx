@@ -1,4 +1,5 @@
 import Link from "fumadocs-core/link";
+import { asMarkdown, md } from "fumadocs-core/server";
 import { ArrowUpRight, Download, Link as LinkIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -34,6 +35,17 @@ export function ActionLink({
   filename,
   children,
 }: ActionLinkProps) {
+  // The Markdown edition keeps the link and drops the chrome: the kind glyph,
+  // the trailing arrow, and the new-tab behaviour have no Markdown form, and
+  // the link text already names the action the glyph stands for. A download's
+  // filename follows the link the way it sits beside it on the page.
+  if (asMarkdown()) {
+    const trailing = filename ? ` \`${filename}\`` : "";
+    // Every call site places the device on its own line, so the empty line
+    // prefix is here for the block framing it carries, not for a prefix.
+    return md.linePrefix("")`[${children}](${href})${trailing}`;
+  }
+
   const Icon = icons[kind];
   const isSelfLink = href.startsWith("/");
   const linkClassName = cn(

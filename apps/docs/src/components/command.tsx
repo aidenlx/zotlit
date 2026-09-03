@@ -1,6 +1,7 @@
 // "Run this Obsidian command" mark for docs prose: a terminal rubric with the
 // command-palette name in the serif display voice. The block form adds a
 // copy-to-clipboard link; the inline form stays minimal — glyph + name only.
+import { asMarkdown, md } from "fumadocs-core/server";
 import { Terminal } from "lucide-react";
 import { useState } from "react";
 
@@ -29,6 +30,16 @@ export function Command(props: CommandProps) {
   const inline = props.inline ?? false;
   const commandName =
     props.name === undefined ? props.children : `ZotLit: ${props.name}`;
+
+  // The Markdown edition carries the command name as code. The inline form
+  // stays mid-sentence; the block form keeps its standalone rubric as a
+  // blockquote, where the terminal glyph becomes the word it stands for and
+  // the copy affordance drops — a reader of Markdown already has the text.
+  if (asMarkdown()) {
+    return inline
+      ? md`\`${commandName}\``
+      : md.linePrefix("> ")`Command: \`${commandName}\``;
+  }
 
   if (inline) {
     return (

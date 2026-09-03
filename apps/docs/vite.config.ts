@@ -6,6 +6,7 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { fumadocsMdx } from "fumadocs-mdx/vite";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 
@@ -25,6 +26,37 @@ process.env.MINIFLARE_REGISTRY_PATH ??= resolve(
   packageRoot,
   ".wrangler/registry",
 );
+/** The real `fumadocs-core/server`, the entry its `import` condition names. */
+const fumadocsServer = fileURLToPath(
+  import.meta.resolve("fumadocs-core/server"),
+);
+
+/**
+ * `fumadocs-core/server` lists its `browser` export condition first, and the
+ * Worker carries that condition — `@cloudflare/vite-plugin` resolves `workerd`,
+ * `worker`, `module`, `browser` — so the Worker would load the stub whose
+ * `renderToMarkdown` throws. The Markdown editions render inside the Worker, so
+ * that environment alone takes the real entry; the client keeps the stub, which
+ * is what holds Markdown rendering out of its bundle. This is a `resolveId`
+ * hook rather than an alias because Vite resolves `resolve.alias` once for
+ * every environment, leaving no place to name the Worker on its own.
+ */
+function fumadocsServerOnWorker(): Plugin {
+  return {
+    name: "zotlit:fumadocs-server-on-worker",
+    enforce: "pre",
+    resolveId(source) {
+      if (
+        source !== "fumadocs-core/server" ||
+        this.environment.name !== "ssr"
+      ) {
+        return undefined;
+      }
+      return fumadocsServer;
+    },
+  };
+}
+
 let docsLine: Cloudflare.Env["DOCS_LINE"] | undefined;
 
 function resolvedDocsLine(): Cloudflare.Env["DOCS_LINE"] {
@@ -146,6 +178,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    fumadocsServerOnWorker(),
     paraglideVitePlugin({
       project: "../../project.inlang",
       outdir: "./src/paraglide",
