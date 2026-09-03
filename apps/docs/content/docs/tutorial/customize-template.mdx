@@ -9,6 +9,7 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
@@ -30,7 +31,7 @@ Each annotation in your note renders as a callout block. The built-in template u
   <Step>
     ### Create the editable template file
 
-    Open ZotLit's settings in Obsidian (**Settings > ZotLit**) and go to the <UiLabel name={m.settings_page_templates()} /> sub-page. Under the <UiLabel name={m.settings_template_files_heading()} /> group, find the row labeled <UiLabel name={m.settings_template_name_annotation()} />.
+    Open ZotLit's settings in Obsidian (<SettingsPath />) and go to the <UiLabel name={m.settings_page_templates()} /> sub-page. Under the <UiLabel name={m.settings_template_files_heading()} /> group, find the row labeled <UiLabel name={m.settings_template_name_annotation()} />.
 
     Click the pen icon button to the right of the row. Its tooltip reads "<UiLabel name={m.settings_template_eject()} />."
 

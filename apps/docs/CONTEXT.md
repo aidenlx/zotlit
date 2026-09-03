@@ -17,7 +17,7 @@ A stable, untranslated name that identifies a product control or choice in the E
 _Avoid_: UI text, product copy
 
 **Settings Path**:
-The bold navigation route from Obsidian Settings to a ZotLit settings page or one setting on it, always written from Settings through the ZotLit tab. Documentation renders it as one unit rather than as separate labels.
+The bold navigation route from Obsidian Settings to the ZotLit tab, one of its settings pages, or one setting on that page, always written from Settings through the ZotLit tab. Documentation renders it as one unit rather than as separate labels.
 _Avoid_: settings breadcrumb, menu path, Community plugins route
 
 **Section Index**:

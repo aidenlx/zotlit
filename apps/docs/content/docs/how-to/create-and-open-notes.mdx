@@ -58,7 +58,7 @@ You can also place the cursor on a recognized citation and run <Command inline n
 
 ZotLit recognizes bare keys and citation clusters alike: `@key`, `-@key`, `[@key]`, `[@key, p. 3]`, and multi-cite `[@a; @b]`.
 
-A click resolves the citation key against Zotero's native citation key field, across every library in your <UiLabel name={m.settings_library_scope_name()} /> (set at the top of **Settings > ZotLit**). When a Zotero item carries that key and already has a literature note, ZotLit opens the note. When the item exists but has no literature note yet, ZotLit creates one and opens it.
+A click resolves the citation key against Zotero's native citation key field, across every library in your <UiLabel name={m.settings_library_scope_name()} /> (set at the top of <SettingsPath />). When a Zotero item carries that key and already has a literature note, ZotLit opens the note. When the item exists but has no literature note yet, ZotLit creates one and opens it.
 
 If the item is not found in your Zotero library, a notice appears: "No Zotero item with citation key `@{key}`." If the database is unavailable, ZotLit shows "Open the Zotero database to look up citation key `@{key}`."
 
@@ -108,7 +108,7 @@ Obsidian opens a confirmation modal that lists what will be created and what wil
 
 In Zotero, right-click **My Library** or a group library in the sidebar. Choose **ZotLit > Create or Update Literature Notes**.
 
-The Obsidian command covers every library in your <UiLabel name={m.settings_library_scope_name()} /> (set in **Settings > ZotLit**). The Zotero entry covers the library you right-clicked, whatever your library scope is.
+The Obsidian command covers every library in your <UiLabel name={m.settings_library_scope_name()} /> (set in <SettingsPath />). The Zotero entry covers the library you right-clicked, whatever your library scope is.
 
 ### Update one collection at once [#collection-wide]
 
