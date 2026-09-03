@@ -62,6 +62,14 @@
     .dot { width: 7px; height: 7px; border-radius: 50%; background: #5f9b62; flex: none; }
     .exrow { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid #f1eee4; white-space: nowrap; }
     .exrow .exn { width: 130px; flex: none; font-size: 13px; }
+    .dot.bad { background: #c0442a; }
+    .bad { color: #c0442a; }
+    /* editable parts: the same boxes, now typed into */
+    .field input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: #22354d; font: 400 14px Inter, sans-serif; padding: 0; }
+    .field input.mono { font-family: "SF Mono", Menlo, ui-monospace, monospace; font-size: 13px; }
+    .field.tap { cursor: text; }
+    .field select { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: #22354d; font: 400 14px Inter, sans-serif; padding: 0; appearance: none; -webkit-appearance: none; }
+    .exrow .btn { cursor: pointer; }
   </style>
 </helmet>
 <div style="width: 1440px; height: 1000px; display: flex; flex-direction: column; background: #f9f6ee; overflow: hidden;">
@@ -117,25 +125,25 @@
 
           <div class="fgroup">
             <div class="flabel">Folder</div>
-            <div class="field">Literature/</div>
+            <div class="field"><input id="folder" value="Literature/" aria-label="Folder"></div>
             <div class="fhint">Inside your vault. Made if missing.</div>
           </div>
 
           <div class="fgroup">
             <div class="flabel">File name</div>
-            <div class="field"><span class="chip">Citation key</span><span class="btn mini quiet" style="margin-left: auto;">Fields</span></div>
+            <div class="field tap" id="namebox"><span id="nameview" style="display: flex; align-items: center;"></span><span class="btn mini quiet" style="margin-left: auto;">Fields</span></div>
             <div class="fhint">Type <span class="mono">{{</span> to add a field. One line; ZotLit adds <span class="mono">.md</span>.</div>
           </div>
 
           <div class="fgroup">
             <div class="flabel">For this paper</div>
-            <div class="field"><span class="dot"></span><span class="mono">Literature/rougier2014figures.md</span></div>
+            <div class="field"><span class="dot" id="pvdot"></span><span class="mono" id="pvtext">Literature/rougier2014figures.md</span></div>
             <div class="fhint">No note with this name yet.</div>
           </div>
 
           <div class="fgroup">
             <div class="flabel">Citation style</div>
-            <div class="field sel"><span>APA 7th edition</span><span class="muted">&#9662;</span></div>
+            <div class="field sel"><select id="style" aria-label="Citation style"><option>APA 7th edition</option><option>Chicago 17th (author-date)</option><option>IEEE</option><option>Vancouver</option></select><span class="muted">&#9662;</span></div>
             <div class="fhint">Used by the Citation field and copied links.</div>
           </div>
 
@@ -145,9 +153,9 @@
 
           <div class="fgroup">
             <div class="flabel">Other ways people name notes</div>
-            <div class="exrow"><span class="exn">Citation key</span><span class="mono muted">rougier2014figures.md</span><span class="btn mini quiet" style="margin-left: auto;">Use</span></div>
-            <div class="exrow"><span class="exn">Year &middot; Short title</span><span class="mono muted">2014 - Ten Simple Rules.md</span><span class="btn mini quiet" style="margin-left: auto;">Use</span></div>
-            <div class="exrow"><span class="exn">First author &middot; Year</span><span class="mono muted">Rougier 2014.md</span><span class="btn mini quiet" style="margin-left: auto;">Use</span></div>
+            <div class="exrow" data-use="{{ zt.citekey }}"><span class="exn">Citation key</span><span class="mono muted">rougier2014figures.md</span><span class="btn mini quiet" style="margin-left: auto;">Use</span></div>
+            <div class="exrow" data-use='{{ zt.date | date: "%Y" }} - {{ zt.shortTitle }}'><span class="exn">Year &middot; Short title</span><span class="mono muted">2014 - Ten Simple Rules.md</span><span class="btn mini quiet" style="margin-left: auto;">Use</span></div>
+            <div class="exrow" data-use='{{ zt.creators | first | map: "lastName" }} {{ zt.date | date: "%Y" }}'><span class="exn">First author &middot; Year</span><span class="mono muted">Rougier 2014.md</span><span class="btn mini quiet" style="margin-left: auto;">Use</span></div>
           </div>
 
         </div>
@@ -163,7 +171,7 @@
       <div class="muted small" style="margin-bottom: 10px;">For the paper above. Nothing is written until you save.</div>
       <div style="flex: 1; overflow: hidden; padding: 2px 8px 8px 2px;">
         <div class="sheet">
-          <div class="muted small" style="margin-bottom: 10px;"><span style="background: #f9ece1; border-radius: 4px; padding: 2px 6px;">Literature/rougier2014figures.md</span></div>
+          <div class="muted small" style="margin-bottom: 10px;"><span id="pathline" style="background: #f9ece1; border-radius: 4px; padding: 2px 6px;">Literature/rougier2014figures.md</span></div>
           <div class="props">
             <div><b>title</b><span>Ten Simple Rules for Better Figures</span></div>
             <div><b>citekey</b><span>rougier2014figures</span></div>
@@ -184,6 +192,259 @@
     </div>
   </div>
 </div>
+<script>
+(function () {
+  /* ---- the paper on screen, fixed and in memory ---- */
+  var zt = {
+    title: "Ten Simple Rules for Better Figures",
+    shortTitle: "Ten Simple Rules",
+    citekey: "rougier2014figures",
+    date: "2014-09-11",
+    year: 2014,
+    publicationTitle: "PLOS Computational Biology",
+    DOI: "10.1371/journal.pcbi.1003833",
+    tags: ["figures", "research"],
+    abstract: "Scientific visualization is classically defined as the process of…",
+    creators: [
+      { lastName: "Rougier", firstName: "Nicolas P." },
+      { lastName: "Droettboom", firstName: "Michael" },
+      { lastName: "Bourne", firstName: "Philip E." },
+    ],
+  };
+  var CTX = { zt: zt };
+
+  /* ---- a small Liquid subset + a small JSON-e subset ---- */
+  function fail(msg) { var e = new Error(msg); e.msg = msg; return e; }
+  function msgOf(e) { return e && e.msg ? e.msg : String((e && e.message) || e); }
+
+  function splitTop(s, ch) {
+    var out = [], cur = "", q = null;
+    for (var i = 0; i < s.length; i++) {
+      var c = s[i];
+      if (q) { cur += c; if (c === q) q = null; }
+      else if (c === '"' || c === "'") { q = c; cur += c; }
+      else if (c === ch) { out.push(cur); cur = ""; }
+      else cur += c;
+    }
+    out.push(cur);
+    return out;
+  }
+  function literal(t) {
+    if (/^"[^"]*"$/.test(t) || /^'[^']*'$/.test(t)) return t.slice(1, -1);
+    if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+    if (t === "true") return true;
+    if (t === "false") return false;
+    if (t === "nil" || t === "null") return null;
+    return undefined;
+  }
+  function resolve(path, ctx) {
+    var parts = path.split("."), v = ctx;
+    for (var i = 0; i < parts.length; i++) {
+      if (v === null || v === undefined || !(parts[i] in Object(v))) throw fail("does not know the field '" + path + "'");
+      v = v[parts[i]];
+    }
+    return v;
+  }
+  function toArr(v) { return Array.isArray(v) ? v : (v === undefined || v === null ? [] : [v]); }
+  var FILTERS = {
+    join: function (v, s) { return toArr(v).map(text).join(s === undefined ? ", " : s); },
+    first: function (v) { return Array.isArray(v) || typeof v === "string" ? v[0] : v; },
+    last: function (v) { return Array.isArray(v) || typeof v === "string" ? v[v.length - 1] : v; },
+    upcase: function (v) { return text(v).toUpperCase(); },
+    downcase: function (v) { return text(v).toLowerCase(); },
+    truncate: function (v, n) { var s = text(v); n = n === undefined ? 50 : n; return s.length <= n ? s : s.slice(0, Math.max(0, n - 1)) + "…"; },
+    "default": function (v, d) { var empty = v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length); return empty ? d : v; },
+    date: function (v, f) {
+      var m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!m) throw fail("cannot read a date from '" + text(v) + "'");
+      return (f === undefined ? "%Y" : f).replace("%Y", m[1]).replace("%m", m[2]).replace("%d", m[3]);
+    },
+    map: function (v, k) {
+      if (Array.isArray(v)) return v.map(function (x) { return x === null || x === undefined ? undefined : x[k]; });
+      if (v && typeof v === "object") return v[k];
+      return undefined;
+    },
+    size: function (v) { return Array.isArray(v) || typeof v === "string" ? v.length : Object.keys(Object(v)).length; },
+  };
+  function valueOf(t, ctx) {
+    t = t.trim();
+    if (!t) return undefined;
+    var l = literal(t);
+    if (l !== undefined) return l;
+    if (/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)*$/.test(t)) return resolve(t, ctx);
+    throw fail("cannot read '" + t + "'");
+  }
+  function evalExpr(src, ctx) {
+    var parts = splitTop(String(src), "|");
+    var v = valueOf(parts[0], ctx);
+    for (var i = 1; i < parts.length; i++) {
+      var seg = parts[i].trim();
+      if (!seg) continue;
+      var ci = seg.indexOf(":");
+      var name = (ci < 0 ? seg : seg.slice(0, ci)).trim();
+      var fn = FILTERS[name];
+      if (!fn) throw fail("does not know the filter '" + name + "'");
+      var args = ci < 0 ? [] : splitTop(seg.slice(ci + 1), ",").map(function (a) { return valueOf(a, ctx); });
+      v = fn.apply(null, [v].concat(args));
+    }
+    return v;
+  }
+  function truthy(v) { return !(v === undefined || v === null || v === false || v === "" || (Array.isArray(v) && !v.length)); }
+  function text(v) {
+    if (v === undefined || v === null) return "";
+    if (Array.isArray(v)) return v.map(text).join(", ");
+    if (typeof v === "object") return JSON.stringify(v);
+    return String(v);
+  }
+  var TAG = /\{\{([\s\S]*?)\}\}|\{%([\s\S]*?)%\}/g;
+  function renderTpl(src, ctx) {
+    var out = "", last = 0, m, stack = [], emit = true;
+    TAG.lastIndex = 0;
+    while ((m = TAG.exec(src))) {
+      if (emit) out += src.slice(last, m.index);
+      last = m.index + m[0].length;
+      if (m[1] !== undefined) { if (emit) out += text(evalExpr(m[1], ctx)); }
+      else {
+        var t = m[2].trim();
+        if (/^if\s/.test(t)) { stack.push(emit); emit = emit && truthy(evalExpr(t.slice(3), ctx)); }
+        else if (t === "else") { var p = stack.length ? stack[stack.length - 1] : true; emit = p && !emit; }
+        else if (t === "endif") { emit = stack.length ? stack.pop() : true; }
+        else throw fail("does not know the tag '" + t + "'");
+      }
+    }
+    if (emit) out += src.slice(last);
+    return out;
+  }
+  var ONE = /^\s*\{\{([^{}]*)\}\}\s*$/;
+  /** A lone output tag keeps its own type; anything else renders to text. */
+  function evalValue(src, ctx) {
+    var m = ONE.exec(src);
+    return m ? evalExpr(m[1], ctx) : renderTpl(src, ctx);
+  }
+  function jsonE(node, ctx) {
+    if (Array.isArray(node)) return node.map(function (n) { return jsonE(n, ctx); });
+    if (node && typeof node === "object") {
+      if ("$eval" in node) return evalExpr(node.$eval, ctx);
+      if ("$if" in node) {
+        var c = typeof node.$if === "string" ? evalExpr(node.$if, ctx) : jsonE(node.$if, ctx);
+        if (truthy(c)) return "then" in node ? jsonE(node.then, ctx) : undefined;
+        return "else" in node ? jsonE(node.else, ctx) : undefined;
+      }
+      if ("$map" in node) {
+        var arr = typeof node.$map === "string" ? evalExpr(node.$map, ctx) : jsonE(node.$map, ctx);
+        var ek = Object.keys(node).filter(function (k) { return /^each\(.+\)$/.test(k); })[0];
+        if (!ek) throw fail("needs an each(...) key next to $map");
+        var name = ek.slice(5, -1);
+        return toArr(arr).map(function (x) {
+          var sub = {};
+          for (var k in ctx) sub[k] = ctx[k];
+          sub[name] = x;
+          return jsonE(node[ek], sub);
+        });
+      }
+      var o = {};
+      Object.keys(node).forEach(function (k) {
+        var v = jsonE(node[k], ctx);
+        if (v !== undefined) o[k] = v;
+      });
+      return o;
+    }
+    return node;
+  }
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  var CHIPS = {
+    "zt.title": "Title",
+    "zt.citekey": "Citation key",
+    "zt.tags": "Tags",
+    "zt.shortTitle": "Short title",
+    "zt.publicationTitle": "Journal",
+  };
+
+  var nameTpl = "{{ zt.citekey }}";
+  var folderEl = document.getElementById("folder");
+  var box = document.getElementById("namebox");
+  var view = document.getElementById("nameview");
+  var dot = document.getElementById("pvdot");
+  var out = document.getElementById("pvtext");
+  var pathline = document.getElementById("pathline");
+
+  /** The chip echo: {{ … }} become chips, the rest stays plain. */
+  function chips(src) {
+    var html = "", last = 0, m;
+    var re = /\{\{([\s\S]*?)\}\}/g;
+    while ((m = re.exec(src))) {
+      html += esc(src.slice(last, m.index));
+      last = m.index + m[0].length;
+      var inner = m[1].trim();
+      var label = CHIPS[inner];
+      html += label
+        ? '<span class="chip">' + esc(label) + "</span>"
+        : '<span class="chip open"><span class="k">' + esc(inner) + "</span></span>";
+      re.lastIndex = last;
+    }
+    html += esc(src.slice(last));
+    return html || '<span class="muted">empty</span>';
+  }
+
+  function preview() {
+    var folder = folderEl.value;
+    if (folder && folder.slice(-1) !== "/") folder += "/";
+    var name, problem = null;
+    try {
+      name = String(renderTpl(nameTpl, CTX)).replace(/[\r\n]+/g, " ").trim();
+      if (!name) problem = "The name is empty. Add a field or some text.";
+      else if (/[\/\\:]/.test(name)) problem = "A file name cannot hold / \\ or :.";
+    } catch (x) {
+      problem = "The name template " + msgOf(x) + ".";
+    }
+    if (problem) {
+      dot.className = "dot bad";
+      out.className = "mono bad";
+      out.textContent = problem;
+      pathline.textContent = folder;
+    } else {
+      dot.className = "dot";
+      out.className = "mono";
+      out.textContent = folder + name + ".md";
+      pathline.textContent = folder + name + ".md";
+    }
+    view.innerHTML = chips(nameTpl);
+  }
+
+  /* the name field: the chip echo at rest, a plain input while typing */
+  function edit() {
+    if (box.querySelector("input")) return;
+    var i = document.createElement("input");
+    i.className = "mono";
+    i.value = nameTpl;
+    i.setAttribute("aria-label", "File name");
+    i.addEventListener("input", function () { nameTpl = i.value; preview(); });
+    i.addEventListener("blur", function () { i.remove(); view.style.display = ""; preview(); });
+    i.addEventListener("keydown", function (ev) { if (ev.key === "Enter" || ev.key === "Escape") i.blur(); });
+    view.style.display = "none";
+    box.insertBefore(i, view);
+    i.focus();
+    i.select();
+  }
+  box.addEventListener("click", function (ev) { if (!ev.target.closest(".btn")) edit(); });
+
+  folderEl.addEventListener("input", preview);
+
+  Array.prototype.forEach.call(document.querySelectorAll(".exrow[data-use]"), function (row) {
+    row.querySelector(".btn").addEventListener("click", function () {
+      nameTpl = row.dataset.use;
+      var i = box.querySelector("input");
+      if (i) i.value = nameTpl;
+      preview();
+    });
+  });
+
+  preview();
+})();
+</script>
 </x-dc>
 </body>
 </html>

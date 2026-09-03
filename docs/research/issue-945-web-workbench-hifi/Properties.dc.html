@@ -69,6 +69,21 @@
     .seg span.on { background: #f9ece1; color: #c94d15; font-weight: 500; }
     .ed { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border: 1px solid #e8622c; border-radius: 6px; background: #fff; white-space: nowrap; overflow: hidden; }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: #5f9b62; flex: none; }
+    .dot.bad { background: #c0442a; }
+    /* one problem, said calmly */
+    .notice { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border: 1px solid #e3cf92; border-left: 4px solid #d8a72c; background: #fdf8e7; border-radius: 6px; padding: 12px 16px; margin-bottom: 12px; }
+    .notice .t { font-weight: 600; font-size: 14px; }
+    .notice .s { color: #5d6d82; font-size: 13px; }
+    /* editable parts: same boxes, now typed into */
+    .prow { cursor: default; }
+    .prow.pick { cursor: pointer; }
+    .prow.pick:hover { background: #f9f6ee; }
+    .inp input { width: 100%; border: none; outline: none; background: transparent; color: #22354d; font: 500 14px Inter, sans-serif; padding: 0; }
+    .ed textarea { flex: 1; min-width: 0; border: none; outline: none; background: transparent; color: #22354d; resize: none; overflow: auto; font-family: "SF Mono", Menlo, ui-monospace, monospace; font-size: 13px; line-height: 20px; height: 20px; padding: 0; }
+    .ed.tall { height: auto; align-items: stretch; padding: 8px 10px; }
+    .ed.tall textarea { height: 76px; white-space: pre; }
+    .seg span { cursor: pointer; }
+    .bad { color: #c0442a; }
   </style>
 </helmet>
 <div style="width: 1440px; height: 900px; display: flex; flex-direction: column; background: #f9f6ee; overflow: hidden;">
@@ -120,41 +135,8 @@
       <div class="col-title" style="margin-bottom: 4px;">Properties</div>
       <div class="muted small" style="margin-bottom: 10px;">The fields at the top of every note. Select one to edit it.</div>
       <div class="pane" style="flex: 1;">
-        <div style="flex: 1; overflow: hidden;">
-
-          <div class="prow">
-            <div class="top"><span class="pname">title</span><span class="pval"><span class="chip">Title</span></span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b3ac9c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg></span></div>
-            <div class="sub">Ten Simple Rules for Better Figures</div>
-          </div>
-
-          <div class="prow">
-            <div class="top"><span class="pname">citekey</span><span class="pval"><span class="chip">Citation key</span></span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b3ac9c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg></span></div>
-            <div class="sub">rougier2014figures</div>
-          </div>
-
-          <div class="prow sel">
-            <div class="top" style="gap: 10px;"><span class="inp" style="width: 150px;">tags</span><div class="seg" style="margin-left: auto;"><span class="on">Value &middot; Liquid</span><span>Rule &middot; JSON-e</span></div></div>
-            <div class="ed" style="margin-top: 10px;"><span class="mono">{{ zt.tags | join: ", " }}</span><span class="muted small" style="margin-left: auto;"><span class="mono">{{</span> opens the field list</span><span class="btn mini">Fields</span></div>
-            <div class="sub" style="display: flex; align-items: center; gap: 8px;"><span class="muted">For this paper</span><span class="dot"></span><span>figures, research</span><span class="muted">&middot; list</span></div>
-            <div class="facts" style="display: flex; align-items: center; gap: 8px; margin-top: 10px;"><span class="btn mini quiet">Done</span><span class="btn mini quiet">Remove</span></div>
-          </div>
-
-          <div class="prow">
-            <div class="top"><span class="pname">status</span><span class="pval">reading</span><span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b3ac9c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg></span></div>
-            <div class="sub">the same for every note</div>
-          </div>
-
-          <div class="prow">
-            <div class="top"><span class="pname">Several from a rule</span><span class="pval"><span class="ro">read-only</span></span></div>
-            <div class="sub">adds year and journal &middot; edit the rule in Advanced</div>
-            <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
-              <div style="display: flex; align-items: center; gap: 12px;"><span class="ro">year</span><span class="muted small">2014</span></div>
-              <div style="display: flex; align-items: center; gap: 12px;"><span class="ro">journal</span><span class="muted small">PLOS Computational Biology</span></div>
-            </div>
-          </div>
-
-        </div>
-        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid #f1eee4;"><div class="btn quiet">+ Add property</div><span class="muted small" style="white-space: nowrap;">A new property starts as a Value in Liquid.</span></div>
+        <div id="plist" style="flex: 1; overflow: auto;"></div>
+        <div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid #f1eee4;"><div class="btn quiet" id="addprop">+ Add property</div><span class="muted small" style="white-space: nowrap;">A new property starts as a Value in Liquid.</span></div>
       </div>
     </div>
 
@@ -162,16 +144,11 @@
     <div style="display: flex; flex-direction: column; min-height: 0;">
       <div class="col-title" style="margin-bottom: 4px;">The note you get</div>
       <div class="muted small" style="margin-bottom: 10px;">For the paper above. Nothing is written until you save.</div>
-      <div style="flex: 1; overflow: hidden; padding: 2px 8px 8px 2px;">
+      <div style="flex: 1; overflow: auto; padding: 2px 8px 8px 2px;">
+        <div id="noticeslot"></div>
         <div class="sheet">
           <div class="muted small" style="margin-bottom: 10px;">Literature/rougier2014figures.md</div>
-          <div class="props">
-            <div><b>title</b><span>Ten Simple Rules for Better Figures</span></div>
-            <div><b>citekey</b><span>rougier2014figures</span></div>
-            <div style="background: #f9ece1; border-radius: 4px; margin: 0 -6px; padding: 2px 6px;"><b>tags</b><span>figures, research</span></div>
-            <div><b>status</b><span>reading</span></div>
-            <div><b>year</b><span>2014</span></div>
-            <div><b>journal</b><span>PLOS Computational Biology</span></div>
+          <div class="props" id="props">
           </div>
           <div class="serif" style="font-size: 22px; font-weight: 500; line-height: 1.25; margin-bottom: 8px;">Ten Simple Rules for Better Figures</div>
           <div style="margin-bottom: 14px;"><a href="#">Open in Zotero</a> · <a href="#">Rougier et al. - 2014 - Ten Simple Rules.pdf</a></div>
@@ -187,6 +164,416 @@
     </div>
   </div>
 </div>
+<script>
+(function () {
+  /* ---- the paper on screen, fixed and in memory ---- */
+  var zt = {
+    title: "Ten Simple Rules for Better Figures",
+    shortTitle: "Ten Simple Rules",
+    citekey: "rougier2014figures",
+    date: "2014-09-11",
+    year: 2014,
+    publicationTitle: "PLOS Computational Biology",
+    DOI: "10.1371/journal.pcbi.1003833",
+    tags: ["figures", "research"],
+    abstract: "Scientific visualization is classically defined as the process of…",
+    creators: [
+      { lastName: "Rougier", firstName: "Nicolas P." },
+      { lastName: "Droettboom", firstName: "Michael" },
+      { lastName: "Bourne", firstName: "Philip E." },
+    ],
+  };
+  var CTX = { zt: zt };
+
+  /* ---- a small Liquid subset + a small JSON-e subset ---- */
+  function fail(msg) { var e = new Error(msg); e.msg = msg; return e; }
+  function msgOf(e) { return e && e.msg ? e.msg : String((e && e.message) || e); }
+
+  function splitTop(s, ch) {
+    var out = [], cur = "", q = null;
+    for (var i = 0; i < s.length; i++) {
+      var c = s[i];
+      if (q) { cur += c; if (c === q) q = null; }
+      else if (c === '"' || c === "'") { q = c; cur += c; }
+      else if (c === ch) { out.push(cur); cur = ""; }
+      else cur += c;
+    }
+    out.push(cur);
+    return out;
+  }
+  function literal(t) {
+    if (/^"[^"]*"$/.test(t) || /^'[^']*'$/.test(t)) return t.slice(1, -1);
+    if (/^-?\d+(\.\d+)?$/.test(t)) return Number(t);
+    if (t === "true") return true;
+    if (t === "false") return false;
+    if (t === "nil" || t === "null") return null;
+    return undefined;
+  }
+  function resolve(path, ctx) {
+    var parts = path.split("."), v = ctx;
+    for (var i = 0; i < parts.length; i++) {
+      if (v === null || v === undefined || !(parts[i] in Object(v))) throw fail("does not know the field '" + path + "'");
+      v = v[parts[i]];
+    }
+    return v;
+  }
+  function toArr(v) { return Array.isArray(v) ? v : (v === undefined || v === null ? [] : [v]); }
+  var FILTERS = {
+    join: function (v, s) { return toArr(v).map(text).join(s === undefined ? ", " : s); },
+    first: function (v) { return Array.isArray(v) || typeof v === "string" ? v[0] : v; },
+    last: function (v) { return Array.isArray(v) || typeof v === "string" ? v[v.length - 1] : v; },
+    upcase: function (v) { return text(v).toUpperCase(); },
+    downcase: function (v) { return text(v).toLowerCase(); },
+    truncate: function (v, n) { var s = text(v); n = n === undefined ? 50 : n; return s.length <= n ? s : s.slice(0, Math.max(0, n - 1)) + "…"; },
+    "default": function (v, d) { var empty = v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length); return empty ? d : v; },
+    date: function (v, f) {
+      var m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!m) throw fail("cannot read a date from '" + text(v) + "'");
+      return (f === undefined ? "%Y" : f).replace("%Y", m[1]).replace("%m", m[2]).replace("%d", m[3]);
+    },
+    map: function (v, k) {
+      if (Array.isArray(v)) return v.map(function (x) { return x === null || x === undefined ? undefined : x[k]; });
+      if (v && typeof v === "object") return v[k];
+      return undefined;
+    },
+    size: function (v) { return Array.isArray(v) || typeof v === "string" ? v.length : Object.keys(Object(v)).length; },
+  };
+  function valueOf(t, ctx) {
+    t = t.trim();
+    if (!t) return undefined;
+    var l = literal(t);
+    if (l !== undefined) return l;
+    if (/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)*$/.test(t)) return resolve(t, ctx);
+    throw fail("cannot read '" + t + "'");
+  }
+  function evalExpr(src, ctx) {
+    var parts = splitTop(String(src), "|");
+    var v = valueOf(parts[0], ctx);
+    for (var i = 1; i < parts.length; i++) {
+      var seg = parts[i].trim();
+      if (!seg) continue;
+      var ci = seg.indexOf(":");
+      var name = (ci < 0 ? seg : seg.slice(0, ci)).trim();
+      var fn = FILTERS[name];
+      if (!fn) throw fail("does not know the filter '" + name + "'");
+      var args = ci < 0 ? [] : splitTop(seg.slice(ci + 1), ",").map(function (a) { return valueOf(a, ctx); });
+      v = fn.apply(null, [v].concat(args));
+    }
+    return v;
+  }
+  function truthy(v) { return !(v === undefined || v === null || v === false || v === "" || (Array.isArray(v) && !v.length)); }
+  function text(v) {
+    if (v === undefined || v === null) return "";
+    if (Array.isArray(v)) return v.map(text).join(", ");
+    if (typeof v === "object") return JSON.stringify(v);
+    return String(v);
+  }
+  var TAG = /\{\{([\s\S]*?)\}\}|\{%([\s\S]*?)%\}/g;
+  function renderTpl(src, ctx) {
+    var out = "", last = 0, m, stack = [], emit = true;
+    TAG.lastIndex = 0;
+    while ((m = TAG.exec(src))) {
+      if (emit) out += src.slice(last, m.index);
+      last = m.index + m[0].length;
+      if (m[1] !== undefined) { if (emit) out += text(evalExpr(m[1], ctx)); }
+      else {
+        var t = m[2].trim();
+        if (/^if\s/.test(t)) { stack.push(emit); emit = emit && truthy(evalExpr(t.slice(3), ctx)); }
+        else if (t === "else") { var p = stack.length ? stack[stack.length - 1] : true; emit = p && !emit; }
+        else if (t === "endif") { emit = stack.length ? stack.pop() : true; }
+        else throw fail("does not know the tag '" + t + "'");
+      }
+    }
+    if (emit) out += src.slice(last);
+    return out;
+  }
+  var ONE = /^\s*\{\{([^{}]*)\}\}\s*$/;
+  /** A lone output tag keeps its own type; anything else renders to text. */
+  function evalValue(src, ctx) {
+    var m = ONE.exec(src);
+    return m ? evalExpr(m[1], ctx) : renderTpl(src, ctx);
+  }
+  function jsonE(node, ctx) {
+    if (Array.isArray(node)) return node.map(function (n) { return jsonE(n, ctx); });
+    if (node && typeof node === "object") {
+      if ("$eval" in node) return evalExpr(node.$eval, ctx);
+      if ("$if" in node) {
+        var c = typeof node.$if === "string" ? evalExpr(node.$if, ctx) : jsonE(node.$if, ctx);
+        if (truthy(c)) return "then" in node ? jsonE(node.then, ctx) : undefined;
+        return "else" in node ? jsonE(node.else, ctx) : undefined;
+      }
+      if ("$map" in node) {
+        var arr = typeof node.$map === "string" ? evalExpr(node.$map, ctx) : jsonE(node.$map, ctx);
+        var ek = Object.keys(node).filter(function (k) { return /^each\(.+\)$/.test(k); })[0];
+        if (!ek) throw fail("needs an each(...) key next to $map");
+        var name = ek.slice(5, -1);
+        return toArr(arr).map(function (x) {
+          var sub = {};
+          for (var k in ctx) sub[k] = ctx[k];
+          sub[name] = x;
+          return jsonE(node[ek], sub);
+        });
+      }
+      var o = {};
+      Object.keys(node).forEach(function (k) {
+        var v = jsonE(node[k], ctx);
+        if (v !== undefined) o[k] = v;
+      });
+      return o;
+    }
+    return node;
+  }
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  /* ---- the authored entries ---- */
+  var entries = [
+    { key: "title", kind: "value", src: "{{ zt.title }}" },
+    { key: "citekey", kind: "value", src: "{{ zt.citekey }}" },
+    { key: "tags", kind: "value", src: "{{ zt.tags }}" },
+    { key: "status", kind: "value", src: "reading" },
+    {
+      key: null,
+      kind: "rule",
+      src: '{\n  "year": { "$eval": "zt.date | date: \\"%Y\\"" },\n  "journal": { "$eval": "zt.publicationTitle" }\n}',
+    },
+  ];
+  var open = 2;
+
+  /* the friendly names the chips carry, by the expression inside {{ }} */
+  var CHIPS = {
+    "zt.title": "Title",
+    "zt.citekey": "Citation key",
+    "zt.tags": "Tags",
+    "zt.publicationTitle": "Journal",
+    "zt.DOI": "DOI",
+    "zt.abstract": "Abstract",
+    "zt.shortTitle": "Short title",
+  };
+
+  function typeWord(v) {
+    if (v === undefined) return "absent";
+    if (v === null) return "null";
+    if (Array.isArray(v)) return "list";
+    return typeof v;
+  }
+  function shown(v) {
+    if (v === undefined) return "";
+    if (v === null) return "null";
+    return text(v);
+  }
+  function target(e, i) {
+    return e.key ? "field '" + e.key + "' (entry #" + (i + 1) + ")" : "entry #" + (i + 1);
+  }
+
+  /** Evaluate one entry against the paper. Never throws. */
+  function run(e, i) {
+    try {
+      if (e.kind === "rule") {
+        var node;
+        try { node = JSON.parse(e.src); }
+        catch (x) { throw fail("is not valid JSON yet (YAML is the file format; JSON accepted)"); }
+        var out = jsonE(node, CTX);
+        if (!out || typeof out !== "object" || Array.isArray(out)) throw fail("must produce a mapping");
+        return { patch: out };
+      }
+      var v = evalValue(e.src, CTX);
+      var patch = {};
+      if (v !== undefined) patch[e.key] = v;
+      return { patch: patch, value: v };
+    } catch (x) {
+      return {
+        patch: {},
+        error: "Managed Frontmatter " + target(e, i) + " " + msgOf(x),
+        recovery: "Correct the value for Managed Frontmatter " + target(e, i) + ".",
+      };
+    }
+  }
+
+  var CHEV = '<span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#b3ac9c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"></path></svg></span>';
+
+  function collapsedValue(e, i, r) {
+    var m = ONE.exec(e.src);
+    var label = m && CHIPS[m[1].trim()];
+    var pval = label
+      ? '<span class="chip">' + esc(label) + "</span>"
+      : (m ? '<span class="mono">' + esc(e.src.trim()) + "</span>" : esc(e.src));
+    var sub = r.error
+      ? '<span class="bad">' + esc(r.error) + "</span>"
+      : (e.src.indexOf("{{") < 0 ? "the same for every note" : esc(shown(r.value)));
+    return (
+      '<div class="prow pick" data-i="' + i + '">' +
+      '<div class="top"><span class="pname">' + esc(e.key) + '</span><span class="pval">' + pval + "</span>" + CHEV + "</div>" +
+      '<div class="sub">' + sub + "</div>" +
+      "</div>"
+    );
+  }
+
+  function ruleFields(r) {
+    if (r.error) return '<div class="sub bad">' + esc(r.error) + "</div>";
+    var keys = Object.keys(r.patch);
+    if (!keys.length) return '<div class="sub">Empty patch &middot; existing properties stay unchanged.</div>';
+    return (
+      '<div style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">' +
+      keys.map(function (k) {
+        return '<div style="display: flex; align-items: center; gap: 12px;"><span class="ro">' + esc(k) +
+          '</span><span class="muted small">' + esc(shown(r.patch[k])) + '</span><span class="muted small">&middot; ' + typeWord(r.patch[k]) + "</span></div>";
+      }).join("") +
+      "</div>"
+    );
+  }
+
+  function ruleSummary(r) {
+    if (r.error) return "a rule that needs a fix";
+    var keys = Object.keys(r.patch);
+    if (!keys.length) return "adds nothing yet";
+    if (keys.length === 1) return "adds " + keys[0];
+    return "adds " + keys.slice(0, -1).join(", ") + " and " + keys[keys.length - 1];
+  }
+
+  function collapsedRule(e, i, r) {
+    return (
+      '<div class="prow pick" data-i="' + i + '">' +
+      '<div class="top"><span class="pname">Several from a rule</span><span class="pval"></span>' + CHEV + "</div>" +
+      '<div class="sub">' + esc(ruleSummary(r)) + "</div>" +
+      ruleFields(r) +
+      "</div>"
+    );
+  }
+
+  function seg(kind) {
+    return (
+      '<div class="seg" style="margin-left: auto;">' +
+      '<span class="' + (kind === "value" ? "on" : "") + '" data-kind="value">Value &middot; Liquid</span>' +
+      '<span class="' + (kind === "rule" ? "on" : "") + '" data-kind="rule">Rule &middot; JSON-e</span>' +
+      "</div>"
+    );
+  }
+  var ACTIONS = '<div class="facts" style="display: flex; align-items: center; gap: 8px; margin-top: 10px;"><span class="btn mini quiet" data-act="done">Done</span><span class="btn mini quiet" data-act="remove">Remove</span></div>';
+
+  function expanded(e, i, r) {
+    var head = e.kind === "rule"
+      ? '<span class="muted small">One rule supplies ' + Object.keys(r.patch).length + (Object.keys(r.patch).length === 1 ? " property" : " properties") + ". They move together.</span>"
+      : '<span class="inp" style="width: 150px;"><input data-f="key" value="' + esc(e.key) + '" aria-label="Property name for entry ' + (i + 1) + '"></span>';
+    var editor = e.kind === "rule"
+      ? '<div class="ed tall" style="margin-top: 10px;"><textarea data-f="src" spellcheck="false">' + esc(e.src) + "</textarea></div>"
+      : '<div class="ed" style="margin-top: 10px;"><textarea data-f="src" rows="1" spellcheck="false">' + esc(e.src) +
+        '</textarea><span class="muted small" style="margin-left: auto;"><span class="mono">{{</span> opens the field list</span><span class="btn mini">Fields</span></div>';
+    var result;
+    if (e.kind === "rule") {
+      result = '<div class="sub">For this paper &middot; evaluation results</div>' + ruleFields(r);
+    } else if (r.error) {
+      result = '<div class="sub" style="display: flex; align-items: center; gap: 8px;"><span class="muted">For this paper</span><span class="dot bad"></span><span class="bad">' + esc(r.error) + "</span></div>";
+    } else {
+      result = '<div class="sub" style="display: flex; align-items: center; gap: 8px;"><span class="muted">For this paper</span><span class="dot"></span><span>' +
+        esc(shown(r.value)) + '</span><span class="muted">&middot; ' + typeWord(r.value) + "</span></div>";
+    }
+    return (
+      '<div class="prow sel" data-i="' + i + '">' +
+      '<div class="top" style="gap: 10px;">' + head + seg(e.kind) + "</div>" +
+      editor + result + ACTIONS +
+      "</div>"
+    );
+  }
+
+  /* ---- fold the whole list: later entry wins, undefined contributes nothing ---- */
+  function fold(results) {
+    var m = new Map();
+    results.forEach(function (r) {
+      Object.keys(r.patch).forEach(function (k) {
+        if (r.patch[k] !== undefined) m.set(k, r.patch[k]);
+      });
+    });
+    return m;
+  }
+
+  var plist = document.getElementById("plist");
+  var props = document.getElementById("props");
+  var slot = document.getElementById("noticeslot");
+
+  function render() {
+    var results = entries.map(run);
+    plist.innerHTML = entries.map(function (e, i) {
+      var r = results[i];
+      if (i === open) return expanded(e, i, r);
+      return e.kind === "rule" ? collapsedRule(e, i, r) : collapsedValue(e, i, r);
+    }).join("");
+
+    var lit = fold(results);
+    var mine = open === null ? {} : results[open].patch;
+    var rows = [];
+    lit.forEach(function (v, k) {
+      var hot = Object.prototype.hasOwnProperty.call(mine, k);
+      rows.push('<div' + (hot ? ' style="background: #f9ece1; border-radius: 4px; margin: 0 -6px; padding: 2px 6px;"' : "") +
+        "><b>" + esc(k) + "</b><span>" + esc(shown(v)) + "</span></div>");
+    });
+    props.innerHTML = rows.join("\n");
+
+    var bad = results.filter(function (r) { return r.error; })[0];
+    slot.innerHTML = bad
+      ? '<div class="notice"><div class="t">' + esc(bad.error) + '</div><div class="s">' + esc(bad.recovery) +
+        '</div><div class="s">No properties or note content will be applied.</div></div>'
+      : "";
+  }
+
+  function uniqueKey() {
+    var used = {};
+    entries.forEach(function (e) { if (e.key) used[e.key] = 1; });
+    if (!used.property) return "property";
+    for (var n = 2; ; n++) if (!used["property" + n]) return "property" + n;
+  }
+
+  plist.addEventListener("click", function (ev) {
+    var row = ev.target.closest(".prow");
+    if (!row) return;
+    var i = Number(row.dataset.i);
+    var kindPick = ev.target.closest("[data-kind]");
+    if (kindPick) {
+      var want = kindPick.dataset.kind;
+      var e = entries[i];
+      if (want !== e.kind) {
+        /* swap the editor and replace the value member; the text is not translated */
+        var m = ONE.exec(e.src);
+        e.src = want === "rule"
+          ? "{\n  " + JSON.stringify(e.key || uniqueKey()) + ': { "$eval": ' + JSON.stringify(m ? m[1].trim() : "zt.title") + " }\n}"
+          : "{{ zt.title }}";
+        e.kind = want;
+        if (want === "value" && !e.key) e.key = uniqueKey();
+        render();
+      }
+      return;
+    }
+    var act = ev.target.closest("[data-act]");
+    if (act) {
+      if (act.dataset.act === "remove") { entries.splice(i, 1); open = null; }
+      else open = null;
+      render();
+      return;
+    }
+    if (row.classList.contains("pick")) { open = i; render(); }
+  });
+
+  plist.addEventListener("input", function (ev) {
+    var f = ev.target.dataset && ev.target.dataset.f;
+    if (!f) return;
+    var i = Number(ev.target.closest(".prow").dataset.i);
+    entries[i][f] = ev.target.value;
+    var at = ev.target.selectionStart;
+    render();
+    var back = plist.querySelector('.prow[data-i="' + i + '"] [data-f="' + f + '"]');
+    if (back) { back.focus(); try { back.setSelectionRange(at, at); } catch (x) { /* not a text field */ } }
+  });
+
+  document.getElementById("addprop").addEventListener("click", function () {
+    entries.push({ key: uniqueKey(), kind: "value", src: "{{ zt.title }}" });
+    open = entries.length - 1;
+    render();
+  });
+
+  render();
+})();
+</script>
 </x-dc>
 </body>
 </html>

@@ -127,7 +127,7 @@ Switch, create, share, and delete stay in Obsidian (#918).
 
 ## Limits
 
-Static boards; no editor runs. Chip decorations over Liquid are a design ruling; the CodeMirror
+Static boards, except Properties and Name and folder, which run: their rows, editors, folding, filename evaluation, and errors work on a small in-page Liquid and JSON-e subset over the sample paper. No editor runs elsewhere. Chip decorations over Liquid are a design ruling; the CodeMirror
 extension that draws them is implementation work under #863. The Properties board shows the
 "Several from a rule" entry read-only; its YAML editor is in Advanced per #930's amendment.
 The Properties board shows one entry open for editing (name, `Value · Liquid` or

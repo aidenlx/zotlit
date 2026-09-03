@@ -44,7 +44,8 @@
       "y": 1040,
       "w": 1440,
       "h": 900,
-      "page": "page-1"
+      "page": "page-1",
+      "is_interactive": true
     },
     {
       "file": "Filename.dc.html",
@@ -53,7 +54,8 @@
       "y": 1040,
       "w": 1440,
       "h": 1000,
-      "page": "page-1"
+      "page": "page-1",
+      "is_interactive": true
     },
     {
       "file": "Problems.dc.html",
