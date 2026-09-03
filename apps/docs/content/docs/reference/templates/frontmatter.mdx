@@ -8,6 +8,8 @@ updated: "2.0.0"
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 This page documents how ZotLit manages YAML frontmatter on literature notes: system-managed fields, user-configured fields, merge strategies, and the behavior during note updates.
@@ -24,25 +26,25 @@ ZotLit always writes `zotero-key`. User configuration cannot override it.
 
 ## User-configured fields
 
-Configured at **Settings > {m.settings_page_templates()} > {m.settings_page_frontmatter()}**. Each field has four parts:
+Configured at <SettingsPath page={m.settings_page_templates()} setting={m.settings_page_frontmatter()} />. Each field has four parts:
 
-| Part                                     | Description                                             |
-| ---------------------------------------- | ------------------------------------------------------- |
-| {m.settings_frontmatter_key_name()}      | The YAML property name written to frontmatter           |
-| {m.settings_frontmatter_expr_name()}     | Produces the value (evaluated in the declared language) |
-| {m.settings_frontmatter_language_name()} | `liquid` or `javascript`                                |
-| {m.settings_frontmatter_merge_name()}    | How the field behaves when refreshing an existing note  |
+| Part                                                      | Description                                             |
+| --------------------------------------------------------- | ------------------------------------------------------- |
+| <UiLabel name={m.settings_frontmatter_key_name()} />      | The YAML property name written to frontmatter           |
+| <UiLabel name={m.settings_frontmatter_expr_name()} />     | Produces the value (evaluated in the declared language) |
+| <UiLabel name={m.settings_frontmatter_language_name()} /> | `liquid` or `javascript`                                |
+| <UiLabel name={m.settings_frontmatter_merge_name()} />    | How the field behaves when refreshing an existing note  |
 
 ### Default fields
 
 Out of the box, ZotLit configures:
 
-| {m.settings_frontmatter_key_name()} | {m.settings_frontmatter_expr_name()} | {m.settings_frontmatter_language_name()}   | {m.settings_frontmatter_merge_name()}    |
-| ----------------------------------- | ------------------------------------ | ------------------------------------------ | ---------------------------------------- |
-| `title`                             | `zt.title`                           | {m.settings_frontmatter_language_liquid()} | {m.settings_frontmatter_merge_replace()} |
-| `related`                           | `zt.relatedItems \| note_links`      | {m.settings_frontmatter_language_liquid()} | {m.settings_frontmatter_merge_replace()} |
-| `collections`                       | `zt.collections \| collection_paths` | {m.settings_frontmatter_language_liquid()} | {m.settings_frontmatter_merge_replace()} |
-| `citekey`                           | `zt.citationKey`                     | {m.settings_frontmatter_language_liquid()} | {m.settings_frontmatter_merge_replace()} |
+| <UiLabel name={m.settings_frontmatter_key_name()} /> | <UiLabel name={m.settings_frontmatter_expr_name()} /> | <UiLabel name={m.settings_frontmatter_language_name()} />   | <UiLabel name={m.settings_frontmatter_merge_name()} />    |
+| ---------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------- |
+| `title`                                              | `zt.title`                                            | <UiLabel name={m.settings_frontmatter_language_liquid()} /> | <UiLabel name={m.settings_frontmatter_merge_replace()} /> |
+| `related`                                            | `zt.relatedItems \| note_links`                       | <UiLabel name={m.settings_frontmatter_language_liquid()} /> | <UiLabel name={m.settings_frontmatter_merge_replace()} /> |
+| `collections`                                        | `zt.collections \| collection_paths`                  | <UiLabel name={m.settings_frontmatter_language_liquid()} /> | <UiLabel name={m.settings_frontmatter_merge_replace()} /> |
+| `citekey`                                            | `zt.citationKey`                                      | <UiLabel name={m.settings_frontmatter_language_liquid()} /> | <UiLabel name={m.settings_frontmatter_merge_replace()} /> |
 
 The default `citekey` field has this definition:
 
@@ -81,15 +83,15 @@ The return value is serialized to YAML automatically.
 
 Each user field selects one of three merge strategies that control what happens when the note is updated:
 
-| Strategy  | UI label                                 | Behavior                                                                                                                                                                                                                                                                                            |
-| --------- | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `replace` | {m.settings_frontmatter_merge_replace()} | Writes the generated value unconditionally. The existing value is overwritten                                                                                                                                                                                                                       |
-| `append`  | {m.settings_frontmatter_merge_append()}  | Appends new generated values not already present to the existing array. Manual additions remain. If existing is blank, writes the generated value. Both the existing and generated values must be arrays; when either side is not an array (and existing is not blank), the field is left unchanged |
-| `keep`    | {m.settings_frontmatter_merge_keep()}    | Writes the generated value only when the existing field is blank. Once the field has a value, it is never overwritten                                                                                                                                                                               |
+| Strategy  | UI label                                                  | Behavior                                                                                                                                                                                                                                                                                            |
+| --------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `replace` | <UiLabel name={m.settings_frontmatter_merge_replace()} /> | Writes the generated value unconditionally. The existing value is overwritten                                                                                                                                                                                                                       |
+| `append`  | <UiLabel name={m.settings_frontmatter_merge_append()} />  | Appends new generated values not already present to the existing array. Manual additions remain. If existing is blank, writes the generated value. Both the existing and generated values must be arrays; when either side is not an array (and existing is not blank), the field is left unchanged |
+| `keep`    | <UiLabel name={m.settings_frontmatter_merge_keep()} />    | Writes the generated value only when the existing field is blank. Once the field has a value, it is never overwritten                                                                                                                                                                               |
 
 ### What counts as blank
 
-A value is blank (and treated as absent by <code>{m.settings_frontmatter_merge_append()}</code> and <code>{m.settings_frontmatter_merge_keep()}</code>) when it is:
+A value is blank (and treated as absent by <UiLabel name={m.settings_frontmatter_merge_append()} /> and <UiLabel name={m.settings_frontmatter_merge_keep()} />) when it is:
 
 - `null` or undefined
 - An empty string (`""`)
@@ -102,17 +104,17 @@ When an expression returns `undefined`, the field is untouched regardless of the
 
 ### Append arrays detail
 
-The <code>{m.settings_frontmatter_merge_append()}</code> strategy preserves existing items verbatim (including any duplicates already present) and appends only generated items not already in the array.
+The <UiLabel name={m.settings_frontmatter_merge_append()} /> strategy preserves existing items verbatim (including any duplicates already present) and appends only generated items not already in the array.
 
 ## Reserved keys
 
 The following keys cannot be used in user field configuration:
 
-| {m.settings_frontmatter_key_name()} | Owner                                     |
-| ----------------------------------- | ----------------------------------------- |
-| `zotero-key`                        | System-managed (literature note identity) |
-| `zotero-note-key`                   | Imported notes                            |
-| `zotero-lastmod`                    | Imported notes                            |
+| <UiLabel name={m.settings_frontmatter_key_name()} /> | Owner                                     |
+| ---------------------------------------------------- | ----------------------------------------- |
+| `zotero-key`                                         | System-managed (literature note identity) |
+| `zotero-note-key`                                    | Imported notes                            |
+| `zotero-lastmod`                                     | Imported notes                            |
 
 Attempting to use a reserved key is rejected in both the settings modal and the CLI.
 

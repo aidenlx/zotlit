@@ -9,9 +9,10 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This tutorial picks up where [Create your first literature note](/docs/tutorial/first-note) left off. You will change how annotation callouts look in that note by editing a template file, then use the {m.template_data_explorer_view_name()} to find new data you can add.
+This tutorial picks up where [Create your first literature note](/docs/tutorial/first-note) left off. You will change how annotation callouts look in that note by editing a template file, then use the <UiLabel name={m.template_data_explorer_view_name()} /> to find new data you can add.
 
 <Callout type="info" title="Before you start">
   You need the literature note you created in [the first
@@ -29,9 +30,9 @@ Each annotation in your note renders as a callout block. The built-in template u
   <Step>
     ### Create the editable template file
 
-    Open ZotLit's settings in Obsidian (**Settings > ZotLit**) and go to the **{m.settings_page_templates()}** sub-page. Under the **{m.settings_template_files_heading()}** group, find the row labeled **{m.settings_template_name_annotation()}**.
+    Open ZotLit's settings in Obsidian (**Settings > ZotLit**) and go to the <UiLabel name={m.settings_page_templates()} /> sub-page. Under the <UiLabel name={m.settings_template_files_heading()} /> group, find the row labeled <UiLabel name={m.settings_template_name_annotation()} />.
 
-    Click the pen icon button to the right of the row. Its tooltip reads "{m.settings_template_eject()}."
+    Click the pen icon button to the right of the row. Its tooltip reads "<UiLabel name={m.settings_template_eject()} />."
 
     A notice confirms the file was saved: **Template saved to templates/zotlit-annotation.liquid.md** (the exact path depends on your template folder setting).
 
@@ -80,7 +81,7 @@ Each annotation in your note renders as a callout block. The built-in template u
 
 ## Add annotation color to the title
 
-The annotation template has access to data from each annotation in your Zotero library. One useful property is `colorName`, which holds the highlight color as a word (such as "yellow", "red", or "green"). You can discover properties like this in the {m.template_data_explorer_view_name()}.
+The annotation template has access to data from each annotation in your Zotero library. One useful property is `colorName`, which holds the highlight color as a word (such as "yellow", "red", or "green"). You can discover properties like this in the <UiLabel name={m.template_data_explorer_view_name()} />.
 
 <Steps>
   <Step>
@@ -96,9 +97,9 @@ The annotation template has access to data from each annotation in your Zotero l
   <Step>
     ### Find the color property
 
-    In the explorer, expand the **annotations** list and find an annotation entry. Right-click that annotation row and choose **{m.template_data_explorer_menu_explore_annotation()}**. This re-roots the tree so that each property's path matches what you write in the annotation template.
+    In the explorer, expand the **annotations** list and find an annotation entry. Right-click that annotation row and choose <UiLabel name={m.template_data_explorer_menu_explore_annotation()} />. This re-roots the tree so that each property's path matches what you write in the annotation template.
 
-    Look for the `colorName` row. Right-click it and choose **{m.template_data_explorer_menu_copy_output()}**. The clipboard now contains `{{ zt.colorName }}`, ready to paste into your template.
+    Look for the `colorName` row. Right-click it and choose <UiLabel name={m.template_data_explorer_menu_copy_output()} />. The clipboard now contains `{{ zt.colorName }}`, ready to paste into your template.
 
   </Step>
   <Step>
@@ -123,7 +124,7 @@ The annotation template has access to data from each annotation in your Zotero l
 
 ## Restoring the default template
 
-If you want to undo your changes, delete the `templates/zotlit-annotation.liquid.md` file from your vault. The next time you run **{m.command_update_note_name()}**, ZotLit renders annotations with the original built-in template.
+If you want to undo your changes, delete the `templates/zotlit-annotation.liquid.md` file from your vault. The next time you run <UiLabel name={m.command_update_note_name()} />, ZotLit renders annotations with the original built-in template.
 
 ## What's next
 

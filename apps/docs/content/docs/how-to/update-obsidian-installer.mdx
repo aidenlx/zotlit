@@ -7,6 +7,7 @@ updated: "2.0.0"
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Callout } from "@/components/callout";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 Use this guide when ZotLit shows the persistent **Update Obsidian to use ZotLit** notice, or when ZotLit does not load at all: Obsidian shows _Failed to load plugin "zotlit"_, and the developer console shows a `SyntaxError`.
@@ -23,7 +24,7 @@ Obsidian's automatic updates can update the app version, but they cannot replace
   <Step>
     ### Download the current installer
 
-    Select **{m.notice_installer_update_download()}** in the ZotLit notice. You can also open the [Obsidian download page](https://obsidian.md/download). Download the installer for your operating system.
+    Select <UiLabel name={m.notice_installer_update_download()} /> in the ZotLit notice. You can also open the [Obsidian download page](https://obsidian.md/download). Download the installer for your operating system.
 
   </Step>
   <Step>

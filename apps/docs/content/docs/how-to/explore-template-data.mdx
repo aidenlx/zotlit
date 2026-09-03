@@ -9,6 +9,7 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 The Template Data Explorer shows the full data tree that templates receive for a Zotero item. Use it to discover field paths, inspect values, and copy ready-to-use snippets into your templates.
@@ -34,15 +35,15 @@ The explorer opens in the right sidebar. You can reach it from several entry poi
 
 ### From a literature note
 
-Right-click (or click the three-dot menu) on a literature note in the file explorer or tab, then select **{m.template_data_explorer_menu_explore()}**. The explorer opens seeded with that note's item.
+Right-click (or click the three-dot menu) on a literature note in the file explorer or tab, then select <UiLabel name={m.template_data_explorer_menu_explore()} />. The explorer opens seeded with that note's item.
 
 ### From the annotation view
 
-In the annotation sidebar, open the more-options menu on any annotation row and select **{m.template_data_explorer_menu_explore()}**. The explorer opens anchored at that annotation.
+In the annotation sidebar, open the more-options menu on any annotation row and select <UiLabel name={m.template_data_explorer_menu_explore()} />. The explorer opens anchored at that annotation.
 
 ### From Zotero (item)
 
-ZotLit Companion, the Zotero add-on, adds these entry points in Zotero. Right-click a single item, open the **ZotLit** submenu, and select **{m.template_data_explorer_menu_explore()}**. Zotero opens the explorer in Obsidian via a protocol link.
+ZotLit Companion, the Zotero add-on, adds these entry points in Zotero. Right-click a single item, open the **ZotLit** submenu, and select <UiLabel name={m.template_data_explorer_menu_explore()} />. Zotero opens the explorer in Obsidian via a protocol link.
 
 ### From Zotero (annotation)
 
@@ -56,9 +57,9 @@ A Zotero key identifies one object: an item, an attachment, an annotation, or a 
 
 In Obsidian:
 
-- For the active literature note, run <Command inline name={m.command_copy_item_key_name()} />, or select **{m.command_copy_item_key_name()}** from the file menu.
-- On an annotation row, open the more-options menu and select **{m.indexed_key_menu_copy_annotation()}**.
-- In the explorer, open the more-options menu on the tab and select **{m.command_copy_item_key_name()}** or **{m.indexed_key_menu_copy_annotation()}**. The label follows the current root.
+- For the active literature note, run <Command inline name={m.command_copy_item_key_name()} />, or select <UiLabel name={m.command_copy_item_key_name()} /> from the file menu.
+- On an annotation row, open the more-options menu and select <UiLabel name={m.indexed_key_menu_copy_annotation()} />.
+- In the explorer, open the more-options menu on the tab and select <UiLabel name={m.command_copy_item_key_name()} /> or <UiLabel name={m.indexed_key_menu_copy_annotation()} />. The label follows the current root.
 
 If a literature note is already open, you can also copy its `zotero-key` frontmatter value by hand.
 
@@ -79,9 +80,9 @@ Type in the filter box (placeholder: "Filter properties...") to narrow the tree.
 
 ### Switch between note root and annotation root [#roots]
 
-By default the tree shows the full `zt` object (note root). To view the data available inside annotation templates, open the more-options menu on an annotation node in the tree and select **{m.template_data_explorer_menu_explore_annotation()}**. The tree re-anchors to that annotation's data shape.
+By default the tree shows the full `zt` object (note root). To view the data available inside annotation templates, open the more-options menu on an annotation node in the tree and select <UiLabel name={m.template_data_explorer_menu_explore_annotation()} />. The tree re-anchors to that annotation's data shape.
 
-To return, click **{m.template_data_explorer_back_to_note_root()}** in the breadcrumb.
+To return, click <UiLabel name={m.template_data_explorer_back_to_note_root()} /> in the breadcrumb.
 
 ## Copy paths and snippets
 
@@ -89,24 +90,27 @@ Each row in the tree offers actions to copy data into your templates.
 
 ### Copy path
 
-Click **{m.template_data_explorer_menu_copy_path()}** in a row's more-options menu to copy the engine-neutral property path (e.g. `zt.creators[0].lastName`). The notice "Path copied" confirms the action.
+Click <UiLabel name={m.template_data_explorer_menu_copy_path()} /> in a row's more-options menu to copy the engine-neutral property path (e.g. `zt.creators[0].lastName`). The notice "Path copied" confirms the action.
 
 ### Copy value
 
-Click the **{m.template_data_explorer_menu_copy_value()}** button on a row to copy its current value. Primitives copy verbatim; objects and arrays copy as JSON. The notice "Value copied" confirms the action.
+Click the <UiLabel name={m.template_data_explorer_menu_copy_value()} /> button on a row to copy its current value. Primitives copy verbatim; objects and arrays copy as JSON. The notice "Value copied" confirms the action.
 
 ### Copy template snippets
 
-Below **{m.template_data_explorer_menu_copy_path()}**, the menu offers ready-to-use template snippets wrapped in the correct syntax:
+Below <UiLabel name={m.template_data_explorer_menu_copy_path()} />, the menu offers ready-to-use template snippets wrapped in the correct syntax:
 
-- **{m.template_data_explorer_menu_copy_output()}**: renders the value (e.g. `{{ zt.title }}`).
-- **{m.template_data_explorer_menu_copy_if_present()}**: wraps the value in a conditional block.
-- **{m.template_data_explorer_menu_copy_loop()}**: iterates over an array node.
-- **{m.template_data_explorer_menu_copy_joined()}**: joins an array into a delimiter-separated string.
+- <UiLabel name={m.template_data_explorer_menu_copy_output()} />: renders the value (e.g. `{{ zt.title }}`).
+- <UiLabel name={m.template_data_explorer_menu_copy_if_present()} />: wraps the
+  value in a conditional block.
+- <UiLabel name={m.template_data_explorer_menu_copy_loop()} />: iterates over an
+  array node.
+- <UiLabel name={m.template_data_explorer_menu_copy_joined()} />: joins an array
+  into a delimiter-separated string.
 
-Array nodes show **{m.template_data_explorer_menu_copy_loop()}** and **{m.template_data_explorer_menu_copy_joined()}**. Non-array nodes show **{m.template_data_explorer_menu_copy_output()}** and **{m.template_data_explorer_menu_copy_if_present()}**.
+Array nodes show <UiLabel name={m.template_data_explorer_menu_copy_loop()} /> and <UiLabel name={m.template_data_explorer_menu_copy_joined()} />. Non-array nodes show <UiLabel name={m.template_data_explorer_menu_copy_output()} /> and <UiLabel name={m.template_data_explorer_menu_copy_if_present()} />.
 
-When {m.settings_template_js_enable_name()} is enabled, these snippet items split into **{m.template_data_explorer_submenu_liquid()}** and **{m.template_data_explorer_submenu_eta()}** submenus so you can pick the syntax matching your template. When disabled, Liquid snippets appear inline with no submenu.
+When <UiLabel name={m.settings_template_js_enable_name()} /> is enabled, these snippet items split into <UiLabel name={m.template_data_explorer_submenu_liquid()} /> and <UiLabel name={m.template_data_explorer_submenu_eta()} /> submenus so you can pick the syntax matching your template. When disabled, Liquid snippets appear inline with no submenu.
 
 A successful copy shows the notice "Snippet copied."
 

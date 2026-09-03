@@ -8,6 +8,8 @@ updated: "2.1.0"
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 Use this guide to inspect an active note's references and correct entries that ZotLit cannot resolve or format.
@@ -38,9 +40,9 @@ Use this guide to inspect an active note's references and correct entries that Z
 
     Hover the entry or focus it with the keyboard to reveal its row actions.
 
-    - **{m.references_open_note()}** opens the note. ZotLit creates it first when the Zotero item has no Literature Note.
-    - **{m.references_open_in_zotero()}** selects the item in Zotero.
-    - **{m.references_open_attachment()}** opens its attachment. When several attachments exist, ZotLit opens a selection menu.
+    - <UiLabel name={m.references_open_note()} /> opens the note. ZotLit creates it first when the Zotero item has no Literature Note.
+    - <UiLabel name={m.references_open_in_zotero()} /> selects the item in Zotero.
+    - <UiLabel name={m.references_open_attachment()} /> opens its attachment. When several attachments exist, ZotLit opens a selection menu.
 
     An attachment action appears only when the item has an attachment to open.
 
@@ -48,11 +50,11 @@ Use this guide to inspect an active note's references and correct entries that Z
   <Step>
     ### Inspect a citation from the editor
 
-    Under **Settings > ZotLit > {m.settings_page_citations()} > {m.settings_citation_hover_heading()}**, set **{m.settings_citation_hover_action_name()}** to **{m.settings_citation_hover_action_popover()}**.
+    Under <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_hover_heading()} />, set <UiLabel name={m.settings_citation_hover_action_name()} /> to <UiLabel name={m.settings_citation_hover_action_popover()} />.
 
     Hover a formatted citation. The popover shows each cited item's complete bibliography entry and the same Literature Note, Zotero, and attachment actions.
 
-    Use **{m.settings_citation_hover_mod_page_name()}** to control hover separately for {m.settings_citation_hover_mod_source_name()}, {m.settings_citation_hover_mod_live_preview_name()}, and reading view.
+    Use <UiLabel name={m.settings_citation_hover_mod_page_name()} /> to control hover separately for <UiLabel name={m.settings_citation_hover_mod_source_name()} />, <UiLabel name={m.settings_citation_hover_mod_live_preview_name()} />, and reading view.
 
   </Step>
 </Steps>
@@ -63,21 +65,21 @@ Open the note, then run:
 
 <Command name={m.command_set_citation_presentation_name()} />
 
-You can also select **{m.command_set_citation_presentation_name()}** from the active note's **More options** menu.
+You can also select <UiLabel name={m.command_set_citation_presentation_name()} /> from the active note's **More options** menu.
 
-1. Select a **{m.citation_presentation_style_name()}** installed in Zotero, or keep the vault style.
-2. Enter a **{m.citation_presentation_language_name()}**, such as `en-US`, `de`, or `zh-CN`.
-3. Select **{m.citation_presentation_confirm()}**.
+1. Select a <UiLabel name={m.citation_presentation_style_name()} /> installed in Zotero, or keep the vault style.
+2. Enter a <UiLabel name={m.citation_presentation_language_name()} />, such as `en-US`, `de`, or `zh-CN`.
+3. Select <UiLabel name={m.citation_presentation_confirm()} />.
 
-The style applies to this note's in-text citations, {m.references_view_name()} Sidebar, {m.settings_citation_hover_action_popover()}, copied bibliography, and built-in export. **{m.citation_presentation_language_name()}** sets Pandoc `lang` for the complete exported document, not only its citations.
+The style applies to this note's in-text citations, <UiLabel name={m.references_view_name()} /> Sidebar, <UiLabel name={m.settings_citation_hover_action_popover()} />, copied bibliography, and built-in export. <UiLabel name={m.citation_presentation_language_name()} /> sets Pandoc `lang` for the complete exported document, not only its citations.
 
-Select the reset button beside **{m.citation_presentation_language_name()}**. Its tooltip is **{m.citation_presentation_language_reset()}**. This removes `lang` from the note, so citation formatting uses the vault **{m.settings_citation_locale_name()}**.
+Select the reset button beside <UiLabel name={m.citation_presentation_language_name()} />. Its tooltip is <UiLabel name={m.citation_presentation_language_reset()} />. This removes `lang` from the note, so citation formatting uses the vault <UiLabel name={m.settings_citation_locale_name()} />.
 
 ## Copy references [#copy-references]
 
 ### Copy the complete bibliography
 
-Select **{m.references_copy_bibliography()}** in the {m.references_view_name()} Sidebar toolbar. ZotLit copies the formatted entries in bibliography order, without a heading.
+Select <UiLabel name={m.references_copy_bibliography()} /> in the <UiLabel name={m.references_view_name()} /> Sidebar toolbar. ZotLit copies the formatted entries in bibliography order, without a heading.
 
 The clipboard contains rich text and plain text. Plain-text entries have a blank line between them.
 
@@ -91,14 +93,14 @@ Selecting the row's chevron navigates to citation occurrences. It does not copy 
 
 Hover the disabled action to see its current reason.
 
-| Tooltip                                         | What to do                                                                   |
-| ----------------------------------------------- | ---------------------------------------------------------------------------- |
-| **{m.references_copy_blocked_no_note()}**       | Open the Markdown note whose bibliography you need.                          |
-| **{m.references_copy_blocked_no_references()}** | Add a recognized citation to the active note.                                |
-| **{m.references_copy_blocked_pending()}**       | Wait for the current formatting pass to finish.                              |
-| **{m.references_copy_blocked_unavailable()}**   | Install or restore the Pandoc engine and an available style.                 |
-| **{m.references_copy_blocked_failed()}**        | Check the engine and selected style, then retry after the sidebar refreshes. |
-| **{m.references_copy_blocked_errors()}**        | Correct every Reference Error listed in the sidebar.                         |
+| Tooltip                                                      | What to do                                                                   |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| <UiLabel name={m.references_copy_blocked_no_note()} />       | Open the Markdown note whose bibliography you need.                          |
+| <UiLabel name={m.references_copy_blocked_no_references()} /> | Add a recognized citation to the active note.                                |
+| <UiLabel name={m.references_copy_blocked_pending()} />       | Wait for the current formatting pass to finish.                              |
+| <UiLabel name={m.references_copy_blocked_unavailable()} />   | Install or restore the Pandoc engine and an available style.                 |
+| <UiLabel name={m.references_copy_blocked_failed()} />        | Check the engine and selected style, then retry after the sidebar refreshes. |
+| <UiLabel name={m.references_copy_blocked_errors()} />        | Correct every Reference Error listed in the sidebar.                         |
 
 The action also becomes temporarily unavailable when the active note, style, locale, or Zotero data changes. Wait for the new bibliography to finish formatting.
 
@@ -106,23 +108,23 @@ The action also becomes temporarily unavailable when the active note, style, loc
 
 Each Reference Error stays tied to its exact source occurrence. Use the row's chevron to open that occurrence.
 
-| Sidebar state                                                            | Cause                                                                   | Recovery                                                                                                |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `@key matches no item in your Zotero library.`                           | No item in **{m.settings_library_scope_name()}** has that citation key. | Correct the key, add the matching library to the scope, or assign the key to the intended item.         |
-| `@key matches multiple items in your Zotero library.`                    | Several in-scope items have the same citation key.                      | Give each item a distinct key, or narrow **{m.settings_library_scope_name()}** until the key is unique. |
-| `This link has an invalid citation fragment.`                            | A Literature Note link has a malformed `#cite:` fragment.               | Correct the fragment. For a page locator, use `#cite:locator=33`.                                       |
-| `{linkpath} points to an item that is no longer in your Zotero library.` | The Literature Note's `zotero-key` no longer resolves to an item.       | Restore the Zotero item or correct the Literature Note identity.                                        |
+| Sidebar state                                                            | Cause                                                                                | Recovery                                                                                                             |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `@key matches no item in your Zotero library.`                           | No item in <UiLabel name={m.settings_library_scope_name()} /> has that citation key. | Correct the key, add the matching library to the scope, or assign the key to the intended item.                      |
+| `@key matches multiple items in your Zotero library.`                    | Several in-scope items have the same citation key.                                   | Give each item a distinct key, or narrow <UiLabel name={m.settings_library_scope_name()} /> until the key is unique. |
+| `This link has an invalid citation fragment.`                            | A Literature Note link has a malformed `#cite:` fragment.                            | Correct the fragment. For a page locator, use `#cite:locator=33`.                                                    |
+| `{linkpath} points to an item that is no longer in your Zotero library.` | The Literature Note's `zotero-key` no longer resolves to an item.                    | Restore the Zotero item or correct the Literature Note identity.                                                     |
 
-An ambiguous row lists every matching item with its library and item key. **{m.references_open_note()}** stays unavailable until the citation key identifies one item.
+An ambiguous row lists every matching item with its library and item key. <UiLabel name={m.references_open_note()} /> stays unavailable until the citation key identifies one item.
 
 ## Fix presentation errors
 
-| Banner                                                       | Recovery                                                                                                                                                                   |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **This note's citation and references style is unavailable** | Correct the note's `zotlit-csl`, install that style in Zotero, or use the vault style.                                                                                     |
-| **This note's document language is invalid**                 | Set `lang` to a language tag such as `de-DE`, or remove the property.                                                                                                      |
-| **ZotLit could not format these references**                 | Check the selected style and {m.settings_citation_engine_name()} under **Settings > ZotLit > {m.settings_page_citations()} > {m.settings_citation_references_heading()}**. |
-| **The Pandoc engine is unavailable**                         | Open the same settings page and repair or reinstall the engine.                                                                                                            |
+| Banner                                                       | Recovery                                                                                                                                                                                        |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **This note's citation and references style is unavailable** | Correct the note's `zotlit-csl`, install that style in Zotero, or use the vault style.                                                                                                          |
+| **This note's document language is invalid**                 | Set `lang` to a language tag such as `de-DE`, or remove the property.                                                                                                                           |
+| **ZotLit could not format these references**                 | Check the selected style and <UiLabel name={m.settings_citation_engine_name()} /> under <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_references_heading()} />. |
+| **The Pandoc engine is unavailable**                         | Open the same settings page and repair or reinstall the engine.                                                                                                                                 |
 
 The sidebar shows a minimal list when formatted output is unavailable. Copy remains disabled until ZotLit produces a complete bibliography without Reference Errors.
 
