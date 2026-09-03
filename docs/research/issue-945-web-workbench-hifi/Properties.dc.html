@@ -32,6 +32,11 @@
     .note .h1 { font-weight: 600; font-size: 22px; line-height: 1.3; }
     .note .h2 { font-weight: 600; font-size: 17px; }
     .chip { display: inline-block; padding: 0 7px; margin: 0 1px; border-radius: 4px; background: #f9ece1; color: #c94d15; font-weight: 500; font-size: 14px; line-height: 22px; vertical-align: baseline; white-space: nowrap; }
+    .chip::before { content: "{{ "; color: #e0a98f; font-weight: 400; }
+    .chip::after { content: " }}"; color: #e0a98f; font-weight: 400; }
+    .chip.open { background: #fff; color: #22354d; border: 1px solid #e8622c; font-family: "SF Mono", Menlo, ui-monospace, monospace; font-size: 13px; }
+    .chip.open::before, .chip.open::after { color: #c94d15; }
+    .chip.open .k { color: #c94d15; }
     .band { margin: 8px -26px 8px -26px; padding: 8px 26px 12px 22px; border-left: 4px solid #e8622c; background: #fdf6f1; }
     .band .bl { display: flex; gap: 12px; align-items: baseline; color: #c94d15; font-weight: 600; font-size: 12px; margin-bottom: 4px; white-space: nowrap; }
     .band .bl span:last-child { font-weight: 400; color: #5d6d82; }

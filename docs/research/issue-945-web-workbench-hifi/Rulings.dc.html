@@ -41,14 +41,14 @@
   <div class="board" style="flex: 1; overflow: hidden; padding: 22px 28px 26px;">
 
     <h2 class="sec">The job</h2>
-    <p class="lead">Change what my literature notes look like, see it, keep it. Three concepts and no more: this is my note; the orange chips fill in from Zotero, I add one from the list; Save keeps it.</p>
+    <p class="lead">Change what my literature notes look like, see it, keep it. Three concepts and no more: this is my note; the orange {{ fields }} fill in from Zotero, I add one from the list; Save keeps it.</p>
 
     <h2 class="sec">Composition</h2>
     <ul class="b">
       <li>One header row: name, the paper shown, ···, Save.</li>
       <li>Three columns: From this paper · Your note · The note you get.</li>
       <li>The note is the only open pane; Properties and Name and folder are two links under it.</li>
-      <li>Fields are chips with human names; the Liquid source lives under the chips (one buffer, one undo, ADR 0032) and shows only in Advanced.</li>
+      <li>Fields print as {{ Title }}, the field's human name in the Liquid braces, as a live preview over the source; selecting one reveals its code, {{ zt.title }}, in place (one buffer, one undo, ADR 0032). Advanced shows the whole file.</li>
       <li>The kept-up-to-date part is a tinted band; the highlight format is a dashed box inside it.</li>
       <li>Empty states are hidden: no Problems line when there are none, no connection line when connected.</li>
       <li>Advanced, Download, and Undo sit behind ···.</li>

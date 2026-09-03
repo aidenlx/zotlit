@@ -47,12 +47,14 @@ shortcut `{% render_annotation annotation %}` (ADR 0034); CodeMirror 6 at the Ob
 
 ## Item 1 — Composition
 
-**Ruling 1.1 — fields are chips, and the source lives under them.** On the beginner face a
-field reads as a chip with a human name: Title, Authors, Page, Highlighted text. The chip is a
-CodeMirror decoration over the real Liquid expression in the one source buffer (ADR 0032), so
-undo, Save, and Advanced all see the same text. The raw `{{ zt.title }}` appears on the Advanced
-board only. This is the one change that removes code from the first screen without a second
-document model.
+**Ruling 1.1 — fields print as `{{ Title }}`, and a select reveals the code.** On the beginner
+face a field keeps the Liquid braces and prints its human name inside them: `{{ Title }}`,
+`{{ Authors }}`, `{{ Page }}`, `{{ Highlighted text }}`. The braces stay because they are the
+one piece of syntax the researcher will meet again in the manual and in the vault file. The
+chip is a live preview drawn as a CodeMirror decoration over the real expression in the one
+source buffer (ADR 0032). Selecting a chip opens it in place and shows the expression as
+ZotLit reads it, `{{ zt.title }}`, editable; selecting elsewhere closes it back to the
+preview. Undo, Save, and Advanced all see the same text. Advanced shows the whole file.
 
 **Ruling 1.2 — one header row.** Template name, the paper shown, a `···` menu, Save. The
 connection state prints only when it is not the normal one ("Not connected to Obsidian"). Save
