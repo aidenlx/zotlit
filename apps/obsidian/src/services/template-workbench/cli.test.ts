@@ -2,9 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
+import {
+  ContractMetadataError,
+  markInertPlaceholder,
+} from "@zotlit/workbench/explorer";
 
 import { InertTemplateError } from "@/services/template/errors";
-import { markInertPlaceholder } from "@/services/template/inert-placeholder";
 import type { CompileError } from "@/services/template/service";
 
 import {
@@ -24,7 +27,6 @@ import {
 import { CONTRACT_VERSION, DIAGNOSTIC_HINTS } from "./envelope";
 import { TEMPLATE_SLOT_NAMES } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
-import { ContractMetadataError } from "./serialize";
 
 const PLUGIN_VERSION = "1.2.3";
 const IDENTITY = {

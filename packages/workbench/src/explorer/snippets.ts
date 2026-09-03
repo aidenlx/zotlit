@@ -1,10 +1,6 @@
 // Pure paste-ready template-snippet generation for Template Data Explorer nodes.
 
-import {
-  formatAccessorPath,
-  isAccessorIdentifier,
-} from "@/services/template/accessor-path";
-
+import { formatAccessorPath, isAccessorIdentifier } from "./accessor-path";
 import type { DisplayNode } from "./display-tree";
 
 export type TemplateEngine = "liquid" | "eta";
