@@ -37,7 +37,7 @@
     .sheet { position: relative; background: #fffdf7; border: 1px solid #d8d2c2; box-shadow: 6px 6px 0 0 #d8d2c2; }
     .sheet::after { content: ""; position: absolute; top: -1px; right: 22px; width: 14px; height: 26px; background: #c94d15; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%); }
     /* code */
-    .code { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; line-height: 1.6; color: #22354d; white-space: pre; tab-size: 2; }
+    .code { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; line-height: 1.6; color: #22354d; white-space: pre-wrap; tab-size: 2; }
     .ln { display: inline-block; width: 28px; margin-right: 12px; text-align: right; color: #b3ac9c; user-select: none; }
     .hole { color: #c94d15; background: #f9ece1; border-radius: 2px; padding: 0 2px; }
     .tag { color: #5d6d82; }
@@ -169,10 +169,7 @@
           <div class="muted" style="font-size: 12px;">Write it like any note. The orange parts fill in from Zotero.</div>
         </div>
         <div style="flex-grow: 1; padding: 10px 0 10px 8px; overflow: hidden;">
-<div class="code"><span class="ln">1</span><span class="kw"># </span><span class="hole">{{ zt.title }}</span>
-<span class="ln">2</span>
-<span class="ln">3</span>[Open in Zotero](<span class="hole">{{ zt.backlink }}</span>) · <span class="hole">{{ zt.fileLink }}</span>
-<span class="ln">4</span></div>
+<div class="code"><span class="ln">1</span><span class="kw"># </span><span class="hole">{{ zt.title }}</span><br><span class="ln">2</span><br><span class="ln">3</span>[Open in Zotero](<span class="hole">{{ zt.backlink }}</span>) · <span class="hole">{{ zt.fileLink }}</span><br><span class="ln">4</span></div>
 <div class="code" style="background: #f9ece1;"><span class="ln">5</span><span class="hole">{{ zt.abstractNote }}</span><span class="caret"></span></div>
 <div class="code"><span class="ln">6</span></div>
           <div class="managed" style="margin-right: 10px;">
@@ -182,17 +179,14 @@
               <span style="flex-grow: 1;"></span>
               <a href="#" style="font-weight: 400; text-transform: none; letter-spacing: 0; font-family: Inter, system-ui, sans-serif; font-size: 11.5px;">About scope</a>
             </div>
-<div class="code"><span class="ln">7</span><span class="kw">## Highlights</span>
-<span class="ln">8</span><span class="tag">{% for </span>annotation<span class="tag"> in </span><span class="hole">zt.annotations</span><span class="tag"> %}</span></div>
+<div class="code"><span class="ln">7</span><span class="kw">## Highlights</span><br><span class="ln">8</span><span class="tag">{% for </span>annotation<span class="tag"> in </span><span class="hole">zt.annotations</span><span class="tag"> %}</span></div>
             <div class="nested">
               <div class="managed-edge" style="color: #1e3a5f; border-bottom: 1px solid #d8d2c2; height: 24px;">
                 <span>How one highlight looks</span>
                 <span style="flex-grow: 1;"></span>
                 <span style="font-weight: 400; text-transform: none; letter-spacing: 0; font-family: Inter, system-ui, sans-serif; font-size: 11.5px; color: #5d6d82;">you are editing it here</span>
               </div>
-<div class="code" style="padding: 6px 0 6px 8px;"><span class="ln" style="width: 22px;">a1</span>&gt; [!quote] Page <span class="hole">{{ zt.pageLabel }}</span>
-<span class="ln" style="width: 22px;">a2</span>&gt; <span class="hole">{{ zt.text }}</span>
-<span class="ln" style="width: 22px;">a3</span>&gt; <span class="hole">{{ zt.comment }}</span></div>
+<div class="code" style="padding: 6px 0 6px 8px;"><span class="ln" style="width: 22px;">a1</span>&gt; [!quote] Page <span class="hole">{{ zt.pageLabel }}</span><br><span class="ln" style="width: 22px;">a2</span>&gt; <span class="hole">{{ zt.text }}</span><br><span class="ln" style="width: 22px;">a3</span>&gt; <span class="hole">{{ zt.comment }}</span></div>
               <div style="display: flex; align-items: center; gap: 8px; padding: 5px 10px; border-top: 1px dashed #d8d2c2; font-size: 11.5px; color: #5d6d82;">
                 <span class="label" style="font-size: 9.5px;">For this paper</span>
                 <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Page 4 · “Figures should be self-explanatory: a reader looking at the figure alone…”</span>
@@ -201,9 +195,7 @@
 <div class="code"><span class="ln">10</span><span class="tag">{% endfor %}</span></div>
             <div class="managed-edge" style="border-top: 1px dashed #efc9b3; color: #b3ac9c;"><span>End of the kept-up-to-date part</span></div>
           </div>
-<div class="code"><span class="ln">12</span>
-<span class="ln">13</span><span class="kw">## My reading notes</span>
-<span class="ln">14</span><span style="color: #b3ac9c;">Anything you write here stays yours.</span></div>
+<div class="code"><span class="ln">12</span><br><span class="ln">13</span><span class="kw">## My reading notes</span><br><span class="ln">14</span><span style="color: #b3ac9c;">Anything you write here stays yours.</span></div>
         </div>
       </div>
       <div class="strip">

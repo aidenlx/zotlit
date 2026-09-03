@@ -37,7 +37,7 @@
     .sheet { position: relative; background: #fffdf7; border: 1px solid #d8d2c2; box-shadow: 6px 6px 0 0 #d8d2c2; }
     .sheet::after { content: ""; position: absolute; top: -1px; right: 22px; width: 14px; height: 26px; background: #c94d15; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 72%, 0 100%); }
     /* code */
-    .code { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; line-height: 1.6; color: #22354d; white-space: pre; tab-size: 2; }
+    .code { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; line-height: 1.6; color: #22354d; white-space: pre-wrap; tab-size: 2; }
     .ln { display: inline-block; width: 28px; margin-right: 12px; text-align: right; color: #b3ac9c; user-select: none; }
     .hole { color: #c94d15; background: #f9ece1; border-radius: 2px; padding: 0 2px; }
     .tag { color: #5d6d82; }
@@ -186,29 +186,7 @@
           </div>
         </div>
         <div style="flex-grow: 1; padding: 12px 0 12px 8px; overflow: hidden; background: #fbf9f3;">
-<div class="code"><span class="ln">1</span><span class="kw"># </span><span class="hole">&lt;%= zt.title %&gt;</span>
-<span class="ln">2</span>
-<span class="ln">3</span><span class="hole">&lt;%= zt.creators %&gt;</span> · <span class="hole">&lt;%= zt.date %&gt;</span>
-<span class="ln">4</span>
-<span class="ln">5</span><span class="kw">## Highlights</span>
-<span class="ln">6</span><span class="tag">&lt;% for (const annotation of zt.annotations) { %&gt;</span>
-<span class="ln">7</span><span class="tag">&lt;%~ </span>renderAnnotation(annotation)<span class="tag"> %&gt;</span>
-<span class="ln">8</span><span class="tag">&lt;% } %&gt;</span>
-<span class="ln">9</span>
-<span class="ln">10</span><span class="kw">## Field notes</span>
-<span class="ln">11</span>
-<span class="ln">12</span>- Method:
-<span class="ln">13</span>- Sample:
-<span class="ln">14</span>- What I would repeat:
-<span class="ln">15</span>
-<span class="ln">16</span><span class="kw">## Open questions</span>
-<span class="ln">17</span>
-<span class="ln">18</span><span class="tag">&lt;% if (zt.tags.length &gt; 0) { %&gt;</span>
-<span class="ln">19</span>Tagged: <span class="hole">&lt;%= zt.tags.map((t) =&gt; t.name).join(", ") %&gt;</span>
-<span class="ln">20</span><span class="tag">&lt;% } %&gt;</span>
-<span class="ln">21</span>
-<span class="ln">22</span>[Open in Zotero](<span class="hole">&lt;%= zt.backlink %&gt;</span>)
-<span class="ln">23</span></div>
+<div class="code"><span class="ln">1</span><span class="kw"># </span><span class="hole">&lt;%= zt.title %&gt;</span><br><span class="ln">2</span><br><span class="ln">3</span><span class="hole">&lt;%= zt.creators %&gt;</span> · <span class="hole">&lt;%= zt.date %&gt;</span><br><span class="ln">4</span><br><span class="ln">5</span><span class="kw">## Highlights</span><br><span class="ln">6</span><span class="tag">&lt;% for (const annotation of zt.annotations) { %&gt;</span><br><span class="ln">7</span><span class="tag">&lt;%~ </span>renderAnnotation(annotation)<span class="tag"> %&gt;</span><br><span class="ln">8</span><span class="tag">&lt;% } %&gt;</span><br><span class="ln">9</span><br><span class="ln">10</span><span class="kw">## Field notes</span><br><span class="ln">11</span><br><span class="ln">12</span>- Method:<br><span class="ln">13</span>- Sample:<br><span class="ln">14</span>- What I would repeat:<br><span class="ln">15</span><br><span class="ln">16</span><span class="kw">## Open questions</span><br><span class="ln">17</span><br><span class="ln">18</span><span class="tag">&lt;% if (zt.tags.length &gt; 0) { %&gt;</span><br><span class="ln">19</span>Tagged: <span class="hole">&lt;%= zt.tags.map((t) =&gt; t.name).join(", ") %&gt;</span><br><span class="ln">20</span><span class="tag">&lt;% } %&gt;</span><br><span class="ln">21</span><br><span class="ln">22</span>[Open in Zotero](<span class="hole">&lt;%= zt.backlink %&gt;</span>)<br><span class="ln">23</span></div>
         </div>
         <div style="display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-top: 1px solid #d8d2c2; background: #fbf9f3; font-size: 11.5px; color: #5d6d82;">
           <span class="label" style="font-size: 9.5px;">JavaScript</span>
