@@ -9,6 +9,7 @@ import { valid as isValidSemVer } from "semver";
 import * as v from "valibot";
 
 import { etaGrammar } from "./src/lib/eta-grammar.js";
+import { stringifyAttention } from "./src/lib/markdown-attention.js";
 import { publishedOn } from "./src/lib/shared.js";
 import { CONTRACT_IR } from "./src/lib/template-contract/contract.js";
 import { renderContractTableMarkdown } from "./src/lib/template-contract/gfm.js";
@@ -46,10 +47,16 @@ const semverSchema = v.pipe(
  * element keeps its evaluated props and resolves from the components map
  * `src/lib/markdown-editions.tsx` hands it. A component that calls
  * `asMarkdown()` there decides its own Markdown form; one that does not is
- * serialized as JSX, the way the whole page once was.
+ * serialized as JSX, the way the whole page once was. `stringify` also serializes
+ * every bold and italic span itself, which keeps the opening marker literal —
+ * see `src/lib/markdown-attention.ts`.
  */
 const markdownEdition: LLMsOptions = {
   output: "function",
+  // oxlint-disable-next-line max-params -- signature dictated by LLMsOptions.stringify
+  stringify(node, _parent, state, info) {
+    return stringifyAttention(node, state, info);
+  },
 };
 
 /**
@@ -60,9 +67,10 @@ const markdownEdition: LLMsOptions = {
  */
 const docsMarkdownEdition: LLMsOptions = {
   ...markdownEdition,
-  stringify(node) {
+  // oxlint-disable-next-line max-params -- signature dictated by LLMsOptions.stringify
+  stringify(node, _parent, state, info) {
     if (node.type !== "mdxJsxFlowElement" || node.name !== "ContractTable") {
-      return undefined;
+      return stringifyAttention(node, state, info);
     }
     const attribute = node.attributes.find(
       (entry) => entry.type === "mdxJsxAttribute" && entry.name === "section",
