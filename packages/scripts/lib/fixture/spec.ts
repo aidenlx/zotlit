@@ -106,7 +106,12 @@ export interface FixtureItem {
    * object-key format, so `isItemKey` accepts it.
    */
   key: string;
-  itemType: "journalArticle" | "bookSection";
+  itemType:
+    | "journalArticle"
+    | "bookSection"
+    | "conferencePaper"
+    | "book"
+    | "thesis";
   /** `null` leaves the item without a native Zotero Citation Key. */
   citationKey: string | null;
   /** Fixture Vault filename stem when a prose page needs a stable target. */
@@ -465,6 +470,46 @@ export const ITEMS: readonly FixtureItem[] = [
     dateModified: "2025-02-05 12:00:00",
     collectionIDs: [1],
   },
+  {
+    itemID: 60,
+    libraryID: 1,
+    key: "CNPF226A",
+    itemType: "conferencePaper",
+    citationKey: "riveraResearchInterfaces2026",
+    title: "Designing reproducible research interfaces",
+    containerTitle: "Proceedings of the Open Research Conference",
+    date: "2026",
+    creators: [author("Mara", "Rivera"), author("Tao", "Chen")],
+    dateModified: "2025-01-03 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 61,
+    libraryID: 1,
+    key: "NW2CPDTC",
+    itemType: "book",
+    citationKey: "Kahneman2011",
+    title: "Thinking, fast and slow",
+    containerTitle: "Penguin Books",
+    date: "2011-00-00 2011",
+    creators: [author("D", "Kahneman")],
+    dateModified: "2025-05-22 03:30:30",
+    collectionIDs: [],
+  },
+  {
+    itemID: 62,
+    libraryID: 1,
+    key: "I49R3FTL",
+    itemType: "thesis",
+    citationKey: "Batista2010",
+    title:
+      "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media cities",
+    containerTitle: "",
+    date: "2010-00-00 2010",
+    creators: [author("Edgard Antunes Dias", "Batista")],
+    dateModified: "2025-05-22 03:30:30",
+    collectionIDs: [],
+  },
 ];
 
 function author(firstName: string, lastName: string): FixtureCreator {
@@ -740,6 +785,19 @@ export const ATTACHMENTS: readonly FixtureAttachment[] = [
     sourceAsset: "rougier-2014/rougier-2014.pdf",
     dateModified: "2025-02-04 12:00:00",
   },
+  {
+    itemID: 63,
+    libraryID: 1,
+    key: "CNPDF26A",
+    parentItemID: 60,
+    linkMode: "imported_file",
+    contentType: "application/pdf",
+    title: "Research interfaces conference paper",
+    path: "research-interfaces.pdf",
+    url: null,
+    sourceAsset: "rougier-2014/rougier-2014.pdf",
+    dateModified: "2025-01-03 11:00:00",
+  },
 ];
 
 interface FixtureAnnotationBase {
@@ -800,7 +858,7 @@ export type FixtureAnnotation = FixtureAnnotationBase &
       }
   );
 
-/** Real anchors captured from pages in the committed PDFs. */
+/** Reviewed anchors for the committed Fixture documents. */
 export const ANNOTATIONS: readonly FixtureAnnotation[] = [
   {
     itemID: 26,
@@ -1007,6 +1065,22 @@ export const ANNOTATIONS: readonly FixtureAnnotation[] = [
     cacheImageAsset: "rougier-2014/annotations/4PE492KU.png",
     dateAdded: "2026-08-23 16:20:12",
     dateModified: "2026-08-23 16:20:18",
+  },
+  {
+    itemID: 64,
+    libraryID: 1,
+    key: "CNPAN26A",
+    parentItemID: 63,
+    type: 1,
+    text: "A reproducible interface makes its inputs and outputs inspectable.",
+    comment: "Reviewed Fixture text; it contains no personal library data.",
+    color: "#ffd400",
+    pageLabel: "1",
+    sortIndex: "00000|000001|00000",
+    position: { pageIndex: 0, rects: [[58, 590, 375, 610]] },
+    cacheImageAsset: null,
+    dateAdded: "2025-01-03 11:30:00",
+    dateModified: "2025-01-03 11:30:00",
   },
 ];
 

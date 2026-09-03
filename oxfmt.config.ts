@@ -14,5 +14,6 @@ export default defineConfig({
     "packages/obsidian-api/**",
     "packages/pdfjs-dist/**",
     "packages/zotero-types/zotero-schema/**",
+    "packages/workbench/src/samples/*.json",
   ],
 });

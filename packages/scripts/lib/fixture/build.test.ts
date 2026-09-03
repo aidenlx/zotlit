@@ -361,6 +361,13 @@ describe("the generated Zotero database", () => {
         title: "Rougier et al. 2014 PDF",
         url: null,
       },
+      {
+        key: "CNPDF26A",
+        path: "storage:research-interfaces.pdf",
+        charsetID: null,
+        title: "Research interfaces conference paper",
+        url: null,
+      },
     ]);
   });
 

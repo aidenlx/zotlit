@@ -1,1 +1,185 @@
-export {};
+// Browser-safe rendering of Workbench Item Snapshots.
+
+import { CONTRACT_VERSION } from "@zotlit/db";
+import { TemplateFacade } from "@zotlit/templates/facade";
+import { evalManagedFrontmatterEntries } from "@zotlit/templates/frontmatter";
+import { FRONTMATTER_ABSENT } from "@zotlit/templates/frontmatter-merge";
+
+import book from "@/samples/book.json" with { type: "json" };
+import conferencePaper from "@/samples/conference-paper.json" with { type: "json" };
+import journalArticle from "@/samples/journal-article.json" with { type: "json" };
+import thesis from "@/samples/thesis.json" with { type: "json" };
+import type { ItemSnapshot } from "@/snapshot/index";
+
+import { restoreTemplateData } from "./restore-template-data";
+
+export { DEFAULT_PROFILE_SOURCE } from "./default-profile";
+export { restoreTemplateData } from "./restore-template-data";
+
+export const SAMPLE_ITEMS = [
+  journalArticle,
+  conferencePaper,
+  book,
+  thesis,
+] as unknown as readonly ItemSnapshot[];
+
+export interface RenderDiagnostic {
+  readonly code:
+    | "contract-version-mismatch"
+    | "invalid-profile"
+    | "property-error"
+    | "render-error";
+  readonly message: string;
+  readonly part?: "profile" | "properties" | "render";
+}
+
+export interface RenderedProperty {
+  readonly key: string;
+  readonly value?: unknown;
+  readonly missing: boolean;
+}
+
+export interface ProfileRenderResult {
+  readonly sourceRevision: string;
+  readonly snapshotRevision: string;
+  readonly filename: string | null;
+  readonly properties: readonly RenderedProperty[];
+  readonly creationBody: string | null;
+  readonly managedRegion: string | null;
+  readonly annotation: string | null;
+  readonly diagnostics: readonly RenderDiagnostic[];
+}
+
+export function renderProfile(
+  source: string,
+  snapshot: ItemSnapshot,
+): ProfileRenderResult {
+  const identity = {
+    sourceRevision: sourceHash(source),
+    snapshotRevision: snapshot.revision,
+  };
+  if (snapshot.contractVersion !== CONTRACT_VERSION) {
+    return failedRender(identity, {
+      code: "contract-version-mismatch",
+      message: `Item Snapshot contract ${snapshot.contractVersion} does not match ${CONTRACT_VERSION}.`,
+    });
+  }
+
+  const facade = new TemplateFacade();
+  let document;
+  try {
+    document = facade.parseLiteratureNoteTemplate(source);
+  } catch (error) {
+    return failedRender(identity, {
+      code: "invalid-profile",
+      message: errorMessage(error),
+      part: "profile",
+    });
+  }
+
+  try {
+    for (const partial of document.manifest.partials ?? []) {
+      facade.define(partial.name, partial.source, partial.language);
+    }
+    const note = restoreTemplateData(
+      snapshot.roots.note,
+      snapshot.descriptors.note,
+    );
+    const filenameData = restoreTemplateData(
+      snapshot.roots.filename,
+      snapshot.descriptors.filename,
+    );
+    const annotations = snapshot.roots.annotations.map((annotation, index) => {
+      const descriptors = snapshot.descriptors.annotations[index];
+      if (!descriptors) {
+        throw new Error(`Annotation ${index} has no snapshot descriptors.`);
+      }
+      return restoreTemplateData(annotation, descriptors);
+    });
+    const compiled = facade.compileManagedFrontmatterEntries(
+      document.manifest.frontmatter ?? [],
+      { javascript: false },
+    );
+    const evaluated = evalManagedFrontmatterEntries(
+      compiled.compiled,
+      note,
+      Temporal.Now.instant(),
+    );
+    const diagnostics: RenderDiagnostic[] = [
+      ...compiled.inertKeys.map((key) => ({
+        code: "property-error" as const,
+        message: `Managed Frontmatter '${key}' requires JavaScript.`,
+        part: "properties" as const,
+      })),
+      ...evaluated.errors.map(({ key, error }) => ({
+        code: "property-error" as const,
+        message: `${key}: ${errorMessage(error)}`,
+        part: "properties" as const,
+      })),
+    ];
+    return {
+      ...identity,
+      filename: facade.renderLiteratureNoteTemplateFilename(
+        document,
+        filenameData,
+      ),
+      properties: evaluated.values.map(({ key, value }) => ({
+        key,
+        ...(value === undefined || value === FRONTMATTER_ABSENT
+          ? {}
+          : { value }),
+        missing: value === undefined || value === FRONTMATTER_ABSENT,
+      })),
+      creationBody: facade.renderLiteratureNoteTemplateForCreate(
+        document,
+        note,
+      ),
+      managedRegion: facade.renderLiteratureNoteTemplateForUpdate(
+        document,
+        note,
+      ),
+      annotation:
+        annotations.length > 0
+          ? facade.renderLiteratureNoteTemplateAnnotation(
+              document,
+              annotations[0]!,
+            )
+          : null,
+      diagnostics,
+    };
+  } catch (error) {
+    return failedRender(identity, {
+      code: "render-error",
+      message: errorMessage(error),
+      part: "render",
+    });
+  }
+}
+
+function failedRender(
+  identity: Pick<ProfileRenderResult, "sourceRevision" | "snapshotRevision">,
+  diagnostic: RenderDiagnostic,
+): ProfileRenderResult {
+  return {
+    ...identity,
+    filename: null,
+    properties: [],
+    creationBody: null,
+    managedRegion: null,
+    annotation: null,
+    diagnostics: [diagnostic],
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function sourceHash(source: string): string {
+  let hash = 2_166_136_261;
+  for (let index = 0; index < source.length; index++) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}

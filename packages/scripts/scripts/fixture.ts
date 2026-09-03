@@ -33,6 +33,7 @@ import {
   PRISTINE_STYLES_PATH,
   PRISTINE_TEMPLATE_PATH,
 } from "#fixture/pristine";
+import { regenerateFixtureSampleItems } from "#fixture/sample-items";
 import { getWorkspaceRoot } from "#package-roots";
 import {
   installBetterBibtex,
@@ -267,6 +268,17 @@ const cli = yargs(hideBin(process.argv))
       );
       console.log(`Wrote ${PRISTINE_TEMPLATE_PATH}`);
       console.log(`Wrote ${PRISTINE_STYLES_PATH}`);
+    },
+  )
+  .command(
+    "samples",
+    "regenerate the web Workbench Sample Items",
+    () => {},
+    async () => {
+      const generated = await regenerateFixtureSampleItems(workspaceRoot);
+      console.log(
+        `Regenerated ${generated.length} Sample Items in packages/workbench/src/samples.`,
+      );
     },
   )
   .command(

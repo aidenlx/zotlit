@@ -16,6 +16,9 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "outDir": "dist",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
     "rootDir": "src",
     "isolatedDeclarations": false,
     "types": []
