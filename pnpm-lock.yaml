@@ -620,6 +620,9 @@ importers:
       '@zotlit/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@zotlit/obsidian-i18n':
+        specifier: workspace:*
+        version: link:../../packages/obsidian-i18n
       '@zotlit/scripts':
         specifier: workspace:*
         version: link:../../packages/scripts

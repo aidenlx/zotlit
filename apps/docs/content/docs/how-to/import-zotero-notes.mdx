@@ -112,7 +112,7 @@ For the whole library, open the command palette and run:
 
 <Command name={m.command_import_all_notes_name()} />
 
-For one collection, right-click it in the Zotero sidebar and choose **ZotLit > Import Child and Standalone Notes**. Nested subcollections are included. The same entry on **My Library** or a group library covers that whole library.
+For one collection, right-click it in the Zotero sidebar and choose <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_collection_import_all_notes.label"]()} />. Nested subcollections are included. The same entry on **My Library** or a group library covers that whole library.
 
 Obsidian opens the <UiLabel name={m.batch_import_title()} /> modal described below, listing every note it found. Review the list, then confirm to start the batch.
 
@@ -130,9 +130,9 @@ ZotLit Companion, the Zotero add-on, starts batch re-import from Zotero.
   <Step>
     ### Select notes in Zotero
 
-    In Zotero, select the notes you want to re-import, child notes under an item, or standalone notes. Right-click to open the context menu, then choose **ZotLit > Import Selected Note(s)**.
+    In Zotero, select the notes you want to re-import, child notes under an item, or standalone notes. Right-click to open the context menu, then choose <UiLabel name={m["zotero.menu_submenu.label"]()} /> > <UiLabel name={m["zotero.menu_item_import_notes.label"]({ count: 2 })} />.
 
-    (This menu entry appears when the selection contains note items. If you select regular items instead, the menu shows **Import Child Notes**, which triggers a different import path.)
+    (This menu entry appears when the selection contains note items. If you select regular items instead, the menu shows <UiLabel name={m["zotero.menu_item_import_child_notes.label"]()} />, which triggers a different import path.)
 
   </Step>
   <Step>

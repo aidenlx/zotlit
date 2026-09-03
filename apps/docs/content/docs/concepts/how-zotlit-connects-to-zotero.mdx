@@ -31,7 +31,7 @@ directly without creating a copy. It is what
 unavailable. This mode reads only the main database file. Recent edits can stay
 in Zotero's separate write-ahead log until Zotero writes them to the main file.
 
-The Companion keeps the main database file current by writing recent changes into it. Its **Keep the database file up to date for Obsidian** setting is enabled by default. This database checkpoint works without [live updates](/docs/how-to/set-up-live-updates).
+The Companion keeps the main database file current by writing recent changes into it. Its <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} /> setting is enabled by default. This database checkpoint works without [live updates](/docs/how-to/set-up-live-updates).
 
 <UiLabel name={m.settings_db_read_mode_copy()} /> works on any filesystem and
 sees recent edits. It copies the entire database each time, so it is slower and

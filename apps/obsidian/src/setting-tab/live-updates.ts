@@ -20,7 +20,9 @@ export function liveUpdatesPageItems(
     },
     {
       name: m.settings_live_updates_port_name(),
-      desc: m.settings_live_updates_port_desc(),
+      desc: m.settings_live_updates_port_desc({
+        label: m["zotero.prefs_notify_url"](),
+      }),
       visible: enabled,
       control: {
         type: "number",
@@ -55,7 +57,10 @@ function enabledDescription(): DocumentFragment {
 
   const hint = createDiv({ cls: "zt:mt-2 zt:text-(--text-warning)" });
   hint.append(
-    m.settings_live_updates_companion_desc(),
+    m.settings_live_updates_companion_desc({
+      section: m["zotero.prefs_notify_section"](),
+      label: m["zotero.prefs_notify_enable.label"](),
+    }),
     " ",
     createEl("a", {
       href: DOCS_COMPANION,
