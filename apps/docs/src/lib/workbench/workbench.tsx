@@ -16,6 +16,7 @@ import { m } from "@/paraglide/messages.js";
 
 import { PaperFields } from "./paper-fields";
 import type { SampleItem } from "./paper-fields";
+import { ResultSheet } from "./reading-view";
 import { startRenderWorker } from "./render-client";
 import { SliceEditor } from "./slice-editor";
 import { ensureTemporal } from "./temporal";
@@ -36,6 +37,7 @@ export function Workbench() {
   const [advanced, setAdvanced] = useState(false);
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showMarkdown, setShowMarkdown] = useState(false);
   const [profile, setProfile] = useState<{
     name: string;
     description: string;
@@ -245,9 +247,19 @@ export function Workbench() {
         </section>
 
         <section className="flex min-h-0 flex-col">
-          <h2 className="font-serif text-[1.06rem] font-medium">
-            {m.workbench_result_heading()}
-          </h2>
+          <div className="flex items-baseline gap-3">
+            <h2 className="font-serif text-[1.06rem] font-medium">
+              {m.workbench_result_heading()}
+            </h2>
+            <button
+              type="button"
+              aria-pressed={showMarkdown}
+              onClick={() => setShowMarkdown((on) => !on)}
+              className="ml-auto cursor-pointer border border-fd-border px-2 py-0.5 font-mono text-[0.62rem] font-semibold tracking-widest text-fd-muted-foreground uppercase aria-pressed:border-fd-primary aria-pressed:text-fd-primary"
+            >
+              {m.workbench_result_markdown_toggle()}
+            </button>
+          </div>
           <p className="mt-1 mb-2.5 text-xs text-fd-muted-foreground">
             {m.workbench_result_lede()}
           </p>
@@ -268,12 +280,11 @@ export function Workbench() {
                     {previewProblem.message}
                   </p>
                 )}
-                <pre
-                  aria-label={m.workbench_result_body()}
-                  className="font-mono text-[0.8rem] leading-relaxed whitespace-pre-wrap"
-                >
-                  {result.creationBody}
-                </pre>
+                <ResultSheet
+                  markdown={result.creationBody ?? ""}
+                  properties={result.properties}
+                  showMarkdown={showMarkdown}
+                />
               </>
             ) : (
               <p className="text-sm text-fd-muted-foreground">

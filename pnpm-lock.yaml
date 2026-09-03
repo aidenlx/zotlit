@@ -314,6 +314,12 @@ importers:
       '@js-temporal/polyfill':
         specifier: 'catalog:'
         version: 0.5.1
+      '@quartz-community/rehype-obsidian':
+        specifier: 0.1.2
+        version: 0.1.2
+      '@quartz-community/remark-obsidian':
+        specifier: 0.2.4
+        version: 0.2.4
       '@tanstack/react-devtools':
         specifier: ^0.10.12
         version: 0.10.12(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(csstype@3.2.3)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(solid-js@1.9.15)
@@ -362,9 +368,24 @@ importers:
       react-dom:
         specifier: 'catalog:'
         version: 19.2.7(react@19.2.7)
+      rehype-callouts:
+        specifier: 2.2.0
+        version: 2.2.0
+      remark-gfm:
+        specifier: 4.0.1
+        version: 4.0.1(supports-color@10.2.2)
+      remark-parse:
+        specifier: 11.0.0
+        version: 11.0.0(supports-color@10.2.2)
+      remark-rehype:
+        specifier: 11.1.2
+        version: 11.1.2
       semver:
         specifier: 'catalog:'
         version: 7.8.5
+      unified:
+        specifier: 11.0.5
+        version: 11.0.5
       valibot:
         specifier: 'catalog:'
         version: 1.4.2(typescript@7.0.2)
@@ -381,6 +402,12 @@ importers:
       '@tanstack/devtools-vite':
         specifier: ^0.8.5
         version: 0.8.5(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.2)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+      '@types/hast':
+        specifier: 3.0.5
+        version: 3.0.5
+      '@types/mdast':
+        specifier: 4.0.4
+        version: 4.0.4
       '@types/mdx':
         specifier: ^2.0.14
         version: 2.0.14
@@ -2981,6 +3008,14 @@ packages:
   '@quansync/fs@1.0.0':
     resolution: {integrity: sha512-4TJ3DFtlf1L5LDMaM6CanJ/0lckGNtJcMjQ1NAV6zDmA0tEHKZtxNKin8EgPaVX1YzljbxckyT2tJrpQKAtngQ==}
 
+  '@quartz-community/rehype-obsidian@0.1.2':
+    resolution: {integrity: sha512-qzwQ/HNABg2K0z3FRtsYwrJrnxkjGOj1/nmnMDK9ygIpRy2FLw1cIxnMbzoBEk7PyOZ10AhdazBDpUb6cV38Qg==}
+    engines: {node: '>=22'}
+
+  '@quartz-community/remark-obsidian@0.2.4':
+    resolution: {integrity: sha512-R0gv8sW3IbVylrMH5kItjQVxqMfCfXvfXtLXmspZY8yFV4TLR2Cf/9T2hW0PXl2EsUcEtwcsZmYbH1BPJEsh1w==}
+    engines: {node: '>=22'}
+
   '@rolldown/binding-android-arm64@1.1.5':
     resolution: {integrity: sha512-lZg8fqIv2v7FF237bwMgzGZEJvGL79/s5knJ/i6FmsGF4XXlzccZ4jb+TrFIxtSSxFtIpdsgrPZeMk1I9AFcyQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -5278,8 +5313,14 @@ packages:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
 
+  hast-util-from-html@2.0.3:
+    resolution: {integrity: sha512-CUSRHXyKjzHov8yKsQjGOElXy/3EKpyX56ELnkHH34vDVw1N1XSQ1ZcAvTyAPtGqLTuKP/uxM+aLkSPqF/EtMw==}
+
   hast-util-from-parse5@8.0.3:
     resolution: {integrity: sha512-3kxEVkEKt0zvcZ3hCRYI8rqrgwtlIOFMWkbclACvjlDw8Li9S2hk/d51OI0nr/gIpdMHNepwgOKqZ/sy0Clpyg==}
+
+  hast-util-is-element@3.0.0:
+    resolution: {integrity: sha512-Val9mnv2IWpLbNPqc/pUem+a7Ipj2aHacCwgNfTiK0vJKl0LF+4Ba4+v1oPHFpf3bLYmreq0/l3Gud9S5OH42g==}
 
   hast-util-parse-selector@4.0.0:
     resolution: {integrity: sha512-wkQCkSYoOGCRKERFWcxMVMOcYE2K1AaNLU8DXS9arxnLOUEWbOXKXiJUNzEpqZ3JOKpnha3jkFrumEjVliDe7A==}
@@ -6307,6 +6348,10 @@ packages:
   regexp.prototype.flags@1.5.4:
     resolution: {integrity: sha512-dYqgNSZbDwkaJ2ceRd9ojCGjBq+mOm9LmtXnAnEGyHhN/5R7iDW2TRw3h+o/jCFxus3P2LfWIIiwowAjANm7IA==}
     engines: {node: '>= 0.4'}
+
+  rehype-callouts@2.2.0:
+    resolution: {integrity: sha512-snwN1LkjLM3SuymqpsoLonoJ8gVy5yJN9WztBiyj8HAAj5Mv3Fez5vFzVwscLQdzMZo27xv2FycGzAGDkT4dNw==}
+    engines: {node: '>=18.0.0'}
 
   rehype-raw@7.0.0:
     resolution: {integrity: sha512-/aE8hCfKlQeA8LmyeyQvQF3eBiLRGNlfBJEvWH7ivp9sBqs7TNqBL5X3v157rM4IFETqDnIOO+z5M/biZbo9Ww==}
@@ -8766,6 +8811,10 @@ snapshots:
     dependencies:
       quansync: 1.0.0
 
+  '@quartz-community/rehype-obsidian@0.1.2': {}
+
+  '@quartz-community/remark-obsidian@0.2.4': {}
+
   '@rolldown/binding-android-arm64@1.1.5':
     optional: true
 
@@ -11073,6 +11122,15 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
+  hast-util-from-html@2.0.3:
+    dependencies:
+      '@types/hast': 3.0.5
+      devlop: 1.1.0
+      hast-util-from-parse5: 8.0.3
+      parse5: 7.3.0
+      vfile: 6.0.3
+      vfile-message: 4.0.3
+
   hast-util-from-parse5@8.0.3:
     dependencies:
       '@types/hast': 3.0.5
@@ -11083,6 +11141,10 @@ snapshots:
       vfile: 6.0.3
       vfile-location: 5.0.3
       web-namespaces: 2.0.1
+
+  hast-util-is-element@3.0.0:
+    dependencies:
+      '@types/hast': 3.0.5
 
   hast-util-parse-selector@4.0.0:
     dependencies:
@@ -12494,6 +12556,14 @@ snapshots:
       get-proto: 1.0.1
       gopd: 1.2.0
       set-function-name: 2.0.2
+
+  rehype-callouts@2.2.0:
+    dependencies:
+      '@types/hast': 3.0.5
+      hast-util-from-html: 2.0.3
+      hast-util-is-element: 3.0.0
+      hastscript: 9.0.1
+      unist-util-visit: 5.1.0
 
   rehype-raw@7.0.0:
     dependencies:
