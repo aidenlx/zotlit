@@ -4,6 +4,7 @@ import collections from "collections/browser";
 
 import { BackCrumb } from "@/components/back-crumb";
 import { Comments } from "@/components/comments";
+import { DocsLastUpdated } from "@/components/docs-last-updated";
 import { getMDXComponents } from "@/components/mdx";
 import { FooterCards } from "@/layouts/docs/page/slots/footer";
 import { cn } from "@/lib/cn";
@@ -15,9 +16,13 @@ import { blogPostingSchema, breadcrumbListSchema } from "@/lib/structured-data";
 
 const getPost = createServerFn({ method: "GET" })
   .validator((slug: string) => slug)
-  .handler(({ data: slug }) => {
+  .handler(async ({ data: slug }) => {
     const page = blog.getPage([slug]);
     if (!page) throw notFound();
+    // The git date rides with the compiled body, not the frontmatter head.
+    const modified = (await page.data.load()).lastModified
+      ?.toISOString()
+      .slice(0, 10);
     // getBlogPages() runs newest-first, so the neighbour after this post in
     // the list is the older one and the neighbour before it is the newer one.
     const pages = getBlogPages();
@@ -33,14 +38,26 @@ const getPost = createServerFn({ method: "GET" })
       description: page.data.description,
       author: page.data.author,
       date: page.data.date,
+      // Only a revision after publication is worth telling readers and crawlers.
+      modified:
+        modified !== undefined && modified > page.data.date
+          ? modified
+          : undefined,
       older: neighbour(pages[index + 1]),
       newer: neighbour(index > 0 ? pages[index - 1] : undefined),
     };
   });
 
-const postBody = collections.blogs.createClientLoader<object>({
+const postBody = collections.blogs.createClientLoader<{ modified?: string }>({
   id: "blogs",
-  component: ({ default: MDX }) => <MDX components={getMDXComponents()} />,
+  component: ({ default: MDX, lastModified }, { modified }) => (
+    <>
+      <MDX components={getMDXComponents()} />
+      {modified !== undefined && (
+        <DocsLastUpdated date={lastModified} className="mt-8 font-sans" />
+      )}
+    </>
+  ),
 });
 
 export const Route = createFileRoute("/_home/blog/$slug")({
@@ -62,13 +79,18 @@ export const Route = createFileRoute("/_home/blog/$slug")({
             slugs: post.slugs,
             alt: `${post.title} — ZotLit blog`,
           },
-          article: { publishedTime: post.date, authors: [post.author] },
+          article: {
+            publishedTime: post.date,
+            modifiedTime: post.modified,
+            authors: [post.author],
+          },
           schemas: [
             blogPostingSchema({
               title: post.title,
               description: post.description,
               author: post.author,
               date: post.date,
+              modified: post.modified,
               url: post.url,
             }),
             breadcrumbListSchema([
@@ -103,7 +125,7 @@ function BlogPost() {
         </header>
         <div className="border-t border-fd-border pt-6">
           <div className={cn("prose max-w-none", ztProse)}>
-            <Body />
+            <Body modified={post.modified} />
           </div>
         </div>
 
