@@ -1,8 +1,9 @@
 // Pure value-walker mapping an anchor root object + expansion set to typed display nodes.
 
-import { formatAccessorPath } from "@/services/template/accessor-path";
-import type { TemplatePathSegment } from "@/services/template/accessor-path";
-import { inertPlaceholderReason } from "@/services/template/inert-placeholder";
+import { formatAccessorPath } from "./accessor-path";
+import type { TemplatePathSegment } from "./accessor-path";
+import { inertPlaceholderReason } from "./inert-placeholder";
+import { coerceToString } from "./string-coercion";
 
 export type PathSegment = TemplatePathSegment;
 
@@ -252,8 +253,7 @@ const PREVIEW_MAX_LENGTH = 80;
  */
 function containerPreview(value: object): string | undefined {
   if (!Object.hasOwn(value, "toString")) return undefined;
-  // oxlint-disable-next-line no-base-to-string -- guarded above: value defines its own toString.
-  const rendered = String(value).replaceAll(/\s+/g, " ").trim();
+  const rendered = coerceToString(value).replaceAll(/\s+/g, " ").trim();
   if (!rendered || rendered === "[object Object]") return undefined;
   return rendered.length > PREVIEW_MAX_LENGTH
     ? `${rendered.slice(0, PREVIEW_MAX_LENGTH)}…`
@@ -277,8 +277,7 @@ function describeSignature(fn: Function, label: string): string {
 function evaluateHelper(fn: (...args: unknown[]) => unknown): string | null {
   try {
     const result = fn();
-    // oxlint-disable-next-line no-base-to-string -- helpers may legitimately return non-string values (e.g. numbers); render whatever they produce.
-    return result == null ? null : String(result);
+    return result == null ? null : coerceToString(result);
   } catch {
     return null;
   }
@@ -305,8 +304,7 @@ export function copyValue(node: DisplayNode): string | null {
     case "undefined":
       return "undefined";
     case "opaque":
-      // oxlint-disable-next-line no-base-to-string -- opaque values render via their own toString (e.g. Temporal, Date).
-      return String(node.value);
+      return coerceToString(node.value);
     case "array":
     case "object":
       return stringifyContainer(node.value);

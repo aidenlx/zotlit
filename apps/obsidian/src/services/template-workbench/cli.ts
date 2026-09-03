@@ -7,6 +7,10 @@ import type { FrontmatterLanguage } from "@zotlit/templates/constants";
 import { LiteratureNoteTemplateError } from "@zotlit/templates/facade";
 import type { RootVariableUse } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
+import {
+  ContractMetadataError,
+  serializeTemplateData,
+} from "@zotlit/workbench/explorer";
 
 import { FIELD_ZOTERO_KEY, RESERVED_KEYS } from "@/lib/constants";
 import { getLogger } from "@/lib/log";
@@ -59,7 +63,6 @@ import {
 } from "./request";
 import type { ParsedRequest } from "./request";
 import { schemaAssets } from "./schema";
-import { ContractMetadataError, serializeTemplateData } from "./serialize";
 
 export type { WorkbenchIdentity } from "./envelope";
 

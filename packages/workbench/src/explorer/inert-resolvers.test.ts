@@ -1,7 +1,7 @@
-// @vitest-environment happy-dom
+import { basename } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import TurndownService from "turndown";
-import { describe, expect, it } from "vitest";
+import { pathToFileURL } from "node:url";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   CollectionCache,
@@ -17,11 +17,9 @@ import type {
   Item,
 } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
+import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import type { ItemFields } from "@zotlit/zotero-types";
-
-import { creatorSummary } from "@/lib/item-summary";
-import { defaults as settingsDefaults } from "@/services/settings/schema";
 
 import { inertPlaceholderReason } from "./inert-placeholder";
 import {
@@ -132,16 +130,49 @@ function makeFakeVault(existingPaths: readonly string[] = []) {
 }
 
 function buildResolvers(overrides?: Partial<InertNoteResolverDeps>) {
-  return buildInertNoteResolvers({
+  return buildInertNoteResolvers(makeResolverDeps(overrides));
+}
+
+function makeResolverDeps(
+  overrides?: Partial<InertNoteResolverDeps>,
+): InertNoteResolverDeps {
+  const fileManager = makeFakeFileManager();
+  const vault = makeFakeVault();
+  const pathContext = { dataDir: "/data", baseAttachmentPath: null };
+  return {
     noteIndex: makeFakeNoteIndex(),
-    fileManager: makeFakeFileManager(),
-    vault: makeFakeVault(),
-    zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
-    Turndown: TurndownService,
+    getFileByPath: vault.getFileByPath,
+    generateMarkdownLink: ({ file, sourcePath, subpath, alias }) =>
+      fileManager.generateMarkdownLink(file, sourcePath, subpath, alias),
     sourcePath: "",
     excerptImages: { kind: "file-url" },
+    notImportedReason: () => "Not imported",
+    attachmentAbsPath: (attachment) =>
+      attachmentAbsPath(attachment, pathContext),
+    attachmentFileLink: (attachment, page) => {
+      const absPath = attachmentAbsPath(attachment, pathContext);
+      if (!absPath) return () => null;
+      const defaultAlias = basename(absPath) || "attachment";
+      const defaultSubpath = page == null ? "" : `#page=${page}`;
+      const href = pathToFileURL(absPath).href;
+      return (alias = defaultAlias, subpath = defaultSubpath) =>
+        `[${alias}](${href}${subpath})`;
+    },
+    annotationCachePath: (annotation) =>
+      resolveAnnotCachePath(annotation, {
+        dataDir: pathContext.dataDir,
+        groupID: annotation.groupID,
+      }),
+    commentToMarkdown: (html) => (html === "<b>hi</b>" ? "**hi**" : html),
+    authorsShort: () => "Host author summary",
+    fileUrlLink: (absPath, defaultAlias) => {
+      const href = pathToFileURL(absPath).href;
+      return (alias = defaultAlias, subpath = "") =>
+        `[${alias}](${href}${subpath})`;
+    },
+    normalizeVaultPath: (path) => path,
     ...overrides,
-  });
+  };
 }
 
 describe("buildInertNoteResolvers", () => {
@@ -164,9 +195,10 @@ describe("buildInertNoteResolvers", () => {
     );
   });
 
-  it("converts comment HTML through the real turndown conversion", () => {
-    const resolvers = buildResolvers();
-    expect(resolvers.annotation.commentToMarkdown("<b>hi</b>")).toBe("**hi**");
+  it("uses the host comment converter", () => {
+    const commentToMarkdown = vi.fn<(html: string) => string>();
+    const resolvers = buildResolvers({ commentToMarkdown });
+    expect(resolvers.annotation.commentToMarkdown).toBe(commentToMarkdown);
   });
 
   it("resolves notePath from an already-indexed note, null otherwise", () => {
@@ -211,22 +243,10 @@ describe("buildInertNoteResolvers", () => {
     ).toBeNull();
   });
 
-  it("delegates authorsShort to the real creatorSummary helper", () => {
-    const resolvers = buildResolvers();
-    const item = makeItem(
-      { itemType: "journalArticle", title: "A Study" },
-      {
-        creators: [
-          {
-            firstName: "Jane",
-            lastName: "Smith",
-            creatorType: "author",
-            fieldMode: 0,
-          },
-        ],
-      },
-    );
-    expect(resolvers.item.authorsShort(item)).toBe(creatorSummary(item));
+  it("delegates authorsShort to the host adapter", () => {
+    const authorsShort = vi.fn<InertNoteResolverDeps["authorsShort"]>();
+    const resolvers = buildResolvers({ authorsShort });
+    expect(resolvers.item.authorsShort).toBe(authorsShort);
   });
 
   describe("annotationImageLink", () => {
@@ -251,7 +271,7 @@ describe("buildInertNoteResolvers", () => {
 
     it("links through generateMarkdownLink when the vault image already exists", () => {
       const resolvers = buildResolvers({
-        vault: makeFakeVault([VAULT_IMAGE_PATH]),
+        getFileByPath: makeFakeVault([VAULT_IMAGE_PATH]).getFileByPath,
         sourcePath: NOTE_PATH,
         excerptImages: { kind: "vault", folderPath: VAULT_FOLDER },
       });
@@ -264,7 +284,7 @@ describe("buildInertNoteResolvers", () => {
 
     it("returns a branded placeholder when the vault image does not exist", () => {
       const resolvers = buildResolvers({
-        vault: makeFakeVault(),
+        getFileByPath: makeFakeVault().getFileByPath,
         excerptImages: { kind: "vault", folderPath: VAULT_FOLDER },
       });
       const imageAnnotation = makeAnnotation({ type: 3 });
@@ -326,18 +346,20 @@ describe("buildInertNoteResolvers", () => {
 describe("resolveExcerptImageContext", () => {
   it("resolves to file-url when attachment import is disabled", async () => {
     const context = await resolveExcerptImageContext({
-      app: {} as never,
-      settings: { ...settingsDefaults, "attachment.import": false },
+      attachmentImport: false,
+      attachmentFolderPath: null,
       litNotePath: NOTE_PATH,
+      resolveAttachmentFolderPath: async () => VAULT_FOLDER,
     });
     expect(context).toEqual<ExcerptImageContext>({ kind: "file-url" });
   });
 
   it("resolves to not-imported when import is enabled, no explicit folder is set, and no literature note exists", async () => {
     const context = await resolveExcerptImageContext({
-      app: {} as never,
-      settings: { ...settingsDefaults, "attachment.import": true },
+      attachmentImport: true,
+      attachmentFolderPath: null,
       litNotePath: null,
+      resolveAttachmentFolderPath: async () => VAULT_FOLDER,
     });
     expect(context).toEqual<ExcerptImageContext>({ kind: "not-imported" });
   });
@@ -346,13 +368,10 @@ describe("resolveExcerptImageContext", () => {
     // An explicit attachment.folder-path is deterministic regardless of any
     // note path, so an already-imported excerpt image should still resolve.
     const context = await resolveExcerptImageContext({
-      app: {} as never,
-      settings: {
-        ...settingsDefaults,
-        "attachment.import": true,
-        "attachment.folder-path": VAULT_FOLDER,
-      },
+      attachmentImport: true,
+      attachmentFolderPath: VAULT_FOLDER,
       litNotePath: null,
+      resolveAttachmentFolderPath: async (folderPath) => folderPath!,
     });
     expect(context).toEqual<ExcerptImageContext>({
       kind: "vault",
@@ -361,16 +380,11 @@ describe("resolveExcerptImageContext", () => {
   });
 
   it("resolves to vault with the configured folder path when a literature note exists", async () => {
-    // With an explicit folder path, resolveAttachmentFolderPath never touches
-    // `app`, so a minimal stub is sufficient here.
     const context = await resolveExcerptImageContext({
-      app: {} as never,
-      settings: {
-        ...settingsDefaults,
-        "attachment.import": true,
-        "attachment.folder-path": VAULT_FOLDER,
-      },
+      attachmentImport: true,
+      attachmentFolderPath: VAULT_FOLDER,
       litNotePath: NOTE_PATH,
+      resolveAttachmentFolderPath: async (folderPath) => folderPath!,
     });
     expect(context).toEqual<ExcerptImageContext>({
       kind: "vault",
@@ -411,15 +425,21 @@ describe("buildInertNoteResolvers — full browse queues no vault write (ADR 000
       },
     };
 
-    const resolvers = buildInertNoteResolvers({
-      noteIndex: recordingNoteIndex,
-      fileManager: recordingFileManager,
-      vault: recordingVault,
-      zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
-      Turndown: TurndownService,
-      sourcePath: NOTE_PATH,
-      excerptImages: { kind: "vault", folderPath: VAULT_FOLDER },
-    });
+    const resolvers = buildInertNoteResolvers(
+      makeResolverDeps({
+        noteIndex: recordingNoteIndex,
+        generateMarkdownLink: ({ file, sourcePath, subpath, alias }) =>
+          recordingFileManager.generateMarkdownLink(
+            file,
+            sourcePath,
+            subpath,
+            alias,
+          ),
+        getFileByPath: recordingVault.getFileByPath,
+        sourcePath: NOTE_PATH,
+        excerptImages: { kind: "vault", folderPath: VAULT_FOLDER },
+      }),
+    );
 
     const item = makeItem({ itemType: "journalArticle", title: "A Study" });
     const attachment = makeAttachment({});
@@ -576,18 +596,24 @@ describe("buildInertNoteResolvers over a real fetchNoteContext tree", () => {
       },
     };
 
-    const resolvers = buildInertNoteResolvers({
-      noteIndex: recordingNoteIndex,
-      fileManager: recordingFileManager,
-      vault: recordingVault,
-      zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
-      Turndown: TurndownService,
-      sourcePath: MAIN_NOTE_PATH,
-      // Excerpt images are not imported for this item, so the excerpt-image
-      // helper must resolve to the inert placeholder rather than minting a
-      // vault path.
-      excerptImages: { kind: "not-imported" },
-    });
+    const resolvers = buildInertNoteResolvers(
+      makeResolverDeps({
+        noteIndex: recordingNoteIndex,
+        generateMarkdownLink: ({ file, sourcePath, subpath, alias }) =>
+          recordingFileManager.generateMarkdownLink(
+            file,
+            sourcePath,
+            subpath,
+            alias,
+          ),
+        getFileByPath: recordingVault.getFileByPath,
+        sourcePath: MAIN_NOTE_PATH,
+        // Excerpt images are not imported for this item, so the excerpt-image
+        // helper must resolve to the inert placeholder rather than minting a
+        // vault path.
+        excerptImages: { kind: "not-imported" },
+      }),
+    );
 
     const [main] = getItemsByKey(client, USER_LIBRARY_ID, [MAIN_KEY]);
     expect(main).toBeDefined();

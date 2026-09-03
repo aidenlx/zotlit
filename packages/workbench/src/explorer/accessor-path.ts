@@ -1,10 +1,8 @@
 // Formats Template data paths for display, snippets, and serialized references.
 
-import { regex } from "arkregex";
-
 export type TemplatePathSegment = string | number;
 
-const IDENTIFIER = regex("^[A-Za-z_$][A-Za-z0-9_$]*$");
+const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
 export function isAccessorIdentifier(value: string): boolean {
   return IDENTIFIER.test(value);

@@ -2,15 +2,22 @@
 import { Menu } from "obsidian";
 import { createContext } from "react";
 
+import {
+  copyValue,
+  formatPath,
+  renderSnippet,
+  snippetKindsFor,
+} from "@zotlit/workbench/explorer";
+import type {
+  DisplayNode,
+  SnippetKind,
+  TemplateEngine,
+} from "@zotlit/workbench/explorer";
+
 import * as m from "@/lib/i18n/generated/messages";
 import * as toast from "@/lib/toast";
 import type { IndexedKeyCopyTarget } from "@/services/indexed-key/actions";
 import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
-
-import { copyValue, formatPath } from "./display-tree";
-import type { DisplayNode } from "./display-tree";
-import { renderSnippet, snippetKindsFor } from "./snippets";
-import type { SnippetKind, TemplateEngine } from "./snippets";
 
 const SNIPPET_LABEL: Record<SnippetKind, () => string> = {
   output: m.template_data_explorer_menu_copy_output,

@@ -6,11 +6,12 @@ import type {
   ContractType,
   RuntimeContractIR,
 } from "@zotlit/db/contract/ir";
-import contractIRJson from "@zotlit/db/contract/ir.runtime.json";
+import contractIRJson from "@zotlit/db/contract/ir.runtime.json" with { type: "json" };
 
-import { formatAccessorPath } from "@/services/template/accessor-path";
-import type { TemplatePathSegment } from "@/services/template/accessor-path";
-import { inertPlaceholderReason } from "@/services/template/inert-placeholder";
+import { formatAccessorPath } from "./accessor-path";
+import type { TemplatePathSegment } from "./accessor-path";
+import { inertPlaceholderReason } from "./inert-placeholder";
+import { coerceToString } from "./string-coercion";
 const UNKNOWN_CONTRACT_TYPE: ContractType = { kind: "unknown" };
 const contractIR = contractIRJson as RuntimeContractIR;
 
@@ -89,15 +90,13 @@ function serializeValue(value: unknown, context: SerializeContext): unknown {
   ) {
     return value;
   }
-  // oxlint-disable-next-line no-base-to-string -- symbols and bigints have stable primitive string forms.
-  if (typeof value !== "object") return String(value);
+  if (typeof value !== "object") return coerceToString(value);
 
   const cyclePath = active.get(value);
   if (cyclePath !== undefined) {
     return { $ref: formatAccessorPath(cyclePath, "zt") };
   }
-  // oxlint-disable-next-line no-base-to-string -- Template context opaque objects (for example Temporal values) define their display form.
-  if (!isPlainContainer(value)) return String(value);
+  if (!isPlainContainer(value)) return coerceToString(value);
 
   active.set(value, path);
   try {

@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import { markInertPlaceholder } from "@/services/template/inert-placeholder";
-
 import {
   annotationKeyAtPath,
   buildDisplayTree,
@@ -11,6 +9,7 @@ import {
   formatPath,
 } from "./display-tree";
 import type { DisplayNode } from "./display-tree";
+import { markInertPlaceholder } from "./inert-placeholder";
 
 function expectValueChildren(node: DisplayNode): readonly DisplayNode[] {
   expect(node.kind).toBe("value");
