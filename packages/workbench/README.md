@@ -22,6 +22,8 @@ The complete source is the authority ([ADR 0032](../../docs/adr/0032-web-workben
   step, undo and redo routed to the master, and a wholesale child refresh.
 - `manifestValueEdit(source, path, value)` — the one targeted YAML patch, so a
   form control changes a single manifest node and every other byte survives.
+- `manifestNodeRange(source, path)` — the source range one manifest node covers,
+  so a host can tell which manifest value an editor position sits in.
 
 ## Render
 

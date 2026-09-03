@@ -245,6 +245,14 @@ function valueTypeOf(value: unknown): DisplayValueType {
 /** Keeps a collapsed preview to one compact line (annotation excerpts / titles can run long or multi-line). */
 const PREVIEW_MAX_LENGTH = 80;
 
+/** The one compact line a preview shows: whitespace collapsed, cut at {@link PREVIEW_MAX_LENGTH} with an ellipsis. */
+export function previewLine(text: string): string {
+  const line = text.replaceAll(/\s+/g, " ").trim();
+  return line.length > PREVIEW_MAX_LENGTH
+    ? `${line.slice(0, PREVIEW_MAX_LENGTH)}…`
+    : line;
+}
+
 /**
  * Collapsed preview drawn from a container's own `toString` — the non-enumerable
  * renderer the template context attaches to creators, dates, tags, and
@@ -253,11 +261,9 @@ const PREVIEW_MAX_LENGTH = 80;
  */
 function containerPreview(value: object): string | undefined {
   if (!Object.hasOwn(value, "toString")) return undefined;
-  const rendered = coerceToString(value).replaceAll(/\s+/g, " ").trim();
+  const rendered = previewLine(coerceToString(value));
   if (!rendered || rendered === "[object Object]") return undefined;
-  return rendered.length > PREVIEW_MAX_LENGTH
-    ? `${rendered.slice(0, PREVIEW_MAX_LENGTH)}…`
-    : rendered;
+  return rendered;
 }
 
 /** Labels of the template contract's `TemplateLink`/`FallibleTemplateLink` helpers, which all share the `(alias?, subpath?)` signature. */
