@@ -16,6 +16,8 @@ import type { ComponentType, ElementType } from "react";
 import { ActionLink } from "@/components/action-link";
 import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
 
 import {
   getDocsAvailability,
@@ -45,6 +47,8 @@ const mdxComponents: Record<string, ElementType> = {
   ActionLink,
   Callout,
   Command,
+  SettingsPath,
+  UiLabel,
 };
 
 /** The `_markdown` export every page carries under `output: "function"`. */

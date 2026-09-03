@@ -13,8 +13,12 @@ The required Zotero add-on. Write “ZotLit Companion, the Zotero add-on” on f
 _Avoid_: Zotero companion, ZotLit Zotero companion, companion plugin, Zotero plugin (v1 term), zotero-obsidian-note (v1 product), ZotLit for Zotero
 
 **UI Label**:
-A stable, untranslated name that identifies a product control or choice in the English base catalog, such as a command, setting, menu item, button, or tooltip. Documentation quotes it from its Message instead of restating its text.
+A stable, untranslated name that identifies a product control or choice in the English base catalog, such as a command, setting, menu item, button, or tooltip. Documentation quotes it from its Message instead of restating its text. A notice text that documentation quotes verbatim is treated the same way.
 _Avoid_: UI text, product copy
+
+**Settings Path**:
+The bold navigation route from Obsidian Settings to a ZotLit settings page or one setting on it, always written from Settings through the ZotLit tab. Documentation renders it as one unit rather than as separate labels.
+_Avoid_: settings breadcrumb, menu path, Community plugins route
 
 **Section Index**:
 The wayfinding page at a section's own URL (e.g. /docs/how-to): it helps the reader find the material they need — organized around the reader's situation or question, never a flat listing of the section's pages. It routes and nothing else: no tutorial, how-to, concept, or reference content of its own. The Intro section's index is the docs index ("Introduction").
