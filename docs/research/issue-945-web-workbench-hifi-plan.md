@@ -54,7 +54,8 @@ one piece of syntax the researcher will meet again in the manual and in the vaul
 chip is a live preview drawn as a CodeMirror decoration over the real expression in the one
 source buffer (ADR 0032). Selecting a chip opens it in place and shows the expression as
 ZotLit reads it, `{{ zt.title }}`, editable; selecting elsewhere closes it back to the
-preview. Undo, Save, and Advanced all see the same text. Advanced shows the whole file.
+preview. Undo, Save, and Advanced all see the same text. Advanced shows the whole file as plain
+source, with no field preview: every expression prints as written.
 
 **Ruling 1.2 — one header row.** Template name, the paper shown, a `···` menu, Save. The
 connection state prints only when it is not the normal one ("Not connected to Obsidian"). Save
