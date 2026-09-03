@@ -26,6 +26,7 @@ import {
   VAULT_CASES,
 } from "#fixture";
 import { renderGuide } from "#fixture/guide";
+import { startMockLocalBridge } from "#fixture/local-bridge-server";
 import { runPairedRun } from "#fixture/paired-run";
 import { createNodePairedRunPorts } from "#fixture/paired-run-node";
 import {
@@ -279,6 +280,41 @@ const cli = yargs(hideBin(process.argv))
       console.log(
         `Regenerated ${generated.length} Sample Items in packages/workbench/src/samples.`,
       );
+    },
+  )
+  .command(
+    "bridge",
+    "build and serve the mock Local Bridge on loopback",
+    (y) =>
+      y
+        .option("port", {
+          describe: "loopback port",
+          type: "number",
+          default: 23_120,
+        })
+        .option("origin", {
+          describe: "approved Workbench Origin",
+          type: "string",
+          default: "http://localhost:4321",
+        })
+        .option("conflict-next-save", {
+          describe: "make the next Profile save observe an external revision",
+          type: "boolean",
+          default: false,
+        }),
+    async (argv) => {
+      const pluginBundleDir = await findPluginBundle();
+      await buildFixture(layout, { pluginBundleDir });
+      const bridge = startMockLocalBridge({
+        layout,
+        allowedOrigin: argv.origin,
+        port: argv.port,
+        conflictNextSave: argv["conflict-next-save"],
+      });
+      console.log(
+        `Mock Local Bridge listening at http://127.0.0.1:${argv.port} for ${argv.origin}`,
+      );
+      console.log(`One-time code: ${bridge.initialOneTimeCode}`);
     },
   )
   .command(

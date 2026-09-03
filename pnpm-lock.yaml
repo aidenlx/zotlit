@@ -107,6 +107,9 @@ settings:
 
 catalogs:
   default:
+    '@hono/node-server':
+      specifier: ^2.0.10
+      version: 2.0.10
     '@lezer/common':
       specifier: 1.5.2
       version: 1.5.2
@@ -170,6 +173,9 @@ catalogs:
     happy-dom:
       specifier: ^20.9.0
       version: 20.9.0
+    hono:
+      specifier: ^4.13.0
+      version: 4.13.0
     monkey-around:
       specifier: 3.0.0
       version: 3.0.0
@@ -424,7 +430,7 @@ importers:
         specifier: ^0.4.2
         version: 0.4.2
       '@hono/node-server':
-        specifier: ^2.0.10
+        specifier: 'catalog:'
         version: 2.0.10(hono@4.13.0)
       '@hono/valibot-validator':
         specifier: ^0.6.1
@@ -475,7 +481,7 @@ importers:
         specifier: 'catalog:'
         version: 0.8.3
       hono:
-        specifier: ^4.13.0
+        specifier: 'catalog:'
         version: 4.13.0
       idb:
         specifier: ^8.0.3
@@ -893,6 +899,12 @@ importers:
       '@clack/prompts':
         specifier: ^0.11.0
         version: 0.11.0
+      '@hono/node-server':
+        specifier: 'catalog:'
+        version: 2.0.10(hono@4.13.0)
+      '@js-temporal/polyfill':
+        specifier: ^0.5.1
+        version: 0.5.1
       '@pnpm/find-workspace-dir':
         specifier: 'catalog:'
         version: 1000.1.5
@@ -923,6 +935,9 @@ importers:
       get-port:
         specifier: ^7.2.0
         version: 7.2.0
+      hono:
+        specifier: 'catalog:'
+        version: 4.13.0
       semver:
         specifier: ^7.8.0
         version: 7.8.5
@@ -1039,6 +1054,9 @@ importers:
       arkregex:
         specifier: 'catalog:'
         version: 0.0.5
+      valibot:
+        specifier: 'catalog:'
+        version: 1.4.2(typescript@7.0.2)
     devDependencies:
       '@codemirror/language':
         specifier: 6.12.3

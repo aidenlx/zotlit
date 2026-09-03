@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@bjorn3/browser_wasi_shim": "^0.4.2",
-    "@hono/node-server": "^2.0.10",
+    "@hono/node-server": "catalog:",
     "@hono/valibot-validator": "^0.6.1",
     "@std/async": "catalog:",
     "@std/collections": "catalog:",
@@ -38,7 +38,7 @@
     "clsx": "^2.1.1",
     "eta": "catalog:",
     "fflate": "catalog:",
-    "hono": "^4.13.0",
+    "hono": "catalog:",
     "idb": "^8.0.3",
     "nanoid": "^5.1.16",
     "p-limit": "^7.3.0",
