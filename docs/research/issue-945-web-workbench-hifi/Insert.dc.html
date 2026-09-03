@@ -21,6 +21,10 @@
     .btn.cta { background: #1e3a5f; color: #fff; border-color: #1e3a5f; border-radius: 0; padding: 0 18px; }
     .btn.quiet { border-color: transparent; background: transparent; color: #5d6d82; }
     .col-title { font-family: Gelasio, Georgia, serif; font-weight: 500; font-size: 17px; color: #22354d; }
+    .tabs { display: flex; gap: 22px; border-bottom: 1px solid #d8d2c2; margin-bottom: 10px; }
+    .tab { font-family: Gelasio, Georgia, serif; font-weight: 500; font-size: 17px; color: #5d6d82; padding: 0 0 7px; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; cursor: pointer; }
+    .tab.on { color: #22354d; border-bottom-color: #e8622c; }
+    .tab .muted { font-family: Inter, system-ui, sans-serif; font-size: 12px; font-weight: 400; }
     .pane { background: #fffdf7; border: 1px solid #d8d2c2; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden; }
     /* field rail */
     .frow { display: flex; flex-direction: column; gap: 1px; padding: 8px 14px; border-bottom: 1px solid #f1eee4; cursor: default; }
@@ -105,7 +109,11 @@
 
     <!-- your note -->
     <div style="display: flex; flex-direction: column; min-height: 0;">
-      <div class="col-title" style="margin-bottom: 4px;">Your note</div>
+      <div class="tabs">
+        <div class="tab on">Your note</div>
+        <div class="tab">Properties <span class="muted">· 4 fields</span></div>
+        <div class="tab">Name and folder <span class="muted">· Literature/…</span></div>
+      </div>
       <div class="muted small" style="margin-bottom: 10px;">Write it like any note. The orange parts fill in from Zotero.</div>
       <div class="pane" style="flex: 1;">
         <div class="note" style="flex: 1; overflow: hidden;"><span class="h1"># <span class="chip open"><span class="k">zt.</span>title</span></span> <span class="muted small" style="font-weight:400;">← selected: the field as ZotLit reads it. Select elsewhere to close.</span>
@@ -118,10 +126,6 @@
 &gt; <span class="chip">My comment</span></div></div>
 <span class="h2">## My reading notes</span>
 <span class="placeholder">Anything you write here stays yours.</span></div>
-        <div style="display: flex; gap: 22px; padding: 12px 20px; border-top: 1px solid #f1eee4; background: #f9f6ee;">
-          <a href="#" class="small" style="color: #22354d; white-space: nowrap;">Properties <span class="muted">· title, citekey, tags, status</span></a>
-          <a href="#" class="small" style="color: #22354d; white-space: nowrap;">Name and folder <span class="muted">· Literature/…</span></a>
-        </div>
       </div>
     </div>
 

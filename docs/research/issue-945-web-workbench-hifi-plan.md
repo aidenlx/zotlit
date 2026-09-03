@@ -62,9 +62,11 @@ connection state prints only when it is not the normal one ("Not connected to Ob
 reads "Save" when connected and "Download" when standalone. Undo, Download, and Advanced sit
 behind `···`. There is no Revert, no unsaved-changes counter, no Advanced toggle on the bar.
 
-**Ruling 1.3 — the middle column holds one open pane.** The note body is open on the first
-screen. Properties and Name and folder are two plain links under it; selecting one swaps the
-pane's content and offers "Back to your note". The result column never moves.
+**Ruling 1.3 — the middle column holds one open pane, chosen by three equal tabs.** Your note,
+Properties, and Name and folder sit as tabs at the head of the column, each with a short
+summary ("Properties · 4 fields", "Name and folder · Literature/…"). Your note is the open tab
+on the first screen. Selecting a tab swaps the pane's content; the result column never moves.
+The three are equal in weight and position; only the default differs.
 
 **Ruling 1.4 — the field list shows values first, in human names.** Eleven common rows with
 this paper's value under each, a search box, and "Everything else from Zotero · 41 more" at
@@ -86,7 +88,7 @@ highlights render for the paper shown. A Problems strip appears only when there 
 
 | On the first screen | One select away | Advanced | Not on the web |
 | --- | --- | --- | --- |
-| Template name; the paper shown; field list with values; note body with chips; kept-up-to-date band; highlight box; result sheet; Save | Put in note and Copy; Properties list; Name and folder form; paper picker; everything else from Zotero; Download; Undo | Raw file with manifest; `--- zotlit:annotation ---` header; YAML for "Several from a rule"; language; IDs and compatibility; parser codes | Switch, create, share, delete a template (#918); JavaScript templates (ADR 0033) |
+| Template name; the paper shown; field list with values; note body with chips; kept-up-to-date band; highlight box; result sheet; Save | Put in note and Copy; Properties tab; Name and folder tab; paper picker; everything else from Zotero; Download; Undo | Raw file with manifest; `--- zotlit:annotation ---` header; YAML for "Several from a rule"; language; IDs and compatibility; parser codes | Switch, create, share, delete a template (#918); JavaScript templates (ADR 0033) |
 
 ## Item 2 — The final-section format on every screen
 
