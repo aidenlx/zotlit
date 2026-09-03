@@ -2,6 +2,15 @@ import * as v from "valibot";
 
 export type TemplateLanguage = "liquid" | "eta";
 
+/** The standalone line that opens a Profile document's final Annotation Section. */
+export const ANNOTATION_HEADER = "--- zotlit:annotation ---";
+
+/** Managed Block boundary tag names; the Literature Note Template owns their meaning. */
+export const MANAGED_BLOCK_TAG_NAMES: readonly [string, string] = [
+  "managed",
+  "endmanaged",
+];
+
 /**
  * Eta `autoTrim` mode for one side of a template tag. `"nl"` strips a single
  * newline, `"slurp"` strips all whitespace, `false` keeps it. Single source of

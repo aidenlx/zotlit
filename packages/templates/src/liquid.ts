@@ -57,6 +57,14 @@ export const ZOTLIT_FILTER_NAMES: readonly string[] = Object.freeze([
   "pandoc_cite",
 ]);
 
+/** Tags this engine registers beyond LiquidJS builtins; `bq` is the only block tag. */
+export const ZOTLIT_TAG_NAMES: readonly string[] = Object.freeze([
+  "bq",
+  "endbq",
+  "render_annotation",
+  "suffix",
+]);
+
 const ITEM_DATE_KINDS: ReadonlySet<unknown> = new Set([
   "date",
   "yearMonth",

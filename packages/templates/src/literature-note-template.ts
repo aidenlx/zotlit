@@ -9,14 +9,16 @@ import {
 } from "yaml";
 
 import {
+  ANNOTATION_HEADER,
   frontmatterMergeStrategySchema,
+  MANAGED_BLOCK_TAG_NAMES,
   RESERVED_FRONTMATTER_KEYS,
 } from "./constants";
 import type { FrontmatterField, TemplateLanguage } from "./constants";
 
-const OPEN_MANAGED = "{% managed %}";
-const CLOSE_MANAGED = "{% endmanaged %}";
-const ANNOTATION_HEADER = "--- zotlit:annotation ---";
+const [MANAGED_OPEN_TAG, MANAGED_CLOSE_TAG] = MANAGED_BLOCK_TAG_NAMES;
+const OPEN_MANAGED = `{% ${MANAGED_OPEN_TAG} %}`;
+const CLOSE_MANAGED = `{% ${MANAGED_CLOSE_TAG} %}`;
 
 const nonEmptyString = v.pipe(v.string(), v.trim(), v.nonEmpty());
 const nonEmptyTemplateSource = v.pipe(
