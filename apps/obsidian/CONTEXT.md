@@ -126,6 +126,18 @@ _Avoid_: template export (suggests rendered note output), data dump (the file fo
 The fixed template data for one selected Item, shared by the web Workbench's preview and field palette until an explicit refresh. It includes permitted local link targets and explicit unavailable values where private local data is omitted.
 _Avoid_: Template Data Export (the separate inspection artifact), live Item data (a snapshot remains fixed)
 
+**Sample Item** _(web Workbench)_:
+A built-in Item Snapshot the web Workbench ships for standalone use, one per supported Item type, so the preview and field palette work before any Workbench Connection exists. The surface names it as sample data whenever it is the source.
+_Avoid_: fixture item (the Fixture is test infrastructure), demo data, placeholder item
+
+**Local Bridge** _(web Workbench)_:
+The loopback-only service the plugin offers the web Workbench for the operations a Workbench Connection grants: Item Snapshots, Profile document read and Save, template dependencies, and citation styles. Its contract is separate from the Companion's local server and the Agent CLI.
+_Avoid_: Companion server, Live Update server (the Companion-facing listener), bridge server, local API
+
+**Workbench Connection** _(web Workbench)_:
+A temporary, explicitly approved session between one web Workbench page and one vault, naming the website, the vault, the selected Item, the selected Profile, and the granted operations. Disconnect or plugin shutdown ends it; standalone use continues without one.
+_Avoid_: pairing, link (the Obsidian URI verb), login, bridge session
+
 ### Agent CLI
 
 **CLI Contract**:
