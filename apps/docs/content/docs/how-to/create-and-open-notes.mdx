@@ -9,6 +9,8 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 Open an existing Literature Note or create one from its Zotero item.
@@ -44,7 +46,7 @@ It searches every library in your [library scope](/docs/reference/settings#libra
 
 ## Open a note from a Pandoc citation
 
-Turn on **{m.settings_citation_pandoc_citations_name()}** and **{m.settings_citation_open_as_links_name()}** under **Settings > ZotLit > {m.settings_page_citations()}**. **{m.settings_citation_pandoc_citations_name()}** is on by default, and **{m.settings_citation_open_as_links_name()}** is off by default.
+Turn on <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_open_as_links_name()} /> under <SettingsPath page={m.settings_page_citations()} />. <UiLabel name={m.settings_citation_pandoc_citations_name()} /> is on by default, and <UiLabel name={m.settings_citation_open_as_links_name()} /> is off by default.
 
 Type or paste a Pandoc citation such as `@key` or `[@key]` in an editor.
 
@@ -56,15 +58,18 @@ You can also place the cursor on a recognized citation and run <Command inline n
 
 ZotLit recognizes bare keys and citation clusters alike: `@key`, `-@key`, `[@key]`, `[@key, p. 3]`, and multi-cite `[@a; @b]`.
 
-A click resolves the citation key against Zotero's native citation key field, across every library in your **{m.settings_library_scope_name()}** (set at the top of **Settings > ZotLit**). When a Zotero item carries that key and already has a literature note, ZotLit opens the note. When the item exists but has no literature note yet, ZotLit creates one and opens it.
+A click resolves the citation key against Zotero's native citation key field, across every library in your <UiLabel name={m.settings_library_scope_name()} /> (set at the top of **Settings > ZotLit**). When a Zotero item carries that key and already has a literature note, ZotLit opens the note. When the item exists but has no literature note yet, ZotLit creates one and opens it.
 
 If the item is not found in your Zotero library, a notice appears: "No Zotero item with citation key `@{key}`." If the database is unavailable, ZotLit shows "Open the Zotero database to look up citation key `@{key}`."
 
 If several Zotero items carry that key, ZotLit asks which one you mean. A picker lists each item with its library and item key, and opens the one you choose. See [A key that matches several items](/docs/concepts/how-citekey-links-work#ambiguous-key).
 
-The four open-under-cursor commands use **{m.settings_citation_open_as_links_name()}**; what hovering shows follows **{m.settings_citation_hover_action_name()}** instead. **{m.settings_citation_show_formatted_name()}** does not control navigation.
+The four open-under-cursor commands use <UiLabel name={m.settings_citation_open_as_links_name()} />; what hovering shows follows <UiLabel name={m.settings_citation_hover_action_name()} /> instead. <UiLabel name={m.settings_citation_show_formatted_name()} /> does not control navigation.
 
-**{m.settings_citation_open_as_links_name()}** covers Literature Note wikilinks shown as citations as well. For recognized syntax and the complete interaction model, see [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work).
+<UiLabel name={m.settings_citation_open_as_links_name()} /> covers Literature
+Note wikilinks shown as citations as well. For recognized syntax and the
+complete interaction model, see [How in-text citation rendering and navigation
+work](/docs/concepts/how-citekey-links-work).
 
 ## Find notes that cite a Literature Note
 
@@ -72,16 +77,20 @@ Open the Literature Note whose incoming citations you want to inspect. Run:
 
 <Command name={m.command_show_cited_by_name()} />
 
-The {m.cited_by_view_name()} Sidebar follows the active Literature Note. It groups citation occurrences by source note and shows the citation in its surrounding text.
+The <UiLabel name={m.cited_by_view_name()} /> Sidebar follows the active Literature Note. It groups citation occurrences by source note and shows the citation in its surrounding text.
 
 Use the sidebar toolbar to narrow and arrange the results:
 
-- **{m.cited_by_show_search_filter()}** filters by source-note path or the shown citation context.
-- **{m.cited_by_show_more_context()}** expands every result from a compact excerpt to its enclosing Markdown block.
-- **{m.cited_by_change_sort_order()}** sorts source notes by file name, modified time, or created time, in either direction.
-- **{m.cited_by_collapse_results()}** collapses or expands the visible source-note groups.
+- <UiLabel name={m.cited_by_show_search_filter()} /> filters by source-note path
+  or the shown citation context.
+- <UiLabel name={m.cited_by_show_more_context()} /> expands every result from a
+  compact excerpt to its enclosing Markdown block.
+- <UiLabel name={m.cited_by_change_sort_order()} /> sorts source notes by file
+  name, modified time, or created time, in either direction.
+- <UiLabel name={m.cited_by_collapse_results()} /> collapses or expands the
+  visible source-note groups.
 
-Select a citation excerpt to open its source note at that occurrence. Select **{m.cited_by_open_source()}** on a group to open the note without targeting one occurrence. Hold Ctrl on Windows or Linux, or Command on macOS, to open either action in another pane.
+Select a citation excerpt to open its source note at that occurrence. Select <UiLabel name={m.cited_by_open_source()} /> on a group to open the note without targeting one occurrence. Hold Ctrl on Windows or Linux, or Command on macOS, to open either action in another pane.
 
 ## Create or update notes in bulk [#bulk]
 
@@ -99,7 +108,7 @@ Obsidian opens a confirmation modal that lists what will be created and what wil
 
 In Zotero, right-click **My Library** or a group library in the sidebar. Choose **ZotLit > Create or Update Literature Notes**.
 
-The Obsidian command covers every library in your **{m.settings_library_scope_name()}** (set in **Settings > ZotLit**). The Zotero entry covers the library you right-clicked, whatever your library scope is.
+The Obsidian command covers every library in your <UiLabel name={m.settings_library_scope_name()} /> (set in **Settings > ZotLit**). The Zotero entry covers the library you right-clicked, whatever your library scope is.
 
 ### Update one collection at once [#collection-wide]
 

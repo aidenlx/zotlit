@@ -9,6 +9,7 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 The annotation view is a sidebar panel that lists a Zotero item's annotations. You can browse highlights, drag them into your notes, and optionally follow the active Zotero reader so the view updates as you read.
@@ -19,7 +20,7 @@ Open the command palette and run:
 
 <Command name={m.command_open_annot_view_name()} />
 
-The **{m.annot_view_name()}** panel opens in the right sidebar. A ribbon icon (highlighter) also opens the view with a single click.
+The <UiLabel name={m.annot_view_name()} /> panel opens in the right sidebar. A ribbon icon (highlighter) also opens the view with a single click.
 
 By default, the view follows the active literature note. When no literature note is open, it shows: "Open a literature note to see annotations."
 
@@ -39,7 +40,7 @@ The view can track which item is open in Zotero's PDF reader, updating automatic
   <Step>
     ### Activate reader-following
 
-    In the annotation view header, click the follow-reader button. Its tooltip changes to "{m.annot_view_follow_reader_active_tooltip()}" while active.
+    In the annotation view header, click the follow-reader button. Its tooltip changes to "<UiLabel name={m.annot_view_follow_reader_active_tooltip()} />" while active.
 
     When you open or switch items in the Zotero reader, the annotation view updates to show that item's annotations.
 
@@ -58,7 +59,7 @@ The annotation view has three follow modes:
 | **Reader**         | Follows the item open in the Zotero PDF reader. Requires the ZotLit server. |
 | **Linked**         | Pinned to a manually chosen item.                                           |
 
-To pin the view to a specific item, click the link button (tooltip: "{m.annot_view_link_tooltip()}") and search for an item. Click unlink (tooltip: "{m.annot_view_unlink_tooltip()}") to return to the default note-following mode.
+To pin the view to a specific item, click the link button (tooltip: "<UiLabel name={m.annot_view_link_tooltip()} />") and search for an item. Click unlink (tooltip: "<UiLabel name={m.annot_view_unlink_tooltip()} />") to return to the default note-following mode.
 
 ## Pull annotations into a note
 
@@ -68,11 +69,16 @@ Drag an annotation row from the sidebar and drop it into the editor. ZotLit rend
 
 Right-click an annotation row for additional options:
 
-- **{m.annot_view_menu_copy_backlink()}**: copies a link back to the annotation's location in the PDF.
-- **{m.annot_view_menu_copy_text()}**: copies the highlighted or underlined text.
-- **{m.annot_view_menu_copy_citation()}**: copies a formatted citation for the annotation's parent item.
-- **{m.indexed_key_menu_copy_annotation()}**: copies the annotation's Zotero key.
-- **{m.template_data_explorer_menu_explore()}**: opens the Template Data Explorer with the annotation's data.
+- <UiLabel name={m.annot_view_menu_copy_backlink()} />: copies a link back to
+  the annotation's location in the PDF.
+- <UiLabel name={m.annot_view_menu_copy_text()} />: copies the highlighted or
+  underlined text.
+- <UiLabel name={m.annot_view_menu_copy_citation()} />: copies a formatted
+  citation for the annotation's parent item.
+- <UiLabel name={m.indexed_key_menu_copy_annotation()} />: copies the
+  annotation's Zotero key.
+- <UiLabel name={m.template_data_explorer_menu_explore()} />: opens the Template
+  Data Explorer with the annotation's data.
 
 ## See also
 

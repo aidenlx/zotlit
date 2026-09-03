@@ -8,6 +8,8 @@ updated: "2.1.0"
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 ZotLit Companion, the Zotero add-on, can push changes to Obsidian as you read and annotate in Zotero. The annotation view's reader-following mode and automatic database refreshes both depend on this optional connection.
@@ -25,15 +27,15 @@ ZotLit Companion, the Zotero add-on, can push changes to Obsidian as you read an
   <Step>
     ### Open the Live updates settings
 
-    In Obsidian, open **Settings > ZotLit > {m.settings_page_live_updates()}**.
+    In Obsidian, open <SettingsPath page={m.settings_page_live_updates()} />.
 
   </Step>
   <Step>
     ### Turn on the listener
 
-    Enable **{m.settings_live_updates_enabled_name()}**. This starts the ZotLit server (a local HTTP listener) that the Companion connects to.
+    Enable <UiLabel name={m.settings_live_updates_enabled_name()} />. This starts the ZotLit server (a local HTTP listener) that the Companion connects to.
 
-    The default port is **9091** and the default hostname is **127.0.0.1**. You can change the port in the same settings page. The hostname setting is under the **{m.settings_live_updates_advanced()}** group: keep it on 127.0.0.1 unless you need network access from another machine.
+    The default port is **9091** and the default hostname is **127.0.0.1**. You can change the port in the same settings page. The hostname setting is under the <UiLabel name={m.settings_live_updates_advanced()} /> group: keep it on 127.0.0.1 unless you need network access from another machine.
 
   </Step>
 </Steps>
@@ -69,7 +71,7 @@ After enabling both sides, open an item in the Zotero PDF reader with the annota
 
 ## Source ID filtering
 
-The ZotLit server accepts requests only from the Zotero install whose profile and data directory match the connected source. Requests from other Zotero installs are silently ignored. The source identifiers are displayed read-only under **Settings > ZotLit > {m.settings_page_database()}**.
+The ZotLit server accepts requests only from the Zotero install whose profile and data directory match the connected source. Requests from other Zotero installs are silently ignored. The source identifiers are displayed read-only under <SettingsPath page={m.settings_page_database()} />.
 
 ## See also
 

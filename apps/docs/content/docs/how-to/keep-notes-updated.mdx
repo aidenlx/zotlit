@@ -9,6 +9,7 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 When your Zotero metadata or annotations change, you can refresh your literature notes to match. ZotLit preserves your own writing by updating only the parts it manages.
@@ -50,7 +51,7 @@ A notice confirms: "Metadata updated." The note body is not changed.
 
 ### Context menu
 
-You can also right-click a literature note file in the file explorer. The **ZotLit** section of the context menu offers **{m.command_update_note_name()}**, **{m.command_update_note_metadata_name()}**, **{m.command_overwrite_note_name()}**, and **{m.command_copy_item_key_name()}**.
+You can also right-click a literature note file in the file explorer. The **ZotLit** section of the context menu offers <UiLabel name={m.command_update_note_name()} />, <UiLabel name={m.command_update_note_metadata_name()} />, <UiLabel name={m.command_overwrite_note_name()} />, and <UiLabel name={m.command_copy_item_key_name()} />.
 
 ## Update notes in batch
 
@@ -66,9 +67,9 @@ ZotLit Companion, the Zotero add-on, starts batch updates from Zotero.
   <Step>
     ### Confirm in Obsidian
 
-    Obsidian opens a confirmation dialog titled **{m.batch_update_title()}**. It shows how many notes will be created or updated, grouped by status: **{m.batch_update_group_update({ count: "…" })}**, **{m.batch_update_group_create({ count: "…" })}**, and **{m.batch_update_group_not_found({ count: "…" })}**.
+    Obsidian opens a confirmation dialog titled <UiLabel name={m.batch_update_title()} />. It shows how many notes will be created or updated, grouped by status: <UiLabel name={m.batch_update_group_update({ count: "…" })} />, <UiLabel name={m.batch_update_group_create({ count: "…" })} />, and <UiLabel name={m.batch_update_group_not_found({ count: "…" })} />.
 
-    Click **{m.batch_update_confirm_button()}** to proceed.
+    Click <UiLabel name={m.batch_update_confirm_button()} /> to proceed.
 
   </Step>
   <Step>
@@ -105,7 +106,7 @@ keys you added are kept.
 A confirmation dialog appears before the overwrite proceeds.
 
 <Callout type="warn" title="Notes created with ZotLit v1">
-  Literature notes created with ZotLit v1 do not have a managed region. Running **{m.command_update_note_name()}** on a v1 note refreshes its frontmatter but leaves the body untouched, showing the notice "Frontmatter updated. No managed region found."
+  Literature notes created with ZotLit v1 do not have a managed region. Running <UiLabel name={m.command_update_note_name()} /> on a v1 note refreshes its frontmatter but leaves the body untouched, showing the notice "Frontmatter updated. No managed region found."
 
 To fully refresh a v1 note's body, use <Command inline name={m.command_overwrite_note_name()} />. This replaces the entire body with the current note template.
 

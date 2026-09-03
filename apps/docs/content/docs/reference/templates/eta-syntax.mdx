@@ -7,9 +7,10 @@ updated: "2.0.0"
 
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This page documents the Eta template language as configured in ZotLit. Eta templates require the [{m.settings_template_js_enable_name()} gate](/docs/how-to/enable-javascript-templates) to be enabled. For the default Liquid engine, see [Template syntax](/docs/reference/templates/syntax).
+This page documents the Eta template language as configured in ZotLit. Eta templates require the [<UiLabel name={m.settings_template_js_enable_name()} /> gate](/docs/how-to/enable-javascript-templates) to be enabled. For the default Liquid engine, see [Template syntax](/docs/reference/templates/syntax).
 
 All template data is accessible through a single variable, `zt`. The shape of `zt` depends on the template type: see the [Data reference](/docs/reference/templates/data) for the full property list.
 
@@ -64,12 +65,14 @@ The trailing `-%>` consumes the newline immediately after the opening tag, so ea
 
 ### Global autoTrim setting
 
-Two settings control default trim behavior when the {m.settings_template_js_enable_name()} gate is on:
+Two settings control default trim behavior when the <UiLabel name={m.settings_template_js_enable_name()} /> gate is on:
 
-- **{m.settings_template_trim_leading_name()}:** applies to the opening side of every tag.
-- **{m.settings_template_trim_trailing_name()}:** applies to the closing side of every tag.
+- <UiLabel name={m.settings_template_trim_leading_name()} />: applies to the
+  opening side of every tag.
+- <UiLabel name={m.settings_template_trim_trailing_name()} />: applies to the
+  closing side of every tag.
 
-Each accepts three values: {m.settings_template_trim_disable()} (no trim), {m.settings_template_trim_nl()}, or {m.settings_template_trim_slurp()}. Per-tag markers always override the global setting for that tag.
+Each accepts three values: <UiLabel name={m.settings_template_trim_disable()} /> (no trim), <UiLabel name={m.settings_template_trim_nl()} />, or <UiLabel name={m.settings_template_trim_slurp()} />. Per-tag markers always override the global setting for that tag.
 
 <Callout type="info" title="Markdown is whitespace-sensitive">
   The default (keep all whitespace) avoids silently breaking Markdown

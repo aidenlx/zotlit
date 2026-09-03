@@ -9,6 +9,8 @@ import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 ZotLit ships six built-in templates that control literature note filenames, note bodies, annotations, the managed region, and citations. You can override any of them by creating an editable file in your vault.
@@ -25,22 +27,22 @@ ZotLit ships six built-in templates that control literature note filenames, note
   <Step>
     ### Open template settings
 
-    In Obsidian, open **Settings > ZotLit > {m.settings_page_templates()}**. Under the **Template files** heading you see a row for each template type: {m.settings_template_name_filename()}, {m.settings_template_name_note()}, {m.settings_template_name_annotation()}, {m.settings_template_name_content()}, {m.settings_template_name_cite()}, and {m.settings_template_name_cite2()}.
+    In Obsidian, open <SettingsPath page={m.settings_page_templates()} />. Under the **Template files** heading you see a row for each template type: <UiLabel name={m.settings_template_name_filename()} />, <UiLabel name={m.settings_template_name_note()} />, <UiLabel name={m.settings_template_name_annotation()} />, <UiLabel name={m.settings_template_name_content()} />, <UiLabel name={m.settings_template_name_cite()} />, and <UiLabel name={m.settings_template_name_cite2()} />.
 
   </Step>
   <Step>
     ### Create the file
 
-    On the row for the template you want to customize, click the **{m.settings_template_eject()}** button (pencil-on-file icon). ZotLit copies the built-in default into your vault and opens it in the editor.
+    On the row for the template you want to customize, click the <UiLabel name={m.settings_template_eject()} /> button (pencil-on-file icon). ZotLit copies the built-in default into your vault and opens it in the editor.
 
     A notice confirms the location: "Template saved to `{path}`."
 
-    The file is created at `<template folder>/zotlit-<name>.liquid.md`, where `<template folder>` is the path configured in **Settings > ZotLit > {m.settings_page_templates()} > {m.settings_template_folder_name()}** (default: `templates`).
+    The file is created at `<template folder>/zotlit-<name>.liquid.md`, where `<template folder>` is the path configured in <SettingsPath page={m.settings_page_templates()} setting={m.settings_template_folder_name()} /> (default: `templates`).
 
   </Step>
 </Steps>
 
-To create all six template files at once, click the **{m.settings_template_eject_all()}** button at the top of the Template files section.
+To create all six template files at once, click the <UiLabel name={m.settings_template_eject_all()} /> button at the top of the Template files section.
 
 ## Edit the template
 
@@ -64,14 +66,20 @@ This re-renders the managed region using the current template. To update only fr
 
 Two options return a template to its built-in default:
 
-- **{m.settings_template_reset()}** (rotate icon on the template row): replaces the file's contents with the built-in default while keeping the file in place. A confirm modal asks: "Replace '`{name}`' with the built-in default? Your changes will be lost."
-- **{m.settings_template_delete()}** (trash icon on the template row): moves the file to Obsidian's trash. With the file gone, ZotLit falls back to the built-in default automatically. The watcher picks up the deletion immediately.
+- <UiLabel name={m.settings_template_reset()} /> (rotate icon on the template
+  row): replaces the file's contents with the built-in default while keeping the
+  file in place. A confirm modal asks: "Replace '`{name}`' with the built-in
+  default? Your changes will be lost."
+- <UiLabel name={m.settings_template_delete()} /> (trash icon on the template
+  row): moves the file to Obsidian's trash. With the file gone, ZotLit falls
+  back to the built-in default automatically. The watcher picks up the deletion
+  immediately.
 
 ## Switch to Eta (JavaScript)
 
-After enabling the {m.settings_template_js_enable_name()} gate, each template row shows a **{m.settings_template_language_tooltip()}** dropdown with **{m.settings_template_language_liquid()}** and **{m.settings_template_language_eta()}** options. See [Enable JavaScript templates](/docs/how-to/enable-javascript-templates) for the opt-in procedure.
+After enabling the <UiLabel name={m.settings_template_js_enable_name()} /> gate, each template row shows a <UiLabel name={m.settings_template_language_tooltip()} /> dropdown with <UiLabel name={m.settings_template_language_liquid()} /> and <UiLabel name={m.settings_template_language_eta()} /> options. See [Enable JavaScript templates](/docs/how-to/enable-javascript-templates) for the opt-in procedure.
 
-Selecting {m.settings_template_language_eta()} replaces the file. It does not convert syntax between Liquid and Eta.
+Selecting <UiLabel name={m.settings_template_language_eta()} /> replaces the file. It does not convert syntax between Liquid and Eta.
 
 ## See also
 

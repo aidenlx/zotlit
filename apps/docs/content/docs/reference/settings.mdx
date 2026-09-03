@@ -8,34 +8,41 @@ updated: "2.1.0"
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 This reference lists every ZotLit setting, its default, dependencies, and storage scope.
 
-Open settings from **Settings > Community plugins > ZotLit**.
+Open settings from **Settings > ZotLit**.
 
 ## Hub (top-level)
 
 The hub page shows when you first open ZotLit settings.
 
-| Label                                 | Key                      | Control                                                        | Default                          |
-| ------------------------------------- | ------------------------ | -------------------------------------------------------------- | -------------------------------- |
-| **{m.settings_library_scope_name()}** | `zotero.library-scope`   | {m.settings_library_scope_all()}, or an editable selected list | {m.settings_library_scope_all()} |
-| **{m.settings_note_folder_name()}**   | `note.literature-folder` | Folder picker                                                  | `literatures`                    |
+| Label                                              | Key                      | Control                                                                         | Default                                           |
+| -------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------- |
+| <UiLabel name={m.settings_library_scope_name()} /> | `zotero.library-scope`   | <UiLabel name={m.settings_library_scope_all()} />, or an editable selected list | <UiLabel name={m.settings_library_scope_all()} /> |
+| <UiLabel name={m.settings_note_folder_name()} />   | `note.literature-folder` | Folder picker                                                                   | `literatures`                                     |
 
 ### Library scope [#library-scope]
 
 The libraries ZotLit uses for item search, citation key resolution, and library-wide commands. Everything that already names one item, note, or library keeps that exact target: a menu entry or link from Zotero runs against the library it came from, and a literature note stays tied to its own item.
 
-**{m.settings_library_scope_all()}** follows your Zotero database. A group library you join later is in scope at once, read-only groups included, and a group you leave drops out.
+<UiLabel name={m.settings_library_scope_all()} /> follows your Zotero database.
+A group library you join later is in scope at once, read-only groups included,
+and a group you leave drops out.
 
-**{m.settings_library_scope_selected()}** stays exactly as you set it. A group library you join later stays out of scope until you add it.
+<UiLabel name={m.settings_library_scope_selected()} /> stays exactly as you set
+it. A group library you join later stays out of scope until you add it.
 
-**{m.settings_library_scope_add()}** offers the libraries you have not selected yet, and each row's delete action removes one. The last remaining row has no delete action, so the list is never empty.
+<UiLabel name={m.settings_library_scope_add()} /> offers the libraries you have
+not selected yet, and each row's delete action removes one. The last remaining
+row has no delete action, so the list is never empty.
 
-Switching to **{m.settings_library_scope_selected()}** starts at **{m.settings_library_scope_personal()}**. Switching to **{m.settings_library_scope_all()}** discards the list you had.
+Switching to <UiLabel name={m.settings_library_scope_selected()} /> starts at <UiLabel name={m.settings_library_scope_personal()} />. Switching to <UiLabel name={m.settings_library_scope_all()} /> discards the list you had.
 
-ZotLit stores each selection as a stable reference: **{m.settings_library_scope_personal()}** as itself, a group library by its Zotero group ID. Group names and Zotero's internal library numbers are never stored, so a renamed group keeps its place in the list and shows its current name.
+ZotLit stores each selection as a stable reference: <UiLabel name={m.settings_library_scope_personal()} /> as itself, a group library by its Zotero group ID. Group names and Zotero's internal library numbers are never stored, so a renamed group keeps its place in the list and shows its current name.
 
 #### An unavailable library [#unavailable-library]
 
@@ -53,91 +60,107 @@ Your saved scope is untouched. See [Fix Zotero changes that do not appear](/docs
 
 ZotLit can fail to read a saved scope, after an edited `data.json` or a vault synced from a newer ZotLit. It keeps the broken value on disk rather than overwriting it, and an unrelated settings change leaves that value in place.
 
-ZotLit shows the notice "Library scope is invalid" once, marks the setting with a standing warning, and searches **{m.settings_library_scope_personal()}** alone until you repair the setting. The first change you make here writes over the broken value and clears both warnings.
+ZotLit shows the notice "Library scope is invalid" once, marks the setting with a standing warning, and searches <UiLabel name={m.settings_library_scope_personal()} /> alone until you repair the setting. The first change you make here writes over the broken value and clears both warnings.
 
 <Callout type="info" title="What an upgrade sets">
   An upgrade from an earlier ZotLit version starts at
-  <strong>{m.settings_library_scope_selected()}</strong> with
-  <strong>{m.settings_library_scope_personal()}</strong>, whatever library you
+  <UiLabel name={m.settings_library_scope_selected()} /> with
+  <UiLabel name={m.settings_library_scope_personal()} />, whatever library you
   had selected before. Widen the scope here to search your group libraries. A
-  fresh installation starts at **{m.settings_library_scope_all()}**.
+  fresh installation starts at <UiLabel name={m.settings_library_scope_all()} />
+  .
 </Callout>
 
 ## Citations
 
-Open this page from **Settings > ZotLit > {m.settings_page_citations()}**.
+Open this page from <SettingsPath page={m.settings_page_citations()} />.
 
 ### Citation suggestions
 
-| Label                                         | Key                                  | Control | Default | Dependency                                       | Storage |
-| --------------------------------------------- | ------------------------------------ | ------- | ------- | ------------------------------------------------ | ------- |
-| **{m.settings_citation_suggester_name()}**    | `citation.editor-suggester`          | Toggle  | On      | None                                             | Synced  |
-| **{m.settings_citation_at_trigger_name()}**   | `citation.at-trigger`                | Toggle  | Off     | **{m.settings_citation_suggester_name()}** is on | Synced  |
-| **{m.settings_citation_show_citekey_name()}** | `citation.show-citekey-in-suggester` | Toggle  | Off     | None                                             | Synced  |
+| Label                                                      | Key                                  | Control | Default | Dependency                                                    | Storage |
+| ---------------------------------------------------------- | ------------------------------------ | ------- | ------- | ------------------------------------------------------------- | ------- |
+| <UiLabel name={m.settings_citation_suggester_name()} />    | `citation.editor-suggester`          | Toggle  | On      | None                                                          | Synced  |
+| <UiLabel name={m.settings_citation_at_trigger_name()} />   | `citation.at-trigger`                | Toggle  | Off     | <UiLabel name={m.settings_citation_suggester_name()} /> is on | Synced  |
+| <UiLabel name={m.settings_citation_show_citekey_name()} /> | `citation.show-citekey-in-suggester` | Toggle  | Off     | None                                                          | Synced  |
 
 <Callout type="info">
-  **{m.settings_citation_at_trigger_name()}** is visible only when
-  <strong>{m.settings_citation_suggester_name()}</strong> is on.
+  <UiLabel name={m.settings_citation_at_trigger_name()} /> is visible only when
+  <UiLabel name={m.settings_citation_suggester_name()} /> is on.
 </Callout>
 
 ### Citation sources
 
-| Label                                               | Key                           | Control | Default | Dependency | Storage |
-| --------------------------------------------------- | ----------------------------- | ------- | ------- | ---------- | ------- |
-| **{m.settings_citation_pandoc_citations_name()}**   | `citation.pandoc-citations`   | Toggle  | On      | None       | Synced  |
-| **{m.settings_citation_wikilink_citations_name()}** | `citation.wikilink-citations` | Toggle  | Off     | None       | Synced  |
+| Label                                                            | Key                           | Control | Default | Dependency | Storage |
+| ---------------------------------------------------------------- | ----------------------------- | ------- | ------- | ---------- | ------- |
+| <UiLabel name={m.settings_citation_pandoc_citations_name()} />   | `citation.pandoc-citations`   | Toggle  | On      | None       | Synced  |
+| <UiLabel name={m.settings_citation_wikilink_citations_name()} /> | `citation.wikilink-citations` | Toggle  | Off     | None       | Synced  |
 
-**{m.settings_citation_pandoc_citations_name()}:** Include Pandoc citations such as `@doe2024` in the references sidebar and ZotLit’s in-text features. This setting does not change citation insertion or export.
+<UiLabel name={m.settings_citation_pandoc_citations_name()} />: Include Pandoc
+citations such as `@doe2024` in the references sidebar and ZotLit’s in-text
+features. This setting does not change citation insertion or export.
 
-**{m.settings_citation_wikilink_citations_name()}:** Include unaliased links to literature notes in the references sidebar and ZotLit’s in-text features. Heading links, block links, and invalid citation fragments stay as links. This setting does not change export.
+<UiLabel name={m.settings_citation_wikilink_citations_name()} />: Include
+unaliased links to literature notes in the references sidebar and ZotLit’s
+in-text features. Heading links, block links, and invalid citation fragments
+stay as links. This setting does not change export.
 
-Both settings can be off. ZotLit’s internal Citation Index remains active, and **{m.settings_citation_index_reset_name()}** remains available under {m.settings_page_maintenance()}.
+Both settings can be off. ZotLit’s internal Citation Index remains active, and <UiLabel name={m.settings_citation_index_reset_name()} /> remains available under <UiLabel name={m.settings_page_maintenance()} />.
 
 ### In-text citations
 
-| Label                                           | Key                       | Control | Default | Dependency                                                                  | Storage |
-| ----------------------------------------------- | ------------------------- | ------- | ------- | --------------------------------------------------------------------------- | ------- |
-| **{m.settings_citation_show_formatted_name()}** | `citation.show-formatted` | Toggle  | On      | Active citation source; Pandoc engine and selected style for formatted text | Synced  |
-| **{m.settings_citation_open_as_links_name()}**  | `citation.open-as-links`  | Toggle  | Off     | Active citation source                                                      | Synced  |
+| Label                                                        | Key                       | Control | Default | Dependency                                                                  | Storage |
+| ------------------------------------------------------------ | ------------------------- | ------- | ------- | --------------------------------------------------------------------------- | ------- |
+| <UiLabel name={m.settings_citation_show_formatted_name()} /> | `citation.show-formatted` | Toggle  | On      | Active citation source; Pandoc engine and selected style for formatted text | Synced  |
+| <UiLabel name={m.settings_citation_open_as_links_name()} />  | `citation.open-as-links`  | Toggle  | Off     | Active citation source                                                      | Synced  |
 
-**{m.settings_citation_show_formatted_name()}:** Show citations in Live Preview and reading view with the selected citation and references style. Source mode always shows Markdown. Citations stay unchanged when ZotLit cannot format them.
+<UiLabel name={m.settings_citation_show_formatted_name()} />: Show citations in
+Live Preview and reading view with the selected citation and references style.
+Source mode always shows Markdown. Citations stay unchanged when ZotLit cannot
+format them.
 
-**{m.settings_citation_open_as_links_name()}:** Open literature notes when you select a Pandoc citation or a literature note wikilink shown as a citation. When off, selecting a citation places the cursor in the citation text so you can edit it.
+<UiLabel name={m.settings_citation_open_as_links_name()} />: Open literature
+notes when you select a Pandoc citation or a literature note wikilink shown as a
+citation. When off, selecting a citation places the cursor in the citation text
+so you can edit it.
 
-The navigation setting also controls the four open-under-cursor commands. **{m.settings_citation_hover_action_name()}** owns hover on its own. While this setting is off, Ctrl-click (Windows and Linux) or Cmd-click (macOS) still opens the Literature Note.
+The navigation setting also controls the four open-under-cursor commands. <UiLabel name={m.settings_citation_hover_action_name()} /> owns hover on its own. While this setting is off, Ctrl-click (Windows and Linux) or Cmd-click (macOS) still opens the Literature Note.
 
 ### Hover
 
-| Label                                           | Key                     | Control                                                                                                                                              | Default                                      | Dependency                                                                                   | Storage |
-| ----------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------- | ------- |
-| **{m.settings_citation_hover_action_name()}**   | `citation.hover-action` | Dropdown ({m.settings_citation_hover_action_off()}, {m.settings_citation_hover_action_popover()}, {m.settings_citation_hover_action_page_preview()}) | {m.settings_citation_hover_action_popover()} | Active citation source                                                                       | Synced  |
-| **{m.settings_citation_hover_mod_page_name()}** | (sub-page)              | Sub-page listing one toggle per editing mode                                                                                                         | —                                            | **{m.settings_citation_hover_action_name()}** = {m.settings_citation_hover_action_popover()} | Synced  |
+| Label                                                        | Key                     | Control                                                                                                                                                                                                 | Default                                                       | Dependency                                                                                                                 | Storage |
+| ------------------------------------------------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------- |
+| <UiLabel name={m.settings_citation_hover_action_name()} />   | `citation.hover-action` | Dropdown (<UiLabel name={m.settings_citation_hover_action_off()} />, <UiLabel name={m.settings_citation_hover_action_popover()} />, <UiLabel name={m.settings_citation_hover_action_page_preview()} />) | <UiLabel name={m.settings_citation_hover_action_popover()} /> | Active citation source                                                                                                     | Synced  |
+| <UiLabel name={m.settings_citation_hover_mod_page_name()} /> | (sub-page)              | Sub-page listing one toggle per editing mode                                                                                                                                                            | —                                                             | <UiLabel name={m.settings_citation_hover_action_name()} /> = <UiLabel name={m.settings_citation_hover_action_popover()} /> | Synced  |
 
-**{m.settings_citation_hover_action_name()}:** What hovering a citation or literature note link shows. Page preview follows the Page preview plugin settings.
+<UiLabel name={m.settings_citation_hover_action_name()} />: What hovering a
+citation or literature note link shows. Page preview follows the Page preview
+plugin settings.
 
-One hover shows one result. **{m.settings_citation_hover_action_popover()}** shows the bibliography entry of every cited item. **{m.settings_citation_hover_action_page_preview()}** shows the Literature Note of a single-item citation under the built-in Page preview plugin's own settings, and shows nothing for a multi-item citation. **{m.settings_citation_hover_action_off()}** adds no ZotLit hover result.
+One hover shows one result. <UiLabel name={m.settings_citation_hover_action_popover()} /> shows the bibliography entry of every cited item. <UiLabel name={m.settings_citation_hover_action_page_preview()} /> shows the Literature Note of a single-item citation under the built-in Page preview plugin's own settings, and shows nothing for a multi-item citation. <UiLabel name={m.settings_citation_hover_action_off()} /> adds no ZotLit hover result.
 
 #### Require modifier key
 
-Show the popover only while holding Ctrl (Windows) or Command (macOS). The sub-page appears only while **{m.settings_citation_hover_action_name()}** is {m.settings_citation_hover_action_popover()}, and lists one toggle per editing mode, like the built-in Page preview plugin lists one toggle per hover source.
+Show the popover only while holding Ctrl (Windows) or Command (macOS). The sub-page appears only while <UiLabel name={m.settings_citation_hover_action_name()} /> is <UiLabel name={m.settings_citation_hover_action_popover()} />, and lists one toggle per editing mode, like the built-in Page preview plugin lists one toggle per hover source.
 
-| Label                                                   | Key                                       | Control | Default |
-| ------------------------------------------------------- | ----------------------------------------- | ------- | ------- |
-| **{m.settings_citation_hover_mod_source_name()}**       | `citation.hover-require-mod-source`       | Toggle  | On      |
-| **{m.settings_citation_hover_mod_live_preview_name()}** | `citation.hover-require-mod-live-preview` | Toggle  | Off     |
-| **{m.settings_citation_hover_mod_reading_name()}**      | `citation.hover-require-mod-reading`      | Toggle  | Off     |
+| Label                                                                | Key                                       | Control | Default |
+| -------------------------------------------------------------------- | ----------------------------------------- | ------- | ------- |
+| <UiLabel name={m.settings_citation_hover_mod_source_name()} />       | `citation.hover-require-mod-source`       | Toggle  | On      |
+| <UiLabel name={m.settings_citation_hover_mod_live_preview_name()} /> | `citation.hover-require-mod-live-preview` | Toggle  | Off     |
+| <UiLabel name={m.settings_citation_hover_mod_reading_name()} />      | `citation.hover-require-mod-reading`      | Toggle  | Off     |
 
 Each toggle gates the popover in its own editing mode, and the modifier is read when the pointer arrives.
 
 ### Formatting
 
-| Label                                             | Key                         | Control                                                                                   | Default                                          | Dependency             | Storage    |
-| ------------------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------ | ---------------------- | ---------- |
-| **{m.settings_citation_references_style_name()}** | `citation.references-style` | Dropdown (lists installed styles)                                                         | {m.settings_citation_references_style_default()} | Zotero style directory | Synced     |
-| **{m.settings_citation_locale_name()}**           | `citation.locale`           | Text                                                                                      | {m.settings_citation_locale_default()}           | None                   | Synced     |
-| **{m.settings_citation_engine_name()}**           | None                        | {m.settings_citation_engine_install()} or {m.settings_citation_engine_uninstall()} action | Not installed                                    | Network for install    | Per device |
+| Label                                                          | Key                         | Control                                                                                                                     | Default                                                           | Dependency             | Storage    |
+| -------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------- | ---------- |
+| <UiLabel name={m.settings_citation_references_style_name()} /> | `citation.references-style` | Dropdown (lists installed styles)                                                                                           | <UiLabel name={m.settings_citation_references_style_default()} /> | Zotero style directory | Synced     |
+| <UiLabel name={m.settings_citation_locale_name()} />           | `citation.locale`           | Text                                                                                                                        | <UiLabel name={m.settings_citation_locale_default()} />           | None                   | Synced     |
+| <UiLabel name={m.settings_citation_engine_name()} />           | None                        | <UiLabel name={m.settings_citation_engine_install()} /> or <UiLabel name={m.settings_citation_engine_uninstall()} /> action | Not installed                                                     | Network for install    | Per device |
 
-**{m.settings_citation_references_style_name()}:** CSL style used to format in-text citations and the references sidebar. Install and manage styles in Zotero.
+<UiLabel name={m.settings_citation_references_style_name()} />: CSL style used
+to format in-text citations and the references sidebar. Install and manage
+styles in Zotero.
 
 The dropdown stores the CSL style ID. Default uses ZotLit's embedded style. ZotLit uses the embedded style only while Default is selected.
 
@@ -145,13 +168,13 @@ An unavailable style remains selected. In-text citations stay native, and the Re
 
 > This style isn’t installed in Zotero. Install it in Zotero or select another style.
 
-The first formatting attempt shows this notice once per plugin lifecycle: "The selected citation and references style isn’t installed in Zotero." Its **{m.notice_citation_style_missing_action()}** action opens the {m.settings_page_citations()} page.
+The first formatting attempt shows this notice once per plugin lifecycle: "The selected citation and references style isn’t installed in Zotero." Its <UiLabel name={m.notice_citation_style_missing_action()} /> action opens the <UiLabel name={m.settings_page_citations()} /> page.
 
 A note can select its own style with the `zotlit-csl` property. The property takes the CSL style ID of a style installed in Zotero. Every other note keeps the vault selection.
 
-That note uses its own style for in-text citations, the {m.references_view_name()} Sidebar, the {m.settings_citation_hover_action_popover()}, and the copied bibliography. The built-in export dialog opens on the same style. The dialog holds a style you pick there for that run alone, and never writes it to the note.
+That note uses its own style for in-text citations, the <UiLabel name={m.references_view_name()} /> Sidebar, the <UiLabel name={m.settings_citation_hover_action_popover()} />, and the copied bibliography. The built-in export dialog opens on the same style. The dialog holds a style you pick there for that run alone, and never writes it to the note.
 
-A note whose `zotlit-csl` names an unavailable style stops instead of using the vault selection. Its citations stay native. The {m.references_view_name()} Sidebar shows its minimal list with this banner, and the copy action stays unavailable.
+A note whose `zotlit-csl` names an unavailable style stops instead of using the vault selection. Its citations stay native. The <UiLabel name={m.references_view_name()} /> Sidebar shows its minimal list with this banner, and the copy action stays unavailable.
 
 > This note's citation and references style is unavailable
 
@@ -159,21 +182,24 @@ Built-in export of that note opens on the same unavailable style and stops with 
 
 An empty `zotlit-csl` property stops the note the same way, and its built-in export stops before the dialog opens. Remove the property to use the vault selection again.
 
-**{m.settings_citation_locale_name()}:** Sets the language for citation terms, dates, names, and sorting. Leave empty to use the language the selected style declares.
+<UiLabel name={m.settings_citation_locale_name()} />: Sets the language for
+citation terms, dates, names, and sorting. Leave empty to use the language the
+selected style declares.
 
 The field takes a language tag such as `en-US`, `de`, or `zh-CN`. ZotLit rejects any other form and shows this message: "Enter a language code such as en-US, de, or zh-CN."
 
-The locale applies to in-text citations, the {m.references_view_name()} Sidebar, the {m.settings_citation_hover_action_popover()}, the copied bibliography, and built-in export. Built-in export applies it to citation processing only: a note that declares Pandoc `lang` keeps that language, and a note that declares none stays without one.
+The locale applies to in-text citations, the <UiLabel name={m.references_view_name()} /> Sidebar, the <UiLabel name={m.settings_citation_hover_action_popover()} />, the copied bibliography, and built-in export. Built-in export applies it to citation processing only: a note that declares Pandoc `lang` keeps that language, and a note that declares none stays without one.
 
-A note can set its own locale with the standard Pandoc `lang` property. The property takes the same language tags this field takes. It overrides this setting for that note across in-text citations, the {m.references_view_name()} Sidebar, the {m.settings_citation_hover_action_popover()}, the copied bibliography, and built-in export. Built-in export also passes it to Pandoc as the exported document's own language.
+A note can set its own locale with the standard Pandoc `lang` property. The property takes the same language tags this field takes. It overrides this setting for that note across in-text citations, the <UiLabel name={m.references_view_name()} /> Sidebar, the <UiLabel name={m.settings_citation_hover_action_popover()} />, the copied bibliography, and built-in export. Built-in export also passes it to Pandoc as the exported document's own language.
 
-A note whose `lang` is not a language tag stops instead of using this setting. Its citations stay native. The {m.references_view_name()} Sidebar shows its minimal list with this banner, the copy action stays unavailable, and built-in export stops before the dialog opens.
+A note whose `lang` is not a language tag stops instead of using this setting. Its citations stay native. The <UiLabel name={m.references_view_name()} /> Sidebar shows its minimal list with this banner, the copy action stays unavailable, and built-in export stops before the dialog opens.
 
 > This note's document language is invalid
 
 Both note properties are set from the <Command inline name={m.command_set_citation_presentation_name()} /> command, which is also in the note's **More options** menu. See [Commands](/docs/reference/commands).
 
-**{m.settings_citation_engine_name()}:** Formats in-text citations, references, and exports. Installation applies to every vault on this device.
+<UiLabel name={m.settings_citation_engine_name()} />: Formats in-text citations,
+references, and exports. Installation applies to every vault on this device.
 
 Before installation, its status is: "Not installed. References Sidebar stays a plain list until you install it." This supported state does not show a lifecycle notice.
 
@@ -181,124 +207,139 @@ Before installation, its status is: "Not installed. References Sidebar stays a p
 
 These rows support conversion with a user-installed Pandoc CLI. They are separate from ZotLit's built-in export command.
 
-| Label                                            | Key  | Control                                                 | Default | Dependency               | Storage                    |
-| ------------------------------------------------ | ---- | ------------------------------------------------------- | ------- | ------------------------ | -------------------------- |
-| **{m.settings_citation_pandoc_tutorial_name()}** | None | **{m.settings_citation_pandoc_tutorial_open()}** action | None    | Network to open          | None                       |
-| **{m.settings_citation_pandoc_files_name()}**    | None | **{m.settings_citation_pandoc_files_save()}** action    | None    | A selected output folder | Writes the selected folder |
-| **{m.settings_citation_pandoc_guide_name()}**    | None | Read-only guide action                                  | None    | None                     | Per plugin installation    |
+| Label                                                         | Key  | Control                                                              | Default | Dependency               | Storage                    |
+| ------------------------------------------------------------- | ---- | -------------------------------------------------------------------- | ------- | ------------------------ | -------------------------- |
+| <UiLabel name={m.settings_citation_pandoc_tutorial_name()} /> | None | <UiLabel name={m.settings_citation_pandoc_tutorial_open()} /> action | None    | Network to open          | None                       |
+| <UiLabel name={m.settings_citation_pandoc_files_name()} />    | None | <UiLabel name={m.settings_citation_pandoc_files_save()} /> action    | None    | A selected output folder | Writes the selected folder |
+| <UiLabel name={m.settings_citation_pandoc_guide_name()} />    | None | Read-only guide action                                               | None    | None                     | Per plugin installation    |
 
-**{m.settings_citation_pandoc_tutorial_name()}:** Opens [Build a Pandoc citation workflow](/docs/tutorial/pandoc-citation-workflow) at its stable URL.
+<UiLabel name={m.settings_citation_pandoc_tutorial_name()} />: Opens [Build a
+Pandoc citation workflow](/docs/tutorial/pandoc-citation-workflow) at its stable
+URL.
 
-**{m.settings_citation_pandoc_files_name()}:** Save the version-matched filter and defaults file to one folder. Keep both files together.
+<UiLabel name={m.settings_citation_pandoc_files_name()} />: Save the
+version-matched filter and defaults file to one folder. Keep both files
+together.
 
-**{m.settings_citation_pandoc_guide_name()}:** ZotLit reference for the native Pandoc workflow.
+<UiLabel name={m.settings_citation_pandoc_guide_name()} />: ZotLit reference for
+the native Pandoc workflow.
 
-**{m.settings_citation_pandoc_files_save()}** writes the pair to the folder you select. See [Export a note with citations](/docs/how-to/export-note-with-citations) for ZotLit's built-in workflow.
+<UiLabel name={m.settings_citation_pandoc_files_save()} /> writes the pair to
+the folder you select. See [Export a note with
+citations](/docs/how-to/export-note-with-citations) for ZotLit's built-in
+workflow.
 
 ## Zotero database
 
 <Callout type="info" title="Device Overrides">
-  **{m.settings_db_profile_dir_name()}** and **{m.settings_db_data_dir_name()}**
+  <UiLabel name={m.settings_db_profile_dir_name()} /> and{" "}
+  <UiLabel name={m.settings_db_data_dir_name()} />
   are stored per device and never sync through the vault. Setting either value
   on one computer does not affect other computers that share the same vault.
   When unset, ZotLit auto-detects the default Zotero location. See [Use ZotLit
   on multiple devices](/docs/how-to/sync-across-devices) for details.
 </Callout>
 
-| Label                                   | Key                   | Control                                | Default                          | Storage    |
-| --------------------------------------- | --------------------- | -------------------------------------- | -------------------------------- | ---------- |
-| **{m.settings_db_profile_dir_name()}**  | (device-local)        | Profile picker                         | {m.settings_db_profile_auto()}   | Per device |
-| **{m.settings_db_file_name()}**         | (read-only)           | Displays resolved `zotero.sqlite` path | None                             | None       |
-| **{m.settings_db_read_mode_name()}**    | `zotero.read-mode`    | Dropdown                               | {m.settings_db_read_mode_auto()} | Synced     |
-| **{m.settings_db_auto_refresh_name()}** | `zotero.auto-refresh` | Toggle                                 | On                               | Synced     |
+| Label                                                | Key                   | Control                                | Default                                           | Storage    |
+| ---------------------------------------------------- | --------------------- | -------------------------------------- | ------------------------------------------------- | ---------- |
+| <UiLabel name={m.settings_db_profile_dir_name()} />  | (device-local)        | Profile picker                         | <UiLabel name={m.settings_db_profile_auto()} />   | Per device |
+| <UiLabel name={m.settings_db_file_name()} />         | (read-only)           | Displays resolved `zotero.sqlite` path | None                                              | None       |
+| <UiLabel name={m.settings_db_read_mode_name()} />    | `zotero.read-mode`    | Dropdown                               | <UiLabel name={m.settings_db_read_mode_auto()} /> | Synced     |
+| <UiLabel name={m.settings_db_auto_refresh_name()} /> | `zotero.auto-refresh` | Toggle                                 | On                                                | Synced     |
 
-**{m.settings_db_read_mode_name()}** options:
+<UiLabel name={m.settings_db_read_mode_name()} /> options:
 
-| Option                                | Behavior                                                                                                                                                              |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| {m.settings_db_read_mode_auto()}      | Picks the best available mode for your platform. See [How ZotLit connects to Zotero](/docs/concepts/how-zotlit-connects-to-zotero) for details.                       |
-| {m.settings_db_read_mode_reflink()}   | Fast, lightweight snapshot. What {m.settings_db_read_mode_auto()} uses on macOS and Linux filesystems that support cloning.                                           |
-| {m.settings_db_read_mode_copy()}      | Byte-for-byte copy of the database file. Works on any filesystem but slower and uses more disk space. {m.settings_db_read_mode_auto()} does not select this mode.     |
-| {m.settings_db_read_mode_immutable()} | Reads the database file directly. What {m.settings_db_read_mode_auto()} falls back to when cloning is unavailable. Recent edits in Zotero may not appear immediately. |
+| Option                                                 | Behavior                                                                                                                                                                               |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.settings_db_read_mode_auto()} />      | Picks the best available mode for your platform. See [How ZotLit connects to Zotero](/docs/concepts/how-zotlit-connects-to-zotero) for details.                                        |
+| <UiLabel name={m.settings_db_read_mode_reflink()} />   | Fast, lightweight snapshot. What <UiLabel name={m.settings_db_read_mode_auto()} /> uses on macOS and Linux filesystems that support cloning.                                           |
+| <UiLabel name={m.settings_db_read_mode_copy()} />      | Byte-for-byte copy of the database file. Works on any filesystem but slower and uses more disk space. <UiLabel name={m.settings_db_read_mode_auto()} /> does not select this mode.     |
+| <UiLabel name={m.settings_db_read_mode_immutable()} /> | Reads the database file directly. What <UiLabel name={m.settings_db_read_mode_auto()} /> falls back to when cloning is unavailable. Recent edits in Zotero may not appear immediately. |
 
 ### Advanced
 
-| Label                                | Key            | Control                                                                  | Default                         | Storage    |
-| ------------------------------------ | -------------- | ------------------------------------------------------------------------ | ------------------------------- | ---------- |
-| **{m.settings_db_data_dir_name()}**  | (device-local) | Folder picker                                                            | {m.settings_db_data_dir_auto()} | Per device |
-| **{m.settings_db_source_id_name()}** | (read-only)    | Displays the 8-character hex identifier for the connected Zotero install | None                            | None       |
+| Label                                             | Key            | Control                                                                  | Default                                          | Storage    |
+| ------------------------------------------------- | -------------- | ------------------------------------------------------------------------ | ------------------------------------------------ | ---------- |
+| <UiLabel name={m.settings_db_data_dir_name()} />  | (device-local) | Folder picker                                                            | <UiLabel name={m.settings_db_data_dir_auto()} /> | Per device |
+| <UiLabel name={m.settings_db_source_id_name()} /> | (read-only)    | Displays the 8-character hex identifier for the connected Zotero install | None                                             | None       |
 
 ## Templates
 
-| Label                                   | Key               | Control       | Default     |
-| --------------------------------------- | ----------------- | ------------- | ----------- |
-| **{m.settings_template_folder_name()}** | `template.folder` | Folder picker | `templates` |
+| Label                                                | Key               | Control       | Default     |
+| ---------------------------------------------------- | ----------------- | ------------- | ----------- |
+| <UiLabel name={m.settings_template_folder_name()} /> | `template.folder` | Folder picker | `templates` |
 
 ### JavaScript templates
 
 JavaScript (Eta) templates are gated behind a per-device toggle. Enabling shows a confirmation modal.
 
-| Label                                          | Key                           | Control                                                                         | Default                              |
-| ---------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------- | ------------------------------------ |
-| **{m.settings_template_js_enable_name()}**     | (per-device gate)             | {m.settings_template_js_turn_on()} / {m.settings_template_js_turn_off()} button | Off                                  |
-| **{m.settings_template_auto_pair_name()}**     | `template.auto-pair-eta`      | Toggle                                                                          | Off                                  |
-| **{m.settings_template_trim_leading_name()}**  | `template.auto-trim-leading`  | Dropdown                                                                        | {m.settings_template_trim_disable()} |
-| **{m.settings_template_trim_trailing_name()}** | `template.auto-trim-trailing` | Dropdown                                                                        | {m.settings_template_trim_disable()} |
+| Label                                                       | Key                           | Control                                                                                                           | Default                                               |
+| ----------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| <UiLabel name={m.settings_template_js_enable_name()} />     | (per-device gate)             | <UiLabel name={m.settings_template_js_turn_on()} /> / <UiLabel name={m.settings_template_js_turn_off()} /> button | Off                                                   |
+| <UiLabel name={m.settings_template_auto_pair_name()} />     | `template.auto-pair-eta`      | Toggle                                                                                                            | Off                                                   |
+| <UiLabel name={m.settings_template_trim_leading_name()} />  | `template.auto-trim-leading`  | Dropdown                                                                                                          | <UiLabel name={m.settings_template_trim_disable()} /> |
+| <UiLabel name={m.settings_template_trim_trailing_name()} /> | `template.auto-trim-trailing` | Dropdown                                                                                                          | <UiLabel name={m.settings_template_trim_disable()} /> |
 
 <Callout type="info">
   The three settings below the gate are visible only when{" "}
-  {m.settings_template_js_enable_name()}
+  <UiLabel name={m.settings_template_js_enable_name()} />
   are enabled.
 </Callout>
 
-**Trim whitespace** options: {m.settings_template_trim_disable()}, {m.settings_template_trim_nl()}, {m.settings_template_trim_slurp()}.
+**Trim whitespace** options: <UiLabel name={m.settings_template_trim_disable()} />, <UiLabel name={m.settings_template_trim_nl()} />, <UiLabel name={m.settings_template_trim_slurp()} />.
 
 ### Template files
 
-This group lists one row per template type, in order: **{m.settings_template_name_filename()}**, **{m.settings_template_name_note()}**, **{m.settings_template_name_annotation()}**, **{m.settings_template_name_content()}**, **{m.settings_template_name_cite()}**, **{m.settings_template_name_cite2()}**.
+This group lists one row per template type, in order: <UiLabel name={m.settings_template_name_filename()} />, <UiLabel name={m.settings_template_name_note()} />, <UiLabel name={m.settings_template_name_annotation()} />, <UiLabel name={m.settings_template_name_content()} />, <UiLabel name={m.settings_template_name_cite()} />, <UiLabel name={m.settings_template_name_cite2()} />.
 
 Each row provides:
 
-- **{m.settings_template_eject()}**: ejects the built-in default to a file you can edit.
-- **{m.settings_template_open()}**: opens the ejected file in the editor.
-- **{m.settings_template_reset()}**: deletes the ejected file and reverts to the built-in (destructive; requires confirmation).
-- **{m.settings_template_delete()}**: removes the ejected file (destructive; requires confirmation).
-- **{m.settings_template_language_tooltip()}**: dropdown to switch between {m.settings_template_language_liquid()} and {m.settings_template_language_eta()}.
+- <UiLabel name={m.settings_template_eject()} />: ejects the built-in default to
+  a file you can edit.
+- <UiLabel name={m.settings_template_open()} />: opens the ejected file in the
+  editor.
+- <UiLabel name={m.settings_template_reset()} />: deletes the ejected file and
+  reverts to the built-in (destructive; requires confirmation).
+- <UiLabel name={m.settings_template_delete()} />: removes the ejected file
+  (destructive; requires confirmation).
+- <UiLabel name={m.settings_template_language_tooltip()} />: dropdown to switch
+  between <UiLabel name={m.settings_template_language_liquid()} /> and
+  <UiLabel name={m.settings_template_language_eta()} />.
 
-A **{m.settings_template_eject_all()}** button at the top of the group ejects every template at once.
+A <UiLabel name={m.settings_template_eject_all()} /> button at the top of the group ejects every template at once.
 
 ### Template files > Frontmatter
 
 A sub-page managing the `note.frontmatter-fields` setting as an editable list. Each field row has:
 
-| Column                                       | Description                                                                                                                                                        |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **{m.settings_frontmatter_key_name()}**      | The YAML frontmatter key name                                                                                                                                      |
-| **{m.settings_frontmatter_expr_name()}**     | Template expression that produces the value                                                                                                                        |
-| **{m.settings_frontmatter_language_name()}** | {m.settings_frontmatter_language_liquid()} or {m.settings_frontmatter_language_javascript()}                                                                       |
-| **{m.settings_frontmatter_merge_name()}**    | How the field is updated on re-render: {m.settings_frontmatter_merge_replace()}, {m.settings_frontmatter_merge_append()}, or {m.settings_frontmatter_merge_keep()} |
+| Column                                                    | Description                                                                                                                                                                                                           |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.settings_frontmatter_key_name()} />      | The YAML frontmatter key name                                                                                                                                                                                         |
+| <UiLabel name={m.settings_frontmatter_expr_name()} />     | Template expression that produces the value                                                                                                                                                                           |
+| <UiLabel name={m.settings_frontmatter_language_name()} /> | <UiLabel name={m.settings_frontmatter_language_liquid()} /> or <UiLabel name={m.settings_frontmatter_language_javascript()} />                                                                                        |
+| <UiLabel name={m.settings_frontmatter_merge_name()} />    | How the field is updated on re-render: <UiLabel name={m.settings_frontmatter_merge_replace()} />, <UiLabel name={m.settings_frontmatter_merge_append()} />, or <UiLabel name={m.settings_frontmatter_merge_keep()} /> |
 
-Actions: **{m.settings_note_frontmatter_add()}**, **{m.settings_note_frontmatter_reset()}** (reverts the full list).
+Actions: <UiLabel name={m.settings_note_frontmatter_add()} />, <UiLabel name={m.settings_note_frontmatter_reset()} /> (reverts the full list).
 
 ## Note import
 
-| Label                                                    | Key                                   | Control       | Default        |
-| -------------------------------------------------------- | ------------------------------------- | ------------- | -------------- |
-| **{m.settings_note_import_folder_name()}**               | `note.import-folder`                  | Folder picker | `zotero_notes` |
-| **{m.settings_note_import_colored_highlights_name()}**   | `note.import-colored-highlights`      | Toggle        | Off            |
-| **{m.settings_note_import_annotations_template_name()}** | `note.import-annotations-as-template` | Toggle        | Off            |
+| Label                                                                 | Key                                   | Control       | Default        |
+| --------------------------------------------------------------------- | ------------------------------------- | ------------- | -------------- |
+| <UiLabel name={m.settings_note_import_folder_name()} />               | `note.import-folder`                  | Folder picker | `zotero_notes` |
+| <UiLabel name={m.settings_note_import_colored_highlights_name()} />   | `note.import-colored-highlights`      | Toggle        | Off            |
+| <UiLabel name={m.settings_note_import_annotations_template_name()} /> | `note.import-annotations-as-template` | Toggle        | Off            |
 
 ## Attachments
 
-| Label                                       | Key                      | Control                                                       | Default            |
-| ------------------------------------------- | ------------------------ | ------------------------------------------------------------- | ------------------ |
-| **{m.settings_attachment_import_name()}**   | `attachment.import`      | Toggle                                                        | On                 |
-| **{m.settings_attachment_folder_name()}**   | `attachment.folder-path` | Folder picker                                                 | (Obsidian default) |
-| **{m.settings_attachment_approved_name()}** | (device-local)           | Sub-page listing the folders attachments may be imported from | Empty              |
+| Label                                                    | Key                      | Control                                                       | Default            |
+| -------------------------------------------------------- | ------------------------ | ------------------------------------------------------------- | ------------------ |
+| <UiLabel name={m.settings_attachment_import_name()} />   | `attachment.import`      | Toggle                                                        | On                 |
+| <UiLabel name={m.settings_attachment_folder_name()} />   | `attachment.folder-path` | Folder picker                                                 | (Obsidian default) |
+| <UiLabel name={m.settings_attachment_approved_name()} /> | (device-local)           | Sub-page listing the folders attachments may be imported from | Empty              |
 
 <Callout type="info">
-  <strong>{m.settings_attachment_folder_name()}</strong> is visible only when
-  <strong>{m.settings_attachment_import_name()}</strong> is on.
+  <UiLabel name={m.settings_attachment_folder_name()} /> is visible only when
+  <UiLabel name={m.settings_attachment_import_name()} /> is on.
 </Callout>
 
 ### Approved folders
@@ -309,56 +350,70 @@ This approval applies to imported content such as annotation images and images e
 
 When imported content is outside all approved locations, ZotLit uses a `file://` URI. A notice reports how many files it skipped, lists the unapproved source folders, and links to ZotLit settings.
 
-Actions: **{m.settings_attachment_approved_add()}** (opens a folder picker), and delete on each row. Approval applies to future imports. Re-import previously imported notes to copy attachments that were skipped.
+Actions: <UiLabel name={m.settings_attachment_approved_add()} /> (opens a folder picker), and delete on each row. Approval applies to future imports. Re-import previously imported notes to copy attachments that were skipped.
 
 <Callout type="info" title="Device Overrides">
-  {m.settings_attachment_approved_name()} are stored per device and never sync
-  through the vault. Approving a folder on one computer grants nothing on
-  another computer, and nothing in another vault.
+  <UiLabel name={m.settings_attachment_approved_name()} /> are stored per device
+  and never sync through the vault. Approving a folder on one computer grants
+  nothing on another computer, and nothing in another vault.
 </Callout>
 
 ## Live updates
 
-| Label                                        | Key              | Control                   | Default |
-| -------------------------------------------- | ---------------- | ------------------------- | ------- |
-| **{m.settings_live_updates_enabled_name()}** | `server.enabled` | Toggle                    | Off     |
-| **{m.settings_live_updates_port_name()}**    | `server.port`    | Number from 1024 to 65535 | `9091`  |
+| Label                                                     | Key              | Control                   | Default |
+| --------------------------------------------------------- | ---------------- | ------------------------- | ------- |
+| <UiLabel name={m.settings_live_updates_enabled_name()} /> | `server.enabled` | Toggle                    | Off     |
+| <UiLabel name={m.settings_live_updates_port_name()} />    | `server.port`    | Number from 1024 to 65535 | `9091`  |
 
 <Callout type="info">
-  <strong>{m.settings_live_updates_port_name()}</strong> and
-  <strong>{m.settings_live_updates_hostname_name()}</strong> are visible only
+  <UiLabel name={m.settings_live_updates_port_name()} /> and
+  <UiLabel name={m.settings_live_updates_hostname_name()} /> are visible only
   when
-  <strong>{m.settings_live_updates_enabled_name()}</strong> is on.
+  <UiLabel name={m.settings_live_updates_enabled_name()} /> is on.
 </Callout>
 
 ### Advanced
 
-| Label                                         | Key               | Control | Default     |
-| --------------------------------------------- | ----------------- | ------- | ----------- |
-| **{m.settings_live_updates_hostname_name()}** | `server.hostname` | Text    | `127.0.0.1` |
+| Label                                                      | Key               | Control | Default     |
+| ---------------------------------------------------------- | ----------------- | ------- | ----------- |
+| <UiLabel name={m.settings_live_updates_hostname_name()} /> | `server.hostname` | Text    | `127.0.0.1` |
 
 ## Maintenance
 
-| Label                                  | Key                       | Control  | Default |
-| -------------------------------------- | ------------------------- | -------- | ------- |
-| **{m.settings_update_notices_name()}** | `release.notices-enabled` | Toggle   | On      |
-| **{m.settings_log_level_name()}**      | `log.level`               | Dropdown | info    |
-| **{m.settings_log_to_file_name()}**    | `log.to-file`             | Toggle   | Off     |
+| Label                                               | Key                       | Control  | Default |
+| --------------------------------------------------- | ------------------------- | -------- | ------- |
+| <UiLabel name={m.settings_update_notices_name()} /> | `release.notices-enabled` | Toggle   | On      |
+| <UiLabel name={m.settings_log_level_name()} />      | `log.level`               | Dropdown | info    |
+| <UiLabel name={m.settings_log_to_file_name()} />    | `log.to-file`             | Toggle   | Off     |
 
-**{m.settings_update_notices_name()}** shows a notice linking to the release notes after ZotLit updates.
+<UiLabel name={m.settings_update_notices_name()} /> shows a notice linking to
+the release notes after ZotLit updates.
 
-**{m.settings_log_level_name()}** options: {m.settings_log_level_off()}, trace, debug, info, warning, error, fatal.
+<UiLabel name={m.settings_log_level_name()} /> options:
+<UiLabel name={m.settings_log_level_off()} />, trace, debug, info, warning,
+error, fatal.
 
-When **{m.settings_log_to_file_name()}** is on, logs append to `zotlit.log.jsonl` inside the plugin folder. Two additional action rows appear:
+When <UiLabel name={m.settings_log_to_file_name()} /> is on, logs append to `zotlit.log.jsonl` inside the plugin folder. Two additional action rows appear:
 
-- **{m.settings_log_open_file_name()}:** opens the JSONL log in the system editor.
-- **{m.settings_log_export_name()}:** exports the log file for sharing.
+- <UiLabel name={m.settings_log_open_file_name()} />: opens the JSONL log in the
+  system editor.
+- <UiLabel name={m.settings_log_export_name()} />: exports the log file for
+  sharing.
 
-Both actions are disabled while **{m.settings_log_to_file_name()}** is off.
+Both actions are disabled while <UiLabel name={m.settings_log_to_file_name()} /> is off.
 
-**{m.settings_citation_index_reset_name()}** clears the stored citation key scans and reads your notes again. ZotLit keeps a scan per note so that a restart only re-reads the notes that changed, and the scans are rebuilt from your vault, so nothing in your vault changes. Use it when the references sidebar disagrees with what a note cites. The rebuild runs in the background after you confirm.
+<UiLabel name={m.settings_citation_index_reset_name()} /> clears the stored
+citation key scans and reads your notes again. ZotLit keeps a scan per note so
+that a restart only re-reads the notes that changed, and the scans are rebuilt
+from your vault, so nothing in your vault changes. Use it when the references
+sidebar disagrees with what a note cites. The rebuild runs in the background
+after you confirm.
 
-**{m.settings_language_pack_reset_name()}** removes the downloaded language packs stored on this device and forgets whether ZotLit already offered them. The pack loaded at startup stays in place until you restart Obsidian, after which ZotLit offers to install it again. Use it when translated text looks wrong or outdated.
+<UiLabel name={m.settings_language_pack_reset_name()} /> removes the downloaded
+language packs stored on this device and forgets whether ZotLit already offered
+them. The pack loaded at startup stays in place until you restart Obsidian,
+after which ZotLit offers to install it again. Use it when translated text looks
+wrong or outdated.
 
 ## See also
 
