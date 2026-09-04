@@ -55,7 +55,7 @@ export type LocalBridgeConnection =
   | ({ readonly state: "connected" } & Omit<ConnectionGrant, "credential">)
   | {
       readonly state: "unavailable";
-      readonly reason: "revoked";
+      readonly reason: "connection-lost" | "revoked";
     }
   | {
       readonly state: "unavailable";
@@ -100,7 +100,7 @@ export class LocalBridgeClient {
     this.#baseUrl = options.baseUrl.endsWith("/")
       ? options.baseUrl.slice(0, -1)
       : options.baseUrl;
-    this.#fetch = options.fetch ?? globalThis.fetch;
+    this.#fetch = (options.fetch ?? globalThis.fetch).bind(globalThis);
     this.#storage = options.storage ?? browserSessionStorage();
     this.#compatibility = options.compatibility;
     this.#restoreConnection();
@@ -266,13 +266,22 @@ export class LocalBridgeClient {
       headers.set("Content-Type", "application/json");
     if (authenticated)
       headers.set("Authorization", `Bearer ${this.#credential}`);
-    const response = await this.#fetch(`${this.#baseUrl}${path}`, {
-      method: options.body === undefined ? "GET" : "POST",
-      headers,
-      body:
-        options.body === undefined ? undefined : JSON.stringify(options.body),
-      signal: options.signal,
-    });
+    let response: Response;
+    try {
+      response = await this.#fetch(`${this.#baseUrl}${path}`, {
+        method: options.body === undefined ? "GET" : "POST",
+        headers,
+        body:
+          options.body === undefined ? undefined : JSON.stringify(options.body),
+        signal: options.signal,
+      });
+    } catch (error) {
+      if (authenticated) {
+        this.#clearCredential();
+        this.#connection = { state: "unavailable", reason: "connection-lost" };
+      }
+      throw error;
+    }
 
     const payload: unknown = await response.json();
     if (!response.ok) {

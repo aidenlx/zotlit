@@ -1,6 +1,10 @@
 // Per-render Worker orchestration: one debounce, one deadline, and a revision
 // stamp that keeps a late result from replacing a newer one.
 
+import type {
+  SelectedCitationStyleResponse,
+  TemplateDependenciesResponse,
+} from "@/bridge/contracts";
 import type { ItemSnapshot } from "@/snapshot/index";
 
 import { failedRender, profileSourceRevision } from "./result";
@@ -9,6 +13,12 @@ import type { ProfileRenderResult, RenderIdentity } from "./result";
 export interface RenderRequest {
   readonly source: string;
   readonly snapshot: ItemSnapshot;
+  readonly resources?: RenderResources;
+}
+
+export interface RenderResources {
+  readonly dependencies: TemplateDependenciesResponse;
+  readonly citationStyle: SelectedCitationStyleResponse;
 }
 
 /** One render's Worker, which the scheduler owns and terminates. */

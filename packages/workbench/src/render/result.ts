@@ -3,11 +3,14 @@
 
 export interface RenderDiagnostic {
   readonly code:
+    | "citation-style-error"
     | "contract-version-mismatch"
     | "invalid-profile"
+    | "missing-dependency"
     | "property-error"
     | "render-error"
-    | "render-timeout";
+    | "render-timeout"
+    | "unsupported-dependency";
   readonly message: string;
   readonly part?: "profile" | "properties" | "render";
   /**

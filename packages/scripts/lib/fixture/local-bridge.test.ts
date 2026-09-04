@@ -1,21 +1,24 @@
+import getPort from "get-port";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
   BRIDGE_VERSION,
+  LOCAL_BRIDGE_ORIGIN,
+  LOCAL_BRIDGE_PATHS,
   LocalBridgeClient,
   LocalBridgeUnavailableError,
 } from "@zotlit/workbench/bridge";
 
 import { buildFixture } from "./build.ts";
 import { getFixtureLayout } from "./layout.ts";
+import { startMockLocalBridge } from "./local-bridge-server.ts";
 import { createMockLocalBridge } from "./local-bridge.ts";
 
 import { getWorkspaceRoot } from "#package-roots";
 
 const ORIGIN = "https://zotlit.aidenlx.site";
-const BASE_URL = "http://127.0.0.1:23120";
 const PARENT_STYLE_ID = "http://www.zotero.org/styles/fixture-parent";
 const DEPENDENT_STYLE_ID = "http://www.zotero.org/styles/fixture-dependent";
 const PARENT_STYLE = `<?xml version="1.0" encoding="utf-8"?>
@@ -32,6 +35,55 @@ const DEPENDENT_STYLE = `<?xml version="1.0" encoding="utf-8"?>
 </style>`;
 
 describe("LocalBridgeClient against the mock Local Bridge", () => {
+  it("connects through the loopback server after a browser CORS preflight", async () => {
+    await using fixture = await createBridgeFixture();
+    const port = await getPort();
+    const bridge = startMockLocalBridge({
+      layout: fixture.layout,
+      allowedOrigin: ORIGIN,
+      port,
+    });
+    using stack = new DisposableStack();
+    stack.adopt(bridge.server, (server) => server.close());
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    const preflight = await fetch(
+      `${baseUrl}${LOCAL_BRIDGE_PATHS.loopbackBootstrap}`,
+      {
+        method: "OPTIONS",
+        headers: {
+          Origin: ORIGIN,
+          "Access-Control-Request-Headers": "content-type",
+          "Access-Control-Request-Method": "POST",
+        },
+      },
+    );
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-origin")).toBe(ORIGIN);
+
+    const client = new LocalBridgeClient({
+      baseUrl,
+      fetch: async (input, init) => {
+        const headers = new Headers(init?.headers);
+        headers.set("Origin", ORIGIN);
+        return fetch(input, { ...init, headers });
+      },
+      storage: memoryStorage(),
+      compatibility: {
+        bridgeVersion: BRIDGE_VERSION,
+        templateDataContractVersion: 2,
+      },
+    });
+    await expect(client.connectFromLoopback()).resolves.toMatchObject({
+      state: "connected",
+      installation: { vault: "ZotLit Fixture" },
+    });
+    await expect(client.readSelectedProfile()).resolves.toMatchObject({
+      profile: { name: "Books" },
+      document: { state: "present" },
+    });
+  });
+
   it("runs every approved operation over a code-bootstrap session", async () => {
     await using fixture = await createBridgeFixture();
     const { layout } = fixture;
@@ -475,7 +527,7 @@ frontmatter:\n`,
     const bridge = createMockLocalBridge({ layout, allowedOrigin: ORIGIN });
 
     const wrongOrigin = await bridge.app.request(
-      `${BASE_URL}/v1/bootstrap/probe`,
+      `${LOCAL_BRIDGE_ORIGIN}/v1/bootstrap/probe`,
       {
         method: "POST",
         headers: { Origin: "https://example.invalid" },
@@ -499,7 +551,7 @@ function clientFor(
   } = {},
 ): LocalBridgeClient {
   return new LocalBridgeClient({
-    baseUrl: BASE_URL,
+    baseUrl: LOCAL_BRIDGE_ORIGIN,
     fetch: async (input, init) => {
       const headers = new Headers(init?.headers);
       headers.set("Origin", ORIGIN);

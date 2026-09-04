@@ -1,4 +1,7 @@
-// Browser-safe rendering of Workbench Item Snapshots.
+// Browser-safe rendering of Workbench Item Snapshots. A connected render
+// validates the selected citation style bundle here; CSL formatting stays in
+// Obsidian because this preview produces the Profile's generated Markdown and
+// has no bibliography or citation processor.
 
 import { CONTRACT_VERSION } from "@zotlit/db";
 import { TemplateFacade } from "@zotlit/templates/facade";
@@ -10,6 +13,7 @@ import {
 } from "@zotlit/templates/frontmatter-merge";
 import type { EvaluatedFrontmatterField } from "@zotlit/templates/frontmatter-merge";
 
+import type { SelectedCitationStyleResponse } from "@/bridge/contracts";
 import book from "@/samples/book.json" with { type: "json" };
 import conferencePaper from "@/samples/conference-paper.json" with { type: "json" };
 import journalArticle from "@/samples/journal-article.json" with { type: "json" };
@@ -23,6 +27,7 @@ import type {
   RenderDiagnostic,
   RenderedProperty,
 } from "./result";
+import type { RenderResources } from "./scheduler";
 
 export { DEFAULT_PROFILE_SOURCE } from "./default-profile";
 export { failedRender, profileSourceRevision } from "./result";
@@ -35,6 +40,7 @@ export type {
 export { createRenderScheduler } from "./scheduler";
 export type {
   RenderRequest,
+  RenderResources,
   RenderScheduler,
   RenderSchedulerOptions,
   RenderWorkerHandle,
@@ -51,6 +57,7 @@ export const SAMPLE_ITEMS = [
 export function renderProfile(
   source: string,
   snapshot: ItemSnapshot,
+  resources?: RenderResources,
 ): ProfileRenderResult {
   const identity = {
     sourceRevision: profileSourceRevision(source),
@@ -74,8 +81,18 @@ export function renderProfile(
       part: "profile",
     });
   }
+  const dependencyDiagnostics: RenderDiagnostic[] = (
+    resources?.dependencies.diagnostics ?? []
+  ).map((diagnostic) => ({ ...diagnostic, part: "profile" }));
+  const resourceDiagnostics = [
+    ...dependencyDiagnostics,
+    ...citationStyleDiagnostics(resources?.citationStyle),
+  ];
 
   try {
+    for (const partial of resources?.dependencies.templates ?? []) {
+      facade.define(partial.name, partial.source, partial.language);
+    }
     for (const partial of document.manifest.partials ?? []) {
       facade.define(partial.name, partial.source, partial.language);
     }
@@ -122,15 +139,41 @@ export function renderProfile(
               annotations[0]!,
             )
           : null,
-      diagnostics: frontmatter.diagnostics,
+      diagnostics: [...resourceDiagnostics, ...frontmatter.diagnostics],
     };
   } catch (error) {
-    return failedRender(identity, {
+    const failure = failedRender(identity, {
       code: "render-error",
       message: errorMessage(error),
       part: "render",
     });
+    return {
+      ...failure,
+      diagnostics: [...resourceDiagnostics, ...failure.diagnostics],
+    };
   }
+}
+
+function citationStyleDiagnostics(
+  style: SelectedCitationStyleResponse | undefined,
+): RenderDiagnostic[] {
+  if (style?.kind !== "failed") return [];
+  let message: string;
+  switch (style.reason) {
+    case "style-missing":
+      message = `Citation style '${style.styleId}' is not installed.`;
+      break;
+    case "parent-missing":
+      message = `Citation style '${style.styleId}' requires missing parent '${style.parentId}'.`;
+      break;
+    case "unreadable":
+      message = `Citation style '${style.styleId}' could not be read.`;
+      break;
+    case "invalid":
+      message = `Citation style '${style.styleId}' is invalid.`;
+      break;
+  }
+  return [{ code: "citation-style-error", message, part: "render" }];
 }
 
 /**

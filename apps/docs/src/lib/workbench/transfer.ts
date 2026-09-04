@@ -5,7 +5,11 @@
 
 import * as v from "valibot";
 
-import { itemSnapshotSchema } from "@zotlit/workbench/bridge";
+import {
+  expectedProfileRevisionSchema,
+  itemSnapshotSchema,
+} from "@zotlit/workbench/bridge";
+import type { SaveSelectedProfileRequest } from "@zotlit/workbench/bridge";
 
 import type { SampleItem } from "./fields";
 
@@ -13,11 +17,13 @@ import type { SampleItem } from "./fields";
 export interface WorkbenchDraft {
   readonly source: string;
   readonly snapshot: SampleItem;
+  readonly expected?: SaveSelectedProfileRequest["expected"];
 }
 
 const draftSchema = v.object({
   source: v.string(),
   snapshot: itemSnapshotSchema,
+  expected: v.optional(expectedProfileRevisionSchema),
 });
 
 /**

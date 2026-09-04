@@ -97,6 +97,75 @@ describe("Sample Items", () => {
     });
   });
 
+  it("renders a required partial supplied by a Workbench Connection", () => {
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "# {{ zt.title }}",
+      "{% render 'connected-heading' with zt as zt %}",
+    );
+
+    const result = renderProfile(source, SAMPLE_ITEMS[0]!, {
+      dependencies: {
+        templates: [
+          {
+            name: "connected-heading",
+            language: "liquid",
+            source: "# Connected: {{ zt.title }}",
+          },
+        ],
+        diagnostics: [],
+      },
+      citationStyle: { kind: "default" },
+    });
+
+    expect(result.creationBody).toContain(
+      "# Connected: Why Most Published Research Findings Are False",
+    );
+    expect(result.diagnostics).toEqual([]);
+  });
+
+  it("reports a dependency the Local Bridge could not bundle", () => {
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "# {{ zt.title }}",
+      "{% render 'summary' with zt as zt %}",
+    );
+    const result = renderProfile(source, SAMPLE_ITEMS[0]!, {
+      dependencies: {
+        templates: [],
+        diagnostics: [
+          {
+            code: "missing-dependency",
+            message: "Template dependency 'summary' is missing.",
+          },
+        ],
+      },
+      citationStyle: { kind: "default" },
+    });
+
+    expect(result.diagnostics).toContainEqual({
+      code: "missing-dependency",
+      message: "Template dependency 'summary' is missing.",
+      part: "profile",
+    });
+  });
+
+  it("reports a selected citation style the Local Bridge could not resolve", () => {
+    const result = renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!, {
+      dependencies: { templates: [], diagnostics: [] },
+      citationStyle: {
+        kind: "failed",
+        styleId: "http://www.zotero.org/styles/missing",
+        reason: "style-missing",
+      },
+    });
+
+    expect(result.diagnostics).toContainEqual({
+      code: "citation-style-error",
+      message:
+        "Citation style 'http://www.zotero.org/styles/missing' is not installed.",
+      part: "render",
+    });
+  });
+
   it("restores dates, graph references, string values, and link arguments", () => {
     const root = restoreTemplateData(
       {
