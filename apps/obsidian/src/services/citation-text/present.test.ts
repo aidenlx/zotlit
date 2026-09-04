@@ -139,6 +139,11 @@ describe("citationState", () => {
   it("reads a citation naming no key at all as resolved", () => {
     expect(citationState([])).toBe("resolved");
   });
+
+  it("keeps a pending citation neutral", () => {
+    expect(stateFor("pending")).toBe("pending");
+    expect(stateFor("resolved", "pending")).toBe("pending");
+  });
 });
 
 // The class names are a public promise to themes, so the state each one stands
@@ -146,6 +151,7 @@ describe("citationState", () => {
 describe("citationStateHooks", () => {
   it("names one public theme hook per state a citation reads as", () => {
     expect(citationStateHooks("resolved")).toEqual([]);
+    expect(citationStateHooks("pending")).toEqual(["zt-citation-key-pending"]);
     expect(citationStateHooks("unresolved")).toEqual([
       "zt-citation-key-unresolved",
     ]);
@@ -160,6 +166,7 @@ describe("citationStateHooks", () => {
 
 describe("citekeyState", () => {
   it("reads what one resolution names", () => {
+    expect(citekeyState(null)).toBe("pending");
     expect(citekeyState({ kind: "missing" })).toBe("missing");
     expect(
       citekeyState({
@@ -200,6 +207,10 @@ describe("literalKeyStateOf", () => {
   // surface has anything to show in the citation's place.
   it("reads a key whose Item the document could not read as missing", () => {
     expect(literalKeyStateOf(citations, () => "resolved")("b")).toBe("missing");
+  });
+
+  it("keeps a key neutral before the first snapshot settles", () => {
+    expect(literalKeyStateOf(citations, () => "pending")("b")).toBe("pending");
   });
 });
 

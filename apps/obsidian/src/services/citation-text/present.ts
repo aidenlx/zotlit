@@ -146,7 +146,7 @@ export function literalSummaryOf({
  * reach: one Zotero Item, none at all, or several — an Ambiguous Citation Key,
  * which names no one Item and so reaches nothing a surface can show.
  */
-export type CitationKeyState = "resolved" | "missing" | "ambiguous";
+export type CitationKeyState = "pending" | "resolved" | "missing" | "ambiguous";
 
 /** {@link CitationKeyState} of one Citation Key. */
 export type KeyStateOf = (citekey: string) => CitationKeyState;
@@ -160,12 +160,16 @@ export type KeyStateOf = (citekey: string) => CitationKeyState;
  */
 export type CitationState =
   | "resolved"
+  | "pending"
   | "unresolved"
   | "partially-unresolved"
   | "ambiguous";
 
 /** How one Citation Key resolution reads on a note surface. */
-export function citekeyState(resolution: CitekeyResolution): CitationKeyState {
+export function citekeyState(
+  resolution: CitekeyResolution | null,
+): CitationKeyState {
+  if (resolution === null) return "pending";
   switch (resolution.kind) {
     case "unique":
       return "resolved";
@@ -190,7 +194,8 @@ export function literalKeyStateOf(
   const summaryOf = literalSummaryOf(citations);
   return (citekey) => {
     if (summaryOf(citekey) !== undefined) return "resolved";
-    return stateOf(citekey) === "ambiguous" ? "ambiguous" : "missing";
+    const state = stateOf(citekey);
+    return state === "pending" || state === "ambiguous" ? state : "missing";
   };
 }
 
@@ -210,6 +215,7 @@ export function citationKeyStates(
 export function citationState(
   states: readonly CitationKeyState[],
 ): CitationState {
+  if (states.some((state) => state === "pending")) return "pending";
   if (states.some((state) => state === "missing")) {
     return states.some((state) => state === "resolved")
       ? "partially-unresolved"
@@ -225,6 +231,8 @@ export function citationStateHooks(state: CitationState): string[] {
   switch (state) {
     case "resolved":
       return [];
+    case "pending":
+      return [themeHook.citationKeyPending];
     case "unresolved":
       return [themeHook.citationKeyUnresolved];
     case "partially-unresolved":

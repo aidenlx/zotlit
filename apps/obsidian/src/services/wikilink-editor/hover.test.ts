@@ -70,6 +70,7 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { Keymap, editorInfoField } from "obsidian";
 
+import type { Held } from "@/lib/held-reads";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { DocumentCitations } from "@/services/citation-text/present";
@@ -108,7 +109,12 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
   let hover: HoverPreferences = hoverPreferences(settings);
   // Rebuilt on demand, so a fresh value redraws the widget the way a fresh
   // read of the document does.
-  let held = citations();
+  const hold = (value: DocumentCitations): Held<DocumentCitations> => ({
+    value,
+    status: "fresh",
+    settled: Promise.resolve(value),
+  });
+  let held = hold(citations());
 
   function citations(): DocumentCitations {
     return {
@@ -145,7 +151,6 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
                 : null,
           enabled: () => true,
           citationText: () => held,
-          requestCitationText: () => undefined,
           open: (citekey, pane) => opened.push([citekey, pane]),
           showPopover: (request) => requests.push(request),
           hoverPreferences: () => hover,
@@ -194,7 +199,7 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
     },
     /** Draws the Citation again from a fresh read, as CodeMirror does. */
     redraw: () => {
-      held = citations();
+      held = hold(citations());
       view.dispatch({ changes: { from: view.state.doc.length, insert: " " } });
     },
     [Symbol.dispose]: () => view.destroy(),

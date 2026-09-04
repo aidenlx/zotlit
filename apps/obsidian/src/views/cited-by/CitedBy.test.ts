@@ -196,7 +196,7 @@ function snapshot(overrides: Partial<CitedBySnapshot> = {}): CitedBySnapshot {
   return {
     groups: [group],
     coverage: "complete",
-    resolution: "ready",
+    resolution: "fresh",
     ...overrides,
   };
 }
@@ -383,7 +383,7 @@ describe("CitedBy", () => {
     const { container } = await render({
       snapshot: snapshot({
         coverage: "degraded",
-        resolution: "degraded",
+        resolution: "failed",
       }),
     });
     expect(container.textContent).toContain("Some notes could not be indexed.");
@@ -399,7 +399,7 @@ describe("CitedBy", () => {
       snapshot: snapshot({
         groups: [],
         coverage: "complete",
-        resolution: "degraded",
+        resolution: "failed",
       }),
     });
 
@@ -417,7 +417,7 @@ describe("CitedBy", () => {
       snapshot: snapshot({
         groups: [],
         coverage: "complete",
-        resolution: "resolving",
+        resolution: null,
       }),
     });
 

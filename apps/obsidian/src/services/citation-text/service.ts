@@ -10,15 +10,16 @@ import {
   resolveIndexedKeyLibrary,
 } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
-import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
-import { BoundedCache } from "@/lib/bounded-cache";
 import { isRenderableCitation } from "@/lib/citation-fragment";
 import type { CitationKey } from "@/lib/citation-fragment";
 import type { TextSpan } from "@/lib/citation-grammar";
 import { registerEvent } from "@/lib/disposables";
+import { HeldReads } from "@/lib/held-reads";
+import type { Held } from "@/lib/held-reads";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import { mapsEqual } from "@/lib/maps-equal";
 import {
   citationOfRun,
   citationRuns,
@@ -40,6 +41,7 @@ import {
 import { holdsNote } from "@/services/pandoc/inline-content";
 import type {
   BibliographyRenderCache,
+  HeldRenderOutcome,
   RenderPresentation,
 } from "@/services/pandoc/render-cache";
 import { Service } from "@/services/service-base";
@@ -63,40 +65,14 @@ const logger = getLogger("citation-text");
  */
 const HELD_DOCUMENTS = 8;
 
-const NO_CITATIONS: DocumentCitations = {
-  formatted: new Map(),
-  entrySerials: false,
-  summaries: new Map(),
-  literalWorks: new Map(),
-};
-
 /** What a citation shows in place of a note where no serial stands for one. */
 const NO_SERIALS: readonly undefined[] = [];
 
-/** One document's citations, and what the read that produced them answered. */
-interface HeldCitations {
-  promise: Promise<DocumentCitations>;
-  /**
-   * What the read produced, once it has — or, while a revalidation still runs,
-   * the stale text it carried forward for {@link CitationText.peek} to serve.
-   */
-  text: DocumentCitations | null;
-  /**
-   * The answer predates an invalidation. Peek keeps serving it, and the next
-   * peek or load replaces it with a fresh read.
-   */
-  stale: boolean;
-  /**
-   * Whether the read behind {@link promise} has committed into {@link text}.
-   * A stale record still reading is joined rather than replaced, so one read
-   * runs per document however often the surfaces ask.
-   */
-  settled: boolean;
-}
-
 interface CitationTextEvents {
-  /** What is held for one document changed — a fresh read, or a stale drop. */
+  /** What is held for one document changed or went stale. */
   changed: (path: string) => void;
+  /** One document read committed, including an equal or failed read. */
+  settled: (path: string) => void;
   /** Every document's citation text went stale; a surface showing it asks again. */
   invalidated: () => void;
 }
@@ -146,8 +122,10 @@ export class CitationText extends Service<void> {
   readonly #citationIndex;
   readonly #noteIndex;
   readonly #bibliographyRender;
-  readonly #emitter = createNanoEvents<CitationTextEvents>();
-  readonly #documents = new BoundedCache<HeldCitations>(HELD_DOCUMENTS);
+  readonly #documents = new HeldReads<DocumentCitations>({
+    limit: HELD_DOCUMENTS,
+    same: documentCitationsEqual,
+  });
 
   ready: Promise<void>;
 
@@ -165,55 +143,65 @@ export class CitationText extends Service<void> {
     event: K,
     cb: CitationTextEvents[K],
   ): () => void {
-    return this.#emitter.on(event, cb);
+    return this.#documents.on(event, cb);
   }
 
   /**
    * The citations held for one document, for a caller that cannot wait — the
    * editor builds its decorations synchronously.
    *
-   * A stale answer — one an invalidation reached — is served as it stands, and
-   * the peek itself starts the read that replaces it.
+   * The peek resolves the file and starts the first or replacement read. A
+   * stale answer stays available while that read runs.
    *
-   * @returns null while nothing is held yet, which is the caller's cue to
-   *   {@link load} and show the raw source until the read settles.
+   * @returns null while the first read is pending.
    */
-  peek(path: string): DocumentCitations | null {
-    const held = this.#documents.peek(path);
-    if (held?.stale && held.settled) this.#revalidate(path);
-    // Answered from what the revalidation left held, so a stale path whose
-    // file is gone reads null rather than one last serve of its old text.
-    return this.#documents.peek(path)?.text ?? null;
-  }
-
-  /** Reads and holds one document's citations, so {@link peek} can answer for it. */
-  load(file: TFile): Promise<DocumentCitations> {
-    const held = this.#documents.peek(file.path);
-    // A stale record still reading is left to its own commit — the mark makes
-    // the peek after that commit read once more — so only a settled one is
-    // replaced here.
-    if (held?.stale && held.settled) this.#documents.delete(file.path);
-    // The factory only runs where nothing holds the path, which after the
-    // delete above is a missing record or a stale one — never a fresh one —
-    // so the stale text it hands over is exactly what peek kept serving.
-    return this.#documents.hold(file.path, () => this.#begin(file, held?.text))
-      .promise;
+  peek(path: string): Held<DocumentCitations> | null {
+    const file = this.#app.vault.getFileByPath(path);
+    if (file === null) {
+      this.#documents.delete(path);
+      return null;
+    }
+    void this.#documents.read(path, () =>
+      this.#readDocument(file).catch((error: unknown) => {
+        logger.warn("Cannot read the citations of a document", {
+          path: file.path,
+          error,
+        });
+        return null;
+      }),
+    );
+    return this.#documents.peek(path);
   }
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
     stack.defer(
-      this.#citationIndex.on("membership-changed", () => this.#invalidateAll()),
+      this.#citationIndex.on("membership-changed", () =>
+        this.#documents.invalidate(),
+      ),
     );
     // A document's own citekeys decide what its citations say.
-    stack.defer(this.#citationIndex.on("changed", (path) => this.#drop(path)));
+    stack.defer(
+      this.#citationIndex.on("changed", (path) =>
+        this.#documents.invalidate(path),
+      ),
+    );
     // So does everything else the document writes around them: a locator or a
     // prefix is part of the source a render is keyed by, and editing one leaves
     // the citekey occurrences the Citation Index tracks untouched. The drop
     // reaches that one document, so an edit anywhere else leaves the rest held.
     stack.use(
       registerEvent(
-        this.#app.metadataCache.on("changed", (file) => this.#drop(file.path)),
+        this.#app.metadataCache.on("changed", (file) =>
+          this.#documents.invalidate(file.path),
+        ),
+      ),
+    );
+    stack.use(
+      registerEvent(
+        this.#app.metadataCache.on("deleted", (file) =>
+          this.#documents.delete(file.path),
+        ),
       ),
     );
     // Renaming or creating a Literature Note is a cross-document input: which
@@ -224,115 +212,27 @@ export class CitationText extends Service<void> {
     // and dropping there would put back the wholesale flush this holds text to
     // avoid; a rescan that finds a moved mapping in steady state has already
     // emitted `changed` for it.
-    stack.defer(this.#noteIndex.on("changed", () => this.#invalidateAll()));
+    stack.defer(
+      this.#noteIndex.on("changed", () => this.#documents.invalidate()),
+    );
     // A citekey resolution snapshot rebuild is the other cross-document input:
     // it decides what a literal `@citekey` reaches, and whether a wikilink's
     // Literature Note carries a native citation key at all.
     stack.defer(
-      this.#citationIndex.on("resolution-changed", () => this.#invalidateAll()),
+      this.#citationIndex.on("resolution-changed", () =>
+        this.#documents.invalidate(),
+      ),
     );
     // What the render cache holds is what these surfaces show, so its wholesale
     // drop makes every document's text stale at once.
     stack.defer(
-      this.#bibliographyRender.on("invalidated", () => this.#invalidateAll()),
+      this.#bibliographyRender.on("invalidated", () =>
+        this.#documents.invalidate(),
+      ),
     );
-    stack.defer(() => this.#documents.clear());
+    stack.use(this.#documents);
 
     this.commit(stack.move());
-  }
-
-  /**
-   * One document's text no longer stands. The editor saving the document it
-   * shows lands here after every burst of typing, so a settled answer keeps
-   * being served until the fresh read replaces it: a surface that read nothing
-   * meanwhile would put the raw source back for as long as the read takes. An
-   * occurrence the edit moved reads its source's first-occurrence text for that
-   * long, the same fallback a surface holding no coordinate takes.
-   */
-  #drop(path: string): void {
-    const held = this.#documents.peek(path);
-    if (held === undefined) return;
-    this.#stale(path, held);
-    this.#emitter.emit("changed", path);
-  }
-
-  /**
-   * Marks one held document stale, or discards it when it holds no text yet.
-   *
-   * A settled answer keeps being served until a fresh read replaces it, so a
-   * surface showing it never falls back to the raw source. A read that has
-   * never settled is discarded: its answer predates the invalidation and there
-   * is no text to keep serving. A read already revalidating keeps the stale
-   * text it carries and is marked stale again, so what it commits is
-   * revalidated once more by the next peek.
-   *
-   * @returns whether the record was kept stale or discarded.
-   */
-  #stale(path: string, held: HeldCitations): "stale" | "discarded" {
-    if (held.text === null) {
-      this.#documents.delete(path);
-      return "discarded";
-    }
-    held.stale = true;
-    return "stale";
-  }
-
-  /** Start the fresh read a stale peek asks for; a path no file backs is let go. */
-  #revalidate(path: string): void {
-    const file = this.#app.vault.getFileByPath(path);
-    if (file === null) {
-      this.#documents.delete(path);
-      return;
-    }
-    void this.load(file);
-  }
-
-  /** Every document's text went stale. */
-  #invalidateAll(): void {
-    if (this.#documents.size === 0) return;
-    let stale = 0;
-    let discarded = 0;
-    for (const [path, held] of this.#documents.entries()) {
-      if (this.#stale(path, held) === "stale") stale += 1;
-      else discarded += 1;
-    }
-    logger.debug("Citation text went stale", { stale, discarded });
-    this.#emitter.emit("invalidated");
-  }
-
-  /** Starts one document's read and holds it while it runs. */
-  #begin(file: TFile, staleText?: DocumentCitations | null): HeldCitations {
-    const held: HeldCitations = {
-      text: staleText ?? null,
-      stale: false,
-      settled: false,
-      promise: this.#readDocument(file)
-        .catch((error: unknown) => {
-          logger.warn("Cannot read the citations of a document", {
-            path: file.path,
-            error,
-          });
-          return null;
-        })
-        .then((text) => {
-          // A drop while the read ran leaves this answer superseded, and
-          // whatever took its place is not this record's to touch.
-          const current = this.#documents.peek(file.path);
-          if (current !== held) {
-            return current?.promise ?? NO_CITATIONS;
-          }
-          if (text === null) {
-            // A failed read is not an answer to hold: the next ask tries again.
-            this.#documents.delete(file.path);
-            return NO_CITATIONS;
-          }
-          held.text = text;
-          held.settled = true;
-          this.#emitter.emit("changed", file.path);
-          return text;
-        }),
-    };
-    return held;
   }
 
   /**
@@ -396,10 +296,12 @@ export class CitationText extends Service<void> {
     const rendered =
       presentation === null
         ? null
-        : await this.#bibliographyRender.renderCitations(
-            sources,
-            items,
-            presentation,
+        : await this.#settledRender(() =>
+            this.#bibliographyRender.renderCitations(
+              sources,
+              items,
+              presentation,
+            ),
           );
     // A style whose citations are footnotes leaves a note in the rendered
     // content, which no surface can show. That output — not the style — is
@@ -483,19 +385,36 @@ export class CitationText extends Service<void> {
     presentation: RenderPresentation,
   ): Promise<ReadonlyMap<string, number>> {
     const serials = new Map<string, number>();
-    const outcome = await this.#bibliographyRender.render(items, presentation);
-    if (outcome.kind !== "rendered") {
-      logger.debug("Cannot number the cited entries", { kind: outcome.kind });
+    const rendered = await this.#settledRender(() =>
+      this.#bibliographyRender.render(items, presentation),
+    );
+    if (rendered === null) {
+      logger.debug("Cannot number the cited entries");
       return serials;
     }
     const places = new Map(
-      outcome.entries.map(({ id }, index) => [id, index + 1]),
+      rendered.entries.map(({ id }, index) => [id, index + 1]),
     );
     for (const [indexedKey, { csl }] of works) {
       const serial = places.get(csl.id);
       if (serial !== undefined) serials.set(indexedKey, serial);
     }
     return serials;
+  }
+
+  /** Waits through a stale render and reads the record that replaced it. */
+  async #settledRender<T>(
+    read: () => Promise<HeldRenderOutcome<T>>,
+  ): Promise<T | null> {
+    let outcome = await read();
+    while (
+      outcome.kind === "held" &&
+      outcome.record.status === "revalidating"
+    ) {
+      await outcome.record.settled;
+      outcome = await read();
+    }
+    return outcome.kind === "held" ? outcome.record.value : null;
   }
 
   /**
@@ -799,4 +718,34 @@ function resolvedMembers(
     members.push(source.slice(from, to).trim());
   }
   return `[${members.join("; ")}]`;
+}
+
+function documentCitationsEqual(
+  prev: DocumentCitations,
+  next: DocumentCitations,
+): boolean {
+  return (
+    prev.entrySerials === next.entrySerials &&
+    mapsEqual(prev.summaries, next.summaries, Object.is) &&
+    mapsEqual(prev.literalWorks, next.literalWorks, Object.is) &&
+    mapsEqual(prev.formatted, next.formatted, occurrencesEqual)
+  );
+}
+
+function occurrencesEqual(
+  prev: readonly FormattedOccurrence[],
+  next: readonly FormattedOccurrence[],
+): boolean {
+  return (
+    prev.length === next.length &&
+    prev.every(
+      (occurrence, index) =>
+        occurrence.start === next[index]!.start &&
+        JSON.stringify(occurrence.text) === JSON.stringify(next[index]!.text) &&
+        occurrence.serials.length === next[index]!.serials.length &&
+        occurrence.serials.every(
+          (serial, at) => serial === next[index]!.serials[at],
+        ),
+    )
+  );
 }

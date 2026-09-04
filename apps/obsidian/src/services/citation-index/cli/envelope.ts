@@ -20,7 +20,7 @@ import type {
 } from "@/services/citation-index/service";
 
 /** The wire format of the `zotlit:` citation commands, versioned on its own. */
-export const CONTRACT_VERSION = 2;
+export const CONTRACT_VERSION = 3;
 
 /** Identity of the vault and Zotero source a command answered from. */
 export interface CitationsIdentity {
@@ -36,7 +36,7 @@ export interface CitationsIdentity {
 }
 
 /**
- * The documented diagnostic codes of contract version 2, each defined with
+ * The documented diagnostic codes of contract version 3, each defined with
  * the recovery action its diagnostic carries. This record is the single source
  * of both, so a new code arrives with its own hint.
  */
@@ -256,7 +256,7 @@ interface ReferencesPayload {
    *  Zotero source still holds it. */
   database: DatabaseReadability;
   /** An `unresolved` entry names a citation key no Item carries only while
-   *  this is `"ready"`; a stale snapshot resolves a live key to nothing. */
+   *  this is `"fresh"`; a stale snapshot resolves a live key to nothing. */
   resolution: CitationKeyResolution;
   /** Which Citation Syntaxes admit occurrences into `entries`: an excluded
    *  syntax's occurrences appear in no entry. */

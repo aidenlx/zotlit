@@ -20,9 +20,9 @@ import {
 } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { editorInfoField, livePreviewState } from "obsidian";
-import type { TFile } from "obsidian";
 
 import { livePreviewOf, overlapsSelection } from "@/lib/editor-decoration";
+import type { Held } from "@/lib/held-reads";
 import { getLogger } from "@/lib/log";
 import { themeHook } from "@/lib/theme-hooks";
 import type { CitekeyResolution } from "@/services/citation-index/service";
@@ -83,7 +83,7 @@ export type OpenCitekey = (citekey: string, pane: NavigationPane) => void;
  * What a citekey names — read synchronously from the Citation Index's
  * resolution snapshot: one Zotero Item, none, or several candidates.
  */
-export type ResolveCitekey = (citekey: string) => CitekeyResolution;
+export type ResolveCitekey = (citekey: string) => CitekeyResolution | null;
 
 /**
  * The resolution state the page preview branch reads.
@@ -110,9 +110,7 @@ export interface CitekeyEditorHandlers {
    * decorations are built synchronously, so a widget can only show text that is
    * already there.
    */
-  citationText: (path: string) => DocumentCitations | null;
-  /** Asks for a document's citations, so a later rebuild finds them held. */
-  requestCitationText: (file: TFile) => void;
+  citationText: (path: string) => Held<DocumentCitations> | null;
 }
 
 /**
@@ -163,6 +161,7 @@ function markDecorations(
   attributes?: Record<string, string>,
 ): Record<CitationKeyState, Decoration> {
   return {
+    pending: Decoration.mark({ class: markClass("pending"), attributes }),
     resolved: Decoration.mark({ class: markClass("resolved"), attributes }),
     missing: Decoration.mark({ class: markClass("missing"), attributes }),
     ambiguous: Decoration.mark({ class: markClass("ambiguous"), attributes }),
@@ -357,7 +356,7 @@ export function citekeyEditorExtension(
               // An Ambiguous Citation Key adopts no candidate's identity, so
               // the popover reads it as the key it is and names its candidates.
               indexedKey:
-                resolution.kind === "unique"
+                resolution?.kind === "unique"
                   ? resolution.item.indexedKey
                   : undefined,
             };
@@ -378,11 +377,9 @@ export function citekeyEditorExtension(
         const file = view.state.field(editorInfoField, false)?.file;
         if (!file) return null;
         const held = handlers.citationText(file.path);
-        if (held === null) {
-          handlers.requestCitationText(file);
-          return null;
-        }
-        return { citations: held, path: file.path };
+        return held === null
+          ? null
+          : { citations: held.value, path: file.path };
       }
 
       #rebuild(view: EditorView): void {

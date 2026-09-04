@@ -12,10 +12,10 @@ import type { EditorState, Extension } from "@codemirror/state";
 import { Decoration, ViewPlugin, WidgetType } from "@codemirror/view";
 import type { DecorationSet, EditorView, ViewUpdate } from "@codemirror/view";
 import { editorInfoField, livePreviewState } from "obsidian";
-import type { TFile } from "obsidian";
 
 import { livePreviewOf } from "@/lib/editor-decoration";
 import type { DocRange } from "@/lib/editor-decoration";
+import type { Held } from "@/lib/held-reads";
 import { themeHook } from "@/lib/theme-hooks";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
 import {
@@ -73,9 +73,7 @@ export interface WikilinkEditorHandlers {
    * decorations are built synchronously, so a widget can only show text that is
    * already there, and until then it keeps native wikilink presentation.
    */
-  citationText: (path: string) => DocumentCitations | null;
-  /** Asks for a document's citations, so a later rebuild finds them held. */
-  requestCitationText: (file: TFile) => void;
+  citationText: (path: string) => Held<DocumentCitations> | null;
   /** The open-or-create flow every citation surface shares. */
   open: (citekey: string, pane: NavigationPane) => void;
   /** Show the Citation Popover of one hovered Citation. */
@@ -463,9 +461,6 @@ function buildDecorations(
   // link presentation, and the read announces itself when it settles, which
   // brings the formatted text in without a document change.
   const citations = file === null ? null : handlers.citationText(file.path);
-  if (file !== null && citations === null) {
-    handlers.requestCitationText(file);
-  }
 
   // A Citation opens as the link it is wherever the plugin leaves its click
   // alone; where it does not, the click reaches the source instead.
@@ -476,7 +471,7 @@ function buildDecorations(
     citations === null
       ? []
       : decorations.flatMap((candidate) => {
-          const decoration = replacement(candidate, citations, click);
+          const decoration = replacement(candidate, citations.value, click);
           return decoration === null
             ? []
             : [{ from: candidate.from, to: candidate.to, decoration }];

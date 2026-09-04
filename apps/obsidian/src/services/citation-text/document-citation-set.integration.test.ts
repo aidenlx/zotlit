@@ -30,7 +30,7 @@ import type { ReferenceEntry } from "@/views/references/entries";
 
 import { ALPHA, firstText } from "./__fixtures__";
 import { citationElement, citationKey } from "./present";
-import type { FormattedOccurrence } from "./present";
+import type { DocumentCitations, FormattedOccurrence } from "./present";
 import { CitationText } from "./service";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
@@ -152,6 +152,26 @@ beforeEach(() => {
   });
 });
 
+async function readText(
+  service: CitationText,
+  file: TFile,
+): Promise<DocumentCitations> {
+  let held = service.peek(file.path);
+  if (held === null) {
+    await new Promise<void>((resolve) => {
+      const unsubscribe = service.on("settled", (path) => {
+        if (path !== file.path) return;
+        unsubscribe();
+        resolve();
+      });
+    });
+    held = service.peek(file.path);
+  }
+  if (held === null) throw new Error("citation text missing");
+  await held.settled;
+  return service.peek(file.path)?.value ?? held.value;
+}
+
 /**
  * A Literature Note for an Item Zotero holds no citation key for, so the
  * derived citekey falls back to the note's own filename.
@@ -191,7 +211,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     await text.ready;
 
     const includedSet = await index.getDocumentCitationSet(draft);
-    const includedText = await text.load(draft);
+    const includedText = await readText(text, draft);
     const includedEntries = await sidebarEntries(engine, includedSet.citations);
 
     expect(includedSet.occurrences.map(({ kind }) => kind)).toEqual([
@@ -220,7 +240,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
 
     settings.update({ "citation.wikilink-citations": false });
     const excludedSet = await index.getDocumentCitationSet(draft);
-    const excludedText = await text.load(draft);
+    const excludedText = await readText(text, draft);
     const excludedEntries = await sidebarEntries(engine, excludedSet.citations);
 
     expect(excludedSet.occurrences.map(({ kind }) => kind)).toEqual([
@@ -256,7 +276,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     await text.ready;
 
     const set = await index.getDocumentCitationSet(draft);
-    const rendered = await text.load(draft);
+    const rendered = await readText(text, draft);
     const entries = await sidebarEntries(engine, set.citations, NOTE_STYLE);
 
     expect(rendered.entrySerials).toBe(true);
@@ -289,7 +309,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     await text.ready;
 
     const set = await index.getDocumentCitationSet(draft);
-    const rendered = await text.load(draft);
+    const rendered = await readText(text, draft);
     const entries = await sidebarEntries(engine, set.citations);
 
     expect(rendered.formatted.has("[@doe2024; @ghost]")).toBe(false);
@@ -317,7 +337,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     await using text = openText(harness, engine, AUTHOR_STYLE);
     await text.ready;
 
-    const { formatted } = await text.load(harness.draft);
+    const { formatted } = await readText(text, harness.draft);
 
     expect(
       firstText(
@@ -351,7 +371,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     await using text = openText(harness, engine, NUMERIC_STYLE);
     await text.ready;
 
-    const { formatted } = await text.load(harness.draft);
+    const { formatted } = await readText(text, harness.draft);
 
     expect(
       firstText(
@@ -402,7 +422,7 @@ describe("Document Citation Set integration", { timeout: 60_000 }, () => {
     // The first scan of a document announces itself, which drops a citation
     // text read that raced it; the surfaces answer that by asking again.
     const set = await harness.index.getDocumentCitationSet(harness.draft);
-    const { formatted } = await text.load(harness.draft);
+    const { formatted } = await readText(text, harness.draft);
 
     expect(set.citations).toMatchObject([
       { indexedKey: null, occurrences: [{ kind: "citekey", raw: "doe2024" }] },
@@ -430,14 +450,36 @@ function openText(
     noteIndex,
     bibliographyRender: {
       vaultPresentation: { styleId: null, locale: null },
-      renderCitations: (citations, items) =>
-        engine.renderCitations({ citations, items, styleXml }),
+      renderCitations: async (citations, items) => {
+        const value = await engine.renderCitations({
+          citations,
+          items,
+          styleXml,
+        });
+        return {
+          kind: "held",
+          key: "integration-citations",
+          record: {
+            value,
+            status: "fresh",
+            settled: Promise.resolve(value),
+          },
+        };
+      },
       render: async (items) => {
         const entries = await engine.renderBibliography({ items, styleXml });
-        return {
-          kind: "rendered",
+        const value = {
           entries,
           hasEntryMarkers: entries.some(({ marker }) => marker !== undefined),
+        };
+        return {
+          kind: "held",
+          key: "integration-render",
+          record: {
+            value,
+            status: "fresh",
+            settled: Promise.resolve(value),
+          },
         };
       },
       on: () => () => undefined,
