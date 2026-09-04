@@ -720,6 +720,49 @@ describe("CitationIndex resolution", () => {
     expect(index.resolution).toBe("fresh");
   });
 
+  it("retries a failed first snapshot on the next citekey read", async () => {
+    const db = new DatabaseStub({ readyImmediately: false });
+    const { index, citekeys } = await makeHarness({}, { db, notes: false });
+
+    citekeys.error = new Error("torn read");
+    db.settle();
+    await index.whenResolved();
+    const failedCalls = citekeys.calls.length;
+
+    citekeys.error = null;
+    expect(index.resolveCitekey("doe2024")).toBeNull();
+    expect(index.citekeyOf(KEY_A)).toBeNull();
+    expect(index.resolution).toBeNull();
+    await yieldToMain();
+
+    expect(citekeys.calls).toHaveLength(failedCalls + 1);
+    expect(index.resolution).toBe("fresh");
+    expect(index.resolveCitekey("doe2024")?.kind).toBe("unique");
+  });
+
+  it("retries a failed first snapshot through a document read", async () => {
+    const db = new DatabaseStub({ readyImmediately: false });
+    const { index, citekeys, draft } = await makeHarness(
+      { "draft.md": "As @doe2024 wrote." },
+      { db, notes: false },
+    );
+
+    citekeys.error = new Error("torn read");
+    db.settle();
+    await index.whenResolved();
+
+    citekeys.error = null;
+    expect(await citationsOf(index, draft)).toMatchObject([
+      { indexedKey: null },
+    ]);
+    await yieldToMain();
+
+    expect(await citationsOf(index, draft)).toMatchObject([
+      { indexedKey: KEY_A },
+    ]);
+    expect(index.resolution).toBe("fresh");
+  });
+
   it("settles whenResolved when disposal interrupts the first rebuild", async () => {
     const db = new DatabaseStub({ readyImmediately: false });
     const { index } = await makeHarness({}, { db, notes: false });

@@ -384,8 +384,7 @@ export class CitationIndex extends Service<void> {
    * reverse observation carries the same state inside its snapshot.
    */
   get resolution(): CitationKeyResolution {
-    const record = this.#snapshots.peek(SNAPSHOT_KEY);
-    void this.#rebuildSnapshot();
+    const record = this.#heldSnapshot();
     return record?.status ?? null;
   }
 
@@ -442,15 +441,13 @@ export class CitationIndex extends Service<void> {
    * synchronously: no Item, exactly one, or several candidates.
    */
   resolveCitekey(citekey: string): CitekeyResolution | null {
-    const record = this.#snapshots.peek(SNAPSHOT_KEY);
-    void this.#rebuildSnapshot();
+    const record = this.#heldSnapshot();
     return record?.value.resolve(citekey) ?? null;
   }
 
   /** The native citation key of an Item — the wikilink display text. */
   citekeyOf(indexedKey: string): string | null {
-    const record = this.#snapshots.peek(SNAPSHOT_KEY);
-    void this.#rebuildSnapshot();
+    const record = this.#heldSnapshot();
     return record?.value.citekeyOf(indexedKey) ?? null;
   }
 
@@ -588,9 +585,18 @@ export class CitationIndex extends Service<void> {
       ),
     );
     stack.defer(
-      this.#snapshots.on("settled", () =>
-        this.#emitter.emit("cited-by-invalidated"),
-      ),
+      this.#snapshots.on("settled", (_key, snapshot) => {
+        // A no-value settlement leaves the public resolution pending. Waking a
+        // reverse observer would make its next ask repeat the failed read.
+        if (snapshot === null) {
+          logger.trace(
+            "Resolution snapshot settlement kept reverse observers pending",
+            { resolution: null },
+          );
+          return;
+        }
+        this.#emitter.emit("cited-by-invalidated");
+      }),
     );
     stack.use(this.#snapshots);
 
@@ -712,6 +718,12 @@ export class CitationIndex extends Service<void> {
   #invalidateSnapshot(): void {
     this.#snapshots.invalidate();
     void this.#rebuildSnapshot();
+  }
+
+  #heldSnapshot(): Held<CitekeySnapshot> | null {
+    const snapshot = this.#snapshots.peek(SNAPSHOT_KEY);
+    void this.#rebuildSnapshot();
+    return snapshot;
   }
 
   #rebuildSnapshot(): Promise<Held<CitekeySnapshot> | null> {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { Held } from "./held-reads";
 import { HeldReads } from "./held-reads";
 
 function deferred<T>(): {
@@ -111,18 +112,30 @@ describe("HeldReads", () => {
     expect(reads.peek("a")?.value).toBe("new");
   });
 
-  it("keeps a failed first read pending until invalidation re-arms it", async () => {
+  it("retries a failed first read on the next ask", async () => {
     const reads = new HeldReads<string>({ limit: 2 });
     const failed = vi.fn(async () => null);
+    const settlements: (Held<string> | null)[] = [];
+    reads.on("settled", (_key, held) => settlements.push(held));
 
-    await expect(reads.read("a", failed)).resolves.toBeNull();
     await expect(reads.read("a", failed)).resolves.toBeNull();
     expect(failed).toHaveBeenCalledOnce();
+    expect(settlements).toEqual([null]);
 
-    reads.invalidate("a");
-    await expect(reads.read("a", async () => "new")).resolves.toMatchObject({
-      value: "new",
-    });
+    const gate = deferred<string | null>();
+    const retry = vi.fn(() => gate.promise);
+    const second = reads.read("a", retry);
+    const joined = reads.read("a", retry);
+    await Promise.resolve();
+
+    expect(reads.peek("a")).toBeNull();
+    expect(retry).toHaveBeenCalledOnce();
+
+    gate.resolve("new");
+    const fresh = await second;
+    expect(await joined).toBe(fresh);
+    expect(fresh).toMatchObject({ value: "new", status: "fresh" });
+    expect(settlements).toEqual([null, fresh]);
   });
 
   it("keeps equal value identity and still reports settlement", async () => {

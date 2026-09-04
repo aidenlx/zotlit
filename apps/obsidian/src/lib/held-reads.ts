@@ -18,12 +18,11 @@ interface Entry<T> {
   held: MutableHeld<T> | null;
   reading: Promise<T | null> | null;
   stale: boolean;
-  failed: boolean;
 }
 
-interface HeldReadEvents {
+interface HeldReadEvents<T> {
   changed: (key: string) => void;
-  settled: (key: string) => void;
+  settled: (key: string, held: Held<T> | null) => void;
   invalidated: () => void;
 }
 
@@ -34,14 +33,14 @@ export interface HeldReadsOptions<T> {
 
 /**
  * Holds the last successful answer for each key while an invalidated answer is
- * read again. Pending reads have no public record, so absence stays distinct
- * from a failed or stale answer.
+ * read again. A failed first read keeps the key pending. A failed replacement
+ * keeps its held answer with a failed status.
  */
 export class HeldReads<T> implements Disposable {
   readonly #entries = new Map<string, Entry<T>>();
   readonly #limit;
   readonly #same;
-  readonly #emitter = createNanoEvents<HeldReadEvents>();
+  readonly #emitter = createNanoEvents<HeldReadEvents<T>>();
 
   constructor(options: HeldReadsOptions<T>) {
     this.#limit = options.limit;
@@ -62,7 +61,7 @@ export class HeldReads<T> implements Disposable {
   read(key: string, read: () => Promise<T | null>): Promise<Held<T> | null> {
     let entry = this.#touch(key);
     if (entry === undefined) {
-      entry = { held: null, reading: null, stale: false, failed: false };
+      entry = { held: null, reading: null, stale: false };
       this.#entries.set(key, entry);
       this.#evict();
     }
@@ -75,11 +74,8 @@ export class HeldReads<T> implements Disposable {
     if (entry.held !== null && !entry.stale) {
       return Promise.resolve(entry.held);
     }
-    if (entry.failed && !entry.stale) return Promise.resolve(null);
-
     const held = entry.held;
     entry.stale = false;
-    entry.failed = false;
     const reading: Promise<T | null> = Promise.resolve()
       .then(read)
       .then((value) => this.#commit({ key, entry, reading, value }));
@@ -110,9 +106,9 @@ export class HeldReads<T> implements Disposable {
     this.#entries.delete(key);
   }
 
-  on<K extends keyof HeldReadEvents>(
+  on<K extends keyof HeldReadEvents<T>>(
     event: K,
-    cb: HeldReadEvents[K],
+    cb: HeldReadEvents<T>[K],
   ): () => void {
     return this.#emitter.on(event, cb);
   }
@@ -159,13 +155,11 @@ export class HeldReads<T> implements Disposable {
     entry.reading = null;
 
     if (value === null) {
-      if (entry.held === null) {
-        entry.failed = true;
-      } else {
+      if (entry.held !== null) {
         entry.held.status = "failed";
         entry.held.settled = reading;
       }
-      this.#emitter.emit("settled", key);
+      this.#emitter.emit("settled", key, entry.held);
       return null;
     }
 
@@ -176,7 +170,7 @@ export class HeldReads<T> implements Disposable {
       entry.held = { value, status: "fresh", settled: reading };
       this.#emitter.emit("changed", key);
     }
-    this.#emitter.emit("settled", key);
+    this.#emitter.emit("settled", key, entry.held);
     return value;
   }
 
