@@ -4,7 +4,10 @@ import { stringify as stringifyYaml } from "yaml";
 
 import type { TemplateLanguage } from "./constants";
 import { parseLiteratureNoteTemplate } from "./literature-note-template";
-import type { LiteratureNoteTemplatePartial } from "./literature-note-template";
+import type {
+  LiteratureNoteTemplateDocument,
+  LiteratureNoteTemplatePartial,
+} from "./literature-note-template";
 
 export type { LiteratureNoteTemplatePartial } from "./literature-note-template";
 
@@ -88,6 +91,24 @@ export interface LiteratureNotePackDiffRow {
   readonly verdict: "apply" | "unchanged" | "refuse";
   readonly currentSource: string | null;
   readonly candidateSource: string;
+}
+
+/**
+ * The partial names a document's own templates call, before any bundle resolves
+ * them. The reserved `annotation` name is the document's own section rather
+ * than a partial, so it is left out.
+ */
+export function literatureNoteTemplateDependencies(
+  document: LiteratureNoteTemplateDocument,
+): string[] {
+  const names = [
+    document.body,
+    document.annotationSection.source,
+    document.manifest.filename,
+  ].flatMap((template) =>
+    referencedPartialNames(template, document.manifest.language),
+  );
+  return [...new Set(names)].filter((name) => name !== "annotation").sort();
 }
 
 /** Export reachable partials, keeping folder bindings only when requested. */

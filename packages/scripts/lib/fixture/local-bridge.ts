@@ -21,7 +21,9 @@ import {
   saveSelectedProfileRequestSchema,
   selectedCitationStyleRequestSchema,
   selectedItemRequestSchema,
+  templateDependenciesRequestSchema,
 } from "@zotlit/workbench/bridge";
+import type { ProfileBindingDefaults } from "@zotlit/workbench/bridge";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 
 import type { FixtureLayout } from "./layout.ts";
@@ -32,6 +34,7 @@ import {
 import {
   FixtureProfileStore,
   fixtureProfileIdentity,
+  readVaultBindingDefaults,
 } from "./local-bridge-profile.ts";
 import type { SelectedFixtureProfile } from "./local-bridge-profile.ts";
 
@@ -59,6 +62,8 @@ export interface MockLocalBridgeControl {
   revokeSessions(): void;
   allowNewSessions(): void;
   issueOneTimeCode(): string;
+  /** Stands in for a bridge restarted on another version, mid-session. */
+  reportBridgeVersion(version: number): void;
 }
 
 export interface MockLocalBridge {
@@ -76,6 +81,7 @@ export function createMockLocalBridge(
   const profiles = new FixtureProfileStore(options.layout);
   let selectedProfile: SelectedFixtureProfile = "books";
   let sessionsRevoked = false;
+  let bridgeVersion: number = BRIDGE_VERSION;
 
   app.use("/v1/*", async (context, next) => {
     const url = new URL(context.req.url);
@@ -119,6 +125,19 @@ export function createMockLocalBridge(
     await next();
   });
 
+  app.get(LOCAL_BRIDGE_PATHS.resumeSession, async (context) =>
+    // The auth middleware already refused a credential this bridge no longer
+    // knows, so reaching here means the grant still stands: answer with the
+    // versions and bindings in effect now, which is what the page re-checks.
+    context.json(
+      await describeConnection(
+        options.layout,
+        sessionProfile(context, credentials),
+        bridgeVersion,
+      ),
+    ),
+  );
+
   app.post(LOCAL_BRIDGE_PATHS.codeBootstrap, async (context) => {
     const request = await parseBody(
       context.req.raw,
@@ -132,7 +151,14 @@ export function createMockLocalBridge(
         message: "The one-time code is invalid or already used.",
       });
     }
-    return context.json(issueConnection(credentials, selectedProfile));
+    return context.json(
+      await issueConnection(
+        options.layout,
+        credentials,
+        selectedProfile,
+        bridgeVersion,
+      ),
+    );
   });
 
   app.post(LOCAL_BRIDGE_PATHS.loopbackBootstrap, async (context) => {
@@ -143,7 +169,12 @@ export function createMockLocalBridge(
     if (!request.success) return invalidRequest(context, request.issues);
     return context.json({
       state: "approved" as const,
-      connection: issueConnection(credentials, selectedProfile),
+      connection: await issueConnection(
+        options.layout,
+        credentials,
+        selectedProfile,
+        bridgeVersion,
+      ),
     });
   });
 
@@ -214,9 +245,15 @@ export function createMockLocalBridge(
     return context.json(result);
   });
 
-  app.get(LOCAL_BRIDGE_PATHS.templateDependencies, async (context) => {
+  app.post(LOCAL_BRIDGE_PATHS.templateDependencies, async (context) => {
+    const request = await parseBody(
+      context.req.raw,
+      templateDependenciesRequestSchema,
+    );
+    if (!request.success) return invalidRequest(context, request.issues);
     const bundle = await profiles.readDependencies(
       sessionProfile(context, credentials),
+      request.output.source,
     );
     return bundle === undefined
       ? documentMissing(context)
@@ -260,29 +297,56 @@ export function createMockLocalBridge(
         oneTimeCodes.add(code);
         return code;
       },
+      reportBridgeVersion(version) {
+        bridgeVersion = version;
+      },
     },
   };
 }
 
-function issueConnection(
+// oxlint-disable-next-line max-params -- one mock route's whole mutable state.
+async function issueConnection(
+  layout: FixtureLayout,
   credentials: Map<string, SelectedFixtureProfile>,
   selectedProfile: SelectedFixtureProfile,
+  bridgeVersion: number,
 ) {
   const credential = randomUUID();
   credentials.set(credential, selectedProfile);
   return {
     credential,
+    ...(await describeConnection(layout, selectedProfile, bridgeVersion)),
+  };
+}
+
+/** The grant as it stands now, which both bootstrap and resume answer with. */
+async function describeConnection(
+  layout: FixtureLayout,
+  selectedProfile: SelectedFixtureProfile,
+  bridgeVersion: number,
+): Promise<{
+  installation: { id: string; vault: string; zoteroSourceId: string };
+  pluginVersion: string;
+  bridgeVersion: number;
+  templateDataContractVersion: number;
+  capabilities: string[];
+  selectedItem: { key: string; title: string };
+  selectedProfile: { id: string; name: string };
+  profileDefaults: ProfileBindingDefaults;
+}> {
+  return {
     installation: {
       id: FIXTURE_INSTALLATION_ID,
       vault: FIXTURE_VAULT_NAME,
       zoteroSourceId: FIXTURE_SOURCE_ID,
     },
     pluginVersion: FIXTURE_PLUGIN_VERSION,
-    bridgeVersion: BRIDGE_VERSION,
+    bridgeVersion,
     templateDataContractVersion: CONTRACT_VERSION,
     capabilities: [...BRIDGE_CAPABILITIES],
     selectedItem: { key: FIXTURE_ITEM_KEY, title: FIXTURE_ITEM_TITLE },
     selectedProfile: fixtureProfileIdentity(selectedProfile),
+    profileDefaults: await readVaultBindingDefaults(layout),
   };
 }
 

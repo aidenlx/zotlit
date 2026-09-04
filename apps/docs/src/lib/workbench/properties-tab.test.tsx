@@ -99,6 +99,8 @@ describe("the Properties result column", () => {
       entries={controller.managedEntries!}
       properties={result.properties}
       fold={result.fold}
+      frontmatterBlock={result.frontmatterBlock}
+      showMarkdown={false}
     />,
   );
   const [byEntry = "", fold = ""] = markup.split(m.workbench_result_fold());
@@ -122,5 +124,23 @@ describe("the Properties result column", () => {
       "citekey",
       "kind",
     ]);
+  });
+
+  it("hands over the generated YAML when Markdown is asked for", () => {
+    const raw = textOf(
+      renderToStaticMarkup(
+        <PropertiesResult
+          entries={controller.managedEntries!}
+          properties={result.properties}
+          fold={result.fold}
+          frontmatterBlock={result.frontmatterBlock}
+          showMarkdown
+        />,
+      ),
+    );
+
+    expect(raw).toBe(result.frontmatterBlock);
+    expect(raw).toContain("title:");
+    expect(raw).not.toContain(m.workbench_result_fold());
   });
 });

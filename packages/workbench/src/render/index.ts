@@ -3,7 +3,16 @@
 // Obsidian because this preview produces the Profile's generated Markdown and
 // has no bibliography or citation processor.
 
-import { CONTRACT_VERSION } from "@zotlit/db";
+import { stringify as stringifyYaml } from "yaml";
+
+import {
+  citekeysToCiteTemplateData,
+  CONTRACT_VERSION,
+  narrowBaseDataToCiteItemData,
+  withAnnotationCitation,
+} from "@zotlit/db";
+import type { TemplateAnnotation } from "@zotlit/db";
+import { inlineCitation } from "@zotlit/templates";
 import { TemplateFacade } from "@zotlit/templates/facade";
 import type { ManagedFrontmatterEntry } from "@zotlit/templates/facade";
 import { evalManagedFrontmatterEntries } from "@zotlit/templates/frontmatter";
@@ -90,6 +99,10 @@ export function renderProfile(
   // host refuses.
   const bundled = resources?.dependencies.templates ?? [];
   const supported = bundled.filter(({ language }) => language === "liquid");
+  const defined = new Set([
+    ...supported.map(({ name }) => name),
+    ...(document.manifest.partials ?? []).map(({ name }) => name),
+  ]);
   const resourceDiagnostics = [
     ...dependencyDiagnostics,
     ...bundled
@@ -122,7 +135,11 @@ export function renderProfile(
       if (!descriptors) {
         throw new Error(`Annotation ${index} has no snapshot descriptors.`);
       }
-      return restoreTemplateData(annotation, descriptors);
+      return withRenderedCitation(
+        facade,
+        restoreTemplateData(annotation, descriptors),
+        defined.has(CITE_TEMPLATE),
+      );
     });
     const frontmatter = evaluateFrontmatter(
       facade,
@@ -137,6 +154,7 @@ export function renderProfile(
       ),
       properties: frontmatter.properties,
       fold: frontmatter.fold,
+      frontmatterBlock: frontmatterBlock(frontmatter.fold),
       creationBody: facade.renderLiteratureNoteTemplateForCreate(
         document,
         note,
@@ -165,6 +183,42 @@ export function renderProfile(
       diagnostics: [...resourceDiagnostics, ...failure.diagnostics],
     };
   }
+}
+
+/** The partial an annotation's page-pinned citation is rendered through. */
+const CITE_TEMPLATE = "cite";
+
+/**
+ * The annotation's `citation`, produced here rather than carried in the
+ * snapshot: Obsidian renders it from the parent Item with the annotation's page
+ * as locator through the `cite` partial, so a preview holding that partial
+ * produces the same text. A Profile whose `cite` partial is neither bundled nor
+ * authored, and a parent Item with no citation key, leave the value null.
+ * @see apps/obsidian/src/lib/annotation-render.ts annotationCitation
+ */
+function withRenderedCitation(
+  facade: TemplateFacade,
+  restored: Record<string, unknown>,
+  hasCiteTemplate: boolean,
+): object {
+  const annotation = restored as unknown as TemplateAnnotation;
+  return withAnnotationCitation(annotation, () => {
+    const parent = annotation.parentItem;
+    if (!hasCiteTemplate || !parent?.citekey) return null;
+    return inlineCitation(
+      facade.render(
+        CITE_TEMPLATE,
+        citekeysToCiteTemplateData([
+          {
+            citationKey: parent.citekey,
+            item: narrowBaseDataToCiteItemData(parent, parent.citekey),
+            label: "page",
+            locator: annotation.pageLabel,
+          },
+        ]),
+      ),
+    );
+  });
 }
 
 /** The selected style the Local Bridge could not hand over, under its reason. */
@@ -263,6 +317,19 @@ function evaluateFrontmatter(
     ...conflicts,
   ].toSorted(byPosition);
   return { properties, fold, diagnostics };
+}
+
+/**
+ * The fold as the note's own YAML block. An absent key contributes nothing to
+ * the created note, so it is left out here too.
+ */
+function frontmatterBlock(fold: readonly RenderedProperty[]): string | null {
+  const present = fold.filter(({ missing }) => !missing);
+  if (present.length === 0) return null;
+  return stringifyYaml(
+    Object.fromEntries(present.map(({ key, value }) => [key, value])),
+    { lineWidth: 0 },
+  );
 }
 
 /** A property diagnostic, which always names the entry that raised it. */

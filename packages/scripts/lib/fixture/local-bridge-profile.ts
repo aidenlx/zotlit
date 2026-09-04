@@ -6,6 +6,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gte } from "semver";
+import * as v from "valibot";
 
 import { CONTRACT_VERSION } from "@zotlit/db";
 import { TemplateFacade } from "@zotlit/templates/facade";
@@ -15,6 +16,7 @@ import {
 } from "@zotlit/templates/literature-note-pack";
 import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature-note-pack";
 import type {
+  ProfileBindingDefaults,
   SaveSelectedProfileRequest,
   SaveSelectedProfileResponse,
   SelectedProfileResponse,
@@ -86,12 +88,14 @@ export class FixtureProfileStore {
     return save;
   }
 
+  /** Resolves the partials `source` calls — the draft on screen, not the file. */
   async readDependencies(
     selectedProfile: SelectedFixtureProfile,
+    source: string,
   ): Promise<TemplateDependenciesResponse | undefined> {
     const selected = await this.read(selectedProfile);
     if (selected.document.state === "missing") return undefined;
-    return dependencyBundle(selected.source);
+    return dependencyBundle(source);
   }
 
   async #saveSelectedProfile(
@@ -139,6 +143,61 @@ export class FixtureProfileStore {
       await writeFile(path, request.source, "utf8");
     }
     return { state: "saved", revision: revisionOf(request.source) };
+  }
+}
+
+/**
+ * The Profile bindings this vault has in effect, which a Profile that sets none
+ * inherits. A vault with no saved settings falls back to the plugin's built-in
+ * Default Profile, the values a fresh install starts on.
+ * @see apps/obsidian/src/services/settings/schema.ts DEFAULT_LITERATURE_NOTE_PROFILE
+ */
+export async function readVaultBindingDefaults(
+  layout: FixtureLayout,
+): Promise<ProfileBindingDefaults> {
+  const settings = v.safeParse(
+    vaultSettingsSchema,
+    parseJson(await readOptionalFile(layout.pluginDataPath)),
+  );
+  const bindings = settings.success
+    ? settings.output["note.default-profile"].bindings
+    : {};
+  return {
+    folder: bindings["note.literature-folder"] ?? "literatures",
+    citationStyle: bindings["citation.references-style"] ?? null,
+    importFolder: bindings["note.import-folder"] ?? "zotero_notes",
+    importColoredHighlights:
+      bindings["note.import-colored-highlights"] ?? false,
+    importAnnotationsAsTemplate:
+      bindings["note.import-annotations-as-template"] ?? false,
+  };
+}
+
+/** Only the keys the five web bindings read; every other setting passes by. */
+const vaultSettingsSchema = v.looseObject({
+  "note.default-profile": v.optional(
+    v.looseObject({
+      bindings: v.optional(
+        v.looseObject({
+          "note.literature-folder": v.optional(v.string()),
+          "citation.references-style": v.optional(v.nullable(v.string())),
+          "note.import-folder": v.optional(v.string()),
+          "note.import-colored-highlights": v.optional(v.boolean()),
+          "note.import-annotations-as-template": v.optional(v.boolean()),
+        }),
+        {},
+      ),
+    }),
+    { bindings: {} },
+  ),
+});
+
+function parseJson(source: string | undefined): unknown {
+  if (source === undefined) return {};
+  try {
+    return JSON.parse(source);
+  } catch {
+    return {};
   }
 }
 

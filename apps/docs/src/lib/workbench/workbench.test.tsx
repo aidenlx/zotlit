@@ -160,62 +160,7 @@ describe("a Workbench Connection", () => {
     expect(saves()[1]?.body).toMatchObject({ source: CONNECTED });
   });
 
-  it("can start clean against the refreshed revision after a conflict", async () => {
-    const requests: BridgeRequest[] = [];
-    const externalSource = `${CONNECTED}\nExternal Fixture edit`;
-    vi.stubGlobal(
-      "fetch",
-      bridgeFetch(requests, {
-        conflictOnce: {
-          revision: "external-revision",
-          source: externalSource,
-        },
-      }),
-    );
-    using page = open();
-
-    page.press(m.workbench_connection_connect());
-    await page.waitFor(() =>
-      expect(title(page.host)).toBe("Connected profile"),
-    );
-    page.press(m.workbench_add_field());
-    const sheet = openSheet(page.host);
-    selectField(sheet, m.workbench_field_title());
-    press(sheet, m.workbench_fields_put_in_note());
-    await page.settle();
-
-    page.press(m.workbench_save());
-    await page.waitFor(() =>
-      expect(page.host.textContent).toContain(m.workbench_save_conflict()),
-    );
-    expect(page.host.textContent).toContain(m.workbench_save_conflict());
-
-    page.press(m.workbench_connection_disconnect());
-    await page.waitFor(() =>
-      expect(page.host.textContent).toContain(
-        m.workbench_connection_disconnected_notice(),
-      ),
-    );
-    page.press(m.workbench_connection_connect());
-    await page.waitFor(() =>
-      expect(page.host.textContent).toContain(m.workbench_restore_heading()),
-    );
-
-    page.press(m.workbench_restore_decline());
-    page.press(m.workbench_save());
-    const saves = () =>
-      requests.filter(
-        ({ path }) => path === LOCAL_BRIDGE_PATHS.saveSelectedProfile,
-      );
-    await page.waitFor(() => expect(saves()).toHaveLength(2));
-    expect(saves()[1]?.body).toEqual({
-      reference: "profile:default",
-      expected: { state: "revision", revision: "external-revision" },
-      source: externalSource,
-    });
-  });
-
-  it("restores a kept conflict draft against the refreshed revision", async () => {
+  it("keeps the draft through a disconnect and reconnect", async () => {
     const requests: BridgeRequest[] = [];
     const externalSource = `${CONNECTED}\nExternal Fixture edit`;
     vi.stubGlobal(
@@ -244,6 +189,7 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_save_conflict()),
     );
+
     page.press(m.workbench_connection_disconnect());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
@@ -252,16 +198,78 @@ describe("a Workbench Connection", () => {
     );
     page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
-      expect(page.host.textContent).toContain(m.workbench_restore_heading()),
+      expect(page.host.textContent).toContain(
+        m.workbench_connection_disconnect(),
+      ),
     );
 
-    page.press(m.workbench_restore_accept());
+    // The work never left the page, so nothing is offered back: the reconnect
+    // takes the vault's refreshed revision as the state to save against.
+    expect(page.host.textContent).not.toContain(m.workbench_restore_heading());
+    openMenu(page.host);
+    page.press(m.workbench_advanced());
+    expect(sourceView(page.host).state.doc.toString()).toContain(snippet);
+
     page.press(m.workbench_save());
     const saves = () =>
       requests.filter(
         ({ path }) => path === LOCAL_BRIDGE_PATHS.saveSelectedProfile,
       );
     await page.waitFor(() => expect(saves()).toHaveLength(2));
+    expect(saves()[1]?.body).toMatchObject({
+      reference: "profile:default",
+      expected: { state: "revision", revision: "external-revision" },
+      source: expect.stringContaining(snippet),
+    });
+  });
+
+  it("restores a kept conflict draft against the refreshed revision", async () => {
+    const requests: BridgeRequest[] = [];
+    const externalSource = `${CONNECTED}\nExternal Fixture edit`;
+    vi.stubGlobal(
+      "fetch",
+      bridgeFetch(requests, {
+        conflictOnce: {
+          revision: "external-revision",
+          source: externalSource,
+        },
+      }),
+    );
+    let snippet = "";
+    {
+      using page = open();
+      page.press(m.workbench_connection_connect());
+      await page.waitFor(() =>
+        expect(title(page.host)).toBe("Connected profile"),
+      );
+      page.press(m.workbench_add_field());
+      const sheet = openSheet(page.host);
+      selectField(sheet, m.workbench_field_title());
+      snippet = sheet.querySelector("code")!.textContent!;
+      press(sheet, m.workbench_fields_put_in_note());
+      await page.settle();
+
+      page.press(m.workbench_save());
+      await page.waitFor(() =>
+        expect(page.host.textContent).toContain(m.workbench_save_conflict()),
+      );
+    }
+
+    // A reload opens the vault's refreshed source and offers the kept work.
+    using reloaded = open();
+    await reloaded.waitFor(() =>
+      expect(reloaded.host.textContent).toContain(
+        m.workbench_restore_heading(),
+      ),
+    );
+
+    reloaded.press(m.workbench_restore_accept());
+    reloaded.press(m.workbench_save());
+    const saves = () =>
+      requests.filter(
+        ({ path }) => path === LOCAL_BRIDGE_PATHS.saveSelectedProfile,
+      );
+    await reloaded.waitFor(() => expect(saves()).toHaveLength(2));
     expect(saves()[1]?.body).toMatchObject({
       reference: "profile:default",
       expected: { state: "revision", revision: "external-revision" },
@@ -289,6 +297,25 @@ describe("a Workbench Connection", () => {
       ),
     ).toHaveLength(1);
     expect(page.host.textContent).not.toContain("No Local Bridge is running");
+  });
+
+  it("stops polling for approval when the reader leaves the page", async () => {
+    const requests: BridgeRequest[] = [];
+    vi.stubGlobal("fetch", bridgeFetch(requests, { loopbackPending: true }));
+    {
+      using page = open();
+      page.press(m.workbench_connection_connect());
+      await page.waitFor(() =>
+        expect(page.host.textContent).toContain(
+          m.workbench_connection_cancel(),
+        ),
+      );
+    }
+
+    const probe = requests.find(
+      ({ path }) => path === LOCAL_BRIDGE_PATHS.loopbackBootstrap,
+    );
+    expect(probe?.signal?.aborted).toBe(true);
   });
 
   it("refetches the citation style when its manifest binding changes", async () => {
@@ -544,6 +571,80 @@ describe("a Workbench Connection", () => {
     ).toMatchObject({ source: expect.stringContaining(snippet) });
   });
 
+  it("refuses a profile whose vault partial the web workbench cannot run", async () => {
+    vi.stubGlobal("fetch", bridgeFetch([], { etaDependency: true }));
+    using page = open();
+
+    page.press(m.workbench_connection_connect());
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(
+        m.workbench_unsupported_heading(),
+      ),
+    );
+
+    // The bundle is read before anything compiles, so the Profile is handed on
+    // rather than edited, rendered, or saved.
+    expect(page.host.textContent).toContain(
+      m.workbench_problem_unsupported_partial({ name: "fixture-heading" }),
+    );
+    expect(page.host.querySelector('[role="tablist"]')).toBeNull();
+    expect(page.host.textContent).not.toContain(m.workbench_save());
+    await page.settle();
+    expect(rendered()).not.toContain(CONNECTED);
+  });
+
+  it("reads the bundle again when the draft calls another partial", async () => {
+    const requests: BridgeRequest[] = [];
+    vi.stubGlobal("fetch", bridgeFetch(requests));
+    using page = open();
+
+    page.press(m.workbench_connection_connect());
+    await page.waitFor(() =>
+      expect(title(page.host)).toBe("Connected profile"),
+    );
+    const bundles = () =>
+      requests.filter(
+        ({ path }) => path === LOCAL_BRIDGE_PATHS.templateDependencies,
+      );
+    expect(bundles()).toHaveLength(1);
+
+    openMenu(page.host);
+    page.press(m.workbench_advanced());
+    const view = sourceView(page.host);
+    act(() => {
+      view.dispatch({
+        changes: {
+          from: view.state.doc.length,
+          insert: "\n{% render 'summary' %}",
+        },
+        userEvent: "input.type",
+      });
+    });
+
+    // The draft now calls a partial the vault holds, so the bundle is read for
+    // the draft rather than for the file the vault saved.
+    await page.waitFor(() => expect(bundles()).toHaveLength(2));
+    expect(bundles()[1]?.body).toMatchObject({
+      source: expect.stringContaining("{% render 'summary' %}"),
+    });
+  });
+
+  it("shows the vault's own binding defaults on an unset binding", async () => {
+    vi.stubGlobal("fetch", bridgeFetch([]));
+    using page = open();
+
+    page.press(m.workbench_connection_connect());
+    await page.waitFor(() =>
+      expect(title(page.host)).toBe("Connected profile"),
+    );
+    page.press(m.workbench_tab_name_and_folder());
+
+    // The built-in Default's bindings live in Obsidian, so the tab reads the
+    // vault's effective values rather than the plugin's built-in ones.
+    expect(page.host.textContent).toContain("fixture-literature");
+    expect(page.host.textContent).not.toContain("literatures");
+  });
+
   it("restores the connection from tab storage on reload", async () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal("fetch", bridgeFetch(requests));
@@ -673,7 +774,35 @@ describe("a draft the parser refuses", () => {
 
     expect(chosenTab(page.host)).toBe(m.workbench_tab_note());
   });
+
+  it("opens Name and folder for a field that tab writes", async () => {
+    using page = open();
+    openMenu(page.host);
+    page.press(m.workbench_advanced());
+    const view = sourceView(page.host);
+    act(() => {
+      view.dispatch({
+        changes: emptied(view.state.doc.toString(), "name: Default"),
+        userEvent: "input.type",
+      });
+    });
+    await page.settle();
+
+    expect(page.host.textContent).toContain(m.workbench_problems_heading());
+    page.press(m.workbench_problems_where_details());
+
+    expect(chosenTab(page.host)).toBe(m.workbench_tab_name_and_folder());
+  });
 });
+
+/** Clears the value on `line`, which leaves the manifest field it holds empty. */
+function emptied(
+  source: string,
+  line: string,
+): { from: number; to: number; insert: string } {
+  const from = source.indexOf(line);
+  return { from, to: from + line.length, insert: `${line.split(":")[0]}:` };
+}
 
 describe("the document's way in and out", () => {
   it("opens an imported profile and hands its bytes back", async () => {
@@ -948,6 +1077,7 @@ interface BridgeRequest {
   readonly path: string;
   readonly body: unknown;
   readonly receiver: unknown;
+  readonly signal?: AbortSignal | null;
 }
 
 interface BridgeFixtureOptions {
@@ -957,6 +1087,7 @@ interface BridgeFixtureOptions {
     readonly source: string;
   };
   readonly itemNetworkFailureOnce?: boolean;
+  readonly etaDependency?: boolean;
   readonly itemProtocolFailureOnce?: boolean;
   readonly loopbackPending?: boolean;
   readonly save?: SaveSelectedProfileResponse;
@@ -986,7 +1117,12 @@ function bridgeFetch(
     );
     const body =
       typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
-    requests.push({ path: url.pathname, body, receiver: this });
+    requests.push({
+      path: url.pathname,
+      body,
+      receiver: this,
+      signal: init?.signal,
+    });
 
     if (
       url.pathname === LOCAL_BRIDGE_PATHS.loopbackBootstrap &&
@@ -1040,6 +1176,13 @@ function bridgeFetch(
         title: SAMPLE_ITEMS[0]!.item.title,
       },
       selectedProfile: { id: "default", name: "Connected profile" },
+      profileDefaults: {
+        folder: "fixture-literature",
+        citationStyle: "ieee",
+        importFolder: "fixture-notes",
+        importColoredHighlights: true,
+        importAnnotationsAsTemplate: false,
+      },
     };
     let payload: unknown;
     if (url.pathname === LOCAL_BRIDGE_PATHS.selectedProfile) {
@@ -1091,12 +1234,14 @@ function bridgeResponse({
       return grant;
     case LOCAL_BRIDGE_PATHS.loopbackBootstrap:
       return { state: "approved", connection: grant };
+    case LOCAL_BRIDGE_PATHS.resumeSession:
+      return grant;
     case LOCAL_BRIDGE_PATHS.templateDependencies:
       return {
         templates: [
           {
             name: "fixture-heading",
-            language: "liquid",
+            language: options.etaDependency ? "eta" : "liquid",
             source: "# Fixture: {{ zt.title }}",
           },
         ],

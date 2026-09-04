@@ -21,8 +21,8 @@ import type {
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { attachmentAbsPath, resolveAnnotCachePath } from "@zotlit/db/path";
 import type { AttachmentPathContext } from "@zotlit/db/path";
+import { inlineCitation } from "@zotlit/templates";
 
-import { inlineCitation } from "@/lib/inline-citation";
 import { creatorSummary } from "@/lib/item-summary";
 import { fileUrlLink } from "@/lib/markdown-link";
 import {

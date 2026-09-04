@@ -43,14 +43,21 @@ describe("problemText", () => {
     ).toBe(m.workbench_problem_unsupported_js_unnamed());
   });
 
-  it("shows the parser's own wording for every other code", () => {
+  it("writes a parser code in the catalog rather than the parser's English", () => {
     const controller = new WorkbenchDocumentController("not a profile");
 
-    const [problem] = controller.problems;
-    expect(problemText(problem!)).toEqual({
-      message: problem!.message,
-      recovery: problem!.recovery,
+    expect(problemText(controller.problems[0]!)).toEqual({
+      message: m.workbench_problem_invalid_document(),
+      recovery: m.workbench_problem_invalid_document_recovery(),
     });
+  });
+
+  it("names the manifest field a schema failure came from", () => {
+    const controller = new WorkbenchDocumentController(
+      DEFAULT_PROFILE_SOURCE.replace(/^name: .*$/m, "name: 12"),
+    );
+
+    expect(problemText(controller.problems[0]!).message).toContain("name");
   });
 });
 

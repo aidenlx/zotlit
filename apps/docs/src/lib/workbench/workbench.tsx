@@ -41,7 +41,11 @@ import {
   triggerHoldsCaret,
 } from "./fields";
 import type { SampleItem } from "./fields";
-import { ProfileHandoff, unsupportedProblems } from "./handoff";
+import {
+  ProfileHandoff,
+  unsupportedDependencies,
+  unsupportedProblems,
+} from "./handoff";
 import { NameFolderPane } from "./name-folder";
 import { NotePane } from "./note-pane";
 import type { NoteEditor } from "./note-pane";
@@ -80,6 +84,7 @@ const PROBLEM_WHERE: Partial<Record<WorkbenchSliceId, () => string>> = {
   advanced: m.workbench_problems_where_advanced,
   note: m.workbench_problems_where_note,
   filename: m.workbench_problems_where_filename,
+  details: m.workbench_problems_where_details,
 };
 
 /** The `{{` popup's own box: the size it is drawn at, and its margin. */
@@ -223,10 +228,19 @@ export function Workbench() {
 
   /** Opens the Profile a connection hydrated, with what it kept beside it. */
   function openSelectedProfile({ selected, kept }: ProfileHydration) {
-    drafts.adopt(
-      { reference: selected.document.reference, source: selected.source },
-      kept,
-    );
+    const opened = {
+      reference: selected.document.reference,
+      source: selected.source,
+    };
+    // A connection that comes back to the document already open leaves the text
+    // and its undo history where they are: the connection was lost, the work
+    // was not. The vault's own bytes become the saved state the draft is
+    // measured against, so an unsaved edit stays an unsaved edit.
+    if (drafts.reference === opened.reference) {
+      drafts.rebase(opened);
+      return;
+    }
+    drafts.adopt(opened, kept);
     loadDocument(selected.source);
   }
 
@@ -261,8 +275,13 @@ export function Workbench() {
   }, []);
 
   // One reading of the problems behind both gates: the screen a refused Profile
-  // gets, and the render it never starts.
-  const unsupported = unsupportedProblems(controller.problems);
+  // gets, and the render it never starts. A connected bundle is read before any
+  // compilation, so a partial the vault holds in Eta refuses the Profile here
+  // rather than through a diagnostic the Worker raises mid-render.
+  const unsupported = [
+    ...unsupportedProblems(controller.problems),
+    ...unsupportedDependencies(resources?.dependencies),
+  ];
   const refused = unsupported.length > 0;
   // A draft the parser refuses renders as nothing, so the last good result
   // stands beside the Problems strip while the reader repairs it, rather than
@@ -364,10 +383,12 @@ export function Workbench() {
       setTab("note");
       setNoteEditor("note");
     }
-    if (id === "filename") setTab("name");
+    if (id === "filename" || id === "details") setTab("name");
     // A fresh object every time, so selecting the same problem twice reveals it
-    // again.
-    setReveal(range ? { ...range } : null);
+    // again. The Name and folder form writes its manifest fields through
+    // controls rather than an editor, so a problem it owns opens the tab and
+    // reveals nothing.
+    setReveal(range && id !== "details" ? { ...range } : null);
   }
 
   /** Leaves the sheet, and the reader on the button that raised it. */
@@ -755,6 +776,9 @@ export function Workbench() {
                 manifest={manifest ?? null}
                 filename={result?.filename ?? null}
                 citationStyles={citationStyles}
+                {...(connection.state === "connected"
+                  ? { defaults: connection.profileDefaults }
+                  : {})}
                 reveal={reveal}
                 onSelection={trackSelection}
                 onFieldTrigger={setTrigger}
@@ -891,6 +915,8 @@ export function Workbench() {
                     entries={entries ?? []}
                     properties={result.properties}
                     fold={result.fold}
+                    frontmatterBlock={result.frontmatterBlock}
+                    showMarkdown={showMarkdown}
                   />
                 ) : (
                   <ResultSheet

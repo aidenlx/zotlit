@@ -13,6 +13,12 @@ import {
   SAMPLE_ITEMS,
 } from "./index";
 
+/** The default Profile with the annotation section printing `zt.citation`. */
+const SAMPLE_WITH_CITATION = DEFAULT_PROFILE_SOURCE.replace(
+  "{{ zt.imgLink | embed }}{{ zt.text }}",
+  "{{ zt.citation }} {{ zt.text }}",
+);
+
 describe("Sample Items", () => {
   it("ships four current-contract item types", () => {
     expect(
@@ -121,6 +127,38 @@ describe("Sample Items", () => {
       "# Connected: Why Most Published Research Findings Are False",
     );
     expect(result.diagnostics).toEqual([]);
+  });
+
+  it("renders an annotation citation through the bundled cite partial", () => {
+    const source = SAMPLE_WITH_CITATION;
+    const paper = SAMPLE_ITEMS[1]!;
+
+    // Standalone there is no `cite` partial to render it with, so the value
+    // stays absent rather than guessing at Obsidian's own output.
+    expect(renderProfile(source, paper).annotation).not.toContain(
+      "riveraResearchInterfaces2026",
+    );
+
+    const connected = renderProfile(source, paper, {
+      dependencies: {
+        templates: [
+          {
+            name: "cite",
+            language: "liquid",
+            source: "{{ zt.citations | pandoc_cite }}\n",
+          },
+        ],
+        diagnostics: [],
+      },
+      citationStyle: { kind: "default" },
+    });
+
+    // The parent Item with the annotation's page as locator, on one line, the
+    // way Obsidian writes it.
+    expect(connected.annotation).toContain(
+      "[@riveraResearchInterfaces2026, {p. 1}]",
+    );
+    expect(connected.diagnostics).toEqual([]);
   });
 
   it("reports a dependency the Local Bridge could not bundle", () => {

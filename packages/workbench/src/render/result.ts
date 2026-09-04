@@ -59,6 +59,12 @@ export interface ProfileRenderResult extends RenderIdentity {
    * merged. Each row carries the position that fixed its place in the note.
    */
   readonly fold: readonly RenderedProperty[];
+  /**
+   * The fold as the YAML block the created note carries, so a reader can check
+   * the generated text rather than the values behind it. Null when the render
+   * produced no frontmatter at all.
+   */
+  readonly frontmatterBlock: string | null;
   readonly creationBody: string | null;
   readonly managedRegion: string | null;
   readonly annotation: string | null;
@@ -84,6 +90,7 @@ export function failedRender(
     filename: null,
     properties: [],
     fold: [],
+    frontmatterBlock: null,
     creationBody: null,
     managedRegion: null,
     annotation: null,

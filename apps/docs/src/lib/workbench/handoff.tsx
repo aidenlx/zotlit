@@ -3,6 +3,7 @@
 // here: it is explained, offered back unchanged, and pointed at Obsidian.
 // @see docs/adr/0033-web-workbench-is-public-and-standalone.md
 
+import type { TemplateDependenciesResponse } from "@zotlit/workbench/bridge";
 import type { WorkbenchProblem } from "@zotlit/workbench/document";
 
 import { m } from "@/paraglide/messages.js";
@@ -19,6 +20,23 @@ export function unsupportedProblems(
       code === "unsupported-partial-language" ||
       code === "unsupported-js",
   );
+}
+
+/**
+ * The same refusal for a partial the vault holds rather than the manifest: a
+ * connected bundle is read before anything is compiled, so an Eta dependency
+ * reaches this screen instead of the render that would have run it.
+ */
+export function unsupportedDependencies(
+  dependencies: TemplateDependenciesResponse | undefined,
+): readonly WorkbenchProblem[] {
+  return (dependencies?.templates ?? [])
+    .filter(({ language }) => language !== "liquid")
+    .map(({ name }) => ({
+      code: "unsupported-partial-language" as const,
+      params: { name },
+      slice: "advanced" as const,
+    }));
 }
 
 export interface ProfileHandoffProps {

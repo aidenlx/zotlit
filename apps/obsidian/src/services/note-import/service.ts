@@ -17,6 +17,7 @@ import type {
   TemplateNoteLink,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { inlineCitation } from "@zotlit/templates";
 
 import { renderAnnotations } from "@/lib/annotation-render";
 import {
@@ -31,7 +32,6 @@ import {
   normalizeFolderPath,
 } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
-import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
 import { DEFAULT_PROFILE, unknownProfileDiagnostic } from "@/lib/profile-stamp";

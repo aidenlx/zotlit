@@ -42,6 +42,22 @@ export const profileIdentitySchema = v.object({
 });
 export type ProfileIdentity = v.InferOutput<typeof profileIdentitySchema>;
 
+/**
+ * The vault's own value for each sparse binding a Profile may override, so a
+ * connected page shows the default in effect there rather than the plugin's
+ * built-in one, and Override writes that same value.
+ */
+export const profileBindingDefaultsSchema = v.object({
+  folder: v.string(),
+  citationStyle: v.nullable(v.string()),
+  importFolder: v.string(),
+  importColoredHighlights: v.boolean(),
+  importAnnotationsAsTemplate: v.boolean(),
+});
+export type ProfileBindingDefaults = v.InferOutput<
+  typeof profileBindingDefaultsSchema
+>;
+
 export const connectionGrantSchema = v.object({
   credential: v.string(),
   installation: bridgeInstallationSchema,
@@ -51,8 +67,17 @@ export const connectionGrantSchema = v.object({
   capabilities: v.array(bridgeCapabilitySchema),
   selectedItem: selectedItemIdentitySchema,
   selectedProfile: profileIdentitySchema,
+  profileDefaults: profileBindingDefaultsSchema,
 });
 export type ConnectionGrant = v.InferOutput<typeof connectionGrantSchema>;
+
+/**
+ * What the bridge running now says about a kept credential: the grant as it
+ * stands, without the credential the page already holds.
+ */
+export const sessionResumeResponseSchema = v.omit(connectionGrantSchema, [
+  "credential",
+]);
 
 export const codeBootstrapRequestSchema = v.object({
   code: v.string(),
@@ -211,6 +236,17 @@ export const templateDependencyDiagnosticSchema = v.object({
   message: v.string(),
 });
 
+/**
+ * The document the bundle answers. A Local Bridge resolves the partials this
+ * exact draft calls, so a preview never runs against the vault's saved Profile.
+ */
+export const templateDependenciesRequestSchema = v.object({
+  source: v.string(),
+});
+export type TemplateDependenciesRequest = v.InferOutput<
+  typeof templateDependenciesRequestSchema
+>;
+
 export const templateDependenciesResponseSchema = v.object({
   templates: v.array(templateDependencySchema),
   diagnostics: v.array(templateDependencyDiagnosticSchema),
@@ -274,6 +310,7 @@ export const LOCAL_BRIDGE_PATHS = {
   codeBootstrap: "/v1/bootstrap/code",
   loopbackBootstrap: "/v1/bootstrap/probe",
   disconnect: "/v1/session/disconnect",
+  resumeSession: "/v1/session/resume",
   templateSchema: "/v1/template/schema",
   selectedItem: "/v1/item/selected",
   selectedProfile: "/v1/profile/selected",
