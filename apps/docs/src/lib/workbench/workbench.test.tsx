@@ -397,6 +397,41 @@ describe("a Workbench Connection", () => {
     );
   });
 
+  it("reconnects on the kept credential without a fresh approval", async () => {
+    const requests: BridgeRequest[] = [];
+    vi.stubGlobal(
+      "fetch",
+      bridgeFetch(requests, { itemNetworkFailureOnce: true }),
+    );
+    using page = open();
+
+    page.press(m.workbench_connection_connect());
+    await page.waitFor(() =>
+      expect(title(page.host)).toBe("Connected profile"),
+    );
+    page.press(m.workbench_load_item());
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(
+        m.workbench_connection_reconnect(),
+      ),
+    );
+
+    page.press(m.workbench_connection_reconnect());
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(
+        m.workbench_connection_disconnect(),
+      ),
+    );
+
+    // The blip left the grant intact, so Reconnect re-checked it instead of
+    // asking Obsidian to approve the page a second time.
+    expect(
+      requests.filter(
+        ({ path }) => path === LOCAL_BRIDGE_PATHS.loopbackBootstrap,
+      ),
+    ).toHaveLength(1);
+  });
+
   it("keeps the session credential through a lost connection", async () => {
     vi.stubGlobal("fetch", bridgeFetch([], { itemNetworkFailureOnce: true }));
     {
@@ -608,6 +643,65 @@ describe("a profile the web workbench refuses", () => {
   });
 });
 
+describe("a draft the parser refuses", () => {
+  it("keeps the last good result, and opens the pane the problem names", async () => {
+    using page = open();
+    await page.settle();
+    const rendersOfGoodSource = rendered().length;
+    expect(rendersOfGoodSource).toBeGreaterThan(0);
+
+    openMenu(page.host);
+    page.press(m.workbench_advanced());
+    const view = sourceView(page.host);
+    const broken = view.state.doc
+      .toString()
+      .replace("# {{ zt.title }}", "{% managed %}\nTwice\n{% endmanaged %}");
+    act(() => {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: broken },
+        userEvent: "input.type",
+      });
+    });
+    await page.settle();
+
+    // Nothing renders a draft the parser refuses, so the sheet keeps the last
+    // good result while the Problems strip carries the repair.
+    expect(rendered()).toHaveLength(rendersOfGoodSource);
+    expect(page.host.textContent).toContain(m.workbench_problems_heading());
+
+    page.press(m.workbench_problems_where_note());
+
+    expect(chosenTab(page.host)).toBe(m.workbench_tab_note());
+  });
+});
+
+describe("the document's way in and out", () => {
+  it("opens an imported profile and hands its bytes back", async () => {
+    using page = open();
+    const blobs: Blob[] = [];
+    const names: string[] = [];
+    vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+      blobs.push(blob as Blob);
+      return "blob:workbench";
+    });
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+      function (this: HTMLAnchorElement) {
+        names.push(this.download);
+      },
+    );
+
+    importFile(page.host, KEPT);
+    await page.waitFor(() => expect(title(page.host)).toBe("Kept work"));
+
+    openMenu(page.host);
+    page.press(m.workbench_download());
+
+    expect(names).toEqual(["zotlit-profile.default.md"]);
+    await expect(blobs[0]!.text()).resolves.toBe(KEPT);
+  });
+});
+
 describe("the narrow layout", () => {
   it("carries the result on a tab of its own", () => {
     using page = open();
@@ -768,6 +862,35 @@ function selectField(scope: HTMLElement, label: string): void {
   );
   if (!target) throw new Error(`No field row reads '${label}'.`);
   act(() => target.click());
+}
+
+/** The whole-document editor Advanced opens over. */
+function sourceView(host: HTMLElement): EditorView {
+  const view = [...host.querySelectorAll<HTMLElement>(".cm-editor")]
+    .map((editor) => EditorView.findFromDOM(editor)!)
+    .find((editor) => editor.state.doc.toString().startsWith("---"));
+  if (!view) throw new Error("Advanced is not open.");
+  return view;
+}
+
+/** The pane tab the page reads as chosen. */
+function chosenTab(host: HTMLElement): string {
+  const tabs = host.querySelector(
+    `[role="tablist"][aria-label="${m.workbench_title()}"]`,
+  )!;
+  return tabs.querySelector('[aria-selected="true"]')!.textContent!;
+}
+
+/** Hands `source` to the page as the file a reader picked. */
+function importFile(host: HTMLElement, source: string): void {
+  const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+  Object.defineProperty(input, "files", {
+    configurable: true,
+    value: [new File([source], "profile.md", { type: "text/markdown" })],
+  });
+  act(() => {
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
 }
 
 /** Opens the header's More actions menu, where Advanced is offered. */

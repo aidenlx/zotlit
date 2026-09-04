@@ -152,6 +152,17 @@ export class LocalBridgeClient {
     }
   }
 
+  /**
+   * Takes the kept credential back up, which is what a reload does on its own.
+   * A transport failure leaves the grant intact, so an in-page Reconnect
+   * re-checks compatibility here and the revision on the hydration that
+   * follows, rather than costing a fresh approval. Answers null when the tab
+   * kept no grant, which leaves the caller to bootstrap.
+   */
+  resume(): LocalBridgeConnection | null {
+    return this.#restoreConnection();
+  }
+
   async disconnect(): Promise<void> {
     if (this.#connection.state === "connected") {
       await this.#request(
@@ -312,17 +323,15 @@ export class LocalBridgeClient {
     this.#storage?.removeItem(CREDENTIAL_STORAGE_KEY);
   }
 
-  #restoreConnection(): void {
+  #restoreConnection(): LocalBridgeConnection | null {
     const stored = this.#storage?.getItem(CREDENTIAL_STORAGE_KEY);
-    if (stored === null || stored === undefined) return;
+    if (stored === null || stored === undefined) return null;
     try {
       const parsed = v.safeParse(connectionGrantSchema, JSON.parse(stored));
-      if (parsed.success) {
-        this.#acceptConnection(parsed.output);
-        return;
-      }
+      if (parsed.success) return this.#acceptConnection(parsed.output);
     } catch {}
     this.#clearCredential();
+    return null;
   }
 }
 

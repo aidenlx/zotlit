@@ -16,7 +16,7 @@ import type {
   SaveSelectedProfileResponse,
   SelectedProfileResponse,
 } from "@zotlit/workbench/bridge";
-import { WorkbenchDocumentController } from "@zotlit/workbench/document";
+import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import type { RenderResources } from "@zotlit/workbench/render";
 
 import { m } from "@/paraglide/messages.js";
@@ -25,7 +25,7 @@ import type { SampleItem } from "./fields";
 import { readDraft } from "./transfer";
 import type { WorkbenchDraft } from "./transfer";
 
-interface ProfileHydration {
+export interface ProfileHydration {
   readonly selected: SelectedProfileResponse;
   readonly kept: WorkbenchDraft | null;
 }
@@ -101,8 +101,10 @@ export function useWorkbenchConnection({
 
   async function hydrateConnection(): Promise<void> {
     const selected = await bridge.readSelectedProfile();
-    const parsed = new WorkbenchDocumentController(selected.source);
-    const styleId = parsed.document?.manifest.citationStyle ?? null;
+    // The vault's own default, until the document this hydration opens says
+    // which style it binds: the settle effect below reads that binding from the
+    // page's own controller, so hydration parses nothing of its own.
+    const styleId = null;
     const [dependencies, citationStyle, styles] = await Promise.all([
       bridge.readTemplateDependencies(),
       bridge.readSelectedCitationStyle({ styleId }),
@@ -173,6 +175,13 @@ export function useWorkbenchConnection({
   }
 
   function connectFromPage() {
+    // A transport failure kept the grant, so Reconnect takes it back up and
+    // re-checks it against the bridge instead of asking for a fresh approval.
+    const resumed = bridge.resume();
+    if (resumed?.state === "connected") {
+      void connect(() => Promise.resolve(resumed));
+      return;
+    }
     const abort = new AbortController();
     connectionAbort.current = abort;
     void connect(
