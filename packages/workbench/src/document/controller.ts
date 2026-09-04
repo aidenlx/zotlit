@@ -75,16 +75,23 @@ export function entryPosition(id: WorkbenchSliceId): number | null {
   return name === "entry" ? Number(position) : null;
 }
 
-/** Why a draft is refused: the parser's own codes, plus the web host's two. */
+/** Why a draft is refused: the parser's own codes, plus the web host's three. */
 export type WorkbenchProblemCode =
   | LiteratureNoteTemplateErrorCode
+  | "unsupported-js"
   | "unsupported-language"
-  | "unsupported-js";
+  | "unsupported-partial-language";
 
 export interface WorkbenchProblem {
   readonly code: WorkbenchProblemCode;
-  readonly message: string;
-  readonly recovery: string;
+  /**
+   * The parser's own wording, absent for a code this package raises itself: one
+   * code is one sentence, so a host writes it in the reader's own language.
+   */
+  readonly message?: string;
+  readonly recovery?: string;
+  /** The values a host's own message for `code` reads. */
+  readonly params?: Readonly<Record<string, string>>;
   /** Where the reader repairs it. */
   readonly slice: WorkbenchSliceId;
   /** The responsible text in master offsets, when the check can name it. */
@@ -583,9 +590,6 @@ function webProblems(
   if (manifest.language === "eta") {
     problems.push({
       code: "unsupported-language",
-      message:
-        "This profile is written in Eta, which the web workbench can't edit.",
-      recovery: "Open the profile in Obsidian, or download it unchanged.",
       slice: "advanced",
       ...at(source, ["language"]),
     });
@@ -593,9 +597,8 @@ function webProblems(
   for (const [index, partial] of (manifest.partials ?? []).entries()) {
     if (partial.language === "eta") {
       problems.push({
-        code: "unsupported-language",
-        message: `The partial '${partial.name}' is written in Eta, which the web workbench can't render.`,
-        recovery: "Open the profile in Obsidian, or download it unchanged.",
+        code: "unsupported-partial-language",
+        params: { name: partial.name },
         slice: "advanced",
         ...at(source, ["partials", index, "language"]),
       });
@@ -605,8 +608,7 @@ function webProblems(
     if ("js" in entry) {
       problems.push({
         code: "unsupported-js",
-        message: `The property '${entry.key ?? "(unnamed)"}' runs JavaScript, which the web workbench can't evaluate.`,
-        recovery: "Open the profile in Obsidian, or download it unchanged.",
+        ...(entry.key === undefined ? {} : { params: { key: entry.key } }),
         slice: "advanced",
         ...at(source, ["frontmatter", index, "js"]),
       });

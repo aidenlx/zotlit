@@ -7,12 +7,17 @@ import type { WorkbenchProblem } from "@zotlit/workbench/document";
 
 import { m } from "@/paraglide/messages.js";
 
-/** The codes this screen answers, which are the web host's own two. */
+import { problemText } from "./problems";
+
+/** The codes this screen answers, which are the web host's own three. */
 export function unsupportedProblems(
   problems: readonly WorkbenchProblem[],
 ): readonly WorkbenchProblem[] {
   return problems.filter(
-    ({ code }) => code === "unsupported-language" || code === "unsupported-js",
+    ({ code }) =>
+      code === "unsupported-language" ||
+      code === "unsupported-partial-language" ||
+      code === "unsupported-js",
   );
 }
 
@@ -41,7 +46,9 @@ export function ProfileHandoff({
         <p className="text-sm">{m.workbench_unsupported_lede()}</p>
         <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-fd-muted-foreground">
           {problems.map((problem) => (
-            <li key={problem.message}>{problem.message}</li>
+            <li key={`${problem.code}:${problem.range?.from ?? ""}`}>
+              {problemText(problem).message}
+            </li>
           ))}
         </ul>
         <div className="flex flex-wrap items-center gap-3">

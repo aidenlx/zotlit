@@ -45,6 +45,7 @@ import { ProfileHandoff, unsupportedProblems } from "./handoff";
 import { NameFolderPane } from "./name-folder";
 import { NotePane } from "./note-pane";
 import type { NoteEditor } from "./note-pane";
+import { diagnosticText, problemText } from "./problems";
 import { PropertiesPane, PropertiesResult } from "./properties-tab";
 import type { EntryDiagnostic } from "./properties-tab";
 import { ResultSheet } from "./reading-view";
@@ -380,12 +381,21 @@ export function Workbench() {
   // A row carries every problem that names it: the renderer's own, and the
   // manifest errors the parser pinned to one entry.
   const rowProblems: EntryDiagnostic[] = [
-    ...(result?.diagnostics ?? []).flatMap(({ position, message }) =>
-      position === undefined ? [] : [{ position, message }],
+    ...(result?.diagnostics ?? []).flatMap((diagnostic) =>
+      diagnostic.position === undefined
+        ? []
+        : [
+            {
+              position: diagnostic.position,
+              message: diagnosticText(diagnostic),
+            },
+          ],
     ),
-    ...controller.problems.flatMap(({ slice: id, message }) => {
-      const position = entryPosition(id);
-      return position === null ? [] : [{ position, message }];
+    ...controller.problems.flatMap((entry) => {
+      const position = entryPosition(entry.slice);
+      return position === null
+        ? []
+        : [{ position, message: problemText(entry).message }];
     }),
   ];
   const problemRow = problem ? entryPosition(problem.slice) : null;
@@ -971,7 +981,7 @@ export function Workbench() {
                     <strong className="font-medium">
                       {m.workbench_preview_problem()}
                     </strong>{" "}
-                    {previewProblem.message}{" "}
+                    {diagnosticText(previewProblem)}{" "}
                     {previewProblem.position !== undefined && (
                       <button
                         type="button"
@@ -1022,8 +1032,10 @@ export function Workbench() {
             {m.workbench_problems_heading()}
           </p>
           <p className="mt-1 text-sm">
-            {problem.message}{" "}
-            <span className="text-fd-muted-foreground">{problem.recovery}</span>{" "}
+            {problemText(problem).message}{" "}
+            <span className="text-fd-muted-foreground">
+              {problemText(problem).recovery}
+            </span>{" "}
             <button
               type="button"
               onClick={() => {

@@ -66,7 +66,7 @@ export function renderProfile(
   if (snapshot.contractVersion !== CONTRACT_VERSION) {
     return failedRender(identity, {
       code: "contract-version-mismatch",
-      message: `Item Snapshot contract ${snapshot.contractVersion} does not match ${CONTRACT_VERSION}.`,
+      params: { found: snapshot.contractVersion, expected: CONTRACT_VERSION },
     });
   }
 
@@ -154,26 +154,24 @@ export function renderProfile(
   }
 }
 
+/** The selected style the Local Bridge could not hand over, under its reason. */
 function citationStyleDiagnostics(
   style: SelectedCitationStyleResponse | undefined,
 ): RenderDiagnostic[] {
   if (style?.kind !== "failed") return [];
-  let message: string;
-  switch (style.reason) {
-    case "style-missing":
-      message = `Citation style '${style.styleId}' is not installed.`;
-      break;
-    case "parent-missing":
-      message = `Citation style '${style.styleId}' requires missing parent '${style.parentId}'.`;
-      break;
-    case "unreadable":
-      message = `Citation style '${style.styleId}' could not be read.`;
-      break;
-    case "invalid":
-      message = `Citation style '${style.styleId}' is invalid.`;
-      break;
-  }
-  return [{ code: "citation-style-error", message, part: "render" }];
+  return [
+    {
+      code: "citation-style-error",
+      params: {
+        reason: style.reason,
+        styleId: style.styleId,
+        ...(style.reason === "parent-missing"
+          ? { parentId: style.parentId }
+          : {}),
+      },
+      part: "render",
+    },
+  ];
 }
 
 /**
@@ -208,12 +206,13 @@ function evaluateFrontmatter(
     // entry stamps its own position onto what it produced, so the conflict
     // names one.
     onConflict: (key, { position, recovery }) =>
-      conflicts.push(
-        propertyError(
-          `${key}: this entry could not append to the value an earlier entry set.${recovery === undefined ? "" : ` ${recovery}`}`,
-          position!,
-        ),
-      ),
+      conflicts.push({
+        code: "property-append-conflict",
+        params: { key },
+        ...(recovery === undefined ? {} : { message: recovery }),
+        part: "properties",
+        position: position!,
+      }),
   });
   const fold = Object.entries(patch).map(([key, value]) => ({
     key,
@@ -230,16 +229,24 @@ function evaluateFrontmatter(
     ...authored.flatMap((entry, index) =>
       "js" in entry
         ? [
-            propertyError(
-              `Managed Frontmatter ${label(entry, index + 1)} requires JavaScript.`,
-              index + 1,
-            ),
+            {
+              code: "property-javascript" as const,
+              ...(entry.key === undefined
+                ? {}
+                : { params: { key: entry.key } }),
+              part: "properties" as const,
+              position: index + 1,
+            },
           ]
         : [],
     ),
-    ...errors.map(({ key, position, error }) =>
-      propertyError(`${key}: ${errorMessage(error)}`, position),
-    ),
+    ...errors.map(({ key, position, error }) => ({
+      code: "property-error" as const,
+      message: errorMessage(error),
+      params: { key },
+      part: "properties" as const,
+      position,
+    })),
     ...conflicts,
   ].toSorted(byPosition);
   return { properties, fold, diagnostics };
@@ -247,11 +254,6 @@ function evaluateFrontmatter(
 
 /** A property diagnostic, which always names the entry that raised it. */
 type EntryDiagnostic = RenderDiagnostic & { readonly position: number };
-
-/** A problem one entry raised, under the position that carries it to its row. */
-function propertyError(message: string, position: number): EntryDiagnostic {
-  return { code: "property-error", message, part: "properties", position };
-}
 
 /** List order, so the diagnostic a host reads first belongs to the first row. */
 function byPosition(a: EntryDiagnostic, b: EntryDiagnostic): number {
@@ -266,15 +268,6 @@ function rendered({
   const missing = value === undefined || value === FRONTMATTER_ABSENT;
   // Every compiled entry stamps its own position onto what it produced.
   return { key, ...(missing ? {} : { value }), missing, position: position! };
-}
-
-/**
- * The entry a property diagnostic is about. This package holds no Language Pack
- * facade — it renders inside a worker and inside Obsidian — so the wording it
- * hands a host stays English until a diagnostic carries a code the host maps.
- */
-function label(entry: ManagedFrontmatterEntry, position: number): string {
-  return entry.key === undefined ? `entry #${position}` : `'${entry.key}'`;
 }
 
 function errorMessage(error: unknown): string {

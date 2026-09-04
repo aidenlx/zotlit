@@ -1,17 +1,33 @@
 // The render result shape and its identity stamp, shared by the renderer and
 // the scheduler that decides which result is still current.
 
+/**
+ * What went wrong, in the vocabulary a host writes its own wording against. One
+ * code is one sentence, so a host reads `code` and its `params` rather than the
+ * English this package would otherwise author.
+ */
+export type RenderDiagnosticCode =
+  | "citation-style-error"
+  | "contract-version-mismatch"
+  | "invalid-profile"
+  | "missing-dependency"
+  | "property-append-conflict"
+  | "property-error"
+  | "property-javascript"
+  | "render-error"
+  | "render-timeout"
+  | "unsupported-dependency";
+
 export interface RenderDiagnostic {
-  readonly code:
-    | "citation-style-error"
-    | "contract-version-mismatch"
-    | "invalid-profile"
-    | "missing-dependency"
-    | "property-error"
-    | "render-error"
-    | "render-timeout"
-    | "unsupported-dependency";
-  readonly message: string;
+  readonly code: RenderDiagnosticCode;
+  /**
+   * The wording this package did not author — the template engine's own failure
+   * text, or the one a Local Bridge sent. Absent when `code` and `params` say
+   * the whole thing.
+   */
+  readonly message?: string;
+  /** The values a host's own message for `code` reads. */
+  readonly params?: Readonly<Record<string, string | number>>;
   readonly part?: "profile" | "properties" | "render";
   /**
    * 1-based position of the Managed Frontmatter entry that caused it, so the
