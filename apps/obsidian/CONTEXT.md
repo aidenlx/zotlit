@@ -230,6 +230,10 @@ _Avoid_: citation rendering (ambiguous with reference rendering), citation displ
 The complete formatted text the Pandoc Engine produces for the Document Citation Set. It is produced for the whole document at once because a numbering style counts across the complete set and a position-dependent style renders each Citation Occurrence by its place in the document, so two occurrences of one source can read differently and each in-text surface shows the text of its own occurrence; a surface that cannot tell which occurrence it shows falls back to the source's first-occurrence text. Every in-text surface changes from its native source presentation only after that complete result is ready. A Citation the engine cannot format stays entirely in its source presentation.
 _Avoid_: citation cache (names the Citation Index's persistence, not this), rendered bibliography (the References Sidebar's whole-list render)
 
+**Held Read**:
+The value one surface reads for a key, kept on screen while a fresh read replaces it. Pending is the absence of a Held Read, never a verdict.
+_Avoid_: cache, SWR cache
+
 **Citekey Navigation** _(Obsidian)_:
 The interaction surface of recognized literal Pandoc citations across Live Preview, Source mode, and reading mode — selection, click, and the open-under-cursor palette commands, all routed through one flow; what hovering shows belongs to the Hover Action. Open Citations as Links chooses what a plain click does and gates the palette commands; Mod+click always opens. A single-item Citation opens its Literature Note; a multi-item Citation opens an item menu. It is independent of In-text Citation Rendering; a Literature Note wikilink joins the click surface only while it shows a Rendered Citation, and keeps Obsidian's native navigation otherwise.
 _Avoid_: citekey click (one gesture of the surface, not the concept), citekey links

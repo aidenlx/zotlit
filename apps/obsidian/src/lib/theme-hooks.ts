@@ -3,6 +3,7 @@
 export const themeHook = {
   citation: "zt-citation",
   citationKey: "zt-citation-key",
+  citationKeyPending: "zt-citation-key-pending",
   citationKeyUnresolved: "zt-citation-key-unresolved",
   citationKeyPartiallyUnresolved: "zt-citation-key-partially-unresolved",
   citationKeyAmbiguous: "zt-citation-key-ambiguous",

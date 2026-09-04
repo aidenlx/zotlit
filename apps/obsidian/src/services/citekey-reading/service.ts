@@ -46,9 +46,9 @@ export interface CitekeyReadingDeps {
   app: App;
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
   /** The formatted citations every surface of one document shares. */
-  citationText: Pick<CitationText, "load" | "on" | "peek">;
+  citationText: Pick<CitationText, "on" | "peek">;
   /** What a literal citekey names, which is what tells missing from Ambiguous. */
-  citationIndex: Pick<CitationIndex, "resolveCitekey">;
+  citationIndex: Pick<CitationIndex, "resolution" | "resolveCitekey">;
   /** The open-or-create flow every citekey surface shares, and what hover previews. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "hoverNotePath">;
   /** What a hovered citation shows. */
@@ -181,20 +181,23 @@ export class CitekeyReading extends Service<void> {
     if (!file) return;
 
     const text = this.#citationText.peek(file.path);
-    if (text === null) {
-      void this.#citationText.load(file);
-      return;
-    }
-    const stateOf = literalKeyStateOf(text, (citekey) =>
-      citekeyState(this.#citationIndex.resolveCitekey(citekey)),
-    );
+    const resolutionPending = this.#citationIndex.resolution === null;
+    if (text === null && !resolutionPending) return;
+    const snapshotState = (citekey: string) =>
+      citekeyState(this.#citationIndex.resolveCitekey(citekey));
+    const stateOf =
+      text === null
+        ? snapshotState
+        : literalKeyStateOf(text.value, snapshotState);
     const doc = el.ownerDocument;
     // Which occurrence each citation of the section is, so a position-dependent
     // style shows every one of them the text rendered for its own place.
     const coordinates = sectionCoordinates(citations, sectionRange(ctx, el));
     replaceCitations(citations, (citation, index) => {
       const content = this.#showFormatted
-        ? citationContent(citation, text, coordinates[index])
+        ? text === null
+          ? null
+          : citationContent(citation, text.value, coordinates[index])
         : null;
       const states = citationKeyStates(citation, stateOf);
       const themeClasses = [
@@ -207,7 +210,7 @@ export class CitekeyReading extends Service<void> {
         themeClasses,
       );
       const navigation: CitationNavigation = {
-        works: citedWorks(citation, text),
+        works: text === null ? [] : citedWorks(citation, text.value),
         // The occurrence this section shows in the citation's place, which is
         // where a note-class style's own note text is read from, however often
         // the popover reads it again. A citation left as source text shows none.

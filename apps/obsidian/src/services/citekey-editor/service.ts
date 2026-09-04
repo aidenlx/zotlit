@@ -47,7 +47,7 @@ export interface CitekeyEditorDeps {
   noteFeature: NoteFeature;
   db: DatabaseService;
   /** The formatted citations every surface of one document shares. */
-  citationText: Pick<CitationText, "peek" | "load" | "on">;
+  citationText: Pick<CitationText, "peek" | "on">;
   /** What a hovered citation shows. */
   citationPopover: CitationPopover;
   settings: SettingsService;
@@ -130,11 +130,6 @@ export class CitekeyEditor extends Service<void> {
       navigationEnabled: () => this.#navigationEnabled,
       showFormatted: () => this.#showFormatted,
       citationText: (path) => this.#citationText.peek(path),
-      requestCitationText: (file) => {
-        // The read announces itself when it settles, which is what brings the
-        // widgets in.
-        void this.#citationText.load(file);
-      },
     });
     this.ready = this.#load();
   }
@@ -195,7 +190,7 @@ export class CitekeyEditor extends Service<void> {
    */
   #uniqueItem(citekey: string): SnapshotItem | null {
     const resolved = this.#citationIndex.resolveCitekey(citekey);
-    return resolved.kind === "unique" ? resolved.item : null;
+    return resolved?.kind === "unique" ? resolved.item : null;
   }
 
   #restyleEditors(): void {
@@ -301,7 +296,7 @@ export class CitekeyEditor extends Service<void> {
     ]);
 
     const resolved = this.#citationIndex.resolveCitekey(citekey);
-    if (resolved.kind === "ambiguous") {
+    if (resolved?.kind === "ambiguous") {
       logger.debug("Citekey names several items", {
         citekey,
         candidates: resolved.candidates.length,
@@ -316,8 +311,8 @@ export class CitekeyEditor extends Service<void> {
       });
       return;
     }
-    if (resolved.kind === "missing") {
-      if (this.#db.state !== "ready") {
+    if (resolved === null || resolved.kind === "missing") {
+      if (resolved === null || this.#db.state !== "ready") {
         logger.debug("Citekey open blocked", {
           citekey,
           branch: "db-unavailable",

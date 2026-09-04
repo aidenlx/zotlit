@@ -211,7 +211,14 @@ function Reference({
   guttered: boolean;
 }) {
   const actions = useReferenceActions();
-  const presentation = referencePresentation(entry, { numbered, serials });
+  // A missing Held Read has not answered for this list, so an unresolved row
+  // reads as a lookup in progress rather than a verdict.
+  const pending = useReferencesStore((s) => s.citekeyResolution) === null;
+  const presentation = referencePresentation(entry, {
+    numbered,
+    serials,
+    pending,
+  });
   const { source } = presentation;
   const occurrenceCount = entry.occurrences.length;
 
@@ -236,7 +243,7 @@ function Reference({
               rides with the jump button instead, where a selection cannot
               sweep it up. */}
         <div className="zt:select-text">
-          <ReferenceBody entry={entry} />
+          <ReferenceBody entry={entry} pending={pending} />
         </div>
         {/* Collapsed to zero height as a class, never an inline style — an
               inline style on this element would outrank the hover/focus
@@ -315,7 +322,11 @@ function Reference({
 
 function referencePresentation(
   entry: ReferenceEntry,
-  { numbered, serials }: { numbered: boolean; serials: boolean },
+  {
+    numbered,
+    serials,
+    pending,
+  }: { numbered: boolean; serials: boolean; pending: boolean },
 ): {
   gutter: ReactNode;
   warning: boolean;
@@ -365,6 +376,16 @@ function referencePresentation(
         source: undefined,
       };
     case "unresolved":
+      // A lookup still in progress has no verdict to warn about.
+      if (pending) {
+        return {
+          gutter: "…",
+          warning: false,
+          noteLabel: m.references_open_note_pending(),
+          noteDisabled: true,
+          source: undefined,
+        };
+      }
       return {
         gutter: "⚠",
         warning: true,
@@ -393,7 +414,13 @@ function referencePresentation(
   }
 }
 
-function ReferenceBody({ entry }: { entry: ReferenceEntry }) {
+function ReferenceBody({
+  entry,
+  pending,
+}: {
+  entry: ReferenceEntry;
+  pending: boolean;
+}) {
   const textClass = "zt:font-content zt:text-sm zt:leading-snug zt:break-words";
   switch (entry.kind) {
     case "rendered":
@@ -418,6 +445,14 @@ function ReferenceBody({ entry }: { entry: ReferenceEntry }) {
         </span>
       );
     case "unresolved":
+      // A lookup still in progress states itself instead of a false verdict.
+      if (pending) {
+        return (
+          <span className={cn(textClass, "zt:text-muted-foreground")}>
+            {m.references_citekey_pending({ citekey: entry.citekey })}
+          </span>
+        );
+      }
       return (
         <span className={cn(textClass, "zt:text-destructive")}>
           {m.references_citekey_unresolved({ citekey: entry.citekey })}

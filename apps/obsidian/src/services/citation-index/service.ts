@@ -7,6 +7,8 @@ import { getCitekeysByLibrary } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
+import { HeldReads } from "@/lib/held-reads";
+import type { Held } from "@/lib/held-reads";
 import { getLogger } from "@/lib/log";
 import { yieldToMain } from "@/lib/yield-to-main";
 import type { DatabaseService } from "@/services/database/service";
@@ -60,7 +62,7 @@ export interface CitedByGroup {
 }
 
 export type CitationCoverage = "indexing" | "complete" | "degraded";
-export type CitationKeyResolution = "resolving" | "ready" | "degraded";
+export type CitationKeyResolution = Held<CitekeySnapshot>["status"] | null;
 
 /** Whether a Citation Syntax's occurrences reach a citation-command answer. */
 export type CitationSyntaxAdmission = "included" | "excluded";
@@ -135,6 +137,7 @@ const logger = getLogger("citation-index");
 
 /** Files the backfill scans between two yields to the host. */
 const BACKFILL_CHUNK = 20;
+const SNAPSHOT_KEY = "citekeys";
 
 interface CitationIndexEvents {
   /** One document's literal-citekey occurrences changed. */
@@ -202,7 +205,10 @@ export class CitationIndex extends Service<void> {
   readonly #emitter = createNanoEvents<CitationIndexEvents>();
   /** Scans by path; a path it covers with matching mtime and size needs no read. */
   readonly #scans = new Map<string, FileScan>();
-  readonly #snapshot = new CitekeySnapshot();
+  readonly #snapshots = new HeldReads<CitekeySnapshot>({
+    limit: 1,
+    same: (prev, next) => prev.sameAs(next),
+  });
   /** Callers parked on a one-shot readiness signal; disposal flushes them. */
   readonly #waiters = new Set<() => void>();
   #store?: CitekeyStore;
@@ -217,10 +223,6 @@ export class CitationIndex extends Service<void> {
   #backfilled = false;
   #coverage: CitationCoverage = "indexing";
   #stopped = false;
-  /** Which build of the resolution snapshot is current; a rebuild bumps it. */
-  #rebuildSeq = 0;
-  #resolved = false;
-  #resolution: CitationKeyResolution = "resolving";
 
   ready: Promise<void>;
 
@@ -244,6 +246,7 @@ export class CitationIndex extends Service<void> {
    */
   async getDocumentCitationSet(file: TFile): Promise<DocumentCitationSet> {
     await this.ready;
+    void this.#rebuildSnapshot();
     const { citekeys, links } = this.#admitted(
       file,
       await this.#coverFile(file),
@@ -358,9 +361,9 @@ export class CitationIndex extends Service<void> {
   }
 
   /**
-   * Wait until coverage and citation-key resolution both leave their
-   * transitional states. `degraded` counts as settled: it is the state a
-   * caller reports as data, not a stage that resolves on its own.
+   * Wait until coverage and citation-key resolution both have settled once. A
+   * failed resolution read counts as settled data rather than a stage that
+   * resolves on its own.
    *
    * @returns `"timeout"` when the bounded wait expires, `"settled"` otherwise.
    */
@@ -381,7 +384,8 @@ export class CitationIndex extends Service<void> {
    * reverse observation carries the same state inside its snapshot.
    */
   get resolution(): CitationKeyResolution {
-    return this.#resolution;
+    const record = this.#heldSnapshot();
+    return record?.status ?? null;
   }
 
   /**
@@ -436,13 +440,15 @@ export class CitationIndex extends Service<void> {
    * What a native citation key names in the current Library Scope, read
    * synchronously: no Item, exactly one, or several candidates.
    */
-  resolveCitekey(citekey: string): CitekeyResolution {
-    return this.#snapshot.resolve(citekey);
+  resolveCitekey(citekey: string): CitekeyResolution | null {
+    const record = this.#heldSnapshot();
+    return record?.value.resolve(citekey) ?? null;
   }
 
   /** The native citation key of an Item — the wikilink display text. */
   citekeyOf(indexedKey: string): string | null {
-    return this.#snapshot.citekeyOf(indexedKey);
+    const record = this.#heldSnapshot();
+    return record?.value.citekeyOf(indexedKey) ?? null;
   }
 
   /**
@@ -451,7 +457,20 @@ export class CitationIndex extends Service<void> {
    */
   async whenResolved(): Promise<void> {
     await this.ready;
-    await this.#waitFor("resolution-changed", this.#resolved);
+    if (this.#stopped) return;
+    await this.#waitForRead(this.#rebuildSnapshot());
+  }
+
+  /** Settles a first snapshot read or disposal, whichever comes first. */
+  #waitForRead(read: Promise<Held<CitekeySnapshot> | null>): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const wake = (): void => {
+        this.#waiters.delete(wake);
+        resolve();
+      };
+      this.#waiters.add(wake);
+      void read.then(wake);
+    });
   }
 
   /**
@@ -554,12 +573,32 @@ export class CitationIndex extends Service<void> {
         }),
       ),
     );
-    stack.defer(this.#db.on("changed", () => void this.#rebuildSnapshot()));
+    stack.defer(this.#db.on("changed", () => this.#invalidateSnapshot()));
     // Library Scope decides which Libraries a Citation Key resolves against,
     // so narrowing or widening it can turn an Ambiguous key unique and back.
     stack.defer(
-      this.#libraryScope.on("changed", () => void this.#rebuildSnapshot()),
+      this.#libraryScope.on("changed", () => this.#invalidateSnapshot()),
     );
+    stack.defer(
+      this.#snapshots.on("changed", () =>
+        this.#emitter.emit("resolution-changed"),
+      ),
+    );
+    stack.defer(
+      this.#snapshots.on("settled", (_key, snapshot) => {
+        // A no-value settlement leaves the public resolution pending. Waking a
+        // reverse observer would make its next ask repeat the failed read.
+        if (snapshot === null) {
+          logger.trace(
+            "Resolution snapshot settlement kept reverse observers pending",
+            { resolution: null },
+          );
+          return;
+        }
+        this.#emitter.emit("cited-by-invalidated");
+      }),
+    );
+    stack.use(this.#snapshots);
 
     // A store that fails to open leaves the index whole and unpersisted, so the
     // failure costs a rescan per launch rather than the feature.
@@ -669,75 +708,63 @@ export class CitationIndex extends Service<void> {
 
   /**
    * Rebuilds the resolution snapshot from one bulk read per local Library.
-   * Sequenced by {@link #rebuildSeq}, so a rebuild superseded mid-flight by a
-   * newer one settles without touching the maps. A degraded database, or a
-   * read that throws, leaves the maps as they were rather than clearing them.
+   * The Held Read commits only the current read. A degraded database, or a read
+   * that throws, leaves the maps as they were rather than clearing them.
    *
    * Every local Library is read, because the reverse lookup by exact Indexed
    * Key covers them all; Library Scope then decides which of those rows the
    * forward Citation Key lookup answers from.
    */
-  async #rebuildSnapshot(): Promise<void> {
-    this.#rebuildSeq += 1;
-    const seq = this.#rebuildSeq;
-    this.#setResolution("resolving");
+  #invalidateSnapshot(): void {
+    this.#snapshots.invalidate();
+    void this.#rebuildSnapshot();
+  }
+
+  #heldSnapshot(): Held<CitekeySnapshot> | null {
+    const snapshot = this.#snapshots.peek(SNAPSHOT_KEY);
+    void this.#rebuildSnapshot();
+    return snapshot;
+  }
+
+  #rebuildSnapshot(): Promise<Held<CitekeySnapshot> | null> {
+    if (this.#stopped) {
+      return Promise.resolve(this.#snapshots.peek(SNAPSHOT_KEY));
+    }
+    return this.#snapshots.read(SNAPSHOT_KEY, () => this.#readSnapshot());
+  }
+
+  async #readSnapshot(): Promise<CitekeySnapshot | null> {
     try {
       await this.#db.ready;
       await this.#libraryScope.ready;
     } catch (error) {
       logger.warn("Resolution snapshot database unavailable", { error });
-      if (this.#stopped || seq !== this.#rebuildSeq) return;
-      this.#settleResolution("degraded", false);
-      return;
+      return null;
     }
-    if (this.#stopped || seq !== this.#rebuildSeq) return;
+    if (this.#stopped) return null;
 
-    let changed = false;
-    let resolution: CitationKeyResolution = "ready";
     const scope = this.#libraryScope.current;
     if (this.#db.state !== "ready" || scope === null) {
-      resolution = "degraded";
       logger.debug("Resolution snapshot rebuild skipped, database not ready");
-    } else {
-      try {
-        const inScope = new Set(
-          scope.available.map((library) => library.libraryID),
-        );
-        const rows = this.#libraryScope.libraries.flatMap((library) =>
-          this.#readCitekeys(this.#db.client, library.libraryID),
-        );
-        changed = this.#snapshot.replace(rows, inScope);
-        logger.debug("Resolution snapshot rebuilt", {
-          libraries: this.#libraryScope.libraries.length,
-          inScope: inScope.size,
-          count: rows.length,
-          changed,
-        });
-      } catch (error) {
-        resolution = "degraded";
-        logger.warn("Resolution snapshot rebuild failed", { error });
-      }
+      return null;
     }
-
-    this.#settleResolution(resolution, changed);
-  }
-
-  #setResolution(resolution: CitationKeyResolution): void {
-    if (resolution === this.#resolution) return;
-    this.#resolution = resolution;
-    this.#emitter.emit("cited-by-invalidated");
-  }
-
-  #settleResolution(
-    resolution: Exclude<CitationKeyResolution, "resolving">,
-    changed: boolean,
-  ): void {
-    const firstSettle = !this.#resolved;
-    const stateChanged = resolution !== this.#resolution;
-    this.#resolved = true;
-    this.#resolution = resolution;
-    if (stateChanged) this.#emitter.emit("cited-by-invalidated");
-    if (changed || firstSettle) this.#emitter.emit("resolution-changed");
+    try {
+      const inScope = new Set(
+        scope.available.map((library) => library.libraryID),
+      );
+      const rows = this.#libraryScope.libraries.flatMap((library) =>
+        this.#readCitekeys(this.#db.client, library.libraryID),
+      );
+      logger.debug("Resolution snapshot rebuilt", {
+        libraries: this.#libraryScope.libraries.length,
+        inScope: inScope.size,
+        count: rows.length,
+      });
+      return CitekeySnapshot.from(rows, inScope);
+    } catch (error) {
+      logger.warn("Resolution snapshot rebuild failed", { error });
+      return null;
+    }
   }
 
   /** Idempotent: a content-identical touch stores the same list and wakes nobody. */
@@ -869,7 +896,7 @@ export class CitationIndex extends Service<void> {
     return {
       groups,
       coverage: this.#coverage,
-      resolution: this.#resolution,
+      resolution: this.resolution,
     };
   }
 
@@ -922,7 +949,8 @@ export class CitationIndex extends Service<void> {
     occurrence: CitationOccurrence,
     indexedKey: string,
   ): boolean {
-    const resolved = this.#snapshot.resolve(occurrence.raw);
+    const resolved = this.resolveCitekey(occurrence.raw);
+    if (resolved === null) return false;
     switch (resolved.kind) {
       case "missing":
         return false;
@@ -940,8 +968,8 @@ export class CitationIndex extends Service<void> {
    * when it names several, which adopts no candidate's Indexed Key.
    */
   #uniqueItem(citekey: string): SnapshotItem | null {
-    const resolved = this.#snapshot.resolve(citekey);
-    return resolved.kind === "unique" ? resolved.item : null;
+    const resolved = this.resolveCitekey(citekey);
+    return resolved?.kind === "unique" ? resolved.item : null;
   }
 
   /** Whether a wikilink Citation Occurrence resolves to `indexedKey`. */
