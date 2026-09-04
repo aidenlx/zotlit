@@ -35,6 +35,7 @@
     "@tanstack/react-router-devtools": "^1.167.1",
     "@tanstack/react-start": "^1.168.48",
     "@tanstack/router-plugin": "^1.168.34",
+    "@unpic/react": "^1.0.2",
     "arkregex": "catalog:",
     "class-variance-authority": "^0.7.1",
     "cnfast": "^0.1.0",
@@ -46,6 +47,7 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "semver": "catalog:",
+    "unpic": "^4.2.2",
     "valibot": "catalog:"
   },
   "devDependencies": {
