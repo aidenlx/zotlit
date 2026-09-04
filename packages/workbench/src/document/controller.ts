@@ -16,6 +16,7 @@ import type {
   TransactionSpec,
 } from "@codemirror/state";
 
+import { ANNOTATION_HEADER } from "@zotlit/templates/constants";
 import {
   LiteratureNoteTemplateError,
   parseLiteratureNoteTemplate,
@@ -39,6 +40,8 @@ import type {
   ManifestScalar,
   WorkbenchSliceRange,
 } from "./manifest-patch";
+import { noteRegions } from "./regions";
+import type { NoteRegions } from "./regions";
 
 /** The pane that edits one Managed Frontmatter entry's expression. */
 export type WorkbenchEntrySliceId = `entry:${number}`;
@@ -46,9 +49,18 @@ export type WorkbenchEntrySliceId = `entry:${number}`;
 /** A pane that edits one region of the master document. */
 export type WorkbenchSliceId =
   | "note"
+  | "annotation"
   | "filename"
   | "advanced"
   | WorkbenchEntrySliceId;
+
+/** The Annotation Section as its two panes address it, in master offsets. */
+export interface WorkbenchAnnotationSection {
+  /** The `--- zotlit:annotation ---` line, which Advanced highlights. */
+  readonly header: WorkbenchSliceRange;
+  /** The source under it, which the highlight box edits. */
+  readonly source: WorkbenchSliceRange;
+}
 
 export type { WorkbenchSliceRange } from "./manifest-patch";
 
@@ -109,6 +121,7 @@ export class WorkbenchDocumentController {
   #problems: readonly WorkbenchProblem[] = [];
   #focused: WorkbenchSliceId | null = null;
   #entries: readonly ManagedEntrySource[] | null = null;
+  #regions: NoteRegions = { annotationCalls: [], managedBlock: null };
   readonly #ranges = new Map<WorkbenchSliceId, WorkbenchSliceRange>([
     ["note", { from: 0, to: 0 }],
     ["advanced", { from: 0, to: 0 }],
@@ -185,6 +198,27 @@ export class WorkbenchDocumentController {
    */
   get filenameSlice(): WorkbenchSliceRange | null {
     return this.#ranges.get("filename") ?? null;
+  }
+
+  /**
+   * The boxes the note body carries: every annotation render call, and the
+   * Managed Block. Both are read from the source, so a draft mid-repair keeps
+   * the boxes the reader is working in.
+   */
+  get noteRegions(): NoteRegions {
+    return this.#regions;
+  }
+
+  /**
+   * The Annotation Section's header line and the source under it, or null while
+   * the document has never carried a section. The header is the line the
+   * section's source starts after, so it survives a draft the parser refuses.
+   */
+  get annotationSection(): WorkbenchAnnotationSection | null {
+    const source = this.#ranges.get("annotation");
+    if (!source) return null;
+    const line = this.#state.doc.lineAt(Math.max(source.from - 1, 0));
+    return { header: { from: line.from, to: line.to }, source };
   }
 
   get canUndo(): boolean {
@@ -296,6 +330,31 @@ export class WorkbenchDocumentController {
     if (!edit) return false;
     this.dispatch({
       changes: edit,
+      userEvent: "input.form",
+      annotations: isolateHistory.of("full"),
+    });
+    return true;
+  }
+
+  /**
+   * Writes the Annotation Section header a document without one is missing, as
+   * a line of its own at the end of the file. It inserts that header and the
+   * line break that ends it and nothing else, so the section it opens is empty
+   * until the reader writes in it.
+   * @returns false when the document is not missing its section.
+   */
+  repairAnnotationSection(): boolean {
+    if (
+      !this.#problems.some(({ code }) => code === "missing-annotation-section")
+    ) {
+      return false;
+    }
+    const { doc } = this.#state;
+    // The header counts as one only on a line of its own, so a file whose last
+    // line still holds text is given the break that ends that line.
+    const start = doc.line(doc.lines).length === 0 ? "" : "\n";
+    this.dispatch({
+      changes: { from: doc.length, insert: `${start}${ANNOTATION_HEADER}\n` },
       userEvent: "input.form",
       annotations: isolateHistory.of("full"),
     });
@@ -442,6 +501,10 @@ export class WorkbenchDocumentController {
         from: document.bodyStart,
         to: document.annotationSection.headerStart,
       });
+      this.#ranges.set("annotation", {
+        from: document.annotationSection.start,
+        to: document.annotationSection.end,
+      });
       this.#problems = webProblems(document, source);
     } catch (error) {
       if (!(error instanceof LiteratureNoteTemplateError)) throw error;
@@ -463,6 +526,7 @@ export class WorkbenchDocumentController {
         },
       ];
     }
+    this.#regions = noteRegions(source, this.sliceRange("note"));
   }
 
   /**

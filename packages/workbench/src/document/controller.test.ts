@@ -335,3 +335,122 @@ describe("WorkbenchDocumentController", () => {
     );
   });
 });
+
+describe("WorkbenchDocumentController and the Annotation Section", () => {
+  /** A Profile whose note body calls the section twice, around a Managed Block. */
+  const TWO_CALLS = HAND_WRITTEN.replace(
+    "Read on {{ zt.dateAdded }}.",
+    `{% managed %}
+{% for annotation in zt.annotations %}
+{% render_annotation annotation %}
+{% endfor %}
+{% endmanaged %}
+
+{% render "annotation" with annotation as zt %}`,
+  );
+
+  it("edits the section source alone, keeping the header and the note body", () => {
+    const controller = new WorkbenchDocumentController(HAND_WRITTEN);
+    const { from, to } = controller.sliceRange("annotation");
+
+    expect(HAND_WRITTEN.slice(from, to)).toBe("> {{ zt.text }}\n");
+    controller.dispatch({
+      changes: { from, to, insert: "> {{ zt.text }} ({{ zt.pageLabel }})\n" },
+      userEvent: "input.type",
+    });
+
+    expect(controller.source).toBe(
+      HAND_WRITTEN.replace(
+        "> {{ zt.text }}\n",
+        "> {{ zt.text }} ({{ zt.pageLabel }})\n",
+      ),
+    );
+    expect(controller.problems).toEqual([]);
+  });
+
+  it("undoes a section edit in the one history the whole document shares", () => {
+    const controller = new WorkbenchDocumentController(HAND_WRITTEN);
+    const { to } = controller.sliceRange("annotation");
+    controller.dispatch({
+      changes: { from: to, insert: "> extra\n" },
+      userEvent: "input.type",
+    });
+
+    expect(controller.undo()).toBe(true);
+    expect(controller.source).toBe(HAND_WRITTEN);
+  });
+
+  it("names the header line the section starts after", () => {
+    const controller = new WorkbenchDocumentController(HAND_WRITTEN);
+    const { header } = controller.annotationSection!;
+
+    expect(HAND_WRITTEN.slice(header.from, header.to)).toBe(
+      "--- zotlit:annotation ---",
+    );
+  });
+
+  it("reports every render call in the note body, in master offsets", () => {
+    const controller = new WorkbenchDocumentController(TWO_CALLS);
+    const { annotationCalls, managedBlock } = controller.noteRegions;
+
+    expect(
+      annotationCalls.map(({ call }) => TWO_CALLS.slice(call.from, call.to)),
+    ).toEqual([
+      "{% render_annotation annotation %}",
+      '{% render "annotation" with annotation as zt %}',
+    ]);
+    expect(
+      TWO_CALLS.slice(managedBlock!.open.from, managedBlock!.open.to),
+    ).toBe("{% managed %}");
+  });
+
+  it("adds the missing header and the line break that ends it, and nothing else", () => {
+    const source = HAND_WRITTEN.replace(
+      "--- zotlit:annotation ---\n> {{ zt.text }}\n",
+      "",
+    );
+    const controller = new WorkbenchDocumentController(source);
+
+    expect(controller.problems[0]?.code).toBe("missing-annotation-section");
+    expect(controller.repairAnnotationSection()).toBe(true);
+
+    expect(controller.source).toBe(`${source}--- zotlit:annotation ---\n`);
+    expect(controller.problems).toEqual([]);
+    expect(controller.sliceText("annotation")).toBe("");
+  });
+
+  it("ends a last line that holds text before writing the header on its own", () => {
+    const source = HAND_WRITTEN.replace(
+      "\n--- zotlit:annotation ---\n> {{ zt.text }}\n",
+      "Last line with no break.",
+    );
+    const controller = new WorkbenchDocumentController(source);
+
+    expect(controller.repairAnnotationSection()).toBe(true);
+
+    expect(controller.source).toBe(`${source}\n--- zotlit:annotation ---\n`);
+    expect(controller.problems).toEqual([]);
+  });
+
+  it("refuses to repair a document that already carries a section", () => {
+    const controller = new WorkbenchDocumentController(HAND_WRITTEN);
+
+    expect(controller.repairAnnotationSection()).toBe(false);
+    expect(controller.source).toBe(HAND_WRITTEN);
+  });
+
+  it("keeps the section ranges of a CRLF document in its own line break", () => {
+    const source = HAND_WRITTEN.replaceAll("\n", "\r\n");
+    const controller = new WorkbenchDocumentController(source);
+    const { from, to } = controller.sliceRange("annotation");
+
+    controller.dispatch({
+      changes: { from, to, insert: "> one\n> two\n" },
+      userEvent: "input.type",
+    });
+
+    expect(controller.source).toBe(
+      source.replace("> {{ zt.text }}\r\n", "> one\r\n> two\r\n"),
+    );
+  });
+});

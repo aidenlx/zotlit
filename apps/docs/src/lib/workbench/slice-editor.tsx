@@ -1,6 +1,7 @@
 // A CodeMirror pane bound to one slice of the master Profile document.
 
 import { EditorSelection, EditorState } from "@codemirror/state";
+import type { Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 
@@ -40,12 +41,19 @@ export interface SliceEditorProps {
    */
   singleLine?: boolean;
   /**
+   * The host's own extensions over this pane — the boxes it draws on the text.
+   * They are read once, when the view is built, so a caller keeps one value.
+   */
+  extensions?: Extension;
+  /**
    * Master offsets to select and scroll to, so a problem opens on the text
    * that caused it. Each new object reveals again.
    */
   reveal?: WorkbenchSliceRange | null;
   /** The selection in master offsets, whenever it moves or the pane takes focus. */
   onSelection?: (selection: WorkbenchSliceRange) => void;
+  /** The pane took focus, so the host knows which editor the reader is in. */
+  onFocus?: () => void;
   /** A just-typed `{{`, so the host can offer the field list in its place. */
   onFieldTrigger?: (trigger: FieldTrigger) => void;
 }
@@ -56,16 +64,18 @@ export function SliceEditor({
   label,
   language = "liquid",
   singleLine = false,
+  extensions,
   reveal,
   onSelection,
+  onFocus,
   onFieldTrigger,
 }: SliceEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView>(null);
   // The view outlives every render, so it reads the current callbacks through
   // a ref instead of being rebuilt whenever the host passes new ones.
-  const report = useRef({ onSelection, onFieldTrigger });
-  report.current = { onSelection, onFieldTrigger };
+  const report = useRef({ onSelection, onFocus, onFieldTrigger });
+  report.current = { onSelection, onFocus, onFieldTrigger };
 
   useEffect(() => {
     const view = new EditorView({
@@ -86,8 +96,12 @@ export function SliceEditor({
           // gutter rides with Advanced alone.
           ...(slice === "advanced" ? [lineNumbers()] : []),
           EditorView.contentAttributes.of({ "aria-label": label }),
+          extensions ?? [],
           EditorView.updateListener.of((update) => {
             if (!update.selectionSet && !update.focusChanged) return;
+            if (update.focusChanged && update.view.hasFocus) {
+              report.current.onFocus?.();
+            }
             const { from } = controller.sliceRange(slice);
             report.current.onSelection?.(sliceSelection(update.view, from));
             // A typed brace is the accelerator; a paste, an undo, or a
@@ -114,7 +128,7 @@ export function SliceEditor({
       editor.current = null;
       view.destroy();
     };
-  }, [controller, slice, label, language, singleLine]);
+  }, [controller, slice, label, language, singleLine, extensions]);
 
   useEffect(() => {
     const view = editor.current;
