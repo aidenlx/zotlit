@@ -272,9 +272,14 @@ describe("the Properties list", () => {
       <ResultSheet
         markdown=""
         properties={[
-          { key: "doi", missing: true },
-          { key: "abstract", value: null, missing: false },
-          { key: "citekey", value: "ioannidisWhyMost2005", missing: false },
+          { key: "doi", missing: true, position: 1 },
+          { key: "abstract", value: null, missing: false, position: 2 },
+          {
+            key: "citekey",
+            value: "ioannidisWhyMost2005",
+            missing: false,
+            position: 3,
+          },
         ]}
         showMarkdown={false}
       />,

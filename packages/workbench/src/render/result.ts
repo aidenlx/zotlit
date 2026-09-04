@@ -10,12 +10,20 @@ export interface RenderDiagnostic {
     | "render-timeout";
   readonly message: string;
   readonly part?: "profile" | "properties" | "render";
+  /**
+   * 1-based position of the Managed Frontmatter entry that caused it, so the
+   * responsible row can carry the diagnostic. Absent when nothing names one,
+   * which is what sends the reader to Advanced instead.
+   */
+  readonly position?: number;
 }
 
 export interface RenderedProperty {
   readonly key: string;
   readonly value?: unknown;
   readonly missing: boolean;
+  /** 1-based position of the Managed Frontmatter entry that produced it. */
+  readonly position: number;
 }
 
 export interface RenderIdentity {
@@ -25,7 +33,13 @@ export interface RenderIdentity {
 
 export interface ProfileRenderResult extends RenderIdentity {
   readonly filename: string | null;
+  /** What each entry produced on its own, in list order. */
   readonly properties: readonly RenderedProperty[];
+  /**
+   * The final ordered fold — the frontmatter the note gets once every entry has
+   * merged. Each row carries the position that fixed its place in the note.
+   */
+  readonly fold: readonly RenderedProperty[];
   readonly creationBody: string | null;
   readonly managedRegion: string | null;
   readonly annotation: string | null;
@@ -50,6 +64,7 @@ export function failedRender(
     ...identity,
     filename: null,
     properties: [],
+    fold: [],
     creationBody: null,
     managedRegion: null,
     annotation: null,

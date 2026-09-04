@@ -10,7 +10,7 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
-import { liquidMarkdown } from "@zotlit/workbench/language";
+import { liquidMarkdown, yamlRule } from "@zotlit/workbench/language";
 
 import { FIELD_TRIGGER } from "./fields";
 
@@ -21,10 +21,19 @@ export interface FieldTrigger {
   readonly top: number;
 }
 
+/**
+ * The text a pane holds: the note's own Liquid-in-Markdown, or the YAML a
+ * Managed Frontmatter rule is written in. The `{{` accelerator belongs to
+ * Liquid, so a rule pane offers the field list nowhere.
+ */
+export type SliceLanguage = "liquid" | "yaml";
+
 export interface SliceEditorProps {
   controller: WorkbenchDocumentController;
   slice: WorkbenchSliceId;
   label: string;
+  /** @default "liquid" */
+  language?: SliceLanguage;
   /**
    * Master offsets to select and scroll to, so a problem opens on the text
    * that caused it. Each new object reveals again.
@@ -40,6 +49,7 @@ export function SliceEditor({
   controller,
   slice,
   label,
+  language = "liquid",
   reveal,
   onSelection,
   onFieldTrigger,
@@ -57,7 +67,7 @@ export function SliceEditor({
         doc: controller.sliceText(slice),
         extensions: [
           workbenchSlice(controller, slice),
-          liquidMarkdown,
+          language === "yaml" ? yamlRule : liquidMarkdown,
           EditorView.lineWrapping,
           // The whole-file pane is the one place a reader counts lines, so the
           // gutter rides with Advanced alone.
@@ -69,9 +79,11 @@ export function SliceEditor({
             report.current.onSelection?.(sliceSelection(update.view, from));
             // A typed brace is the accelerator; a paste, an undo, or a
             // Backspace that lands after an existing `{{` is not.
-            const typed = update.transactions.some((transaction) =>
-              transaction.isUserEvent("input.type"),
-            );
+            const typed =
+              language === "liquid" &&
+              update.transactions.some((transaction) =>
+                transaction.isUserEvent("input.type"),
+              );
             const trigger = typed ? fieldTriggerAt(update.view, from) : null;
             if (trigger) report.current.onFieldTrigger?.(trigger);
           }),
@@ -89,7 +101,7 @@ export function SliceEditor({
       editor.current = null;
       view.destroy();
     };
-  }, [controller, slice, label]);
+  }, [controller, slice, label, language]);
 
   useEffect(() => {
     const view = editor.current;

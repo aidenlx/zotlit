@@ -305,29 +305,11 @@ export function ResultSheet({
   return (
     <div>
       {properties.length > 0 && (
-        <dl
-          aria-label={m.workbench_result_properties()}
-          className="mb-4 grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-fd-border pb-3 text-xs"
-        >
-          {properties.map((property) => (
-            <Fragment key={property.key}>
-              <dt className="truncate font-mono text-fd-muted-foreground">
-                {property.key}
-              </dt>
-              <dd className="break-words">
-                {property.missing || property.value == null ? (
-                  <span className="text-fd-muted-foreground italic">
-                    {property.missing
-                      ? m.workbench_property_unset()
-                      : m.workbench_property_empty()}
-                  </span>
-                ) : (
-                  propertyText(property.value)
-                )}
-              </dd>
-            </Fragment>
-          ))}
-        </dl>
+        <PropertyList
+          properties={properties}
+          label={m.workbench_result_properties()}
+          className="mb-4 border-b border-fd-border pb-3 text-xs"
+        />
       )}
       <div aria-label={m.workbench_result_body()} className={SHEET_STYLE}>
         {parseNote(markdown).children.map((node, index) =>
@@ -338,7 +320,55 @@ export function ResultSheet({
   );
 }
 
-function propertyText(value: unknown): string {
+/**
+ * A property grid — the name beside the value, or beside the reason it has
+ * none. The sheet's own frontmatter list and the Properties tab's columns are
+ * this one list.
+ */
+export function PropertyList({
+  properties,
+  label,
+  className = "",
+}: {
+  properties: readonly RenderedProperty[];
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <dl
+      aria-label={label}
+      className={`grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-1 ${className}`}
+    >
+      {properties.map((property) => (
+        <Fragment key={`${property.position}:${property.key}`}>
+          <dt className="truncate font-mono text-fd-muted-foreground">
+            {property.key}
+          </dt>
+          <dd className="break-words">
+            <PropertyValue property={property} />
+          </dd>
+        </Fragment>
+      ))}
+    </dl>
+  );
+}
+
+/** A produced value, or the reason it has none. */
+export function PropertyValue({ property }: { property: RenderedProperty }) {
+  if (property.missing || property.value == null) {
+    return (
+      <span className="text-fd-muted-foreground italic">
+        {property.missing
+          ? m.workbench_property_unset()
+          : m.workbench_property_empty()}
+      </span>
+    );
+  }
+  return propertyText(property.value);
+}
+
+/** One property value as a single line of text, shared by every property list. */
+export function propertyText(value: unknown): string {
   if (Array.isArray(value)) return value.map(propertyText).join(", ");
   if (typeof value === "object" && value !== null) return JSON.stringify(value);
   return String(value);

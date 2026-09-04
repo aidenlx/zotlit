@@ -8,6 +8,7 @@ export {
   STRUCTURAL_TAGS,
 } from "./liquid";
 export type { LiquidRange } from "./liquid";
+export { yamlRule } from "./yaml";
 export { hoverHint, rootAt, suggestions } from "./suggestions";
 export type {
   Suggestion,

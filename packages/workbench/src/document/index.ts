@@ -1,5 +1,11 @@
-export { sliceEdit, WorkbenchDocumentController } from "./controller";
+export {
+  entryPosition,
+  entrySlice,
+  sliceEdit,
+  WorkbenchDocumentController,
+} from "./controller";
 export type {
+  WorkbenchEntrySliceId,
   WorkbenchProblem,
   WorkbenchProblemCode,
   WorkbenchSliceEditor,
@@ -7,5 +13,17 @@ export type {
   WorkbenchSliceRange,
   WorkbenchUpdate,
 } from "./controller";
-export { manifestNodeRange, manifestValueEdit } from "./manifest-patch";
+export {
+  managedEntryEdit,
+  managedFrontmatterEntries,
+  manifestNodeRange,
+  manifestValueEdit,
+} from "./manifest-patch";
+export type {
+  ManagedEntryAction,
+  ManagedEntryLanguage,
+  ManagedEntrySource,
+  ManagedFrontmatterList,
+  ManifestScalar,
+} from "./manifest-patch";
 export { workbenchSlice } from "./slice";

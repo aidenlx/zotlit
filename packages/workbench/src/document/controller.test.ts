@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { WorkbenchDocumentController } from "./controller";
+import { entrySlice, WorkbenchDocumentController } from "./controller";
 
 /**
  * A hand-written Profile: an out-of-order manifest with a comment, a single-
@@ -178,9 +178,28 @@ describe("WorkbenchDocumentController", () => {
     );
 
     const [problem] = controller.problems;
-    expect(problem).toMatchObject({ code: "invalid-manifest" });
+    expect(problem).toMatchObject({
+      code: "invalid-manifest",
+      slice: "advanced",
+    });
     const { from, to } = problem!.range!;
     expect(controller.source.slice(from, to)).toBe("two");
+  });
+
+  it("sends a manifest error the parser pins to one entry to that row", () => {
+    const controller = new WorkbenchDocumentController(
+      HAND_WRITTEN.replace("merge: replace", "merge: sometimes"),
+    );
+
+    const [problem] = controller.problems;
+    expect(problem).toMatchObject({
+      code: "invalid-manifest",
+      slice: entrySlice(1),
+    });
+    const { from, to } = problem!.range!;
+    expect(controller.source.slice(from, to).trimEnd()).toBe(
+      "key: title\n    expr: zt.title\n    merge: sometimes",
+    );
   });
 
   it("reports an Eta profile as unsupported on the web and points at the value", () => {
