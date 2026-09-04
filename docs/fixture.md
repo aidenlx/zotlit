@@ -44,6 +44,8 @@ pnpm fixture paths
 
 The Fixture Vault contains generated Literature Notes, imported-note mirrors, and committed test pages. Its Literature Notes reference only Items in the generated Zotero data.
 
+Each build writes a minimal saved layout. The first open shows the file explorer and search on the left. The right sidebar shows the Annotations, References, and Cited by tabs, then the Obsidian backlinks and outgoing links tabs. The ZotLit tabs are in this layout only when the build installs the plugin bundle. Obsidian writes its own layout to `workspace.json` while a session runs, so a rebuild is necessary to restore this preset.
+
 For plugin development, use the per-worktree Development Vault:
 
 ```sh
