@@ -528,7 +528,7 @@ export class WorkbenchDocumentController {
           code: error.code,
           message: error.message,
           recovery: error.recovery,
-          slice: this.#sliceFor(error.manifestPath),
+          slice: this.#sliceFor(error),
           ...(range ? { range } : {}),
         },
       ];
@@ -537,18 +537,45 @@ export class WorkbenchDocumentController {
   }
 
   /**
-   * The pane a manifest problem is repaired in: the row that owns the entry the
-   * parser named, and Advanced for every error that names no entry.
+   * The pane a problem is repaired in: the row that owns the entry the parser
+   * named, the note name for the manifest value that holds it, the note body
+   * for a problem in the text that pane already shows, and Advanced for every
+   * error no pane can name.
    */
-  #sliceFor(path: readonly (string | number)[] | undefined): WorkbenchSliceId {
+  #sliceFor(error: LiteratureNoteTemplateError): WorkbenchSliceId {
+    const path = error.manifestPath;
     const index = path?.[0] === "frontmatter" ? path[1] : undefined;
-    if (typeof index !== "number") return "advanced";
-    const position = index + 1;
-    return this.#entries?.some((entry) => entry.position === position)
-      ? entrySlice(position)
-      : "advanced";
+    if (typeof index === "number") {
+      const position = index + 1;
+      return this.#entries?.some((entry) => entry.position === position)
+        ? entrySlice(position)
+        : "advanced";
+    }
+    if (path?.[0] === "filename" && this.filenameSlice) return "filename";
+    return this.#inNoteBody(error) ? "note" : "advanced";
+  }
+
+  /**
+   * Whether the note pane already holds the text the parser pointed at. The
+   * ranges belong to the last parse the change set remapped, so a code about
+   * the document's own structure — a missing or duplicated section header —
+   * stays with Advanced, where that structure is repaired.
+   */
+  #inNoteBody({ code, offset }: LiteratureNoteTemplateError): boolean {
+    if (offset === undefined || !NOTE_BODY_ERRORS.has(code)) return false;
+    const note = this.#ranges.get("note");
+    // The note slice stops before the section header, so a problem sitting on
+    // that line is the document's own structure rather than the note's text.
+    return note !== undefined && offset >= note.from && offset < note.to;
   }
 }
+
+/** The parser codes that name text the note pane owns rather than structure. */
+const NOTE_BODY_ERRORS = new Set<LiteratureNoteTemplateErrorCode>([
+  "invalid-managed-block",
+  "duplicate-managed-block",
+  "unknown-section-header",
+]);
 
 /**
  * The parts of `changes` the change filter keeps out of the master, in the

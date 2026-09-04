@@ -186,6 +186,35 @@ describe("WorkbenchDocumentController", () => {
     expect(controller.source.slice(from, to)).toBe("two");
   });
 
+  it("sends a note-name error to the pane that edits the note name", () => {
+    const controller = new WorkbenchDocumentController(
+      HAND_WRITTEN.replace("filename: '{{ zt.citationKey }}'", "filename: 12"),
+    );
+
+    const [problem] = controller.problems;
+    expect(problem).toMatchObject({
+      code: "invalid-manifest",
+      slice: "filename",
+    });
+    const { from, to } = problem!.range!;
+    expect(controller.source.slice(from, to)).toBe("12");
+  });
+
+  it("sends an unclosed Managed Block to the note pane that holds it", () => {
+    const controller = new WorkbenchDocumentController(HAND_WRITTEN);
+
+    noteEdit(controller, "{% managed %}\n");
+
+    const [problem] = controller.problems;
+    expect(problem).toMatchObject({
+      code: "invalid-managed-block",
+      slice: "note",
+    });
+    const note = controller.sliceRange("note");
+    expect(problem!.range!.from).toBeGreaterThanOrEqual(note.from);
+    expect(problem!.range!.to).toBeLessThanOrEqual(note.to);
+  });
+
   it("sends a manifest error the parser pins to one entry to that row", () => {
     const controller = new WorkbenchDocumentController(
       HAND_WRITTEN.replace("merge: replace", "merge: sometimes"),

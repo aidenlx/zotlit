@@ -13,6 +13,7 @@ import {
   WorkbenchDocumentController,
 } from "@zotlit/workbench/document";
 import type {
+  WorkbenchProblem,
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
@@ -74,6 +75,16 @@ const TAB_LEDE = {
   note: m.workbench_note_lede,
   properties: m.workbench_properties_lede,
   name: m.workbench_name_lede,
+};
+
+/**
+ * Where a problem is repaired, named for the reader. Every other slice is one
+ * Managed Frontmatter row, which reads as the entry it is.
+ */
+const PROBLEM_WHERE: Partial<Record<WorkbenchSliceId, () => string>> = {
+  advanced: m.workbench_problems_where_advanced,
+  note: m.workbench_problems_where_note,
+  filename: m.workbench_problems_where_filename,
 };
 
 /** The `{{` popup's own box: the size it is drawn at, and its margin. */
@@ -398,7 +409,6 @@ export function Workbench() {
         : [{ position, message: problemText(entry).message }];
     }),
   ];
-  const problemRow = problem ? entryPosition(problem.slice) : null;
   // The Name and folder tab writes the note name; a manifest that holds that
   // value in a form no one-line pane can own leaves the caret in the note.
   const slice: WorkbenchSliceId = advanced
@@ -420,6 +430,28 @@ export function Workbench() {
     setAdvanced(false);
     setTab("properties");
     setOpenRow(position);
+    // A fresh object every time, so selecting the same problem twice reveals it
+    // again.
+    setReveal(range ? { ...range } : null);
+  }
+
+  /**
+   * Opens the pane a problem is repaired in — the row, the note name, the note
+   * body, or Advanced — and reveals the text the parser pointed at.
+   */
+  function goToProblem({ slice: id, range }: WorkbenchProblem) {
+    const position = entryPosition(id);
+    if (position !== null) {
+      goToEntry(position, range);
+      return;
+    }
+    setView("edit");
+    setAdvanced(id === "advanced");
+    if (id === "note") {
+      setTab("note");
+      setNoteEditor("note");
+    }
+    if (id === "filename") setTab("name");
     // A fresh object every time, so selecting the same problem twice reveals it
     // again.
     setReveal(range ? { ...range } : null);
@@ -1038,21 +1070,14 @@ export function Workbench() {
             </span>{" "}
             <button
               type="button"
-              onClick={() => {
-                if (problemRow !== null) {
-                  goToEntry(problemRow, problem.range);
-                  return;
-                }
-                setView("edit");
-                setAdvanced(true);
-                // A fresh object every time, so selecting the same problem
-                // twice reveals it again.
-                setReveal(problem.range ? { ...problem.range } : null);
-              }}
+              onClick={() => goToProblem(problem)}
               className="cursor-pointer underline underline-offset-2"
             >
-              {problemRow === null
-                ? m.workbench_problems_where_advanced()
+              {entryPosition(problem.slice) === null
+                ? (
+                    PROBLEM_WHERE[problem.slice] ??
+                    m.workbench_problems_where_advanced
+                  )()
                 : m.workbench_problems_where_entry()}
             </button>
           </p>
