@@ -65,7 +65,7 @@ describe("renderWikilinkCitations", () => {
     );
     renderWikilinkCitations(root, citationOf, display);
 
-    expect(root.textContent).toBe("[@wang2020, p. 7]");
+    expect(root.textContent).toBe("[@wang2020, {p. 7}]");
   });
 
   it("puts the formatted citation, markup and all, in the anchor", () => {

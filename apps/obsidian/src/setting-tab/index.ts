@@ -5,6 +5,7 @@ import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { ProfileService } from "@/services/profile/service";
 import type {
   SettingsPatch,
   SettingsService,
@@ -20,6 +21,7 @@ import type {
   CitationIndexActions,
   PandocEngineActions,
   ReleaseTabActions,
+  SettingsControlKey,
   SettingsKey,
   SettingTabContext,
 } from "./context";
@@ -32,8 +34,12 @@ import {
   LOG_LEVEL_KEY,
   maintenancePageItems,
 } from "./maintenance";
-import { noteImportPageItems } from "./note-import";
-import { defaultPlaceholder } from "./placeholder";
+import {
+  getProfileControlValue,
+  isProfileControlKey,
+  literatureNoteProfileItems,
+  setProfileControlValue,
+} from "./profiles";
 import { resourcesGroup } from "./resources";
 import {
   AUTO_TRIM_KEYS,
@@ -43,8 +49,11 @@ import {
 } from "./templates";
 
 export interface ZotLitSettingTabOptions {
+  createProfile: SettingTabContext["createProfile"];
+  importProfile: SettingTabContext["importProfile"];
   plugin: ZotLitPlugin;
   settings: SettingsService;
+  profile: ProfileService;
   db: DatabaseService;
   libraryScope: LibraryScopeService;
   zoteroPref: ZoteroPrefService;
@@ -57,6 +66,8 @@ export interface ZotLitSettingTabOptions {
 }
 
 export class ZotLitSettingTab extends PluginSettingTab {
+  readonly #importProfile: SettingTabContext["importProfile"];
+  readonly #createProfile: SettingTabContext["createProfile"];
   readonly #plugin: ZotLitPlugin;
   readonly #settings: SettingsService;
   readonly #db: DatabaseService;
@@ -64,11 +75,15 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #zoteroPref: ZoteroPrefService;
   readonly #attachmentImport: AttachmentImportActions;
   readonly #citationIndex: CitationIndexActions;
+  readonly #profile: ProfileService;
+  readonly #template: TemplateService;
   readonly #release: ReleaseTabActions;
   readonly #pandocEngine: PandocEngineActions;
   readonly #languagePack: LanguagePackLifecycle;
 
   constructor({
+    createProfile,
+    importProfile,
     plugin,
     settings,
     db,
@@ -77,24 +92,45 @@ export class ZotLitSettingTab extends PluginSettingTab {
     attachmentImport,
     citationIndex,
     template,
+    profile,
     release,
     pandocEngine,
     languagePack,
   }: ZotLitSettingTabOptions) {
     super(plugin.app, plugin);
     this.#plugin = plugin;
+    this.#createProfile = createProfile;
+    this.#importProfile = importProfile;
     this.#settings = settings;
     this.#db = db;
     this.#libraryScope = libraryScope;
     this.#zoteroPref = zoteroPref;
     this.#attachmentImport = attachmentImport;
     this.#citationIndex = citationIndex;
+    this.#template = template;
+    this.#profile = profile;
+    plugin.register(profile.on("changed", () => this.#requestUpdate()));
     this.#release = release;
     this.#pandocEngine = pandocEngine;
     this.#languagePack = languagePack;
 
     plugin.register(
       template.on("compile-status-changed", () => this.#requestUpdate()),
+    );
+    // Obsidian calls `update()` from `addSettingTab()`, so the first pass runs
+    // while `onload` is still wiring and TemplateService is still loading. The
+    // rows that need it structurally are left out of that pass, so re-render
+    // once the service reports ready. `compile-status-changed` can't stand in:
+    // its load-time emit lands before the service flips to loaded.
+    let unloaded = false;
+    plugin.register(() => {
+      unloaded = true;
+    });
+    void profile.ready.then(
+      () => {
+        if (!unloaded) this.#requestUpdate();
+      },
+      () => {},
     );
     plugin.register(languagePack.subscribe(() => this.#requestUpdate()));
     plugin.register(pandocEngine.subscribe(() => this.#requestUpdate()));
@@ -110,13 +146,24 @@ export class ZotLitSettingTab extends PluginSettingTab {
     // reminder appears/disappears reactively on both render paths.
     let lastFields = settings.current?.["note.frontmatter-fields"];
     let lastPending = settings.current?.["release.migration-pending"];
+    let lastTemplateConversionPending =
+      settings.current?.["note.template-conversion-pending"];
     plugin.register(
       settings.subscribe((value) => {
         const fields = value?.["note.frontmatter-fields"];
         const pending = value?.["release.migration-pending"];
-        if (fields === lastFields && pending === lastPending) return;
+        const templateConversionPending =
+          value?.["note.template-conversion-pending"];
+        if (
+          fields === lastFields &&
+          pending === lastPending &&
+          templateConversionPending === lastTemplateConversionPending
+        ) {
+          return;
+        }
         lastFields = fields;
         lastPending = pending;
+        lastTemplateConversionPending = templateConversionPending;
         this.#requestUpdate();
       }),
     );
@@ -129,6 +176,9 @@ export class ZotLitSettingTab extends PluginSettingTab {
 
   /** Bridge declarative `control` reads to {@link SettingsService}. */
   override getControlValue(key: string): unknown {
+    if (isProfileControlKey(key)) {
+      return getProfileControlValue(this.#settings, key);
+    }
     const value = this.#settings.current?.[key as SettingsKey];
     // Auto-trim stores `false | "nl" | "slurp"`; its dropdown reads a string.
     if (AUTO_TRIM_KEYS.has(key as SettingsKey)) return encodeAutoTrim(value);
@@ -139,6 +189,10 @@ export class ZotLitSettingTab extends PluginSettingTab {
 
   /** Bridge declarative `control` writes to {@link SettingsService}. */
   override setControlValue(key: string, value: unknown): void {
+    if (isProfileControlKey(key)) {
+      setProfileControlValue(this.#settings, key, value);
+      return;
+    }
     const next = AUTO_TRIM_KEYS.has(key as SettingsKey)
       ? decodeAutoTrim(value)
       : key === LOG_LEVEL_KEY
@@ -152,35 +206,31 @@ export class ZotLitSettingTab extends PluginSettingTab {
   override getSettingDefinitions(): SettingDefinitionItem[] {
     const ctx: SettingTabContext = {
       app: this.#plugin.app,
-      plugin: this.#plugin,
+      createProfile: this.#createProfile,
+      importProfile: this.#importProfile,
+      manifest: this.#plugin.manifest,
       settings: this.#settings,
+      profile: this.#profile,
       db: this.#db,
       libraryScope: this.#libraryScope,
       zoteroPref: this.#zoteroPref,
       attachmentImport: this.#attachmentImport,
       citationIndex: this.#citationIndex,
+      template: this.#template,
       release: this.#release,
       pandocEngine: this.#pandocEngine,
       languagePack: this.#languagePack,
       requestUpdate: () => this.update(),
     };
 
-    const items: SettingDefinitionItem<SettingsKey>[] = [
+    const items: SettingDefinitionItem<SettingsControlKey>[] = [
       // Migration reminder (while pending) and the resources strip, one
       // headerless group — see resourcesGroup for why the reminder is
       // included structurally rather than via `visible`.
       resourcesGroup(ctx),
 
       // Hub — the most-used settings, no top-level heading (per Obsidian style).
-      {
-        name: m.settings_note_folder_name(),
-        desc: m.settings_note_folder_desc(),
-        control: {
-          type: "folder",
-          key: "note.literature-folder",
-          placeholder: defaultPlaceholder("note.literature-folder"),
-        },
-      },
+      ...literatureNoteProfileItems(ctx),
       // Self-contained domains live on navigable sub-pages, grouped apart
       // from the hub items above so the page rows read as their own section.
       {
@@ -204,12 +254,6 @@ export class ZotLitSettingTab extends PluginSettingTab {
             name: m.settings_page_templates(),
             desc: m.settings_page_templates_desc(),
             items: templatesPageItems(ctx),
-          },
-          {
-            type: "page",
-            name: m.settings_page_note_import(),
-            desc: m.settings_page_note_import_desc(),
-            items: noteImportPageItems(ctx),
           },
           {
             type: "page",

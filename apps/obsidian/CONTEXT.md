@@ -11,15 +11,19 @@ An Obsidian Markdown file linked one-to-one with a Zotero Item. Identified by a 
 _Avoid_: note (ambiguous across Zotero/Obsidian boundary), Zotero note (ambiguous with Child Note), document
 
 **Imported Note** _(Obsidian)_:
-An Obsidian Markdown file produced by converting a Zotero Child Note's HTML body to Markdown. Identified by a `zotero-note-key` frontmatter field (disjoint from `zotero-key`, so it never pollutes the Literature Note index). Carries a `zotero-lastmod` frontmatter field (the source Child Note's Zotero `dateModified`) used by batch re-import to skip unchanged notes. Whole-body overwrite on explicit re-import. The Zotero-side source is a Child Note.
+An Obsidian Markdown file produced by converting a Zotero Child Note's HTML body to Markdown. Identified by a `zotero-note-key` frontmatter field (disjoint from `zotero-key`, so it never pollutes the Literature Note index). Carries a `zotero-lastmod` frontmatter field (the source Child Note's Zotero `dateModified`) used by batch re-import to skip unchanged notes, and the same `zotlit-profile` stamp as a Literature Note — written at creation from the creation context (side-effect import: the in-flight operation's Profile; explicit import of an attached note: the parent's Literature Note stamp; otherwise the default Profile), re-emitted on every overwrite, absent meaning the default Profile. Writes follow the stamp; the parent item's Profile is never consulted after creation. Whole-body overwrite on explicit re-import. The Zotero-side source is a Child Note.
 _Avoid_: child note (that's the Zotero-side source), mirror, note (ambiguous)
 
 **Managed Region**:
-The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered from the `content` template on every update. Content outside the markers is user-owned and preserved.
+The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered from the Managed Block (previously the `content` template) on every update. Content outside the markers is user-owned and preserved.
 _Avoid_: managed block, template region, synced region
 
 **Managed Frontmatter**:
-Frontmatter fields on a Literature Note whose values are re-evaluated from template expressions on update. `zotero-key` is the system field; the ordered user-configured entries each declare `{key, expression, language, merge strategy}`, and the defaults include a `citekey` field sourced from `zt.citationKey`. Each expression declares its own language — Liquid (the default) or JavaScript — and always evaluates in that language; each field's merge strategy (replace, append arrays, keep existing) governs how the re-evaluated value combines with the value already on the note; JavaScript fields run only while JavaScript Templates is enabled on the device, and are otherwise inert — a note write that consumes the field set fails with an error naming them, existing notes untouched. Unmanaged keys are preserved. The user-configured entries are ordered, and that order is the write order for the fields on a newly created note; on an update, keys already on the note keep their position.
+Frontmatter fields on a Literature Note whose values are re-evaluated on update. `zotero-key` is the system field; each ordered user-configured entry either declares a static key with a merge strategy and one value, or is a Spread Entry that produces several fields at once. A static-key value lives in exactly one language tier — a Liquid expression for plain values, a JSON-e template for nested construction and conditional presence, or a JavaScript expression behind JavaScript Templates. A value can return any valid frontmatter scalar, sequence, or mapping; only a JSON-e value can make its field absent, and an absent field is deleted under replace and preserved under append and keep. Each field's merge strategy (replace, append arrays, keep existing) governs how the result combines with the value already on the note. Entries apply in list order: when more than one entry produces the same key, each later entry's merge strategy combines with the pending result, so the later entry wins. Unmanaged keys are preserved. Entry order is the write order for fields on a newly created note — the first entry that produces a key sets its position; on an update, keys already on the note keep their position.
+
+**Spread Entry**:
+A Managed Frontmatter entry with no key whose value — a JSON-e template, or a JavaScript expression behind JavaScript Templates — evaluates to a string-keyed mapping; every produced key becomes a field at the entry's position under the entry's single merge strategy. A key the mapping omits is left untouched, and the whole entry can be conditionally inert; deleting a field stays a static-key capability. A produced key that is reserved or empty refuses the operation.
+_Avoid_: multi-field entry, mapping entry, extra slot
 
 ### Templates
 
@@ -27,14 +31,61 @@ Frontmatter fields on a Literature Note whose values are re-evaluated from templ
 A template file in the vault's template folder defining Markdown output — `zotlit-<name>.liquid.md` (Liquid, the default language), or `zotlit-<name>.eta.md` when JavaScript Templates are enabled. The extension names the rendering language; when both files exist for one name, the Liquid file wins and the Eta file is flagged as shadowed. Falls back to the embedded defaults (Liquid only) when no vault file exists. A Template changes language by replacing its file with the other extension's edition — content is never converted between languages. Templates include each other by name, not by file, so one set may mix languages. Named templates:
 - `note` — full Literature Note body on **create** and **overwrite**
 - `content` — Managed Region body on **update** (the rest of the note is preserved)
-- `annotation` — single annotation rendering (drag-insert and optional Annotation Paragraph subsuming)
+- `annotation` — single annotation rendering (drag-insert and optional Annotation Paragraph subsuming); superseded by the Annotation Section
 - `cite` / `cite2` — primary / secondary in-text citation format
 - `filename` — a new Literature Note's filename (see Filename Template)
 
 _Avoid_: format, layout, schema
 
+**Literature Note Template**:
+The single authoring object controlling what Literature Notes look like: one document per Literature Note Profile with a manifest, a note source with an optional Managed Block, and a required final Annotation Section. Both sources use one rendering language and may render shared partials by name; this document supersedes the `note`/`content` Template pair.
+_Avoid_: note template (names only the retired `note` half), unified template (vague), literature note (that is the vault file, not its template)
+
+**Literature Note Profile**:
+A named configuration under which ZotLit-written notes are created and updated. A Profile *is* its Literature Note Template document: the document's manifest carries the Profile ID, the label, and the Profile's bindings — the Literature Note target folder and citation style, and the Imported Note bindings: import folder, colored highlights, and annotations-as-template. A Profile that leaves a binding unset inherits it from the default Profile, whose bindings record is total; no vault-global copies of these values exist. Every Profile document in the template folder is a Profile — nothing else registers, points at, or installs one. Each Literature Note and each Imported Note belongs to exactly one Profile, recorded by an explicit `zotlit-profile` system frontmatter stamp; a note without a stamp belongs to the default Profile, and writes follow the stamp — membership is never inferred from another note. Profiles never multiply notes: one Zotero Item maps to at most one Literature Note vault-wide.
+_Avoid_: profile (bare — collides with the Zotero application profile), preset (OZI's model, deliberately reshaped), import format
+
+**Profile document**:
+The vault file that is a Literature Note Profile: a Literature Note Template document named `zotlit-profile.<slug>.md` in the template folder — the slug is the normalized label, with the Profile ID appended when two labels collide. The `zotlit-profile.` prefix is what makes the file a Profile; the Profile ID is read from the manifest, never from the filename, so renaming the file changes nothing.
+_Avoid_: profile file, profile record, profile settings
+
+**Default Profile**:
+The built-in Literature Note Profile every vault has. Its bindings record is total and lives in plugin settings, and its look is the built-in template until the user ejects `zotlit-profile.default.md` (manifest `id: default`, which carries no bindings); it is the one Profile that is a settings record rather than a Profile document.
+_Avoid_: global settings, vault settings
+
+**Profile stamp**:
+The whole `zotlit-profile` system frontmatter value that records a note's Literature Note Profile. It carries a Profile hint followed by the Profile ID in parentheses; a stamp that is a bare Profile ID is also valid. Every ZotLit write of a stamped note re-emits the stamp with the Profile's current label.
+_Avoid_: profile field, profile reference
+
+**Profile ID**:
+The opaque, stable identifier of a Literature Note Profile — the only part of a Profile stamp ZotLit compares. Membership resolves by exact ID match; an unknown ID is a diagnostic, never a fallback to the label.
+_Avoid_: profile key, profile uuid
+
+**Profile hint**:
+The human-readable part of a Profile stamp: the Profile's label at the time of the write, kept so a person can recognise the Profile in a plain-text note. Informational only — a stale or mismatched hint changes nothing.
+_Avoid_: profile name (in a stamp), profile slug
+
+**Profile selector**:
+The value a note or an operation resolves its Literature Note Profile against: a Profile ID, or the literal `default` for the default Profile. The one way ZotLit names "no specific Profile" — a stamp read yields the stamped Profile ID, `default` when the note carries no stamp, or nothing when the stamp names no Profile ID (that note is unknown, never the default).
+
+**Profile resolution**:
+The step that turns a Profile selector or a note's Profile stamp into the Literature Note Profile an operation runs under — the default Profile when nothing names one, otherwise the Profile whose ID matches, with its sparse bindings merged over the default Profile. A stamp that names no configured Profile resolves to an unknown result that keeps the stamp verbatim; it never resolves to the default Profile.
+_Avoid_: profile lookup, profile find
+
+**Managed Block**:
+The `{% managed %}` … `{% endmanaged %}` block in a Literature Note Template document's body — a self-contained sub-template supported in both Liquid and Eta. It renders in isolation: variables assigned outside the block are not visible inside, so an update-time render is identical to a create-time render. On create it renders in place within the body; on update it alone re-renders to refill the note's Managed Region. When its tags are Line-Owning Tags, the Managed Region occupies exactly the lines the block occupied. Role-equivalent to the retired `content` Template.
+_Avoid_: managed region (the rendered output in the note, not the template source), content block
+
+**Annotation Section**:
+The required final part of a Literature Note Template document, introduced by the standalone `--- zotlit:annotation ---` line, which holds the Profile's single-annotation source and can be empty. It supplies all annotation rendering under that Profile with isolated Annotation Root data, including note calls, shared-partial calls, direct insertion, and Imported Notes.
+_Avoid_: Annotation Block (the retired development format), annotation partial (the section belongs to the Profile document)
+
+**Line-Owning Tag**:
+A Managed Block tag that occupies a line by itself: only whitespace stands between the line start and the tag, and a newline follows it directly. Its indentation and trailing newline belong to the tag; an inline tag keeps every surrounding byte.
+_Avoid_: block trimming (names the effect, not the condition), whitespace control (the engine's `-%}` and `<%_` markers, which these tags do not use)
+
 **JavaScript Templates**:
-The gated capability to run user-authored JavaScript during rendering — Eta template files and JavaScript-language Managed Frontmatter fields together. Off by default; enabled per device behind an explicit confirmation, and the flag never syncs. While off, `.eta.md` templates and JavaScript frontmatter fields are inert — an operation that requires one fails with an error naming it, never falling back to substitute output — and no user-authored code is compiled or executed anywhere, settings validation included.
+The gated capability to run user-authored JavaScript through Eta template files. Off by default; enabled per device behind an explicit confirmation, and the flag never syncs. While off, `.eta.md` templates are inert — an operation that requires one fails with an error naming it, never falling back to substitute output — and no user-authored JavaScript is compiled or executed anywhere, settings validation included.
 _Avoid_: advanced templates, legacy templates, scripting, user scripts
 
 **Filename Template**:
@@ -65,11 +116,27 @@ _Avoid_: template expression (a Snippet may be a statement — a loop or guard �
 The Template Data Explorer's default anchor — the full note-template context for the chosen Item, exactly what the `note`/`content` templates receive as `zt`.
 
 **Annotation Root**:
-The Template Data Explorer re-anchored at a single Annotation, exactly what the `annotation` template receives as `zt`; copy paths root at the annotation. Entered from that annotation's node in the Note Root tree, or directly via an annotation-scoped entry point.
+The Template Data Explorer re-anchored at a single Annotation, exactly what the Annotation Section receives as `zt`; copy paths root at the annotation. Entered from that annotation's node in the Note Root tree, or directly via an annotation-scoped entry point.
 
 **Template Data Export** _(Obsidian)_:
 The Template Data Explorer's current root, saved as a JSON file for a bug report. Always the whole root the pane is anchored at — the Note Root or the Annotation Root — never the rows an active filter leaves visible. Carries the same data the Agent CLI answers with, under a header naming the plugin version, the contract version, and the Indexed Key and root that reproduce it. Being Explorer data, it records inert placeholders where a real render would write files.
 _Avoid_: template export (suggests rendered note output), data dump (the file follows the published contract, it is not raw state)
+
+**Item Snapshot** _(web Workbench)_:
+The fixed template data for one selected Item, shared by the web Workbench's preview and field palette until an explicit refresh. It includes permitted local link targets and explicit unavailable values where private local data is omitted.
+_Avoid_: Template Data Export (the separate inspection artifact), live Item data (a snapshot remains fixed)
+
+**Sample Item** _(web Workbench)_:
+A built-in Item Snapshot the web Workbench ships for standalone use, one per supported Item type, so the preview and field palette work before any Workbench Connection exists. The surface names it as sample data whenever it is the source.
+_Avoid_: fixture item (the Fixture is test infrastructure), demo data, placeholder item
+
+**Local Bridge** _(web Workbench)_:
+The loopback-only service the plugin offers the web Workbench for the operations a Workbench Connection grants: Item Snapshots, Profile document read and Save, template dependencies, and citation styles. Its contract is separate from the Companion's local server and the Agent CLI.
+_Avoid_: Companion server, Live Update server (the Companion-facing listener), bridge server, local API
+
+**Workbench Connection** _(web Workbench)_:
+A temporary, explicitly approved session between one web Workbench page and one vault, naming the website, the vault, the selected Item, the selected Profile, and the granted operations. Disconnect or plugin shutdown ends it; standalone use continues without one.
+_Avoid_: pairing, link (the Obsidian URI verb), login, bridge session
 
 ### Agent CLI
 
@@ -94,12 +161,15 @@ A frozen snapshot of a Zotero Annotation embedded inline in a Child Note's HTML 
 _Avoid_: annotation (that's the live Zotero entity), mark
 
 **Annotation Paragraph**:
-A `<p>` in a Child Note's HTML whose sole content is a single Annotation Excerpt (optionally followed by a citation). Detected structurally by the note parser; when the `note.import-annotations-as-template` setting is on, the paragraph is subsumed and re-rendered through the `annotation` template from live DB data instead of the frozen excerpt.
+A `<p>` in a Child Note's HTML whose sole content is a single Annotation Excerpt (optionally followed by a citation). Detected structurally by the note parser; when the note's Profile enables annotations-as-template, the paragraph is subsumed and re-rendered through that Profile's Annotation Section from live DB data instead of the frozen excerpt.
 _Avoid_: annotation block, callout
 
 **Colored Highlight Syntax**:
-The opt-in Markdown representation for red, orange, yellow, green, blue, and purple highlights in an Imported Note. A colored-circle emoji at the start of `==...==` selects the color; highlights outside that set retain their HTML representation.
+An opt-in Markdown representation of a highlight in an Imported Note, with a selected emoji at the start of `==...==`. The emoji comes from the Highlight Mapping for the source color.
 _Avoid_: Bear highlight, emoji highlight
+
+**Highlight Mapping**:
+A per-color choice of representation for highlights converted during Note Import: a colored HTML mark or Colored Highlight Syntax with a selected emoji. Each mapping corresponds to a recognized Zotero palette color.
 
 ### Integration processes
 
@@ -192,6 +262,22 @@ _Avoid_: citation map (that's the derived lookup structure)
 **Citation Item**:
 One cited Item within a Citation, pairing the pure item data with citation-scoped properties: Locator, locator label, suppress-author, prefix, suffix. The citation-scoped properties never live on the item itself. In the cite-template data: `zt.citations` (Citation Items) alongside `zt.items` (the same items, bare).
 _Avoid_: cite item, citation entry
+
+**Citation Prefix**:
+Text that introduces one Citation Item within Pandoc citation source, before its citation key.
+_Avoid_: prefix (too broad), citation context (a separate source-preview concept)
+
+**Citation Suffix**:
+Text that follows one Citation Item within Pandoc citation source, after its citation key and Locator.
+_Avoid_: suffix (too broad), locator (a pinpoint reference, not trailing text)
+
+**Locator Label**:
+The kind of pinpoint reference a Locator contains, such as page, chapter, or section. Cite-template data exposes both its full value and the abbreviated `labelShort` value used in Pandoc source.
+_Avoid_: locator type, page label (names only one kind)
+
+**Suppress Author**:
+A Citation Item property that asks Pandoc to omit the cited author's name from citation output, represented by `-@` in Pandoc source.
+_Avoid_: omit author, hidden author
 
 **Locator**:
 A pinpoint reference within a cited work (CSL locator), e.g. a page number, with an accompanying label naming its kind (`page` by default). An annotation-derived Citation uses the annotation's page label as its Locator — mirroring Zotero's own annotation citations.
@@ -297,6 +383,10 @@ _Avoid_: citation universe, rendered citations (presentation, not membership)
 **Citation Cluster**:
 The bracketed literal-citekey syntax `[see @a, p. 3; @b]` — one `;`-separated item per citekey, each carrying an optional prefix and suffix, and `-@` to suppress the author. It is the source text a Citation Index scan and an editor widget both read; the Citation Run is its wikilink counterpart in Pandoc export.
 _Avoid_: citation group (names the result, not the source syntax), bracketed citation
+
+**Author-in-text Citation**:
+Pandoc citation source that puts the first cited author's name into the surrounding prose, such as `@a [p. 3; @b]`. Later Citation Items and the first item's Locator and Citation Suffix stay in the trailing brackets.
+_Avoid_: bare citation (omits the author behavior), narrative citation (CSL terminology for formatted output)
 
 **Pandoc Citations**:
 The default-on choice to include literal Pandoc citation syntax, such as `@doe2024` and `[@doe2024]`, in the Document Citation Set. Turning it off leaves the source visible and excludes those occurrences from ZotLit's Obsidian citation-aware features without disabling the internal Citation Index or changing citation insertion and export.

@@ -1,182 +1,24 @@
-import { dirname } from "node:path/posix";
-import { TFile, TFolder } from "obsidian";
-import type { App, EventRef, Plugin, TAbstractFile } from "obsidian";
+import type { App, Plugin } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
-import { evalFrontmatterFields } from "@zotlit/templates/frontmatter";
+import {
+  evalFrontmatterFields,
+  evalManagedFrontmatterEntries,
+} from "@zotlit/templates/frontmatter";
+import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { ProfileId } from "@/lib/profile-stamp";
+import { resolveProfile } from "@/services/profile/__fixtures__/reader";
+import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
 import { SettingsService } from "@/services/settings/service";
 
 import { DEFAULT_TEMPLATES, templatePath } from "./defaults";
 import { InertTemplateError } from "./errors";
 import { TemplateService } from "./service";
-
-type VaultEvent = "create" | "modify" | "rename" | "delete";
-type VaultCallback = (...args: unknown[]) => void;
-
-class MockVault {
-  readonly root = makeFolder("", null, this);
-  readonly files = new Map<string, TFile>();
-  readonly folders = new Map<string, TFolder>([["", this.root]]);
-  readonly contents = new Map<string, string>();
-  readonly cachedRead = vi.fn(async (file: TFile) => {
-    return this.contents.get(file.path) ?? "";
-  });
-
-  #mtime = 1;
-  readonly #listeners: Record<VaultEvent, Set<VaultCallback>> = {
-    create: new Set(),
-    modify: new Set(),
-    rename: new Set(),
-    delete: new Set(),
-  };
-
-  getRoot(): TFolder {
-    return this.root;
-  }
-
-  getFolderByPath(path: string): TFolder | null {
-    return this.folders.get(path) ?? null;
-  }
-
-  getFileByPath(path: string): TFile | null {
-    return this.files.get(path) ?? null;
-  }
-
-  getConfig(name: "autoPairBrackets" | "autoPairMarkdown"): boolean {
-    return name === "autoPairBrackets" || name === "autoPairMarkdown";
-  }
-
-  on(name: VaultEvent, callback: VaultCallback): EventRef {
-    this.#listeners[name].add(callback);
-    return { e: this, name, callback } as unknown as EventRef;
-  }
-
-  offref(ref: EventRef): void {
-    const eventRef = ref as unknown as {
-      name: VaultEvent;
-      callback: VaultCallback;
-    };
-    this.#listeners[eventRef.name].delete(eventRef.callback);
-  }
-
-  addFile(path: string, content: string): TFile {
-    const file = makeFile(path, this.#nextStat(content), this);
-    this.files.set(path, file);
-    this.contents.set(path, content);
-    this.#ensureFolder(dirname(path)).children.push(file);
-    return file;
-  }
-
-  createFile(path: string, content: string): TFile {
-    const file = this.addFile(path, content);
-    this.#emit("create", file);
-    return file;
-  }
-
-  modifyFile(path: string, content: string): void {
-    const file = this.files.get(path);
-    if (!file) throw new Error(`Missing file: ${path}`);
-    file.stat = this.#nextStat(content);
-    this.contents.set(path, content);
-    this.#emit("modify", file);
-  }
-
-  renameFile(oldPath: string, newPath: string): void {
-    const file = this.files.get(oldPath);
-    const content = this.contents.get(oldPath);
-    if (!file || content === undefined)
-      throw new Error(`Missing file: ${oldPath}`);
-
-    this.#detach(file);
-    this.files.delete(oldPath);
-    this.contents.delete(oldPath);
-
-    file.path = newPath;
-    file.name = basename(newPath);
-    file.basename = file.name.replace(/\.[^.]+$/, "");
-    file.extension = file.name.split(".").at(-1) ?? "";
-    file.parent = this.#ensureFolder(dirname(newPath));
-    file.parent.children.push(file);
-    this.files.set(newPath, file);
-    this.contents.set(newPath, content);
-    this.#emit("rename", file, oldPath);
-  }
-
-  deleteFile(path: string): void {
-    const file = this.files.get(path);
-    if (!file) throw new Error(`Missing file: ${path}`);
-    this.#detach(file);
-    this.files.delete(path);
-    this.contents.delete(path);
-    this.#emit("delete", file);
-  }
-
-  #ensureFolder(path: string): TFolder {
-    const normalized = path === "." ? "" : path;
-    const existing = this.folders.get(normalized);
-    if (existing) return existing;
-
-    const parent = this.#ensureFolder(dirname(normalized));
-    const folder = makeFolder(normalized, parent, this);
-    parent.children.push(folder);
-    this.folders.set(normalized, folder);
-    return folder;
-  }
-
-  #detach(file: TAbstractFile): void {
-    const siblings = file.parent?.children;
-    if (!siblings) return;
-    const index = siblings.indexOf(file);
-    if (index >= 0) siblings.splice(index, 1);
-  }
-
-  #nextStat(content: string) {
-    const now = this.#mtime++;
-    return {
-      type: "file" as const,
-      ctime: now,
-      mtime: now,
-      size: content.length,
-    };
-  }
-
-  #emit(name: VaultEvent, ...args: unknown[]): void {
-    for (const callback of this.#listeners[name]) {
-      callback(...args);
-    }
-  }
-}
-
-class PluginStub {
-  readonly editorExtensions: unknown[] = [];
-  readonly editorSuggests: unknown[] = [];
-
-  constructor(
-    readonly app: App,
-    public data: unknown,
-  ) {}
-
-  loadData(): Promise<unknown> {
-    return Promise.resolve(this.data);
-  }
-
-  async saveData(data: unknown): Promise<void> {
-    this.data = data;
-  }
-
-  registerEditorExtension(extension: unknown): void {
-    this.editorExtensions.push(extension);
-  }
-
-  registerEditorSuggest(suggest: unknown): void {
-    this.editorSuggests.push(suggest);
-  }
-}
+import { MockVault, PluginStub } from "./test-vault";
 
 interface Harness {
   app: App & { workspace: { updateOptions: ReturnType<typeof vi.fn> } };
@@ -203,6 +45,465 @@ afterEach(async () => {
 });
 
 describe("TemplateService", () => {
+  it("discovers and reconciles Literature Note Template documents", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/books.md", literatureNoteDocument("Books"));
+    const { service } = await makeHarness({ vault });
+
+    expect(
+      service
+        .getLiteratureNoteTemplate("books.md")
+        ?.renderForCreate({ title: "First" }),
+    ).toContain("# Books First");
+
+    vault.modifyFile(
+      "templates/books.md",
+      literatureNoteDocument("Revised books"),
+    );
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(
+      service
+        .getLiteratureNoteTemplate("books.md")
+        ?.renderForCreate({ title: "Second" }),
+    ).toContain("# Revised books Second");
+
+    vault.deleteFile("templates/books.md");
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(service.getLiteratureNoteTemplate("books.md")).toBeUndefined();
+  });
+
+  it("compiles document frontmatter with the per-device JavaScript gate", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/books.md",
+      literatureNoteDocument("Books").replace(
+        'filename: "{{ zt.title }}"',
+        `filename: "{{ zt.title }}"
+frontmatter:
+  - key: title
+    merge: replace
+    expr: zt.title
+  - key: scripted
+    merge: replace
+    js: zt.title + "!"`,
+      ),
+    );
+    const { service } = await makeHarness({ vault });
+
+    const inert = service.getLiteratureNoteTemplate("books.md")?.frontmatter;
+    expect(inert?.inertKeys).toEqual(["scripted"]);
+    expect(
+      evalManagedFrontmatterEntries(
+        inert?.compiled ?? [],
+        { title: "Paper" },
+        Temporal.Now.instant(),
+      ).values,
+    ).toEqual([
+      { key: "title", value: "Paper", merge: "replace", position: 1 },
+    ]);
+
+    await service.setJavascriptTemplatesEnabled(true);
+
+    const active = service.getLiteratureNoteTemplate("books.md")?.frontmatter;
+    expect(active?.inertKeys).toEqual([]);
+    expect(
+      evalManagedFrontmatterEntries(
+        active?.compiled ?? [],
+        { title: "Paper" },
+        Temporal.Now.instant(),
+      ).values,
+    ).toEqual([
+      { key: "title", value: "Paper", merge: "replace", position: 1 },
+      { key: "scripted", value: "Paper!", merge: "replace", position: 2 },
+    ]);
+  });
+
+  it("renders Profile Annotation Sections, refuses a blockless document, and keeps the documentless and legacy paths", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/books.md",
+      literatureNoteDocument("Books", "PROFILE {{ zt.text }}"),
+    );
+    vault.addFile(
+      "templates/plain.md",
+      `---
+id: plain
+name: Plain
+version: 1.0.0
+author: ZotLit
+description: Blockless fixture
+contract: 1
+filename: "{{ zt.title }}"
+---
+# Plain {{ zt.title }}
+
+{% managed %}Managed {{ zt.title }}{% endmanaged %}
+`,
+    );
+    vault.addFile(
+      "templates/zotlit-annotation.liquid.md",
+      "LEGACY {{ zt.text }}",
+    );
+    const { service } = await makeHarness({ vault });
+    const profiles = [
+      {
+        id: "Bk3Qn7XvT2Lp" as ProfileId,
+        label: "Books",
+        document: "books.md",
+      },
+      {
+        id: "Rz9Wm4YfH6Kd" as ProfileId,
+        label: "Plain",
+        document: "plain.md",
+      },
+      {
+        id: "Vv1Ww2Xx3Yy4" as ProfileId,
+        label: "Documentless",
+      },
+    ];
+    const data = {
+      pageLabel: "4",
+      imgLink: null,
+      text: "Excerpt",
+      comment: null,
+    };
+    const converted = {
+      ...defaults,
+      "note.template-conversion-pending": false,
+      profiles: profiles,
+    };
+
+    expect(
+      service.renderProfileAnnotation(data, {
+        profile: resolveProfile(converted, profiles[0]!.id)!,
+      }),
+    ).toBe("PROFILE Excerpt");
+    // plain.md has no Annotation Section: the document is invalid, and the
+    // render refuses instead of substituting the embedded default.
+    expect(() =>
+      service.renderProfileAnnotation(data, {
+        profile: resolveProfile(converted, profiles[1]!.id)!,
+      }),
+    ).toThrow(expect.objectContaining({ code: "missing-annotation-section" }));
+    // A documentless Profile predates the required-block rule and keeps the
+    // embedded default through the legacy machinery.
+    expect(
+      service.renderProfileAnnotation(data, {
+        profile: resolveProfile(converted, profiles[2]!.id)!,
+      }),
+    ).toContain("[!note] Page 4");
+    expect(
+      service.renderProfileAnnotation(data, {
+        profile: resolveProfile(
+          { ...converted, "note.template-conversion-pending": true },
+          profiles[0]!.id,
+        )!,
+      }),
+    ).toBe("LEGACY Excerpt");
+  });
+
+  it("reports a missing Profile document instead of falling back", async () => {
+    const { service } = await makeHarness({ vault: new MockVault() });
+    const settings = {
+      ...defaults,
+      "note.template-conversion-pending": false,
+      profiles: [
+        {
+          id: "Tt2Uu4Vv6Ww8" as ProfileId,
+          label: "Books",
+          document: "missing.md",
+        },
+      ],
+    };
+
+    expect(() =>
+      service.renderProfileAnnotation(
+        { text: "Excerpt" },
+        {
+          profile: resolveProfile(settings, settings.profiles[0]!.id)!,
+        },
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        diagnostic: expect.objectContaining({
+          code: "missing-literature-note-template",
+          document: "missing.md",
+        }),
+      }),
+    );
+  });
+
+  it.each(["liquid", "eta"] as const)(
+    "keeps %s Profile annotation calls aligned after source changes",
+    async (language) => {
+      const vault = new MockVault();
+      const call =
+        language === "liquid"
+          ? "{% render_annotation zt.annotation %}"
+          : "<%~ renderAnnotation(zt.annotation) %>";
+      const annotation =
+        language === "liquid"
+          ? "PROFILE {{ zt.text }}"
+          : "PROFILE <%= zt.text %>";
+      const source = literatureNoteDocument("Books", annotation)
+        .replace(
+          'filename: "{{ zt.title }}"',
+          `filename: note\nlanguage: ${language}`,
+        )
+        .replace("Managed {{ zt.title }}", call);
+      vault.addFile("templates/books.md", source);
+      vault.addFile(
+        "templates/zotlit-annotation.liquid.md",
+        "GLOBAL {{ zt.text }}",
+      );
+      const { service } = await makeHarness({
+        vault,
+        javascriptTemplates: true,
+      });
+      const profile = resolveProfile(
+        {
+          ...defaults,
+          "note.template-conversion-pending": false,
+          profiles: [
+            {
+              id: "Bk3Qn7XvT2Lp" as ProfileId,
+              label: "Books",
+              document: "books.md",
+            },
+          ],
+        },
+        "Bk3Qn7XvT2Lp" as ProfileId,
+      )!;
+      const data = { annotation: { text: "A" } };
+      const original = service.getLiteratureNoteTemplate("books.md")!;
+      expect(original.renderForUpdate(data)).toBe(
+        "%%zt-managed%%\nPROFILE A\n%%/zt-managed%%",
+      );
+      expect(original.renderForCreate(data)).toContain("PROFILE A");
+      expect(
+        service.renderProfileAnnotation(data.annotation, { profile }),
+      ).toBe("PROFILE A");
+      const exported = await service.exportLiteratureNotePack("books.md");
+      expect(
+        new TemplateFacade().parseLiteratureNoteTemplate(exported).manifest
+          .partials,
+      ).toBeUndefined();
+      expect(
+        service
+          .prepareLiteratureNoteTemplateSource(exported)
+          .renderAnnotation(data.annotation),
+      ).toBe("PROFILE A");
+      vault.modifyFile(
+        "templates/books.md",
+        source.replace("PROFILE", "CHANGED"),
+      );
+      await vi.advanceTimersByTimeAsync(500);
+      expect(
+        service.renderProfileAnnotation(data.annotation, { profile }),
+      ).toBe("CHANGED A");
+      expect(
+        service.getLiteratureNoteTemplate("books.md")!.renderForUpdate(data),
+      ).toBe("%%zt-managed%%\nCHANGED A\n%%/zt-managed%%");
+      expect(original.renderAnnotation(data.annotation)).toBe("PROFILE A");
+      expect(service.render("annotation", data.annotation)).toBe("GLOBAL A");
+    },
+  );
+
+  it("uses bundled partial calls with the Profile's Annotation Section in write-free preview", async () => {
+    const { service, vault } = await makeHarness();
+    const source = literatureNoteDocument("Draft", "Local {{ zt.text }}")
+      .replace(
+        "contract: 1",
+        `contract: 1
+partials:
+  - name: summary
+    language: liquid
+    source: '{% render_annotation zt.annotation %}'`,
+      )
+      .replace(
+        "Managed {{ zt.title }}",
+        '{% render "summary" with zt as zt %}',
+      );
+    const paths = [...vault.files.keys()];
+    const document = service.prepareLiteratureNoteTemplateSource(source);
+    expect(document.renderForUpdate({ annotation: { text: "A" } })).toBe(
+      "%%zt-managed%%\nLocal A\n%%/zt-managed%%",
+    );
+    expect(document.renderAnnotation({ text: "A" })).toBe("Local A");
+    expect([...vault.files.keys()]).toEqual(paths);
+  });
+
+  it("reports valid and invalid Literature Note Template documents", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/books.md", literatureNoteDocument("Books"));
+    vault.addFile(
+      "templates/duplicate.md",
+      literatureNoteDocument("{% managed %}One{% endmanaged %}"),
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(service.getLiteratureNoteTemplateStatuses()).toMatchObject([
+      {
+        reference: "books.md",
+        path: "templates/books.md",
+        validation: { state: "valid", hasManagedBlock: true },
+      },
+      {
+        reference: "duplicate.md",
+        path: "templates/duplicate.md",
+        validation: {
+          state: "invalid",
+          error: { code: "duplicate-managed-block" },
+        },
+      },
+    ]);
+  });
+
+  it("renders an uninstalled Literature Note Template source in memory", async () => {
+    const { service, vault } = await makeHarness();
+    const paths = [...vault.files.keys()];
+
+    const rendered = service.renderLiteratureNoteTemplateSource(
+      literatureNoteDocument("Draft"),
+      { title: "Paper" },
+    );
+
+    expect(rendered.create).toContain("# Draft Paper");
+    expect(rendered.update).toContain("Managed Paper");
+    expect([...vault.files.keys()]).toEqual(paths);
+  });
+
+  it("exports an installed document with its reachable partials bundled", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/books.md",
+      literatureNoteDocument("Draft").replace(
+        "Managed {{ zt.title }}",
+        '{% render "summary" with zt as zt %}',
+      ),
+    );
+    vault.addFile(
+      "templates/zotlit-summary.liquid.md",
+      "Summary {{ zt.title }}",
+    );
+    const { service } = await makeHarness({ vault });
+
+    const exported = new TemplateFacade().parseLiteratureNoteTemplate(
+      await service.exportLiteratureNotePack("books.md"),
+    );
+
+    expect(exported.manifest.partials).toEqual([
+      {
+        name: "summary",
+        language: "liquid",
+        source: "Summary {{ zt.title }}",
+      },
+    ]);
+  });
+
+  it("renders bundled Pack partials from an uninstalled source", async () => {
+    const { service } = await makeHarness();
+    const source = exportLiteratureNotePack(
+      literatureNoteDocument("Draft").replace(
+        "Managed {{ zt.title }}",
+        '{% render "summary" with zt as zt %}',
+      ),
+      [
+        {
+          name: "summary",
+          language: "liquid",
+          source: "Summary {{ zt.title }}",
+        },
+      ],
+    );
+
+    expect(
+      service.renderLiteratureNoteTemplateSource(source, { title: "Paper" }),
+    ).toMatchObject({ create: expect.stringContaining("Summary Paper") });
+  });
+
+  it("keeps installed bundled partials local to their Profile for every render", async () => {
+    const vault = new MockVault();
+    const partial = '{% render "summary" with zt as zt %}';
+    const source = exportLiteratureNotePack(
+      literatureNoteDocument("Shared", partial)
+        .replace("Managed {{ zt.title }}", partial)
+        .replace('filename: "{{ zt.title }}"', `filename: '${partial}'`),
+      [
+        {
+          name: "summary",
+          language: "liquid",
+          source: "Bundled {{ zt.title }}",
+        },
+      ],
+    );
+    vault.addFile("templates/shared.md", source);
+    vault.addFile("templates/zotlit-summary.liquid.md", "Local {{ zt.title }}");
+    vault.addFile(
+      "templates/local.md",
+      literatureNoteDocument("Local").replace(
+        "Managed {{ zt.title }}",
+        partial,
+      ),
+    );
+    const { service } = await makeHarness({ vault });
+    const paths = [...vault.files.keys()];
+    const document = service.getLiteratureNoteTemplate("shared.md")!;
+
+    expect(document.renderForCreate({ title: "Paper" })).toContain(
+      "Bundled Paper",
+    );
+    expect(document.renderForUpdate({ title: "Paper" })).toContain(
+      "Bundled Paper",
+    );
+    expect(document.renderFilename({ title: "Paper" })).toBe("Bundled Paper");
+    expect(document.renderAnnotation({ title: "Paper" })).toBe("Bundled Paper");
+    expect(
+      service
+        .getLiteratureNoteTemplate("local.md")!
+        .renderForCreate({ title: "Paper" }),
+    ).toContain("Local Paper");
+    expect([...vault.files.keys()]).toEqual(paths);
+    expect(
+      await vault.cachedRead(
+        vault.getFileByPath("templates/zotlit-summary.liquid.md")!,
+      ),
+    ).toBe("Local {{ zt.title }}");
+  });
+
+  it("keeps an installed bundled Eta partial behind the JavaScript consent gate", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/shared.md",
+      exportLiteratureNotePack(
+        literatureNoteDocument("Shared").replace(
+          "Managed {{ zt.title }}",
+          '{% render "summary" with zt as zt %}',
+        ),
+        [
+          {
+            name: "summary",
+            language: "eta",
+            source: "Bundled <%= zt.title %>",
+          },
+        ],
+      ),
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(() => service.getLiteratureNoteTemplate("shared.md")).toThrow(
+      m.settings_template_inert_eta({ path: "templates/shared.md" }),
+    );
+    await service.setJavascriptTemplatesEnabled(true);
+    expect(
+      service
+        .getLiteratureNoteTemplate("shared.md")!
+        .renderForCreate({ title: "Paper" }),
+    ).toContain("Bundled Paper");
+  });
+
   it("bounds the settle wait while initial settings are still loading", async () => {
     const loaded = deferred<Readonly<Settings>>();
     const vault = new MockVault();
@@ -768,6 +1069,110 @@ describe("TemplateService", () => {
     ).toContain("# Paper");
   });
 
+  it("synthesizes and verifies a legacy Profile document from current winners", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-note.liquid.md",
+      'Before {% render "content" with zt as zt %} After {{ zt.title }}',
+    );
+    vault.addFile(
+      "templates/zotlit-content.liquid.md",
+      "Managed {{ zt.title }}",
+    );
+    vault.addFile(
+      "templates/zotlit-filename.liquid.md",
+      "{{ zt.citationKey }}",
+    );
+    vault.addFile(
+      "templates/zotlit-annotation.liquid.md",
+      "Annotation {{ zt.text }}",
+    );
+    vault.addFile(
+      "templates/zotlit-annotation.eta.md",
+      "Shadowed <%= zt.text %>",
+    );
+    const { service } = await makeHarness({ vault });
+
+    const converted = await service.convertLegacyLiteratureNoteTemplates({
+      note: { title: "Paper" },
+      filename: { citationKey: "doePaper" },
+      annotation: { text: "Excerpt" },
+    });
+
+    expect(converted.source).toContain(
+      "{% managed %}Managed {{ zt.title }}{% endmanaged %}",
+    );
+    expect(converted.document.manifest.frontmatter).toEqual([
+      { key: "title", expr: "zt.title", merge: "replace" },
+      {
+        key: "related",
+        expr: "zt.relatedItems | note_links",
+        merge: "replace",
+      },
+      {
+        key: "collections",
+        expr: "zt.collections | collection_paths",
+        merge: "replace",
+      },
+      { key: "citekey", expr: "zt.citationKey", merge: "replace" },
+    ]);
+    expect(converted.legacyFiles).toEqual([
+      "templates/zotlit-filename.liquid.md",
+      "templates/zotlit-note.liquid.md",
+      "templates/zotlit-annotation.liquid.md",
+      "templates/zotlit-annotation.eta.md",
+      "templates/zotlit-content.liquid.md",
+    ]);
+    expect(converted.document.annotationSection.source).toBe(
+      "Annotation {{ zt.text }}",
+    );
+  });
+
+  it("refuses conversion while an Eta Literature Note slot is inert", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-annotation.eta.md",
+      "Annotation <%= zt.text %>",
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(service.getLegacyLiteratureNoteTemplateFiles()).toContain(
+      "templates/zotlit-annotation.eta.md",
+    );
+    await expect(
+      service.convertLegacyLiteratureNoteTemplates({
+        note: { title: "Paper" },
+        filename: { citationKey: "doePaper" },
+        annotation: { text: "Excerpt" },
+      }),
+    ).rejects.toMatchObject({
+      code: "unsupported-legacy-template",
+      difference: "inert template",
+    });
+  });
+
+  it("retires Literature Note slots after conversion", async () => {
+    const { service, settings } = await makeHarness({
+      settings: { "note.template-conversion-pending": true },
+    });
+
+    expect(service.getTemplateFileStatuses().map(({ name }) => name)).toEqual([
+      "filename",
+      "note",
+      "annotation",
+      "content",
+      "cite",
+      "cite2",
+    ]);
+
+    settings.update({ "note.template-conversion-pending": false });
+
+    expect(service.getTemplateFileStatuses().map(({ name }) => name)).toEqual([
+      "cite",
+      "cite2",
+    ]);
+  });
+
   it("reports the winner the reconciler compiled", async () => {
     const vault = new MockVault();
     vault.addFile("templates/zotlit-note.eta.md", "E <%= zt.title %>");
@@ -1260,6 +1665,7 @@ async function makeHarness(options?: {
   } as unknown as Harness["app"];
   const plugin = new PluginStub(app, {
     __VERSION__: 1,
+    "note.template-conversion-pending": true,
     ...options?.settings,
   });
   const settings = new SettingsService({
@@ -1273,6 +1679,7 @@ async function makeHarness(options?: {
     migrateV6: (raw) => raw,
     migrateV7: (raw) => raw,
     migrateV8: (raw) => raw,
+    migrateV9: (raw) => raw,
   });
   await settings.ready;
 
@@ -1288,34 +1695,20 @@ async function makeHarness(options?: {
   return harness;
 }
 
-function makeFolder(
-  path: string,
-  parent: TFolder | null,
-  vault: unknown,
-): TFolder {
-  const folder = new TFolder();
-  folder.vault = vault as never;
-  folder.path = path;
-  folder.name = basename(path);
-  folder.parent = parent;
-  folder.children = [];
-  return folder;
-}
+function literatureNoteDocument(heading: string, annotation?: string): string {
+  return `---
+id: books
+name: Books
+version: 1.0.0
+author: ZotLit
+description: Books fixture
+contract: 1
+filename: "{{ zt.title }}"
+---
+# ${heading} {{ zt.title }}
 
-function makeFile(path: string, stat: TFile["stat"], vault: MockVault): TFile {
-  const file = new TFile();
-  file.vault = vault as never;
-  file.path = path;
-  file.name = basename(path);
-  file.basename = file.name.replace(/\.[^.]+$/, "");
-  file.extension = file.name.split(".").at(-1) ?? "";
-  file.parent = vault.getFolderByPath(dirname(path)) ?? vault.getRoot();
-  file.stat = stat;
-  return file;
-}
-
-function basename(path: string): string {
-  return path.split("/").at(-1) ?? "";
+{% managed %}Managed {{ zt.title }}{% endmanaged %}
+--- zotlit:annotation ---\n${annotation ?? "Annotation"}`;
 }
 
 async function flushAsync(): Promise<void> {

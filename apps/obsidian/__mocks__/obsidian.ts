@@ -57,6 +57,16 @@ export function getIcon(name: IconName): SVGSVGElement | null {
   return svg;
 }
 
+export function setIcon(el: HTMLElement, name: IconName): void {
+  const icon = getIcon(name);
+  el.replaceChildren(...(icon ? [icon] : []));
+}
+
+/** Stand-in for Obsidian's delegated tooltip attributes. */
+export function setTooltip(el: HTMLElement, tooltip: string): void {
+  el.setAttribute("aria-label", tooltip);
+}
+
 // Obsidian exposes `sleep` as a runtime global; toast durations await it.
 // Provide it for tests that exercise that code path.
 globalThis.sleep ??= (ms: number) =>
@@ -368,8 +378,18 @@ export class Scope {
   }
 }
 
+export abstract class FuzzySuggestModal<T> {
+  constructor(readonly app: App) {}
+  setPlaceholder(_placeholder: string): void {}
+  open(): void {}
+  abstract getItems(): T[];
+  abstract getItemText(item: T): string;
+  abstract onChooseItem(item: T): void;
+}
+
 export abstract class SuggestModal<T> {
   limit = 0;
+  readonly contentEl = { addClass: (_className: string) => {} };
   emptyStateText = "";
   readonly app: App;
   readonly scope = new Scope();
@@ -380,6 +400,11 @@ export abstract class SuggestModal<T> {
 
   setPlaceholder(_placeholder: string): void {}
   setInstructions(_instructions: Instruction[]): void {}
+  open(): void {}
+  close(): void {
+    this.onClose();
+  }
+  onClose(): void {}
   selectActiveSuggestion(_evt: MouseEvent | KeyboardEvent): void {}
 
   abstract getSuggestions(query: string): T[] | Promise<T[]>;
@@ -680,16 +705,20 @@ export function settingsOf(containerEl: HTMLElement): Setting[] {
  * TextComponent.type}, and {@link ButtonComponent.click}.
  */
 export class Setting {
+  readonly settingEl = containerElStub();
+  readonly controlEl = containerElStub();
   /** Every component added to this row, in the order it was added. */
   readonly components: (
     | ButtonComponent
     | DropdownComponent
     | ExtraButtonComponent
     | TextComponent
+    | ToggleComponent
   )[] = [];
 
   name = "";
   desc = "";
+  errorMessage: string | null = null;
 
   constructor(readonly containerEl: HTMLElement) {
     const rows = settingRows.get(containerEl) ?? [];
@@ -707,12 +736,25 @@ export class Setting {
     return this;
   }
 
+  setErrorMessage(message: string | null): this {
+    this.errorMessage = message;
+    return this;
+  }
+
   addDropdown(cb: (dropdown: DropdownComponent) => unknown): this {
     return this.#add(new DropdownComponent(this.containerEl), cb);
   }
 
   addText(cb: (text: TextComponent) => unknown): this {
     return this.#add(new TextComponent(this.containerEl), cb);
+  }
+
+  addTextArea(cb: (text: TextAreaComponent) => unknown): this {
+    return this.#add(new TextAreaComponent(this.containerEl), cb);
+  }
+
+  addToggle(cb: (toggle: ToggleComponent) => unknown): this {
+    return this.#add(new ToggleComponent(this.containerEl), cb);
   }
 
   addButton(cb: (button: ButtonComponent) => unknown): this {
@@ -728,7 +770,8 @@ export class Setting {
       | ButtonComponent
       | DropdownComponent
       | ExtraButtonComponent
-      | TextComponent,
+      | TextComponent
+      | ToggleComponent,
   >(component: T, cb: (component: T) => unknown): this {
     this.components.push(component);
     cb(component);
@@ -783,6 +826,7 @@ export class DropdownComponent {
 function inputElStub(): HTMLInputElement {
   const input = {
     value: "",
+    addClass: (_className: string) => {},
     placeholder: "",
     validationMessage: "",
     setCustomValidity: (message: string) => {
@@ -826,6 +870,30 @@ export class TextComponent {
   }
 }
 
+export class TextAreaComponent extends TextComponent {}
+
+export class ToggleComponent {
+  #value = false;
+  #changed: ((value: boolean) => unknown) | undefined;
+  constructor(readonly containerEl: HTMLElement) {}
+  getValue(): boolean {
+    return this.#value;
+  }
+  setValue(value: boolean): this {
+    this.#value = value;
+    return this;
+  }
+  onChange(callback: (value: boolean) => unknown): this {
+    this.#changed = callback;
+    return this;
+  }
+  /** Test helper: change the checked state, as the user does. */
+  toggle(value: boolean): void {
+    this.setValue(value);
+    this.#changed?.(value);
+  }
+}
+
 /**
  * The borderless icon action a row carries beside its control. It is read by
  * the tooltip it names, which is the label the user gets from it.
@@ -861,6 +929,9 @@ export class ExtraButtonComponent {
 }
 
 export class ButtonComponent {
+  setDestructive(): this {
+    return this;
+  }
   buttonEl: HTMLElement = noticeElStub;
 
   /** The label the button carries, as the user reads it. */
@@ -880,6 +951,10 @@ export class ButtonComponent {
     return this;
   }
 
+  setDisabled(_disabled: boolean): this {
+    return this;
+  }
+
   setCta(): this {
     return this;
   }
@@ -891,5 +966,46 @@ export class ButtonComponent {
   /** Test helper: press the button, as the user does. */
   click(): void {
     this.#clicked?.({} as MouseEvent);
+  }
+}
+
+export class ConfirmationButton extends ButtonComponent {
+  setDisabled(_disabled: boolean): this {
+    return this;
+  }
+  setDestructive(): this {
+    return this;
+  }
+}
+
+export class ConfirmationModal {
+  readonly contentEl = globalThis.document
+    ? document.createElement("div")
+    : containerElStub();
+  #closed: (() => void) | undefined;
+  constructor(_app: App) {}
+  setTitle(_title: string): this {
+    return this;
+  }
+  setContent(_content: string): this {
+    return this;
+  }
+  addCheckbox(_label: string, _changed: (value: boolean) => void): this {
+    return this;
+  }
+  addButton(cb: (button: ConfirmationButton) => unknown): this {
+    cb(new ConfirmationButton(noticeElStub));
+    return this;
+  }
+  addCancelButton(_label: string): this {
+    return this;
+  }
+  setCloseCallback(callback: () => void): this {
+    this.#closed = callback;
+    return this;
+  }
+  open(): void {}
+  close(): void {
+    this.#closed?.();
   }
 }

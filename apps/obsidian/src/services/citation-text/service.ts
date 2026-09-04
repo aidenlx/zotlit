@@ -1,6 +1,5 @@
-// The formatted text of one document's Citations, held for every surface that shows them.
-
 import type { App, TFile } from "obsidian";
+// The formatted text of one document's Citations, held for every surface that shows them.
 
 import {
   getItemsByKey,
@@ -11,11 +10,10 @@ import {
 } from "@zotlit/db";
 import type { CslItemData } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
+import type { PandocTextSpan as TextSpan } from "@zotlit/templates/pandoc-citation";
 
 import { BoundedCache } from "@/lib/bounded-cache";
-import { isRenderableCitation } from "@/lib/citation-fragment";
-import type { CitationKey } from "@/lib/citation-fragment";
-import type { TextSpan } from "@/lib/citation-grammar";
+import type { CitationKey } from "@/lib/citation-source";
 import { registerEvent } from "@/lib/disposables";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
@@ -42,7 +40,9 @@ import type {
   BibliographyRenderCache,
   RenderPresentation,
 } from "@/services/pandoc/render-cache";
+import type { ProfileReader } from "@/services/profile/service";
 import { Service } from "@/services/service-base";
+import type { SettingsService } from "@/services/settings/service";
 
 import { citationKey } from "./present";
 import type {
@@ -76,8 +76,22 @@ const NO_SERIALS: readonly undefined[] = [];
 /** One document's citations, and what the read that produced them answered. */
 interface HeldCitations {
   promise: Promise<DocumentCitations>;
-  /** What the read produced, once it has; null while it is still running. */
+  /**
+   * What the read produced, once it has — or, while a revalidation still runs,
+   * the stale text it carried forward for {@link CitationText.peek} to serve.
+   */
   text: DocumentCitations | null;
+  /**
+   * The answer predates a cross-document invalidation. Peek keeps serving it,
+   * and the next peek or load replaces it with a fresh read.
+   */
+  stale: boolean;
+  /**
+   * Whether the read behind {@link promise} has committed into {@link text}.
+   * A stale record still reading is joined rather than replaced, so one read
+   * runs per document however often the surfaces ask.
+   */
+  settled: boolean;
 }
 
 interface CitationTextEvents {
@@ -96,6 +110,8 @@ export interface CitationTextDeps {
   >;
   /** What a citekey resolves to, which decides what a Citation can say. */
   noteIndex: Pick<NoteIndex, "on" | "whenIndexed">;
+  settings: Pick<SettingsService, "current">;
+  profile: ProfileReader;
   /** The plugin-wide render cache, which owns the Citation and References Style and the engine. */
   bibliographyRender: Pick<
     BibliographyRenderCache,
@@ -131,6 +147,8 @@ export class CitationText extends Service<void> {
   readonly #db;
   readonly #citationIndex;
   readonly #noteIndex;
+  readonly #profile: ProfileReader;
+  readonly #settings;
   readonly #bibliographyRender;
   readonly #emitter = createNanoEvents<CitationTextEvents>();
   readonly #documents = new BoundedCache<HeldCitations>(HELD_DOCUMENTS);
@@ -143,6 +161,8 @@ export class CitationText extends Service<void> {
     this.#db = deps.db;
     this.#citationIndex = deps.citationIndex;
     this.#noteIndex = deps.noteIndex;
+    this.#settings = deps.settings;
+    this.#profile = deps.profile;
     this.#bibliographyRender = deps.bibliographyRender;
     this.ready = this.#load();
   }
@@ -158,22 +178,38 @@ export class CitationText extends Service<void> {
    * The citations held for one document, for a caller that cannot wait — the
    * editor builds its decorations synchronously.
    *
+   * A stale answer — one a cross-document invalidation reached — is served as
+   * it stands, and the peek itself starts the read that replaces it.
+   *
    * @returns null while nothing is held yet, which is the caller's cue to
    *   {@link load} and show the raw source until the read settles.
    */
   peek(path: string): DocumentCitations | null {
+    const held = this.#documents.peek(path);
+    if (held?.stale && held.settled) this.#revalidate(path);
+    // Answered from what the revalidation left held, so a stale path whose
+    // file is gone reads null rather than one last serve of its old text.
     return this.#documents.peek(path)?.text ?? null;
   }
 
   /** Reads and holds one document's citations, so {@link peek} can answer for it. */
   load(file: TFile): Promise<DocumentCitations> {
-    return this.#documents.hold(file.path, () => this.#begin(file)).promise;
+    const held = this.#documents.peek(file.path);
+    // A stale record still reading is left to its own commit — the mark makes
+    // the peek after that commit read once more — so only a settled one is
+    // replaced here.
+    if (held?.stale && held.settled) this.#documents.delete(file.path);
+    // The factory only runs where nothing holds the path, which after the
+    // delete above is a missing record or a stale one — never a fresh one —
+    // so the stale text it hands over is exactly what peek kept serving.
+    return this.#documents.hold(file.path, () => this.#begin(file, held?.text))
+      .promise;
   }
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
     stack.defer(
-      this.#citationIndex.on("membership-changed", () => this.#dropAll()),
+      this.#citationIndex.on("membership-changed", () => this.#invalidateAll()),
     );
     // A document's own citekeys decide what its citations say.
     stack.defer(this.#citationIndex.on("changed", (path) => this.#drop(path)));
@@ -194,17 +230,17 @@ export class CitationText extends Service<void> {
     // and dropping there would put back the wholesale flush this holds text to
     // avoid; a rescan that finds a moved mapping in steady state has already
     // emitted `changed` for it.
-    stack.defer(this.#noteIndex.on("changed", () => this.#dropAll()));
+    stack.defer(this.#noteIndex.on("changed", () => this.#invalidateAll()));
     // A citekey resolution snapshot rebuild is the other cross-document input:
     // it decides what a literal `@citekey` reaches, and whether a wikilink's
     // Literature Note carries a native citation key at all.
     stack.defer(
-      this.#citationIndex.on("resolution-changed", () => this.#dropAll()),
+      this.#citationIndex.on("resolution-changed", () => this.#invalidateAll()),
     );
     // What the render cache holds is what these surfaces show, so its wholesale
     // drop makes every document's text stale at once.
     stack.defer(
-      this.#bibliographyRender.on("invalidated", () => this.#dropAll()),
+      this.#bibliographyRender.on("invalidated", () => this.#invalidateAll()),
     );
     stack.defer(() => this.#documents.clear());
 
@@ -218,20 +254,47 @@ export class CitationText extends Service<void> {
     this.#emitter.emit("changed", path);
   }
 
-  /** Every document's text no longer stands. */
-  #dropAll(): void {
+  /** Start the fresh read a stale peek asks for; a path no file backs is let go. */
+  #revalidate(path: string): void {
+    const file = this.#app.vault.getFileByPath(path);
+    if (file === null) {
+      this.#documents.delete(path);
+      return;
+    }
+    void this.load(file);
+  }
+
+  /**
+   * Every document's text went stale. A settled answer keeps being served until
+   * a fresh read replaces it, so a surface showing it never falls back to the
+   * raw source. A read that has never settled is discarded: its answer predates
+   * the invalidation and there is no text to keep serving. A read already
+   * revalidating keeps the stale text it carries and is marked stale again, so
+   * what it commits is revalidated once more by the next peek.
+   */
+  #invalidateAll(): void {
     if (this.#documents.size === 0) return;
-    logger.debug("Dropped the citation text", {
-      documents: this.#documents.size,
-    });
-    this.#documents.clear();
+    let stale = 0;
+    let discarded = 0;
+    for (const [path, held] of this.#documents.entries()) {
+      if (held.text === null) {
+        this.#documents.delete(path);
+        discarded += 1;
+      } else {
+        held.stale = true;
+        stale += 1;
+      }
+    }
+    logger.debug("Citation text went stale", { stale, discarded });
     this.#emitter.emit("invalidated");
   }
 
   /** Starts one document's read and holds it while it runs. */
-  #begin(file: TFile): HeldCitations {
+  #begin(file: TFile, staleText?: DocumentCitations | null): HeldCitations {
     const held: HeldCitations = {
-      text: null,
+      text: staleText ?? null,
+      stale: false,
+      settled: false,
       promise: this.#readDocument(file)
         .catch((error: unknown) => {
           logger.warn("Cannot read the citations of a document", {
@@ -253,6 +316,7 @@ export class CitationText extends Service<void> {
             return NO_CITATIONS;
           }
           held.text = text;
+          held.settled = true;
           this.#emitter.emit("changed", file.path);
           return text;
         }),
@@ -276,6 +340,7 @@ export class CitationText extends Service<void> {
   async #readDocument(file: TFile): Promise<DocumentCitations> {
     await Promise.all([
       this.#noteIndex.whenIndexed(),
+      this.#profile.ready,
       this.#citationIndex.whenResolved(),
     ]);
     const body = await this.#app.vault.cachedRead(file);
@@ -312,7 +377,7 @@ export class CitationText extends Service<void> {
     // nothing: its citations keep the source the author wrote, rather than
     // reading as though a vault selection were what the note declared.
     const presented = documentCitationPresentation(
-      documentPresentation(this.#app.metadataCache, file),
+      documentPresentation(this.#app.metadataCache, file, this.#profile),
       this.#bibliographyRender.vaultPresentation,
       { citations: set.citations, works },
     );
@@ -377,6 +442,9 @@ export class CitationText extends Service<void> {
       ),
     }));
     return {
+      ...(presented.kind === "unusable" && presented.property === "profile"
+        ? { presentationFailure: presented }
+        : {}),
       formatted,
       entrySerials,
       summaries: new Map(
@@ -473,15 +541,6 @@ export class CitationText extends Service<void> {
         cited.push(citation.indexedKey);
       }
       const citation = citationOfRun(run);
-      // A derivation the engine would read back as something else stays out of
-      // the render and keeps its native wikilink presentation.
-      if (!isRenderableCitation(citation)) {
-        logger.debug("Wikilink citation is not Pandoc source", {
-          path: file.path,
-          source: citation.source,
-        });
-        continue;
-      }
       citations.push({
         start: run[0]!.source.position.start.offset,
         ...citation,

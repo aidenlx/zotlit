@@ -1,4 +1,4 @@
-import type { App } from "obsidian";
+import type { App, PluginManifest } from "obsidian";
 
 import type { LanguagePackLifecycle } from "@/lib/i18n";
 import type { AttachmentImportService } from "@/services/attachment-import/service";
@@ -6,14 +6,21 @@ import type { CitationIndex } from "@/services/citation-index/service";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { PandocEngineService } from "@/services/pandoc/service";
+import type { ProfileService } from "@/services/profile/service";
 import type { ReleaseService } from "@/services/release/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import type ZotLitPlugin from "@/zt-main";
+
+import type { CreateProfile } from "./create-profile-modal";
+import type { ImportProfile } from "./import-profile-modal";
 
 /** Settings keys, used to type declarative `control` bindings against the schema. */
 export type SettingsKey = keyof Settings;
+export type ProfileControlKey =
+  `note-profile:default:${"folder" | "citation-style" | "import-folder" | "colored-highlights" | "annotations-as-template"}`;
+export type SettingsControlKey = SettingsKey | ProfileControlKey;
 
 /** The release-service surface the setting tab needs — reused by both render paths. */
 export type ReleaseTabActions = Pick<
@@ -44,8 +51,17 @@ export type AttachmentImportActions = Pick<
  */
 export interface SettingTabContext {
   app: App;
-  plugin: ZotLitPlugin;
+  createProfile: CreateProfile;
+  importProfile: ImportProfile;
+  /**
+   * The plugin's own manifest — its version and its folder in the vault. The
+   * plugin object itself stays out of this context: its `services` getter is a
+   * debug escape hatch that throws until `onload()` commits, and the first
+   * `getSettingDefinitions()` runs inside `onload()`.
+   */
+  manifest: PluginManifest;
   settings: SettingsService;
+  profile: ProfileService;
   db: DatabaseService;
   /** The live Library Scope the Library scope rows read and repair. */
   libraryScope: LibraryScopeService;
@@ -55,6 +71,13 @@ export interface SettingTabContext {
   /** The vault-wide Citation Index, reset from the Maintenance page. */
   citationIndex: CitationIndexActions;
   release: ReleaseTabActions;
+  /**
+   * The template store the Templates, Frontmatter, and Profile rows read.
+   * Injected rather than reached through `plugin.services`: the first
+   * `getSettingDefinitions()` runs from `addSettingTab()`, while `onload()` is
+   * still wiring and that escape hatch still throws.
+   */
+  template: TemplateService;
   /** The device-wide Pandoc engine binary, installed and uninstalled from here. */
   pandocEngine: PandocEngineActions;
   languagePack: LanguagePackLifecycle;

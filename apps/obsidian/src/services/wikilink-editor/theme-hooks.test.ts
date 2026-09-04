@@ -111,7 +111,7 @@ function viewOf(
     formatted: new Map([
       [
         citationKey({
-          source: "[@example, p. 7]",
+          source: "[@example, {p. 7}]",
           works: [LITERATURE_NOTE.indexedKey],
         }),
         occurrences(content),

@@ -5,6 +5,8 @@ import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
+import { DEFAULT_PROFILE, readProfileStamp } from "@/lib/profile-stamp";
+import type { ProfileSelector } from "@/lib/profile-stamp";
 import { Service } from "@/services/service-base";
 
 import {
@@ -87,6 +89,7 @@ export class NoteIndex extends Service<void> {
   readonly #notesByItemKey = new Map<string, Set<TFile>>();
   readonly #notesByNoteKey = new Map<string, Set<TFile>>();
   readonly #contribByFile = new Map<TFile, FileContributions>();
+  readonly #warnedDuplicatePaths = new Map<string, string>();
   #scanned = false;
 
   ready: Promise<void>;
@@ -98,12 +101,43 @@ export class NoteIndex extends Service<void> {
   }
 
   getNotesByItemKey(indexedKey: string): TFile[] {
-    return sortNotes(this.#notesByItemKey.get(indexedKey));
+    const notes = sortNotes(this.#notesByItemKey.get(indexedKey));
+    if (notes.length > 1) {
+      const paths = notes.map((file) => file.path);
+      const signature = paths.join("\0");
+      if (this.#warnedDuplicatePaths.get(indexedKey) !== signature) {
+        this.#warnedDuplicatePaths.set(indexedKey, signature);
+        logger.warn("Indexed Key resolves to multiple Literature Notes", {
+          indexedKey,
+          paths,
+        });
+      }
+    } else {
+      this.#warnedDuplicatePaths.delete(indexedKey);
+    }
+    return notes;
   }
 
   /** Imported-note files carrying `zotero-note-key`; disjoint from lit notes. */
   getImportedNoteByNoteKey(noteKey: string): TFile[] {
     return sortNotes(this.#notesByNoteKey.get(noteKey));
+  }
+
+  /** Await {@link whenIndexed} before querying; stamp labels are hints, IDs select membership. */
+  getNotesByProfile(selector: ProfileSelector): {
+    literatureNotes: TFile[];
+    importedNotes: TFile[];
+  } {
+    const literatureNotes: TFile[] = [];
+    const importedNotes: TFile[] = [];
+    for (const [file, contribution] of this.#contribByFile) {
+      const stamp = readProfileStamp(this.#app.metadataCache, file);
+      const profile = stamp === undefined ? DEFAULT_PROFILE : stamp.id;
+      if (profile !== selector) continue;
+      if (contribution.noteKey !== null) importedNotes.push(file);
+      else if (contribution.itemKey !== null) literatureNotes.push(file);
+    }
+    return { literatureNotes, importedNotes };
   }
 
   /** Indexed keys that currently have at least one Literature Note. */
@@ -239,6 +273,7 @@ export class NoteIndex extends Service<void> {
     this.#notesByItemKey.clear();
     this.#notesByNoteKey.clear();
     this.#contribByFile.clear();
+    this.#warnedDuplicatePaths.clear();
   }
 }
 

@@ -4,10 +4,12 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { CslItemData } from "@zotlit/db";
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import type { DatabaseEvents } from "@/services/database/service";
+import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
-import type { Settings } from "@/services/settings/schema";
 import type { ZoteroPrefEvents } from "@/services/zotero-pref/service";
 
 import type { Inlines } from "./ast";
@@ -149,8 +151,8 @@ class SettingsStub {
     (settings: Readonly<Settings> | null) => void
   >();
 
-  constructor(overrides: Partial<Settings> = {}) {
-    this.current = { ...defaults, ...overrides };
+  constructor(overrides: SettingsOverrides = {}) {
+    this.current = applySettingsOverrides(defaults, overrides);
   }
 
   subscribe(
@@ -161,10 +163,39 @@ class SettingsStub {
     return () => this.#listeners.delete(listener);
   }
 
-  update(overrides: Partial<Settings>): void {
-    this.current = { ...this.current, ...overrides };
+  update(overrides: SettingsOverrides): void {
+    this.current = applySettingsOverrides(this.current, overrides);
     for (const listener of this.#listeners) listener(this.current);
   }
+}
+
+type SettingsOverrides = Partial<Settings> &
+  Pick<
+    Partial<ResolvedLiteratureNoteProfileBindings>,
+    "citation.references-style"
+  >;
+
+function applySettingsOverrides(
+  current: Readonly<Settings>,
+  overrides: SettingsOverrides,
+): Settings {
+  const { ["citation.references-style"]: referencesStyle, ...persisted } =
+    overrides;
+  return {
+    ...current,
+    ...persisted,
+    "note.default-profile": {
+      ...current["note.default-profile"],
+      ...persisted["note.default-profile"],
+      bindings: {
+        ...current["note.default-profile"].bindings,
+        ...persisted["note.default-profile"]?.bindings,
+        ...(referencesStyle === undefined
+          ? {}
+          : { "citation.references-style": referencesStyle }),
+      },
+    },
+  };
 }
 
 /** One render cache and the stubs it reads, torn down with the test that holds it. */
@@ -177,12 +208,13 @@ interface Harness extends AsyncDisposable {
   settings: SettingsStub;
   /** Every `invalidated` the cache announced. */
   invalidations: number[];
+  profileEvents: ReturnType<typeof createNanoEvents<{ changed: () => void }>>;
   /** Unavailable selected styles announced during this plugin lifecycle. */
   missingStyles: string[];
 }
 
 async function makeHarness(
-  overrides: Partial<Settings> = {},
+  overrides: SettingsOverrides = {},
   dataDir?: string,
 ): Promise<Harness> {
   await using stack = new AsyncDisposableStack();
@@ -193,8 +225,13 @@ async function makeHarness(
     "citation.references-style": null,
     ...overrides,
   });
+  const profileEvents = createNanoEvents<{ changed: () => void }>();
   const cache = stack.use(
     new BibliographyRenderCache({
+      profile: {
+        ready: Promise.resolve(),
+        on: (event, callback) => profileEvents.on(event, callback),
+      },
       db,
       pandocEngine,
       zoteroPref,
@@ -217,6 +254,7 @@ async function makeHarness(
     zoteroPref,
     settings,
     invalidations,
+    profileEvents,
     missingStyles,
     [Symbol.asyncDispose]: () => held[Symbol.asyncDispose](),
   };
@@ -401,6 +439,16 @@ describe("BibliographyRenderCache", () => {
       reason: "style-missing",
     });
     expect(engine.requests).toHaveLength(1);
+  });
+
+  it("drops every render when a named Profile citation style changes", async () => {
+    await using harness = await makeHarness();
+    const { cache, invalidations } = harness;
+
+    await cache.render([item("alpha")]);
+    harness.profileEvents.emit("changed");
+
+    expect(invalidations).toHaveLength(1);
   });
 
   it("drops every render when the engine comes or goes", async () => {

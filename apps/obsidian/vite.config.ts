@@ -8,7 +8,7 @@ import type { Plugin } from "vite";
 import { analyzer, unstableRolldownAdapter } from "vite-bundle-analyzer";
 
 import { obsidianI18n } from "@zotlit/obsidian-i18n/vite";
-import { getDevVaultDir } from "@zotlit/scripts/dev-vault";
+import { DEV_VAULT_CASE_ENV, getDevVaultDir } from "@zotlit/scripts/dev-vault";
 import {
   parseManifest,
   parseMinElectronVersion,
@@ -18,6 +18,11 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 import packageJson from "./package.json" with { type: "json" };
 import { pandocFilterVariants } from "./scripts/lua-filter.ts";
 import { resolvePandocEnginePin } from "./scripts/pandoc-engine.ts";
+
+import {
+  EXCLUDE_MESSAGE_PREFIXES,
+  TARGET_LOCALE_MESSAGE_PREFIXES,
+} from "#language-pack-options";
 
 const builtins = [
   ...builtinModules,
@@ -38,7 +43,12 @@ console.log(`Pinning Pandoc ${pandocEngine.version}: ${pandocEngine.url}`);
 
 /** `obsidian-vault.ts create` seeds and registers this folder with Obsidian. */
 function getDevVaultPluginDir(pluginId: string) {
-  return join(getDevVaultDir(workspaceRoot), ".obsidian", "plugins", pluginId);
+  return join(
+    getDevVaultDir(workspaceRoot, process.env[DEV_VAULT_CASE_ENV]),
+    ".obsidian",
+    "plugins",
+    pluginId,
+  );
 }
 
 export default defineConfig(({ mode }) => {
@@ -102,12 +112,8 @@ export default defineConfig(({ mode }) => {
       obsidianI18n({
         project: join(workspaceRoot, "project.inlang"),
         output: "src/lib/i18n/generated",
-        excludeMessagePrefixes: ["docs_"],
-        // Lifecycle copy has to be readable before its Language Pack exists.
-        targetLocaleMessagePrefixes: [
-          "notice_language_pack_",
-          "settings_language_pack_",
-        ],
+        excludeMessagePrefixes: EXCLUDE_MESSAGE_PREFIXES,
+        targetLocaleMessagePrefixes: TARGET_LOCALE_MESSAGE_PREFIXES,
         servePacks:
           i18nDevServerPort === undefined
             ? undefined

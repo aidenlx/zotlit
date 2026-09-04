@@ -6,6 +6,7 @@ import {
   getChildNotesByParentIDs,
   getItemDisplayRefByID,
   getItemsByKey,
+  getItemsByID,
   getNoteByItemID,
   getNoteByKey,
   getNoteRefsByItemIDs,
@@ -17,6 +18,10 @@ import type { ImportMode } from "@zotlit/protocol";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import type { ProfileSelector } from "@/lib/profile-stamp";
+import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
+import { batchProfileSummary } from "@/services/batch-profile-summary";
+import type { BatchProfileCount } from "@/services/batch-profile-summary";
 import { classifyChunked, runBatchWrite } from "@/services/batch-run";
 import type {
   BatchClassifyControls,
@@ -33,15 +38,30 @@ import {
 import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type {
+  NoteFeature,
+  CreationProfileSelection,
+  ProfilePreview,
+} from "@/services/note-feature";
 import { lastmodFromFrontmatter } from "@/services/note-index/parse";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import { FlatManifest, HierarchyManifest } from "@/views/batch-modal";
-import type { FlatTask, HierarchyParent } from "@/views/batch-modal";
+import type {
+  FlatTask,
+  HierarchyParent,
+  BatchProfileChoice,
+} from "@/views/batch-modal";
 
 import { importRunSummary } from "./batch-import-notices";
-import type { NoteImporter, WriteOutcome } from "./service";
+import { NoteImportProfileError } from "./service";
+import type {
+  NoteImporter,
+  WriteOutcome,
+  PreparedExplicitImport,
+} from "./service";
 import type { NoteImportView } from "./view";
 
 const logger = getLogger("batch-import");
@@ -51,13 +71,15 @@ const logger = getLogger("batch-import");
 const IMPORT_CONCURRENCY = 16;
 
 export interface NoteImportDeps {
+  profile: ProfileReader;
+  noteFeature: Pick<NoteFeature, "resolveCreationProfile">;
   /** UI port for the classify/confirm modals; keeps `App` out of the runners. */
   view: NoteImportView;
   db: Pick<DatabaseService, "state" | "client" | "acquireRead">;
-  settings: Pick<SettingsService, "loaded">;
+  settings: Pick<SettingsService, "loaded" | "update">;
   /** Which Libraries an unqualified library-wide import covers. */
   libraryScope: Pick<LibraryScopeService, "resolveWith">;
-  noteImport: Pick<NoteImporter, "importNote">;
+  noteImport: Pick<NoteImporter, "importNote" | "prepareExplicitImport">;
   noteIndex: Pick<NoteIndex, "whenIndexed" | "getImportedNoteByNoteKey">;
   metadataCache: Pick<MetadataCache, "getFileCache">;
   /** Only template readiness is gated here; rendering lives in `noteImport`. */
@@ -96,10 +118,15 @@ export function createBatchImport(deps: NoteImportDeps): BatchImport {
   };
 }
 
-type ImportAction =
+type ImportAction = {
+  profilePlan?: PreparedExplicitImport;
+  unknownStamp?: string;
+  task?: FlatTask;
+} & (
   | { note: ChildNote; label: string; kind: "create" }
   | { note: ChildNote; label: string; kind: "overwrite"; file: TFile }
-  | { note: ChildNote; label: string; kind: "up-to-date"; file: TFile };
+  | { note: ChildNote; label: string; kind: "up-to-date"; file: TFile }
+);
 
 interface NotFoundEntry {
   itemID: number;
@@ -242,15 +269,171 @@ function toAction(
 }
 
 function actionToTask(action: ImportAction): FlatTask {
-  return {
+  const task = {
     id: action.note.itemID,
     label: action.label,
-    kind: batchGroupKey(action.note.libraryID, action.kind),
+    kind: batchGroupKey(
+      action.note.libraryID,
+      action.kind === "create" && action.profilePlan?.source === "orphan"
+        ? "orphan"
+        : action.kind,
+    ),
+    ...(action.unknownStamp !== undefined
+      ? { profile: action.unknownStamp }
+      : {}),
+    ...(action.profilePlan
+      ? {
+          profile:
+            action.profilePlan.profile.label ??
+            m.settings_profile_default_name(),
+          ...(action.kind === "create"
+            ? { path: action.profilePlan.path }
+            : {}),
+        }
+      : {}),
   };
+  action.task = task;
+  return task;
 }
 
 function needsImport(action: ImportAction): boolean {
   return action.kind !== "up-to-date";
+}
+
+function importRow(action: ImportAction): { label: string; profile?: string } {
+  return {
+    label: action.label,
+    ...(action.unknownStamp !== undefined
+      ? { profile: action.unknownStamp }
+      : {}),
+    ...(action.profilePlan
+      ? {
+          profile:
+            action.profilePlan.profile.label ??
+            m.settings_profile_default_name(),
+        }
+      : {}),
+  };
+}
+
+interface ImportProfileChoice extends BatchProfileChoice {
+  readonly selector: ProfileSelector;
+}
+
+async function prepareImportProfiles(
+  deps: NoteImportDeps,
+  actions: readonly ImportAction[],
+  signal: AbortSignal,
+): Promise<ImportProfileChoice | undefined> {
+  let selection: CreationProfileSelection =
+    await deps.noteFeature.resolveCreationProfile();
+  const cache = new Map<ProfileSelector, Map<number, PreparedExplicitImport>>();
+  const initial = new Map<number, PreparedExplicitImport>();
+  {
+    using lease = await deps.db.acquireRead();
+    for (const action of actions) {
+      signal.throwIfAborted();
+      try {
+        action.profilePlan = await deps.noteImport.prepareExplicitImport(
+          action.note,
+          { client: lease.client, orphanProfile: selection.selector },
+        );
+        initial.set(action.note.itemID, action.profilePlan);
+      } catch (error) {
+        if (error instanceof NoteImportProfileError)
+          action.unknownStamp = error.diagnostic.stamp;
+        logger.debug(
+          "Import preview unavailable; write will report the note diagnostic",
+          { noteKey: action.note.indexedKey, error },
+        );
+      }
+    }
+  }
+  cache.set(selection.selector, initial);
+  const orphans = actions.filter(
+    (action) =>
+      action.kind === "create" && action.profilePlan?.source === "orphan",
+  );
+  const first = orphans[0];
+  if (!first) return undefined;
+
+  let indexedKey: string | undefined;
+  if (first.note.parentItemID !== null) {
+    using lease = await deps.db.acquireRead();
+    indexedKey = getItemsByID(lease.client, [first.note.parentItemID])[0]
+      ?.indexedKey;
+  }
+  const plansFor = async (selector: ProfileSelector) => {
+    let plans = cache.get(selector);
+    if (plans) return plans;
+    plans = new Map();
+    using lease = await deps.db.acquireRead();
+    for (const action of orphans) {
+      plans.set(
+        action.note.itemID,
+        await deps.noteImport.prepareExplicitImport(action.note, {
+          client: lease.client,
+          orphanProfile: selector,
+        }),
+      );
+    }
+    cache.set(selector, plans);
+    return plans;
+  };
+  return {
+    get selector() {
+      return selection.selector;
+    },
+    get label() {
+      return (
+        deps.profile.resolveProfile(selection.selector)?.label ??
+        m.settings_profile_default_name()
+      );
+    },
+    get source() {
+      return selection.source;
+    },
+    choose: async () => {
+      const previews: ProfilePreview[] = [];
+      const selectors: ProfileSelector[] = [
+        DEFAULT_PROFILE,
+        ...deps.profile.profiles.map(({ id }) => id),
+      ];
+      for (const selector of selectors) {
+        const plan = (await plansFor(selector)).get(first.note.itemID)!;
+        previews.push({
+          selector,
+          label: plan.profile.label,
+          folder: plan.profile.bindings["note.import-folder"],
+          citationStyle: plan.profile.bindings["citation.references-style"],
+          document: plan.profile.document,
+          path: plan.path,
+        });
+      }
+      const chosen = await deps.view.chooseProfile({
+        selection,
+        previews,
+        indexedKey,
+      });
+      if (chosen === undefined) return;
+      const plans = await plansFor(chosen);
+      for (const action of orphans) {
+        action.profilePlan = plans.get(action.note.itemID)!;
+        if (action.task)
+          Object.assign(action.task, {
+            path: action.profilePlan.path,
+            profile:
+              action.profilePlan.profile.label ??
+              m.settings_profile_default_name(),
+          });
+      }
+      selection = { selector: chosen, source: "asked", shouldAsk: true };
+      logger.debug("Changed batch orphan Profile", {
+        selector: chosen,
+        notes: orphans.length,
+      });
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -265,6 +448,9 @@ function openNoteImportModal(
   const ids = distinct(itemIDs);
   let runnableActions: ImportAction[] = [];
   let notFoundCount = 0;
+  let profileChoice: ImportProfileChoice | undefined;
+  let profilesEnabled = false;
+  const profileCounts = new Map<ProfileSelector, BatchProfileCount>();
   deps.view.openBatchModal({
     text: {
       title: m.batch_import_title(),
@@ -280,11 +466,26 @@ function openNoteImportModal(
           unavailableLibraries,
         ),
       confirmButton: m.batch_import_confirm_button(),
-      runSummary: importRunSummary(() => notFoundCount),
+      runSummary: (result, state) =>
+        profilesEnabled
+          ? batchProfileSummary(result, {
+              ...state,
+              profiles: [...profileCounts.values()],
+              notFound: notFoundCount,
+            })
+          : importRunSummary(() => notFoundCount)(result, state),
     },
     total: ids.length,
     onClassify: async (controls) => {
       const classified = await classifyNoteImport(deps, ids, controls);
+      await deps.profile.ready;
+      profilesEnabled = deps.profile.profiles.length > 0;
+      if (profilesEnabled)
+        profileChoice = await prepareImportProfiles(
+          deps,
+          classified.actions,
+          controls.signal,
+        );
       runnableActions = classified.actions.filter(needsImport);
       const upToDate = classified.actions.filter((a) => !needsImport(a));
       notFoundCount = classified.notFound.length;
@@ -293,16 +494,34 @@ function openNoteImportModal(
         notFound: classified.notFound,
         groups: batchGroups(classified.libraries, [
           { kind: "create", header: m.batch_import_group_import },
+          ...(profileChoice
+            ? [
+                {
+                  kind: "orphan",
+                  header: m.batch_import_group_orphan,
+                  profileChoice,
+                },
+              ]
+            : []),
           { kind: "overwrite", header: m.batch_import_group_overwrite },
         ]),
-        upToDate: upToDate.map((a) => ({ label: a.label })),
+        upToDate: upToDate.map(importRow),
         upToDateHeader: m.batch_import_group_up_to_date,
         notFoundHeader: m.batch_update_group_not_found,
         skippedHeader: m.batch_update_group_skipped,
         abortedHeader: m.batch_update_group_aborted,
       });
     },
-    onRun: (controls) => executeImportRun(deps, runnableActions, controls),
+    onRun: (controls) => {
+      if (profileChoice)
+        deps.settings.update({
+          "note.last-used-profile": profileChoice.selector,
+        });
+      return executeImportRun(deps, runnableActions, {
+        controls,
+        profileCounts: profilesEnabled ? profileCounts : undefined,
+      });
+    },
   });
 }
 
@@ -363,6 +582,9 @@ function openChildImportModal(
 ): void {
   const ids = distinct(parentItemIDs);
   let runnableActions: ImportAction[] = [];
+  let profileChoice: ImportProfileChoice | undefined;
+  let profilesEnabled = false;
+  const profileCounts = new Map<ProfileSelector, BatchProfileCount>();
   deps.view.openBatchModal({
     text: {
       title: m.batch_import_child_title(),
@@ -375,29 +597,57 @@ function openChildImportModal(
           ? m.batch_import_child_confirm_none()
           : m.batch_import_child_confirm_intro({ count: actionable }),
       confirmButton: m.batch_import_confirm_button(),
-      runSummary: importRunSummary(() => 0),
+      runSummary: (result, state) =>
+        profilesEnabled
+          ? batchProfileSummary(result, {
+              ...state,
+              profiles: [...profileCounts.values()],
+            })
+          : importRunSummary(() => 0)(result, state),
     },
     total: ids.length,
     onClassify: async (controls) => {
       const parents = await classifyChildImport(deps, ids, controls);
       const allActions = parents.flatMap((parent) => parent.actions);
+      await deps.profile.ready;
+      profilesEnabled = deps.profile.profiles.length > 0;
+      if (profilesEnabled)
+        profileChoice = await prepareImportProfiles(
+          deps,
+          allActions,
+          controls.signal,
+        );
       runnableActions = allActions.filter(needsImport);
       const upToDateChildren = allActions.filter((a) => !needsImport(a));
       return new HierarchyManifest({
         parents: parents.map(
           (parent): HierarchyParent => ({
             label: parent.label,
+            profileChoice: parent.actions.some(
+              (action) => action.profilePlan?.source === "orphan",
+            )
+              ? profileChoice
+              : undefined,
             children: parent.actions.filter(needsImport).map(actionToTask),
           }),
         ),
-        upToDate: upToDateChildren.map((a) => ({ label: a.label })),
+        upToDate: upToDateChildren.map(importRow),
         upToDateHeader: m.batch_import_group_up_to_date,
         doneHeader: m.batch_import_child_group_done,
         skippedHeader: m.batch_update_group_skipped,
         abortedHeader: m.batch_update_group_aborted,
       });
     },
-    onRun: (controls) => executeImportRun(deps, runnableActions, controls),
+    onRun: (controls) => {
+      if (profileChoice)
+        deps.settings.update({
+          "note.last-used-profile": profileChoice.selector,
+        });
+      return executeImportRun(deps, runnableActions, {
+        controls,
+        profileCounts: profilesEnabled ? profileCounts : undefined,
+      });
+    },
   });
 }
 
@@ -510,7 +760,13 @@ async function importOne(
 async function executeImportRun(
   deps: NoteImportDeps,
   actions: readonly ImportAction[],
-  controls: BatchRunControls,
+  {
+    controls,
+    profileCounts,
+  }: {
+    controls: BatchRunControls;
+    profileCounts?: Map<ProfileSelector, BatchProfileCount>;
+  },
 ): Promise<BatchRunResult> {
   const [settings] = await Promise.all([
     deps.settings.loaded,
@@ -533,14 +789,27 @@ async function executeImportRun(
         });
         return "skipped";
       }
-      const outcome = await deps.noteImport.importNote(note, {
+      const options = {
         client,
         settings,
         groupIdMemo: memo,
         tagMemo,
         attachmentFolderCache,
         ...(task.kind === "overwrite" ? { targetFile: task.file } : {}),
-      });
+      };
+      const outcome = task.profilePlan
+        ? await task.profilePlan.import(note, options)
+        : await deps.noteImport.importNote(note, options);
+      if (profileCounts && task.profilePlan && outcome !== "skipped") {
+        const { profile } = task.profilePlan;
+        const count = profileCounts.get(profile.selector) ?? {
+          label: profile.label ?? m.settings_profile_default_name(),
+          created: 0,
+          updated: 0,
+        };
+        count[outcome === "created" ? "created" : "updated"]++;
+        profileCounts.set(profile.selector, count);
+      }
       if (outcome === "overwritten") return "updated";
       return outcome;
     },

@@ -1,11 +1,12 @@
 // Materializes a literature note's child Zotero notes into flat Markdown mirrors.
 import { normalizePath, stringifyYaml } from "obsidian";
-import type { FileManager, TFile, Vault } from "obsidian";
+import type { FileManager, MetadataCache, TFile, Vault } from "obsidian";
 import pLimit from "p-limit";
 
 import {
   citekeysToCiteTemplateData,
   getAnnotationsByKey,
+  getItemsByID,
   getNoteByKey,
 } from "@zotlit/db";
 import type {
@@ -16,9 +17,11 @@ import type {
   TemplateNoteLink,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
+import { inlineCitation } from "@zotlit/templates";
 
 import { renderAnnotations } from "@/lib/annotation-render";
 import {
+  FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_LASTMOD,
   FIELD_ZOTERO_NOTE_KEY,
   stringifyInstant,
@@ -28,9 +31,14 @@ import {
   joinFolderPath,
   normalizeFolderPath,
 } from "@/lib/ensure-folder";
-import { inlineCitation } from "@/lib/inline-citation";
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { syntheticFile } from "@/lib/markdown-link";
+import { DEFAULT_PROFILE, unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import type {
+  ProfileSelector,
+  UnknownProfileDiagnostic,
+} from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type {
   AttachmentImport,
@@ -43,7 +51,12 @@ import {
   truncateToByteLimit,
 } from "@/services/note-feature/filename";
 import type { NoteIndex } from "@/services/note-index/service";
-import type { Settings } from "@/services/settings/schema";
+import { boundProfile, getProfileBinding } from "@/services/profile/bindings";
+import type {
+  ProfileBindingSettings,
+  ResolvedProfile,
+} from "@/services/profile/bindings";
+import type { ProfileService } from "@/services/profile/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -67,10 +80,12 @@ type WriteMode =
 /** Shared per-run inputs threaded to every write in a `prepare`/`importNote` call. */
 interface RunContext {
   client: NodeDatabaseClient;
-  settings: Readonly<Settings>;
+  settings: ProfileBindingSettings;
   groupIdMemo?: GroupIDMemo;
   tagMemo?: TagMemo;
   attachmentFolderCache: Map<string, string>;
+  /** Profile every note this run writes belongs to. */
+  profile: ResolvedProfile;
 }
 
 interface QueuedImport {
@@ -90,12 +105,14 @@ export type ImportVaultApp = {
     | "process"
   >;
   fileManager: Pick<FileManager, "generateMarkdownLink">;
+  metadataCache: Pick<MetadataCache, "getFileCache">;
 };
 
 interface NoteImporterDeps {
+  profile: Pick<ProfileService, "ready" | "resolveProfile" | "profileOf">;
   app: ImportVaultApp;
-  noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey">;
-  template: Pick<TemplateService, "render">;
+  noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey" | "getNotesByItemKey">;
+  template: Pick<TemplateService, "render" | "renderProfileAnnotation">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
 }
@@ -105,7 +122,7 @@ export interface PrepareNoteImportOptions {
   /** The literature note's vault path; the link source for `noteLink`. */
   sourcePath: string;
   /** Caller-held settings snapshot (import folder and related note-import prefs). */
-  settings: Readonly<Settings>;
+  settings: ProfileBindingSettings;
   /** Shared across a run so group-library lookups memoize. */
   groupIdMemo?: GroupIDMemo;
   /** Shared across a run so parent-item/annotation tag lookups memoize. */
@@ -123,14 +140,28 @@ export interface NoteImport {
   flush(): Promise<{ created: number; skipped: number; failed: number }>;
 }
 
-interface ImportNoteOptions {
+export interface ImportNoteOptions {
   client: NodeDatabaseClient;
-  settings: Readonly<Settings>;
+  settings: ProfileBindingSettings;
   groupIdMemo?: GroupIDMemo;
   tagMemo?: TagMemo;
   attachmentFolderCache?: Map<string, string>;
   /** Explicit overwrite target; omitted resolves by imported-note index. */
   targetFile?: TFile;
+}
+
+interface PrepareExplicitImportOptions {
+  client: NodeDatabaseClient;
+  groupIdMemo?: GroupIDMemo;
+  orphanProfile?: ProfileSelector;
+}
+
+export interface PreparedExplicitImport {
+  source: "existing" | "parent" | "orphan";
+  profile: ResolvedProfile;
+  path: string;
+  /** Execute the previewed import using a fresh, caller-held database lease. */
+  import(note: Note, options: ImportNoteOptions): Promise<WriteOutcome>;
 }
 
 /**
@@ -140,6 +171,11 @@ interface ImportNoteOptions {
  */
 export interface NoteImporter {
   prepare(options: PrepareNoteImportOptions): Promise<NoteImport>;
+  /** Freeze the Profile and path for explicit-import confirmation without writing. */
+  prepareExplicitImport(
+    note: ChildNote,
+    options: PrepareExplicitImportOptions,
+  ): Promise<PreparedExplicitImport>;
   /**
    * Explicitly import a single note (create or overwrite). Used by the batch
    * runner and the single "Update imported note" command. Wraps the write in
@@ -176,6 +212,8 @@ export function createNoteImporter(deps: NoteImporterDeps): NoteImporter {
   };
   return {
     prepare: (options) => prepareImport(ctx, options),
+    prepareExplicitImport: (note, options) =>
+      prepareExplicitImport(ctx, note, options),
     importNote: (note, options) => doImportNote(ctx, note, options),
   };
 }
@@ -184,16 +222,22 @@ async function prepareImport(
   ctx: Ctx,
   options: PrepareNoteImportOptions,
 ): Promise<NoteImport> {
+  await ctx.profile.ready;
   const { settings, sourcePath } = options;
   const importFolder = normalizeFolderPath(
-    normalizePath(settings["note.import-folder"]),
+    normalizePath(getProfileBinding(settings, "note.import-folder")),
   );
+  const profile =
+    boundProfile(settings) ?? ctx.profile.resolveProfile(DEFAULT_PROFILE);
+  if (!profile)
+    throw new NoteImportProfileError(DEFAULT_PROFILE, { path: sourcePath });
   const run: RunContext = {
     client: options.client,
     settings,
     groupIdMemo: options.groupIdMemo,
     tagMemo: options.tagMemo,
     attachmentFolderCache: new Map(),
+    profile,
   };
   const queue: QueuedImport[] = [];
   logger.debug("Prepared note import", { sourcePath, importFolder });
@@ -209,18 +253,16 @@ async function doImportNote(
   note: Note,
   options: ImportNoteOptions,
 ): Promise<WriteOutcome> {
+  await ctx.profile.ready;
   return ctx.limit(async () => {
-    const existing =
-      (options.targetFile
-        ? ctx.app.vault.getFileByPath(options.targetFile.path)
-        : null) ?? ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
-
+    const { existing, profile } = explicitImportTarget(ctx, note, options);
     const run: RunContext = {
       client: options.client,
-      settings: options.settings,
+      settings: profile.settings,
       groupIdMemo: options.groupIdMemo,
       tagMemo: options.tagMemo,
       attachmentFolderCache: options.attachmentFolderCache ?? new Map(),
+      profile,
     };
 
     if (existing) {
@@ -231,13 +273,124 @@ async function doImportNote(
     }
     const folder = await ensureImportFolder(
       ctx.app,
-      options.settings["note.import-folder"],
+      getProfileBinding(run.settings, "note.import-folder"),
     );
     return writeNote(ctx, note, {
       mode: { action: "create", path: mintImportPath(ctx.app, folder, note) },
       run,
     });
   });
+}
+
+async function prepareExplicitImport(
+  ctx: Ctx,
+  note: ChildNote,
+  options: PrepareExplicitImportOptions,
+): Promise<PreparedExplicitImport> {
+  await ctx.profile.ready;
+  const { existing, profile, source, sourcePath } = explicitImportTarget(
+    ctx,
+    note,
+    options,
+  );
+  const { orphanProfile } = options;
+  const path =
+    existing?.path ??
+    mintImportPath(
+      ctx.app,
+      getProfileBinding(profile.settings, "note.import-folder"),
+      note,
+    );
+  logger.debug("Prepared explicit note import", {
+    indexedKey: note.indexedKey,
+    path,
+    profile: profile.selector,
+  });
+  return {
+    source,
+    profile,
+    path,
+    import: (current, runOptions) =>
+      ctx.limit(async () => {
+        const target = explicitImportTarget(ctx, current, {
+          client: runOptions.client,
+          groupIdMemo: runOptions.groupIdMemo,
+          orphanProfile,
+        });
+        if (
+          target.source !== source ||
+          target.sourcePath !== sourcePath ||
+          target.profile.selector !== profile.selector
+        ) {
+          logger.debug("Explicit note import source changed; skipped", {
+            indexedKey: current.indexedKey,
+            path,
+            source,
+            currentSource: target.source,
+            profile: profile.selector,
+            currentProfile: target.profile.selector,
+          });
+          return "skipped";
+        }
+        if (!existing)
+          await ensureImportFolder(
+            ctx.app,
+            getProfileBinding(profile.settings, "note.import-folder"),
+          );
+        return writeNote(ctx, current, {
+          mode: existing
+            ? { action: "overwrite", file: existing }
+            : { action: "create", path },
+          run: {
+            client: runOptions.client,
+            settings: profile.settings,
+            groupIdMemo: runOptions.groupIdMemo,
+            tagMemo: runOptions.tagMemo,
+            attachmentFolderCache:
+              runOptions.attachmentFolderCache ?? new Map(),
+            profile,
+          },
+        });
+      }),
+  };
+}
+
+function explicitImportTarget(
+  ctx: Ctx,
+  note: ChildNote,
+  options: PrepareExplicitImportOptions & { targetFile?: TFile },
+) {
+  const existing =
+    (options.targetFile
+      ? ctx.app.vault.getFileByPath(options.targetFile.path)
+      : null) ?? ctx.noteIndex.getImportedNoteByNoteKey(note.indexedKey)[0];
+  const file = existing ?? parentLiteratureNote(ctx, note, options);
+  const source: PreparedExplicitImport["source"] = existing
+    ? "existing"
+    : file
+      ? "parent"
+      : "orphan";
+  if (!file && options.orphanProfile !== undefined) {
+    const profile = ctx.profile.resolveProfile(options.orphanProfile);
+    if (!profile)
+      throw new NoteImportProfileError(options.orphanProfile, {
+        indexedKey: note.indexedKey,
+      });
+    return { existing, profile, source, sourcePath: undefined };
+  }
+  const resolved = ctx.profile.profileOf(file);
+  if (!resolved.ok)
+    throw new NoteImportProfileError(resolved.stamped.stamp, {
+      path: file?.path,
+      indexedKey: note.indexedKey,
+      imported: existing !== undefined,
+    });
+  return {
+    existing,
+    profile: resolved.profile,
+    source,
+    sourcePath: file?.path,
+  };
 }
 
 function resolveChildNote(
@@ -368,9 +521,10 @@ async function writeNote(
       folderCache: run.attachmentFolderCache,
     });
     attachmentBatch = batch;
-    const renderAnnotationParagraph = run.settings[
-      "note.import-annotations-as-template"
-    ]
+    const renderAnnotationParagraph = getProfileBinding(
+      run.settings,
+      "note.import-annotations-as-template",
+    )
       ? (keys: readonly string[]) =>
           renderAnnotations(
             run.client,
@@ -381,6 +535,10 @@ async function writeNote(
               attachmentImport: batch,
               groupIdMemo: run.groupIdMemo,
               tagMemo: run.tagMemo,
+              renderAnnotation: (data) =>
+                ctx.template.renderProfileAnnotation(data, {
+                  profile: run.profile,
+                }),
             },
           )
       : undefined;
@@ -395,7 +553,11 @@ async function writeNote(
         dataDir: ctx.zoteroPref.dataDir,
         baseAttachmentPath: ctx.zoteroPref.baseAttachmentPath,
       },
-      useColoredHighlightSyntax: run.settings["note.import-colored-highlights"],
+      useColoredHighlightSyntax: getProfileBinding(
+        run.settings,
+        "note.import-colored-highlights",
+      ),
+      highlightMappings: run.settings["note.import-highlight-mappings"],
       attachmentImport: batch,
       renderAnnotationParagraph,
     });
@@ -405,6 +567,9 @@ async function writeNote(
     date: stringifyInstant(note.dateAdded),
     [FIELD_ZOTERO_NOTE_KEY]: note.indexedKey,
     [FIELD_ZOTERO_LASTMOD]: stringifyInstant(note.dateModified),
+    ...(run.profile.stamp === undefined
+      ? {}
+      : { [FIELD_LITERATURE_NOTE_PROFILE]: run.profile.stamp }),
   };
   const content = `---\n${stringifyYaml(frontmatter)}---\n${body}`;
 
@@ -435,6 +600,44 @@ async function writeNote(
     });
   }
   return outcome;
+}
+
+/** The parent Literature Note an explicitly created note inherits its Profile from. */
+function parentLiteratureNote(
+  ctx: Ctx,
+  note: ChildNote,
+  options: Pick<ImportNoteOptions, "client" | "groupIdMemo">,
+): TFile | undefined {
+  if (note.parentItemID === null) return undefined;
+  const parent = getItemsByID(options.client, [note.parentItemID], {
+    memo: options.groupIdMemo,
+  })[0];
+  if (!parent) return undefined;
+  return ctx.noteIndex.getNotesByItemKey(parent.indexedKey)[0];
+}
+
+export class NoteImportProfileError extends Error {
+  readonly diagnostic: UnknownProfileDiagnostic;
+  readonly imported: boolean;
+
+  constructor(
+    stamp: string,
+    context: { path?: string; indexedKey?: string; imported?: boolean },
+  ) {
+    const { imported = true, ...diagnosticContext } = context;
+    const diagnostic = unknownProfileDiagnostic(stamp, diagnosticContext);
+    super(
+      imported
+        ? m.notice_imported_note_profile_unknown({
+            stamp,
+            target: context.path ?? context.indexedKey ?? stamp,
+          })
+        : m.notice_literature_note_profile_unknown({ stamp }),
+    );
+    this.name = "NoteImportProfileError";
+    this.diagnostic = diagnostic;
+    this.imported = imported;
+  }
 }
 
 /**

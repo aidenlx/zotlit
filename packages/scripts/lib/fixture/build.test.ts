@@ -46,10 +46,15 @@ import {
   getFixtureLayout,
   INSTALLED_STYLES,
   ITEMS,
+  legacyTemplateFilename,
+  legacyTemplateSource,
   LIBRARY_SCOPE_SETTING_KEY,
   NOTES,
   SCOPE_CASES,
   selectScopeCase,
+  UPGRADER_FRONTMATTER_FIELDS,
+  UPGRADER_LEGACY_TEMPLATES,
+  VAULT_CASES,
 } from "./build.ts";
 import type { FixtureLayout } from "./build.ts";
 import { BETTER_BIBTEX_PREFS, QUIET_FIRST_RUN_PREFS } from "./paired-zotero.ts";
@@ -354,6 +359,13 @@ describe("the generated Zotero database", () => {
         path: join(layout.vaultDir, "attachments", "rougier-2014.pdf"),
         charsetID: null,
         title: "Rougier et al. 2014 PDF",
+        url: null,
+      },
+      {
+        key: "CNPDF26A",
+        path: "storage:research-interfaces.pdf",
+        charsetID: null,
+        title: "Research interfaces conference paper",
         url: null,
       },
     ]);
@@ -1117,6 +1129,9 @@ describe("the generated Obsidian vault", () => {
       "pandoc-export-error-intent.md",
       "pandoc-export-missing-bibliography.md",
       "pandoc-export-success.md",
+      "profile-examples/profile-import-replacement-v1.md",
+      "profile-examples/profile-import-replacement-v2.md",
+      "profile-examples/profile-import-unavailable-style.md",
       "wikilink-display-test.md",
       "wikilink-parity-test.md",
     ]) {
@@ -1127,6 +1142,32 @@ describe("the generated Obsidian vault", () => {
 
       expect(await readFile(join(layout.vaultDir, name), "utf-8")).toBe(asset);
     }
+  });
+
+  it("carries descriptive Profile import examples outside the template folder", async () => {
+    const examples = await Promise.all(
+      [
+        "profile-import-replacement-v1.md",
+        "profile-import-replacement-v2.md",
+        "profile-import-unavailable-style.md",
+      ].map((name) =>
+        readFile(join(layout.vaultDir, "profile-examples", name), "utf-8"),
+      ),
+    );
+
+    expect(examples).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("id: ImportV1Abc1"),
+        expect.stringContaining(
+          "Fixture sample for testing Profile import and replacement.",
+        ),
+        expect.stringContaining("id: AbsentStyle1"),
+        expect.stringContaining(
+          "Fixture sample for testing Profile import with an unavailable citation style.",
+        ),
+      ]),
+    );
+    expect(examples.join("\n")).not.toMatch(/smoke/i);
   });
 
   it("carries every tutorial citation form in the Pandoc success case", async () => {
@@ -1150,6 +1191,9 @@ describe("the generated Obsidian vault", () => {
     const items = ITEMS.filter(({ libraryID }) => libraryID === 1);
     expect(await readdir(join(layout.vaultDir, "literatures"))).toEqual(
       items
+        .filter(
+          ({ literatureNoteProfile }) => literatureNoteProfile === undefined,
+        )
         .map(({ key, literatureNoteName }) => `${literatureNoteName ?? key}.md`)
         .sort(),
     );
@@ -1167,7 +1211,7 @@ describe("the generated Obsidian vault", () => {
       const note = await readFile(
         join(
           layout.vaultDir,
-          "literatures",
+          item.literatureNoteProfile === undefined ? "literatures" : "books",
           `${item.literatureNoteName ?? item.key}.md`,
         ),
         "utf-8",
@@ -1178,6 +1222,23 @@ describe("the generated Obsidian vault", () => {
       expect(citationKeys.get(item.itemID) ?? null).toBe(item.citationKey);
       expect(note.includes("\ncitekey:")).toBe(item.citationKey !== null);
     }
+  });
+
+  it("stamps the Books Profile Literature Note and leaves the others bare", async () => {
+    const stamped = await readFile(
+      join(layout.vaultDir, "books", "books-duplicateWithin2020.md"),
+      "utf-8",
+    );
+    const unstamped = await readFile(
+      join(layout.vaultDir, "literatures", "AAAAAAAA.md"),
+      "utf-8",
+    );
+
+    expect(await readdir(join(layout.vaultDir, "books"))).toEqual([
+      "books-duplicateWithin2020.md",
+    ]);
+    expect(stamped).toContain("zotlit-profile: Books (V1StGXR8Z5jd)");
+    expect(unstamped).not.toContain("zotlit-profile:");
   });
 
   it("resolves every positive prose-page target to a generated Item", async () => {
@@ -1429,8 +1490,58 @@ describe("the generated Obsidian vault", () => {
       await readFile(layout.pluginDataPath, "utf-8"),
     ) as Record<string, unknown>;
 
-    expect(data.__VERSION__).toBe(9);
+    expect(data.__VERSION__).toBe(10);
+    expect(data["note.default-profile"]).toEqual({
+      bindings: {
+        "note.literature-folder": "literatures",
+        "citation.references-style": null,
+        "note.import-folder": "zotero_notes",
+        "note.import-colored-highlights": false,
+        "note.import-annotations-as-template": false,
+      },
+    });
     expect(data[LIBRARY_SCOPE_SETTING_KEY]).toEqual({ mode: "all" });
+  });
+
+  it("saves the Fixture's document-backed Literature Note Profile", async () => {
+    const data = JSON.parse(
+      await readFile(layout.pluginDataPath, "utf-8"),
+    ) as Record<string, unknown>;
+
+    expect(data).not.toHaveProperty("note.profiles");
+    const source = await readFile(
+      join(layout.vaultDir, "templates", "zotlit-profile.books.md"),
+      "utf-8",
+    );
+    expect(source).toContain("id: V1StGXR8Z5jd");
+    expect(source).toContain("name: Books");
+    expect(source).toContain("folder: books");
+    expect(source).toContain(
+      "citationStyle: http://www.zotero.org/styles/chinese-gb7714-1987-numeric",
+    );
+  });
+
+  it("writes Managed Frontmatter into the Fixture Profile document", async () => {
+    const document = await readFile(
+      join(layout.vaultDir, "templates", "zotlit-profile.books.md"),
+      "utf-8",
+    );
+
+    expect(document).toContain(`frontmatter:
+  - key: fixture-title
+    expr: zt.title
+    merge: replace`);
+    expect(document).toContain(`  - key: fixture-kind
+    value:
+      $if: 'zt.itemType == "journalArticle"'
+      then: reference/article
+      else: reference/other
+    merge: replace`);
+    expect(document).toContain(`  - key: fixture-obsolete
+    value:
+      $if: 'zt.itemType == "bookSection"'
+      then: retained
+    merge: replace`);
   });
 
   it("selects the available, partial, and fully unavailable scope cases", async () => {
@@ -1449,5 +1560,131 @@ describe("the generated Obsidian vault", () => {
       "partial",
       "unavailable",
     ]);
+  });
+});
+
+describe("a Vault Case", () => {
+  async function buildVaultCase(vaultCase: string): Promise<FixtureLayout> {
+    const caseLayout = getFixtureLayout(
+      await mkdtemp(join(dirname(layout.root), `fixture-test-${vaultCase}-`)),
+    );
+    fixture.defer(() => rm(caseLayout.root, { recursive: true, force: true }));
+    // A stale bundle folder stands in for a Development Vault's plugin folder,
+    // whose data.json holds whatever ZotLit last saved there.
+    const bundleDir = await mkdtemp(join(dirname(layout.root), "bundle-"));
+    fixture.defer(() => rm(bundleDir, { recursive: true, force: true }));
+    await writeFile(join(bundleDir, "main.js"), "// stale bundle\n");
+    await writeFile(
+      join(bundleDir, "data.json"),
+      JSON.stringify({ __VERSION__: 10, stale: true }),
+    );
+    await buildFixture(caseLayout, { vaultCase, pluginBundleDir: bundleDir });
+    return caseLayout;
+  }
+
+  it("names the configured, fresh, and upgrader cases", () => {
+    expect(VAULT_CASES.map((vaultCase) => vaultCase.id)).toEqual([
+      "configured",
+      "fresh",
+      "upgrader",
+    ]);
+  });
+
+  it("leaves a fresh vault with ZotLit enabled and nothing else", async () => {
+    const fresh = await buildVaultCase("fresh");
+
+    // `attachments` holds the vault-backed linked-file Attachment the Zotero
+    // data references: a file the user keeps in the vault, not ZotLit state.
+    expect(await readdir(fresh.vaultDir)).toEqual([".obsidian", "attachments"]);
+    expect(
+      JSON.parse(
+        await readFile(
+          join(fresh.vaultDir, ".obsidian", "community-plugins.json"),
+          "utf-8",
+        ),
+      ),
+    ).toEqual(["hot-reload", "zotlit"]);
+    await expect(
+      readFile(join(fresh.pluginDir, "main.js"), "utf-8"),
+    ).resolves.toBe("// stale bundle\n");
+    await expect(stat(fresh.pluginDataPath)).rejects.toThrow("ENOENT");
+  });
+
+  it("refuses a fresh vault with a saved Library Scope", async () => {
+    const caseLayout = getFixtureLayout(
+      await mkdtemp(join(dirname(layout.root), "fixture-test-fresh-scope-")),
+    );
+    fixture.defer(() => rm(caseLayout.root, { recursive: true, force: true }));
+
+    await expect(
+      buildFixture(caseLayout, { vaultCase: "fresh", scopeCase: "partial" }),
+    ).rejects.toThrow('cannot save the "partial" Scope Case');
+  });
+
+  it("writes the v2.1 settings shape into an upgrader vault", async () => {
+    const upgrader = await buildVaultCase("upgrader");
+    const data = JSON.parse(
+      await readFile(upgrader.pluginDataPath, "utf-8"),
+    ) as Record<string, unknown>;
+
+    expect(data).toEqual({
+      __VERSION__: 9,
+      "note.literature-folder": "literatures",
+      "note.import-folder": "zotero_notes",
+      "note.frontmatter-fields": UPGRADER_FRONTMATTER_FIELDS,
+      "release.previous-version": "2.1.0",
+      "server.enabled": true,
+      [LIBRARY_SCOPE_SETTING_KEY]: { mode: "all" },
+    });
+    expect(UPGRADER_FRONTMATTER_FIELDS.map((field) => field.key)).toEqual([
+      "title",
+      "related",
+      "collections",
+      "citekey",
+      "year",
+    ]);
+  });
+
+  it("ejects every legacy slot file with its visible edit, and no Profile document", async () => {
+    const upgrader = await buildVaultCase("upgrader");
+    const templates = join(upgrader.vaultDir, "templates");
+
+    expect((await readdir(templates)).sort()).toEqual(
+      [
+        "zotlit-annotation.liquid.md",
+        "zotlit-content.liquid.md",
+        "zotlit-filename.liquid.md",
+        "zotlit-note.liquid.md",
+      ].sort(),
+    );
+    for (const template of UPGRADER_LEGACY_TEMPLATES) {
+      const source = await readFile(
+        join(templates, legacyTemplateFilename(template)),
+        "utf-8",
+      );
+      expect(source).toBe(await legacyTemplateSource(template));
+      expect(source).toContain(template.replace);
+    }
+    // The v2.1 vault has no Profiles, so the Books Profile note it seeds is
+    // one more unstamped note in the single literature folder.
+    expect(
+      (await readdir(join(upgrader.vaultDir, "literatures"))).sort(),
+    ).toEqual(
+      [
+        ...(await readdir(join(layout.vaultDir, "literatures"))),
+        "books-duplicateWithin2020.md",
+      ].sort(),
+    );
+    expect(await readdir(upgrader.vaultDir)).not.toContain("books");
+  });
+
+  it("fails when a shipped default drifts away from its edit", async () => {
+    await expect(
+      legacyTemplateSource({
+        name: "note",
+        find: "text the default note template never held",
+        replace: "",
+      }),
+    ).rejects.toThrow("update UPGRADER_LEGACY_TEMPLATES");
   });
 });

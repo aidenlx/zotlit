@@ -1,7 +1,6 @@
+import type { Extension } from "@codemirror/state";
 // The citekey editor treatment service: it follows the settings that switch the
 // CodeMirror extension on and owns the click that opens a citekey's note.
-
-import type { Extension } from "@codemirror/state";
 import type { App, Plugin } from "obsidian";
 
 import { getItemsByID } from "@zotlit/db";
@@ -29,22 +28,28 @@ import type {
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteFeature } from "@/services/note-feature";
-import { createNoteWithToast } from "@/services/note-feature/update-single";
+import { createNoteInteractively } from "@/services/note-feature";
+import { resolveLiteratureNoteWithWarning } from "@/services/note-feature/update-single";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import type { ImportProfile, CreateProfile } from "@/setting-tab/profiles";
 
 import { citekeyDecorationsChanged, citekeyEditorExtension } from "./extension";
 
 const logger = getLogger("citekey-editor");
 
 export interface CitekeyEditorDeps {
+  createProfile: CreateProfile;
+  importProfile: ImportProfile;
   app: App;
   plugin: Pick<Plugin, "registerEditorExtension" | "registerHoverLinkSource">;
   noteIndex: NoteIndex;
   noteFeature: NoteFeature;
+  zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   db: DatabaseService;
   /** The formatted citations every surface of one document shares. */
   citationText: Pick<CitationText, "peek" | "load" | "on">;
@@ -84,10 +89,13 @@ interface CitekeyEditorEvents {
  * reconfigure — the mechanism `registerEditorExtension` documents.
  */
 export class CitekeyEditor extends Service<void> {
+  readonly #createProfile;
+  readonly #importProfile;
   readonly #app;
   readonly #plugin;
   readonly #noteIndex;
   readonly #noteFeature;
+  readonly #zoteroPref;
   readonly #db;
   readonly #citationText;
   readonly #citationPopover;
@@ -110,9 +118,12 @@ export class CitekeyEditor extends Service<void> {
   constructor(deps: CitekeyEditorDeps) {
     super();
     this.#app = deps.app;
+    this.#createProfile = deps.createProfile;
+    this.#importProfile = deps.importProfile;
     this.#plugin = deps.plugin;
     this.#noteIndex = deps.noteIndex;
     this.#noteFeature = deps.noteFeature;
+    this.#zoteroPref = deps.zoteroPref;
     this.#db = deps.db;
     this.#citationText = deps.citationText;
     this.#citationPopover = deps.citationPopover;
@@ -360,7 +371,9 @@ export class CitekeyEditor extends Service<void> {
     citekey?: string,
   ): Promise<void> {
     const { workspace } = this.#app;
-    const existing = this.#noteIndex.getNotesByItemKey(item.indexedKey)[0];
+    const existing = resolveLiteratureNoteWithWarning(
+      this.#noteIndex.getNotesByItemKey(item.indexedKey),
+    );
     if (existing) {
       logger.debug("Opened citekey note", {
         indexedKey: item.indexedKey,
@@ -383,7 +396,16 @@ export class CitekeyEditor extends Service<void> {
       return;
     }
 
-    const file = await createNoteWithToast(this.#noteFeature, zoteroItem);
+    const file = await createNoteInteractively(
+      {
+        app: this.#app,
+        noteFeature: this.#noteFeature,
+        createProfile: this.#createProfile,
+        importProfile: this.#importProfile,
+        zoteroPref: this.#zoteroPref,
+      },
+      zoteroItem,
+    );
     if (!file) {
       logger.debug("Citekey note creation cancelled", {
         indexedKey: item.indexedKey,

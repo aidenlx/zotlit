@@ -9,6 +9,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Command } from "@/components/command";
+import { m } from "@/paraglide/messages.js";
 
 This tutorial takes you from one Zotero item to a cited Word document.
 
@@ -32,7 +33,7 @@ Complete the [ZotLit installation](/docs/install-zotlit). You also need ZotLit C
   <Step>
     ### Install the Pandoc engine
 
-    In Obsidian, open **Settings > ZotLit > Citations > Formatting**. Find **Pandoc engine**, then select **Install**.
+    In Obsidian, open **Settings > ZotLit > {m.settings_page_citations()} > {m.settings_citation_references_heading()}**. Find **{m.settings_citation_engine_name()}**, then select **{m.settings_citation_engine_install()}**.
 
     Wait until the row says that Pandoc is installed. The engine formats citations, references, and the exported document.
 
@@ -56,15 +57,15 @@ Complete the [ZotLit installation](/docs/install-zotlit). You also need ZotLit C
 
     Open the command palette and run:
 
-    <Command>ZotLit: Open references</Command>
+    <Command name={m.command_open_references_view_name()} />
 
-    The References Sidebar shows the formatted bibliography entry for your citation.
+    The {m.references_view_name()} Sidebar shows the formatted bibliography entry for your citation.
 
   </Step>
   <Step>
     ### Preview the citation
 
-    Hover over the formatted citation in Live Preview. The Citation Popover shows the complete bibliography entry.
+    Hover over the formatted citation in Live Preview. The {m.settings_citation_hover_action_popover()} shows the complete bibliography entry.
 
     The default hover settings show this popover without a modifier key in Live Preview.
 
@@ -72,7 +73,7 @@ Complete the [ZotLit installation](/docs/install-zotlit). You also need ZotLit C
   <Step>
     ### Copy the bibliography
 
-    In the References Sidebar toolbar, select **Copy bibliography**. Paste it into a text editor or word processor.
+    In the {m.references_view_name()} Sidebar toolbar, select **{m.references_copy_bibliography()}**. Paste it into a text editor or word processor.
 
     ZotLit places rich text and plain text on the clipboard. The destination uses the representation it supports.
 
@@ -82,9 +83,9 @@ Complete the [ZotLit installation](/docs/install-zotlit). You also need ZotLit C
 
     Keep the note active. Open the command palette and run:
 
-    <Command>ZotLit: Export note with citations</Command>
+    <Command name={m.command_pandoc_export_name()} />
 
-    Leave **Format** set to **Word document**. Choose a destination, then select **Export**.
+    Leave **{m.pandoc_export_format_name()}** set to **{m.pandoc_export_format_docx()}**. Choose a destination, then select **{m.pandoc_export_confirm()}**.
 
     Open the resulting `.docx` file. It contains your formatted citation and a bibliography.
 

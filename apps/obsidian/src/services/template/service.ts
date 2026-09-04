@@ -1,5 +1,5 @@
 import type { Extension } from "@codemirror/state";
-import { dirname } from "node:path/posix";
+import { dirname, join } from "node:path/posix";
 import { TFile } from "obsidian";
 import type { App, EventRef, Plugin, TAbstractFile } from "obsidian";
 
@@ -8,27 +8,42 @@ import type {
   AutoTrim,
   FrontmatterLanguage,
 } from "@zotlit/templates/constants";
-import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
+import {
+  LegacyTemplateConversionError,
+  LiteratureNoteTemplateError,
+  TemplateError,
+  TemplateFacade,
+} from "@zotlit/templates/facade";
 import type {
+  ConvertedLegacyLiteratureNoteTemplate,
+  LiteratureNoteTemplateDocument,
+  LiteratureNoteTemplateErrorCode,
+  LiteratureNoteTemplateManifest,
   RootVariableUse,
   TemplateLanguage,
 } from "@zotlit/templates/facade";
 import { evalFrontmatterFields } from "@zotlit/templates/frontmatter";
 import type {
   CompiledFrontmatterField,
+  CompiledManagedFrontmatter,
   FrontmatterField,
 } from "@zotlit/templates/frontmatter";
+import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
+import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature-note-pack";
 import { managedRegionTransform } from "@zotlit/templates/obsidian";
 
 import { RESERVED_KEYS } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
+import type { ResolvedProfile } from "@/services/profile/bindings";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
 import {
   DEFAULT_TEMPLATES,
+  GLOBAL_TEMPLATE_NAMES,
   isTemplateName,
   MANAGED_CONTENT_TEMPLATE,
   templateFileFromPath,
@@ -43,6 +58,8 @@ import { normalizeVaultPath } from "./path";
 
 const logger = getLogger("template");
 const FLUSH_DEBOUNCE_MS = 500;
+const LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES: ReadonlySet<TemplateName> =
+  new Set(["filename", "note", "annotation", MANAGED_CONTENT_TEMPLATE]);
 
 /** localStorage key for the per-device JavaScript Templates consent flag. */
 const JS_TEMPLATES_STORAGE_KEY = "zotlit-javascript-templates";
@@ -84,6 +101,76 @@ export interface TemplateFileStatus {
   shadowedFiles: readonly string[];
   inertFiles: readonly string[];
   compileError: string | null;
+}
+
+/** One reconciled Literature Note Template document in the template folder. */
+export interface ResolvedLiteratureNoteTemplate {
+  readonly reference: string;
+  readonly path: string;
+  readonly manifest: LiteratureNoteTemplateManifest;
+  readonly frontmatter?: CompiledManagedFrontmatter;
+  readonly hasManagedBlock: boolean;
+  renderForCreate<T extends object>(data: T): string;
+  renderForUpdate<T extends object>(data: T): string | null;
+  renderAnnotation<T extends object>(data: T): string;
+  renderFilename<T extends object>(data: T): string;
+}
+
+export type ProfileAnnotationDiagnostic =
+  | UnknownProfileDiagnostic
+  | {
+      readonly code: "missing-literature-note-template";
+      readonly document: string;
+      readonly hint: string;
+    };
+
+/** A stamped Profile cannot supply the requested annotation presentation. */
+export class ProfileAnnotationError extends Error {
+  readonly diagnostic: ProfileAnnotationDiagnostic;
+
+  constructor(diagnostic: ProfileAnnotationDiagnostic) {
+    super(
+      diagnostic.code === "unknown-literature-note-profile"
+        ? m.notice_literature_note_profile_unknown({
+            stamp: diagnostic.stamp,
+          })
+        : m.notice_literature_note_template_missing({
+            document: diagnostic.document,
+          }),
+    );
+    this.name = "ProfileAnnotationError";
+    this.diagnostic = diagnostic;
+  }
+}
+
+/** Validation state for one Literature Note Template document in the folder. */
+export interface LiteratureNoteTemplateStatus {
+  readonly reference: string;
+  readonly path: string;
+  readonly validation:
+    | {
+        readonly state: "valid";
+        readonly manifest: LiteratureNoteTemplateManifest;
+        readonly hasManagedBlock: boolean;
+      }
+    | {
+        readonly state: "invalid";
+        readonly manifestId?: string;
+        readonly error: {
+          readonly code: LiteratureNoteTemplateErrorCode | "unknown";
+          readonly message: string;
+          readonly recovery: string;
+        };
+      };
+}
+
+export interface ConvertedLegacyProfileDocument extends ConvertedLegacyLiteratureNoteTemplate {
+  readonly legacyFiles: readonly string[];
+}
+
+interface ReconciledLiteratureNoteTemplate {
+  path: string;
+  document: LiteratureNoteTemplateDocument;
 }
 
 /** A recorded compile error: its message, and the liquidjs caret-annotated
@@ -136,6 +223,12 @@ export class TemplateService extends Service<void> {
   readonly #shadowed = new Map<string, string>();
   readonly #inertEta = new Map<string, string>();
   readonly #pendingFlush = new Set<string>();
+  readonly #pendingDocumentFlush = new Set<string>();
+  readonly #literatureNoteDocuments = new Map<
+    string,
+    ReconciledLiteratureNoteTemplate
+  >();
+  readonly #literatureNoteDocumentErrors = new Map<string, Error>();
   readonly #settledWaiters = new Set<SettledWaiter>();
   readonly #autoPairExtensions: Extension[] = [];
 
@@ -195,9 +288,18 @@ export class TemplateService extends Service<void> {
 
   getTemplateFileStatuses(): readonly TemplateFileStatus[] {
     this.#requireLoaded("getTemplateFileStatuses");
+    const names = this.#settings.current?.["note.template-conversion-pending"]
+      ? TEMPLATE_NAMES
+      : GLOBAL_TEMPLATE_NAMES;
+    return this.#getTemplateFileStatuses(names);
+  }
+
+  #getTemplateFileStatuses(
+    names: readonly TemplateName[],
+  ): readonly TemplateFileStatus[] {
     const folder = this.#currentTemplateFolder();
 
-    return TEMPLATE_NAMES.map((name) => {
+    return names.map((name) => {
       const liquidPath = templatePath(folder, name, "liquid");
       // Every canonical name is written while a folder rebuild walks it; the
       // fallback covers a read taken inside that walk, before the name's own
@@ -216,6 +318,216 @@ export class TemplateService extends Service<void> {
         compileError: this.#compileErrors.get(name)?.message ?? null,
       };
     });
+  }
+
+  /** Resolve one document filename from the configured template folder. */
+  getLiteratureNoteTemplate(
+    reference: string,
+  ): ResolvedLiteratureNoteTemplate | undefined {
+    this.#requireLoaded("getLiteratureNoteTemplate");
+    const error = this.#literatureNoteDocumentErrors.get(reference);
+    if (error) throw error;
+    const entry = this.#literatureNoteDocuments.get(reference);
+    if (!entry) return undefined;
+    return this.#resolveLiteratureDocument(entry, reference);
+  }
+
+  /** Compile a draft against the installed partials without installing or writing it. */
+  prepareLiteratureNoteTemplateSource(
+    source: string,
+  ): ResolvedLiteratureNoteTemplate {
+    this.#requireLoaded("prepareLiteratureNoteTemplateSource");
+    const document = this.#facade.parseLiteratureNoteTemplate(source);
+    return this.#resolveLiteratureDocument(
+      { document, path: "source override" },
+      "source override",
+    );
+  }
+
+  #resolveLiteratureDocument(
+    entry: ReconciledLiteratureNoteTemplate,
+    reference: string,
+  ): ResolvedLiteratureNoteTemplate {
+    const { document, path } = entry;
+    if (
+      (document.manifest.language === "eta" ||
+        document.manifest.partials?.some(
+          (partial) => partial.language === "eta",
+        )) &&
+      !this.#javascriptTemplatesEnabled
+    ) {
+      throw new InertTemplateError(m.settings_template_inert_eta({ path }));
+    }
+    const facade = document.manifest.partials
+      ? new TemplateFacade({
+          transformRender: managedRegionTransform(MANAGED_CONTENT_TEMPLATE),
+        })
+      : this.#facade;
+    for (const partial of document.manifest.partials ?? [])
+      facade.define(partial.name, partial.source, partial.language);
+    const frontmatter = document.manifest.frontmatter
+      ? facade.compileManagedFrontmatterEntries(document.manifest.frontmatter, {
+          javascript: this.#javascriptTemplatesEnabled,
+        })
+      : undefined;
+    return {
+      reference,
+      path,
+      manifest: document.manifest,
+      frontmatter,
+      hasManagedBlock: document.managedBlock !== null,
+      renderForCreate: <T extends object>(data: T) =>
+        facade.renderLiteratureNoteTemplateForCreate(document, data),
+      renderForUpdate: <T extends object>(data: T) =>
+        facade.renderLiteratureNoteTemplateForUpdate(document, data),
+      renderAnnotation: <T extends object>(data: T) =>
+        facade.renderLiteratureNoteTemplateAnnotation(document, data),
+      renderFilename: <T extends object>(data: T) =>
+        toSingleLine(
+          facade.renderLiteratureNoteTemplateFilename(document, data),
+        ),
+    };
+  }
+
+  /** Render one annotation through its Profile document or legacy slot. */
+  renderProfileAnnotation<T extends object>(
+    data: T,
+    options: { profile: ResolvedProfile },
+  ): string {
+    const { profile } = options;
+    if (profile.settings["note.template-conversion-pending"]) {
+      return this.render("annotation", data);
+    }
+
+    if (profile.document) {
+      const document = this.getLiteratureNoteTemplate(profile.document);
+      if (!document) {
+        throw new ProfileAnnotationError({
+          code: "missing-literature-note-template",
+          document: profile.document,
+          hint: "Restore the document in the template folder or clear the Profile document reference.",
+        });
+      }
+      return document.renderAnnotation(data);
+    }
+    this.#requireLoaded("renderProfileAnnotation");
+    return this.#facade.render("annotation", data, {
+      source: DEFAULT_TEMPLATES.annotation,
+      language: "liquid",
+    });
+  }
+
+  /** Report every installed document and its reconciled validation state. */
+  getLiteratureNoteTemplateStatuses(): readonly LiteratureNoteTemplateStatus[] {
+    this.#requireLoaded("getLiteratureNoteTemplateStatuses");
+    const references = new Set([
+      ...this.#literatureNoteDocuments.keys(),
+      ...this.#literatureNoteDocumentErrors.keys(),
+    ]);
+    return [...references].sort().map((reference) => {
+      const entry = this.#literatureNoteDocuments.get(reference);
+      if (entry) {
+        return {
+          reference,
+          path: entry.path,
+          validation: {
+            state: "valid",
+            manifest: entry.document.manifest,
+            hasManagedBlock: entry.document.managedBlock !== null,
+          },
+        };
+      }
+      const error = this.#literatureNoteDocumentErrors.get(reference)!;
+      const path = join(this.#currentTemplateFolder(), reference);
+      return {
+        reference,
+        path,
+        validation: {
+          state: "invalid",
+          ...(error instanceof LiteratureNoteTemplateError &&
+          error.manifestId !== undefined
+            ? { manifestId: error.manifestId }
+            : {}),
+          error:
+            error instanceof LiteratureNoteTemplateError
+              ? {
+                  code: error.code,
+                  message: error.message,
+                  recovery: error.recovery,
+                }
+              : {
+                  code: "unknown",
+                  message: error.message,
+                  recovery: "Correct the document, then inspect it again.",
+                },
+        },
+      };
+    });
+  }
+
+  /** Parse and render document source in memory without installing it. */
+  renderLiteratureNoteTemplateSource<T extends object>(
+    source: string,
+    data: T,
+  ): { create: string; update: string | null } {
+    const document = this.prepareLiteratureNoteTemplateSource(source);
+    return {
+      create: document.renderForCreate(data),
+      update: document.renderForUpdate(data),
+    };
+  }
+
+  /** Export one installed document with all reachable partials embedded. */
+  async exportLiteratureNotePack(
+    reference: string,
+    options: { includeFolders?: boolean } = {},
+  ): Promise<string> {
+    this.#requireLoaded("exportLiteratureNotePack");
+    const reconciled = this.#literatureNoteDocuments.get(reference);
+    if (!reconciled) {
+      throw new Error(
+        `Literature Note Template '${reference}' is not installed`,
+      );
+    }
+    const documentFile = this.#app.vault.getFileByPath(reconciled.path);
+    if (!documentFile) {
+      throw new Error(`Literature Note Template '${reference}' is unavailable`);
+    }
+    return this.exportLiteratureNotePackSource(
+      await this.#app.vault.cachedRead(documentFile),
+      options,
+    );
+  }
+
+  /** Export a Profile snapshot, including a built-in Default that has no file. */
+  async exportLiteratureNotePackSource(
+    source: string,
+    options: { includeFolders?: boolean } = {},
+  ): Promise<string> {
+    this.#requireLoaded("exportLiteratureNotePackSource");
+    const partials = (
+      await Promise.all(
+        [...this.#winners.entries()].map(async ([name, winner]) => {
+          if (winner.source.kind === "none") return null;
+          if (winner.source.kind === "embedded-default") {
+            if (!isTemplateName(name)) return null;
+            return {
+              name,
+              language: winner.language,
+              source: DEFAULT_TEMPLATES[name],
+            } satisfies LiteratureNoteTemplatePartial;
+          }
+          const file = this.#app.vault.getFileByPath(winner.source.path);
+          if (!file) return null;
+          return {
+            name,
+            language: winner.language,
+            source: await this.#app.vault.cachedRead(file),
+          } satisfies LiteratureNoteTemplatePartial;
+        }),
+      )
+    ).filter((partial) => partial !== null);
+    return exportLiteratureNotePack(source, partials, options);
   }
 
   /**
@@ -402,6 +714,81 @@ export class TemplateService extends Service<void> {
     return DEFAULT_TEMPLATES[name];
   }
 
+  /** Vault files that make the default Profile use legacy Literature Note slots. */
+  getLegacyLiteratureNoteTemplateFiles(): readonly string[] {
+    return this.#getTemplateFileStatuses(TEMPLATE_NAMES)
+      .filter((status) =>
+        LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES.has(status.name),
+      )
+      .flatMap((status) => [
+        ...(status.winner.source.kind === "vault"
+          ? [status.winner.source.path]
+          : []),
+        ...status.shadowedFiles,
+        ...status.inertFiles,
+      ]);
+  }
+
+  /** Build and byte-verify the converted default Profile document in memory. */
+  async convertLegacyLiteratureNoteTemplates(data: {
+    readonly note: object;
+    readonly filename: object;
+    readonly annotation?: object;
+  }): Promise<ConvertedLegacyProfileDocument> {
+    this.#requireLoaded("convertLegacyLiteratureNoteTemplates");
+    const statuses = this.#getTemplateFileStatuses(TEMPLATE_NAMES);
+    const inert = statuses.find(
+      (status) =>
+        LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES.has(status.name) &&
+        status.winner.source.kind === "none" &&
+        status.inertFiles.length > 0,
+    );
+    if (inert) {
+      throw new LegacyTemplateConversionError(
+        "unsupported-legacy-template",
+        `Legacy template '${inert.name}' is inert while JavaScript Templates are disabled`,
+        {
+          difference: "inert template",
+          recovery:
+            "Enable JavaScript Templates on this device, then retry conversion.",
+        },
+      );
+    }
+    const source = async (
+      name: "filename" | "note" | "content" | "annotation",
+    ) => {
+      const status = statuses.find((candidate) => candidate.name === name)!;
+      return {
+        source: await this.getTemplateSource(name),
+        language: status.winner.language,
+      };
+    };
+    const [note, content, filename] = await Promise.all([
+      source("note"),
+      source("content"),
+      source("filename"),
+    ]);
+    const annotationStatus = statuses.find(
+      (candidate) => candidate.name === "annotation",
+    )!;
+    const annotation =
+      annotationStatus.winner.source.kind === "vault"
+        ? await source("annotation")
+        : undefined;
+    return {
+      ...this.#facade.convertLegacyLiteratureNoteTemplates(
+        { note, content, filename, annotation },
+        data,
+        {
+          frontmatter:
+            this.#settings.current?.["note.frontmatter-fields"] ?? [],
+          javascript: this.#javascriptTemplatesEnabled,
+        },
+      ),
+      legacyFiles: this.getLegacyLiteratureNoteTemplateFiles(),
+    };
+  }
+
   /**
    * Compile-check a single Managed Frontmatter expression for the setting tab.
    * A javascript expression is left unvalidated while the gate is off —
@@ -546,11 +933,14 @@ export class TemplateService extends Service<void> {
       const generation = ++this.#folderGeneration;
       this.#cancelFlush();
       this.#pendingFlush.clear();
+      this.#pendingDocumentFlush.clear();
       this.#shadowed.clear();
       this.#inertEta.clear();
       this.#winners.clear();
       this.#facade.reset();
       this.#compileErrors.clear();
+      this.#literatureNoteDocuments.clear();
+      this.#literatureNoteDocumentErrors.clear();
 
       const root =
         folder === ""
@@ -558,11 +948,15 @@ export class TemplateService extends Service<void> {
           : this.#app.vault.getFolderByPath(folder);
 
       const names = new Set<string>();
+      const documentReferences = new Set<string>();
       if (root) {
         for (const child of root.children) {
           if (child instanceof TFile) {
             const parsed = templateFileFromPath(child.path);
             if (parsed) names.add(parsed.name);
+            else if (child.extension === "md") {
+              documentReferences.add(child.name);
+            }
           }
         }
       } else {
@@ -575,9 +969,12 @@ export class TemplateService extends Service<void> {
         if (!names.has(name)) this.#useDefault(name);
       }
 
-      await Promise.all(
-        [...names].map((name) => this.#reconcileName(name, generation)),
-      );
+      await Promise.all([
+        ...[...names].map((name) => this.#reconcileName(name, generation)),
+        ...[...documentReferences].map((reference) =>
+          this.#reconcileDocument(reference, generation),
+        ),
+      ]);
       if (generation !== this.#folderGeneration) return;
 
       this.#emitter.emit("compile-status-changed");
@@ -593,24 +990,30 @@ export class TemplateService extends Service<void> {
 
   #onCreateOrModify(file: TAbstractFile): void {
     if (!(file instanceof TFile)) return;
-    this.#queueTemplateName(file.path);
+    this.#queueTemplatePath(file.path);
   }
 
   #onRename(file: TAbstractFile, oldPathRaw: string): void {
-    this.#queueTemplateName(oldPathRaw);
-    if (file instanceof TFile) this.#queueTemplateName(file.path);
+    this.#queueTemplatePath(oldPathRaw);
+    if (file instanceof TFile) this.#queueTemplatePath(file.path);
   }
 
   #onDelete(file: TAbstractFile): void {
-    this.#queueTemplateName(file.path);
+    this.#queueTemplatePath(file.path);
   }
 
-  #queueTemplateName(path: string): void {
+  #queueTemplatePath(path: string): void {
     const normalized = normalizeVaultPath(path);
-    if (!this.#isWatchedTemplatePath(normalized)) return;
     const parsed = templateFileFromPath(normalized);
-    if (!parsed) return;
-    this.#pendingFlush.add(parsed.name);
+    if (parsed && this.#isWatchedTemplatePath(normalized)) {
+      this.#pendingFlush.add(parsed.name);
+    } else if (
+      isWatchedDocumentPath(normalized, this.#currentTemplateFolder())
+    ) {
+      this.#pendingDocumentFlush.add(normalized.split("/").at(-1)!);
+    } else {
+      return;
+    }
     this.#scheduleFlush();
   }
 
@@ -627,10 +1030,15 @@ export class TemplateService extends Service<void> {
     try {
       const generation = this.#folderGeneration;
       const names = [...this.#pendingFlush];
+      const documentReferences = [...this.#pendingDocumentFlush];
       this.#pendingFlush.clear();
-      await Promise.all(
-        names.map((name) => this.#reconcileName(name, generation)),
-      );
+      this.#pendingDocumentFlush.clear();
+      await Promise.all([
+        ...names.map((name) => this.#reconcileName(name, generation)),
+        ...documentReferences.map((reference) =>
+          this.#reconcileDocument(reference, generation),
+        ),
+      ]);
 
       if (generation !== this.#folderGeneration) return;
 
@@ -731,6 +1139,38 @@ export class TemplateService extends Service<void> {
       language: winner.language,
       source: { kind: "vault", path: winner.file.path },
     });
+  }
+
+  async #reconcileDocument(
+    reference: string,
+    generation: number,
+  ): Promise<void> {
+    if (generation !== this.#folderGeneration) return;
+    const folder = this.#currentTemplateFolder();
+    const path = folder === "" ? reference : join(folder, reference);
+    const file = this.#app.vault.getFileByPath(path);
+    if (!file) {
+      this.#literatureNoteDocuments.delete(reference);
+      this.#literatureNoteDocumentErrors.delete(reference);
+      return;
+    }
+
+    try {
+      const source = await this.#app.vault.cachedRead(file);
+      if (generation !== this.#folderGeneration) return;
+      const document = this.#facade.parseLiteratureNoteTemplate(source);
+      this.#literatureNoteDocuments.set(reference, { path, document });
+      this.#literatureNoteDocumentErrors.delete(reference);
+    } catch (error) {
+      if (generation !== this.#folderGeneration) return;
+      const failure = Error.isError(error) ? error : new Error(String(error));
+      this.#literatureNoteDocuments.delete(reference);
+      this.#literatureNoteDocumentErrors.set(reference, failure);
+      logger.warn("Failed to reconcile Literature Note Template document", {
+        error: failure,
+        path,
+      });
+    }
   }
 
   /**
@@ -836,7 +1276,8 @@ export class TemplateService extends Service<void> {
     return (
       this.#settlingTasks === 0 &&
       this.#flushTimer === null &&
-      this.#pendingFlush.size === 0
+      this.#pendingFlush.size === 0 &&
+      this.#pendingDocumentFlush.size === 0
     );
   }
 
@@ -962,6 +1403,16 @@ function isWatchedTemplatePath(path: string, folder: string): boolean {
   const normalized = normalizeVaultPath(path);
   return (
     templateFileFromPath(normalized) !== null &&
+    normalizeVaultPath(dirname(normalized)) === normalizeVaultPath(folder)
+  );
+}
+
+/** A document is a direct Markdown child of the configured template folder. */
+function isWatchedDocumentPath(path: string, folder: string): boolean {
+  const normalized = normalizeVaultPath(path);
+  return (
+    normalized.endsWith(".md") &&
+    templateFileFromPath(normalized) === null &&
     normalizeVaultPath(dirname(normalized)) === normalizeVaultPath(folder)
   );
 }

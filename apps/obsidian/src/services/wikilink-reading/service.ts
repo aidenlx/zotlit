@@ -3,10 +3,12 @@
 // open reading views to render again when something outside their documents
 // changed the answer.
 
-import { MarkdownView } from "obsidian";
+import { MarkdownView, setTooltip } from "obsidian";
 import type { App, MarkdownPostProcessorContext, Plugin } from "obsidian";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { renderProfileRecovery } from "@/lib/profile-recovery";
 import { rerenderReadingViews, sectionRange } from "@/lib/reading-view";
 import {
   WikilinkDisplaySettings,
@@ -170,6 +172,18 @@ export class WikilinkReading extends Service<void> {
     // Which occurrence each Citation of the section is, so a position-dependent
     // style shows every one of them the text rendered for its own place.
     const citations = runs.map((run) => citationOfRun(run));
+    const failure = text?.presentationFailure;
+    renderProfileRecovery(el, this.#app, { path: failure?.target });
+    if (failure) {
+      const diagnostic = m.notice_imported_note_profile_unknown({
+        stamp: failure.diagnostic.stamp,
+        target: failure.target,
+      });
+      for (const { source } of runs.flat()) {
+        source.dataset["citationPresentationError"] = "profile";
+        setTooltip(source, diagnostic);
+      }
+    }
     const coordinates = sectionCoordinates(citations, sectionRange(ctx, el));
     const contents = citations.map((citation, index) =>
       text === null

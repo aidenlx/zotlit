@@ -32,11 +32,13 @@ import {
   samePresentation,
 } from "@/services/pandoc/document-presentation";
 import type {
+  DocumentPresentationFailure,
   DocumentPresentation,
-  UnusableProperty,
 } from "@/services/pandoc/document-presentation";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
+import type { ProfileReader } from "@/services/profile/service";
+import type { SettingsService } from "@/services/settings/service";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
 import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
@@ -67,7 +69,7 @@ export interface ReferencesViewDeps {
   db: Pick<DatabaseService, "state" | "client" | "ready" | "on">;
   citationIndex: Pick<
     CitationIndex,
-    "getDocumentCitationSet" | "resolveCitekey" | "on"
+    "getDocumentCitationSet" | "resolveCitekey" | "resolution" | "on"
   >;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
@@ -87,6 +89,8 @@ export interface ReferencesViewDeps {
     BibliographyRenderCache,
     "render" | "on" | "vaultPresentation"
   >;
+  settings: Pick<SettingsService, "current">;
+  profile: ProfileReader;
   /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
   /** Reveals the Citation and References Style row in settings. */
@@ -131,7 +135,7 @@ export class ReferencesView extends ItemView {
    * The note property that put the current minimal list on screen; `null` while
    * the note's own presentation is not what stopped the render.
    */
-  #documentPresentationError: UnusableProperty | null = null;
+  #documentPresentationError: DocumentPresentationFailure | null = null;
   /** Where the current list's render stands, as copy readiness reads it. */
   #formatting: ReferencesFormatting = "pending";
   /** Copy readiness as it was last published, so only a change is logged. */
@@ -207,7 +211,21 @@ export class ReferencesView extends ItemView {
     // differently, so the active document's Citations may resolve to a
     // different Item — or a citekey that resolved before now resolves to
     // none — regardless of which document changed to trigger the rebuild.
-    this.register(citationIndex.on("resolution-changed", () => this.#rescan()));
+    // The resolution state is published on its own, because a settle that
+    // leaves the Citations identical — every key still unresolved — skips the
+    // reload, and the pending label must still give way to the verdict.
+    this.register(
+      citationIndex.on("resolution-changed", () => {
+        this.#publishResolution();
+        this.#rescan();
+      }),
+    );
+    // A rebuild that settles with the maps unchanged emits no
+    // resolution-changed — only cited-by-invalidated announces the state
+    // flip — so this is what returns the pending label to a verdict.
+    this.register(
+      citationIndex.on("cited-by-invalidated", () => this.#publishResolution()),
+    );
     this.register(citationIndex.on("membership-changed", () => this.#rescan()));
     this.registerEvent(app.metadataCache.on("changed", () => this.#rescan()));
     // What the document's own citations show decides what this gutter shows,
@@ -220,16 +238,21 @@ export class ReferencesView extends ItemView {
     this.register(db.on("changed", () => this.#reload()));
     this.register(pandocEngine.subscribe(() => this.#reload()));
     // What the cache holds is what this pane shows, so its wholesale drop —
-    // for a Zotero change, a Citation and References Style change, or an engine that came or
-    // went — is the one signal that makes the formatted entries here stale.
+    // for a Zotero change, a Citation and References Style change, or an engine
+    // that came or went — keeps entries on screen while the reload runs. A
+    // changed Profile presentation clears entries from the previous style.
     this.register(
-      bibliographyRender.on("invalidated", () =>
-        this.#reload({ invalidate: true }),
-      ),
+      bibliographyRender.on("invalidated", () => {
+        const presentation = this.#readPresentation(this.#file);
+        const invalidate = !samePresentation(this.#presentation, presentation);
+        this.#presentation = presentation;
+        this.#reload({ invalidate });
+      }),
     );
     this.#reload();
     this.#rescan();
-    await db.ready;
+    await Promise.all([db.ready, this.#deps.profile.ready]);
+    this.#rescan();
     this.#reload();
   }
 
@@ -252,6 +275,7 @@ export class ReferencesView extends ItemView {
    * all the same, and the copy it offers names the note now on screen.
    */
   #rescan(): void {
+    if (!this.#deps.profile.loaded) return;
     const scan = ++this.#scan;
     // A presentation change makes the entries on screen stale the moment it is
     // read, and the read that follows lands a turn later at the earliest, so
@@ -331,7 +355,11 @@ export class ReferencesView extends ItemView {
   #readPresentation(file: TFile | null): DocumentPresentation {
     return file === null
       ? { kind: "read", presentation: {} }
-      : documentPresentation(this.#deps.app.metadataCache, file);
+      : documentPresentation(
+          this.#deps.app.metadataCache,
+          file,
+          this.#deps.profile,
+        );
   }
 
   /**
@@ -370,9 +398,18 @@ export class ReferencesView extends ItemView {
       formattingFailed: this.#formattingFailed,
       documentPresentationError: this.#documentPresentationError,
       dbReady: this.#deps.db.state === "ready",
+      citekeyResolution: this.#deps.citationIndex.resolution,
       copy: this.#trackCopy(entries),
     });
     void this.#render(generation, citations, sources);
+  }
+
+  /** Republish the resolution state alone, for a settle the list survives. */
+  #publishResolution(): void {
+    const citekeyResolution = this.#deps.citationIndex.resolution;
+    if (this.#store.getState().citekeyResolution !== citekeyResolution) {
+      this.#store.setState({ citekeyResolution });
+    }
   }
 
   /**
@@ -482,7 +519,7 @@ export class ReferencesView extends ItemView {
       { citations, works: sources },
     );
     if (presented.kind === "unusable") {
-      this.#documentPresentationError = presented.property;
+      this.#documentPresentationError = presented;
       this.#showMinimal(citations, sources, false);
       return;
     }
@@ -500,8 +537,15 @@ export class ReferencesView extends ItemView {
         outcome.kind === "unavailable" &&
         outcome.reason === "style-missing" &&
         declared.kind === "read" &&
-        declared.presentation.styleId !== undefined
-          ? "style"
+        typeof declared.presentation.styleId === "string"
+          ? declared.profileStyle
+            ? {
+                kind: "unusable",
+                property: "profile-style",
+                styleId: declared.presentation.styleId,
+                ...declared.profileStyle,
+              }
+            : { kind: "unusable", property: "style" }
           : null;
       this.#showMinimal(citations, sources, outcome.kind === "failed");
       return;

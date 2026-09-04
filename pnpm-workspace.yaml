@@ -13,6 +13,18 @@ allowBuilds:
   workerd: true
 
 catalog:
+  "@hono/node-server": ^2.0.10
+  "@codemirror/autocomplete": 6.20.3
+  "@codemirror/language": 6.12.3
+  "@codemirror/state": 6.5.0
+  "@codemirror/view": 6.38.6
+  "@lezer/common": 1.5.2
+  "@lezer/highlight": 1.2.3
+  "@lezer/lr": 1.4.10
+  "@js-temporal/polyfill": ^0.5.1
+  happy-dom: ^20.9.0
+  hono: ^4.13.0
+  yaml: ^2.9.0
   "@logtape/logtape": ^2.0.7
   "@pnpm/find-workspace-dir": ^1000.1.5
   "@std/collections": jsr:1.2.0
@@ -49,6 +61,11 @@ catalog:
 # blockExoticSubdeps refuses. Scope overrides to zotero-types only so we
 # don't shadow these names anywhere else in the graph.
 overrides:
+  # Obsidian and every Workbench host must share CodeMirror class identities.
+  "@codemirror/autocomplete": 6.20.3
+  "@codemirror/language": 6.12.3
+  "@codemirror/state": 6.5.0
+  "@codemirror/view": 6.38.6
   "zotero-types>epubjs": 0.3.93
   "zotero-types>pdfjs-dist": workspace:*
   # ajv pins fast-uri to ^3.0.1; force the patched version (GHSA-7p8r-x3mc-p8w7).

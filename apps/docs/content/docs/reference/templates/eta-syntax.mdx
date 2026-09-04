@@ -7,8 +7,9 @@ updated: "2.0.0"
 
 import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { m } from "@/paraglide/messages.js";
 
-This page documents the Eta template language as configured in ZotLit. Eta templates require the [JavaScript Templates gate](/docs/how-to/enable-javascript-templates) to be enabled. For the default Liquid engine, see [Template syntax](/docs/reference/templates/syntax).
+This page documents the Eta template language as configured in ZotLit. Eta templates require the [{m.settings_template_js_enable_name()} gate](/docs/how-to/enable-javascript-templates) to be enabled. For the default Liquid engine, see [Template syntax](/docs/reference/templates/syntax).
 
 All template data is accessible through a single variable, `zt`. The shape of `zt` depends on the template type: see the [Data reference](/docs/reference/templates/data) for the full property list.
 
@@ -63,12 +64,12 @@ The trailing `-%>` consumes the newline immediately after the opening tag, so ea
 
 ### Global autoTrim setting
 
-Two settings control default trim behavior when the JavaScript Templates gate is on:
+Two settings control default trim behavior when the {m.settings_template_js_enable_name()} gate is on:
 
-- **Trim whitespace before tags:** applies to the opening side of every tag.
-- **Trim whitespace after tags:** applies to the closing side of every tag.
+- **{m.settings_template_trim_leading_name()}:** applies to the opening side of every tag.
+- **{m.settings_template_trim_trailing_name()}:** applies to the closing side of every tag.
 
-Each accepts three values: Keep (no trim), Strip one newline, or Strip all whitespace. Per-tag markers always override the global setting for that tag.
+Each accepts three values: {m.settings_template_trim_disable()} (no trim), {m.settings_template_trim_nl()}, or {m.settings_template_trim_slurp()}. Per-tag markers always override the global setting for that tag.
 
 <Callout type="info" title="Markdown is whitespace-sensitive">
   The default (keep all whitespace) avoids silently breaking Markdown
@@ -102,6 +103,26 @@ The editor autocomplete inserts `= zt. ` when you select the interpolation hint 
 
 `zt` replaces v1's `it` variable. See [Migrate v1 Eta templates](/docs/how-to/migrate-v1-eta-templates) for the full property mapping.
 
+## `renderAnnotation()`: annotation rendering [#render-annotation]
+
+Renders one annotation, available as `zt` inside the annotation template.
+
+```eta
+<%~ renderAnnotation(annotation) %>
+```
+
+The annotation argument is required. A missing or null value raises an error.
+
+For an annotation value, the equivalent native Eta syntax is:
+
+```eta
+<%~ include("annotation", annotation) %>
+```
+
+In a Literature Note Profile, the shortcut and native calls to `annotation` use the Profile's Annotation Section. This required final section starts after the exact standalone line `--- zotlit:annotation ---` and continues to the end of the document. It uses the Profile's language and can be empty.
+
+Calls from shared partials use the calling Profile's section, with isolated annotation data. Direct annotation insertion and Imported Notes use the same section for their applicable Profile. Outside Profile rendering, the shortcut keeps the existing named-template lookup.
+
 ## `include()`: composing templates
 
 `include()` renders another template inline. Pass the template name and an optional data argument:
@@ -113,7 +134,7 @@ The editor autocomplete inserts `= zt. ` when you select the interpolation hint 
 
 The data argument becomes the child template's `zt` variable, direct passthrough not merged with the parent's data. When omitted, the child inherits the parent's `zt`.
 
-The name resolves to a registered template: `"annotation"` finds `zotlit-annotation.eta.md`. It is a name, not a file path.
+The name resolves to a registered template. During Profile rendering, `"annotation"` selects the Profile's Annotation Section. Outside Profile rendering, it finds `zotlit-annotation.eta.md`. Other names keep their existing lookup; each is a name, not a file path.
 
 ### The `content` include
 
@@ -164,6 +185,40 @@ Signature: `embed(link, alias?, subpath?)`
 | ---------------------------------------- | -------------------- |
 | `zt.imgLink` renders `"[[excerpt.png]]"` | `"![[excerpt.png]]"` |
 | `zt.imgLink` is `null`                   | `""`                 |
+
+## `pandocCite()`: Pandoc Citation source [#pandoc-cite]
+
+Formats a Citation Item array as Pandoc Citation source. Pass `zt.citations` directly to the helper.
+
+```eta
+<%= pandocCite(zt.citations) %>
+<%= pandocCite(zt.citations, "prefer-author-in-text") %>
+```
+
+Signature: `pandocCite(citations, form?)`
+
+The optional form is `"normal"` by default.
+
+| Form                      | Output for one item | Description                                                                                                                                            |
+| ------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `"normal"`                | `[@smith2024]`      | Produces a bracketed Citation Cluster.                                                                                                                 |
+| `"prefer-author-in-text"` | `@smith2024`        | Produces an Author-in-text Citation when the first retained item has no prefix and does not suppress the author. Otherwise, produces a normal cluster. |
+
+The helper handles all Citation Item properties used in Pandoc source:
+
+| Input                                             | Output                     |
+| ------------------------------------------------- | -------------------------- |
+| Locator `"3"` with `labelShort` `"p."`            | `[@smith2024, {p. 3}]`     |
+| Prefix `"see "` and suffix `", note 4"`           | `[see @smith2024, note 4]` |
+| `suppressAuthor` set to `true`                    | `[-@smith2024]`            |
+| Citation key `"KX67D9YM?"`                        | `[@{KX67D9YM?}]`           |
+| `"prefer-author-in-text"` with locator `"3"`      | `@smith2024 [{p. 3}]`      |
+| `"prefer-author-in-text"` with prefix `"see "`    | `[see @smith2024]`         |
+| Empty array or items with null citation keys only | `""`                       |
+
+Items with a null citation key are omitted. The helper preserves the order of the remaining items and adds braces around complex citation keys when Pandoc requires them.
+
+Input that cannot be represented without changing its citation structure raises a render error.
 
 ## `suffix()`: filename collision guard [#suffix-filename-collision-guard]
 

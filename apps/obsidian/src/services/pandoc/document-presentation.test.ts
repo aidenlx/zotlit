@@ -1,9 +1,14 @@
 import type { CachedMetadata, MetadataCache, TFile } from "obsidian";
 import { describe, expect, it } from "vitest";
 
+import type { ProfileId } from "@/lib/profile-stamp";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
+import { defaults } from "@/services/settings/schema";
+
 import {
   documentCitationPresentation,
-  documentPresentation,
+  documentPresentation as readPresentation,
   samePresentation,
 } from "./document-presentation";
 
@@ -14,6 +19,33 @@ const STYLE_ID = "http://www.zotero.org/styles/nature";
 /** The presentation a note renders under, which is what most assertions read. */
 function read(frontmatter: Record<string, unknown> | null) {
   return documentPresentation(cacheOf(frontmatter), FILE);
+}
+
+function profileSettings(
+  defaultStyle: string | null,
+  profileStyle?: string | null,
+): Readonly<Settings> {
+  return {
+    ...defaults,
+    "note.default-profile": {
+      ...defaults["note.default-profile"],
+      bindings: {
+        ...defaults["note.default-profile"].bindings,
+        "citation.references-style": defaultStyle,
+      },
+    },
+    profiles: [
+      {
+        id: "Bk3Qn7XvT2Lp" as ProfileId,
+        label: "Research",
+        ...(profileStyle === undefined
+          ? {}
+          : {
+              bindings: { "citation.references-style": profileStyle },
+            }),
+      },
+    ],
+  };
 }
 
 describe("documentPresentation", () => {
@@ -60,6 +92,195 @@ describe("documentPresentation", () => {
     expect(read({ "zotlit-csl": STYLE_ID, lang: "de-DE" })).toEqual({
       kind: "read",
       presentation: { styleId: STYLE_ID, locale: "de-DE" },
+    });
+  });
+
+  it("takes an Imported Note style from its stamped Profile", () => {
+    const settings = profileSettings("default-style", "research-style");
+
+    expect(
+      documentPresentation(
+        cacheOf({
+          "zotero-note-key": "1/NOTE1234",
+          "zotlit-profile": "Bk3Qn7XvT2Lp",
+        }),
+        FILE,
+        settings,
+      ),
+    ).toEqual({
+      kind: "read",
+      presentation: { styleId: "research-style" },
+      profileStyle: {
+        profile: "Bk3Qn7XvT2Lp",
+        target: FILE.path,
+      },
+    });
+  });
+
+  it("inherits an omitted Imported Note Profile style from the default Profile", () => {
+    const settings = profileSettings("default-style");
+
+    expect(
+      documentPresentation(
+        cacheOf({
+          "zotero-note-key": "1/NOTE1234",
+          "zotlit-profile": "Bk3Qn7XvT2Lp",
+        }),
+        FILE,
+        settings,
+      ),
+    ).toEqual({
+      kind: "read",
+      presentation: { styleId: "default-style" },
+      profileStyle: {
+        profile: "Bk3Qn7XvT2Lp",
+        target: FILE.path,
+      },
+    });
+  });
+
+  it("takes a stampless Imported Note style from the default Profile", () => {
+    const settings = profileSettings("default-style");
+
+    expect(
+      documentPresentation(
+        cacheOf({ "zotero-note-key": "1/NOTE1234" }),
+        FILE,
+        settings,
+      ),
+    ).toEqual({
+      kind: "read",
+      presentation: { styleId: "default-style" },
+      profileStyle: { profile: "default", target: FILE.path },
+    });
+  });
+
+  it("keeps a Literature Note on document and vault presentation", () => {
+    const settings = profileSettings("default-style", "research-style");
+
+    expect(
+      documentPresentation(
+        cacheOf({
+          "zotero-key": "1/ITEM1234",
+          "zotlit-profile": "Bk3Qn7XvT2Lp",
+        }),
+        FILE,
+        settings,
+      ),
+    ).toEqual({ kind: "read", presentation: {} });
+  });
+
+  it("keeps an Imported Note's Profile style in charge", () => {
+    const settings = profileSettings("default-style", "research-style");
+
+    expect(
+      documentPresentation(
+        cacheOf({
+          "zotero-note-key": "1/NOTE1234",
+          "zotlit-profile": "Bk3Qn7XvT2Lp",
+          "zotlit-csl": "document-style",
+        }),
+        FILE,
+        settings,
+      ),
+    ).toEqual({
+      kind: "read",
+      presentation: { styleId: "research-style" },
+      profileStyle: {
+        profile: "Bk3Qn7XvT2Lp",
+        target: FILE.path,
+      },
+    });
+  });
+
+  it("resolves an Imported Note's Profile from a full-form stamp", () => {
+    const settings = profileSettings("default-style", "research-style");
+
+    expect(
+      documentPresentation(
+        cacheOf({
+          "zotero-note-key": "1/NOTE1234",
+          "zotlit-profile": "Research (Bk3Qn7XvT2Lp)",
+        }),
+        FILE,
+        settings,
+      ),
+    ).toEqual({
+      kind: "read",
+      presentation: { styleId: "research-style" },
+      profileStyle: { profile: "Bk3Qn7XvT2Lp", target: FILE.path },
+    });
+  });
+
+  it("reads a Profile stamp Obsidian stored as a one-item list", () => {
+    const settings = profileSettings("default-style", "research-style");
+
+    expect(
+      documentPresentation(
+        cacheOf({
+          "zotero-note-key": "1/NOTE1234",
+          "zotlit-profile": ["Bk3Qn7XvT2Lp"],
+        }),
+        FILE,
+        settings,
+      ),
+    ).toEqual({
+      kind: "read",
+      presentation: { styleId: "research-style" },
+      profileStyle: {
+        profile: "Bk3Qn7XvT2Lp",
+        target: FILE.path,
+      },
+    });
+  });
+
+  it("refuses an Imported Note whose Profile is unavailable", () => {
+    const settings = profileSettings("default-style");
+
+    expect(
+      documentPresentation(
+        cacheOf({
+          "zotero-note-key": "1/NOTE1234",
+          "zotlit-profile": "deleted-profile",
+        }),
+        FILE,
+        settings,
+      ),
+    ).toEqual({
+      kind: "unusable",
+      property: "profile",
+      diagnostic: {
+        code: "unknown-literature-note-profile",
+        hint: "Use Switch profile... to choose an available Profile for this note.",
+        recovery: { action: "switch-profile" },
+        stamp: "deleted-profile",
+      },
+      target: FILE.path,
+    });
+  });
+
+  it("refuses a stamp of the selector text itself, never treating it as the default Profile", () => {
+    const settings = profileSettings("default-style");
+
+    expect(
+      documentPresentation(
+        cacheOf({
+          "zotero-note-key": "1/NOTE1234",
+          "zotlit-profile": "default",
+        }),
+        FILE,
+        settings,
+      ),
+    ).toEqual({
+      kind: "unusable",
+      property: "profile",
+      diagnostic: {
+        code: "unknown-literature-note-profile",
+        hint: "Use Switch profile... to choose an available Profile for this note.",
+        recovery: { action: "switch-profile" },
+        stamp: "default",
+      },
+      target: FILE.path,
     });
   });
 
@@ -178,6 +399,23 @@ describe("samePresentation", () => {
       ),
     ).toBe(false);
   });
+
+  it("holds Profile style provenance apart", () => {
+    const presentation = { styleId: STYLE_ID };
+    expect(
+      samePresentation(
+        {
+          kind: "read",
+          presentation,
+          profileStyle: {
+            profile: "Rz9Wm4YfH6Kd" as ProfileId,
+            target: FILE.path,
+          },
+        },
+        { kind: "read", presentation },
+      ),
+    ).toBe(false);
+  });
 });
 
 function cacheOf(
@@ -187,4 +425,16 @@ function cacheOf(
     getFileCache: () =>
       frontmatter === null ? null : ({ frontmatter } as CachedMetadata),
   };
+}
+
+function documentPresentation(
+  cache: Pick<MetadataCache, "getFileCache">,
+  file: TFile,
+  settings?: Settings | null,
+) {
+  return readPresentation(
+    cache,
+    file,
+    settings ? profileReader(settings, cache) : undefined,
+  );
 }

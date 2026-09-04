@@ -1,8 +1,48 @@
+import type { App } from "obsidian";
+
+// Batch-import outcomes and actionable Profile recovery for notices and toasts.
 import * as m from "@/lib/i18n/generated/messages";
-// Pure BatchImportResult → user-facing string mappings for notices and toasts.
+import { profileRecoveryNotice } from "@/lib/profile-recovery";
 import type { BatchRunResult } from "@/services/batch-run";
+import { ProfileAnnotationError } from "@/services/template/service";
 
 import type { BatchImportResult } from "./batch-import";
+import { NoteImportProfileError } from "./service";
+
+export function importedNoteProfileErrorNotice(
+  error: unknown,
+  options: { app?: App; path?: string } = {},
+): string | DocumentFragment | undefined {
+  if (
+    !(
+      error instanceof NoteImportProfileError ||
+      error instanceof ProfileAnnotationError
+    )
+  )
+    return undefined;
+  return options.app &&
+    error.diagnostic.code === "unknown-literature-note-profile"
+    ? profileRecoveryNotice(options.app, error.diagnostic, {
+        path: options.path,
+        imported:
+          error instanceof NoteImportProfileError ? error.imported : true,
+      })
+    : error.message;
+}
+
+function importErrorNotice(
+  _message: string,
+  error: unknown,
+  options: { app?: App },
+): string | DocumentFragment {
+  return (
+    importedNoteProfileErrorNotice(error, options) ?? m.batch_import_failed()
+  );
+}
+type ImportErrorNotice = (
+  message: string,
+  error: unknown,
+) => string | DocumentFragment;
 
 /** Map preflight import outcomes to a notice; modal/cancelled paths are silent. */
 export function batchImportNotice(
@@ -53,34 +93,34 @@ export function batchImportAllNotice(
   }
 }
 
-export function batchImportAllToast(): {
+export function batchImportAllToast(options: { app?: App } = {}): {
   success: (result: BatchImportResult) => string | undefined;
-  error: string;
+  error: ImportErrorNotice;
 } {
   return {
     success: batchImportAllNotice,
-    error: m.batch_import_failed(),
+    error: (message, error) => importErrorNotice(message, error, options),
   };
 }
 
-export function batchImportToast(): {
+export function batchImportToast(options: { app?: App } = {}): {
   success: (result: BatchImportResult) => string | undefined;
-  error: string;
+  error: ImportErrorNotice;
 } {
   return {
     success: batchImportNotice,
-    error: m.batch_import_failed(),
+    error: (message, error) => importErrorNotice(message, error, options),
   };
 }
 
-export function childImportToast(): {
+export function childImportToast(options: { app?: App } = {}): {
   success: (result: BatchImportResult | null) => string | undefined;
-  error: string;
+  error: ImportErrorNotice;
 } {
   return {
     success: (result) =>
       result ? batchImportNotice(result) : m.notice_protocol_item_not_found(),
-    error: m.batch_import_failed(),
+    error: (message, error) => importErrorNotice(message, error, options),
   };
 }
 

@@ -1,8 +1,8 @@
+import type { App } from "obsidian";
 // The Citation Popover: the entries one hovered citation shows, read for the document it is written in.
 
-import type { App } from "obsidian";
-
 import { getLogger } from "@/lib/log";
+import { requestProfileSwitch } from "@/lib/profile-recovery";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type { CitationIndex } from "@/services/citation-index/service";
@@ -16,9 +16,12 @@ import {
   documentCitationPresentation,
   documentPresentation,
 } from "@/services/pandoc/document-presentation";
+import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import type { BibliographyEntry } from "@/services/pandoc/engine";
 import { noteContent } from "@/services/pandoc/inline-content";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import type { ProfileReader } from "@/services/profile/service";
+import type { SettingsService } from "@/services/settings/service";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
 
@@ -35,12 +38,14 @@ export interface CitationPopoverDeps {
   db: Pick<DatabaseService, "state" | "client">;
   citationIndex: Pick<
     CitationIndex,
-    "getDocumentCitationSet" | "resolveCitekey"
+    "getDocumentCitationSet" | "resolveCitekey" | "resolution"
   >;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
   /** The formatted citations of the hovered document, read for this popover. */
   citationText: Pick<CitationText, "load">;
+  settings: Pick<SettingsService, "current">;
+  profile: ProfileReader;
   /** The plugin-wide render cache, which the References Sidebar reads its own entries from. */
   bibliographyRender: Pick<
     BibliographyRenderCache,
@@ -101,6 +106,12 @@ interface PopoverRead {
   blocks: CitationPopoverBlock[];
   /** The note a note-class style wrote for the hovered occurrence. */
   note: Inlines | undefined;
+  profileFailure: ProfilePresentationFailure | undefined;
+  /**
+   * The citekey resolution snapshot could not answer when this read ran, so
+   * an unresolved block is a lookup in progress rather than a missing Item.
+   */
+  pending: boolean;
 }
 
 /**
@@ -128,7 +139,7 @@ async function fill(
     return;
   }
   if (!current()) return;
-  const { blocks, note } = read;
+  const { blocks, note, profileFailure, pending } = read;
   // Every work the hover carries becomes a block, so an empty stack means
   // the document itself could not be read — nothing the popover can say.
   if (blocks.length === 0) {
@@ -138,9 +149,16 @@ async function fill(
   const actions = createCitationPopoverActions({
     open: request.open,
     hide: () => popover.hide(),
+    switchProfile: (path) => requestProfileSwitch(deps.app, path),
   });
   const shown = popover.render(
-    <CitationPopoverContent blocks={blocks} note={note} actions={actions} />,
+    <CitationPopoverContent
+      blocks={blocks}
+      note={note}
+      profileFailure={profileFailure}
+      actions={actions}
+      pending={pending}
+    />,
   );
   logger.debug("Citation popover entries read", {
     path: request.sourcePath,
@@ -154,20 +172,29 @@ async function readBlocks(
   deps: CitationPopoverDeps,
   request: CitationHoverRequest,
 ): Promise<PopoverRead> {
+  await deps.profile.ready;
   const file = deps.app.vault.getFileByPath(request.sourcePath);
   if (!file) {
     logger.debug("Hovered citation sits in no note", {
       path: request.sourcePath,
     });
-    return { blocks: [], note: undefined };
+    return {
+      blocks: [],
+      note: undefined,
+      profileFailure: undefined,
+      pending: false,
+    };
   }
   const { citations } = await deps.citationIndex.getDocumentCitationSet(file);
+  // Read beside the citations it qualifies: this read resolved against the
+  // snapshot as it stood here, and the popover redraws on the next hover.
+  const pending = deps.citationIndex.resolution !== "ready";
   const { sources } = readReferenceSources(deps.db, citations);
   // The hovered note's own Citation Presentation, so the popover shows what the
   // References Sidebar of that note shows — including nothing formatted at all
   // where the note's declared style or language cannot be rendered with.
   const presented = documentCitationPresentation(
-    documentPresentation(deps.app.metadataCache, file),
+    documentPresentation(deps.app.metadataCache, file, deps.profile),
     deps.bibliographyRender.vaultPresentation,
     { citations, works: sources },
   );
@@ -207,6 +234,11 @@ async function readBlocks(
       },
     }),
     note: formatted ? noteContent(formatted.text.content) : undefined,
+    profileFailure:
+      presented.kind === "unusable" && presented.property === "profile"
+        ? presented
+        : undefined,
+    pending,
   };
 }
 

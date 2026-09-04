@@ -118,8 +118,9 @@ jobs:
           pnpm turbo run build --filter=@zotlit/docs
         env:
           # Public Cloudflare Web Analytics site token; without it the built
-          # site serves no beacon.
-          VITE_CF_BEACON_TOKEN: ${{ vars.CF_BEACON_TOKEN }}
+          # site serves no beacon. Each line reports to its own site, so the
+          # two lines' numbers stay apart.
+          VITE_CF_BEACON_TOKEN: ${{ github.ref_name == 'next' && vars.CF_BEACON_TOKEN_BETA || vars.CF_BEACON_TOKEN }}
 
       - name: Deploy
         run: |

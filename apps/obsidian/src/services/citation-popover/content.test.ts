@@ -6,8 +6,10 @@ import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { ambiguousCandidates } from "@/services/citation-index/__fixtures__/ambiguous-candidates";
 import type { Inlines } from "@/services/pandoc/ast";
+import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 
 import type { CitationPopoverActions } from "./actions";
 import type {
@@ -30,6 +32,7 @@ const actions: CitationPopoverActions = {
   onOpenInZotero: vi.fn(),
   onOpenAttachment: vi.fn(),
   onDone: vi.fn(),
+  onSwitchProfile: vi.fn(),
 };
 
 const entry = (
@@ -65,13 +68,26 @@ afterEach(async () => {
 async function render(
   blocks: readonly CitationPopoverBlock[],
   note?: Inlines,
+  {
+    profileFailure,
+    pending,
+  }: {
+    profileFailure?: ProfilePresentationFailure;
+    pending?: boolean;
+  } = {},
 ): Promise<HTMLElement> {
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
   await act(() => {
     root!.render(
-      createElement(CitationPopoverContent, { blocks, note, actions }),
+      createElement(CitationPopoverContent, {
+        blocks,
+        note,
+        profileFailure,
+        actions,
+        pending,
+      }),
     );
   });
   return container;
@@ -87,6 +103,30 @@ const iconsOf = (block: HTMLElement): (string | null)[] =>
   );
 
 describe("CitationPopoverContent", () => {
+  it("shows an unavailable Imported Note Profile and its recovery", async () => {
+    const container = await render([entry("doe2024")], undefined, {
+      profileFailure: {
+        kind: "unusable",
+        property: "profile",
+        diagnostic: unknownProfileDiagnostic("Reading notes (Bk3Qn7XvT2Lp)"),
+        target: "Imported/Research.md",
+      },
+    });
+
+    const diagnostic = container.querySelector(
+      "[data-citation-popover-profile-error]",
+    );
+    expect(diagnostic?.textContent).toContain("Reading notes (Bk3Qn7XvT2Lp)");
+    const recovery = diagnostic?.querySelector("button");
+    expect(recovery).not.toBeNull();
+    expect(recovery?.textContent).toBe(m.profile_switch_recovery());
+    recovery?.click();
+    expect(actions.onSwitchProfile).toHaveBeenCalledWith(
+      "Imported/Research.md",
+    );
+    expect(actions.onDone).toHaveBeenCalled();
+  });
+
   it("stacks one block per work, in the order the citation names them", async () => {
     const container = await render([entry("smith2025"), entry("doe2024")]);
 
@@ -196,6 +236,20 @@ describe("CitationPopoverContent", () => {
       m.references_citekey_unresolved({ citekey: "typo2024" }),
     );
     expect(iconsOf(unresolved!)).toEqual([]);
+  });
+
+  it("reads an unresolved citekey as a lookup in progress while resolution is pending", async () => {
+    const container = await render(
+      [{ kind: "unresolved", citekey: "doe2024" }],
+      undefined,
+      { pending: true },
+    );
+
+    const [block] = blocksOf(container);
+    expect(block!.textContent).toBe(
+      m.references_citekey_pending({ citekey: "doe2024" }),
+    );
+    expect(block!.querySelector(".zt\\:text-destructive")).toBeNull();
   });
 
   it("explains an ambiguous citekey by the candidates it names", async () => {

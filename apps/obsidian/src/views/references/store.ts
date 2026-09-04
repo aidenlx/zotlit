@@ -7,10 +7,11 @@ import { createStore } from "zustand/vanilla";
 import type { AmbiguousCandidatesOf } from "@/services/citation-index/ambiguity";
 import type {
   Citation,
+  CitationKeyResolution,
   DocumentCitationError,
   ReferenceSource,
 } from "@/services/citation-index/service";
-import type { UnusableProperty } from "@/services/pandoc/document-presentation";
+import type { DocumentPresentationFailure } from "@/services/pandoc/document-presentation";
 import type { PandocEngineStatus } from "@/services/pandoc/service";
 
 import { buildReferenceEntries } from "./entries";
@@ -76,9 +77,15 @@ export interface ReferencesState {
    * which is a repair on that note rather than on a vault selection; `null`
    * while nothing about that note is at fault.
    */
-  documentPresentationError: UnusableProperty | null;
+  documentPresentationError: DocumentPresentationFailure | null;
   /** `false` while the Zotero database cannot be read. */
   dbReady: boolean;
+  /**
+   * How well citation keys resolved when the list was built. Anything but
+   * `ready` presents an unresolved row as a lookup in progress rather than a
+   * missing Item.
+   */
+  citekeyResolution: CitationKeyResolution;
   /** Whether the visible list can be copied, and why not. */
   copy: ReferencesCopyState;
 }
@@ -93,6 +100,7 @@ export function createReferencesStore() {
     formattingFailed: false,
     documentPresentationError: null,
     dbReady: false,
+    citekeyResolution: "resolving",
     copy: { kind: "blocked", reason: "no-note" },
   }));
 }

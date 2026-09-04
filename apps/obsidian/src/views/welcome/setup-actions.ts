@@ -20,7 +20,7 @@ export interface SetupActions {
 
 export interface SetupActionsDeps {
   app: App;
-  settings: Pick<SettingsService, "update">;
+  settings: Pick<SettingsService, "updateDefaultLiteratureNoteProfileBindings">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "setDataDir">;
   /** Plugin id — prefixes command ids and identifies the settings tab. */
   pluginId: string;
@@ -33,7 +33,9 @@ export function createSetupActions(deps: SetupActionsDeps): SetupActions {
     },
     pickFolder: () => {
       new LiteratureFolderModal(deps.app, (folder) => {
-        deps.settings.update({ "note.literature-folder": folder.path });
+        deps.settings.updateDefaultLiteratureNoteProfileBindings({
+          "note.literature-folder": folder.path,
+        });
       }).open();
     },
     searchLibrary: () => {

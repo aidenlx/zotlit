@@ -1,6 +1,6 @@
-import "./style.css";
 import type { App, Plugin } from "obsidian";
 
+import "./style.css";
 import * as m from "@/lib/i18n/generated/messages";
 import { revealSetting } from "@/lib/open-settings";
 import type { CitationIndex } from "@/services/citation-index/service";
@@ -10,6 +10,7 @@ import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
+import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 
 import { REFERENCES_VIEW_TYPE, ReferencesView } from "./view";
@@ -21,6 +22,7 @@ type ReferencesPlugin = Pick<
 >;
 
 export interface ReferencesRegistrationDeps {
+  profile: ProfileReader;
   app: App;
   db: DatabaseService;
   citationIndex: CitationIndex;
@@ -38,6 +40,7 @@ export function registerReferencesView(
 ): void {
   const viewDeps: ReferencesViewDeps = {
     app: deps.app,
+    profile: deps.profile,
     db: deps.db,
     citationIndex: deps.citationIndex,
     libraryScope: deps.libraryScope,
@@ -45,6 +48,7 @@ export function registerReferencesView(
     citekeyEditor: deps.citekeyEditor,
     pandocEngine: deps.pandocEngine,
     bibliographyRender: deps.bibliographyRender,
+    settings: deps.settings,
     openSettings: () => {
       revealSetting(
         plugin.app,

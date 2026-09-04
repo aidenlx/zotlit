@@ -27,7 +27,7 @@ import type {
 import { parseNote } from "./note-parser";
 import type { ParseNoteDeps } from "./note-parser";
 
-const packageRoot = getPackageRoot();
+const packageRoot = getPackageRoot(import.meta.filename);
 
 // Keep the real DOM-free parsers; only the DB-backed legs are stubbed per test.
 vi.mock("@zotlit/db", async (importOriginal) => {
@@ -263,6 +263,70 @@ describe("highlight annotation", () => {
         "(zotero://open/library/items/T2P8T29G?annotation=C2DF35H3&page=62)",
     );
   });
+
+  it.each(["#e56eee", "#aaaaaa", "#a6507b"])(
+    "maps %s excerpts to a custom emoji and preserves the backlink",
+    (color) => {
+      const md = parseNote(
+        TurndownService,
+        note(
+          annot(
+            "highlight",
+            {
+              attachmentURI: ATTACHMENT,
+              annotationKey: "C2DF35H3",
+              color,
+              pageLabel: "62",
+            },
+            "Highlighted text",
+          ),
+        ),
+        {
+          ...deps,
+          useColoredHighlightSyntax: true,
+          highlightMappings: {
+            magenta: { output: "custom", customEmoji: "👩‍🔬" },
+            gray: { output: "custom", customEmoji: "👩‍🔬" },
+            plum: { output: "custom", customEmoji: "👩‍🔬" },
+          },
+        },
+      );
+
+      expect(md).toBe(
+        "[==👩‍🔬Highlighted text==](zotero://open/library/items/T2P8T29G?annotation=C2DF35H3&page=62)",
+      );
+    },
+  );
+
+  it.each(["", "🔴🔵"])(
+    "keeps linked HTML for an incomplete custom mapping: %j",
+    (customEmoji) => {
+      const md = parseNote(
+        TurndownService,
+        note(
+          annot(
+            "highlight",
+            {
+              attachmentURI: ATTACHMENT,
+              annotationKey: "C2DF35H3",
+              color: "#2ea8e5",
+            },
+            "Highlighted text",
+          ),
+        ),
+        {
+          ...deps,
+          useColoredHighlightSyntax: true,
+          highlightMappings: { blue: { output: "custom", customEmoji } },
+        },
+      );
+
+      expect(md).toContain('[<mark class="zotlit-hl" data-color="blue"');
+      expect(md).toContain(
+        "](zotero://open/library/items/T2P8T29G?annotation=C2DF35H3)",
+      );
+    },
+  );
 
   it("keeps linked HTML for an unsupported color when enabled", () => {
     const md = parseNote(
@@ -674,7 +738,7 @@ describe("annotation template mode", () => {
       ...deps,
       renderAnnotationParagraph,
     });
-    expect(md).toContain("[@Hensher2011, p. 62]");
+    expect(md).toContain("[@Hensher2011, {p. 62}]");
   });
 });
 
@@ -894,7 +958,7 @@ describe("citation resolution", () => {
           facade.render("cite", citekeysToCiteTemplateData(items)),
       },
     );
-    expect(md).toContain("[-@Hensher2011, p. 62]");
+    expect(md).toContain("[-@Hensher2011, {p. 62}]");
   });
 
   it("renders suppress-author as a Pandoc -@key prefix", () => {

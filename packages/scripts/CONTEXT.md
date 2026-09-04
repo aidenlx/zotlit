@@ -29,6 +29,11 @@ _Avoid_: dev vault, test vault
 **Scope Case**:
 A named, saved Library Scope state (all, available, partial, unavailable).
 
+**Vault Case**:
+A named, saved Fixture Vault state beside the Library Scope — settings file,
+notes, Profiles, and template files (configured, fresh, upgrader).
+_Avoid_: vault preset, vault scenario
+
 **End-to-end Run**:
 The plugin running in a real Obsidian window, reading the Fixture's Zotero
 data directory from disk.

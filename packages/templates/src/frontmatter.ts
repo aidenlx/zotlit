@@ -1,5 +1,6 @@
 import { Context, toValueSync, Value } from "liquidjs";
 import type { Liquid } from "liquidjs";
+import { stringify as stringifyYaml } from "yaml";
 
 import { basename } from "./basename";
 import type {
@@ -7,6 +8,26 @@ import type {
   FrontmatterLanguage,
   FrontmatterMergeStrategy,
 } from "./constants";
+import {
+  assertFrontmatterOutputDomain,
+  assertFrontmatterSpreadOutput,
+  ManagedFrontmatterError,
+  renderJsonEFrontmatterValue,
+} from "./frontmatter-json-e";
+import type { FrontmatterJsonValue } from "./frontmatter-json-e";
+import { FRONTMATTER_ABSENT } from "./frontmatter-merge";
+import type { EvaluatedFrontmatterField } from "./frontmatter-merge";
+import type { ManagedFrontmatterEntry } from "./literature-note-template";
+
+export {
+  FrontmatterJsonEError,
+  renderJsonEFrontmatterValue,
+} from "./frontmatter-json-e";
+export type {
+  FrontmatterJsonValue,
+  RenderJsonEFrontmatterValueOptions,
+} from "./frontmatter-json-e";
+export { FRONTMATTER_ABSENT } from "./frontmatter-merge";
 
 type BasenameHelper = (path: string, ext?: string) => string;
 type FrontmatterEvaluator = (zt: object, basename: BasenameHelper) => unknown;
@@ -16,6 +37,43 @@ export interface CompiledFrontmatterField {
   key: string;
   fn: FrontmatterEvaluator;
   merge: FrontmatterMergeStrategy;
+}
+
+type ManagedFrontmatterEvaluator = (
+  zt: object,
+  operationTimestamp: Temporal.Instant,
+) => unknown;
+
+export type CompiledManagedFrontmatterEntry = {
+  readonly position: number;
+  readonly merge: FrontmatterMergeStrategy;
+} & (
+  | { readonly key: string; readonly fn: ManagedFrontmatterEvaluator }
+  | {
+      readonly key: undefined;
+      readonly fn: (
+        zt: object,
+        operationTimestamp: Temporal.Instant,
+      ) => Record<string, FrontmatterJsonValue> | typeof FRONTMATTER_ABSENT;
+    }
+);
+
+export interface CompiledManagedFrontmatter {
+  readonly compiled: readonly CompiledManagedFrontmatterEntry[];
+  readonly inertKeys: readonly string[];
+}
+
+export interface ManagedFrontmatterEvaluationError {
+  readonly key: string;
+  /** 1-based list position of the entry that raised it. */
+  readonly position: number;
+  readonly error: unknown;
+}
+
+export interface ManagedFrontmatterEvaluation {
+  readonly values: readonly EvaluatedFrontmatterField[];
+  readonly keys: readonly string[];
+  readonly errors: readonly ManagedFrontmatterEvaluationError[];
 }
 
 export interface CompileFrontmatterOptions {
@@ -29,6 +87,126 @@ export interface CompiledFrontmatter {
   compiled: CompiledFrontmatterField[];
   /** Keys of javascript fields skipped (never compiled) because the gate is off. */
   inertKeys: string[];
+}
+
+export function compileManagedFrontmatterEntries(
+  entries: readonly ManagedFrontmatterEntry[],
+  options: CompileFrontmatterOptions,
+): CompiledManagedFrontmatter {
+  const compiled: CompiledManagedFrontmatterEntry[] = [];
+  const inertKeys: string[] = [];
+  for (const [index, entry] of entries.entries()) {
+    const position = index + 1;
+    if ("js" in entry && !options.javascript) {
+      inertKeys.push(entry.key ?? `entry #${position}`);
+      continue;
+    }
+
+    if (entry.key === undefined && "js" in entry) {
+      const evaluator = toEvaluator(entry.js);
+      compiled.push({
+        key: undefined,
+        position,
+        merge: entry.merge,
+        fn: (zt) => {
+          const value = evaluator(zt, basename);
+          assertFrontmatterSpreadOutput(value, position);
+          return value;
+        },
+      });
+      continue;
+    }
+    if (entry.key === undefined && "value" in entry) {
+      compiled.push({
+        key: undefined,
+        position,
+        merge: entry.merge,
+        fn: (zt, operationTimestamp) =>
+          renderJsonEFrontmatterValue(entry.value, {
+            position,
+            zt,
+            operationTimestamp,
+          }),
+      });
+      continue;
+    }
+
+    let fn: ManagedFrontmatterEvaluator;
+    if ("expr" in entry) {
+      const evaluator = toLiquidEvaluator(entry.expr, options.liquid);
+      fn = (zt) => evaluator(zt, basename);
+    } else if ("js" in entry) {
+      const evaluator = toEvaluator(entry.js);
+      fn = (zt) => evaluator(zt, basename);
+    } else {
+      fn = (zt, operationTimestamp) =>
+        renderJsonEFrontmatterValue(entry.value, {
+          key: entry.key,
+          position,
+          zt,
+          operationTimestamp,
+        });
+    }
+    if (entry.key !== undefined) {
+      compiled.push({ key: entry.key, position, merge: entry.merge, fn });
+    }
+  }
+  return { compiled, inertKeys };
+}
+
+export function evalManagedFrontmatterEntries(
+  entries: readonly CompiledManagedFrontmatterEntry[],
+  zt: object,
+  operationTimestamp: Temporal.Instant,
+): ManagedFrontmatterEvaluation {
+  const values: EvaluatedFrontmatterField[] = [];
+  const keys = new Set<string>();
+  const errors: ManagedFrontmatterEvaluationError[] = [];
+  for (const entry of entries) {
+    try {
+      if (entry.key === undefined) {
+        const value = entry.fn(zt, operationTimestamp);
+        if (value === FRONTMATTER_ABSENT) continue;
+        for (const [key, generated] of Object.entries(value)) {
+          values.push({
+            key,
+            merge: entry.merge,
+            value: generated,
+            position: entry.position,
+          });
+          keys.add(key);
+        }
+        continue;
+      }
+      const value = entry.fn(zt, operationTimestamp);
+      if (value !== undefined && value !== FRONTMATTER_ABSENT) {
+        assertFrontmatterOutputDomain(value);
+        keys.add(entry.key);
+      }
+      values.push({
+        key: entry.key,
+        merge: entry.merge,
+        value,
+        position: entry.position,
+      });
+    } catch (cause) {
+      const error =
+        cause instanceof ManagedFrontmatterError
+          ? cause
+          : new ManagedFrontmatterError(
+              entry,
+              `failed evaluation: ${cause instanceof Error ? cause.message : String(cause)}`,
+              { cause },
+            );
+      const key =
+        entry.key ??
+        (error.key === undefined
+          ? `entry #${entry.position}`
+          : `'${error.key}' (entry #${entry.position})`);
+      errors.push({ key, position: entry.position, error });
+    }
+  }
+  return { values, keys: [...keys], errors };
 }
 
 /**
@@ -146,16 +324,44 @@ export function evalFrontmatterFields(
   zt: object,
   onError?: (key: string, error: unknown) => void,
 ): Record<string, unknown> {
-  const fm: Record<string, unknown> = {};
+  const fm: Record<string, unknown> = Object.create(null);
   for (const field of fields) {
     try {
       const value = field.fn(zt, basename);
-      if (value !== undefined) fm[field.key] = value;
+      if (value !== undefined) defineFrontmatterValue(fm, field.key, value);
     } catch (error) {
       onError?.(field.key, error);
     }
   }
   return fm;
+}
+
+/** Serialize selected keys first, preserving their explicit order. */
+export function stringifyFrontmatterInOrder(
+  values: Readonly<Record<string, unknown>>,
+  keys: readonly string[],
+): string {
+  const ordered = new Map<string, unknown>();
+  for (const key of keys) {
+    if (Object.hasOwn(values, key)) ordered.set(key, values[key]);
+  }
+  for (const key of Object.keys(values)) {
+    if (!ordered.has(key)) ordered.set(key, values[key]);
+  }
+  return stringifyYaml(ordered);
+}
+
+function defineFrontmatterValue(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
 }
 
 export { basename };

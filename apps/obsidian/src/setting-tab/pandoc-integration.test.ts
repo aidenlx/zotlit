@@ -14,7 +14,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("pandocIntegrationDefinition", () => {
   it("shows the tutorial, pair-save action, and installed Pandoc CLI Guide in order", () => {
     const definition = pandocIntegrationDefinition({
-      plugin: { manifest: { version: "2.0.1-test" } },
+      manifest: { version: "2.0.1-test" },
     } as SettingTabContext) as SettingDefinitionGroup<SettingsKey>;
 
     expect(definition.heading).toBe(
@@ -43,7 +43,7 @@ describe("pandocIntegrationDefinition", () => {
     vi.stubGlobal("window", { open });
 
     const definition = pandocIntegrationDefinition({
-      plugin: { manifest: { version: "2.0.1-test" } },
+      manifest: { version: "2.0.1-test" },
     } as SettingTabContext) as SettingDefinitionGroup<SettingsKey>;
     const tutorial = definition.items![0]!;
     expect(tutorial).toMatchObject({

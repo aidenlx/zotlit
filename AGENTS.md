@@ -20,6 +20,7 @@ Turborepo + pnpm monorepo for **ZotLit**, an Obsidian plugin that integrates Zot
 - `mise` pins to Node 26 version (see `mise.toml`). Its `idiomatic_version_file_enable_tools = ["pnpm"]` setting also activates pnpm at the version declared in root `package.json`'s `packageManager` field.
 - `mise run init` initializes git submodules, including `packages/obsidian-api` and `packages/zotero-types/zotero-schema`.
 - Resolve tool availability from the current workspace environment. Use `pnpm exec` for workspace binaries; use the Mise-managed toolchain defined by `mise.toml`.
+- `agent-browser` (>= 0.31.1) — browser automation via CDP. Run `agent-browser skills get core` once per session for the version-matched usage guide. Session conventions and gotchas: [`docs/agents/agent-browser.md`](docs/agents/agent-browser.md).
 
 ## Commands
 
@@ -58,7 +59,7 @@ Write reports to the user in ASD-STE100 Simplified Technical English.
 
 Every changed line traces to the user's request. Leave adjacent code, comments, and formatting as found. Remove only orphans YOUR changes created; mention pre-existing dead code, don't delete it.
 
-## Code conventions
+## Code standard
 
 Authoring conventions live in [`policies/`](policies/), one topic per file:
 
@@ -66,6 +67,7 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 - [deep modules](policies/pure-logic.md) — default to one cohesive module; split only with concrete payoff
 - [comments](policies/comments.md) — JSDoc conventions, module-level comments
 - [function-parameters](policies/function-parameters.md) — max 3 positional, options object for the rest
+- [tautological tests](policies/tautological-tests.md) — assert against hand-derived expectations, not mirrored implementation
 - [resource-disposal](policies/resource-disposal.md) — scope-bound `using`, safe-constructor, destructuring gotcha
 - [regex](policies/regex.md) — arkregex for typed captures; `/arkregex` skill
 - [event-naming](policies/event-naming.md) — nanoevents event names are dash-case, not camelCase

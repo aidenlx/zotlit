@@ -16,6 +16,8 @@ import { gitConfig, repoSlug } from "./shared";
 const ZOTERO_ADDON_ID = "zotlit@aidenlx.site";
 /** Release facts may lag GitHub by up to an hour. */
 const CACHE_SECONDS = 3600;
+/** An unavailable release-data host must not hold a page or build open. */
+const FETCH_TIMEOUT_MS = 5_000;
 
 /** The one host the rate-limit token belongs to. */
 const API_HOST = "api.github.com";
@@ -65,6 +67,7 @@ function isApiRequest(url: string) {
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
     const response = await fetch(url, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       headers: {
         // GitHub's API rejects a request that names no client.
         "user-agent": `${gitConfig.user}-${gitConfig.repo}-docs`,

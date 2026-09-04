@@ -1,7 +1,6 @@
+import { writeFile } from "node:fs/promises";
 // Registers the built-in export command and drives one export end to end:
 // modal → resolution → bibliography → engine → chosen destination.
-
-import { writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { requestUrl } from "obsidian";
 import type { App, FileSystemAdapter, Plugin, TFile } from "obsidian";
@@ -12,6 +11,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice, LazyNotice } from "@/lib/notice";
+import { requestProfileSwitch } from "@/lib/profile-recovery";
 import type { DatabaseService } from "@/services/database/service";
 import { resolveIndexedKey } from "@/services/note-index/service";
 import {
@@ -32,6 +32,7 @@ import type { ExportPorts } from "@/services/pandoc/export";
 import type { PandocEngineService } from "@/services/pandoc/service";
 import { resolveInstalledStyle } from "@/services/pandoc/styles";
 import type { CslStyleRequest } from "@/services/pandoc/styles";
+import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -46,6 +47,7 @@ export interface PandocExportDeps {
   pandocEngine: Pick<PandocEngineService, "getStatus" | "getEngine">;
   zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir" | "httpPort" | "get">;
   settings: Pick<SettingsService, "current">;
+  profile: ProfileReader;
   /** Opens the settings page the engine install lives on. */
   openSettings: () => void;
 }
@@ -76,6 +78,7 @@ export async function runPandocExport(
   file: TFile,
   deps: PandocExportDeps,
 ): Promise<void> {
+  await deps.profile.ready;
   const { app, pandocEngine, zoteroPref, settings } = deps;
   if (pandocEngine.getStatus().kind !== "installed") {
     showEngineMissing(deps.openSettings);
@@ -83,14 +86,23 @@ export async function runPandocExport(
   }
   // A note whose own presentation property names nothing stops here: a vault
   // selection never stands in for it, in the dialog or in the exported run.
-  const declared = documentPresentation(app.metadataCache, file);
+  const declared = documentPresentation(app.metadataCache, file, deps.profile);
   if (declared.kind === "unusable") {
-    showExportFailure({
-      kind:
-        declared.property === "language"
-          ? "document-language-invalid"
-          : "document-style-invalid",
-    });
+    showExportFailure(
+      declared.property === "profile"
+        ? {
+            kind: "document-profile-invalid",
+            stamp: declared.diagnostic.stamp,
+            target: declared.target,
+            recover: () => requestProfileSwitch(app, declared.target),
+          }
+        : {
+            kind:
+              declared.property === "language"
+                ? "document-language-invalid"
+                : "document-style-invalid",
+          },
+    );
     return;
   }
   // Where this export starts: the document's own effective Citation
@@ -123,7 +135,13 @@ export async function runPandocExport(
     { documentStyle: choices.styleId === declared.presentation.styleId },
   );
   if (style === null) {
-    showExportFailure({ kind: "document-style-invalid" });
+    showExportFailure(
+      declared.profileStyle &&
+        choices.styleId === declared.presentation.styleId &&
+        typeof choices.styleId === "string"
+        ? { kind: "profile-style-invalid", styleId: choices.styleId }
+        : { kind: "document-style-invalid" },
+    );
     return;
   }
 

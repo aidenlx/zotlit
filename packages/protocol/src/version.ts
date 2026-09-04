@@ -4,7 +4,7 @@ export const PROTOCOL_VERSION_HEADER = "X-Zotlit-Protocol-Version";
 // (notify.ts, batchUpdateRequestSchema, importNotesRequestSchema,
 // noteStatusResponseSchema). URL actions are unversioned and permanent, so a
 // URL-only change never bumps this.
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 8;
 
 export type ProtocolVersionCheck =
   | { ok: true; received: number }

@@ -27,6 +27,7 @@ export interface CitationPopoverActions {
   onOpenAttachment: (block: CitationEntryBlock, event: MouseEvent) => void;
   /** Every action leaves the popover closed over what it just opened. */
   onDone: () => void;
+  onSwitchProfile: (path: string) => void;
 }
 
 export interface CitationPopoverActionDeps {
@@ -34,11 +35,13 @@ export interface CitationPopoverActionDeps {
   open: (citekey: string, pane: NavigationPane) => void;
   /** Hide the popover the entries are shown in. */
   hide: () => void;
+  switchProfile: (path: string) => void;
 }
 
 export function createCitationPopoverActions({
   open,
   hide,
+  switchProfile,
 }: CitationPopoverActionDeps): CitationPopoverActions {
   return {
     onOpenNote(block, event) {
@@ -65,6 +68,7 @@ export function createCitationPopoverActions({
       openAttachments(block.attachments, event);
     },
     onDone: hide,
+    onSwitchProfile: switchProfile,
   };
 }
 

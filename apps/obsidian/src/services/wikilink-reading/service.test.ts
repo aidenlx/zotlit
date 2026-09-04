@@ -3,6 +3,8 @@ import { Keymap, MarkdownView } from "obsidian";
 import type { MarkdownPostProcessor } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { FormattedOccurrence } from "@/services/citation-text/present";
@@ -10,6 +12,7 @@ import type {
   CitationHoverRequest,
   NavigationPane,
 } from "@/services/citekey-navigation";
+import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -39,6 +42,7 @@ interface Harness extends AsyncDisposable {
   renderHtml: (html: string) => Promise<HTMLElement>;
   /** Every Citation Popover the surface asked for. */
   requests: CitationHoverRequest[];
+  switchRequests: string[];
   /** Every Literature Note the popover's own open action reached for. */
   opened: [citekey: string, pane: NavigationPane][];
   /** Every gesture Obsidian's own delegated listeners would have answered. */
@@ -56,12 +60,15 @@ async function harness({
   citekeys,
   sourcePath = "note.md",
   pending,
+  presentationFailure,
   ...overrides
 }: Partial<Settings> & {
   /** The formatted citation the shared text holds, by its {@link held} identity. */
   formatted?: Record<string, string>;
   /** Keep the citation-text read pending. */
   pending?: boolean;
+  /** An unavailable Imported Note Profile held with the document text. */
+  presentationFailure?: ProfilePresentationFailure;
   /** The citekey resolution snapshot's answer for each Indexed Key. */
   citekeys?: Record<string, string>;
   /** The file that owns each rendered section. */
@@ -69,11 +76,16 @@ async function harness({
 } = {}): Promise<Harness> {
   const settings = new SettingsStub(overrides);
   const noteIndex = new NoteIndexStub();
-  const citationText = new CitationTextStub(formatted ?? {}, pending);
+  const citationText = new CitationTextStub(
+    formatted ?? {},
+    pending,
+    presentationFailure,
+  );
   const citationIndex = new CitationIndexStub(
     citekeys ?? { [WANG_KEY]: "wang2020" },
   );
   const requests: CitationHoverRequest[] = [];
+  const switchRequests: string[] = [];
   const opened: [citekey: string, pane: NavigationPane][] = [];
   const native: MouseEvent[] = [];
   let rerenders = 0;
@@ -92,7 +104,11 @@ async function harness({
   });
   const service = new WikilinkReading({
     app: {
-      workspace: { getLeavesOfType: () => [{ view }] },
+      workspace: {
+        getLeavesOfType: () => [{ view }],
+        trigger: (_name: string, request: { path: string }) =>
+          switchRequests.push(request.path),
+      },
       vault: { getFileByPath: (path: string) => ({ path }) },
       metadataCache: {
         getFirstLinkpathDest: (linkpath: string, origin: string) =>
@@ -128,6 +144,7 @@ async function harness({
     citationText,
     citationIndex,
     requests,
+    switchRequests,
     opened,
     native,
     render: async (linktext) => {
@@ -210,7 +227,9 @@ describe("WikilinkReading rendering", () => {
   it("exposes both literal hooks when it renders a Literature Note Citation", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
-      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
+      formatted: {
+        [held("[@wang2020, {p. 7}]")]: "(Wang et al. 2020, p. 7)",
+      },
     });
 
     const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
@@ -220,11 +239,43 @@ describe("WikilinkReading rendering", () => {
     expect(rendered?.classList.contains("zt-literature-note-link")).toBe(true);
   });
 
+  it("names an unavailable Imported Note Profile with an Obsidian tooltip", async () => {
+    await using harnessed = await harness({
+      "citation.wikilink-citations": true,
+      presentationFailure: {
+        kind: "unusable",
+        property: "profile",
+        diagnostic: unknownProfileDiagnostic("deleted-profile"),
+        target: "Imported/Research.md",
+      },
+    });
+
+    const root = await harnessed.renderSection(WANG);
+    const link = root.querySelector<HTMLElement>(
+      '[data-citation-presentation-error="profile"]',
+    );
+
+    expect(link?.getAttribute("aria-label")).toContain("deleted-profile");
+    expect(link?.getAttribute("aria-label")).toBe(
+      m.notice_imported_note_profile_unknown({
+        stamp: "deleted-profile",
+        target: "Imported/Research.md",
+      }),
+    );
+    const recovery = root.querySelector<HTMLButtonElement>(
+      "[data-profile-recovery]",
+    );
+    expect(recovery?.textContent).toBe(m.profile_switch_recovery());
+    recovery?.click();
+    expect(harnessed.switchRequests).toEqual(["Imported/Research.md"]);
+    expect(link?.title).toBe("");
+  });
+
   it("exposes the combined literal hooks once on a rendered Citation Run", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
       formatted: {
-        [held("[@wang2020, p. 7; @wang2020, p. 9]", [WANG_KEY, WANG_KEY])]:
+        [held("[@wang2020, {p. 7}; @wang2020, {p. 9}]", [WANG_KEY, WANG_KEY])]:
           "(Wang et al. 2020, pp. 7, 9)",
       },
     });
@@ -288,7 +339,9 @@ describe("WikilinkReading rendering", () => {
   it("shows the citation a style formatted once the shared text holds one", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
-      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
+      formatted: {
+        [held("[@wang2020, {p. 7}]")]: "(Wang et al. 2020, p. 7)",
+      },
     });
 
     expect(await harnessed.render(`${WANG}#cite:locator=7`)).toBe(
@@ -300,7 +353,9 @@ describe("WikilinkReading rendering", () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": true,
       "citation.show-formatted": false,
-      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
+      formatted: {
+        [held("[@wang2020, {p. 7}]")]: "(Wang et al. 2020, p. 7)",
+      },
     });
 
     const root = await harnessed.renderSection(`${WANG}#cite:locator=7`);
@@ -350,7 +405,9 @@ describe("WikilinkReading hover", () => {
   const rendering = (overrides: Parameters<typeof harness>[0] = {}) =>
     harness({
       "citation.wikilink-citations": true,
-      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
+      formatted: {
+        [held("[@wang2020, {p. 7}]")]: "(Wang et al. 2020, p. 7)",
+      },
       ...overrides,
     });
 
@@ -443,7 +500,9 @@ describe("WikilinkReading click", () => {
   const rendering = (overrides: Parameters<typeof harness>[0] = {}) =>
     harness({
       "citation.wikilink-citations": true,
-      formatted: { [held("[@wang2020, p. 7]")]: "(Wang et al. 2020, p. 7)" },
+      formatted: {
+        [held("[@wang2020, {p. 7}]")]: "(Wang et al. 2020, p. 7)",
+      },
       ...overrides,
     });
 
@@ -612,19 +671,26 @@ describe("WikilinkReading rerender", () => {
 interface HeldText {
   formatted: Map<string, FormattedOccurrence[]>;
   summaries: Map<string, string>;
+  presentationFailure?: ProfilePresentationFailure;
 }
 
 class CitationTextStub {
   readonly #formatted: Record<string, string>;
   readonly #pending: boolean;
+  readonly #presentationFailure: ProfilePresentationFailure | undefined;
   readonly #listeners: Record<"changed" | "invalidated", Set<() => void>> = {
     changed: new Set(),
     invalidated: new Set(),
   };
 
-  constructor(formatted: Record<string, string>, pending = false) {
+  constructor(
+    formatted: Record<string, string>,
+    pending = false,
+    presentationFailure?: ProfilePresentationFailure,
+  ) {
     this.#formatted = formatted;
     this.#pending = pending;
+    this.#presentationFailure = presentationFailure;
   }
 
   load(): Promise<HeldText> {
@@ -641,7 +707,13 @@ class CitationTextStub {
     for (const [source, text] of Object.entries(this.#formatted)) {
       formatted.set(source, occurrences(rendered(text)));
     }
-    return { formatted, summaries: new Map() };
+    return {
+      formatted,
+      summaries: new Map(),
+      ...(this.#presentationFailure
+        ? { presentationFailure: this.#presentationFailure }
+        : {}),
+    };
   }
 
   on(event: "changed" | "invalidated", cb: () => void): () => void {

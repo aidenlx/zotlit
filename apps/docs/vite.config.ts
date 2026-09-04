@@ -1,4 +1,5 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
+import { paraglideVitePlugin } from "@inlang/paraglide-js";
 import tailwindcss from "@tailwindcss/vite";
 import { devtools } from "@tanstack/devtools-vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
@@ -18,6 +19,12 @@ import {
 } from "./src/lib/v1-redirects.js";
 
 const packageRoot = import.meta.dirname;
+// Keep Miniflare's local Worker registry with the package's other ignored
+// runtime state, so a build needs no access to the user's global config path.
+process.env.MINIFLARE_REGISTRY_PATH ??= resolve(
+  packageRoot,
+  ".wrangler/registry",
+);
 let docsLine: Cloudflare.Env["DOCS_LINE"] | undefined;
 
 function resolvedDocsLine(): Cloudflare.Env["DOCS_LINE"] {
@@ -128,6 +135,11 @@ export default defineConfig({
   optimizeDeps: {
     include: ["@base-ui/react > use-sync-external-store/shim/with-selector"],
   },
+  // The Workbench's render Worker is a module Worker: it awaits the Temporal
+  // polyfill before it takes its first message, and top-level await needs an
+  // ES bundle rather than Vite's default IIFE.
+  // @see src/lib/workbench/render-worker.ts
+  worker: { format: "es" },
   // Both aliases are declared here rather than through
   // `resolve.tsconfigPaths`, which under Vite 8 leaves the `paths` in
   // `tsconfig.app.json` unresolved.
@@ -139,6 +151,13 @@ export default defineConfig({
     },
   },
   plugins: [
+    paraglideVitePlugin({
+      project: "../../project.inlang",
+      outdir: "./src/paraglide",
+      outputStructure: "message-modules",
+      strategy: ["baseLocale"],
+      emitTsDeclarations: true,
+    }),
     devtools(),
     tailwindcss(),
     fumadocsMdx(),

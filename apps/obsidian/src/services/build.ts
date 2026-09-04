@@ -1,3 +1,7 @@
+import {
+  createProfileCreator,
+  createProfileImporter,
+} from "@/setting-tab/profiles";
 import { openWelcomeView } from "@/views/welcome/register";
 import type ZotLitPlugin from "@/zt-main";
 
@@ -24,6 +28,7 @@ import { createNoteImportView } from "./note-import/view";
 import { NoteIndex } from "./note-index/service";
 import { BibliographyRenderCache } from "./pandoc/render-cache";
 import { createPandocEngineService } from "./pandoc/service";
+import { ProfileService } from "./profile/service";
 import { ReleaseService } from "./release/service";
 import { ServiceContainer } from "./service-base";
 import {
@@ -36,8 +41,13 @@ import {
   migrateV6ToV7,
   migrateV7ToV8,
   migrateV8ToV9,
+  migrateV9ToV10,
 } from "./settings/migrate";
 import { SettingsService } from "./settings/service";
+import {
+  LiteratureNoteTemplateMigrationService,
+  loadLiteratureNoteTemplateMigrationData,
+} from "./template/migration";
 import { TemplateService } from "./template/service";
 import { WikilinkEditor } from "./wikilink-editor/service";
 import { WikilinkReading } from "./wikilink-reading/service";
@@ -75,6 +85,7 @@ export function buildServices(
           migrateV6: migrateV6ToV7,
           migrateV7: migrateV7ToV8,
           migrateV8: migrateV8ToV9,
+          migrateV9: migrateV9ToV10,
         }),
     })
     .use({
@@ -94,10 +105,19 @@ export function buildServices(
         new TemplateService({ plugin, app: plugin.app, settings }),
     })
     .use({
-      zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
+      noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
     })
     .use({
-      noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
+      profile: ({ settings, template, noteIndex }) =>
+        new ProfileService({
+          app: plugin.app,
+          settings,
+          template,
+          noteIndex,
+        }),
+    })
+    .use({
+      zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
     })
     .use({
       liveUpdate: ({ settings, zoteroPref, noteIndex }) =>
@@ -113,12 +133,14 @@ export function buildServices(
     })
     .useValue({
       noteImport: ({
+        profile,
         noteIndex,
         template,
         zoteroPref,
         attachmentImport,
       }): NoteImporter =>
         createNoteImporter({
+          profile,
           app: plugin.app,
           noteIndex,
           template,
@@ -131,6 +153,35 @@ export function buildServices(
         new LibraryScopeService({ db, settings }),
     })
     .use({
+      templateMigration: ({
+        db,
+        libraryScope,
+        noteIndex,
+        settings,
+        template,
+        zoteroPref,
+      }) =>
+        new LiteratureNoteTemplateMigrationService({
+          app: plugin.app,
+          settings,
+          template,
+          loadVerificationData: (options) =>
+            loadLiteratureNoteTemplateMigrationData(
+              {
+                app: plugin.app,
+                db,
+                libraryScope,
+                noteIndex,
+                settings,
+                templates: template,
+                zoteroPref,
+              },
+              options,
+            ),
+          openPrompt: () => openWelcomeView(plugin.app, "upgraded"),
+        }),
+    })
+    .use({
       itemLookup: ({ db, libraryScope }) =>
         new ItemLookup({
           db,
@@ -140,6 +191,7 @@ export function buildServices(
     })
     .useValue({
       noteFeature: ({
+        profile,
         template,
         db,
         noteIndex,
@@ -149,6 +201,7 @@ export function buildServices(
         noteImport,
       }): NoteFeature =>
         createNoteFeature({
+          profile,
           app: plugin.app,
           template,
           db,
@@ -160,7 +213,58 @@ export function buildServices(
         }),
     })
     .useValue({
+      createProfile: ({
+        profile,
+        template,
+        db,
+        noteIndex,
+        zoteroPref,
+        settings,
+        libraryScope,
+        noteFeature,
+      }) =>
+        createProfileCreator({
+          app: plugin.app,
+          profile,
+          template,
+          db,
+          noteIndex,
+          zoteroPref,
+          settings,
+          libraryScope,
+          noteFeature,
+        }),
+    })
+    .useValue({
+      importProfile: ({
+        profile,
+        template,
+        db,
+        noteIndex,
+        zoteroPref,
+        settings,
+        libraryScope,
+        noteFeature,
+      }) =>
+        createProfileImporter({
+          app: plugin.app,
+          profile,
+          template,
+          db,
+          noteIndex,
+          zoteroPref,
+          settings,
+          libraryScope,
+          noteFeature,
+        }),
+    })
+    .useValue({
       batchImport: ({
+        profile,
+        noteFeature,
+        createProfile,
+        importProfile,
+        zoteroPref,
         db,
         settings,
         libraryScope,
@@ -169,7 +273,13 @@ export function buildServices(
         template,
       }): BatchImport =>
         createBatchImport({
-          view: createNoteImportView(plugin.app),
+          view: createNoteImportView(plugin.app, {
+            createProfile,
+            importProfile,
+            zoteroPref,
+          }),
+          profile,
+          noteFeature,
           db,
           settings,
           libraryScope,
@@ -193,8 +303,15 @@ export function buildServices(
       pandocEngine: () => createPandocEngineService(plugin.app),
     })
     .use({
-      bibliographyRender: ({ db, pandocEngine, zoteroPref, settings }) =>
+      bibliographyRender: ({
+        db,
+        pandocEngine,
+        zoteroPref,
+        settings,
+        profile,
+      }) =>
         new BibliographyRenderCache({
+          profile,
           db,
           pandocEngine,
           zoteroPref,
@@ -202,36 +319,52 @@ export function buildServices(
         }),
     })
     .use({
-      citationText: ({ db, citationIndex, noteIndex, bibliographyRender }) =>
+      citationText: ({
+        profile,
+        db,
+        citationIndex,
+        noteIndex,
+        bibliographyRender,
+        settings,
+      }) =>
         new CitationText({
+          profile,
           app: plugin.app,
           db,
           citationIndex,
           noteIndex,
           bibliographyRender,
+          settings,
         }),
     })
     .useValue({
       citationPopover: ({
+        profile,
         db,
         citationIndex,
         citationText,
         bibliographyRender,
         libraryScope,
+        settings,
       }): CitationPopover =>
         createCitationPopover({
+          profile,
           app: plugin.app,
           db,
           citationIndex,
           citationText,
           bibliographyRender,
           libraryScope,
+          settings,
         }),
     })
     .use({
       citekeyEditor: ({
         noteIndex,
         noteFeature,
+        createProfile,
+        importProfile,
+        zoteroPref,
         db,
         citationText,
         citationPopover,
@@ -244,6 +377,9 @@ export function buildServices(
           plugin,
           noteIndex,
           noteFeature,
+          createProfile,
+          importProfile,
+          zoteroPref,
           db,
           citationText,
           citationPopover,

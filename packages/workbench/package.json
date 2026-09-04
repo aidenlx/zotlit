@@ -1,0 +1,68 @@
+{
+  "name": "@zotlit/workbench",
+  "version": "0.0.0",
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./bridge": "./dist/bridge.mjs",
+    "./document": "./dist/document.mjs",
+    "./explorer": "./dist/explorer.mjs",
+    "./language": "./dist/language.mjs",
+    "./render": "./dist/render.mjs",
+    "./snapshot": {
+      "types": "./dist/snapshot.d.mts",
+      "node": "./dist/snapshot.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.lib.json",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
+    "lint": "oxlint",
+    "test": "vitest run",
+    "generate:eta": "lezer-generator src/language/eta.grammar -o src/language/eta-parser.ts --typeScript"
+  },
+  "dependencies": {
+    "@codemirror/commands": "6.11.0",
+    "@codemirror/lang-javascript": "6.2.5",
+    "@codemirror/lang-liquid": "6.3.2",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/lang-yaml": "6.1.3",
+    "@lezer/common": "catalog:",
+    "@lezer/highlight": "catalog:",
+    "@lezer/lr": "catalog:",
+    "@zotlit/db": "workspace:*",
+    "@zotlit/templates": "workspace:*",
+    "arkregex": "catalog:",
+    "valibot": "catalog:",
+    "yaml": "catalog:"
+  },
+  "devDependencies": {
+    "@codemirror/autocomplete": "catalog:",
+    "@codemirror/language": "catalog:",
+    "@codemirror/state": "catalog:",
+    "@codemirror/view": "catalog:",
+    "@lezer/generator": "1.8.0",
+    "@types/node": "catalog:",
+    "@zotlit/config": "workspace:*",
+    "@zotlit/zotero-types": "workspace:*",
+    "ajv": "catalog:",
+    "happy-dom": "catalog:",
+    "oxlint": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "@codemirror/autocomplete": "catalog:",
+    "@codemirror/language": "catalog:",
+    "@codemirror/state": "catalog:",
+    "@codemirror/view": "catalog:"
+  }
+}

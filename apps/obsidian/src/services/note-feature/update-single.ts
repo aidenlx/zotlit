@@ -5,26 +5,31 @@ import type { Item, ItemRef } from "@zotlit/db";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { profileRecoveryNotice } from "@/lib/profile-recovery";
+import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import { EmptyFilenameError } from "@/services/note-feature/filename";
 import type {
+  CreateNoteResult,
   NoteFeature,
+  NoteOperationDiagnostic,
   UpdateResult,
   UpdateScope,
 } from "@/services/note-feature/operations";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { ProfileReader } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
 
 /**
- * The slice of a protocol handler's dependencies needed to create / update a
- * single literature note. Shared by the `update` / `open` URL actions and the
- * batch runner's one-actionable fast path so all three behave identically.
+ * Dependencies for the batch runner's single-action create / update path.
+ * Companion links use the separate interactive navigation flow.
  */
 export interface SingleUpdateDeps {
+  profile: ProfileReader;
   app: App;
   db: DatabaseService;
   settings: SettingsService;
@@ -45,16 +50,21 @@ export interface SingleUpdateDeps {
 export async function updateNote(
   deps: SingleUpdateDeps,
   ref: ItemRef,
-  scope: UpdateScope = "full",
+  {
+    scope = "full",
+    profile,
+  }: { scope?: UpdateScope; profile?: ProfileSelector } = {},
 ): Promise<void> {
-  const file = deps.noteIndex.getNotesByItemKey(ref.indexedKey)[0];
+  const file = resolveLiteratureNoteWithWarning(
+    deps.noteIndex.getNotesByItemKey(ref.indexedKey),
+  );
 
   if (!file) {
     if (scope === "metadata") {
       new BaseNotice(m.notice_update_metadata_no_note());
       return;
     }
-    await createAndOpen(deps, ref);
+    await createAndOpen(deps, ref, profile);
     return;
   }
 
@@ -64,34 +74,52 @@ export async function updateNote(
   if (!itemKey) return;
 
   void toast.promise(
-    deps.noteFeature.updateNote(file, { indexedKey: itemKey, scope }),
-    updateNoteToast(scope),
+    deps.noteFeature.updateNote(file, {
+      indexedKey: itemKey,
+      scope,
+      profile,
+    }),
+    updateNoteToast(scope, { app: deps.app }),
   );
 }
 
 /** Toast copy for a single-note update, framed by `scope`. A `metadata` update
  *  never touches the body, so it reports as "metadata updated" rather than the
  *  full update's region-aware messages. */
-export function updateNoteToast(scope: UpdateScope): {
+export function updateNoteToast(
+  scope: UpdateScope,
+  options: { app?: App } = {},
+): {
   loading: string;
-  success: (result: UpdateResult) => string;
+  success: (result: UpdateResult) => string | DocumentFragment;
   error: (_msg: string, e: unknown) => string;
 } {
+  const diagnosticContent = (diagnostic: NoteOperationDiagnostic) =>
+    options.app
+      ? noteOperationDiagnosticContent(options.app, diagnostic)
+      : noteOperationDiagnosticNotice(diagnostic);
   const error = (_msg: string, e: unknown): string =>
     e instanceof InertTemplateError ? e.message : m.notice_update_note_failed();
   if (scope === "metadata") {
     return {
       loading: m.notice_updating_note_metadata(),
-      success: () => m.notice_updated_note_metadata(),
+      success: (result) =>
+        result.diagnostic
+          ? diagnosticContent(result.diagnostic)
+          : m.notice_updated_note_metadata(),
       error,
     };
   }
   return {
     loading: m.notice_updating_note(),
     success: (result) =>
-      result.bodyUpdated
-        ? m.notice_updated_note()
-        : m.notice_updated_note_no_region(),
+      result.diagnostic
+        ? diagnosticContent(result.diagnostic)
+        : result.bodyUpdated
+          ? m.notice_updated_note()
+          : result.noManagedBlock
+            ? m.notice_updated_note_no_managed_block()
+            : m.notice_updated_note_no_region(),
     error,
   };
 }
@@ -100,11 +128,15 @@ export function updateNoteToast(scope: UpdateScope): {
 export async function createAndOpen(
   deps: SingleUpdateDeps,
   ref: ItemRef,
+  profile?: ProfileSelector,
 ): Promise<void> {
   const [item] = getItemsByID(deps.db.client, [ref.itemID]);
   if (!item) return;
 
-  const file = await createNoteWithToast(deps.noteFeature, item);
+  const file = await createNoteWithToast(deps.noteFeature, item, {
+    profile,
+    app: deps.app,
+  });
   if (!file) return;
   await deps.app.workspace.openLinkText(file.path, "", false, {
     active: true,
@@ -119,18 +151,108 @@ export async function createAndOpen(
 export async function createNoteWithToast(
   noteFeature: Pick<NoteFeature, "createNote">,
   item: Item,
+  options: { profile?: ProfileSelector; app?: App } = {},
+): Promise<TFile | null> {
+  return createNoteTaskWithToast(
+    () => noteFeature.createNote(item, { profile: options.profile }),
+    { app: options.app },
+  );
+}
+
+/** Start the create notice only after the user's Profile decision has settled. */
+export async function createNoteTaskWithToast(
+  create: () => Promise<CreateNoteResult>,
+  options: { app?: App } = {},
 ): Promise<TFile | null> {
   try {
-    return await toast.promise(noteFeature.createNote(item), {
+    const result = await toast.promise(create(), {
       loading: m.notice_creating_note(),
-      success: m.notice_created_note(),
+      success: (result) =>
+        result.outcome === "refused" &&
+        result.diagnostic.code === "unknown-literature-note-profile" &&
+        options.app
+          ? profileRecoveryNotice(options.app, result.diagnostic)
+          : createNoteNotice(result),
       error: (_msg, e) =>
         e instanceof EmptyFilenameError || e instanceof InertTemplateError
           ? e.message
           : m.notice_create_note_failed(),
       swallowError: false,
     });
+    return result.outcome === "created" ? result.file : null;
   } catch {
     return null;
   }
+}
+
+export function createNoteNotice(result: CreateNoteResult): string {
+  if (result.outcome === "created") return m.notice_created_note();
+  const { diagnostic } = result;
+  switch (diagnostic.code) {
+    case "literature-note-exists":
+      return m.notice_create_note_exists({ path: diagnostic.paths[0] });
+    case "duplicate-literature-notes":
+      return m.notice_create_note_duplicates({
+        paths: diagnostic.paths.join(", "),
+      });
+    case "unknown-literature-note-profile":
+    case "literature-note-profile-conflict":
+    case "missing-literature-note-template":
+    case "literature-note-template-conversion-required":
+    case "managed-frontmatter-refused":
+      return noteOperationDiagnosticNotice(diagnostic);
+  }
+}
+
+export function noteOperationDiagnosticNotice(
+  diagnostic: NoteOperationDiagnostic,
+): string {
+  switch (diagnostic.code) {
+    case "unknown-literature-note-profile":
+      return m.notice_literature_note_profile_unknown({
+        stamp: diagnostic.stamp,
+      });
+    case "literature-note-profile-conflict":
+      return m.notice_literature_note_profile_conflict();
+    case "missing-literature-note-template":
+      return m.notice_literature_note_template_missing({
+        document: diagnostic.document,
+      });
+    case "literature-note-template-conversion-required":
+      return m.notice_literature_note_template_conversion_required();
+    case "managed-frontmatter-refused":
+      return m.notice_managed_frontmatter_refused({
+        failures: diagnostic.failures
+          .map(({ message, hint }) => `${message} ${hint}`)
+          .join(" "),
+      });
+  }
+}
+
+/** Actionable rendering stays at the UI seam; core errors keep plain text. */
+export function noteOperationDiagnosticContent(
+  app: App,
+  diagnostic: NoteOperationDiagnostic,
+): string | DocumentFragment {
+  return diagnostic.code === "unknown-literature-note-profile"
+    ? profileRecoveryNotice(app, diagnostic)
+    : noteOperationDiagnosticNotice(diagnostic);
+}
+
+export function duplicateLiteratureNoteWarning(
+  notes: readonly Pick<TFile, "path">[],
+): string | null {
+  if (notes.length < 2) return null;
+  return m.notice_duplicate_literature_notes({
+    paths: notes.map((file) => file.path).join(", "),
+    selected: notes[0]!.path,
+  });
+}
+
+export function resolveLiteratureNoteWithWarning(
+  notes: readonly TFile[],
+): TFile | undefined {
+  const warning = duplicateLiteratureNoteWarning(notes);
+  if (warning) new BaseNotice(warning);
+  return notes[0];
 }

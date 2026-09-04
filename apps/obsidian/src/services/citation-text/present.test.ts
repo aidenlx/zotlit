@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 
-import { scanCitations } from "@/lib/citation-grammar";
+import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
 
 import { rendered } from "./__fixtures__";
 import {
@@ -23,11 +23,11 @@ import type {
 
 /** One citation, read out of the source text that is nothing but that citation. */
 function citation(source: string): CitationSource {
-  const [found] = scanCitations(source);
+  const [found] = scanPandocCitations(source);
   return {
     source,
-    keys: found!.keys.map(({ citekey, start, end }) => ({
-      citekey,
+    keys: found!.items.map(({ citationKey, start, end }) => ({
+      citekey: citationKey,
       start,
       end,
     })),

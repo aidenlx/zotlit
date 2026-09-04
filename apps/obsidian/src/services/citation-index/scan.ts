@@ -3,9 +3,10 @@
 import { parseLinktext } from "obsidian";
 import type { LinkCache, Loc, Pos } from "obsidian";
 
+import { scanPandocCitations } from "@zotlit/templates/pandoc-citation";
+
 import { parseCitationFragment } from "@/lib/citation-fragment";
-import { scanCitations, scanCitekeys } from "@/lib/citation-grammar";
-import type { CitationSpan } from "@/lib/citation-grammar";
+import type { ScannedCitation } from "@/lib/citation-source";
 
 /** Which syntax wrote a Citation Occurrence. */
 export type CitationSyntax = "citekey" | "wikilink";
@@ -37,15 +38,17 @@ export interface MalformedWikilinkCitation {
 export function scanCitekeyOccurrences(text: string): CitationOccurrence[] {
   const lineStarts = lineStartsOf(text);
   const occurrences: CitationOccurrence[] = [];
-  for (const { citekey, start, end } of scanCitekeys(maskExclusions(text))) {
-    occurrences.push({
-      kind: "citekey",
-      raw: citekey,
-      position: {
-        start: locAt(lineStarts, start),
-        end: locAt(lineStarts, end),
-      },
-    });
+  for (const citation of scanPandocCitations(maskExclusions(text))) {
+    for (const { citationKey, start, end } of citation.items) {
+      occurrences.push({
+        kind: "citekey",
+        raw: citationKey,
+        position: {
+          start: locAt(lineStarts, start),
+          end: locAt(lineStarts, end),
+        },
+      });
+    }
   }
   return occurrences;
 }
@@ -57,8 +60,18 @@ export function scanCitekeyOccurrences(text: string): CitationOccurrence[] {
  *
  * @returns the citations of `text`, in document order.
  */
-export function scanDocumentCitations(text: string): CitationSpan[] {
-  return scanCitations(maskExclusions(text));
+export function scanDocumentCitations(text: string): ScannedCitation[] {
+  return scanPandocCitations(maskExclusions(text)).map(
+    ({ start, end, items }) => ({
+      start,
+      end,
+      keys: items.map((item) => ({
+        citekey: item.citationKey,
+        start: item.start,
+        end: item.end,
+      })),
+    }),
+  );
 }
 
 /**

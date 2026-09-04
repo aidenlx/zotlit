@@ -31,6 +31,7 @@ import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { registerCitationStyleNotice } from "./services/pandoc/notices";
 import { reapCslStore } from "./services/pandoc/reap-temps";
 import { registerPandocResolve } from "./services/pandoc/register";
+import { addProfileActions } from "./services/profile/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
@@ -152,7 +153,17 @@ export default class ZotLitPlugin extends Plugin {
   // Debug/escape-hatch access only. Services should depend on each other via DI.
   #services?: ReturnType<typeof buildServices>["services"];
 
-  get services(): ReturnType<typeof buildServices>["services"] {
+  /**
+   * The service container, for `obsidian eval` callers outside the bundle —
+   * `packages/e2e` and `packages/scripts` reach it through a string, so they
+   * keep working while TypeScript sees nothing to navigate.
+   *
+   * Typed `unknown` on purpose: it stays unset until `onload()` commits, so
+   * anything inside the bundle that reads a service through it gets a value
+   * that throws at exactly the wrong moment. Take the service as an explicit
+   * dependency instead.
+   */
+  get services(): unknown {
     if (!this.#services) throw new Error("Plugin not loaded");
     return this.#services;
   }
@@ -198,6 +209,9 @@ export default class ZotLitPlugin extends Plugin {
 
     this.addSettingTab(
       new ZotLitSettingTab({
+        createProfile: services.createProfile,
+        importProfile: services.importProfile,
+        profile: services.profile,
         plugin: this,
         settings: services.settings,
         db: services.db,
@@ -212,17 +226,25 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
 
+    addProfileActions(this, { importProfile: services.importProfile });
     addDatabaseActions(this, { db: services.db });
     addReleaseActions(this, { release: services.release });
     addIndexedKeyActions(this);
     addCitekeyEditorActions(this, { citekeyEditor: services.citekeyEditor });
     registerIndexedKeyFileMenu(this);
     addNoteFeatureActions(this, {
+      createProfile: services.createProfile,
+      importProfile: services.importProfile,
       app: this.app,
       noteFeature: services.noteFeature,
+      zoteroPref: services.zoteroPref,
       batchImport: services.batchImport,
       updateAll: () =>
         runBatchUpdateAll({
+          createProfile: services.createProfile,
+          importProfile: services.importProfile,
+          zoteroPref: services.zoteroPref,
+          profile: services.profile,
           app: this.app,
           db: services.db,
           settings: services.settings,
@@ -239,15 +261,21 @@ export default class ZotLitPlugin extends Plugin {
       citationIndex: services.citationIndex,
     });
     registerQuickSwitch(this, {
+      createProfile: services.createProfile,
+      importProfile: services.importProfile,
       app: this.app,
       lookup: services.itemLookup,
       noteIndex: services.noteIndex,
       noteFeature: services.noteFeature,
       settings: services.settings,
+      zoteroPref: services.zoteroPref,
     });
 
     void stack.use(
       registerProtocolHandlers(this, {
+        createProfile: services.createProfile,
+        importProfile: services.importProfile,
+        profile: services.profile,
         app: this.app,
         settings: services.settings,
         db: services.db,
@@ -292,6 +320,7 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
     registerReferencesView(this, {
+      profile: services.profile,
       app: this.app,
       db: services.db,
       citationIndex: services.citationIndex,
@@ -324,6 +353,7 @@ export default class ZotLitPlugin extends Plugin {
     }
 
     registerTemplateWorkbench(this, {
+      profile: services.profile,
       app: this.app,
       db: services.db,
       noteIndex: services.noteIndex,
@@ -339,6 +369,7 @@ export default class ZotLitPlugin extends Plugin {
     });
 
     registerPandocExport(this, {
+      profile: services.profile,
       app: this.app,
       db: services.db,
       pandocEngine: services.pandocEngine,
@@ -361,6 +392,8 @@ export default class ZotLitPlugin extends Plugin {
       db: services.db,
       zoteroPref: services.zoteroPref,
       settings: services.settings,
+      templateMigration: services.templateMigration,
+      release: services.release,
     });
 
     stack.defer(

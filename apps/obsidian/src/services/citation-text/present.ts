@@ -1,16 +1,17 @@
 // How one Citation is presented once its formatted text is known.
 
-import type { CitationSource } from "@/lib/citation-fragment";
+import type { CitationSource } from "@/lib/citation-source";
 import type { SectionRange } from "@/lib/reading-view";
 import { themeHook } from "@/lib/theme-hooks";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { CitedWork } from "@/services/citekey-navigation";
+import type { ProfilePresentationFailure } from "@/services/pandoc/document-presentation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
 import { renderInlineContent } from "@/services/pandoc/inline-content";
 
 // One citation as a surface holds it: the same shape whether a note wrote it or
 // a wikilink derivation did, which is what lets the two syntaxes share a render.
-export type { CitationKey, CitationSource } from "@/lib/citation-fragment";
+export type { CitationKey, CitationSource } from "@/lib/citation-source";
 
 /**
  * One citation as a surface holds it, with the works it names when its own
@@ -93,6 +94,8 @@ export interface ShownCitation {
 
 /** What one document's surfaces need to put text in their citations' place. */
 export interface DocumentCitations {
+  /** An unavailable Imported Note Profile, shown by its citation surfaces. */
+  presentationFailure?: ProfilePresentationFailure;
   /**
    * Every occurrence of one {@link citationKey} the engine rendered, in
    * document order.

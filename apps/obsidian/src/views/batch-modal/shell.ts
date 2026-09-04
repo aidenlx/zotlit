@@ -1,13 +1,16 @@
 import { Modal, Setting, setIcon } from "obsidian";
-import type { App } from "obsidian";
+import type { App, ButtonComponent } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { cn } from "@/lib/utils";
 import type { BatchFailure } from "@/services/batch-run";
 
 import { failureRow, ICON_CLS, section, SECTION_SUMMARY_CLS } from "./dom";
 import type { BatchManifest, BatchModalOptions, BatchRunResult } from "./types";
+
+const logger = getLogger("batch-modal");
 
 /**
  * Imperative loading → confirm → progress → summary modal for a batch run, in a
@@ -31,6 +34,7 @@ export class BatchModal extends Modal {
   #manifest: BatchManifest | null = null;
   #runAbort: AbortController | null = null;
   #dismissed = false;
+  #choosingProfile = false;
 
   /** Terminal status per row id; the single source for progress counts. Absent
    * ids were aborted before running. */
@@ -123,18 +127,39 @@ export class BatchModal extends Modal {
     const body = shell.createDiv({
       cls: "zt:flex-1 zt:min-h-0 zt:overflow-y-auto",
     });
-    manifest.renderList(body);
+    let runButton: ButtonComponent | undefined;
+    manifest.renderList(body, {
+      chooseProfile: async (choice) => {
+        if (this.#choosingProfile || this.#dismissed) return;
+        this.#choosingProfile = true;
+        runButton?.setDisabled(true);
+        try {
+          await choice.choose();
+        } catch (error) {
+          logger.error("Failed to change batch Profile", {
+            error,
+            label: choice.label,
+            source: choice.source,
+          });
+          if (!this.#dismissed) new BaseNotice(this.#options.text.loadFailed);
+        } finally {
+          this.#choosingProfile = false;
+          if (!this.#dismissed) this.#renderConfirm();
+        }
+      },
+    });
 
     const footer = new Setting(shell).addButton((btn) =>
       btn.setButtonText(m.modal_cancel()).onClick(() => this.close()),
     );
     if (manifest.counts.actionable > 0) {
-      footer.addButton((btn) =>
+      footer.addButton((btn) => {
+        runButton = btn;
         btn
           .setButtonText(this.#options.text.confirmButton)
           .setCta()
-          .onClick(() => void this.#run()),
-      );
+          .onClick(() => void this.#run());
+      });
     }
   }
 
@@ -228,7 +253,7 @@ export class BatchModal extends Modal {
   #addFailure(failure: BatchFailure): void {
     this.#failures.push(failure);
     if (!this.#failedPanel || !this.#failedPanelList) return;
-    failureRow(this.#failedPanelList, failure);
+    failureRow(this.#failedPanelList, failure, this.app);
     this.#failedPanel.toggle(true);
     this.#failedPanelSummary?.setText(
       (this.#options.text.failedHeader ?? m.batch_update_group_failed)({
@@ -319,6 +344,7 @@ export class BatchModal extends Modal {
   }
 
   async #run(): Promise<void> {
+    if (this.#choosingProfile || this.#dismissed) return;
     this.#renderProgress();
     const abort = new AbortController();
     this.#runAbort = abort;
@@ -388,7 +414,7 @@ export class BatchModal extends Modal {
         }),
         true,
       );
-      for (const failure of this.#failures) failureRow(ul, failure);
+      for (const failure of this.#failures) failureRow(ul, failure, this.app);
     }
     this.#manifestOrThrow.renderSummary(details, this.#finalStatus);
 

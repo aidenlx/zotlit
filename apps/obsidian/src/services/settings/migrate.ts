@@ -133,7 +133,7 @@ export function migrateLegacyV0(raw: unknown): Partial<Settings> {
  * template, autoTrim) are handled inline in `migrateLegacyV0` instead.
  */
 const V0_KEY_MAP: ReadonlyArray<
-  readonly [keyof ZotLitSettingsV0, keyof Settings]
+  readonly [keyof ZotLitSettingsV0, keyof Settings | "note.literature-folder"]
 > = [
   ["citationEditorSuggester", "citation.editor-suggester"],
   ["showCitekeyInSuggester", "citation.show-citekey-in-suggester"],
@@ -354,6 +354,50 @@ export function migrateV8ToV9(raw: unknown): Record<string, unknown> {
     "zotero.library-scope": {
       mode: "selected",
       libraries: [{ type: "personal" }],
+    },
+  };
+}
+
+/** Move the retired vault-global note bindings into the default Profile. */
+export function migrateV9ToV10(raw: unknown): Record<string, unknown> {
+  if (!isPlainObject(raw)) return {};
+  const {
+    "citation.references-style": citationStyle,
+    "note.literature-folder": literatureFolder,
+    "note.import-folder": importFolder,
+    "note.import-colored-highlights": coloredHighlights,
+    "note.import-annotations-as-template": annotationsAsTemplate,
+    "note.default-profile": _defaultProfile,
+    "note.profiles": _profiles,
+    "note.template-pack-installs": _packs,
+    ...rest
+  } = raw;
+  const base = defaults["note.default-profile"].bindings;
+  return {
+    ...rest,
+    "note.default-profile": {
+      bindings: {
+        "citation.references-style":
+          citationStyle === null || typeof citationStyle === "string"
+            ? citationStyle
+            : base["citation.references-style"],
+        "note.literature-folder":
+          typeof literatureFolder === "string"
+            ? literatureFolder
+            : base["note.literature-folder"],
+        "note.import-folder":
+          typeof importFolder === "string"
+            ? importFolder
+            : base["note.import-folder"],
+        "note.import-colored-highlights":
+          typeof coloredHighlights === "boolean"
+            ? coloredHighlights
+            : base["note.import-colored-highlights"],
+        "note.import-annotations-as-template":
+          typeof annotationsAsTemplate === "boolean"
+            ? annotationsAsTemplate
+            : base["note.import-annotations-as-template"],
+      },
     },
   };
 }

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "journal-article",
+    "label": "Journal article",
+    "source": "fixture-vault",
+    "library": { "type": "personal" },
+    "key": "IANNP5A2"
+  },
+  {
+    "id": "conference-paper",
+    "label": "Conference paper with highlights and a PDF",
+    "source": "fixture-vault",
+    "library": { "type": "personal" },
+    "key": "CNPF226A"
+  },
+  {
+    "id": "book",
+    "label": "Book",
+    "source": "maintainer-library",
+    "library": { "type": "personal" },
+    "key": "NW2CPDTC"
+  },
+  {
+    "id": "thesis",
+    "label": "Thesis",
+    "source": "migrated-library",
+    "library": { "type": "personal" },
+    "key": "I49R3FTL"
+  }
+]

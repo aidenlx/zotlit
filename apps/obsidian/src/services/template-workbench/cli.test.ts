@@ -2,9 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
+import {
+  ContractMetadataError,
+  markInertPlaceholder,
+} from "@zotlit/workbench/explorer";
 
 import { InertTemplateError } from "@/services/template/errors";
-import { markInertPlaceholder } from "@/services/template/inert-placeholder";
 import type { CompileError } from "@/services/template/service";
 
 import {
@@ -24,7 +27,6 @@ import {
 import { CONTRACT_VERSION, DIAGNOSTIC_HINTS } from "./envelope";
 import { TEMPLATE_SLOT_NAMES } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
-import { ContractMetadataError } from "./serialize";
 
 const PLUGIN_VERSION = "1.2.3";
 const IDENTITY = {
@@ -205,7 +207,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers["zotlit:template-status"]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 5,
       command: "zotlit:template-status",
       ok: false,
       diagnostic: {
@@ -252,7 +254,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       request: {
@@ -318,7 +320,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_DATA_COMMAND,
       ok: true,
       request: {
@@ -502,7 +504,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_STATUS_COMMAND]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_STATUS_COMMAND,
       ok: false,
       diagnostic: {
@@ -569,8 +571,11 @@ describe("Template Workbench CLI", () => {
     ["data", ["$helper", "$inert", "$ref", ...CONTRACT_ROOT_NAMES]],
     ["render", [...TEMPLATE_SLOT_NAMES]],
     ["editing", ["editablePath", "shadowedFiles"]],
-    ["eta", ["javascriptTemplatesEnabled", "ETA_OPT_IN_REQUIRED"]],
-    ["liquid", ["liquidjs", "zt", "bq", "group_by"]],
+    [
+      "eta",
+      ["javascriptTemplatesEnabled", "ETA_OPT_IN_REQUIRED", "pandocCite"],
+    ],
+    ["liquid", ["liquidjs", "zt", "bq", "group_by", "pandoc_cite"]],
     [
       "frontmatter",
       [
@@ -644,7 +649,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_GUIDE_COMMAND]({ topic: "bogus" });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_GUIDE_COMMAND,
       ok: false,
       diagnostic: {
@@ -714,7 +719,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_DATA_COMMAND](params);
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       diagnostic: {
@@ -955,7 +960,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_DATA_COMMAND,
       ok: false,
       request: { key: "ITEM2345", root: "note", format: "json" },
@@ -1009,7 +1014,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_DATA_COMMAND,
         ok: false,
         identity: IDENTITY,
@@ -1052,7 +1057,7 @@ describe("Template Workbench CLI", () => {
     const output = await handlers[TEMPLATE_SCHEMA_COMMAND]({});
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_SCHEMA_COMMAND,
       ok: true,
       pluginVersion: PLUGIN_VERSION,
@@ -1101,7 +1106,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_SCHEMA_COMMAND,
         ok: false,
         diagnostic: {
@@ -1143,7 +1148,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_SCHEMA_COMMAND,
       ok: false,
       diagnostic: {
@@ -1237,6 +1242,55 @@ describe("Template Workbench CLI", () => {
     },
   );
 
+  it("reports a controlled selector diagnostic for retired Literature Note slots", async () => {
+    const loadData = vi.fn(async () => ({ kind: "not-found" }) as const);
+    const render = vi.fn(() => "");
+    const getTemplateSource = vi.fn(async () => "");
+    const handlers = createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadData,
+      templates: {
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => TEMPLATE_FILES.slice(-2),
+        render,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource,
+        waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
+      },
+    });
+
+    const rendered = await handlers[TEMPLATE_RENDER_COMMAND]({
+      key: "ITEM2345",
+      template: "note",
+      format: "json",
+    });
+    const sourced = await handlers[TEMPLATE_SOURCE_COMMAND]({
+      template: "annotation",
+    });
+
+    for (const output of [rendered, sourced]) {
+      expect(JSON.parse(output)).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "INVALID_SELECTOR",
+          details: { parameter: "template" },
+        },
+      });
+    }
+    expect(loadData).not.toHaveBeenCalled();
+    expect(render).not.toHaveBeenCalled();
+    expect(getTemplateSource).not.toHaveBeenCalled();
+  });
+
   it.each(["markdown", "json"] as const)(
     "renders filename through the collapsing render method for format=%s",
     async (format) => {
@@ -1313,7 +1367,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_RENDER_COMMAND,
       ok: true,
       request: {
@@ -1407,7 +1461,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       request: {
@@ -1506,7 +1560,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_RENDER_COMMAND,
         ok: false,
         diagnostic: {
@@ -1554,7 +1608,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       diagnostic: {
@@ -1598,7 +1652,7 @@ describe("Template Workbench CLI", () => {
     });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 5,
       command: TEMPLATE_RENDER_COMMAND,
       ok: false,
       diagnostic: {
@@ -1666,7 +1720,7 @@ describe("Template Workbench CLI", () => {
       const output = await handlers[TEMPLATE_RENDER_COMMAND](params);
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_RENDER_COMMAND,
         ok: false,
         diagnostic: {
@@ -1892,7 +1946,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_SOURCE_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -1966,7 +2020,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_SOURCE_COMMAND,
         ok: false,
         diagnostic: {
@@ -2040,7 +2094,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_STATUS_COMMAND,
         ok: false,
         diagnostic: {
@@ -2109,7 +2163,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: TEMPLATE_GUIDE_COMMAND,
         ok: false,
         diagnostic: {
@@ -2256,7 +2310,7 @@ describe("Template Workbench CLI", () => {
       const output = await handlers[FRONTMATTER_STATUS_COMMAND]({});
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 2,
+        contractVersion: 5,
         command: FRONTMATTER_STATUS_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -2277,7 +2331,12 @@ describe("Template Workbench CLI", () => {
             inert: true,
           },
         ],
-        reservedKeys: ["zotero-key", "zotero-note-key", "zotero-lastmod"],
+        reservedKeys: [
+          "zotero-key",
+          "zotlit-profile",
+          "zotero-note-key",
+          "zotero-lastmod",
+        ],
       });
     });
 
@@ -2348,7 +2407,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: FRONTMATTER_STATUS_COMMAND,
         ok: false,
         diagnostic: {
@@ -2474,7 +2533,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 2,
+        contractVersion: 5,
         command: FRONTMATTER_EVAL_COMMAND,
         ok: true,
         request: { key: "ITEM2345", format: "json", adhoc: null },
@@ -2641,7 +2700,7 @@ describe("Template Workbench CLI", () => {
       });
 
       expect(JSON.parse(output)).toEqual({
-        contractVersion: 2,
+        contractVersion: 5,
         command: FRONTMATTER_EVAL_COMMAND,
         ok: true,
         request: {
@@ -2902,7 +2961,7 @@ describe("Template Workbench CLI", () => {
         },
       ]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: FRONTMATTER_SET_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -3316,7 +3375,7 @@ describe("Template Workbench CLI", () => {
 
       expect(write).toHaveBeenCalledWith([FIELD_B]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: FRONTMATTER_REMOVE_COMMAND,
         ok: true,
         identity: IDENTITY,
@@ -3505,7 +3564,7 @@ describe("Template Workbench CLI", () => {
 
       expect(write).toHaveBeenCalledWith([FIELD_C, FIELD_A, FIELD_B]);
       expect(JSON.parse(output)).toMatchObject({
-        contractVersion: 2,
+        contractVersion: 5,
         command: FRONTMATTER_REORDER_COMMAND,
         ok: true,
         identity: IDENTITY,

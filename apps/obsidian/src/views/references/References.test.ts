@@ -5,6 +5,9 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import type { ProfileId } from "@/lib/profile-stamp";
 import { ambiguousCandidates } from "@/services/citation-index/__fixtures__/ambiguous-candidates";
 import type {
   CitationOccurrence,
@@ -40,6 +43,7 @@ const actions: ReferenceActions = {
   onOpenAttachment: () => undefined,
   onOpenEngineSettings: () => undefined,
   onChangeStyle: vi.fn(),
+  onSwitchProfile: vi.fn(),
   onDismissEngineHint: () => undefined,
   onCopyBibliography: vi.fn(() => Promise.resolve()),
 };
@@ -82,10 +86,15 @@ async function render(
     documentPresentationError = null,
     engine = { kind: "installed", version: "test" },
     copy = { kind: "blocked", reason: "pending" },
+    citekeyResolution = "ready",
   }: Partial<
     Pick<
       ReferencesState,
-      "formattingFailed" | "documentPresentationError" | "engine" | "copy"
+      | "formattingFailed"
+      | "documentPresentationError"
+      | "engine"
+      | "copy"
+      | "citekeyResolution"
     >
   > = {},
 ): Promise<HTMLElement> {
@@ -96,6 +105,7 @@ async function render(
     formattingFailed,
     documentPresentationError,
     dbReady: true,
+    citekeyResolution,
     copy,
   };
   const container = document.createElement("div");
@@ -149,6 +159,30 @@ describe("References", () => {
         el.classList.contains("zt:break-words"),
       ),
     ).toBe(true);
+  });
+
+  it("reads an unresolved row as a lookup in progress while resolution is pending", async () => {
+    const container = await render(
+      [
+        {
+          id: "@doe2024",
+          refNumber: 1,
+          occurrences: [occurrence],
+          kind: "unresolved",
+          citekey: "doe2024",
+        },
+      ],
+      { kind: "minimal" },
+      { citekeyResolution: "resolving" },
+    );
+
+    expect(container.textContent).toContain(
+      m.references_citekey_pending({ citekey: "doe2024" }),
+    );
+    expect(container.textContent).not.toContain(
+      m.references_citekey_unresolved({ citekey: "doe2024" }),
+    );
+    expect(container.textContent).not.toContain("⚠");
   });
 
   it("shares a numeric style's gutter with an unrendered Reference Error", async () => {
@@ -492,16 +526,44 @@ describe("References banners", () => {
     [
       "an unusable note style",
       {
-        documentPresentationError: "style",
+        documentPresentationError: { kind: "unusable", property: "style" },
       } satisfies Partial<ReferencesState>,
       "This note's citation and references style is unavailable",
     ],
     [
       "an unusable document language",
       {
-        documentPresentationError: "language",
+        documentPresentationError: {
+          kind: "unusable",
+          property: "language",
+        },
       } satisfies Partial<ReferencesState>,
       "This note's document language is invalid",
+    ],
+    [
+      "an unavailable Imported Note Profile",
+      {
+        documentPresentationError: {
+          kind: "unusable",
+          property: "profile",
+          diagnostic: unknownProfileDiagnostic("deleted-profile"),
+          target: "Imported/Research.md",
+        },
+      } satisfies Partial<ReferencesState>,
+      "This imported note's profile is unavailable",
+    ],
+    [
+      "an unavailable Imported Note Profile style",
+      {
+        documentPresentationError: {
+          kind: "unusable",
+          property: "profile-style",
+          styleId: "missing-profile-style",
+          profile: "research-profile" as ProfileId,
+          target: "Imported/Research.md",
+        },
+      } satisfies Partial<ReferencesState>,
+      "This imported note's profile style is unavailable",
     ],
   ])("keeps %s with the scrolling list region", async (_, state, title) => {
     const container = await render([summaryEntry], { kind: "minimal" }, state);
@@ -705,4 +767,26 @@ describe("References copy action", () => {
       expect(actions.onCopyBibliography).not.toHaveBeenCalled();
     },
   );
+});
+
+it("opens Profile recovery for the note named by the References diagnostic", async () => {
+  const container = await render(
+    [],
+    { kind: "minimal" },
+    {
+      documentPresentationError: {
+        kind: "unusable",
+        property: "profile",
+        diagnostic: unknownProfileDiagnostic("Missing (Qw8Er5Ty2Ui9)"),
+        target: "Imported/Orphan.md",
+      },
+    },
+  );
+  const button = container.querySelector<HTMLButtonElement>(
+    "[data-profile-recovery]",
+  );
+  expect(button).not.toBeNull();
+  expect(button?.textContent).toBe(m.profile_switch_recovery());
+  button?.click();
+  expect(actions.onSwitchProfile).toHaveBeenCalledWith("Imported/Orphan.md");
 });

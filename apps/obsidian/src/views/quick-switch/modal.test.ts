@@ -1,9 +1,30 @@
-import { Platform } from "obsidian";
-import type { App, Instruction, Modifier } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+import { Keymap, Platform } from "obsidian";
+import type { App, Instruction, Modifier, TFile } from "obsidian";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { ProfileId } from "@/lib/profile-stamp";
+import { defaults } from "@/services/settings/schema";
+import { DEFAULT_LITERATURE_NOTE_PROFILE } from "@/services/settings/schema";
 
 import { QuickSwitchModal } from "./modal";
+import { chooseLiteratureNoteProfile } from "./profile-picker";
 import type { QuickSwitchDeps } from "./register";
+
+vi.mock("./profile-picker", () => ({
+  chooseLiteratureNoteProfile: vi.fn(),
+}));
+
+beforeEach(() => vi.clearAllMocks());
+
+function profileSettings(profiles: { id: ProfileId; label: string }[] = []): {
+  "note.default-profile": typeof DEFAULT_LITERATURE_NOTE_PROFILE;
+  profiles: typeof profiles;
+} {
+  return {
+    "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
+    profiles: profiles,
+  };
+}
 
 function onPlatform(isMacOS: boolean): void {
   vi.spyOn(Platform, "isMacOS", "get").mockReturnValue(isMacOS);
@@ -17,7 +38,7 @@ function makeModal(): QuickSwitchModal {
     noteIndex: { getNotesByItemKey: vi.fn().mockReturnValue([]) },
     settings: { current: {} },
   } as unknown as QuickSwitchDeps;
-  return new QuickSwitchModal(deps);
+  return makeQuickSwitchModal(deps);
 }
 
 function findHandler(
@@ -88,3 +109,149 @@ describe("QuickSwitchModal instructions", () => {
     expect(capture(false)).toContain("Ctrl↵");
   });
 });
+
+describe("QuickSwitchModal Profile creation", () => {
+  function creationDeps(existing?: TFile) {
+    onPlatform(true);
+    const books = "Bk3Qn7XvT2Lp" as ProfileId;
+    const create = vi.fn(async () => ({
+      outcome: "created" as const,
+      file: { path: "Books/Paper.md" } as TFile,
+    }));
+    const openLinkText = vi.fn(async () => {});
+    const preview = {
+      selector: books,
+      label: "Books",
+      folder: "Books",
+      citationStyle: null,
+      document: "books.md",
+      path: "Books/Paper.md",
+      create,
+    };
+    const deps = {
+      app: {
+        metadataCache: {
+          getFileCache: () => ({
+            frontmatter: { "zotlit-profile": `Books (${books})` },
+          }),
+        },
+        workspace: { openLinkText },
+      },
+      noteIndex: {
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => (existing ? [existing] : []),
+      },
+      noteFeature: {
+        createNote: vi.fn(async () => ({
+          outcome: "created" as const,
+          file: { path: "Literature/Paper.md" } as TFile,
+        })),
+        resolveCreationProfile: vi.fn(async () => ({
+          selector: books,
+          source: "last-used" as const,
+          shouldAsk: true,
+        })),
+        prepareCreationProfiles: vi.fn(async () => [preview]),
+      },
+      zoteroPref: { dataDir: null },
+      settings: {
+        current: {
+          ...defaults,
+          ...profileSettings([{ id: books, label: "Books" }]),
+          "note.last-used-profile": books,
+        },
+      },
+    };
+    return {
+      deps,
+      books,
+      preview,
+      create,
+      openLinkText,
+      modal: makeQuickSwitchModal(deps as unknown as QuickSwitchDeps),
+    };
+  }
+
+  it("opens an existing stamped note without a picker or a Profile change", async () => {
+    const { modal, deps, openLinkText } = creationDeps({
+      path: "Books/Existing.md",
+    } as TFile);
+    await modal.onChooseSuggestion(
+      { item: { indexedKey: "PAPER234" } } as never,
+      {} as KeyboardEvent,
+    );
+    expect(openLinkText).toHaveBeenCalledWith("Books/Existing.md", "", false, {
+      active: true,
+    });
+    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+    expect(deps.noteFeature.resolveCreationProfile).not.toHaveBeenCalled();
+    expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
+  });
+
+  it("passes prepared rows and last-used selection to the picker and cancels silently", async () => {
+    const { modal, deps, books, preview, create, openLinkText } =
+      creationDeps();
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue(undefined);
+    await modal.onChooseSuggestion(
+      { item: { indexedKey: "PAPER234" } } as never,
+      {} as KeyboardEvent,
+    );
+    expect(chooseLiteratureNoteProfile).toHaveBeenCalledWith(deps.app, {
+      preselected: books,
+      onNew: expect.any(Function),
+      onImport: expect.any(Function),
+      source: "last-used",
+      previews: [preview],
+      styles: [],
+    });
+    expect(create).not.toHaveBeenCalled();
+    expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
+    expect(openLinkText).not.toHaveBeenCalled();
+  });
+
+  it("creates the selected preview and preserves a request for a new pane", async () => {
+    const { modal, books, create, openLinkText } = creationDeps();
+    using _mod = vi.spyOn(Keymap, "isModEvent").mockReturnValue(true);
+    vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
+      id: books,
+      label: "Books",
+    });
+    await modal.onChooseSuggestion(
+      { item: { indexedKey: "PAPER234" } } as never,
+      { metaKey: true } as KeyboardEvent,
+    );
+    expect(create).toHaveBeenCalledOnce();
+    expect(openLinkText).toHaveBeenCalledWith("Books/Paper.md", "", true, {
+      active: true,
+    });
+  });
+
+  it("creates directly without loading picker previews when only Default is available", async () => {
+    const { modal, deps, openLinkText } = creationDeps();
+    deps.noteFeature.resolveCreationProfile.mockResolvedValue({
+      selector: "default",
+      source: "bound",
+      shouldAsk: false,
+    } as never);
+    await modal.onChooseSuggestion(
+      { item: { indexedKey: "PAPER234" } } as never,
+      {} as KeyboardEvent,
+    );
+    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+    expect(deps.noteFeature.prepareCreationProfiles).not.toHaveBeenCalled();
+    expect(deps.noteFeature.createNote).toHaveBeenCalledWith(
+      expect.any(Object),
+      { profile: "default" },
+    );
+    expect(openLinkText).toHaveBeenCalledWith(
+      "Literature/Paper.md",
+      "",
+      false,
+      { active: true },
+    );
+  });
+});
+
+function makeQuickSwitchModal(deps: QuickSwitchDeps): QuickSwitchModal {
+  return new QuickSwitchModal(deps);
+}

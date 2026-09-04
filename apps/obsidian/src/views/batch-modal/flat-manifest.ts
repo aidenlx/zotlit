@@ -7,12 +7,19 @@ import {
   section,
   SECTION_OPEN_MAX,
   setRowIcon,
+  profileChoiceControl,
+  profileListGroup,
 } from "./dom";
-import type { BatchCounts, BatchManifest } from "./types";
+import type { BatchRow } from "./dom";
+import type {
+  BatchCounts,
+  BatchManifest,
+  BatchListControls,
+  BatchProfileChoice,
+} from "./types";
 
-export interface FlatTask {
+export interface FlatTask extends BatchRow {
   id: number;
-  label: string;
   /** Group key; one of the {@link FlatManifestOptions.groups} kinds. */
   kind: string;
 }
@@ -21,6 +28,7 @@ export interface FlatTask {
 export interface FlatGroupDef {
   kind: string;
   header: (args: { count: number }) => string;
+  profileChoice?: BatchProfileChoice;
 }
 
 export interface FlatManifestOptions {
@@ -29,8 +37,10 @@ export interface FlatManifestOptions {
   /** Ordered group definitions; tasks are bucketed by `kind`. */
   groups: readonly FlatGroupDef[];
   /** Items classified as up-to-date; shown as a static informational group. */
-  upToDate?: readonly { label: string }[];
+  upToDate?: readonly BatchRow[];
   upToDateHeader?: (args: { count: number }) => string;
+  kept?: readonly BatchRow[];
+  keptHeader?: (args: { count: number }) => string;
   notFoundHeader: (args: { count: number }) => string;
   /** Header for items that ran but had nothing to write (e.g. vanished note). */
   skippedHeader?: (args: { count: number }) => string;
@@ -59,7 +69,7 @@ export class FlatManifest implements BatchManifest {
     };
   }
 
-  renderList(parent: HTMLElement): void {
+  renderList(parent: HTMLElement, controls?: BatchListControls): void {
     this.#rowIcons.clear();
     const byKind = Object.groupBy(this.#options.tasks, (task) => task.kind);
     for (const group of this.#options.groups) {
@@ -70,13 +80,19 @@ export class FlatManifest implements BatchManifest {
         group.header({ count: tasks.length }),
         tasks.length <= SECTION_OPEN_MAX,
       );
+      if (group.profileChoice)
+        profileChoiceControl(
+          ul.previousElementSibling as HTMLElement,
+          group.profileChoice,
+          controls,
+        );
       for (const task of tasks) {
-        const icon = row(ul, task.label);
+        const icon = row(ul, task.label, task);
         setRowIcon(icon, "pending");
         this.#rowIcons.set(task.id, icon);
       }
     }
-    this.#renderUpToDate(parent);
+    this.#renderStatic(parent);
     listGroup(parent, {
       header: this.#options.notFoundHeader({
         count: this.#options.notFound.length,
@@ -87,7 +103,15 @@ export class FlatManifest implements BatchManifest {
     });
   }
 
-  #renderUpToDate(parent: HTMLElement): void {
+  #renderStatic(parent: HTMLElement): void {
+    if (this.#options.kept?.length && this.#options.keptHeader) {
+      listGroup(parent, {
+        header: this.#options.keptHeader({ count: this.#options.kept.length }),
+        items: this.#options.kept,
+        icon: "minus",
+        colorCls: "zt:text-(--text-muted)",
+      });
+    }
     const items = this.#options.upToDate;
     if (!items?.length || !this.#options.upToDateHeader) return;
     listGroup(parent, {
@@ -113,14 +137,15 @@ export class FlatManifest implements BatchManifest {
     );
     const byKind = Object.groupBy(done, (task) => task.kind);
     for (const group of this.#options.groups) {
-      listGroup(parent, {
+      profileListGroup(parent, {
+        profileHeader: group.header,
         header: group.header({ count: (byKind[group.kind] ?? []).length }),
         items: byKind[group.kind] ?? [],
         icon: ROW_ICON.done,
         colorCls: ROW_ICON_CLASS.done,
       });
     }
-    this.#renderUpToDate(parent);
+    this.#renderStatic(parent);
     listGroup(parent, {
       header: this.#options.notFoundHeader({
         count: this.#options.notFound.length,
