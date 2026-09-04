@@ -101,7 +101,7 @@ export interface CitedByState {
 export const EMPTY_CITED_BY_SNAPSHOT: CitedBySnapshot = {
   groups: [],
   coverage: "indexing",
-  resolution: "resolving",
+  resolution: null,
 };
 
 export type CitedByStore = ReturnType<typeof createCitedByStore>;

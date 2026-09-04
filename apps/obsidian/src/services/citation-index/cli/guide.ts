@@ -70,11 +70,15 @@ const SYNTAX_STATES = {
 
 /** How well citation keys resolve to items of the connected Zotero source. */
 const RESOLUTION_STATES = {
-  resolving: "The citation-key snapshot is being rebuilt.",
-  ready: "The snapshot matches the connected Zotero source.",
-  degraded:
-    "The Zotero database could not be read, so the snapshot is stale or empty and a citation key may resolve to nothing.",
-} as const satisfies Record<CitationKeyResolution, string>;
+  null: "No citation-key snapshot has settled yet.",
+  fresh: "The snapshot matches the connected Zotero source.",
+  revalidating: "The held snapshot is available while its replacement is read.",
+  failed:
+    "The replacement read failed, so the held snapshot remains available until another input change.",
+} as const satisfies Record<
+  "null" | Exclude<CitationKeyResolution, null>,
+  string
+>;
 
 /** Whether the connected Zotero source answered the references entry join. */
 const DATABASE_STATES = {

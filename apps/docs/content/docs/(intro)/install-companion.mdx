@@ -9,6 +9,8 @@ import { Tabs, Tab } from "@/components/tabs";
 import { VersionLedger } from "@/components/version-ledger";
 import { XpiDownload } from "@/components/xpi-download";
 import { Steps, Step } from "fumadocs-ui/components/steps";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
 
 ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to ZotLit. The Companion is part of every supported ZotLit setup.
 
@@ -40,7 +42,7 @@ ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to Zo
       <Step>
         ### Confirm the installation
 
-        After installing, a **ZotLit** pane should appear in Zotero's settings.
+        After installing, a <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane should appear in Zotero's settings.
 
         You do not need to configure anything here right now. The next section explains when this matters.
 
@@ -75,7 +77,7 @@ ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to Zo
       <Step>
         ### Confirm the installation
 
-        After installing, a **ZotLit** pane should appear in Zotero's settings.
+        After installing, a <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane should appear in Zotero's settings.
 
         You do not need to configure anything here right now. The next section explains when this matters.
 
@@ -87,7 +89,7 @@ ZotLit Companion, the Zotero add-on, keeps recent Zotero changes available to Zo
 
 ## Keep the database file current
 
-The Companion enables **Keep the database file up to date for Obsidian** by default. This setting lets ZotLit read recent Zotero changes when you update a literature note. Keep it enabled under the **Database** section of the ZotLit pane.
+The Companion enables <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} /> by default. This setting lets ZotLit read recent Zotero changes when you update a literature note. Keep it enabled under the <UiLabel name={m["zotero.prefs_database_section"]()} /> section of the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane.
 
 This database setting works without live updates. Basic context-menu actions also work through protocol links with no extra setup.
 

@@ -5,10 +5,12 @@ import {
   defineConfig,
   defineDocs,
 } from "fumadocs-mdx/config";
+import lastModified from "fumadocs-mdx/plugins/last-modified";
 import { valid as isValidSemVer } from "semver";
 import * as v from "valibot";
 
 import { etaGrammar } from "./src/lib/eta-grammar.js";
+import { stringifyAttention } from "./src/lib/markdown-attention.js";
 import { publishedOn } from "./src/lib/shared.js";
 import { CONTRACT_IR } from "./src/lib/template-contract/contract.js";
 import { renderContractTableMarkdown } from "./src/lib/template-contract/gfm.js";
@@ -41,14 +43,35 @@ const semverSchema = v.pipe(
 );
 
 /**
- * The generated reference page carries its tables as `<ContractTable>`, which
- * the Markdown edition would otherwise emit as JSX. Replace each one with the
- * GFM table rendered from the same page model the component reads.
+ * Every collection's Markdown edition compiles to a `_markdown` component
+ * rather than a string: prose is still stringified at build time, while a JSX
+ * element keeps its evaluated props and resolves from the components map
+ * `src/lib/markdown-editions.tsx` hands it. A component that calls
+ * `asMarkdown()` there decides its own Markdown form; one that does not is
+ * serialized as JSX, the way the whole page once was. `stringify` also serializes
+ * every bold and italic span itself, which keeps the opening marker literal —
+ * see `src/lib/markdown-attention.ts`.
  */
 const markdownEdition: LLMsOptions = {
-  stringify(node) {
+  output: "function",
+  // oxlint-disable-next-line max-params -- signature dictated by LLMsOptions.stringify
+  stringify(node, _parent, state, info) {
+    return stringifyAttention(node, state, info);
+  },
+};
+
+/**
+ * The generated reference page carries its tables as `<ContractTable>`, which
+ * the Markdown edition would otherwise emit as JSX. Replace each one with the
+ * GFM table rendered from the same page model the component reads. `stringify`
+ * runs ahead of the JSX collection step, so the table lands as build-time text.
+ */
+const docsMarkdownEdition: LLMsOptions = {
+  ...markdownEdition,
+  // oxlint-disable-next-line max-params -- signature dictated by LLMsOptions.stringify
+  stringify(node, _parent, state, info) {
     if (node.type !== "mdxJsxFlowElement" || node.name !== "ContractTable") {
-      return undefined;
+      return stringifyAttention(node, state, info);
     }
     const attribute = node.attributes.find(
       (entry) => entry.type === "mdxJsxAttribute" && entry.name === "section",
@@ -89,7 +112,7 @@ export const docs = defineDocs({
     // pattern with `./`, which turns `!**/_*.mdx` into the inert `./!**/_*.mdx`.
     files: ["**/[!_]*.mdx"],
     postprocess: {
-      includeProcessedMarkdown: markdownEdition,
+      includeProcessedMarkdown: docsMarkdownEdition,
     },
   },
   meta: {
@@ -102,7 +125,7 @@ export const changelogs = defineCollections({
   dir: "content/changelog",
   async: true,
   postprocess: {
-    includeProcessedMarkdown: true,
+    includeProcessedMarkdown: markdownEdition,
   },
   schema: v.object({
     title: v.optional(v.string()),
@@ -119,7 +142,7 @@ export const blogs = defineCollections({
   dir: "content/blog",
   async: true,
   postprocess: {
-    includeProcessedMarkdown: true,
+    includeProcessedMarkdown: markdownEdition,
   },
   schema: v.object({
     title: v.string(),
@@ -132,6 +155,17 @@ export const blogs = defineCollections({
 });
 
 export default defineConfig({
+  // Each docs page and blog post carries its file's last commit date, read
+  // from git history at build time. A changelog entry is fixed at its release
+  // `date`, so the plugin leaves that collection alone. The date rides with
+  // the compiled body, so an `async` collection reaches it through `load()`,
+  // never off the frontmatter head. The deploy workflow checks out full
+  // history for it.
+  plugins: [
+    lastModified({
+      filter: (collection) => collection === "docs" || collection === "blogs",
+    }),
+  ],
   mdxOptions: {
     rehypeCodeOptions: {
       ...rehypeCodeDefaultOptions,

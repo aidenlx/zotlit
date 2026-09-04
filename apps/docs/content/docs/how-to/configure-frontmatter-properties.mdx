@@ -6,9 +6,11 @@ updated: "2.0.0"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
-import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 You can map Zotero data into YAML frontmatter properties that appear at the top of every literature note. ZotLit ships four default fields: `title`, `related`, `collections`, and `citekey`.
@@ -19,7 +21,7 @@ You can map Zotero data into YAML frontmatter properties that appear at the top 
   <Step>
     ### Open the Frontmatter sub-page
 
-    In Obsidian, open **Settings > ZotLit > {m.settings_page_templates()} > {m.settings_page_frontmatter()}**. This sub-page lists all configured user fields.
+    In Obsidian, open <SettingsPath page={m.settings_page_templates()} setting={m.settings_page_frontmatter()} />. This sub-page lists all configured user fields.
 
   </Step>
   <Step>
@@ -27,10 +29,10 @@ You can map Zotero data into YAML frontmatter properties that appear at the top 
 
     Click the add button. A modal opens with four inputs:
 
-    - **{m.settings_frontmatter_key_name()}**: the YAML property name written to frontmatter.
-    - **{m.settings_frontmatter_language_name()}**: **{m.settings_frontmatter_language_liquid()}** or **{m.settings_frontmatter_language_javascript()}**. The JavaScript option appears only when the [JavaScript Templates gate](/docs/how-to/enable-javascript-templates) is enabled on that device.
-    - **{m.settings_frontmatter_expr_name()}**: the template expression whose output becomes the field value. Use `zt.` paths (e.g. `zt.title`, `zt.DOI`). Browse available paths with the [Template Data Explorer](/docs/how-to/explore-template-data).
-    - **{m.settings_frontmatter_merge_name()}**: controls how the value is applied on note update.
+    - <UiLabel name={m.settings_frontmatter_key_name()} />: the YAML property name written to frontmatter.
+    - <UiLabel name={m.settings_frontmatter_language_name()} />: <UiLabel name={m.settings_frontmatter_language_liquid()} /> or <UiLabel name={m.settings_frontmatter_language_javascript()} />. The JavaScript option appears only when the [JavaScript Templates gate](/docs/how-to/enable-javascript-templates) is enabled on that device.
+    - <UiLabel name={m.settings_frontmatter_expr_name()} />: the template expression whose output becomes the field value. Use `zt.` paths (e.g. `zt.title`, `zt.DOI`). Browse available paths with the [Template Data Explorer](/docs/how-to/explore-template-data).
+    - <UiLabel name={m.settings_frontmatter_merge_name()} />: controls how the value is applied on note update.
 
   </Step>
   <Step>
@@ -38,17 +40,17 @@ You can map Zotero data into YAML frontmatter properties that appear at the top 
 
     Three strategies are available:
 
-    | Strategy | Behavior on update |
-    |----------|-------------------|
-    | **{m.settings_frontmatter_merge_replace()}** | Overwrites the field with the new value every time. |
-    | **{m.settings_frontmatter_merge_append()}** | Adds new array items without removing existing ones. |
-    | **{m.settings_frontmatter_merge_keep()}** | Writes the field only if it does not already exist in frontmatter. |
+    | Strategy                                                  | Behavior on update                                                 |
+    | --------------------------------------------------------- | ------------------------------------------------------------------ |
+    | <UiLabel name={m.settings_frontmatter_merge_replace()} /> | Overwrites the field with the new value every time.                |
+    | <UiLabel name={m.settings_frontmatter_merge_append()} />  | Adds new array items without removing existing ones.               |
+    | <UiLabel name={m.settings_frontmatter_merge_keep()} />    | Writes the field only if it does not already exist in frontmatter. |
 
   </Step>
   <Step>
     ### Save
 
-    Click **{m.settings_frontmatter_save()}**. If validation passes, the field is added to the list.
+    Click <UiLabel name={m.settings_frontmatter_save()} />. If validation passes, the field is added to the list.
 
   </Step>
 </Steps>
@@ -62,17 +64,17 @@ Zotero tag objects from `zt.tags` and returns an array of Obsidian tag values.
   <Step>
     ### Add the `tags` field
 
-    In **Settings > ZotLit > {m.settings_page_templates()} > {m.settings_page_frontmatter()}**, add a field with these values:
+    In <SettingsPath page={m.settings_page_templates()} setting={m.settings_page_frontmatter()} />, add a field with these values:
 
     | Input | Value |
     | ----- | ----- |
-    | **{m.settings_frontmatter_key_name()}** | `tags` |
-    | **{m.settings_frontmatter_language_name()}** | **{m.settings_frontmatter_language_liquid()}** |
-    | **{m.settings_frontmatter_expr_name()}** | `zt.tags \| obsidian_tag` |
-    | **{m.settings_frontmatter_merge_name()}** | **{m.settings_frontmatter_merge_replace()}** |
+    | <UiLabel name={m.settings_frontmatter_key_name()} /> | `tags` |
+    | <UiLabel name={m.settings_frontmatter_language_name()} /> | <UiLabel name={m.settings_frontmatter_language_liquid()} /> |
+    | <UiLabel name={m.settings_frontmatter_expr_name()} /> | `zt.tags \| obsidian_tag` |
+    | <UiLabel name={m.settings_frontmatter_merge_name()} /> | <UiLabel name={m.settings_frontmatter_merge_replace()} /> |
 
-    The <code>{m.settings_frontmatter_merge_replace()}</code> strategy keeps the note's Zotero tags in sync. Choose
-    **{m.settings_frontmatter_merge_append()}** when you want to keep manual Obsidian tags too.
+    The <UiLabel name={m.settings_frontmatter_merge_replace()} /> strategy keeps the note's Zotero tags in sync. Choose
+    <UiLabel name={m.settings_frontmatter_merge_append()} /> when you want to keep manual Obsidian tags too.
 
   </Step>
   <Step>
@@ -111,7 +113,7 @@ Click a field's row to reopen the edit modal and change its settings. To remove 
 
 The order of fields in the Frontmatter list determines the order of frontmatter keys when ZotLit creates a new literature note. On a new note, the system identity field `zotero-key` follows the user-configured fields.
 
-To change the order, drag a field by the handle on its row in **Settings > ZotLit > {m.settings_page_templates()} > {m.settings_page_frontmatter()}**.
+To change the order, drag a field by the handle on its row in <SettingsPath page={m.settings_page_templates()} setting={m.settings_page_frontmatter()} />.
 
 ### Existing notes
 
@@ -137,18 +139,20 @@ After changing frontmatter configuration, run:
 
 This re-evaluates all field expressions and writes the results to the active note's frontmatter according to each field's merge strategy.
 
-The default `citekey` field uses `zt.citationKey`, Liquid, and **{m.settings_frontmatter_merge_replace()}**. It writes `null` when the Zotero item has no citation key. You can edit or remove this field because it is not reserved.
+The default `citekey` field uses `zt.citationKey`, Liquid, and <UiLabel name={m.settings_frontmatter_merge_replace()} />. It writes `null` when the Zotero item has no citation key. You can edit or remove this field because it is not reserved.
 
 ## Agent-based configuration
 
 An agent with the ZotLit skill can configure managed frontmatter field templates through the Template Workbench CLI. See [Template Workbench](/docs/concepts/template-workbench) for details.
 
 <Callout type="info" title="JavaScript fields and the gate">
-  A frontmatter field with {m.settings_frontmatter_language_name()} set to{" "}
-  {m.settings_frontmatter_language_javascript()} is inert when the JavaScript
-  Templates gate is off on that device. The settings page shows: "This field is
-  inactive because JavaScript templates are disabled on this device." See
-  [Enable JavaScript templates](/docs/how-to/enable-javascript-templates).
+  A frontmatter field with{" "}
+  <UiLabel name={m.settings_frontmatter_language_name()} /> set to{" "}
+  <UiLabel name={m.settings_frontmatter_language_javascript()} /> is inert when
+  the JavaScript Templates gate is off on that device. The settings page shows:
+  "This field is inactive because JavaScript templates are disabled on this
+  device." See [Enable JavaScript
+  templates](/docs/how-to/enable-javascript-templates).
 </Callout>
 
 ## See also

@@ -19,10 +19,11 @@ import type {
 } from "@zotlit/protocol";
 
 import { formatValue } from "@/lib/l10n";
+import type { FluentMessageArgs } from "@/lib/l10n";
 import { logger as appLogger } from "@/lib/logger";
 import { notifyUrl } from "@/notify/shared";
 import { sourceId } from "@/notify/source";
-import type { FluentMessageId } from "@/types/fluent";
+import type { FluentMessageId, FluentMessages } from "@/types/fluent";
 
 const logger = appLogger.getChild(["menus", "obsidian"]);
 
@@ -237,7 +238,7 @@ export async function updateManyInObsidian(
  * on the in-flight progress window reports the outcome — "continue in Obsidian"
  * on success, the failure hint otherwise — and auto-dismisses after a moment.
  */
-async function settleProgress(
+async function settleProgress<M extends FluentMessageId>(
   progress: Zotero.ProgressWindow,
   {
     titleId,
@@ -245,13 +246,13 @@ async function settleProgress(
     messageArgs,
   }: {
     titleId: FluentMessageId;
-    messageId: FluentMessageId;
-    messageArgs?: Record<string, number>;
+    messageId: M;
+    messageArgs?: FluentMessages[M];
   },
 ): Promise<void> {
   const [title, message] = await Promise.all([
     formatValue(titleId),
-    formatValue(messageId, messageArgs),
+    formatValue(messageId, ...([messageArgs] as FluentMessageArgs<M>)),
   ]);
   progress.changeHeadline(title ?? "");
   progress.addDescription(message ?? "");

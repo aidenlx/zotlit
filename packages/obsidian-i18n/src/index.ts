@@ -24,7 +24,14 @@ export {
   type TargetLocaleMessages,
 } from "./runtime.js";
 export { languageEndonym } from "./endonyms.js";
-export type { LanguagePack } from "./language-pack.js";
+export type {
+  Declaration,
+  Expression,
+  LanguagePack,
+  Match,
+  Message,
+  Variant,
+} from "./language-pack.js";
 export {
   noopLogger,
   type LogProperties,

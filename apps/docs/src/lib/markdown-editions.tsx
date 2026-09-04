@@ -1,12 +1,23 @@
 // The authored Markdown editions of every page, and the two llms indexes.
 //
 // Server-only: the editions come from `collections/server` through
-// `src/lib/source.ts`, already processed by the `includeProcessedMarkdown`
-// step in `source.config.ts` — so a page's `<ContractTable>` arrives as a GFM
-// table rather than JSX. `src/lib/markdown-routes.ts` owns the URLs these
-// editions answer at.
+// `src/lib/source.ts`. Each page compiles to a `_markdown` component — the
+// `output: "function"` step in `source.config.ts` — whose prose is already
+// stringified and whose JSX elements arrive with their evaluated props. This
+// module renders that component and owns `mdxComponents`, the map those
+// elements resolve against: a component there that calls `asMarkdown()` gives
+// its own Markdown form, and every other one is serialized as JSX.
+// `src/lib/markdown-routes.ts` owns the URLs these editions answer at.
 
+import { renderToMarkdown } from "fumadocs-core/server";
 import { llms } from "fumadocs-core/source";
+import type { ComponentType, ElementType } from "react";
+
+import { ActionLink } from "@/components/action-link";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
 
 import {
   getDocsAvailability,
@@ -31,17 +42,42 @@ export const plainTextHeaders = {
   "content-type": "text/plain; charset=utf-8",
 };
 
+/** The components an edition's JSX elements resolve against. */
+const mdxComponents: Record<string, ElementType> = {
+  ActionLink,
+  Callout,
+  Command,
+  SettingsPath,
+  UiLabel,
+};
+
+/** The `_markdown` export every page carries under `output: "function"`. */
+type MarkdownBody = ComponentType<{
+  components: Record<string, ElementType>;
+}>;
+
 /** A page of any of the three collections, seen through what an edition needs. */
 interface EditionPage {
   url: string;
-  data: { getText: (kind: "processed") => Promise<string> };
+  data: { load: () => Promise<{ _exports: Record<string, unknown> }> };
 }
 
-/** Title line, page URL, an optional preamble, then the processed Markdown body. */
+/** The page's body as Markdown, rendered through its `_markdown` component. */
+async function renderBody(page: EditionPage) {
+  const { _exports } = await page.data.load();
+  const Body = _exports._markdown as MarkdownBody | undefined;
+  if (!Body) {
+    throw new Error(`${page.url} carries no Markdown edition`);
+  }
+
+  return renderToMarkdown(<Body components={mdxComponents} />);
+}
+
+/** Title line, page URL, an optional preamble, then the rendered Markdown body. */
 async function renderPage(heading: string, page: EditionPage, preamble = "") {
   return `# ${heading} (${page.url})
 
-${preamble}${await page.data.getText("processed")}`;
+${preamble}${await renderBody(page)}`;
 }
 
 /**

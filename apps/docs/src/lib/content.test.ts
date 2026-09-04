@@ -22,6 +22,16 @@ function isLinkedHeading(line: string): boolean {
   return labelStart >= 0 && content.indexOf("](", labelStart + 1) > labelStart;
 }
 
+function hasBareMessage(line: string): boolean {
+  return line
+    .split("{m.")
+    .slice(0, -1)
+    .some((before) => {
+      const preceding = before.trimEnd().at(-1);
+      return preceding !== "=" && preceding !== "$";
+    });
+}
+
 describe("MDX content", () => {
   it("keeps links outside headings", () => {
     const linkedHeadings = getMdxFiles(contentDirectory).flatMap((path) =>
@@ -35,5 +45,19 @@ describe("MDX content", () => {
     );
 
     expect(linkedHeadings).toEqual([]);
+  });
+
+  it("reaches Messages only through component props", () => {
+    const bareMessages = getMdxFiles(contentDirectory).flatMap((path) =>
+      readFileSync(path, "utf8")
+        .split("\n")
+        .flatMap((line, index) =>
+          hasBareMessage(line)
+            ? [`${relative(contentDirectory, path)}:${index + 1}`]
+            : [],
+        ),
+    );
+
+    expect(bareMessages).toEqual([]);
   });
 });

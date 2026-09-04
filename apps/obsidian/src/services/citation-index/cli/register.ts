@@ -100,7 +100,8 @@ export function registerCitationsCli(
     index: {
       waitUntilSettled: (timeoutMs) =>
         deps.citationIndex.waitUntilSettled(timeoutMs),
-      resolveCitekey: (citekey) => deps.citationIndex.resolveCitekey(citekey),
+      resolveCitekey: (citekey) =>
+        deps.citationIndex.resolveCitekey(citekey) ?? { kind: "missing" },
       citekeyOf: (indexedKey) => deps.citationIndex.citekeyOf(indexedKey),
       getCitedBy: (indexedKey) => deps.citationIndex.getCitedBy(indexedKey),
       resolution: () => deps.citationIndex.resolution,

@@ -91,8 +91,14 @@ Fontsource serves all four faces from the package's own assets: the `@import`s
 at the top of `src/styles.css` register them, and the `@theme inline` block in
 the same file assigns the roles. Metric-adjusted local fallback faces in that
 stylesheet preserve the shift-free swaps that `next/font` generated before the
-TanStack Start migration. Their overrides come from Next.js 16.3.0's metrics
-for these Google Font families.
+TanStack Start migration. The Inter and Gelasio overrides come from Next.js
+16.3.0's metrics for these Google Font families. The mono fallback stands in
+for a fixed-pitch face, so it names monospace locals instead of the
+proportional Arial `next/font` emits for every family — a proportional stand-in
+matches Plex Mono across mixed-case prose and then runs ~38% wide on the short
+uppercase apparatus labels, which is where the swap moves the layout. Those
+locals carry no `size-adjust`: every monospace face shares Plex Mono's 0.6em
+advance, so the overrides pin the vertical metrics alone.
 
 Gelasio's upright and italic latin faces preload in `src/routes/__root.tsx`
 because serif display paints on essentially every route. Inter stays
@@ -100,7 +106,7 @@ unpreloaded because its adjusted fallback stabilizes the app-wide body and
 chrome until the real face loads.
 
 IBM Plex Mono loads three explicit weights (400/500/600 — Plex Mono isn't a
-variable font), unpreloaded, swapping from its adjusted local fallback.
+variable font), unpreloaded, swapping from its monospace local fallback.
 Its `@theme inline` `--font-mono` override reroutes both the `font-mono` utility
 and every `var(--font-mono)` reference onto it in one lever.
 

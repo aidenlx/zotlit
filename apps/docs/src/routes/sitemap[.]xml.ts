@@ -7,7 +7,8 @@ import { renderSitemap, xmlHeaders } from "@/lib/sitemap";
 export const Route = createFileRoute("/sitemap.xml")({
   server: {
     handlers: {
-      GET: () => new Response(renderSitemap(), { headers: xmlHeaders }),
+      GET: async () =>
+        new Response(await renderSitemap(), { headers: xmlHeaders }),
     },
   },
 });

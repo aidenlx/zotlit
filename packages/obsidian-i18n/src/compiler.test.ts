@@ -15,6 +15,7 @@ import {
   compile,
   compileProject,
   INLANG_PLUGINS,
+  loadMessageData,
   writeOutput,
 } from "./compiler.js";
 import type { CompileResult, GeneratedArtifacts } from "./compiler.js";
@@ -32,8 +33,15 @@ import {
 } from "./test-fixtures.js";
 
 const packageRoot = resolve(import.meta.dirname, "..");
+const workspaceRoot = resolve(packageRoot, "../..");
 const execFileAsync = promisify(execFile);
 const TARGET_LOCALE_PREFIXES = ["notice_pack_"];
+/** The Companion labels the Obsidian build quotes; mirrors its Language Pack options. */
+const OBSIDIAN_INCLUDED_MESSAGES = [
+  "zotero.prefs_notify_section",
+  "zotero.prefs_notify_enable.label",
+  "zotero.prefs_notify_url",
+];
 
 describe("writeOutput", () => {
   test("preserves unchanged artifact mtimes", async () => {
@@ -1225,6 +1233,232 @@ async function typecheckGeneratedOutput(
     );
   }
 }
+
+describe("message data", () => {
+  const companionCatalog = {
+    plugin_example: "Plugin text",
+    zotero: {
+      prefs_pane_label: "ZotLit",
+      menu_item_open: { label: "Open Literature Note in Obsidian" },
+      menu_item_update: {
+        label: [
+          {
+            declarations: ["input count", "local countPlural = count: plural"],
+            selectors: ["countPlural"],
+            match: {
+              "countPlural=one": "Create or Update Literature Note",
+              "countPlural=*": "Create or Update Literature Notes",
+            },
+          },
+        ],
+      },
+    },
+  };
+
+  test("returns the message IR and reports for a nested namespace", async () => {
+    const projectPath = await createFixtureProject(companionCatalog);
+    await addLocale(projectPath, "zh-CN", {
+      plugin_example: "插件文本",
+      zotero: { prefs_pane_label: "ZotLit" },
+    });
+
+    const data = await loadMessageData({
+      root: dirname(projectPath),
+      project: projectPath,
+      includeMessagePrefixes: ["zotero."],
+    });
+
+    expect(data.baseLocale).toBe("en");
+    expect(data.locales).toEqual(["en", "zh-CN"]);
+    expect(data.messages.map((message) => message.id)).toEqual([
+      "zotero.menu_item_open.label",
+      "zotero.menu_item_update.label",
+      "zotero.prefs_pane_label",
+    ]);
+    expect(data.messages[1]).toMatchObject({
+      id: "zotero.menu_item_update.label",
+      inputs: [{ name: "count", type: "number" }],
+      messages: {
+        en: {
+          declarations: [
+            { type: "input", name: "count" },
+            {
+              type: "local",
+              name: "countPlural",
+              value: {
+                type: "formatter",
+                name: "plural",
+                argument: { type: "variable", name: "count" },
+                options: {},
+              },
+            },
+          ],
+        },
+      },
+    });
+    expect(data.messages[2]!.messages).toEqual({
+      en: "ZotLit",
+      "zh-CN": "ZotLit",
+    });
+    expect(data.untranslated).toEqual([
+      {
+        locale: "zh-CN",
+        sourcePath: join(dirname(projectPath), "messages", "zh-CN.json"),
+        sourcePaths: [join(dirname(projectPath), "messages", "zh-CN.json")],
+        bundleIds: [
+          "zotero.menu_item_open.label",
+          "zotero.menu_item_update.label",
+        ],
+      },
+    ]);
+    expect(data.undeclaredInputs).toEqual([]);
+    expect(data.missingBaseLocale).toBeUndefined();
+    expect(data.warnings).toHaveLength(1);
+    expect(data.watchPaths).toEqual([
+      join(projectPath, "settings.json"),
+      join(dirname(projectPath), "messages", "en.json"),
+      join(dirname(projectPath), "messages", "zh-CN.json"),
+    ]);
+  });
+
+  test("reports the undeclared-input and missing-base drift of a namespace", async () => {
+    const projectPath = await createFixtureProject(companionCatalog);
+    await addLocale(projectPath, "zh-CN", {
+      zotero: {
+        prefs_pane_label: "ZotLit {extra}",
+        menu_only_here: { label: "仅中文" },
+      },
+    });
+
+    const data = await loadMessageData({
+      root: dirname(projectPath),
+      project: projectPath,
+      includeMessagePrefixes: ["zotero."],
+    });
+
+    expect(data.undeclaredInputs).toMatchObject([
+      {
+        locale: "zh-CN",
+        bundleId: "zotero.prefs_pane_label",
+        inputs: ["extra"],
+      },
+    ]);
+    expect(data.missingBaseLocale).toMatchObject({
+      bundleIds: ["zotero.menu_only_here.label"],
+    });
+  });
+
+  test("drops the namespace under an excluded prefix", async () => {
+    const projectPath = await createFixtureProject(companionCatalog);
+    const outputDirectory = await createTemporaryDirectory();
+
+    await compile({
+      root: dirname(projectPath),
+      project: projectPath,
+      output: outputDirectory,
+      excludeMessagePrefixes: ["zotero."],
+    });
+
+    const facade = await readFile(join(outputDirectory, "messages.ts"), "utf8");
+    const pack = await readFile(join(outputDirectory, "en.json"), "utf8");
+    expect(facade).toContain("plugin_example");
+    expect(facade).not.toContain("zotero");
+    expect(pack).not.toContain("zotero");
+  });
+
+  test("restores an Included Message under its literal export name and bundle ID", async () => {
+    const projectPath = await createFixtureProject(companionCatalog);
+    await addLocale(projectPath, "zh-CN", {
+      plugin_example: "插件文本",
+      zotero: { menu_item_open: { label: "在 Obsidian 中打开文献笔记" } },
+    });
+    const outputDirectory = await createTemporaryDirectory();
+
+    const result = await compile({
+      root: dirname(projectPath),
+      project: projectPath,
+      output: outputDirectory,
+      excludeMessagePrefixes: ["zotero."],
+      includeMessages: [
+        "zotero.menu_item_open.label",
+        "zotero.menu_item_update.label",
+      ],
+    });
+
+    const facade = await readFile(join(outputDirectory, "messages.ts"), "utf8");
+    expect(facade).toContain(
+      'const zotero_menu_item_open_label = (): string => translate("zotero.menu_item_open.label");',
+    );
+    expect(facade).toContain(
+      'export { zotero_menu_item_open_label as "zotero.menu_item_open.label" };',
+    );
+    expect(facade).toContain(
+      'const zotero_menu_item_update_label = (inputs: { count: number }): string => translate("zotero.menu_item_update.label", inputs);',
+    );
+    expect(facade).not.toContain("prefs_pane_label");
+    const englishPack = JSON.parse(
+      await readFile(join(outputDirectory, "en.json"), "utf8"),
+    );
+    const chinesePack = JSON.parse(
+      await readFile(join(outputDirectory, "zh-CN.json"), "utf8"),
+    );
+    expect(englishPack.messages["zotero.menu_item_open.label"]).toBe(
+      "Open Literature Note in Obsidian",
+    );
+    expect(englishPack.messages).not.toHaveProperty("zotero.prefs_pane_label");
+    expect(chinesePack.messages["zotero.menu_item_open.label"]).toBe(
+      "在 Obsidian 中打开文献笔记",
+    );
+    expect(result.untranslated).toEqual([
+      {
+        locale: "zh-CN",
+        sourcePath: join(dirname(projectPath), "messages", "zh-CN.json"),
+        sourcePaths: [join(dirname(projectPath), "messages", "zh-CN.json")],
+        bundleIds: ["zotero.menu_item_update.label"],
+      },
+    ]);
+  });
+
+  test("rejects an Included Message the project does not define", async () => {
+    const projectPath = await createFixtureProject(companionCatalog);
+    const outputDirectory = await createTemporaryDirectory();
+
+    await expect(
+      compile({
+        root: dirname(projectPath),
+        project: projectPath,
+        output: outputDirectory,
+        excludeMessagePrefixes: ["zotero."],
+        includeMessages: ["zotero.menu_item_missing.label"],
+      }),
+    ).rejects.toThrow(
+      'Included Message "zotero.menu_item_missing.label" is not defined',
+    );
+  });
+
+  test("compiles the workspace catalog with the Obsidian build's configuration", async () => {
+    const outputDirectory = await createTemporaryDirectory();
+
+    const result = await compile({
+      root: workspaceRoot,
+      project: "project.inlang",
+      output: outputDirectory,
+      excludeMessagePrefixes: ["docs_", "workbench_", "zotero."],
+      includeMessages: OBSIDIAN_INCLUDED_MESSAGES,
+      targetLocaleMessagePrefixes: [
+        "notice_language_pack_",
+        "settings_language_pack_",
+      ],
+    });
+
+    expect(result.missingBaseLocale).toBeUndefined();
+    expect(result.undeclaredInputs).toEqual([]);
+    const facade = await readFile(join(outputDirectory, "messages.ts"), "utf8");
+    for (const bundleId of OBSIDIAN_INCLUDED_MESSAGES) {
+      expect(facade).toContain(`as ${JSON.stringify(bundleId)}`);
+    }
+  });
+});
 
 async function generateLanguagePacks(options: {
   projectPath: string;

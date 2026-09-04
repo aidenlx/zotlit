@@ -6,6 +6,8 @@ updated: "2.1.0"
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 ZotLit uses one ordered set of citations to format the active note, number its references, and support citation navigation.
@@ -14,18 +16,18 @@ ZotLit uses one ordered set of citations to format the active note, number its r
 
 The Document Citation Set contains the Citation Occurrences from the active note. Each occurrence keeps its source position and citation details.
 
-Two settings under **Settings > ZotLit > {m.settings_page_citations()}** decide which sources join the set:
+Two settings under <SettingsPath page={m.settings_page_citations()} /> decide which sources join the set:
 
-| Setting                                             | Default | Included source                                           |
-| --------------------------------------------------- | ------- | --------------------------------------------------------- |
-| **{m.settings_citation_pandoc_citations_name()}**   | On      | Literal Pandoc syntax such as `@doe2024` and `[@doe2024]` |
-| **{m.settings_citation_wikilink_citations_name()}** | Off     | Eligible wikilinks to Literature Notes                    |
+| Setting                                                          | Default | Included source                                           |
+| ---------------------------------------------------------------- | ------- | --------------------------------------------------------- |
+| <UiLabel name={m.settings_citation_pandoc_citations_name()} />   | On      | Literal Pandoc syntax such as `@doe2024` and `[@doe2024]` |
+| <UiLabel name={m.settings_citation_wikilink_citations_name()} /> | Off     | Eligible wikilinks to Literature Notes                    |
 
 You can turn off both sources. The References Sidebar, formatted in-text citations, numeric numbering, and Citekey Navigation then receive an empty set.
 
 An eligible wikilink is unaliased and points to a Literature Note. It has either no fragment or a valid Citation Fragment such as `#cite:locator=33`.
 
-Aliases, embeds, unresolved targets, heading fragments, and block fragments stay outside the set. Malformed Citation Fragments also stay outside it. The References Sidebar reports a malformed fragment as a Reference Error while **{m.settings_citation_wikilink_citations_name()}** is on.
+Aliases, embeds, unresolved targets, heading fragments, and block fragments stay outside the set. Malformed Citation Fragments also stay outside it. The References Sidebar reports a malformed fragment as a Reference Error while <UiLabel name={m.settings_citation_wikilink_citations_name()} /> is on.
 
 The set keeps source order. This order matters because numeric styles assign numbers from the complete note, not from one visible section.
 
@@ -53,7 +55,7 @@ ZotLit also excludes citation-like text in code, math, `%%` comments, frontmatte
 
 ### Resolution
 
-ZotLit resolves Pandoc citation keys against Zotero's native citation key field, across every library in your **{m.settings_library_scope_name()}**. It does not use the `citekey` frontmatter field for resolution.
+ZotLit resolves Pandoc citation keys against Zotero's native citation key field, across every library in your <UiLabel name={m.settings_library_scope_name()} />. It does not use the `citekey` frontmatter field for resolution.
 
 An item can appear as a citation before it has a Literature Note. Opening that citation creates the Literature Note, then opens it. An unresolved key stays in its native source and appears as a Reference Error in the sidebar.
 
@@ -79,7 +81,10 @@ Wikilinks keep Obsidian's native link target, click behavior, and drag behavior.
 
 ## Formatted in-text citations
 
-**{m.settings_citation_show_formatted_name()}** is on by default. It applies the selected **{m.settings_citation_references_style_name()}** in Live Preview and reading view. Source mode always shows Markdown.
+<UiLabel name={m.settings_citation_show_formatted_name()} /> is on by default.
+It applies the selected
+<UiLabel name={m.settings_citation_references_style_name()} /> in Live Preview
+and reading view. Source mode always shows Markdown.
 
 ZotLit asks the Pandoc engine to format the complete Document Citation Set. A complete render keeps numbering and style context consistent across the note. ZotLit swaps the whole document to formatted text only after that render finishes.
 
@@ -89,7 +94,7 @@ ZotLit leaves the native source visible when it cannot produce one complete form
 
 A Citation Cluster with any unresolved item stays completely unchanged. Its resolved items still affect later numeric numbering and the References Sidebar.
 
-Turning **{m.settings_citation_show_formatted_name()}** off leaves every source in Obsidian's native presentation. It does not change set membership, Citekey Navigation, insertion, or export.
+Turning <UiLabel name={m.settings_citation_show_formatted_name()} /> off leaves every source in Obsidian's native presentation. It does not change set membership, Citekey Navigation, insertion, or export.
 
 ## References and errors
 
@@ -101,7 +106,9 @@ The [references how-to](/docs/how-to/review-copy-troubleshoot-references) covers
 
 ## Citekey Navigation
 
-**{m.settings_citation_open_as_links_name()}** controls navigation for both literal Pandoc citations and Literature Note wikilinks shown as citations. It works independently of formatted display and hover behavior.
+<UiLabel name={m.settings_citation_open_as_links_name()} /> controls navigation
+for both literal Pandoc citations and Literature Note wikilinks shown as
+citations. It works independently of formatted display and hover behavior.
 
 A single-item citation can open or create its Literature Note. A multi-item citation requires an item choice. An [ambiguous key](#ambiguous-key) requires a candidate choice because the key itself names no unique item.
 

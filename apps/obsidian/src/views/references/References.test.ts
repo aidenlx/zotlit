@@ -86,7 +86,7 @@ async function render(
     documentPresentationError = null,
     engine = { kind: "installed", version: "test" },
     copy = { kind: "blocked", reason: "pending" },
-    citekeyResolution = "ready",
+    citekeyResolution = "fresh",
   }: Partial<
     Pick<
       ReferencesState,
@@ -173,7 +173,7 @@ describe("References", () => {
         },
       ],
       { kind: "minimal" },
-      { citekeyResolution: "resolving" },
+      { citekeyResolution: null },
     );
 
     expect(container.textContent).toContain(

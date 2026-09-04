@@ -1,16 +1,48 @@
 import { FLUENT_FILE_NAME } from "@/constant";
 import { logger as appLogger } from "@/lib/logger";
-import type { FluentMessageId } from "@/types/fluent";
+import type { FluentMessageId, FluentMessages } from "@/types/fluent";
 
 const FTL_FILES = [FLUENT_FILE_NAME];
 
 export const l10n = new Localization(FTL_FILES);
 
-export function formatValue(
-  id: FluentMessageId,
-  args?: L10nArgs,
+/** Distributes to `true` for each member of the ID union that takes no inputs, `never` otherwise. */
+type InputFreeMembers<I extends FluentMessageId> = I extends FluentMessageId
+  ? [FluentMessages[I]] extends [never]
+    ? true
+    : never
+  : never;
+
+/**
+ * The argument list a message ID accepts: none for an input-free message,
+ * its inputs otherwise. A union mixing both kinds makes the inputs optional.
+ */
+export type FluentMessageArgs<I extends FluentMessageId> = [
+  FluentMessages[I],
+] extends [never]
+  ? []
+  : [InputFreeMembers<I>] extends [never]
+    ? [args: FluentMessages[I]]
+    : [args?: FluentMessages[I]];
+
+export function formatValue<I extends FluentMessageId>(
+  id: I,
+  ...[args]: FluentMessageArgs<I>
 ): Promise<string | null> {
-  return l10n.formatValue(id, args);
+  return l10n.formatValue(id, args as L10nArgs | undefined);
+}
+
+/**
+ * The JSON string `setL10nArgs` takes for a menu entry's message, typed over
+ * that message's inputs. Zotero assigns the value straight to
+ * `dataset.l10nArgs`, so it has to arrive serialized.
+ */
+export function l10nArgs<I extends FluentMessageId>(
+  id: I,
+  args: FluentMessages[I],
+): string {
+  void id;
+  return JSON.stringify(args);
 }
 
 const fluentLogger = appLogger.getChild("l10n");
@@ -20,11 +52,11 @@ const fluentLogger = appLogger.getChild("l10n");
  * message means the FTL file and the code disagree, so it fails loudly instead
  * of rendering blank UI.
  */
-export async function requireMessage(
-  id: FluentMessageId,
-  args?: L10nArgs,
+export async function requireMessage<I extends FluentMessageId>(
+  id: I,
+  ...args: FluentMessageArgs<I>
 ): Promise<string> {
-  const message = await formatValue(id, args);
+  const message = await formatValue(id, ...args);
   if (message === null) {
     fluentLogger.error("missing FTL message", { id });
     throw new Error(`missing FTL message: ${id}`);

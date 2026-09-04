@@ -21,6 +21,7 @@ import { resolvePandocEnginePin } from "./scripts/pandoc-engine.ts";
 
 import {
   EXCLUDE_MESSAGE_PREFIXES,
+  INCLUDE_MESSAGES,
   TARGET_LOCALE_MESSAGE_PREFIXES,
 } from "#language-pack-options";
 
@@ -113,6 +114,7 @@ export default defineConfig(({ mode }) => {
         project: join(workspaceRoot, "project.inlang"),
         output: "src/lib/i18n/generated",
         excludeMessagePrefixes: EXCLUDE_MESSAGE_PREFIXES,
+        includeMessages: INCLUDE_MESSAGES,
         targetLocaleMessagePrefixes: TARGET_LOCALE_MESSAGE_PREFIXES,
         servePacks:
           i18nDevServerPort === undefined

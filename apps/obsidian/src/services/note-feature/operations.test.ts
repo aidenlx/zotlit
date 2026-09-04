@@ -10,7 +10,9 @@ import {
   getAnnotationsByItemId,
   getChildNotesByParentIDs,
   getItemsByKey,
+  itemBaseFields,
   resolveIndexedKeyLibrary,
+  resolveVenue,
 } from "@zotlit/db";
 import type {
   BaseItem,
@@ -4316,6 +4318,12 @@ function makeItem(
     citationKey: string | null;
   },
 ): Item {
+  const fields = {
+    itemType: "journalArticle",
+    title: input.title,
+    citationKey: input.citationKey,
+  } as ItemFields;
+  const baseFields = itemBaseFields(fields);
   return {
     itemID: input.itemID ?? 1,
     libraryID: input.libraryID ?? 1,
@@ -4327,11 +4335,9 @@ function makeItem(
     primaryCreatorType: "author",
     customFields: new Map(),
     groupID: null,
-    fields: {
-      itemType: "journalArticle",
-      title: input.title,
-      citationKey: input.citationKey,
-    } as ItemFields,
+    fields,
+    baseFields,
+    venue: resolveVenue(baseFields),
   };
 }
 
@@ -4352,6 +4358,14 @@ function makeCreateGateItem(): Item {
       title: "Root",
       citationKey: "root",
     } as ItemFields,
+    baseFields: {
+      publicationTitle: null,
+      publisher: null,
+      volume: null,
+      issue: null,
+      pages: null,
+    },
+    venue: null,
   };
 }
 

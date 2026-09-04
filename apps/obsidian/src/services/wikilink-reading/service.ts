@@ -46,7 +46,7 @@ export interface WikilinkReadingDeps {
   plugin: Pick<Plugin, "registerMarkdownPostProcessor">;
   noteIndex: Pick<NoteIndex, "on">;
   /** The formatted citations every surface of one document shares. */
-  citationText: Pick<CitationText, "load" | "on" | "peek">;
+  citationText: Pick<CitationText, "on" | "peek">;
   /** The open-or-create flow every citation surface shares. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   /** What a hovered citation shows. */
@@ -163,16 +163,13 @@ export class WikilinkReading extends Service<void> {
     // waits for nothing. Native links stay in place while the read settles.
     const file = this.#app.vault.getFileByPath(ctx.sourcePath);
     const text = file === null ? null : this.#citationText.peek(file.path);
-    if (file !== null && text === null) {
-      void this.#citationText.load(file);
-      return;
-    }
+    if (text === null) return;
     if (this.#retired) return;
 
     // Which occurrence each Citation of the section is, so a position-dependent
     // style shows every one of them the text rendered for its own place.
     const citations = runs.map((run) => citationOfRun(run));
-    const failure = text?.presentationFailure;
+    const failure = text.value.presentationFailure;
     renderProfileRecovery(el, this.#app, { path: failure?.target });
     if (failure) {
       const diagnostic = m.notice_imported_note_profile_unknown({
@@ -186,9 +183,7 @@ export class WikilinkReading extends Service<void> {
     }
     const coordinates = sectionCoordinates(citations, sectionRange(ctx, el));
     const contents = citations.map((citation, index) =>
-      text === null
-        ? null
-        : citationContent(citation, text, coordinates[index]),
+      citationContent(citation, text.value, coordinates[index]),
     );
     const shown = renderCitationRuns(
       runs,

@@ -121,7 +121,8 @@ function Results({
   if (
     groups.length === 0 &&
     coverage === "complete" &&
-    resolution === "ready"
+    resolution !== null &&
+    resolution !== "failed"
   ) {
     return <EmptyState>{m.cited_by_empty()}</EmptyState>;
   }
@@ -290,13 +291,13 @@ function citedByStatuses(
       warning: true,
     });
   }
-  if (resolution === "resolving") {
+  if (resolution === null) {
     statuses.push({
       key: "resolving",
       message: m.cited_by_resolving(),
       warning: false,
     });
-  } else if (resolution === "degraded") {
+  } else if (resolution === "failed") {
     statuses.push({
       key: "resolution-degraded",
       message: m.cited_by_resolution_degraded(),

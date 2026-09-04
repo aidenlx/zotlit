@@ -14,6 +14,10 @@ _Avoid_: note (ambiguous across Zotero/Obsidian boundary), Zotero note (ambiguou
 An Obsidian Markdown file produced by converting a Zotero Child Note's HTML body to Markdown. Identified by a `zotero-note-key` frontmatter field (disjoint from `zotero-key`, so it never pollutes the Literature Note index). Carries a `zotero-lastmod` frontmatter field (the source Child Note's Zotero `dateModified`) used by batch re-import to skip unchanged notes, and the same `zotlit-profile` stamp as a Literature Note — written at creation from the creation context (side-effect import: the in-flight operation's Profile; explicit import of an attached note: the parent's Literature Note stamp; otherwise the default Profile), re-emitted on every overwrite, absent meaning the default Profile. Writes follow the stamp; the parent item's Profile is never consulted after creation. Whole-body overwrite on explicit re-import. The Zotero-side source is a Child Note.
 _Avoid_: child note (that's the Zotero-side source), mirror, note (ambiguous)
 
+**Plain HTML Child Note** _(Zotero)_:
+A Child Note whose stored HTML has no usable Zotero note schema marker. Note Import preserves its general document structure and visible formatting without assigning Zotero-specific semantics to citations, annotation excerpts, or embedded attachments.
+_Avoid_: non-standard Zotero note, schema-less note
+
 **Managed Region**:
 The `%%zt-managed%%`-delimited portion of a Literature Note's body, re-rendered from the Managed Block (previously the `content` template) on every update. Content outside the markers is user-owned and preserved.
 _Avoid_: managed block, template region, synced region
@@ -315,6 +319,10 @@ _Avoid_: citation rendering (ambiguous with reference rendering), citation displ
 **Document Citation Text**:
 The complete formatted text the Pandoc Engine produces for the Document Citation Set. It is produced for the whole document at once because a numbering style counts across the complete set and a position-dependent style renders each Citation Occurrence by its place in the document, so two occurrences of one source can read differently and each in-text surface shows the text of its own occurrence; a surface that cannot tell which occurrence it shows falls back to the source's first-occurrence text. Every in-text surface changes from its native source presentation only after that complete result is ready. A Citation the engine cannot format stays entirely in its source presentation.
 _Avoid_: citation cache (names the Citation Index's persistence, not this), rendered bibliography (the References Sidebar's whole-list render)
+
+**Held Read**:
+The value one surface reads for a key, kept on screen while a fresh read replaces it. Pending is the absence of a Held Read, never a verdict.
+_Avoid_: cache, SWR cache
 
 **Citekey Navigation** _(Obsidian)_:
 The interaction surface of recognized literal Pandoc citations across Live Preview, Source mode, and reading mode — selection, click, and the open-under-cursor palette commands, all routed through one flow; what hovering shows belongs to the Hover Action. Open Citations as Links chooses what a plain click does and gates the palette commands; Mod+click always opens. A single-item Citation opens its Literature Note; a multi-item Citation opens an item menu. It is independent of In-text Citation Rendering; a Literature Note wikilink joins the click surface only while it shows a Rendered Citation, and keeps Obsidian's native navigation otherwise.

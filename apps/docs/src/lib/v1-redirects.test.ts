@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { zotlitLegacyUrl } from "./shared";
-import {
-  buildV1Redirects,
-  renderHeadersFile,
-  renderRedirectsFile,
-} from "./v1-redirects";
+import { buildV1Redirects, renderRedirectsFile } from "./v1-redirects";
 
 const redirects = buildV1Redirects();
 const find = (source: string) => redirects.find((r) => r.source === source);
@@ -106,27 +102,5 @@ describe("renderRedirectsFile", () => {
 
   it("ends with a newline so the last rule parses", () => {
     expect(file.endsWith("\n")).toBe(true);
-  });
-});
-
-describe("renderHeadersFile", () => {
-  const file = renderHeadersFile();
-
-  it("adds the giscus CORS header to the comment themes", () => {
-    expect(file).toContain(
-      "/giscus/*\n  Access-Control-Allow-Origin: https://giscus.app",
-    );
-  });
-
-  it("types the changelog feed as RSS", () => {
-    expect(file).toContain(
-      "/changelog/rss.xml\n  Content-Type: application/rss+xml; charset=utf-8",
-    );
-  });
-
-  it("caches the commit-pinned agent-skill archives forever", () => {
-    expect(file).toContain(
-      "/.well-known/agent-skills/*/archive.zip\n  Cache-Control: public, max-age=31536000, immutable",
-    );
   });
 });
