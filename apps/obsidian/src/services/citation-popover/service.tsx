@@ -2,6 +2,7 @@
 
 import type { App } from "obsidian";
 
+import type { Held } from "@/lib/held-reads";
 import { getLogger } from "@/lib/log";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
 import { readReferenceSources } from "@/services/citation-index/service";
@@ -242,20 +243,20 @@ async function settledCitationText(
     const held = citationText.peek(path);
     if (held === null) {
       const wake = Promise.withResolvers<
-        "changed" | "invalidated" | "settled"
+        Held<DocumentCitations> | null | undefined
       >();
       const unsubscribes = [
         citationText.on("changed", (changedPath) => {
-          if (changedPath === path) wake.resolve("changed");
+          if (changedPath === path) wake.resolve(undefined);
         }),
-        citationText.on("invalidated", () => wake.resolve("invalidated")),
-        citationText.on("settled", (settledPath) => {
-          if (settledPath === path) wake.resolve("settled");
+        citationText.on("invalidated", () => wake.resolve(undefined)),
+        citationText.on("settled", (settledPath, settled) => {
+          if (settledPath === path) wake.resolve(settled);
         }),
       ];
-      const event = await wake.promise;
+      const settled = await wake.promise;
       for (const unsubscribe of unsubscribes) unsubscribe();
-      if (event === "settled" && citationText.peek(path) === null) return null;
+      if (settled !== undefined) return settled?.value ?? null;
       continue;
     }
     if (held.status === "revalidating") {

@@ -72,7 +72,7 @@ interface CitationTextEvents {
   /** What is held for one document changed or went stale. */
   changed: (path: string) => void;
   /** One document read committed, including an equal or failed read. */
-  settled: (path: string) => void;
+  settled: (path: string, held: Held<DocumentCitations> | null) => void;
   /** Every document's citation text went stale; a surface showing it asks again. */
   invalidated: () => void;
 }

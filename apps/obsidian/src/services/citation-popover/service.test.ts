@@ -44,7 +44,9 @@ function harness(initial: Held<DocumentCitations> | null) {
   let held = initial;
   const listeners = {
     changed: new Set<(path: string) => void>(),
-    settled: new Set<(path: string) => void>(),
+    settled: new Set<
+      (path: string, held: Held<DocumentCitations> | null) => void
+    >(),
     invalidated: new Set<() => void>(),
   };
   const citationText = {
@@ -115,6 +117,9 @@ function harness(initial: Held<DocumentCitations> | null) {
     emitInvalidated: () => {
       for (const listener of listeners.invalidated) listener();
     },
+    emitSettled: (settled: Held<DocumentCitations> | null) => {
+      for (const listener of listeners.settled) listener(NOTE.path, settled);
+    },
     hold(value: Held<DocumentCitations>) {
       held = value;
     },
@@ -127,6 +132,34 @@ beforeEach(() => {
 });
 
 describe("Citation Popover citation text", () => {
+  it("settles the second hover after the first citation-text read failed", async () => {
+    vi.useFakeTimers();
+    try {
+      const run = harness(null);
+
+      run.show();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(run.citationText.peek).toHaveBeenCalledOnce();
+      run.emitSettled(null);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(popovers[0]!.render).toHaveBeenCalledOnce();
+      expect(run.citationText.peek).toHaveBeenCalledOnce();
+
+      run.show();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(run.citationText.peek).toHaveBeenCalledTimes(2);
+      run.emitSettled(null);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(popovers[1]!.render).toHaveBeenCalledOnce();
+      expect(run.citationText.peek).toHaveBeenCalledTimes(2);
+      const content = popovers[1]!.render.mock
+        .calls[0]![0] as ReactElement<CitationPopoverContentProps>;
+      expect(content.props.note).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it.each([
     [
       "the document changed",
