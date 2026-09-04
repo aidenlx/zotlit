@@ -5,6 +5,9 @@ date: 2026-08-24
 ---
 
 import { ActionLink } from "@/components/action-link";
+import { Callout } from "@/components/callout";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
 
 v2.1 delivers the citation workflow. It covers the full path from inserting a citation to exporting a finished document with a formatted bibliography, and it adds multi-library support and Zotero 10 compatibility along the way.
 
@@ -107,7 +110,7 @@ When a citation key matches items in more than one library, ZotLit surfaces the 
 
 ### Zotero 10 support
 
-ZotLit supports Zotero 10 alongside Zotero 9. Zotero 10 changed how it stores recent edits, so the Companion now keeps the database current for ZotLit automatically. When you switch from Zotero to Obsidian, your changes are already there. A new **Database Status** panel on the Zotero sidebar confirms that recent changes have reached the database.
+ZotLit supports Zotero 10 alongside Zotero 9. Zotero 10 changed how it stores recent edits, so the Companion now keeps the database current for ZotLit automatically. When you switch from Zotero to Obsidian, your changes are already there. A new <UiLabel name={m["zotero.database_status.tooltiptext"]()} /> panel on the Zotero sidebar confirms that recent changes have reached the database.
 
 <ActionLink href="/docs/how-to/fix-stale-data" kind="external">
   Fix Zotero changes that do not appear

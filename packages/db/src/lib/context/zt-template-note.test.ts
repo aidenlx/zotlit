@@ -6,6 +6,7 @@ import { USER_LIBRARY_ID } from "@/lib/constants";
 import type { Annotation } from "@/lib/zt-annot";
 import type { Attachment } from "@/lib/zt-attach";
 import type { ItemTag, Tag } from "@/lib/zt-tag";
+import { itemBaseFields, resolveVenue } from "@/lib/zt-venue";
 import type { BaseItem, Item } from "@/queries/items";
 
 import type { TemplateFilenameItemData } from "./zt-template-item";
@@ -15,6 +16,7 @@ function makeItem(
   fields: { itemType: string } & Record<string, string | null>,
   base?: Partial<BaseItem> & Pick<Partial<Item>, "groupID">,
 ): Item {
+  const baseFields = itemBaseFields(fields as ItemFields);
   return {
     itemID: 1,
     libraryID: USER_LIBRARY_ID,
@@ -28,6 +30,8 @@ function makeItem(
     groupID: null,
     ...base,
     fields: fields as ItemFields,
+    baseFields,
+    venue: resolveVenue(baseFields),
   };
 }
 

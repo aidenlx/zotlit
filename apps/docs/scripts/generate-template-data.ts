@@ -26,9 +26,9 @@ title: "Template data"
 description: "Every property available on the zt variable, organized by template type."
 ---`;
 
-const IMPORTS = `import { Callout } from "fumadocs-ui/components/callout";
-import { Card, Cards } from "fumadocs-ui/components/card";
+const IMPORTS = `import { Card, Cards } from "fumadocs-ui/components/card";
 
+import { Callout } from "@/components/callout";
 import { ContractTable } from "@/components/contract-table";`;
 
 const INTRO = `This page lists every property available on \`zt\` in each template type. Use the [Template Data Explorer](/docs/how-to/explore-template-data) against your own library to discover values interactively.`;

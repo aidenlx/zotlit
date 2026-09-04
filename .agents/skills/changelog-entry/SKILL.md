@@ -7,7 +7,7 @@ description: Write a user-facing changelog entry under apps/docs/content/changel
 
 Writes a new file at `apps/docs/content/changelog/<version>.mdx` describing user-visible changes since the last release.
 
-The reader is an Obsidian plugin user who integrates Zotero. They care what changed for *them*, not how it was implemented. Prose is authored by the `docs-writer` agent following the `docs-writing` skill — scope the content, then delegate the writing.
+The reader is a non-technical academic who uses Obsidian with Zotero for their research workflow. They care what they can *feel* — faster, smoother, newly possible — not how it was built. Describe benefits and observable differences; leave the mechanism out. Prose is authored by the `docs-writer` agent following the `docs-writing` skill — scope the content, then delegate the writing.
 
 ## Optional context slot
 
@@ -66,14 +66,16 @@ Most commits get dropped. That is correct.
 
 - `chore:` — version bumps, dependency updates, CI, release commits, skill/agent updates
 - `refactor:` — unless the user can perceive the difference
-- `fix(...)` for a feature new in this release — the broken state never shipped
+- `fix(...)` for code new in this release — whether it fixes a new feature or another new fix, the broken state never shipped. Test: did the bug exist in the previous release? If not, drop it.
 - `test:`, `docs(agents)`, internal logging, dev-only tooling, type-only changes
 - `build:`, `ci:`, `perf:` that only affect build speed or developer experience
 - Commits whose user-facing effect is already covered by a later commit in the same range
 
+Commit messages are raw material, not copy. Rephrase each change in the reader's language — what they see, touch, or no longer struggle with. Aggregate commits that address the same user-facing problem into one entry.
+
 ### 5. Surface test
 
-Walk every sentence in the draft and ask: *would a user who has never read source code understand this without skipping a word?*
+Walk every sentence and ask: *would a researcher who has never read source code understand this — and care?* Each sentence names what the user gains or what stopped hurting, not the mechanism.
 
 Strip: class names, function names, API internals (`AsyncLocalStorage`, `MessageChannel`), return types (`null`), storage mechanisms (`synced plugin settings`, `localStorage`), internal decision logic ("the plugin decides whether to...").
 

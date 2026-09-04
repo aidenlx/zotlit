@@ -30,6 +30,7 @@ import { getLogger } from "@/lib/log";
 import {
   ANNOTATION_CALLOUT_ATTR,
   createNoteTurndown,
+  createObsidianTurndown,
   encodeCalloutAttr,
 } from "@/lib/turndown";
 import { renderColorMark, renderHighlight } from "@/lib/turndown/color-mark";
@@ -144,8 +145,9 @@ export function createNoteParser(
  * real vault embeds.
  *
  * Notes below {@link parseNoteSchema}'s supported schema version convert to a
- * legacy-format callout instead; HTML with no schema container (empty or
- * non-note input) yields `""`.
+ * legacy-format callout instead. A Plain HTML Child Note with no usable schema
+ * marker keeps basic Obsidian-compatible formatting without running the
+ * Zotero-specific conversion rules.
  *
  * @param Turndown - Obsidian's `TurndownService` global at runtime; the npm
  *   package in tests.
@@ -160,7 +162,15 @@ export function parseNote(
   const root = new DOMParser().parseFromString(html, "text/html");
   const schema = parseNoteSchema(root);
   if (!schema.supported) {
-    if (schema.version === null) return "";
+    if (schema.version === null) {
+      if (!root.body.hasChildNodes()) return "";
+      const markdown = createObsidianTurndown(Turndown).turndown(root.body);
+      logger.warn("Converted Plain HTML Child Note with basic formatting", {
+        fallbackReason: schema.fallbackReason,
+        markdownLength: markdown.length,
+      });
+      return markdown;
+    }
     logger.warn("Skipped legacy Zotero note", {
       schemaVersion: schema.version,
     });

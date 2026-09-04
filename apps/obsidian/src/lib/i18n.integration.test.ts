@@ -12,6 +12,7 @@ import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import {
   EXCLUDE_MESSAGE_PREFIXES,
+  INCLUDE_MESSAGES,
   TARGET_LOCALE_MESSAGE_PREFIXES,
 } from "#language-pack-options";
 
@@ -25,6 +26,12 @@ test("the ZotLit project compiles through the reusable package contract", async 
   // The web Workbench's strings belong to the docs catalog, so the plugin pack
   // leaves them out.
   expect(generated.basePack.messages).not.toHaveProperty("workbench_title");
+  expect(generated.basePack.messages).not.toHaveProperty([
+    "zotero.menu_file.label",
+  ]);
+  expect(generated.basePack.messages).toHaveProperty([
+    "zotero.prefs_notify_section",
+  ]);
   // A pack over the cap is refused at runtime, and copy another host owns is
   // what fills it. Add the new prefix to EXCLUDE_MESSAGE_PREFIXES when this
   // fails for messages the plugin never reads.
@@ -75,6 +82,7 @@ async function compileRealProject(): Promise<{
     project: "project.inlang",
     output,
     excludeMessagePrefixes: EXCLUDE_MESSAGE_PREFIXES,
+    includeMessages: INCLUDE_MESSAGES,
     targetLocaleMessagePrefixes: TARGET_LOCALE_MESSAGE_PREFIXES,
   });
   const basePack = JSON.parse(await readFile(join(output, "en.json"), "utf8"));

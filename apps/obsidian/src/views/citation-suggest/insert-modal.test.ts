@@ -18,7 +18,7 @@ function makeModal(
     settings: { current: {} },
     citationIndex: {
       resolveCitekey: () => ({ kind: "missing" }),
-      resolution: "ready",
+      resolution: "fresh",
     },
     ...overrides,
   } as unknown as CitationSuggestDeps;
@@ -89,7 +89,7 @@ describe("InsertCitationModal ambiguity", () => {
     const modal = makeModal(
       {
         noteFeature: { renderCitation },
-        citationIndex: { resolveCitekey: () => ambiguous, resolution: "ready" },
+        citationIndex: { resolveCitekey: () => ambiguous, resolution: "fresh" },
       } as unknown as Partial<CitationSuggestDeps>,
       editor,
     );

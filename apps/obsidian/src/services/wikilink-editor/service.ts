@@ -30,7 +30,7 @@ export interface WikilinkEditorDeps {
   plugin: Pick<Plugin, "registerEditorExtension">;
   noteIndex: Pick<NoteIndex, "on">;
   /** The formatted citations every surface of one document shares. */
-  citationText: Pick<CitationText, "peek" | "load" | "on">;
+  citationText: Pick<CitationText, "peek" | "on">;
   /** The open-or-create flow every citation surface shares. */
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   /** What a hovered citation shows. */
@@ -89,11 +89,6 @@ export class WikilinkEditor extends Service<void> {
         this.#literatureNote(linkpath, sourcePath),
       enabled: () => this.#display.enabled,
       citationText: (path) => this.#citationText.peek(path),
-      requestCitationText: (file) => {
-        // The read announces itself when it settles, which is what brings the
-        // formatted citations in.
-        void this.#citationText.load(file);
-      },
       open: (citekey, pane) => {
         void this.#citekeyEditor.openCitekey(citekey, pane);
       },

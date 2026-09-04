@@ -31,7 +31,7 @@ type PageRoute = Exclude<FileRouteTypes["to"], (typeof machineRoutes)[number]>;
 interface Entry {
   /** The URL path this entry publishes. @default the route's own path */
   pathname?: string;
-  /** Publication day in ISO form, for the pages that carry one. */
+  /** Publication or last-commit day in ISO form, for the pages that carry one. */
   lastModified?: string;
 }
 
@@ -44,7 +44,39 @@ function renderUrl(loc: string, lastModified?: string): string {
   return `<url><loc>${loc.replaceAll("&", "&amp;")}</loc>${lastmod}</url>`;
 }
 
-export function renderSitemap(): string {
+/**
+ * The collections are `async`, so a page's git date rides with its compiled
+ * body rather than the frontmatter head; the body is already compiled for the
+ * Markdown editions, so this costs the sitemap no extra MDX work.
+ */
+async function lastCommitDay(page: {
+  data: { load(): Promise<{ lastModified?: Date }> };
+}): Promise<string | undefined> {
+  const { lastModified } = await page.data.load();
+  return lastModified?.toISOString().slice(0, 10);
+}
+
+async function docsEntries(): Promise<Entry[]> {
+  const pages = source.getPages().filter((page) => page.slugs.length > 0);
+  return Promise.all(
+    pages.map(async (page) => ({
+      pathname: page.url,
+      lastModified: await lastCommitDay(page),
+    })),
+  );
+}
+
+/** A post's last commit day, or its publication day when git knows no later one. */
+async function blogEntries(): Promise<Entry[]> {
+  return Promise.all(
+    blog.getPages().map(async (page) => ({
+      pathname: page.url,
+      lastModified: (await lastCommitDay(page)) ?? page.data.date,
+    })),
+  );
+}
+
+export async function renderSitemap(): Promise<string> {
   // A missing key is a compile error: adding a page route forces a sitemap entry.
   const routes: Record<PageRoute, Entry[]> = {
     "/": [{ pathname: "" }],
@@ -53,20 +85,14 @@ export function renderSitemap(): string {
     "/community": [{}],
     "/docs": [{}],
     "/workbench": [{}],
-    "/blog/$slug": blog.getPages().map((page) => ({
-      pathname: page.url,
-      lastModified: page.data.date,
-    })),
+    "/blog/$slug": await blogEntries(),
     "/changelog/$version": changelog.getPages().map((page) => ({
       pathname: page.url,
       lastModified: page.data.date,
     })),
     // The `/docs` index is a page of the collection too, and lists itself with
     // an empty slug set, so the route above carries no entry of its own.
-    "/docs/$": source
-      .getPages()
-      .filter((page) => page.slugs.length > 0)
-      .map((page) => ({ pathname: page.url })),
+    "/docs/$": await docsEntries(),
   };
 
   const urls = Object.entries(routes).flatMap(([route, entries]) =>

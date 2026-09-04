@@ -1,13 +1,18 @@
-import type { App } from "obsidian";
 // The Citation Popover: the entries one hovered citation shows, read for the document it is written in.
 
+import type { App } from "obsidian";
+
+import type { Held } from "@/lib/held-reads";
 import { getLogger } from "@/lib/log";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
 import { describeCandidates } from "@/services/citation-index/ambiguity";
 import { readReferenceSources } from "@/services/citation-index/service";
 import type { CitationIndex } from "@/services/citation-index/service";
 import { shownCitationContent } from "@/services/citation-text/present";
-import type { CitationText } from "@/services/citation-text/service";
+import type {
+  CitationText,
+  DocumentCitations,
+} from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
@@ -21,7 +26,6 @@ import type { BibliographyEntry } from "@/services/pandoc/engine";
 import { noteContent } from "@/services/pandoc/inline-content";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { ProfileReader } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
 
@@ -43,8 +47,7 @@ export interface CitationPopoverDeps {
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
   /** The formatted citations of the hovered document, read for this popover. */
-  citationText: Pick<CitationText, "load">;
-  settings: Pick<SettingsService, "current">;
+  citationText: Pick<CitationText, "on" | "peek">;
   profile: ProfileReader;
   /** The plugin-wide render cache, which the References Sidebar reads its own entries from. */
   bibliographyRender: Pick<
@@ -188,7 +191,7 @@ async function readBlocks(
   const { citations } = await deps.citationIndex.getDocumentCitationSet(file);
   // Read beside the citations it qualifies: this read resolved against the
   // snapshot as it stood here, and the popover redraws on the next hover.
-  const pending = deps.citationIndex.resolution !== "ready";
+  const pending = deps.citationIndex.resolution === null;
   const { sources } = readReferenceSources(deps.db, citations);
   // The hovered note's own Citation Presentation, so the popover shows what the
   // References Sidebar of that note shows — including nothing formatted at all
@@ -207,28 +210,34 @@ async function readBlocks(
         );
   const entries = buildReferenceEntries(citations, sources, {
     bibliography:
-      outcome?.kind === "rendered"
-        ? { entries: renderedEntries(outcome.entries), complete: true }
+      outcome?.kind === "held"
+        ? {
+            entries: renderedEntries(outcome.record.value.entries),
+            complete: true,
+          }
         : undefined,
   });
   // The document's own citations as they stand now, rather than as the hover
   // found them: a Citation Presentation change drops what was held for this
   // note, and this read is what puts the note text and the serials back.
-  const text = await deps.citationText.load(file);
+  const text = await settledCitationText(deps.citationText, file.path);
   // A note-class style writes its citation as a note the surfaces stand serials
   // in place of, so the popover is where that text is read — taken from the
   // formatted text of the very occurrence the pointer is on, and from no other
   // occurrence once an edit has moved the one the hover stands on.
-  const formatted = request.shown && shownCitationContent(request.shown, text);
+  const formatted =
+    request.shown && text
+      ? shownCitationContent(request.shown, text)
+      : undefined;
   return {
     blocks: citationPopoverBlocks(request.works, entries, {
-      serials: text.entrySerials,
+      serials: text?.entrySerials ?? false,
       // Read as the popover fills, so an Ambiguous Citation Key states the
       // candidates the current Library Scope names — and no candidate is
       // described for the citations that resolve.
       ambiguous: (citekey) => {
         const resolution = deps.citationIndex.resolveCitekey(citekey);
-        return resolution.kind === "ambiguous"
+        return resolution?.kind === "ambiguous"
           ? describeCandidates(deps, resolution.candidates)
           : null;
       },
@@ -240,6 +249,39 @@ async function readBlocks(
         : undefined,
     pending,
   };
+}
+
+/** Reads through first-load and revalidation commits for an asynchronous surface. */
+async function settledCitationText(
+  citationText: Pick<CitationText, "on" | "peek">,
+  path: string,
+): Promise<DocumentCitations | null> {
+  while (true) {
+    const held = citationText.peek(path);
+    if (held === null) {
+      const wake = Promise.withResolvers<
+        Held<DocumentCitations> | null | undefined
+      >();
+      const unsubscribes = [
+        citationText.on("changed", (changedPath) => {
+          if (changedPath === path) wake.resolve(undefined);
+        }),
+        citationText.on("invalidated", () => wake.resolve(undefined)),
+        citationText.on("settled", (settledPath, settled) => {
+          if (settledPath === path) wake.resolve(settled);
+        }),
+      ];
+      const settled = await wake.promise;
+      for (const unsubscribe of unsubscribes) unsubscribe();
+      if (settled !== undefined) return settled?.value ?? null;
+      continue;
+    }
+    if (held.status === "revalidating") {
+      await held.settled;
+      continue;
+    }
+    return held.value;
+  }
 }
 
 /** The formatted entries by CSL id, which is the item identity they are joined under. */

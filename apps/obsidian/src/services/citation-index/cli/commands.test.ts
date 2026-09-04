@@ -64,13 +64,13 @@ const REPORTED_OCCURRENCE = {
 const CITED: CitedBySnapshot = {
   groups: [{ path: "notes/review.md", occurrences: [OCCURRENCE] }],
   coverage: "complete",
-  resolution: "ready",
+  resolution: "fresh",
 };
 
 const EMPTY: CitedBySnapshot = {
   groups: [],
   coverage: "complete",
-  resolution: "ready",
+  resolution: "fresh",
 };
 
 const DOCUMENT_PATH = "notes/review.md";
@@ -216,7 +216,7 @@ function setup(options: SetupOptions = {}) {
   const getCitedBy = vi.fn(() => options.snapshot ?? CITED);
   const lookupItem = vi.fn(() => lookup);
   const readDocument = vi.fn(() => Promise.resolve(documentReferences));
-  const resolution = vi.fn(() => options.resolution ?? "ready");
+  const resolution = vi.fn(() => options.resolution ?? "fresh");
   const syntaxes = vi.fn(() => options.syntaxes ?? SYNTAXES);
   const documentOmittedSyntaxes = vi.fn(() =>
     Promise.resolve(options.documentOmittedSyntaxes ?? []),
@@ -271,7 +271,7 @@ describe("zotlit:cited-by", () => {
 
     expect(getCitedBy).toHaveBeenCalledWith(ITEM_KEY);
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 3,
       command: CITED_BY_COMMAND,
       ok: true,
       request: { key: ITEM_KEY },
@@ -284,7 +284,7 @@ describe("zotlit:cited-by", () => {
       groups: [{ path: "notes/review.md", occurrences: [REPORTED_OCCURRENCE] }],
       omittedSyntaxes: [],
       coverage: "complete",
-      resolution: "ready",
+      resolution: "fresh",
       syntaxes: SYNTAXES,
     });
   });
@@ -299,7 +299,7 @@ describe("zotlit:cited-by", () => {
           },
         ],
         coverage: "complete",
-        resolution: "ready",
+        resolution: "fresh",
       },
     });
 
@@ -345,7 +345,7 @@ describe("zotlit:cited-by", () => {
       snapshot: {
         groups: [],
         coverage: "complete",
-        resolution: "ready",
+        resolution: "fresh",
       },
       citedByOmittedSyntaxes: ["wikilink"],
     });
@@ -372,7 +372,7 @@ describe("zotlit:cited-by", () => {
       snapshot: {
         groups: [{ path: "notes/review.md", occurrences: [OCCURRENCE] }],
         coverage: "complete",
-        resolution: "ready",
+        resolution: "fresh",
       },
       citedByOmittedSyntaxes: ["wikilink"],
     });
@@ -435,14 +435,14 @@ describe("zotlit:cited-by", () => {
       snapshot: {
         groups: [],
         coverage: "degraded",
-        resolution: "degraded",
+        resolution: "failed",
       },
     });
 
     expect(JSON.parse(await citedBy({ key: ITEM_KEY }))).toMatchObject({
       ok: true,
       coverage: "degraded",
-      resolution: "degraded",
+      resolution: "failed",
     });
   });
 
@@ -452,14 +452,14 @@ describe("zotlit:cited-by", () => {
       snapshot: {
         groups: [],
         coverage: "complete",
-        resolution: "degraded",
+        resolution: "failed",
       },
     });
 
     expect(JSON.parse(await citedBy({ key: ITEM_KEY }))).toMatchObject({
       ok: true,
       item: { key: ITEM_KEY, summary: null },
-      resolution: "degraded",
+      resolution: "failed",
     });
   });
 
@@ -576,7 +576,7 @@ describe("zotlit:cited-by", () => {
     expect(lookupItem).not.toHaveBeenCalled();
     expect(getCitedBy).not.toHaveBeenCalled();
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 3,
       command: CITED_BY_COMMAND,
       ok: false,
       request: { key: ITEM_KEY },
@@ -642,7 +642,7 @@ describe("zotlit:cited-by", () => {
           order.push("cited-by");
           return CITED;
         },
-        resolution: () => "ready",
+        resolution: () => "fresh",
         syntaxes: () => SYNTAXES,
         documentOmittedSyntaxes: () => Promise.resolve([]),
         citedByOmittedSyntaxes: () => Promise.resolve([]),
@@ -668,7 +668,7 @@ describe("zotlit:references", () => {
 
     expect(readDocument).toHaveBeenCalledWith(DOCUMENT_PATH);
     expect(JSON.parse(output)).toEqual({
-      contractVersion: 2,
+      contractVersion: 3,
       command: REFERENCES_COMMAND,
       ok: true,
       request: { file: DOCUMENT_PATH },
@@ -702,7 +702,7 @@ describe("zotlit:references", () => {
       ],
       omittedSyntaxes: [],
       database: "ready",
-      resolution: "ready",
+      resolution: "fresh",
       syntaxes: SYNTAXES,
     });
   });
@@ -744,7 +744,7 @@ describe("zotlit:references", () => {
         sources: new Map(),
         database: "unreadable",
       },
-      resolution: "degraded",
+      resolution: "failed",
     });
 
     const output = await references({ file: DOCUMENT_PATH });
@@ -752,7 +752,7 @@ describe("zotlit:references", () => {
     expect(JSON.parse(output)).toMatchObject({
       ok: true,
       database: "unreadable",
-      resolution: "degraded",
+      resolution: "failed",
     });
   });
 
@@ -1090,8 +1090,9 @@ describe("zotlit:citations-guide", () => {
       "indexing",
       "complete",
       "degraded",
-      "resolving",
-      "ready",
+      "revalidating",
+      "fresh",
+      "failed",
       "unreadable",
     ]) {
       expect(output).toContain(state);
@@ -1146,7 +1147,7 @@ describe("zotlit:citations-guide", () => {
     const output = await guide({ topic: "positions" });
 
     expect(JSON.parse(output)).toMatchObject({
-      contractVersion: 2,
+      contractVersion: 3,
       command: CITATIONS_GUIDE_COMMAND,
       ok: false,
       diagnostic: {

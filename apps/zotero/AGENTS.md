@@ -18,9 +18,15 @@ Package-specific authoring conventions live in [`policies/`](policies/), one top
 - [zotero-api-shapes](policies/zotero-api-shapes.md) — test for the Zotero 10 name, fall through to Zotero 9
 - [reader-patching](policies/reader-patching.md) — plain assignment, never `monkey-around` across the compartment boundary
 - [chrome-injection](policies/chrome-injection.md) — registries first; a hand-injected node is owned and removed
-- [localization](policies/localization.md) — `zotlit-` message IDs, Title Case menus, JSON-string l10n args
+- [localization](policies/localization.md) — copy under `zotero` in `messages/*.json`, derived FTL, Title Case menus, JSON-string l10n args
 - [prefs](policies/prefs.md) — `extensions.zotlit.` keys, the typed wrapper, codegen types
 - [dates](policies/dates.md) — native `Date` and `Intl`; this runtime has no `Temporal`
+
+## UI text (Derived Fluent Files)
+
+Author Companion copy under the `zotero` object in `messages/{locale}.json`; the build derives `addon/locale/{locale}/zotlit.ftl` from it and regenerates `src/types/fluent.ts`, which is committed. A production build fails when that file is stale — rerun it and commit. Format in TS through `formatValue` / `requireMessage` / `l10nArgs` from `@/lib/l10n`, typed over `FluentMessages`; reference XUL through `data-l10n-id`, checked at build.
+
+Run `/i18n-ui-text` for wording style (menu labels are the Title Case exception); `/inlang-i18n` for JSON format; [localization](policies/localization.md) for the ID mapping and attribute shape.
 
 ## Logging
 

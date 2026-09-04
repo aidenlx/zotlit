@@ -245,9 +245,9 @@ function Reference({
   guttered: boolean;
 }) {
   const actions = useReferenceActions();
-  // Anything but `ready` means the snapshot has not answered for this list, so
-  // an unresolved row reads as a lookup in progress rather than a verdict.
-  const pending = useReferencesStore((s) => s.citekeyResolution) !== "ready";
+  // A missing Held Read has not answered for this list, so an unresolved row
+  // reads as a lookup in progress rather than a verdict.
+  const pending = useReferencesStore((s) => s.citekeyResolution) === null;
   const presentation = referencePresentation(entry, {
     numbered,
     serials,

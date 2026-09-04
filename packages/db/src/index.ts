@@ -18,6 +18,11 @@ export {
   type Item,
 } from "./queries/items";
 export {
+  itemBaseFields,
+  resolveVenue,
+  type ItemBaseFields,
+} from "./lib/zt-venue";
+export {
   itemToCsl,
   type CslDate,
   type CslItemData,

@@ -6,6 +6,7 @@ date: 2026-07-25
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { ActionLink } from "@/components/action-link";
+import { Callout } from "@/components/callout";
 
 ZotLit v1 had a dependency that broke every time Obsidian updated its runtime. I tried to keep up with patches, but it wasn't sustainable. Replacing that dependency meant rebuilding most of the plugin anyway, so v2 rewrite also simplifies the internals: templates, annotations, how item fields are structured. The public beta is ready to try.
 

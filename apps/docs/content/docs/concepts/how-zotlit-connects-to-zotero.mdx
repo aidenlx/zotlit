@@ -5,8 +5,9 @@ introduced: "2.0.0"
 updated: "2.1.0"
 ---
 
-import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 ZotLit reads your library from the Zotero database. ZotLit Companion, the Zotero add-on, keeps recent changes available and connects Zotero actions to Obsidian. Live updates provide an optional third connection.
@@ -17,15 +18,26 @@ ZotLit supports Zotero 9 or later and requires the Companion.
 
 Zotero can keep recent changes in a separate database file while it is running. ZotLit uses a read mode to access your library without interfering with Zotero.
 
-The default **{m.settings_db_read_mode_auto()}** setting picks the best available mode. It attempts a **{m.settings_db_read_mode_reflink()}** on macOS and Linux. {m.settings_db_read_mode_auto()} uses the clone on APFS, Btrfs, and reflink-enabled XFS filesystems. On Windows and other filesystems, such as ext4, {m.settings_db_read_mode_auto()} falls back to **{m.settings_db_read_mode_immutable()}**. You can override this in Settings.
+The default <UiLabel name={m.settings_db_read_mode_auto()} /> setting picks the best available mode. It attempts a <UiLabel name={m.settings_db_read_mode_reflink()} /> on macOS and Linux. <UiLabel name={m.settings_db_read_mode_auto()} /> uses the clone on APFS, Btrfs, and reflink-enabled XFS filesystems. On Windows and other filesystems, such as ext4, <UiLabel name={m.settings_db_read_mode_auto()} /> falls back to <UiLabel name={m.settings_db_read_mode_immutable()} />. You can override this in Settings.
 
-**{m.settings_db_read_mode_reflink()}** creates a fast, lightweight snapshot of the database. It sees recent edits, and it is what {m.settings_db_read_mode_auto()} uses on any macOS or Linux filesystem that supports cloning.
+<UiLabel name={m.settings_db_read_mode_reflink()} /> creates a fast, lightweight
+snapshot of the database. It sees recent edits, and it is what
+<UiLabel name={m.settings_db_read_mode_auto()} /> uses on any macOS or Linux
+filesystem that supports cloning.
 
-**{m.settings_db_read_mode_immutable()}** reads the database file directly without creating a copy. It is what {m.settings_db_read_mode_auto()} uses when cloning is unavailable. This mode reads only the main database file. Recent edits can stay in Zotero's separate write-ahead log until Zotero writes them to the main file.
+<UiLabel name={m.settings_db_read_mode_immutable()} /> reads the database file
+directly without creating a copy. It is what
+<UiLabel name={m.settings_db_read_mode_auto()} /> uses when cloning is
+unavailable. This mode reads only the main database file. Recent edits can stay
+in Zotero's separate write-ahead log until Zotero writes them to the main file.
 
-The Companion keeps the main database file current by writing recent changes into it. Its **Keep the database file up to date for Obsidian** setting is enabled by default. This database checkpoint works without [live updates](/docs/how-to/set-up-live-updates).
+The Companion keeps the main database file current by writing recent changes into it. Its <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} /> setting is enabled by default. This database checkpoint works without [live updates](/docs/how-to/set-up-live-updates).
 
-**{m.settings_db_read_mode_copy()}** works on any filesystem and sees recent edits. It copies the entire database each time, so it is slower and uses more disk space, especially with large Zotero libraries. {m.settings_db_read_mode_auto()} never selects this mode; choose it manually if other modes are unavailable.
+<UiLabel name={m.settings_db_read_mode_copy()} /> works on any filesystem and
+sees recent edits. It copies the entire database each time, so it is slower and
+uses more disk space, especially with large Zotero libraries.
+<UiLabel name={m.settings_db_read_mode_auto()} /> never selects this mode;
+choose it manually if other modes are unavailable.
 
 See the [Settings reference](/docs/reference/settings) for the full option list and descriptions.
 

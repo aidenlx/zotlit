@@ -36,12 +36,16 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField, Keymap } from "obsidian";
 
+import type { Held } from "@/lib/held-reads";
 import type {
   CitekeyResolution,
   SnapshotItem,
 } from "@/services/citation-index/service";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
-import type { FormattedOccurrence } from "@/services/citation-text/present";
+import type {
+  DocumentCitations,
+  FormattedOccurrence,
+} from "@/services/citation-text/present";
 import {
   CITEKEY_HOVER_SOURCE,
   hoverPreferences,
@@ -91,6 +95,10 @@ const hover = (
 ): HoverPreferences => ({ ...hoverPreferences(defaults), ...overrides });
 
 const stateOf = (doc: string): EditorState => EditorState.create({ doc });
+
+function heldRead(value: DocumentCitations): Held<DocumentCitations> {
+  return { value, status: "fresh", settled: Promise.resolve(value) };
+}
 
 function editorView(options: ConstructorParameters<typeof EditorView>[0]) {
   const view = new EditorView(options);
@@ -143,7 +151,6 @@ describe("citekeyEditorExtension theme hooks", () => {
           navigationEnabled: () => true,
           showFormatted: () => true,
           citationText: () => null,
-          requestCitationText: () => undefined,
         }),
       }),
     });
@@ -155,6 +162,32 @@ describe("citekeyEditorExtension theme hooks", () => {
       view.dom.querySelectorAll(".zt-citation-key-unresolved").item(0)
         .textContent,
     ).toBe("@unresolved");
+  });
+
+  it("keeps a pending citation key neutral in Source mode", () => {
+    livePreview.mockReturnValue(false);
+    using view = editorView({
+      parent: document.body,
+      state: EditorState.create({
+        doc: "@pending",
+        extensions: citekeyEditorExtension({
+          open: () => undefined,
+          showPopover: () => undefined,
+          hoverPreferences: () => hover(),
+          hoverNotePath: () => null,
+          resolveCitekey: () => null,
+          navigationEnabled: () => true,
+          showFormatted: () => true,
+          citationText: () => null,
+        }),
+      }),
+    });
+
+    const marked = view.dom.querySelector(".zt-citation-key-pending");
+    expect(marked?.textContent).toBe("@pending");
+    expect(marked?.classList.contains("zt-citation-key-unresolved")).toBe(
+      false,
+    );
   });
 
   // An Ambiguous Citation Key reads apart from a key that reaches nothing, in
@@ -177,7 +210,6 @@ describe("citekeyEditorExtension theme hooks", () => {
             navigationEnabled: () => true,
             showFormatted: () => true,
             citationText: () => null,
-            requestCitationText: () => undefined,
           }),
         }),
       });
@@ -212,7 +244,6 @@ describe("citekeyEditorExtension theme hooks", () => {
           navigationEnabled: () => navigationEnabled,
           showFormatted: () => false,
           citationText: () => null,
-          requestCitationText: () => undefined,
         }),
       }),
     });
@@ -225,6 +256,9 @@ describe("citekeyEditorExtension theme hooks", () => {
     expect(marks()).toEqual([undefined, undefined]);
 
     navigationEnabled = false;
+    // This harness uses an empty syntax tree. A zero-width viewport marks that
+    // tree complete, which lets the external invalidation rebuild.
+    vi.spyOn(view, "viewport", "get").mockReturnValue({ from: 0, to: 0 });
     view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
 
     // The caret the editor places is what the mark's own source is edited by.
@@ -251,13 +285,13 @@ describe("citekeyEditorExtension theme hooks", () => {
             resolveCitekey: () => unique(DOE_KEY),
             navigationEnabled: () => navigationEnabled,
             showFormatted: () => true,
-            citationText: () => ({
-              formatted: new Map([["[@doe2024]", occurrences(formatted)]]),
-              entrySerials: false,
-              summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
-              literalWorks: new Map([["doe2024", DOE_KEY]]),
-            }),
-            requestCitationText: () => undefined,
+            citationText: () =>
+              heldRead({
+                formatted: new Map([["[@doe2024]", occurrences(formatted)]]),
+                entrySerials: false,
+                summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+                literalWorks: new Map([["doe2024", DOE_KEY]]),
+              }),
           }),
         ],
       }),
@@ -269,6 +303,9 @@ describe("citekeyEditorExtension theme hooks", () => {
     expect(drawn.dataset.ztClick).toBe("open");
 
     navigationEnabled = false;
+    // This harness uses an empty syntax tree. A zero-width viewport marks that
+    // tree complete, which lets the external invalidation rebuild.
+    vi.spyOn(view, "viewport", "get").mockReturnValue({ from: 0, to: 0 });
     view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
     const closed = view.dom.querySelector<HTMLElement>(".zt-citation")!;
     closed.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -315,7 +352,6 @@ describe("citekeyEditorExtension delegated hover", () => {
             navigationEnabled: () => navigationEnabled,
             showFormatted: () => false,
             citationText: () => null,
-            requestCitationText: () => undefined,
           }),
         ],
       }),
@@ -457,12 +493,20 @@ describe("citekeyEditorExtension citation widgets", () => {
     ]),
   ) {
     livePreview.mockReturnValue(true);
-    const held = {
+    const held = heldRead({
       formatted,
       entrySerials: false,
       summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
       literalWorks: new Map([["doe2024", DOE_KEY]]),
-    };
+    });
+    return viewWithCitationText(doc, () => held);
+  }
+
+  function viewWithCitationText(
+    doc: string,
+    citationText: () => Held<DocumentCitations>,
+  ) {
+    livePreview.mockReturnValue(true);
     return editorView({
       parent: document.body,
       state: EditorState.create({
@@ -477,8 +521,7 @@ describe("citekeyEditorExtension citation widgets", () => {
             resolveCitekey: () => unique(DOE_KEY),
             navigationEnabled: () => false,
             showFormatted: () => true,
-            citationText: () => held,
-            requestCitationText: () => undefined,
+            citationText,
           }),
         ],
       }),
@@ -518,16 +561,57 @@ describe("citekeyEditorExtension citation widgets", () => {
 
   it("keeps the drawn citation while an edit lands away from it", () => {
     using view = viewOf("[@doe2024] tail");
-    const drawn = view.dom.querySelector(".zt-citation");
+    const drawn = view.dom.querySelector<HTMLElement>(".zt-citation")!;
     expect(drawn?.textContent).toBe("Doe (2024)");
 
     view.dispatch({
       changes: { from: view.state.doc.length, insert: " more" },
     });
 
-    // The held text is one shared value, so the widget compares equal by
-    // reference and CodeMirror keeps the element it already drew.
+    // The held text is unchanged, so CodeMirror keeps the element it already
+    // drew.
     expect(view.dom.querySelector(".zt-citation")).toBe(drawn);
+  });
+
+  it("keeps the drawn citation only while a moved occurrence reads the same", () => {
+    let held = heldRead({
+      formatted: new Map([["[@doe2024]", occurrences(rendered("Doe (2024)"))]]),
+      entrySerials: false,
+      summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+      literalWorks: new Map([["doe2024", DOE_KEY]]),
+    });
+    using view = viewWithCitationText("[@doe2024]", () => held);
+    const drawn = view.dom.querySelector<HTMLElement>(".zt-citation")!;
+
+    view.dispatch({ changes: { from: 0, insert: "Before " } });
+    expect(view.dom.querySelector(".zt-citation")).toBe(drawn);
+
+    held = heldRead({
+      formatted: new Map([
+        ["[@doe2024]", occurrences(rendered("Doe (2024)"), 7)],
+      ]),
+      entrySerials: false,
+      summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+      literalWorks: new Map([["doe2024", DOE_KEY]]),
+    });
+    vi.spyOn(view, "viewport", "get").mockReturnValue({ from: 0, to: 0 });
+    view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
+
+    expect(view.dom.querySelector(".zt-citation")).toBe(drawn);
+    drawn.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(requests[0]?.shown?.at).toEqual({ kind: "offset", start: 7 });
+
+    held = heldRead({
+      formatted: new Map([
+        ["[@doe2024]", occurrences(rendered("Roe (2025)"), 7)],
+      ]),
+      entrySerials: false,
+      summaries: new Map([[DOE_KEY, "Roe (2025)"]]),
+      literalWorks: new Map([["doe2024", DOE_KEY]]),
+    });
+    view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
+
+    expect(view.dom.querySelector(".zt-citation")).not.toBe(drawn);
   });
 
   it("shows the drawn citation's popover while Citekey Navigation is off", () => {

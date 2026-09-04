@@ -5,9 +5,10 @@ introduced: "2.0.0"
 updated: "2.0.0"
 ---
 
-import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 ZotLit ships a built-in Liquid default for every template type. These are embedded in the plugin and used when no ejected file exists in the template folder. This page shows each default verbatim and explains what it renders.
@@ -111,7 +112,7 @@ Filename: `zotlit-cite.liquid.md`
 
 Produces Pandoc Citation source such as `[@smith2024, {p. 62}; -@doe2021]`.
 
-ZotLit normalizes the rendered output of both citation templates to inline form: leading and trailing whitespace is trimmed, and any whitespace run containing a line break collapses to a single space. This normalization applies everywhere a citation renders — the inline suggester, the command-palette picker, the `zt.citation` annotation field, {m.annot_view_menu_copy_citation()}, and citation resolution during note import.
+ZotLit normalizes the rendered output of both citation templates to inline form: leading and trailing whitespace is trimmed, and any whitespace run containing a line break collapses to a single space. This normalization applies everywhere a citation renders — the inline suggester, the command-palette picker, the `zt.citation` annotation field, <UiLabel name={m.annot_view_menu_copy_citation()} />, and citation resolution during note import.
 
 | Behavior             | Detail                                                                                          |
 | -------------------- | ----------------------------------------------------------------------------------------------- |

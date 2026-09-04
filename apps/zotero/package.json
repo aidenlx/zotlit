@@ -32,6 +32,7 @@
     "@types/node": "catalog:",
     "@types/semver": "^7.7.1",
     "@zotlit/config": "workspace:*",
+    "@zotlit/obsidian-i18n": "workspace:*",
     "@zotlit/scripts": "workspace:*",
     "adm-zip": "^0.6.0",
     "eta": "catalog:",

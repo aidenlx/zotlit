@@ -325,7 +325,6 @@ export function buildServices(
         citationIndex,
         noteIndex,
         bibliographyRender,
-        settings,
       }) =>
         new CitationText({
           profile,
@@ -334,7 +333,6 @@ export function buildServices(
           citationIndex,
           noteIndex,
           bibliographyRender,
-          settings,
         }),
     })
     .useValue({
@@ -345,7 +343,6 @@ export function buildServices(
         citationText,
         bibliographyRender,
         libraryScope,
-        settings,
       }): CitationPopover =>
         createCitationPopover({
           profile,
@@ -355,7 +352,6 @@ export function buildServices(
           citationText,
           bibliographyRender,
           libraryScope,
-          settings,
         }),
     })
     .use({

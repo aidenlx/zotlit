@@ -6,22 +6,24 @@ updated: "2.1.0"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
-import { Callout } from "fumadocs-ui/components/callout";
 import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 Use the Citation Suggester or command palette to insert a Markdown citation from your Zotero library.
 
 Both entry points search every library in your [library scope](/docs/reference/settings#library-scope) at once, in one relevance order. While more than one library can contribute results, each suggestion names the library its item comes from. With one library in scope, that label is left off.
 
-Citation insertion works independently of the Document Citation Set and In-text Citation Rendering. You can insert citations with both source settings off and with **{m.settings_citation_show_formatted_name()}** off.
+Citation insertion works independently of the Document Citation Set and In-text Citation Rendering. You can insert citations with both source settings off and with <UiLabel name={m.settings_citation_show_formatted_name()} /> off.
 
 ## Insert while typing
 
 The citation suggester opens when you type `[@` (or `【@`) in the editor. A dropdown appears with items from your Zotero library.
 
-With the opt-in **{m.settings_citation_at_trigger_name()}** enabled, a bare `@` at a word boundary (start of line, after a space, or after an opening bracket or quote) also opens the suggester.
+With the opt-in <UiLabel name={m.settings_citation_at_trigger_name()} /> enabled, a bare `@` at a word boundary (start of line, after a space, or after an opening bracket or quote) also opens the suggester.
 
 <Steps>
   <Step>
@@ -29,7 +31,7 @@ With the opt-in **{m.settings_citation_at_trigger_name()}** enabled, a bare `@` 
 
     Type `[@` in the editor. A suggestion list appears.
 
-    With **{m.settings_citation_at_trigger_name()}** enabled, typing `@` at a word boundary does the same thing. A mid-word `@` (e.g. in an email address) is ignored.
+    With <UiLabel name={m.settings_citation_at_trigger_name()} /> enabled, typing `@` at a word boundary does the same thing. A mid-word `@` (e.g. in an email address) is ignored.
 
   </Step>
   <Step>
@@ -59,9 +61,16 @@ If the selected item has no citation key, nothing is inserted and a notice appea
 
 ### Suggester settings
 
-- **{m.settings_citation_suggester_name()}** (default: on): enables or disables the inline suggester. Find it in **Settings > ZotLit > {m.settings_page_citations()}**.
-- **{m.settings_citation_at_trigger_name()}** (default: off): also opens the suggester on a bare `@` at a word boundary. Visible only while **{m.settings_citation_suggester_name()}** is on. Find it in **Settings > ZotLit > {m.settings_page_citations()}**.
-- **{m.settings_citation_show_citekey_name()}** (default: off): shows each item's citation key beside its title in the suggester list. Find it in **Settings > ZotLit > {m.settings_page_citations()}**.
+- <UiLabel name={m.settings_citation_suggester_name()} /> (default: on): enables
+  or disables the inline suggester. Find it in
+  <SettingsPath page={m.settings_page_citations()} />.
+- <UiLabel name={m.settings_citation_at_trigger_name()} /> (default: off): also
+  opens the suggester on a bare `@` at a word boundary. Visible only while
+  <UiLabel name={m.settings_citation_suggester_name()} /> is on. Find it in
+  <SettingsPath page={m.settings_page_citations()} />.
+- <UiLabel name={m.settings_citation_show_citekey_name()} /> (default: off):
+  shows each item's citation key beside its title in the suggester list. Find it
+  in <SettingsPath page={m.settings_page_citations()} />.
 
 ## Insert from the command palette
 
@@ -94,7 +103,7 @@ Use this form when the citation must also remain an Obsidian link to its Literat
   <Step>
     ### Enable the citation source
 
-    Open **Settings > ZotLit > {m.settings_page_citations()}** and turn on **{m.settings_citation_wikilink_citations_name()}**.
+    Open <SettingsPath page={m.settings_page_citations()} /> and turn on <UiLabel name={m.settings_citation_wikilink_citations_name()} />.
 
   </Step>
   <Step>
@@ -143,16 +152,16 @@ Keys already written in your notes stay readable. See [How in-text citation rend
 
 ZotLit ships two citation templates:
 
-| Template  | Settings label                         | Default output     | Example          |
-| --------- | -------------------------------------- | ------------------ | ---------------- |
-| Primary   | **{m.settings_template_name_cite()}**  | Bracketed citation | `[@citationKey]` |
-| Secondary | **{m.settings_template_name_cite2()}** | Bare citation      | `@citationKey`   |
+| Template  | Settings label                                      | Default output     | Example          |
+| --------- | --------------------------------------------------- | ------------------ | ---------------- |
+| Primary   | <UiLabel name={m.settings_template_name_cite()} />  | Bracketed citation | `[@citationKey]` |
+| Secondary | <UiLabel name={m.settings_template_name_cite2()} /> | Bare citation      | `@citationKey`   |
 
-These are the default outputs. You can change them by editing the **{m.settings_template_name_cite()}** and **{m.settings_template_name_cite2()}** templates in **Settings > {m.settings_page_templates()}**. The rendered citation is normalized to a single line (leading/trailing whitespace trimmed, line-break runs collapsed to a space). Each insert ends with a trailing space and places the cursor after it; if a space already follows the insert position, it is reused rather than doubled.
+These are the default outputs. You can change them by editing the <UiLabel name={m.settings_template_name_cite()} /> and <UiLabel name={m.settings_template_name_cite2()} /> templates in <SettingsPath page={m.settings_page_templates()} />. The rendered citation is normalized to a single line (leading/trailing whitespace trimmed, line-break runs collapsed to a space). Each insert ends with a trailing space and places the cursor after it; if a space already follows the insert position, it is reused rather than doubled.
 
-With **{m.settings_citation_pandoc_citations_name()}** and **{m.settings_citation_show_formatted_name()}** on, both forms can show formatted text in Live Preview and reading view. Formatting requires the Pandoc engine and selected style.
+With <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_show_formatted_name()} /> on, both forms can show formatted text in Live Preview and reading view. Formatting requires the Pandoc engine and selected style.
 
-With **{m.settings_citation_pandoc_citations_name()}** and **{m.settings_citation_open_as_links_name()}** on, you can open the cited Literature Note. Use a click in Live Preview or Ctrl-click or Cmd-click in Source mode. See [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work).
+With <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_open_as_links_name()} /> on, you can open the cited Literature Note. Use a click in Live Preview or Ctrl-click or Cmd-click in Source mode. See [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work).
 
 ## See also
 

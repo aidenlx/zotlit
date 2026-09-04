@@ -8,6 +8,8 @@ updated: "2.1.0"
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
 Use this guide when Zotero changes do not appear after you update a literature note in Obsidian.
@@ -24,15 +26,15 @@ Use this guide when Zotero changes do not appear after you update a literature n
   <Step>
     ### Confirm the Companion setting
 
-    In Zotero, open **Edit → Settings** on Windows or Linux. On macOS, open **Zotero → Settings**. Select the **ZotLit** pane.
+    In Zotero, open **Edit → Settings** on Windows or Linux. On macOS, open **Zotero → Settings**. Select the <UiLabel name={m["zotero.prefs_pane_label"]()} /> pane.
 
-    Under **Database**, enable **Keep the database file up to date for Obsidian**. New Companion installations enable this setting by default.
+    Under <UiLabel name={m["zotero.prefs_database_section"]()} />, enable <UiLabel name={m["zotero.prefs_wal_checkpoint.label"]()} />. New Companion installations enable this setting by default.
 
   </Step>
   <Step>
     ### Make recent changes available
 
-    In Zotero's item pane, select **Database Status** beside **Locate**. If **Write Changes to Database File Now** is available, select it.
+    In Zotero's item pane, select <UiLabel name={m["zotero.database_status.tooltiptext"]()} /> beside **Locate**. If <UiLabel name={m["zotero.database_status_write_now"]()} /> is available, select it.
 
     This makes recent Zotero changes available immediately.
 
@@ -55,13 +57,15 @@ Use this guide when Zotero changes do not appear after you update a literature n
 
 ## Advanced: Use Full copy as a last resort [#read-mode]
 
-If the problem continues, open **Settings → ZotLit → {m.settings_page_database()}**. Set **{m.settings_db_read_mode_name()}** to **{m.settings_db_read_mode_copy()}**, refresh the database, and update the literature note again.
+If the problem continues, open <SettingsPath page={m.settings_page_database()} />. Set <UiLabel name={m.settings_db_read_mode_name()} /> to <UiLabel name={m.settings_db_read_mode_copy()} />, refresh the database, and update the literature note again.
 
-**{m.settings_db_read_mode_copy()}** copies the entire database on every refresh. Large Zotero libraries take longer to refresh and use more disk space.
+<UiLabel name={m.settings_db_read_mode_copy()} /> copies the entire database on
+every refresh. Large Zotero libraries take longer to refresh and use more disk
+space.
 
 ## Report a remaining problem
 
-If {m.settings_db_read_mode_copy()} also fails, [collect debug logs](/docs/how-to/collect-debug-logs). Then [file a bug report](https://github.com/aidenlx/zotlit/discussions/new?category=bug-reports) with your ZotLit version, operating system, and reproduction steps.
+If <UiLabel name={m.settings_db_read_mode_copy()} /> also fails, [collect debug logs](/docs/how-to/collect-debug-logs). Then [file a bug report](https://github.com/aidenlx/zotlit/discussions/new?category=bug-reports) with your ZotLit version, operating system, and reproduction steps.
 
 ## See also
 

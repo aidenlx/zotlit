@@ -1,5 +1,8 @@
+import { join } from "node:path";
 import { defineConfig } from "vite";
 import type { ConfigEnv } from "vite";
+
+import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { fluentPlugin } from "./scripts/vite-fluent-plugin.js";
 import { prefsPlugin } from "./scripts/vite-prefs-plugin.js";
@@ -15,8 +18,13 @@ import {
 } from "./src/constant.js";
 
 const packageRoot = import.meta.dirname;
+const workspaceRoot = await getWorkspaceRoot(packageRoot);
 
 const FLUENT_PREFIX = "zotlit";
+/** The inlang namespace holding Companion copy; see ADR 0027. */
+const FLUENT_NAMESPACE = "zotero.";
+/** Zotero's fallback chain looks for `en-US`, so the base `en` catalog lands there. */
+const FLUENT_LOCALE_ALIASES = { en: "en-US" };
 const PREF_PREFIX = "extensions.zotlit.";
 
 // Names that Zotero's plugin loader expects as top-level bindings on the
@@ -63,17 +71,19 @@ export function createZoteroViteConfig({ mode }: ConfigEnv) {
       target: "es2023",
     }),
     plugins: [
-      // Runs before zoteroBuildPlugin: validates + writes locale FTLs and
-      // codegens `src/types/fluent.d.ts` before the zip step picks them up.
+      // Runs before zoteroBuildPlugin: derives the locale FTLs from the
+      // inlang project and codegens `src/types/fluent.ts` before the zip
+      // step picks them up.
       fluentPlugin({
         root: packageRoot,
         env,
+        project: join(workspaceRoot, "project.inlang"),
+        namespace: FLUENT_NAMESPACE,
         prefix: FLUENT_PREFIX,
-        localeDir: "locale",
+        localeAliases: FLUENT_LOCALE_ALIASES,
         ftlFileName: FLUENT_FILE_NAME,
         addonDir: "addon",
         typesOutput: "src/types/fluent.ts",
-        primaryLocale: "en-US",
       }),
       prefsPlugin({
         root: packageRoot,

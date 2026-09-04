@@ -4,6 +4,7 @@ import type { LibraryCitekey } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import { getLogger } from "@/lib/log";
+import { mapsEqual } from "@/lib/maps-equal";
 
 const logger = getLogger("citation-index");
 
@@ -29,7 +30,7 @@ export type CitekeyResolution =
   /** Candidates in canonical Library order, then by ascending `itemID`. */
   | { kind: "ambiguous"; candidates: readonly SnapshotItem[] };
 
-/** The bulk read {@link CitekeySnapshot.replace} rebuilds one Library from. */
+/** The bulk read a {@link CitekeySnapshot} rebuilds one Library from. */
 export type ReadCitekeys = (
   db: NodeDatabaseClient,
   libraryID: number,
@@ -51,6 +52,16 @@ export class CitekeySnapshot {
   #byCitekey = new Map<string, SnapshotItem[]>();
   #citekeyByIndexedKey = new Map<string, string>();
 
+  /** Builds a complete snapshot from one canonical bulk read. */
+  static from(
+    rows: readonly LibraryCitekey[],
+    inScope: ReadonlySet<number>,
+  ): CitekeySnapshot {
+    const snapshot = new CitekeySnapshot();
+    snapshot.#replace(rows, inScope);
+    return snapshot;
+  }
+
   /** The Items a native citation key names, in the current Library Scope. */
   resolve(citekey: string): CitekeyResolution {
     const candidates = this.#byCitekey.get(citekey);
@@ -65,20 +76,11 @@ export class CitekeySnapshot {
     return this.#citekeyByIndexedKey.get(indexedKey) ?? null;
   }
 
-  /**
-   * Replace the maps with the rows of a fresh bulk read.
-   *
-   * @param rows every local Library's rows, concatenated in canonical Library
-   *   order — the order candidates of one Citation Key are reported in.
-   * @param inScope the local ids of the available Libraries in Library Scope.
-   *   Forward resolution is built from those rows alone; the reverse map takes
-   *   every row, so an exact Indexed Key resolves whatever the scope is.
-   * @returns whether what the maps answer changed.
-   */
-  replace(
+  /** Builds both lookup directions from one fresh bulk read. */
+  #replace(
     rows: readonly LibraryCitekey[],
     inScope: ReadonlySet<number>,
-  ): boolean {
+  ): void {
     const byCitekey = new Map<string, SnapshotItem[]>();
     const citekeyByIndexedKey = new Map<string, string>();
     for (const row of rows) {
@@ -103,16 +105,20 @@ export class CitekeySnapshot {
       }
     }
 
-    const changed =
-      !mapsEqual(this.#byCitekey, byCitekey, candidatesEqual) ||
-      !mapsEqual(
-        this.#citekeyByIndexedKey,
-        citekeyByIndexedKey,
-        (a, b) => a === b,
-      );
     this.#byCitekey = byCitekey;
     this.#citekeyByIndexedKey = citekeyByIndexedKey;
-    return changed;
+  }
+
+  /** Whether both lookup directions answer identically. */
+  sameAs(other: CitekeySnapshot): boolean {
+    return (
+      mapsEqual(this.#byCitekey, other.#byCitekey, candidatesEqual) &&
+      mapsEqual(
+        this.#citekeyByIndexedKey,
+        other.#citekeyByIndexedKey,
+        (a, b) => a === b,
+      )
+    );
   }
 }
 
@@ -133,17 +139,4 @@ function itemEqual(a: SnapshotItem, b: SnapshotItem): boolean {
     a.key === b.key &&
     a.indexedKey === b.indexedKey
   );
-}
-
-function mapsEqual<K, V>(
-  a: ReadonlyMap<K, V>,
-  b: ReadonlyMap<K, V>,
-  valueEqual: (a: V, b: V) => boolean,
-): boolean {
-  if (a.size !== b.size) return false;
-  for (const [key, value] of a) {
-    const other = b.get(key);
-    if (other === undefined || !valueEqual(value, other)) return false;
-  }
-  return true;
 }
