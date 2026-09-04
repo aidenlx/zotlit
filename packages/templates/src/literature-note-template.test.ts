@@ -3,7 +3,11 @@ import annotationLiquid from "@defaults/annotation.liquid?raw";
 import { describe, expect, it } from "vitest";
 
 import type { FrontmatterField } from "./constants";
-import { convertLegacyFrontmatterFields, TemplateFacade } from "./facade";
+import {
+  convertLegacyFrontmatterFields,
+  literatureNoteTemplateManifestRange,
+  TemplateFacade,
+} from "./facade";
 import type { LiteratureNoteTemplateError } from "./facade";
 import { formatManagedRegion } from "./obsidian";
 
@@ -1286,4 +1290,118 @@ describe("Line-Owning Tags", () => {
       `Head\r\n${formatManagedRegion("X")}\r\nTail\r\n`,
     );
   });
+});
+
+describe("where a Profile document is repaired", () => {
+  const facade = new TemplateFacade();
+
+  /** The error `source` raises, so each case reads the location it carries. */
+  function parseFailure(source: string): LiteratureNoteTemplateError {
+    try {
+      facade.parseLiteratureNoteTemplate(source);
+    } catch (error) {
+      return error as LiteratureNoteTemplateError;
+    }
+    throw new Error("The document parsed.");
+  }
+
+  it("points at the manifest line the YAML parser refused", () => {
+    const source = blockDocument(
+      "Body\n--- zotlit:annotation ---\nA\n",
+      "dup",
+    ).replace("filename: note", "filename: note\nfilename: other");
+    const failure = parseFailure(source);
+
+    expect(failure.code).toBe("invalid-manifest");
+    expect(source.slice(failure.offset)).toMatch(/^filename: other/);
+  });
+
+  it("names the manifest field a schema issue is about", () => {
+    const source = blockDocument(
+      "Body\n--- zotlit:annotation ---\nA\n",
+      "schema",
+    ).replace("filename: note", "filename: 5");
+    const failure = parseFailure(source);
+
+    expect(failure.code).toBe("invalid-manifest");
+    expect(failure.manifestPath).toEqual(["filename"]);
+    // Every schema issue names its node instead, so the offset stays on the
+    // first manifest line: the byte after the opening fence.
+    expect(failure.offset).toBe(source.indexOf("\n") + 1);
+  });
+
+  it("names the reserved partial by its place in the list", () => {
+    const source = blockDocument(
+      "Body\n--- zotlit:annotation ---\nA\n",
+      "reserved",
+    ).replace(
+      "filename: note",
+      [
+        "filename: note",
+        "partials:",
+        "  - name: cite",
+        "    language: liquid",
+        "    source: c",
+        "  - name: annotation",
+        "    language: liquid",
+        "    source: a",
+      ].join("\n"),
+    );
+    const failure = parseFailure(source);
+
+    expect(failure.code).toBe("reserved-annotation-partial");
+    expect(failure.manifestPath).toEqual(["partials", 1, "name"]);
+  });
+
+  it.each(["\n", "\r\n"])(
+    "points at the unclosed Managed Block across %j line breaks",
+    (eol) => {
+      const source = blockDocument(
+        "Head\n{% managed %}\nBody\n--- zotlit:annotation ---\nA\n",
+        "unclosed",
+      ).replaceAll("\n", eol);
+      const failure = parseFailure(source);
+
+      expect(failure.code).toBe("invalid-managed-block");
+      expect(failure.offset).toBe(source.indexOf("{% managed %}"));
+    },
+  );
+
+  it("points at the second Managed Block, not the first", () => {
+    const source = blockDocument(
+      [
+        "{% managed %}",
+        "One",
+        "{% endmanaged %}",
+        "{% managed %}",
+        "Two",
+        "{% endmanaged %}",
+        "--- zotlit:annotation ---",
+        "A",
+        "",
+      ].join("\n"),
+      "duplicate",
+    );
+    const failure = parseFailure(source);
+
+    expect(failure.code).toBe("duplicate-managed-block");
+    expect(failure.offset).toBe(source.lastIndexOf("{% managed %}"));
+  });
+
+  it.each(["\n", "\r\n"])(
+    "measures the manifest between the fences across %j line breaks",
+    (eol) => {
+      const source = blockDocument(
+        `Body${eol}--- zotlit:annotation ---${eol}A${eol}`,
+        "range",
+      ).replaceAll("\n", eol);
+      const { from, to } = literatureNoteTemplateManifestRange(source);
+
+      expect(source.slice(from, to)).toBe(
+        `id: range${eol}name: Line owning note${eol}version: 1.0.0${eol}author: Ada Example${eol}description: Tests line-owning structural tags.${eol}contract: 2${eol}filename: note${eol}`,
+      );
+      expect(source.slice(0, from)).toBe(`---${eol}`);
+      expect(source.slice(to)).toMatch(/^---/);
+    },
+  );
 });
