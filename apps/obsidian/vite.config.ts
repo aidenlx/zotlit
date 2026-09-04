@@ -19,6 +19,11 @@ import packageJson from "./package.json" with { type: "json" };
 import { pandocFilterVariants } from "./scripts/lua-filter.ts";
 import { resolvePandocEnginePin } from "./scripts/pandoc-engine.ts";
 
+import {
+  EXCLUDE_MESSAGE_PREFIXES,
+  TARGET_LOCALE_MESSAGE_PREFIXES,
+} from "#language-pack-options";
+
 const builtins = [
   ...builtinModules,
   "original-fs",
@@ -107,13 +112,8 @@ export default defineConfig(({ mode }) => {
       obsidianI18n({
         project: join(workspaceRoot, "project.inlang"),
         output: "src/lib/i18n/generated",
-        // `workbench_` copy belongs to the web Workbench in `apps/docs`.
-        excludeMessagePrefixes: ["docs_", "workbench_"],
-        // Lifecycle copy has to be readable before its Language Pack exists.
-        targetLocaleMessagePrefixes: [
-          "notice_language_pack_",
-          "settings_language_pack_",
-        ],
+        excludeMessagePrefixes: EXCLUDE_MESSAGE_PREFIXES,
+        targetLocaleMessagePrefixes: TARGET_LOCALE_MESSAGE_PREFIXES,
         servePacks:
           i18nDevServerPort === undefined
             ? undefined

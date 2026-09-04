@@ -5,10 +5,13 @@
   "description": "Plugin to integrate with Zotero, create literature notes and insert citations from a Zotero library.",
   "author": "AidenLx",
   "type": "module",
+  "imports": {
+    "#language-pack-options": "./scripts/language-pack-options.ts"
+  },
   "scripts": {
     "build": "vite build && npm run typecheck",
     "build:dev": "vite build --mode development",
-    "generate:language-packs": "obsidian-i18n compile --project ../../project.inlang --output src/lib/i18n/generated --exclude-prefix docs_ --exclude-prefix workbench_ --target-locale-prefix notice_language_pack_ --target-locale-prefix settings_language_pack_",
+    "generate:language-packs": "node scripts/generate-language-packs.ts",
     "dev": "vite build --watch --mode development",
     "dev:vault": "npm run build:dev && ../../packages/scripts/scripts/obsidian-vault.ts open && npm run dev",
     "dev:i18n": "I18N_DEV_SERVER=true vite build --watch --mode development",
