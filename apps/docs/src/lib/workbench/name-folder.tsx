@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
+import type { InstalledCitationStyle } from "@zotlit/workbench/bridge";
 import type {
   ManifestScalar,
   WorkbenchDocumentController,
@@ -33,15 +34,15 @@ interface Binding {
   readonly key: BindingKey;
   readonly label: () => string;
   /**
-   * The control the value is edited through. A style is typed as its CSL ID:
-   * the installed styles are the vault's, so the picker over them waits for the
-   * bridge operation that lists them.
+   * The control the value is edited through. A style is picked from the vault's
+   * installed styles while a Workbench Connection lists them, and typed as its
+   * CSL ID standalone, where no vault says which are installed.
    */
   readonly kind: "path" | "style" | "toggle";
   /**
-   * The value an unset binding takes. Standalone reads the built-in Default
-   * Profile's bindings; a connected Workbench reads the vault's own through the
-   * bridge.
+   * The value an unset binding takes: the plugin's built-in Default Profile,
+   * connected or not. The bridge contract carries no vault-settings read, so a
+   * vault that changed one of these is not what the Default origin names.
    * @see apps/obsidian/src/services/settings/schema.ts DEFAULT_LITERATURE_NOTE_PROFILE
    */
   readonly fallback: string | boolean | null;
@@ -99,6 +100,11 @@ export interface NameFolderPaneProps {
   manifest: ProfileManifest | null;
   /** The note name the current render produced, for the live result. */
   filename: string | null;
+  /**
+   * The styles the connected vault has installed, for the citation-style
+   * picker. Null standalone, and while the connection lists none.
+   */
+  citationStyles?: readonly InstalledCitationStyle[] | null;
   reveal?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
   onFieldTrigger?: (trigger: FieldTrigger) => void;
@@ -108,6 +114,7 @@ export function NameFolderPane({
   controller,
   manifest,
   filename,
+  citationStyles,
   reveal,
   onSelection,
   onFieldTrigger,
@@ -220,6 +227,7 @@ export function NameFolderPane({
               key={binding.key}
               binding={binding}
               value={shown[binding.key]}
+              citationStyles={citationStyles ?? null}
               onWrite={(value) => write(binding.key, value)}
             />
           ))
@@ -377,10 +385,12 @@ function TextValue({
 function BindingRow({
   binding,
   value,
+  citationStyles,
   onWrite,
 }: {
   binding: Binding;
   value: string | boolean | null | undefined;
+  citationStyles: readonly InstalledCitationStyle[] | null;
   onWrite: (value: ManifestScalar | undefined) => void;
 }) {
   const label = binding.label();
@@ -413,7 +423,15 @@ function BindingRow({
             : m.workbench_name_use_default()}
         </button>
       </div>
-      {binding.kind === "toggle" ? (
+      {binding.kind === "style" && citationStyles ? (
+        <StylePicker
+          id={id}
+          value={typeof effective === "string" ? effective : null}
+          disabled={inherits}
+          styles={citationStyles}
+          onWrite={onWrite}
+        />
+      ) : binding.kind === "toggle" ? (
         <span className="flex items-center gap-2 text-xs">
           <input
             id={id}
@@ -446,6 +464,50 @@ function BindingRow({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The citation style as the vault's own list. A style the profile names that the
+ * vault has not installed keeps its place in the list, so opening the picker
+ * never quietly rewrites a value the reader did not touch.
+ */
+function StylePicker({
+  id,
+  value,
+  disabled,
+  styles,
+  onWrite,
+}: {
+  id: string;
+  value: string | null;
+  disabled: boolean;
+  styles: readonly InstalledCitationStyle[];
+  onWrite: (value: ManifestScalar) => void;
+}) {
+  const options =
+    value !== null &&
+    value !== "" &&
+    !styles.some((style) => style.id === value)
+      ? [{ id: value, title: value }, ...styles]
+      : styles;
+  return (
+    <select
+      id={id}
+      value={value ?? ""}
+      disabled={disabled}
+      onChange={(event) =>
+        onWrite(event.target.value === "" ? null : event.target.value)
+      }
+      className="min-w-0 border border-fd-border bg-fd-background px-2 py-1 text-[0.78rem] disabled:text-fd-muted-foreground"
+    >
+      <option value="">{m.workbench_name_value_no_style()}</option>
+      {options.map((style) => (
+        <option key={style.id} value={style.id}>
+          {style.title}
+        </option>
+      ))}
+    </select>
   );
 }
 

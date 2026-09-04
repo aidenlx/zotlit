@@ -963,6 +963,11 @@ function bridgeResponse({
             xml: '<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0"/>',
           }
         : { kind: "default" };
+    case LOCAL_BRIDGE_PATHS.citationStyles:
+      return [
+        { id: "apa", title: "American Psychological Association" },
+        { id: "ieee", title: "IEEE" },
+      ];
     case LOCAL_BRIDGE_PATHS.selectedItem:
       return {
         ...SAMPLE_ITEMS[0],
