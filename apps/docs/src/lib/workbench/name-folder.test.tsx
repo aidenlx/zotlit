@@ -220,9 +220,9 @@ describe("the Name and folder tab", () => {
     });
 
     const trigger = tab.triggers.at(-1)!;
-    const { document: profile, source } = tab.controller;
+    const { document: profile, source, filenameSlice } = tab.controller;
     expect(source.slice(trigger.range.from, trigger.range.to)).toBe("{{");
-    expect(templateRootAt(profile, source, trigger.range.from)).toBe(
+    expect(templateRootAt(profile, filenameSlice, trigger.range.from)).toBe(
       "filename",
     );
   });

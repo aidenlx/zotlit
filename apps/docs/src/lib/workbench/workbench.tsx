@@ -500,9 +500,13 @@ export function Workbench() {
         : slice === "filename"
           ? "filename"
           : slice === "advanced"
-            ? templateRootAt(controller.document, controller.source, caret.from)
+            ? templateRootAt(
+                controller.document,
+                controller.filenameSlice,
+                caret.from,
+              )
             : "note",
-    [slice, controller.document, controller.source, caret.from],
+    [slice, controller.document, controller.filenameSlice, caret.from],
   );
   const fields = useMemo(
     () => (temporal ? rootData(sample, root) : null),
