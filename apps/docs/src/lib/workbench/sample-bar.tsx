@@ -11,12 +11,18 @@ import type { SampleItem } from "./fields";
 export function SampleBar({
   sample,
   connection,
+  unmatchedItemType,
   busy,
   onShow,
   onLoad,
 }: {
   readonly sample: SampleItem;
   readonly connection: LocalBridgeConnection;
+  /**
+   * The sample item type this Profile asks for where no bundled Item carries
+   * it, so the reader is told which paper they are not being shown.
+   */
+  readonly unmatchedItemType?: string;
   /** True while the connection is fetching the selected Item. */
   readonly busy: boolean;
   readonly onShow: (sample: SampleItem) => void;
@@ -77,6 +83,11 @@ export function SampleBar({
             : m.workbench_retained_badge()
           : m.workbench_sample_badge()}
       </span>
+      {unmatchedItemType !== undefined && (
+        <span className="text-xs text-fd-muted-foreground">
+          {m.workbench_sample_type_missing({ itemType: unmatchedItemType })}
+        </span>
+      )}
       {connected && (
         <button
           type="button"

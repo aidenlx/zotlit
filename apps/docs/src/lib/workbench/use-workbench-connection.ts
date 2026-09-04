@@ -75,9 +75,12 @@ export function useWorkbenchConnection({
     readonly InstalledCitationStyle[] | null
   >(null);
   const [loadedStyleId, setLoadedStyleId] = useState<string | null>();
-  // The partial names the held bundle answers. Null until the first settle
-  // records what the hydrated document calls.
-  const loadedDependencies = useRef<string | null>(null);
+  // The exact draft the held bundle was read for, and the partial names that
+  // draft turned out to call. Both are how a bundle is known to answer the
+  // document on screen rather than the one the vault holds.
+  const bundleSource = useRef<string | null>(null);
+  const bundleDependencies = useRef<string | null>(null);
+  const [bundleStale, setBundleStale] = useState(false);
   const [connectionBusy, setConnectionBusy] = useState(false);
   const [connectionCancellable, setConnectionCancellable] = useState(false);
   const [itemBusy, setItemBusy] = useState(false);
@@ -90,8 +93,17 @@ export function useWorkbenchConnection({
     setResources(undefined);
     setCitationStyles(null);
     setLoadedStyleId(undefined);
-    loadedDependencies.current = null;
+    bundleSource.current = null;
+    bundleDependencies.current = null;
+    setBundleStale(false);
   }, []);
+
+  /** The revision the text now on screen was read at, which Save answers for. */
+  const saveAgainst = useCallback(
+    (expected: SaveSelectedProfileRequest["expected"]) =>
+      setSaveTarget((held) => (held ? { ...held, expected } : held)),
+    [],
+  );
 
   const connectionFailed = useCallback(
     (error: unknown) => {
@@ -105,18 +117,23 @@ export function useWorkbenchConnection({
 
   async function hydrateConnection(): Promise<void> {
     const selected = await bridge.readSelectedProfile();
-    // The vault's own default, until the document this hydration opens says
-    // which style it binds: the settle effect below reads that binding from the
-    // page's own controller, so hydration parses nothing of its own.
-    const styleId = null;
+    // The style this vault has in effect, which a Profile that binds none
+    // inherits and the Name and folder pane shows as its value. The settle
+    // effect below reads the Profile's own binding from the page's controller,
+    // so hydration parses nothing of its own.
+    const grant = bridge.connection;
+    const styleId =
+      grant.state === "connected" ? grant.profileDefaults.citationStyle : null;
     const [dependencies, citationStyle, styles] = await Promise.all([
       bridge.readTemplateDependencies({ source: selected.source }),
       bridge.readSelectedCitationStyle({ styleId }),
       readCitationStyles(),
     ]);
-    // The bundle answers the source this hydration opens, and the settle effect
-    // below reads it again once the draft calls a different set of partials.
-    loadedDependencies.current = null;
+    // The bundle answers these exact bytes; the settle effect below reads it
+    // again as soon as the draft on screen calls another set of partials.
+    bundleSource.current = selected.source;
+    bundleDependencies.current = null;
+    setBundleStale(false);
     const reference = selected.document.reference;
     const currentExpected = expectedRevision(selected.document);
     const kept = readDraft(reference);
@@ -262,7 +279,10 @@ export function useWorkbenchConnection({
       return;
     }
     if (bridge.connection.state === "connected") {
-      void connect(async () => bridge.connection);
+      // The restored grant records the versions and capabilities in force when
+      // it was issued, so a reload presents the kept credential to the bridge
+      // running now and is measured against what it answers.
+      void connect(async () => (await bridge.resume()) ?? bridge.connection);
     }
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- bootstraps once against `bridge`, not on every `connect` identity change
   }, [bridge]);
@@ -275,21 +295,32 @@ export function useWorkbenchConnection({
   // The partials the draft calls right now. A bundle is read again only when
   // this list changes, so typing never queries the vault.
   const dependencyNames = controller.dependencies.join("\u0000");
+  const draftSource = controller.source;
   useEffect(() => {
     if (connection.state !== "connected" || !resources) return;
-    if (loadedDependencies.current === null) {
-      // The hydration's own bundle answers the document it opened.
-      loadedDependencies.current = dependencyNames;
+    if (draftSource === bundleSource.current) {
+      // The held bundle was read for these very bytes, so what they call is
+      // what it answers, and an edit leaving that list alone needs no read.
+      bundleDependencies.current = dependencyNames;
+      setBundleStale(false);
       return;
     }
-    if (loadedDependencies.current === dependencyNames) return;
+    if (bundleDependencies.current === dependencyNames) {
+      setBundleStale(false);
+      return;
+    }
+    // Until the bundle for this draft lands, the held one answers another set
+    // of partials, so nothing is rendered against it.
+    setBundleStale(true);
     let current = true;
     void bridge
-      .readTemplateDependencies({ source: controller.source })
+      .readTemplateDependencies({ source: draftSource })
       .then((dependencies) => {
         if (!current) return;
-        loadedDependencies.current = dependencyNames;
+        bundleSource.current = draftSource;
+        bundleDependencies.current = dependencyNames;
         setResources((held) => (held ? { ...held, dependencies } : held));
+        setBundleStale(false);
       })
       .catch((error: unknown) => {
         if (current) connectionFailed(error);
@@ -301,13 +332,19 @@ export function useWorkbenchConnection({
     bridge,
     connection,
     connectionFailed,
-    controller,
     dependencyNames,
+    draftSource,
     resources,
   ]);
 
+  const inheritedStyleId =
+    connection.state === "connected"
+      ? connection.profileDefaults.citationStyle
+      : null;
+  // The style the preview renders under: the Profile's own binding, and the
+  // vault's where it binds none, which is the value Name and folder shows.
   const styleId = controller.document
-    ? (controller.document.manifest.citationStyle ?? null)
+    ? (controller.document.manifest.citationStyle ?? inheritedStyleId)
     : undefined;
   useEffect(() => {
     if (
@@ -338,7 +375,10 @@ export function useWorkbenchConnection({
     connection,
     saveTarget,
     resources,
+    /** True while the held bundle answers a draft other than the one on screen. */
+    resourcesStale: bundleStale,
     citationStyles,
+    saveAgainst,
     connectionBusy,
     connectionCancellable,
     itemBusy,

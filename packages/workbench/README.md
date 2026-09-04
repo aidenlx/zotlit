@@ -105,6 +105,10 @@ schedules those renders:
   render, and a partial in it written in Eta is named as an
   `unsupported-dependency` diagnostic rather than defined: the web host renders
   Liquid and JSON-e only, wherever the source came from.
+- The bundled Resolved CSL Style is checked here: a style the Local Bridge
+  could not resolve, and one whose content is no standalone CSL style, are both
+  `citation-style-error` diagnostics. CSL formatting itself stays in Obsidian,
+  which is where a Literature Note's citations are rendered.
 - `createRenderScheduler(options)` — one debounce (300 ms), one Worker per
   render terminated on its deadline, and a revision check that drops a result
   the reader has already typed past. The host supplies the Worker factory.
@@ -141,6 +145,10 @@ Templates, ported from the reviewed language prototype:
 - `suggestions(source, position, config)` and `hoverHint(...)` — contract-driven
   field, filter, tag, partial, and snippet options; `rootAt(...)` resolves the
   root in scope at a position.
+- `templateCompletion(read)` — those two as one editor extension: the typing
+  popup and the pointer hint over the same resolution. `read()` answers with
+  the pane's current root, partials, and Item values, so one editor follows the
+  reader between roots and papers.
 
 Regenerate the Eta parser after editing `src/language/eta.grammar`:
 

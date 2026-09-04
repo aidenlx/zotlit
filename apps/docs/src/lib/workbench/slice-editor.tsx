@@ -11,9 +11,16 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
-import { liquidMarkdown, yamlRule } from "@zotlit/workbench/language";
+import {
+  liquidMarkdown,
+  templateCompletion,
+  yamlRule,
+} from "@zotlit/workbench/language";
+import type { SuggestionSource } from "@zotlit/workbench/language";
 
 import { FIELD_TRIGGER } from "./fields";
+
+export type { SuggestionSource } from "@zotlit/workbench/language";
 
 /** The `{{` a reader just typed, in master offsets, with where it sits on screen. */
 export interface FieldTrigger {
@@ -50,6 +57,13 @@ export interface SliceEditorProps {
    * that caused it. Each new object reveals again.
    */
   reveal?: WorkbenchSliceRange | null;
+  /**
+   * The contract this pane's completion and hover resolve against. It is read
+   * per keystroke, so a pane that follows the caret into another root needs no
+   * new editor. A rule pane holds YAML, where the Template contract says
+   * nothing, so it offers neither.
+   */
+  suggest?: SuggestionSource;
   /** The selection in master offsets, whenever it moves or the pane takes focus. */
   onSelection?: (selection: WorkbenchSliceRange) => void;
   /** The pane took focus, so the host knows which editor the reader is in. */
@@ -66,6 +80,7 @@ export function SliceEditor({
   singleLine = false,
   extensions,
   reveal,
+  suggest,
   onSelection,
   onFocus,
   onFieldTrigger,
@@ -74,8 +89,8 @@ export function SliceEditor({
   const editor = useRef<EditorView>(null);
   // The view outlives every render, so it reads the current callbacks through
   // a ref instead of being rebuilt whenever the host passes new ones.
-  const report = useRef({ onSelection, onFocus, onFieldTrigger });
-  report.current = { onSelection, onFocus, onFieldTrigger };
+  const report = useRef({ onSelection, onFocus, onFieldTrigger, suggest });
+  report.current = { onSelection, onFocus, onFieldTrigger, suggest };
 
   useEffect(() => {
     const view = new EditorView({
@@ -84,6 +99,9 @@ export function SliceEditor({
         extensions: [
           workbenchSlice(controller, slice),
           language === "yaml" ? yamlRule : liquidMarkdown,
+          ...(language === "yaml"
+            ? []
+            : [templateCompletion(() => report.current.suggest?.() ?? null)]),
           ...(singleLine
             ? [
                 EditorState.transactionFilter.of((transaction) =>

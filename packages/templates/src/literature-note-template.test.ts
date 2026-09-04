@@ -617,6 +617,34 @@ Before{% managed %}AB{% endmanaged %}After\n--- zotlit:annotation ---\nANNOTATIO
     );
   });
 
+  it("compiles every source a document renders, and defines none of them", () => {
+    const facade = new TemplateFacade();
+    const source = `---
+id: example.compile
+name: Compile check
+version: 1.0.0
+author: Ada Example
+description: Compiles without rendering.
+contract: 2
+filename: '{{ zt.key }}'
+---
+Before{% managed %}{{ zt.title }}{% endmanaged %}After\n--- zotlit:annotation ---\n{{ zt.text }}`;
+
+    facade.compileLiteratureNoteTemplate(
+      facade.parseLiteratureNoteTemplate(source),
+    );
+    // Nothing the check compiled stays behind, so a later render resolves the
+    // same names it would have without it.
+    expect(() => facade.render("example.compile:compile:0", {})).toThrowError(
+      /not found/,
+    );
+
+    const broken = facade.parseLiteratureNoteTemplate(
+      source.replace("After", "After{% for %}"),
+    );
+    expect(() => facade.compileLiteratureNoteTemplate(broken)).toThrowError();
+  });
+
   it("renders an isolated Liquid Managed Block identically for create and update", () => {
     const facade = new TemplateFacade();
     const document = facade.parseLiteratureNoteTemplate(`---

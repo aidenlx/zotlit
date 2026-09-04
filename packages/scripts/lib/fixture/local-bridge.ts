@@ -152,12 +152,11 @@ export function createMockLocalBridge(
       });
     }
     return context.json(
-      await issueConnection(
-        options.layout,
+      await issueConnection(options.layout, {
         credentials,
         selectedProfile,
         bridgeVersion,
-      ),
+      }),
     );
   });
 
@@ -169,12 +168,11 @@ export function createMockLocalBridge(
     if (!request.success) return invalidRequest(context, request.issues);
     return context.json({
       state: "approved" as const,
-      connection: await issueConnection(
-        options.layout,
+      connection: await issueConnection(options.layout, {
         credentials,
         selectedProfile,
         bridgeVersion,
-      ),
+      }),
     });
   });
 
@@ -304,12 +302,17 @@ export function createMockLocalBridge(
   };
 }
 
-// oxlint-disable-next-line max-params -- one mock route's whole mutable state.
 async function issueConnection(
   layout: FixtureLayout,
-  credentials: Map<string, SelectedFixtureProfile>,
-  selectedProfile: SelectedFixtureProfile,
-  bridgeVersion: number,
+  {
+    credentials,
+    selectedProfile,
+    bridgeVersion,
+  }: {
+    credentials: Map<string, SelectedFixtureProfile>;
+    selectedProfile: SelectedFixtureProfile;
+    bridgeVersion: number;
+  },
 ) {
   const credential = randomUUID();
   credentials.set(credential, selectedProfile);

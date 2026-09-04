@@ -28,10 +28,17 @@ import type { FixtureLayout } from "./layout.ts";
 import { LITERATURE_NOTE_PROFILES } from "./spec.ts";
 
 const FIXTURE_PLUGIN_VERSION = "2.1.1";
-const BUILT_IN_CITE_SOURCE = readFileSync(
-  fileURLToPath(import.meta.resolve("@zotlit/templates/defaults/cite.liquid")),
-  "utf8",
-);
+/** The one partial every vault holds, which the bundle and the Save both offer. */
+const BUILT_IN_CITE_PARTIAL: LiteratureNoteTemplatePartial = {
+  name: "cite",
+  language: "liquid",
+  source: readFileSync(
+    fileURLToPath(
+      import.meta.resolve("@zotlit/templates/defaults/cite.liquid"),
+    ),
+    "utf8",
+  ),
+};
 
 export type SelectedFixtureProfile = "books" | "default";
 
@@ -263,13 +270,10 @@ function expectedRevisionConflict(
 }
 
 function dependencyBundle(source: string): TemplateDependenciesResponse {
-  const cite: LiteratureNoteTemplatePartial = {
-    name: "cite",
-    language: "liquid",
-    source: BUILT_IN_CITE_SOURCE,
-  };
   try {
-    const bundledSource = exportLiteratureNotePack(source, [cite]);
+    const bundledSource = exportLiteratureNotePack(source, [
+      BUILT_IN_CITE_PARTIAL,
+    ]);
     const document = new TemplateFacade().parseLiteratureNoteTemplate(
       bundledSource,
     );
@@ -293,12 +297,19 @@ function dependencyBundle(source: string): TemplateDependenciesResponse {
   }
 }
 
+/**
+ * The Save this vault would refuse. A Profile that parses can still fail to
+ * compile or call a partial no vault holds, so the write boundary compiles
+ * every source the Profile renders and resolves its external dependencies
+ * before anything reaches the file.
+ */
 function validateProfileSource(
   source: string,
   selectedProfileId: string,
 ): SaveSelectedProfileResponse | undefined {
   try {
-    const document = new TemplateFacade().parseLiteratureNoteTemplate(source);
+    const facade = new TemplateFacade();
+    const document = facade.parseLiteratureNoteTemplate(source);
     if (document.manifest.id !== selectedProfileId) {
       return { state: "refused", reason: "invalid-source" };
     }
@@ -320,6 +331,14 @@ function validateProfileSource(
     ) {
       return { state: "refused", reason: "unsupported-profile" };
     }
+    for (const partial of document.manifest.partials ?? []) {
+      facade.define(partial.name, partial.source, partial.language);
+    }
+    facade.compileLiteratureNoteTemplate(document);
+    // The partials this Profile calls, resolved the way the dependency bundle
+    // resolves them: a call no vault can answer refuses the Save here rather
+    // than leaving behind a Profile the next render cannot run.
+    exportLiteratureNotePack(source, [BUILT_IN_CITE_PARTIAL]);
   } catch {
     return { state: "refused", reason: "invalid-source" };
   }

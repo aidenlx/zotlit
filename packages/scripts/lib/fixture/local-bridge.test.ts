@@ -502,6 +502,51 @@ frontmatter:\n`,
     });
   });
 
+  it("refuses a Save the vault could not compile or resolve", async () => {
+    await using fixture = await createBridgeFixture();
+    const bridge = createMockLocalBridge({
+      layout: fixture.layout,
+      allowedOrigin: ORIGIN,
+    });
+    const client = clientFor(bridge);
+    await client.connectFromFragment(
+      `#zotlit-connect=${bridge.initialOneTimeCode}`,
+    );
+    const profile = await client.readSelectedProfile();
+    if (profile.document.state !== "present") {
+      throw new Error("Fixture Books Profile must have a document.");
+    }
+    const expected = {
+      state: "revision",
+      revision: profile.document.revision,
+    } as const;
+
+    // Liquid the engine cannot parse never reaches the file, so the vault is
+    // left holding a Profile every later render can still run.
+    await expect(
+      client.saveSelectedProfile({
+        reference: profile.document.reference,
+        expected,
+        source: `${profile.source}\n{% for %}`,
+      }),
+    ).resolves.toEqual({ state: "refused", reason: "invalid-source" });
+
+    // A call no vault can answer is refused the same way the bundle reports it.
+    await expect(
+      client.saveSelectedProfile({
+        reference: profile.document.reference,
+        expected,
+        source: `${profile.source}\n{% render 'missing' %}`,
+      }),
+    ).resolves.toEqual({ state: "refused", reason: "invalid-source" });
+
+    // Neither refusal wrote anything, so the revision the vault answers for
+    // is the one both Saves were checked against.
+    await expect(client.readSelectedProfile()).resolves.toMatchObject({
+      document: { revision: profile.document.revision },
+    });
+  });
+
   it("serializes saves that start from the same Profile revision", async () => {
     await using fixture = await createBridgeFixture();
     const bridge = createMockLocalBridge({
