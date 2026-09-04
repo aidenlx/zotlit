@@ -806,6 +806,80 @@ function writePrefs(
 /** ZotLit's settings version, so the vault loads without a migration pass. */
 const SETTINGS_VERSION = 9;
 
+/** ZotLit's right-sidebar view types, as `registerView` declares them. */
+const ZOTLIT_SIDEBAR_VIEW_TYPES = [
+  "zotero-annotation-view",
+  "zotlit-references",
+  "zotlit-cited-by",
+];
+
+/** One saved sidebar tab. Obsidian fills the rest of the leaf state itself. */
+function workspaceLeaf(type: string): Record<string, unknown> {
+  return { id: `zt-leaf-${type}`, type: "leaf", state: { type, state: {} } };
+}
+
+/**
+ * The saved layout a Fixture Vault opens with: the file explorer and search on
+ * the left, and the three ZotLit tabs beside Obsidian's backlink and
+ * outgoing-link tabs on the right. Obsidian rewrites `workspace.json` as a
+ * session goes on, so this preset decides the first open only.
+ *
+ * Obsidian shows a placeholder for a view type no loaded plugin registers, so
+ * the ZotLit tabs join the layout only when the build installs the bundle.
+ */
+function workspacePreset(options: BuildOptions): Record<string, unknown> {
+  return {
+    main: {
+      id: "zt-main",
+      type: "split",
+      direction: "vertical",
+      children: [
+        {
+          id: "zt-main-tabs",
+          type: "tabs",
+          children: [workspaceLeaf("empty")],
+        },
+      ],
+    },
+    left: {
+      id: "zt-left",
+      type: "split",
+      direction: "horizontal",
+      width: 300,
+      children: [
+        {
+          id: "zt-left-tabs",
+          type: "tabs",
+          children: [workspaceLeaf("file-explorer"), workspaceLeaf("search")],
+        },
+      ],
+    },
+    right: {
+      id: "zt-right",
+      type: "split",
+      direction: "horizontal",
+      width: 340,
+      collapsed: false,
+      children: [
+        {
+          id: "zt-right-tabs",
+          type: "tabs",
+          currentTab: 0,
+          children: [
+            ...(options.pluginBundleDir
+              ? ZOTLIT_SIDEBAR_VIEW_TYPES.map(workspaceLeaf)
+              : []),
+            workspaceLeaf("backlink"),
+            workspaceLeaf("outgoing-link"),
+          ],
+        },
+      ],
+    },
+    active: "zt-leaf-empty",
+    lastOpenFiles: [],
+  };
+}
+
 async function writeVault(
   layout: FixtureLayout,
   options: BuildOptions,
@@ -837,6 +911,7 @@ async function writeVault(
     "editor-status": true,
     outline: true,
   });
+  await writeJson(join(configDir, "workspace.json"), workspacePreset(options));
   await cp(VAULT_PAGES_DIR, layout.vaultDir, { recursive: true });
   await cp(
     join(VAULT_PLUGINS_DIR, "hot-reload"),
