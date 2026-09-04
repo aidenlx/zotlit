@@ -19,7 +19,6 @@ import type {
 } from "@zotlit/workbench/document";
 import {
   DEFAULT_PROFILE_SOURCE,
-  SAMPLE_ITEMS,
   createRenderScheduler,
 } from "@zotlit/workbench/render";
 import type { ProfileRenderResult } from "@zotlit/workbench/render";
@@ -51,18 +50,14 @@ import { PropertiesPane, PropertiesResult } from "./properties-tab";
 import type { EntryDiagnostic } from "./properties-tab";
 import { ResultSheet } from "./reading-view";
 import { startRenderWorker } from "./render-client";
+import { SampleBar } from "./sample-bar";
 import { SliceEditor } from "./slice-editor";
 import type { FieldTrigger } from "./slice-editor";
 import { ensureTemporal } from "./temporal";
-import {
-  clearDraft,
-  downloadProfile,
-  profileFileName,
-  readDraft,
-  writeDraft,
-} from "./transfer";
-import type { WorkbenchDraft } from "./transfer";
+import { downloadProfile, profileFileName } from "./transfer";
 import { useWorkbenchConnection } from "./use-workbench-connection";
+import type { ProfileHydration } from "./use-workbench-connection";
+import { DEFAULT_SAMPLE, useWorkbenchDraft } from "./use-workbench-draft";
 
 /** The three equal tabs, in the order the pane offers them. */
 const TAB_LABEL = {
@@ -93,40 +88,10 @@ const POPUP_HEIGHT = 384;
 const POPUP_MARGIN = 8;
 
 /**
- * The document this page keeps a draft for. A standalone reader edits one
- * document at a time, so the page holds one reference of its own; a connected
- * Workbench keys each vault document by the reference the bridge gave it.
- */
-const STANDALONE_DOCUMENT = "standalone";
-
-/** Quiet time after the last change before the draft is written. */
-const AUTOSAVE_MS = 500;
-
-/** The paper a fresh visit opens on. */
-const DEFAULT_SAMPLE = SAMPLE_ITEMS[0]!;
-
-/**
  * The width the result stops being a tab at and becomes the column beside the
  * pane. Every `min-[780px]:` class in this file is the same threshold.
  */
 const WIDE_LAYOUT = "(min-width: 780px)";
-
-interface RestoreOffer {
-  readonly draft: WorkbenchDraft;
-  readonly baseline: DocumentBaseline;
-}
-
-interface DocumentBaseline {
-  readonly reference: string;
-  readonly source: string;
-  readonly snapshot: string;
-}
-
-const STANDALONE_BASELINE: DocumentBaseline = {
-  reference: STANDALONE_DOCUMENT,
-  source: DEFAULT_PROFILE_SOURCE,
-  snapshot: snapshotIdentity(DEFAULT_SAMPLE),
-};
 
 /**
  * Keeps the popup inside the window the `{{` was typed in: a trigger near an
@@ -187,20 +152,6 @@ export function Workbench() {
   const [controller, setController] = useState(
     () => new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE),
   );
-  const [baseline, setBaseline] = useState(STANDALONE_BASELINE);
-  const [activeDocumentReference, setActiveDocumentReference] =
-    useState(STANDALONE_DOCUMENT);
-  // Read once, before the first autosave, so the record the last visit left is
-  // the one the reader is offered.
-  const [restorable, setRestorable] = useState<RestoreOffer | null>(() => {
-    const draft = readDraft(STANDALONE_DOCUMENT);
-    return draft
-      ? {
-          draft,
-          baseline: STANDALONE_BASELINE,
-        }
-      : null;
-  });
   const fileInput = useRef<HTMLInputElement>(null);
   // Where the sheet was opened from, so closing it hands the keyboard back.
   const addField = useRef<HTMLButtonElement>(null);
@@ -257,25 +208,27 @@ export function Workbench() {
   } = useWorkbenchConnection({
     controller,
     sample,
-    onHydrate: ({ selected, kept }) => {
-      const nextBaseline = {
-        reference: selected.document.reference,
-        source: selected.source,
-        snapshot: snapshotIdentity(sample),
-      };
-      setActiveDocumentReference(selected.document.reference);
-      setBaseline(nextBaseline);
-      loadDocument(selected.source);
-      setRestorable(kept ? { draft: kept, baseline: nextBaseline } : null);
-    },
+    onHydrate: openSelectedProfile,
     onItemLoaded: setSample,
-    onSaved: ({ reference, source }) =>
-      setBaseline({
-        reference,
-        source,
-        snapshot: snapshotIdentity(sample),
-      }),
+    onSaved: ({ reference, source }) => drafts.rebase({ reference, source }),
   });
+  const drafts = useWorkbenchDraft({
+    controller,
+    revision,
+    sample,
+    ...(connection.state === "connected" && saveTarget
+      ? { expected: saveTarget.expected }
+      : {}),
+  });
+
+  /** Opens the Profile a connection hydrated, with what it kept beside it. */
+  function openSelectedProfile({ selected, kept }: ProfileHydration) {
+    drafts.adopt(
+      { reference: selected.document.reference, source: selected.source },
+      kept,
+    );
+    loadDocument(selected.source);
+  }
 
   useEffect(
     () => controller.subscribe(() => setRevision((n) => n + 1)),
@@ -311,61 +264,20 @@ export function Workbench() {
   // gets, and the render it never starts.
   const unsupported = unsupportedProblems(controller.problems);
   const refused = unsupported.length > 0;
+  // A draft the parser refuses renders as nothing, so the last good result
+  // stands beside the Problems strip while the reader repairs it, rather than
+  // emptying the sheet and reporting the same parse error twice.
+  const renderable = !refused && controller.document !== null;
 
   useEffect(() => {
     // A Profile the web host refuses is never compiled, so nothing renders it.
-    if (refused) return;
+    if (!renderable) return;
     scheduler.request({
       source: controller.source,
       snapshot: sample,
       ...(resources ? { resources } : {}),
     });
-  }, [scheduler, controller, sample, revision, refused, resources]);
-
-  const documentReference = activeDocumentReference;
-  const atBaseline =
-    documentReference === baseline.reference &&
-    controller.source === baseline.source &&
-    snapshotIdentity(sample) === baseline.snapshot;
-
-  // The draft and the paper it is shown against are kept together, so a reload
-  // offers both or neither.
-  useEffect(() => {
-    // The prompt stands over an untouched page alone: the first change answers
-    // it the way Start clean does, so what the reader writes before answering
-    // is kept, and Restore never lands on top of it.
-    if (restorable) {
-      const stillWaiting =
-        documentReference === restorable.baseline.reference &&
-        controller.source === restorable.baseline.source &&
-        snapshotIdentity(sample) === restorable.baseline.snapshot;
-      if (stillWaiting) return;
-      setRestorable(null);
-      return;
-    }
-    const source = controller.source;
-    const timer = setTimeout(() => {
-      if (atBaseline) clearDraft(documentReference);
-      else
-        writeDraft(documentReference, {
-          source,
-          snapshot: sample,
-          ...(connection.state === "connected" && saveTarget
-            ? { expected: saveTarget.expected }
-            : {}),
-        });
-    }, AUTOSAVE_MS);
-    return () => clearTimeout(timer);
-  }, [
-    restorable,
-    atBaseline,
-    documentReference,
-    connection.state,
-    saveTarget,
-    controller,
-    sample,
-    revision,
-  ]);
+  }, [scheduler, controller, sample, revision, renderable, resources]);
 
   // The header keeps the last name the document parsed with, so repairing an
   // invalid draft does not blank the page it is on.
@@ -571,12 +483,6 @@ export function Workbench() {
 
   const draft = controller.document === null;
   const connected = connection.state === "connected";
-  const connectedSnapshot = sample.provenance.kind === "connected";
-  const currentConnectedSnapshot =
-    connectedSnapshot &&
-    connected &&
-    sample.provenance.installationId === connection.installation.id &&
-    sample.item.key === connection.selectedItem.key;
   // One input serves both screens, because the handoff is where a reader who
   // cannot edit this Profile reaches for another one.
   const filePicker = (
@@ -619,69 +525,13 @@ export function Workbench() {
         <h1 className="font-serif text-xl font-medium">{profile.name}</h1>
         <p className="text-fd-muted-foreground italic">{profile.description}</p>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <label
-            htmlFor="workbench-sample"
-            className="font-mono text-[0.68rem] font-semibold tracking-widest text-fd-muted-foreground uppercase"
-          >
-            {m.workbench_showing_label()}
-          </label>
-          {connectedSnapshot && connected ? (
-            <span
-              id="workbench-sample"
-              className="max-w-[22rem] min-w-0 truncate border border-fd-border bg-fd-card px-2 py-1.5 text-sm"
-            >
-              {sample.item.title ?? sample.item.key}
-            </span>
-          ) : (
-            <select
-              id="workbench-sample"
-              className="max-w-[22rem] min-w-0 truncate border border-fd-border bg-fd-card px-2 py-1.5 text-sm"
-              value={
-                connectedSnapshot
-                  ? `connected:${sample.item.key}`
-                  : sample.item.key
-              }
-              onChange={(event) => {
-                const selected = SAMPLE_ITEMS.find(
-                  (item) => item.item.key === event.target.value,
-                );
-                if (selected) setSample(selected);
-              }}
-            >
-              {connectedSnapshot && (
-                <option value={`connected:${sample.item.key}`}>
-                  {sample.item.title ?? sample.item.key}
-                </option>
-              )}
-              {SAMPLE_ITEMS.map((item) => (
-                <option key={item.item.key} value={item.item.key}>
-                  {item.item.title ?? item.item.key}
-                </option>
-              ))}
-            </select>
-          )}
-          <span className="border border-fd-border px-1.5 py-0.5 font-mono text-[0.6rem] font-semibold tracking-widest text-fd-muted-foreground uppercase">
-            {connectedSnapshot
-              ? currentConnectedSnapshot
-                ? m.workbench_connected_badge()
-                : m.workbench_retained_badge()
-              : m.workbench_sample_badge()}
-          </span>
-          {connected && (
-            <button
-              type="button"
-              disabled={itemBusy}
-              onClick={() => void loadSelectedItem()}
-              className="cursor-pointer border border-fd-border px-3 py-1.5 text-sm font-medium disabled:cursor-wait disabled:text-fd-muted-foreground"
-            >
-              {itemBusy
-                ? m.workbench_loading_item()
-                : connectedSnapshot &&
-                    sample.item.key === connection.selectedItem.key
-                  ? m.workbench_refresh_item()
-                  : m.workbench_load_item()}
-            </button>
-          )}
+          <SampleBar
+            sample={sample}
+            connection={connection}
+            busy={itemBusy}
+            onShow={setSample}
+            onLoad={() => void loadSelectedItem()}
+          />
           <div>
             <button
               type="button"
@@ -778,7 +628,7 @@ export function Workbench() {
         onDisconnect={() => void disconnect()}
       />
 
-      {restorable && (
+      {drafts.restorable && (
         <section
           aria-label={m.workbench_restore_heading()}
           className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-2 border-b border-fd-border bg-fd-accent/40 px-4 py-3 min-[780px]:px-6"
@@ -791,9 +641,10 @@ export function Workbench() {
             <button
               type="button"
               onClick={() => {
-                loadDocument(restorable.draft.source);
-                setSample(restorable.draft.snapshot);
-                setRestorable(null);
+                const kept = drafts.restore();
+                if (!kept) return;
+                loadDocument(kept.source);
+                setSample(kept.snapshot);
               }}
               className="cursor-pointer bg-fd-primary px-3 py-1 text-sm font-medium text-fd-primary-foreground"
             >
@@ -801,10 +652,7 @@ export function Workbench() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                clearDraft(restorable.baseline.reference);
-                setRestorable(null);
-              }}
+              onClick={() => drafts.startClean()}
               className="cursor-pointer border border-fd-border px-3 py-1 text-sm"
             >
               {m.workbench_restore_decline()}
@@ -1093,12 +941,4 @@ export function Workbench() {
       )}
     </div>
   );
-}
-
-function snapshotIdentity(snapshot: SampleItem): string {
-  const provenance =
-    snapshot.provenance.kind === "sample"
-      ? `sample:${snapshot.provenance.id}`
-      : `connected:${snapshot.provenance.installationId}`;
-  return `${provenance}:${snapshot.item.key}:${snapshot.revision}`;
 }
