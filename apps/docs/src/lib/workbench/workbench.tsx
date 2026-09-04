@@ -1,7 +1,7 @@
 // The standalone Template Workbench: one master Profile document behind a
 // header, three columns, and the result the reader would get.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   entryPosition,
@@ -35,6 +35,7 @@ import {
   triggerHoldsCaret,
 } from "./fields";
 import type { SampleItem } from "./fields";
+import { ProfileHandoff, unsupportedProblems } from "./handoff";
 import { NameFolderPane } from "./name-folder";
 import { NotePane } from "./note-pane";
 import type { NoteEditor } from "./note-pane";
@@ -45,6 +46,13 @@ import { startRenderWorker } from "./render-client";
 import { SliceEditor } from "./slice-editor";
 import type { FieldTrigger } from "./slice-editor";
 import { ensureTemporal } from "./temporal";
+import {
+  clearDraft,
+  downloadProfile,
+  profileFileName,
+  readDraft,
+  writeDraft,
+} from "./transfer";
 
 /** The three equal tabs, in the order the pane offers them. */
 const TAB_LABEL = {
@@ -65,6 +73,19 @@ const POPUP_HEIGHT = 384;
 const POPUP_MARGIN = 8;
 
 /**
+ * The document this page keeps a draft for. A standalone reader edits one
+ * document at a time, so the page holds one reference of its own; a connected
+ * Workbench keys each vault document by the reference the bridge gave it.
+ */
+const STANDALONE_DOCUMENT = "standalone";
+
+/** Quiet time after the last change before the draft is written. */
+const AUTOSAVE_MS = 500;
+
+/** The paper a fresh visit opens on. */
+const DEFAULT_SAMPLE = SAMPLE_ITEMS[0]!;
+
+/**
  * Keeps the popup inside the window the `{{` was typed in: a trigger near an
  * edge slides the panel back until it fits, and a window too short for the
  * whole panel leaves it as tall as the window allows, with its list scrolling.
@@ -82,9 +103,15 @@ function popupPosition(trigger: FieldTrigger) {
 }
 
 export function Workbench() {
-  const [controller] = useState(
+  const [controller, setController] = useState(
     () => new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE),
   );
+  // Read once, before the first autosave, so the record the last visit left is
+  // the one the reader is offered.
+  const [restorable, setRestorable] = useState(() =>
+    readDraft(STANDALONE_DOCUMENT),
+  );
+  const fileInput = useRef<HTMLInputElement>(null);
   const [result, setResult] = useState<ProfileRenderResult | null>(null);
   const [scheduler] = useState(() =>
     createRenderScheduler({
@@ -93,7 +120,7 @@ export function Workbench() {
     }),
   );
   const [revision, setRevision] = useState(0);
-  const [sample, setSample] = useState<SampleItem>(SAMPLE_ITEMS[0]!);
+  const [sample, setSample] = useState<SampleItem>(DEFAULT_SAMPLE);
   const [tab, setTab] = useState<"note" | "properties" | "name">("note");
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [advanced, setAdvanced] = useState(false);
@@ -133,9 +160,42 @@ export function Workbench() {
     return () => document.removeEventListener("keydown", close);
   }, [trigger]);
 
+  // One reading of the problems behind both gates: the screen a refused Profile
+  // gets, and the render it never starts.
+  const unsupported = unsupportedProblems(controller.problems);
+  const refused = unsupported.length > 0;
+
   useEffect(() => {
+    // A Profile the web host refuses is never compiled, so nothing renders it.
+    if (refused) return;
     scheduler.request({ source: controller.source, snapshot: sample });
-  }, [scheduler, controller, sample, revision]);
+  }, [scheduler, controller, sample, revision, refused]);
+
+  // A visit still on the built-in default, showing the paper that opens with
+  // it, has nothing worth keeping, so an untouched visit leaves the next one
+  // clean.
+  const untouched =
+    controller.source === DEFAULT_PROFILE_SOURCE &&
+    sample.item.key === DEFAULT_SAMPLE.item.key;
+
+  // The draft and the paper it is shown against are kept together, so a reload
+  // offers both or neither.
+  useEffect(() => {
+    // The prompt stands over an untouched page alone: the first change answers
+    // it the way Start clean does, so what the reader writes before answering
+    // is kept, and Restore never lands on top of it.
+    if (restorable) {
+      if (untouched) return;
+      setRestorable(null);
+      return;
+    }
+    const source = controller.source;
+    const timer = setTimeout(() => {
+      if (untouched) clearDraft(STANDALONE_DOCUMENT);
+      else writeDraft(STANDALONE_DOCUMENT, { source, snapshot: sample });
+    }, AUTOSAVE_MS);
+    return () => clearTimeout(timer);
+  }, [restorable, untouched, controller, sample, revision]);
 
   // The header keeps the last name the document parsed with, so repairing an
   // invalid draft does not blank the page it is on.
@@ -259,15 +319,30 @@ export function Workbench() {
     );
   }
 
+  /** Opens `source` as the document being edited, with a history of its own. */
+  function loadDocument(source: string) {
+    setController(new WorkbenchDocumentController(source));
+    setAdvanced(false);
+    setTab("note");
+    setNoteEditor("note");
+    setOpenRow(null);
+    setReveal(null);
+    setHighlight(null);
+    setTrigger(null);
+    setCaret({ from: 0, to: 0 });
+  }
+
+  /** Hands the reader their own bytes back, draft or not. */
   function download() {
-    const url = URL.createObjectURL(
-      new Blob([controller.source], { type: "text/markdown" }),
+    downloadProfile(
+      controller.source,
+      profileFileName(manifest?.id, { draft: controller.document === null }),
     );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `zotlit-profile.${manifest?.id ?? "profile"}.md`;
-    link.click();
-    URL.revokeObjectURL(url);
+  }
+
+  function importFile(file: File | undefined) {
+    if (!file) return;
+    void file.text().then(loadDocument);
   }
 
   function act(run: () => void) {
@@ -277,8 +352,41 @@ export function Workbench() {
     };
   }
 
+  const draft = controller.document === null;
+  // One input serves both screens, because the handoff is where a reader who
+  // cannot edit this Profile reaches for another one.
+  const filePicker = (
+    <input
+      ref={fileInput}
+      type="file"
+      accept=".md,text/markdown"
+      aria-label={m.workbench_import_label()}
+      className="hidden"
+      onChange={(event) => {
+        importFile(event.target.files?.[0]);
+        // Cleared, so opening the same file twice opens it twice.
+        event.target.value = "";
+      }}
+    />
+  );
+  const openFile = () => fileInput.current?.click();
+
+  if (unsupported.length > 0) {
+    return (
+      <>
+        {filePicker}
+        <ProfileHandoff
+          problems={unsupported}
+          onDownload={download}
+          onImport={openFile}
+        />
+      </>
+    );
+  }
+
   return (
     <div className="flex h-dvh flex-col bg-fd-background text-fd-foreground">
+      {filePicker}
       <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-fd-border px-6 py-3">
         <h1 className="font-serif text-xl font-medium">{profile.name}</h1>
         <p className="text-fd-muted-foreground italic">{profile.description}</p>
@@ -342,7 +450,17 @@ export function Workbench() {
                   onClick={act(download)}
                   className="cursor-pointer px-3 py-1.5 text-left text-sm hover:bg-fd-accent"
                 >
-                  {m.workbench_download()}
+                  {draft
+                    ? m.workbench_download_draft()
+                    : m.workbench_download()}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={act(openFile)}
+                  className="cursor-pointer px-3 py-1.5 text-left text-sm hover:bg-fd-accent"
+                >
+                  {m.workbench_import()}
                 </button>
                 <button
                   type="button"
@@ -366,10 +484,45 @@ export function Workbench() {
             onClick={download}
             className="cursor-pointer bg-fd-primary px-4 py-1.5 text-sm font-medium text-fd-primary-foreground"
           >
-            {m.workbench_download()}
+            {draft ? m.workbench_download_draft() : m.workbench_download()}
           </button>
         </div>
       </header>
+
+      {restorable && (
+        <section
+          aria-label={m.workbench_restore_heading()}
+          className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-2 border-b border-fd-border bg-fd-accent/40 px-6 py-3"
+        >
+          <p className="text-sm font-medium">{m.workbench_restore_heading()}</p>
+          <p className="text-sm text-fd-muted-foreground">
+            {m.workbench_restore_body()}
+          </p>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                loadDocument(restorable.source);
+                setSample(restorable.snapshot);
+                setRestorable(null);
+              }}
+              className="cursor-pointer bg-fd-primary px-3 py-1 text-sm font-medium text-fd-primary-foreground"
+            >
+              {m.workbench_restore_accept()}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                clearDraft(STANDALONE_DOCUMENT);
+                setRestorable(null);
+              }}
+              className="cursor-pointer border border-fd-border px-3 py-1 text-sm"
+            >
+              {m.workbench_restore_decline()}
+            </button>
+          </div>
+        </section>
+      )}
 
       <main className="grid min-h-0 flex-1 gap-5 px-6 py-5 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)_minmax(0,26rem)]">
         <FieldList key={root} root={root} data={fields} onInsert={insert} />
