@@ -25,6 +25,7 @@ import { liquidRanges, STRUCTURAL_TAGS } from "./liquid";
 import type { LiquidRange } from "./liquid";
 
 const contract = contractJson as ContractIR;
+const JSDOC_LINK = regex("\\{@link (?<target>[^}]+)}", "g");
 const ANNOTATION_SHORTCUT_DETAIL =
   "Renders the Profile's final Annotation Section with the argument bound to zt. Outside a Profile, uses the named annotation partial. Missing or null data is an error.";
 
@@ -287,7 +288,7 @@ function fieldOptions({
       type: describe(field.type),
       detail: [
         field.description
-          ?.replaceAll(/\{@link ([^}]+)}/g, "$1")
+          ?.replaceAll(JSDOC_LINK, "$<target>")
           .replaceAll("`", ""),
         !isEta && helper.kind === "helper" && helper.filter
           ? `Liquid arguments use | ${helper.filter}.`

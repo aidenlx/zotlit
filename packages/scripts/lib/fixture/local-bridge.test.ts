@@ -661,16 +661,19 @@ function clientFor(
 async function createBridgeFixture(): Promise<
   AsyncDisposable & { layout: ReturnType<typeof getFixtureLayout> }
 > {
+  await using stack = new AsyncDisposableStack();
   const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
   const scratch = join(workspaceRoot, "tmp");
   await mkdir(scratch, { recursive: true });
   const root = await mkdtemp(join(scratch, "local-bridge-test-"));
+  stack.defer(() => rm(root, { recursive: true, force: true }));
   const layout = getFixtureLayout(root);
   await buildFixture(layout);
+  const cleanup = stack.move();
   return {
     layout,
     async [Symbol.asyncDispose]() {
-      await rm(root, { recursive: true, force: true });
+      await cleanup[Symbol.asyncDispose]();
     },
   };
 }

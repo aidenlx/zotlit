@@ -224,13 +224,15 @@ export function Workbench() {
     controller,
     revision,
     sample,
-    ...(connection.state === "connected" && saveTarget
-      ? { expected: saveTarget.expected }
-      : {}),
+    saveTarget,
   });
 
   /** Opens the Profile a connection hydrated, with what it kept beside it. */
-  function openSelectedProfile({ selected, kept }: ProfileHydration) {
+  function openSelectedProfile({
+    selected,
+    kept,
+    retainedExpected,
+  }: ProfileHydration) {
     const opened = {
       reference: selected.document.reference,
       source: selected.source,
@@ -243,7 +245,7 @@ export function Workbench() {
       drafts.rebase(opened);
       // The text on screen still descends from the revision it was read at, so
       // Save answers for that one: the vault moved, this draft did not.
-      if (kept?.expected) saveAgainst(kept.expected);
+      if (retainedExpected) saveAgainst(retainedExpected);
       return;
     }
     drafts.adopt(opened, kept);

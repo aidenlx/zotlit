@@ -66,6 +66,7 @@ export function FieldList({ root, data, onInsert }: FieldListProps) {
   const [showAll, setShowAll] = useState(false);
 
   const query = tree.filterQuery;
+  const allOpen = showAll || query.length > 0;
   const nodes = useMemo(
     () => (data ? buildDisplayTree(data, { expanded: new Set() }) : []),
     [data],
@@ -76,11 +77,11 @@ export function FieldList({ root, data, onInsert }: FieldListProps) {
     [common, query],
   );
   const explorer = useMemo(() => {
-    if (!showAll || !data) return [];
+    if (!allOpen || !data) return [];
     if (!query) return buildDisplayTree(data, { expanded: tree.expanded });
     const options = { collapsed: tree.filterCollapsed };
     return buildFilteredDisplayTree(data, query, options).nodes;
-  }, [showAll, data, query, tree.expanded, tree.filterCollapsed]);
+  }, [allOpen, data, query, tree.expanded, tree.filterCollapsed]);
 
   // What the foot promises: the fields this paper carries beyond the rows it
   // leads with, which is what opening the tree adds. The count runs off the
@@ -146,21 +147,21 @@ export function FieldList({ root, data, onInsert }: FieldListProps) {
                 </li>
               ))}
             </ul>
-            {rows.length === 0 && (
+            {rows.length === 0 && explorer.length === 0 && (
               <p className="px-3 py-2 text-xs text-fd-muted-foreground">
                 {m.workbench_fields_no_matches()}
               </p>
             )}
             <button
               type="button"
-              aria-expanded={showAll}
+              aria-expanded={allOpen}
               onClick={() => setShowAll((open) => !open)}
               className="w-full cursor-pointer border-t border-fd-border px-3 py-2 text-left text-xs text-fd-muted-foreground hover:bg-fd-accent"
             >
               {m.workbench_fields_everything_else()}
               {rest > 0 && <span className="ml-2 font-mono">{rest}</span>}
             </button>
-            {showAll && (
+            {allOpen && (
               <ExplorerRows
                 nodes={explorer}
                 depth={0}
