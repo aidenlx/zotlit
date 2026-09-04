@@ -38,13 +38,40 @@
   size-adjust: 109.74%;
 }
 
+/* The mono fallback stands in for a fixed-pitch face, so it names monospace
+   locals — one per platform — rather than the proportional Arial next/font
+   emits for every family. A proportional stand-in tracks Plex Mono across
+   mixed-case prose and then runs ~38% wide on the short uppercase apparatus
+   labels (site nav, TOC title, version chips), which is where the swap shifts
+   the layout.
+
+   Every monospace face here advances at 0.6em, the same as Plex Mono, so the
+   overrides carry the vertical metrics alone and need no size-adjust. Those
+   metrics are what the face is for: installed monospace ascents run from 83%
+   to 104%, and pinning them means the line box is identical whichever local
+   answers. Consolas stays off the list — at 0.55em it is the one common
+   monospace that would reintroduce a width shift on the swap.
+
+   `local()` matches a full font name or a PostScript name, never a family
+   name, so entries read "Menlo-Regular" rather than "Menlo" — a family name
+   silently matches nothing. Each face is named in both forms because engines
+   differ on which they accept, and an entry that matches nothing is inert.
+   "Courier New" is the floor: its family name is also the regular face's full
+   name, so it answers everywhere the font exists.
+
+   A total miss stays safe. The face fails to load, --font-mono drops to its
+   ui-monospace tail, and the swap is still shift-free: every monospace face
+   shares the 0.6em advance, and no mono surface on the site is on
+   `line-height: normal`, so none depends on the overrides below. */
 @font-face {
   font-family: "IBM Plex Mono Fallback";
-  src: local("Arial");
-  ascent-override: 76.16%;
-  descent-override: 20.43%;
+  src:
+    local("Menlo-Regular"), local("Menlo Regular"), local("DejaVuSansMono"),
+    local("DejaVu Sans Mono Book"), local("RobotoMono-Regular"),
+    local("Roboto Mono Regular"), local("Courier New");
+  ascent-override: 102.5%;
+  descent-override: 27.5%;
   line-gap-override: 0%;
-  size-adjust: 134.59%;
 }
 
 /* Archivo SemiBold subset to the five "ZotLit" glyphs (~1 KB) — the wordmark,
