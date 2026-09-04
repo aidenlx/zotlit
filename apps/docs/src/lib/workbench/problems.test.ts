@@ -88,6 +88,23 @@ describe("diagnosticText", () => {
     ).toBe(m.workbench_diagnostic_render_timeout({ deadlineMs: "2000" }));
   });
 
+  it("names an Eta dependency the renderer refused, and keeps a bridge's own wording", () => {
+    expect(
+      diagnosticText({
+        code: "unsupported-dependency",
+        params: { name: "summary" },
+        part: "profile",
+      }),
+    ).toBe(m.workbench_diagnostic_unsupported_dependency({ name: "summary" }));
+    expect(
+      diagnosticText({
+        code: "unsupported-dependency",
+        message: "Template dependency 'summary' uses an unsupported language.",
+        part: "profile",
+      }),
+    ).toBe("Template dependency 'summary' uses an unsupported language.");
+  });
+
   it("shows the engine's own failure text for a render error", () => {
     expect(
       diagnosticText({
