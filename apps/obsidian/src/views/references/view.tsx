@@ -42,7 +42,6 @@ import type {
 } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
 import type { ProfileReader } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
 import type { CopyBibliographySnapshot, ReferenceActions } from "./actions";
@@ -93,7 +92,6 @@ export interface ReferencesViewDeps {
     BibliographyRenderCache,
     "render" | "on" | "vaultPresentation"
   >;
-  settings: Pick<SettingsService, "current">;
   profile: ProfileReader;
   /** Reveals the engine row in settings, where the install lives. */
   openSettings: () => void;
@@ -327,7 +325,7 @@ export class ReferencesView extends ItemView {
         count: citations.length,
         restyled,
       });
-      this.#reload();
+      this.#reload({ invalidate: restyled });
     });
   }
 
@@ -570,10 +568,6 @@ export class ReferencesView extends ItemView {
     }
     this.#renderKey = outcome.key;
     this.#documentPresentationError = null;
-    if (outcome.record.status === "failed") {
-      this.#showMinimal(citations, sources, true);
-      return;
-    }
     this.#paint(outcome.record, citations, sources);
   }
 
@@ -591,9 +585,13 @@ export class ReferencesView extends ItemView {
       this.#onScreen.set(id, { marker, content });
     }
     this.#entryMarkers = hasEntryMarkers;
-    this.#formattingFailed = false;
+    this.#formattingFailed = record.status === "failed";
     this.#formatting =
-      record.status === "revalidating" ? "pending" : "complete";
+      record.status === "revalidating"
+        ? "pending"
+        : record.status === "failed"
+          ? "failed"
+          : "complete";
     logger.debug("References bibliography rendered", {
       count: rendered.length,
       hasEntryMarkers,
@@ -610,7 +608,7 @@ export class ReferencesView extends ItemView {
     this.#store.setState({
       entries,
       listMode: this.#listMode(),
-      formattingFailed: false,
+      formattingFailed: this.#formattingFailed,
       documentPresentationError: null,
       copy: this.#trackCopy(entries),
     });
