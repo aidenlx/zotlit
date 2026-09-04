@@ -25,6 +25,7 @@ import type {
   LiteratureNoteTemplateDocument,
   LiteratureNoteTemplateErrorCode,
 } from "@zotlit/templates/facade";
+import { literatureNoteTemplateDependencies } from "@zotlit/templates/literature-note-pack";
 
 import {
   managedEntryEdit,
@@ -46,12 +47,17 @@ import type { NoteRegions } from "./regions";
 /** The pane that edits one Managed Frontmatter entry's expression. */
 export type WorkbenchEntrySliceId = `entry:${number}`;
 
-/** A pane that edits one region of the master document. */
+/**
+ * A pane a problem is repaired in. Every id but `details` is an editor over one
+ * region of the master document; `details` is the Name and folder form, which
+ * writes the manifest scalars it shows through controls of its own.
+ */
 export type WorkbenchSliceId =
   | "note"
   | "annotation"
   | "filename"
   | "advanced"
+  | "details"
   | WorkbenchEntrySliceId;
 
 /** The Annotation Section as its two panes address it, in master offsets. */
@@ -83,13 +89,8 @@ export type WorkbenchProblemCode =
   | "unsupported-partial-language";
 
 export interface WorkbenchProblem {
+  /** One code is one sentence, which each host writes in the reader's own language. */
   readonly code: WorkbenchProblemCode;
-  /**
-   * The parser's own wording, absent for a code this package raises itself: one
-   * code is one sentence, so a host writes it in the reader's own language.
-   */
-  readonly message?: string;
-  readonly recovery?: string;
   /** The values a host's own message for `code` reads. */
   readonly params?: Readonly<Record<string, string>>;
   /** Where the reader repairs it. */
@@ -128,6 +129,7 @@ export class WorkbenchDocumentController {
   #problems: readonly WorkbenchProblem[] = [];
   #focused: WorkbenchSliceId | null = null;
   #entries: readonly ManagedEntrySource[] | null = null;
+  #dependencies: readonly string[] = [];
   #regions: NoteRegions = { annotationCalls: [], managedBlock: null };
   readonly #ranges = new Map<WorkbenchSliceId, WorkbenchSliceRange>([
     ["note", { from: 0, to: 0 }],
@@ -197,6 +199,15 @@ export class WorkbenchDocumentController {
    */
   get managedEntries(): readonly ManagedEntrySource[] | null {
     return this.#entries;
+  }
+
+  /**
+   * The partial names this draft calls, sorted, which is what a Local Bridge
+   * bundles for the preview. A draft that does not parse keeps the last list
+   * that did, so a repair in progress never drops the bundle it needs.
+   */
+  get dependencies(): readonly string[] {
+    return this.#dependencies;
   }
 
   /**
@@ -512,6 +523,7 @@ export class WorkbenchDocumentController {
         from: document.annotationSection.start,
         to: document.annotationSection.end,
       });
+      this.#dependencies = literatureNoteTemplateDependencies(document);
       this.#problems = webProblems(document, source);
     } catch (error) {
       if (!(error instanceof LiteratureNoteTemplateError)) throw error;
@@ -526,8 +538,9 @@ export class WorkbenchDocumentController {
       this.#problems = [
         {
           code: error.code,
-          message: error.message,
-          recovery: error.recovery,
+          ...(error.manifestPath
+            ? { params: { field: error.manifestPath.join(".") } }
+            : {}),
           slice: this.#sliceFor(error),
           ...(range ? { range } : {}),
         },
@@ -538,9 +551,10 @@ export class WorkbenchDocumentController {
 
   /**
    * The pane a problem is repaired in: the row that owns the entry the parser
-   * named, the note name for the manifest value that holds it, the note body
-   * for a problem in the text that pane already shows, and Advanced for every
-   * error no pane can name.
+   * named, the note name for the manifest value that holds it, the Name and
+   * folder form for the manifest fields it writes, the note body for a problem
+   * in the text that pane already shows, and Advanced for every error no pane
+   * can name.
    */
   #sliceFor(error: LiteratureNoteTemplateError): WorkbenchSliceId {
     const path = error.manifestPath;
@@ -552,6 +566,9 @@ export class WorkbenchDocumentController {
         : "advanced";
     }
     if (path?.[0] === "filename" && this.filenameSlice) return "filename";
+    if (typeof path?.[0] === "string" && DETAIL_KEYS.has(path[0])) {
+      return "details";
+    }
     return this.#inNoteBody(error) ? "note" : "advanced";
   }
 
@@ -569,6 +586,25 @@ export class WorkbenchDocumentController {
     return note !== undefined && offset >= note.from && offset < note.to;
   }
 }
+
+/**
+ * The manifest keys the Name and folder form writes, so an error the parser
+ * pinned to one of them opens the field that holds it. The keys that form
+ * shows read-only — `id`, `contract`, `minAppVersion` — stay with Advanced.
+ */
+const DETAIL_KEYS = new Set([
+  "name",
+  "description",
+  "version",
+  "author",
+  "folder",
+  "citationStyle",
+  "importFolder",
+  "importColoredHighlights",
+  "importAnnotationsAsTemplate",
+  "language",
+  "sampleItemType",
+]);
 
 /** The parser codes that name text the note pane owns rather than structure. */
 const NOTE_BODY_ERRORS = new Set<LiteratureNoteTemplateErrorCode>([

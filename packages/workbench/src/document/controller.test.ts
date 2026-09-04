@@ -231,6 +231,29 @@ describe("WorkbenchDocumentController", () => {
     );
   });
 
+  it("sends a manifest field the Name and folder form writes to that form", () => {
+    const controller = new WorkbenchDocumentController(
+      HAND_WRITTEN.replace("version: 1.0.0", "version: 3"),
+    );
+
+    expect(controller.problems[0]).toMatchObject({
+      code: "invalid-manifest",
+      params: { field: "version" },
+      slice: "details",
+    });
+  });
+
+  it("names the partials the draft calls, before any bundle resolves them", () => {
+    const controller = new WorkbenchDocumentController(
+      HAND_WRITTEN.replace(
+        "# {{ zt.title }}",
+        "{% render 'summary' %}{% render 'cite' %}",
+      ),
+    );
+
+    expect(controller.dependencies).toEqual(["cite", "summary"]);
+  });
+
   it("reports an Eta profile as unsupported on the web and points at the value", () => {
     const controller = new WorkbenchDocumentController(
       HAND_WRITTEN.replace("language: liquid", "language: eta"),

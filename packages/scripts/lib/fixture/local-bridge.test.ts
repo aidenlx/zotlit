@@ -1,3 +1,4 @@
+import type { ServerType } from "@hono/node-server";
 import getPort from "get-port";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -43,8 +44,8 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
       allowedOrigin: ORIGIN,
       port,
     });
-    using stack = new DisposableStack();
-    stack.adopt(bridge.server, (server) => server.close());
+    await using stack = new AsyncDisposableStack();
+    stack.adopt(bridge.server, closeServer);
     const baseUrl = `http://127.0.0.1:${port}`;
 
     const preflight = await fetch(
@@ -133,7 +134,9 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
       throw new Error("Fixture Books Profile must have a document.");
     }
 
-    const dependencies = await client.readTemplateDependencies();
+    const dependencies = await client.readTemplateDependencies({
+      source: profile.source,
+    });
     expect(dependencies.templates).toHaveLength(0);
     expect(dependencies.diagnostics).toEqual([]);
     await expect(client.listCitationStyles()).resolves.toContainEqual({
@@ -288,6 +291,56 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     );
   });
 
+  it("re-checks a kept credential against the bridge running now", async () => {
+    await using fixture = await createBridgeFixture();
+    const bridge = createMockLocalBridge({
+      layout: fixture.layout,
+      allowedOrigin: ORIGIN,
+    });
+    const storage = memoryStorage();
+    const client = clientFor(bridge, { storage });
+    await client.connectFromFragment(
+      `#zotlit-connect=${bridge.initialOneTimeCode}`,
+    );
+
+    // The tab a reload or a lost connection left behind, holding the grant.
+    const returning = clientFor(bridge, { storage });
+    await expect(returning.resume()).resolves.toMatchObject({
+      state: "connected",
+      installation: { vault: "ZotLit Fixture" },
+      // The vault's own binding defaults, which is what an unset binding
+      // inherits rather than the plugin's built-in values.
+      profileDefaults: {
+        folder: "literatures",
+        citationStyle: null,
+        importFolder: "zotero_notes",
+        importColoredHighlights: false,
+        importAnnotationsAsTemplate: false,
+      },
+    });
+
+    // A bridge that came back on another version is measured against this page
+    // now, rather than accepted from the versions the grant was issued under.
+    bridge.control.reportBridgeVersion(BRIDGE_VERSION + 1);
+    await expect(clientFor(bridge, { storage }).resume()).resolves.toEqual({
+      state: "unavailable",
+      reason: "version-mismatch",
+      expected: {
+        bridgeVersion: BRIDGE_VERSION,
+        templateDataContractVersion: 2,
+      },
+      received: {
+        bridgeVersion: BRIDGE_VERSION + 1,
+        templateDataContractVersion: 2,
+      },
+    });
+
+    // A tab that kept no grant is left to bootstrap instead.
+    await expect(
+      clientFor(bridge, { storage: memoryStorage() }).resume(),
+    ).resolves.toBeNull();
+  });
+
   it("refuses incompatible and browser-unsupported Profile source", async () => {
     await using fixture = await createBridgeFixture();
     const bridge = createMockLocalBridge({
@@ -359,7 +412,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     });
   });
 
-  it("bundles reachable dependencies and diagnoses unavailable ones", async () => {
+  it("bundles the draft's own dependencies and diagnoses unavailable ones", async () => {
     await using fixture = await createBridgeFixture();
     const bridge = createMockLocalBridge({
       layout: fixture.layout,
@@ -374,6 +427,8 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
       throw new Error("Fixture Books Profile must have a document.");
     }
 
+    // The draft, never saved: the bundle answers the source the request
+    // carries, so a preview matches the document on screen.
     const withDependencies = profile.source
       .replace(
         "frontmatter:\n",
@@ -387,13 +442,9 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
 frontmatter:\n`,
       )
       .replace("## Book details", "{% render 'summary' %}\n\n## Book details");
-    const saved = await client.saveSelectedProfile({
-      reference: profile.document.reference,
-      expected: { state: "revision", revision: profile.document.revision },
-      source: withDependencies,
-    });
-    expect(saved).toMatchObject({ state: "saved" });
-    await expect(client.readTemplateDependencies()).resolves.toEqual({
+    await expect(
+      client.readTemplateDependencies({ source: withDependencies }),
+    ).resolves.toEqual({
       templates: [
         {
           name: "cite",
@@ -408,18 +459,18 @@ frontmatter:\n`,
       ],
       diagnostics: [],
     });
+    // The saved file still calls nothing, which is what the draft replaced.
+    await expect(
+      client.readTemplateDependencies({ source: profile.source }),
+    ).resolves.toEqual({ templates: [], diagnostics: [] });
 
-    if (saved.state !== "saved") throw new Error("Expected a saved result.");
     const missingDependency = withDependencies.replace(
       "{% render 'summary' %}",
       "{% render 'missing' %}",
     );
-    await client.saveSelectedProfile({
-      reference: profile.document.reference,
-      expected: { state: "revision", revision: saved.revision },
-      source: missingDependency,
-    });
-    await expect(client.readTemplateDependencies()).resolves.toMatchObject({
+    await expect(
+      client.readTemplateDependencies({ source: missingDependency }),
+    ).resolves.toMatchObject({
       templates: [],
       diagnostics: [
         {
@@ -432,12 +483,9 @@ frontmatter:\n`,
     const unsupportedDependency = withDependencies
       .replace("language: liquid", "language: eta")
       .replace("{% render 'cite' %}", "<%~ include('cite') %>");
-    await writeFile(
-      join(fixture.layout.vaultDir, "templates", "zotlit-profile.books.md"),
-      unsupportedDependency,
-      "utf8",
-    );
-    await expect(client.readTemplateDependencies()).resolves.toMatchObject({
+    await expect(
+      client.readTemplateDependencies({ source: unsupportedDependency }),
+    ).resolves.toMatchObject({
       templates: [
         {
           name: "cite",
@@ -580,6 +628,19 @@ async function createBridgeFixture(): Promise<
       await rm(root, { recursive: true, force: true });
     },
   };
+}
+
+/**
+ * Shuts the loopback server down and waits for it: `close()` only stops new
+ * connections, so the Fixture directory outlives every request still in flight.
+ * Keep-alive sockets the browser client left open are ended first, which is
+ * what lets `close()` settle at all.
+ */
+function closeServer(server: ServerType): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if ("closeAllConnections" in server) server.closeAllConnections();
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
 }
 
 function memoryStorage(): {

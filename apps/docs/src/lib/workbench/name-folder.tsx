@@ -5,7 +5,10 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-import type { InstalledCitationStyle } from "@zotlit/workbench/bridge";
+import type {
+  InstalledCitationStyle,
+  ProfileBindingDefaults,
+} from "@zotlit/workbench/bridge";
 import type {
   ManifestScalar,
   WorkbenchDocumentController,
@@ -39,47 +42,45 @@ interface Binding {
    * CSL ID standalone, where no vault says which are installed.
    */
   readonly kind: "path" | "style" | "toggle";
-  /**
-   * The value an unset binding takes: the plugin's built-in Default Profile,
-   * connected or not. The bridge contract carries no vault-settings read, so a
-   * vault that changed one of these is not what the Default origin names.
-   * @see apps/obsidian/src/services/settings/schema.ts DEFAULT_LITERATURE_NOTE_PROFILE
-   */
-  readonly fallback: string | boolean | null;
 }
 
 const BINDINGS: readonly Binding[] = [
-  {
-    key: "folder",
-    label: m.workbench_name_binding_folder,
-    kind: "path",
-    fallback: "literatures",
-  },
+  { key: "folder", label: m.workbench_name_binding_folder, kind: "path" },
   {
     key: "citationStyle",
     label: m.workbench_name_binding_citation_style,
     kind: "style",
-    fallback: null,
   },
   {
     key: "importFolder",
     label: m.workbench_name_binding_import_folder,
     kind: "path",
-    fallback: "zotero_notes",
   },
   {
     key: "importColoredHighlights",
     label: m.workbench_name_binding_colored_highlights,
     kind: "toggle",
-    fallback: false,
   },
   {
     key: "importAnnotationsAsTemplate",
     label: m.workbench_name_binding_annotation_template,
     kind: "toggle",
-    fallback: false,
   },
 ];
+
+/**
+ * What an unset binding inherits with no vault to ask: the plugin's built-in
+ * Default Profile, which is what a fresh install starts on. A Workbench
+ * Connection replaces this with the vault's own effective values.
+ * @see apps/obsidian/src/services/settings/schema.ts DEFAULT_LITERATURE_NOTE_PROFILE
+ */
+export const BUILT_IN_BINDING_DEFAULTS: ProfileBindingDefaults = {
+  folder: "literatures",
+  citationStyle: null,
+  importFolder: "zotero_notes",
+  importColoredHighlights: false,
+  importAnnotationsAsTemplate: false,
+};
 
 /** The Profile whose bindings live in Obsidian's settings rather than here. */
 const DEFAULT_PROFILE_ID = "default";
@@ -105,6 +106,11 @@ export interface NameFolderPaneProps {
    * picker. Null standalone, and while the connection lists none.
    */
   citationStyles?: readonly InstalledCitationStyle[] | null;
+  /**
+   * The values an unset binding inherits. A Workbench Connection carries the
+   * vault's own; standalone this is the plugin's built-in Default Profile.
+   */
+  defaults?: ProfileBindingDefaults;
   reveal?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
   onFieldTrigger?: (trigger: FieldTrigger) => void;
@@ -115,6 +121,7 @@ export function NameFolderPane({
   manifest,
   filename,
   citationStyles,
+  defaults = BUILT_IN_BINDING_DEFAULTS,
   reveal,
   onSelection,
   onFieldTrigger,
@@ -213,7 +220,9 @@ export function NameFolderPane({
               {BINDINGS.map((binding) => (
                 <div key={binding.key} className="flex items-baseline gap-3">
                   <dt className="min-w-0 flex-1">{binding.label()}</dt>
-                  <dd className="font-mono">{valueText(binding.fallback)}</dd>
+                  <dd className="font-mono">
+                    {valueText(defaults[binding.key])}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -227,6 +236,7 @@ export function NameFolderPane({
               key={binding.key}
               binding={binding}
               value={shown[binding.key]}
+              fallback={defaults[binding.key]}
               citationStyles={citationStyles ?? null}
               onWrite={(value) => write(binding.key, value)}
             />
@@ -385,17 +395,20 @@ function TextValue({
 function BindingRow({
   binding,
   value,
+  fallback,
   citationStyles,
   onWrite,
 }: {
   binding: Binding;
   value: string | boolean | null | undefined;
+  /** The value in effect where this binding is unset. */
+  fallback: string | boolean | null;
   citationStyles: readonly InstalledCitationStyle[] | null;
   onWrite: (value: ManifestScalar | undefined) => void;
 }) {
   const label = binding.label();
   const inherits = value === undefined;
-  const effective = inherits ? binding.fallback : value;
+  const effective = inherits ? fallback : value;
   const id = `workbench-binding-${binding.key}`;
   return (
     <div className="flex flex-col gap-1.5 border border-fd-border bg-fd-card px-3 py-2">
@@ -415,7 +428,7 @@ function BindingRow({
               ? m.workbench_name_override_for({ name: label })
               : m.workbench_name_use_default_for({ name: label })
           }
-          onClick={() => onWrite(inherits ? binding.fallback : undefined)}
+          onClick={() => onWrite(inherits ? fallback : undefined)}
           className="cursor-pointer border border-fd-border px-2 py-0.5 text-xs"
         >
           {inherits

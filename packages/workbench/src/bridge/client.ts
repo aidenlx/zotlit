@@ -19,6 +19,8 @@ import {
   selectedCitationStyleResponseSchema,
   selectedItemRequestSchema,
   selectedProfileResponseSchema,
+  sessionResumeResponseSchema,
+  templateDependenciesRequestSchema,
   templateDependenciesResponseSchema,
   templateSchemaResponseSchema,
 } from "./contracts";
@@ -31,6 +33,7 @@ import type {
   SelectedCitationStyleRequest,
   SelectedCitationStyleResponse,
   SelectedProfileResponse,
+  TemplateDependenciesRequest,
   TemplateDependenciesResponse,
   TemplateSchemaResponse,
 } from "./contracts";
@@ -153,14 +156,26 @@ export class LocalBridgeClient {
   }
 
   /**
-   * Takes the kept credential back up, which is what a reload does on its own.
-   * A transport failure leaves the grant intact, so an in-page Reconnect
-   * re-checks compatibility here and the revision on the hydration that
-   * follows, rather than costing a fresh approval. Answers null when the tab
+   * Takes the kept credential back up and presents it to the bridge running
+   * now, which answers with its current versions and capabilities. A transport
+   * failure leaves the grant intact, so an in-page Reconnect costs no fresh
+   * approval; a restarted or upgraded bridge is still measured against this
+   * page rather than against the versions the grant was issued under, and the
+   * hydration that follows re-reads the revision. Answers null when the tab
    * kept no grant, which leaves the caller to bootstrap.
    */
-  resume(): LocalBridgeConnection | null {
-    return this.#restoreConnection();
+  async resume(
+    options: { readonly signal?: AbortSignal } = {},
+  ): Promise<LocalBridgeConnection | null> {
+    const kept = this.#restoreConnection();
+    const credential = this.#credential;
+    if (kept?.state !== "connected" || credential === undefined) return kept;
+    const current = await this.#request(
+      LOCAL_BRIDGE_PATHS.resumeSession,
+      sessionResumeResponseSchema,
+      { signal: options.signal },
+    );
+    return this.#acceptConnection({ ...current, credential });
   }
 
   async disconnect(): Promise<void> {
@@ -205,10 +220,13 @@ export class LocalBridgeClient {
     );
   }
 
-  readTemplateDependencies(): Promise<TemplateDependenciesResponse> {
+  readTemplateDependencies(
+    request: TemplateDependenciesRequest,
+  ): Promise<TemplateDependenciesResponse> {
     return this.#request(
       LOCAL_BRIDGE_PATHS.templateDependencies,
       templateDependenciesResponseSchema,
+      { body: v.parse(templateDependenciesRequestSchema, request) },
     );
   }
 

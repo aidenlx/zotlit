@@ -51,7 +51,6 @@ interface SavedDocument {
 }
 
 export interface WorkbenchDraftKeeper {
-  /** The document this browser keeps a draft under. */
   readonly reference: string;
   /** The last visit's work, standing until the reader answers the prompt. */
   readonly restorable: RestoreOffer | null;
@@ -59,9 +58,7 @@ export interface WorkbenchDraftKeeper {
   adopt(document: SavedDocument, kept: WorkbenchDraft | null): void;
   /** Takes `document` as the saved state of the document being edited. */
   rebase(document: SavedDocument): void;
-  /** Answers the prompt with the kept work, which the caller opens. */
   restore(): WorkbenchDraft | null;
-  /** Answers the prompt by dropping what the last visit left. */
   startClean(): void;
 }
 

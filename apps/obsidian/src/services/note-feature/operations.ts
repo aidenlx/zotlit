@@ -24,6 +24,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import type { UpdateScope } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { Emitter } from "@zotlit/shared/nanoevents";
+import { inlineCitation } from "@zotlit/templates";
 import { stringifyFrontmatterInOrder } from "@zotlit/templates/frontmatter";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
@@ -42,7 +43,6 @@ import {
   normalizeFolderPath,
 } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
-import { inlineCitation } from "@/lib/inline-citation";
 import { getLogger } from "@/lib/log";
 import {
   DEFAULT_PROFILE,

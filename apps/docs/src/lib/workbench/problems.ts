@@ -1,6 +1,7 @@
 // The reader's wording for what the core reports. `@zotlit/workbench` renders
 // inside a Worker and inside Obsidian, so it names a problem by code and hands
-// over the values that fill it; the words come from this app's own catalog.
+// over the values that fill it; every code is written here, in this app's own
+// catalog, so a reader outside English reads their own language.
 
 import type { WorkbenchProblem } from "@zotlit/workbench/document";
 import type { RenderDiagnostic } from "@zotlit/workbench/render";
@@ -15,32 +16,71 @@ export interface ProblemText {
 }
 
 export function problemText(problem: WorkbenchProblem): ProblemText {
-  const text = (message: string): ProblemText => ({
+  const handoff = (message: string): ProblemText => ({
     message,
     recovery: m.workbench_problem_unsupported_recovery(),
   });
   switch (problem.code) {
     case "unsupported-language":
-      return text(m.workbench_problem_unsupported_language());
+      return handoff(m.workbench_problem_unsupported_language());
     case "unsupported-partial-language":
-      return text(
+      return handoff(
         m.workbench_problem_unsupported_partial({
           name: String(problem.params?.name),
         }),
       );
     case "unsupported-js":
-      return text(
+      return handoff(
         problem.params?.key === undefined
           ? m.workbench_problem_unsupported_js_unnamed()
           : m.workbench_problem_unsupported_js({ key: problem.params.key }),
       );
-    default:
-      // The parser writes its own wording, which every host shows as it stands.
+    case "invalid-document":
       return {
-        message: problem.message ?? problem.code,
-        ...(problem.recovery === undefined
-          ? {}
-          : { recovery: problem.recovery }),
+        message: m.workbench_problem_invalid_document(),
+        recovery: m.workbench_problem_invalid_document_recovery(),
+      };
+    case "invalid-manifest":
+      return {
+        // The field the parser named, when it could name one; a YAML syntax
+        // failure names no field, and the reveal points at the text instead.
+        message:
+          problem.params?.field === undefined
+            ? m.workbench_problem_invalid_manifest()
+            : m.workbench_problem_invalid_manifest_field({
+                field: problem.params.field,
+              }),
+        recovery: m.workbench_problem_invalid_manifest_recovery(),
+      };
+    case "invalid-managed-block":
+      return {
+        message: m.workbench_problem_invalid_managed_block(),
+        recovery: m.workbench_problem_invalid_managed_block_recovery(),
+      };
+    case "duplicate-managed-block":
+      return {
+        message: m.workbench_problem_duplicate_managed_block(),
+        recovery: m.workbench_problem_duplicate_managed_block_recovery(),
+      };
+    case "unknown-section-header":
+      return {
+        message: m.workbench_problem_unknown_section_header(),
+        recovery: m.workbench_problem_unknown_section_header_recovery(),
+      };
+    case "duplicate-annotation-section":
+      return {
+        message: m.workbench_problem_duplicate_annotation_section(),
+        recovery: m.workbench_problem_duplicate_annotation_section_recovery(),
+      };
+    case "missing-annotation-section":
+      return {
+        message: m.workbench_problem_missing_annotation_section(),
+        recovery: m.workbench_problem_missing_annotation_section_recovery(),
+      };
+    case "reserved-annotation-partial":
+      return {
+        message: m.workbench_problem_reserved_annotation_partial(),
+        recovery: m.workbench_problem_reserved_annotation_partial_recovery(),
       };
   }
 }

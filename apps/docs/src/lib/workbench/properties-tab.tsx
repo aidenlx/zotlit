@@ -427,17 +427,33 @@ export interface PropertiesResultProps {
   properties: readonly RenderedProperty[];
   /** The frontmatter the note gets once every entry has merged, in order. */
   fold: readonly RenderedProperty[];
+  /** The fold as the note's own YAML block, for the Markdown toggle. */
+  frontmatterBlock: string | null;
+  showMarkdown: boolean;
 }
 
 /**
  * The result column while Properties is open: what each rule produced on its
  * own, grouped under the entry that produced it, beside the final ordered fold.
+ * The Markdown toggle replaces both with the generated YAML the note carries.
  */
 export function PropertiesResult({
   entries,
   properties,
   fold,
+  frontmatterBlock,
+  showMarkdown,
 }: PropertiesResultProps) {
+  if (showMarkdown) {
+    return (
+      <pre
+        aria-label={m.workbench_result_markdown_body()}
+        className="font-mono text-[0.8rem] leading-relaxed whitespace-pre-wrap"
+      >
+        {frontmatterBlock ?? m.workbench_properties_produced_none()}
+      </pre>
+    );
+  }
   const produced = byEntry(properties);
   return (
     <div className="flex flex-col gap-4">

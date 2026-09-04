@@ -75,6 +75,9 @@ export function useWorkbenchConnection({
     readonly InstalledCitationStyle[] | null
   >(null);
   const [loadedStyleId, setLoadedStyleId] = useState<string | null>();
+  // The partial names the held bundle answers. Null until the first settle
+  // records what the hydrated document calls.
+  const loadedDependencies = useRef<string | null>(null);
   const [connectionBusy, setConnectionBusy] = useState(false);
   const [connectionCancellable, setConnectionCancellable] = useState(false);
   const [itemBusy, setItemBusy] = useState(false);
@@ -87,6 +90,7 @@ export function useWorkbenchConnection({
     setResources(undefined);
     setCitationStyles(null);
     setLoadedStyleId(undefined);
+    loadedDependencies.current = null;
   }, []);
 
   const connectionFailed = useCallback(
@@ -106,10 +110,13 @@ export function useWorkbenchConnection({
     // page's own controller, so hydration parses nothing of its own.
     const styleId = null;
     const [dependencies, citationStyle, styles] = await Promise.all([
-      bridge.readTemplateDependencies(),
+      bridge.readTemplateDependencies({ source: selected.source }),
       bridge.readSelectedCitationStyle({ styleId }),
       readCitationStyles(),
     ]);
+    // The bundle answers the source this hydration opens, and the settle effect
+    // below reads it again once the draft calls a different set of partials.
+    loadedDependencies.current = null;
     const reference = selected.document.reference;
     const currentExpected = expectedRevision(selected.document);
     const kept = readDraft(reference);
@@ -175,17 +182,16 @@ export function useWorkbenchConnection({
   }
 
   function connectFromPage() {
-    // A transport failure kept the grant, so Reconnect takes it back up and
-    // re-checks it against the bridge instead of asking for a fresh approval.
-    const resumed = bridge.resume();
-    if (resumed?.state === "connected") {
-      void connect(() => Promise.resolve(resumed));
-      return;
-    }
     const abort = new AbortController();
     connectionAbort.current = abort;
     void connect(
-      () => bridge.connectFromLoopback({ signal: abort.signal }),
+      async () =>
+        // A transport failure kept the grant, so Reconnect presents it to the
+        // bridge running now — which re-checks compatibility against this page
+        // — instead of asking for a fresh approval. A tab that kept no grant
+        // falls through to the loopback approval.
+        (await bridge.resume({ signal: abort.signal })) ??
+        (await bridge.connectFromLoopback({ signal: abort.signal })),
       abort,
     );
   }
@@ -261,6 +267,45 @@ export function useWorkbenchConnection({
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- bootstraps once against `bridge`, not on every `connect` identity change
   }, [bridge]);
 
+  // A page the reader leaves mid-approval stops polling with them: the loopback
+  // bootstrap runs until it is approved or aborted, and nothing outlives the
+  // hook that started it.
+  useEffect(() => () => connectionAbort.current?.abort(), []);
+
+  // The partials the draft calls right now. A bundle is read again only when
+  // this list changes, so typing never queries the vault.
+  const dependencyNames = controller.dependencies.join("\u0000");
+  useEffect(() => {
+    if (connection.state !== "connected" || !resources) return;
+    if (loadedDependencies.current === null) {
+      // The hydration's own bundle answers the document it opened.
+      loadedDependencies.current = dependencyNames;
+      return;
+    }
+    if (loadedDependencies.current === dependencyNames) return;
+    let current = true;
+    void bridge
+      .readTemplateDependencies({ source: controller.source })
+      .then((dependencies) => {
+        if (!current) return;
+        loadedDependencies.current = dependencyNames;
+        setResources((held) => (held ? { ...held, dependencies } : held));
+      })
+      .catch((error: unknown) => {
+        if (current) connectionFailed(error);
+      });
+    return () => {
+      current = false;
+    };
+  }, [
+    bridge,
+    connection,
+    connectionFailed,
+    controller,
+    dependencyNames,
+    resources,
+  ]);
+
   const styleId = controller.document
     ? (controller.document.manifest.citationStyle ?? null)
     : undefined;
@@ -278,7 +323,7 @@ export function useWorkbenchConnection({
       .readSelectedCitationStyle({ styleId })
       .then((citationStyle) => {
         if (!current) return;
-        setResources({ ...resources, citationStyle });
+        setResources((held) => (held ? { ...held, citationStyle } : held));
         setLoadedStyleId(styleId);
       })
       .catch((error: unknown) => {

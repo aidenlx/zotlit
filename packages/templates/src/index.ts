@@ -162,6 +162,7 @@ export {
   hasSuffixMarker,
   replaceSuffixMarkers,
 } from "./filename-suffix";
+export { inlineCitation } from "./inline-citation";
 
 function pointToSyntaxError(
   source: string,
