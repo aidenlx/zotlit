@@ -213,6 +213,118 @@ describe("WorkbenchDocumentController", () => {
     expect(controller.source.slice(from, to)).toBe("eta");
   });
 
+  it("reads the note name as the text inside the quotes the author wrote", () => {
+    const controller = new WorkbenchDocumentController(HAND_WRITTEN);
+    const filename = controller.filenameSlice!;
+
+    expect(HAND_WRITTEN.slice(filename.from, filename.to)).toBe(
+      "{{ zt.citationKey }}",
+    );
+    expect(controller.sliceRange("filename")).toEqual(filename);
+  });
+
+  it("leaves a note name no one line can hold to Advanced", () => {
+    const controller = new WorkbenchDocumentController(
+      HAND_WRITTEN.replace(
+        "filename: '{{ zt.citationKey }}'",
+        "filename: |\n  {{ zt.citationKey }}",
+      ),
+    );
+
+    expect(controller.problems).toEqual([]);
+    expect(controller.filenameSlice).toBeNull();
+  });
+
+  it("edits the note name through its own slice, quotes untouched", () => {
+    const controller = new WorkbenchDocumentController(HAND_WRITTEN);
+    const { from } = controller.filenameSlice!;
+
+    controller.dispatch({
+      changes: { from, insert: "{{ zt.date }}-" },
+      userEvent: "input.type",
+    });
+
+    expect(controller.source).toBe(
+      HAND_WRITTEN.replace(
+        "filename: '{{ zt.citationKey }}'",
+        "filename: '{{ zt.date }}-{{ zt.citationKey }}'",
+      ),
+    );
+  });
+
+  it("writes a binding the manifest never carried, then takes the key away", () => {
+    const controller = new WorkbenchDocumentController(HAND_WRITTEN);
+
+    expect(controller.setManifestKey("folder", "literatures")).toBe(true);
+    // A key the manifest never wrote lands at its foot, so no line the author
+    // ordered has to move.
+    expect(controller.source).toBe(
+      HAND_WRITTEN.replace(
+        "---\n# {{ zt.title }}",
+        "folder: literatures\n---\n# {{ zt.title }}",
+      ),
+    );
+    expect(controller.document?.manifest.folder).toBe("literatures");
+
+    expect(controller.setManifestKey("folder", undefined)).toBe(true);
+    expect(controller.source).toBe(HAND_WRITTEN);
+  });
+
+  it("keeps an explicit empty path and an explicit false apart from unset", () => {
+    const controller = new WorkbenchDocumentController(HAND_WRITTEN);
+
+    controller.setManifestKey("folder", "");
+    controller.setManifestKey("importColoredHighlights", false);
+
+    expect(controller.problems).toEqual([]);
+    const { manifest } = controller.document!;
+    expect(manifest.folder).toBe("");
+    expect(manifest.importColoredHighlights).toBe(false);
+    expect(manifest.importFolder).toBeUndefined();
+  });
+
+  it("removes one binding key and leaves the line the author commented", () => {
+    const source = HAND_WRITTEN.replace(
+      "language: liquid",
+      "folder: papers # where they land\ncitationStyle: null\nlanguage: liquid",
+    );
+    const controller = new WorkbenchDocumentController(source);
+
+    expect(controller.setManifestKey("folder", undefined)).toBe(true);
+
+    expect(controller.source).toBe(
+      source.replace("folder: papers # where they land\n", ""),
+    );
+    expect(controller.document?.manifest.citationStyle).toBeNull();
+  });
+
+  it("refuses a key whose value spans lines no form owns", () => {
+    const controller = new WorkbenchDocumentController(HAND_WRITTEN);
+
+    expect(controller.setManifestKey("frontmatter", undefined)).toBe(false);
+
+    expect(controller.source).toBe(HAND_WRITTEN);
+  });
+
+  it("undoes one Override in one step", () => {
+    const controller = new WorkbenchDocumentController(HAND_WRITTEN);
+
+    controller.setManifestKey("importFolder", "zotero_notes");
+    controller.undo();
+
+    expect(controller.source).toBe(HAND_WRITTEN);
+  });
+
+  it("changes the language key and leaves every template source as it was", () => {
+    const controller = new WorkbenchDocumentController(HAND_WRITTEN);
+
+    expect(controller.setManifestKey("language", "eta")).toBe(true);
+
+    expect(controller.source).toBe(
+      HAND_WRITTEN.replace("language: liquid", "language: eta"),
+    );
+  });
+
   it("applies a form edit while the focused slice has no editor open", () => {
     const controller = new WorkbenchDocumentController(HAND_WRITTEN);
     controller.setFocusedSlice("advanced");

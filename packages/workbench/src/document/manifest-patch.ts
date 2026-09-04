@@ -92,6 +92,82 @@ export function manifestValueEdit(
 }
 
 /**
+ * The document change that writes one top-level manifest key, or removes the
+ * key with its own line when `value` is undefined — the two halves of Override
+ * and Use default. A key the manifest never wrote is added at its foot.
+ * @returns null when the manifest does not parse, when the key holds a value no
+ * form can patch — anything but a scalar — and when a removal is asked of a key
+ * the manifest never wrote, which is the state the caller wanted.
+ */
+export function manifestKeyEdit(
+  source: string,
+  key: string,
+  value: ManifestScalar | undefined,
+): ChangeSpec | null {
+  const manifest = manifestYaml(source);
+  if (!manifest || manifest.doc.errors.length > 0) return null;
+
+  const pair = mapPair(manifest.doc.contents, key);
+  if (!pair) {
+    return value === undefined
+      ? null
+      : {
+          from: manifest.end,
+          to: manifest.end,
+          insert: `${key}: ${scalarText(value, null)}\n`,
+        };
+  }
+  // A block mapping or a sequence under this key spans lines the removal below
+  // would leave behind, so a key that holds one keeps the value it has.
+  if (
+    !isScalar(pair.key) ||
+    !pair.key.range ||
+    !isScalar(pair.value) ||
+    !pair.value.range
+  ) {
+    return null;
+  }
+  const [from, to] = pair.value.range;
+  if (value !== undefined) {
+    return {
+      from: manifest.offset + from,
+      to: manifest.offset + to,
+      insert: scalarText(value, pair.value),
+    };
+  }
+  // The key goes with the line it was written on, so the manifest keeps the
+  // shape it had rather than gaining a blank line where the binding was.
+  return {
+    from: lineStart(source, manifest.offset + pair.key.range[0]),
+    to: blockEnd(source, manifest.offset + to),
+  };
+}
+
+/**
+ * The text a manifest scalar holds, inside its quotes when it has them — the
+ * region a slice editor owns, so the note-name template is edited as template
+ * source rather than as YAML.
+ * @returns null when the value is written in a form one line cannot hold: a
+ * block scalar, a folded plain scalar, or a quoted one carrying an escape.
+ */
+export function manifestScalarSlice(
+  source: string,
+  path: readonly (string | number)[],
+): WorkbenchSliceRange | null {
+  const found = manifestNode(source, path);
+  if (!found || !isScalar(found.node)) return null;
+
+  const { node, from, to } = found;
+  const quoted = node.type === "QUOTE_SINGLE" || node.type === "QUOTE_DOUBLE";
+  if (node.type !== "PLAIN" && !quoted) return null;
+  const slice = quoted ? { from: from + 1, to: to - 1 } : { from, to };
+  const text = source.slice(slice.from, slice.to);
+  // A quoted scalar whose raw text differs from its value carries an escape or
+  // a doubled quote, which an editor over the raw text would corrupt.
+  return text.includes("\n") || (quoted && text !== node.value) ? null : slice;
+}
+
+/**
  * Document offsets of the manifest node at `path`, so a problem can point at
  * the text that caused it.
  * @returns null when the draft has no closed manifest or the path names no node.

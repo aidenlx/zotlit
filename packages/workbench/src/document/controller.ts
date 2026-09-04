@@ -28,7 +28,9 @@ import type {
 import {
   managedEntryEdit,
   managedFrontmatterEntries,
+  manifestKeyEdit,
   manifestNodeRange,
+  manifestScalarSlice,
   manifestValueEdit,
 } from "./manifest-patch";
 import type {
@@ -42,7 +44,11 @@ import type {
 export type WorkbenchEntrySliceId = `entry:${number}`;
 
 /** A pane that edits one region of the master document. */
-export type WorkbenchSliceId = "note" | "advanced" | WorkbenchEntrySliceId;
+export type WorkbenchSliceId =
+  | "note"
+  | "filename"
+  | "advanced"
+  | WorkbenchEntrySliceId;
 
 export type { WorkbenchSliceRange } from "./manifest-patch";
 
@@ -173,6 +179,14 @@ export class WorkbenchDocumentController {
     return this.#entries;
   }
 
+  /**
+   * The note-name template's own text, or null while the manifest writes it in
+   * a form one line cannot hold, which leaves that value to Advanced.
+   */
+  get filenameSlice(): WorkbenchSliceRange | null {
+    return this.#ranges.get("filename") ?? null;
+  }
+
   get canUndo(): boolean {
     return undoDepth(this.#state) > 0;
   }
@@ -267,6 +281,24 @@ export class WorkbenchDocumentController {
     const edit = manifestValueEdit(this.#text, path, value);
     if (!edit) return false;
     this.dispatch({ changes: edit, userEvent: "input.form" });
+    return true;
+  }
+
+  /**
+   * Writes one top-level manifest key, or removes it when `value` is undefined.
+   * Override and Use default are the two calls, and each lands as its own undo
+   * step; every other manifest byte stays where the author put it.
+   * @returns false when the manifest does not parse, or the key holds a node no
+   * form can patch.
+   */
+  setManifestKey(key: string, value: ManifestScalar | undefined): boolean {
+    const edit = manifestKeyEdit(this.#text, key, value);
+    if (!edit) return false;
+    this.dispatch({
+      changes: edit,
+      userEvent: "input.form",
+      annotations: isolateHistory.of("full"),
+    });
     return true;
   }
 
@@ -371,15 +403,19 @@ export class WorkbenchDocumentController {
   }
 
   /**
-   * Re-reads the Managed Frontmatter rows and the slice each one is edited
-   * through. A manifest that stopped parsing keeps the rows it had, whose
-   * ranges the change set already remapped; a list that parses into a shape no
-   * form can patch takes its rows and their ranges with it, so nothing points
-   * at text the rows no longer own.
+   * Re-reads the regions the manifest owns: the note-name value and the
+   * Managed Frontmatter rows, with the slice each one is edited through. A
+   * manifest that stopped parsing keeps the regions it had, whose ranges the
+   * change set already remapped, so the reader repairs the text in the editor
+   * they are already in; a list or a value that parses into a shape no form can
+   * patch takes its region with it, so nothing points at text no pane owns.
    */
-  #readEntries(source: string): void {
+  #readManifest(source: string): void {
     const list = managedFrontmatterEntries(source);
     if (list.status === "unparsed") return;
+    const filename = manifestScalarSlice(source, ["filename"]);
+    if (filename) this.#ranges.set("filename", filename);
+    else this.#ranges.delete("filename");
     const entries = list.status === "rows" ? list.entries : null;
     this.#entries = entries;
     for (const id of this.#ranges.keys()) {
@@ -398,7 +434,7 @@ export class WorkbenchDocumentController {
   #analyze(): void {
     const source = this.#text;
     this.#ranges.set("advanced", { from: 0, to: source.length });
-    this.#readEntries(source);
+    this.#readManifest(source);
     try {
       const document = parseLiteratureNoteTemplate(source);
       this.#document = document;

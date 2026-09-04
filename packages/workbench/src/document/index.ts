@@ -16,7 +16,9 @@ export type {
 export {
   managedEntryEdit,
   managedFrontmatterEntries,
+  manifestKeyEdit,
   manifestNodeRange,
+  manifestScalarSlice,
   manifestValueEdit,
 } from "./manifest-patch";
 export type {

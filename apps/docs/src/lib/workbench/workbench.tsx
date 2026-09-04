@@ -29,6 +29,7 @@ import {
   triggerHoldsCaret,
 } from "./fields";
 import type { SampleItem } from "./fields";
+import { NameFolderPane } from "./name-folder";
 import { PropertiesPane, PropertiesResult } from "./properties-tab";
 import type { EntryDiagnostic } from "./properties-tab";
 import { ResultSheet } from "./reading-view";
@@ -36,6 +37,19 @@ import { startRenderWorker } from "./render-client";
 import { SliceEditor } from "./slice-editor";
 import type { FieldTrigger } from "./slice-editor";
 import { ensureTemporal } from "./temporal";
+
+/** The three equal tabs, in the order the pane offers them. */
+const TAB_LABEL = {
+  note: m.workbench_tab_note,
+  properties: m.workbench_tab_properties,
+  name: m.workbench_tab_name_and_folder,
+};
+
+const TAB_LEDE = {
+  note: m.workbench_note_lede,
+  properties: m.workbench_properties_lede,
+  name: m.workbench_name_lede,
+};
 
 /** The `{{` popup's own box: the size it is drawn at, and its margin. */
 const POPUP_WIDTH = 320;
@@ -72,7 +86,7 @@ export function Workbench() {
   );
   const [revision, setRevision] = useState(0);
   const [sample, setSample] = useState<SampleItem>(SAMPLE_ITEMS[0]!);
-  const [tab, setTab] = useState<"note" | "properties">("note");
+  const [tab, setTab] = useState<"note" | "properties" | "name">("note");
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [advanced, setAdvanced] = useState(false);
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
@@ -146,11 +160,15 @@ export function Workbench() {
     }),
   ];
   const problemRow = problem ? entryPosition(problem.slice) : null;
+  // The Name and folder tab writes the note name; a manifest that holds that
+  // value in a form no one-line pane can own leaves the caret in the note.
   const slice: WorkbenchSliceId = advanced
     ? "advanced"
     : tab === "properties" && row !== null
       ? entrySlice(row)
-      : "note";
+      : tab === "name" && controller.filenameSlice
+        ? "filename"
+        : "note";
 
   /** Opens the row a diagnostic named, wherever the reader was. */
   function goToEntry(position: number, range?: WorkbenchSliceRange) {
@@ -324,7 +342,7 @@ export function Workbench() {
                 aria-label={m.workbench_title()}
                 className="flex gap-5 border-b border-fd-border"
               >
-                {(["note", "properties"] as const).map((id) => (
+                {(["note", "properties", "name"] as const).map((id) => (
                   <button
                     key={id}
                     type="button"
@@ -333,28 +351,25 @@ export function Workbench() {
                     onClick={() => setTab(id)}
                     className="-mb-px cursor-pointer pb-1.5 font-serif text-[1.06rem] font-medium text-fd-muted-foreground aria-selected:border-b-2 aria-selected:border-fd-primary aria-selected:text-fd-foreground"
                   >
-                    {id === "note"
-                      ? m.workbench_tab_note()
-                      : m.workbench_tab_properties()}
+                    {TAB_LABEL[id]()}
                   </button>
                 ))}
-                <span
-                  role="tab"
-                  aria-selected={false}
-                  aria-disabled
-                  className="-mb-px pb-1.5 font-serif text-[1.06rem] font-medium text-fd-muted-foreground/60"
-                >
-                  {m.workbench_tab_name_and_folder()}
-                </span>
               </div>
               <p className="mt-2 mb-2.5 text-xs text-fd-muted-foreground">
-                {tab === "note"
-                  ? m.workbench_note_lede()
-                  : m.workbench_properties_lede()}
+                {TAB_LEDE[tab]()}
               </p>
             </>
           )}
-          {!advanced && tab === "properties" ? (
+          {!advanced && tab === "name" ? (
+            <NameFolderPane
+              controller={controller}
+              manifest={manifest ?? null}
+              filename={result?.filename ?? null}
+              reveal={reveal}
+              onSelection={trackSelection}
+              onFieldTrigger={setTrigger}
+            />
+          ) : !advanced && tab === "properties" ? (
             entries === null ? (
               <p className="text-sm text-fd-muted-foreground">
                 {m.workbench_properties_source_only()}

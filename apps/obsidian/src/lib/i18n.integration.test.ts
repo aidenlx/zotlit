@@ -16,6 +16,9 @@ test("the ZotLit project compiles through the reusable package contract", async 
 
   expect(generated.result.messageCount).toBeGreaterThan(400);
   expect(generated.basePack.messages).not.toHaveProperty("docs_index_title");
+  // The web Workbench's strings belong to the docs catalog, so the plugin pack
+  // leaves them out.
+  expect(generated.basePack.messages).not.toHaveProperty("workbench_title");
   expect(generated.messages.hello()).toBe("world");
   // Lifecycle copy renders in the target language from the bundled subset,
   // with no Language Pack installed and no network access.
@@ -59,7 +62,7 @@ async function compileRealProject(): Promise<{
     root: workspaceRoot,
     project: "project.inlang",
     output,
-    excludeMessagePrefixes: ["docs_"],
+    excludeMessagePrefixes: ["docs_", "workbench_"],
     targetLocaleMessagePrefixes: [
       "notice_language_pack_",
       "settings_language_pack_",

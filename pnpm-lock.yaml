@@ -441,6 +441,9 @@ importers:
       fflate:
         specifier: 'catalog:'
         version: 0.8.3
+      happy-dom:
+        specifier: 'catalog:'
+        version: 20.9.0
       oxlint:
         specifier: 'catalog:'
         version: 1.70.0(oxlint-tsgolint@0.23.0)

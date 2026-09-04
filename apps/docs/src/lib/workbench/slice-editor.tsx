@@ -35,6 +35,11 @@ export interface SliceEditorProps {
   /** @default "liquid" */
   language?: SliceLanguage;
   /**
+   * Refuses a line break. A pane over a manifest scalar — the note name is the
+   * one — holds a value a break would end, taking the document with it.
+   */
+  singleLine?: boolean;
+  /**
    * Master offsets to select and scroll to, so a problem opens on the text
    * that caused it. Each new object reveals again.
    */
@@ -50,6 +55,7 @@ export function SliceEditor({
   slice,
   label,
   language = "liquid",
+  singleLine = false,
   reveal,
   onSelection,
   onFieldTrigger,
@@ -68,6 +74,13 @@ export function SliceEditor({
         extensions: [
           workbenchSlice(controller, slice),
           language === "yaml" ? yamlRule : liquidMarkdown,
+          ...(singleLine
+            ? [
+                EditorState.transactionFilter.of((transaction) =>
+                  transaction.newDoc.lines > 1 ? [] : transaction,
+                ),
+              ]
+            : []),
           EditorView.lineWrapping,
           // The whole-file pane is the one place a reader counts lines, so the
           // gutter rides with Advanced alone.
@@ -101,7 +114,7 @@ export function SliceEditor({
       editor.current = null;
       view.destroy();
     };
-  }, [controller, slice, label, language]);
+  }, [controller, slice, label, language, singleLine]);
 
   useEffect(() => {
     const view = editor.current;
