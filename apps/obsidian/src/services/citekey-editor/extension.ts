@@ -201,10 +201,16 @@ export function citekeyEditorExtension(
       }
 
       update(update: ViewUpdate): void {
-        // Obsidian freezes its own live-preview decorations while the mouse is
-        // down, so a drag-selection never moves the text under the pointer;
-        // the frozen set is mapped through the changes instead.
-        if (update.view.plugin(livePreviewState)?.mousedown) {
+        const tree = syntaxTree(update.state);
+        // The stream parse stops just past the viewport, so a tree shorter than
+        // the viewport has no nodes over part of it. Obsidian also freezes its
+        // decorations during IME composition and while the mouse is down. In
+        // all three cases the mapped set stands in until the next update.
+        if (
+          tree.length < update.view.viewport.to ||
+          update.view.composing ||
+          update.view.plugin(livePreviewState)?.mousedown
+        ) {
           if (update.docChanged) {
             this.decorations = this.decorations.map(update.changes);
             this.widgets = this.widgets.map(update.changes);
@@ -218,7 +224,7 @@ export function citekeyEditorExtension(
           // change decides again which Citations show raw text.
           update.selectionSet ||
           update.focusChanged ||
-          syntaxTree(update.state) !== syntaxTree(update.startState) ||
+          tree !== syntaxTree(update.startState) ||
           livePreviewOf(update.state) !== livePreviewOf(update.startState) ||
           update.transactions.some((tr) =>
             tr.effects.some((effect) => effect.is(citekeyDecorationsChanged)),

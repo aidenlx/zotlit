@@ -256,6 +256,9 @@ describe("citekeyEditorExtension theme hooks", () => {
     expect(marks()).toEqual([undefined, undefined]);
 
     navigationEnabled = false;
+    // This harness uses an empty syntax tree. A zero-width viewport marks that
+    // tree complete, which lets the external invalidation rebuild.
+    vi.spyOn(view, "viewport", "get").mockReturnValue({ from: 0, to: 0 });
     view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
 
     // The caret the editor places is what the mark's own source is edited by.
@@ -300,6 +303,9 @@ describe("citekeyEditorExtension theme hooks", () => {
     expect(drawn.dataset.ztClick).toBe("open");
 
     navigationEnabled = false;
+    // This harness uses an empty syntax tree. A zero-width viewport marks that
+    // tree complete, which lets the external invalidation rebuild.
+    vi.spyOn(view, "viewport", "get").mockReturnValue({ from: 0, to: 0 });
     view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
     const closed = view.dom.querySelector<HTMLElement>(".zt-citation")!;
     closed.dispatchEvent(new MouseEvent("click", { bubbles: true }));
