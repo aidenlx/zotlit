@@ -46,7 +46,7 @@ import type {
 } from "@/services/pandoc/render-cache";
 import { Service } from "@/services/service-base";
 
-import { citationKey } from "./present";
+import { citationKey, presentedCitationEqual } from "./present";
 import type {
   CitationSource,
   DocumentCitations,
@@ -741,11 +741,7 @@ function occurrencesEqual(
     prev.every(
       (occurrence, index) =>
         occurrence.start === next[index]!.start &&
-        JSON.stringify(occurrence.text) === JSON.stringify(next[index]!.text) &&
-        occurrence.serials.length === next[index]!.serials.length &&
-        occurrence.serials.every(
-          (serial, at) => serial === next[index]!.serials[at],
-        ),
+        presentedCitationEqual(occurrence, next[index]!),
     )
   );
 }

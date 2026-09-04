@@ -499,6 +499,14 @@ describe("citekeyEditorExtension citation widgets", () => {
       summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
       literalWorks: new Map([["doe2024", DOE_KEY]]),
     });
+    return viewWithCitationText(doc, () => held);
+  }
+
+  function viewWithCitationText(
+    doc: string,
+    citationText: () => Held<DocumentCitations>,
+  ) {
+    livePreview.mockReturnValue(true);
     return editorView({
       parent: document.body,
       state: EditorState.create({
@@ -513,7 +521,7 @@ describe("citekeyEditorExtension citation widgets", () => {
             resolveCitekey: () => unique(DOE_KEY),
             navigationEnabled: () => false,
             showFormatted: () => true,
-            citationText: () => held,
+            citationText,
           }),
         ],
       }),
@@ -553,16 +561,57 @@ describe("citekeyEditorExtension citation widgets", () => {
 
   it("keeps the drawn citation while an edit lands away from it", () => {
     using view = viewOf("[@doe2024] tail");
-    const drawn = view.dom.querySelector(".zt-citation");
+    const drawn = view.dom.querySelector<HTMLElement>(".zt-citation")!;
     expect(drawn?.textContent).toBe("Doe (2024)");
 
     view.dispatch({
       changes: { from: view.state.doc.length, insert: " more" },
     });
 
-    // The held text is one shared value, so the widget compares equal by
-    // reference and CodeMirror keeps the element it already drew.
+    // The held text is unchanged, so CodeMirror keeps the element it already
+    // drew.
     expect(view.dom.querySelector(".zt-citation")).toBe(drawn);
+  });
+
+  it("keeps the drawn citation only while a moved occurrence reads the same", () => {
+    let held = heldRead({
+      formatted: new Map([["[@doe2024]", occurrences(rendered("Doe (2024)"))]]),
+      entrySerials: false,
+      summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+      literalWorks: new Map([["doe2024", DOE_KEY]]),
+    });
+    using view = viewWithCitationText("[@doe2024]", () => held);
+    const drawn = view.dom.querySelector<HTMLElement>(".zt-citation")!;
+
+    view.dispatch({ changes: { from: 0, insert: "Before " } });
+    expect(view.dom.querySelector(".zt-citation")).toBe(drawn);
+
+    held = heldRead({
+      formatted: new Map([
+        ["[@doe2024]", occurrences(rendered("Doe (2024)"), 7)],
+      ]),
+      entrySerials: false,
+      summaries: new Map([[DOE_KEY, "Doe (2024)"]]),
+      literalWorks: new Map([["doe2024", DOE_KEY]]),
+    });
+    vi.spyOn(view, "viewport", "get").mockReturnValue({ from: 0, to: 0 });
+    view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
+
+    expect(view.dom.querySelector(".zt-citation")).toBe(drawn);
+    drawn.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(requests[0]?.shown?.at).toEqual({ kind: "offset", start: 7 });
+
+    held = heldRead({
+      formatted: new Map([
+        ["[@doe2024]", occurrences(rendered("Roe (2025)"), 7)],
+      ]),
+      entrySerials: false,
+      summaries: new Map([[DOE_KEY, "Roe (2025)"]]),
+      literalWorks: new Map([["doe2024", DOE_KEY]]),
+    });
+    view.dispatch({ effects: citekeyDecorationsChanged.of(undefined) });
+
+    expect(view.dom.querySelector(".zt-citation")).not.toBe(drawn);
   });
 
   it("shows the drawn citation's popover while Citekey Navigation is off", () => {

@@ -35,6 +35,7 @@ import {
   citedWorks,
   citekeyState,
   literalKeyStateOf,
+  presentedCitationEqual,
 } from "@/services/citation-text/present";
 import type {
   CitationCoordinate,
@@ -431,13 +432,26 @@ interface EditedDocument {
   path: string;
 }
 
+interface RenderedCitationWidget {
+  content: PresentedCitation;
+  source: string;
+  footnote: boolean;
+  navigable: boolean;
+  navigation: CitationNavigation;
+  themeClasses: readonly string[];
+}
+
+const renderedCitationWidgets = new WeakMap<
+  HTMLElement,
+  RenderedCitationWidget
+>();
+
 /**
  * One Citation shown as the text a style formatted.
  *
- * Two widgets are the same when they stand for the same source and show the
- * same content: formatted content is the immutable value the document's held
- * citations carry, so the comparison is a reference test and a fresh read of
- * that document is a fresh value that redraws.
+ * A document read can move the occurrence while preserving its rendered text
+ * and Entry Serials. The equal fast path recognizes the held value, and the
+ * DOM update path keeps a value-equal element while refreshing its navigation.
  */
 class CitationWidget extends WidgetType {
   readonly #source;
@@ -485,13 +499,56 @@ class CitationWidget extends WidgetType {
     );
   }
 
+  updateDOM(element: HTMLElement, view: EditorView): boolean {
+    const rendered = renderedCitationWidgets.get(element);
+    if (
+      rendered === undefined ||
+      rendered.source !== this.#source ||
+      !presentedCitationEqual(rendered.content, this.#content) ||
+      rendered.navigable !== this.#navigable ||
+      rendered.footnote !== this.#footnote ||
+      rendered.themeClasses.length !== this.#themeClasses.length ||
+      rendered.themeClasses.some(
+        (themeClass, index) => themeClass !== this.#themeClasses[index],
+      )
+    ) {
+      return false;
+    }
+    Object.assign(rendered.navigation, this.#navigation(view));
+    renderedCitationWidgets.set(element, {
+      source: this.#source,
+      content: this.#content,
+      navigable: this.#navigable,
+      footnote: this.#footnote,
+      navigation: rendered.navigation,
+      themeClasses: this.#themeClasses,
+    });
+    return true;
+  }
+
   toDOM(view: EditorView): HTMLElement {
     const element = citationElement(view.dom.ownerDocument, this.#content, [
       themeHook.citationKey,
       ...this.#themeClasses,
       ...(this.#footnote ? [FOOTNOTE_WIDGET_CLASS] : []),
     ]);
-    const navigation: CitationNavigation = {
+    const navigation = this.#navigation(view);
+    renderedCitationWidgets.set(element, {
+      source: this.#source,
+      content: this.#content,
+      navigable: this.#navigable,
+      footnote: this.#footnote,
+      navigation,
+      themeClasses: this.#themeClasses,
+    });
+    markCitationClick(element, this.#navigable ? "open" : "edit");
+    if (this.#navigable) attachCitationNavigation(element, navigation);
+    else attachClosedCitationGestures(element, navigation);
+    return element;
+  }
+
+  #navigation(view: EditorView): CitationNavigation {
+    return {
       works: this.#works,
       // The occurrence this widget stands in the citation's place, which is
       // where a note-class style's own note text is read from, however often
@@ -513,14 +570,6 @@ class CitationWidget extends WidgetType {
           : null;
       },
     };
-    // The Hover Action owns hover on every rendered citation. A plain click is
-    // Citekey Navigation's where it opens the work the citation names, and the
-    // editor's own where it does not: the caret lands in the source this widget
-    // stands in place of, and the Citation is written again as raw text.
-    markCitationClick(element, this.#navigable ? "open" : "edit");
-    if (this.#navigable) attachCitationNavigation(element, navigation);
-    else attachClosedCitationGestures(element, navigation);
-    return element;
   }
 
   /** The widget owns every gesture on its own element. */

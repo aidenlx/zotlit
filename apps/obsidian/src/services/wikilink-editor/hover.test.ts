@@ -95,8 +95,15 @@ const OTHER_NOTE = {
 };
 
 /** One Citation the hovered document holds formatted text for. */
-function heldText(source: string, works: string[], text: string) {
-  return [citationKey({ source, works }), occurrences(rendered(text))] as const;
+function heldText(
+  source: string,
+  works: string[],
+  { text, start = 0 }: { text: string; start?: number },
+) {
+  return [
+    citationKey({ source, works }),
+    occurrences(rendered(text), start),
+  ] as const;
 }
 
 function harness(doc: string, overrides: Partial<Settings> = {}) {
@@ -107,8 +114,7 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
   const opened: [citekey: string, pane: unknown][] = [];
   let settings: Readonly<Settings> = { ...defaults, ...overrides };
   let hover: HoverPreferences = hoverPreferences(settings);
-  // Rebuilt on demand, so a fresh value redraws the widget the way a fresh
-  // read of the document does.
+  // Rebuilt on demand, the way a fresh read replaces the held document value.
   const hold = (value: DocumentCitations): Held<DocumentCitations> => ({
     value,
     status: "fresh",
@@ -116,19 +122,18 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
   });
   let held = hold(citations());
 
-  function citations(): DocumentCitations {
+  function citations(start = 0): DocumentCitations {
     return {
       entrySerials: false,
       formatted: new Map([
-        heldText(
-          "[@example, p. 7]",
-          [LITERATURE_NOTE.indexedKey],
-          "(Example 2020, p. 7)",
-        ),
+        heldText("[@example, p. 7]", [LITERATURE_NOTE.indexedKey], {
+          text: "(Example 2020, p. 7)",
+          start,
+        }),
         heldText(
           "[@example, p. 7; @other]",
           [LITERATURE_NOTE.indexedKey, OTHER_NOTE.indexedKey],
-          "(Example 2020, p. 7; Other 2021)",
+          { text: "(Example 2020, p. 7; Other 2021)", start },
         ),
       ]),
       summaries: new Map(),
@@ -197,10 +202,10 @@ function harness(doc: string, overrides: Partial<Settings> = {}) {
       hover = hoverPreferences(settings);
       view.dispatch({});
     },
-    /** Draws the Citation again from a fresh read, as CodeMirror does. */
+    /** Moves and refreshes the Citation from a fresh read. */
     redraw: () => {
-      held = hold(citations());
-      view.dispatch({ changes: { from: view.state.doc.length, insert: " " } });
+      held = hold(citations(7));
+      view.dispatch({ changes: { from: 0, insert: "Before " } });
     },
     [Symbol.dispose]: () => view.destroy(),
   };
@@ -242,15 +247,19 @@ describe("wikilinkEditorExtension hover under the Citation Popover", () => {
     expect(editor.native).toEqual([]);
   });
 
-  it("hovers a Citation CodeMirror has drawn again", () => {
+  it("keeps and hovers a Citation after its occurrence moves", () => {
     using editor = harness("[[literatures/example#cite:locator=7]]");
     const drawn = editor.citation();
 
     editor.redraw();
-    expect(editor.citation()).not.toBe(drawn);
+    expect(editor.citation()).toBe(drawn);
     editor.hover();
 
     expect(editor.requests).toHaveLength(1);
+    expect(editor.requests[0]?.shown?.at).toEqual({
+      kind: "offset",
+      start: 7,
+    });
   });
 
   it("holds the hover back until Mod is held where Live Preview asks for it", () => {

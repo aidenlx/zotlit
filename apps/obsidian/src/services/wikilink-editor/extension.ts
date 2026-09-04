@@ -20,6 +20,7 @@ import { themeHook } from "@/lib/theme-hooks";
 import type { LiteratureNoteTarget } from "@/lib/wikilink-citation";
 import {
   citationContent,
+  presentedCitationEqual,
   showCitation,
 } from "@/services/citation-text/present";
 import type {
@@ -97,13 +98,17 @@ export interface WikilinkEditorHandlers {
  * The Citation each rendered wikilink stands for, which the delegated hover
  * reads the hovered element back to.
  *
- * CodeMirror builds a widget's DOM again whenever the decoration is rebuilt, so
- * the element is the key and a dropped one is collected with its entry.
+ * CodeMirror can keep a widget's DOM across a value-equal document read. The
+ * widget refreshes this entry when it keeps the element, and a dropped element
+ * is collected with its entry.
  */
 const renderedCitations = new WeakMap<HTMLElement, RenderedWikilinkCitation>();
 
 /** What one rendered wikilink Citation shows, and the works it names. */
 interface RenderedWikilinkCitation {
+  content: PresentedCitation;
+  className: string;
+  click: CitationClickAffordance;
   works: readonly HoveredWork[];
   /** The occurrence it stands for, which a note-class style's note is read from. */
   shown: ShownCitation;
@@ -400,9 +405,9 @@ class CitationDisplayWidget extends WidgetType {
   }
 
   /**
-   * Formatted content is the immutable value the document's held citations
-   * carry, so the comparison is a reference test and a fresh read of that
-   * document is a fresh value that redraws.
+   * The held-value fast path avoids a comparison. A fresh document read takes
+   * the DOM update path, which keeps value-equal content and refreshes its
+   * hover metadata.
    */
   eq(other: CitationDisplayWidget): boolean {
     return (
@@ -410,6 +415,26 @@ class CitationDisplayWidget extends WidgetType {
       other.#className === this.#className &&
       other.#click === this.#click
     );
+  }
+
+  updateDOM(element: HTMLElement): boolean {
+    const rendered = renderedCitations.get(element);
+    if (
+      rendered === undefined ||
+      !presentedCitationEqual(rendered.content, this.#content) ||
+      rendered.className !== this.#className ||
+      rendered.click !== this.#click
+    ) {
+      return false;
+    }
+    renderedCitations.set(element, {
+      content: this.#content,
+      className: this.#className,
+      click: this.#click,
+      works: this.#works,
+      shown: this.#shown,
+    });
+    return true;
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -423,6 +448,9 @@ class CitationDisplayWidget extends WidgetType {
     // that would take the gesture away from them.
     showCitation(element, this.#content, "suppress");
     renderedCitations.set(element, {
+      content: this.#content,
+      className: this.#className,
+      click: this.#click,
       works: this.#works,
       shown: this.#shown,
     });

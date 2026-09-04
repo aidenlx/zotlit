@@ -219,8 +219,8 @@ describe("wikilinkEditorExtension citation rendering", () => {
       changes: { from: view.state.doc.length, insert: " more" },
     });
 
-    // The held text is one shared value, so the widget compares equal by
-    // reference and CodeMirror keeps the element it already drew.
+    // The held text is unchanged, so CodeMirror keeps the element it already
+    // drew.
     expect(view.dom.querySelector(".zt-citation")).toBe(drawn);
   });
 });

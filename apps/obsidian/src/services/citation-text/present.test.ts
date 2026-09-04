@@ -12,6 +12,7 @@ import {
   citedWorks,
   citekeyState,
   literalKeyStateOf,
+  presentedCitationEqual,
   sectionCoordinates,
 } from "./present";
 import type {
@@ -211,6 +212,31 @@ describe("literalKeyStateOf", () => {
 
   it("keeps a key neutral before the first snapshot settles", () => {
     expect(literalKeyStateOf(citations, () => "pending")("b")).toBe("pending");
+  });
+});
+
+describe("presentedCitationEqual", () => {
+  it("compares rendered text and Entry Serials", () => {
+    const citation = { text: rendered("Zeta (2020)"), serials: [1] };
+
+    expect(
+      presentedCitationEqual(citation, {
+        text: rendered("Zeta (2020)"),
+        serials: [1],
+      }),
+    ).toBe(true);
+    expect(
+      presentedCitationEqual(citation, {
+        text: rendered("Adams (2018)"),
+        serials: [1],
+      }),
+    ).toBe(false);
+    expect(
+      presentedCitationEqual(citation, {
+        text: rendered("Zeta (2020)"),
+        serials: [2],
+      }),
+    ).toBe(false);
   });
 });
 

@@ -57,6 +57,19 @@ export interface PresentedCitation {
   serials: readonly (number | undefined)[];
 }
 
+/** Occurrence coordinates stay outside this equality because they do not change rendered DOM. */
+export function presentedCitationEqual(
+  left: PresentedCitation,
+  right: PresentedCitation,
+): boolean {
+  return (
+    left === right ||
+    (JSON.stringify(left.text) === JSON.stringify(right.text) &&
+      left.serials.length === right.serials.length &&
+      left.serials.every((serial, index) => serial === right.serials[index]))
+  );
+}
+
 /**
  * One Citation Occurrence of a document, as the surface showing that occurrence
  * presents it.
