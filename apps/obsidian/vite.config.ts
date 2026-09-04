@@ -107,7 +107,8 @@ export default defineConfig(({ mode }) => {
       obsidianI18n({
         project: join(workspaceRoot, "project.inlang"),
         output: "src/lib/i18n/generated",
-        excludeMessagePrefixes: ["docs_"],
+        // `workbench_` copy belongs to the web Workbench in `apps/docs`.
+        excludeMessagePrefixes: ["docs_", "workbench_"],
         // Lifecycle copy has to be readable before its Language Pack exists.
         targetLocaleMessagePrefixes: [
           "notice_language_pack_",
