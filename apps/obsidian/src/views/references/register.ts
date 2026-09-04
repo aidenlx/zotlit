@@ -11,7 +11,6 @@ import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
 import type { ProfileReader } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
 
 import { REFERENCES_VIEW_TYPE, ReferencesView } from "./view";
 import type { ReferencesViewDeps } from "./view";
@@ -31,7 +30,6 @@ export interface ReferencesRegistrationDeps {
   citekeyEditor: CitekeyEditor;
   pandocEngine: PandocEngineService;
   bibliographyRender: BibliographyRenderCache;
-  settings: SettingsService;
 }
 
 export function registerReferencesView(
@@ -48,7 +46,6 @@ export function registerReferencesView(
     citekeyEditor: deps.citekeyEditor,
     pandocEngine: deps.pandocEngine,
     bibliographyRender: deps.bibliographyRender,
-    settings: deps.settings,
     openSettings: () => {
       revealSetting(
         plugin.app,

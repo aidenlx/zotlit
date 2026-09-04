@@ -133,7 +133,6 @@ export class BibliographyRenderCache extends Service<void> {
   });
   /** `undefined` until the first settings snapshot names the vault selections. */
   #vault: EffectivePresentation | undefined;
-  /** Named Profile citation-style bindings in the last settings snapshot. */
   /** The first unavailable selected style found in this plugin lifecycle. */
   #missingStyle: string | null = null;
 
