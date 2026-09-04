@@ -160,8 +160,10 @@ describe("Sample Items", () => {
 
     expect(result.diagnostics).toContainEqual({
       code: "citation-style-error",
-      message:
-        "Citation style 'http://www.zotero.org/styles/missing' is not installed.",
+      params: {
+        reason: "style-missing",
+        styleId: "http://www.zotero.org/styles/missing",
+      },
       part: "render",
     });
   });
@@ -317,12 +319,10 @@ describe("Managed Frontmatter rows", () => {
       })),
     ).toEqual([
       { code: "property-error", part: "properties", position: 6 },
-      { code: "property-error", part: "properties", position: 7 },
+      { code: "property-javascript", part: "properties", position: 7 },
     ]);
     expect(result.diagnostics[0]?.message).toContain("broken");
-    expect(result.diagnostics[1]?.message).toBe(
-      "Managed Frontmatter 'computed' requires JavaScript.",
-    );
+    expect(result.diagnostics[1]?.params).toEqual({ key: "computed" });
   });
 
   it("folds a key under the entry that produced its value, not the one that tried", () => {
@@ -342,9 +342,13 @@ describe("Managed Frontmatter rows", () => {
     const result = renderProfile(MERGE_PROFILE, sample);
 
     expect(result.diagnostics).toMatchObject([
-      { code: "property-error", part: "properties", position: 8 },
+      {
+        code: "property-append-conflict",
+        params: { key: "tags" },
+        part: "properties",
+        position: 8,
+      },
     ]);
-    expect(result.diagnostics[0]?.message).toContain("tags");
     expect(result.fold.find(({ key }) => key === "tags")).toMatchObject({
       position: 7,
     });

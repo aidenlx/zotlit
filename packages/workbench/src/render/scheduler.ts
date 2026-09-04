@@ -89,7 +89,7 @@ export function createRenderScheduler({
       settle(
         failedRender(identity, {
           code: "render-timeout",
-          message: `Rendering took longer than ${deadlineMs} ms and was stopped.`,
+          params: { deadlineMs },
           part: "render",
         }),
       );

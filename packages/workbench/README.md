@@ -97,6 +97,13 @@ schedules those renders:
   render terminated on its deadline, and a revision check that drops a result
   the reader has already typed past. The host supplies the Worker factory.
 
+A `RenderDiagnostic` and a `WorkbenchProblem` name what went wrong by `code`,
+with the values that fill it in `params`. This package holds no Language Pack
+facade — it renders inside a Worker and inside Obsidian — so the host writes
+each code in the reader's own language. `message` carries the wording this
+package did not author: the template engine's failure text, the Local Bridge's
+own, and the document parser's.
+
 ## Language
 
 `@zotlit/workbench/language` holds the editor support for Liquid and Eta
