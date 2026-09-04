@@ -5,9 +5,15 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
 import { expect, test } from "vitest";
 
+import { LANGUAGE_PACK_LIMITS } from "@zotlit/obsidian-i18n";
 import type { LanguagePackRuntime } from "@zotlit/obsidian-i18n";
 import { compile } from "@zotlit/obsidian-i18n/compiler";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
+
+import {
+  EXCLUDE_MESSAGE_PREFIXES,
+  TARGET_LOCALE_MESSAGE_PREFIXES,
+} from "#language-pack-options";
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 
@@ -19,6 +25,12 @@ test("the ZotLit project compiles through the reusable package contract", async 
   // The web Workbench's strings belong to the docs catalog, so the plugin pack
   // leaves them out.
   expect(generated.basePack.messages).not.toHaveProperty("workbench_title");
+  // A pack over the cap is refused at runtime, and copy another host owns is
+  // what fills it. Add the new prefix to EXCLUDE_MESSAGE_PREFIXES when this
+  // fails for messages the plugin never reads.
+  expect(Object.keys(generated.basePack.messages).length).toBeLessThanOrEqual(
+    LANGUAGE_PACK_LIMITS.messages,
+  );
   expect(generated.messages.hello()).toBe("world");
   // Lifecycle copy renders in the target language from the bundled subset,
   // with no Language Pack installed and no network access.
@@ -62,11 +74,8 @@ async function compileRealProject(): Promise<{
     root: workspaceRoot,
     project: "project.inlang",
     output,
-    excludeMessagePrefixes: ["docs_", "workbench_"],
-    targetLocaleMessagePrefixes: [
-      "notice_language_pack_",
-      "settings_language_pack_",
-    ],
+    excludeMessagePrefixes: EXCLUDE_MESSAGE_PREFIXES,
+    targetLocaleMessagePrefixes: TARGET_LOCALE_MESSAGE_PREFIXES,
   });
   const basePack = JSON.parse(await readFile(join(output, "en.json"), "utf8"));
   const server = await createServer({

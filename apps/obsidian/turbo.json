@@ -5,6 +5,8 @@
     "generate:language-packs": {
       "dependsOn": ["@zotlit/obsidian-i18n#build"],
       "inputs": [
+        "scripts/generate-language-packs.ts",
+        "scripts/language-pack-options.ts",
         "$TURBO_ROOT$/packages/obsidian-i18n/src/**",
         "$TURBO_ROOT$/project.inlang/settings.json",
         "$TURBO_ROOT$/messages/**"
