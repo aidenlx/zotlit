@@ -70,9 +70,11 @@ The complete source is the authority ([ADR 0032](../../docs/adr/0032-web-workben
   re-derives those ranges from the manifest after every change, and keeps the
   last list it parsed while a draft is mid-repair; a list that parses into a
   shape no form can patch takes the rows and their ranges with it, and
-  `managedEntries` answers null. A validation problem the parser pins to one
-  entry carries that entry's slice, so it is repaired in its own row; every
-  other problem stays with Advanced.
+  `managedEntries` answers null. A problem carries the pane it is
+  repaired in: the row of the entry the parser pinned it to, `filename` for the
+  manifest value the note name lives in, `note` for a Managed Block or a stray
+  section header inside the note body, and Advanced for the document's own
+  structure and for every error no pane can name.
 
 ### Limits
 
