@@ -91,7 +91,10 @@ jobs:
       # Docs, empty for the production line, which is the top-level config.
       WRANGLER_ENV: ${{ github.ref_name == 'next' && 'beta' || '' }}
     steps:
+      # The docs build reads image bytes from Git LFS before Vite.
       - uses: actions/checkout@v7
+        with:
+          lfs: true
 
       # The docs build installs its own dependency closure below, so the
       # workspace-wide bootstrap stays off.
