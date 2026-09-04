@@ -1,7 +1,11 @@
 // The standalone Template Workbench: one master Profile document behind a
-// header, three columns, and the result the reader would get.
+// header, three columns, and the result the reader would get. It folds twice:
+// under 1024 px the field column becomes the sheet the bottom "Add a field"
+// button opens, and under 780 px the pane fills the screen with the result
+// behind a tab of its own.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 
 import {
   entryPosition,
@@ -28,6 +32,7 @@ import {
   annotationHeaderMark,
 } from "./annotation";
 import { FieldList } from "./field-list";
+import type { FieldListProps } from "./field-list";
 import {
   insertSnippet,
   rootData,
@@ -86,6 +91,12 @@ const AUTOSAVE_MS = 500;
 const DEFAULT_SAMPLE = SAMPLE_ITEMS[0]!;
 
 /**
+ * The width the result stops being a tab at and becomes the column beside the
+ * pane. Every `min-[780px]:` class in this file is the same threshold.
+ */
+const WIDE_LAYOUT = "(min-width: 780px)";
+
+/**
  * Keeps the popup inside the window the `{{` was typed in: a trigger near an
  * edge slides the panel back until it fits, and a window too short for the
  * whole panel leaves it as tall as the window allows, with its list scrolling.
@@ -102,6 +113,44 @@ function popupPosition(trigger: FieldTrigger) {
   };
 }
 
+/**
+ * The field list standing over the pane it writes into: the popup `{{` opens at
+ * the caret, and the sheet the narrow layout's "Add a field" button raises. One
+ * box, so the list's chrome and its way out read the same wherever it opens.
+ */
+function FieldDialog({
+  className,
+  style,
+  onClose,
+  ...list
+}: FieldListProps & {
+  /** Where the box is drawn: the popup's panel, or the sheet's bottom strip. */
+  className: string;
+  style?: CSSProperties;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-label={m.workbench_fields_heading()}
+      style={style}
+      className={`fixed z-20 flex flex-col border-fd-border bg-fd-card ${className}`}
+    >
+      <div className="grid min-h-0 flex-1 grid-cols-1">
+        {/* A root of its own opens a list of its own, from the top. */}
+        <FieldList key={list.root} {...list} />
+      </div>
+      <button
+        type="button"
+        onClick={onClose}
+        className="mt-2 cursor-pointer self-start border border-fd-border px-2 py-1 text-xs"
+      >
+        {m.workbench_fields_close()}
+      </button>
+    </div>
+  );
+}
+
 export function Workbench() {
   const [controller, setController] = useState(
     () => new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE),
@@ -112,6 +161,8 @@ export function Workbench() {
     readDraft(STANDALONE_DOCUMENT),
   );
   const fileInput = useRef<HTMLInputElement>(null);
+  // Where the sheet was opened from, so closing it hands the keyboard back.
+  const addField = useRef<HTMLButtonElement>(null);
   const [result, setResult] = useState<ProfileRenderResult | null>(null);
   const [scheduler] = useState(() =>
     createRenderScheduler({
@@ -122,6 +173,11 @@ export function Workbench() {
   const [revision, setRevision] = useState(0);
   const [sample, setSample] = useState<SampleItem>(DEFAULT_SAMPLE);
   const [tab, setTab] = useState<"note" | "properties" | "name">("note");
+  // Which of the two the narrow screen is showing, and whether the field list
+  // is open over it. Both are the narrow layout's alone: a wide screen shows
+  // the pane, the result, and the field list at once.
+  const [view, setView] = useState<"edit" | "result">("edit");
+  const [sheet, setSheet] = useState(false);
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [advanced, setAdvanced] = useState(false);
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
@@ -152,13 +208,26 @@ export function Workbench() {
     void ensureTemporal().then(() => setTemporal(true));
   }, []);
   useEffect(() => {
-    if (!trigger) return;
+    if (!trigger && !sheet) return;
     const close = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setTrigger(null);
+      if (event.key !== "Escape") return;
+      setTrigger(null);
+      if (sheet) closeSheet();
     };
     document.addEventListener("keydown", close);
     return () => document.removeEventListener("keydown", close);
-  }, [trigger]);
+  }, [trigger, sheet]);
+  // The Editor and Result tabs stand under 780 px alone, so a window that grows
+  // past them leaves the reader in the pane rather than on a result no tab
+  // reads as chosen.
+  useEffect(() => {
+    const wide = window.matchMedia(WIDE_LAYOUT);
+    const settle = () => {
+      if (wide.matches) setView("edit");
+    };
+    wide.addEventListener("change", settle);
+    return () => wide.removeEventListener("change", settle);
+  }, []);
 
   // One reading of the problems behind both gates: the screen a refused Profile
   // gets, and the render it never starts.
@@ -249,12 +318,19 @@ export function Workbench() {
 
   /** Opens the row a diagnostic named, wherever the reader was. */
   function goToEntry(position: number, range?: WorkbenchSliceRange) {
+    setView("edit");
     setAdvanced(false);
     setTab("properties");
     setOpenRow(position);
     // A fresh object every time, so selecting the same problem twice reveals it
     // again.
     setReveal(range ? { ...range } : null);
+  }
+
+  /** Leaves the sheet, and the reader on the button that raised it. */
+  function closeSheet() {
+    setSheet(false);
+    addField.current?.focus();
   }
 
   /** Leaves the note tab, so its second editor does not follow the reader out. */
@@ -269,6 +345,7 @@ export function Workbench() {
    * nowhere — which is also where a document missing the section is repaired.
    */
   function openHighlight() {
+    setView("edit");
     const section = controller.annotationSection;
     if (!section || controller.noteRegions.annotationCalls.length === 0) {
       setAdvanced(true);
@@ -308,6 +385,9 @@ export function Workbench() {
       snippet,
     });
     setTrigger(null);
+    // The sheet stands over the pane it writes into, so it leaves with the
+    // snippet it put there.
+    setSheet(false);
     setReveal({ from: head, to: head });
   }
 
@@ -323,6 +403,8 @@ export function Workbench() {
   function loadDocument(source: string) {
     setController(new WorkbenchDocumentController(source));
     setAdvanced(false);
+    setView("edit");
+    setSheet(false);
     setTab("note");
     setNoteEditor("note");
     setOpenRow(null);
@@ -385,12 +467,14 @@ export function Workbench() {
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-fd-background text-fd-foreground">
+    // The page sits under the site's banner strip, so its height is the window
+    // less whatever that strip takes; a dismissed strip leaves the whole window.
+    <div className="flex h-[calc(100dvh-var(--fd-banner-height,0px))] flex-col bg-fd-background text-fd-foreground">
       {filePicker}
-      <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-fd-border px-6 py-3">
+      <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-fd-border px-4 py-3 min-[780px]:px-6">
         <h1 className="font-serif text-xl font-medium">{profile.name}</h1>
         <p className="text-fd-muted-foreground italic">{profile.description}</p>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <label
             htmlFor="workbench-sample"
             className="font-mono text-[0.68rem] font-semibold tracking-widest text-fd-muted-foreground uppercase"
@@ -399,7 +483,7 @@ export function Workbench() {
           </label>
           <select
             id="workbench-sample"
-            className="max-w-[22rem] truncate border border-fd-border bg-fd-card px-2 py-1.5 text-sm"
+            className="max-w-[22rem] min-w-0 truncate border border-fd-border bg-fd-card px-2 py-1.5 text-sm"
             value={sample.item.key}
             onChange={(event) => {
               setSample(
@@ -467,6 +551,10 @@ export function Workbench() {
                   role="menuitemcheckbox"
                   aria-checked={advanced}
                   onClick={act(() => {
+                    // Advanced stands over the pane, so opening it from the
+                    // narrow layout's result tab carries the reader to what it
+                    // opened rather than leaving the press reading as nothing.
+                    if (!advanced) setView("edit");
                     // A reveal belongs to the problem the reader clicked, so
                     // reopening Advanced from here starts on the caret instead.
                     setReveal(null);
@@ -492,7 +580,7 @@ export function Workbench() {
       {restorable && (
         <section
           aria-label={m.workbench_restore_heading()}
-          className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-2 border-b border-fd-border bg-fd-accent/40 px-6 py-3"
+          className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-2 border-b border-fd-border bg-fd-accent/40 px-4 py-3 min-[780px]:px-6"
         >
           <p className="text-sm font-medium">{m.workbench_restore_heading()}</p>
           <p className="text-sm text-fd-muted-foreground">
@@ -524,10 +612,44 @@ export function Workbench() {
         </section>
       )}
 
-      <main className="grid min-h-0 flex-1 gap-5 px-6 py-5 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)_minmax(0,26rem)]">
-        <FieldList key={root} root={root} data={fields} onInsert={insert} />
+      <main className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 min-[780px]:grid min-[780px]:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] min-[780px]:gap-5 min-[780px]:px-6 min-[780px]:py-5 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)_minmax(0,26rem)]">
+        {/* The two the narrow screen shows one of. The pane and the result are
+            columns of their own once there is room for both. */}
+        <div
+          role="tablist"
+          aria-label={m.workbench_view_label()}
+          className="flex gap-5 border-b border-fd-border min-[780px]:hidden"
+        >
+          {(["edit", "result"] as const).map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={view === id}
+              onClick={() => {
+                setView(id);
+                setSheet(false);
+              }}
+              className="-mb-px cursor-pointer pb-1.5 font-mono text-[0.68rem] font-semibold tracking-widest text-fd-muted-foreground uppercase aria-selected:border-b-2 aria-selected:border-fd-primary aria-selected:text-fd-foreground"
+            >
+              {id === "edit"
+                ? m.workbench_view_editor()
+                : m.workbench_view_result()}
+            </button>
+          ))}
+        </div>
 
-        <section className="flex min-h-0 flex-col">
+        {/* A column of its own where three fit; under that width the same list
+            is what "Add a field" opens. */}
+        <div className="hidden min-h-0 min-w-0 grid-cols-1 lg:grid">
+          <FieldList key={root} root={root} data={fields} onInsert={insert} />
+        </div>
+
+        <section
+          className={`min-h-0 flex-1 flex-col ${
+            view === "result" ? "hidden min-[780px]:flex" : "flex"
+          }`}
+        >
           {advanced ? (
             <>
               <h2 className="font-serif text-[1.06rem] font-medium">
@@ -624,25 +746,43 @@ export function Workbench() {
           )}
           {/* Next to the editor in tab order, because that is where it opens. */}
           {trigger && (
-            <div
-              role="dialog"
-              aria-label={m.workbench_fields_heading()}
+            <FieldDialog
+              root={root}
+              data={fields}
+              onInsert={insert}
+              onClose={() => setTrigger(null)}
               style={popupPosition(trigger)}
-              className="fixed z-20 flex w-80 flex-col border border-fd-border bg-fd-card p-3 shadow-[4px_4px_0_0_var(--color-fd-border)]"
-            >
-              <FieldList root={root} data={fields} onInsert={insert} />
-              <button
-                type="button"
-                onClick={() => setTrigger(null)}
-                className="mt-2 cursor-pointer self-start border border-fd-border px-2 py-1 text-xs"
-              >
-                {m.workbench_fields_close()}
-              </button>
-            </div>
+              className="w-80 border p-3 shadow-[4px_4px_0_0_var(--color-fd-border)]"
+            />
+          )}
+          {/* The field list's way in where it has no column: the same list, the
+              same insertion, opened over the pane it writes into. */}
+          <button
+            ref={addField}
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded={sheet}
+            onClick={() => setSheet(true)}
+            className="mt-3 cursor-pointer border border-fd-border bg-fd-card px-3 py-2 text-sm font-medium lg:hidden"
+          >
+            {m.workbench_add_field()}
+          </button>
+          {sheet && (
+            <FieldDialog
+              root={root}
+              data={fields}
+              onInsert={insert}
+              onClose={closeSheet}
+              className="inset-x-0 bottom-0 max-h-[75dvh] border-t p-4 shadow-[0_-4px_0_0_var(--color-fd-border)] lg:hidden"
+            />
           )}
         </section>
 
-        <section className="flex min-h-0 flex-col">
+        <section
+          className={`min-h-0 flex-1 flex-col ${
+            view === "result" ? "flex" : "hidden min-[780px]:flex"
+          }`}
+        >
           <div className="flex items-baseline gap-3">
             <h2 className="font-serif text-[1.06rem] font-medium">
               {showAnnotation
@@ -724,7 +864,7 @@ export function Workbench() {
       {problem && (
         <section
           aria-label={m.workbench_problems_heading()}
-          className="shrink-0 border-t border-fd-border bg-fd-accent/40 px-6 py-3"
+          className="shrink-0 border-t border-fd-border bg-fd-accent/40 px-4 py-3 min-[780px]:px-6"
         >
           <p className="font-mono text-[0.68rem] font-semibold tracking-widest text-fd-primary uppercase">
             {m.workbench_problems_heading()}
@@ -739,6 +879,7 @@ export function Workbench() {
                   goToEntry(problemRow, problem.range);
                   return;
                 }
+                setView("edit");
                 setAdvanced(true);
                 // A fresh object every time, so selecting the same problem
                 // twice reveals it again.
