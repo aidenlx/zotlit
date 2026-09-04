@@ -44,6 +44,7 @@
     "yaml": "catalog:"
   },
   "devDependencies": {
+    "@codemirror/autocomplete": "catalog:",
     "@codemirror/language": "catalog:",
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:",
@@ -59,6 +60,7 @@
     "vitest": "catalog:"
   },
   "peerDependencies": {
+    "@codemirror/autocomplete": "catalog:",
     "@codemirror/language": "catalog:",
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:"

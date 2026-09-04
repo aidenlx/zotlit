@@ -3,6 +3,7 @@
 // Obsidian because this preview produces the Profile's generated Markdown and
 // has no bibliography or citation processor.
 
+import { regex } from "arkregex";
 import { stringify as stringifyYaml } from "yaml";
 
 import {
@@ -221,24 +222,51 @@ function withRenderedCitation(
   });
 }
 
-/** The selected style the Local Bridge could not hand over, under its reason. */
+/**
+ * The root element every standalone CSL style opens with, and the element a
+ * processor formats through. A style carrying neither renders nothing, so the
+ * bundle answers for a style the preview cannot be shown under.
+ * @see apps/obsidian/src/services/pandoc/styles.ts isStandaloneCslStyle
+ */
+const CSL_ELEMENT_PREFIX = "(?:[^\\s/<>=:]+:)?";
+const CSL_STYLE_ROOT = regex(`<${CSL_ELEMENT_PREFIX}style(?=[\\s/>])`);
+const CSL_LAYOUT = regex(`<${CSL_ELEMENT_PREFIX}layout(?=[\\s/>])`);
+
+/**
+ * What the bundled Resolved CSL Style says about this render: the reason the
+ * Local Bridge could not hand one over, or the content it handed over failing
+ * the one check this host can make on it. CSL formatting itself stays in
+ * Obsidian, so an installed style that holds together leaves no diagnostic.
+ */
 function citationStyleDiagnostics(
   style: SelectedCitationStyleResponse | undefined,
 ): RenderDiagnostic[] {
-  if (style?.kind !== "failed") return [];
-  return [
+  const failure = (
+    styleId: string,
+    reason: string,
+    parentId?: string,
+  ): RenderDiagnostic[] => [
     {
       code: "citation-style-error",
       params: {
-        reason: style.reason,
-        styleId: style.styleId,
-        ...(style.reason === "parent-missing"
-          ? { parentId: style.parentId }
-          : {}),
+        reason,
+        styleId,
+        ...(parentId === undefined ? {} : { parentId }),
       },
       part: "render",
     },
   ];
+  if (style?.kind === "failed") {
+    return failure(
+      style.styleId,
+      style.reason,
+      style.reason === "parent-missing" ? style.parentId : undefined,
+    );
+  }
+  if (style?.kind !== "installed") return [];
+  return CSL_STYLE_ROOT.test(style.xml) && CSL_LAYOUT.test(style.xml)
+    ? []
+    : failure(style.styleId, "invalid");
 }
 
 /**

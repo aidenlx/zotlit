@@ -362,6 +362,36 @@ export class TemplateFacade {
     };
   }
 
+  /**
+   * Compiles every source this document renders — the body outside its Managed
+   * Block, the block itself, the Annotation Section, and the note name —
+   * without evaluating any of them and without leaving anything defined, so a
+   * caller can refuse a document whose text the engine cannot parse before it
+   * is written anywhere. Throws the engine's own failure for the first source
+   * that fails.
+   */
+  compileLiteratureNoteTemplate(
+    document: LiteratureNoteTemplateDocument,
+  ): void {
+    const { language } = document.manifest;
+    const block = document.managedBlock;
+    const sources = [
+      block
+        ? document.body.slice(0, block.start) + document.body.slice(block.end)
+        : document.body,
+      ...(block ? [block.source] : []),
+      document.annotationSection.source,
+      document.manifest.filename,
+    ];
+    sources.forEach((source, index) => {
+      // Named apart from every partial, so a compile leaves the registry as it
+      // found it whatever the document calls its own templates.
+      const name = `${document.manifest.id}:compile:${index}`;
+      this.define(name, source, language);
+      this.remove(name, language);
+    });
+  }
+
   renderLiteratureNoteTemplateForCreate<T extends object>(
     document: LiteratureNoteTemplateDocument,
     data: T,

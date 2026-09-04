@@ -186,6 +186,37 @@ describe("Sample Items", () => {
     });
   });
 
+  it("takes an installed citation style, and names one that renders nothing", () => {
+    const bundle = { templates: [], diagnostics: [] };
+    const standalone =
+      '<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0">' +
+      "<citation><layout/></citation></style>";
+
+    expect(
+      renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!, {
+        dependencies: bundle,
+        citationStyle: { kind: "installed", styleId: "apa", xml: standalone },
+      }).diagnostics,
+    ).toEqual([]);
+
+    // A style with nothing to format through is a bundle the preview cannot be
+    // shown under, whatever the Local Bridge called it.
+    expect(
+      renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!, {
+        dependencies: bundle,
+        citationStyle: {
+          kind: "installed",
+          styleId: "apa",
+          xml: "<html><body>Not a style</body></html>",
+        },
+      }).diagnostics,
+    ).toContainEqual({
+      code: "citation-style-error",
+      params: { reason: "invalid", styleId: "apa" },
+      part: "render",
+    });
+  });
+
   it("names an Eta dependency instead of running it", () => {
     const source = DEFAULT_PROFILE_SOURCE.replace(
       "# {{ zt.title }}",

@@ -9,6 +9,8 @@ export {
 } from "./liquid";
 export type { LiquidRange } from "./liquid";
 export { yamlRule } from "./yaml";
+export { templateCompletion } from "./completion";
+export type { SuggestionSource } from "./completion";
 export { hoverHint, rootAt, suggestions } from "./suggestions";
 export type {
   Suggestion,

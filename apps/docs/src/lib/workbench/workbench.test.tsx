@@ -37,6 +37,10 @@ const CONNECTED = DEFAULT_PROFILE_SOURCE.replace(
   "name: Default",
   "name: Connected profile",
 );
+/** A standalone CSL style, which is what a bundled installed style must be. */
+const FIXTURE_CSL_STYLE =
+  '<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0">' +
+  "<citation><layout/></citation></style>";
 
 // This environment carries no Storage of its own, so each test starts on one
 // that behaves as a browser's does.
@@ -94,7 +98,11 @@ describe("a Workbench Connection", () => {
         ],
         diagnostics: [],
       },
-      citationStyle: { kind: "default" },
+      citationStyle: {
+        kind: "installed",
+        styleId: "ieee",
+        xml: FIXTURE_CSL_STYLE,
+      },
     });
 
     page.press(m.workbench_save());
@@ -203,8 +211,9 @@ describe("a Workbench Connection", () => {
       ),
     );
 
-    // The work never left the page, so nothing is offered back: the reconnect
-    // takes the vault's refreshed revision as the state to save against.
+    // The work never left the page, so nothing is offered back, and it still
+    // answers for the revision it was read at: the vault moved under this
+    // draft, which is no permission to write over the edit that moved it.
     expect(page.host.textContent).not.toContain(m.workbench_restore_heading());
     openMenu(page.host);
     page.press(m.workbench_advanced());
@@ -218,12 +227,12 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() => expect(saves()).toHaveLength(2));
     expect(saves()[1]?.body).toMatchObject({
       reference: "profile:default",
-      expected: { state: "revision", revision: "external-revision" },
+      expected: { state: "revision", revision: "revision-1" },
       source: expect.stringContaining(snippet),
     });
   });
 
-  it("restores a kept conflict draft against the refreshed revision", async () => {
+  it("restores a kept conflict draft against the revision it was read at", async () => {
     const requests: BridgeRequest[] = [];
     const externalSource = `${CONNECTED}\nExternal Fixture edit`;
     vi.stubGlobal(
@@ -272,7 +281,7 @@ describe("a Workbench Connection", () => {
     await reloaded.waitFor(() => expect(saves()).toHaveLength(2));
     expect(saves()[1]?.body).toMatchObject({
       reference: "profile:default",
-      expected: { state: "revision", revision: "external-revision" },
+      expected: { state: "revision", revision: "revision-1" },
       source: expect.stringContaining(snippet),
     });
   });
@@ -668,6 +677,29 @@ describe("a Workbench Connection", () => {
         ({ path }) => path === LOCAL_BRIDGE_PATHS.loopbackBootstrap,
       ),
     ).toHaveLength(1);
+    // The grant records the versions it was issued under, so the reload asks
+    // the bridge running now rather than trusting the tab's own copy.
+    expect(
+      requests.filter(({ path }) => path === LOCAL_BRIDGE_PATHS.resumeSession),
+    ).toHaveLength(1);
+  });
+
+  it("refuses a profile whose partial the vault would not hand over", async () => {
+    const refusal =
+      "Template dependency 'summary' uses an unsupported language.";
+    vi.stubGlobal("fetch", bridgeFetch([], { dependencyRefusal: refusal }));
+    using page = open();
+
+    page.press(m.workbench_connection_connect());
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(
+        m.workbench_unsupported_heading(),
+      ),
+    );
+
+    // The bridge names the partial it refused; nothing else in this page can.
+    expect(page.host.textContent).toContain(refusal);
+    expect(page.host.querySelector('[role="tablist"]')).toBeNull();
   });
 });
 
@@ -792,6 +824,57 @@ describe("a draft the parser refuses", () => {
     page.press(m.workbench_problems_where_details());
 
     expect(chosenTab(page.host)).toBe(m.workbench_tab_name_and_folder());
+    // The form writes its fields through controls, so the reader lands in the
+    // one holding the field the parser named.
+    expect(document.activeElement?.id).toBe("workbench-field-name");
+  });
+});
+
+describe("the paper a profile is written for", () => {
+  it("opens on the bundled sample item its sample item type names", async () => {
+    const book = SAMPLE_ITEMS.find(({ item }) => item.itemType === "book")!;
+    using page = open();
+
+    importFile(page.host, withSampleItemType("book"));
+
+    await page.waitFor(() => expect(shownItem(page.host)).toBe(book.item.key));
+  });
+
+  it("names a type no bundled sample carries, and keeps the paper on screen", async () => {
+    using page = open();
+
+    importFile(page.host, withSampleItemType("webpage"));
+
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(
+        m.workbench_sample_type_missing({ itemType: "webpage" }),
+      ),
+    );
+    expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[0]!.item.key);
+  });
+});
+
+/** The default Profile, written for one Zotero item type. */
+function withSampleItemType(itemType: string): string {
+  return DEFAULT_PROFILE_SOURCE.replace(
+    "language: liquid",
+    `language: liquid\nsampleItemType: ${itemType}`,
+  );
+}
+
+describe("the result column", () => {
+  it("offers the update-only managed region beside the note", () => {
+    using page = open();
+
+    expect(page.host.textContent).toContain(m.workbench_result_heading());
+    page.press(m.workbench_result_managed_toggle());
+
+    // The part an update rewrites is its own result, so it is read on its own
+    // rather than found inside the note a creation gets.
+    expect(page.host.textContent).toContain(
+      m.workbench_result_managed_heading(),
+    );
+    expect(page.host.textContent).not.toContain(m.workbench_result_heading());
   });
 });
 
@@ -1088,6 +1171,8 @@ interface BridgeFixtureOptions {
   };
   readonly itemNetworkFailureOnce?: boolean;
   readonly etaDependency?: boolean;
+  /** The sentence a bridge sends instead of handing a partial over. */
+  readonly dependencyRefusal?: string;
   readonly itemProtocolFailureOnce?: boolean;
   readonly loopbackPending?: boolean;
   readonly save?: SaveSelectedProfileResponse;
@@ -1237,6 +1322,17 @@ function bridgeResponse({
     case LOCAL_BRIDGE_PATHS.resumeSession:
       return grant;
     case LOCAL_BRIDGE_PATHS.templateDependencies:
+      if (options.dependencyRefusal !== undefined) {
+        return {
+          templates: [],
+          diagnostics: [
+            {
+              code: "unsupported-dependency",
+              message: options.dependencyRefusal,
+            },
+          ],
+        };
+      }
       return {
         templates: [
           {
@@ -1252,7 +1348,7 @@ function bridgeResponse({
         ? {
             kind: "installed",
             styleId: body.styleId,
-            xml: '<style xmlns="http://purl.org/net/xbiblio/csl" version="1.0"/>',
+            xml: FIXTURE_CSL_STYLE,
           }
         : { kind: "default" };
     case LOCAL_BRIDGE_PATHS.citationStyles:

@@ -20,7 +20,7 @@ import type {
 import { m } from "@/paraglide/messages.js";
 
 import { SliceEditor } from "./slice-editor";
-import type { FieldTrigger } from "./slice-editor";
+import type { FieldTrigger, SuggestionSource } from "./slice-editor";
 
 /** Which of the note tab's two editors the reader is in. */
 export type NoteEditor = "note" | "annotation";
@@ -33,6 +33,8 @@ export interface NotePaneProps {
   highlight?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
   onFieldTrigger?: (trigger: FieldTrigger) => void;
+  /** The contract both editors complete and explain against. */
+  suggest?: SuggestionSource;
   /** A later render call, or the reader, asked for the highlight editor. */
   onOpenHighlight: () => void;
   onEditing: (editor: NoteEditor) => void;
@@ -44,6 +46,7 @@ export function NotePane({
   highlight,
   onSelection,
   onFieldTrigger,
+  suggest,
   onOpenHighlight,
   onEditing,
 }: NotePaneProps) {
@@ -78,6 +81,7 @@ export function NotePane({
         label={m.workbench_tab_note()}
         extensions={extensions}
         reveal={reveal}
+        suggest={suggest}
         onSelection={selection("note")}
         onFocus={() => editing("note")}
         onFieldTrigger={onFieldTrigger}
@@ -99,6 +103,7 @@ export function NotePane({
                 slice="annotation"
                 label={m.workbench_highlight_label()}
                 reveal={highlight}
+                suggest={suggest}
                 onSelection={selection("annotation")}
                 onFocus={() => editing("annotation")}
                 onFieldTrigger={onFieldTrigger}

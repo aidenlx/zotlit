@@ -19,6 +19,7 @@ import type {
 } from "@zotlit/workbench/document";
 import {
   DEFAULT_PROFILE_SOURCE,
+  SAMPLE_ITEMS,
   createRenderScheduler,
 } from "@zotlit/workbench/render";
 import type { ProfileRenderResult } from "@zotlit/workbench/render";
@@ -184,6 +185,10 @@ export function Workbench() {
   const [highlight, setHighlight] = useState<WorkbenchSliceRange | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
+  const [showManaged, setShowManaged] = useState(false);
+  // The Name and folder control a manifest problem opens, as a fresh object
+  // every time, so selecting the same problem twice opens it again.
+  const [focusField, setFocusField] = useState<{ field: string } | null>(null);
   const [caret, setCaret] = useState<WorkbenchSliceRange>({ from: 0, to: 0 });
   const [trigger, setTrigger] = useState<FieldTrigger | null>(null);
   // The field list restores the snapshot the way the renderer does, so it waits
@@ -191,15 +196,13 @@ export function Workbench() {
   const [temporal, setTemporal] = useState(
     () => globalThis.Temporal !== undefined,
   );
-  const [profile, setProfile] = useState<{
-    name: string;
-    description: string;
-  }>({ name: m.workbench_title(), description: "" });
   const {
     connection,
     saveTarget,
     resources,
+    resourcesStale,
     citationStyles,
+    saveAgainst,
     connectionBusy,
     connectionCancellable,
     itemBusy,
@@ -238,6 +241,9 @@ export function Workbench() {
     // measured against, so an unsaved edit stays an unsaved edit.
     if (drafts.reference === opened.reference) {
       drafts.rebase(opened);
+      // The text on screen still descends from the revision it was read at, so
+      // Save answers for that one: the vault moved, this draft did not.
+      if (kept?.expected) saveAgainst(kept.expected);
       return;
     }
     drafts.adopt(opened, kept);
@@ -289,26 +295,58 @@ export function Workbench() {
   const renderable = !refused && controller.document !== null;
 
   useEffect(() => {
-    // A Profile the web host refuses is never compiled, so nothing renders it.
-    if (!renderable) return;
+    // A Profile the web host refuses is never compiled, so nothing renders it,
+    // and a bundle read for another draft would render this one against the
+    // wrong partials — the last good result stands until its own bundle lands.
+    if (!renderable || resourcesStale) return;
     scheduler.request({
       source: controller.source,
       snapshot: sample,
       ...(resources ? { resources } : {}),
     });
-  }, [scheduler, controller, sample, revision, renderable, resources]);
+  }, [
+    scheduler,
+    controller,
+    sample,
+    revision,
+    renderable,
+    resources,
+    resourcesStale,
+  ]);
 
-  // The header keeps the last name the document parsed with, so repairing an
-  // invalid draft does not blank the page it is on.
+  // The last manifest the document parsed with. The header and the Name and
+  // folder form read it, so repairing an invalid draft blanks neither.
   const manifest = controller.document?.manifest;
+  const [shownManifest, setShownManifest] = useState(manifest ?? null);
   useEffect(() => {
-    if (manifest) {
-      setProfile({
-        name: manifest.name,
-        description: manifest.description ?? "",
-      });
-    }
+    if (manifest) setShownManifest(manifest);
   }, [manifest]);
+  const profile = {
+    name: shownManifest?.name ?? m.workbench_title(),
+    description: shownManifest?.description ?? "",
+  };
+
+  // The paper this Profile is written for: the bundled Item carrying its sample
+  // item type. A type no bundled Item carries leaves the paper on screen, and
+  // the header says which type went unanswered.
+  const sampleItemType = shownManifest?.sampleItemType;
+  const bundledForType = SAMPLE_ITEMS.find(
+    (item) => item.item.itemType === sampleItemType,
+  );
+  useEffect(() => {
+    if (bundledForType) setSample(bundledForType);
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- one selection per named type, not per parse of the same manifest
+  }, [sampleItemType]);
+
+  // What the editors complete and explain against: every partial this Profile
+  // can call, whether the manifest carries it or a connected bundle answers it.
+  const partials = useMemo(
+    () => [
+      ...(shownManifest?.partials ?? []).map(({ name }) => name),
+      ...(resources?.dependencies.templates ?? []).map(({ name }) => name),
+    ],
+    [shownManifest, resources],
+  );
 
   const problem = controller.problems[0];
   const previewProblem = result?.diagnostics[0];
@@ -355,6 +393,9 @@ export function Workbench() {
   // The highlight box is the note tab's second editor, so the result column
   // shows the one highlight while the reader is in it.
   const showAnnotation = !advanced && slice === "annotation";
+  // The note itself, which is the one result an update rewrites part of, so the
+  // update-only Managed Region is offered beside it and nowhere else.
+  const showNote = !showAnnotation && !(!advanced && tab === "properties");
 
   /** Opens the row a diagnostic named, wherever the reader was. */
   function goToEntry(position: number, range?: WorkbenchSliceRange) {
@@ -371,7 +412,8 @@ export function Workbench() {
    * Opens the pane a problem is repaired in — the row, the note name, the note
    * body, or Advanced — and reveals the text the parser pointed at.
    */
-  function goToProblem({ slice: id, range }: WorkbenchProblem) {
+  function goToProblem(problem: WorkbenchProblem) {
+    const { slice: id, range } = problem;
     const position = entryPosition(id);
     if (position !== null) {
       goToEntry(position, range);
@@ -386,9 +428,14 @@ export function Workbench() {
     if (id === "filename" || id === "details") setTab("name");
     // A fresh object every time, so selecting the same problem twice reveals it
     // again. The Name and folder form writes its manifest fields through
-    // controls rather than an editor, so a problem it owns opens the tab and
-    // reveals nothing.
+    // controls rather than an editor, so a problem it owns opens the control
+    // holding the field the parser named instead of revealing text.
     setReveal(range && id !== "details" ? { ...range } : null);
+    setFocusField(
+      id === "details" && problem.params?.field !== undefined
+        ? { field: problem.params.field }
+        : null,
+    );
   }
 
   /** Leaves the sheet, and the reader on the button that raised it. */
@@ -445,6 +492,17 @@ export function Workbench() {
     () => (temporal ? rootData(sample, root) : null),
     [temporal, sample, root],
   );
+  /**
+   * What the editor's own completion and hover resolve against: the root the
+   * pane the reader is in writes, the partials this Profile can call, and this
+   * paper's values for that root. It is read per keystroke, so no pane is
+   * rebuilt when the reader changes paper or moves between roots.
+   */
+  const suggest = () => ({
+    root,
+    partials,
+    ...(fields ? { sample: fields } : {}),
+  });
 
   /** Puts a snippet where the reader left the caret, then hands focus back. */
   function insert(snippet: string) {
@@ -527,7 +585,7 @@ export function Workbench() {
       <>
         {filePicker}
         <ProfileHandoff
-          problems={unsupported}
+          reasons={unsupported}
           onDownload={download}
           onImport={openFile}
         />
@@ -549,6 +607,9 @@ export function Workbench() {
           <SampleBar
             sample={sample}
             connection={connection}
+            {...(sampleItemType !== undefined && !bundledForType
+              ? { unmatchedItemType: sampleItemType }
+              : {})}
             busy={itemBusy}
             onShow={setSample}
             onLoad={() => void loadSelectedItem()}
@@ -666,6 +727,7 @@ export function Workbench() {
                 if (!kept) return;
                 loadDocument(kept.source);
                 setSample(kept.snapshot);
+                if (kept.expected) saveAgainst(kept.expected);
               }}
               className="cursor-pointer bg-fd-primary px-3 py-1 text-sm font-medium text-fd-primary-foreground"
             >
@@ -764,6 +826,7 @@ export function Workbench() {
                   label={m.workbench_advanced_heading()}
                   extensions={annotationHeaderMark}
                   reveal={reveal}
+                  suggest={suggest}
                   onSelection={trackSelection}
                   onFieldTrigger={setTrigger}
                 />
@@ -773,9 +836,11 @@ export function Workbench() {
             <>
               <NameFolderPane
                 controller={controller}
-                manifest={manifest ?? null}
+                manifest={shownManifest}
                 filename={result?.filename ?? null}
                 citationStyles={citationStyles}
+                focus={focusField}
+                suggest={suggest}
                 {...(connection.state === "connected"
                   ? { defaults: connection.profileDefaults }
                   : {})}
@@ -812,6 +877,7 @@ export function Workbench() {
               controller={controller}
               reveal={reveal}
               highlight={highlight}
+              suggest={suggest}
               onSelection={trackSelection}
               onFieldTrigger={setTrigger}
               onOpenHighlight={openHighlight}
@@ -861,21 +927,37 @@ export function Workbench() {
             <h2 className="font-serif text-[1.06rem] font-medium">
               {showAnnotation
                 ? m.workbench_highlight_heading()
-                : m.workbench_result_heading()}
+                : showManaged
+                  ? m.workbench_result_managed_heading()
+                  : m.workbench_result_heading()}
             </h2>
-            <button
-              type="button"
-              aria-pressed={showMarkdown}
-              onClick={() => setShowMarkdown((on) => !on)}
-              className="ml-auto cursor-pointer border border-fd-border px-2 py-0.5 font-mono text-[0.62rem] font-semibold tracking-widest text-fd-muted-foreground uppercase aria-pressed:border-fd-primary aria-pressed:text-fd-primary"
-            >
-              {m.workbench_result_markdown_toggle()}
-            </button>
+            <div className="ml-auto flex items-baseline gap-2">
+              {showNote && (
+                <button
+                  type="button"
+                  aria-pressed={showManaged}
+                  onClick={() => setShowManaged((on) => !on)}
+                  className="cursor-pointer border border-fd-border px-2 py-0.5 font-mono text-[0.62rem] font-semibold tracking-widest text-fd-muted-foreground uppercase aria-pressed:border-fd-primary aria-pressed:text-fd-primary"
+                >
+                  {m.workbench_result_managed_toggle()}
+                </button>
+              )}
+              <button
+                type="button"
+                aria-pressed={showMarkdown}
+                onClick={() => setShowMarkdown((on) => !on)}
+                className="cursor-pointer border border-fd-border px-2 py-0.5 font-mono text-[0.62rem] font-semibold tracking-widest text-fd-muted-foreground uppercase aria-pressed:border-fd-primary aria-pressed:text-fd-primary"
+              >
+                {m.workbench_result_markdown_toggle()}
+              </button>
+            </div>
           </div>
           <p className="mt-1 mb-2.5 text-xs text-fd-muted-foreground">
             {showAnnotation
               ? m.workbench_highlight_result_lede()
-              : m.workbench_result_lede()}
+              : showManaged
+                ? m.workbench_result_managed_lede()
+                : m.workbench_result_lede()}
           </p>
           <div className="min-h-0 flex-1 overflow-auto border border-fd-border bg-fd-card p-5 shadow-[6px_6px_0_0_var(--color-fd-border)]">
             {result ? (
@@ -910,6 +992,18 @@ export function Workbench() {
                     markdown={result.annotation}
                     showMarkdown={showMarkdown}
                   />
+                ) : showNote && showManaged ? (
+                  result.managedRegion === null ? (
+                    <p className="text-sm text-fd-muted-foreground">
+                      {m.workbench_result_managed_none()}
+                    </p>
+                  ) : (
+                    <ResultSheet
+                      markdown={result.managedRegion}
+                      properties={[]}
+                      showMarkdown={showMarkdown}
+                    />
+                  )
                 ) : !advanced && tab === "properties" ? (
                   <PropertiesResult
                     entries={entries ?? []}

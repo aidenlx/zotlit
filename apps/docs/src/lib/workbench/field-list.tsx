@@ -53,7 +53,6 @@ interface RowSelection {
   readonly kind: SnippetKind;
 }
 
-/** What every row needs to select itself and act on the selection. */
 interface RowActions {
   readonly selected: RowSelection | null;
   readonly onSelect: (node: DisplayNode) => void;
@@ -188,7 +187,6 @@ interface ExplorerRowsProps {
   readonly onToggle: (key: string) => void;
 }
 
-/** The Explorer tree over the same root, indented one step per level. */
 function ExplorerRows({ nodes, depth, actions, onToggle }: ExplorerRowsProps) {
   const indent = { marginLeft: `${depth * 0.75}rem` };
   return (
@@ -240,7 +238,6 @@ interface FieldRowViewProps {
   readonly actions: RowActions;
 }
 
-/** One row: the name, this paper's value, and — once selected — what to do with it. */
 function FieldRowView({ node, label, value, actions }: FieldRowViewProps) {
   const { selected, onSelect, onKind, onInsert } = actions;
   const kind = selected && selected.key === node.key ? selected.kind : null;

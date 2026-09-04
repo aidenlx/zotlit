@@ -223,6 +223,7 @@ catalogs:
       version: 8.8.5
 
 overrides:
+  '@codemirror/autocomplete': 6.20.3
   '@codemirror/language': 6.12.3
   '@codemirror/state': 6.5.0
   '@codemirror/view': 6.38.6
@@ -290,6 +291,9 @@ importers:
       '@base-ui/react':
         specifier: ^1.7.0
         version: 1.7.0(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@codemirror/autocomplete':
+        specifier: 6.20.3
+        version: 6.20.3
       '@codemirror/state':
         specifier: 6.5.0
         version: 6.5.0
@@ -1112,6 +1116,9 @@ importers:
         specifier: 'catalog:'
         version: 2.9.0
     devDependencies:
+      '@codemirror/autocomplete':
+        specifier: 6.20.3
+        version: 6.20.3
       '@codemirror/language':
         specifier: 6.12.3
         version: 6.12.3

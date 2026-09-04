@@ -18,7 +18,7 @@ import type {
 import { m } from "@/paraglide/messages.js";
 
 import { SliceEditor } from "./slice-editor";
-import type { FieldTrigger } from "./slice-editor";
+import type { FieldTrigger, SuggestionSource } from "./slice-editor";
 
 /** The manifest, named without depending on the templates package. */
 type ProfileManifest = NonNullable<
@@ -85,6 +85,14 @@ export const BUILT_IN_BINDING_DEFAULTS: ProfileBindingDefaults = {
 /** The Profile whose bindings live in Obsidian's settings rather than here. */
 const DEFAULT_PROFILE_ID = "default";
 
+/**
+ * The control that holds one manifest key. A problem the parser pinned to a key
+ * opens the control under this id, so every field this form writes carries one.
+ */
+function fieldId(key: string): string {
+  return `workbench-field-${key}`;
+}
+
 /** One binding value in the words the tab reads it in. */
 function valueText(value: string | boolean | null | undefined): string {
   if (value === undefined) return m.workbench_name_unset();
@@ -97,7 +105,11 @@ function valueText(value: string | boolean | null | undefined): string {
 
 export interface NameFolderPaneProps {
   controller: WorkbenchDocumentController;
-  /** The parsed manifest, or null while the draft does not parse. */
+  /**
+   * The manifest this form writes: the last one the document parsed with, so a
+   * draft under repair keeps the values the reader is repairing. Null before
+   * any parse has succeeded, which is what the form has nothing to show for.
+   */
   manifest: ProfileManifest | null;
   /** The note name the current render produced, for the live result. */
   filename: string | null;
@@ -111,6 +123,13 @@ export interface NameFolderPaneProps {
    * vault's own; standalone this is the plugin's built-in Default Profile.
    */
   defaults?: ProfileBindingDefaults;
+  /**
+   * The manifest key to open, named by the problem that sent the reader here.
+   * Each new object opens it again.
+   */
+  focus?: { readonly field: string } | null;
+  /** The contract the note-name editor completes and explains against. */
+  suggest?: SuggestionSource;
   reveal?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
   onFieldTrigger?: (trigger: FieldTrigger) => void;
@@ -122,18 +141,25 @@ export function NameFolderPane({
   filename,
   citationStyles,
   defaults = BUILT_IN_BINDING_DEFAULTS,
+  focus,
+  suggest,
   reveal,
   onSelection,
   onFieldTrigger,
 }: NameFolderPaneProps) {
-  // A draft that stopped parsing keeps the values the form last read, so the
-  // form waits for the repair instead of emptying under the reader.
-  const [shown, setShown] = useState(manifest);
+  // The control a problem named, brought on screen with the keyboard in it. A
+  // key the locked details hold opens that block first, so the reader lands on
+  // the field rather than on the summary that hides it.
   useEffect(() => {
-    if (manifest) setShown(manifest);
-  }, [manifest]);
+    if (!focus) return;
+    const control = document.getElementById(fieldId(focus.field));
+    if (!control) return;
+    control.closest("details")?.setAttribute("open", "");
+    control.scrollIntoView({ block: "nearest" });
+    control.focus();
+  }, [focus]);
 
-  if (!shown) {
+  if (!manifest) {
     return (
       <p className="text-sm text-fd-muted-foreground">
         {m.workbench_name_unreadable()}
@@ -149,26 +175,30 @@ export function NameFolderPane({
       <Group heading={m.workbench_name_profile_heading()}>
         <Field label={m.workbench_name_field_name()}>
           <TextValue
-            value={shown.name}
+            field="name"
+            value={manifest.name}
             onCommit={(value) => write("name", value)}
           />
         </Field>
         <Field label={m.workbench_name_field_description()}>
           <TextValue
-            value={shown.description ?? ""}
+            field="description"
+            value={manifest.description ?? ""}
             optional
             onCommit={(value) => write("description", value)}
           />
         </Field>
         <Field label={m.workbench_name_field_version()}>
           <TextValue
-            value={shown.version}
+            field="version"
+            value={manifest.version}
             onCommit={(value) => write("version", value)}
           />
         </Field>
         <Field label={m.workbench_name_field_author()}>
           <TextValue
-            value={shown.author ?? ""}
+            field="author"
+            value={manifest.author ?? ""}
             optional
             onCommit={(value) => write("author", value)}
           />
@@ -187,6 +217,7 @@ export function NameFolderPane({
               label={m.workbench_name_filename_label()}
               singleLine
               reveal={reveal}
+              suggest={suggest}
               onSelection={onSelection}
               onFieldTrigger={onFieldTrigger}
             />
@@ -209,12 +240,12 @@ export function NameFolderPane({
       <Group
         heading={m.workbench_name_bindings_heading()}
         lede={
-          shown.id === DEFAULT_PROFILE_ID
+          manifest.id === DEFAULT_PROFILE_ID
             ? m.workbench_name_default_lede()
             : m.workbench_name_bindings_lede()
         }
       >
-        {shown.id === DEFAULT_PROFILE_ID ? (
+        {manifest.id === DEFAULT_PROFILE_ID ? (
           <>
             <dl className="flex flex-col gap-1.5 text-xs">
               {BINDINGS.map((binding) => (
@@ -235,7 +266,7 @@ export function NameFolderPane({
             <BindingRow
               key={binding.key}
               binding={binding}
-              value={shown[binding.key]}
+              value={manifest[binding.key]}
               fallback={defaults[binding.key]}
               citationStyles={citationStyles ?? null}
               onWrite={(value) => write(binding.key, value)}
@@ -244,7 +275,7 @@ export function NameFolderPane({
         )}
       </Group>
 
-      <LanguageGroup language={shown.language} onWrite={write} />
+      <LanguageGroup language={manifest.language} onWrite={write} />
 
       <details className="border border-fd-border bg-fd-card px-3 py-2">
         <summary className="cursor-pointer font-mono text-[0.62rem] font-semibold tracking-widest text-fd-muted-foreground uppercase">
@@ -254,7 +285,7 @@ export function NameFolderPane({
           <Field label={m.workbench_name_field_id()}>
             <input
               readOnly
-              value={shown.id}
+              value={manifest.id}
               className="min-w-0 flex-1 border border-fd-border bg-fd-background px-2 py-1 font-mono text-[0.78rem] text-fd-muted-foreground"
             />
           </Field>
@@ -264,14 +295,14 @@ export function NameFolderPane({
           <Field label={m.workbench_name_field_contract()}>
             <input
               readOnly
-              value={String(shown.contract)}
+              value={String(manifest.contract)}
               className="min-w-0 flex-1 border border-fd-border bg-fd-background px-2 py-1 font-mono text-[0.78rem] text-fd-muted-foreground"
             />
           </Field>
           <Field label={m.workbench_name_field_min_app_version()}>
             <input
               readOnly
-              value={shown.minAppVersion ?? m.workbench_name_unset()}
+              value={manifest.minAppVersion ?? m.workbench_name_unset()}
               className="min-w-0 flex-1 border border-fd-border bg-fd-background px-2 py-1 font-mono text-[0.78rem] text-fd-muted-foreground"
             />
           </Field>
@@ -280,7 +311,8 @@ export function NameFolderPane({
           </p>
           <Field label={m.workbench_name_field_sample_item_type()}>
             <TextValue
-              value={shown.sampleItemType ?? ""}
+              field="sampleItemType"
+              value={manifest.sampleItemType ?? ""}
               optional
               onCommit={(value) => write("sampleItemType", value)}
             />
@@ -368,16 +400,20 @@ function DraftText({
  * writing the empty string the schema refuses.
  */
 function TextValue({
+  field,
   value,
   optional = false,
   onCommit,
 }: {
+  /** The manifest key this box writes, which names the control. */
+  field: string;
   value: string;
   optional?: boolean;
   onCommit: (value: string | undefined) => void;
 }) {
   return (
     <DraftText
+      id={fieldId(field)}
       value={value}
       placeholder={optional ? m.workbench_name_optional() : undefined}
       onCommit={(next) => onCommit(optional && next === "" ? undefined : next)}
@@ -409,7 +445,7 @@ function BindingRow({
   const label = binding.label();
   const inherits = value === undefined;
   const effective = inherits ? fallback : value;
-  const id = `workbench-binding-${binding.key}`;
+  const id = fieldId(binding.key);
   return (
     <div className="flex flex-col gap-1.5 border border-fd-border bg-fd-card px-3 py-2">
       <div className="flex items-baseline gap-3">
@@ -544,6 +580,7 @@ function LanguageGroup({
     >
       <Field label={m.workbench_name_language_heading()}>
         <select
+          id={fieldId("language")}
           value={pending ?? language}
           onChange={(event) => setPending(event.target.value)}
           className="border border-fd-border bg-fd-background px-2 py-1 text-xs"
