@@ -1,0 +1,11 @@
+---
+version: "2.1.2"
+date: "2026-09-05"
+description: "Fixed false 'no matching item' errors and citation flickering"
+---
+
+## Bug Fixes
+
+- Fixed false "no matching item" errors that appeared after restarting Obsidian or after a period of inactivity. Citations that the item picker could still find would show a notice saying the citation key "matches no item in your Zotero library," and the error persisted until the next restart. ZotLit's citation-key lookup could fall out of sync on startup, and once broken it never recovered on its own. The lookup now stays consistent through startup and rebuilds itself after a failed read, so existing citations resolve correctly without a restart.
+- Fixed citations flickering to raw `@citekey` text while typing. Each time Obsidian saved, the rendered citation text briefly disappeared before the fresh render arrived. The previous citation text now stays on screen while ZotLit re-renders, so citations remain stable during typing.
+- Fixed citations and the References Sidebar flashing back to placeholder text when Zotero's database refreshed (for example, after editing an item in Zotero). ZotLit now keeps the previous content visible until the fresh data arrives, so a refresh that changes nothing produces no visible interruption.
