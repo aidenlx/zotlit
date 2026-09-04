@@ -106,6 +106,14 @@ each code in the reader's own language. `message` carries the wording this
 package did not author: the template engine's failure text, the Local Bridge's
 own, and the document parser's.
 
+## Bridge
+
+`@zotlit/workbench/bridge` holds the wire schemas and the browser client. The
+session credential lives in `sessionStorage` and outlives a transport failure:
+a dropped fetch marks the connection lost and keeps the credential, so a reload
+re-checks compatibility and revision with it. A refusal (HTTP 401) and a version
+mismatch clear it, and so does an explicit disconnect.
+
 ## Language
 
 `@zotlit/workbench/language` holds the editor support for Liquid and Eta

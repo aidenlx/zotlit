@@ -397,6 +397,30 @@ describe("a Workbench Connection", () => {
     );
   });
 
+  it("keeps the session credential through a lost connection", async () => {
+    vi.stubGlobal("fetch", bridgeFetch([], { itemNetworkFailureOnce: true }));
+    {
+      using page = open();
+      page.press(m.workbench_connection_connect());
+      await page.waitFor(() =>
+        expect(title(page.host)).toBe("Connected profile"),
+      );
+      page.press(m.workbench_load_item());
+      await page.waitFor(() =>
+        expect(page.host.textContent).toContain(
+          m.workbench_connection_reconnect(),
+        ),
+      );
+    }
+
+    // A reload re-checks compatibility and revision with the kept credential,
+    // rather than asking Obsidian for a fresh approval.
+    using restored = open();
+    await restored.waitFor(() =>
+      expect(restored.host.textContent).toContain("Fixture vault"),
+    );
+  });
+
   it("creates the built-in Default against an expected absence", async () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal("fetch", bridgeFetch(requests, { builtInAbsent: true }));

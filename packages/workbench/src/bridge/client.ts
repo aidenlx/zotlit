@@ -276,8 +276,11 @@ export class LocalBridgeClient {
         signal: options.signal,
       });
     } catch (error) {
+      // A transport failure says nothing about the grant, so the credential
+      // stays in tab storage: a reload restores it and re-checks compatibility
+      // and revision, rather than asking for a fresh approval. Only a refusal
+      // and a version mismatch clear it.
       if (authenticated) {
-        this.#clearCredential();
         this.#connection = { state: "unavailable", reason: "connection-lost" };
       }
       throw error;
