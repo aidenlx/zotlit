@@ -1,7 +1,6 @@
 ---
 name: inlang-i18n
 description: "Define ZotLit UI messages in the Inlang Message Format and consume them through the generated JSON Language Pack facade. Use when editing messages/*.json, adding interpolation or variants, changing locale resolution, or working with m.* calls."
-paths: "messages/*.json"
 ---
 
 # Inlang messages + JSON Language Packs
