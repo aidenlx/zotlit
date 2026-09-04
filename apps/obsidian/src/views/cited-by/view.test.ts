@@ -175,7 +175,7 @@ describe("CitedByView", () => {
       publish?.({
         groups: [{ path: file.path, occurrences: [] }],
         coverage: "complete",
-        resolution: "ready",
+        resolution: "fresh",
       }),
     );
 
@@ -255,7 +255,7 @@ describe("CitedByView", () => {
         },
       ],
       coverage: "complete",
-      resolution: "ready",
+      resolution: "fresh",
     };
     const settle = async () => {
       for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
@@ -453,7 +453,7 @@ describe("CitedByView", () => {
       harness.publishSnapshot({
         groups: [],
         coverage: "indexing",
-        resolution: "resolving",
+        resolution: null,
       }),
     );
     expect(view.contentEl.querySelector("[data-cited-by-show-search]")).toBe(
@@ -607,7 +607,7 @@ function makeHarness() {
       publish?.({
         groups: citing.map(({ path }) => citingGroup(path)),
         coverage: "complete",
-        resolution: "ready",
+        resolution: "fresh",
       }),
     publishSnapshot: (snapshot: CitedBySnapshot) => publish?.(snapshot),
     activate: (file: TFile) => {

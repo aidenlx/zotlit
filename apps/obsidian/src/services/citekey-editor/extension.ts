@@ -20,9 +20,9 @@ import {
 } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { editorInfoField, livePreviewState } from "obsidian";
-import type { TFile } from "obsidian";
 
 import { livePreviewOf, overlapsSelection } from "@/lib/editor-decoration";
+import type { Held } from "@/lib/held-reads";
 import { getLogger } from "@/lib/log";
 import { themeHook } from "@/lib/theme-hooks";
 import type { CitekeyResolution } from "@/services/citation-index/service";
@@ -35,6 +35,7 @@ import {
   citedWorks,
   citekeyState,
   literalKeyStateOf,
+  presentedCitationEqual,
 } from "@/services/citation-text/present";
 import type {
   CitationCoordinate,
@@ -83,7 +84,7 @@ export type OpenCitekey = (citekey: string, pane: NavigationPane) => void;
  * What a citekey names — read synchronously from the Citation Index's
  * resolution snapshot: one Zotero Item, none, or several candidates.
  */
-export type ResolveCitekey = (citekey: string) => CitekeyResolution;
+export type ResolveCitekey = (citekey: string) => CitekeyResolution | null;
 
 /**
  * The resolution state the page preview branch reads.
@@ -110,9 +111,7 @@ export interface CitekeyEditorHandlers {
    * decorations are built synchronously, so a widget can only show text that is
    * already there.
    */
-  citationText: (path: string) => DocumentCitations | null;
-  /** Asks for a document's citations, so a later rebuild finds them held. */
-  requestCitationText: (file: TFile) => void;
+  citationText: (path: string) => Held<DocumentCitations> | null;
 }
 
 /**
@@ -163,6 +162,7 @@ function markDecorations(
   attributes?: Record<string, string>,
 ): Record<CitationKeyState, Decoration> {
   return {
+    pending: Decoration.mark({ class: markClass("pending"), attributes }),
     resolved: Decoration.mark({ class: markClass("resolved"), attributes }),
     missing: Decoration.mark({ class: markClass("missing"), attributes }),
     ambiguous: Decoration.mark({ class: markClass("ambiguous"), attributes }),
@@ -202,10 +202,16 @@ export function citekeyEditorExtension(
       }
 
       update(update: ViewUpdate): void {
-        // Obsidian freezes its own live-preview decorations while the mouse is
-        // down, so a drag-selection never moves the text under the pointer;
-        // the frozen set is mapped through the changes instead.
-        if (update.view.plugin(livePreviewState)?.mousedown) {
+        const tree = syntaxTree(update.state);
+        // The stream parse stops just past the viewport, so a tree shorter than
+        // the viewport has no nodes over part of it. Obsidian also freezes its
+        // decorations during IME composition and while the mouse is down. In
+        // all three cases the mapped set stands in until the next update.
+        if (
+          tree.length < update.view.viewport.to ||
+          update.view.composing ||
+          update.view.plugin(livePreviewState)?.mousedown
+        ) {
           if (update.docChanged) {
             this.decorations = this.decorations.map(update.changes);
             this.widgets = this.widgets.map(update.changes);
@@ -219,7 +225,7 @@ export function citekeyEditorExtension(
           // change decides again which Citations show raw text.
           update.selectionSet ||
           update.focusChanged ||
-          syntaxTree(update.state) !== syntaxTree(update.startState) ||
+          tree !== syntaxTree(update.startState) ||
           livePreviewOf(update.state) !== livePreviewOf(update.startState) ||
           update.transactions.some((tr) =>
             tr.effects.some((effect) => effect.is(citekeyDecorationsChanged)),
@@ -357,7 +363,7 @@ export function citekeyEditorExtension(
               // An Ambiguous Citation Key adopts no candidate's identity, so
               // the popover reads it as the key it is and names its candidates.
               indexedKey:
-                resolution.kind === "unique"
+                resolution?.kind === "unique"
                   ? resolution.item.indexedKey
                   : undefined,
             };
@@ -378,11 +384,9 @@ export function citekeyEditorExtension(
         const file = view.state.field(editorInfoField, false)?.file;
         if (!file) return null;
         const held = handlers.citationText(file.path);
-        if (held === null) {
-          handlers.requestCitationText(file);
-          return null;
-        }
-        return { citations: held, path: file.path };
+        return held === null
+          ? null
+          : { citations: held.value, path: file.path };
       }
 
       #rebuild(view: EditorView): void {
@@ -428,13 +432,26 @@ interface EditedDocument {
   path: string;
 }
 
+interface RenderedCitationWidget {
+  content: PresentedCitation;
+  source: string;
+  footnote: boolean;
+  navigable: boolean;
+  navigation: CitationNavigation;
+  themeClasses: readonly string[];
+}
+
+const renderedCitationWidgets = new WeakMap<
+  HTMLElement,
+  RenderedCitationWidget
+>();
+
 /**
  * One Citation shown as the text a style formatted.
  *
- * Two widgets are the same when they stand for the same source and show the
- * same content: formatted content is the immutable value the document's held
- * citations carry, so the comparison is a reference test and a fresh read of
- * that document is a fresh value that redraws.
+ * A document read can move the occurrence while preserving its rendered text
+ * and Entry Serials. The equal fast path recognizes the held value, and the
+ * DOM update path keeps a value-equal element while refreshing its navigation.
  */
 class CitationWidget extends WidgetType {
   readonly #source;
@@ -482,13 +499,56 @@ class CitationWidget extends WidgetType {
     );
   }
 
+  updateDOM(element: HTMLElement, view: EditorView): boolean {
+    const rendered = renderedCitationWidgets.get(element);
+    if (
+      rendered === undefined ||
+      rendered.source !== this.#source ||
+      !presentedCitationEqual(rendered.content, this.#content) ||
+      rendered.navigable !== this.#navigable ||
+      rendered.footnote !== this.#footnote ||
+      rendered.themeClasses.length !== this.#themeClasses.length ||
+      rendered.themeClasses.some(
+        (themeClass, index) => themeClass !== this.#themeClasses[index],
+      )
+    ) {
+      return false;
+    }
+    Object.assign(rendered.navigation, this.#navigation(view));
+    renderedCitationWidgets.set(element, {
+      source: this.#source,
+      content: this.#content,
+      navigable: this.#navigable,
+      footnote: this.#footnote,
+      navigation: rendered.navigation,
+      themeClasses: this.#themeClasses,
+    });
+    return true;
+  }
+
   toDOM(view: EditorView): HTMLElement {
     const element = citationElement(view.dom.ownerDocument, this.#content, [
       themeHook.citationKey,
       ...this.#themeClasses,
       ...(this.#footnote ? [FOOTNOTE_WIDGET_CLASS] : []),
     ]);
-    const navigation: CitationNavigation = {
+    const navigation = this.#navigation(view);
+    renderedCitationWidgets.set(element, {
+      source: this.#source,
+      content: this.#content,
+      navigable: this.#navigable,
+      footnote: this.#footnote,
+      navigation,
+      themeClasses: this.#themeClasses,
+    });
+    markCitationClick(element, this.#navigable ? "open" : "edit");
+    if (this.#navigable) attachCitationNavigation(element, navigation);
+    else attachClosedCitationGestures(element, navigation);
+    return element;
+  }
+
+  #navigation(view: EditorView): CitationNavigation {
+    return {
       works: this.#works,
       // The occurrence this widget stands in the citation's place, which is
       // where a note-class style's own note text is read from, however often
@@ -510,14 +570,6 @@ class CitationWidget extends WidgetType {
           : null;
       },
     };
-    // The Hover Action owns hover on every rendered citation. A plain click is
-    // Citekey Navigation's where it opens the work the citation names, and the
-    // editor's own where it does not: the caret lands in the source this widget
-    // stands in place of, and the Citation is written again as raw text.
-    markCitationClick(element, this.#navigable ? "open" : "edit");
-    if (this.#navigable) attachCitationNavigation(element, navigation);
-    else attachClosedCitationGestures(element, navigation);
-    return element;
   }
 
   /** The widget owns every gesture on its own element. */

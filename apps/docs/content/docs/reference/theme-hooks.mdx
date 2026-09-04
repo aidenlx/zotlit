@@ -2,7 +2,7 @@
 title: "Theme hooks"
 description: "Public CSS classes for active citation sources and rendered citations across Obsidian views."
 introduced: "2.1.0"
-updated: "2.1.0"
+updated: "2.1.2"
 ---
 
 import { UiLabel } from "@/components/ui-label";
@@ -16,6 +16,7 @@ This reference lists ZotLit's public citation CSS classes and their activation r
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `zt-citation`                          | A Citation that ZotLit renders or makes navigable.                                                                                                     |
 | `zt-citation-key`                      | A raw citation key, or a rendered Citation produced from literal citation key syntax.                                                                  |
+| `zt-citation-key-pending`              | A citation key awaiting the first Citation Key Resolution Snapshot. The element also has `zt-citation-key`.                                            |
 | `zt-citation-key-unresolved`           | A citation key that does not resolve, or a rendered Citation in which no citation key resolves. The element also has `zt-citation-key`.                |
 | `zt-citation-key-partially-unresolved` | A rendered Citation containing both resolved and unresolved citation keys. The element also has `zt-citation-key`.                                     |
 | `zt-citation-key-ambiguous`            | A citation key that matches several Zotero items, or a rendered Citation containing one and no unresolved key. The element also has `zt-citation-key`. |
@@ -47,7 +48,7 @@ ZotLit adds a public class only when both conditions apply:
 
 `zt-literature-note-link` identifies active Wikilink Citation sources. <UiLabel name={m.settings_citation_wikilink_citations_name()} /> controls their membership. ZotLit applies the hook when <UiLabel name={m.settings_citation_show_formatted_name()} /> supplies their rendering. Obsidian supplies wikilink navigation while <UiLabel name={m.settings_citation_open_as_links_name()} /> is on; when it is off, a plain click on a rendered wikilink citation puts the cursor in the link's source text in Live Preview and does nothing in reading view, and Mod+click still opens the note.
 
-One citation key states one resolution state. A key that matches several Zotero items receives `zt-citation-key-ambiguous` in Source mode, Live Preview, and reading view. Inside a Citation Cluster, an unresolved key outranks an ambiguous one: a cluster that holds both receives `zt-citation-key-unresolved`, or `zt-citation-key-partially-unresolved` when it also holds a resolved key, and no ambiguous class.
+One citation key states one resolution state. Before the first Citation Key Resolution Snapshot settles, it receives `zt-citation-key-pending`. A key that matches several Zotero items receives `zt-citation-key-ambiguous` in Source mode, Live Preview, and reading view. Inside a Citation Cluster, an unresolved key outranks an ambiguous one: a cluster that holds both receives `zt-citation-key-unresolved`, or `zt-citation-key-partially-unresolved` when it also holds a resolved key, and no ambiguous class.
 
 Aliases, heading links, block links, embeds, unresolved targets, and malformed Citation Fragments stay outside renderable membership. ZotLit gives them no public citation class.
 
@@ -62,6 +63,8 @@ The class appears once more in the <UiLabel name={m.settings_citation_hover_acti
 ## Default appearance [#defaults]
 
 Resolved citation keys use Obsidian's `--link-*` variables. Fully unresolved citation keys use the corresponding `--link-unresolved-*` variables.
+
+Pending citation keys have no ZotLit default style. They keep the host view's neutral appearance until the first resolution snapshot settles.
 
 ZotLit adds no aggregate style for `zt-citation-key-partially-unresolved`. A partial result therefore keeps the appearance of its resolved works. ZotLit adds no style to a native Literature Note wikilink.
 

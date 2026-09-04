@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { writeClipboardRichText } from "@/lib/clipboard";
+import type { Held } from "@/lib/held-reads";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -35,7 +36,10 @@ import type {
   DocumentPresentation,
   UnusableProperty,
 } from "@/services/pandoc/document-presentation";
-import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
+import type {
+  BibliographyRenderCache,
+  BibliographyRenderResult,
+} from "@/services/pandoc/render-cache";
 import type { PandocEngineService } from "@/services/pandoc/service";
 
 import { createReferenceActions, ReferenceActionsContext } from "./actions";
@@ -77,7 +81,7 @@ export interface ReferencesViewDeps {
    * The active document's formatted citations, which say whether that document
    * shows Entry Serials — the gutter follows what the citations show.
    */
-  citationText: Pick<CitationText, "peek" | "load" | "on">;
+  citationText: Pick<CitationText, "peek" | "on">;
   pandocEngine: Pick<
     PandocEngineService,
     "getStatus" | "subscribe" | "decline"
@@ -101,7 +105,7 @@ export class ReferencesView extends ItemView {
    * order. Kept across reloads so an entry that is already formatted never
    * falls back to its summary mid-edit.
    */
-  readonly #rendered = new Map<string, RenderedReference>();
+  readonly #onScreen = new Map<string, RenderedReference>();
   /**
    * Entry Marker ownership of the last completed render for the current style,
    * or `null` while the list on screen is the minimal one.
@@ -113,8 +117,10 @@ export class ReferencesView extends ItemView {
   #formattingFailed = false;
   #root: Root | null = null;
   #actions: ReferenceActions | null = null;
-  /** Bumped per reload; an older render that finishes late is discarded. */
-  #generation = 0;
+  /** Bumped when copy readiness moves to another on-screen result. */
+  #copyGeneration = 0;
+  /** The Held Read whose events can repaint this list. */
+  #renderKey: string | null = null;
   /** Bumped per rescan, the same way, since a query may await a file read. */
   #scan = 0;
   /** The Markdown note the current list was read from; `null` for none. */
@@ -241,6 +247,11 @@ export class ReferencesView extends ItemView {
     // flashes the minimal list; an unavailable or failed outcome still clears
     // them through #showMinimal.
     this.register(bibliographyRender.on("invalidated", () => this.#reload()));
+    const repaint = (key: string): void => {
+      if (key === this.#renderKey) this.#reload();
+    };
+    this.register(bibliographyRender.on("changed", repaint));
+    this.register(bibliographyRender.on("settled", repaint));
     this.#reload();
     this.#rescan();
     await db.ready;
@@ -306,7 +317,7 @@ export class ReferencesView extends ItemView {
         count: citations.length,
         restyled,
       });
-      this.#reload({ invalidate: restyled });
+      this.#reload();
     });
   }
 
@@ -336,7 +347,7 @@ export class ReferencesView extends ItemView {
    */
   readonly #ambiguousCandidates: AmbiguousCandidatesOf = (citekey) => {
     const resolved = this.#deps.citationIndex.resolveCitekey(citekey);
-    return resolved.kind === "ambiguous"
+    return resolved?.kind === "ambiguous"
       ? describeCandidates(this.#deps, resolved.candidates)
       : null;
   };
@@ -348,26 +359,16 @@ export class ReferencesView extends ItemView {
       : documentPresentation(this.#deps.app.metadataCache, file);
   }
 
-  /**
-   * Re-read the cited Items and re-render the whole list — no incremental
-   * diffing. `invalidate` drops the formatted entries too, for a change that
-   * makes them stale rather than incomplete.
-   */
-  #reload({ invalidate = false } = {}): void {
-    if (invalidate) {
-      this.#rendered.clear();
-      this.#entryMarkers = null;
-      this.#formattingFailed = false;
-      this.#documentPresentationError = null;
-    }
+  /** Re-read the cited Items and re-render the whole list. */
+  #reload(): void {
     this.#entrySerials = this.#readEntrySerials();
-    const generation = ++this.#generation;
+    this.#copyGeneration += 1;
     const citations = this.#citations;
     const { sources } = readReferenceSources(this.#deps.db, citations);
     const engine = this.#deps.pandocEngine.getStatus();
     const entries = buildReferenceEntries(citations, sources, {
       bibliography: {
-        entries: this.#rendered,
+        entries: this.#onScreen,
         complete: false,
       },
       errors: this.#errors,
@@ -387,7 +388,7 @@ export class ReferencesView extends ItemView {
       citekeyResolution: this.#deps.citationIndex.resolution,
       copy: this.#trackCopy(entries),
     });
-    void this.#render(generation, citations, sources);
+    void this.#render(citations, sources);
   }
 
   /** Republish the resolution state alone, for a settle the list survives. */
@@ -411,7 +412,7 @@ export class ReferencesView extends ItemView {
    */
   #trackCopy(entries: readonly ReferenceEntry[]): ReferencesCopyState {
     const path = this.#path;
-    const generation = this.#generation;
+    const generation = this.#copyGeneration;
     const copy = referencesCopyState({
       path,
       generation,
@@ -492,10 +493,10 @@ export class ReferencesView extends ItemView {
    * the thing to repair, which also leaves the Copied Bibliography out of reach.
    */
   async #render(
-    generation: number,
     citations: readonly Citation[],
     sources: ReadonlyMap<string, ReferenceSource>,
   ): Promise<void> {
+    const file = this.#file;
     const declared = this.#presentation;
     // One value for this render: the style and Citation Locale the note is
     // shown under, and the works it cites in the order it cites them.
@@ -505,6 +506,7 @@ export class ReferencesView extends ItemView {
       { citations, works: sources },
     );
     if (presented.kind === "unusable") {
+      this.#renderKey = null;
       this.#documentPresentationError = presented.property;
       this.#showMinimal(citations, sources, false);
       return;
@@ -514,40 +516,61 @@ export class ReferencesView extends ItemView {
       presented.items,
       presented.presentation,
     );
-    if (generation !== this.#generation) return;
+    if (
+      file !== this.#file ||
+      citations !== this.#citations ||
+      declared !== this.#presentation
+    ) {
+      return;
+    }
 
-    if (outcome.kind !== "rendered") {
+    if (outcome.kind === "unavailable") {
+      this.#renderKey = null;
       // A style the note itself named is the note's to repair; one it inherited
       // from the vault is the vault selection's, which its own warning names.
       this.#documentPresentationError =
-        outcome.kind === "unavailable" &&
         outcome.reason === "style-missing" &&
         declared.kind === "read" &&
         declared.presentation.styleId !== undefined
           ? "style"
           : null;
-      this.#showMinimal(citations, sources, outcome.kind === "failed");
+      this.#showMinimal(citations, sources, outcome.reason === "failed");
       return;
     }
+    this.#renderKey = outcome.key;
     this.#documentPresentationError = null;
+    if (outcome.record.status === "failed") {
+      this.#showMinimal(citations, sources, true);
+      return;
+    }
+    this.#paint(outcome.record, citations, sources);
+  }
 
+  #paint(
+    record: Held<BibliographyRenderResult>,
+    citations: readonly Citation[],
+    sources: ReadonlyMap<string, ReferenceSource>,
+  ): void {
+    const { entries: rendered, hasEntryMarkers } = record.value;
     // Refilled rather than merged: the render covers every cited Item, so
     // what it leaves out is no longer cited, and the map's order is the
     // bibliography order the list reads in.
-    this.#rendered.clear();
-    for (const { id, marker, content } of outcome.entries) {
-      this.#rendered.set(id, { marker, content });
+    this.#onScreen.clear();
+    for (const { id, marker, content } of rendered) {
+      this.#onScreen.set(id, { marker, content });
     }
-    this.#entryMarkers = outcome.hasEntryMarkers;
+    this.#entryMarkers = hasEntryMarkers;
     this.#formattingFailed = false;
-    this.#formatting = "complete";
+    this.#formatting =
+      record.status === "revalidating" ? "pending" : "complete";
     logger.debug("References bibliography rendered", {
-      count: outcome.entries.length,
-      hasEntryMarkers: outcome.hasEntryMarkers,
+      count: rendered.length,
+      hasEntryMarkers,
+      status: record.status,
     });
     const entries = buildReferenceEntries(citations, sources, {
       bibliography: {
-        entries: this.#rendered,
+        entries: this.#onScreen,
         complete: true,
       },
       errors: this.#errors,
@@ -592,9 +615,7 @@ export class ReferencesView extends ItemView {
     const file = this.#file;
     if (file === null) return false;
     const held = this.#deps.citationText.peek(file.path);
-    if (held !== null) return held.entrySerials;
-    void this.#deps.citationText.load(file);
-    return false;
+    return held?.value.entrySerials ?? false;
   }
 
   /** Replace stale formatted entries with the current minimal reference list. */
@@ -603,7 +624,7 @@ export class ReferencesView extends ItemView {
     sources: ReadonlyMap<string, ReferenceSource>,
     formattingFailed: boolean,
   ): void {
-    this.#rendered.clear();
+    this.#onScreen.clear();
     this.#entryMarkers = null;
     this.#formattingFailed = formattingFailed;
     this.#formatting = formattingFailed ? "failed" : "unavailable";

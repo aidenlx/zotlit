@@ -434,7 +434,12 @@ export async function openCitationVault({
   const held = stack.move();
   return {
     async citationText(citekey = CITATION_KEY) {
-      const { formatted } = await citationText.load(harness.draft);
+      let held = citationText.peek(harness.draft.path);
+      await settle(() => {
+        held = citationText.peek(harness.draft.path);
+        return held !== null && held.status !== "revalidating";
+      });
+      const { formatted } = held!.value;
       return firstText(formatted.get(`@${citekey}`));
     },
     async sidebarText() {
