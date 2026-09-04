@@ -268,9 +268,13 @@ describe("document Managed Frontmatter entries", () => {
     expect(result.values).toEqual([
       { key: "working", merge: "replace", value: "A Study", position: 3 },
     ]);
-    expect(result.errors.map(({ key }) => key)).toEqual([
-      "broken-expr",
-      "broken-value",
+    // Each error carries the list position of the entry that raised it, which
+    // is how a host marks the row it belongs to.
+    expect(
+      result.errors.map(({ key, position }) => ({ key, position })),
+    ).toEqual([
+      { key: "broken-expr", position: 1 },
+      { key: "broken-value", position: 2 },
     ]);
   });
 

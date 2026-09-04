@@ -222,9 +222,9 @@ describe("inert marks", () => {
       />,
     );
 
-    expect(textOf(markup)).toContain("Image unavailable");
-    expect(textOf(markup)).toContain("Embedded note unavailable");
-    expect(textOf(markup)).toContain("Embedded file unavailable");
+    expect(textOf(markup)).toContain(m.workbench_embed_image_unavailable());
+    expect(textOf(markup)).toContain(m.workbench_embed_note_unavailable());
+    expect(textOf(markup)).toContain(m.workbench_embed_file_unavailable());
     expect(markup).not.toContain("<a ");
     expect(markup).not.toContain("href=");
   });
