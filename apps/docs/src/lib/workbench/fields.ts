@@ -4,7 +4,6 @@
 // the `{{` accelerator, the engine its snippets are written in, and the patch
 // Put in note applies to the master document.
 
-import { manifestNodeRange } from "@zotlit/workbench/document";
 import type {
   WorkbenchDocumentController,
   WorkbenchSliceId,
@@ -79,17 +78,19 @@ export const ROOT_LABEL: Record<TemplateRoot, () => string> = {
 /**
  * The root an editor position writes against: the Annotation Section renders
  * one highlight, the manifest's `filename` value renders the note name, and
- * every other position renders the note.
+ * every other position renders the note. The filename range is the controller's
+ * own `filenameSlice`, so a caret move reads it rather than re-parsing the
+ * manifest; a note name one line cannot hold owns no slice, and a caret inside
+ * it reads the note the way the rest of the manifest does.
  */
 export function templateRootAt(
   document: ProfileDocument | null,
-  source: string,
+  filename: WorkbenchSliceRange | null,
   offset: number,
 ): TemplateRoot {
   if (!document) return "note";
   if (offset >= document.annotationSection.headerStart) return "annotation";
   if (offset >= document.bodyStart) return "note";
-  const filename = manifestNodeRange(source, ["filename"]);
   return filename && offset >= filename.from && offset <= filename.to
     ? "filename"
     : "note";

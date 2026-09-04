@@ -22,6 +22,7 @@ import type { SampleItem, TemplateRoot } from "./fields";
 const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
 const profile = controller.document!;
 const source = controller.source;
+const filename = controller.filenameSlice;
 
 const [journalArticle, conferencePaper, book] = SAMPLE_ITEMS as readonly [
   SampleItem,
@@ -41,7 +42,7 @@ function nodeFor(root: TemplateRoot, label: string): DisplayNode {
 describe("templateRootAt", () => {
   it("reads the note body as the note root", () => {
     const offset = source.indexOf("# {{ zt.title }}");
-    expect(templateRootAt(profile, source, offset)).toBe("note");
+    expect(templateRootAt(profile, filename, offset)).toBe("note");
   });
 
   it("reads the Annotation Section as the annotation root", () => {
@@ -49,21 +50,21 @@ describe("templateRootAt", () => {
     // The note pane stops at the section header, so this is a caret only the
     // Advanced editor can put there — and it still switches the root.
     expect(offset).toBeGreaterThan(controller.sliceRange("note").to);
-    expect(templateRootAt(profile, source, offset)).toBe("annotation");
+    expect(templateRootAt(profile, filename, offset)).toBe("annotation");
   });
 
   it("reads the manifest's filename value as the filename root", () => {
     const offset = source.indexOf("zt.citationKey | default");
-    expect(templateRootAt(profile, source, offset)).toBe("filename");
+    expect(templateRootAt(profile, filename, offset)).toBe("filename");
   });
 
   it("reads the rest of the manifest as the note root", () => {
     const offset = source.indexOf("frontmatter:");
-    expect(templateRootAt(profile, source, offset)).toBe("note");
+    expect(templateRootAt(profile, filename, offset)).toBe("note");
   });
 
   it("reads a draft that does not parse as the note root", () => {
-    expect(templateRootAt(null, "", 0)).toBe("note");
+    expect(templateRootAt(null, null, 0)).toBe("note");
   });
 });
 
