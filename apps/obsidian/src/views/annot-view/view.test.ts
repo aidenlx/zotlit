@@ -45,6 +45,19 @@ vi.mock("@zotlit/db", async (importOriginal) => {
 // The React tree is not under test here; the drag handler is.
 vi.mock("./AnnotView", () => ({ AnnotView: () => null }));
 
+/** Captured from the provider so a test can read what a card's drag would see. */
+let store: import("./store").AnnotStore;
+vi.mock("./store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./store")>();
+  return {
+    ...actual,
+    AnnotStoreProvider: (props: { value: typeof store; children: unknown }) => {
+      store = props.value;
+      return props.children;
+    },
+  };
+});
+
 /** Captured from `createAnnotActions` so the test can fire a drag directly. */
 let onDragStart: (evt: unknown, annot: AnnotViewItem) => void;
 
@@ -63,6 +76,7 @@ const { AnnotationView } = await import("./view");
 
 const RENDERED = "> [!quote] rendered by the annotation template";
 const LIT_NOTE = "Lit Note.md";
+const LIT_NOTE_2 = "Lit Note 2.md";
 
 function createDeps() {
   let activeFile: { path: string } | null = null;
@@ -81,7 +95,7 @@ function createDeps() {
       on,
       // Only the literature note carries the item key; a blank Ctrl+N note does not.
       getFileCache: (file: { path: string }) =>
-        file.path === LIT_NOTE
+        file.path === LIT_NOTE || file.path === LIT_NOTE_2
           ? { frontmatter: { "zotero-key": "ABCD2345" } }
           : null,
     },
@@ -89,6 +103,10 @@ function createDeps() {
     saveLocalStorage: () => undefined,
   } as unknown as App;
 
+  /** While held, `prepare()` stays pending until `releasePrepares()`. */
+  let held: Array<() => void> | null = null;
+  const discard = vi.fn();
+  const handle = { flush: async () => undefined, discard };
   const deps = {
     app,
     db: {
@@ -110,7 +128,12 @@ function createDeps() {
     },
     noteIndex: { getNotesByItemKey: () => [] },
     attachmentImport: {
-      prepare: () => Promise.resolve({ flush: async () => undefined }),
+      prepare: () =>
+        held
+          ? new Promise<typeof handle>((resolve) => {
+              held!.push(() => resolve(handle));
+            })
+          : Promise.resolve(handle),
     },
     itemLookup: { search: () => [] },
     settings: {},
@@ -122,13 +145,30 @@ function createDeps() {
       activeFile = { path };
       for (const cb of listeners.get("active-leaf-change") ?? []) cb();
     },
+    /** The active note's content changed, as a drop's insertion does. */
+    changeNote() {
+      for (const cb of listeners.get("changed") ?? []) cb(activeFile);
+    },
+    holdPrepares() {
+      held = [];
+    },
+    async releasePrepares() {
+      const pending = held ?? [];
+      held = null;
+      for (const resolve of pending) resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    },
+    discard,
   };
 }
 
+/** Resolves the ordinary drag payload; `""` once the drag was cancelled. */
 function drag(): string {
   const data = new Map<string, string>();
   const evt = {
     timeStamp: 1,
+    preventDefault: () => data.clear(),
     target: { win: globalThis.window } as unknown as HTMLElement,
     dataTransfer: {
       dropEffect: "none",
@@ -138,6 +178,11 @@ function drag(): string {
   };
   onDragStart(evt, annot);
   return data.get("text/plain") ?? "";
+}
+
+/** The drag ends without an editor drop. */
+function abandonDrag(): void {
+  globalThis.window.dispatchEvent(new Event("dragend"));
 }
 
 describe("annot view drag-insert", () => {
@@ -190,5 +235,53 @@ describe("annot view drag-insert", () => {
     await Promise.resolve();
 
     expect(drag()).toBe(RENDERED);
+  });
+
+  // `prepare()` is async and re-runs after every drag, drop, and leaf
+  // activation. The handle prepared for the same note keeps serving until the
+  // fresh one lands, so a drag inside that window is still templated.
+  describe("while the import handle re-prepares for the same note", () => {
+    beforeEach(async () => {
+      await (view as unknown as { onOpen(): Promise<void> }).onOpen();
+      await view.setState({ followMode: "note" }, {} as never);
+      await Promise.resolve();
+      harness.openNote(LIT_NOTE);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(drag()).toBe(RENDERED);
+      harness.holdPrepares();
+    });
+
+    it("renders the template right after a drag settles", () => {
+      abandonDrag();
+      expect(drag()).toBe(RENDERED);
+    });
+
+    it("renders the template right after the note re-activates", () => {
+      // Clicking the panel to start a drag activates its leaf, which
+      // re-syncs the handle against the unchanged active note.
+      harness.openNote(LIT_NOTE);
+      expect(drag()).toBe(RENDERED);
+    });
+
+    it("renders the template right after the dropped text changes the note", () => {
+      harness.changeNote();
+      expect(drag()).toBe(RENDERED);
+    });
+
+    it("discards an abandoned drag's queued copy", () => {
+      abandonDrag();
+      expect(harness.discard).toHaveBeenCalledTimes(1);
+    });
+
+    it("disables the drag for another note until its own handle is prepared", async () => {
+      expect(store.getState().dragTarget).toBe("ready");
+      harness.openNote(LIT_NOTE_2);
+      expect(store.getState().dragTarget).toBe("preparing");
+      expect(drag()).toBe("");
+      await harness.releasePrepares();
+      expect(store.getState().dragTarget).toBe("ready");
+      expect(drag()).toBe(RENDERED);
+    });
   });
 });
