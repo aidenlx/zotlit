@@ -618,7 +618,7 @@ describe("CitationIndex resolution", () => {
     const db = new DatabaseStub({ readyImmediately: false });
     const { index } = await makeHarness({}, { db, notes: false });
 
-    expect(index.resolveCitekey("doe2024")).toEqual({ kind: "missing" });
+    expect(index.resolveCitekey("doe2024")).toBeNull();
     const waiting = index.whenResolved();
 
     db.settle();
@@ -635,10 +635,10 @@ describe("CitationIndex resolution", () => {
     });
   });
 
-  it("rebuilds on the database changed event, dropping the old key and adding the new one", async () => {
+  it("rebuilds on the database changed event, replacing the old key with the new one", async () => {
     const { index, citekeys, db } = await makeHarness({}, { notes: false });
-    expect(index.resolveCitekey("doe2024").kind).toBe("unique");
-    expect(index.resolveCitekey("doe2024b").kind).toBe("missing");
+    expect(index.resolveCitekey("doe2024")?.kind).toBe("unique");
+    expect(index.resolveCitekey("doe2024b")?.kind).toBe("missing");
 
     citekeys.rows = citekeys.rows.map((row) =>
       row.citekey === "doe2024" ? { ...row, citekey: "doe2024b" } : row,
@@ -695,31 +695,52 @@ describe("CitationIndex resolution", () => {
 
     await index.whenResolved();
 
-    expect(index.resolveCitekey("doe2024")).toEqual({ kind: "missing" });
+    expect(index.resolveCitekey("doe2024")).toBeNull();
   });
 
-  it("revalidates a degraded snapshot on the next citekey read", async () => {
+  it("keeps a failed snapshot until another invalidation rearms it", async () => {
+    const { index, citekeys, db } = await makeHarness({}, { notes: false });
+    expect(index.resolution).toBe("fresh");
+
+    citekeys.error = new Error("torn read");
+    db.changed();
+    await yieldToMain();
+
+    expect(index.resolution).toBe("failed");
+    expect(index.resolveCitekey("doe2024")?.kind).toBe("unique");
+    const failedCalls = citekeys.calls.length;
+
+    citekeys.error = null;
+    index.resolveCitekey("doe2024");
+    await yieldToMain();
+    expect(citekeys.calls).toHaveLength(failedCalls);
+
+    db.changed();
+    await yieldToMain();
+    expect(index.resolution).toBe("fresh");
+  });
+
+  it("retries a failed first snapshot on the next citekey read", async () => {
     const db = new DatabaseStub({ readyImmediately: false });
     const { index, citekeys } = await makeHarness({}, { db, notes: false });
 
-    // The first rebuild reads a torn database exactly once and settles degraded
-    // with the maps still empty.
     citekeys.error = new Error("torn read");
     db.settle();
     await index.whenResolved();
-    expect(index.resolution).toBe("degraded");
+    const failedCalls = citekeys.calls.length;
 
-    // The database answers again; the stale answer is served and the read
-    // schedules the background rebuild that heals the snapshot.
     citekeys.error = null;
-    expect(index.resolveCitekey("doe2024").kind).toBe("missing");
+    expect(index.resolveCitekey("doe2024")).toBeNull();
+    expect(index.citekeyOf(KEY_A)).toBeNull();
+    expect(index.resolution).toBeNull();
     await yieldToMain();
 
-    expect(index.resolution).toBe("ready");
-    expect(index.resolveCitekey("doe2024").kind).toBe("unique");
+    expect(citekeys.calls).toHaveLength(failedCalls + 1);
+    expect(index.resolution).toBe("fresh");
+    expect(index.resolveCitekey("doe2024")?.kind).toBe("unique");
   });
 
-  it("revalidates a degraded snapshot through a document read", async () => {
+  it("retries a failed first snapshot through a document read", async () => {
     const db = new DatabaseStub({ readyImmediately: false });
     const { index, citekeys, draft } = await makeHarness(
       { "draft.md": "As @doe2024 wrote." },
@@ -729,18 +750,17 @@ describe("CitationIndex resolution", () => {
     citekeys.error = new Error("torn read");
     db.settle();
     await index.whenResolved();
-    expect(index.resolution).toBe("degraded");
 
     citekeys.error = null;
-    // The read schedules the heal; whether it lands inside this read's own
-    // awaits or after them is timing, so only the settled outcome is asserted.
-    await citationsOf(index, draft);
+    expect(await citationsOf(index, draft)).toMatchObject([
+      { indexedKey: null },
+    ]);
     await yieldToMain();
 
     expect(await citationsOf(index, draft)).toMatchObject([
       { indexedKey: KEY_A },
     ]);
-    expect(index.resolution).toBe("ready");
+    expect(index.resolution).toBe("fresh");
   });
 
   it("settles whenResolved when disposal interrupts the first rebuild", async () => {
@@ -765,7 +785,7 @@ describe("CitationIndex resolution", () => {
 
     await yieldToMain();
     expect(snapshots).toMatchObject([
-      { coverage: "indexing", resolution: "ready", groups: [] },
+      { coverage: "indexing", resolution: "fresh", groups: [] },
     ]);
     workspace.layoutReady();
     await index.whenIndexed();
@@ -773,7 +793,7 @@ describe("CitationIndex resolution", () => {
     expect(snapshots).toHaveLength(4);
     expect(snapshots.at(-1)).toMatchObject({
       coverage: "complete",
-      resolution: "ready",
+      resolution: "fresh",
       groups: [
         { path: "a-first.md", occurrences: [{ raw: "doe2024" }] },
         {
@@ -828,7 +848,10 @@ describe("CitationIndex resolution", () => {
     settings.settle();
     await index.ready;
     await yieldToMain();
-    expect(snapshots).toHaveLength(1);
+    expect(snapshots).toMatchObject([
+      { resolution: null },
+      { resolution: "fresh" },
+    ]);
   });
 
   it("stays silent when disposed during listener registration", async () => {
@@ -954,12 +977,12 @@ describe("CitationIndex resolution", () => {
     await yieldToMain();
 
     expect(snapshots.at(-1)).toMatchObject({
-      resolution: "degraded",
+      resolution: "failed",
       groups: [{ path: "draft.md" }],
     });
   });
 
-  it("retains wikilinks while resolution settles from resolving to degraded", async () => {
+  it("retains wikilinks while the first resolution read settles without a value", async () => {
     const db = new DatabaseStub({ readyImmediately: false });
     db.state = "degraded";
     const body = "See [[Doe 2024]].";
@@ -976,7 +999,7 @@ describe("CitationIndex resolution", () => {
     workspace.layoutReady();
     await index.whenIndexed();
     expect(snapshots.at(-1)).toMatchObject({
-      resolution: "resolving",
+      resolution: null,
       groups: [{ path: draft.path, occurrences: [{ kind: "wikilink" }] }],
     });
 
@@ -984,7 +1007,7 @@ describe("CitationIndex resolution", () => {
     await index.whenResolved();
     await yieldToMain();
     expect(snapshots.at(-1)).toMatchObject({
-      resolution: "degraded",
+      resolution: null,
       groups: [{ path: draft.path, occurrences: [{ kind: "wikilink" }] }],
     });
   });
@@ -1573,7 +1596,7 @@ describe("CitationIndex one-shot reads", () => {
 
     expect(index.getCitedBy(KEY_A)).toMatchObject({
       coverage: "complete",
-      resolution: "ready",
+      resolution: "fresh",
       groups: [{ path: "review.md", occurrences: [{ raw: "doe2024" }] }],
     });
   });
@@ -1600,7 +1623,7 @@ describe("CitationIndex one-shot reads", () => {
 
     workspace.layoutReady();
     await expect(index.waitUntilSettled(1_000)).resolves.toBe("settled");
-    expect(index.getCitedBy(KEY_A).resolution).toBe("degraded");
+    expect(index.getCitedBy(KEY_A).resolution).toBeNull();
   });
 });
 
@@ -1673,9 +1696,9 @@ describe("CitationIndex ambiguous citation keys", () => {
     );
 
     const resolved = index.resolveCitekey("doe2024");
-    expect(resolved.kind).toBe("ambiguous");
+    expect(resolved?.kind).toBe("ambiguous");
     expect(
-      resolved.kind === "ambiguous"
+      resolved?.kind === "ambiguous"
         ? resolved.candidates.map((candidate) => candidate.indexedKey)
         : [],
     ).toEqual([KEY_A, GROUP_KEY]);
@@ -1687,7 +1710,7 @@ describe("CitationIndex ambiguous citation keys", () => {
       {},
       { notes: false, citekeys: [myLibraryRow, groupTwin], libraryScope },
     );
-    expect(index.resolveCitekey("doe2024").kind).toBe("ambiguous");
+    expect(index.resolveCitekey("doe2024")?.kind).toBe("ambiguous");
 
     libraryScope.select([personalLibrary()]);
     await index.whenResolved();

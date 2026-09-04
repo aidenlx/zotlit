@@ -52,7 +52,7 @@ describe("ambiguousCitekeyDiagnostic", () => {
 });
 
 describe("envelope", () => {
-  it("carries an ambiguous reference entry at contract version 2", () => {
+  it("carries an ambiguous reference entry at contract version 3", () => {
     const entry: ReferenceEntry = {
       refNumber: 1,
       kind: "ambiguous",
@@ -68,12 +68,12 @@ describe("envelope", () => {
           entries: [entry],
           omittedSyntaxes: [],
           database: "ready",
-          resolution: "ready",
+          resolution: "fresh",
           syntaxes: { citekey: "included", wikilink: "included" },
         }),
       ),
     ).toEqual({
-      contractVersion: 2,
+      contractVersion: 3,
       command: "zotlit:references",
       ok: true,
       entries: [
@@ -90,7 +90,7 @@ describe("envelope", () => {
       ],
       omittedSyntaxes: [],
       database: "ready",
-      resolution: "ready",
+      resolution: "fresh",
       syntaxes: { citekey: "included", wikilink: "included" },
     });
   });

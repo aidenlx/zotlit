@@ -3,6 +3,7 @@ import { Keymap, MarkdownView } from "obsidian";
 import type { MarkdownPostProcessor } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import type { Held } from "@/lib/held-reads";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { FormattedOccurrence } from "@/services/citation-text/present";
@@ -611,7 +612,9 @@ describe("WikilinkReading rerender", () => {
 /** What the stub holds for one document, as a surface reads it. */
 interface HeldText {
   formatted: Map<string, FormattedOccurrence[]>;
+  entrySerials: boolean;
   summaries: Map<string, string>;
+  literalWorks: Map<string, string>;
 }
 
 class CitationTextStub {
@@ -627,13 +630,10 @@ class CitationTextStub {
     this.#pending = pending;
   }
 
-  load(): Promise<HeldText> {
-    if (this.#pending) return new Promise(() => undefined);
-    return Promise.resolve(this.#text());
-  }
-
-  peek(): HeldText | null {
-    return this.#pending ? null : this.#text();
+  peek(): Held<HeldText> | null {
+    if (this.#pending) return null;
+    const value = this.#text();
+    return { value, status: "fresh", settled: Promise.resolve(value) };
   }
 
   #text(): HeldText {
@@ -641,7 +641,12 @@ class CitationTextStub {
     for (const [source, text] of Object.entries(this.#formatted)) {
       formatted.set(source, occurrences(rendered(text)));
     }
-    return { formatted, summaries: new Map() };
+    return {
+      formatted,
+      entrySerials: false,
+      summaries: new Map(),
+      literalWorks: new Map(),
+    };
   }
 
   on(event: "changed" | "invalidated", cb: () => void): () => void {

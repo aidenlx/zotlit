@@ -4,6 +4,7 @@ import type { App, EventRef, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Held } from "@/lib/held-reads";
 import * as m from "@/lib/i18n/generated/messages";
 import type {
   CitationKeyResolution,
@@ -12,6 +13,7 @@ import type {
 import type { DocumentCitations } from "@/services/citation-text/present";
 import type { Inline, Inlines } from "@/services/pandoc/ast";
 import type { BibliographyRenderOutcome } from "@/services/pandoc/render-cache";
+import type { BibliographyRenderResult } from "@/services/pandoc/render-cache";
 
 import { ReferencesView } from "./view";
 
@@ -90,8 +92,7 @@ function words(text: string): Inlines {
 }
 
 function renderedOutcome(): RenderedBibliography {
-  return {
-    kind: "rendered",
+  const value: BibliographyRenderResult = {
     entries: [
       {
         id: "ref-book",
@@ -101,12 +102,20 @@ function renderedOutcome(): RenderedBibliography {
     ],
     hasEntryMarkers: true,
   };
+  return {
+    kind: "held",
+    key: "test-render",
+    record: {
+      value,
+      status: "fresh",
+      settled: Promise.resolve(value),
+    },
+  };
 }
 
 /** What a style that writes no Entry Marker renders, which leaves the gutter free. */
 function unmarkedOutcome(): RenderedBibliography {
-  return {
-    kind: "rendered",
+  const value: BibliographyRenderResult = {
     entries: [
       {
         id: "ref-book",
@@ -115,6 +124,15 @@ function unmarkedOutcome(): RenderedBibliography {
       },
     ],
     hasEntryMarkers: false,
+  };
+  return {
+    kind: "held",
+    key: "test-render-unmarked",
+    record: {
+      value,
+      status: "fresh",
+      settled: Promise.resolve(value),
+    },
   };
 }
 
@@ -191,7 +209,7 @@ beforeEach(async () => {
   renders = [];
   scans = [];
   heldCitations = null;
-  citekeyResolution = "ready";
+  citekeyResolution = "fresh";
   activeFile = markdownFile("tidal");
   otherFile = markdownFile("estuary");
   const app = {
@@ -239,8 +257,14 @@ beforeEach(async () => {
         },
       },
       citationText: {
-        peek: () => heldCitations,
-        load: () => Promise.resolve(heldCitations),
+        peek: (): Held<DocumentCitations> | null =>
+          heldCitations === null
+            ? null
+            : {
+                value: heldCitations,
+                status: "fresh",
+                settled: Promise.resolve(heldCitations),
+              },
         on: (event: string, callback: (path: string) => void) => {
           if (event === "changed") onCitationsChanged = callback;
           return () => undefined;
@@ -416,8 +440,8 @@ describe("ReferencesView citekey resolution", () => {
     await act(() => onActiveLeafChange!());
     await finishScan(unresolvedSet);
 
-    // The snapshot rebuild flips to "resolving" before this reload reads it.
-    citekeyResolution = "resolving";
+    // No snapshot has settled before this reload reads it.
+    citekeyResolution = null;
     await act(() => onDbChanged?.());
     expect(view!.contentEl.textContent).toContain(
       m.references_citekey_pending({ citekey: "ghost2024" }),
@@ -425,7 +449,7 @@ describe("ReferencesView citekey resolution", () => {
 
     // The rebuild settles with the maps unchanged, so no resolution-changed
     // event follows — only the state flip the settle announces.
-    citekeyResolution = "ready";
+    citekeyResolution = "fresh";
     await act(() => onCitedByInvalidated!());
 
     expect(view!.contentEl.textContent).toContain(

@@ -76,6 +76,7 @@ vi.mock("obsidian", async (importOriginal) => {
 
 import { editorInfoField } from "obsidian";
 
+import type { Held } from "@/lib/held-reads";
 import { occurrences, rendered } from "@/services/citation-text/__fixtures__";
 import { citationKey } from "@/services/citation-text/present";
 import type { DocumentCitations } from "@/services/citation-text/present";
@@ -106,7 +107,7 @@ function viewOf(
 ) {
   // Held once, the way the service holds one document's answer: every ask
   // gets the same value, which is what lets a widget compare by reference.
-  const held: DocumentCitations = {
+  const value: DocumentCitations = {
     entrySerials: false,
     formatted: new Map([
       [
@@ -120,6 +121,11 @@ function viewOf(
     summaries: new Map([[LITERATURE_NOTE.indexedKey, "Example (2020)"]]),
     literalWorks: new Map(),
   };
+  const held: Held<DocumentCitations> = {
+    value,
+    status: "fresh",
+    settled: Promise.resolve(value),
+  };
   const view = new EditorView({
     parent: document.body,
     state: EditorState.create({
@@ -131,7 +137,6 @@ function viewOf(
             linkpath === "literatures/example" ? LITERATURE_NOTE : null,
           enabled: () => enabled,
           citationText: () => (formatted ? held : null),
-          requestCitationText: () => undefined,
           open: () => undefined,
           showPopover: () => undefined,
           hoverPreferences: () => hoverPreferences(defaults),
@@ -214,8 +219,8 @@ describe("wikilinkEditorExtension citation rendering", () => {
       changes: { from: view.state.doc.length, insert: " more" },
     });
 
-    // The held text is one shared value, so the widget compares equal by
-    // reference and CodeMirror keeps the element it already drew.
+    // The held text is unchanged, so CodeMirror keeps the element it already
+    // drew.
     expect(view.dom.querySelector(".zt-citation")).toBe(drawn);
   });
 });

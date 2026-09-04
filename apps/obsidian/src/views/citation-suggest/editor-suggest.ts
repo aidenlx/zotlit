@@ -165,13 +165,13 @@ export function resolveCitationInsert(
     };
   }
 
-  // `degraded` is settled data, so it inserts on whatever the snapshot holds;
-  // `resolving` has no verdict yet and would read an ambiguous key as missing.
-  if (deps.citationIndex.resolution === "resolving") {
+  // A pending snapshot has no verdict yet and would read an ambiguous key as
+  // missing. A held snapshot keeps its verdict while it revalidates or fails.
+  if (deps.citationIndex.resolution === null) {
     return { kind: "notice", message: m.notice_citekey_not_ready() };
   }
 
-  if (deps.citationIndex.resolveCitekey(citationKey).kind === "ambiguous") {
+  if (deps.citationIndex.resolveCitekey(citationKey)?.kind === "ambiguous") {
     return {
       kind: "notice",
       message: m.notice_citekey_ambiguous_insert({ citekey: citationKey }),

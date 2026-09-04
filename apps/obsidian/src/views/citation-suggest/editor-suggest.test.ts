@@ -29,7 +29,7 @@ function makeHit(citationKey: string | null): SearchHit {
 function insertDeps(
   renderCitation: unknown,
   resolved: CitekeyResolution = { kind: "unique", item: UNIQUE_ITEM },
-  resolution: CitationKeyResolution = "ready",
+  resolution: CitationKeyResolution = "fresh",
 ): Pick<CitationSuggestDeps, "noteFeature" | "citationIndex"> {
   return {
     noteFeature: {
@@ -148,7 +148,7 @@ describe("resolveCitationInsert", () => {
     // A snapshot still resolving answers every key as missing, so an ambiguous
     // key would slip through the refusal above and lose its Item identity.
     const outcome = resolveCitationInsert(
-      insertDeps(renderCitation, { kind: "missing" }, "resolving"),
+      insertDeps(renderCitation, { kind: "missing" }, null),
       makeHit("abc2024"),
       false,
     );
@@ -160,14 +160,14 @@ describe("resolveCitationInsert", () => {
     });
   });
 
-  it("inserts on a degraded snapshot, which is settled data rather than a pending answer", () => {
+  it("inserts from a failed held snapshot rather than treating it as pending", () => {
     const renderCitation = vi.fn().mockReturnValue("[@abc2024]");
 
     const outcome = resolveCitationInsert(
       insertDeps(
         renderCitation,
         { kind: "unique", item: UNIQUE_ITEM },
-        "degraded",
+        "failed",
       ),
       makeHit("abc2024"),
       false,

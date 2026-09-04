@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 
+import { themeHook } from "@/lib/theme-hooks";
 import type { Citation } from "@/services/citation-index/service";
 import {
   ALPHA,
@@ -93,11 +94,14 @@ async function makeHarness({
   renderText = (source) => `«${source}»`,
   overrides = {},
   ambiguousKeys = [],
+  resolutionPending = false,
 }: {
   body: string;
   cited?: Citation[];
   /** The citekeys the resolution snapshot answers with several candidates for. */
   ambiguousKeys?: readonly string[];
+  /** Whether the citation-key snapshot has no first answer yet. */
+  resolutionPending?: boolean;
   /** Whether an engine is installed, which is what the cache answers for. */
   formats?: boolean;
   /** Custom render answer for pending-generation tests. */
@@ -119,7 +123,10 @@ async function makeHarness({
   const citationText = stack.use(
     new CitationText({
       app: {
-        vault: { cachedRead: () => Promise.resolve(body) },
+        vault: {
+          cachedRead: () => Promise.resolve(body),
+          getFileByPath: (path: string) => ({ path }) as TFile,
+        },
         metadataCache: {
           on: () => ({ e: { offref: () => undefined } }),
           getFileCache: () => ({}),
@@ -139,17 +146,27 @@ async function makeHarness({
       },
       bibliographyRender: {
         vaultPresentation: { styleId: null, locale: null },
-        renderCitations: (citations: readonly string[]) => {
+        renderCitations: async (citations: readonly string[]) => {
           citationRequests.push({ citations });
-          return formatCitations
-            ? formatCitations(citations)
-            : Promise.resolve(
-                formats
-                  ? citations.map((source, index) =>
-                      rendered(renderText(source, index)),
-                    )
-                  : null,
-              );
+          const value = formatCitations
+            ? await formatCitations(citations)
+            : formats
+              ? citations.map((source, index) =>
+                  rendered(renderText(source, index)),
+                )
+              : null;
+          if (value === null) {
+            return { kind: "unavailable", reason: "failed" };
+          }
+          return {
+            kind: "held",
+            key: citations.join("\0"),
+            record: {
+              value,
+              status: "fresh",
+              settled: Promise.resolve(value),
+            },
+          };
         },
         on: () => () => undefined,
       },
@@ -164,7 +181,8 @@ async function makeHarness({
   );
   await citationText.ready;
   if (!formatCitations) {
-    await citationText.load({ path: "note.md" } as TFile);
+    citationText.peek("note.md");
+    await vi.waitFor(() => expect(citationText.peek("note.md")).not.toBeNull());
   }
 
   const service = stack.use(
@@ -185,10 +203,13 @@ async function makeHarness({
       },
       citationText,
       citationIndex: {
+        resolution: resolutionPending ? null : "fresh",
         resolveCitekey: (citekey: string) =>
-          ambiguousKeys.includes(citekey)
-            ? { kind: "ambiguous", candidates: [] }
-            : { kind: "missing" },
+          resolutionPending
+            ? null
+            : ambiguousKeys.includes(citekey)
+              ? { kind: "ambiguous", candidates: [] }
+              : { kind: "missing" },
       },
       citekeyEditor: {
         openCitekey: (citekey: string, pane: unknown) => {
@@ -365,6 +386,22 @@ describe("CitekeyReading", () => {
 
     settle?.([rendered("«[@alpha]»")]);
     await pending;
+  });
+
+  it("marks source as neutral while citation-key resolution is pending", async () => {
+    const pending = new Promise<readonly RenderedCitation[]>(() => undefined);
+    await using harnessed = await makeHarness({
+      body: "Blah [@alpha].",
+      formatCitations: () => pending,
+      resolutionPending: true,
+    });
+    const el = section("<p>Blah [@alpha].</p>");
+
+    await harnessed.process(el, harnessed.ctx);
+
+    expect(el.textContent).toBe("Blah [@alpha].");
+    expect(el.querySelector(`.${themeHook.citationKeyPending}`)).not.toBeNull();
+    expect(el.querySelector(`.${themeHook.citationKeyUnresolved}`)).toBeNull();
   });
 
   it("leaves a citekey no Literature Note carries as written", async () => {

@@ -81,9 +81,8 @@ export interface ReferencesState {
   /** `false` while the Zotero database cannot be read. */
   dbReady: boolean;
   /**
-   * How well citation keys resolved when the list was built. Anything but
-   * `ready` presents an unresolved row as a lookup in progress rather than a
-   * missing Item.
+   * How well citation keys resolved when the list was built. `null` presents
+   * an unresolved row as a lookup in progress rather than a missing Item.
    */
   citekeyResolution: CitationKeyResolution;
   /** Whether the visible list can be copied, and why not. */
@@ -100,7 +99,7 @@ export function createReferencesStore() {
     formattingFailed: false,
     documentPresentationError: null,
     dbReady: false,
-    citekeyResolution: "resolving",
+    citekeyResolution: null,
     copy: { kind: "blocked", reason: "no-note" },
   }));
 }

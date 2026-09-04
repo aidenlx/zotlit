@@ -24,7 +24,7 @@ import {
   rendered,
 } from "./__fixtures__";
 import { citationKey, literalSummaryOf } from "./present";
-import type { FormattedOccurrence } from "./present";
+import type { DocumentCitations, FormattedOccurrence } from "./present";
 import { CitationText } from "./service";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
@@ -74,6 +74,7 @@ async function makeHarness({
   cited = [citation("alpha", ALPHA_KEY)],
   formats = true,
   formatCitations,
+  formatStatus = "fresh",
   bibliography,
   links = [],
   notes = {},
@@ -88,6 +89,8 @@ async function makeHarness({
   formatCitations?: (
     citations: readonly string[],
   ) => Promise<readonly RenderedCitation[] | null>;
+  /** The held state the render-cache answer exposes. */
+  formatStatus?: "fresh" | "revalidating" | "failed";
   /**
    * The works the bibliography renders an entry for, in bibliography order,
    * out of the works it was asked for. Defaults to all of them in that same
@@ -168,30 +171,50 @@ async function makeHarness({
     },
     bibliographyRender: {
       vaultPresentation: { styleId: null, locale: null },
-      renderCitations: (citations: readonly string[]) => {
+      renderCitations: async (citations: readonly string[]) => {
         citationRequests.push({ citations });
-        if (formatCitations) return formatCitations(citations);
-        return Promise.resolve(
-          formats ? citations.map((source) => rendered(`«${source}»`)) : null,
-        );
+        const value = formatCitations
+          ? await formatCitations(citations)
+          : formats
+            ? citations.map((source) => rendered(`«${source}»`))
+            : null;
+        if (value === null) {
+          return { kind: "unavailable", reason: "failed" };
+        }
+        return {
+          kind: "held",
+          key: citations.join("\0"),
+          record: {
+            value,
+            status: formatStatus,
+            settled: Promise.resolve(formatStatus === "failed" ? null : value),
+          },
+        };
       },
       render: (items: readonly { id: string }[]) => {
         const ids = items.map(({ id }) => id);
         bibliographyRequests.push(ids);
         const entries = bibliography ? bibliography(ids) : ids;
-        return Promise.resolve(
-          entries === null
-            ? { kind: "failed" }
-            : {
-                kind: "rendered",
-                entries: entries.map((id) => ({
-                  id,
-                  marker: undefined,
-                  content: [],
-                })),
-                hasEntryMarkers: false,
-              },
-        );
+        if (entries === null) {
+          return Promise.resolve({ kind: "unavailable", reason: "failed" });
+        }
+        const value = {
+          entries: entries.map((id) => ({
+            id,
+            marker: undefined,
+            content: [],
+          })),
+          hasEntryMarkers: false,
+        };
+        return Promise.resolve({
+          kind: "held",
+          key: ids.join("\0"),
+          record: {
+            value,
+            status: "fresh",
+            settled: Promise.resolve(value),
+          },
+        });
       },
       on: listen("render"),
     },
@@ -226,13 +249,30 @@ beforeEach(() => {
   vi.mocked(getItemsByKey).mockReturnValue([ALPHA as never]);
 });
 
+async function readText(service: CitationText): Promise<DocumentCitations> {
+  let held = service.peek(NOTE.path);
+  if (held === null) {
+    await new Promise<void>((resolve) => {
+      const unsubscribe = service.on("settled", (path) => {
+        if (path !== NOTE.path) return;
+        unsubscribe();
+        resolve();
+      });
+    });
+    held = service.peek(NOTE.path);
+  }
+  if (held === null) throw new Error("citation text missing");
+  await held.settled;
+  return service.peek(NOTE.path)?.value ?? held.value;
+}
+
 describe("CitationText", () => {
   it("formats every citation the document writes", async () => {
     const { service, citationRequests, dispose } = await makeHarness({
       body: "First @alpha.\n\nThen [see @alpha, p. 3].",
     });
 
-    const { formatted } = await service.load(NOTE);
+    const { formatted } = await readText(service);
 
     expect(citationRequests).toEqual([
       { citations: [`@${ALPHA_KEY}`, `[see @${ALPHA_KEY}, p. 3]`] },
@@ -243,12 +283,25 @@ describe("CitationText", () => {
     await dispose();
   });
 
+  it("keeps the held citation text when its replacement render failed", async () => {
+    const { service, dispose } = await makeHarness({
+      body: "Blah [@alpha].",
+      formatCitations: () => Promise.resolve([rendered("held")]),
+      formatStatus: "failed",
+    });
+
+    const { formatted } = await readText(service);
+
+    expect(firstText(formatted.get("[@alpha]"))).toBe("held");
+    await dispose();
+  });
+
   it("reads no citation out of a code block", async () => {
     const { service, citationRequests, dispose } = await makeHarness({
       body: "```\n[@alpha]\n```\n\nReal [@alpha] here.",
     });
 
-    await service.load(NOTE);
+    await readText(service);
 
     expect(citationRequests).toEqual([{ citations: [`[@${ALPHA_KEY}]`] }]);
     await dispose();
@@ -259,8 +312,8 @@ describe("CitationText", () => {
       body: "One [@alpha].\n\nTwo [@alpha].",
     });
 
-    await service.load(NOTE);
-    await service.load(NOTE);
+    await readText(service);
+    await readText(service);
 
     expect(citationRequests).toHaveLength(1);
     await dispose();
@@ -272,7 +325,7 @@ describe("CitationText", () => {
       formats: false,
     });
 
-    const text = await service.load(NOTE);
+    const text = await readText(service);
 
     expect(literalSummaryOf(text)("alpha")).toBe("Zeta (2020)");
     expect(text.formatted.size).toBe(0);
@@ -285,7 +338,7 @@ describe("CitationText", () => {
       cited: [citation("ghost", null)],
     });
 
-    await service.load(NOTE);
+    await readText(service);
 
     expect(citationRequests).toEqual([{ citations: [] }]);
     await dispose();
@@ -298,7 +351,7 @@ describe("CitationText", () => {
       cited: [citation("alpha"), citation("ghost", null)],
     });
 
-    const { formatted } = await service.load(NOTE);
+    const { formatted } = await readText(service);
 
     expect(citationRequests).toEqual([
       { citations: [`[@${ALPHA_KEY}]`, `[@${ALPHA_KEY}]`] },
@@ -322,7 +375,7 @@ describe("CitationText", () => {
         ),
     });
 
-    const { formatted } = await service.load(NOTE);
+    const { formatted } = await readText(service);
 
     expect(formatted.get("[@alpha]")?.map(({ start }) => start)).toEqual([
       body.indexOf("[@alpha]"),
@@ -341,7 +394,7 @@ describe("CitationText", () => {
       formatCitations: async ([first]) => [rendered(`«${first}»`)],
     });
 
-    const { formatted } = await service.load(NOTE);
+    const { formatted } = await readText(service);
 
     expect(formatted.size).toBe(0);
     await dispose();
@@ -380,7 +433,7 @@ describe("CitationText over wikilink Citations", () => {
       settings: WIKILINK_CITATIONS,
     });
 
-    const { formatted } = await service.load(NOTE);
+    const { formatted } = await readText(service);
 
     expect(citationRequests).toEqual([{ citations: [`[@${LIT_KEY}, p. 4]`] }]);
     expect(
@@ -407,7 +460,7 @@ describe("CitationText over wikilink Citations", () => {
       settings: WIKILINK_CITATIONS,
     });
 
-    await service.load(NOTE);
+    await readText(service);
 
     expect(citationRequests).toEqual([
       { citations: [`[@${LIT_KEY}, p. 4; @${LIT_KEY}]`] },
@@ -425,7 +478,7 @@ describe("CitationText over wikilink Citations", () => {
       settings: { "citation.wikilink-citations": false },
     });
 
-    await service.load(NOTE);
+    await readText(service);
 
     expect(citationRequests).toEqual([{ citations: [] }]);
     await dispose();
@@ -444,7 +497,7 @@ describe("CitationText over wikilink Citations", () => {
       },
     });
 
-    await service.load(NOTE);
+    await readText(service);
 
     expect(citationRequests).toEqual([{ citations: [`[@${LIT_KEY}]`] }]);
     await dispose();
@@ -459,7 +512,7 @@ describe("CitationText over wikilink Citations", () => {
       notes,
     });
 
-    await service.load(NOTE);
+    await readText(service);
 
     expect(citationRequests).toEqual([{ citations: [] }]);
     await dispose();
@@ -474,7 +527,7 @@ describe("CitationText over wikilink Citations", () => {
       settings: WIKILINK_CITATIONS,
     });
 
-    await service.load(NOTE);
+    await readText(service);
 
     expect(citationRequests).toEqual([
       { citations: [`[@${LIT_KEY}, p. 5]`, `[@${ALPHA_KEY}, p. 6]`] },
@@ -495,7 +548,7 @@ describe("CitationText over wikilink Citations", () => {
       settings: WIKILINK_CITATIONS,
     });
 
-    await service.load(NOTE);
+    await readText(service);
 
     expect(citationRequests).toEqual([{ citations: [] }]);
     await dispose();
@@ -512,7 +565,7 @@ describe("CitationText over wikilink Citations", () => {
       formats: false,
     });
 
-    const { summaries } = await service.load(NOTE);
+    const { summaries } = await readText(service);
 
     expect(summaries.get(LIT_KEY)).toBe("Zeta (2020)");
     await dispose();
@@ -531,7 +584,7 @@ describe("CitationText over wikilink Citations", () => {
       formats: false,
     });
 
-    const text = await service.load(NOTE);
+    const text = await readText(service);
 
     expect(text.summaries.get(LIT_KEY)).toBe("Zeta (2020)");
     expect(literalSummaryOf(text)("alpha")).toBeUndefined();
@@ -557,43 +610,50 @@ describe("CitationText staleness", () => {
         },
       });
 
-    const superseded = service.load(NOTE);
+    service.peek(NOTE.path);
     await vi.waitFor(() => expect(citationRequests).toHaveLength(1));
     indexChanged(NOTE.path);
-    const current = service.load(NOTE);
+    service.peek(NOTE.path);
     await vi.waitFor(() => expect(citationRequests).toHaveLength(2));
     finishFirst?.([rendered("stale")]);
 
-    expect(firstText((await superseded).formatted.get("[@alpha]"))).toBe(
-      "fresh",
+    await vi.waitFor(() =>
+      expect(
+        firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+      ).toBe("fresh"),
     );
-    expect(firstText((await current).formatted.get("[@alpha]"))).toBe("fresh");
     await dispose();
   });
 
   it("answers a synchronous caller only once the read settled", async () => {
     const { service, dispose } = await makeHarness({ body: "Blah [@alpha]." });
 
-    const reading = service.load(NOTE);
+    service.peek(NOTE.path);
     expect(service.peek(NOTE.path)).toBeNull();
-    await reading;
+    await readText(service);
 
-    expect(service.peek(NOTE.path)?.formatted.get("[@alpha]")).toBeDefined();
+    expect(
+      service.peek(NOTE.path)?.value.formatted.get("[@alpha]"),
+    ).toBeDefined();
     await dispose();
   });
 
-  it("drops a document whose own citations changed, and says so", async () => {
-    const { service, indexChanged, dispose } = await makeHarness({
-      body: "Blah [@alpha].",
-    });
-    await service.load(NOTE);
+  it("keeps a document's text when its own citations changed, and says so", async () => {
+    const { service, citationRequests, indexChanged, dispose } =
+      await makeHarness({ body: "Blah [@alpha]." });
+    await readText(service);
     const changed: string[] = [];
     service.on("changed", (path) => changed.push(path));
 
     indexChanged(NOTE.path);
 
-    expect(service.peek(NOTE.path)).toBeNull();
     expect(changed).toEqual([NOTE.path]);
+    // The peek that serves the stale text is also what starts the fresh read.
+    expect(
+      service.peek(NOTE.path)?.value.formatted.get("[@alpha]"),
+    ).toBeDefined();
+    await vi.waitFor(() => expect(citationRequests).toHaveLength(2));
+    await vi.waitFor(() => expect(changed).toEqual([NOTE.path]));
     await dispose();
   });
 
@@ -601,13 +661,15 @@ describe("CitationText staleness", () => {
     const { service, rendersInvalidated, dispose } = await makeHarness({
       body: "Blah [@alpha].",
     });
-    await service.load(NOTE);
+    await readText(service);
     let invalidated = 0;
     service.on("invalidated", () => (invalidated += 1));
 
     rendersInvalidated();
 
-    expect(service.peek(NOTE.path)?.formatted.get("[@alpha]")).toBeDefined();
+    expect(
+      service.peek(NOTE.path)?.value.formatted.get("[@alpha]"),
+    ).toBeDefined();
     expect(invalidated).toBe(1);
     await dispose();
   });
@@ -625,25 +687,25 @@ describe("CitationText staleness", () => {
         });
       },
     });
-    await service.load(NOTE);
+    await readText(service);
     const changed: string[] = [];
     service.on("changed", (path) => changed.push(path));
 
     rendersInvalidated();
     // The peek that serves the stale text is also what starts the fresh read.
-    expect(firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]"))).toBe(
-      "stale",
-    );
+    expect(
+      firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+    ).toBe("stale");
     await vi.waitFor(() => expect(finishFresh).toBeDefined());
-    expect(firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]"))).toBe(
-      "stale",
-    );
+    expect(
+      firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+    ).toBe("stale");
 
     finishFresh!([rendered("fresh")]);
     await vi.waitFor(() => expect(changed).toEqual([NOTE.path]));
-    expect(firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]"))).toBe(
-      "fresh",
-    );
+    expect(
+      firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+    ).toBe("fresh");
     await dispose();
   });
 
@@ -664,7 +726,7 @@ describe("CitationText staleness", () => {
           });
         },
       });
-    await service.load(NOTE);
+    await readText(service);
 
     rendersInvalidated();
     service.peek(NOTE.path);
@@ -673,7 +735,7 @@ describe("CitationText staleness", () => {
     gates[0]!([rendered("v2")]);
     await vi.waitFor(() =>
       expect(
-        firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]")),
+        firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
       ).toBe("v2"),
     );
 
@@ -681,7 +743,7 @@ describe("CitationText staleness", () => {
     gates[1]!([rendered("v3")]);
     await vi.waitFor(() =>
       expect(
-        firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]")),
+        firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
       ).toBe("v3"),
     );
     await dispose();
@@ -690,7 +752,7 @@ describe("CitationText staleness", () => {
   it("revalidates a stale document once, however many surfaces peek", async () => {
     const { service, citationRequests, rendersInvalidated, dispose } =
       await makeHarness({ body: "Blah [@alpha]." });
-    await service.load(NOTE);
+    await readText(service);
 
     rendersInvalidated();
     service.peek(NOTE.path);
@@ -712,26 +774,72 @@ describe("CitationText staleness", () => {
         return Promise.resolve(sources.map(() => rendered(text)));
       },
     });
-    await service.load(NOTE);
+    await readText(service);
 
     rendersInvalidated();
-    const text = await service.load(NOTE);
+    const text = await readText(service);
 
     expect(firstText(text.formatted.get("[@alpha]"))).toBe("fresh");
-    expect(firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]"))).toBe(
-      "fresh",
-    );
+    expect(
+      firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+    ).toBe("fresh");
     await dispose();
   });
 
   // A locator or a prefix belongs to the source a render is keyed by, and
   // editing one moves no citekey occurrence, so the metadata event is what
   // catches it.
-  it("drops the one document whose own file changed", async () => {
+  // An editor saving the document it shows lands here after every burst of
+  // typing, so the text it holds stays on screen until the fresh read replaces
+  // it; a peek that read nothing would put the raw source back for that long.
+  it("keeps the one document whose own file changed until its fresh read lands", async () => {
+    let generation = 0;
+    let finishFresh: ((value: readonly RenderedCitation[]) => void) | undefined;
     const { service, metadataChanged, dispose } = await makeHarness({
       body: "Blah [@alpha].",
+      formatCitations: () => {
+        generation += 1;
+        if (generation === 1) return Promise.resolve([rendered("stale")]);
+        return new Promise((resolve) => {
+          finishFresh = resolve;
+        });
+      },
     });
-    await service.load(NOTE);
+    await readText(service);
+    const changed: string[] = [];
+    service.on("changed", (path) => changed.push(path));
+
+    metadataChanged(NOTE.path);
+
+    expect(changed).toEqual([NOTE.path]);
+    expect(
+      firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+    ).toBe("stale");
+    await vi.waitFor(() => expect(finishFresh).toBeDefined());
+    expect(
+      firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+    ).toBe("stale");
+
+    finishFresh!([rendered("fresh")]);
+    await vi.waitFor(() => expect(changed).toEqual([NOTE.path, NOTE.path]));
+    expect(
+      firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
+    ).toBe("fresh");
+    await dispose();
+  });
+
+  it("discards a document whose own file changed before its first read settled", async () => {
+    let finishFirst: ((value: readonly RenderedCitation[]) => void) | undefined;
+    const { service, citationRequests, metadataChanged, dispose } =
+      await makeHarness({
+        body: "Blah [@alpha].",
+        formatCitations: () =>
+          new Promise((resolve) => {
+            finishFirst = resolve;
+          }),
+      });
+    service.peek(NOTE.path);
+    await vi.waitFor(() => expect(finishFirst).toBeDefined());
     const changed: string[] = [];
     service.on("changed", (path) => changed.push(path));
 
@@ -739,6 +847,7 @@ describe("CitationText staleness", () => {
 
     expect(service.peek(NOTE.path)).toBeNull();
     expect(changed).toEqual([NOTE.path]);
+    expect(citationRequests).toHaveLength(1);
     await dispose();
   });
 
@@ -746,7 +855,7 @@ describe("CitationText staleness", () => {
     const { service, metadataChanged, dispose } = await makeHarness({
       body: "Blah [@alpha].",
     });
-    await service.load(NOTE);
+    await readText(service);
     const events: string[] = [];
     service.on("changed", () => events.push("changed"));
     service.on("invalidated", () => events.push("invalidated"));
@@ -764,7 +873,7 @@ describe("CitationText staleness", () => {
     const { service, resolutionChanged, dispose } = await makeHarness({
       body: "Blah [@alpha].",
     });
-    await service.load(NOTE);
+    await readText(service);
     let invalidated = 0;
     service.on("invalidated", () => (invalidated += 1));
 
@@ -782,7 +891,7 @@ describe("CitationText staleness", () => {
     const { service, citekeyResolutionChanged, dispose } = await makeHarness({
       body: "Blah [@alpha].",
     });
-    await service.load(NOTE);
+    await readText(service);
     let invalidated = 0;
     service.on("invalidated", () => (invalidated += 1));
 
@@ -796,10 +905,10 @@ describe("CitationText staleness", () => {
   it("reads a document again after it was dropped", async () => {
     const { service, citationRequests, indexChanged, dispose } =
       await makeHarness({ body: "Blah [@alpha]." });
-    await service.load(NOTE);
+    await readText(service);
 
     indexChanged(NOTE.path);
-    await service.load(NOTE);
+    await readText(service);
 
     expect(citationRequests).toHaveLength(2);
     expect(service.peek(NOTE.path)).not.toBeNull();
@@ -849,7 +958,7 @@ describe("CitationText Entry Serials", () => {
       formatCitations: (sources) => Promise.resolve(sources.map(noted)),
     });
 
-    const { formatted, entrySerials } = await service.load(NOTE);
+    const { formatted, entrySerials } = await readText(service);
 
     expect(entrySerials).toBe(true);
     expect(firstSerials(formatted.get(CLUSTER))).toEqual([1, 2]);
@@ -877,7 +986,7 @@ describe("CitationText Entry Serials", () => {
         ]),
     });
 
-    const { formatted } = await service.load(NOTE);
+    const { formatted } = await readText(service);
 
     expect(firstSerials(formatted.get(CLUSTER))).toEqual([1, 2]);
     await dispose();
@@ -893,7 +1002,7 @@ describe("CitationText Entry Serials", () => {
       bibliography: (ids) => ids.slice(1),
     });
 
-    const { formatted } = await service.load(NOTE);
+    const { formatted } = await readText(service);
 
     expect(firstSerials(formatted.get(CLUSTER))).toEqual([undefined, 1]);
     await dispose();
@@ -907,7 +1016,7 @@ describe("CitationText Entry Serials", () => {
       bibliography: () => null,
     });
 
-    const { formatted, entrySerials } = await service.load(NOTE);
+    const { formatted, entrySerials } = await readText(service);
 
     expect(entrySerials).toBe(true);
     expect(firstSerials(formatted.get(CLUSTER))).toEqual([
@@ -925,7 +1034,7 @@ describe("CitationText Entry Serials", () => {
       cited: TWO_WORKS,
     });
 
-    const { formatted, entrySerials } = await service.load(NOTE);
+    const { formatted, entrySerials } = await readText(service);
 
     expect(entrySerials).toBe(false);
     expect(firstSerials(formatted.get(CLUSTER))).toEqual([]);

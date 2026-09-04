@@ -20,6 +20,7 @@ import type {
   RenderedCitation,
 } from "./engine";
 import { BibliographyRenderCache } from "./render-cache";
+import type { CitationRenderOutcome } from "./render-cache";
 import type { PandocEngineStatus } from "./service";
 
 const APA = "http://www.zotero.org/styles/apa";
@@ -74,6 +75,10 @@ class EngineStub implements CitationEngine {
 
 function inlines(text: string): Inlines {
   return [{ t: "Str", c: text }];
+}
+
+function citationValue(outcome: CitationRenderOutcome) {
+  return outcome.kind === "held" ? outcome.record.value : null;
 }
 
 class PandocEngineStub {
@@ -332,19 +337,24 @@ describe("BibliographyRenderCache", () => {
 
     expect(engine.requests).toHaveLength(1);
     expect(first).toMatchObject({
-      kind: "rendered",
-      entries: [{ id: "alpha" }, { id: "zebra" }],
-      hasEntryMarkers: true,
+      kind: "held",
+      record: {
+        value: {
+          entries: [{ id: "alpha" }, { id: "zebra" }],
+          hasEntryMarkers: true,
+        },
+        status: "fresh",
+      },
     });
     if (
-      first.kind !== "rendered" ||
-      second.kind !== "rendered" ||
-      third.kind !== "rendered"
+      first.kind !== "held" ||
+      second.kind !== "held" ||
+      third.kind !== "held"
     ) {
       throw new Error("bibliography render missing");
     }
-    expect(first.entries).toBe(second.entries);
-    expect(first.entries).toBe(third.entries);
+    expect(first.record).toBe(second.record);
+    expect(first.record).toBe(third.record);
   });
 
   it("renders again for a different cited set, order included", async () => {
@@ -436,9 +446,13 @@ describe("BibliographyRenderCache", () => {
     const { cache, engine } = harness;
 
     await expect(cache.render([])).resolves.toEqual({
-      kind: "rendered",
-      entries: [],
-      hasEntryMarkers: false,
+      kind: "held",
+      key: expect.any(String),
+      record: {
+        value: { entries: [], hasEntryMarkers: false },
+        status: "fresh",
+        settled: expect.any(Promise),
+      },
     });
     expect(engine.requests).toHaveLength(0);
   });
@@ -458,16 +472,20 @@ describe("BibliographyRenderCache", () => {
     expect(missingStyles).toEqual([]);
   });
 
-  it("asks again after a render the engine refused", async () => {
+  it("asks again after invalidation rearms a render the engine refused", async () => {
     await using harness = await makeHarness();
-    const { cache, engine } = harness;
+    const { cache, engine, db } = harness;
     const items = [item("alpha")];
 
     engine.fails = true;
-    await expect(cache.render(items)).resolves.toEqual({ kind: "failed" });
+    await expect(cache.render(items)).resolves.toEqual({
+      kind: "unavailable",
+      reason: "failed",
+    });
     engine.fails = false;
+    db.changed();
     await expect(cache.render(items)).resolves.toMatchObject({
-      kind: "rendered",
+      kind: "held",
     });
 
     expect(engine.requests).toHaveLength(2);
@@ -485,7 +503,7 @@ describe("BibliographyRenderCache", () => {
     });
     await expect(
       cache.renderCitations(["[@alpha]"], [item("alpha")]),
-    ).resolves.toBeNull();
+    ).resolves.toEqual({ kind: "unavailable", reason: "style-missing" });
     await cache.render([item("alpha")]);
 
     expect(engine.requests).toHaveLength(0);
@@ -695,8 +713,13 @@ describe("BibliographyRenderCache citations", () => {
     ]);
 
     expect(engine.citationRequests).toHaveLength(1);
-    expect(first).toBe(second);
-    expect(first?.map((citation) => citation.content)).toEqual([
+    expect(first.kind).toBe("held");
+    expect(second.kind).toBe("held");
+    if (first.kind !== "held" || second.kind !== "held") {
+      throw new Error("citation render missing");
+    }
+    expect(first.record).toBe(second.record);
+    expect(first.record.value.map((citation) => citation.content)).toEqual([
       inlines("cite for [@alpha]"),
       inlines("cite for @alpha"),
     ]);
@@ -720,7 +743,7 @@ describe("BibliographyRenderCache citations", () => {
     settings.update({ "citation.references-style": IEEE });
     const changed = await cache.renderCitations(["[@alpha]"], items);
 
-    expect(changed).toBeNull();
+    expect(changed).toEqual({ kind: "unavailable", reason: "style-missing" });
     expect(engine.citationRequests).toHaveLength(1);
   });
 
@@ -729,9 +752,10 @@ describe("BibliographyRenderCache citations", () => {
     const { cache, engine, pandocEngine } = harness;
     pandocEngine.setStatus({ kind: "absent" });
 
-    await expect(
-      cache.renderCitations(["[@alpha]"], items),
-    ).resolves.toBeNull();
+    await expect(cache.renderCitations(["[@alpha]"], items)).resolves.toEqual({
+      kind: "unavailable",
+      reason: "engine-absent",
+    });
     expect(engine.citationRequests).toHaveLength(0);
   });
 
@@ -739,22 +763,24 @@ describe("BibliographyRenderCache citations", () => {
     await using harness = await makeHarness();
     const { cache, engine } = harness;
 
-    await expect(cache.renderCitations([], [])).resolves.toEqual([]);
+    expect(citationValue(await cache.renderCitations([], []))).toEqual([]);
     expect(engine.citationRequests).toHaveLength(0);
   });
 
-  it("asks again after a render the engine refused", async () => {
+  it("asks again after invalidation rearms a render the engine refused", async () => {
     await using harness = await makeHarness();
-    const { cache, engine } = harness;
+    const { cache, engine, db } = harness;
 
     engine.fails = true;
-    await expect(
-      cache.renderCitations(["[@alpha]"], items),
-    ).resolves.toBeNull();
+    await expect(cache.renderCitations(["[@alpha]"], items)).resolves.toEqual({
+      kind: "unavailable",
+      reason: "failed",
+    });
     engine.fails = false;
-    await expect(
-      cache.renderCitations(["[@alpha]"], items),
-    ).resolves.not.toBeNull();
+    db.changed();
+    expect(
+      citationValue(await cache.renderCitations(["[@alpha]"], items)),
+    ).not.toBeNull();
 
     expect(engine.citationRequests).toHaveLength(2);
   });
