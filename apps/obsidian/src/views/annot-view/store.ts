@@ -15,6 +15,13 @@ import type { AnnotFilter } from "./filter";
  */
 export type FollowMode = "note" | "reader" | "linked";
 
+/**
+ * Whether a card can be dragged into the active note: `ready` once the
+ * note's attachment-import handle stands, `preparing` while it is being
+ * prepared, `none` when no note is open to receive the drop.
+ */
+export type DragTarget = "ready" | "preparing" | "none";
+
 export interface AnnotState {
   attachments: AnnotViewAttachment[] | null;
   selectedAttachmentID: number | null;
@@ -32,6 +39,7 @@ export interface AnnotState {
   linked: { target: ItemRef; displayLabel: string } | null;
   /** Whether the Zotero reader can be followed (server enabled and listening). */
   serverAvailable: boolean;
+  dragTarget: DragTarget;
   /** Search row visible. */
   searchOpen: boolean;
   /** Case-insensitive substring query typed into the search row. */
@@ -76,6 +84,7 @@ export function createAnnotStore() {
         followMode: "note",
         linked: null,
         serverAvailable: false,
+        dragTarget: "none",
         ...INITIAL_FILTER_STATE,
       }),
     ),

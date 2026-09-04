@@ -44,7 +44,14 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
       (s.readerTarget?.selected.includes(annot.itemID) ?? false),
   );
   const selectedTagIDs = useAnnotStore((s) => s.selectedTagIDs);
+  const dragTarget = useAnnotStore((s) => s.dragTarget);
   const toggleTag = useToggleSelectedTagID();
+  const dragTooltip =
+    dragTarget === "ready"
+      ? typeLabel(annot.type)
+      : dragTarget === "preparing"
+        ? m.annot_view_drag_preparing_tooltip()
+        : m.annot_view_drag_no_note_tooltip();
 
   return (
     <div
@@ -57,10 +64,16 @@ export function Annotation({ annot, collapsed }: AnnotationProps) {
         onContextMenu={(e) => actions.onMoreOptions(e, annot)}
       >
         <span
-          className="zt:flex zt:cursor-grab zt:items-center"
-          draggable
+          className={cn(
+            "zt:flex zt:items-center",
+            dragTarget === "ready"
+              ? "zt:cursor-grab"
+              : "zt:cursor-not-allowed zt:opacity-40",
+          )}
+          draggable={dragTarget === "ready"}
+          aria-disabled={dragTarget !== "ready"}
           onDragStart={(e) => actions.onDragStart(e, annot)}
-          {...tooltipAttrs(typeLabel(annot.type))}
+          {...tooltipAttrs(dragTooltip)}
         >
           <Icon name={typeIcon(annot.type)} size={16} style={{ color }} />
         </span>

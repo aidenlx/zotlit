@@ -69,6 +69,7 @@ const blockedAttachmentImport = {
       blocked: 0,
       refused: 0,
     }),
+    discard: () => undefined,
   }),
 };
 

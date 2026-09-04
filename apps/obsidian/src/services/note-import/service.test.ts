@@ -151,7 +151,8 @@ function makeAttachmentImport() {
     }),
   );
   const resolveLink = vi.fn(() => () => "[[image.png]]");
-  const prepare = vi.fn(async () => ({ decide, resolveLink, flush }));
+  const discard = vi.fn();
+  const prepare = vi.fn(async () => ({ decide, resolveLink, flush, discard }));
   return { prepare, flush, decide, resolveLink };
 }
 
