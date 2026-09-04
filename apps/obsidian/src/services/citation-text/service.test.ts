@@ -582,18 +582,20 @@ describe("CitationText staleness", () => {
     await dispose();
   });
 
-  it("drops a document whose own citations changed, and says so", async () => {
-    const { service, indexChanged, dispose } = await makeHarness({
-      body: "Blah [@alpha].",
-    });
+  it("keeps a document's text when its own citations changed, and says so", async () => {
+    const { service, citationRequests, indexChanged, dispose } =
+      await makeHarness({ body: "Blah [@alpha]." });
     await service.load(NOTE);
     const changed: string[] = [];
     service.on("changed", (path) => changed.push(path));
 
     indexChanged(NOTE.path);
 
-    expect(service.peek(NOTE.path)).toBeNull();
     expect(changed).toEqual([NOTE.path]);
+    // The peek that serves the stale text is also what starts the fresh read.
+    expect(service.peek(NOTE.path)?.formatted.get("[@alpha]")).toBeDefined();
+    await vi.waitFor(() => expect(citationRequests).toHaveLength(2));
+    await vi.waitFor(() => expect(changed).toEqual([NOTE.path, NOTE.path]));
     await dispose();
   });
 
@@ -727,9 +729,21 @@ describe("CitationText staleness", () => {
   // A locator or a prefix belongs to the source a render is keyed by, and
   // editing one moves no citekey occurrence, so the metadata event is what
   // catches it.
-  it("drops the one document whose own file changed", async () => {
+  // An editor saving the document it shows lands here after every burst of
+  // typing, so the text it holds stays on screen until the fresh read replaces
+  // it; a peek that read nothing would put the raw source back for that long.
+  it("keeps the one document whose own file changed until its fresh read lands", async () => {
+    let generation = 0;
+    let finishFresh: ((value: readonly RenderedCitation[]) => void) | undefined;
     const { service, metadataChanged, dispose } = await makeHarness({
       body: "Blah [@alpha].",
+      formatCitations: () => {
+        generation += 1;
+        if (generation === 1) return Promise.resolve([rendered("stale")]);
+        return new Promise((resolve) => {
+          finishFresh = resolve;
+        });
+      },
     });
     await service.load(NOTE);
     const changed: string[] = [];
@@ -737,8 +751,43 @@ describe("CitationText staleness", () => {
 
     metadataChanged(NOTE.path);
 
+    expect(changed).toEqual([NOTE.path]);
+    expect(firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]"))).toBe(
+      "stale",
+    );
+    await vi.waitFor(() => expect(finishFresh).toBeDefined());
+    expect(firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]"))).toBe(
+      "stale",
+    );
+
+    finishFresh!([rendered("fresh")]);
+    await vi.waitFor(() => expect(changed).toEqual([NOTE.path, NOTE.path]));
+    expect(firstText(service.peek(NOTE.path)?.formatted.get("[@alpha]"))).toBe(
+      "fresh",
+    );
+    await dispose();
+  });
+
+  it("discards a document whose own file changed before its first read settled", async () => {
+    let finishFirst: ((value: readonly RenderedCitation[]) => void) | undefined;
+    const { service, citationRequests, metadataChanged, dispose } =
+      await makeHarness({
+        body: "Blah [@alpha].",
+        formatCitations: () =>
+          new Promise((resolve) => {
+            finishFirst = resolve;
+          }),
+      });
+    void service.load(NOTE);
+    await vi.waitFor(() => expect(finishFirst).toBeDefined());
+    const changed: string[] = [];
+    service.on("changed", (path) => changed.push(path));
+
+    metadataChanged(NOTE.path);
+
     expect(service.peek(NOTE.path)).toBeNull();
     expect(changed).toEqual([NOTE.path]);
+    expect(citationRequests).toHaveLength(1);
     await dispose();
   });
 

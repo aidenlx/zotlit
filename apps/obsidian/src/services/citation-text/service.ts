@@ -82,8 +82,8 @@ interface HeldCitations {
    */
   text: DocumentCitations | null;
   /**
-   * The answer predates a cross-document invalidation. Peek keeps serving it,
-   * and the next peek or load replaces it with a fresh read.
+   * The answer predates an invalidation. Peek keeps serving it, and the next
+   * peek or load replaces it with a fresh read.
    */
   stale: boolean;
   /**
@@ -172,8 +172,8 @@ export class CitationText extends Service<void> {
    * The citations held for one document, for a caller that cannot wait — the
    * editor builds its decorations synchronously.
    *
-   * A stale answer — one a cross-document invalidation reached — is served as
-   * it stands, and the peek itself starts the read that replaces it.
+   * A stale answer — one an invalidation reached — is served as it stands, and
+   * the peek itself starts the read that replaces it.
    *
    * @returns null while nothing is held yet, which is the caller's cue to
    *   {@link load} and show the raw source until the read settles.
@@ -241,11 +241,40 @@ export class CitationText extends Service<void> {
     this.commit(stack.move());
   }
 
-  /** One document's text no longer stands. */
+  /**
+   * One document's text no longer stands. The editor saving the document it
+   * shows lands here after every burst of typing, so a settled answer keeps
+   * being served until the fresh read replaces it: a surface that read nothing
+   * meanwhile would put the raw source back for as long as the read takes. An
+   * occurrence the edit moved reads its source's first-occurrence text for that
+   * long, the same fallback a surface holding no coordinate takes.
+   */
   #drop(path: string): void {
-    if (this.#documents.peek(path) === undefined) return;
-    this.#documents.delete(path);
+    const held = this.#documents.peek(path);
+    if (held === undefined) return;
+    this.#stale(path, held);
     this.#emitter.emit("changed", path);
+  }
+
+  /**
+   * Marks one held document stale, or discards it when it holds no text yet.
+   *
+   * A settled answer keeps being served until a fresh read replaces it, so a
+   * surface showing it never falls back to the raw source. A read that has
+   * never settled is discarded: its answer predates the invalidation and there
+   * is no text to keep serving. A read already revalidating keeps the stale
+   * text it carries and is marked stale again, so what it commits is
+   * revalidated once more by the next peek.
+   *
+   * @returns whether the record was kept stale or discarded.
+   */
+  #stale(path: string, held: HeldCitations): "stale" | "discarded" {
+    if (held.text === null) {
+      this.#documents.delete(path);
+      return "discarded";
+    }
+    held.stale = true;
+    return "stale";
   }
 
   /** Start the fresh read a stale peek asks for; a path no file backs is let go. */
@@ -258,26 +287,14 @@ export class CitationText extends Service<void> {
     void this.load(file);
   }
 
-  /**
-   * Every document's text went stale. A settled answer keeps being served until
-   * a fresh read replaces it, so a surface showing it never falls back to the
-   * raw source. A read that has never settled is discarded: its answer predates
-   * the invalidation and there is no text to keep serving. A read already
-   * revalidating keeps the stale text it carries and is marked stale again, so
-   * what it commits is revalidated once more by the next peek.
-   */
+  /** Every document's text went stale. */
   #invalidateAll(): void {
     if (this.#documents.size === 0) return;
     let stale = 0;
     let discarded = 0;
     for (const [path, held] of this.#documents.entries()) {
-      if (held.text === null) {
-        this.#documents.delete(path);
-        discarded += 1;
-      } else {
-        held.stale = true;
-        stale += 1;
-      }
+      if (this.#stale(path, held) === "stale") stale += 1;
+      else discarded += 1;
     }
     logger.debug("Citation text went stale", { stale, discarded });
     this.#emitter.emit("invalidated");
