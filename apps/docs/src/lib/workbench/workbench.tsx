@@ -243,6 +243,7 @@ export function Workbench() {
     connection,
     saveTarget,
     resources,
+    citationStyles,
     connectionBusy,
     connectionCancellable,
     itemBusy,
@@ -899,6 +900,7 @@ export function Workbench() {
                 controller={controller}
                 manifest={manifest ?? null}
                 filename={result?.filename ?? null}
+                citationStyles={citationStyles}
                 reveal={reveal}
                 onSelection={trackSelection}
                 onFieldTrigger={setTrigger}

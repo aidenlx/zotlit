@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import type { InstalledCitationStyle } from "@zotlit/workbench/bridge";
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 
@@ -47,7 +48,10 @@ function bindingRow(markup: string, key: string): string {
   return markup.slice(start, next === -1 ? section : Math.min(next, section));
 }
 
-function pane(source: string) {
+function pane(
+  source: string,
+  citationStyles?: readonly InstalledCitationStyle[],
+) {
   const controller = new WorkbenchDocumentController(source);
   expect(controller.problems).toEqual([]);
   return renderToStaticMarkup(
@@ -55,6 +59,7 @@ function pane(source: string) {
       controller={controller}
       manifest={controller.document!.manifest}
       filename="Tufte1983Visual"
+      citationStyles={citationStyles ?? null}
     />,
   );
 }
@@ -131,6 +136,49 @@ describe("the Name and folder tab", () => {
     // The inherited value is shown, and the control stays out of reach.
     expect(row).toContain('value="zotero_notes"');
     expect(row).toContain("disabled");
+  });
+
+  it("types the citation style as a CSL ID while no vault lists them", () => {
+    const row = bindingRow(own, "citationStyle");
+
+    expect(row).toContain(m.workbench_name_citation_style_placeholder());
+    expect(row).not.toContain("<select");
+  });
+
+  it("picks the citation style from the styles a connected vault installed", () => {
+    const row = bindingRow(
+      pane(
+        OWN_PROFILE.replace(
+          "folder: papers",
+          "folder: papers\ncitationStyle: apa",
+        ),
+        [
+          { id: "apa", title: "American Psychological Association" },
+          { id: "ieee", title: "IEEE" },
+        ],
+      ),
+      "citationStyle",
+    );
+
+    expect(row).toContain("<select");
+    expect(row).toContain("American Psychological Association");
+    expect(row).toContain("IEEE");
+    expect(row).toContain(m.workbench_name_value_no_style());
+  });
+
+  it("keeps a style the vault has not installed in the picker", () => {
+    const row = bindingRow(
+      pane(
+        OWN_PROFILE.replace(
+          "folder: papers",
+          "folder: papers\ncitationStyle: chicago",
+        ),
+        [{ id: "apa", title: "American Psychological Association" }],
+      ),
+      "citationStyle",
+    );
+
+    expect(row).toContain('value="chicago"');
   });
 
   it("keeps an explicit false apart from an unset toggle", () => {

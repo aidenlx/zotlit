@@ -6,9 +6,11 @@ import {
   BRIDGE_VERSION,
   LOCAL_BRIDGE_ORIGIN,
   LocalBridgeClient,
+  LocalBridgeProtocolError,
   LocalBridgeUnavailableError,
 } from "@zotlit/workbench/bridge";
 import type {
+  InstalledCitationStyle,
   LocalBridgeConnection,
   SaveSelectedProfileRequest,
   SaveSelectedProfileResponse,
@@ -69,6 +71,9 @@ export function useWorkbenchConnection({
   );
   const [saveTarget, setSaveTarget] = useState<SaveTarget | null>(null);
   const [resources, setResources] = useState<RenderResources | undefined>();
+  const [citationStyles, setCitationStyles] = useState<
+    readonly InstalledCitationStyle[] | null
+  >(null);
   const [loadedStyleId, setLoadedStyleId] = useState<string | null>();
   const [connectionBusy, setConnectionBusy] = useState(false);
   const [connectionCancellable, setConnectionCancellable] = useState(false);
@@ -80,6 +85,7 @@ export function useWorkbenchConnection({
   const resetConnectedState = useCallback(() => {
     setSaveTarget(null);
     setResources(undefined);
+    setCitationStyles(null);
     setLoadedStyleId(undefined);
   }, []);
 
@@ -97,15 +103,17 @@ export function useWorkbenchConnection({
     const selected = await bridge.readSelectedProfile();
     const parsed = new WorkbenchDocumentController(selected.source);
     const styleId = parsed.document?.manifest.citationStyle ?? null;
-    const [dependencies, citationStyle] = await Promise.all([
+    const [dependencies, citationStyle, styles] = await Promise.all([
       bridge.readTemplateDependencies(),
       bridge.readSelectedCitationStyle({ styleId }),
+      readCitationStyles(),
     ]);
     const reference = selected.document.reference;
     const currentExpected = expectedRevision(selected.document);
     const kept = readDraft(reference);
 
     setResources({ dependencies, citationStyle });
+    setCitationStyles(styles);
     setLoadedStyleId(styleId);
     setSaveTarget({ reference, expected: currentExpected });
 
@@ -115,6 +123,30 @@ export function useWorkbenchConnection({
       !sameExpectedRevision(kept.expected, currentExpected)
     ) {
       setMessage(m.workbench_save_conflict());
+    }
+  }
+
+  /**
+   * The styles the vault has installed, so the citation-style binding is picked
+   * from a list rather than typed. A vault that granted no listing, or a bridge
+   * that refused it, leaves the binding as a typed CSL ID instead of costing the
+   * whole hydration; a lost connection still fails the hydration it belongs to.
+   */
+  async function readCitationStyles(): Promise<
+    readonly InstalledCitationStyle[] | null
+  > {
+    const grant = bridge.connection;
+    if (
+      grant.state !== "connected" ||
+      !grant.capabilities.includes("citation-styles:list")
+    ) {
+      return null;
+    }
+    try {
+      return await bridge.listCitationStyles();
+    } catch (error) {
+      if (error instanceof LocalBridgeProtocolError) return null;
+      throw error;
     }
   }
 
@@ -252,6 +284,7 @@ export function useWorkbenchConnection({
     connection,
     saveTarget,
     resources,
+    citationStyles,
     connectionBusy,
     connectionCancellable,
     itemBusy,
