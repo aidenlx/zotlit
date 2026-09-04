@@ -24,6 +24,34 @@ The complete source is the authority ([ADR 0032](../../docs/adr/0032-web-workben
   form control changes a single manifest node and every other byte survives.
 - `manifestNodeRange(source, path)` — the source range one manifest node covers,
   so a host can tell which manifest value an editor position sits in.
+- `managedFrontmatterEntries(source)` — every Managed Frontmatter entry the
+  manifest authors, with its key, language, merge strategy, the whole lines it
+  occupies, and the expression a row edits. It answers `rows` with those
+  entries, `source-only` when the manifest parses and its list is written in a
+  shape a form cannot patch — a flow list, or an entry that is not a block
+  mapping — which leaves that list to Advanced, and `unparsed` while the
+  manifest itself does not parse.
+- `managedEntryEdit(source, action)` and the controller's `editManagedEntry` —
+  the one place a Properties action becomes source bytes: add a property, add a
+  Spread Entry, add an override after an entry, remove, reorder, change the
+  language, or set the key or merge strategy. Each is one undo step, rewrites
+  only the lines of the entry it names, and starts a new expression on a
+  language change rather than translating the old one.
+- `entrySlice(position)` and `entryPosition(id)` — the slice id one entry's
+  expression is edited through, and the entry a slice id names. The controller
+  re-derives those ranges from the manifest after every change, and keeps the
+  last list it parsed while a draft is mid-repair; a list that parses into a
+  shape no form can patch takes the rows and their ranges with it, and
+  `managedEntries` answers null. A validation problem the parser pins to one
+  entry carries that entry's slice, so it is repaired in its own row; every
+  other problem stays with Advanced.
+
+### Limits
+
+An entry whose `value` spans several lines is edited as the source holds it:
+the slice carries the continuation lines' own indentation, and a line the
+reader adds needs its own indent. A single-line rule — the shape every action
+writes — has no such catch.
 
 ## Render
 
@@ -31,7 +59,12 @@ The complete source is the authority ([ADR 0032](../../docs/adr/0032-web-workben
 schedules those renders:
 
 - `renderProfile(source, snapshot)` — the six-part result set with diagnostics,
-  stamped with the source and snapshot revisions.
+  stamped with the source and snapshot revisions. Every Managed Frontmatter
+  entry evaluates on its own against that one snapshot, so `properties` carries
+  each entry's own result under the 1-based position that produced it, `fold`
+  carries the frontmatter the note gets once every entry has merged, and a
+  property diagnostic — an evaluation failure, a `js` entry, or an append the
+  fold could not take — names the entry responsible for it.
 - `createRenderScheduler(options)` — one debounce (300 ms), one Worker per
   render terminated on its deadline, and a revision check that drops a result
   the reader has already typed past. The host supplies the Worker factory.
@@ -43,6 +76,7 @@ Templates, ported from the reviewed language prototype:
 
 - `liquidMarkdown` — the upstream Liquid language over a Markdown base, plus a
   delimiter accent decoration (`zt-liquid-delimiter`).
+- `yamlRule` — the YAML language, for a pane over one Managed Frontmatter rule.
 - `liquidRanges(source)` — a quote-aware delimiter scanner that bounds
   suggestions and hover and marks the Managed Block tags as `structural`.
 - `eta`, `etaLanguage`, `etaRange(source, position)` — a Lezer grammar for

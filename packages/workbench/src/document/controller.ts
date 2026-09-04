@@ -3,6 +3,7 @@
 
 import {
   history,
+  isolateHistory,
   redo,
   redoDepth,
   undo,
@@ -24,15 +25,36 @@ import type {
   LiteratureNoteTemplateErrorCode,
 } from "@zotlit/templates/facade";
 
-import { manifestNodeRange, manifestValueEdit } from "./manifest-patch";
-import type { ManifestScalar } from "./manifest-patch";
+import {
+  managedEntryEdit,
+  managedFrontmatterEntries,
+  manifestNodeRange,
+  manifestValueEdit,
+} from "./manifest-patch";
+import type {
+  ManagedEntryAction,
+  ManagedEntrySource,
+  ManifestScalar,
+  WorkbenchSliceRange,
+} from "./manifest-patch";
+
+/** The pane that edits one Managed Frontmatter entry's expression. */
+export type WorkbenchEntrySliceId = `entry:${number}`;
 
 /** A pane that edits one region of the master document. */
-export type WorkbenchSliceId = "note" | "advanced";
+export type WorkbenchSliceId = "note" | "advanced" | WorkbenchEntrySliceId;
 
-export interface WorkbenchSliceRange {
-  readonly from: number;
-  readonly to: number;
+export type { WorkbenchSliceRange } from "./manifest-patch";
+
+/** The slice one Managed Frontmatter entry's expression is edited through. */
+export function entrySlice(position: number): WorkbenchEntrySliceId {
+  return `entry:${position}`;
+}
+
+/** The entry a slice belongs to, or null when the slice is not a row. */
+export function entryPosition(id: WorkbenchSliceId): number | null {
+  const [name, position] = id.split(":");
+  return name === "entry" ? Number(position) : null;
 }
 
 /** Why a draft is refused: the parser's own codes, plus the web host's two. */
@@ -80,6 +102,7 @@ export class WorkbenchDocumentController {
   #document: LiteratureNoteTemplateDocument | null = null;
   #problems: readonly WorkbenchProblem[] = [];
   #focused: WorkbenchSliceId | null = null;
+  #entries: readonly ManagedEntrySource[] | null = null;
   readonly #ranges = new Map<WorkbenchSliceId, WorkbenchSliceRange>([
     ["note", { from: 0, to: 0 }],
     ["advanced", { from: 0, to: 0 }],
@@ -139,6 +162,17 @@ export class WorkbenchDocumentController {
     return this.#problems;
   }
 
+  /**
+   * The Managed Frontmatter entries the manifest authors, in list order, or
+   * null while the list is one no form can patch — a flow list, an entry that
+   * is not a block mapping — which leaves it to Advanced. A draft whose
+   * manifest stopped parsing keeps the last list that did, so the rows stay on
+   * screen while the reader repairs the text inside one of them.
+   */
+  get managedEntries(): readonly ManagedEntrySource[] | null {
+    return this.#entries;
+  }
+
   get canUndo(): boolean {
     return undoDepth(this.#state) > 0;
   }
@@ -147,8 +181,13 @@ export class WorkbenchDocumentController {
     return redoDepth(this.#state) > 0;
   }
 
+  /**
+   * The region `id` covers. An entry removed while its editor is still mounted
+   * takes its range with it, so that editor reads an empty region for the one
+   * update it sees before the host drops the row.
+   */
   sliceRange(id: WorkbenchSliceId): WorkbenchSliceRange {
-    return this.#ranges.get(id)!;
+    return this.#ranges.get(id) ?? { from: 0, to: 0 };
   }
 
   sliceText(id: WorkbenchSliceId): string {
@@ -232,6 +271,27 @@ export class WorkbenchDocumentController {
   }
 
   /**
+   * Applies one Properties action — add, remove, reorder, change language,
+   * change merge or key — as a targeted edit of the entry's own YAML lines, in
+   * one undo step.
+   * @returns false when the action names no entry the form can patch.
+   */
+  editManagedEntry(action: ManagedEntryAction): boolean {
+    const edit = managedEntryEdit(this.#text, action);
+    if (!edit) return false;
+    // A structural action rewrites the very lines the focused row is editing,
+    // so it goes to the master whole instead of being quarantined and replayed;
+    // the row that survives it picks its focus back up from the DOM.
+    this.setFocusedSlice(null);
+    this.dispatch({
+      changes: edit,
+      userEvent: "input.form",
+      annotations: isolateHistory.of("full"),
+    });
+    return true;
+  }
+
+  /**
    * The editor a transaction stays out of, with the region it holds right now,
    * or null when the transaction may touch the whole document. A slice with no
    * editor open holds no live text, so nothing is kept out of the master for
@@ -240,16 +300,18 @@ export class WorkbenchDocumentController {
   #quarantine(transaction: Transaction): Quarantine | null {
     const focused = this.#focused;
     const editor = focused === null ? undefined : this.#slices.get(focused);
+    const range = focused === null ? undefined : this.#ranges.get(focused);
     if (
       focused === null ||
       editor === undefined ||
+      range === undefined ||
       transaction.annotation(sliceEdit) === focused ||
       transaction.isUserEvent("undo") ||
       transaction.isUserEvent("redo")
     ) {
       return null;
     }
-    return { id: focused, editor, range: this.#ranges.get(focused)! };
+    return { id: focused, editor, range };
   }
 
   /**
@@ -309,6 +371,26 @@ export class WorkbenchDocumentController {
   }
 
   /**
+   * Re-reads the Managed Frontmatter rows and the slice each one is edited
+   * through. A manifest that stopped parsing keeps the rows it had, whose
+   * ranges the change set already remapped; a list that parses into a shape no
+   * form can patch takes its rows and their ranges with it, so nothing points
+   * at text the rows no longer own.
+   */
+  #readEntries(source: string): void {
+    const list = managedFrontmatterEntries(source);
+    if (list.status === "unparsed") return;
+    const entries = list.status === "rows" ? list.entries : null;
+    this.#entries = entries;
+    for (const id of this.#ranges.keys()) {
+      if (id.startsWith("entry:")) this.#ranges.delete(id);
+    }
+    for (const entry of entries ?? []) {
+      this.#ranges.set(entrySlice(entry.position), entry.expression);
+    }
+  }
+
+  /**
    * Re-derives the slice ranges and the Problems list from the current source.
    * A draft that does not parse keeps the ranges the change set remapped, so
    * the reader can repair the text in the editor they are already in.
@@ -316,6 +398,7 @@ export class WorkbenchDocumentController {
   #analyze(): void {
     const source = this.#text;
     this.#ranges.set("advanced", { from: 0, to: source.length });
+    this.#readEntries(source);
     try {
       const document = parseLiteratureNoteTemplate(source);
       this.#document = document;
@@ -339,11 +422,24 @@ export class WorkbenchDocumentController {
           code: error.code,
           message: error.message,
           recovery: error.recovery,
-          slice: "advanced",
+          slice: this.#sliceFor(error.manifestPath),
           ...(range ? { range } : {}),
         },
       ];
     }
+  }
+
+  /**
+   * The pane a manifest problem is repaired in: the row that owns the entry the
+   * parser named, and Advanced for every error that names no entry.
+   */
+  #sliceFor(path: readonly (string | number)[] | undefined): WorkbenchSliceId {
+    const index = path?.[0] === "frontmatter" ? path[1] : undefined;
+    if (typeof index !== "number") return "advanced";
+    const position = index + 1;
+    return this.#entries?.some((entry) => entry.position === position)
+      ? entrySlice(position)
+      : "advanced";
   }
 }
 

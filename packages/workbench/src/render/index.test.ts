@@ -165,3 +165,119 @@ describe("Sample Items", () => {
     ).toBe("paper.pdf");
   });
 });
+
+/**
+ * The default Profile with three entries appended: a Spread Entry that produces
+ * one new key and overrides one an earlier entry set, a rule that cannot
+ * evaluate, and a `js` entry the web host refuses to run.
+ */
+const ROWS_PROFILE = DEFAULT_PROFILE_SOURCE.replace(
+  "---\n# {{ zt.title }}",
+  `  - value: { title: 'From the spread', kind: { $eval: 'zt.itemType' } }
+    merge: replace
+  - key: broken
+    value: { $eval: 'zt.nowhere.deep' }
+    merge: replace
+  - key: computed
+    js: zt.title
+    merge: replace
+---
+# {{ zt.title }}`,
+);
+
+/**
+ * The default Profile with four entries appended: a rule that produces nothing
+ * followed by a spread that produces the same key, then a value one entry sets
+ * and a spread that cannot append to it.
+ */
+const MERGE_PROFILE = DEFAULT_PROFILE_SOURCE.replace(
+  "---\n# {{ zt.title }}",
+  `  - key: doi
+    expr: zt.nowhere
+    merge: replace
+  - value: { doi: { $eval: 'zt.title' } }
+    merge: replace
+  - key: tags
+    expr: zt.title
+    merge: replace
+  - value: { tags: { $eval: '[zt.title]' } }
+    merge: append
+---
+# {{ zt.title }}`,
+);
+
+describe("Managed Frontmatter rows", () => {
+  const sample = SAMPLE_ITEMS[0]!;
+
+  it("stamps every produced field with the entry that produced it", () => {
+    const result = renderProfile(ROWS_PROFILE, sample);
+
+    expect(
+      result.properties.map(({ position, key }) => [position, key]),
+    ).toEqual([
+      [1, "title"],
+      [2, "related"],
+      [3, "collections"],
+      [4, "citekey"],
+      [5, "title"],
+      [5, "kind"],
+    ]);
+  });
+
+  it("folds the contributions in first-producer order", () => {
+    const result = renderProfile(ROWS_PROFILE, sample);
+
+    expect(result.fold.map(({ position, key }) => [position, key])).toEqual([
+      [1, "title"],
+      [2, "related"],
+      [3, "collections"],
+      [4, "citekey"],
+      [5, "kind"],
+    ]);
+    expect(result.fold[0]?.value).toBe("From the spread");
+  });
+
+  it("names the entry every property diagnostic came from", () => {
+    const result = renderProfile(ROWS_PROFILE, sample);
+
+    expect(
+      result.diagnostics.map(({ code, part, position }) => ({
+        code,
+        part,
+        position,
+      })),
+    ).toEqual([
+      { code: "property-error", part: "properties", position: 6 },
+      { code: "property-error", part: "properties", position: 7 },
+    ]);
+    expect(result.diagnostics[0]?.message).toContain("broken");
+    expect(result.diagnostics[1]?.message).toBe(
+      "Managed Frontmatter 'computed' requires JavaScript.",
+    );
+  });
+
+  it("folds a key under the entry that produced its value, not the one that tried", () => {
+    const result = renderProfile(MERGE_PROFILE, sample);
+
+    expect(result.properties.filter(({ key }) => key === "doi")).toMatchObject([
+      { position: 5, missing: true },
+      { position: 6 },
+    ]);
+    expect(result.fold.find(({ key }) => key === "doi")).toMatchObject({
+      position: 6,
+      value: sample.item.title,
+    });
+  });
+
+  it("names the entry whose append the fold could not take", () => {
+    const result = renderProfile(MERGE_PROFILE, sample);
+
+    expect(result.diagnostics).toMatchObject([
+      { code: "property-error", part: "properties", position: 8 },
+    ]);
+    expect(result.diagnostics[0]?.message).toContain("tags");
+    expect(result.fold.find(({ key }) => key === "tags")).toMatchObject({
+      position: 7,
+    });
+  });
+});

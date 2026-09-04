@@ -1096,6 +1096,47 @@
   "workbench_render_worker_failed": "The preview stopped before it finished.",
   "workbench_problems_heading": "Problems",
   "workbench_problems_where_advanced": "Repair it in Advanced.",
+  "workbench_problems_where_entry": "Go to entry",
+  "workbench_properties_lede": "Each row is one rule. Together they set the note's properties.",
+  "workbench_properties_empty": "This profile sets no properties yet.",
+  "workbench_properties_source_only": "This list is written in a form these rows can't edit. Open it in Advanced.",
+  "workbench_properties_spread": "Several properties",
+  "workbench_properties_row_problem": "Problem",
+  "workbench_properties_produced": [
+    {
+      "declarations": [
+        "input count",
+        "input names",
+        "local category = count: plural"
+      ],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "1 property: {names}",
+        "category=*": "{count} properties: {names}"
+      }
+    }
+  ],
+  "workbench_properties_produced_none": "No properties for this paper",
+  "workbench_properties_javascript": "This rule runs JavaScript. Open the profile in Obsidian.",
+  "workbench_properties_name": "Property name",
+  "workbench_properties_expression": "Expression",
+  "workbench_properties_merge": "Merge",
+  "workbench_properties_merge_replace": "Replace",
+  "workbench_properties_merge_append": "Append",
+  "workbench_properties_merge_keep": "Keep",
+  "workbench_properties_add": "Add a property",
+  "workbench_properties_more_ways": "More ways to add",
+  "workbench_properties_add_spread": "Several properties from one rule",
+  "workbench_properties_options": "Entry options",
+  "workbench_properties_add_override": "Add an override after this",
+  "workbench_properties_to_rule": "Write it as a rule",
+  "workbench_properties_to_value": "Write it as a value",
+  "workbench_properties_move_up": "Move up",
+  "workbench_properties_move_down": "Move down",
+  "workbench_properties_remove": "Remove",
+  "workbench_properties_override_hint": "A later property can override one of these fields.",
+  "workbench_result_by_entry": "What each rule produced",
+  "workbench_result_fold": "Final properties",
   "creator_summary": [
     {
       "declarations": ["input count", "input first"],

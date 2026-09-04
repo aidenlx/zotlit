@@ -65,6 +65,8 @@ export interface CompiledManagedFrontmatter {
 
 export interface ManagedFrontmatterEvaluationError {
   readonly key: string;
+  /** 1-based list position of the entry that raised it. */
+  readonly position: number;
   readonly error: unknown;
 }
 
@@ -201,7 +203,7 @@ export function evalManagedFrontmatterEntries(
         (error.key === undefined
           ? `entry #${entry.position}`
           : `'${error.key}' (entry #${entry.position})`);
-      errors.push({ key, error });
+      errors.push({ key, position: entry.position, error });
     }
   }
   return { values, keys: [...keys], errors };

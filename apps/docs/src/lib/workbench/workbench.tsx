@@ -3,8 +3,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { WorkbenchDocumentController } from "@zotlit/workbench/document";
-import type { WorkbenchSliceRange } from "@zotlit/workbench/document";
+import {
+  entryPosition,
+  entrySlice,
+  WorkbenchDocumentController,
+} from "@zotlit/workbench/document";
+import type {
+  WorkbenchSliceId,
+  WorkbenchSliceRange,
+} from "@zotlit/workbench/document";
 import {
   DEFAULT_PROFILE_SOURCE,
   SAMPLE_ITEMS,
@@ -22,6 +29,8 @@ import {
   triggerHoldsCaret,
 } from "./fields";
 import type { SampleItem } from "./fields";
+import { PropertiesPane, PropertiesResult } from "./properties-tab";
+import type { EntryDiagnostic } from "./properties-tab";
 import { ResultSheet } from "./reading-view";
 import { startRenderWorker } from "./render-client";
 import { SliceEditor } from "./slice-editor";
@@ -63,6 +72,8 @@ export function Workbench() {
   );
   const [revision, setRevision] = useState(0);
   const [sample, setSample] = useState<SampleItem>(SAMPLE_ITEMS[0]!);
+  const [tab, setTab] = useState<"note" | "properties">("note");
+  const [openRow, setOpenRow] = useState<number | null>(null);
   const [advanced, setAdvanced] = useState(false);
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -114,7 +125,42 @@ export function Workbench() {
 
   const problem = controller.problems[0];
   const previewProblem = result?.diagnostics[0];
-  const slice = advanced ? "advanced" : "note";
+  // Null while the manifest's list is one the rows cannot edit, which is what
+  // sends the reader to Advanced with the source intact.
+  const entries = controller.managedEntries;
+  // An entry that left the list owns no slice, so its row closes with it and
+  // nothing addresses the text it used to hold.
+  const row =
+    openRow !== null && entries !== null && openRow <= entries.length
+      ? openRow
+      : null;
+  // A row carries every problem that names it: the renderer's own, and the
+  // manifest errors the parser pinned to one entry.
+  const rowProblems: EntryDiagnostic[] = [
+    ...(result?.diagnostics ?? []).flatMap(({ position, message }) =>
+      position === undefined ? [] : [{ position, message }],
+    ),
+    ...controller.problems.flatMap(({ slice: id, message }) => {
+      const position = entryPosition(id);
+      return position === null ? [] : [{ position, message }];
+    }),
+  ];
+  const problemRow = problem ? entryPosition(problem.slice) : null;
+  const slice: WorkbenchSliceId = advanced
+    ? "advanced"
+    : tab === "properties" && row !== null
+      ? entrySlice(row)
+      : "note";
+
+  /** Opens the row a diagnostic named, wherever the reader was. */
+  function goToEntry(position: number, range?: WorkbenchSliceRange) {
+    setAdvanced(false);
+    setTab("properties");
+    setOpenRow(position);
+    // A fresh object every time, so selecting the same problem twice reveals it
+    // again.
+    setReveal(range ? { ...range } : null);
+  }
 
   // The field list follows the editor: the Annotation Section renders one
   // highlight, the manifest's filename value renders the note name. A caret in
@@ -278,49 +324,72 @@ export function Workbench() {
                 aria-label={m.workbench_title()}
                 className="flex gap-5 border-b border-fd-border"
               >
+                {(["note", "properties"] as const).map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === id}
+                    onClick={() => setTab(id)}
+                    className="-mb-px cursor-pointer pb-1.5 font-serif text-[1.06rem] font-medium text-fd-muted-foreground aria-selected:border-b-2 aria-selected:border-fd-primary aria-selected:text-fd-foreground"
+                  >
+                    {id === "note"
+                      ? m.workbench_tab_note()
+                      : m.workbench_tab_properties()}
+                  </button>
+                ))}
                 <span
                   role="tab"
-                  aria-selected
-                  tabIndex={0}
-                  className="-mb-px border-b-2 border-fd-primary pb-1.5 font-serif text-[1.06rem] font-medium"
+                  aria-selected={false}
+                  aria-disabled
+                  className="-mb-px pb-1.5 font-serif text-[1.06rem] font-medium text-fd-muted-foreground/60"
                 >
-                  {m.workbench_tab_note()}
+                  {m.workbench_tab_name_and_folder()}
                 </span>
-                {[
-                  m.workbench_tab_properties(),
-                  m.workbench_tab_name_and_folder(),
-                ].map((label) => (
-                  <span
-                    key={label}
-                    role="tab"
-                    aria-selected={false}
-                    aria-disabled
-                    className="-mb-px pb-1.5 font-serif text-[1.06rem] font-medium text-fd-muted-foreground/60"
-                  >
-                    {label}
-                  </span>
-                ))}
               </div>
               <p className="mt-2 mb-2.5 text-xs text-fd-muted-foreground">
-                {m.workbench_note_lede()}
+                {tab === "note"
+                  ? m.workbench_note_lede()
+                  : m.workbench_properties_lede()}
               </p>
             </>
           )}
-          <div className="flex min-h-0 flex-1 flex-col border border-fd-border bg-fd-card">
-            <SliceEditor
-              key={slice}
-              controller={controller}
-              slice={slice}
-              label={
-                advanced
-                  ? m.workbench_advanced_heading()
-                  : m.workbench_tab_note()
-              }
-              reveal={reveal}
-              onSelection={trackSelection}
-              onFieldTrigger={setTrigger}
-            />
-          </div>
+          {!advanced && tab === "properties" ? (
+            entries === null ? (
+              <p className="text-sm text-fd-muted-foreground">
+                {m.workbench_properties_source_only()}
+              </p>
+            ) : (
+              <PropertiesPane
+                controller={controller}
+                entries={entries}
+                properties={result?.properties ?? []}
+                fold={result?.fold ?? []}
+                diagnostics={rowProblems}
+                selected={row}
+                onSelect={setOpenRow}
+                reveal={reveal}
+                onSelection={trackSelection}
+                onFieldTrigger={setTrigger}
+              />
+            )
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col border border-fd-border bg-fd-card">
+              <SliceEditor
+                key={slice}
+                controller={controller}
+                slice={slice}
+                label={
+                  advanced
+                    ? m.workbench_advanced_heading()
+                    : m.workbench_tab_note()
+                }
+                reveal={reveal}
+                onSelection={trackSelection}
+                onFieldTrigger={setTrigger}
+              />
+            </div>
+          )}
           {/* Next to the editor in tab order, because that is where it opens. */}
           {trigger && (
             <div
@@ -372,14 +441,33 @@ export function Workbench() {
                     <strong className="font-medium">
                       {m.workbench_preview_problem()}
                     </strong>{" "}
-                    {previewProblem.message}
+                    {previewProblem.message}{" "}
+                    {previewProblem.position !== undefined && (
+                      <button
+                        type="button"
+                        onClick={() => goToEntry(previewProblem.position!)}
+                        className="cursor-pointer underline underline-offset-2"
+                      >
+                        {m.workbench_problems_where_entry()}
+                      </button>
+                    )}
                   </p>
                 )}
-                <ResultSheet
-                  markdown={result.creationBody ?? ""}
-                  properties={result.properties}
-                  showMarkdown={showMarkdown}
-                />
+                {!advanced && tab === "properties" ? (
+                  <PropertiesResult
+                    entries={entries ?? []}
+                    properties={result.properties}
+                    fold={result.fold}
+                  />
+                ) : (
+                  <ResultSheet
+                    markdown={result.creationBody ?? ""}
+                    // The sheet is the note, so its list is the fold every
+                    // entry merged into, not each entry's own contribution.
+                    properties={result.fold}
+                    showMarkdown={showMarkdown}
+                  />
+                )}
               </>
             ) : (
               <p className="text-sm text-fd-muted-foreground">
@@ -404,6 +492,10 @@ export function Workbench() {
             <button
               type="button"
               onClick={() => {
+                if (problemRow !== null) {
+                  goToEntry(problemRow, problem.range);
+                  return;
+                }
                 setAdvanced(true);
                 // A fresh object every time, so selecting the same problem
                 // twice reveals it again.
@@ -411,7 +503,9 @@ export function Workbench() {
               }}
               className="cursor-pointer underline underline-offset-2"
             >
-              {m.workbench_problems_where_advanced()}
+              {problemRow === null
+                ? m.workbench_problems_where_advanced()
+                : m.workbench_problems_where_entry()}
             </button>
           </p>
         </section>
