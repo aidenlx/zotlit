@@ -28,6 +28,8 @@ import type { WorkbenchDraft } from "./transfer";
 export interface ProfileHydration {
   readonly selected: SelectedProfileResponse;
   readonly kept: WorkbenchDraft | null;
+  /** The revision the retained in-memory draft still descends from. */
+  readonly retainedExpected?: SaveSelectedProfileRequest["expected"];
 }
 
 interface SavedProfile {
@@ -44,7 +46,7 @@ interface UseWorkbenchConnectionOptions {
   readonly onSaved: (profile: SavedProfile) => void;
 }
 
-interface SaveTarget {
+export interface SaveTarget {
   readonly reference: string;
   readonly expected: SaveSelectedProfileRequest["expected"];
 }
@@ -89,7 +91,6 @@ export function useWorkbenchConnection({
   const connectionAbort = useRef<AbortController | null>(null);
 
   const resetConnectedState = useCallback(() => {
-    setSaveTarget(null);
     setResources(undefined);
     setCitationStyles(null);
     setLoadedStyleId(undefined);
@@ -137,13 +138,17 @@ export function useWorkbenchConnection({
     const reference = selected.document.reference;
     const currentExpected = expectedRevision(selected.document);
     const kept = readDraft(reference);
+    const retainedExpected =
+      saveTarget?.reference === reference
+        ? saveTarget.expected
+        : kept?.expected;
 
     setResources({ dependencies, citationStyle });
     setCitationStyles(styles);
     setLoadedStyleId(styleId);
     setSaveTarget({ reference, expected: currentExpected });
 
-    onHydrate({ selected, kept });
+    onHydrate({ selected, kept, retainedExpected });
     if (
       kept?.expected &&
       !sameExpectedRevision(kept.expected, currentExpected)

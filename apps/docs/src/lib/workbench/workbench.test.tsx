@@ -204,6 +204,16 @@ describe("a Workbench Connection", () => {
         m.workbench_connection_disconnected_notice(),
       ),
     );
+    await page.settle();
+    expect(
+      JSON.parse(
+        localStorage.getItem("zotlit.workbench.draft.profile:default")!,
+      ).expected,
+    ).toEqual({ state: "revision", revision: "revision-1" });
+    localStorage.removeItem("zotlit.workbench.draft.profile:default");
+    vi.spyOn(localStorage, "getItem").mockImplementation(() => {
+      throw new Error("Site data is blocked.");
+    });
     page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
@@ -851,6 +861,34 @@ describe("the paper a profile is written for", () => {
       ),
     );
     expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[0]!.item.key);
+  });
+});
+
+describe("the field list", () => {
+  it("searches the complete Zotero tree without opening the foot first", async () => {
+    using page = open();
+    const search = page.host.querySelector<HTMLInputElement>(
+      `input[aria-label="${m.workbench_fields_search()}"]`,
+    )!;
+
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(search, "DOI");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await page.waitFor(() =>
+      expect(
+        [...page.host.querySelectorAll("button")].some(
+          (button) => button.firstElementChild?.textContent === "DOI",
+        ),
+      ).toBe(true),
+    );
+    expect(page.host.textContent).not.toContain(
+      m.workbench_fields_no_matches(),
+    );
   });
 });
 

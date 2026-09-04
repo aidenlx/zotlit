@@ -4,13 +4,13 @@
 
 import { useEffect, useState } from "react";
 
-import type { SaveSelectedProfileRequest } from "@zotlit/workbench/bridge";
 import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 
 import type { SampleItem } from "./fields";
 import { clearDraft, readDraft, writeDraft } from "./transfer";
 import type { WorkbenchDraft } from "./transfer";
+import type { SaveTarget } from "./use-workbench-connection";
 
 /** The paper a fresh visit opens on. */
 export const DEFAULT_SAMPLE = SAMPLE_ITEMS[0]!;
@@ -66,14 +66,14 @@ export function useWorkbenchDraft({
   controller,
   revision,
   sample,
-  expected,
+  saveTarget,
 }: {
   readonly controller: WorkbenchDocumentController;
   /** Counts the controller's changes, so the autosave follows the text. */
   readonly revision: number;
   readonly sample: SampleItem;
-  /** The revision a connected Save expects, kept with the draft. */
-  readonly expected?: SaveSelectedProfileRequest["expected"];
+  /** The connected document revision retained across a lost connection. */
+  readonly saveTarget: SaveTarget | null;
 }): WorkbenchDraftKeeper {
   const [baseline, setBaseline] = useState(STANDALONE_BASELINE);
   const [reference, setReference] = useState(STANDALONE_DOCUMENT);
@@ -88,6 +88,8 @@ export function useWorkbenchDraft({
     reference === baseline.reference &&
     controller.source === baseline.source &&
     snapshotIdentity(sample) === baseline.snapshot;
+  const expected =
+    saveTarget?.reference === reference ? saveTarget.expected : undefined;
 
   useEffect(() => {
     // The prompt stands over an untouched page alone: the first change answers
