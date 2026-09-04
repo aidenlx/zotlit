@@ -73,6 +73,15 @@ export function diagnosticText(diagnostic: RenderDiagnostic): string {
         : m.workbench_diagnostic_property_javascript({
             key: String(params.key),
           });
+    case "unsupported-dependency":
+      // The renderer names the dependency it refused and leaves the words
+      // here; a Local Bridge that reports its own bundle failure sends the
+      // sentence instead, which falls to the default below.
+      return params.name === undefined
+        ? (diagnostic.message ?? diagnostic.code)
+        : m.workbench_diagnostic_unsupported_dependency({
+            name: String(params.name),
+          });
     case "property-append-conflict": {
       const conflict = m.workbench_diagnostic_property_append_conflict({
         key: String(params.key),

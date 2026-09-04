@@ -1164,6 +1164,7 @@
   "workbench_diagnostic_property_javascript": "The property '{key}' runs JavaScript.",
   "workbench_diagnostic_property_javascript_unnamed": "Property {position} runs JavaScript.",
   "workbench_diagnostic_property_append_conflict": "{key}: this entry could not append to the value an earlier entry set.",
+  "workbench_diagnostic_unsupported_dependency": "The template dependency '{name}' uses Eta, which the web workbench can't render.",
   "workbench_properties_lede": "Each row is one rule. Together they set the note's properties.",
   "workbench_properties_empty": "This profile sets no properties yet.",
   "workbench_properties_source_only": "This list is written in a form these rows can't edit. Open it in Advanced.",

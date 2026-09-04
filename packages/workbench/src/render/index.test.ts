@@ -148,6 +148,36 @@ describe("Sample Items", () => {
     });
   });
 
+  it("names an Eta dependency instead of running it", () => {
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "# {{ zt.title }}",
+      "{% render 'connected-heading' with zt as zt %}",
+    );
+
+    const result = renderProfile(source, SAMPLE_ITEMS[0]!, {
+      dependencies: {
+        templates: [
+          {
+            name: "connected-heading",
+            language: "eta",
+            source: "# <%= it.title %>",
+          },
+        ],
+        diagnostics: [],
+      },
+      citationStyle: { kind: "default" },
+    });
+
+    expect(result.diagnostics).toContainEqual({
+      code: "unsupported-dependency",
+      params: { name: "connected-heading" },
+      part: "profile",
+    });
+    // Nothing defined it, so the render fails where the call stands rather
+    // than running Eta in the Worker.
+    expect(result.creationBody).toBeNull();
+  });
+
   it("reports a selected citation style the Local Bridge could not resolve", () => {
     const result = renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!, {
       dependencies: { templates: [], diagnostics: [] },

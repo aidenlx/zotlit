@@ -5,6 +5,12 @@ Subpath exports: `bridge`, `document`, `explorer`, `language`, `render`, and the
 Node-only `snapshot`. The package has no React dependency and targets
 CodeMirror at the versions Obsidian pins.
 
+It carries no logger: it runs in a browser page, in a render Worker, and inside
+Obsidian, and it names every decision a host acts on in the value it returns —
+a `WorkbenchProblem`, a `RenderDiagnostic`, a `LocalBridgeConnection` state — so
+the host logs. That is a package-scoped exception to
+[the logging policy](../../policies/logging.md).
+
 ## Document
 
 `@zotlit/workbench/document` owns one Profile document and its editing rules.
@@ -95,6 +101,10 @@ schedules those renders:
   carries the frontmatter the note gets once every entry has merged, and a
   property diagnostic — an evaluation failure, a `js` entry, or an append the
   fold could not take — names the entry responsible for it.
+- A dependency bundle a Local Bridge supplied is registered by name before the
+  render, and a partial in it written in Eta is named as an
+  `unsupported-dependency` diagnostic rather than defined: the web host renders
+  Liquid and JSON-e only, wherever the source came from.
 - `createRenderScheduler(options)` — one debounce (300 ms), one Worker per
   render terminated on its deadline, and a revision check that drops a result
   the reader has already typed past. The host supplies the Worker factory.
@@ -111,8 +121,9 @@ own, and the document parser's.
 `@zotlit/workbench/bridge` holds the wire schemas and the browser client. The
 session credential lives in `sessionStorage` and outlives a transport failure:
 a dropped fetch marks the connection lost and keeps the credential, so a reload
-re-checks compatibility and revision with it. A refusal (HTTP 401) and a version
-mismatch clear it, and so does an explicit disconnect.
+re-checks compatibility and revision with it, and `resume()` does the same from
+the page, so Reconnect after a blip costs no fresh approval. A refusal (HTTP
+401) and a version mismatch clear it, and so does an explicit disconnect.
 
 ## Language
 
