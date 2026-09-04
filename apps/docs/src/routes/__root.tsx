@@ -6,6 +6,7 @@ import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import { RootProvider } from "fumadocs-ui/provider/tanstack";
 
+import { DocsImage } from "@/components/docs-image";
 import { LegacyBanner } from "@/components/legacy-banner";
 import { Header } from "@/layouts/home/slots/header";
 import { baseOptions } from "@/lib/layout.shared";
@@ -78,7 +79,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body className="flex min-h-screen flex-col">
         {/* The search dialog fetches `/api/search`, the fumadocs default. */}
-        <RootProvider>
+        <RootProvider components={{ Image: DocsImage }}>
           <LegacyBanner />
           {children}
         </RootProvider>

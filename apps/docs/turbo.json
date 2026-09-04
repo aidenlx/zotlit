@@ -12,10 +12,9 @@
         "$TURBO_ROOT$/messages/**"
       ],
       "outputs": ["dist/**", ".tanstack/**", ".source/**"],
-      // The Cloudflare Web Analytics site token is read at build time, so a
-      // build with it differs from one without; `CLOUDFLARE_ENV` picks the
-      // wrangler environment the build carries, so the beta build and the
-      // production build are two different outputs.
+      // The Cloudflare Web Analytics token is read at build time, so builds
+      // with different values are distinct; `CLOUDFLARE_ENV` likewise
+      // separates beta and production outputs.
       "env": ["VITE_CF_BEACON_TOKEN", "CLOUDFLARE_ENV", "GITHUB_SHA"]
     },
     // The `.source/` collection index, which the typecheck reads. `vite build`
