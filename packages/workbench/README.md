@@ -49,6 +49,22 @@ The complete source is the authority ([ADR 0032](../../docs/adr/0032-web-workben
   language, or set the key or merge strategy. Each is one undo step, rewrites
   only the lines of the entry it names, and starts a new expression on a
   language change rather than translating the old one.
+- `noteRegions(source, note)` — the boxes the note body carries, in the offsets
+  the source is read in: every annotation render call, in the shortcut form and
+  in the native `render "annotation"` form, and the Managed Block with its
+  line-owning tags apart from the tag text. A call inside a Liquid `raw` or
+  `comment` block, or inside a Markdown code fence or code span, is prose about
+  a call rather than a call, so it is left out. The controller keeps the answer
+  as `noteRegions`, and a host reads the same function over a pane's own text.
+  @see docs/adr/0034-template-rendering-shortcut-is-annotation-specific.md
+- The controller's `annotationSection` — the Annotation Section's header line
+  and the source under it, which is also the `annotation` slice. A draft the
+  parser refuses keeps the regions it had, so the reader repairs the text in the
+  editor they are in; a document that has never carried a section answers null.
+- The controller's `repairAnnotationSection()` — the header a document without
+  one is missing, written as a line of its own at the end of the file in one
+  undo step. It writes that header and the line break that ends it and nothing
+  else, so the section it opens is empty until the reader writes in it.
 - `entrySlice(position)` and `entryPosition(id)` — the slice id one entry's
   expression is edited through, and the entry a slice id names. The controller
   re-derives those ranges from the manifest after every change, and keeps the

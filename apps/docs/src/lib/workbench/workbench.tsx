@@ -21,6 +21,12 @@ import type { ProfileRenderResult } from "@zotlit/workbench/render";
 
 import { m } from "@/paraglide/messages.js";
 
+import {
+  AnnotationPointer,
+  AnnotationResult,
+  AnnotationSectionBar,
+  annotationHeaderMark,
+} from "./annotation";
 import { FieldList } from "./field-list";
 import {
   insertSnippet,
@@ -30,6 +36,8 @@ import {
 } from "./fields";
 import type { SampleItem } from "./fields";
 import { NameFolderPane } from "./name-folder";
+import { NotePane } from "./note-pane";
+import type { NoteEditor } from "./note-pane";
 import { PropertiesPane, PropertiesResult } from "./properties-tab";
 import type { EntryDiagnostic } from "./properties-tab";
 import { ResultSheet } from "./reading-view";
@@ -90,6 +98,10 @@ export function Workbench() {
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [advanced, setAdvanced] = useState(false);
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
+  // Which of the note tab's two editors the reader is in, and where the
+  // highlight box opens when they are sent to it from elsewhere.
+  const [noteEditor, setNoteEditor] = useState<NoteEditor>("note");
+  const [highlight, setHighlight] = useState<WorkbenchSliceRange | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [caret, setCaret] = useState<WorkbenchSliceRange>({ from: 0, to: 0 });
@@ -168,7 +180,12 @@ export function Workbench() {
       ? entrySlice(row)
       : tab === "name" && controller.filenameSlice
         ? "filename"
-        : "note";
+        : tab === "note" && noteEditor === "annotation"
+          ? "annotation"
+          : "note";
+  // The highlight box is the note tab's second editor, so the result column
+  // shows the one highlight while the reader is in it.
+  const showAnnotation = !advanced && slice === "annotation";
 
   /** Opens the row a diagnostic named, wherever the reader was. */
   function goToEntry(position: number, range?: WorkbenchSliceRange) {
@@ -180,12 +197,44 @@ export function Workbench() {
     setReveal(range ? { ...range } : null);
   }
 
-  // The field list follows the editor: the Annotation Section renders one
-  // highlight, the manifest's filename value renders the note name. A caret in
-  // the manifest parses YAML, so the answer is held until the caret moves.
+  /** Leaves the note tab, so its second editor does not follow the reader out. */
+  function openTab(id: "note" | "properties" | "name") {
+    setTab(id);
+    if (id !== "note") setNoteEditor("note");
+  }
+
+  /**
+   * Opens the one editor over the Annotation Section: the highlight box at the
+   * first render call, and the section in Advanced when the note body calls it
+   * nowhere — which is also where a document missing the section is repaired.
+   */
+  function openHighlight() {
+    const section = controller.annotationSection;
+    if (!section || controller.noteRegions.annotationCalls.length === 0) {
+      setAdvanced(true);
+      setReveal(section ? { ...section.header } : null);
+      return;
+    }
+    setAdvanced(false);
+    setTab("note");
+    setNoteEditor("annotation");
+    setHighlight({ from: section.source.from, to: section.source.from });
+  }
+
+  // The field list follows the pane the reader is in: the highlight box renders
+  // one highlight, the note name renders the filename, and every rule and the
+  // note itself render the note. Advanced holds the whole file, so there alone
+  // the caret says which root the reader is writing against.
   const root = useMemo(
-    () => templateRootAt(controller.document, controller.source, caret.from),
-    [controller.document, controller.source, caret.from],
+    () =>
+      slice === "annotation"
+        ? "annotation"
+        : slice === "filename"
+          ? "filename"
+          : slice === "advanced"
+            ? templateRootAt(controller.document, controller.source, caret.from)
+            : "note",
+    [slice, controller.document, controller.source, caret.from],
   );
   const fields = useMemo(
     () => (temporal ? rootData(sample, root) : null),
@@ -348,7 +397,7 @@ export function Workbench() {
                     type="button"
                     role="tab"
                     aria-selected={tab === id}
-                    onClick={() => setTab(id)}
+                    onClick={() => openTab(id)}
                     className="-mb-px cursor-pointer pb-1.5 font-serif text-[1.06rem] font-medium text-fd-muted-foreground aria-selected:border-b-2 aria-selected:border-fd-primary aria-selected:text-fd-foreground"
                   >
                     {TAB_LABEL[id]()}
@@ -360,50 +409,65 @@ export function Workbench() {
               </p>
             </>
           )}
-          {!advanced && tab === "name" ? (
-            <NameFolderPane
+          {advanced ? (
+            <>
+              <AnnotationSectionBar controller={controller} onGo={setReveal} />
+              <div className="flex min-h-0 flex-1 flex-col border border-fd-border bg-fd-card [&_.zt-section-header]:bg-fd-accent/60 [&_.zt-section-header]:shadow-[inset_2px_0_0_0_var(--color-fd-primary)]">
+                <SliceEditor
+                  controller={controller}
+                  slice="advanced"
+                  label={m.workbench_advanced_heading()}
+                  extensions={annotationHeaderMark}
+                  reveal={reveal}
+                  onSelection={trackSelection}
+                  onFieldTrigger={setTrigger}
+                />
+              </div>
+            </>
+          ) : tab === "name" ? (
+            <>
+              <NameFolderPane
+                controller={controller}
+                manifest={manifest ?? null}
+                filename={result?.filename ?? null}
+                reveal={reveal}
+                onSelection={trackSelection}
+                onFieldTrigger={setTrigger}
+              />
+              <AnnotationPointer onOpen={openHighlight} />
+            </>
+          ) : tab === "properties" ? (
+            <>
+              {entries === null ? (
+                <p className="text-sm text-fd-muted-foreground">
+                  {m.workbench_properties_source_only()}
+                </p>
+              ) : (
+                <PropertiesPane
+                  controller={controller}
+                  entries={entries}
+                  properties={result?.properties ?? []}
+                  fold={result?.fold ?? []}
+                  diagnostics={rowProblems}
+                  selected={row}
+                  onSelect={setOpenRow}
+                  reveal={reveal}
+                  onSelection={trackSelection}
+                  onFieldTrigger={setTrigger}
+                />
+              )}
+              <AnnotationPointer onOpen={openHighlight} />
+            </>
+          ) : (
+            <NotePane
               controller={controller}
-              manifest={manifest ?? null}
-              filename={result?.filename ?? null}
               reveal={reveal}
+              highlight={highlight}
               onSelection={trackSelection}
               onFieldTrigger={setTrigger}
+              onOpenHighlight={openHighlight}
+              onEditing={setNoteEditor}
             />
-          ) : !advanced && tab === "properties" ? (
-            entries === null ? (
-              <p className="text-sm text-fd-muted-foreground">
-                {m.workbench_properties_source_only()}
-              </p>
-            ) : (
-              <PropertiesPane
-                controller={controller}
-                entries={entries}
-                properties={result?.properties ?? []}
-                fold={result?.fold ?? []}
-                diagnostics={rowProblems}
-                selected={row}
-                onSelect={setOpenRow}
-                reveal={reveal}
-                onSelection={trackSelection}
-                onFieldTrigger={setTrigger}
-              />
-            )
-          ) : (
-            <div className="flex min-h-0 flex-1 flex-col border border-fd-border bg-fd-card">
-              <SliceEditor
-                key={slice}
-                controller={controller}
-                slice={slice}
-                label={
-                  advanced
-                    ? m.workbench_advanced_heading()
-                    : m.workbench_tab_note()
-                }
-                reveal={reveal}
-                onSelection={trackSelection}
-                onFieldTrigger={setTrigger}
-              />
-            </div>
           )}
           {/* Next to the editor in tab order, because that is where it opens. */}
           {trigger && (
@@ -428,7 +492,9 @@ export function Workbench() {
         <section className="flex min-h-0 flex-col">
           <div className="flex items-baseline gap-3">
             <h2 className="font-serif text-[1.06rem] font-medium">
-              {m.workbench_result_heading()}
+              {showAnnotation
+                ? m.workbench_highlight_heading()
+                : m.workbench_result_heading()}
             </h2>
             <button
               type="button"
@@ -440,17 +506,21 @@ export function Workbench() {
             </button>
           </div>
           <p className="mt-1 mb-2.5 text-xs text-fd-muted-foreground">
-            {m.workbench_result_lede()}
+            {showAnnotation
+              ? m.workbench_highlight_result_lede()
+              : m.workbench_result_lede()}
           </p>
           <div className="min-h-0 flex-1 overflow-auto border border-fd-border bg-fd-card p-5 shadow-[6px_6px_0_0_var(--color-fd-border)]">
             {result ? (
               <>
-                <p className="mb-3 font-mono text-xs text-fd-muted-foreground">
-                  <span className="sr-only">
-                    {m.workbench_result_filename()}:{" "}
-                  </span>
-                  {result.filename}
-                </p>
+                {!showAnnotation && (
+                  <p className="mb-3 font-mono text-xs text-fd-muted-foreground">
+                    <span className="sr-only">
+                      {m.workbench_result_filename()}:{" "}
+                    </span>
+                    {result.filename}
+                  </p>
+                )}
                 {previewProblem && (
                   <p className="mb-3 border-l-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs">
                     <strong className="font-medium">
@@ -468,7 +538,12 @@ export function Workbench() {
                     )}
                   </p>
                 )}
-                {!advanced && tab === "properties" ? (
+                {showAnnotation ? (
+                  <AnnotationResult
+                    markdown={result.annotation}
+                    showMarkdown={showMarkdown}
+                  />
+                ) : !advanced && tab === "properties" ? (
                   <PropertiesResult
                     entries={entries ?? []}
                     properties={result.properties}
