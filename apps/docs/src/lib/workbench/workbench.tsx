@@ -613,7 +613,9 @@ export function Workbench() {
     // less whatever that strip takes; a dismissed strip leaves the whole window.
     <div className="flex h-[calc(100dvh-var(--fd-banner-height,0px))] flex-col bg-fd-background text-fd-foreground">
       {filePicker}
-      <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-fd-border px-4 py-3 min-[780px]:px-6">
+      {/* The menu below hangs from this header's own right edge, so a header
+          that wraps under 780 px never carries it off the screen. */}
+      <header className="relative flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-fd-border px-4 py-3 min-[780px]:px-6">
         <h1 className="font-serif text-xl font-medium">{profile.name}</h1>
         <p className="text-fd-muted-foreground italic">{profile.description}</p>
         <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -680,7 +682,7 @@ export function Workbench() {
                   : m.workbench_load_item()}
             </button>
           )}
-          <div className="relative">
+          <div>
             <button
               type="button"
               aria-label={m.workbench_more_actions()}
@@ -695,7 +697,7 @@ export function Workbench() {
               <div
                 role="menu"
                 aria-label={m.workbench_more_actions()}
-                className="absolute right-0 z-10 mt-1 flex w-56 flex-col border border-fd-border bg-fd-card p-1 shadow-[4px_4px_0_0_var(--color-fd-border)]"
+                className="absolute top-full right-4 z-10 mt-1 flex w-56 flex-col border border-fd-border bg-fd-card p-1 shadow-[4px_4px_0_0_var(--color-fd-border)] min-[780px]:right-6"
               >
                 <button
                   type="button"
