@@ -22,8 +22,20 @@ The complete source is the authority ([ADR 0032](../../docs/adr/0032-web-workben
   step, undo and redo routed to the master, and a wholesale child refresh.
 - `manifestValueEdit(source, path, value)` — the one targeted YAML patch, so a
   form control changes a single manifest node and every other byte survives.
+- `manifestKeyEdit(source, key, value)` and the controller's `setManifestKey` —
+  one top-level manifest key written, or removed with its own line when the
+  value is `undefined`. They are the two halves of Override and Use default, so
+  an explicit empty path, a null style, and a `false` toggle each stay distinct
+  from an unset key; a key the manifest never wrote lands at its foot. Each call
+  is one undo step.
 - `manifestNodeRange(source, path)` — the source range one manifest node covers,
   so a host can tell which manifest value an editor position sits in.
+- `manifestScalarSlice(source, path)` — the text a manifest scalar holds, inside
+  its quotes when it has them, so the note-name template is edited as template
+  source. It answers null for a value one line cannot hold — a block scalar, a
+  folded plain scalar, or a quoted one carrying an escape — which leaves that
+  value to Advanced. The controller keeps it as the `filename` slice and reports
+  it through `filenameSlice`.
 - `managedFrontmatterEntries(source)` — every Managed Frontmatter entry the
   manifest authors, with its key, language, merge strategy, the whole lines it
   occupies, and the expression a row edits. It answers `rows` with those

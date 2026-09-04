@@ -76,6 +76,7 @@
     "@zotlit/scripts": "workspace:*",
     "cross-env": "catalog:",
     "fflate": "catalog:",
+    "happy-dom": "catalog:",
     "oxlint": "catalog:",
     "schema-dts": "^2.0.0",
     "tailwindcss": "catalog:",
