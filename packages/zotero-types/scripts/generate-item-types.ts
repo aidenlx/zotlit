@@ -1,5 +1,6 @@
+// Generates src/item-types.ts: the built-in top-level Zotero item types with their bundled locale labels.
 import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 // oxlint-disable-next-line no-restricted-imports
 import schema from "../zotero-schema/schema.json" with { type: "json" };
@@ -24,7 +25,8 @@ const LOCALES = ["en-US", "zh-CN"] as const;
 /** Child item types excluded from the generated top-level item-type list. */
 const EXCLUDED_ITEM_TYPES = new Set(["annotation", "attachment", "note"]);
 
-const outputFile = join("src", "item-types.ts");
+const packageRoot = resolve(import.meta.dirname, "..");
+const outputFile = join(packageRoot, "src", "item-types.ts");
 
 await writeFile(outputFile, render(schema));
 
