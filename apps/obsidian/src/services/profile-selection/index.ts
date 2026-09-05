@@ -21,6 +21,7 @@ export {
 } from "./condition";
 export {
   choicesLookup,
+  collectionKey,
   collectionLookup,
   listCollectionChoices,
   resolveMembershipFacts,

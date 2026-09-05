@@ -78,14 +78,17 @@ export function collectionLookup(
   };
 }
 
+/** One string per Collection reference: the Library selector key and the Collection key. */
+export function collectionKey({ library, key }: CollectionReference): string {
+  return `${selectorKey(library)}/${key}`;
+}
+
 /** The existence check {@link collectionLookup} makes, over listed choices. */
 export function choicesLookup(
   choices: readonly CollectionChoice[],
 ): (reference: CollectionReference) => boolean {
-  const known = new Set(
-    choices.map(({ library, key }) => `${selectorKey(library)}/${key}`),
-  );
-  return ({ library, key }) => known.has(`${selectorKey(library)}/${key}`);
+  const known = new Set(choices.map(collectionKey));
+  return (reference) => known.has(collectionKey(reference));
 }
 
 /**
@@ -131,19 +134,16 @@ function ancestorsOf(
   node: CollectionNode,
   nodes: ReadonlyMap<number, CollectionNode>,
 ): CollectionNode[] {
+  const parentOf = (child: CollectionNode) =>
+    child.parentCollectionID === null
+      ? undefined
+      : nodes.get(child.parentCollectionID);
   const chain: CollectionNode[] = [];
-  for (
-    let parent =
-      node.parentCollectionID === null
-        ? undefined
-        : nodes.get(node.parentCollectionID);
-    parent;
-    parent =
-      parent.parentCollectionID === null
-        ? undefined
-        : nodes.get(parent.parentCollectionID)
-  )
+  let parent = parentOf(node);
+  while (parent) {
     chain.push(parent);
+    parent = parentOf(parent);
+  }
   return chain;
 }
 

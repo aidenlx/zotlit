@@ -17,6 +17,8 @@ import type {
   LibrarySelector,
 } from "@/services/library-scope/scope";
 import {
+  choicesLookup,
+  collectionKey,
   collectionLabel,
   compileCondition,
   describeProblem,
@@ -430,8 +432,8 @@ export class ProfileSelectionRuleModal extends Modal {
     condition: Extract<FlatCondition, { kind: "collection" }>,
   ): void {
     const choices = this.#collections;
-    const current = collectionValue(condition);
-    const known = choices.some((choice) => collectionValue(choice) === current);
+    const current = collectionKey(condition);
+    const known = choicesLookup(choices)(condition);
     setting.setErrorMessage(
       known
         ? null
@@ -442,7 +444,7 @@ export class ProfileSelectionRuleModal extends Modal {
     setting.addDropdown((dropdown) => {
       for (const choice of choices)
         dropdown.addOption(
-          collectionValue(choice),
+          collectionKey(choice),
           collectionLabel(choice, this.#describeOptions()),
         );
       if (!known)
@@ -454,7 +456,7 @@ export class ProfileSelectionRuleModal extends Modal {
         );
       dropdown.setValue(current).onChange((value) => {
         const choice = choices.find(
-          (candidate) => collectionValue(candidate) === value,
+          (candidate) => collectionKey(candidate) === value,
         );
         if (!choice) return;
         this.#replaceAt(path, {
@@ -615,9 +617,7 @@ export class ProfileSelectionRuleModal extends Modal {
       case "item-type":
         return null;
       case "collection":
-        return this.#collections.some(
-          (choice) => collectionValue(choice) === collectionValue(condition),
-        )
+        return choicesLookup(this.#collections)(condition)
           ? null
           : describeProblem(
               { code: "missing-collection", ...condition },
@@ -785,14 +785,6 @@ function addableLibraries(
 function availableCollections(ctx: SettingTabContext): CollectionChoice[] {
   if (ctx.db.state !== "ready") return [];
   return listCollectionChoices(ctx.db.client, ctx.libraryScope.libraries);
-}
-
-/** The dropdown value of a Collection: its portable reference. */
-function collectionValue(reference: {
-  library: LibrarySelector;
-  key: string;
-}): string {
-  return `${selectorKey(reference.library)}/${reference.key}`;
 }
 
 function conditionsDesc(): DocumentFragment {
