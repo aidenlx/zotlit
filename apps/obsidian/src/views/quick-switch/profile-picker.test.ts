@@ -122,6 +122,68 @@ it("renders effective folders, style titles, templates, paths and the selected s
   await expect(choice).resolves.toBeUndefined();
 });
 
+it("shows the rule behind a preselected choice and the problem that stopped automatic selection", async () => {
+  using opened = vi.spyOn(SuggestModal.prototype, "open");
+  const preview = {
+    selector: books.id,
+    label: "Books",
+    folder: "Reading",
+    citationStyle: null,
+    document: "books.md",
+    path: "Reading/Paper.md",
+  };
+  const choice = chooseLiteratureNoteProfile({} as App, {
+    preselected: books.id,
+    source: "rule",
+    reason: "Item type is Book in My Library",
+    previews: [preview],
+  });
+  const modal = opened.mock
+    .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
+  const rows = await modal.getSuggestions("");
+  expect(rows[0]).toMatchObject({
+    id: books.id,
+    source: "rule",
+    reason: "Item type is Book in My Library",
+  });
+  const text: string[] = [];
+  const el = {
+    createDiv: ({ text: value }: { text: string }) => {
+      text.push(value);
+      return {
+        createSpan: ({ text: value }: { text: string }) => text.push(value),
+      };
+    },
+  } as unknown as HTMLElement;
+  modal.renderSuggestion(rows[0]!, el);
+  expect(text).toContain(
+    m.modal_profile_source_rule({ rule: "Item type is Book in My Library" }),
+  );
+  modal.onClose();
+  await expect(choice).resolves.toBeUndefined();
+
+  const stopped = chooseLiteratureNoteProfile({} as App, {
+    preselected: "default",
+    source: "bound",
+    problem: "Rule broke. Choose a profile for this note.",
+    previews: [{ ...preview, selector: "default", label: undefined }, preview],
+  });
+  const stoppedModal = opened.mock
+    .instances[1] as SuggestModal<LiteratureNoteProfileChoice>;
+  const stoppedRows = await stoppedModal.getSuggestions("");
+  expect(stoppedRows[0]).toMatchObject({
+    id: "default",
+    preselected: true,
+    problem: "Rule broke. Choose a profile for this note.",
+  });
+  expect(stoppedRows[1]).toMatchObject({ id: books.id, problem: undefined });
+  text.length = 0;
+  stoppedModal.renderSuggestion(stoppedRows[0]!, el);
+  expect(text).toContain("Rule broke. Choose a profile for this note.");
+  stoppedModal.onClose();
+  await expect(stopped).resolves.toBeUndefined();
+});
+
 it("waits for the shared create dialog when New profile is chosen after native close", async () => {
   using opened = vi.spyOn(SuggestModal.prototype, "open");
   const created = Promise.withResolvers<

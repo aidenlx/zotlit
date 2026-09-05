@@ -568,23 +568,302 @@ describe("Profile source selection", () => {
         asked: "default",
       }),
     ).toEqual({ selector: "default", source: "asked", shouldAsk: true });
-    expect(
-      await feature.resolveCreationProfile({
-        headless: "Missing12345" as ProfileId,
-      }),
-    ).toEqual({ selector: "default", source: "bound", shouldAsk: true });
     expect(update).not.toHaveBeenCalled();
   });
-  it("uses Default without a picker when no added Profile resolves", async () => {
+  it("reports an invalid explicit selector instead of treating it as absent, even with Default alone", async () => {
+    const missing = "Missing12345" as ProfileId;
+    const withProfiles = makeUpdateHarness({
+      content: "",
+      settings: {
+        profiles: [{ id: "Bk3Qn7XvT2Lp" as ProfileId, label: "Books" }],
+      },
+    }).deps;
+    expect(
+      await createNoteFeature(withProfiles).resolveCreationProfile({
+        headless: missing,
+      }),
+    ).toEqual({
+      selector: "default",
+      source: "bound",
+      shouldAsk: true,
+      problem: {
+        kind: "invalid-selector",
+        source: "headless",
+        selector: missing,
+      },
+    });
     const { deps } = makeUpdateHarness({ content: "" });
     seedRememberedProfile(deps.settings, "Bk3Qn7XvT2Lp" as ProfileId);
     using update = vi.spyOn(deps.settings, "update");
-    expect(
-      await createNoteFeature(deps).resolveCreationProfile({
-        headless: "Rz9Wm4YfH6Kd" as ProfileId,
-      }),
-    ).toEqual({ selector: "default", source: "bound", shouldAsk: false });
+    const feature = createNoteFeature(deps);
+    expect(await feature.resolveCreationProfile()).toEqual({
+      selector: "default",
+      source: "bound",
+      shouldAsk: false,
+    });
+    expect(await feature.resolveCreationProfile({ asked: missing })).toEqual({
+      selector: "default",
+      source: "bound",
+      shouldAsk: true,
+      problem: { kind: "invalid-selector", source: "asked", selector: missing },
+    });
     expect(update).not.toHaveBeenCalled();
+  });
+  it("selects the first matching rule in user order, explains it, and ranks it below explicit input", async () => {
+    const books = "Bk3Qn7XvT2Lp" as ProfileId;
+    const papers = "Rz9Wm4YfH6Kd" as ProfileId;
+    const thesisRule = {
+      id: "thesis",
+      scope: { mode: "all" },
+      expression: 'itemType == "thesis"',
+      profile: papers,
+    } as const;
+    const bookRule = {
+      id: "book",
+      scope: { mode: "selected", libraries: [{ type: "personal" }] },
+      expression: 'itemType == "book"',
+      profile: books,
+    } as const;
+    const anyRule = {
+      id: "any",
+      scope: { mode: "all" },
+      expression: "",
+      profile: "default",
+    } as const;
+    const { deps } = makeUpdateHarness({
+      content: "",
+      settings: {
+        profiles: [
+          { id: books, label: "Books" },
+          { id: papers, label: "Papers" },
+        ],
+        "profile.selection-rules": [thesisRule, bookRule, anyRule],
+      },
+    });
+    const feature = createNoteFeature(deps);
+    const book = typedItem("book");
+    expect(await feature.resolveCreationProfile({ item: book })).toEqual({
+      selector: books,
+      source: "rule",
+      shouldAsk: true,
+      rule: bookRule,
+    });
+    // A rule that selects Default is a match, not a fallback.
+    expect(
+      await feature.resolveCreationProfile({ item: typedItem("letter") }),
+    ).toEqual({
+      selector: "default",
+      source: "rule",
+      shouldAsk: true,
+      rule: anyRule,
+    });
+    // The book rule is scoped to My Library; a group book falls through to
+    // the catch-all rule.
+    expect(
+      await feature.resolveCreationProfile({
+        item: { ...book, libraryID: 2, groupID: 118 },
+      }),
+    ).toEqual({
+      selector: "default",
+      source: "rule",
+      shouldAsk: true,
+      rule: anyRule,
+    });
+    expect(
+      await feature.resolveCreationProfile({ item: book, headless: papers }),
+    ).toEqual({ selector: papers, source: "headless", shouldAsk: true });
+    expect(
+      await feature.resolveCreationProfile({
+        item: book,
+        headless: papers,
+        asked: "default",
+      }),
+    ).toEqual({ selector: "default", source: "asked", shouldAsk: true });
+    // Reordering changes the next operation: the catch-all now wins first.
+    deps.settings.update({
+      "profile.selection-rules": [anyRule, thesisRule, bookRule],
+    });
+    expect(await feature.resolveCreationProfile({ item: book })).toEqual({
+      selector: "default",
+      source: "rule",
+      shouldAsk: true,
+      rule: anyRule,
+    });
+    deps.settings.update({ "profile.selection-rules": [thesisRule] });
+    expect(await feature.resolveCreationProfile({ item: book })).toEqual({
+      selector: "default",
+      source: "bound",
+      shouldAsk: true,
+    });
+  });
+  it("stops at a broken in-scope rule or an unavailable target and ignores rules outside the Item's Library", async () => {
+    const books = "Bk3Qn7XvT2Lp" as ProfileId;
+    const gone = "Rz9Wm4YfH6Kd" as ProfileId;
+    const brokenGroupRule = {
+      id: "broken-group",
+      scope: { mode: "selected", libraries: [{ type: "group", groupID: 118 }] },
+      expression: "itemType ==",
+      profile: books,
+    } as const;
+    const goneRule = {
+      id: "gone",
+      scope: { mode: "all" },
+      expression: 'itemType == "book"',
+      profile: gone,
+    } as const;
+    const bookRule = {
+      id: "book",
+      scope: { mode: "all" },
+      expression: 'itemType == "book"',
+      profile: books,
+    } as const;
+    const brokenRule = {
+      id: "broken",
+      scope: { mode: "all" },
+      expression: 'title == "x"',
+      profile: books,
+    } as const;
+    const { deps } = makeUpdateHarness({
+      content: "",
+      settings: {
+        profiles: [{ id: books, label: "Books" }],
+        "profile.selection-rules": [brokenGroupRule, goneRule, bookRule],
+      },
+    });
+    const feature = createNoteFeature(deps);
+    const book = typedItem("book");
+    expect(await feature.resolveCreationProfile({ item: book })).toEqual({
+      selector: "default",
+      source: "bound",
+      shouldAsk: true,
+      problem: { kind: "unavailable-target", rule: goneRule, selector: gone },
+    });
+    expect(
+      await feature.resolveCreationProfile({
+        item: { ...book, libraryID: 2, groupID: 118 },
+      }),
+    ).toEqual({
+      selector: "default",
+      source: "bound",
+      shouldAsk: true,
+      problem: {
+        kind: "broken-rule",
+        rule: brokenGroupRule,
+        problem: { code: "syntax", from: 11, to: 11, text: "" },
+      },
+    });
+    // A valid nonmatch of the unavailable target advances to the book rule.
+    deps.settings.update({
+      "profile.selection-rules": [
+        { ...goneRule, expression: 'itemType == "thesis"' },
+        bookRule,
+      ],
+    });
+    expect(await feature.resolveCreationProfile({ item: book })).toEqual({
+      selector: books,
+      source: "rule",
+      shouldAsk: true,
+      rule: bookRule,
+    });
+    // A broken rule before a matching one stops selection even with Default
+    // as the only Profile: the picker opens instead of silently using it.
+    const defaultOnly = makeUpdateHarness({
+      content: "",
+      settings: {
+        "profile.selection-rules": [
+          brokenRule,
+          { ...bookRule, profile: "default" },
+        ],
+      },
+    }).deps;
+    expect(
+      await createNoteFeature(defaultOnly).resolveCreationProfile({
+        item: book,
+      }),
+    ).toEqual({
+      selector: "default",
+      source: "bound",
+      shouldAsk: true,
+      problem: {
+        kind: "broken-rule",
+        rule: brokenRule,
+        problem: { code: "unsupported", from: 0, to: 12, text: 'title == "x"' },
+      },
+    });
+  });
+  it("creates at the previewed path under the shown Profile after rules change, and stops once that Profile is gone", async () => {
+    const books = "Bk3Qn7XvT2Lp" as ProfileId;
+    const bookRule = {
+      id: "book",
+      scope: { mode: "all" },
+      expression: 'itemType == "book"',
+      profile: books,
+    } as const;
+    const { deps } = makeUpdateHarness({
+      content: "",
+      settings: {
+        profiles: [
+          {
+            id: books,
+            label: "Books",
+            document: "books.md",
+            bindings: { "note.literature-folder": "Reading" },
+          },
+        ],
+        "profile.selection-rules": [bookRule],
+      },
+    });
+    const app = makeApp();
+    deps.app = app;
+    const document = makeDocumentTemplate({ filename: "Shelf/Root" });
+    deps.template = {
+      ...makeTemplate(),
+      getLiteratureNoteTemplate: (reference) =>
+        reference === "books.md" ? document : undefined,
+    };
+    vi.mocked(fetchNoteContext).mockImplementation(
+      (_client, current, options) =>
+        stubNoteContext(current, [], options!.resolvers),
+    );
+    const feature = createNoteFeature(deps);
+    const book = typedItem("book");
+    const selection = await feature.resolveCreationProfile({ item: book });
+    expect(selection).toMatchObject({ selector: books, source: "rule" });
+    const previews = await feature.prepareCreationProfiles(book);
+    const preview = previews.find(({ selector }) => selector === books)!;
+    expect(preview.path).toBe("Reading/Shelf/Root.md");
+    // The rule list and the Item change after the preview; the pending
+    // write keeps the shown Profile and destination.
+    deps.settings.update({ "profile.selection-rules": [] });
+    const result = await preview.create();
+    expect(result).toMatchObject({
+      outcome: "created",
+      file: { path: "Reading/Shelf/Root.md" },
+    });
+    expect(app.vault.contentByPath.get("Reading/Shelf/Root.md")).toContain(
+      `${FIELD_LITERATURE_NOTE_PROFILE}: Books (${books})`,
+    );
+    // The next operation reads the current (now empty) rules.
+    expect(
+      await feature.resolveCreationProfile({
+        item: { ...book, indexedKey: "OTHER234", key: "OTHER234", itemID: 2 },
+      }),
+    ).toEqual({ selector: "default", source: "bound", shouldAsk: true });
+
+    const other = {
+      ...book,
+      indexedKey: "OTHER234",
+      key: "OTHER234",
+      itemID: 2,
+    };
+    const [, pending] = await feature.prepareCreationProfiles(other);
+    expect(pending!.selector).toBe(books);
+    deps.settings.update({ profiles: [] } as never);
+    expect(await pending!.create()).toMatchObject({
+      outcome: "refused",
+      diagnostic: { code: "unknown-literature-note-profile", stamp: books },
+    });
+    expect(app.vault.create).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -4358,6 +4637,12 @@ function makeItem(
     baseFields,
     venue: resolveVenue(baseFields),
   };
+}
+
+/** A My Library Item of one built-in type, as rules read it. */
+function typedItem(itemType: string): Item {
+  const item = makeCreateGateItem();
+  return { ...item, fields: { ...item.fields, itemType } as ItemFields };
 }
 
 function makeCreateGateItem(): Item {

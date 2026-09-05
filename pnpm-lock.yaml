@@ -502,6 +502,9 @@ importers:
       '@zotlit/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@zotlit/filter-expression':
+        specifier: workspace:*
+        version: link:../../packages/filter-expression
       '@zotlit/item-lookup':
         specifier: workspace:*
         version: link:../../packages/item-lookup

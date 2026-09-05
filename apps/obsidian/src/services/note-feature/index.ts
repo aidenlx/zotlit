@@ -22,6 +22,8 @@ export {
   type CreateNoteResult,
   type CreationProfileSources,
   type CreationProfileSelection,
+  type CreationProfileSource,
+  type CreationSelectionProblem,
   type PreparedCreationProfile,
   type ProfileNotePreview,
   type ProfileNotePreviewOptions,

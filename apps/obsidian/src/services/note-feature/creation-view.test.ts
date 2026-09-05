@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 
 import type { Item } from "@zotlit/db";
 
+import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
@@ -53,6 +54,88 @@ it("creates a note from the New profile dialog's prepared callback without re-re
   expect(create).toHaveBeenCalledOnce();
   expect(deps.noteFeature.prepareCreationProfiles).toHaveBeenCalledOnce();
   expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
+});
+
+it("resolves the selection from the Item and hands the picker its rule reason, problem, and previews", async () => {
+  const books = "Bk3Qn7XvT2Lp" as ProfileId;
+  const rule = {
+    id: "book",
+    scope: { mode: "all" as const },
+    expression: 'itemType == "book"',
+    profile: books,
+  };
+  const preview = {
+    selector: books,
+    label: "Books",
+    folder: "Books",
+    citationStyle: null,
+    document: "books.md",
+    path: "Books/Paper.md",
+    create: vi.fn(async () => ({
+      outcome: "created" as const,
+      file: { path: "Books/Paper.md" } as TFile,
+    })),
+  };
+  const resolveCreationProfile = vi.fn(async () => ({
+    selector: books,
+    source: "rule" as const,
+    shouldAsk: true,
+    rule,
+  }));
+  const deps = {
+    app: {} as App,
+    zoteroPref: { dataDir: null },
+    noteFeature: {
+      resolveCreationProfile,
+      prepareCreationProfiles: vi.fn(async () => [preview]),
+      createNote: vi.fn(),
+    },
+  } as unknown as InteractiveCreationDeps;
+  const item = { indexedKey: "ABCD2345" } as Item;
+  vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
+    id: books,
+    label: "Books",
+  });
+  await expect(createNoteInteractively(deps, item)).resolves.toMatchObject({
+    path: "Books/Paper.md",
+  });
+  expect(resolveCreationProfile).toHaveBeenCalledExactlyOnceWith({ item });
+  expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
+    deps.app,
+    expect.objectContaining({
+      preselected: books,
+      source: "rule",
+      reason: m.settings_profile_rule_summary({
+        conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
+        libraries: m.settings_library_scope_all(),
+      }),
+      problem: undefined,
+      previews: [preview],
+    }),
+  );
+  expect(preview.create).toHaveBeenCalledOnce();
+  expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
+
+  resolveCreationProfile.mockResolvedValueOnce({
+    selector: "default",
+    source: "bound",
+    shouldAsk: true,
+    problem: { kind: "unavailable-target", rule, selector: books },
+  } as never);
+  vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce(undefined);
+  await expect(createNoteInteractively(deps, item)).resolves.toBeNull();
+  expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
+    deps.app,
+    expect.objectContaining({
+      preselected: "default",
+      problem: m.modal_profile_problem_unavailable_target({
+        rule: m.settings_profile_rule_summary({
+          conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
+          libraries: m.settings_library_scope_all(),
+        }),
+      }),
+    }),
+  );
 });
 
 it("imports from the contextual picker without creating a note", async () => {

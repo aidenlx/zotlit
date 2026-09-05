@@ -84,6 +84,18 @@ _Avoid_: Profile binding (a Profile's configuration), saved search (a Zotero sea
 The choice of a Literature Note Profile for a new Literature Note from the source Item's first matching Profile Selection Rule. Existing notes retain their recorded Profile membership.
 _Avoid_: Profile resolution (resolving an already chosen selector), automatic Profile switch (changing an existing note's membership)
 
+**Rule condition**:
+The Filter Expression a Profile Selection Rule stores, restricted to the supported condition contract: built-in Zotero item type tests, combined with `&&`, `||`, `!`, and grouping. The rule editor writes the canonical expression; an expression outside the contract is a broken rule, never a silent nonmatch. Library scope is a separate part of the rule, not a condition. The language itself is the Filter Expression context (`packages/filter-expression/CONTEXT.md`).
+_Avoid_: filter (bare), query, search
+
+**Selection source**:
+Where a new Literature Note's Profile came from, in priority order: the manual choice for the current operation, the Profile a command or Companion link supplied, the first matching Profile Selection Rule, and Default. Creation surfaces show the source beside the selected Profile; a rule source names its rule.
+_Avoid_: last-used Profile, remembered Profile (retired)
+
+**Selection problem**:
+The outcome that stops Automatic Profile Selection and requires an explicit choice for the affected Item: an in-scope Profile Selection Rule whose condition cannot be evaluated, a matching rule whose target Profile is unavailable, or an invalid explicitly supplied Profile selector. Distinct from a valid nonmatch, which advances to the next rule.
+_Avoid_: rule error (too broad), fallback
+
 **Managed Block**:
 The `{% managed %}` … `{% endmanaged %}` block in a Literature Note Template document's body — a self-contained sub-template supported in both Liquid and Eta. It renders in isolation: variables assigned outside the block are not visible inside, so an update-time render is identical to a create-time render. On create it renders in place within the body; on update it alone re-renders to refill the note's Managed Region. When its tags are Line-Owning Tags, the Managed Region occupies exactly the lines the block occupied. Role-equivalent to the retired `content` Template.
 _Avoid_: managed region (the rendered output in the note, not the template source), content block

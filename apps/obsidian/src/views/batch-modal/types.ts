@@ -7,6 +7,7 @@ import type {
   BatchRunControls,
   BatchRunResult,
 } from "@/services/batch-run";
+import type { CreationProfileSource } from "@/services/note-feature";
 
 export type {
   BatchClassifyControls,
@@ -27,7 +28,7 @@ export interface BatchCounts {
 /** One shared creation destination; the runner owns its current selection. */
 export interface BatchProfileChoice {
   readonly label: string;
-  readonly source: "headless" | "bound" | "asked";
+  readonly source: CreationProfileSource;
   choose(): Promise<void>;
 }
 

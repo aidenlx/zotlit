@@ -111,6 +111,7 @@ it.each(["open", "update"] as const)(
     await openCompanionNote(harness.deps, REF, { action, profile: PAPERS });
     expect(harness.resolveCreationProfile).toHaveBeenCalledExactlyOnceWith({
       headless: PAPERS,
+      item: harness.item,
     });
     expect(harness.create).toHaveBeenCalledOnce();
     expect(harness.openLinkText).toHaveBeenCalledExactlyOnceWith(
