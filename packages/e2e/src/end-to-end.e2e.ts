@@ -676,12 +676,28 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // The Companion pushes the selection over HTTP, the batch transport
     // documented in packages/protocol; the plugin answers with its
-    // confirmation modal.
-    const pushed = await obEval(
-      vaultId,
-      `(async function(){var services=app.plugins.plugins.zotlit.services;var settings=services.settings.current;var response=await fetch('http://'+settings['server.hostname']+':'+settings['server.port']+'/literature-notes',{method:'PUT',headers:{'content-type':'application/json',${JSON.stringify(PROTOCOL_VERSION_HEADER)}:${JSON.stringify(String(PROTOCOL_VERSION))},${JSON.stringify(SOURCE_ID_HEADER)}:services.zoteroPref.sourceId},body:JSON.stringify({items:${JSON.stringify(selection.map((item) => item.itemID))}})});return String(response.status);})()`,
+    // confirmation modal. The request leaves from this process, as the
+    // Companion's does: a renderer fetch would preflight without the
+    // protocol header and be rejected.
+    const server = JSON.parse(
+      await obEval(
+        vaultId,
+        "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.settings.current;return JSON.stringify({hostname:settings['server.hostname'],port:settings['server.port'],sourceId:services.zoteroPref.sourceId});})()",
+      ),
+    ) as { hostname: string; port: number; sourceId: string };
+    const pushed = await fetch(
+      `http://${server.hostname}:${server.port}/literature-notes`,
+      {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+          [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
+          [SOURCE_ID_HEADER]: server.sourceId,
+        },
+        body: JSON.stringify({ items: selection.map((item) => item.itemID) }),
+      },
     );
-    expect(pushed).toBe("204");
+    expect(pushed.status).toBe(204);
     expect(
       await obEvalUntil(
         vaultId,
