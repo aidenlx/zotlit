@@ -239,6 +239,31 @@ export class WorkbenchDocumentController {
     return { header: { from: line.from, to: line.to }, source };
   }
 
+  /** Render scopes in master offsets, shared by completion and embedded highlighting. */
+  get templateRegions(): readonly (WorkbenchSliceRange & {
+    root: "note" | "annotation" | "filename";
+    expression: boolean;
+  })[] {
+    const annotation = this.annotationSection?.source;
+    const filename = this.filenameSlice;
+    return [
+      ...(annotation
+        ? [{ ...annotation, root: "annotation" as const, expression: false }]
+        : []),
+      { ...this.sliceRange("note"), root: "note", expression: false },
+      ...(filename
+        ? [{ ...filename, root: "filename" as const, expression: false }]
+        : []),
+      ...(this.managedEntries ?? [])
+        .filter((entry) => entry.language === "expr")
+        .map((entry) => ({
+          ...entry.expression,
+          root: "note" as const,
+          expression: true,
+        })),
+    ];
+  }
+
   get canUndo(): boolean {
     return undoDepth(this.#state) > 0;
   }

@@ -4,6 +4,7 @@ export default defineConfig({
   entry: [
     {
       language: "./src/language/index.ts",
+      completion: "./src/language/semantics.ts",
       document: "./src/document/index.ts",
       render: "./src/render/index.ts",
       explorer: "./src/explorer/index.ts",

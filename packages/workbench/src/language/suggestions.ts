@@ -4,12 +4,7 @@
 import { regex } from "arkregex";
 
 import type { ContractRoot } from "@zotlit/db";
-import type {
-  ContractIR,
-  ContractMember,
-  ContractType,
-} from "@zotlit/db/contract/ir";
-import contractJson from "@zotlit/db/contract/ir.json";
+import type { ContractMember, ContractType } from "@zotlit/db/contract/ir";
 import { ANNOTATION_HEADER } from "@zotlit/templates/constants";
 import type { TemplateLanguage } from "@zotlit/templates/constants";
 import {
@@ -19,12 +14,19 @@ import {
   ZOTLIT_TAG_NAMES,
 } from "@zotlit/templates/liquid";
 
-import { etaRange } from "./eta-language";
-import type { EtaRange } from "./eta-language";
-import { liquidRanges, STRUCTURAL_TAGS } from "./liquid";
-import type { LiquidRange } from "./liquid";
-
-const contract = contractJson as ContractIR;
+import {
+  contract,
+  resolve,
+  members,
+  describe,
+  child,
+  sampleValue,
+} from "./contract";
+import { etaRange } from "./eta-syntax";
+import type { EtaRange } from "./eta-syntax";
+import { liquidRanges, STRUCTURAL_TAGS } from "./liquid-ranges";
+import type { LiquidRange } from "./liquid-ranges";
+import { localsAt } from "./scope";
 const JSDOC_LINK = regex("\\{@link (?<target>[^}]+)}", "g");
 const ANNOTATION_SHORTCUT_DETAIL =
   "Renders the Profile's final Annotation Section with the argument bound to zt. Outside a Profile, uses the named annotation partial. Missing or null data is an error.";
@@ -32,12 +34,17 @@ const ANNOTATION_SHORTCUT_DETAIL =
 export interface SuggestionConfig {
   /** The root the document renders against before any Annotation Section. */
   root: ContractRoot;
+  mode?: "expression";
+  /** Source region that owns this render scope, in editor offsets. */
+  scope?: { from: number; to: number };
   /** @default "liquid" */
   language?: TemplateLanguage;
   /** Partial names the host has registered, offered after `render` / `include(`. */
   partials: readonly string[];
   /** Serialized Template data for the root; supplies `Sample:` hints. */
   sample?: unknown;
+  /** Human labels in common-field order, supplied by the host. */
+  fields?: readonly { path: string; label: string }[];
 }
 
 /** Display category driving an option's icon/grouping in the editor UI. */
@@ -64,6 +71,10 @@ export interface Suggestion {
   to?: number;
   /** UTF-16 offset within the inserted text. */
   cursorOffset?: number;
+  path?: string;
+  displayLabel?: string;
+  /** Accepting this value continues member completion. */
+  continuation?: boolean;
 }
 export interface SuggestionResult {
   from: number;
@@ -72,7 +83,57 @@ export interface SuggestionResult {
   tagEnd: number;
   root: ContractRoot;
   trigger: string;
+  language: TemplateLanguage;
+  expression?: boolean;
+  range: TemplateRange;
   options: Suggestion[];
+}
+
+/** One source edit and the resulting caret, in the source's UTF-16 offsets. */
+export interface CompletionEdit {
+  from: number;
+  to: number;
+  insert: string;
+  anchor: number;
+  continue: boolean;
+}
+
+/** Resolve option-specific replacements and preserve the document's line endings. */
+export function completionEdit(
+  source: string,
+  result: SuggestionResult,
+  option: Suggestion,
+): CompletionEdit {
+  const from = option.from ?? result.from;
+  let to = option.to ?? result.to;
+  const newline = source.includes("\r\n") ? "\r\n" : "\n";
+  let text = option.insert;
+  if (option.continuation) {
+    if (!text.endsWith(".")) text += ".";
+    if (source[to] === ".") to++;
+  }
+  if (
+    !result.expression &&
+    option.category === "field" &&
+    !option.continuation &&
+    result.range.kind === "output"
+  ) {
+    const tail = source.slice(to, result.range.to);
+    const close = result.language === "eta" ? " %>" : " }}";
+    if (/^\s*(?:-?}}|[-_]?%>)?$/.test(tail)) {
+      text += result.range.closed ? tail : tail + close;
+      to = result.range.to;
+    }
+  }
+  const insert = text.replaceAll(/\r?\n/g, newline);
+  const prefix = text.slice(0, option.cursorOffset ?? text.length);
+  return {
+    from,
+    to,
+    insert,
+    anchor: from + prefix.replaceAll(/\r?\n/g, newline).length,
+    continue: option.continuation ?? false,
+  };
 }
 
 /**
@@ -94,57 +155,6 @@ export function rootAt(
     from = end + 1;
   }
   return root;
-}
-
-function resolve(type: ContractType): ContractType {
-  return type.kind === "ref" ? resolve(contract.types[type.name]!) : type;
-}
-function members(type: ContractType): readonly ContractMember[] {
-  const value = resolve(type);
-  if (value.kind === "object") return value.members;
-  if (value.kind === "union") return value.options.flatMap(members);
-  if (value.kind === "helper") return members(value.value);
-  return [];
-}
-function describe(type: ContractType): string {
-  switch (type.kind) {
-    case "primitive":
-      return type.type;
-    case "literal":
-      return JSON.stringify(type.value);
-    case "ref":
-      return type.name;
-    case "array":
-      return `${describe(type.items)}[]`;
-    case "helper":
-      return type.signature;
-    case "union":
-      return type.options.map(describe).join(" | ");
-    case "stringified":
-      return type.type;
-    default:
-      return type.kind;
-  }
-}
-function child(type: ContractType, key: string): ContractType | undefined {
-  const value = resolve(type);
-  if (
-    value.kind === "array" &&
-    (key === "first" || key === "last" || /^\d+$/.test(key))
-  )
-    return value.items;
-  return members(value).find((member) => member.name === key)?.type;
-}
-function sampleValue(sample: unknown, path: readonly string[]): unknown {
-  let value = sample;
-  for (const key of path) {
-    if (Array.isArray(value) && (key === "first" || key === "last"))
-      value = key === "first" ? value[0] : value.at(-1);
-    else if (value && typeof value === "object")
-      value = (value as Record<string, unknown>)[key];
-    else return undefined;
-  }
-  return value;
 }
 
 type TemplateRange = LiquidRange | EtaRange;
@@ -282,10 +292,12 @@ function fieldOptions({
     const value = sampleValue(sample, [...path, field.name]);
     const helper = resolve(field.type);
     return {
+      path: ["zt", ...path, field.name].join("."),
       label: field.name,
       insert: field.name,
       category: "field",
       type: describe(field.type),
+      continuation: members(field.type).length > 0 || helper.kind === "array",
       detail: [
         field.description
           ?.replaceAll(JSDOC_LINK, "$<target>")
@@ -478,6 +490,37 @@ export function suggestions(
   position: number,
   config: SuggestionConfig,
 ): SuggestionResult | null {
+  if (config.scope || config.mode === "expression") {
+    const { scope, mode, ...rest } = config;
+    const from = scope?.from ?? 0;
+    const to = scope?.to ?? source.length;
+    if (position < from || position > to) return null;
+    const prefix = mode === "expression" ? "{{ " : "";
+    const found = suggestions(
+      prefix + source.slice(from, to),
+      position - from + prefix.length,
+      rest,
+    );
+    if (!found) return null;
+    const offset = from - prefix.length;
+    return {
+      ...found,
+      expression: mode === "expression",
+      from: found.from + offset,
+      to: found.to + offset,
+      tagEnd: found.tagEnd + offset,
+      range: {
+        ...found.range,
+        from: found.range.from + offset,
+        to: found.range.to + offset,
+      },
+      options: found.options.map((option) => ({
+        ...option,
+        ...(option.from === undefined ? {} : { from: option.from + offset }),
+        ...(option.to === undefined ? {} : { to: option.to + offset }),
+      })),
+    };
+  }
   const isEta = config.language === "eta";
   const profile = isEta ? ETA_PROFILE : LIQUID_PROFILE;
   const range = profile.findRange(source, position);
@@ -490,9 +533,9 @@ export function suggestions(
     tagEnd: range.to,
     root,
     trigger,
-    options: options.filter((o) =>
-      o.label.toLowerCase().startsWith(query.toLowerCase()),
-    ),
+    language: config.language ?? "liquid",
+    range,
+    options: rankSuggestions(options, query, config),
   });
 
   const partial = profile.partialPattern.exec(before);
@@ -512,24 +555,57 @@ export function suggestions(
   });
   if (triggered !== undefined) return triggered;
 
+  const rootType: ContractType = {
+    kind: "ref",
+    name: contract.roots[root]!.type,
+  };
+  const locals = isEta
+    ? new Map([["zt", rootType]])
+    : localsAt(source, position, rootType);
   const rootOption: Suggestion = {
     label: "zt",
     insert: "zt.",
+    continuation: true,
     category: "field",
     type: contract.roots[root]!.type,
     detail: `The ${root} root in this block.`,
   };
-  const pathMatch = regex("(?<path>zt(?:\\.[\\w]*)*)$").exec(before);
+  const rootOptions: Suggestion[] = [
+    ...fieldOptions({
+      fields: members(rootType),
+      path: [],
+      sample: config.sample,
+      isEta,
+    }).map((option) => ({ ...option, insert: `zt.${option.insert}` })),
+    rootOption,
+    ...[...locals]
+      .filter(([name]) => name !== "zt")
+      .map(
+        ([name, type]): Suggestion => ({
+          label: name,
+          insert: name,
+          category: "field",
+          type: type ? describe(type) : "unknown",
+          continuation:
+            type !== undefined &&
+            (members(type).length > 0 || resolve(type).kind === "array"),
+          detail: "",
+        }),
+      ),
+  ];
+  const search = regex("^\\{\\{-?\\s*(?<query>[A-Za-z_]\\w*(?: +\\w*)*)$").exec(
+    before,
+  );
+  if (search) return result("Root", search.groups.query, rootOptions);
+  const pathMatch = regex("(?<path>[A-Za-z_]\\w*(?:\\.[\\w]*)*)$").exec(before);
   if (!pathMatch)
-    return /\s$/.test(before) ? result("Root", "", [rootOption]) : null;
+    return /\s$|^\{\{-?$/.test(before) ? result("Root", "", rootOptions) : null;
   const parts = pathMatch.groups.path.split(".");
-  if (parts.length === 1) return result("Root", "zt", [rootOption]);
+  if (parts.length === 1) return result("Root", parts[0]!, rootOptions);
   const query = parts.pop()!;
   const path = parts.slice(1);
-  let type: ContractType | undefined = {
-    kind: "ref",
-    name: contract.roots[root]!.type,
-  };
+  let type: ContractType | undefined = locals.get(parts[0]!);
+  if (!type) return null;
   for (const key of path) {
     type = child(type, key);
     if (!type) return null;
@@ -600,4 +676,47 @@ export function hoverHint(
     (entry) => entry.label === source.slice(from, to),
   );
   return result && option ? { ...result, from, to, options: [option] } : null;
+}
+
+/** Rank once in the core so host widgets display the same order. */
+function rankSuggestions(
+  options: Suggestion[],
+  query: string,
+  config: SuggestionConfig,
+): Suggestion[] {
+  const fields = config.fields ?? [];
+  return options
+    .map((option, index) => {
+      const common = fields.findIndex((field) => field.path === option.path);
+      const displayLabel = common < 0 ? option.label : fields[common]!.label;
+      const score = query
+        ? Math.min(
+            ...[option.label, displayLabel, option.path ?? ""].map((text) =>
+              matchScore(text, query),
+            ),
+          )
+        : 0;
+      return {
+        option: common < 0 ? option : { ...option, displayLabel },
+        score,
+        order: common < 0 ? fields.length + index : common,
+      };
+    })
+    .filter(({ score }) => Number.isFinite(score))
+    .sort((a, b) => a.score - b.score || a.order - b.order)
+    .map(({ option }) => option);
+}
+
+function matchScore(value: string, search: string): number {
+  const text = value.toLowerCase();
+  const query = search.toLowerCase();
+  if (text === query) return 0;
+  if (text.startsWith(query)) return 1;
+  let offset = 0;
+  for (const char of query) {
+    const found = text.indexOf(char, offset);
+    if (found < 0) return Infinity;
+    offset = found + 1;
+  }
+  return 2;
 }

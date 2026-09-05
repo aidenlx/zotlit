@@ -1,7 +1,7 @@
 // The slice editor: a CodeMirror view over one region of the master document,
 // with no history of its own. Modelled on Obsidian's Live Preview table cells.
 
-import { defaultKeymap } from "@codemirror/commands";
+import { defaultKeymap, isolateHistory } from "@codemirror/commands";
 import {
   Annotation,
   EditorSelection,
@@ -113,10 +113,14 @@ class SliceSync implements PluginValue {
       this.controller.state.doc.length + grown,
     );
     const userEvent = transaction.annotation(Transaction.userEvent);
+    const isolation = transaction.annotation(isolateHistory);
     this.controller.dispatch({
       changes,
       selection: EditorSelection.cursor(head),
-      annotations: sliceEdit.of(this.id),
+      annotations: [
+        sliceEdit.of(this.id),
+        ...(isolation ? [isolateHistory.of(isolation)] : []),
+      ],
       ...(userEvent === undefined ? {} : { userEvent }),
     });
   }

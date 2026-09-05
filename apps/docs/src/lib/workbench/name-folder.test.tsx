@@ -11,9 +11,7 @@ import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 
 import { m } from "@/paraglide/messages.js";
 
-import { templateRootAt } from "./fields";
 import { NameFolderPane } from "./name-folder";
-import type { FieldTrigger } from "./slice-editor";
 
 /**
  * A Profile of the reader's own, which is what carries bindings: one folder
@@ -67,8 +65,6 @@ function pane(
 interface OpenPane extends Disposable {
   controller: WorkbenchDocumentController;
   host: HTMLElement;
-  /** Every `{{` the note-name editor reported, in the order it reported them. */
-  triggers: FieldTrigger[];
 }
 
 /** The tab mounted for real, so the editor and the confirmation both run. */
@@ -77,21 +73,18 @@ function openPane(source: string): OpenPane {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
-  const triggers: FieldTrigger[] = [];
   act(() => {
     root.render(
       <NameFolderPane
         controller={controller}
         manifest={controller.document!.manifest}
         filename="Tufte1983Visual"
-        onFieldTrigger={(trigger) => triggers.push(trigger)}
       />,
     );
   });
   return {
     controller,
     host,
-    triggers,
     [Symbol.dispose]() {
       act(() => root.unmount());
       host.remove();
@@ -204,26 +197,25 @@ describe("the Name and folder tab", () => {
     expect(markup).not.toContain(m.workbench_name_use_default());
   });
 
-  it("offers the Filename Root over a `{{` typed in the note name", () => {
+  it("offers Filename Root fields while typing in the note name", async () => {
     using tab = openPane(OWN_PROFILE);
     const view = EditorView.findFromDOM(
       tab.host.querySelector<HTMLElement>(".cm-editor")!,
     )!;
-    const head = view.state.doc.length;
-
-    act(() => {
+    await act(async () => {
+      view.focus();
       view.dispatch({
-        changes: { from: head, insert: "{{ }}" },
-        selection: { anchor: head + 2 },
+        changes: { from: 0, to: view.state.doc.length, insert: "{{ zt." },
+        selection: { anchor: 6 },
         userEvent: "input.type",
       });
     });
-
-    const trigger = tab.triggers.at(-1)!;
-    const { document: profile, source, filenameSlice } = tab.controller;
-    expect(source.slice(trigger.range.from, trigger.range.to)).toBe("{{");
-    expect(templateRootAt(profile, filenameSlice, trigger.range.from)).toBe(
-      "filename",
+    const options = [...document.querySelectorAll('[role="option"]')].map(
+      (node) => node.textContent,
+    );
+    expect(options.some((text) => text?.includes("zt.citationKey"))).toBe(true);
+    expect(options.some((text) => text?.includes("zt.annotations"))).toBe(
+      false,
     );
   });
 

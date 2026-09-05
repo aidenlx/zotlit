@@ -3,6 +3,9 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 
+import { applyTemplateCompletion } from "@/language/completion";
+import { suggestions } from "@/language/suggestions";
+
 import { WorkbenchDocumentController } from "./controller";
 import type { WorkbenchSliceId } from "./controller";
 import { workbenchSlice } from "./slice";
@@ -45,6 +48,35 @@ function open(
 }
 
 describe("workbenchSlice", () => {
+  it("keeps consecutive accepted completions as separate undo steps", () => {
+    const controller = new WorkbenchDocumentController(
+      PROFILE.replace("# {{ zt.title }}", "{{ zt.ti }} {{ zt.ke }}"),
+    );
+    using note = open(controller, "note");
+    const accept = (query: string, field: string) => {
+      const source = note.text();
+      const result = suggestions(source, source.indexOf(query) + query.length, {
+        root: "note",
+        partials: [],
+      })!;
+      applyTemplateCompletion(
+        note.view,
+        result,
+        result.options.find((option) => option.label === field)!,
+      );
+    };
+    accept("zt.ti", "title");
+    accept("zt.ke", "key");
+    expect(note.text()).toBe("{{ zt.title }} {{ zt.key }}\n");
+    note.view.dispatch({
+      changes: { from: note.view.state.selection.main.head, insert: "!" },
+      userEvent: "input.type",
+    });
+    controller.undo();
+    expect(note.text()).toBe("{{ zt.title }} {{ zt.key }}\n");
+    controller.undo();
+    expect(note.text()).toBe("{{ zt.title }} {{ zt.ke }}\n");
+  });
   it.each(["\n", "\r\n"])(
     "isolates note replacement, deletion, and undo with %j line endings",
     (lineBreak) => {

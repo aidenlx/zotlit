@@ -8,14 +8,12 @@ import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import { m } from "@/paraglide/messages.js";
 
 import {
-  FIELD_TRIGGER,
   commonRows,
   insertRange,
   insertSnippet,
   rootData,
   rowMatches,
   templateRootAt,
-  triggerHoldsCaret,
 } from "./fields";
 import type { SampleItem, TemplateRoot } from "./fields";
 
@@ -231,11 +229,11 @@ describe("insertSnippet", () => {
     const draft = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
     // The two braces the reader types are what opens the popup.
     draft.dispatch({
-      changes: { from: heading, insert: FIELD_TRIGGER },
+      changes: { from: heading, insert: "{{" },
       userEvent: "input.type",
     });
     insertSnippet(draft, "note", {
-      target: { from: heading, to: heading + FIELD_TRIGGER.length },
+      target: { from: heading, to: heading + 2 },
       snippet,
     });
     expect(draft.source.slice(heading, heading + snippet.length)).toBe(snippet);
@@ -251,20 +249,5 @@ describe("insertSnippet", () => {
       snippet,
     });
     expect(head).toBe(note.to + snippet.length);
-  });
-});
-
-describe("triggerHoldsCaret", () => {
-  // The two braces a reader just typed, at an arbitrary offset.
-  const trigger = { from: 40, to: 42 };
-  const at = (offset: number) =>
-    triggerHoldsCaret(trigger, { from: offset, to: offset });
-
-  it("holds while the caret rests on the braces it opened", () => {
-    expect([at(40), at(41), at(42)]).toEqual([true, true, true]);
-  });
-
-  it("lets go once the caret leaves them", () => {
-    expect([at(39), at(43)]).toEqual([false, false]);
   });
 });

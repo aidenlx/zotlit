@@ -68,6 +68,14 @@ const COMMON_FIELDS: Record<TemplateRoot, readonly CommonField[]> = {
   ],
 };
 
+/** Human labels and common-field order shared by discovery and typing completion. */
+export function completionFields(root: TemplateRoot) {
+  return COMMON_FIELDS[root].map((field) => ({
+    path: `zt.${field.key}`,
+    label: field.label(),
+  }));
+}
+
 /** The name shown in the panel's corner, so the reader knows what the list is for. */
 export const ROOT_LABEL: Record<TemplateRoot, () => string> = {
   note: m.workbench_fields_root_note,
@@ -177,7 +185,7 @@ export function fieldValueText(node: DisplayNode): string {
  */
 export const SNIPPET_ENGINE: TemplateEngine = "liquid";
 
-/** The two braces that open the field list, and the text an insertion replaces. */
+/** The opening delimiter that starts Template Completion. */
 export const FIELD_TRIGGER = "{{";
 
 /**
@@ -209,12 +217,4 @@ export function insertSnippet(
     userEvent: "input.complete",
   });
   return from + snippet.length;
-}
-
-/** True while the caret still rests on the `{{` the popup opened over. */
-export function triggerHoldsCaret(
-  trigger: WorkbenchSliceRange,
-  caret: WorkbenchSliceRange,
-): boolean {
-  return caret.from >= trigger.from && caret.from <= trigger.to;
 }

@@ -18,7 +18,7 @@ import type {
 import { m } from "@/paraglide/messages.js";
 
 import { SliceEditor } from "./slice-editor";
-import type { FieldTrigger, SuggestionSource } from "./slice-editor";
+import type { SuggestionSource } from "./slice-editor";
 
 /** The manifest, named without depending on the templates package. */
 type ProfileManifest = NonNullable<
@@ -132,7 +132,6 @@ export interface NameFolderPaneProps {
   suggest?: SuggestionSource;
   reveal?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
-  onFieldTrigger?: (trigger: FieldTrigger) => void;
 }
 
 export function NameFolderPane({
@@ -145,7 +144,6 @@ export function NameFolderPane({
   suggest,
   reveal,
   onSelection,
-  onFieldTrigger,
 }: NameFolderPaneProps) {
   // The control a problem named, brought on screen with the keyboard in it. A
   // key the locked details hold opens that block first, so the reader lands on
@@ -219,7 +217,6 @@ export function NameFolderPane({
               reveal={reveal}
               suggest={suggest}
               onSelection={onSelection}
-              onFieldTrigger={onFieldTrigger}
             />
           </div>
         ) : (
