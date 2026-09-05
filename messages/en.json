@@ -40,6 +40,7 @@
   "notice_no_literature_note": "No literature note for @{citekey}.",
   "notice_creating_note": "Creating literature note…",
   "notice_created_note": "Literature note created.",
+  "notice_created_note_under_profile": "Literature note created under {profile}: {path}.",
   "notice_create_note_exists": "A literature note already exists: {path}.",
   "notice_create_note_duplicates": "Multiple literature notes use this Zotero key: {paths}; resolve the duplicates before you create another note.",
   "notice_literature_note_profile_unknown": "Use Switch profile… to replace the unavailable profile “{stamp}” on this literature note.",

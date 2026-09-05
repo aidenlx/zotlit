@@ -400,6 +400,7 @@ export class CitekeyEditor extends Service<void> {
         zoteroPref: this.#zoteroPref,
       },
       zoteroItem,
+      { direct: true },
     );
     if (!file) {
       logger.debug("Citekey note creation cancelled", {

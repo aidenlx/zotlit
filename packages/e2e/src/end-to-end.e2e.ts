@@ -511,6 +511,53 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(ruleNote).toContain(`citekey: ${bookItem.citationKey}`);
     expect(await hasOneIndexedNote(vaultId, bookItem.key)).toBe(true);
 
+    // A citation link to the same Item creates directly under the rule's
+    // Profile: no picker, and the notice names the Profile and the path.
+    await cli([`vault=${vaultId}`, "delete", `path=${ruleNotePath}`]);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(bookItem.key)}).length)`,
+        { expected: "0" },
+      ),
+    ).toBe(true);
+    await using notices = await observeNotices(vaultId);
+    await obEval(
+      vaultId,
+      `(async function(){var plugin=app.plugins.plugins.zotlit;plugin.services.settings.update({'citation.pandoc-citations':true,'citation.open-as-links':true});var file=await app.vault.create('Rule flow source.md',${JSON.stringify(`[@${bookItem.citationKey}]\n`)});var leaf=app.workspace.getLeaf(false);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.setCursor({line:0,ch:5});return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "app.commands.executeCommandById('zotlit:open-citekey')",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await waitFor(async () =>
+        (
+          await readFile(join(e2eVaultPath, ruleNotePath), "utf-8").catch(
+            () => "",
+          )
+        ).includes("%%zt-managed%%"),
+      ),
+    ).toBe(true);
+    expect(
+      await obEval(vaultId, "String(!!document.querySelector('.prompt'))"),
+    ).toBe("false");
+    expect(await notices.read()).toContain(
+      m.notice_created_note_under_profile({
+        profile: booksProfile.label,
+        path: ruleNotePath,
+      }),
+    );
+    const linkedNote = await readFile(
+      join(e2eVaultPath, ruleNotePath),
+      "utf-8",
+    );
+    expect(linkedNote).toContain(`zotlit-profile: Books (${booksProfile.id})`);
+    expect(await hasOneIndexedNote(vaultId, bookItem.key)).toBe(true);
+
     // Leave the later Profile flows what they expect: one Books note and no
     // rules. The rule list is the vault's own; clearing it is an ordinary edit.
     await cli([`vault=${vaultId}`, "delete", `path=${ruleNotePath}`]);

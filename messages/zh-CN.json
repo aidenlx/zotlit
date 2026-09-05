@@ -39,6 +39,7 @@
   "notice_no_literature_note": "@{citekey} 没有文献笔记。",
   "notice_creating_note": "创建文献笔记…",
   "notice_created_note": "文献笔记已创建。",
+  "notice_created_note_under_profile": "已在配置方案“{profile}”下创建文献笔记：{path}。",
   "notice_create_note_exists": "文献笔记已存在：{path}。",
   "notice_create_note_duplicates": "多个文献笔记使用同一个 Zotero 标识符：{paths}；请先解决重复项，再创建笔记。",
   "notice_literature_note_profile_unknown": "请使用“切换配置方案…”为此文献笔记更换不可用的配置方案“{stamp}”。",
