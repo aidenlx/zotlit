@@ -8,6 +8,7 @@ export type {
   BatchFailure,
   BatchManifest,
   BatchProfileChoice,
+  BatchProfileChoiceScope,
   BatchListControls,
   BatchModalOptions,
   BatchModalText,

@@ -13,6 +13,11 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  PROTOCOL_VERSION,
+  PROTOCOL_VERSION_HEADER,
+  SOURCE_ID_HEADER,
+} from "@zotlit/protocol";
+import {
   findScopeCase,
   ITEMS,
   LITERATURE_NOTE_PROFILES,
@@ -69,8 +74,8 @@ const reachable = await isObsidianReachable();
 describe.skipIf(!reachable)("End-to-end Run", () => {
   let vaultId = "";
   let booksNotePath = "";
-  // The rule the settings UI configured below; the deletion flow restores
-  // it so the warning names a rule the GUI produced.
+  // The rule the settings UI configured below; it stays in place through
+  // the batch flow so the deletion warning names a rule the GUI produced.
   let bookRule: {
     id: string;
     scope: unknown;
@@ -569,13 +574,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(linkedNote).toContain(`zotlit-profile: Books (${booksProfile.id})`);
     expect(await hasOneIndexedNote(vaultId, bookItem.key)).toBe(true);
 
-    // Leave the later Profile flows what they expect: one Books note and no
-    // rules. The rule list is the vault's own; clearing it is an ordinary edit.
+    // Leave the later Profile flows what they expect: one Books note, and
+    // the rule in place for the mixed-Library batch and the deletion warning.
     await cli([`vault=${vaultId}`, "delete", `path=${ruleNotePath}`]);
-    await obEval(
-      vaultId,
-      "app.plugins.plugins.zotlit.services.settings.update({'profile.selection-rules':[]});true",
-    );
     expect(
       await obEvalUntil(
         vaultId,
@@ -585,6 +586,275 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
   });
 
+  it("creates each new note of a mixed-Library selection under its own rule result", async () => {
+    // Rows of the batch: Item 61 (My Library book) matches the Books rule of
+    // the previous test; Item 6 (Shared Reading article) matches the Default
+    // rule configured below; Items 57 (My Library preprint) and 9 (Lab
+    // Archive article, outside both rules' Libraries) match nothing; Item 7
+    // keeps its Books note and Item 1 its unstamped Default note.
+    const bookItem = ITEMS.find((item) => item.itemID === 61)!;
+    const sharedItem = ITEMS.find((item) => item.itemID === 6)!;
+    const preprintItem = ITEMS.find((item) => item.itemID === 57)!;
+    const labItem = ITEMS.find((item) => item.itemID === 9)!;
+    const sharedLibrary = LIBRARIES.find(
+      (library) => library.libraryID === sharedItem.libraryID,
+    )!;
+    const creating = [bookItem, sharedItem, preprintItem, labItem];
+    const selection = [...creating, booksProfileTargetItem, targetItem];
+    for (const item of [sharedItem, preprintItem, labItem]) {
+      const note = await indexedNote(vaultId, item.itemID);
+      if (note.path)
+        await cli([`vault=${vaultId}`, "delete", `path=${note.path}`]);
+      expect(await hasIndexedNotes(vaultId, note.indexedKey, 0)).toBe(true);
+    }
+
+    // The second rule, through the same labeled controls: Shared Reading
+    // articles use Default, an explicit match rather than a fallback.
+    await obEval(
+      vaultId,
+      `(function(){app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();var tab=app.setting.openTabById('zotlit');app.setting.navigateToSearchResult({tab,pagePath:[${JSON.stringify(m.settings_page_profiles())}]});return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var heading=Array.from(document.querySelectorAll('.setting-item-heading, .setting-item')).find(el=>el.textContent.includes(${JSON.stringify(m.settings_profile_rules_heading())}));var button=heading&&heading.querySelector('button, .clickable-icon');if(!button)return false;button.click();return true;})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(Array.from(document.querySelectorAll('.modal')).some(modal=>modal.textContent.includes(${JSON.stringify(m.settings_profile_rule_title_new())})))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var scope=Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_rule_scope())}).querySelector('select');scope.value='selected';scope.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+    );
+    // The editor re-renders after every toggle, so each Library row is
+    // looked up afresh until it shows the wanted state.
+    for (const [name, enabled] of [
+      [m.settings_library_scope_personal(), false],
+      [sharedLibrary.name, true],
+    ] as const) {
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(name)});var toggle=row&&row.querySelector('.checkbox-container');if(!toggle)return false;if(toggle.classList.contains('is-enabled')===${enabled})return true;toggle.click();return false;})()`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+    }
+    const configured = await obEval(
+      vaultId,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var selects=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select').length===3)[0].querySelectorAll('select');pick(selects[1],'is');pick(selects[2],'journalArticle');var target=row(${JSON.stringify(m.settings_profile_rule_target())}).querySelector('select');pick(target,'default');return JSON.stringify({type:selects[2].value,target:target.value});})()`,
+    );
+    expect(JSON.parse(configured)).toEqual({
+      type: "journalArticle",
+      target: "default",
+    });
+    expect(
+      await clickModalButton(vaultId, m.settings_profile_rule_save()),
+    ).toBe(true);
+    const stored = JSON.parse(
+      await obEval(
+        vaultId,
+        "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'])",
+      ),
+    ) as { scope: unknown; expression: string; profile: string }[];
+    expect(stored).toHaveLength(2);
+    expect(stored[1]).toMatchObject({
+      scope: {
+        mode: "selected",
+        libraries: [{ type: "group", groupID: sharedLibrary.groupID }],
+      },
+      expression: 'itemType == "journalArticle"',
+      profile: "default",
+    });
+    await obEval(vaultId, "app.setting.close();true");
+
+    // The Companion pushes the selection over HTTP, the batch transport
+    // documented in packages/protocol; the plugin answers with its
+    // confirmation modal.
+    const pushed = await obEval(
+      vaultId,
+      `(async function(){var services=app.plugins.plugins.zotlit.services;var settings=services.settings.current;var response=await fetch('http://'+settings['server.hostname']+':'+settings['server.port']+'/literature-notes',{method:'PUT',headers:{'content-type':'application/json',${JSON.stringify(PROTOCOL_VERSION_HEADER)}:${JSON.stringify(String(PROTOCOL_VERSION))},${JSON.stringify(SOURCE_ID_HEADER)}:services.zoteroPref.sourceId},body:JSON.stringify({items:${JSON.stringify(selection.map((item) => item.itemID))}})});return String(response.status);})()`,
+    );
+    expect(pushed).toBe("204");
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(Array.from(document.querySelectorAll('.modal button')).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_confirm_button())}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+
+    // Each new row shows its Profile, reason, and destination before the run.
+    const booksRule = m.settings_profile_rule_summary({
+      conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
+      libraries: m.settings_library_scope_personal(),
+    });
+    const sharedRule = m.settings_profile_rule_summary({
+      conditions: m.settings_profile_rule_item_type_is({
+        type: "Journal Article",
+      }),
+      libraries: m.settings_library_scope_group({
+        groupID: sharedLibrary.groupID!,
+      }),
+    });
+    const bookNotePath = `books/books-${bookItem.citationKey}.md`;
+    const preprintNotePath = `books/books-${preprintItem.citationKey}.md`;
+    const labNotePath = `books/books-${labItem.citationKey}.md`;
+    const confirmation = await obEval(
+      vaultId,
+      "document.querySelector('.modal').textContent",
+    );
+    for (const text of [
+      ...creating.map((item) => item.title),
+      bookNotePath,
+      m.modal_profile_source_rule({ rule: booksRule }),
+      m.modal_profile_source_rule({ rule: sharedRule }),
+      m.batch_profile_reason_unmatched(),
+      m.batch_profile_unmatched_destination({
+        count: 2,
+        label: m.settings_profile_default_name(),
+      }),
+      m.batch_profile_unmatched_help(),
+      m.batch_profile_override_all(),
+      m.batch_profile_override_all_help(),
+    ])
+      expect(confirmation).toContain(text);
+    expect(confirmation).not.toContain(m.batch_profile_affected_help());
+
+    // The fallback moves the two unmatched rows to Books; the rows a rule
+    // matched keep their own Profile.
+    await obEval(
+      vaultId,
+      "document.querySelector('[data-profile-choice-scope=\"unmatched\"] [data-profile-choice]').click();true",
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(!!document.querySelector('.prompt .is-selected'))",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String((document.querySelector('.prompt .is-selected')?.textContent??'').includes(${JSON.stringify(preprintNotePath)}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String((document.querySelector('.modal')?.textContent??'').includes(${JSON.stringify(
+          m.batch_profile_unmatched_destination({
+            count: 2,
+            label: booksProfile.label,
+          }),
+        )}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    const chosen = await obEval(
+      vaultId,
+      "document.querySelector('.modal').textContent",
+    );
+    for (const text of [
+      bookNotePath,
+      preprintNotePath,
+      labNotePath,
+      m.modal_profile_source_rule({ rule: booksRule }),
+      m.modal_profile_source_rule({ rule: sharedRule }),
+      m.batch_profile_source_chosen(),
+    ])
+      expect(chosen).toContain(text);
+    expect(chosen).not.toContain(m.batch_profile_reason_unmatched());
+
+    await using notices = await observeNotices(vaultId);
+    expect(
+      await clickModalButton(vaultId, m.batch_update_confirm_button()),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(Array.from(document.querySelectorAll('.modal button')).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_close())}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    // Summary groups follow the Profiles the run wrote: Books for the rule
+    // match and the two fallback rows, Default for the explicit Default rule.
+    const summary = await obEval(
+      vaultId,
+      "document.querySelector('.modal').textContent",
+    );
+    for (const text of [
+      m.batch_profile_created({ count: 3, label: booksProfile.label }),
+      m.batch_profile_created({
+        count: 1,
+        label: m.settings_profile_default_name(),
+      }),
+      m.batch_profile_updated({ count: 1, label: booksProfile.label }),
+      m.batch_profile_updated({
+        count: 1,
+        label: m.settings_profile_default_name(),
+      }),
+    ]) {
+      expect(summary).toContain(text);
+      expect((await notices.read()).join("\n")).toContain(text);
+    }
+    expect(await clickModalButton(vaultId, m.batch_update_close())).toBe(true);
+
+    for (const [item, path] of [
+      [bookItem, bookNotePath],
+      [preprintItem, preprintNotePath],
+      [labItem, labNotePath],
+    ] as const) {
+      expect(
+        await waitFor(async () =>
+          (
+            await readFile(join(e2eVaultPath, path), "utf-8").catch(() => "")
+          ).includes("%%zt-managed%%"),
+        ),
+      ).toBe(true);
+      const content = await readFile(join(e2eVaultPath, path), "utf-8");
+      expect(content).toContain(`zotlit-profile: Books (${booksProfile.id})`);
+      expect(content).toContain(`citekey: ${item.citationKey}`);
+    }
+    const sharedNote = await indexedNote(vaultId, sharedItem.itemID);
+    expect(sharedNote.path?.startsWith("literatures/")).toBe(true);
+    expect(
+      await readFile(join(e2eVaultPath, sharedNote.path!), "utf-8"),
+    ).not.toContain("zotlit-profile:");
+    for (const item of creating) {
+      const note = await indexedNote(vaultId, item.itemID);
+      expect(await hasOneIndexedNote(vaultId, note.indexedKey)).toBe(true);
+    }
+    expect(await hasOneIndexedNote(vaultId, createTargetItem.key)).toBe(true);
+
+    // Leave the deletion flow one Books note; both rules stay for its warning.
+    for (const [item, path] of [
+      [bookItem, bookNotePath],
+      [preprintItem, preprintNotePath],
+      [labItem, labNotePath],
+    ] as const) {
+      await cli([`vault=${vaultId}`, "delete", `path=${path}`]);
+      const note = await indexedNote(vaultId, item.itemID);
+      expect(await hasIndexedNotes(vaultId, note.indexedKey, 0)).toBe(true);
+    }
+  });
+
   it("deletes Books into Default and applies Default on the next update", async () => {
     const profilePath = `templates/${booksProfile.document}`;
     const profileSource = await readFile(
@@ -592,12 +862,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "utf-8",
     );
     const exterior = "My discussion stays outside the managed region.";
-    // The GUI-configured rule selects Books again, so the deletion dialog
-    // has a referencing rule to warn about.
-    await obEval(
-      vaultId,
-      `app.plugins.plugins.zotlit.services.settings.update({'profile.selection-rules':[${JSON.stringify(bookRule)}]});true`,
-    );
+    // The earlier flows left two rules: the GUI-configured Books rule the
+    // deletion dialog warns about, and the Shared Reading rule on Default.
+    const readStoredRules = async () =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'])",
+        ),
+      ) as (typeof bookRule)[];
+    const rulesBefore = await readStoredRules();
+    expect(rulesBefore).toHaveLength(2);
+    expect(rulesBefore[0]).toEqual(bookRule);
+    const sharedRule = rulesBefore[1]!;
+    expect(sharedRule.profile).toBe("default");
     await obEval(
       vaultId,
       `(async function(){app.vault.setConfig('trashOption','local');app.vault.setConfig('settingsPopoutWindow',false);var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});await app.vault.append(file,${JSON.stringify(`\n${exterior}\n`)});app.setting.open();var tab=app.setting.openTabById('zotlit');app.setting.navigateToSearchResult({tab,pagePath:[${JSON.stringify(m.settings_page_profiles())}]});return true;})()`,
@@ -726,15 +1004,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(updated).toContain(exterior);
 
     // Moving the note into Default left the rule's target alone: it still
-    // names the deleted Books ID.
-    const readStoredRules = async () =>
-      JSON.parse(
-        await obEval(
-          vaultId,
-          "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'])",
-        ),
-      ) as (typeof bookRule)[];
-    expect(await readStoredRules()).toEqual([bookRule]);
+    // names the deleted Books ID; the Default rule is untouched.
+    expect(await readStoredRules()).toEqual([bookRule, sharedRule]);
 
     // Manual repair through the existing rule editor: the row shows the
     // unavailable target, the editor's Profile control takes Default.
@@ -770,6 +1041,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(await readStoredRules()).toEqual([
       { ...bookRule, profile: "default" },
+      sharedRule,
     ]);
     // The list shows the repaired rule under Default without the warning.
     expect(
@@ -909,11 +1181,31 @@ function hasOneIndexedNote(
   vaultId: string,
   indexedKey: string,
 ): Promise<boolean> {
+  return hasIndexedNotes(vaultId, indexedKey, 1);
+}
+
+function hasIndexedNotes(
+  vaultId: string,
+  indexedKey: string,
+  count: number,
+): Promise<boolean> {
   return obEvalUntil(
     vaultId,
     `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(indexedKey)}).length)`,
-    { expected: "1" },
+    { expected: String(count) },
   );
+}
+
+/** A Fixture Item's Indexed Key and its current Literature Note, if any. */
+async function indexedNote(
+  vaultId: string,
+  itemID: number,
+): Promise<{ indexedKey: string; path: string | null }> {
+  const response = await obEval(
+    vaultId,
+    `(async function(){var services=app.plugins.plugins.zotlit.services;var hits=await services.itemLookup.search('',{limit:100});var hit=hits.find(function(candidate){return candidate.item.itemID===${itemID};});if(!hit){throw new Error('Fixture Item not found');}var notes=services.noteIndex.getNotesByItemKey(hit.item.indexedKey);return JSON.stringify({indexedKey:hit.item.indexedKey,path:notes[0]?notes[0].path:null});})()`,
+  );
+  return JSON.parse(response) as { indexedKey: string; path: string | null };
 }
 
 /** Maps the Scope Case's stable selectors to the Fixture's libraryIDs. */
