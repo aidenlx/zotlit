@@ -3,6 +3,8 @@
 // Obsidian because this preview produces the Profile's generated Markdown and
 // has no bibliography or citation processor.
 
+import type { SelectedCitationStyleResponse } from "#/bridge/contracts";
+import type { ItemSnapshot } from "#/snapshot/index";
 import { regex } from "arkregex";
 import { stringify as stringifyYaml } from "yaml";
 
@@ -23,13 +25,6 @@ import {
 } from "@zotlit/templates/frontmatter-merge";
 import type { EvaluatedFrontmatterField } from "@zotlit/templates/frontmatter-merge";
 
-import type { SelectedCitationStyleResponse } from "@/bridge/contracts";
-import book from "@/samples/book.json" with { type: "json" };
-import conferencePaper from "@/samples/conference-paper.json" with { type: "json" };
-import journalArticle from "@/samples/journal-article.json" with { type: "json" };
-import thesis from "@/samples/thesis.json" with { type: "json" };
-import type { ItemSnapshot } from "@/snapshot/index";
-
 import { restoreTemplateData } from "./restore-template-data";
 import { failedRender, profileSourceRevision } from "./result";
 import type {
@@ -39,6 +34,11 @@ import type {
   RenderedRange,
 } from "./result";
 import type { RenderResources } from "./scheduler";
+
+import book from "#/samples/book.json" with { type: "json" };
+import conferencePaper from "#/samples/conference-paper.json" with { type: "json" };
+import journalArticle from "#/samples/journal-article.json" with { type: "json" };
+import thesis from "#/samples/thesis.json" with { type: "json" };
 
 export { DEFAULT_PROFILE_SOURCE } from "./default-profile";
 export { failedRender, profileSourceRevision } from "./result";

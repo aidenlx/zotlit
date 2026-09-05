@@ -1,6 +1,5 @@
+import type { ItemSnapshot } from "#/snapshot/types";
 import * as v from "valibot";
-
-import type { ItemSnapshot } from "@/snapshot/types";
 
 import {
   bridgeErrorResponseSchema,

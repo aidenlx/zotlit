@@ -4,14 +4,14 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 
-import { applyTemplateCompletion } from "@/language/completion";
-import { templatePairing } from "@/language/pairing";
-import { suggestions } from "@/language/suggestions";
-
 import { WorkbenchDocumentController } from "./controller";
 import type { WorkbenchSliceId } from "./controller";
 import { jsonLayout } from "./json-source";
 import { workbenchSlice } from "./slice";
+
+import { applyTemplateCompletion } from "#/language/completion";
+import { templatePairing } from "#/language/pairing";
+import { suggestions } from "#/language/suggestions";
 
 const PROFILE = `---
 id: reading

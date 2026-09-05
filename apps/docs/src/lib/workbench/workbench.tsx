@@ -6,19 +6,13 @@
 
 import {
   ArrowLeft,
-  ChevronDown,
-  Code2,
   Download,
   FilePlus2,
   FolderOpen,
-  List,
-  Plus,
-  Redo2,
   Save,
-  Undo2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   entryPosition,
@@ -55,51 +49,42 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { m } from "@/paraglide/messages.js";
 
-import {
-  AnnotationPointer,
-  AnnotationSectionBar,
-  annotationHeaderMark,
-} from "./annotation";
+import { AnnotationPointer, AnnotationSectionBar } from "./annotation";
+import { annotationHeaderMark } from "./annotation-mark";
 import { ConnectionBar } from "./connection-bar";
 import { FieldList } from "./field-list";
 import { insertSnippet, rootData, templateRootAt } from "./fields";
 import type { SampleItem } from "./fields";
 import {
-  ProfileHandoff,
-  unsupportedDependencies,
-  unsupportedProblems,
-} from "./handoff";
+  EditToolbar,
+  PaneTabList,
+  ProfileMenuLabel,
+  ResultHeader,
+  ResultRegion,
+  WorkbenchFrame,
+} from "./frame";
+import { ProfileHandoff } from "./handoff";
 import { NameFolderPane } from "./name-folder";
 import { NotePane } from "./note-pane";
 import type { NoteEditor } from "./note-pane";
 import { diagnosticText, problemText } from "./problems";
 import { PropertiesPane, PropertiesResult } from "./properties-tab";
 import type { EntryDiagnostic } from "./properties-tab";
-import { ResultSheet } from "./reading-view";
 import { startRenderWorker } from "./render-client";
+import { ResultSheet } from "./result-sheet";
 import { SampleBar } from "./sample-bar";
 import { SliceEditor } from "./slice-editor";
+import { TAB_LABEL, TAB_LEDE } from "./tabs";
+import type { WorkbenchTab } from "./tabs";
 import { ensureTemporal } from "./temporal";
 import { downloadProfile, profileFileName } from "./transfer";
+import { unsupportedDependencies, unsupportedProblems } from "./unsupported";
 import { useWorkbenchConnection } from "./use-workbench-connection";
 import type { ProfileHydration } from "./use-workbench-connection";
 import { DEFAULT_SAMPLE, useWorkbenchDraft } from "./use-workbench-draft";
-
-/** The three equal tabs, in the order the pane offers them. */
-const TAB_LABEL = {
-  note: m.workbench_tab_note,
-  properties: m.workbench_tab_properties,
-  name: m.workbench_tab_name_and_folder,
-};
-
-const TAB_LEDE = {
-  note: m.workbench_note_lede,
-  properties: m.workbench_properties_lede,
-  name: m.workbench_name_lede,
-};
 
 /**
  * Where a problem is repaired, named for the reader. Every other slice is one
@@ -706,35 +691,23 @@ export function Workbench() {
     );
   }
 
+  const pending = (
+    <p className="text-sm text-fd-muted-foreground">
+      {m.workbench_result_pending()}
+    </p>
+  );
+
   return (
-    // The page sits under the site's banner strip, so its height is the window
-    // less whatever that strip takes; a dismissed strip leaves the whole window.
-    <div className="flex min-h-[calc(100dvh-var(--fd-banner-height,0px))] flex-col bg-fd-background text-fd-foreground min-[780px]:h-[calc(100dvh-var(--fd-banner-height,0px))] min-[780px]:min-h-[40rem]">
-      <a
-        href="#workbench-editor"
-        className="sr-only focus:not-sr-only focus:p-3"
-      >
-        {m.workbench_skip_editor()}
-      </a>
-      {filePicker}
-      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-fd-border px-4 py-3 min-[780px]:px-6">
-        <div className="min-w-0">
-          <p className="mb-1 text-xs text-fd-muted-foreground">
-            {m.workbench_title()}
-          </p>
-          <h1 className="font-serif text-xl font-medium break-words">
-            {profile.name}
-          </h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+    <WorkbenchFrame
+      name={profile.name}
+      actions={
+        <>
           <DropdownMenu>
             <DropdownMenuTrigger
               disabled={connectionBusy || saveBusy}
               render={<Button variant="outline" />}
             >
-              <FolderOpen aria-hidden />
-              {m.workbench_profile_menu()}
-              <ChevronDown aria-hidden />
+              <ProfileMenuLabel />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={openFile}>
@@ -785,59 +758,64 @@ export function Workbench() {
                 ? m.workbench_download_draft()
                 : m.workbench_download()}
           </Button>
-        </div>
-      </header>
+        </>
+      }
+      strips={
+        <>
+          <ConnectionBar
+            connection={connection}
+            website={window.location.origin}
+            busy={connectionBusy}
+            cancellable={connectionCancellable}
+            message={connectionMessage}
+            saveBusy={saveBusy}
+            editingConnectedProfile={canSaveToVault}
+            onConnect={() => {
+              // Reconnecting the current vault document preserves its draft and history.
+              if (saveTarget?.reference === drafts.reference) connectFromPage();
+              else
+                replaceProfile(
+                  m.workbench_connection_connect(),
+                  connectFromPage,
+                );
+            }}
+            onCancel={cancelConnection}
+            onDisconnect={() => void disconnect()}
+          />
 
-      {replacementDialog}
-
-      <ConnectionBar
-        connection={connection}
-        website={window.location.origin}
-        busy={connectionBusy}
-        cancellable={connectionCancellable}
-        message={connectionMessage}
-        saveBusy={saveBusy}
-        editingConnectedProfile={canSaveToVault}
-        onConnect={() => {
-          // Reconnecting the current vault document preserves its draft and history.
-          if (saveTarget?.reference === drafts.reference) connectFromPage();
-          else
-            replaceProfile(m.workbench_connection_connect(), connectFromPage);
-        }}
-        onCancel={cancelConnection}
-        onDisconnect={() => void disconnect()}
-      />
-
-      {drafts.restorable && (
-        <section
-          aria-label={m.workbench_restore_heading()}
-          className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-2 border-b border-fd-border bg-fd-accent/40 px-4 py-3 min-[780px]:px-6"
-        >
-          <p className="text-sm font-medium">{m.workbench_restore_heading()}</p>
-          <p className="text-sm text-fd-muted-foreground">
-            {m.workbench_restore_body()}
-          </p>
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                const kept = drafts.restore();
-                if (!kept) return;
-                loadDocument(kept.source);
-                setSample(kept.snapshot);
-                if (kept.expected) saveAgainst(kept.expected);
-              }}
+          {drafts.restorable && (
+            <section
+              aria-label={m.workbench_restore_heading()}
+              className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-2 border-b border-fd-border bg-fd-accent/40 px-4 py-3 min-[780px]:px-6"
             >
-              {m.workbench_restore_accept()}
-            </Button>
-            <Button variant="ghost" onClick={() => drafts.startClean()}>
-              {m.workbench_restore_decline()}
-            </Button>
-          </div>
-        </section>
-      )}
-
-      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 pt-4 min-[780px]:px-6">
+              <p className="text-sm font-medium">
+                {m.workbench_restore_heading()}
+              </p>
+              <p className="text-sm text-fd-muted-foreground">
+                {m.workbench_restore_body()}
+              </p>
+              <div className="ml-auto flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const kept = drafts.restore();
+                    if (!kept) return;
+                    loadDocument(kept.source);
+                    setSample(kept.snapshot);
+                    if (kept.expected) saveAgainst(kept.expected);
+                  }}
+                >
+                  {m.workbench_restore_accept()}
+                </Button>
+                <Button variant="ghost" onClick={() => drafts.startClean()}>
+                  {m.workbench_restore_decline()}
+                </Button>
+              </div>
+            </section>
+          )}
+        </>
+      }
+      sample={
         <SampleBar
           sample={sample}
           connection={connection}
@@ -848,131 +826,46 @@ export function Workbench() {
           onShow={setSample}
           onLoad={() => void loadSelectedItem()}
         />
-      </div>
-      <p
-        role="status"
-        className="px-4 pt-2 text-xs text-fd-muted-foreground min-[780px]:px-6"
-      >
-        {(notice?.revision === revision ? notice.text : null) ??
-          fileMessage ??
-          (canSaveToVault
-            ? draft
-              ? m.workbench_save_fix()
-              : drafts.dirty
-                ? m.workbench_unsaved()
-                : m.workbench_saved_profile()
-            : m.workbench_browser_draft())}
-      </p>
-
-      <main
-        id="workbench-editor"
-        className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 min-[780px]:grid min-[780px]:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] min-[780px]:gap-5 min-[780px]:px-6 min-[1180px]:grid-cols-[minmax(18rem,0.75fr)_minmax(0,1fr)_minmax(0,0.85fr)]"
-      >
-        {/* The two the narrow screen shows one of. The pane and the result are
-            columns of their own once there is room for both. */}
-        <div
-          role="group"
-          aria-label={m.workbench_view_label()}
-          className="flex gap-1 rounded-md bg-fd-muted p-1 min-[780px]:hidden"
-        >
-          {(["edit", "result"] as const).map((id) => (
-            <Button
-              key={id}
-              variant={view === id ? "outline" : "ghost"}
-              aria-pressed={view === id}
-              aria-controls={`workbench-${id}-pane`}
-              className="flex-1"
-              onClick={() => {
-                setView(id);
-                setSheet(false);
-              }}
-            >
-              {id === "edit"
-                ? m.workbench_view_editor()
-                : m.workbench_view_result()}
-            </Button>
-          ))}
-        </div>
-
-        {/* A column of its own where three fit; under that width the same list
-            is what "Add a field" opens. */}
-        <div className="hidden min-h-0 min-w-0 grid-cols-1 min-[1180px]:grid">
-          <FieldList
-            key={`${root}:${fieldMode}`}
-            root={root}
-            mode={fieldMode}
-            disabled={fieldDisabled}
-            data={fields}
-            onInsert={insert}
+      }
+      status={
+        (notice?.revision === revision ? notice.text : null) ??
+        fileMessage ??
+        (canSaveToVault
+          ? draft
+            ? m.workbench_save_fix()
+            : drafts.dirty
+              ? m.workbench_unsaved()
+              : m.workbench_saved_profile()
+          : m.workbench_browser_draft())
+      }
+      view={view}
+      onView={(next) => {
+        setView(next);
+        setSheet(false);
+      }}
+      fields={
+        <FieldList
+          key={`${root}:${fieldMode}`}
+          root={root}
+          mode={fieldMode}
+          disabled={fieldDisabled}
+          data={fields}
+          onInsert={insert}
+        />
+      }
+      editor={
+        <>
+          <EditToolbar
+            advanced={advanced}
+            onMode={changeMode}
+            canUndo={controller.canUndo}
+            canRedo={controller.canRedo}
+            onUndo={() => controller.undo()}
+            onRedo={() => controller.redo()}
+            addFieldRef={addField}
+            sheetOpen={sheet}
+            onAddField={() => setSheet(true)}
           />
-        </div>
-
-        <section
-          id="workbench-edit-pane"
-          className={`min-h-80 min-w-0 flex-1 flex-col min-[780px]:min-h-0 ${
-            view === "result" ? "hidden min-[780px]:flex" : "flex"
-          }`}
-        >
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div
-              className="flex items-center gap-1"
-              role="group"
-              aria-label={m.workbench_editing_mode()}
-            >
-              <Button
-                variant={advanced ? "ghost" : "outline"}
-                size="sm"
-                aria-pressed={!advanced}
-                onClick={() => changeMode(false)}
-              >
-                <List aria-hidden />
-                {m.workbench_basic()}
-              </Button>
-              <Button
-                variant={advanced ? "outline" : "ghost"}
-                size="sm"
-                aria-pressed={advanced}
-                onClick={() => changeMode(true)}
-              >
-                <Code2 aria-hidden />
-                {m.workbench_advanced()}
-              </Button>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={m.workbench_undo()}
-                title={m.workbench_undo()}
-                disabled={!controller.canUndo}
-                onClick={() => controller.undo()}
-              >
-                <Undo2 aria-hidden />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={m.workbench_redo()}
-                title={m.workbench_redo()}
-                disabled={!controller.canRedo}
-                onClick={() => controller.redo()}
-              >
-                <Redo2 aria-hidden />
-              </Button>
-              <Button
-                ref={addField}
-                variant="outline"
-                size="sm"
-                onClick={() => setSheet(true)}
-                aria-haspopup="dialog"
-                aria-expanded={sheet}
-                className="min-[1180px]:hidden"
-              >
-                <Plus aria-hidden />
-                {m.workbench_add_field()}
-              </Button>
-            </div>
-          </div>
           {advanced ? (
             <>
               <div className="mb-3">
@@ -1015,21 +908,9 @@ export function Workbench() {
             <Tabs
               className="flex min-h-0 flex-1 flex-col"
               value={tab}
-              onValueChange={(value) =>
-                openTab(value as "note" | "properties" | "name")
-              }
+              onValueChange={(value) => openTab(value as WorkbenchTab)}
             >
-              <TabsList aria-label={m.workbench_title()} className="mb-3">
-                {(["note", "properties", "name"] as const).map((id) => (
-                  <TabsTrigger
-                    key={id}
-                    value={id}
-                    className="min-w-0 flex-1 px-2"
-                  >
-                    {TAB_LABEL[id]()}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+              <PaneTabList />
               <TabsContent value={tab} className="flex min-h-0 flex-1 flex-col">
                 <h2 className="sr-only">{TAB_LABEL[tab]()}</h2>
                 <p className="mb-3 text-sm leading-relaxed text-fd-muted-foreground">
@@ -1134,38 +1015,19 @@ export function Workbench() {
               />
             </DialogContent>
           </Dialog>
-        </section>
-
-        <section
-          id="workbench-result-pane"
-          className={`min-h-80 min-w-0 flex-1 flex-col min-[780px]:min-h-0 ${
-            view === "result" ? "flex" : "hidden min-[780px]:flex"
-          }`}
-        >
-          <div className="mb-3 flex min-h-10 flex-wrap items-center justify-between gap-2">
-            <h2 className="font-serif text-lg font-medium">
-              {!advanced && tab === "properties"
+        </>
+      }
+      result={
+        <>
+          <ResultHeader
+            heading={
+              !advanced && tab === "properties"
                 ? m.workbench_result_fold()
-                : m.workbench_result_heading()}
-            </h2>
-            <label className="flex items-center gap-2 text-sm">
-              <span className="sr-only">{m.workbench_preview_format()}</span>
-              <NativeSelect
-                value={showMarkdown ? "markdown" : "reading"}
-                onChange={(event) =>
-                  setShowMarkdown(event.target.value === "markdown")
-                }
-                size="sm"
-              >
-                <NativeSelectOption value="reading">
-                  {m.workbench_preview_reading()}
-                </NativeSelectOption>
-                <NativeSelectOption value="markdown">
-                  {m.workbench_result_markdown_toggle()}
-                </NativeSelectOption>
-              </NativeSelect>
-            </label>
-          </div>
+                : m.workbench_result_heading()
+            }
+            showMarkdown={showMarkdown}
+            onShowMarkdown={setShowMarkdown}
+          />
           {showNote && (
             <label className="mb-3 flex flex-wrap items-center gap-2 text-sm">
               <span className="text-fd-muted-foreground">
@@ -1197,16 +1059,9 @@ export function Workbench() {
               {m.workbench_preview_stale()}
             </p>
           )}
-          <div
-            role="region"
-            tabIndex={0}
-            aria-label={m.workbench_view_result()}
-            ref={resultRegion}
-            data-emphasis={emphasis || undefined}
-            className="group min-h-0 flex-1 overflow-auto rounded-md border border-fd-border bg-fd-card p-4 shadow-sm sm:p-6"
-          >
+          <ResultRegion ref={resultRegion} emphasis={emphasis}>
             {result ? (
-              <>
+              <Suspense fallback={pending}>
                 <p className="mb-4 font-mono text-xs break-words text-fd-muted-foreground">
                   <span className="sr-only">
                     {m.workbench_result_filename()}:{" "}
@@ -1260,44 +1115,46 @@ export function Workbench() {
                     marks={result.annotationRanges}
                   />
                 )}
-              </>
+              </Suspense>
             ) : (
-              <p className="text-sm text-fd-muted-foreground">
-                {m.workbench_result_pending()}
-              </p>
+              pending
             )}
-          </div>
-        </section>
-      </main>
-
-      {problem && (
-        <section
-          aria-label={m.workbench_problems_heading()}
-          className="shrink-0 border-t border-fd-border bg-fd-accent/40 px-4 py-3 min-[780px]:px-6"
-        >
-          <p className="font-mono text-[0.68rem] font-semibold tracking-widest text-fd-primary uppercase">
-            {m.workbench_problems_heading()}
-          </p>
-          <p className="mt-1 text-sm">
-            {problemText(problem).message}{" "}
-            <span className="text-fd-muted-foreground">
-              {problemText(problem).recovery}
-            </span>{" "}
-            <button
-              type="button"
-              onClick={() => goToProblem(problem)}
-              className="cursor-pointer underline underline-offset-2"
-            >
-              {entryPosition(problem.slice) === null
-                ? (
-                    PROBLEM_WHERE[problem.slice] ??
-                    m.workbench_problems_where_advanced
-                  )()
-                : m.workbench_problems_where_entry()}
-            </button>
-          </p>
-        </section>
-      )}
-    </div>
+          </ResultRegion>
+        </>
+      }
+      footer={
+        problem && (
+          <section
+            aria-label={m.workbench_problems_heading()}
+            className="shrink-0 border-t border-fd-border bg-fd-accent/40 px-4 py-3 min-[780px]:px-6"
+          >
+            <p className="font-mono text-[0.68rem] font-semibold tracking-widest text-fd-primary uppercase">
+              {m.workbench_problems_heading()}
+            </p>
+            <p className="mt-1 text-sm">
+              {problemText(problem).message}{" "}
+              <span className="text-fd-muted-foreground">
+                {problemText(problem).recovery}
+              </span>{" "}
+              <button
+                type="button"
+                onClick={() => goToProblem(problem)}
+                className="cursor-pointer underline underline-offset-2"
+              >
+                {entryPosition(problem.slice) === null
+                  ? (
+                      PROBLEM_WHERE[problem.slice] ??
+                      m.workbench_problems_where_advanced
+                    )()
+                  : m.workbench_problems_where_entry()}
+              </button>
+            </p>
+          </section>
+        )
+      }
+    >
+      {filePicker}
+      {replacementDialog}
+    </WorkbenchFrame>
   );
 }

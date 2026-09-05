@@ -4,8 +4,8 @@
 import type {
   SelectedCitationStyleResponse,
   TemplateDependenciesResponse,
-} from "@/bridge/contracts";
-import type { ItemSnapshot } from "@/snapshot/index";
+} from "#/bridge/contracts";
+import type { ItemSnapshot } from "#/snapshot/index";
 
 import { failedRender, profileSourceRevision } from "./result";
 import type { ProfileRenderResult, RenderIdentity } from "./result";

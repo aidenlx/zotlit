@@ -11,7 +11,7 @@ import type { EditorState, Extension, Range } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
 import { ChevronDown } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { noteRegions } from "@zotlit/workbench/document";
@@ -23,7 +23,7 @@ import type {
 import { Button } from "@/components/ui/button";
 import { m } from "@/paraglide/messages.js";
 
-import { ResultSheet } from "./reading-view";
+import { ResultSheet } from "./result-sheet";
 import { SliceEditor } from "./slice-editor";
 import type { SuggestionSource } from "./slice-editor";
 
@@ -228,11 +228,19 @@ export function NotePane({
                       {m.workbench_annotation_preview_empty()}
                     </p>
                   ) : (
-                    <ResultSheet
-                      markdown={preview}
-                      properties={[]}
-                      showMarkdown={false}
-                    />
+                    <Suspense
+                      fallback={
+                        <p className="text-sm text-fd-muted-foreground">
+                          {m.workbench_result_pending()}
+                        </p>
+                      }
+                    >
+                      <ResultSheet
+                        markdown={preview}
+                        properties={[]}
+                        showMarkdown={false}
+                      />
+                    </Suspense>
                   )}
                 </div>
               </div>

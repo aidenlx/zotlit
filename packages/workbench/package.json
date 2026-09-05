@@ -7,13 +7,35 @@
   ],
   "type": "module",
   "sideEffects": false,
+  "imports": {
+    "#/*.json": "./src/*.json",
+    "#/*": "./src/*.ts"
+  },
   "exports": {
-    "./bridge": "./dist/bridge.mjs",
-    "./completion": "./dist/completion.mjs",
-    "./document": "./dist/document.mjs",
-    "./explorer": "./dist/explorer.mjs",
-    "./language": "./dist/language.mjs",
-    "./render": "./dist/render.mjs",
+    "./bridge": {
+      "development": "./src/bridge/index.ts",
+      "default": "./dist/bridge.mjs"
+    },
+    "./completion": {
+      "development": "./src/language/semantics.ts",
+      "default": "./dist/completion.mjs"
+    },
+    "./document": {
+      "development": "./src/document/index.ts",
+      "default": "./dist/document.mjs"
+    },
+    "./explorer": {
+      "development": "./src/explorer/index.ts",
+      "default": "./dist/explorer.mjs"
+    },
+    "./language": {
+      "development": "./src/language/index.ts",
+      "default": "./dist/language.mjs"
+    },
+    "./render": {
+      "development": "./src/render/index.ts",
+      "default": "./dist/render.mjs"
+    },
     "./snapshot": {
       "types": "./dist/snapshot.d.mts",
       "node": "./dist/snapshot.mjs"

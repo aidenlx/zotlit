@@ -158,6 +158,40 @@ function machineAssets(): Plugin {
   };
 }
 
+/**
+ * The render Worker's graph takes no hot update of its own. Vite has no hot
+ * channel into a Worker, so an update that reaches the Worker's entry — a
+ * module that accepts nothing — falls back to reloading the whole page and
+ * drops the editor's state. The scheduler starts a fresh Worker for every
+ * render, and the dev server serves each module as it now is, so the next
+ * render runs the edit without any update at all. An edit to the entry itself
+ * is dropped, and every other module is cut loose from the entry's importer
+ * edge before Vite propagates, so an edit inside the Worker's graph stops at
+ * the page's own React boundary. Every module is still invalidated. A module
+ * only the Worker reads has no importer left once the edge is cut, so an edit
+ * to it still reloads the page, as it did before; today every module the
+ * Worker reads, the page reads too.
+ * @see src/lib/workbench/render-client.ts
+ */
+function workerHotUpdate(): Plugin {
+  const entry = resolve(packageRoot, "src/lib/workbench/render-worker.ts");
+  return {
+    name: "zotlit:worker-hot-update",
+    hotUpdate({ file, modules }) {
+      if (this.environment.name !== "client") return;
+      if (file === entry) return [];
+      for (const worker of this.environment.moduleGraph.getModulesByFile(
+        entry,
+      ) ?? []) {
+        for (const imported of worker.importedModules) {
+          imported.importers.delete(worker);
+        }
+      }
+      return modules;
+    },
+  };
+}
+
 export default defineConfig(({ command }) => ({
   // `@base-ui/react` imports the named `useSyncExternalStoreWithSelector` from
   // a CommonJS shim. The dev server serves that file raw unless the pre-bundler
@@ -165,6 +199,12 @@ export default defineConfig(({ command }) => ({
   // the page becomes interactive. The production build converts it either way.
   optimizeDeps: {
     include: ["@base-ui/react > use-sync-external-store/shim/with-selector"],
+    // The Workbench sits behind a dynamic import the router's own entry scan
+    // stops short of, so its dependencies — CodeMirror, the Lezer parsers, the
+    // template engines, the reading view's parser stack — were found one by
+    // one as the page requested them, each round re-optimizing and reloading.
+    // Named here, the scan finds them all before the first request.
+    entries: ["src/lib/workbench/workbench.tsx"],
   },
   // The Workbench's render Worker is a module Worker: it awaits the Temporal
   // polyfill before it takes its first message, and top-level await needs an
@@ -197,6 +237,7 @@ export default defineConfig(({ command }) => ({
     fumadocsMdx(),
     cloudflareAssetRules(),
     machineAssets(),
+    workerHotUpdate(),
     cloudflare({
       viteEnvironment: { name: "ssr" },
       config(config) {

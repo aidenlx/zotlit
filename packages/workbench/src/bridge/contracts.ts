@@ -1,8 +1,7 @@
 // Wire contract for the browser Workbench and one approved Local Bridge.
 
+import type { ItemSnapshot } from "#/snapshot/types";
 import * as v from "valibot";
-
-import type { ItemSnapshot } from "@/snapshot/types";
 
 export const BRIDGE_VERSION = 1;
 export const LOCAL_BRIDGE_ORIGIN = "http://127.0.0.1:23120";

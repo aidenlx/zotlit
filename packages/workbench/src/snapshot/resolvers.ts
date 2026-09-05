@@ -2,11 +2,11 @@
 
 import type { Attachment, Item, NoteResolvers, TemplateLink } from "@zotlit/db";
 
-import { markInertPlaceholder } from "@/explorer/index";
-
 import type { SnapshotProvenance, SnapshotVaultTargets } from "./types";
 import { SnapshotSelectionError } from "./types";
 import { formatWikiLink } from "./wiki-link";
+
+import { markInertPlaceholder } from "#/explorer/index";
 
 export function normalizeTargets(
   targets: SnapshotVaultTargets | undefined,

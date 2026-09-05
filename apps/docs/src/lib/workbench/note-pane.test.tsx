@@ -2,7 +2,7 @@
 import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
@@ -150,12 +150,17 @@ describe("the Your note tab", () => {
     expect(pane.opened()).toBe(1);
   });
 
-  it("shows one rendered annotation first, and the format's source on request", () => {
+  it("shows one rendered annotation first, and the format's source on request", async () => {
     using pane = openPane(DEFAULT_PROFILE_SOURCE, {
       preview: "> Marked text from the paper",
     });
 
-    expect(pane.host.textContent).toContain("Marked text from the paper");
+    // The reading view arrives behind a lazy import, after the pane itself.
+    expect(pane.host.textContent).toContain(m.workbench_result_pending());
+    await vi.waitFor(async () => {
+      await act(async () => {});
+      expect(pane.host.textContent).toContain("Marked text from the paper");
+    });
     expect(pane.faces()).toEqual({ preview: true, source: false });
 
     pane.press(m.workbench_annotation_edit_format());
