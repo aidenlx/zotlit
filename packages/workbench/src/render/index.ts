@@ -36,6 +36,7 @@ import type {
   ProfileRenderResult,
   RenderDiagnostic,
   RenderedProperty,
+  RenderedRange,
 } from "./result";
 import type { RenderResources } from "./scheduler";
 
@@ -45,6 +46,7 @@ export type {
   ProfileRenderResult,
   RenderDiagnostic,
   RenderedProperty,
+  RenderedRange,
   RenderIdentity,
 } from "./result";
 export { createRenderScheduler } from "./scheduler";
@@ -142,6 +144,37 @@ export function renderProfile(
         defined.has(CITE_TEMPLATE),
       );
     });
+    // The format is rendered on its own first, so a failure inside it is named
+    // as the format's and a host can show it where the format is edited. The
+    // note goes on rendering: one that never calls the format keeps its
+    // preview, and one that does fails on the same fault, reported once.
+    let rendered: string[] = [];
+    let formatFailure: RenderDiagnostic | null = null;
+    try {
+      rendered = annotations.map((annotation) =>
+        facade.renderLiteratureNoteTemplateAnnotation(document, annotation),
+      );
+    } catch (error) {
+      formatFailure = {
+        code: "render-error",
+        message: errorMessage(error),
+        part: "annotation",
+      };
+    }
+    let creationBody: string;
+    try {
+      creationBody = facade.renderLiteratureNoteTemplateForCreate(
+        document,
+        note,
+      );
+    } catch (error) {
+      if (!formatFailure) throw error;
+      const failure = failedRender(identity, formatFailure);
+      return {
+        ...failure,
+        diagnostics: [...resourceDiagnostics, ...failure.diagnostics],
+      };
+    }
     const frontmatter = evaluateFrontmatter(
       facade,
       document.manifest.frontmatter ?? [],
@@ -157,22 +190,18 @@ export function renderProfile(
       properties: frontmatter.properties,
       fold: frontmatter.fold,
       frontmatterBlock: frontmatterBlock(frontmatter.fold),
-      creationBody: facade.renderLiteratureNoteTemplateForCreate(
-        document,
-        note,
-      ),
+      creationBody,
       managedRegion: facade.renderLiteratureNoteTemplateForUpdate(
         document,
         note,
       ),
-      annotation:
-        annotations.length > 0
-          ? facade.renderLiteratureNoteTemplateAnnotation(
-              document,
-              annotations[0]!,
-            )
-          : null,
-      diagnostics: [...resourceDiagnostics, ...frontmatter.diagnostics],
+      annotation: rendered[0] ?? null,
+      annotationRanges: locateOutputs(creationBody, rendered),
+      diagnostics: [
+        ...resourceDiagnostics,
+        ...(formatFailure ? [formatFailure] : []),
+        ...frontmatter.diagnostics,
+      ],
     };
   } catch (error) {
     const failure = failedRender(identity, {
@@ -381,4 +410,26 @@ function rendered({
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Where each output landed in the body, searched forward in order so two
+ * highlights with the same text take two places. An output the body does not
+ * carry — a note that calls the format for some highlights only — is skipped,
+ * and an empty output marks nothing.
+ */
+function locateOutputs(
+  body: string,
+  outputs: readonly string[],
+): RenderedRange[] {
+  const ranges: RenderedRange[] = [];
+  let cursor = 0;
+  for (const output of outputs) {
+    if (output.length === 0) continue;
+    const from = body.indexOf(output, cursor);
+    if (from === -1) continue;
+    cursor = from + output.length;
+    ranges.push({ from, to: cursor });
+  }
+  return ranges;
 }
