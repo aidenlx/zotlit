@@ -22,3 +22,6 @@ export type {
 
 export { templateHighlighting } from "./highlight";
 export { profileLanguage, embeddedLiquid } from "./embedded";
+
+export { templatePairing } from "./pairing";
+export type { PairingSource } from "./pairing";

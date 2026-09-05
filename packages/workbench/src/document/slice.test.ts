@@ -4,6 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 
 import { applyTemplateCompletion } from "@/language/completion";
+import { templatePairing } from "@/language/pairing";
 import { suggestions } from "@/language/suggestions";
 
 import { WorkbenchDocumentController } from "./controller";
@@ -36,7 +37,7 @@ function open(
   const view = new EditorView({
     state: EditorState.create({
       doc: controller.sliceText(id),
-      extensions: [workbenchSlice(controller, id)],
+      extensions: [workbenchSlice(controller, id), templatePairing()],
     }),
     parent: document.body,
   });
@@ -48,6 +49,83 @@ function open(
 }
 
 describe("workbenchSlice", () => {
+  it.each(["\n", "\r\n"])(
+    "restores generated pairs through master history and pane switches with %j",
+    (lineBreak) => {
+      const controller = new WorkbenchDocumentController(
+        PROFILE.replace("# {{ zt.title }}", "").split("\n").join(lineBreak),
+      );
+      const type = (view: EditorView, text: string) => {
+        const { from, to } = view.state.selection.main;
+        const insert = () =>
+          view.state.update({
+            changes: { from, to, insert: text },
+            selection: { anchor: from + text.length },
+            userEvent: "input.type",
+          });
+        if (
+          !view.state
+            .facet(EditorView.inputHandler)
+            .some((handler) => handler(view, from, to, text, insert))
+        )
+          view.dispatch(insert());
+      };
+      {
+        using note = open(controller, "note");
+        type(note.view, "{");
+        type(note.view, "{");
+        type(note.view, "zt.ti");
+        const result = suggestions(note.text(), 8, {
+          root: "note",
+          partials: [],
+        })!;
+        applyTemplateCompletion(
+          note.view,
+          result,
+          result.options.find((option) => option.label === "title")!,
+        );
+        expect(note.text()).toBe("{{ zt.title }}\n");
+        expect(note.view.state.selection.main.head).toBe(14);
+        controller.undo();
+        expect(note.text()).toBe("{{ zt.ti }}\n");
+        expect(note.view.state.selection.main.head).toBe(8);
+      }
+      using reopened = open(controller, "note");
+      reopened.view.dispatch({ selection: { anchor: 8 } });
+      type(reopened.view, "}");
+      type(reopened.view, "}");
+      expect(reopened.text()).toBe("{{ zt.ti }}\n");
+      expect(reopened.view.state.selection.main.head).toBe(11);
+      controller.undo();
+      expect(reopened.text()).toBe("\n");
+      controller.redo();
+      reopened.view.dispatch({ selection: { anchor: 8 } });
+      type(reopened.view, "}");
+      expect(reopened.text()).toBe("{{ zt.ti }}\n");
+      expect(reopened.view.state.selection.main.head).toBe(10);
+      expect(controller.source).toBe(
+        PROFILE.replace("# {{ zt.title }}", "{{ zt.ti }}")
+          .split("\n")
+          .join(lineBreak),
+      );
+    },
+  );
+  it("keeps undo focus and the other pane's cursor in place", () => {
+    const controller = new WorkbenchDocumentController(PROFILE);
+    using note = open(controller, "note");
+    using annotation = open(controller, "annotation");
+    annotation.view.dispatch({ selection: { anchor: 4 } });
+    note.view.focus();
+    note.view.dispatch({
+      changes: { from: 0, insert: "!" },
+      selection: { anchor: 1 },
+      userEvent: "input.type",
+    });
+    controller.undo();
+    expect(note.text()).toBe("# {{ zt.title }}\n");
+    expect(note.view.hasFocus).toBe(true);
+    expect(annotation.view.state.selection.main.head).toBe(4);
+  });
   it("keeps consecutive accepted completions as separate undo steps", () => {
     const controller = new WorkbenchDocumentController(
       PROFILE.replace("# {{ zt.title }}", "{{ zt.ti }} {{ zt.ke }}"),

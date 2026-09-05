@@ -13,6 +13,7 @@ import type {
 } from "@zotlit/workbench/document";
 import {
   liquidMarkdown,
+  templatePairing,
   profileLanguage,
   embeddedLiquid,
   yamlRule,
@@ -136,7 +137,9 @@ export function SliceEditor({
               ]
             : []),
           editorTheme,
-          ...(language === "yaml" ? [] : [webCompletion(read), webHover(read)]),
+          ...(language === "yaml"
+            ? []
+            : [templatePairing(read), webCompletion(read), webHover(read)]),
           ...(singleLine
             ? [
                 EditorState.transactionFilter.of((transaction) =>

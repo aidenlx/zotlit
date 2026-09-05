@@ -12,6 +12,14 @@ import type { ChangeSpec, Extension } from "@codemirror/state";
 import { ViewPlugin, keymap } from "@codemirror/view";
 import type { EditorView, PluginValue, ViewUpdate } from "@codemirror/view";
 
+import {
+  addPair,
+  pairingState,
+  restorePairs,
+  offsetPair,
+  slicePairs,
+} from "@/language/pairing-state";
+
 import { sliceEdit } from "./controller";
 import type {
   WorkbenchDocumentController,
@@ -32,6 +40,9 @@ export function workbenchSlice(
   id: WorkbenchSliceId,
 ): Extension {
   return [
+    pairingState.init(() =>
+      slicePairs(controller.state, controller.sliceRange(id)),
+    ),
     // Undo belongs to the master, which holds the only history, so this
     // binding has to beat every other undo binding in the host.
     Prec.highest(
@@ -115,7 +126,16 @@ class SliceSync implements PluginValue {
     const userEvent = transaction.annotation(Transaction.userEvent);
     const isolation = transaction.annotation(isolateHistory);
     this.controller.dispatch({
+      selection: EditorSelection.cursor(
+        from + transaction.startState.selection.main.head,
+      ),
+      annotations: Transaction.addToHistory.of(false),
+    });
+    this.controller.dispatch({
       changes,
+      effects: transaction.effects
+        .filter((effect) => effect.is(addPair))
+        .map((effect) => addPair.of(offsetPair(effect.value, from))),
       selection: EditorSelection.cursor(head),
       annotations: [
         sliceEdit.of(this.id),
@@ -135,16 +155,31 @@ class SliceSync implements PluginValue {
     const previous = this.#range;
     this.#range = this.controller.sliceRange(this.id);
     const text = this.controller.sliceText(this.id);
-    if (text === this.view.state.doc.toString()) return;
+    const unchanged = text === this.view.state.doc.toString();
+    if (unchanged) {
+      if (transaction.annotation(sliceEdit) !== this.id) {
+        this.view.dispatch({
+          effects: restorePairs.of(
+            slicePairs(this.controller.state, this.#range),
+          ),
+          annotations: fromMaster.of(true),
+        });
+      }
+      return;
+    }
 
-    const head = transaction.changes.mapPos(
-      previous.from + this.view.state.selection.main.head,
-    );
+    const head =
+      transaction.isUserEvent("undo") || transaction.isUserEvent("redo")
+        ? transaction.state.selection.main.head
+        : transaction.changes.mapPos(
+            previous.from + this.view.state.selection.main.head,
+          );
     this.view.dispatch({
       changes: { from: 0, to: this.view.state.doc.length, insert: text },
       selection: EditorSelection.cursor(
         Math.min(Math.max(head - this.#range.from, 0), text.length),
       ),
+      effects: restorePairs.of(slicePairs(this.controller.state, this.#range)),
       annotations: fromMaster.of(true),
     });
     // Undo and redo reach the master from anywhere — a menu, another pane — so
