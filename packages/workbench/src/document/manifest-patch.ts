@@ -55,6 +55,8 @@ export type ManagedEntryAction =
       readonly action: "language";
       readonly position: number;
       readonly language: "expr" | "value";
+      /** Start a value entry with literal text instead of the example rule. */
+      readonly text?: string;
     }
   | {
       readonly action: "set";
@@ -465,20 +467,40 @@ function moveEntry(
 
 function changeLanguage(
   list: ManagedList,
-  { position, language }: { position: number; language: "expr" | "value" },
+  {
+    position,
+    language,
+    text,
+  }: { position: number; language: "expr" | "value"; text?: string },
 ): ChangeSpec | null {
   const target = entryAt(list, position);
-  if (!target || target.entry.language === language) return null;
+  if (!target) return null;
   // A keyless entry spreads a mapping over the note, which only a rule writes.
-  if (language === "expr" && target.entry.key === undefined) return null;
+  if (
+    (language === "expr" || text !== undefined) &&
+    target.entry.key === undefined
+  )
+    return null;
 
   const field = mapPair(target.node, target.entry.language);
   if (!field || !isScalar(field.key) || !field.key.range) return null;
+  if (
+    target.entry.language === language &&
+    text === undefined &&
+    !(
+      language === "value" &&
+      isScalar(field.value) &&
+      typeof field.value.value === "string"
+    )
+  )
+    return null;
   return {
     from: list.manifest.offset + field.key.range[0],
     to: target.entry.expression.to,
     insert:
-      language === "expr" ? `expr: ${NEW_EXPRESSION}` : `value: ${NEW_RULE}`,
+      language === "expr"
+        ? `expr: ${NEW_EXPRESSION}`
+        : `value: ${text === undefined ? NEW_RULE : JSON.stringify(text)}`,
   };
 }
 

@@ -15,6 +15,13 @@ import type {
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Switch } from "@/components/ui/switch";
 import { m } from "@/paraglide/messages.js";
 
 import { SliceEditor } from "./slice-editor";
@@ -105,6 +112,7 @@ function valueText(value: string | boolean | null | undefined): string {
 
 export interface NameFolderPaneProps {
   controller: WorkbenchDocumentController;
+  onOpenSource?: () => void;
   /**
    * The manifest this form writes: the last one the document parsed with, so a
    * draft under repair keeps the values the reader is repairing. Null before
@@ -136,6 +144,7 @@ export interface NameFolderPaneProps {
 
 export function NameFolderPane({
   controller,
+  onOpenSource,
   manifest,
   filename,
   citationStyles,
@@ -170,45 +179,12 @@ export function NameFolderPane({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-auto pb-4">
-      <Group heading={m.workbench_name_profile_heading()}>
-        <Field label={m.workbench_name_field_name()}>
-          <TextValue
-            field="name"
-            value={manifest.name}
-            onCommit={(value) => write("name", value)}
-          />
-        </Field>
-        <Field label={m.workbench_name_field_description()}>
-          <TextValue
-            field="description"
-            value={manifest.description ?? ""}
-            optional
-            onCommit={(value) => write("description", value)}
-          />
-        </Field>
-        <Field label={m.workbench_name_field_version()}>
-          <TextValue
-            field="version"
-            value={manifest.version}
-            onCommit={(value) => write("version", value)}
-          />
-        </Field>
-        <Field label={m.workbench_name_field_author()}>
-          <TextValue
-            field="author"
-            value={manifest.author ?? ""}
-            optional
-            onCommit={(value) => write("author", value)}
-          />
-        </Field>
-      </Group>
-
       <Group
         heading={m.workbench_name_filename_heading()}
         lede={m.workbench_name_filename_lede()}
       >
         {controller.filenameSlice ? (
-          <div className="border border-fd-border bg-fd-background">
+          <div className="rounded-md border border-fd-border bg-fd-card">
             <SliceEditor
               controller={controller}
               slice="filename"
@@ -222,13 +198,18 @@ export function NameFolderPane({
         ) : (
           <p className="text-xs text-fd-muted-foreground">
             {m.workbench_name_filename_source_only()}
+            {onOpenSource && (
+              <Button variant="outline" className="mt-2" onClick={onOpenSource}>
+                {m.workbench_open_source()}
+              </Button>
+            )}
           </p>
         )}
         <p className="flex items-baseline gap-2 text-xs">
           <span className="text-fd-muted-foreground">
             {m.workbench_name_filename_result()}
           </span>
-          <output className="min-w-0 flex-1 truncate font-mono">
+          <output className="min-w-0 flex-1 font-mono break-words">
             {filename}
           </output>
         </p>
@@ -246,7 +227,10 @@ export function NameFolderPane({
           <>
             <dl className="flex flex-col gap-1.5 text-xs">
               {BINDINGS.map((binding) => (
-                <div key={binding.key} className="flex items-baseline gap-3">
+                <div
+                  key={binding.key}
+                  className="flex flex-wrap items-center gap-2"
+                >
                   <dt className="min-w-0 flex-1">{binding.label()}</dt>
                   <dd className="font-mono">
                     {valueText(defaults[binding.key])}
@@ -272,35 +256,75 @@ export function NameFolderPane({
         )}
       </Group>
 
-      <LanguageGroup language={manifest.language} onWrite={write} />
+      <details className="rounded-md border border-fd-border bg-fd-card p-4">
+        <summary className="cursor-pointer text-sm font-medium">
+          {m.workbench_name_profile_heading()}
+        </summary>
+        <div className="mt-4">
+          <Group heading={m.workbench_name_profile_heading()}>
+            <Field label={m.workbench_name_field_name()}>
+              <TextValue
+                field="name"
+                value={manifest.name}
+                onCommit={(value) => write("name", value)}
+              />
+            </Field>
+            <Field label={m.workbench_name_field_description()}>
+              <TextValue
+                field="description"
+                value={manifest.description ?? ""}
+                optional
+                onCommit={(value) => write("description", value)}
+              />
+            </Field>
+            <Field label={m.workbench_name_field_version()}>
+              <TextValue
+                field="version"
+                value={manifest.version}
+                onCommit={(value) => write("version", value)}
+              />
+            </Field>
+            <Field label={m.workbench_name_field_author()}>
+              <TextValue
+                field="author"
+                value={manifest.author ?? ""}
+                optional
+                onCommit={(value) => write("author", value)}
+              />
+            </Field>
+          </Group>
+        </div>
+      </details>
 
-      <details className="border border-fd-border bg-fd-card px-3 py-2">
-        <summary className="cursor-pointer font-mono text-[0.62rem] font-semibold tracking-widest text-fd-muted-foreground uppercase">
+      <details className="rounded-md border border-fd-border bg-fd-card p-4">
+        <summary className="cursor-pointer text-sm font-medium text-fd-muted-foreground">
           {m.workbench_name_advanced_summary()}
         </summary>
-        <div className="mt-3 flex flex-col gap-3">
+        <div className="mt-4 flex flex-col gap-4">
+          <LanguageGroup language={manifest.language} onWrite={write} />
+
           <Field label={m.workbench_name_field_id()}>
-            <input
+            <Input
               readOnly
               value={manifest.id}
-              className="min-w-0 flex-1 border border-fd-border bg-fd-background px-2 py-1 font-mono text-[0.78rem] text-fd-muted-foreground"
+              className="flex-1 bg-fd-background font-mono text-fd-muted-foreground"
             />
           </Field>
           <p className="text-xs text-fd-muted-foreground">
             {m.workbench_name_id_note()}
           </p>
           <Field label={m.workbench_name_field_contract()}>
-            <input
+            <Input
               readOnly
               value={String(manifest.contract)}
-              className="min-w-0 flex-1 border border-fd-border bg-fd-background px-2 py-1 font-mono text-[0.78rem] text-fd-muted-foreground"
+              className="flex-1 bg-fd-background font-mono text-fd-muted-foreground"
             />
           </Field>
           <Field label={m.workbench_name_field_min_app_version()}>
-            <input
+            <Input
               readOnly
               value={manifest.minAppVersion ?? m.workbench_name_unset()}
-              className="min-w-0 flex-1 border border-fd-border bg-fd-background px-2 py-1 font-mono text-[0.78rem] text-fd-muted-foreground"
+              className="flex-1 bg-fd-background font-mono text-fd-muted-foreground"
             />
           </Field>
           <p className="text-xs text-fd-muted-foreground">
@@ -334,9 +358,7 @@ function Group({
 }) {
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="font-mono text-[0.62rem] font-semibold tracking-widest text-fd-muted-foreground uppercase">
-        {heading}
-      </h3>
+      <h3 className="text-sm font-semibold">{heading}</h3>
       {lede && <p className="text-xs text-fd-muted-foreground">{lede}</p>}
       {children}
     </section>
@@ -345,8 +367,8 @@ function Group({
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="flex items-center gap-2 text-xs">
-      <span className="w-40 shrink-0 text-fd-muted-foreground">{label}</span>
+    <label className="flex flex-col gap-1.5 text-sm">
+      <span className="text-fd-muted-foreground">{label}</span>
       {children}
     </label>
   );
@@ -372,12 +394,12 @@ function DraftText({
   disabled?: boolean;
   placeholder?: string;
   onCommit: (value: string) => void;
-  className: string;
+  className?: string;
 }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   return (
-    <input
+    <Input
       id={id}
       value={draft}
       disabled={disabled}
@@ -414,7 +436,6 @@ function TextValue({
       value={value}
       placeholder={optional ? m.workbench_name_optional() : undefined}
       onCommit={(next) => onCommit(optional && next === "" ? undefined : next)}
-      className="min-w-0 flex-1 border border-fd-border bg-fd-background px-2 py-1 text-[0.78rem]"
     />
   );
 }
@@ -444,30 +465,30 @@ function BindingRow({
   const effective = inherits ? fallback : value;
   const id = fieldId(binding.key);
   return (
-    <div className="flex flex-col gap-1.5 border border-fd-border bg-fd-card px-3 py-2">
-      <div className="flex items-baseline gap-3">
-        <label htmlFor={id} className="min-w-0 flex-1 text-xs">
+    <div className="flex flex-col gap-3 rounded-md border border-fd-border bg-fd-card p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <label htmlFor={id} className="min-w-0 flex-1 text-sm font-medium">
           {label}
         </label>
-        <span className="font-mono text-[0.6rem] font-semibold tracking-widest text-fd-muted-foreground uppercase">
+        <span className="text-xs text-fd-muted-foreground">
           {inherits
             ? m.workbench_name_origin_default()
             : m.workbench_name_origin_profile()}
         </span>
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="sm"
           aria-label={
             inherits
               ? m.workbench_name_override_for({ name: label })
               : m.workbench_name_use_default_for({ name: label })
           }
           onClick={() => onWrite(inherits ? fallback : undefined)}
-          className="cursor-pointer border border-fd-border px-2 py-0.5 text-xs"
         >
           {inherits
             ? m.workbench_name_override()
             : m.workbench_name_use_default()}
-        </button>
+        </Button>
       </div>
       {binding.kind === "style" && citationStyles ? (
         <StylePicker
@@ -478,14 +499,12 @@ function BindingRow({
           onWrite={onWrite}
         />
       ) : binding.kind === "toggle" ? (
-        <span className="flex items-center gap-2 text-xs">
-          <input
+        <span className="flex items-center gap-3 py-2 text-sm">
+          <Switch
             id={id}
-            type="checkbox"
-            role="switch"
             disabled={inherits}
             checked={effective === true}
-            onChange={(event) => onWrite(event.target.checked)}
+            onCheckedChange={onWrite}
           />
           <span className="text-fd-muted-foreground">
             {valueText(effective)}
@@ -506,7 +525,7 @@ function BindingRow({
           onCommit={(next) =>
             onWrite(binding.kind === "style" && next === "" ? null : next)
           }
-          className="min-w-0 border border-fd-border bg-fd-background px-2 py-1 font-mono text-[0.78rem] disabled:text-fd-muted-foreground"
+          className="bg-fd-background disabled:text-fd-muted-foreground"
         />
       )}
     </div>
@@ -538,22 +557,24 @@ function StylePicker({
       ? [{ id: value, title: value }, ...styles]
       : styles;
   return (
-    <select
+    <NativeSelect
       id={id}
       value={value ?? ""}
       disabled={disabled}
       onChange={(event) =>
         onWrite(event.target.value === "" ? null : event.target.value)
       }
-      className="min-w-0 border border-fd-border bg-fd-background px-2 py-1 text-[0.78rem] disabled:text-fd-muted-foreground"
+      className="w-full"
     >
-      <option value="">{m.workbench_name_value_no_style()}</option>
+      <NativeSelectOption value="">
+        {m.workbench_name_value_no_style()}
+      </NativeSelectOption>
       {options.map((style) => (
-        <option key={style.id} value={style.id}>
+        <NativeSelectOption key={style.id} value={style.id}>
           {style.title}
-        </option>
+        </NativeSelectOption>
       ))}
-    </select>
+    </NativeSelect>
   );
 }
 
@@ -576,15 +597,19 @@ function LanguageGroup({
       lede={m.workbench_name_language_lede()}
     >
       <Field label={m.workbench_name_language_heading()}>
-        <select
+        <NativeSelect
           id={fieldId("language")}
           value={pending ?? language}
           onChange={(event) => setPending(event.target.value)}
-          className="border border-fd-border bg-fd-background px-2 py-1 text-xs"
+          className="w-full"
         >
-          <option value="liquid">{m.workbench_name_language_liquid()}</option>
-          <option value="eta">{m.workbench_name_language_eta()}</option>
-        </select>
+          <NativeSelectOption value="liquid">
+            {m.workbench_name_language_liquid()}
+          </NativeSelectOption>
+          <NativeSelectOption value="eta">
+            {m.workbench_name_language_eta()}
+          </NativeSelectOption>
+        </NativeSelect>
       </Field>
       {pending !== null && pending !== language && (
         <div
@@ -596,23 +621,19 @@ function LanguageGroup({
           </strong>
           <p>{m.workbench_name_language_confirm_body()}</p>
           <div className="flex gap-2">
-            <button
-              type="button"
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => {
                 onWrite("language", pending);
                 setPending(null);
               }}
-              className="cursor-pointer border border-fd-border px-2 py-1"
             >
               {m.workbench_name_language_confirm()}
-            </button>
-            <button
-              type="button"
-              onClick={() => setPending(null)}
-              className="cursor-pointer px-2 py-1 underline underline-offset-2"
-            >
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setPending(null)}>
               {m.workbench_name_language_cancel()}
-            </button>
+            </Button>
           </div>
         </div>
       )}

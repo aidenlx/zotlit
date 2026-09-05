@@ -2,13 +2,13 @@
 // full Explorer tree behind "Everything else from Zotero". Both lists select a
 // row the same way, and both insert the same snippet.
 
+import { ChevronDown, Copy, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
   buildDisplayTree,
   buildFilteredDisplayTree,
   initialTreeState,
-  renderSnippet,
   setFilter,
   snippetKindsFor,
   toggleNode,
@@ -19,17 +19,23 @@ import type {
   TreeState,
 } from "@zotlit/workbench/explorer";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 import { m } from "@/paraglide/messages.js";
 
 import {
   FIELD_TRIGGER,
   ROOT_LABEL,
-  SNIPPET_ENGINE,
+  fieldSnippet,
   commonRows,
   fieldValueText,
   rowMatches,
 } from "./fields";
-import type { TemplateRoot } from "./fields";
+import type { FieldInsertionMode, TemplateRoot } from "./fields";
 
 const SNIPPET_LABEL: Record<SnippetKind, () => string> = {
   output: m.workbench_snippet_output,
@@ -41,6 +47,8 @@ const SNIPPET_LABEL: Record<SnippetKind, () => string> = {
 export interface FieldListProps {
   /** The root the editor's caret writes against; the list follows it. */
   root: TemplateRoot;
+  mode?: FieldInsertionMode;
+  disabled?: boolean;
   /** That root's Template data, or null when this paper carries none. */
   data: Record<string, unknown> | null;
   /** Puts the snippet in the note at the saved selection and returns focus. */
@@ -54,13 +62,21 @@ interface RowSelection {
 }
 
 interface RowActions {
+  readonly mode: FieldInsertionMode;
+  readonly disabled: boolean;
   readonly selected: RowSelection | null;
   readonly onSelect: (node: DisplayNode) => void;
   readonly onKind: (kind: SnippetKind) => void;
   readonly onInsert: (snippet: string) => void;
 }
 
-export function FieldList({ root, data, onInsert }: FieldListProps) {
+export function FieldList({
+  root,
+  data,
+  onInsert,
+  mode = "template",
+  disabled = false,
+}: FieldListProps) {
   const [tree, setTree] = useState<TreeState>(initialTreeState);
   const [selected, setSelected] = useState<RowSelection | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -90,12 +106,17 @@ export function FieldList({ root, data, onInsert }: FieldListProps) {
   const rest = nodes.length - common.length;
 
   const actions: RowActions = {
+    mode,
+    disabled,
     selected,
     onSelect: (node) =>
       setSelected((current) =>
         current?.key === node.key
           ? null
-          : { key: node.key, kind: snippetKindsFor(node)[0]! },
+          : {
+              key: node.key,
+              kind: mode === "template" ? snippetKindsFor(node)[0]! : "output",
+            },
       ),
     onKind: (kind) =>
       setSelected((current) => (current ? { ...current, kind } : null)),
@@ -103,19 +124,21 @@ export function FieldList({ root, data, onInsert }: FieldListProps) {
   };
 
   return (
-    <section className="flex min-h-0 flex-col">
-      <div className="flex items-baseline gap-3">
-        <h2 className="font-serif text-[1.06rem] font-medium">
+    <section className="flex min-h-0 flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="font-serif text-lg font-medium">
           {m.workbench_fields_heading()}
         </h2>
-        <span className="ml-auto font-mono text-[0.6rem] font-semibold tracking-widest text-fd-muted-foreground uppercase">
+        <span className="text-xs text-fd-muted-foreground">
           {ROOT_LABEL[root]()}
         </span>
       </div>
-      <p className="mt-1 mb-2 text-xs text-fd-muted-foreground">
-        {m.workbench_fields_lede()}
+      <p className="mt-2 mb-3 text-sm leading-relaxed text-fd-muted-foreground">
+        {disabled
+          ? m.workbench_properties_insert_hint()
+          : m.workbench_fields_lede()}
       </p>
-      <input
+      <Input
         type="search"
         value={query}
         aria-label={m.workbench_fields_search()}
@@ -123,9 +146,9 @@ export function FieldList({ root, data, onInsert }: FieldListProps) {
         onChange={(event) =>
           setTree((current) => setFilter(current, event.target.value))
         }
-        className="mb-2 border border-fd-border bg-fd-card px-2 py-1.5 text-sm"
+        className="mb-3"
       />
-      <div className="min-h-0 flex-1 overflow-auto border border-fd-border bg-fd-card">
+      <div className="min-h-0 flex-1 overflow-auto rounded-md border border-fd-border bg-fd-card">
         {data === null ? (
           <p className="px-3 py-2 text-xs text-fd-muted-foreground">
             {m.workbench_fields_no_highlights()}
@@ -156,9 +179,13 @@ export function FieldList({ root, data, onInsert }: FieldListProps) {
               type="button"
               aria-expanded={allOpen}
               onClick={() => setShowAll((open) => !open)}
-              className="w-full cursor-pointer border-t border-fd-border px-3 py-2 text-left text-xs text-fd-muted-foreground hover:bg-fd-accent"
+              className="flex w-full cursor-pointer items-center gap-2 border-t border-fd-border px-3 py-3 text-start text-sm text-fd-muted-foreground hover:bg-fd-muted"
             >
-              {m.workbench_fields_everything_else()}
+              <ChevronDown
+                aria-hidden
+                className={`size-4 shrink-0 ${allOpen ? "rotate-180" : ""}`}
+              />
+              <span>{m.workbench_fields_everything_else()}</span>
               {rest > 0 && <span className="ml-2 font-mono">{rest}</span>}
             </button>
             {allOpen && (
@@ -189,7 +216,7 @@ interface ExplorerRowsProps {
 }
 
 function ExplorerRows({ nodes, depth, actions, onToggle }: ExplorerRowsProps) {
-  const indent = { marginLeft: `${depth * 0.75}rem` };
+  const indent = { marginInlineStart: `${depth * 0.75}rem` };
   return (
     <ul>
       {nodes.map((node) => (
@@ -202,7 +229,7 @@ function ExplorerRows({ nodes, depth, actions, onToggle }: ExplorerRowsProps) {
                 aria-expanded={node.children !== undefined}
                 onClick={() => onToggle(node.key)}
                 style={indent}
-                className="mt-1.5 cursor-pointer px-1 text-fd-muted-foreground"
+                className="mt-1.5 min-h-8 min-w-6 cursor-pointer px-1 text-fd-muted-foreground"
               >
                 <span aria-hidden>{node.children ? "▾" : "▸"}</span>
               </button>
@@ -240,55 +267,85 @@ interface FieldRowViewProps {
 }
 
 function FieldRowView({ node, label, value, actions }: FieldRowViewProps) {
-  const { selected, onSelect, onKind, onInsert } = actions;
+  const { selected, onSelect, onKind, onInsert, mode, disabled } = actions;
   const kind = selected && selected.key === node.key ? selected.kind : null;
-  const snippet = kind ? renderSnippet(node, SNIPPET_ENGINE, kind) : "";
-  const kinds = snippetKindsFor(node);
+  const snippet = kind ? fieldSnippet(node, mode, kind) : "";
+  const kinds = mode === "template" ? snippetKindsFor(node) : ["output"];
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
 
   return (
-    <div className={kind ? "border-l-2 border-fd-primary" : ""}>
+    <div className={kind ? "bg-fd-muted/50" : ""}>
       <button
         type="button"
-        aria-pressed={kind !== null}
-        onClick={() => onSelect(node)}
-        className="w-full cursor-pointer px-3 py-1.5 text-left hover:bg-fd-accent"
+        aria-expanded={kind !== null}
+        onClick={() => {
+          onSelect(node);
+          setCopyStatus(null);
+        }}
+        className="w-full cursor-pointer px-3 py-2.5 text-start hover:bg-fd-muted"
       >
-        <span className="block text-xs font-medium">{label}</span>
-        <span className="block truncate text-xs text-fd-muted-foreground">
+        <span className="block text-sm font-medium">{label}</span>
+        <span
+          className={`mt-0.5 block text-sm break-words text-fd-muted-foreground ${kind ? "max-h-40 overflow-auto" : "line-clamp-2"}`}
+        >
           {value || "—"}
         </span>
       </button>
       {kind && (
-        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-2">
-          <button
-            type="button"
-            onClick={() => onInsert(snippet)}
-            className="cursor-pointer bg-fd-primary px-2 py-1 text-xs font-medium text-fd-primary-foreground"
-          >
-            {m.workbench_fields_put_in_note()}
-          </button>
-          <button
-            type="button"
-            onClick={() => void navigator.clipboard.writeText(snippet)}
-            className="cursor-pointer border border-fd-border px-2 py-1 text-xs"
-          >
-            {m.workbench_fields_copy()}
-          </button>
-          {kinds.length > 1 &&
-            kinds.map((offered) => (
-              <button
-                key={offered}
-                type="button"
-                aria-pressed={offered === kind}
-                onClick={() => onKind(offered)}
-                className="cursor-pointer border border-fd-border px-2 py-1 text-[0.68rem] text-fd-muted-foreground aria-pressed:border-fd-primary aria-pressed:text-fd-primary"
+        <div className="space-y-3 px-3 pb-3">
+          {kinds.length > 1 && (
+            <label className="flex flex-col gap-1.5 text-sm">
+              {m.workbench_field_snippet()}
+              <NativeSelect
+                value={kind}
+                onChange={(event) => onKind(event.target.value as SnippetKind)}
+                className="w-full"
               >
-                {SNIPPET_LABEL[offered]()}
-              </button>
-            ))}
-          <code className="block w-full font-mono text-[0.68rem] break-all text-fd-primary">
+                {kinds.map((offered) => (
+                  <NativeSelectOption key={offered} value={offered}>
+                    {SNIPPET_LABEL[offered as SnippetKind]()}
+                  </NativeSelectOption>
+                ))}
+              </NativeSelect>
+            </label>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={disabled}
+              onClick={() => onInsert(snippet)}
+            >
+              <Plus aria-hidden />
+              {m.workbench_fields_put_in_note()}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={m.workbench_fields_copy()}
+              title={m.workbench_fields_copy()}
+              onClick={() => {
+                void navigator.clipboard.writeText(snippet).then(
+                  () => setCopyStatus(m.workbench_field_copy_done()),
+                  () => setCopyStatus(m.workbench_field_copy_failed()),
+                );
+              }}
+            >
+              <Copy aria-hidden />
+            </Button>
+          </div>
+          <code
+            dir="ltr"
+            className="block font-mono text-xs break-words whitespace-pre-wrap text-fd-muted-foreground"
+          >
             {snippet}
           </code>
+          <p
+            role="status"
+            className="text-xs text-fd-muted-foreground empty:hidden"
+          >
+            {copyStatus}
+          </p>
         </div>
       )}
     </div>
