@@ -140,18 +140,20 @@ export function SliceEditor({
           webHover(read),
           ...(language === "json-e" || slice === "advanced"
             ? [
-                embeddedJsonE(() =>
-                  controller.templateRegions
-                    .filter(
-                      (region) =>
-                        region.language === "json-e" &&
-                        region.from >= controller.sliceRange(slice).from &&
-                        region.to <= controller.sliceRange(slice).to,
-                    )
-                    .map((region) => ({
-                      from: region.from - controller.sliceRange(slice).from,
-                      to: region.to - controller.sliceRange(slice).from,
-                    })),
+                embeddedJsonE((source) =>
+                  language === "json-e"
+                    ? [{ from: 0, to: source.length }]
+                    : controller.templateRegions
+                        .filter(
+                          (region) =>
+                            region.language === "json-e" &&
+                            region.from >= controller.sliceRange(slice).from &&
+                            region.to <= controller.sliceRange(slice).to,
+                        )
+                        .map((region) => ({
+                          from: region.from - controller.sliceRange(slice).from,
+                          to: region.to - controller.sliceRange(slice).from,
+                        })),
                 ),
               ]
             : []),
