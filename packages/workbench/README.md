@@ -11,6 +11,16 @@ a `WorkbenchProblem`, a `RenderDiagnostic`, a `LocalBridgeConnection` state — 
 the host logs. That is a package-scoped exception to
 [the logging policy](../../policies/logging.md).
 
+## Development
+
+The `development` export condition maps each browser-safe entry to its source,
+so a host's Vite dev server and Vitest read `src/` directly and an edit here
+hot-updates the page without a rebuild. A production build, Node, and the type
+checker take the built `default` entry, so `pnpm build` still has to run before
+a release or a Node consumer sees a change. Imports inside `src/` use the
+`#/` subpath import the package's `imports` field maps to `src/`, which every
+consumer of the source resolves without an alias of its own.
+
 ## Document
 
 `@zotlit/workbench/document` owns one Profile document and its editing rules.

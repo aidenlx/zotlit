@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/native-select";
 import { m } from "@/paraglide/messages.js";
 
-import { PropertyList, propertyText } from "./reading-view";
+import { PropertyList, propertyText } from "./property-list";
 import { SliceEditor } from "./slice-editor";
 import type { SuggestionSource } from "./slice-editor";
 

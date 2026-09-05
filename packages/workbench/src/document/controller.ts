@@ -27,8 +27,6 @@ import type {
 } from "@zotlit/templates/facade";
 import { literatureNoteTemplateDependencies } from "@zotlit/templates/literature-note-pack";
 
-import { pairingState, pairingHistory } from "@/language/pairing-state";
-
 import { jsonSliceHistory } from "./json-source";
 import {
   managedEntryEdit,
@@ -46,6 +44,8 @@ import type {
 } from "./manifest-patch";
 import { noteRegions } from "./regions";
 import type { NoteRegions } from "./regions";
+
+import { pairingState, pairingHistory } from "#/language/pairing-state";
 
 /** The pane that edits one Managed Frontmatter entry's expression. */
 export type WorkbenchEntrySliceId = `entry:${number}`;

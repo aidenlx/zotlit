@@ -18,8 +18,6 @@ import {
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
-import { serializeTemplateData } from "@/explorer/index";
-
 import { collectRootDescriptors } from "./descriptors";
 import {
   authorsShort,
@@ -35,6 +33,8 @@ import type {
 } from "./types";
 import { SnapshotSelectionError } from "./types";
 import { collectUnavailable } from "./unavailable";
+
+import { serializeTemplateData } from "#/explorer/index";
 
 export type * from "./descriptors";
 export type * from "./types";

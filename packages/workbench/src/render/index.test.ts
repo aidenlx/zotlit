@@ -6,14 +6,14 @@ import annotationSchema from "@zotlit/db/contract/annotation.schema.json";
 import filenameSchema from "@zotlit/db/contract/filename.schema.json";
 import noteSchema from "@zotlit/db/contract/note.schema.json";
 
-import { WorkbenchDocumentController } from "@/document";
-
 import {
   DEFAULT_PROFILE_SOURCE,
   renderProfile,
   restoreTemplateData,
   SAMPLE_ITEMS,
 } from "./index";
+
+import { WorkbenchDocumentController } from "#/document/index";
 
 /** The default Profile with the annotation section printing `zt.citation`. */
 const SAMPLE_WITH_CITATION = DEFAULT_PROFILE_SOURCE.replace(

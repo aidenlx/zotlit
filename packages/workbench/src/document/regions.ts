@@ -3,12 +3,12 @@
 // at. Both are read from the source alone, so a draft the parser refuses keeps
 // the boxes the reader is working in.
 
+import type { LiquidRange } from "#/language/liquid";
 import { regex } from "arkregex";
 
-import { liquidRanges } from "@/language/liquid";
-import type { LiquidRange } from "@/language/liquid";
-
 import type { WorkbenchSliceRange } from "./manifest-patch";
+
+import { liquidRanges } from "#/language/liquid";
 
 /** One annotation render call in the note body, in master offsets. */
 export interface AnnotationRenderSite {

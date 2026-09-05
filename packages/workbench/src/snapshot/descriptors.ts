@@ -1,6 +1,6 @@
 // Browser-safe descriptor contract and extraction for serialized Template data.
 
-import type { TemplatePathSegment } from "@/explorer/accessor-path";
+import type { TemplatePathSegment } from "#/explorer/accessor-path";
 
 export interface SnapshotStringCoercion {
   readonly path: readonly TemplatePathSegment[];
