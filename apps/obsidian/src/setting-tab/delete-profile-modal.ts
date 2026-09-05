@@ -1,4 +1,5 @@
-// Profile deletion gathers target and file-move consent in the same dialog.
+// Profile deletion gathers target and file-move consent in the same dialog,
+// and names the Profile Selection Rules the user must repair afterwards.
 import { dirname } from "node:path/posix";
 import { ConfirmationModal } from "obsidian";
 import type { App } from "obsidian";
@@ -8,6 +9,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
+import { describeRule } from "@/services/profile-selection";
 import type { ProfileDeletionPlan } from "@/services/profile/service";
 import {
   profilePreviewChoice,
@@ -125,6 +127,7 @@ export function confirmProfileDeletion(
       });
     update();
   }
+  if (plan.rules.length) renderRuleWarning(modal.contentEl, plan);
   modal.addButton((button) =>
     button
       .setButtonText(
@@ -142,4 +145,24 @@ export function confirmProfileDeletion(
   modal.setCloseCallback(() => resolve(undefined));
   modal.open();
   return promise;
+}
+
+/**
+ * The rules that select the Profile. They keep their target after deletion:
+ * the note target chosen above moves notes only, so the warning says what the
+ * user repairs by hand and where.
+ */
+function renderRuleWarning(
+  container: HTMLElement,
+  plan: ProfileDeletionPlan,
+): void {
+  const section = container.createDiv({ cls: "zt:my-4 zt:space-y-2" });
+  section.createEl("p", {
+    cls: "mod-warning",
+    text: m.settings_profile_delete_rules_count({ count: plan.rules.length }),
+  });
+  const list = section.createEl("ul", { cls: "zt:m-0 zt:pl-5" });
+  for (const rule of plan.rules)
+    list.createEl("li", { text: describeRule(rule) });
+  section.createEl("p", { text: m.settings_profile_delete_rules_repair() });
 }

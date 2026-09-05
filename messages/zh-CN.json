@@ -312,6 +312,16 @@
   "settings_profile_delete_confirm_title": "删除“{label}”配置方案？",
   "settings_profile_delete_confirm_body": "配置方案文档将移至 Obsidian 配置的垃圾箱。",
   "settings_profile_delete": "删除配置方案",
+  "settings_profile_delete_rules_count": [
+    {
+      "declarations": ["input count"],
+      "selectors": ["count"],
+      "match": {
+        "count=*": "{count} 条规则选择此配置方案。"
+      }
+    }
+  ],
+  "settings_profile_delete_rules_repair": "将笔记移至其他配置方案不会更改规则。每条规则仍以此配置方案为目标，并停止自动选择，直到你在“自动选择配置方案”中编辑或移除它。",
   "settings_profile_rules_name": "自动选择配置方案",
   "settings_profile_rules_desc": "规则根据 Zotero 条目为新文献笔记选择配置方案。自上而下第一条匹配的规则生效。没有匹配规则的条目使用“默认”；存在其他配置方案时会询问你。",
   "settings_profile_rules_heading": "配置方案选择规则",

@@ -540,6 +540,17 @@
   ],
   "settings_profile_delete_move_files": "Move files to {folder}",
   "settings_profile_delete_target": "Move notes to profile",
+  "settings_profile_delete_rules_count": [
+    {
+      "declarations": ["input count"],
+      "selectors": ["count"],
+      "match": {
+        "count=1": "1 rule selects this profile.",
+        "count=*": "{count} rules select this profile."
+      }
+    }
+  ],
+  "settings_profile_delete_rules_repair": "Moving notes to another profile does not change the rules. Each rule keeps this profile as its target and stops automatic selection until you edit or remove it under Automatic profile selection.",
   "modal_profile_switch_effects": "The managed block and managed frontmatter will render from the new template on the next update. Text outside the managed region stays unchanged.",
   "modal_profile_switch_imported_unavailable": "Imported notes could not be checked. Only this literature note will switch.",
   "modal_profile_switch_imported_effects": "The imported note will use the new profile the next time you update it from Zotero.",

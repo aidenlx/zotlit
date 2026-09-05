@@ -69,7 +69,20 @@ const reachable = await isObsidianReachable();
 describe.skipIf(!reachable)("End-to-end Run", () => {
   let vaultId = "";
   let booksNotePath = "";
+  // The rule the settings UI configured below; the deletion flow restores
+  // it so the warning names a rule the GUI produced.
+  let bookRule: {
+    id: string;
+    scope: unknown;
+    expression: string;
+    profile: string;
+  };
   let m: typeof import("@obsidian-messages");
+  const bookRuleSummary = () =>
+    m.settings_profile_rule_summary({
+      conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
+      libraries: m.settings_library_scope_personal(),
+    });
 
   beforeAll(async () => {
     // The dev build generates this facade; unreachable runs never load it.
@@ -426,10 +439,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await clickModalButton(vaultId, m.settings_profile_rule_save()),
     ).toBe(true);
-    const ruleSummary = m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
-      libraries: m.settings_library_scope_personal(),
-    });
+    const ruleSummary = bookRuleSummary();
     // The list persists the rule and shows it after the tab re-renders.
     expect(
       await obEvalUntil(
@@ -443,13 +453,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         vaultId,
         "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'])",
       ),
-    ) as { scope: unknown; expression: string; profile: string }[];
+    ) as (typeof bookRule)[];
     expect(stored).toHaveLength(1);
     expect(stored[0]).toMatchObject({
       scope: { mode: "selected", libraries: [{ type: "personal" }] },
       expression: 'itemType == "book"',
       profile: booksProfile.id,
     });
+    bookRule = stored[0]!;
     await obEval(vaultId, "app.setting.close();true");
 
     // Quick Switch preselects the rule's Profile, names the rule, and shows
@@ -534,6 +545,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "utf-8",
     );
     const exterior = "My discussion stays outside the managed region.";
+    // The GUI-configured rule selects Books again, so the deletion dialog
+    // has a referencing rule to warn about.
+    await obEval(
+      vaultId,
+      `app.plugins.plugins.zotlit.services.settings.update({'profile.selection-rules':[${JSON.stringify(bookRule)}]});true`,
+    );
     await obEval(
       vaultId,
       `(async function(){app.vault.setConfig('trashOption','local');app.vault.setConfig('settingsPopoutWindow',false);var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});await app.vault.append(file,${JSON.stringify(`\n${exterior}\n`)});app.setting.open();var tab=app.setting.openTabById('zotlit');app.setting.navigateToSearchResult({tab,pagePath:[${JSON.stringify(m.settings_page_profiles())}]});return true;})()`,
@@ -582,6 +599,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(deletionDialog).toContain(
       m.settings_profile_delete_move_confirm({ count: 1 }),
     );
+    // The warning lists the rule and says it needs manual repair; the
+    // delete action stays available.
+    expect(deletionDialog).toContain(
+      m.settings_profile_delete_rules_count({ count: 1 }),
+    );
+    expect(deletionDialog).toContain(bookRuleSummary());
+    expect(deletionDialog).toContain(m.settings_profile_delete_rules_repair());
     expect(
       await clickModalButton(
         vaultId,
@@ -653,6 +677,66 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       noteBody(afterMove).replace(managedRegion(afterMove), ""),
     );
     expect(updated).toContain(exterior);
+
+    // Moving the note into Default left the rule's target alone: it still
+    // names the deleted Books ID.
+    const readStoredRules = async () =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'])",
+        ),
+      ) as (typeof bookRule)[];
+    expect(await readStoredRules()).toEqual([bookRule]);
+
+    // Manual repair through the existing rule editor: the row shows the
+    // unavailable target, the editor's Profile control takes Default.
+    await obEval(
+      vaultId,
+      `(function(){app.setting.open();var tab=app.setting.openTabById('zotlit');app.setting.navigateToSearchResult({tab,pagePath:[${JSON.stringify(m.settings_page_profiles())}]});return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.id)}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(m.settings_profile_rule_target_unavailable())}));var button=row&&row.querySelector('.clickable-icon');if(!button)return false;button.click();return true;})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(Array.from(document.querySelectorAll('.modal')).some(modal=>modal.textContent.includes(${JSON.stringify(m.settings_profile_rule_title_edit())})))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEval(
+        vaultId,
+        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_rule_target())});var select=row.querySelector('select');select.value='default';select.dispatchEvent(new Event('change',{bubbles:true}));return select.value;})()`,
+      ),
+    ).toBe("default");
+    expect(
+      await clickModalButton(vaultId, m.settings_profile_rule_save()),
+    ).toBe(true);
+    await waitFor(
+      async () => (await readStoredRules())[0]?.profile === "default",
+    );
+    expect(await readStoredRules()).toEqual([
+      { ...bookRule, profile: "default" },
+    ]);
+    // The list shows the repaired rule under Default without the warning.
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(Array.from(document.querySelectorAll('.setting-item')).some(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_default_name())}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(bookRuleSummary())})&&!el.textContent.includes(${JSON.stringify(m.settings_profile_rule_target_unavailable())})))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    // Leave the later flows without rules, as the earlier rule flow did.
+    await obEval(
+      vaultId,
+      "app.plugins.plugins.zotlit.services.settings.update({'profile.selection-rules':[]});app.setting.close();true",
+    );
   });
 
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
