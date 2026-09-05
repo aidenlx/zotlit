@@ -32,12 +32,23 @@ export function buildHeaderRules(): HeaderRule[] {
       source: "/.well-known/agent-skills/*/archive.zip",
       headers: { "Cache-Control": "public, max-age=31536000, immutable" },
     },
-    // Googlebot fetches the hashed chunks to render a page, so they stay
-    // crawlable; the header alone keeps them out of the index. A `robots.txt`
-    // rule here would block rendering instead.
+    /**
+     * Every file under `/assets/` carries a content hash in its name, so a
+     * changed build ships a new URL and these bytes never change. The asset
+     * layer otherwise defaults to `public, max-age=0, must-revalidate`, which
+     * costs a revalidation round trip per chunk, font, and stylesheet on every
+     * repeat visit.
+     *
+     * Googlebot fetches the hashed chunks to render a page, so they stay
+     * crawlable; the header alone keeps them out of the index. A `robots.txt`
+     * rule here would block rendering instead.
+     */
     {
       source: "/assets/*",
-      headers: { "X-Robots-Tag": "noindex" },
+      headers: {
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "X-Robots-Tag": "noindex",
+      },
     },
   ];
 }

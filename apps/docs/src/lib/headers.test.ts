@@ -23,7 +23,9 @@ describe("renderHeadersFile", () => {
     );
   });
 
-  it("keeps the hashed chunks out of the search index", () => {
-    expect(file).toContain("/assets/*\n  X-Robots-Tag: noindex");
+  it("caches the hashed chunks forever and keeps them out of the search index", () => {
+    expect(file).toContain(
+      "/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n  X-Robots-Tag: noindex",
+    );
   });
 });
