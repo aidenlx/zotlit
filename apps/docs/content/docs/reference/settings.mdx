@@ -130,7 +130,7 @@ The <UiLabel name={m.settings_profile_rules_heading()} /> list on the same page 
 
 Rules refer to a Profile by its stable ID, so renaming a Profile or its document keeps the rule. Rules stay in this vault: sharing or importing a Profile never carries them.
 
-When you create a note from the quick switcher, the Profile picker preselects the rule's Profile, names the rule, and shows the resulting path; choosing another Profile overrides the rule for that note only. An item that matches no rule preselects <UiLabel name={m.settings_profile_default_name()} />, or uses it directly when no other Profile exists. A rule that cannot be evaluated, or one whose Profile has been deleted, stops automatic selection and asks you to choose; the rule row shows the problem so you can repair it. Existing notes keep their recorded Profile — rules never move a note.
+When you create a note from the quick switcher, the Profile picker preselects the rule's Profile, names the rule, and shows the resulting path; choosing another Profile overrides the rule for that note only. When you follow a citation or a Zotero link, a Profile named by the link or selected by a rule creates the note at once, and a notice reports the Profile and the path. An item that matches no rule preselects <UiLabel name={m.settings_profile_default_name()} />, or uses it directly when no other Profile exists. A rule that cannot be evaluated, or one whose Profile has been deleted, stops automatic selection and asks you to choose; the rule row shows the problem so you can repair it. Existing notes keep their recorded Profile — rules never move a note.
 
 ## Citations
 
