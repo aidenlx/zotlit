@@ -76,6 +76,14 @@ The value a note or an operation resolves its Literature Note Profile against: a
 The step that turns a Profile selector or a note's Profile stamp into the Literature Note Profile an operation runs under — the default Profile when nothing names one, otherwise the Profile whose ID matches, with its sparse bindings merged over the default Profile. A stamp that names no configured Profile resolves to an unknown result that keeps the stamp verbatim; it never resolves to the default Profile.
 _Avoid_: profile lookup, profile find
 
+**Profile Selection Rule**:
+A vault-owned rule that associates conditions on a Zotero Item with a Literature Note Profile for a new Literature Note. Its position in the ordered rule list defines its priority.
+_Avoid_: Profile binding (a Profile's configuration), saved search (a Zotero search definition)
+
+**Automatic Profile Selection**:
+The choice of a Literature Note Profile for a new Literature Note from the source Item's first matching Profile Selection Rule. Existing notes retain their recorded Profile membership.
+_Avoid_: Profile resolution (resolving an already chosen selector), automatic Profile switch (changing an existing note's membership)
+
 **Managed Block**:
 The `{% managed %}` … `{% endmanaged %}` block in a Literature Note Template document's body — a self-contained sub-template supported in both Liquid and Eta. It renders in isolation: variables assigned outside the block are not visible inside, so an update-time render is identical to a create-time render. On create it renders in place within the body; on update it alone re-renders to refill the note's Managed Region. When its tags are Line-Owning Tags, the Managed Region occupies exactly the lines the block occupied. Role-equivalent to the retired `content` Template.
 _Avoid_: managed region (the rendered output in the note, not the template source), content block
