@@ -14,6 +14,7 @@ export {
 export {
   createNoteInteractively,
   type InteractiveCreationDeps,
+  type InteractiveCreationOptions,
 } from "./creation-view";
 export {
   createNoteFeature,

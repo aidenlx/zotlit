@@ -90,29 +90,33 @@ function creationHarness(selection: CreationProfileSelection) {
 }
 
 it.each(["open", "update"] as const)(
-  "%s asks with the link preselected, releases the DB before the picker, and opens the confirmed path",
+  "%s creates directly under the link's Profile, releases the DB before preparing, and opens the path",
   async (action) => {
     const harness = creationHarness({
       selector: PAPERS,
       source: "headless",
       shouldAsk: true,
     });
-    vi.mocked(chooseLiteratureNoteProfile).mockImplementation(
-      async (_app, options) => {
-        expect(harness.released).toHaveBeenCalledOnce();
-        expect(options).toMatchObject({
-          preselected: PAPERS,
-          source: "headless",
-          previews: [{ path: "Papers/Study.md" }],
-        });
-        return { id: PAPERS, label: "Papers" };
-      },
-    );
+    vi.mocked(chooseLiteratureNoteProfile).mockClear();
+    harness.prepareCreationProfiles.mockImplementation(async () => {
+      expect(harness.released).toHaveBeenCalledOnce();
+      return [
+        {
+          selector: PAPERS,
+          label: "Papers",
+          folder: "Papers",
+          citationStyle: null,
+          path: harness.file.path,
+          create: harness.create,
+        },
+      ] as never;
+    });
     await openCompanionNote(harness.deps, REF, { action, profile: PAPERS });
     expect(harness.resolveCreationProfile).toHaveBeenCalledExactlyOnceWith({
       headless: PAPERS,
       item: harness.item,
     });
+    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
     expect(harness.create).toHaveBeenCalledOnce();
     expect(harness.openLinkText).toHaveBeenCalledExactlyOnceWith(
       "Papers/Study.md",
@@ -122,6 +126,62 @@ it.each(["open", "update"] as const)(
     );
   },
 );
+
+it("creates directly when a rule selects the Profile for an unqualified link", async () => {
+  const harness = creationHarness({
+    selector: PAPERS,
+    source: "rule",
+    shouldAsk: true,
+    rule: {
+      id: "article",
+      scope: { mode: "all" },
+      expression: 'itemType == "journalArticle"',
+      profile: PAPERS,
+    },
+  });
+  vi.mocked(chooseLiteratureNoteProfile).mockClear();
+  await openCompanionNote(harness.deps, REF, { action: "open" });
+  expect(harness.resolveCreationProfile).toHaveBeenCalledExactlyOnceWith({
+    headless: undefined,
+    item: harness.item,
+  });
+  expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+  expect(harness.create).toHaveBeenCalledOnce();
+  expect(harness.openLinkText).toHaveBeenCalledExactlyOnceWith(
+    "Papers/Study.md",
+    "",
+    false,
+    { active: true },
+  );
+});
+
+it("asks with the link's Profile when the rule that matched has an unavailable target", async () => {
+  const rule = {
+    id: "article",
+    scope: { mode: "all" as const },
+    expression: 'itemType == "journalArticle"',
+    profile: BOOKS,
+  };
+  const harness = creationHarness({
+    selector: "default",
+    source: "bound",
+    shouldAsk: true,
+    problem: { kind: "unavailable-target", rule, selector: BOOKS },
+  });
+  vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce(undefined);
+  await openCompanionNote(harness.deps, REF, { action: "open" });
+  expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
+    harness.deps.app,
+    expect.objectContaining({
+      preselected: "default",
+      problem: expect.stringContaining(
+        m.settings_profile_rule_item_type_is({ type: "Journal Article" }),
+      ),
+    }),
+  );
+  expect(harness.create).not.toHaveBeenCalled();
+  expect(harness.openLinkText).not.toHaveBeenCalled();
+});
 
 it("leaves a cancelled picker without a note or navigation", async () => {
   const harness = creationHarness({

@@ -159,20 +159,26 @@ export async function createNoteWithToast(
   );
 }
 
-/** Start the create notice only after the user's Profile decision has settled. */
+/**
+ * Start the create notice only after the user's Profile decision has settled.
+ * `created` replaces the plain success notice, e.g. to name the Profile and
+ * path a resolved selection wrote to.
+ */
 export async function createNoteTaskWithToast(
   create: () => Promise<CreateNoteResult>,
-  options: { app?: App } = {},
+  options: { app?: App; created?: (file: TFile) => string } = {},
 ): Promise<TFile | null> {
   try {
     const result = await toast.promise(create(), {
       loading: m.notice_creating_note(),
       success: (result) =>
-        result.outcome === "refused" &&
-        result.diagnostic.code === "unknown-literature-note-profile" &&
-        options.app
-          ? profileRecoveryNotice(options.app, result.diagnostic)
-          : createNoteNotice(result),
+        result.outcome === "created" && options.created
+          ? options.created(result.file)
+          : result.outcome === "refused" &&
+              result.diagnostic.code === "unknown-literature-note-profile" &&
+              options.app
+            ? profileRecoveryNotice(options.app, result.diagnostic)
+            : createNoteNotice(result),
       error: (_msg, e) =>
         e instanceof EmptyFilenameError || e instanceof InertTemplateError
           ? e.message

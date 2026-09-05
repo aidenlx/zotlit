@@ -11,6 +11,7 @@ import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
+import type { CreationProfileSelection } from "@/services/note-feature";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
@@ -36,7 +37,13 @@ describe("CitekeyEditor Profile creation", () => {
     indexedKey: "PAPER234",
     key: "PAPER234",
   };
-  function fixture() {
+  function fixture(
+    selection: CreationProfileSelection = {
+      selector: "default",
+      source: "bound",
+      shouldAsk: true,
+    },
+  ) {
     const create = vi.fn(async () => ({
       outcome: "created",
       file: { path: "Books/Paper.md" },
@@ -64,12 +71,17 @@ describe("CitekeyEditor Profile creation", () => {
       zoteroPref: { dataDir: null },
       db: { state: "ready", client: {} },
       noteFeature: {
-        resolveCreationProfile: async () => ({
-          selector: books,
-          source: "headless",
-          shouldAsk: true,
-        }),
+        resolveCreationProfile: async () => selection,
         prepareCreationProfiles: async () => [
+          {
+            selector: "default",
+            label: undefined,
+            folder: "Literature",
+            citationStyle: null,
+            document: undefined,
+            path: "Literature/Paper.md",
+            create: vi.fn(),
+          },
           {
             selector: books,
             label: "Books",
@@ -102,6 +114,29 @@ describe("CitekeyEditor Profile creation", () => {
     expect(h.openLinkText).not.toHaveBeenCalled();
     choice.resolve({ id: books, label: "Books" });
     await opening;
+    expect(h.create).toHaveBeenCalledOnce();
+    expect(h.openLinkText).toHaveBeenCalledWith("Books/Paper.md", "", "tab", {
+      active: true,
+    });
+  });
+
+  it("creates directly under a rule-selected Profile without the picker", async () => {
+    const h = fixture({
+      selector: books,
+      source: "rule",
+      shouldAsk: true,
+      rule: {
+        id: "book",
+        scope: { mode: "all" },
+        expression: 'itemType == "book"',
+        profile: books,
+      },
+    });
+    await using service = h.service;
+    await service.ready;
+    vi.mocked(chooseLiteratureNoteProfile).mockClear();
+    await service.openCitekey("paper2024", "tab");
+    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
     expect(h.create).toHaveBeenCalledOnce();
     expect(h.openLinkText).toHaveBeenCalledWith("Books/Paper.md", "", "tab", {
       active: true,
