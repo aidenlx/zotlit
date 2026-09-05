@@ -43,6 +43,9 @@ describe("DocsImage", () => {
     expect(markup).not.toContain("2048w");
     expect(markup).not.toContain("width=3512");
     expect(markup).toContain("width=1920,height=1218");
+    expect(markup).toContain(
+      "background-image:url(/cdn-cgi/image/width=24,height=15,f=auto,fit=cover/img/changelog/wikilink-citation-runs.webp)",
+    );
     expect(markup).toContain('sizes="(max-width: 768px) 100vw, 900px"');
     expect(markup).toContain('class="rounded-lg"');
   });
