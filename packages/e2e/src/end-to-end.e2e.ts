@@ -148,7 +148,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(oneNote).toBe(true);
   });
 
-  it("creates through the citekey command with the last-used Profile selected", async () => {
+  it("creates through the citekey command with an explicitly chosen Profile", async () => {
     const defaultResult = await createFixtureNote(
       vaultId,
       defaultProfileTargetItem.itemID,
@@ -161,7 +161,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     booksNotePath = `books/books-${booksProfileTargetItem.citationKey}.md`;
     await obEval(
       vaultId,
-      `(async function(){var plugin=app.plugins.plugins.zotlit;plugin.services.settings.update({'citation.pandoc-citations':true,'citation.open-as-links':true,'note.last-used-profile':${JSON.stringify(booksProfile.id)}});var file=await app.vault.create('Profile flow source.md',${JSON.stringify(`[@${booksProfileTargetItem.citationKey}]\n`)});var leaf=app.workspace.getLeaf(false);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.setCursor({line:0,ch:5});return true;})()`,
+      `(async function(){var plugin=app.plugins.plugins.zotlit;plugin.services.settings.update({'citation.pandoc-citations':true,'citation.open-as-links':true});var file=await app.vault.create('Profile flow source.md',${JSON.stringify(`[@${booksProfileTargetItem.citationKey}]\n`)});var leaf=app.workspace.getLeaf(false);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.setCursor({line:0,ch:5});return true;})()`,
     );
     expect(
       await obEvalUntil(
@@ -177,13 +177,32 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
+    // Without an explicit input the picker preselects Default; the Books
+    // choice below belongs to this operation alone.
+    const preselected = await obEval(
+      vaultId,
+      "document.querySelector('.prompt .is-selected').textContent",
+    );
+    expect(preselected).toContain(m.settings_profile_default_name());
+    expect(preselected).toContain(m.modal_profile_preselected());
+    expect(preselected).not.toContain(booksProfile.label);
+    await obEval(
+      vaultId,
+      `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String((document.querySelector('.prompt .is-selected')?.textContent??'').includes(${JSON.stringify(booksNotePath)}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
     const selected = await obEval(
       vaultId,
       "document.querySelector('.prompt .is-selected').textContent",
     );
     expect(selected).toContain(booksProfile.label);
-    expect(selected).toContain(m.modal_profile_preselected());
-    expect(selected).toContain(m.modal_profile_source_last_used());
+    expect(selected).not.toContain(m.modal_profile_preselected());
     expect(selected).toContain(booksNotePath);
     await obEval(
       vaultId,
@@ -279,7 +298,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     // All seeded personal notes now use Default, plus the new group note;
     // the citekey-created note is the one existing Books note. The three
-    // remaining group items (8, 9, 10) are created under last-used Books.
+    // remaining group items (8, 9, 10) are created under Default, the batch's
+    // fallback: the Books choice made in the citekey picker stayed with that
+    // operation.
     const defaultCount =
       ITEMS.filter(({ libraryID }) => libraryID === 1).length + 1;
     const summary = await obEval(
@@ -296,7 +317,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
     const created = m.batch_profile_created({
       count: 3,
-      label: booksProfile.label,
+      label: m.settings_profile_default_name(),
     });
     expect(summary).toContain(created);
     expect((await notices.read()).join("\n")).toContain(created);
@@ -404,18 +425,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "Array.from(document.querySelectorAll('.modal')).at(-1).textContent",
     );
     expect(deletionDialog).toContain(
-      m.settings_profile_delete_literature_count({ count: 4 }),
+      m.settings_profile_delete_literature_count({ count: 1 }),
     );
     expect(deletionDialog).toContain(
       m.settings_profile_delete_imported_count({ count: 0 }),
     );
     expect(deletionDialog).toContain(
-      m.settings_profile_delete_move_confirm({ count: 4 }),
+      m.settings_profile_delete_move_confirm({ count: 1 }),
     );
     expect(
       await clickModalButton(
         vaultId,
-        m.settings_profile_delete_move_confirm({ count: 4 }),
+        m.settings_profile_delete_move_confirm({ count: 1 }),
       ),
       deletionDialog,
     ).toBe(true);
@@ -495,8 +516,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "data.json",
     );
 
-    // Settle the preceding Profile deletion's last-used setting before
-    // editing its disk file; plugin unload also flushes pending settings.
+    // Settle any pending settings write before editing its disk file; plugin
+    // unload also flushes pending settings.
     await obEval(
       vaultId,
       "app.plugins.plugins.zotlit.services.settings.flush().then(()=>true)",
