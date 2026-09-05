@@ -23,6 +23,7 @@ import { webCompletion } from "./completion";
 import { editorTheme } from "./editor-theme";
 import { completionFields } from "./fields";
 import { webHover } from "./hover";
+import { tagDescription } from "./tag-help";
 
 export type { SuggestionSource } from "@zotlit/workbench/language";
 
@@ -103,6 +104,7 @@ export function SliceEditor({
           to: region.to - sliceRange.from,
         },
         fields: completionFields(root),
+        tagDescription,
       };
     };
     const view = new EditorView({

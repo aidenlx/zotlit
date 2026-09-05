@@ -4,8 +4,47 @@ import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 
+import { m } from "@/paraglide/messages.js";
+
 import { webCompletion } from "./completion";
 import { webHover } from "./hover";
+import { tagDescription } from "./tag-help";
+
+it("shows tag-specific descriptions, syntax, and examples in hover and completion", async () => {
+  await using h = await hoverEditor(
+    true,
+    "{% bq %}{{ zt.text }}{% endbq %}",
+    4,
+  );
+  await act(async () => {
+    h.view.contentDOM.dispatchEvent(
+      new MouseEvent("mousemove", { bubbles: true, clientX: 40, clientY: 10 }),
+    );
+    await vi.advanceTimersByTimeAsync(500);
+  });
+  const card = document.querySelector('[data-slot="hover-card-content"]')!;
+  expect(card.textContent).toContain(m.workbench_tag_bq());
+  expect(card.textContent).toContain("{% bq %}…{% endbq %}");
+  expect(card.textContent).toContain("{% bq %}{{ zt.text }}{% endbq %}");
+  await act(async () => {
+    h.view.dispatch({ selection: { anchor: 5 } });
+    h.view.contentDOM.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: " ",
+        code: "Space",
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  const option = document.querySelector(
+    '[role="option"][aria-selected="true"]',
+  )!;
+  expect(option.textContent).toContain(m.workbench_tag_bq());
+  expect(option.textContent).toContain("{% bq %}…{% endbq %}");
+  expect(option.textContent).toContain("{% bq %}{{ zt.text }}{% endbq %}");
+});
 
 it("shows the property after 500 ms without moving focus or selection", async () => {
   await using h = await hoverEditor();
@@ -101,7 +140,11 @@ it("cancels the hover when completion consumes Ctrl-Space", async () => {
   expect(document.querySelector('[data-slot="hover-card-content"]')).toBeNull();
 });
 
-async function hoverEditor(completion = false) {
+async function hoverEditor(
+  completion = false,
+  source = "{{ zt.title }}",
+  position = 8,
+) {
   await using cleanup = new AsyncDisposableStack();
   vi.useFakeTimers();
   cleanup.defer(() => {
@@ -111,11 +154,11 @@ async function hoverEditor(completion = false) {
   cleanup.defer(() => {
     vi.unstubAllGlobals();
   });
-  const read = () => ({ root: "note" as const, partials: [] });
+  const read = () => ({ root: "note" as const, partials: [], tagDescription });
   const view = new EditorView({
     state: EditorState.create({
-      doc: "{{ zt.title }}",
-      selection: { anchor: 8 },
+      doc: source,
+      selection: { anchor: position },
       extensions: [
         webHover(read),
         ...(completion ? [webCompletion(read)] : []),
@@ -127,7 +170,7 @@ async function hoverEditor(completion = false) {
     await act(async () => view.destroy());
   });
   // happy-dom has no text layout. Supply only the browser geometry boundary.
-  vi.spyOn(view, "posAtCoords").mockReturnValue(8);
+  vi.spyOn(view, "posAtCoords").mockReturnValue(position);
   vi.spyOn(view, "coordsAtPos").mockImplementation((pos) => ({
     left: pos * 10,
     right: pos * 10,

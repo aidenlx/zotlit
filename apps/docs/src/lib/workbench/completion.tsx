@@ -239,8 +239,24 @@ function CompletionPopup({
                         {option.path}
                       </span>
                     )}
-                    {option.example && (
-                      <span className="truncate text-fd-muted-foreground">
+                    {option.syntax && index === active && (
+                      <>
+                        <span className="whitespace-normal text-fd-muted-foreground">
+                          {option.detail}
+                        </span>
+                        <code className="break-words whitespace-pre-wrap">
+                          {option.syntax}
+                        </code>
+                      </>
+                    )}
+                    {option.example && (!option.syntax || index === active) && (
+                      <span
+                        className={
+                          option.syntax
+                            ? "break-words whitespace-pre-wrap text-fd-muted-foreground"
+                            : "truncate text-fd-muted-foreground"
+                        }
+                      >
                         {option.example}
                       </span>
                     )}
