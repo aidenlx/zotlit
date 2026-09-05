@@ -9,17 +9,17 @@ import { UiLabel } from "./ui-label";
 describe("UiLabel", () => {
   it("renders a strong element with the message text", () => {
     const markup = renderToStaticMarkup(
-      <UiLabel name={m.settings_page_templates()} />,
+      <UiLabel name={m.settings_page_citations()} />,
     );
 
-    expect(markup).toBe("<strong>Templates</strong>");
+    expect(markup).toBe("<strong>Citations</strong>");
   });
 
   it("renders as bold Markdown in the Markdown edition", async () => {
     const markdown = await renderToMarkdown(
-      <UiLabel name={m.settings_page_templates()} />,
+      <UiLabel name={m.settings_page_citations()} />,
     );
 
-    expect(markdown).toBe("**Templates**");
+    expect(markdown).toBe("**Citations**");
   });
 });

@@ -583,6 +583,28 @@ describe("ProfileService", () => {
     expect(profile.resolveProfile("default")?.document).toBeUndefined();
   });
 
+  it("carries the configured frontmatter fields into the ejected Default document", async () => {
+    await using fixture = await harness();
+    const { profile, vault, settings } = fixture;
+    settings.update({
+      "note.frontmatter-fields": [
+        {
+          key: "reading-status",
+          expr: "'unread'",
+          merge: "keep",
+          language: "liquid",
+        },
+      ],
+    });
+    const pending = profile.ejectDefault();
+    await vi.advanceTimersByTimeAsync(500);
+    await pending;
+    const source = vault.contents.get("templates/zotlit-profile.default.md")!;
+    expect(source).toContain("key: reading-status");
+    expect(source).toContain("merge: keep");
+    expect(source).not.toContain("key: title");
+  });
+
   it("uses a renamed Default document for eject and restore actions", async () => {
     await using fixture = await harness({
       "templates/zotlit-profile.default.md": document("default"),

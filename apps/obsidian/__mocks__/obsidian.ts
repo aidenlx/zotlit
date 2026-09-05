@@ -902,6 +902,8 @@ export class ExtraButtonComponent {
   icon = "";
   /** The label the button carries, as the user reads it on hover. */
   tooltip = "";
+  /** Whether the row locked the button, as the user finds it. */
+  disabled = false;
 
   #clicked: ((evt: MouseEvent) => unknown) | null = null;
 
@@ -909,6 +911,11 @@ export class ExtraButtonComponent {
 
   setIcon(icon: string): this {
     this.icon = icon;
+    return this;
+  }
+
+  setDisabled(disabled: boolean): this {
+    this.disabled = disabled;
     return this;
   }
 
@@ -936,6 +943,24 @@ export class ButtonComponent {
 
   /** The label the button carries, as the user reads it. */
   text = "";
+  icon = "";
+  /** The label an icon-only button carries, as the user reads it on hover. */
+  tooltip = "";
+
+  setIcon(icon: string): this {
+    this.icon = icon;
+    return this;
+  }
+
+  setTooltip(tooltip: string): this {
+    this.tooltip = tooltip;
+    return this;
+  }
+
+  then(cb: (button: this) => unknown): this {
+    cb(this);
+    return this;
+  }
 
   #clicked: ((evt: MouseEvent) => unknown) | null = null;
 

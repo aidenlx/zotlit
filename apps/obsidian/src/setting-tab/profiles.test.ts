@@ -1,7 +1,10 @@
 // @vitest-environment happy-dom
-import { ButtonComponent, MenuItem, Setting } from "@mock/obsidian";
+import { ButtonComponent, ExtraButtonComponent, Setting } from "@mock/obsidian";
 import type {
+  ExtraButtonComponent as ObsidianExtraButton,
   Setting as ObsidianSetting,
+  SettingDefinitionItem,
+  SettingDefinitionList,
   SettingDefinitionPage,
   TFile,
 } from "obsidian";
@@ -14,7 +17,8 @@ import { defaults } from "@/services/settings/schema";
 import type { SettingTabContext } from "./context";
 import {
   getProfileControlValue,
-  literatureNoteProfileItems,
+  literatureNoteItems,
+  profilesPage,
   setProfileControlValue,
 } from "./profiles";
 
@@ -34,48 +38,85 @@ function context(): SettingTabContext {
   } as unknown as SettingTabContext;
 }
 
+/** The rendered row, so a test reads the controls the user gets. */
+function render(row: SettingDefinitionItem): Setting {
+  if (!("render" in row) || !row.render)
+    throw new Error("Expected a render row");
+  const setting = new Setting(document.createElement("div"));
+  row.render(setting as unknown as ObsidianSetting, {} as never);
+  return setting;
+}
+
+/** What a `render` row's buttons are labelled by, icon tooltip included. */
+function buttonLabels(row: SettingDefinitionItem): string[] {
+  return render(row)
+    .components.filter((control) => control instanceof ButtonComponent)
+    .map((button) => button.text || button.tooltip);
+}
+
+/** The icons a `render` row's buttons carry, in order. */
+function buttonIcons(row: SettingDefinitionItem): string[] {
+  return render(row)
+    .components.filter((control) => control instanceof ButtonComponent)
+    .map((button) => button.icon);
+}
+
+/** The list a page carries under `heading`. */
+function list(
+  page: SettingDefinitionPage,
+  heading: string,
+): SettingDefinitionList {
+  const found = page.items?.find(
+    (row): row is SettingDefinitionList =>
+      "type" in row && row.type === "list" && row.heading === heading,
+  );
+  if (!found) throw new Error(`No list headed ${heading}`);
+  return found;
+}
+
 describe("Profile settings", () => {
-  it("keeps the five default bindings beside the document actions", () => {
+  it("points Properties at the template document instead of a field list", () => {
     const ctx = context();
-    const page = literatureNoteProfileItems(ctx)[0] as SettingDefinitionPage;
-    expect(page.items).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          control: expect.objectContaining({
-            key: "note-profile:default:folder",
-          }),
-        }),
-        expect.objectContaining({
-          name: m.settings_citation_references_style_name(),
-        }),
-        expect.objectContaining({
-          control: expect.objectContaining({
-            key: "note-profile:default:import-folder",
-          }),
-        }),
-        expect.objectContaining({
-          control: expect.objectContaining({
-            key: "note-profile:default:colored-highlights",
-          }),
-        }),
-        expect.objectContaining({
-          control: expect.objectContaining({
-            key: "note-profile:default:annotations-as-template",
-          }),
-        }),
-      ]),
+    const builtIn = literatureNoteItems(ctx).find(
+      (row) =>
+        "name" in row && row.name === m.settings_profile_properties_name(),
+    )!;
+    expect(builtIn).toMatchObject({
+      desc: m.settings_profile_properties_builtin_desc(),
+    });
+    // No document yet, so the action creates one — the template eject pair.
+    expect(buttonLabels(builtIn)).toEqual([m.settings_template_eject()]);
+    expect(buttonIcons(builtIn)).toEqual(["file-pen"]);
+
+    ctx.app = {
+      vault: { getFileByPath: (path: string) => ({ path }) as TFile },
+    } as unknown as SettingTabContext["app"];
+    const ejected = literatureNoteItems(ctx).find(
+      (row) =>
+        "name" in row && row.name === m.settings_profile_properties_name(),
+    )!;
+    expect(ejected).toMatchObject({
+      desc: m.settings_profile_properties_desc(),
+    });
+    // The document exists, so the same action edits it instead.
+    expect(buttonLabels(ejected)).toEqual([m.settings_template_open()]);
+    expect(buttonIcons(ejected)).toEqual(["pencil"]);
+  });
+
+  it("withholds both ways in while a Profile write would race the load", () => {
+    const ctx = context();
+    ctx.profile = {
+      profiles: [],
+      diagnostics: [],
+      loaded: false,
+      defaultDocumentPath: "templates/zotlit-profile.default.md",
+    } as unknown as SettingTabContext["profile"];
+    const profiles = list(
+      profilesPage(ctx),
+      m.settings_profile_other_heading(),
     );
-    expect(page.items).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "page",
-          name: m.settings_note_import_highlight_mappings_name(),
-          items: expect.arrayContaining([
-            expect.objectContaining({ name: "Blue" }),
-          ]),
-        }),
-      ]),
-    );
+    expect(profiles.addItem).toBeUndefined();
+    expect(profiles.extraButtons).toBeUndefined();
   });
 
   it("lists repeated labels with filenames and excluded documents with diagnostics", () => {
@@ -86,11 +127,13 @@ describe("Profile settings", () => {
           id: "Bk3Qn7XvT2Lp",
           label: "Books",
           document: "zotlit-profile.one.md",
+          bindings: {},
         },
         {
           id: "Rz9Wm4YfH6Kd",
           label: "Books",
           document: "zotlit-profile.two.md",
+          bindings: {},
         },
       ],
       diagnostics: [
@@ -104,23 +147,24 @@ describe("Profile settings", () => {
         },
       ],
     } as unknown as SettingTabContext["profile"];
-    const page = literatureNoteProfileItems(ctx)[0] as SettingDefinitionPage;
-    expect(page.items).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: "Books",
-          desc: "zotlit-profile.one.md",
-        }),
-        expect.objectContaining({
-          name: "Books",
-          desc: "zotlit-profile.two.md",
-        }),
-        expect.objectContaining({
-          name: "templates/zotlit-profile.copy.md",
-          desc: undefined,
-        }),
-      ]),
-    );
+    const page = profilesPage(ctx);
+    expect(list(page, m.settings_profile_other_heading()).items).toEqual([
+      expect.objectContaining({
+        name: "Books",
+        desc: "zotlit-profile.one.md",
+      }),
+      expect.objectContaining({
+        name: "Books",
+        desc: "zotlit-profile.two.md",
+      }),
+    ]);
+    // A refused document never shares the list with the Profiles that loaded.
+    expect(list(page, m.settings_profile_excluded_heading()).items).toEqual([
+      expect.objectContaining({
+        name: "templates/zotlit-profile.copy.md",
+        desc: undefined,
+      }),
+    ]);
   });
 
   it("writes only default bindings through the settings controls", () => {
@@ -139,7 +183,7 @@ describe("Profile settings", () => {
   });
 });
 
-it("has one generic collision banner and Open/Delete actions for each excluded file", async () => {
+it("warns once about repeated IDs and lists each excluded file with its own actions", async () => {
   using confirm = vi.spyOn(confirmation, "confirm").mockResolvedValue(true);
   const ctx = context();
   const paths = [
@@ -165,49 +209,33 @@ it("has one generic collision banner and Open/Delete actions for each excluded f
       message: "Repeated ID",
     })),
   } as unknown as SettingTabContext["profile"];
-  const page = literatureNoteProfileItems(ctx)[0] as SettingDefinitionPage;
-  expect(
-    page.items!.filter(
-      (row) =>
-        "name" in row && row.name === m.settings_profile_duplicate_banner(),
-    ),
-  ).toHaveLength(1);
-  const banner = page.items!.find(
+  const page = profilesPage(ctx);
+  const banners = page.items!.filter(
     (row) =>
-      "name" in row && row.name === m.settings_profile_duplicate_banner(),
-  )!;
+      "name" in row && row.name === m.settings_profile_duplicate_id_name(),
+  );
+  expect(banners).toHaveLength(1);
+  const banner = banners[0]!;
   expect(banner).not.toHaveProperty("render");
   expect(banner).not.toHaveProperty("action");
-  const rows = new Map<string, Setting>();
-  for (const path of paths) {
-    const row = page.items!.find((row) => "name" in row && row.name === path)!;
-    if (!("render" in row) || !row.render)
-      throw new Error("Expected file action row");
-    const setting = new Setting(document.createElement("div"));
-    row.render(setting as unknown as ObsidianSetting, {} as never);
-    rows.set(path, setting);
-    const buttons = setting.components.filter(
-      (control) => control instanceof ButtonComponent,
-    );
-    expect(buttons).toHaveLength(2);
-    expect(buttons.map((button) => button.text)).toEqual(
-      expect.arrayContaining([
-        m.settings_profile_document_open(),
-        m.settings_profile_delete(),
-      ]),
-    );
-  }
-  rows
-    .get(paths[0]!)!
-    .components.filter((control) => control instanceof ButtonComponent)
-    .find((button) => button.text === m.settings_profile_document_open())!
+  // The guidance reads as a warning, so the fix is not mistaken for a setting.
+  const desc = (banner as { desc: DocumentFragment }).desc;
+  expect(desc.textContent).toBe(m.settings_profile_duplicate_banner());
+  expect(
+    (desc.firstElementChild as HTMLElement).classList.contains("mod-warning"),
+  ).toBe(true);
+
+  const excluded = list(page, m.settings_profile_excluded_heading());
+  expect(excluded.items!.map((row) => row.name)).toEqual(paths);
+
+  render(excluded.items![0]!)
+    .components.filter((control) => control instanceof ExtraButtonComponent)
+    .find((button) => button.tooltip === m.settings_template_open())!
     .click();
   expect(open).toHaveBeenCalledWith({ path: paths[0] });
-  rows
-    .get(paths[1]!)!
-    .components.filter((control) => control instanceof ButtonComponent)
-    .find((button) => button.text === m.settings_profile_delete())!
-    .click();
+
+  // Deleting is the list's own affordance, addressed by row index.
+  excluded.onDelete!(1);
   await vi.waitFor(() =>
     expect(trash).toHaveBeenCalledWith({ path: paths[1] }),
   );
@@ -220,58 +248,50 @@ it("has one generic collision banner and Open/Delete actions for each excluded f
   );
 });
 
-it("opens the shared create and import flows from the Add profile menu", async () => {
-  using buttons = vi.spyOn(ButtonComponent.prototype, "onClick");
-  using buttonLabels = vi.spyOn(ButtonComponent.prototype, "setButtonText");
-  using menu = vi.spyOn(MenuItem.prototype, "onClick");
-  using labels = vi.spyOn(MenuItem.prototype, "setTitle");
+it("adds a Profile from Default under the first unused number, with no dialog", async () => {
   const ctx = context();
-  ctx.createProfile = vi.fn(async () => undefined);
+  const duplicate = vi.fn(async () => ({
+    path: "templates/zotlit-profile.profile-2.md",
+  }));
+  ctx.profile = {
+    profiles: [
+      { id: "Bk3Qn7XvT2Lp", label: "Profile 1", bindings: {} },
+      { id: "Rz9Wm4YfH6Kd", label: "Profile 3", bindings: {} },
+    ],
+    diagnostics: [],
+    loaded: true,
+    defaultDocumentPath: "templates/zotlit-profile.default.md",
+    resolveProfile: () => ({ label: undefined }),
+    duplicate,
+  } as unknown as SettingTabContext["profile"];
+  ctx.app = {
+    vault: { getFileByPath: () => null },
+    setting: { close: vi.fn() },
+  } as unknown as SettingTabContext["app"];
+  ctx.requestUpdate = vi.fn();
+
+  const profiles = list(profilesPage(ctx), m.settings_profile_other_heading());
+  profiles.addItem!.action(document.createElement("div"));
+
+  // "Profile 1" and "Profile 3" are taken, so the gap is used before the tail.
+  await vi.waitFor(() =>
+    expect(duplicate).toHaveBeenCalledWith("default", {
+      label: m.settings_profile_numbered_name({ number: 2 }),
+    }),
+  );
+});
+
+it("asks the import flow for its own source", async () => {
+  const ctx = context();
   ctx.importProfile = vi.fn(async () => undefined);
   ctx.requestUpdate = vi.fn();
-  const page = literatureNoteProfileItems(ctx)[0] as SettingDefinitionPage;
-  const row = page.items!.find(
-    (row) => "name" in row && row.name === m.settings_profile_heading(),
-  )!;
-  if (!("render" in row) || !row.render)
-    throw new Error("Expected Add menu row");
-  row.render(
-    new Setting(document.createElement("div")) as unknown as ObsidianSetting,
-    {} as never,
-  );
-  const addButton =
-    buttonLabels.mock.instances[
-      buttonLabels.mock.calls.findIndex(
-        ([label]) => label === m.settings_profile_add_menu(),
-      )
-    ];
-  buttons.mock.calls[buttons.mock.instances.indexOf(addButton)]![0](
-    {} as MouseEvent,
-  );
-  expect(labels.mock.calls.map(([label]) => label)).toEqual([
-    m.settings_profile_add(),
-    m.profile_import_clipboard(),
-    m.profile_import_file(),
-  ]);
-  expect(ctx.createProfile).not.toHaveBeenCalled();
-  expect(ctx.importProfile).not.toHaveBeenCalled();
-  const select = (label: string) => {
-    const instance =
-      labels.mock.instances[
-        labels.mock.calls.findIndex(([title]) => title === label)
-      ];
-    menu.mock.calls[menu.mock.instances.indexOf(instance)]![0](
-      {} as MouseEvent,
-    );
-  };
-  select(m.settings_profile_add());
-  select(m.profile_import_clipboard());
-  await vi.waitFor(() => expect(ctx.createProfile).toHaveBeenCalledOnce());
-  expect(ctx.importProfile).toHaveBeenCalledExactlyOnceWith({
-    source: "clipboard",
-  });
-  select(m.profile_import_file());
+  const profiles = list(profilesPage(ctx), m.settings_profile_other_heading());
+
+  const button = new ExtraButtonComponent(document.createElement("div"));
+  profiles.extraButtons![0]!(button as unknown as ObsidianExtraButton);
+  expect(button.tooltip).toBe(m.command_import_profile_name());
+  button.click();
   await vi.waitFor(() =>
-    expect(ctx.importProfile).toHaveBeenLastCalledWith({ source: "file" }),
+    expect(ctx.importProfile).toHaveBeenCalledExactlyOnceWith(),
   );
 });

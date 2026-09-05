@@ -66,9 +66,8 @@ If you sync your vault across devices, only devices where the owner has explicit
 When the gate is off and you have an `.eta.md` file that would otherwise be active (no Liquid file shadows it), ZotLit treats that template as **inert**:
 
 - The operation that needs the template (create note, update note, insert citation) fails with an error naming the cause. There is no silent fallback to the built-in default.
-- <SettingsPath page={m.settings_page_templates()} /> shows a warning: "The Eta
-  template at `{path}` is inactive because JavaScript templates are disabled on
-  this device."
+- <SettingsPath /> shows a warning: "The Eta template at `{path}` is inactive
+  because JavaScript templates are disabled on this device."
 - The `.eta.md` file remains in your vault untouched, never compiled.
 
 The same applies to frontmatter fields declared as `javascript`: any note write that consumes such a field fails with an error naming the inactive fields, and existing notes are not modified.

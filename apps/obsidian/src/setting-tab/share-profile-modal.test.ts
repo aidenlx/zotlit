@@ -1,5 +1,6 @@
 import {
   ButtonComponent,
+  ExtraButtonComponent,
   Modal,
   Setting,
   TextComponent,
@@ -10,7 +11,6 @@ import {
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SettingDefinitionPage } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import { TemplateFacade } from "@zotlit/templates/facade";
@@ -21,7 +21,7 @@ import * as nativeDialog from "@/lib/require";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 
 import type { SettingTabContext } from "./context";
-import { ShareProfileModal, literatureNoteProfileItems } from "./profiles";
+import { ShareProfileModal, profilesPage } from "./profiles";
 
 const id = "Bk3Qn7XvT2Lp" as ProfileId;
 const source = `---
@@ -167,19 +167,24 @@ it.each(["default", id] as const)(
     });
     using opened = vi.spyOn(Modal.prototype, "open");
     const container = document.createElement("div");
-    using controls = observeControls(container);
-    const page = literatureNoteProfileItems({
+    const page = profilesPage({
       ...f,
       requestUpdate: vi.fn(),
-    } as unknown as SettingTabContext)[0] as SettingDefinitionPage;
+    } as unknown as SettingTabContext);
     const label =
       selector === "default" ? m.settings_profile_default_name() : "Books";
-    const row = page.items?.find(
-      (item) => "name" in item && item.name === label,
+    // Default sits on the page itself; every other Profile is a list row.
+    const rows = page.items!.flatMap((item) =>
+      "type" in item && item.type === "list" ? (item.items ?? []) : [item],
     );
+    const row = rows.find((item) => "name" in item && item.name === label);
     if (!row || !("render" in row)) throw new Error("Profile row missing");
-    row.render?.(new Setting(container) as never, {} as never);
-    controls.click(m.settings_profile_share());
+    const setting = new Setting(container);
+    row.render?.(setting as never, {} as never);
+    setting.components
+      .filter((control) => control instanceof ExtraButtonComponent)
+      .find((button) => button.tooltip === m.settings_profile_share())!
+      .click();
     await vi.waitFor(() => expect(opened).toHaveBeenCalledOnce());
     const modal = opened.mock.instances[0] as unknown as ShareProfileModal;
     expect(modal).toBeInstanceOf(ShareProfileModal);

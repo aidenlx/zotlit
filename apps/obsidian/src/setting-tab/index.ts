@@ -14,6 +14,12 @@ import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type ZotLitPlugin from "@/zt-main";
 
+import {
+  advancedPageItems,
+  decodeLogLevel,
+  encodeLogLevel,
+  LOG_LEVEL_KEY,
+} from "./advanced";
 import { attachmentPageItems } from "./attachments";
 import { citationsPageItems } from "./citations";
 import type {
@@ -25,31 +31,18 @@ import type {
   SettingsKey,
   SettingTabContext,
 } from "./context";
-import { databasePageItems } from "./database";
-import { libraryPage } from "./library-scope";
-import { liveUpdatesPageItems } from "./live-updates";
-import {
-  decodeLogLevel,
-  encodeLogLevel,
-  LOG_LEVEL_KEY,
-  maintenancePageItems,
-} from "./maintenance";
 import {
   getProfileControlValue,
   isProfileControlKey,
-  literatureNoteProfileItems,
+  literatureNoteItems,
+  profilesPage,
   setProfileControlValue,
 } from "./profiles";
 import { resourcesGroup } from "./resources";
-import {
-  AUTO_TRIM_KEYS,
-  decodeAutoTrim,
-  encodeAutoTrim,
-  templatesPageItems,
-} from "./templates";
+import { AUTO_TRIM_KEYS, decodeAutoTrim, encodeAutoTrim } from "./templates";
+import { zoteroPageItems } from "./zotero";
 
 export interface ZotLitSettingTabOptions {
-  createProfile: SettingTabContext["createProfile"];
   importProfile: SettingTabContext["importProfile"];
   plugin: ZotLitPlugin;
   settings: SettingsService;
@@ -67,7 +60,6 @@ export interface ZotLitSettingTabOptions {
 
 export class ZotLitSettingTab extends PluginSettingTab {
   readonly #importProfile: SettingTabContext["importProfile"];
-  readonly #createProfile: SettingTabContext["createProfile"];
   readonly #plugin: ZotLitPlugin;
   readonly #settings: SettingsService;
   readonly #db: DatabaseService;
@@ -82,7 +74,6 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #languagePack: LanguagePackLifecycle;
 
   constructor({
-    createProfile,
     importProfile,
     plugin,
     settings,
@@ -99,7 +90,6 @@ export class ZotLitSettingTab extends PluginSettingTab {
   }: ZotLitSettingTabOptions) {
     super(plugin.app, plugin);
     this.#plugin = plugin;
-    this.#createProfile = createProfile;
     this.#importProfile = importProfile;
     this.#settings = settings;
     this.#db = db;
@@ -138,30 +128,25 @@ export class ZotLitSettingTab extends PluginSettingTab {
     // refresh, a group rename, and a repair each rebuild them.
     plugin.register(libraryScope.on("changed", () => this.#requestUpdate()));
 
-    // Settings: the frontmatter list is structural — its edits add/remove rows,
-    // so the tab must re-render. Reference identity changes only when that key
-    // is mutated, so scalar `control` edits (read on the framework's own render
-    // cycle) never trigger a rebuild and never steal focus from inline inputs.
-    // The migration-pending flag is tracked the same way, so the resources
-    // reminder appears/disappears reactively on both render paths.
-    let lastFields = settings.current?.["note.frontmatter-fields"];
+    // Settings: the two pending flags are structural — the reminder rows are
+    // included or left out, not toggled via `visible` — so the tab re-renders
+    // when either flips. Scalar `control` edits (read on the framework's own
+    // render cycle) never trigger a rebuild and never steal focus from inline
+    // inputs.
     let lastPending = settings.current?.["release.migration-pending"];
     let lastTemplateConversionPending =
       settings.current?.["note.template-conversion-pending"];
     plugin.register(
       settings.subscribe((value) => {
-        const fields = value?.["note.frontmatter-fields"];
         const pending = value?.["release.migration-pending"];
         const templateConversionPending =
           value?.["note.template-conversion-pending"];
         if (
-          fields === lastFields &&
           pending === lastPending &&
           templateConversionPending === lastTemplateConversionPending
         ) {
           return;
         }
-        lastFields = fields;
         lastPending = pending;
         lastTemplateConversionPending = templateConversionPending;
         this.#requestUpdate();
@@ -206,7 +191,6 @@ export class ZotLitSettingTab extends PluginSettingTab {
   override getSettingDefinitions(): SettingDefinitionItem[] {
     const ctx: SettingTabContext = {
       app: this.#plugin.app,
-      createProfile: this.#createProfile,
       importProfile: this.#importProfile,
       manifest: this.#plugin.manifest,
       settings: this.#settings,
@@ -229,13 +213,17 @@ export class ZotLitSettingTab extends PluginSettingTab {
       // included structurally rather than via `visible`.
       resourcesGroup(ctx),
 
-      // Hub — the most-used settings, no top-level heading (per Obsidian style).
-      ...literatureNoteProfileItems(ctx),
-      // Self-contained domains live on navigable sub-pages, grouped apart
-      // from the hub items above so the page rows read as their own section.
+      // The main page is the default Profile: its Literature Note rows inline,
+      // no top-level heading (per Obsidian style), then the Imported notes
+      // group — see ADR 0036.
+      ...literatureNoteItems(ctx),
+      // Everything else lives on navigable sub-pages, grouped apart from the
+      // rows above so the page rows read as their own section. Profiles leads
+      // because it extends the default Profile's rows right above it.
       {
         type: "group",
         items: [
+          profilesPage(ctx),
           {
             type: "page",
             name: m.settings_page_citations(),
@@ -244,16 +232,9 @@ export class ZotLitSettingTab extends PluginSettingTab {
           },
           {
             type: "page",
-            name: m.settings_page_database(),
-            desc: m.settings_page_database_desc(),
-            items: databasePageItems(ctx),
-          },
-          libraryPage(ctx),
-          {
-            type: "page",
-            name: m.settings_page_templates(),
-            desc: m.settings_page_templates_desc(),
-            items: templatesPageItems(ctx),
+            name: m.settings_page_zotero(),
+            desc: m.settings_page_zotero_desc(),
+            items: zoteroPageItems(ctx),
           },
           {
             type: "page",
@@ -263,15 +244,9 @@ export class ZotLitSettingTab extends PluginSettingTab {
           },
           {
             type: "page",
-            name: m.settings_page_live_updates(),
-            desc: m.settings_page_live_updates_desc(),
-            items: liveUpdatesPageItems(ctx),
-          },
-          {
-            type: "page",
-            name: m.settings_page_maintenance(),
-            desc: m.settings_page_maintenance_desc(),
-            items: maintenancePageItems(ctx),
+            name: m.settings_page_advanced(),
+            desc: m.settings_page_advanced_desc(),
+            items: advancedPageItems(ctx),
           },
         ],
       },

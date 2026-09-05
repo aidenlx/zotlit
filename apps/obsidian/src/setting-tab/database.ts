@@ -2,8 +2,8 @@ import { join } from "node:path";
 import type {
   DropdownComponent,
   ExtraButtonComponent,
-  SettingDefinitionItem,
   Setting,
+  SettingGroupItem,
 } from "obsidian";
 
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
@@ -28,12 +28,12 @@ const PICKER_AUTO = "";
 const PICKER_BROWSE = "\0browse";
 
 /**
- * Items for the "Zotero database" sub-page: connection, status, read mode, and
- * advanced device-scoped database state.
+ * The Zotero page's Connection rows: Companion setup, status, the Zotero
+ * profile, the database file, read mode, and change watching.
  */
-export function databasePageItems(
+export function databaseConnectionItems(
   ctx: SettingTabContext,
-): SettingDefinitionItem<SettingsKey>[] {
+): SettingGroupItem<SettingsKey>[] {
   return [
     {
       name: m.settings_db_companion_name(),
@@ -79,21 +79,23 @@ export function databasePageItems(
       desc: m.settings_db_auto_refresh_desc(),
       control: { type: "toggle", key: "zotero.auto-refresh" },
     },
+  ];
+}
+
+/** The Zotero page's Advanced rows the database owns: device-scoped overrides. */
+export function databaseAdvancedItems(
+  ctx: SettingTabContext,
+): SettingGroupItem<SettingsKey>[] {
+  return [
     {
-      type: "group",
-      heading: m.settings_db_advanced(),
-      items: [
-        {
-          name: m.settings_db_data_dir_name(),
-          desc: m.settings_db_data_dir_desc(),
-          render: (setting) => renderDataDirRow(setting, ctx),
-        },
-        {
-          name: m.settings_db_source_id_name(),
-          desc: m.settings_db_source_id_desc(),
-          render: (setting) => renderSourceIdRow(setting, ctx),
-        },
-      ],
+      name: m.settings_db_data_dir_name(),
+      desc: m.settings_db_data_dir_desc(),
+      render: (setting) => renderDataDirRow(setting, ctx),
+    },
+    {
+      name: m.settings_db_source_id_name(),
+      desc: m.settings_db_source_id_desc(),
+      render: (setting) => renderSourceIdRow(setting, ctx),
     },
   ];
 }

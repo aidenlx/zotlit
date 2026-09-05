@@ -157,7 +157,7 @@ ZotLit ships two citation templates:
 | Primary   | <UiLabel name={m.settings_template_name_cite()} />  | Bracketed citation | `[@citationKey]` |
 | Secondary | <UiLabel name={m.settings_template_name_cite2()} /> | Bare citation      | `@citationKey`   |
 
-These are the default outputs. You can change them by editing the <UiLabel name={m.settings_template_name_cite()} /> and <UiLabel name={m.settings_template_name_cite2()} /> templates in <SettingsPath page={m.settings_page_templates()} />. The rendered citation is normalized to a single line (leading/trailing whitespace trimmed, line-break runs collapsed to a space). Each insert ends with a trailing space and places the cursor after it; if a space already follows the insert position, it is reused rather than doubled.
+These are the default outputs. You can change them by editing the <UiLabel name={m.settings_template_name_cite()} /> and <UiLabel name={m.settings_template_name_cite2()} /> templates in the <UiLabel name={m.settings_citation_templates_heading()} /> group at <SettingsPath page={m.settings_page_citations()} />. The rendered citation is normalized to a single line (leading/trailing whitespace trimmed, line-break runs collapsed to a space). Each insert ends with a trailing space and places the cursor after it; if a space already follows the insert position, it is reused rather than doubled.
 
 With <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_show_formatted_name()} /> on, both forms can show formatted text in Live Preview and reading view. Formatting requires the Pandoc engine and selected style.
 

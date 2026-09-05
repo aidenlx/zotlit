@@ -58,7 +58,7 @@ Examples: `zotlit-note.liquid.md`, `zotlit-annotation.eta.md`.
 
 ## Liquid-wins shadowing [#liquid-wins-shadowing]
 
-Both a `.liquid.md` and a `.eta.md` file can exist for the same template name at the same time. When both are present, the Liquid file always takes precedence, regardless of whether JavaScript templates are enabled. The shadowed Eta file is reported with a warning in <SettingsPath page={m.settings_page_templates()} />:
+Both a `.liquid.md` and a `.eta.md` file can exist for the same template name at the same time. When both are present, the Liquid file always takes precedence, regardless of whether JavaScript templates are enabled. The shadowed Eta file is reported with a warning in <SettingsPath />:
 
 > The Eta template at `{path}` is ignored because a Liquid template with the same name takes precedence.
 
@@ -67,12 +67,12 @@ Both a `.liquid.md` and a `.eta.md` file can exist for the same template name at
 Every template type ships with a built-in Liquid default. When no vault file exists for a template name, ZotLit uses the embedded default.
 
 <Callout type="info" title="Using the built-in default">
-  <SettingsPath page={m.settings_page_templates()} /> shows "
+  <SettingsPath /> shows "
   <UiLabel name={m.settings_template_using_default()} />" next to any template
   that has not been ejected. The template works without any file in your vault.
 </Callout>
 
-To customize a template, you **eject** it: the built-in default is copied into your vault's template folder as a `.liquid.md` file and opened for editing. Each template's row in <SettingsPath page={m.settings_page_templates()} /> shows a <UiLabel name={m.settings_template_eject()} /> action when that template still uses the default.
+To customize a template, you **eject** it: the built-in default is copied into your vault's template folder as a `.liquid.md` file and opened for editing. Each template's row in <SettingsPath /> shows a <UiLabel name={m.settings_template_eject()} /> action when that template still uses the default.
 
 Once ejected, the file is yours. ZotLit watches the template folder and recompiles any changed file immediately. Edits take effect without reloading the plugin.
 
@@ -82,7 +82,7 @@ Deleting an ejected template file returns that template to the built-in default.
 
 ### Template folder
 
-All template files live under the folder configured in <SettingsPath page={m.settings_page_templates()} setting={m.settings_template_folder_name()} />. Ejecting, loading, and file watching all use that folder.
+All template files live under the folder configured in <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />. Ejecting, loading, and file watching all use that folder.
 
 ## Switching languages
 

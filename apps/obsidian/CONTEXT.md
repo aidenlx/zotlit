@@ -50,8 +50,8 @@ A named configuration under which ZotLit-written notes are created and updated. 
 _Avoid_: profile (bare — collides with the Zotero application profile), preset (OZI's model, deliberately reshaped), import format
 
 **Profile document**:
-The vault file that is a Literature Note Profile: a Literature Note Template document named `zotlit-profile.<slug>.md` in the template folder — the slug is the normalized label, with the Profile ID appended when two labels collide. The `zotlit-profile.` prefix is what makes the file a Profile; the Profile ID is read from the manifest, never from the filename, so renaming the file changes nothing.
-_Avoid_: profile file, profile record, profile settings
+The vault file that is a Literature Note Profile: a Literature Note Template document named `zotlit-profile.<slug>.md` in the template folder — the slug is the normalized label, with the Profile ID appended when two labels collide. The `zotlit-profile.` prefix is what makes the file a Profile; the Profile ID is read from the manifest, never from the filename, so renaming the file changes nothing. User-facing copy calls it the "template document" — the one name that stands alone for a user who has not yet met the word Profile.
+_Avoid_: profile file, profile record, profile settings, profile document (in UI copy)
 
 **Default Profile**:
 The built-in Literature Note Profile every vault has. Its bindings record is total and lives in plugin settings, and its look is the built-in template until the user ejects `zotlit-profile.default.md` (manifest `id: default`, which carries no bindings); it is the one Profile that is a settings record rather than a Profile document.

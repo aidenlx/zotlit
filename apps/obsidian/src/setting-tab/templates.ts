@@ -2,8 +2,8 @@ import type {
   App,
   SettingControl,
   SettingDefinition,
-  SettingDefinitionItem,
   Setting,
+  SettingGroupItem,
   TFile,
 } from "obsidian";
 
@@ -18,6 +18,7 @@ import type { AutoTrim } from "@/services/settings/schema";
 import {
   DEFAULT_TEMPLATES,
   DEFAULT_TEMPLATES_ETA,
+  GLOBAL_TEMPLATE_NAMES,
   templateFileFromPath,
   templatePath,
 } from "@/services/template/defaults";
@@ -26,9 +27,7 @@ import { normalizeVaultPath } from "@/services/template/path";
 
 import { appendCompileError } from "./compile-error";
 import type { SettingsKey, SettingTabContext } from "./context";
-import { frontmatterPageItems } from "./frontmatter";
 import { defaultPlaceholder } from "./placeholder";
-import { migrationReminderItem } from "./resources";
 
 const logger = getLogger(["setting-tab", "templates"]);
 
@@ -55,15 +54,14 @@ export function decodeAutoTrim(value: unknown): AutoTrim {
   return value === "nl" || value === "slurp" ? value : false;
 }
 
-/** Items for the "Templates" sub-page. */
-export function templatesPageItems(
+/**
+ * The Advanced page's Template engine rows: the template folder and the
+ * JavaScript Templates gate with its Eta editing options.
+ */
+export function templateEngineItems(
   ctx: SettingTabContext,
-): SettingDefinitionItem<SettingsKey>[] {
-  const pending = ctx.settings.current?.["release.migration-pending"] === true;
+): SettingGroupItem<SettingsKey>[] {
   return [
-    // Included structurally, not via `visible` — see migrationReminderItem's
-    // JSDoc for why.
-    ...(pending ? [migrationReminderItem(ctx)] : []),
     {
       name: m.settings_template_folder_name(),
       desc: m.settings_template_folder_desc(),
@@ -74,67 +72,57 @@ export function templatesPageItems(
       },
     },
     {
-      type: "group",
-      heading: m.settings_template_js_heading(),
-      items: [
-        {
-          name: m.settings_template_js_enable_name(),
-          desc: m.settings_template_js_enable_desc(),
-          render: (setting) => renderJsTemplatesButton(setting, ctx),
-        },
-        {
-          name: m.settings_template_auto_pair_name(),
-          desc: m.settings_template_auto_pair_desc(),
-          visible: () => ctx.template.javascriptTemplatesEnabled,
-          control: { type: "toggle", key: "template.auto-pair-eta" },
-        },
-        {
-          name: m.settings_template_trim_leading_name(),
-          desc: m.settings_template_trim_desc(),
-          visible: () => ctx.template.javascriptTemplatesEnabled,
-          control: trimControl("template.auto-trim-leading"),
-        },
-        {
-          name: m.settings_template_trim_trailing_name(),
-          desc: m.settings_template_trim_desc(),
-          visible: () => ctx.template.javascriptTemplatesEnabled,
-          control: trimControl("template.auto-trim-trailing"),
-        },
-      ],
+      name: m.settings_template_js_enable_name(),
+      desc: m.settings_template_js_enable_desc(),
+      render: (setting) => renderJsTemplatesButton(setting, ctx),
     },
     {
-      type: "group",
-      heading: m.settings_template_files_heading(),
-      extraButtons: [
-        (btn) =>
-          btn
-            .setIcon("folder-output")
-            .setTooltip(m.settings_template_eject_all())
-            .onClick(() => void ejectAll(ctx)),
-      ],
-      items: [
-        {
-          type: "page",
-          name: m.settings_page_frontmatter(),
-          desc: m.settings_page_frontmatter_desc(),
-          items: frontmatterPageItems(ctx),
-        },
-        // Structural, so it can't be deferred into a `render` callback the way
-        // the rows' own service reads are. The first `getSettingDefinitions()`
-        // runs from `addSettingTab()`, before TemplateService finishes loading;
-        // the tab re-renders these rows on `ready` — see ZotLitSettingTab.
-        ...(ctx.template.loaded
-          ? ctx.template.getTemplateFileStatuses().map(
-              ({ name }): SettingDefinition<SettingsKey> => ({
-                name: TEMPLATE_META[name].title(),
-                desc: TEMPLATE_META[name].desc(),
-                render: (setting) => renderEjectableRow(setting, ctx, name),
-              }),
-            )
-          : []),
-      ],
+      name: m.settings_template_auto_pair_name(),
+      desc: m.settings_template_auto_pair_desc(),
+      visible: () => ctx.template.javascriptTemplatesEnabled,
+      control: { type: "toggle", key: "template.auto-pair-eta" },
+    },
+    {
+      name: m.settings_template_trim_leading_name(),
+      desc: m.settings_template_trim_desc(),
+      visible: () => ctx.template.javascriptTemplatesEnabled,
+      control: trimControl("template.auto-trim-leading"),
+    },
+    {
+      name: m.settings_template_trim_trailing_name(),
+      desc: m.settings_template_trim_desc(),
+      visible: () => ctx.template.javascriptTemplatesEnabled,
+      control: trimControl("template.auto-trim-trailing"),
     },
   ];
+}
+
+/**
+ * The Citations page's template-file rows: `cite` and `cite2`, the two
+ * Templates that stay outside the Profile document. Legacy slot files never
+ * surface here, pending conversion or not.
+ *
+ * Structural, so it can't be deferred into a `render` callback the way the
+ * rows' own service reads are. The first `getSettingDefinitions()` runs from
+ * `addSettingTab()`, before TemplateService finishes loading; the tab
+ * re-renders these rows on `ready` — see ZotLitSettingTab.
+ */
+export function citationTemplateItems(
+  ctx: SettingTabContext,
+): SettingGroupItem<SettingsKey>[] {
+  if (!ctx.template.loaded) return [];
+  return ctx.template
+    .getTemplateFileStatuses()
+    .filter(({ name }) =>
+      (GLOBAL_TEMPLATE_NAMES as readonly TemplateName[]).includes(name),
+    )
+    .map(
+      ({ name }): SettingDefinition<SettingsKey> => ({
+        name: TEMPLATE_META[name].title(),
+        desc: TEMPLATE_META[name].desc(),
+        render: (setting) => renderEjectableRow(setting, ctx, name),
+      }),
+    );
 }
 
 /**
@@ -519,42 +507,6 @@ async function deleteAndRefresh(
   } catch (error) {
     logger.error("Failed to delete template", { name, error });
     new BaseNotice(m.notice_template_delete_failed());
-  } finally {
-    ctx.requestUpdate();
-  }
-}
-
-async function ejectAll(ctx: SettingTabContext): Promise<void> {
-  const folder = currentFolder(ctx);
-  // A name only counts as missing when neither extension's file exists —
-  // ejecting a `.liquid.md` on top of a user's `.eta.md` override would
-  // silently shadow it.
-  const missing = ctx.template
-    .getTemplateFileStatuses()
-    .map(({ name }) => name)
-    .filter(
-      (name) =>
-        !ctx.app.vault.getFileByPath(templatePath(folder, name)) &&
-        !ctx.app.vault.getFileByPath(templatePath(folder, name, "eta")),
-    );
-  if (missing.length === 0) {
-    new BaseNotice(m.notice_template_eject_none());
-    return;
-  }
-  try {
-    await ensureFolder(ctx.app, folder);
-    await Promise.all(
-      missing.map((name) =>
-        ctx.app.vault.create(
-          templatePath(folder, name),
-          DEFAULT_TEMPLATES[name],
-        ),
-      ),
-    );
-    new BaseNotice(m.notice_template_eject_all());
-  } catch (error) {
-    logger.error("Failed to eject all templates", { error });
-    new BaseNotice(m.notice_template_eject_failed());
   } finally {
     ctx.requestUpdate();
   }

@@ -46,9 +46,9 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
 
 <Steps>
   <Step>
-    ### Open the Maintenance settings
+    ### Open the Advanced settings
 
-    In Obsidian, open <SettingsPath page={m.settings_page_maintenance()} />.
+    In Obsidian, open <SettingsPath page={m.settings_page_advanced()} /> and find the <UiLabel name={m.settings_advanced_logging_heading()} /> group.
 
   </Step>
   <Step>
@@ -66,7 +66,7 @@ Once you have the logs, file the report in the [Bug reports discussion](https://
   <Step>
     ### Save the log archive
 
-    Back in <SettingsPath page={m.settings_page_maintenance()} />, click <UiLabel name={m.settings_log_export_name()} />. This exports the log file for sharing.
+    Back in <SettingsPath page={m.settings_page_advanced()} />, click <UiLabel name={m.settings_log_export_name()} />. This exports the log file for sharing.
 
   </Step>
   <Step>
@@ -188,7 +188,7 @@ Collect this when a template rendered the wrong thing. The saved file holds the 
 <Cards>
   <Card
     title="Settings"
-    description={`Full reference for every ZotLit setting, including ${m.settings_page_maintenance()}.`}
+    description={`Full reference for every ZotLit setting, including ${m.settings_page_advanced()}.`}
     href="/docs/reference/settings"
   />
   <Card
