@@ -28,6 +28,12 @@ export function webCompletion(read: SuggestionSource) {
         constructor(readonly view: EditorView) {}
 
         update(update: ViewUpdate) {
+          if (
+            update.transactions.some((tr) => tr.isUserEvent("input.pair-close"))
+          ) {
+            this.close();
+            return;
+          }
           if (update.focusChanged && !this.view.hasFocus) {
             this.close();
             return;
