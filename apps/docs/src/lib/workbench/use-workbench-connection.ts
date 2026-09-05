@@ -392,6 +392,7 @@ export function useWorkbenchConnection({
     connectFromPage,
     cancelConnection: () => connectionAbort.current?.abort(),
     disconnect,
+    reloadProfile: () => void connect(async () => bridge.connection),
     loadSelectedItem,
     save,
   };

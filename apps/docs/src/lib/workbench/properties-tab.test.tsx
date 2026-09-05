@@ -103,7 +103,7 @@ describe("the Properties result column", () => {
       showMarkdown={false}
     />,
   );
-  const [byEntry = "", fold = ""] = markup.split(m.workbench_result_fold());
+  const [fold = "", byEntry = ""] = markup.split(m.workbench_result_by_entry());
 
   it("groups every produced field under the entry that produced it", () => {
     expect(terms(byEntry)).toEqual([

@@ -104,8 +104,8 @@
   --color-fd-accent: oklch(95.04% 0.0204 62.86); /* #f9ece1 */
   --color-fd-accent-foreground: oklch(32.45% 0.0496 254.76); /* #22354d */
   --color-fd-primary: oklch(
-    0.58 0.17 40.45
-  ); /* deeper orange, ~4.6:1 vs cream */
+    0.54 0.17 40.45
+  ); /* orange text and filled controls meet 4.5:1 on the light surfaces */
   --color-fd-primary-foreground: oklch(96.13% 0.0111 89.72);
   --color-fd-ring: oklch(0.58 0.17 40.45);
   --zotlit-ink: oklch(34.62% 0.0736 256.04); /* #1e3a5f */

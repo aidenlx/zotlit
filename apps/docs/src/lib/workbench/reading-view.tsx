@@ -295,8 +295,10 @@ export function ResultSheet({
   if (showMarkdown) {
     return (
       <pre
+        dir="ltr"
+        role="document"
         aria-label={m.workbench_result_markdown_body()}
-        className="font-mono text-[0.8rem] leading-relaxed whitespace-pre-wrap"
+        className="font-mono text-[0.8rem] leading-relaxed break-words whitespace-pre-wrap"
       >
         {markdown}
       </pre>
@@ -311,7 +313,11 @@ export function ResultSheet({
           className="mb-4 border-b border-fd-border pb-3 text-xs"
         />
       )}
-      <div aria-label={m.workbench_result_body()} className={SHEET_STYLE}>
+      <div
+        role="document"
+        aria-label={m.workbench_result_body()}
+        className={SHEET_STYLE}
+      >
         {parseNote(markdown).children.map((node, index) =>
           toJsx(node as ElementContent, index),
         )}

@@ -6,6 +6,8 @@ import annotationSchema from "@zotlit/db/contract/annotation.schema.json";
 import filenameSchema from "@zotlit/db/contract/filename.schema.json";
 import noteSchema from "@zotlit/db/contract/note.schema.json";
 
+import { WorkbenchDocumentController } from "@/document";
+
 import {
   DEFAULT_PROFILE_SOURCE,
   renderProfile,
@@ -64,6 +66,44 @@ describe("Sample Items", () => {
       expect(result.filename).toBeTruthy();
       expect(result.creationBody).toContain(sample.item.title);
     }
+  });
+
+  it("previews a free filename without exposing the collision marker", () => {
+    expect(
+      renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!).filename,
+    ).toBe("ioannidisWhyMost2005");
+  });
+
+  it("renders fixed property text without YAML quoting and restores its field with undo", () => {
+    const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
+    const text = 'To read: John\'s "paper"';
+    controller.editManagedEntry({
+      action: "language",
+      position: 1,
+      language: "value",
+      text,
+    });
+    const result = renderProfile(controller.source, SAMPLE_ITEMS[0]!);
+    expect(result.diagnostics).toEqual([]);
+    expect(result.fold.find(({ key }) => key === "title")?.value).toBe(text);
+    controller.editManagedEntry({
+      action: "language",
+      position: 1,
+      language: "value",
+    });
+    expect(
+      renderProfile(controller.source, SAMPLE_ITEMS[0]!).fold.find(
+        ({ key }) => key === "title",
+      )?.value,
+    ).toBe("Why Most Published Research Findings Are False");
+    controller.undo();
+    expect(
+      renderProfile(controller.source, SAMPLE_ITEMS[0]!).fold.find(
+        ({ key }) => key === "title",
+      )?.value,
+    ).toBe(text);
+    controller.undo();
+    expect(controller.source).toBe(DEFAULT_PROFILE_SOURCE);
   });
 
   it("returns the complete result set for an edited Profile over every Sample Item", () => {

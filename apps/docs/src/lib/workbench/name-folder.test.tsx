@@ -95,6 +95,24 @@ function openPane(source: string): OpenPane {
 describe("the Name and folder tab", () => {
   const own = pane(OWN_PROFILE);
 
+  it("writes an overridden switch and preserves inherited settings", () => {
+    using tab = openPane(OWN_PROFILE);
+    const toggle = tab.host.querySelector<HTMLElement>('[role="switch"]')!;
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    act(() => toggle.click());
+    expect(tab.controller.document!.manifest.importColoredHighlights).toBe(
+      true,
+    );
+    expect(
+      tab.host
+        .querySelector("#workbench-field-importAnnotationsAsTemplate")
+        ?.hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      tab.controller.document!.manifest.importAnnotationsAsTemplate,
+    ).toBeUndefined();
+  });
+
   it("shows the profile's own identity fields", () => {
     expect(own).toContain('value="Reading notes"');
     expect(own).toContain('value="1.0.0"');

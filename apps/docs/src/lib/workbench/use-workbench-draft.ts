@@ -52,6 +52,8 @@ interface SavedDocument {
 
 export interface WorkbenchDraftKeeper {
   readonly reference: string;
+  /** Changes since the file was opened, downloaded, or saved to Obsidian. */
+  readonly dirty: boolean;
   /** The last visit's work, standing until the reader answers the prompt. */
   readonly restorable: RestoreOffer | null;
   /** Opens `document` as the state being edited, offering `kept` beside it. */
@@ -86,8 +88,14 @@ export function useWorkbenchDraft({
 
   const atBaseline =
     reference === baseline.reference &&
-    controller.source === baseline.source &&
-    snapshotIdentity(sample) === baseline.snapshot;
+    controller.source ===
+      (reference === STANDALONE_DOCUMENT
+        ? STANDALONE_BASELINE.source
+        : baseline.source) &&
+    snapshotIdentity(sample) ===
+      (reference === STANDALONE_DOCUMENT
+        ? STANDALONE_BASELINE.snapshot
+        : baseline.snapshot);
   const expected =
     saveTarget?.reference === reference ? saveTarget.expected : undefined;
 
@@ -127,6 +135,7 @@ export function useWorkbenchDraft({
 
   return {
     reference,
+    dirty: controller.source !== baseline.source,
     restorable,
     adopt({ reference: opened, source }, kept) {
       const next = {

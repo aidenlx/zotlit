@@ -8,7 +8,8 @@ import { StateField } from "@codemirror/state";
 import type { EditorState, Extension, Range } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
-import { useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { noteRegions } from "@zotlit/workbench/document";
@@ -17,6 +18,7 @@ import type {
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
 
+import { Button } from "@/components/ui/button";
 import { m } from "@/paraglide/messages.js";
 
 import { SliceEditor } from "./slice-editor";
@@ -53,9 +55,14 @@ export function NotePane({
   const [box] = useState(() => document.createElement("div"));
   const open = useRef(onOpenHighlight);
   open.current = onOpenHighlight;
-  const [extensions] = useState(() =>
-    noteBoxes(controller, box, () => open.current()),
+  const extensions = useMemo(
+    () => noteBoxes(controller, box, () => open.current()),
+    [controller, box],
   );
+  const [expanded, setExpanded] = useState(false);
+  useEffect(() => {
+    if (highlight) setExpanded(true);
+  }, [highlight]);
   const hasBox =
     controller.annotationSection !== null &&
     controller.noteRegions.annotationCalls.length > 0;
@@ -72,7 +79,7 @@ export function NotePane({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col border border-fd-border bg-fd-card [&_.zt-managed]:bg-fd-accent/40 [&_.zt-managed]:shadow-[inset_2px_0_0_0_var(--color-fd-primary)]">
+    <div className="flex min-h-80 flex-1 flex-col rounded-md border border-fd-border bg-fd-card min-[780px]:min-h-0 [&_.zt-managed]:bg-fd-muted/60 [&_.zt-managed]:shadow-[inset_2px_0_0_0_var(--color-fd-border)]">
       <SliceEditor
         controller={controller}
         slice="note"
@@ -85,16 +92,36 @@ export function NotePane({
       />
       {hasBox &&
         createPortal(
-          <div className="my-1 flex flex-col border border-fd-primary bg-fd-card">
-            <div className="flex flex-wrap items-baseline gap-x-3 border-b border-fd-border px-3 py-1.5">
-              <h3 className="font-serif text-[0.95rem] font-medium">
+          <div className="my-3 flex flex-col rounded-md border border-fd-border bg-fd-card font-sans">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+              <h3 className="text-sm font-medium">
                 {m.workbench_highlight_heading()}
               </h3>
-              <p className="text-xs text-fd-muted-foreground">
-                {m.workbench_highlight_lede()}
-              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-expanded={expanded}
+                onClick={() => {
+                  setExpanded((value) => !value);
+                  if (expanded) editing("note");
+                }}
+              >
+                {expanded
+                  ? m.workbench_highlight_close()
+                  : m.workbench_highlight_edit()}
+                <ChevronDown
+                  aria-hidden
+                  className={expanded ? "rotate-180" : ""}
+                />
+              </Button>
             </div>
-            <div className="flex h-44 flex-col">
+            <div
+              className={
+                expanded
+                  ? "flex h-56 flex-col border-t border-fd-border"
+                  : "hidden"
+              }
+            >
               <SliceEditor
                 controller={controller}
                 slice="annotation"
@@ -196,7 +223,7 @@ class LabelWidget extends WidgetType {
   toDOM(): HTMLElement {
     const element = document.createElement("span");
     element.className =
-      "border border-fd-primary px-1.5 py-0.5 font-mono text-[0.6rem] font-semibold tracking-widest text-fd-primary uppercase";
+      "rounded-sm border border-fd-border bg-fd-card px-2 py-1 text-xs font-medium text-fd-muted-foreground";
     element.textContent = this.label;
     return element;
   }
