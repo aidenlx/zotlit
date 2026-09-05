@@ -433,7 +433,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     const configured = await obEval(
       vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var scope=row(${JSON.stringify(m.settings_profile_rule_scope())}).querySelector('select');pick(scope,'selected');var libraryRow=Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_library_scope_personal())});var toggle=libraryRow&&libraryRow.querySelector('.checkbox-container');if(toggle&&!toggle.classList.contains('is-enabled'))toggle.click();var selects=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select').length===3)[0].querySelectorAll('select');pick(selects[1],'is');pick(selects[2],'book');var target=row(${JSON.stringify(m.settings_profile_rule_target())}).querySelector('select');pick(target,${JSON.stringify(booksProfile.id)});return JSON.stringify({scope:scope.value,library:!!toggle,type:selects[2].value,target:target.value});})()`,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var scope=row(${JSON.stringify(m.settings_profile_rule_scope())}).querySelector('select');pick(scope,'selected');var libraryRow=Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_library_scope_personal())});var toggle=libraryRow&&libraryRow.querySelector('.checkbox-container');if(toggle&&!toggle.classList.contains('is-enabled'))toggle.click();var selects=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select:not(.is-measuring)').length===3)[0].querySelectorAll('select:not(.is-measuring)');pick(selects[1],'is');pick(selects[2],'book');var target=row(${JSON.stringify(m.settings_profile_rule_target())}).querySelector('select');pick(target,${JSON.stringify(booksProfile.id)});return JSON.stringify({scope:scope.value,library:!!toggle,type:selects[2].value,target:target.value});})()`,
     );
     expect(JSON.parse(configured)).toEqual({
       scope: "selected",
@@ -648,7 +648,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     }
     const configured = await obEval(
       vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var selects=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select').length===3)[0].querySelectorAll('select');pick(selects[1],'is');pick(selects[2],'journalArticle');var target=row(${JSON.stringify(m.settings_profile_rule_target())}).querySelector('select');pick(target,'default');return JSON.stringify({type:selects[2].value,target:target.value});})()`,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var selects=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select:not(.is-measuring)').length===3)[0].querySelectorAll('select:not(.is-measuring)');pick(selects[1],'is');pick(selects[2],'journalArticle');var target=row(${JSON.stringify(m.settings_profile_rule_target())}).querySelector('select');pick(target,'default');return JSON.stringify({type:selects[2].value,target:target.value});})()`,
     );
     expect(JSON.parse(configured)).toEqual({
       type: "journalArticle",
@@ -884,10 +884,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       join(e2eVaultPath, booksNotePath),
       "utf-8",
     );
+    // The list's own delete icon is the last control on the row, after the
+    // row's edit, duplicate, and share icons; Obsidian labels it itself.
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(row=>row.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&row.querySelector('.setting-item-description')?.textContent===${JSON.stringify(booksProfile.document)});var button=row&&Array.from(row.querySelectorAll('button')).find(button=>button.textContent===${JSON.stringify(m.settings_profile_delete())});if(!button)return false;button.click();return true;})()`,
+        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(row=>row.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&row.querySelector('.setting-item-description')?.textContent===${JSON.stringify(booksProfile.document)});var button=row&&Array.from(row.querySelectorAll('.clickable-icon')).at(-1);if(!button)return false;button.click();return true;})()`,
         { expected: "true" },
       ),
     ).toBe(true);
