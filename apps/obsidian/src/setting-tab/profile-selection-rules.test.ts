@@ -195,6 +195,21 @@ describe("Profile Selection Rules settings", () => {
     );
   });
 
+  it("judges only the expression while the database is not ready", () => {
+    const ctx = context([staleCollectionRule, brokenRule]);
+    (ctx as { db: unknown }).db = { state: "loading" };
+    const rows = list(ctx).items!;
+    expect(
+      (rows[0] as { desc: DocumentFragment }).desc.querySelector(
+        ".mod-warning",
+      ),
+    ).toBeNull();
+    expect(
+      (rows[1] as { desc: DocumentFragment }).desc.querySelector(".mod-warning")
+        ?.textContent,
+    ).toContain("This rule cannot be evaluated");
+  });
+
   it("flags an unavailable target Profile as a warning", () => {
     const ctx = context([unavailableRule]);
     const rows = list(ctx).items!;

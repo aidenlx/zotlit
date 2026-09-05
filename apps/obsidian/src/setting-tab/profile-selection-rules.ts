@@ -5,6 +5,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import {
   choicesLookup,
+  compileCondition,
   describeProblem,
   describeRule,
   diagnoseRule,
@@ -111,7 +112,11 @@ function targetLabel(
   return profile ? profile.label : selector;
 }
 
-/** Library names and Collection paths, read once per render of the rows. */
+/**
+ * Library names and Collection paths, read once per render of the rows.
+ * `collections` stays absent until the database is ready, so a reference is
+ * judged missing only against Collections that were actually listed.
+ */
 function displayOptions(ctx: SettingTabContext): DescribeOptions {
   const libraries = ctx.libraryScope.libraries;
   return {
@@ -119,7 +124,7 @@ function displayOptions(ctx: SettingTabContext): DescribeOptions {
     collections:
       ctx.db.state === "ready"
         ? listCollectionChoices(ctx.db.client, libraries)
-        : [],
+        : undefined,
   };
 }
 
@@ -142,9 +147,11 @@ function ruleDesc(
       }),
     );
   }
-  const { problem } = diagnoseRule(rule, {
-    hasCollection: choicesLookup(display.collections ?? []),
-  });
+  const { problem } = display.collections
+    ? diagnoseRule(rule, {
+        hasCollection: choicesLookup(display.collections),
+      })
+    : compileCondition(rule.expression);
   if (problem) {
     desc.append(createEl("br"));
     desc.append(
