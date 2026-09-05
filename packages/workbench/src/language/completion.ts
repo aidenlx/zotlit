@@ -1,6 +1,4 @@
-// The typing completion and hover a Template editor offers off the generated
-// contract, over the same `suggestions()` the value-first field list resolves
-// paths with.
+// CodeMirror completion adapter over the shared Template field resolver.
 
 import { autocompletion } from "@codemirror/autocomplete";
 import type {
@@ -10,10 +8,9 @@ import type {
 } from "@codemirror/autocomplete";
 import { isolateHistory } from "@codemirror/commands";
 import type { Extension } from "@codemirror/state";
-import { hoverTooltip } from "@codemirror/view";
 import type { EditorView } from "@codemirror/view";
 
-import { completionEdit, hoverHint, suggestions } from "./suggestions";
+import { completionEdit, suggestions } from "./suggestions";
 import type {
   Suggestion,
   SuggestionConfig,
@@ -44,19 +41,12 @@ export function applyTemplateCompletion(
  */
 export type SuggestionSource = (position: number) => SuggestionConfig | null;
 
-/**
- * Completion and hover over `read()`'s contract. Both answer from one
- * resolution, so what the popup offers and what the pointer explains cannot
- * disagree.
- */
+/** CodeMirror completion over the pane's current contract and source scope. */
 export function templateCompletion(read: SuggestionSource): Extension {
-  return [
-    autocompletion({
-      override: [(context) => completionAt(context, read)],
-      icons: false,
-    }),
-    templateHover(read),
-  ];
+  return autocompletion({
+    override: [(context) => completionAt(context, read)],
+    icons: false,
+  });
 }
 
 function completionAt(
@@ -88,34 +78,4 @@ function option(suggestion: Suggestion): Completion {
     ...(suggestion.type === undefined ? {} : { detail: suggestion.type }),
     info: suggestion.detail,
   };
-}
-
-/** The hovered option as its own small box: what it is, then what it means. */
-function explain(suggestion: Suggestion): { dom: HTMLElement } {
-  const dom = document.createElement("div");
-  dom.className = "cm-tooltip-template-hint";
-  const heading = dom.appendChild(document.createElement("strong"));
-  heading.textContent =
-    suggestion.type === undefined
-      ? suggestion.label
-      : `${suggestion.label}: ${suggestion.type}`;
-  const detail = dom.appendChild(document.createElement("div"));
-  detail.textContent = suggestion.detail;
-  if (suggestion.example !== undefined) {
-    const example = dom.appendChild(document.createElement("code"));
-    example.textContent = suggestion.example;
-  }
-  return { dom };
-}
-
-/** Hover explanations use the same contract and source scope as completion. */
-export function templateHover(read: SuggestionSource): Extension {
-  return hoverTooltip((view, position) => {
-    const config = read(position);
-    if (!config) return null;
-    const hint = hoverHint(view.state.doc.toString(), position, config);
-    const option = hint?.options[0];
-    if (!hint || !option) return null;
-    return { pos: hint.from, end: hint.to, create: () => explain(option) };
-  });
 }

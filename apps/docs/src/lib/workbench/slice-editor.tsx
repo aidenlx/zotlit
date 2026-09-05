@@ -15,7 +15,6 @@ import {
   liquidMarkdown,
   profileLanguage,
   embeddedLiquid,
-  templateHover,
   yamlRule,
 } from "@zotlit/workbench/language";
 import type { SuggestionSource } from "@zotlit/workbench/language";
@@ -23,6 +22,7 @@ import type { SuggestionSource } from "@zotlit/workbench/language";
 import { webCompletion } from "./completion";
 import { editorTheme } from "./editor-theme";
 import { completionFields } from "./fields";
+import { webHover } from "./hover";
 
 export type { SuggestionSource } from "@zotlit/workbench/language";
 
@@ -134,9 +134,7 @@ export function SliceEditor({
               ]
             : []),
           editorTheme,
-          ...(language === "yaml"
-            ? []
-            : [webCompletion(read), templateHover(read)]),
+          ...(language === "yaml" ? [] : [webCompletion(read), webHover(read)]),
           ...(singleLine
             ? [
                 EditorState.transactionFilter.of((transaction) =>
