@@ -12,9 +12,21 @@ import type {
 } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
 
-import { compileCondition, flatConditions } from "./condition";
-import type { ConditionProblem } from "./condition";
+import { compileCondition } from "./condition";
+import type {
+  CollectionReference,
+  ConditionProblem,
+  FlatCondition,
+  RuleCondition,
+} from "./condition";
+import type { CollectionChoice } from "./facts";
 import type { ProfileSelectionRule } from "./schema";
+
+/** The display data a summary names Libraries and Collections by. */
+export interface DescribeOptions {
+  libraries?: readonly AvailableLibrary[];
+  collections?: readonly CollectionChoice[];
+}
 
 /** The label of a built-in Zotero item type in the active locale. */
 export function itemTypeLabel(name: string): string {
@@ -27,21 +39,27 @@ export function itemTypeLabel(name: string): string {
 
 /**
  * One line naming what a rule matches and where: "Item type is Book in My
- * Library". An expression the flat editor cannot show is quoted as written.
- * Without `libraries`, a selected Library reads by its stable selector.
+ * Library". Groups read as lists — "and" for all, "or" for any — with a
+ * nested group in parentheses. An expression outside the contract is quoted
+ * as written.
+ * Without `libraries`, a selected Library reads by its stable selector;
+ * without `collections`, a Collection reads by its Library and key.
  */
 export function describeRule(
   rule: ProfileSelectionRule,
-  options: { libraries?: readonly AvailableLibrary[] } = {},
+  options: DescribeOptions = {},
 ): string {
   return m.settings_profile_rule_summary({
-    conditions: describeConditions(rule.expression),
+    conditions: describeConditions(rule.expression, options),
     libraries: describeScope(rule, options.libraries ?? []),
   });
 }
 
 /** The reason a rule cannot be evaluated, for a settings row or a picker. */
-export function describeProblem(problem: ConditionProblem): string {
+export function describeProblem(
+  problem: ConditionProblem,
+  options: DescribeOptions = {},
+): string {
   switch (problem.code) {
     case "syntax":
       return m.profile_rule_problem_syntax({ text: problem.text });
@@ -49,27 +67,92 @@ export function describeProblem(problem: ConditionProblem): string {
       return m.profile_rule_problem_unsupported({ text: problem.text });
     case "unknown-item-type":
       return m.profile_rule_problem_unknown_item_type({ text: problem.text });
+    case "unknown-library":
+      return m.profile_rule_problem_unknown_library({ text: problem.text });
+    case "missing-collection":
+      return m.profile_rule_problem_missing_collection({
+        collection: collectionLabel(problem, options),
+      });
   }
 }
 
-function describeConditions(expression: string): string {
+/**
+ * How a Collection reads: "My Library: Project / Drafts" when the database
+ * offers it, else its Library and key — the same reference the rule stores.
+ */
+export function collectionLabel(
+  reference: CollectionReference,
+  options: DescribeOptions = {},
+): string {
+  const key = selectorKey(reference.library);
+  const library = options.libraries?.find(
+    (candidate) => selectorKey(candidate.selector) === key,
+  );
+  const choice = options.collections?.find(
+    (candidate) =>
+      selectorKey(candidate.library) === key && candidate.key === reference.key,
+  );
+  return m.settings_profile_rule_collection_label({
+    library: library ? libraryLabel(library) : selectorLabel(reference.library),
+    path: choice ? choice.path.join(" / ") : reference.key,
+  });
+}
+
+function describeConditions(
+  expression: string,
+  options: DescribeOptions,
+): string {
   const { condition } = compileCondition(expression);
-  const flat = condition && flatConditions(condition);
-  if (!flat) return expression.trim();
-  if (flat.length === 0) return m.settings_profile_rule_summary_all_items();
+  if (!condition) return expression.trim();
+  if (condition.kind === "group" && condition.conditions.length === 0)
+    return m.settings_profile_rule_summary_all_items();
+  return describeCondition(condition, options);
+}
+
+function describeCondition(
+  condition: RuleCondition,
+  options: DescribeOptions,
+): string {
+  if (condition.kind !== "group") return describeFlat(condition, options);
   return new Intl.ListFormat(runtime.getLocale(), {
-    type: "conjunction",
+    type: condition.match === "all" ? "conjunction" : "disjunction",
   }).format(
-    flat.map(({ negated, itemType }) =>
-      negated
-        ? m.settings_profile_rule_item_type_is_not({
-            type: itemTypeLabel(itemType),
+    condition.conditions.map((entry) =>
+      entry.kind === "group"
+        ? m.settings_profile_rule_summary_group({
+            conditions: describeCondition(entry, options),
           })
-        : m.settings_profile_rule_item_type_is({
-            type: itemTypeLabel(itemType),
-          }),
+        : describeFlat(entry, options),
     ),
   );
+}
+
+function describeFlat(
+  condition: FlatCondition,
+  options: DescribeOptions,
+): string {
+  switch (condition.kind) {
+    case "item-type": {
+      const type = itemTypeLabel(condition.itemType);
+      return condition.negated
+        ? m.settings_profile_rule_item_type_is_not({ type })
+        : m.settings_profile_rule_item_type_is({ type });
+    }
+    case "collection": {
+      const collection = collectionLabel(condition, options);
+      if (condition.descendants)
+        return condition.negated
+          ? m.settings_profile_rule_not_in_collection({ collection })
+          : m.settings_profile_rule_in_collection({ collection });
+      return condition.negated
+        ? m.settings_profile_rule_not_in_collection_direct({ collection })
+        : m.settings_profile_rule_in_collection_direct({ collection });
+    }
+    case "tag":
+      return condition.negated
+        ? m.settings_profile_rule_has_not_tag({ tag: condition.name })
+        : m.settings_profile_rule_has_tag({ tag: condition.name });
+  }
 }
 
 function describeScope(

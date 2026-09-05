@@ -9,17 +9,43 @@
  * {@link ConditionProblem} — reported when the rule is edited and again when
  * it is evaluated, so a rule the vault cannot judge never selects a Profile.
  *
- * Supported today: `itemType == "<type>"`, `itemType != "<type>"`, `!`,
- * `&&`, `||`, and grouping. Later slices add Collection and Tag predicates
- * to {@link RuleCondition} and to {@link RuleItemFacts} without changing the
- * gate's shape.
+ * Supported vocabulary:
+ * - `itemType == "<type>"` / `itemType != "<type>"` — the built-in Zotero type.
+ * - `inCollection("<library>", "<key>")` — filed in the Collection or any of
+ *   its descendants; `inCollectionDirectly(...)` — filed in it itself. The
+ *   Library is the portable `personal` / `group:<groupID>` reference and the
+ *   key is Zotero's Collection key, so a reference survives a rename and
+ *   tells identical names or keys in different Libraries apart.
+ * - `hasTag("<name>")` — an exact, case-sensitive Tag name; manual and
+ *   automatic applications both count.
+ * - `!`, `&&`, `||`, and grouping.
+ *
+ * Whether a referenced Collection exists is not a compile-time question: the
+ * evaluator checks {@link collectionReferences} against the database and
+ * reports a `missing-collection` problem, keeping a stale reference distinct
+ * from an ordinary nonmatch.
  */
+import { regex } from "arkregex";
+
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { ExpressionNode } from "@zotlit/filter-expression";
 import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
+import { selectorKey } from "@/services/library-scope/scope";
+import type { LibrarySelector } from "@/services/library-scope/scope";
+
 /** The Item field a rule may test. */
 export const ITEM_TYPE_FIELD = "itemType";
+/** The membership predicates a rule may call. */
+export const IN_COLLECTION_FUNCTION = "inCollection";
+export const IN_COLLECTION_DIRECTLY_FUNCTION = "inCollectionDirectly";
+export const HAS_TAG_FUNCTION = "hasTag";
+
+/** A portable reference to one Collection: its Library and Zotero key. */
+export interface CollectionReference {
+  library: LibrarySelector;
+  key: string;
+}
 
 export type RuleCondition =
   | {
@@ -28,25 +54,52 @@ export type RuleCondition =
       match: "all" | "any";
       conditions: RuleCondition[];
     }
-  | { kind: "item-type"; negated: boolean; itemType: string };
+  | { kind: "item-type"; negated: boolean; itemType: string }
+  | {
+      kind: "collection";
+      negated: boolean;
+      library: LibrarySelector;
+      key: string;
+      /** Whether descendants of the Collection count as membership. */
+      descendants: boolean;
+    }
+  | { kind: "tag"; negated: boolean; name: string };
+
+/** A condition the editor shows as one row. */
+export type FlatCondition = Exclude<RuleCondition, { kind: "group" }>;
 
 /** One reason an expression is outside the supported contract. */
-export interface ConditionProblem {
-  code: "syntax" | "unsupported" | "unknown-item-type";
-  /** Source range of the offending node, for the editor to point at. */
-  from: number;
-  to: number;
-  /** The offending source text (empty for a missing token). */
-  text: string;
-}
+export type ConditionProblem =
+  | {
+      code: "syntax" | "unsupported" | "unknown-item-type" | "unknown-library";
+      /** Source range of the offending node, for the editor to point at. */
+      from: number;
+      to: number;
+      /** The offending source text (empty for a missing token). */
+      text: string;
+    }
+  | {
+      /** A referenced Collection the database does not hold. */
+      code: "missing-collection";
+      library: LibrarySelector;
+      key: string;
+    };
 
 export type CompiledCondition =
   | { condition: RuleCondition; problem: null }
   | { condition: null; problem: ConditionProblem };
 
-/** The Item facts a condition reads. Later slices add memberships. */
+/** The Item facts a condition reads. */
 export interface RuleItemFacts {
+  /** `null` for a group Library Zotero reports no group ID for. */
+  library: LibrarySelector | null;
   itemType: string;
+  /** Every Tag name applied to the Item, manual and automatic alike. */
+  tags: readonly string[];
+  /** Keys of the Collections the Item is filed in directly. */
+  collections: readonly string[];
+  /** Keys of every live ancestor of those Collections. */
+  collectionAncestors: readonly string[];
 }
 
 const KNOWN_ITEM_TYPES = new Set(ITEM_TYPES.map(({ name }) => name));
@@ -97,6 +150,39 @@ export function matchCondition(
         : condition.conditions.some((entry) => matchCondition(entry, facts));
     case "item-type":
       return (facts.itemType === condition.itemType) !== condition.negated;
+    case "collection":
+      return isInCollection(condition, facts) !== condition.negated;
+    case "tag":
+      return facts.tags.includes(condition.name) !== condition.negated;
+  }
+}
+
+function isInCollection(
+  condition: Extract<RuleCondition, { kind: "collection" }>,
+  facts: RuleItemFacts,
+): boolean {
+  if (
+    facts.library === null ||
+    selectorKey(facts.library) !== selectorKey(condition.library)
+  )
+    return false;
+  return (
+    facts.collections.includes(condition.key) ||
+    (condition.descendants && facts.collectionAncestors.includes(condition.key))
+  );
+}
+
+/** Every Collection a condition refers to, in source order. */
+export function collectionReferences(
+  condition: RuleCondition,
+): CollectionReference[] {
+  switch (condition.kind) {
+    case "group":
+      return condition.conditions.flatMap(collectionReferences);
+    case "collection":
+      return [{ library: condition.library, key: condition.key }];
+    default:
+      return [];
   }
 }
 
@@ -116,25 +202,18 @@ export function formatCondition(condition: RuleCondition): string {
     }
     case "item-type":
       return `${ITEM_TYPE_FIELD} ${condition.negated ? "!=" : "=="} ${JSON.stringify(condition.itemType)}`;
+    case "collection": {
+      const name = condition.descendants
+        ? IN_COLLECTION_FUNCTION
+        : IN_COLLECTION_DIRECTLY_FUNCTION;
+      const call = `${name}(${JSON.stringify(selectorKey(condition.library))}, ${JSON.stringify(condition.key)})`;
+      return condition.negated ? `!${call}` : call;
+    }
+    case "tag": {
+      const call = `${HAS_TAG_FUNCTION}(${JSON.stringify(condition.name)})`;
+      return condition.negated ? `!${call}` : call;
+    }
   }
-}
-
-/**
- * The flat "Match all" view of a condition, or `null` when the expression
- * carries structure the simple editor cannot show (an `any` group, a nested
- * group). The editor keeps such an expression intact instead of flattening it.
- */
-export function flatConditions(
-  condition: RuleCondition,
-): Extract<RuleCondition, { kind: "item-type" }>[] | null {
-  if (condition.kind !== "group") return [condition];
-  if (condition.match !== "all") return null;
-  const flat: Extract<RuleCondition, { kind: "item-type" }>[] = [];
-  for (const entry of condition.conditions) {
-    if (entry.kind === "group") return null;
-    flat.push(entry);
-  }
-  return flat;
 }
 
 function emptyGroup(): RuleCondition {
@@ -143,7 +222,10 @@ function emptyGroup(): RuleCondition {
 
 class UnsupportedNode extends Error {
   constructor(
-    readonly code: ConditionProblem["code"],
+    readonly code: Exclude<
+      ConditionProblem,
+      { code: "missing-collection" }
+    >["code"],
     readonly from: number,
     readonly to: number,
   ) {
@@ -177,6 +259,8 @@ function convert(node: ExpressionNode): RuleCondition {
       if (node.operator === "==" || node.operator === "!=")
         return equality(node, node.operator === "!=");
       break;
+    case "call":
+      return call(node);
   }
   throw new UnsupportedNode("unsupported", node.from, node.to);
 }
@@ -192,7 +276,7 @@ function flatten(
 }
 
 function negate(condition: RuleCondition): RuleCondition {
-  if (condition.kind === "item-type")
+  if (condition.kind !== "group")
     return { ...condition, negated: !condition.negated };
   // De Morgan keeps the contract closed under `!` without a `not` group.
   return {
@@ -216,4 +300,41 @@ function equality(
   if (!KNOWN_ITEM_TYPES.has(right.value))
     throw new UnsupportedNode("unknown-item-type", right.from, right.to);
   return { kind: "item-type", negated, itemType: right.value };
+}
+
+function call(node: Extract<ExpressionNode, { type: "call" }>): RuleCondition {
+  const { callee, args } = node;
+  if (callee.type !== "identifier")
+    throw new UnsupportedNode("unsupported", node.from, node.to);
+  const strings = args.every((arg) => arg.type === "string") ? args : null;
+  if (callee.name === HAS_TAG_FUNCTION && strings?.length === 1)
+    return { kind: "tag", negated: false, name: strings[0]!.value };
+  const descendants = callee.name === IN_COLLECTION_FUNCTION;
+  if (
+    (descendants || callee.name === IN_COLLECTION_DIRECTLY_FUNCTION) &&
+    strings?.length === 2
+  ) {
+    const [library, key] = strings;
+    return {
+      kind: "collection",
+      negated: false,
+      library: parseLibraryReference(library!),
+      key: key!.value,
+      descendants,
+    };
+  }
+  throw new UnsupportedNode("unsupported", node.from, node.to);
+}
+
+const GROUP_REFERENCE = regex("^group:(?<groupID>[1-9]\\d*)$");
+
+/** Read the portable `personal` / `group:<groupID>` Library reference. */
+function parseLibraryReference(
+  node: Extract<ExpressionNode, { type: "string" }>,
+): LibrarySelector {
+  if (node.value === "personal") return { type: "personal" };
+  const groupID = GROUP_REFERENCE.exec(node.value)?.groups.groupID;
+  if (groupID === undefined)
+    throw new UnsupportedNode("unknown-library", node.from, node.to);
+  return { type: "group", groupID: Number(groupID) };
 }

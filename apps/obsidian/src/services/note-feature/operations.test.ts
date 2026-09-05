@@ -23,6 +23,7 @@ import type {
   TemplateItemData,
 } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
+import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { filenameSuffix } from "@zotlit/templates";
 import defaultCite from "@zotlit/templates/defaults/cite.liquid?raw";
 import { TemplateFacade } from "@zotlit/templates/facade";
@@ -4474,6 +4475,8 @@ function compileDocumentFrontmatter(
 
 function makeDb(): SyncRenderDeps["db"] {
   const client = createClient(":memory:");
+  // The Zotero fixture schema, empty: membership facts read as none.
+  createFixtureSchema(client.$client);
   return {
     state: "ready",
     client,
