@@ -260,6 +260,29 @@ describe("suggestions: contract roots", () => {
 });
 
 describe("suggestions: filters, tags, and partials", () => {
+  it("documents built-in tags, branches, and ZotLit boundaries", () => {
+    const found = suggestions("{% ", 3, note)!.options;
+    expect(found.map((option) => option.label)).toEqual(
+      expect.arrayContaining([
+        "endif",
+        "else",
+        "elsif",
+        "when",
+        "endbq",
+        "endmanaged",
+      ]),
+    );
+    for (const option of found) {
+      expect(option.syntax).toBeTruthy();
+      expect(option.example).toBeTruthy();
+      expect(option.detail).not.toContain("registry");
+    }
+    expect(hoverHint("{% endif %}", 5, note)!.options[0]).toMatchObject({
+      label: "endif",
+      syntax: "{% endif %}",
+    });
+  });
+
   it("lists registered filters after a pipe, marking ZotLit additions", () => {
     const result = suggestions("{{ zt.title | up", 16, note)!;
     expect(result.trigger).toBe("Filters");
@@ -297,7 +320,7 @@ describe("suggestions: filters, tags, and partials", () => {
 });
 
 describe("suggestions: annotation shortcut", () => {
-  it("offers the Liquid tag with its native equivalent", () => {
+  it("offers the Liquid tag with an annotation loop example", () => {
     const shortcut = (source: string) =>
       suggestions(source, 6, note)!.options.find(
         (o) => o.label === "render_annotation",
@@ -308,7 +331,7 @@ describe("suggestions: annotation shortcut", () => {
       insert: "render_annotation annotation",
       cursorOffset: "render_annotation ".length,
       example:
-        '{% render_annotation annotation %} = {% render "annotation" with annotation as zt %}',
+        "{% for annotation in zt.annotations %}{% render_annotation annotation %}{% endfor %}",
     });
     // An existing argument keeps the tag name alone.
     expect(shortcut("{% ren a %}").insert).toBe("render_annotation");
@@ -367,6 +390,80 @@ describe("suggestions: snippets", () => {
 });
 
 describe("hoverHint", () => {
+  it("keeps later tags active after apostrophes in multiline comments", () => {
+    const source =
+      "{% liquid\n  # don't render this\n  echo zt.title\n%}\n{% bq %}Title{% endbq %}";
+    expect(
+      hoverHint(source, source.indexOf("bq") + 1, note)!.options[0]!.label,
+    ).toBe("bq");
+  });
+
+  it("documents comment boundaries while leaving comment text and raw content inactive", () => {
+    for (const source of [
+      "{% comment %}{% bq %}{{ zt.title }}{% endcomment %}",
+      "{% liquid\n  comment\n    bq\n    echo zt.title\n  endcomment\n%}",
+      "{% raw %}{% bq %}{{ zt.title }}{% endraw %}",
+      "{% liquid\n  raw\n    bq\n    echo zt.title\n  endraw\n%}",
+      "{% # bq zt.title %}",
+      "{% liquid\n  # bq zt.title\n%}",
+    ]) {
+      expect(hoverHint(source, source.indexOf("bq") + 1, note)).toBeNull();
+      expect(hoverHint(source, source.indexOf("title") + 1, note)).toBeNull();
+    }
+    for (const source of [
+      "{% comment %}hidden{% endcomment %}",
+      "{% liquid\n  comment\n  hidden\n  endcomment\n%}",
+    ]) {
+      for (const name of ["comment", "endcomment"]) {
+        expect(
+          hoverHint(source, source.indexOf(name) + 1, note)!.options[0]!.label,
+        ).toBe(name);
+      }
+    }
+    expect(hoverHint("{% # hidden %}", 3, note)!.options[0]!.label).toBe("#");
+    expect(
+      hoverHint("{% liquid\n # hidden\n%}", 11, note)!.options[0]!.label,
+    ).toBe("#");
+  });
+
+  it("resolves multiline tag names and keeps completion edits on their line", () => {
+    const source = "{% liquid\n  bq\n    echo zt.title\n  endbq\n%}";
+    for (const name of ["bq", "echo", "endbq"]) {
+      const from = source.indexOf(name);
+      expect(hoverHint(source, from + 1, note)).toMatchObject({
+        from,
+        to: from + name.length,
+        options: [expect.objectContaining({ label: name })],
+      });
+    }
+    const incomplete = "{% liquid\r\n  bq\r\n  endb\r\n%}";
+    const position = incomplete.indexOf("endb") + 4;
+    const result = suggestions(incomplete, position, note)!;
+    const edit = completionEdit(
+      incomplete,
+      result,
+      result.options.find((o) => o.label === "endbq")!,
+    );
+    expect(
+      incomplete.slice(0, edit.from) + edit.insert + incomplete.slice(edit.to),
+    ).toBe("{% liquid\r\n  bq\r\n  endbq\r\n%}");
+    expect(labels("{% liquid\n  ")).not.toContain("managed");
+  });
+
+  it("shows the blockquote helper's syntax and example in hover and completion", () => {
+    const source = "{% bq %}{{ zt.title }}{% endbq %}";
+    const hover = hoverHint(source, 4, note)!.options[0]!;
+    expect(hover).toMatchObject({
+      label: "bq",
+      syntax: "{% bq %}…{% endbq %}",
+      example: "{% bq %}{{ zt.text }}{% endbq %}",
+    });
+    expect(suggestions("{% bq", 5, note)!.options[0]).toMatchObject({
+      syntax: hover.syntax,
+      example: hover.example,
+    });
+  });
+
   it("describes the word under the pointer without moving the range", () => {
     const source = "{{ zt.title | upcase }}";
     expect(hoverHint(source, 7, note)).toMatchObject({

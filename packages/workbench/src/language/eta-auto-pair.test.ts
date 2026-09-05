@@ -53,10 +53,12 @@ describe("etaAutoPair", () => {
   });
 
   it("reflows a prefix and a marker into a fresh pair", () => {
-    using editor = open("<%  %>", 3);
+    using editor = open("<", 1);
+    type(editor.view, "%");
     type(editor.view, "=");
     expect(snapshot(editor.view)).toBe("<%= | %>");
-    using editor2 = open("<%  %>", 3);
+    using editor2 = open("<", 1);
+    type(editor2.view, "%");
     type(editor2.view, "-");
     expect(snapshot(editor2.view)).toBe("<%- | %>");
     type(editor2.view, "~");
@@ -64,7 +66,9 @@ describe("etaAutoPair", () => {
   });
 
   it("types over the close delimiter", () => {
-    using editor = open("<% x %>", 5);
+    using editor = open("<", 1);
+    type(editor.view, "%");
+    type(editor.view, "x");
     type(editor.view, "%");
     expect(snapshot(editor.view)).toBe("<% x %|>");
     type(editor.view, ">");
@@ -72,7 +76,9 @@ describe("etaAutoPair", () => {
   });
 
   it("deletes an empty pair with one Backspace", () => {
-    using editor = open("<%=  %>", 4);
+    using editor = open("<", 1);
+    type(editor.view, "%");
+    type(editor.view, "=");
     const backspace = new KeyboardEvent("keydown", { key: "Backspace" });
     editor.view.contentDOM.dispatchEvent(backspace);
     expect(snapshot(editor.view)).toBe("|");
