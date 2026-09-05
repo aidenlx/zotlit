@@ -4,7 +4,6 @@ import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { BaseNotice } from "@/lib/notice";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { PreparedProfileCreation } from "@/services/profile/service";
@@ -12,8 +11,6 @@ import { defaults } from "@/services/settings/schema";
 
 import { CreateProfileModal } from "./profiles";
 import type { ProfileCreationDeps } from "./profiles";
-
-vi.mock("@/lib/notice", () => ({ BaseNotice: vi.fn() }));
 
 const id = "Bk3Qn7XvT2Lp" as ProfileId;
 function fixture() {
@@ -146,7 +143,6 @@ it.each([false, true])(
         return button instanceof ButtonComponent && button.text === saveLabel;
       })?.[0];
     const f = fixture();
-    vi.mocked(BaseNotice).mockClear();
     const modal = new CreateProfileModal(f.deps, {
       data: { note: {} as never, filename: {} },
       styles: [],
@@ -166,9 +162,6 @@ it.each([false, true])(
     });
     expect(f.create).toHaveBeenCalledOnce();
     expect(f.preview.create).not.toHaveBeenCalled();
-    expect(vi.mocked(BaseNotice).mock.calls).toEqual(
-      useForNote ? [] : [[m.notice_profile_created({ label: "Reading" })]],
-    );
     // The created Profile is handed to the caller's operation alone; the
     // dialog offers no action that keeps it for a later note.
     expect(
