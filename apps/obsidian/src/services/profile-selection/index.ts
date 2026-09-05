@@ -9,7 +9,6 @@ export {
 export {
   collectionReferences,
   compileCondition,
-  flatConditions,
   formatCondition,
   matchCondition,
   MATCH_ALL_EXPRESSION,

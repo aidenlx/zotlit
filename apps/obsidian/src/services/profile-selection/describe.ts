@@ -12,11 +12,12 @@ import type {
 } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
 
-import { compileCondition, flatConditions } from "./condition";
+import { compileCondition } from "./condition";
 import type {
   CollectionReference,
   ConditionProblem,
   FlatCondition,
+  RuleCondition,
 } from "./condition";
 import type { CollectionChoice } from "./facts";
 import type { ProfileSelectionRule } from "./schema";
@@ -38,7 +39,9 @@ export function itemTypeLabel(name: string): string {
 
 /**
  * One line naming what a rule matches and where: "Item type is Book in My
- * Library". An expression the flat editor cannot show is quoted as written.
+ * Library". Groups read as lists — "and" for all, "or" for any — with a
+ * nested group in parentheses. An expression outside the contract is quoted
+ * as written.
  * Without `libraries`, a selected Library reads by its stable selector;
  * without `collections`, a Collection reads by its Library and key.
  */
@@ -100,12 +103,28 @@ function describeConditions(
   options: DescribeOptions,
 ): string {
   const { condition } = compileCondition(expression);
-  const flat = condition && flatConditions(condition);
-  if (!flat) return expression.trim();
-  if (flat.length === 0) return m.settings_profile_rule_summary_all_items();
+  if (!condition) return expression.trim();
+  if (condition.kind === "group" && condition.conditions.length === 0)
+    return m.settings_profile_rule_summary_all_items();
+  return describeCondition(condition, options);
+}
+
+function describeCondition(
+  condition: RuleCondition,
+  options: DescribeOptions,
+): string {
+  if (condition.kind !== "group") return describeFlat(condition, options);
   return new Intl.ListFormat(runtime.getLocale(), {
-    type: "conjunction",
-  }).format(flat.map((entry) => describeFlat(entry, options)));
+    type: condition.match === "all" ? "conjunction" : "disjunction",
+  }).format(
+    condition.conditions.map((entry) =>
+      entry.kind === "group"
+        ? m.settings_profile_rule_summary_group({
+            conditions: describeCondition(entry, options),
+          })
+        : describeFlat(entry, options),
+    ),
+  );
 }
 
 function describeFlat(

@@ -542,6 +542,51 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
     ).toMatchObject({ selector: papers, rule: anyProject });
   });
 
+  it("judges nested alternatives and exclusions by hand-derived outcomes within the Library scope", async () => {
+    // My Library only: in Project (or tagged auto-tag) and not a book.
+    const projectPapers = rule({
+      id: "project-papers",
+      scope: { mode: "selected", libraries: [{ type: "personal" }] },
+      expression:
+        '(inCollection("personal", "PROJ0001") || hasTag("auto-tag")) && itemType != "book"',
+      profile: papers,
+    });
+    // Neither tagged Read nor an article.
+    const untouched = rule({
+      id: "untouched",
+      expression: '!(hasTag("Read") || itemType == "journalArticle")',
+    });
+    // Tagged READ (automatic) but not filed directly in Project.
+    const readElsewhere = rule({
+      id: "read-elsewhere",
+      expression:
+        'hasTag("READ") && !inCollectionDirectly("personal", "PROJ0001")',
+      profile: "default",
+    });
+    const feature = createNoteFeature(
+      harness([projectPapers, untouched, readElsewhere]).deps,
+    );
+    // The article is filed directly in Project and is not a book.
+    expect(
+      await feature.resolveCreationProfile({ item: article }),
+    ).toMatchObject({ selector: papers, rule: projectPapers });
+    // The personal book reaches Project through Drafts but is a book, and
+    // carries "Read", so only the third rule holds: READ and not directly
+    // in Project.
+    expect(
+      await feature.resolveCreationProfile({ item: personalBook }),
+    ).toMatchObject({
+      selector: "default",
+      source: "rule",
+      rule: readElsewhere,
+    });
+    // The group book is outside the first rule's scope; it has no Tags and
+    // is a book, so the negated alternative holds.
+    expect(
+      await feature.resolveCreationProfile({ item: groupBook }),
+    ).toMatchObject({ selector: books, rule: untouched });
+  });
+
   it("keeps a previewed selection fixed while Tags and memberships change, and lets the next operation see the change", async () => {
     const read = rule({
       id: "read",

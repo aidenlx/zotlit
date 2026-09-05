@@ -65,7 +65,7 @@ export type RuleCondition =
     }
   | { kind: "tag"; negated: boolean; name: string };
 
-/** A condition the flat editor shows as one row. */
+/** A condition the editor shows as one row. */
 export type FlatCondition = Exclude<RuleCondition, { kind: "group" }>;
 
 /** One reason an expression is outside the supported contract. */
@@ -214,24 +214,6 @@ export function formatCondition(condition: RuleCondition): string {
       return condition.negated ? `!${call}` : call;
     }
   }
-}
-
-/**
- * The flat "Match all" view of a condition, or `null` when the expression
- * carries structure the simple editor cannot show (an `any` group, a nested
- * group). The editor keeps such an expression intact instead of flattening it.
- */
-export function flatConditions(
-  condition: RuleCondition,
-): FlatCondition[] | null {
-  if (condition.kind !== "group") return [condition];
-  if (condition.match !== "all") return null;
-  const flat: FlatCondition[] = [];
-  for (const entry of condition.conditions) {
-    if (entry.kind === "group") return null;
-    flat.push(entry);
-  }
-  return flat;
 }
 
 function emptyGroup(): RuleCondition {
