@@ -1,12 +1,8 @@
-/**
- * The database side of Profile Selection Rules: the membership facts a rule
- * reads of an Item, whether a referenced Collection exists, and the
- * Collections the editor offers.
- *
- * Every Collection reference is portable — a Library selector plus Zotero's
- * Collection key — and local `libraryID`s are resolved here, per database
- * snapshot, so the same rule means the same thing on every device.
- */
+// The database side of Profile Selection Rules: the membership facts a rule reads of an Item, whether a referenced Collection exists, and the Collections the editor offers.
+//
+// Every Collection reference is portable — a Library selector plus Zotero's
+// Collection key — and local `libraryID`s are resolved here, per database
+// snapshot, so the same rule means the same thing on every device.
 import {
   getCollectionIDsByItem,
   getCollectionNodesByLibrary,

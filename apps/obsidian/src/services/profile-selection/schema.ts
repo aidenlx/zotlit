@@ -1,16 +1,12 @@
-/**
- * Profile Selection Rules — the persisted shape.
- *
- * The vault owns one ordered list; list order is priority order. Each rule
- * records an explicit Library scope (the same stable selectors Library Scope
- * persists), one Filter Expression, and one target Profile selector. The
- * expression is stored as text: its validity against the supported condition
- * contract is judged when a rule is edited or evaluated (`condition.ts`), so
- * a rule that a later version cannot read stays on disk for the user to
- * repair rather than being dropped by the settings load.
- *
- * @see docs/adr/0038-profile-selection-rules-belong-to-the-vault.md
- */
+// The persisted shape of Profile Selection Rules: one vault-owned ordered list, priority order being list order.
+//
+// Each rule records an explicit Library scope (the same stable selectors
+// Library Scope persists), one Filter Expression, and one target Profile
+// selector. The expression is stored as text: its validity against the
+// supported condition contract is judged when a rule is edited or evaluated
+// (`condition.ts`), so a rule that a later version cannot read stays on disk
+// for the user to repair rather than being dropped by the settings load.
+// See docs/adr/0038-profile-selection-rules-belong-to-the-vault.md.
 import * as v from "valibot";
 
 import { parseProfileSelector } from "@/lib/profile-stamp";

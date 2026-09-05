@@ -1,30 +1,26 @@
-/**
- * The condition contract of a Profile Selection Rule: which Filter
- * Expressions a rule may carry, how the editor writes one, and how one is
- * matched against the facts of a Zotero Item.
- *
- * The shared language parses far more than a rule accepts. This module is the
- * gate: an expression compiles to a {@link RuleCondition} only when every node
- * belongs to the supported vocabulary, and anything else is a
- * {@link ConditionProblem} — reported when the rule is edited and again when
- * it is evaluated, so a rule the vault cannot judge never selects a Profile.
- *
- * Supported vocabulary:
- * - `itemType == "<type>"` / `itemType != "<type>"` — the built-in Zotero type.
- * - `inCollection("<library>", "<key>")` — filed in the Collection or any of
- *   its descendants; `inCollectionDirectly(...)` — filed in it itself. The
- *   Library is the portable `personal` / `group:<groupID>` reference and the
- *   key is Zotero's Collection key, so a reference survives a rename and
- *   tells identical names or keys in different Libraries apart.
- * - `hasTag("<name>")` — an exact, case-sensitive Tag name; manual and
- *   automatic applications both count.
- * - `!`, `&&`, `||`, and grouping.
- *
- * Whether a referenced Collection exists is not a compile-time question: the
- * evaluator checks {@link collectionReferences} against the database and
- * reports a `missing-collection` problem, keeping a stale reference distinct
- * from an ordinary nonmatch.
- */
+// The condition contract of a Profile Selection Rule: which Filter Expressions a rule may carry, how the editor writes one, and how one is matched against the facts of a Zotero Item.
+//
+// The shared language parses far more than a rule accepts. This module is the
+// gate: an expression compiles to a `RuleCondition` only when every node
+// belongs to the supported vocabulary, and anything else is a
+// `ConditionProblem` — reported when the rule is edited and again when it is
+// evaluated, so a rule the vault cannot judge never selects a Profile.
+//
+// Supported vocabulary:
+// - `itemType == "<type>"` / `itemType != "<type>"` — the built-in Zotero type.
+// - `inCollection("<library>", "<key>")` — filed in the Collection or any of
+//   its descendants; `inCollectionDirectly(...)` — filed in it itself. The
+//   Library is the portable `personal` / `group:<groupID>` reference and the
+//   key is Zotero's Collection key, so a reference survives a rename and
+//   tells identical names or keys in different Libraries apart.
+// - `hasTag("<name>")` — an exact, case-sensitive Tag name; manual and
+//   automatic applications both count.
+// - `!`, `&&`, `||`, and grouping.
+//
+// Whether a referenced Collection exists is not a compile-time question: the
+// evaluator checks `collectionReferences` against the database and reports a
+// `missing-collection` problem, keeping a stale reference distinct from an
+// ordinary nonmatch.
 import { regex } from "arkregex";
 
 import { parseExpressionAst } from "@zotlit/filter-expression";
