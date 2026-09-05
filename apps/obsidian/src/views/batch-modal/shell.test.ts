@@ -84,6 +84,97 @@ it.each([
   },
 );
 
+it("tells the unmatched fallback, the affected recovery, and the all-new override apart", () => {
+  const unmatched: BatchProfileChoice = {
+    scope: "unmatched",
+    count: 2,
+    label: "Default",
+    source: "bound",
+    choose: vi.fn(),
+  };
+  const affected: BatchProfileChoice = {
+    scope: "affected",
+    count: 1,
+    source: "bound",
+    choose: vi.fn(),
+  };
+  const override: BatchProfileChoice = {
+    scope: "all-new",
+    count: 4,
+    source: "bound",
+    choose: vi.fn(),
+  };
+  const chooseProfile = vi.fn();
+  const manifest = new FlatManifest({
+    tasks: [
+      {
+        id: 1,
+        label: "Matched book",
+        kind: "create",
+        path: "Books/Matched book.md",
+        profile: "Books",
+        reason: m.modal_profile_source_rule({ rule: "Item type is Book" }),
+      },
+      {
+        id: 2,
+        label: "Broken rule paper",
+        kind: "create",
+        reason: m.modal_profile_problem_unavailable_target({
+          rule: "Item type is Thesis",
+        }),
+      },
+    ],
+    groups: [
+      {
+        kind: "create",
+        header: m.batch_update_group_create,
+        profileChoices: [unmatched, affected, override],
+      },
+    ],
+    notFound: [],
+    notFoundHeader: m.batch_update_group_not_found,
+    abortedHeader: m.batch_update_group_aborted,
+  });
+  const container = document.createElement("div");
+  manifest.renderList(container, { chooseProfile });
+  const controls = [
+    ...container.querySelectorAll<HTMLButtonElement>("[data-profile-choice]"),
+  ];
+  expect(controls.map((button) => button.textContent)).toEqual([
+    m.batch_profile_unmatched_destination({ count: 2, label: "Default" }),
+    m.batch_profile_affected_choose({ count: 1 }),
+    m.batch_profile_override_all(),
+  ]);
+  for (const help of [
+    m.batch_profile_unmatched_help(),
+    m.batch_profile_affected_help(),
+    m.batch_profile_override_all_help(),
+  ])
+    expect(container.textContent).toContain(help);
+  expect(container.textContent).not.toContain(m.batch_profile_source_chosen());
+  expect(container.textContent).toContain("Item type is Book");
+  expect(container.textContent).toContain(
+    m.modal_profile_problem_unavailable_target({
+      rule: "Item type is Thesis",
+    }),
+  );
+  expect(container.querySelectorAll("[data-profile-stamp]")).toHaveLength(1);
+  controls[1]!.click();
+  expect(chooseProfile).toHaveBeenLastCalledWith(affected);
+  controls[2]!.click();
+  expect(chooseProfile).toHaveBeenLastCalledWith(override);
+
+  // Once chosen, the override names the shared destination and its source.
+  Object.assign(override, { label: "Articles", source: "asked" });
+  container.replaceChildren();
+  manifest.renderList(container, { chooseProfile });
+  expect(
+    container.querySelector('[data-profile-choice-scope="all-new"]')
+      ?.textContent,
+  ).toContain(m.batch_profile_override_all_destination({ label: "Articles" }));
+  expect(container.textContent).toContain(m.batch_profile_source_chosen());
+});
+
 it("names completed Profile groups with their own counts and retains kept rows", () => {
   const manifest = new FlatManifest({
     tasks: [
