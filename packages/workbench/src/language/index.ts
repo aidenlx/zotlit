@@ -8,7 +8,7 @@ export {
   STRUCTURAL_TAGS,
 } from "./liquid";
 export type { LiquidRange } from "./liquid";
-export { yamlRule } from "./yaml";
+export { jsonRule, embeddedJsonE } from "./json-e-language";
 export { applyTemplateCompletion, templateCompletion } from "./completion";
 export type { SuggestionSource } from "./completion";
 export { completionEdit, hoverHint, rootAt, suggestions } from "./suggestions";

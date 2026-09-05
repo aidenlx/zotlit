@@ -1205,19 +1205,12 @@ frontmatter:
     expr: zt.title
     merge: replace
   - key: fixture-kind
-    value:
-      $if: 'zt.itemType == "journalArticle"'
-      then: reference/article
-      else: reference/other
+    value: {"$if":"zt.itemType == 'journalArticle'","then":"reference/article","else":"reference/other"}
     merge: replace
   - key: fixture-obsolete
-    value:
-      $if: 'zt.itemType == "bookSection"'
-      then: retained
+    value: {"$if":"zt.itemType == 'bookSection'","then":"retained"}
     merge: replace
-  - value:
-      fixture-spread-title: { $eval: zt.title }
-      fixture-spread-kind: { $eval: zt.itemType }
+  - value: {"fixture-spread-title":{"$eval":"zt.title"},"fixture-spread-kind":{"$eval":"zt.itemType"}}
 ---
 # Book profile: {{ zt.title }}
 

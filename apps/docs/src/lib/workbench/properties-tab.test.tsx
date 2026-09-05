@@ -20,7 +20,7 @@ import { PropertiesPane, PropertiesResult } from "./properties-tab";
  */
 const ROWS_PROFILE = DEFAULT_PROFILE_SOURCE.replace(
   "---\n# {{ zt.title }}",
-  `  - value: { kind: { $eval: 'zt.itemType' }, title: { $eval: 'zt.title' } }
+  `  - value: {"kind":{"$eval":"zt.itemType"},"title":{"$eval":"zt.title"}}
     merge: replace
 ---
 # {{ zt.title }}`,

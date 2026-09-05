@@ -281,7 +281,7 @@ function EntryForm({
             controller={controller}
             slice={entrySlice(entry.position)}
             label={m.workbench_properties_expression()}
-            language={entry.language === "value" ? "yaml" : "expression"}
+            language={entry.language === "value" ? "json-e" : "expression"}
             reveal={reveal}
             onSelection={onSelection}
             suggest={suggest}

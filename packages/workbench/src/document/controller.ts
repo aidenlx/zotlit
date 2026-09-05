@@ -243,6 +243,7 @@ export class WorkbenchDocumentController {
   get templateRegions(): readonly (WorkbenchSliceRange & {
     root: "note" | "annotation" | "filename";
     expression: boolean;
+    language?: "json-e";
   })[] {
     const annotation = this.annotationSection?.source;
     const filename = this.filenameSlice;
@@ -255,11 +256,16 @@ export class WorkbenchDocumentController {
         ? [{ ...filename, root: "filename" as const, expression: false }]
         : []),
       ...(this.managedEntries ?? [])
-        .filter((entry) => entry.language === "expr")
+        .filter(
+          (entry) => entry.language === "expr" || entry.language === "value",
+        )
         .map((entry) => ({
           ...entry.expression,
           root: "note" as const,
-          expression: true,
+          expression: entry.language === "expr",
+          ...(entry.language === "value"
+            ? { language: "json-e" as const }
+            : {}),
         })),
     ];
   }
@@ -738,6 +744,21 @@ function webProblems(
       });
     }
   }
+  const entries = managedFrontmatterEntries(source);
+  if (entries.status === "rows")
+    for (const entry of entries.entries) {
+      if (entry.language !== "value") continue;
+      try {
+        JSON.parse(source.slice(entry.expression.from, entry.expression.to));
+      } catch {
+        problems.push({
+          code: "invalid-manifest",
+          params: { field: `frontmatter.${entry.position - 1}.value` },
+          slice: entrySlice(entry.position),
+          range: entry.expression,
+        });
+      }
+    }
   return problems;
 }
 

@@ -27,13 +27,15 @@ Advanced. YAML that a form cannot safely edit remains available in
 Advanced with its source preserved. Use the existing parser and one
 cohesive editing core as the starting point.
 
-Rule rows edit the YAML source of their JSON-e value directly. JSON is
-also valid input within YAML. This amends the JSON-only Rule editor in
-the [#938 ruling](https://github.com/aidenlx/zotlit/issues/938#issuecomment-5468828547):
-direct source editing keeps incomplete input in the same source buffer
-and undo history, which removes the need for a separate pending-JSON
-model. JSON-e remains the evaluation language; the change concerns its
-authoring syntax.
+Rule rows edit JSON source stored directly under `value` in the YAML
+manifest. This keeps incomplete input in the same source buffer and undo
+history, while limiting the outer syntax needed for JSON-e editor support.
+The [JSON-e editor design](../research/json-e-editor-design.md) restores
+the JSON authoring syntax from the
+[#938 ruling](https://github.com/aidenlx/zotlit/issues/938#issuecomment-5468828547)
+and retains direct source editing. JSON-e remains the evaluation language.
+Fixtures and starter rules change with implementation; migration is outside
+scope because this beta has not shipped.
 
 The web and Obsidian hosts share document edit rules, history, source
 mapping, and structural editor extensions. Each host supplies its layout,

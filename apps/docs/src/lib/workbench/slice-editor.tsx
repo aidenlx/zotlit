@@ -15,7 +15,8 @@ import {
   liquidMarkdown,
   profileLanguage,
   embeddedLiquid,
-  yamlRule,
+  jsonRule,
+  embeddedJsonE,
 } from "@zotlit/workbench/language";
 import type { SuggestionSource } from "@zotlit/workbench/language";
 
@@ -27,7 +28,7 @@ import { webHover } from "./hover";
 export type { SuggestionSource } from "@zotlit/workbench/language";
 
 /** The expression pane edits a bare Liquid expression; the note includes Markdown. */
-export type SliceLanguage = "liquid" | "yaml" | "expression";
+export type SliceLanguage = "liquid" | "json-e" | "expression";
 
 export interface SliceEditorProps {
   controller: WorkbenchDocumentController;
@@ -97,6 +98,7 @@ export function SliceEditor({
         partials: controller.dependencies,
         ...supplied,
         root,
+        language: region.language,
         mode: expression ? "expression" : undefined,
         scope: {
           from: region.from - sliceRange.from,
@@ -110,8 +112,8 @@ export function SliceEditor({
         doc: controller.sliceText(slice),
         extensions: [
           workbenchSlice(controller, slice),
-          language === "yaml"
-            ? yamlRule
+          language === "json-e"
+            ? jsonRule
             : slice === "advanced"
               ? profileLanguage
               : language === "expression"
@@ -134,7 +136,30 @@ export function SliceEditor({
               ]
             : []),
           editorTheme,
-          ...(language === "yaml" ? [] : [webCompletion(read), webHover(read)]),
+          webCompletion(read),
+          webHover(read),
+          ...(language === "json-e" || slice === "advanced"
+            ? [
+                embeddedJsonE(() =>
+                  controller.templateRegions
+                    .filter(
+                      (region) =>
+                        region.language === "json-e" &&
+                        region.from >= controller.sliceRange(slice).from &&
+                        region.to <= controller.sliceRange(slice).to,
+                    )
+                    .map((region) => ({
+                      from: region.from - controller.sliceRange(slice).from,
+                      to: region.to - controller.sliceRange(slice).from,
+                    })),
+                ),
+              ]
+            : []),
+          ...(slice === "filename" ||
+          language === "expression" ||
+          language === "json-e"
+            ? [EditorView.theme({ ".cm-content": { minHeight: "5rem" } })]
+            : []),
           ...(singleLine
             ? [
                 EditorState.transactionFilter.of((transaction) =>

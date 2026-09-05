@@ -24,7 +24,7 @@ frontmatter:
     merge: replace
   - key: "read on"
     expr: zt.dateAdded
-  - value: { kind: { $eval: 'zt.itemType' } }
+  - value: {"kind":{"$eval":"zt.itemType"}}
     merge: keep
 ---
 # {{ zt.title }}
@@ -42,8 +42,9 @@ const MULTI_LINE = HAND_WRITTEN.replace(
   /frontmatter:\n(?: .*\n)+/,
   `frontmatter:
   - key: title
-    value:
-      $eval: zt.title
+    value: {
+      "$eval": "zt.title"
+    }
     merge: replace
   - key: subtitle
     expr: >-
@@ -98,7 +99,7 @@ describe("Managed Frontmatter patching", () => {
 
     expect(controller.sliceText(entrySlice(1))).toBe("zt.title");
     expect(controller.sliceText(entrySlice(3))).toBe(
-      "{ kind: { $eval: 'zt.itemType' } }",
+      '{"kind":{"$eval":"zt.itemType"}}',
     );
   });
 
@@ -141,7 +142,7 @@ describe("Managed Frontmatter patching", () => {
     });
 
     expect(source).toContain(
-      "  - value: { kind: { $eval: 'zt.itemType' }, tags: { $eval: 'zt.tags' } }\n",
+      '  - value: {"kind":{"$eval":"zt.itemType"},"tags":{"$eval":"zt.tags"}}\n',
     );
     const added = controller.managedEntries!.at(-1)!;
     expect(added).toMatchObject({ position: 4, language: "value" });
@@ -379,7 +380,7 @@ describe("Managed Frontmatter patching", () => {
 
     expect(controller.editManagedEntry(action)).toBe(true);
     expect(controller.source).toBe(
-      HAND_WRITTEN.replace("expr: zt.title", "value: { $eval: 'zt.title' }"),
+      HAND_WRITTEN.replace("expr: zt.title", 'value: {"$eval":"zt.title"}'),
     );
     expect(controller.undo()).toBe(true);
     expect(controller.source).toBe(HAND_WRITTEN);
@@ -391,7 +392,9 @@ describe("Managed Frontmatter patching", () => {
   it("gives a multi-line expression a slice over its own lines alone", () => {
     const controller = new WorkbenchDocumentController(MULTI_LINE);
 
-    expect(controller.sliceText(entrySlice(1))).toBe("$eval: zt.title");
+    expect(controller.sliceText(entrySlice(1))).toBe(
+      '{\n      "$eval": "zt.title"\n    }',
+    );
     expect(controller.sliceText(entrySlice(2))).toBe(">-\n      zt.shortTitle");
   });
 
@@ -409,7 +412,7 @@ describe("Managed Frontmatter patching", () => {
 
     expect(fromRule.source).toBe(
       MULTI_LINE.replace(
-        "    value:\n      $eval: zt.title",
+        '    value: {\n      "$eval": "zt.title"\n    }',
         "    expr: zt.title",
       ),
     );
@@ -417,7 +420,7 @@ describe("Managed Frontmatter patching", () => {
     expect(fromScalar.source).toBe(
       MULTI_LINE.replace(
         "    expr: >-\n      zt.shortTitle",
-        "    value: { $eval: 'zt.title' }",
+        '    value: {"$eval":"zt.title"}',
       ),
     );
     expect(fromScalar.controller.problems).toEqual([]);
@@ -474,7 +477,7 @@ describe("Managed Frontmatter patching", () => {
 
     expect(controller.managedEntries).toHaveLength(3);
     expect(controller.sliceText(entrySlice(3))).toBe(
-      "[{ kind: { $eval: 'zt.itemType' } }",
+      '[{"kind":{"$eval":"zt.itemType"}}',
     );
   });
 });

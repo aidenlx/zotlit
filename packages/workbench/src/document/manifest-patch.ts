@@ -69,9 +69,9 @@ export type ManagedEntryAction =
  * one — the author's own text stays one undo away.
  */
 const NEW_EXPRESSION = "zt.title";
-const NEW_RULE = "{ $eval: 'zt.title' }";
+const NEW_RULE = '{"$eval":"zt.title"}';
 const NEW_SPREAD =
-  "{ kind: { $eval: 'zt.itemType' }, tags: { $eval: 'zt.tags' } }";
+  '{"kind":{"$eval":"zt.itemType"},"tags":{"$eval":"zt.tags"}}';
 
 /**
  * The document change that replaces the manifest node at `path` with `value`.
