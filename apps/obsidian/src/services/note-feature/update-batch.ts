@@ -358,10 +358,8 @@ export async function runBatchUpdate(
         abortedHeader: m.batch_update_group_aborted,
       });
     },
-    onRun: (controls) => {
-      if (selection)
-        deps.settings.update({ "note.last-used-profile": selection.selector });
-      return executeBatchActions(
+    onRun: (controls) =>
+      executeBatchActions(
         deps,
         {
           actions,
@@ -370,8 +368,7 @@ export async function runBatchUpdate(
           profileCounts: profilesEnabled ? profileCounts : undefined,
         },
         controls,
-      );
-    },
+      ),
   }).open();
   return { outcome: "batch-modal" };
 }

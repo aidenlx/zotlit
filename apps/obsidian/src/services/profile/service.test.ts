@@ -148,7 +148,7 @@ describe("ProfileService", () => {
       "templates/zotlit-profile.books.md": document(),
     });
     const { vault, profile } = fixture;
-    fixture.settings.update({ "note.last-used-profile": BOOKS });
+    using update = vi.spyOn(fixture.settings, "update");
     vault.renameFile(
       "templates/zotlit-profile.books.md",
       "templates/zotlit-profile.reading.md",
@@ -160,7 +160,7 @@ describe("ProfileService", () => {
     vault.createFile("templates/zotlit-profile.copy.md", document());
     await vi.advanceTimersByTimeAsync(500);
     expect(profile.resolveProfile(BOOKS)).toBeUndefined();
-    expect(fixture.settings.current!["note.last-used-profile"]).toBeNull();
+    expect(update).not.toHaveBeenCalled();
     expect(profile.diagnostics).toEqual([
       expect.objectContaining({
         code: "duplicate-profile-id",
@@ -689,7 +689,6 @@ describe("ProfileService", () => {
       },
     );
     fixture.indexNotes();
-    fixture.settings.update({ "note.last-used-profile": BOOKS });
     const pending = profile.delete(BOOKS, "default");
     await vi.advanceTimersByTimeAsync(500);
     await pending;
@@ -701,7 +700,6 @@ describe("ProfileService", () => {
     });
     expect(frontmatters["Scratch.md"]).toEqual({ "zotlit-profile": BOOKS });
     expect(vault.files.has("templates/zotlit-profile.books.md")).toBe(false);
-    expect(fixture.settings.current!["note.last-used-profile"]).toBeNull();
   });
 
   it("keeps the document when a note cannot be re-stamped", async () => {

@@ -33,7 +33,6 @@ function observeButtons() {
 
 it.each([
   ["headless", () => m.batch_profile_source_companion()],
-  ["last-used", () => m.modal_profile_source_last_used()],
   ["asked", () => m.batch_profile_source_chosen()],
 ] as const)(
   "shows a %s Profile chip with row path and a read-only stamp",
@@ -138,7 +137,7 @@ it("refreshes the chip and every path after choosing, and blocks Run while previ
   };
   const choice: BatchProfileChoice = {
     label: "Articles",
-    source: "last-used",
+    source: "bound",
     choose: async () => {
       await pending.promise;
       Object.assign(task, { path: "Books/Paper.md", profile: "Books" });

@@ -25,7 +25,6 @@ export {
   loadProfilePreviewData,
   type ProfileDialogServices,
   createProfileDialog,
-  renderProfileCreatedNotice,
   CreateProfileModal,
   type CreateProfile,
   type CreateProfileOptions,

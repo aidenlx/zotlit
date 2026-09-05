@@ -124,15 +124,15 @@ it.each(["open", "update"] as const)(
 
 it("leaves a cancelled picker without a note or navigation", async () => {
   const harness = creationHarness({
-    selector: BOOKS,
-    source: "last-used",
+    selector: "default",
+    source: "bound",
     shouldAsk: true,
   });
   vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue(undefined);
   await openCompanionNote(harness.deps, REF, { action: "open" });
   expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
     harness.deps.app,
-    expect.objectContaining({ preselected: BOOKS, source: "last-used" }),
+    expect.objectContaining({ preselected: "default", source: "bound" }),
   );
   expect(harness.create).not.toHaveBeenCalled();
   expect(harness.openLinkText).not.toHaveBeenCalled();

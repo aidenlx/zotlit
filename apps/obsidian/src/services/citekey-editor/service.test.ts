@@ -66,7 +66,7 @@ describe("CitekeyEditor Profile creation", () => {
       noteFeature: {
         resolveCreationProfile: async () => ({
           selector: books,
-          source: "last-used",
+          source: "headless",
           shouldAsk: true,
         }),
         prepareCreationProfiles: async () => [

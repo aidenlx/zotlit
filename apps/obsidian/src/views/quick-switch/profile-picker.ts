@@ -221,13 +221,11 @@ export function renderProfileChoice(
         : m.modal_profile_preselected(),
       cls: PROFILE_BADGE_CLASS,
     });
-  const source =
-    choice.source === "last-used"
-      ? m.modal_profile_source_last_used()
-      : choice.source === "headless"
-        ? m.modal_profile_source_link()
-        : undefined;
-  if (source) label.createSpan({ text: source, cls: PROFILE_BADGE_CLASS });
+  if (choice.source === "headless")
+    label.createSpan({
+      text: m.modal_profile_source_link(),
+      cls: PROFILE_BADGE_CLASS,
+    });
   if (choice.detail)
     el.createDiv({ text: choice.detail, cls: "suggestion-note" });
   if (choice.path)

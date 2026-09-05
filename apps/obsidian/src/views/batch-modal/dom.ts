@@ -41,11 +41,9 @@ export function profileChoiceControl(
   const source =
     choice.source === "headless"
       ? m.batch_profile_source_companion()
-      : choice.source === "last-used"
-        ? m.modal_profile_source_last_used()
-        : choice.source === "asked"
-          ? m.batch_profile_source_chosen()
-          : undefined;
+      : choice.source === "asked"
+        ? m.batch_profile_source_chosen()
+        : undefined;
   if (source)
     container.createSpan({
       text: source,
