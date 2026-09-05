@@ -52,7 +52,10 @@ import type {
   CreationProfileSelection,
   PreparedCreationProfile,
 } from "./operations";
-import { describeSelectionProblem } from "./selection-copy";
+import {
+  describeSelectionProblem,
+  describeSelectionSource,
+} from "./selection-copy";
 import {
   createNoteNotice,
   noteOperationDiagnosticNotice,
@@ -430,23 +433,25 @@ function creationRow(
   action: BatchAction & CreateAction,
 ): Pick<FlatTask, "profile" | "path" | "reason"> {
   const { selection, prepared } = action;
-  const reason = !selection
-    ? undefined
-    : selection.problem
-      ? describeSelectionProblem(selection.problem)
-      : selection.source === "rule"
-        ? m.modal_profile_source_rule({ rule: describeRule(selection.rule!) })
-        : selection.source === "headless"
-          ? m.batch_profile_source_companion()
-          : selection.source === "asked"
-            ? m.batch_profile_source_chosen()
-            : m.batch_profile_reason_unmatched();
   return {
     profile: action.profile && profileLabel(action.profile),
     path: prepared?.path,
     reason:
-      [reason, prepared?.unavailable].filter(Boolean).join(" ") || undefined,
+      [selection && creationReason(selection), prepared?.unavailable]
+        .filter(Boolean)
+        .join(" ") || undefined,
   };
+}
+
+/** Why a new row goes where it goes: its problem, its rule, or its source. */
+function creationReason(selection: CreationProfileSelection): string {
+  if (selection.problem) return describeSelectionProblem(selection.problem);
+  if (selection.source === "rule")
+    return m.modal_profile_source_rule({ rule: describeRule(selection.rule) });
+  return (
+    describeSelectionSource(selection.source) ??
+    m.batch_profile_reason_unmatched()
+  );
 }
 
 /**

@@ -171,14 +171,7 @@ export async function createNoteTaskWithToast(
   try {
     const result = await toast.promise(create(), {
       loading: m.notice_creating_note(),
-      success: (result) =>
-        result.outcome === "created" && options.created
-          ? options.created(result.file)
-          : result.outcome === "refused" &&
-              result.diagnostic.code === "unknown-literature-note-profile" &&
-              options.app
-            ? profileRecoveryNotice(options.app, result.diagnostic)
-            : createNoteNotice(result),
+      success: (result) => createNoteSuccessNotice(result, options),
       error: (_msg, e) =>
         e instanceof EmptyFilenameError || e instanceof InertTemplateError
           ? e.message
@@ -189,6 +182,22 @@ export async function createNoteTaskWithToast(
   } catch {
     return null;
   }
+}
+
+/** The caller's words for a created note, a Profile recovery when the app can offer one, else the plain outcome. */
+function createNoteSuccessNotice(
+  result: CreateNoteResult,
+  options: { app?: App; created?: (file: TFile) => string },
+): string | DocumentFragment {
+  if (result.outcome === "created" && options.created)
+    return options.created(result.file);
+  if (
+    result.outcome === "refused" &&
+    result.diagnostic.code === "unknown-literature-note-profile" &&
+    options.app
+  )
+    return profileRecoveryNotice(options.app, result.diagnostic);
+  return createNoteNotice(result);
 }
 
 export function createNoteNotice(result: CreateNoteResult): string {

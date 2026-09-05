@@ -3,7 +3,26 @@
 import * as m from "@/lib/i18n/generated/messages";
 import { describeProblem, describeRule } from "@/services/profile-selection";
 
-import type { CreationSelectionProblem } from "./operations";
+import type {
+  CreationProfileSource,
+  CreationSelectionProblem,
+} from "./operations";
+
+/** Where a batch destination came from; Default (`bound`) has no words. */
+export function describeSelectionSource(
+  source: CreationProfileSource,
+): string | undefined {
+  switch (source) {
+    case "headless":
+      return m.batch_profile_source_companion();
+    case "asked":
+      return m.batch_profile_source_chosen();
+    case "rule":
+      return m.batch_profile_source_rule();
+    case "bound":
+      return undefined;
+  }
+}
 
 /** Why automatic selection stopped, as the user reads it before choosing. */
 export function describeSelectionProblem(

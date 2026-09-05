@@ -221,18 +221,23 @@ export type CreationSelectionProblem =
       selector: ProfileSelector;
     };
 
-export interface CreationProfileSelection {
+export type CreationProfileSelection = {
   selector: ProfileSelector;
-  source: CreationProfileSource;
   /**
    * Whether the creation surface should confirm the selection: other
    * Profiles exist, or automatic selection stopped with a `problem`.
    */
   shouldAsk: boolean;
-  /** The rule that selected the Profile, when `source` is `rule`. */
-  rule?: ProfileSelectionRule;
   problem?: CreationSelectionProblem;
-}
+} & (
+  | {
+      source: "rule";
+      /** The rule that selected the Profile. */
+      rule: ProfileSelectionRule;
+    }
+  | { source: "asked" | "headless"; rule?: undefined }
+  | { source: "bound"; rule?: undefined }
+);
 
 /** Effective Profile bindings and the path relevant to the pending action. */
 export interface ProfilePreview {
@@ -740,16 +745,21 @@ async function resolveCreationProfile(
     source: "bound",
     shouldAsk,
   };
-  const explicit = [
-    { selector: sources.asked, source: "asked" },
-    { selector: sources.headless, source: "headless" },
-  ] as const;
-  const named = explicit.find(({ selector }) => selector != null);
+  const explicit = (["asked", "headless"] as const).map((source) => ({
+    source,
+    selector: sources[source],
+  }));
+  const named = explicit.find(
+    (
+      entry,
+    ): entry is { source: "asked" | "headless"; selector: ProfileSelector } =>
+      entry.selector !== undefined,
+  );
   if (named) {
     const { selector, source } = named;
-    if (!isAvailable(selector!))
-      return stopped({ kind: "invalid-selector", source, selector: selector! });
-    selection = { selector: selector!, source, shouldAsk };
+    if (!isAvailable(selector))
+      return stopped({ kind: "invalid-selector", source, selector });
+    selection = { selector, source, shouldAsk };
   } else if (sources.item && settings["profile.selection-rules"].length > 0) {
     // The Item's actual memberships, read once from one snapshot: rules see
     // every Collection the Item is filed in, not the one a UI shows it under.

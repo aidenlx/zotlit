@@ -139,17 +139,17 @@ function createPrepared(
 
 /** The resolved Profile lost its preview: the same problem its source reports. */
 function unavailableSelection(
-  selection: CreationProfileSelection,
+  selection: Exclude<CreationProfileSelection, { source: "bound" }>,
 ): CreationSelectionProblem {
   return selection.source === "rule"
     ? {
         kind: "unavailable-target",
-        rule: selection.rule!,
+        rule: selection.rule,
         selector: selection.selector,
       }
     : {
         kind: "invalid-selector",
-        source: selection.source as "asked" | "headless",
+        source: selection.source,
         selector: selection.selector,
       };
 }
