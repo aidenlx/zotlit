@@ -449,7 +449,7 @@ describe("selectProfileByRules", () => {
     };
     expect(
       ruleItem(
-        { groupID: null, fields: { itemType: "book" } as never },
+        { libraryID: 1, groupID: null, fields: { itemType: "book" } as never },
         memberships,
       ),
     ).toEqual({
@@ -459,13 +459,35 @@ describe("selectProfileByRules", () => {
     });
     expect(
       ruleItem(
-        { groupID: 118, fields: { itemType: "thesis" } as never },
+        { libraryID: 5, groupID: 118, fields: { itemType: "thesis" } as never },
         memberships,
       ),
     ).toEqual({
       library: { type: "group", groupID: 118 },
       itemType: "thesis",
       ...memberships,
+    });
+  });
+
+  it("gives an Item of an unknown group Library no selector, so a personal-scoped rule skips it", () => {
+    const orphan = ruleItem(
+      { libraryID: 7, groupID: null, fields: { itemType: "book" } as never },
+      { tags: [], collections: [], collectionAncestors: [] },
+    );
+    expect(orphan.library).toBeNull();
+    const personal = rule({
+      id: "personal",
+      scope: { mode: "selected", libraries: [{ type: "personal" }] },
+    });
+    expect(selectProfileByRules([personal], orphan, available)).toEqual({
+      outcome: "unmatched",
+    });
+    expect(
+      selectProfileByRules([rule({ id: "anywhere" })], orphan, available),
+    ).toEqual({
+      outcome: "matched",
+      rule: rule({ id: "anywhere" }),
+      selector: books,
     });
   });
 });
