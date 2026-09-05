@@ -13,7 +13,7 @@ import {
   withAnnotationCitation,
 } from "@zotlit/db";
 import type { TemplateAnnotation } from "@zotlit/db";
-import { inlineCitation } from "@zotlit/templates";
+import { inlineCitation, replaceSuffixMarkers } from "@zotlit/templates";
 import { TemplateFacade } from "@zotlit/templates/facade";
 import type { ManagedFrontmatterEntry } from "@zotlit/templates/facade";
 import { evalManagedFrontmatterEntries } from "@zotlit/templates/frontmatter";
@@ -149,9 +149,10 @@ export function renderProfile(
     );
     return {
       ...identity,
-      filename: facade.renderLiteratureNoteTemplateFilename(
-        document,
-        filenameData,
+      // A preview assumes a free filename; the vault resolves collisions on save.
+      filename: replaceSuffixMarkers(
+        facade.renderLiteratureNoteTemplateFilename(document, filenameData),
+        () => "",
       ),
       properties: frontmatter.properties,
       fold: frontmatter.fold,

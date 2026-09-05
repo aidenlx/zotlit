@@ -6,6 +6,7 @@
 import type { TemplateDependenciesResponse } from "@zotlit/workbench/bridge";
 import type { WorkbenchProblem } from "@zotlit/workbench/document";
 
+import { Button } from "@/components/ui/button";
 import { m } from "@/paraglide/messages.js";
 
 import { problemText } from "./problems";
@@ -66,18 +67,22 @@ export interface ProfileHandoffProps {
   /** Downloads the source as it was read, which is the only copy this page holds. */
   onDownload: () => void;
   onImport: () => void;
+  onUndo?: (() => void) | undefined;
+  message?: string | null | undefined;
 }
 
 export function ProfileHandoff({
   reasons,
   onDownload,
   onImport,
+  onUndo,
+  message,
 }: ProfileHandoffProps) {
   return (
-    <main className="flex h-dvh flex-col items-center justify-center bg-fd-background px-6 text-fd-foreground">
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-fd-background px-4 py-6 text-fd-foreground">
       <section
         aria-labelledby="workbench-handoff"
-        className="flex w-full max-w-xl flex-col gap-4 border border-fd-border bg-fd-card p-6 shadow-[6px_6px_0_0_var(--color-fd-border)]"
+        className="flex w-full max-w-xl flex-col gap-4 rounded-md border border-fd-border bg-fd-card p-5 shadow-sm sm:p-6"
       >
         <h1 id="workbench-handoff" className="font-serif text-xl font-medium">
           {m.workbench_unsupported_heading()}
@@ -89,20 +94,17 @@ export function ProfileHandoff({
           ))}
         </ul>
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={onDownload}
-            className="cursor-pointer bg-fd-primary px-4 py-1.5 text-sm font-medium text-fd-primary-foreground"
-          >
+          <Button onClick={onDownload}>
             {m.workbench_unsupported_download()}
-          </button>
-          <button
-            type="button"
-            onClick={onImport}
-            className="cursor-pointer border border-fd-border px-4 py-1.5 text-sm"
-          >
+          </Button>
+          <Button variant="outline" onClick={onImport}>
             {m.workbench_import()}
-          </button>
+          </Button>
+          {onUndo && (
+            <Button variant="outline" onClick={onUndo}>
+              {m.workbench_undo()}
+            </Button>
+          )}
           <a
             href="/docs/concepts/javascript-templates"
             className="text-sm text-fd-primary underline underline-offset-2"
@@ -110,6 +112,11 @@ export function ProfileHandoff({
             {m.workbench_unsupported_docs()}
           </a>
         </div>
+        {message && (
+          <p role="status" className="text-sm">
+            {message}
+          </p>
+        )}
       </section>
     </main>
   );

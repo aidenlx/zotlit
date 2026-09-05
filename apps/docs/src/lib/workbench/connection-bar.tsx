@@ -5,11 +5,14 @@ import type {
   LocalBridgeConnection,
 } from "@zotlit/workbench/bridge";
 
+import { Button } from "@/components/ui/button";
 import { m } from "@/paraglide/messages.js";
 
 interface ConnectionBarProps {
   readonly connection: LocalBridgeConnection;
   readonly website: string;
+  readonly saveBusy: boolean;
+  readonly editingConnectedProfile: boolean;
   readonly busy: boolean;
   readonly cancellable: boolean;
   readonly message: string | null;
@@ -33,6 +36,8 @@ const CAPABILITY_LABEL = {
 export function ConnectionBar({
   connection,
   website,
+  saveBusy,
+  editingConnectedProfile,
   busy,
   cancellable,
   message,
@@ -47,60 +52,80 @@ export function ConnectionBar({
   return (
     <section
       aria-label={m.workbench_connection_heading()}
-      className="shrink-0 border-b border-fd-border bg-fd-accent/25 px-4 py-3 min-[780px]:px-6"
+      className="shrink-0 border-b border-fd-border bg-fd-muted/50 px-4 py-2 min-[780px]:px-6"
     >
-      <div className="flex flex-wrap items-start gap-x-5 gap-y-2">
-        <div className="min-w-56 flex-1">
-          <p className="font-mono text-[0.68rem] font-semibold tracking-widest text-fd-primary uppercase">
-            {m.workbench_connection_heading()}
+      <div className="flex flex-col items-start justify-between gap-x-4 gap-y-2 sm:flex-row sm:flex-wrap sm:items-center">
+        {connected ? (
+          <details className="min-w-0 flex-1">
+            <summary className="cursor-pointer text-sm">
+              {m.workbench_connection_to_vault({
+                vault: connection.installation.vault,
+              })}
+            </summary>
+            <div className="mt-3 space-y-3 pb-2">
+              <dl className="flex flex-col gap-2 text-sm text-fd-muted-foreground">
+                <ConnectionDatum
+                  label={m.workbench_connection_website()}
+                  value={website}
+                />
+                <ConnectionDatum
+                  label={m.workbench_connection_vault()}
+                  value={connection.installation.vault}
+                />
+                <ConnectionDatum
+                  label={m.workbench_connection_item()}
+                  value={
+                    connection.selectedItem.title ?? connection.selectedItem.key
+                  }
+                />
+                <ConnectionDatum
+                  label={m.workbench_connection_profile()}
+                  value={connection.selectedProfile.name}
+                />
+                <ConnectionDatum
+                  label={m.workbench_connection_access()}
+                  value={connection.capabilities
+                    .map((capability) => CAPABILITY_LABEL[capability]())
+                    .join(", ")}
+                />
+              </dl>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy || saveBusy}
+                onClick={onDisconnect}
+              >
+                {m.workbench_connection_disconnect()}
+              </Button>
+            </div>
+          </details>
+        ) : (
+          <p className="min-w-0 flex-1 text-sm text-fd-muted-foreground">
+            {connectionStatus(connection)}
           </p>
-          {connected ? (
-            <dl className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fd-muted-foreground">
-              <ConnectionDatum
-                label={m.workbench_connection_website()}
-                value={website}
-              />
-              <ConnectionDatum
-                label={m.workbench_connection_vault()}
-                value={connection.installation.vault}
-              />
-              <ConnectionDatum
-                label={m.workbench_connection_item()}
-                value={
-                  connection.selectedItem.title ?? connection.selectedItem.key
-                }
-              />
-              <ConnectionDatum
-                label={m.workbench_connection_profile()}
-                value={connection.selectedProfile.name}
-              />
-              <ConnectionDatum
-                label={m.workbench_connection_access()}
-                value={connection.capabilities
-                  .map((capability) => CAPABILITY_LABEL[capability]())
-                  .join(", ")}
-              />
-            </dl>
-          ) : (
-            <p className="mt-1 text-sm text-fd-muted-foreground">
-              {connectionStatus(connection)}
-            </p>
-          )}
-          {message && (
-            <p aria-live="polite" className="mt-2 text-sm font-medium">
-              {message}
-            </p>
-          )}
-        </div>
-        <button
-          type="button"
-          disabled={busy && !cancellable}
-          onClick={onAction}
-          className="cursor-pointer border border-fd-border bg-fd-card px-3 py-1.5 text-sm font-medium disabled:cursor-wait disabled:text-fd-muted-foreground"
-        >
-          {connectionButtonLabel(connection, busy, cancellable)}
-        </button>
+        )}
+        {connected && editingConnectedProfile && (
+          <p className="text-xs text-fd-muted-foreground">
+            {m.workbench_connection_save_hint()}
+          </p>
+        )}
+        {!connected && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={saveBusy || (busy && !cancellable)}
+            onClick={onAction}
+          >
+            {connectionButtonLabel(connection, busy, cancellable)}
+          </Button>
+        )}
       </div>
+      <p
+        role="status"
+        className="text-sm leading-relaxed not-empty:mt-2 empty:hidden"
+      >
+        {message}
+      </p>
     </section>
   );
 }
@@ -146,9 +171,9 @@ function ConnectionDatum({
   readonly value: string;
 }) {
   return (
-    <div className="flex gap-1">
+    <div className="flex flex-wrap gap-x-2">
       <dt className="font-medium text-fd-foreground">{label}</dt>
-      <dd>{value}</dd>
+      <dd className="min-w-0 break-words">{value}</dd>
     </div>
   );
 }

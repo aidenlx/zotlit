@@ -61,7 +61,7 @@ describe("createRenderScheduler", () => {
     );
 
     expect(results).toHaveLength(1);
-    expect(results[0]!.filename).toBe("ioannidisWhyMost2005%zt-suffix:6:_:%");
+    expect(results[0]!.filename).toBe("ioannidisWhyMost2005");
   });
 
   it("terminates a runaway render at the deadline and renders the next one", () => {

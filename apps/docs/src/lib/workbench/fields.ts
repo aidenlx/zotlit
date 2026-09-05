@@ -9,8 +9,12 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
-import { previewLine } from "@zotlit/workbench/explorer";
-import type { DisplayNode, TemplateEngine } from "@zotlit/workbench/explorer";
+import { formatAccessorPath, renderSnippet } from "@zotlit/workbench/explorer";
+import type {
+  DisplayNode,
+  SnippetKind,
+  TemplateEngine,
+} from "@zotlit/workbench/explorer";
 import { restoreTemplateData } from "@zotlit/workbench/render";
 import type { SAMPLE_ITEMS } from "@zotlit/workbench/render";
 
@@ -165,7 +169,7 @@ export function fieldValueText(node: DisplayNode): string {
   if (node.kind === "helper") return node.evaluated ?? "";
   switch (node.valueType) {
     case "array":
-      return previewLine((node.value as unknown[]).map(String).join(", "));
+      return (node.value as unknown[]).map(String).join(", ");
     case "object":
       return node.preview ?? "";
     case "getter":
@@ -173,7 +177,7 @@ export function fieldValueText(node: DisplayNode): string {
     case "undefined":
       return "";
     default:
-      return previewLine(String(node.value));
+      return String(node.value);
   }
 }
 
@@ -184,6 +188,19 @@ export function fieldValueText(node: DisplayNode): string {
  * @see docs/adr/0033-web-workbench-is-public-and-standalone.md
  */
 export const SNIPPET_ENGINE: TemplateEngine = "liquid";
+
+export type FieldInsertionMode = "template" | "expression" | "json-e";
+
+/** A field inserted in a property uses that property's own value syntax. */
+export function fieldSnippet(
+  node: DisplayNode,
+  mode: FieldInsertionMode,
+  kind: SnippetKind,
+): string {
+  if (mode === "template") return renderSnippet(node, SNIPPET_ENGINE, kind);
+  const path = formatAccessorPath(node.path, "zt");
+  return mode === "expression" ? path : JSON.stringify({ $eval: path });
+}
 
 /** The opening delimiter that starts Template Completion. */
 export const FIELD_TRIGGER = "{{";

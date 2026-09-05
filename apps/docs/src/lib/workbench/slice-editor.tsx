@@ -38,6 +38,8 @@ export interface SliceEditorProps {
   controller: WorkbenchDocumentController;
   slice: WorkbenchSliceId;
   label: string;
+  invalid?: boolean;
+  describedBy?: string;
   /** @default "liquid" */
   language?: SliceLanguage;
   /**
@@ -72,6 +74,8 @@ export function SliceEditor({
   controller,
   slice,
   label,
+  invalid = false,
+  describedBy,
   language = "liquid",
   singleLine = false,
   extensions,
@@ -255,10 +259,19 @@ export function SliceEditor({
     view.focus();
   }, [controller, slice, reveal, language]);
 
+  useEffect(() => {
+    const content = editor.current?.contentDOM;
+    if (!content) return;
+    content.setAttribute("aria-invalid", String(invalid));
+    if (describedBy) content.setAttribute("aria-describedby", describedBy);
+    else content.removeAttribute("aria-describedby");
+  }, [invalid, describedBy]);
+
   return (
     <div
       ref={host}
-      className="min-h-0 flex-1 overflow-auto [&_.cm-content]:font-mono [&_.cm-content]:text-[0.82rem] [&_.cm-editor]:h-full [&_.cm-editor.cm-focused]:outline-none [&_.cm-gutters]:border-fd-border [&_.cm-gutters]:bg-transparent [&_.cm-scroller]:leading-relaxed"
+      dir="ltr"
+      className="min-h-0 flex-1 overflow-auto rounded-md [&_.cm-content]:px-3 [&_.cm-content]:py-3 [&_.cm-content]:font-mono [&_.cm-content]:text-base sm:[&_.cm-content]:text-sm [&_.cm-editor]:h-full [&_.cm-editor.cm-focused]:outline-2 [&_.cm-editor.cm-focused]:-outline-offset-2 [&_.cm-editor.cm-focused]:outline-fd-foreground [&_.cm-gutters]:border-fd-border [&_.cm-gutters]:bg-transparent [&_.cm-scroller]:leading-relaxed"
     />
   );
 }
