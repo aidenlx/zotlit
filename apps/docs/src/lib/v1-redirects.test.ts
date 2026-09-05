@@ -129,4 +129,10 @@ describe("renderHeadersFile", () => {
       "/.well-known/agent-skills/*/archive.zip\n  Cache-Control: public, max-age=31536000, immutable",
     );
   });
+
+  it("caches the content-hashed assets forever", () => {
+    expect(file).toContain(
+      "/assets/*\n  Cache-Control: public, max-age=31536000, immutable",
+    );
+  });
 });

@@ -116,6 +116,17 @@ export function buildHeaderRules(): HeaderRule[] {
       source: "/.well-known/agent-skills/*/archive.zip",
       headers: { "Cache-Control": "public, max-age=31536000, immutable" },
     },
+    /**
+     * Every file under `/assets/` carries a content hash in its name, so a
+     * changed build ships a new URL and these bytes never change. The asset
+     * layer otherwise defaults to `public, max-age=0, must-revalidate`, which
+     * costs a revalidation round trip per chunk, font, and stylesheet on every
+     * repeat visit.
+     */
+    {
+      source: "/assets/*",
+      headers: { "Cache-Control": "public, max-age=31536000, immutable" },
+    },
   ];
 }
 
