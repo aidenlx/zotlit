@@ -61,6 +61,11 @@ import {
   itemKeyFromFrontmatter,
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
+import { ruleItem, selectProfileByRules } from "@/services/profile-selection";
+import type {
+  ConditionProblem,
+  ProfileSelectionRule,
+} from "@/services/profile-selection";
 import { noteProfileSelector } from "@/services/profile/bindings";
 import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
 import type { Settings } from "@/services/settings/schema";
@@ -172,14 +177,56 @@ export type CreateNoteResult =
   | { outcome: "refused"; diagnostic: CreateNoteDiagnostic };
 
 export interface CreationProfileSources {
+  /** A Profile a command or Companion link supplied explicitly. */
   headless?: ProfileSelector;
+  /** The user's manual choice for this operation. */
   asked?: ProfileSelector;
+  /**
+   * The Item the note is created for. Supplies the facts Profile Selection
+   * Rules read; omitted, no rule takes part.
+   */
+  item?: Item;
 }
+
+/**
+ * Where a creation Profile came from, in priority order: `asked` (a manual
+ * choice for this operation) over `headless` (explicit operation input) over
+ * `rule` (the first matching Profile Selection Rule) over `bound` (Default).
+ */
+export type CreationProfileSource = "asked" | "headless" | "rule" | "bound";
+
+/**
+ * Why automatic selection stopped. The selection falls back to Default with
+ * `shouldAsk` set, so the user chooses explicitly for the affected Item.
+ */
+export type CreationSelectionProblem =
+  | {
+      kind: "broken-rule";
+      rule: ProfileSelectionRule;
+      problem: ConditionProblem;
+    }
+  | {
+      kind: "unavailable-target";
+      rule: ProfileSelectionRule;
+      selector: ProfileSelector;
+    }
+  | {
+      kind: "invalid-selector";
+      source: Extract<CreationProfileSource, "asked" | "headless">;
+      selector: ProfileSelector;
+    };
 
 export interface CreationProfileSelection {
   selector: ProfileSelector;
-  source: "headless" | "bound" | "asked";
+  source: CreationProfileSource;
+  /**
+   * Whether the creation surface should confirm the selection: other
+   * Profiles exist, or automatic selection stopped with a `problem`.
+   */
   shouldAsk: boolean;
+  /** The rule that selected the Profile, when `source` is `rule`. */
+  rule?: ProfileSelectionRule;
+  problem?: CreationSelectionProblem;
 }
 
 /** Effective Profile bindings and the path relevant to the pending action. */
@@ -652,31 +699,88 @@ function profilePreview(
   };
 }
 
+/**
+ * Choose the Profile a new Literature Note is created under: the manual
+ * choice, else the explicit input, else the first matching Profile Selection
+ * Rule, else Default. An invalid explicit selector, an unevaluable in-scope
+ * rule, or a matched rule with an unavailable target stops there with a
+ * `problem` — the surface asks for an explicit choice instead of advancing
+ * to a lower-priority source.
+ */
 async function resolveCreationProfile(
   ctx: NoteFeatureDeps,
   sources: CreationProfileSources = {},
 ): Promise<CreationProfileSelection> {
-  await Promise.all([ctx.settings.loaded, ctx.profile.ready]);
+  const [settings] = await Promise.all([
+    ctx.settings.loaded,
+    ctx.profile.ready,
+  ]);
   const shouldAsk = ctx.profile.profiles.length > 0;
+  const isAvailable = (selector: ProfileSelector) =>
+    ctx.profile.resolveProfile(selector) !== undefined;
+  const stopped = (problem: CreationSelectionProblem) => {
+    logger.debug("Creation Profile selection stopped ({kind})", {
+      kind: problem.kind,
+      indexedKey: sources.item?.indexedKey,
+    });
+    return {
+      selector: DEFAULT_PROFILE,
+      source: "bound",
+      shouldAsk: true,
+      problem,
+    } as const;
+  };
   let selection: CreationProfileSelection = {
     selector: DEFAULT_PROFILE,
     source: "bound",
     shouldAsk,
   };
-  if (shouldAsk) {
-    const candidates = [
-      { selector: sources.asked, source: "asked" },
-      { selector: sources.headless, source: "headless" },
-    ] as const;
-    for (const { selector, source } of candidates) {
-      if (selector != null && ctx.profile.resolveProfile(selector)) {
-        selection = { selector, source, shouldAsk };
+  const explicit = [
+    { selector: sources.asked, source: "asked" },
+    { selector: sources.headless, source: "headless" },
+  ] as const;
+  const named = explicit.find(({ selector }) => selector != null);
+  if (named) {
+    const { selector, source } = named;
+    if (!isAvailable(selector!))
+      return stopped({ kind: "invalid-selector", source, selector: selector! });
+    selection = { selector: selector!, source, shouldAsk };
+  } else if (sources.item) {
+    const result = selectProfileByRules(
+      settings["profile.selection-rules"],
+      ruleItem(sources.item),
+      { isAvailable },
+    );
+    switch (result.outcome) {
+      case "matched":
+        selection = {
+          selector: result.selector,
+          source: "rule",
+          shouldAsk,
+          rule: result.rule,
+        };
         break;
-      }
+      case "broken":
+        return stopped({
+          kind: "broken-rule",
+          rule: result.rule,
+          problem: result.problem,
+        });
+      case "unavailable-target":
+        return stopped({
+          kind: "unavailable-target",
+          rule: result.rule,
+          selector: result.selector,
+        });
+      case "unmatched":
+        break;
     }
   }
   logger.debug("Resolved creation Profile {selector} from {source}", {
-    ...selection,
+    selector: selection.selector,
+    source: selection.source,
+    rule: selection.rule?.id,
+    indexedKey: sources.item?.indexedKey,
   });
   return selection;
 }

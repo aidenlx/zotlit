@@ -30,6 +30,7 @@
     "@std/collections": "catalog:",
     "@std/ini": "jsr:0.225.2",
     "@zotlit/db": "workspace:*",
+    "@zotlit/filter-expression": "workspace:*",
     "@zotlit/item-lookup": "workspace:*",
     "@zotlit/obsidian-i18n": "workspace:*",
     "@zotlit/protocol": "workspace:*",

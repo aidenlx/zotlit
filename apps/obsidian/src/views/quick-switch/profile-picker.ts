@@ -24,6 +24,10 @@ export interface LiteratureNoteProfileChoice {
   preselected?: boolean;
   current?: boolean;
   source?: CreationProfileSelection["source"];
+  /** The rule behind a `rule` source, shown beside the preselected choice. */
+  reason?: string;
+  /** Why automatic selection stopped, shown above the preselected choice. */
+  problem?: string;
 }
 
 type ProfilePickerRow =
@@ -34,6 +38,8 @@ interface ProfilePickerOptions {
   preselected?: ProfileSelector;
   current?: ProfileSelector;
   source?: CreationProfileSelection["source"];
+  reason?: string;
+  problem?: string;
   previews?: readonly ProfilePreview[];
   styles?: readonly InstalledCslStyle[];
   onNew?: () => Promise<LiteratureNoteProfileChoice | undefined>;
@@ -112,6 +118,8 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
       choice.preselected = choice.id === options.preselected;
       choice.current = choice.id === options.current;
       choice.source = choice.preselected ? options.source : undefined;
+      choice.reason = choice.preselected ? options.reason : undefined;
+      choice.problem = choice.preselected ? options.problem : undefined;
     }
     const selectedIndex = this.#choices.findIndex(
       ({ id }) => id === options.preselected,
@@ -225,6 +233,16 @@ export function renderProfileChoice(
     label.createSpan({
       text: m.modal_profile_source_link(),
       cls: PROFILE_BADGE_CLASS,
+    });
+  if (choice.source === "rule" && choice.reason)
+    label.createSpan({
+      text: m.modal_profile_source_rule({ rule: choice.reason }),
+      cls: PROFILE_BADGE_CLASS,
+    });
+  if (choice.problem)
+    el.createDiv({
+      text: choice.problem,
+      cls: "suggestion-note zt:text-(--text-warning)",
     });
   if (choice.detail)
     el.createDiv({ text: choice.detail, cls: "suggestion-note" });

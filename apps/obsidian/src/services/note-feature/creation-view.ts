@@ -5,6 +5,7 @@ import type { Item } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
 import { listInstalledStyles } from "@/services/pandoc/styles";
+import { describeRule } from "@/services/profile-selection";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 import type {
   ImportProfile,
@@ -14,6 +15,7 @@ import type {
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
 import type { CreationProfileSources, NoteFeature } from "./operations";
+import { describeSelectionProblem } from "./selection-copy";
 import { createNoteTaskWithToast, createNoteWithToast } from "./update-single";
 
 const logger = getLogger("note-feature");
@@ -34,7 +36,10 @@ export async function createNoteInteractively(
   item: Item,
   sources: CreationProfileSources = {},
 ): Promise<TFile | null> {
-  const selection = await deps.noteFeature.resolveCreationProfile(sources);
+  const selection = await deps.noteFeature.resolveCreationProfile({
+    ...sources,
+    item,
+  });
   if (!selection.shouldAsk)
     return createNoteWithToast(deps.noteFeature, item, {
       profile: selection.selector,
@@ -49,6 +54,8 @@ export async function createNoteInteractively(
   const choice = await chooseLiteratureNoteProfile(deps.app, {
     preselected: selection.selector,
     source: selection.source,
+    reason: selection.rule && describeRule(selection.rule),
+    problem: selection.problem && describeSelectionProblem(selection.problem),
     previews,
     styles,
     onImport: async () => {

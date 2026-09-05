@@ -13,6 +13,10 @@ import {
   DEFAULT_LIBRARY_SCOPE,
   libraryScopeSchema,
 } from "@/services/library-scope/scope";
+import {
+  DEFAULT_PROFILE_SELECTION_RULES,
+  profileSelectionRulesSchema,
+} from "@/services/profile-selection/schema";
 import { DEFAULT_FRONTMATTER_FIELDS } from "@/services/template/defaults";
 
 /**
@@ -142,6 +146,12 @@ export const schema = v.object({
   "note.frontmatter-fields": frontmatterFieldsSchema,
   "note.import-highlight-mappings": highlightMappingsSchema,
 
+  /**
+   * Profile Selection Rules in priority order. Vault-owned: a shared Profile
+   * document never carries them; see `services/profile-selection/schema.ts`.
+   */
+  "profile.selection-rules": profileSelectionRulesSchema,
+
   "server.enabled": v.boolean(),
   "server.port": serverPort,
   "server.hostname": v.string(),
@@ -197,6 +207,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "note.template-conversion-result": null,
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "note.import-highlight-mappings": {},
+  "profile.selection-rules": DEFAULT_PROFILE_SELECTION_RULES,
   "server.enabled": false,
   "server.port": 9091,
   "server.hostname": "127.0.0.1",

@@ -43,7 +43,9 @@ export function profileChoiceControl(
       ? m.batch_profile_source_companion()
       : choice.source === "asked"
         ? m.batch_profile_source_chosen()
-        : undefined;
+        : choice.source === "rule"
+          ? m.batch_profile_source_rule()
+          : undefined;
   if (source)
     container.createSpan({
       text: source,
