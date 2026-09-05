@@ -140,6 +140,20 @@ describe("Profile Selection Rules settings", () => {
     );
   });
 
+  it('summarizes alternatives with "or" and a nested group in parentheses', () => {
+    const ctx = context([
+      {
+        ...groupRule,
+        expression:
+          'itemType == "book" || (hasTag("Read") && !inCollection("personal", "DRFT0001"))',
+      },
+    ]);
+    const desc = (list(ctx).items![0] as { desc: DocumentFragment }).desc;
+    expect(desc.textContent).toContain(
+      `${m.settings_profile_rule_item_type_is({ type: "Book" })} or (${m.settings_profile_rule_has_tag({ tag: "Read" })} and ${m.settings_profile_rule_not_in_collection({ collection: "My Library: Project / Drafts" })})`,
+    );
+  });
+
   it("uses the Default label for the built-in Profile", () => {
     const ctx = context([brokenRule]);
     const rows = list(ctx).items!;

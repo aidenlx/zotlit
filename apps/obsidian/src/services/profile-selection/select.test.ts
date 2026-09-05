@@ -6,7 +6,6 @@ import type { LibrarySelector } from "@/services/library-scope/scope";
 
 import {
   compileCondition,
-  flatConditions,
   formatCondition,
   matchCondition,
   ruleItem,
@@ -96,7 +95,7 @@ describe("condition contract", () => {
     });
   });
 
-  it("keeps any-groups and nested groups outside the flat editor view", () => {
+  it("compiles any-groups and nested groups", () => {
     const { condition } = compileCondition(
       'itemType == "book" || (itemType == "thesis" && itemType != "letter")',
     );
@@ -115,13 +114,6 @@ describe("condition contract", () => {
         },
       ],
     });
-    expect(flatConditions(condition!)).toBeNull();
-    expect(
-      flatConditions(
-        compileCondition('itemType == "book" && itemType != "thesis"')
-          .condition!,
-      ),
-    ).toHaveLength(2);
   });
 
   it("reports syntax errors, unsupported vocabulary, and unknown item types", () => {
@@ -284,9 +276,6 @@ describe("condition contract", () => {
       'inCollection("group:118", "PROJ0001") && !inCollectionDirectly("personal", "SUB00001") && hasTag("say \\"hi\\"") && itemType == "book"',
     );
     expect(compileCondition(expression).condition).toEqual(condition);
-    expect(
-      flatConditions(compileCondition(expression).condition!),
-    ).toHaveLength(4);
   });
 
   it("matches memberships: descendants by default, direct only on request, exact Tag names", () => {
