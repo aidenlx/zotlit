@@ -16,6 +16,8 @@ export interface BatchProfilePickerOptions {
   indexedKey?: string;
   selection: CreationProfileSelection;
   previews: readonly ProfilePreview[];
+  /** Why automatic selection stopped for the rows the choice governs. */
+  problem?: string;
 }
 
 export async function chooseBatchProfile(
@@ -28,6 +30,7 @@ export async function chooseBatchProfile(
   const choice = await chooseLiteratureNoteProfile(deps.app, {
     preselected: options.selection.selector,
     source: options.selection.source,
+    problem: options.problem,
     previews: options.previews,
     styles,
     onNew: async () => {

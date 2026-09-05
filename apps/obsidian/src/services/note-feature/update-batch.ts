@@ -13,7 +13,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import { DEFAULT_PROFILE, unknownProfileDiagnostic } from "@/lib/profile-stamp";
 import { chooseBatchProfile } from "@/services/batch-profile-choice";
 import type { BatchProfilePickerDeps } from "@/services/batch-profile-choice";
 import { batchProfileSummary } from "@/services/batch-profile-summary";
@@ -33,11 +33,16 @@ import {
   withUnavailableLibraries,
 } from "@/services/batch-scope";
 import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
+import { describeRule } from "@/services/profile-selection";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import type { Settings } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
 import { BatchModal, FlatManifest } from "@/views/batch-modal";
-import type { BatchProfileChoice, FlatTask } from "@/views/batch-modal";
+import type {
+  BatchProfileChoice,
+  BatchProfileChoiceScope,
+  FlatTask,
+} from "@/views/batch-modal";
 
 import type {
   CreateNoteDiagnostic,
@@ -47,6 +52,7 @@ import type {
   CreationProfileSelection,
   PreparedCreationProfile,
 } from "./operations";
+import { describeSelectionProblem } from "./selection-copy";
 import {
   createNoteNotice,
   noteOperationDiagnosticNotice,
@@ -64,6 +70,22 @@ function profileLabel(profile: ResolvedProfile): string {
 export interface BatchUpdateDeps
   extends SingleUpdateDeps, BatchProfilePickerDeps {}
 
+/**
+ * How a new row's automatic selection ended. The unmatched fallback and the
+ * broken-rule recovery address rows by it, so a later choice for one group
+ * leaves the other groups' selections in place.
+ */
+type CreationOrigin = "selected" | "unmatched" | "affected";
+
+type CreateAction = {
+  kind: "create";
+  /** This row's own result from the shared selection boundary. */
+  selection?: CreationProfileSelection;
+  origin?: CreationOrigin;
+  /** Frozen for the run: the destination shown is the destination written. */
+  prepared?: PreparedCreationProfile;
+};
+
 type BatchAction = {
   itemID: number;
   indexedKey: string;
@@ -71,10 +93,7 @@ type BatchAction = {
   libraryID: number;
   profile?: ResolvedProfile;
   unknownStamp?: string;
-} & (
-  | { kind: "update"; file: TFile }
-  | { kind: "create"; prepared?: PreparedCreationProfile }
-);
+} & ({ kind: "update"; file: TFile } | CreateAction);
 
 interface NotFoundEntry {
   itemID: number;
@@ -178,7 +197,6 @@ export async function runBatchUpdate(
   // freeze the UI, so it runs inside the modal's loading phase where the bar
   // can paint between chunks; `actions` is captured here for the run callback.
   let actions: BatchAction[] = [];
-  let selection: CreationProfileSelection | undefined;
   let creationItems: Item[] = [];
   let plans: ReadonlyMap<number, readonly PreparedCreationProfile[]> =
     new Map();
@@ -186,23 +204,82 @@ export async function runBatchUpdate(
   let keptCount = 0;
   let notFoundCount = 0;
   const profileCounts = new Map<ProfileSelector, BatchProfileCount>();
-  const applySelection = (selector: ProfileSelector) => {
-    const resolved = deps.profile.resolveProfile(selector)!;
-    for (const action of actions) {
-      if (action.kind !== "create") continue;
-      action.prepared = plans
+  const creations = () =>
+    actions.filter(
+      (action): action is BatchAction & CreateAction =>
+        action.kind === "create",
+    );
+  /** Bind one row to its selection: resolved Profile, frozen path, row copy. */
+  const assign = (
+    action: BatchAction & CreateAction,
+    selection: CreationProfileSelection,
+  ) => {
+    action.selection = selection;
+    action.profile = selection.problem
+      ? undefined
+      : deps.profile.resolveProfile(selection.selector);
+    action.prepared =
+      action.profile &&
+      plans
         .get(action.itemID)
-        ?.find((entry) => entry.selector === selector);
-      action.profile = resolved;
-      const task = tasks.find((entry) => entry.id === action.itemID);
-      if (task)
-        Object.assign(task, {
-          path: action.prepared?.path,
-          reason: action.prepared?.unavailable,
-          profile: profileLabel(resolved),
-        });
-    }
+        ?.find((entry) => entry.selector === selection.selector);
+    const task = tasks.find((entry) => entry.id === action.itemID);
+    if (task) Object.assign(task, creationRow(action));
   };
+  /** A Profile created after classification has no prepared path yet. */
+  const ensurePlans = async (itemID: number, selectors: ProfileSelector[]) => {
+    const prepared = plans.get(itemID) ?? [];
+    if (
+      selectors.every((id) => prepared.some((entry) => entry.selector === id))
+    )
+      return;
+    plans = await deps.noteFeature.prepareBatchCreationProfiles(creationItems);
+  };
+  const choiceFor = (
+    scope: BatchProfileChoiceScope,
+    rows: () => (BatchAction & CreateAction)[],
+  ): BatchProfileChoice => ({
+    scope,
+    get count() {
+      return rows().length;
+    },
+    get label() {
+      const shared = sharedProfile(rows());
+      return shared && profileLabel(shared);
+    },
+    get source() {
+      return rows()[0]?.selection?.source ?? "bound";
+    },
+    choose: async () => {
+      const first = rows()[0];
+      if (!first) return;
+      await ensurePlans(
+        first.itemID,
+        deps.profile.profiles.map(({ id }) => id),
+      );
+      const chosen = await chooseBatchProfile(deps, {
+        indexedKey: first.indexedKey,
+        selection: first.selection ?? {
+          selector: DEFAULT_PROFILE,
+          source: "bound",
+          shouldAsk: true,
+        },
+        problem:
+          first.selection?.problem &&
+          describeSelectionProblem(first.selection.problem),
+        previews: plans.get(first.itemID) ?? [],
+      });
+      if (chosen === undefined) return;
+      await ensurePlans(first.itemID, [chosen]);
+      for (const row of rows())
+        assign(row, { selector: chosen, source: "asked", shouldAsk: true });
+      logger.debug("Changed batch creation Profile", {
+        scope,
+        selector: chosen,
+        items: rows().length,
+      });
+    },
+  });
   new BatchModal(deps.app, {
     text: {
       title: m.batch_update_title(),
@@ -246,94 +323,58 @@ export async function runBatchUpdate(
       actions = classified.actions;
       keptCount = classified.kept.length;
       notFoundCount = classified.notFound.length;
-      let profileChoice: BatchProfileChoice | undefined;
-      if (
-        profilesEnabled &&
-        actions.some((action) => action.kind === "create")
-      ) {
-        selection = await deps.noteFeature.resolveCreationProfile({
-          headless: profile,
-        });
+      let profileChoices: BatchProfileChoice[] | undefined;
+      if (profilesEnabled && creations().length > 0) {
         {
           using lease = await deps.db.acquireRead();
           creationItems = getItemsByID(
             lease.client,
-            actions
-              .filter((action) => action.kind === "create")
-              .map((action) => action.itemID),
+            creations().map((action) => action.itemID),
           );
         }
         plans = await deps.noteFeature.prepareBatchCreationProfiles(
           creationItems,
           { signal: controls.signal },
         );
-        applySelection(selection.selector);
-        profileChoice = {
-          get label() {
-            return profileLabel(
-              deps.profile.resolveProfile(selection!.selector)!,
-            );
-          },
-          get source() {
-            return selection!.source;
-          },
-          choose: async () => {
-            const first = creationItems[0];
-            if (!first) return;
-            if (
-              deps.profile.profiles.some(
-                ({ id }) =>
-                  !plans
-                    .get(first.itemID)
-                    ?.some((entry) => entry.selector === id),
-              )
-            ) {
-              plans =
-                await deps.noteFeature.prepareBatchCreationProfiles(
-                  creationItems,
-                );
-            }
-            const chosen = await chooseBatchProfile(deps, {
-              indexedKey: first.indexedKey,
-              selection: selection!,
-              previews: plans.get(first.itemID) ?? [],
-            });
-            if (chosen === undefined) return;
-            if (
-              !plans
-                .get(first.itemID)
-                ?.some((entry) => entry.selector === chosen)
-            ) {
-              plans =
-                await deps.noteFeature.prepareBatchCreationProfiles(
-                  creationItems,
-                );
-            }
-            applySelection(chosen);
-            selection = { selector: chosen, source: "asked", shouldAsk: true };
-            logger.debug("Changed batch creation Profile", {
-              selector: chosen,
-              items: creationItems.length,
-            });
-          },
-        };
+        // One rule result per new note; an explicit batch Profile outranks
+        // the rules, and a stopped selection leaves the row without a
+        // destination until the user chooses one for the affected rows.
+        for (const action of creations()) {
+          const selection = await deps.noteFeature.resolveCreationProfile({
+            headless: profile,
+            item: creationItems.find((item) => item.itemID === action.itemID),
+          });
+          action.origin = selection.problem
+            ? "affected"
+            : selection.source === "bound"
+              ? "unmatched"
+              : "selected";
+          assign(action, selection);
+        }
+        const rowsOf = (origin: CreationOrigin) => () =>
+          creations().filter((action) => action.origin === origin);
+        profileChoices = [
+          ...(rowsOf("unmatched")().length > 0
+            ? [choiceFor("unmatched", rowsOf("unmatched"))]
+            : []),
+          ...(rowsOf("affected")().length > 0
+            ? [choiceFor("affected", rowsOf("affected"))]
+            : []),
+          choiceFor("all-new", creations),
+        ];
       }
       tasks = actions.map((action) => ({
         id: action.itemID,
         label: action.label,
         kind: batchGroupKey(action.libraryID, action.kind),
         ...(profilesEnabled
-          ? {
-              profile: action.profile
-                ? profileLabel(action.profile)
-                : action.unknownStamp,
-              ...(action.kind === "create"
-                ? {
-                    path: action.prepared?.path,
-                    reason: action.prepared?.unavailable,
-                  }
-                : {}),
-            }
+          ? action.kind === "create"
+            ? creationRow(action)
+            : {
+                profile: action.profile
+                  ? profileLabel(action.profile)
+                  : action.unknownStamp,
+              }
           : {}),
       }));
       return new FlatManifest({
@@ -344,7 +385,7 @@ export async function runBatchUpdate(
           {
             kind: "create",
             header: m.batch_update_group_create,
-            profileChoice,
+            profileChoices,
           },
         ]),
         // Non-actionable, so it rides the static informational slot rather than
@@ -364,13 +405,48 @@ export async function runBatchUpdate(
         {
           actions,
           scope,
-          profile: selection?.selector ?? profile,
+          profile,
           profileCounts: profilesEnabled ? profileCounts : undefined,
         },
         controls,
       ),
   }).open();
   return { outcome: "batch-modal" };
+}
+
+/** The Profile every row shares, or `undefined` while they differ or wait. */
+function sharedProfile(
+  rows: readonly (BatchAction & CreateAction)[],
+): ResolvedProfile | undefined {
+  const [first, ...rest] = rows;
+  if (!first?.profile) return undefined;
+  return rest.every((row) => row.profile?.selector === first.profile!.selector)
+    ? first.profile
+    : undefined;
+}
+
+/** A new row's chip, frozen destination, and the reason behind them. */
+function creationRow(
+  action: BatchAction & CreateAction,
+): Pick<FlatTask, "profile" | "path" | "reason"> {
+  const { selection, prepared } = action;
+  const reason = !selection
+    ? undefined
+    : selection.problem
+      ? describeSelectionProblem(selection.problem)
+      : selection.source === "rule"
+        ? m.modal_profile_source_rule({ rule: describeRule(selection.rule!) })
+        : selection.source === "headless"
+          ? m.batch_profile_source_companion()
+          : selection.source === "asked"
+            ? m.batch_profile_source_chosen()
+            : m.batch_profile_reason_unmatched();
+  return {
+    profile: action.profile && profileLabel(action.profile),
+    path: prepared?.path,
+    reason:
+      [reason, prepared?.unavailable].filter(Boolean).join(" ") || undefined,
+  };
 }
 
 /**
@@ -605,14 +681,24 @@ async function runAction(
     }
     return "updated";
   }
-  if (action.prepared)
+  // A stopped selection the user never resolved writes nothing: no fallback
+  // Profile stands in for the choice the row asked for.
+  if (action.selection?.problem)
+    throw new Error(describeSelectionProblem(action.selection.problem));
+  if (action.prepared) {
+    // The selection stays frozen; only its availability is checked again.
+    if (!deps.profile.resolveProfile(action.prepared.selector))
+      throw new BatchUpdateRefusedError(
+        unknownProfileDiagnostic(action.prepared.selector),
+      );
     return batchCreateOutcome(await action.prepared.create());
+  }
   const result = await deps.noteFeature.createNote(item, {
     collectionCache: run.collectionCache,
     tagMemo: run.tagMemo,
     groupIdMemo: run.groupIdMemo,
     username: run.username,
-    profile: run.profile,
+    profile: action.selection?.selector ?? run.profile,
   });
   return batchCreateOutcome(result);
 }

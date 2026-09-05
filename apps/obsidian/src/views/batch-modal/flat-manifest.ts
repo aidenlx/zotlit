@@ -29,6 +29,8 @@ export interface FlatGroupDef {
   kind: string;
   header: (args: { count: number }) => string;
   profileChoice?: BatchProfileChoice;
+  /** Scoped choices rendered after `profileChoice`, in order. */
+  profileChoices?: readonly BatchProfileChoice[];
 }
 
 export interface FlatManifestOptions {
@@ -80,10 +82,13 @@ export class FlatManifest implements BatchManifest {
         group.header({ count: tasks.length }),
         tasks.length <= SECTION_OPEN_MAX,
       );
-      if (group.profileChoice)
+      for (const choice of [
+        ...(group.profileChoice ? [group.profileChoice] : []),
+        ...(group.profileChoices ?? []),
+      ])
         profileChoiceControl(
           ul.previousElementSibling as HTMLElement,
-          group.profileChoice,
+          choice,
           controls,
         );
       for (const task of tasks) {
