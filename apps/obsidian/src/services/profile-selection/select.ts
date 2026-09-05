@@ -11,6 +11,7 @@
 //
 // The facts of the Item come in, a selection comes out. The database takes
 // part only through the two lookups the caller injects.
+import { USER_LIBRARY_ID } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
@@ -52,10 +53,12 @@ export type RuleSelection =
 
 /**
  * The facts of a database Item, as rules read them: its Library and type
- * from the Item row, its memberships from `resolveMembershipFacts`.
+ * from the Item row, its memberships from `resolveMembershipFacts`. An Item
+ * of a Library that is neither the user Library nor a known group has no
+ * Library selector, so only rules scoped to all Libraries see it.
  */
 export function ruleItem(
-  item: Pick<Item, "groupID" | "fields">,
+  item: Pick<Item, "libraryID" | "groupID" | "fields">,
   memberships: Pick<
     RuleItemFacts,
     "tags" | "collections" | "collectionAncestors"
@@ -63,9 +66,11 @@ export function ruleItem(
 ): RuleItem {
   return {
     library:
-      item.groupID === null
+      item.libraryID === USER_LIBRARY_ID
         ? { type: "personal" }
-        : { type: "group", groupID: item.groupID },
+        : item.groupID === null
+          ? null
+          : { type: "group", groupID: item.groupID },
     itemType: item.fields.itemType,
     ...memberships,
   };
