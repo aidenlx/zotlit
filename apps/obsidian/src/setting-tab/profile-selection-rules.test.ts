@@ -8,6 +8,9 @@ import type {
 } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createClient } from "@zotlit/db/client/node";
+import { createFixtureSchema } from "@zotlit/db/test-utils";
+
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { ProfileSelectionRule } from "@/services/profile-selection";
@@ -45,6 +48,32 @@ const unavailableRule: ProfileSelectionRule = {
   profile: missingId,
 };
 
+const collectionRule: ProfileSelectionRule = {
+  id: "rule-4",
+  scope: { mode: "all" },
+  expression: 'inCollection("personal", "DRFT0001") && hasTag("Read")',
+  profile: profileAId,
+};
+
+const staleCollectionRule: ProfileSelectionRule = {
+  id: "rule-5",
+  scope: { mode: "all" },
+  expression: 'inCollection("personal", "GONE0000")',
+  profile: profileAId,
+};
+
+/** My Library with "Project" and its "Drafts" child. */
+function fixtureDb() {
+  const client = createClient(":memory:");
+  createFixtureSchema(client.$client);
+  client.$client.exec(`
+    insert into libraries (libraryID, type) values (1, 'user');
+    insert into collections (collectionID, collectionName, parentCollectionID, libraryID, key)
+      values (100, 'Project', null, 1, 'PROJ0001'), (101, 'Drafts', 100, 1, 'DRFT0001');
+  `);
+  return { state: "ready", client };
+}
+
 function context(
   rules: readonly ProfileSelectionRule[] = [],
 ): SettingTabContext {
@@ -56,7 +85,10 @@ function context(
     profile: {
       profiles: [{ id: profileAId, label: "Reading", document: "" }],
     },
-    libraryScope: { libraries: [] },
+    libraryScope: {
+      libraries: [{ selector: { type: "personal" }, libraryID: 1, name: null }],
+    },
+    db: fixtureDb(),
     requestUpdate: vi.fn(),
   } as unknown as SettingTabContext;
 }
@@ -108,6 +140,20 @@ describe("Profile Selection Rules settings", () => {
     );
   });
 
+  it('summarizes alternatives with "or" and a nested group in parentheses', () => {
+    const ctx = context([
+      {
+        ...groupRule,
+        expression:
+          'itemType == "book" || (hasTag("Read") && !inCollection("personal", "DRFT0001"))',
+      },
+    ]);
+    const desc = (list(ctx).items![0] as { desc: DocumentFragment }).desc;
+    expect(desc.textContent).toContain(
+      `${m.settings_profile_rule_item_type_is({ type: "Book" })} or (${m.settings_profile_rule_has_tag({ tag: "Read" })} and ${m.settings_profile_rule_not_in_collection({ collection: "My Library: Project / Drafts" })})`,
+    );
+  });
+
   it("uses the Default label for the built-in Profile", () => {
     const ctx = context([brokenRule]);
     const rows = list(ctx).items!;
@@ -121,6 +167,32 @@ describe("Profile Selection Rules settings", () => {
     const warning = desc.querySelector(".mod-warning");
     expect(warning?.textContent).toBeTruthy();
     expect(desc.textContent).toContain("This rule cannot be evaluated");
+  });
+
+  it("names a Collection condition by its Library and path, and a Tag by its exact name", () => {
+    const ctx = context([collectionRule]);
+    const desc = (list(ctx).items![0] as { desc: DocumentFragment }).desc;
+    expect(desc.textContent).toContain(
+      m.settings_profile_rule_in_collection({
+        collection: "My Library: Project / Drafts",
+      }),
+    );
+    expect(desc.textContent).toContain(
+      m.settings_profile_rule_has_tag({ tag: "Read" }),
+    );
+    expect(desc.querySelector(".mod-warning")).toBeNull();
+  });
+
+  it("flags a Collection reference the database lacks as a broken rule", () => {
+    const ctx = context([staleCollectionRule]);
+    const desc = (list(ctx).items![0] as { desc: DocumentFragment }).desc;
+    expect(desc.querySelector(".mod-warning")?.textContent).toBe(
+      m.settings_profile_rule_broken({
+        problem: m.profile_rule_problem_missing_collection({
+          collection: "My Library: GONE0000",
+        }),
+      }),
+    );
   });
 
   it("flags an unavailable target Profile as a warning", () => {
