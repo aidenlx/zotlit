@@ -118,6 +118,20 @@ A new Profile starts identical to the default one, so give it a folder or a cita
 
 Each Profile is edited in its own document. Deleting a Profile that notes still use asks where those notes go first.
 
+### Automatic profile selection [#profile-selection-rules]
+
+The <UiLabel name={m.settings_profile_rules_heading()} /> list on the same page holds the rules that choose a Profile for a **new** literature note from its Zotero item. Rules run from the top; the first rule that matches selects the Profile, so place specific rules above broad ones and drag rows to reorder them. Each rule has:
+
+| Field                                                   | Meaning                                                                                                                                                                                                                            |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.settings_profile_rule_scope()} />      | The Zotero libraries the rule applies to. A new rule starts at <UiLabel name={m.settings_library_scope_all()} />; restrict it to selected libraries to keep personal and group work apart.                                         |
+| <UiLabel name={m.settings_profile_rule_conditions()} /> | Item-type conditions that must all hold (<UiLabel name={m.settings_profile_rule_operator_is()} /> or <UiLabel name={m.settings_profile_rule_operator_is_not()} />). A rule with no conditions matches every item in its libraries. |
+| <UiLabel name={m.settings_profile_rule_target()} />     | The Profile a matching note is created under, including <UiLabel name={m.settings_profile_default_name()} />.                                                                                                                      |
+
+Rules refer to a Profile by its stable ID, so renaming a Profile or its document keeps the rule. Rules stay in this vault: sharing or importing a Profile never carries them.
+
+When you create a note from the quick switcher, the Profile picker preselects the rule's Profile, names the rule, and shows the resulting path; choosing another Profile overrides the rule for that note only. An item that matches no rule preselects <UiLabel name={m.settings_profile_default_name()} />, or uses it directly when no other Profile exists. A rule that cannot be evaluated, or one whose Profile has been deleted, stops automatic selection and asks you to choose; the rule row shows the problem so you can repair it. Existing notes keep their recorded Profile — rules never move a note.
+
 ## Citations
 
 Open this page from <SettingsPath page={m.settings_page_citations()} />.
