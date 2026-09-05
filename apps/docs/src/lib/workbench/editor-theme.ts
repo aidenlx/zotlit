@@ -6,6 +6,8 @@ import { templateHighlighting } from "@zotlit/workbench/language";
 export const editorTheme = [
   templateHighlighting,
   EditorView.theme({
+    // The pane host draws the focus ring, so the editor's own stays off.
+    "&.cm-focused": { outline: "none" },
     ".tok-keyword, .tok-functionName, .tok-operator, .zt-liquid-delimiter, .zt-eta-delimiter":
       {
         color: "var(--color-fd-primary)",
