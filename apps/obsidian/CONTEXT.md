@@ -100,6 +100,10 @@ _Avoid_: filename expression, filename setting (it is a vault file, not configur
 The agent-facing CLI surface over the template system: reports template-authoring state, returns the exact item-backed template data, renders templates entirely in memory, and manages Managed Frontmatter configuration. Inspection, rendering, and frontmatter evaluation are side-effect-free and reuse the Template Data Explorer's inert resolver behavior; mutation is scoped to Managed Frontmatter configuration only — never vault files, never note content. Selection takes one Indexed Key naming any Zotero object, with the data root as the lens on it. Every diagnostic carries its own recovery hint, so corrective guidance arrives with the failure it belongs to.
 _Avoid_: agent template workbench (names the audience, not the thing), template CLI (names the mechanism), template preview (implies rendered visual output)
 
+**Template Completion**:
+Suggestions for fields, local variables, and language constructs at the position being edited in a Template. Accepting a suggestion completes an expression or inserts a Template Snippet.
+_Avoid_: Citation Suggester (a separate feature), field picker (the explicit field discovery surface)
+
 **Workbench Guide**:
 The Template Workbench's built-in usage guide, disclosed in tiers: a quickstart and topic index by default, one topic section on demand. Together with command help it is the home of every workbench tooling fact — value lists come from the same registries the commands use, so the guide cannot drift from the code.
 _Avoid_: manual, skill documentation (the guide lives in the workbench, the skill points at it)

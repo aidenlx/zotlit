@@ -44,6 +44,7 @@
     "@zotlit/workbench": "workspace:*",
     "arkregex": "catalog:",
     "class-variance-authority": "^0.7.1",
+    "cmdk": "1.1.1",
     "cnfast": "^0.1.0",
     "feed": "^6.0.0",
     "fumadocs-core": "16.15.4",

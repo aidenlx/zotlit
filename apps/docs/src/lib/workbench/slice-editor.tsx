@@ -13,28 +13,21 @@ import type {
 } from "@zotlit/workbench/document";
 import {
   liquidMarkdown,
-  templateCompletion,
+  profileLanguage,
+  embeddedLiquid,
+  templateHover,
   yamlRule,
 } from "@zotlit/workbench/language";
 import type { SuggestionSource } from "@zotlit/workbench/language";
 
-import { FIELD_TRIGGER } from "./fields";
+import { webCompletion } from "./completion";
+import { editorTheme } from "./editor-theme";
+import { completionFields } from "./fields";
 
 export type { SuggestionSource } from "@zotlit/workbench/language";
 
-/** The `{{` a reader just typed, in master offsets, with where it sits on screen. */
-export interface FieldTrigger {
-  readonly range: WorkbenchSliceRange;
-  readonly left: number;
-  readonly top: number;
-}
-
-/**
- * The text a pane holds: the note's own Liquid-in-Markdown, or the YAML a
- * Managed Frontmatter rule is written in. The `{{` accelerator belongs to
- * Liquid, so a rule pane offers the field list nowhere.
- */
-export type SliceLanguage = "liquid" | "yaml";
+/** The expression pane edits a bare Liquid expression; the note includes Markdown. */
+export type SliceLanguage = "liquid" | "yaml" | "expression";
 
 export interface SliceEditorProps {
   controller: WorkbenchDocumentController;
@@ -68,8 +61,6 @@ export interface SliceEditorProps {
   onSelection?: (selection: WorkbenchSliceRange) => void;
   /** The pane took focus, so the host knows which editor the reader is in. */
   onFocus?: () => void;
-  /** A just-typed `{{`, so the host can offer the field list in its place. */
-  onFieldTrigger?: (trigger: FieldTrigger) => void;
 }
 
 export function SliceEditor({
@@ -83,25 +74,69 @@ export function SliceEditor({
   suggest,
   onSelection,
   onFocus,
-  onFieldTrigger,
 }: SliceEditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView>(null);
   // The view outlives every render, so it reads the current callbacks through
   // a ref instead of being rebuilt whenever the host passes new ones.
-  const report = useRef({ onSelection, onFocus, onFieldTrigger, suggest });
-  report.current = { onSelection, onFocus, onFieldTrigger, suggest };
+  const report = useRef({ onSelection, onFocus, suggest });
+  report.current = { onSelection, onFocus, suggest };
 
   useEffect(() => {
+    const read: SuggestionSource = (position) => {
+      const sliceRange = controller.sliceRange(slice);
+      const masterPosition = sliceRange.from + position;
+      const region = controller.templateRegions.find(
+        (region) =>
+          masterPosition >= region.from && masterPosition <= region.to,
+      );
+      if (!region) return null;
+      const { root, expression } = region;
+      const supplied = report.current.suggest?.(masterPosition);
+      return {
+        partials: controller.dependencies,
+        ...supplied,
+        root,
+        mode: expression ? "expression" : undefined,
+        scope: {
+          from: region.from - sliceRange.from,
+          to: region.to - sliceRange.from,
+        },
+        fields: completionFields(root),
+      };
+    };
     const view = new EditorView({
       state: EditorState.create({
         doc: controller.sliceText(slice),
         extensions: [
           workbenchSlice(controller, slice),
-          language === "yaml" ? yamlRule : liquidMarkdown,
+          language === "yaml"
+            ? yamlRule
+            : slice === "advanced"
+              ? profileLanguage
+              : language === "expression"
+                ? []
+                : liquidMarkdown,
+          ...(language === "expression"
+            ? [
+                embeddedLiquid((source) => [
+                  { from: 0, to: source.length, expression: true },
+                ]),
+              ]
+            : []),
+          ...(slice === "advanced"
+            ? [
+                embeddedLiquid(() =>
+                  controller.templateRegions.filter(
+                    (region) => region.expression || region.root === "filename",
+                  ),
+                ),
+              ]
+            : []),
+          editorTheme,
           ...(language === "yaml"
             ? []
-            : [templateCompletion(() => report.current.suggest?.() ?? null)]),
+            : [webCompletion(read), templateHover(read)]),
           ...(singleLine
             ? [
                 EditorState.transactionFilter.of((transaction) =>
@@ -122,15 +157,6 @@ export function SliceEditor({
             }
             const { from } = controller.sliceRange(slice);
             report.current.onSelection?.(sliceSelection(update.view, from));
-            // A typed brace is the accelerator; a paste, an undo, or a
-            // Backspace that lands after an existing `{{` is not.
-            const typed =
-              language === "liquid" &&
-              update.transactions.some((transaction) =>
-                transaction.isUserEvent("input.type"),
-              );
-            const trigger = typed ? fieldTriggerAt(update.view, from) : null;
-            if (trigger) report.current.onFieldTrigger?.(trigger);
           }),
         ],
       }),
@@ -179,23 +205,4 @@ function sliceSelection(
 ): WorkbenchSliceRange {
   const { main } = view.state.selection;
   return { from: sliceFrom + main.from, to: sliceFrom + main.to };
-}
-
-/**
- * `{{` is the accelerator for the field list, so a just-typed one is reported
- * with the text it opened on and the place to draw the list.
- */
-function fieldTriggerAt(
-  view: EditorView,
-  sliceFrom: number,
-): FieldTrigger | null {
-  const head = view.state.selection.main.head;
-  const start = head - FIELD_TRIGGER.length;
-  if (view.state.doc.sliceString(start, head) !== FIELD_TRIGGER) return null;
-  const coords = view.coordsAtPos(head);
-  return {
-    range: { from: sliceFrom + start, to: sliceFrom + head },
-    left: coords?.left ?? 0,
-    top: coords?.bottom ?? 0,
-  };
 }

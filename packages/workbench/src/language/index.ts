@@ -9,12 +9,20 @@ export {
 } from "./liquid";
 export type { LiquidRange } from "./liquid";
 export { yamlRule } from "./yaml";
-export { templateCompletion } from "./completion";
+export {
+  applyTemplateCompletion,
+  templateCompletion,
+  templateHover,
+} from "./completion";
 export type { SuggestionSource } from "./completion";
-export { hoverHint, rootAt, suggestions } from "./suggestions";
+export { completionEdit, hoverHint, rootAt, suggestions } from "./suggestions";
 export type {
   Suggestion,
   SuggestionCategory,
   SuggestionConfig,
   SuggestionResult,
+  CompletionEdit,
 } from "./suggestions";
+
+export { templateHighlighting } from "./highlight";
+export { profileLanguage, embeddedLiquid } from "./embedded";

@@ -16,7 +16,7 @@ import { m } from "@/paraglide/messages.js";
 
 import { PropertyList, propertyText } from "./reading-view";
 import { SliceEditor } from "./slice-editor";
-import type { FieldTrigger } from "./slice-editor";
+import type { SuggestionSource } from "./slice-editor";
 
 const MERGE_LABEL: Record<string, () => string> = {
   replace: m.workbench_properties_merge_replace,
@@ -51,7 +51,7 @@ export interface PropertiesPaneProps {
   onSelect: (position: number | null) => void;
   reveal?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
-  onFieldTrigger?: (trigger: FieldTrigger) => void;
+  suggest?: SuggestionSource;
 }
 
 /** Produced fields under the entry that produced them, for either column. */
@@ -110,7 +110,7 @@ export function PropertiesPane({
   onSelect,
   reveal,
   onSelection,
-  onFieldTrigger,
+  suggest,
 }: PropertiesPaneProps) {
   const [menu, setMenu] = useState<number | null>(null);
   const produced = byEntry(properties);
@@ -177,7 +177,7 @@ export function PropertiesPane({
                   act={act}
                   reveal={reveal}
                   onSelection={onSelection}
-                  onFieldTrigger={onFieldTrigger}
+                  suggest={suggest}
                 />
               )}
             </li>
@@ -225,7 +225,7 @@ interface EntryFormProps {
   act: (run: () => void) => () => void;
   reveal?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
-  onFieldTrigger?: (trigger: FieldTrigger) => void;
+  suggest?: SuggestionSource;
 }
 
 /**
@@ -243,7 +243,7 @@ function EntryForm({
   act,
   reveal,
   onSelection,
-  onFieldTrigger,
+  suggest,
 }: EntryFormProps) {
   const spread = entry.key === undefined;
   return (
@@ -281,10 +281,10 @@ function EntryForm({
             controller={controller}
             slice={entrySlice(entry.position)}
             label={m.workbench_properties_expression()}
-            language={entry.language === "value" ? "yaml" : "liquid"}
+            language={entry.language === "value" ? "yaml" : "expression"}
             reveal={reveal}
             onSelection={onSelection}
-            onFieldTrigger={onFieldTrigger}
+            suggest={suggest}
           />
         </div>
       )}

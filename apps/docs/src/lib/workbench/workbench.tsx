@@ -5,7 +5,6 @@
 // behind a tab of its own.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
 
 import {
   entryPosition,
@@ -35,12 +34,7 @@ import {
 import { ConnectionBar } from "./connection-bar";
 import { FieldList } from "./field-list";
 import type { FieldListProps } from "./field-list";
-import {
-  insertSnippet,
-  rootData,
-  templateRootAt,
-  triggerHoldsCaret,
-} from "./fields";
+import { insertSnippet, rootData, templateRootAt } from "./fields";
 import type { SampleItem } from "./fields";
 import {
   ProfileHandoff,
@@ -57,7 +51,6 @@ import { ResultSheet } from "./reading-view";
 import { startRenderWorker } from "./render-client";
 import { SampleBar } from "./sample-bar";
 import { SliceEditor } from "./slice-editor";
-import type { FieldTrigger } from "./slice-editor";
 import { ensureTemporal } from "./temporal";
 import { downloadProfile, profileFileName } from "./transfer";
 import { useWorkbenchConnection } from "./use-workbench-connection";
@@ -89,9 +82,6 @@ const PROBLEM_WHERE: Partial<Record<WorkbenchSliceId, () => string>> = {
 };
 
 /** The `{{` popup's own box: the size it is drawn at, and its margin. */
-const POPUP_WIDTH = 320;
-const POPUP_HEIGHT = 384;
-const POPUP_MARGIN = 8;
 
 /**
  * The width the result stops being a tab at and becomes the column beside the
@@ -99,44 +89,20 @@ const POPUP_MARGIN = 8;
  */
 const WIDE_LAYOUT = "(min-width: 780px)";
 
-/**
- * Keeps the popup inside the window the `{{` was typed in: a trigger near an
- * edge slides the panel back until it fits, and a window too short for the
- * whole panel leaves it as tall as the window allows, with its list scrolling.
- */
-function popupPosition(trigger: FieldTrigger) {
-  const room = (extent: number, size: number) =>
-    Math.max(POPUP_MARGIN, extent - size - POPUP_MARGIN);
-  const left = Math.min(trigger.left, room(window.innerWidth, POPUP_WIDTH));
-  const top = Math.min(trigger.top, room(window.innerHeight, POPUP_HEIGHT));
-  return {
-    left,
-    top,
-    maxHeight: Math.min(POPUP_HEIGHT, window.innerHeight - top - POPUP_MARGIN),
-  };
-}
-
-/**
- * The field list standing over the pane it writes into: the popup `{{` opens at
- * the caret, and the sheet the narrow layout's "Add a field" button raises. One
- * box, so the list's chrome and its way out read the same wherever it opens.
- */
+/** The narrow layout's explicit field-search sheet. */
 function FieldDialog({
   className,
-  style,
   onClose,
   ...list
 }: FieldListProps & {
   /** Where the box is drawn: the popup's panel, or the sheet's bottom strip. */
   className: string;
-  style?: CSSProperties;
   onClose: () => void;
 }) {
   return (
     <div
       role="dialog"
       aria-label={m.workbench_fields_heading()}
-      style={style}
       className={`fixed z-20 flex flex-col border-fd-border bg-fd-card ${className}`}
     >
       <div className="grid min-h-0 flex-1 grid-cols-1">
@@ -190,7 +156,6 @@ export function Workbench() {
   // every time, so selecting the same problem twice opens it again.
   const [focusField, setFocusField] = useState<{ field: string } | null>(null);
   const [caret, setCaret] = useState<WorkbenchSliceRange>({ from: 0, to: 0 });
-  const [trigger, setTrigger] = useState<FieldTrigger | null>(null);
   // The field list restores the snapshot the way the renderer does, so it waits
   // for the same Temporal the restoration needs.
   const [temporal, setTemporal] = useState(
@@ -261,15 +226,14 @@ export function Workbench() {
     void ensureTemporal().then(() => setTemporal(true));
   }, []);
   useEffect(() => {
-    if (!trigger && !sheet) return;
+    if (!sheet) return;
     const close = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      setTrigger(null);
       if (sheet) closeSheet();
     };
     document.addEventListener("keydown", close);
     return () => document.removeEventListener("keydown", close);
-  }, [trigger, sheet]);
+  }, [sheet]);
   // The Editor and Result tabs stand under 780 px alone, so a window that grows
   // past them leaves the reader in the pane rather than on a result no tab
   // reads as chosen.
@@ -500,31 +464,30 @@ export function Workbench() {
    * paper's values for that root. It is read per keystroke, so no pane is
    * rebuilt when the reader changes paper or moves between roots.
    */
-  const suggest = () => ({
-    root,
-    partials,
-    ...(fields ? { sample: fields } : {}),
-  });
+  const suggest = (position: number) => {
+    const currentRoot = templateRootAt(
+      controller.document,
+      controller.filenameSlice,
+      position,
+    );
+    const data = rootData(sample, currentRoot);
+    return { root: currentRoot, partials, ...(data ? { sample: data } : {}) };
+  };
 
   /** Puts a snippet where the reader left the caret, then hands focus back. */
   function insert(snippet: string) {
     const head = insertSnippet(controller, slice, {
-      target: trigger?.range ?? caret,
+      target: caret,
       snippet,
     });
-    setTrigger(null);
     // The sheet stands over the pane it writes into, so it leaves with the
     // snippet it put there.
     setSheet(false);
     setReveal({ from: head, to: head });
   }
 
-  /** A caret that leaves the `{{` it opened on closes the popup that `{{` opened. */
   function trackSelection(selection: WorkbenchSliceRange) {
     setCaret(selection);
-    setTrigger((current) =>
-      current && triggerHoldsCaret(current.range, selection) ? current : null,
-    );
   }
 
   /** Opens `source` as the document being edited, with a history of its own. */
@@ -538,7 +501,6 @@ export function Workbench() {
     setOpenRow(null);
     setReveal(null);
     setHighlight(null);
-    setTrigger(null);
     setCaret({ from: 0, to: 0 });
   }
 
@@ -830,7 +792,6 @@ export function Workbench() {
                   reveal={reveal}
                   suggest={suggest}
                   onSelection={trackSelection}
-                  onFieldTrigger={setTrigger}
                 />
               </div>
             </>
@@ -848,7 +809,6 @@ export function Workbench() {
                   : {})}
                 reveal={reveal}
                 onSelection={trackSelection}
-                onFieldTrigger={setTrigger}
               />
               <AnnotationPointer onOpen={openHighlight} />
             </>
@@ -860,6 +820,7 @@ export function Workbench() {
                 </p>
               ) : (
                 <PropertiesPane
+                  suggest={suggest}
                   controller={controller}
                   entries={entries}
                   properties={result?.properties ?? []}
@@ -869,7 +830,6 @@ export function Workbench() {
                   onSelect={setOpenRow}
                   reveal={reveal}
                   onSelection={trackSelection}
-                  onFieldTrigger={setTrigger}
                 />
               )}
               <AnnotationPointer onOpen={openHighlight} />
@@ -881,20 +841,8 @@ export function Workbench() {
               highlight={highlight}
               suggest={suggest}
               onSelection={trackSelection}
-              onFieldTrigger={setTrigger}
               onOpenHighlight={openHighlight}
               onEditing={setNoteEditor}
-            />
-          )}
-          {/* Next to the editor in tab order, because that is where it opens. */}
-          {trigger && (
-            <FieldDialog
-              root={root}
-              data={fields}
-              onInsert={insert}
-              onClose={() => setTrigger(null)}
-              style={popupPosition(trigger)}
-              className="w-80 border p-3 shadow-[4px_4px_0_0_var(--color-fd-border)]"
             />
           )}
           {/* The field list's way in where it has no column: the same list, the

@@ -1049,6 +1049,7 @@
   "workbench_unsupported_lede": "This workbench edits Liquid profiles in the browser. Eta and JavaScript run in Obsidian only, so this profile stays here unchanged, and it is neither edited nor rendered.",
   "workbench_unsupported_download": "Download it unchanged",
   "workbench_unsupported_docs": "Read about JavaScript templates",
+  "workbench_completion_label": "Template suggestions",
   "workbench_fields_heading": "From this paper",
   "workbench_fields_lede": "Select one to add it where your cursor is.",
   "workbench_fields_root_note": "For your note",
