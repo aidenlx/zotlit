@@ -6,6 +6,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
 import { cn } from "@/lib/utils";
 import type { BatchFailure } from "@/services/batch-run";
+import { describeSelectionSource } from "@/services/note-feature/selection-copy";
 
 import type { BatchListControls, BatchProfileChoice } from "./types";
 
@@ -42,13 +43,7 @@ export function profileChoiceControl(
   const source =
     choice.label === undefined
       ? undefined
-      : choice.source === "headless"
-        ? m.batch_profile_source_companion()
-        : choice.source === "asked"
-          ? m.batch_profile_source_chosen()
-          : choice.source === "rule"
-            ? m.batch_profile_source_rule()
-            : undefined;
+      : describeSelectionSource(choice.source);
   if (source)
     container.createSpan({
       text: source,
