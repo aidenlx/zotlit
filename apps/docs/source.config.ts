@@ -133,6 +133,9 @@ export const blogs = defineCollections({
 
 export default defineConfig({
   mdxOptions: {
+    remarkImageOptions: {
+      useImport: false,
+    },
     rehypeCodeOptions: {
       ...rehypeCodeDefaultOptions,
       langs: ["javascript", etaGrammar],
