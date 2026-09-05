@@ -790,6 +790,34 @@ describe("Profile source selection", () => {
         problem: { code: "unsupported", from: 0, to: 12, text: 'title == "x"' },
       },
     });
+    // A rule whose target Profile was deleted (or its document removed
+    // outside ZotLit) keeps its target ID; matching creation is refused
+    // even with Default as the only Profile, until the rule is repaired
+    // through the editor. The repaired rule serves the next operation.
+    const orphaned = makeUpdateHarness({
+      content: "",
+      settings: { "profile.selection-rules": [goneRule] },
+    }).deps;
+    const orphanedFeature = createNoteFeature(orphaned);
+    expect(
+      await orphanedFeature.resolveCreationProfile({ item: book }),
+    ).toEqual({
+      selector: "default",
+      source: "bound",
+      shouldAsk: true,
+      problem: { kind: "unavailable-target", rule: goneRule, selector: gone },
+    });
+    orphaned.settings.update({
+      "profile.selection-rules": [{ ...goneRule, profile: "default" }],
+    });
+    expect(
+      await orphanedFeature.resolveCreationProfile({ item: book }),
+    ).toEqual({
+      selector: "default",
+      source: "rule",
+      shouldAsk: false,
+      rule: { ...goneRule, profile: "default" },
+    });
   });
   it("creates at the previewed path under the shown Profile after rules change, and stops once that Profile is gone", async () => {
     const books = "Bk3Qn7XvT2Lp" as ProfileId;

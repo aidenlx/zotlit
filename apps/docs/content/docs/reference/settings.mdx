@@ -107,16 +107,18 @@ The <UiLabel name={m.settings_profile_other_heading()} /> list holds every other
 
 Each added Profile has one row, which summarizes what differs from the default Profile and offers these actions:
 
-| Action                                            | Effect                                                                        |
-| ------------------------------------------------- | ----------------------------------------------------------------------------- |
-| <UiLabel name={m.settings_template_open()} />     | Opens the Profile's document in the editor. The document is the editor.       |
-| <UiLabel name={m.settings_profile_duplicate()} /> | Creates a copy of the Profile under a new name.                               |
-| <UiLabel name={m.settings_profile_share()} />     | Copies the Profile, or saves it as a file, so someone else can read it in.    |
-| <UiLabel name={m.settings_profile_delete()} />    | Moves the Profile document to Obsidian's configured trash after notes switch. |
+| Action                                            | Effect                                                                                                                                                           |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.settings_template_open()} />     | Opens the Profile's document in the editor. The document is the editor.                                                                                          |
+| <UiLabel name={m.settings_profile_duplicate()} /> | Creates a copy of the Profile under a new name.                                                                                                                  |
+| <UiLabel name={m.settings_profile_share()} />     | Copies the Profile, or saves it as a file, so someone else can read it in.                                                                                       |
+| <UiLabel name={m.settings_profile_delete()} />    | Moves the Profile document to Obsidian's configured trash after notes switch. Lists the rules that select the Profile; they keep their target for you to repair. |
 
 A new Profile starts identical to the default one, so give it a folder or a citation style in its document — a Profile that differs from the default in nothing has no effect on any note.
 
 Each Profile is edited in its own document. Deleting a Profile that notes still use asks where those notes go first.
+
+The deletion dialog also lists every rule under [Automatic profile selection](#profile-selection-rules) that selects the Profile, even when no note uses it. The two effects are separate: the replacement you select moves those notes only, and each listed rule keeps the deleted Profile as its target. Deletion proceeds after the warning; repair or remove each rule yourself afterwards. Deleting a Profile document outside Obsidian leaves the same rule references.
 
 ### Automatic profile selection [#profile-selection-rules]
 
@@ -130,7 +132,7 @@ The <UiLabel name={m.settings_profile_rules_heading()} /> list on the same page 
 
 Rules refer to a Profile by its stable ID, so renaming a Profile or its document keeps the rule. Rules stay in this vault: sharing or importing a Profile never carries them.
 
-When you create a note from the quick switcher, the Profile picker preselects the rule's Profile, names the rule, and shows the resulting path; choosing another Profile overrides the rule for that note only. When you follow a citation or a Zotero link, a Profile named by the link or selected by a rule creates the note at once, and a notice reports the Profile and the path. An item that matches no rule preselects <UiLabel name={m.settings_profile_default_name()} />, or uses it directly when no other Profile exists. A rule that cannot be evaluated, or one whose Profile has been deleted, stops automatic selection and asks you to choose; the rule row shows the problem so you can repair it. Existing notes keep their recorded Profile — rules never move a note.
+When you create a note from the quick switcher, the Profile picker preselects the rule's Profile, names the rule, and shows the resulting path; choosing another Profile overrides the rule for that note only. When you follow a citation or a Zotero link, a Profile named by the link or selected by a rule creates the note at once, and a notice reports the Profile and the path. An item that matches no rule preselects <UiLabel name={m.settings_profile_default_name()} />, or uses it directly when no other Profile exists. A rule that cannot be evaluated, or one whose Profile has been deleted, stops automatic selection and asks you to choose, even when <UiLabel name={m.settings_profile_default_name()} /> is the only Profile left; the rule row shows the problem so you can repair it. Select <UiLabel name={m.settings_profile_rules_edit()} /> on the row to give the rule another Profile, or delete the row. The repaired rule serves the next new note. Existing notes keep their recorded Profile — rules never move a note.
 
 ## Citations
 
