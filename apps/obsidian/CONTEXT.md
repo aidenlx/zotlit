@@ -85,7 +85,7 @@ The choice of a Literature Note Profile for a new Literature Note from the sourc
 _Avoid_: Profile resolution (resolving an already chosen selector), automatic Profile switch (changing an existing note's membership)
 
 **Rule condition**:
-The Filter Expression a Profile Selection Rule stores, restricted to the supported condition contract: built-in Zotero item type tests, combined with `&&`, `||`, `!`, and grouping. The rule editor writes the canonical expression; an expression outside the contract is a broken rule, never a silent nonmatch. Library scope is a separate part of the rule, not a condition. The language itself is the Filter Expression context (`packages/filter-expression/CONTEXT.md`).
+The Filter Expression a Profile Selection Rule stores, restricted to the supported condition contract: built-in Zotero item type tests, Collection membership tests (filed in a Collection or any of its descendants, or in the Collection itself, referenced by Library selector and Collection key), and exact Tag name tests, combined with `&&`, `||`, `!`, and grouping. The rule editor writes the canonical expression; an expression outside the contract is a broken rule, never a silent nonmatch. Library scope is a separate part of the rule, not a condition. The language itself is the Filter Expression context (`packages/filter-expression/CONTEXT.md`).
 _Avoid_: filter (bare), query, search
 
 **Selection source**:
