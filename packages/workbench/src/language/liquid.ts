@@ -46,6 +46,6 @@ const delimiterHighlight = ViewPlugin.define(
   { decorations: (plugin) => plugin.decorations },
 );
 export const liquidMarkdown = new LanguageSupport(liquidSupport.language, [
-  liquidSupport.support,
+  markdownSupport.support,
   delimiterHighlight,
 ]);

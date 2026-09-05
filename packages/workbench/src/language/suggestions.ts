@@ -25,10 +25,12 @@ import {
 import { etaRange } from "./eta-syntax";
 import type { EtaRange } from "./eta-syntax";
 import { jsonSuggestions, jsonHover } from "./json-e";
-import { liquidRanges, STRUCTURAL_TAGS } from "./liquid-ranges";
+import { liquidCodeRange, STRUCTURAL_TAGS } from "./liquid-ranges";
 import type { LiquidRange } from "./liquid-ranges";
 import { rankSuggestions } from "./matching";
 import { localsAt } from "./scope";
+import { DOCUMENTED_TAG_NAMES, tagHelp } from "./tag-help";
+import type { LiquidTagName } from "./tag-help";
 const JSDOC_LINK = regex("\\{@link (?<target>[^}]+)}", "g");
 const ANNOTATION_SHORTCUT_DETAIL =
   "Renders the Profile's final Annotation Section with the argument bound to zt. Outside a Profile, uses the named annotation partial. Missing or null data is an error.";
@@ -47,6 +49,8 @@ export interface SuggestionConfig {
   sample?: unknown;
   /** Human labels in common-field order, supplied by the host. */
   fields?: readonly { path: string; label: string }[];
+  /** Localized tag descriptions supplied by the host; syntax is the fallback. */
+  tagDescription?: (name: LiquidTagName) => string;
 }
 
 /** Display category driving an option's icon/grouping in the editor UI. */
@@ -68,6 +72,7 @@ export interface Suggestion {
   /** A contract type (`category: "field"`) or the Eta helper's call signature (`category: "annotation-helper"`). Absent for every other category. */
   type?: string;
   detail: string;
+  syntax?: string;
   example?: string;
   from?: number;
   to?: number;
@@ -193,6 +198,7 @@ interface LanguageProfile {
     source: string;
     position: number;
     result: ResultBuilder;
+    description?: SuggestionConfig["tagDescription"];
   }): SuggestionResult | null | undefined;
 }
 
@@ -223,19 +229,26 @@ function tagOptions({
   position,
   range,
   before,
+  description,
 }: {
   source: string;
   position: number;
   range: TemplateRange;
   before: string;
+  description?: SuggestionConfig["tagDescription"];
 }): Suggestion[] {
   return [
     ...new Set([
       ...LIQUID_BUILTIN_TAG_NAMES,
       ...ZOTLIT_TAG_NAMES,
       ...STRUCTURAL_TAGS,
+      ...DOCUMENTED_TAG_NAMES,
     ]),
   ]
+    .filter(
+      (name) =>
+        !("line" in range && range.line && STRUCTURAL_TAGS.includes(name)),
+    )
     .sort()
     .map((name): Suggestion => {
       if (name === "render_annotation") {
@@ -246,9 +259,8 @@ function tagOptions({
           label: name,
           insert: needsArgument ? "render_annotation annotation" : name,
           category: "annotation-tag",
-          detail: ANNOTATION_SHORTCUT_DETAIL,
-          example:
-            '{% render_annotation annotation %} = {% render "annotation" with annotation as zt %}',
+          ...tagHelp(name, description),
+          detail: description?.(name) ?? ANNOTATION_SHORTCUT_DETAIL,
           ...(needsArgument
             ? { cursorOffset: "render_annotation ".length }
             : {}),
@@ -258,9 +270,8 @@ function tagOptions({
         label: name,
         insert: name,
         category: STRUCTURAL_TAGS.includes(name) ? "structural-tag" : "tag",
-        detail: STRUCTURAL_TAGS.includes(name)
-          ? "A Literature Note Template block boundary."
-          : "Liquid tag registry; ZotLit additions included.",
+        detail: `{% ${name} %}`,
+        ...tagHelp(name, description),
       };
       if (name !== "managed") return option;
       const ending = /^\w*(?:\s*-?%})?/.exec(source.slice(position))![0];
@@ -418,17 +429,20 @@ function liquidExtraTrigger({
   source,
   position,
   result,
+  description,
 }: {
   range: TemplateRange;
   before: string;
   source: string;
   position: number;
   result: ResultBuilder;
+  description?: SuggestionConfig["tagDescription"];
 }): SuggestionResult | null | undefined {
   // Other strings are values, not completion triggers. Keep pipes inside quotes inert.
   let quote = "";
   let pipe = -1;
-  for (let i = 2; i < before.length; i++) {
+  const line = "line" in range && range.line;
+  for (let i = line ? 0 : 2; i < before.length; i++) {
     const char = before[i];
     if (quote) {
       if (char === quote) quote = "";
@@ -440,21 +454,22 @@ function liquidExtraTrigger({
     const filter = regex("^\\s*(?<query>\\w*)$").exec(before.slice(pipe + 1));
     if (filter) return result("Filters", filter.groups.query, filterOptions());
   }
-  const tag = regex("^\\{%-?\\s*(?<query>\\w*)$").exec(before);
+  const tag = (
+    line
+      ? regex("^[\\t ]*(?<query>[\\w#]*)$")
+      : regex("^\\{%-?\\s*(?<query>[\\w#]*)$")
+  ).exec(before);
   if (tag)
     return result(
       "Tags",
       tag.groups.query,
-      tagOptions({ source, position, range, before }),
+      tagOptions({ source, position, range, before, description }),
     );
   return undefined;
 }
 
 const liquidProfile: LanguageProfile = {
-  findRange: (source, position) =>
-    liquidRanges(source).find(
-      (r) => position > r.from + 1 && position <= (r.closed ? r.to - 2 : r.to),
-    ),
+  findRange: liquidCodeRange,
   partialPattern: regex("^\\{%-?\\s*render\\s+[\"'](?<query>[^\"']*)$"),
   includeArrayFirstLast: true,
   arraySizeName: "size",
@@ -530,10 +545,16 @@ export function suggestions(
   const range = profile.findRange(source, position);
   if (!range || range.kind === "comment") return null;
   const before = source.slice(range.from, position);
+  if (
+    "name" in range &&
+    (range.name === "#" || range.name === "comment") &&
+    !/^(?:\{%-?)?\s*(?:#|comment)$/.test(before)
+  )
+    return null;
   const root = rootAt(source, position, config.root);
   const result: ResultBuilder = (trigger, query, options) => ({
     from: position - query.length,
-    to: position + (/^[\w-]*/.exec(source.slice(position))?.[0].length ?? 0),
+    to: position + (/^[\w#-]*/.exec(source.slice(position))?.[0].length ?? 0),
     tagEnd: range.to,
     root,
     trigger,
@@ -556,6 +577,7 @@ export function suggestions(
     source,
     position,
     result,
+    description: config.tagDescription,
   });
   if (triggered !== undefined) return triggered;
 
@@ -690,9 +712,9 @@ export function hoverHint(
       : null;
   }
   const from =
-    position - (/[\w-]*$/.exec(source.slice(0, position))?.[0].length ?? 0);
+    position - (/[\w#-]*$/.exec(source.slice(0, position))?.[0].length ?? 0);
   const to =
-    position + (/^[\w-]*/.exec(source.slice(position))?.[0].length ?? 0);
+    position + (/^[\w#-]*/.exec(source.slice(position))?.[0].length ?? 0);
   if (from === to) return null;
   const result = suggestions(source, to, config);
   const option = result?.options.find(

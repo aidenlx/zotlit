@@ -159,6 +159,11 @@ export function webHover(read: SuggestionSource) {
                       </div>
                     )}
                     <p className="whitespace-pre-wrap">{option.detail}</p>
+                    {option.syntax && (
+                      <code className="block break-words whitespace-pre-wrap">
+                        {option.syntax}
+                      </code>
+                    )}
                     {option.example !== undefined && (
                       <code className="block max-h-48 overflow-auto break-words whitespace-pre-wrap text-fd-muted-foreground">
                         {option.example}

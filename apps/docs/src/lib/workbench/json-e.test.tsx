@@ -100,6 +100,26 @@ it.each([false, true])(
         (token) => token.textContent === "${",
       ),
     ).toBe(true);
+    const literalEnd = view.state.doc.toString().indexOf("literal") + 7;
+    await act(async () => view.dispatch({ selection: { anchor: literalEnd } }));
+    for (const char of "{{") {
+      await act(async () => {
+        const { from, to } = view.state.selection.main;
+        const insert = () =>
+          view.state.update({
+            changes: { from, to, insert: char },
+            selection: { anchor: from + 1 },
+            userEvent: "input.type",
+          });
+        if (
+          !view.state
+            .facet(EditorView.inputHandler)
+            .some((handler) => handler(view, from, to, char, insert))
+        )
+          view.dispatch(insert());
+      });
+    }
+    expect(controller.source).toContain('"else":"literal{{"');
   },
 );
 

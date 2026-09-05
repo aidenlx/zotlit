@@ -9,9 +9,17 @@ import {
   Prec,
   Transaction,
 } from "@codemirror/state";
-import type { ChangeSpec, Extension } from "@codemirror/state";
+import type { ChangeSpec, Extension, StateEffect } from "@codemirror/state";
 import { ViewPlugin, keymap } from "@codemirror/view";
 import type { EditorView, PluginValue, ViewUpdate } from "@codemirror/view";
+
+import {
+  addPair,
+  pairingState,
+  restorePairs,
+  offsetPair,
+  slicePairs,
+} from "@/language/pairing-state";
 
 import { sliceEdit } from "./controller";
 import type {
@@ -35,6 +43,9 @@ export function workbenchSlice(
   json = false,
 ): Extension {
   return [
+    pairingState.init(() =>
+      json ? [] : slicePairs(controller.state, controller.sliceRange(id)),
+    ),
     // Undo belongs to the master, which holds the only history, so this
     // binding has to beat every other undo binding in the host.
     Prec.highest(
@@ -138,7 +149,11 @@ class SliceSync implements PluginValue {
     });
 
     let head = transaction.state.selection.main.head;
-    const effects = [];
+    const effects: StateEffect<unknown>[] = this.json
+      ? []
+      : transaction.effects
+          .filter((effect) => effect.is(addPair))
+          .map((effect) => addPair.of(offsetPair(effect.value, from)));
     let grown = transaction.newDoc.length - transaction.startState.doc.length;
     if (this.json) {
       const source = this.controller.sliceText(this.id);
@@ -184,6 +199,14 @@ class SliceSync implements PluginValue {
     head = Math.min(from + head, this.controller.state.doc.length + grown);
     const userEvent = transaction.annotation(Transaction.userEvent);
     const isolation = transaction.annotation(isolateHistory);
+    if (!this.json) {
+      this.controller.dispatch({
+        selection: EditorSelection.cursor(
+          from + transaction.startState.selection.main.head,
+        ),
+        annotations: Transaction.addToHistory.of(false),
+      });
+    }
     this.#pushing = true;
     try {
       this.controller.dispatch({
@@ -219,7 +242,17 @@ class SliceSync implements PluginValue {
       : undefined;
     const text =
       draft?.text ?? (this.json ? jsonLayout(source, true).text : source);
-    if (text === this.view.state.doc.toString() && !draft) return;
+    if (text === this.view.state.doc.toString() && !draft) {
+      if (!this.json && transaction.annotation(sliceEdit) !== this.id) {
+        this.view.dispatch({
+          effects: restorePairs.of(
+            slicePairs(this.controller.state, this.#range),
+          ),
+          annotations: fromMaster.of(true),
+        });
+      }
+      return;
+    }
     const oldHead = this.json
       ? jsonPosition(
           this.view.state.doc.toString(),
@@ -229,7 +262,10 @@ class SliceSync implements PluginValue {
       : this.view.state.selection.main.head;
     const masterHead = Math.min(
       Math.max(
-        transaction.changes.mapPos(previous.from + oldHead) - this.#range.from,
+        (transaction.isUserEvent("undo") || transaction.isUserEvent("redo")
+          ? transaction.state.selection.main.head
+          : transaction.changes.mapPos(previous.from + oldHead)) -
+          this.#range.from,
         0,
       ),
       source.length,
@@ -241,6 +277,9 @@ class SliceSync implements PluginValue {
       changes: { from: 0, to: this.view.state.doc.length, insert: text },
       selection: EditorSelection.cursor(
         Math.min(Math.max(head, 0), text.length),
+      ),
+      effects: restorePairs.of(
+        this.json ? [] : slicePairs(this.controller.state, this.#range),
       ),
       annotations: fromMaster.of(true),
     });

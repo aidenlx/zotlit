@@ -17,6 +17,7 @@ import type {
 } from "@zotlit/workbench/document";
 import {
   liquidMarkdown,
+  templatePairing,
   profileLanguage,
   embeddedLiquid,
   jsonRule,
@@ -28,6 +29,7 @@ import { webCompletion } from "./completion";
 import { editorTheme } from "./editor-theme";
 import { completionFields } from "./fields";
 import { webHover } from "./hover";
+import { tagDescription } from "./tag-help";
 
 export type { SuggestionSource } from "@zotlit/workbench/language";
 
@@ -121,6 +123,7 @@ export function SliceEditor({
                 to: region!.to - sliceRange.from,
               },
         fields: completionFields(root),
+        tagDescription,
       };
     };
     const view = new EditorView({
@@ -155,6 +158,10 @@ export function SliceEditor({
               ]
             : []),
           editorTheme,
+          templatePairing((position) => {
+            const config = read(position);
+            return config?.language === "json-e" ? null : config;
+          }),
           webCompletion(read),
           webHover(read),
           ...(language === "json-e" || slice === "advanced"

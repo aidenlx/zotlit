@@ -27,6 +27,8 @@ import type {
 } from "@zotlit/templates/facade";
 import { literatureNoteTemplateDependencies } from "@zotlit/templates/literature-note-pack";
 
+import { pairingState, pairingHistory } from "@/language/pairing-state";
+
 import { jsonSliceHistory } from "./json-source";
 import {
   managedEntryEdit,
@@ -148,6 +150,8 @@ export class WorkbenchDocumentController {
         // document the first time it is edited.
         EditorState.lineSeparator.of(source.includes("\r\n") ? "\r\n" : "\n"),
         history(),
+        pairingState,
+        pairingHistory,
         jsonSliceHistory,
         // The focused slice holds the reader's live text, so a form or
         // structural edit computed elsewhere leaves that range alone and is
