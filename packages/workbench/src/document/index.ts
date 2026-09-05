@@ -38,3 +38,5 @@ export type {
   NoteRegions,
 } from "./regions";
 export { workbenchSlice } from "./slice";
+
+export { jsonLayout, jsonPosition } from "./json-source";

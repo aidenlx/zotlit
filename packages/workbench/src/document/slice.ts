@@ -5,6 +5,7 @@ import { defaultKeymap, isolateHistory } from "@codemirror/commands";
 import {
   Annotation,
   EditorSelection,
+  ChangeSet,
   Prec,
   Transaction,
 } from "@codemirror/state";
@@ -18,6 +19,7 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "./controller";
+import { jsonLayout, jsonPosition, jsonSliceEdit } from "./json-source";
 
 /** Marks a child transaction as the master's own refresh, so it is not echoed back. */
 const fromMaster = Annotation.define<boolean>();
@@ -30,6 +32,7 @@ const fromMaster = Annotation.define<boolean>();
 export function workbenchSlice(
   controller: WorkbenchDocumentController,
   id: WorkbenchSliceId,
+  json = false,
 ): Extension {
   return [
     // Undo belongs to the master, which holds the only history, so this
@@ -46,30 +49,57 @@ export function workbenchSlice(
       ]),
     ),
     keymap.of(defaultKeymap),
-    ViewPlugin.define((view) => new SliceSync(view, controller, id)),
+    ViewPlugin.define((view) => new SliceSync(view, controller, { id, json })),
   ];
 }
 
 class SliceSync implements PluginValue {
   #range: WorkbenchSliceRange;
+  #pushing = false;
+  readonly id: WorkbenchSliceId;
+  readonly json: boolean;
   readonly #unsubscribe: () => void;
   readonly #unregister: () => void;
 
   constructor(
     readonly view: EditorView,
     readonly controller: WorkbenchDocumentController,
-    readonly id: WorkbenchSliceId,
+    { id, json }: { id: WorkbenchSliceId; json: boolean },
   ) {
+    this.id = id;
+    this.json = json;
     this.#range = controller.sliceRange(id);
     this.#unsubscribe = controller.subscribe((update) => {
-      if (update.docChanged) this.#pull(update.transaction);
+      if (
+        update.docChanged ||
+        update.transaction.effects.some((effect) => effect.is(jsonSliceEdit))
+      )
+        this.#pull(update.transaction);
     });
     // While this editor holds the region's live text, a master edit inside it
     // is suppressed and handed back here instead.
     this.#unregister = controller.registerSlice(id, {
       replay: (changes, userEvent) => {
+        const mapped: ChangeSpec[] = [];
+        const source = controller.sliceText(id);
+        if (json) {
+          ChangeSet.of(changes, source.length).iterChanges(
+            // oxlint-disable-next-line max-params -- CM's iterChanges callback signature.
+            (from, to, _fromB, _toB, inserted) => {
+              mapped.push({
+                from: jsonPosition(
+                  source,
+                  this.view.state.doc.toString(),
+                  from,
+                ),
+                to: jsonPosition(source, this.view.state.doc.toString(), to),
+                insert: inserted.toString(),
+              });
+            },
+          );
+        }
         this.view.dispatch({
-          changes,
+          changes: json ? mapped : changes,
           ...(userEvent === undefined ? {} : { userEvent }),
         });
       },
@@ -94,7 +124,7 @@ class SliceSync implements PluginValue {
     this.controller.setFocusedSlice(null);
   }
 
-  /** Child to master: the same changes, offset into the slice's region. */
+  /** Forward edits in source coordinates; JSON layout stays in the child. */
   #push(transaction: Transaction): void {
     const { from } = this.#range;
     const changes: ChangeSpec[] = [];
@@ -107,22 +137,68 @@ class SliceSync implements PluginValue {
       });
     });
 
-    const grown = transaction.newDoc.length - transaction.startState.doc.length;
-    const head = Math.min(
-      from + transaction.state.selection.main.head,
-      this.controller.state.doc.length + grown,
-    );
+    let head = transaction.state.selection.main.head;
+    const effects = [];
+    let grown = transaction.newDoc.length - transaction.startState.doc.length;
+    if (this.json) {
+      const source = this.controller.sliceText(this.id);
+      const display = transaction.newDoc.toString();
+      const compact = jsonLayout(display, false);
+      let left = 0;
+      while (
+        left < source.length &&
+        left < compact.text.length &&
+        source[left] === compact.text[left]
+      )
+        left++;
+      let right = source.length;
+      let end = compact.text.length;
+      while (
+        right > left &&
+        end > left &&
+        source[right - 1] === compact.text[end - 1]
+      ) {
+        right--;
+        end--;
+      }
+      changes.length = 0;
+      if (left !== right || left !== end)
+        changes.push({
+          from: from + left,
+          to: from + right,
+          insert: compact.text.slice(left, end),
+        });
+      effects.push(
+        jsonSliceEdit.of({
+          id: this.id,
+          before: {
+            text: transaction.startState.doc.toString(),
+            head: transaction.startState.selection.main.head,
+          },
+          after: { text: display, head },
+        }),
+      );
+      head = compact.changes.mapPos(head, 1);
+      grown = compact.text.length - source.length;
+    }
+    head = Math.min(from + head, this.controller.state.doc.length + grown);
     const userEvent = transaction.annotation(Transaction.userEvent);
     const isolation = transaction.annotation(isolateHistory);
-    this.controller.dispatch({
-      changes,
-      selection: EditorSelection.cursor(head),
-      annotations: [
-        sliceEdit.of(this.id),
-        ...(isolation ? [isolateHistory.of(isolation)] : []),
-      ],
-      ...(userEvent === undefined ? {} : { userEvent }),
-    });
+    this.#pushing = true;
+    try {
+      this.controller.dispatch({
+        changes,
+        effects,
+        selection: EditorSelection.cursor(head),
+        annotations: [
+          sliceEdit.of(this.id),
+          ...(isolation ? [isolateHistory.of(isolation)] : []),
+        ],
+        ...(userEvent === undefined ? {} : { userEvent }),
+      });
+    } finally {
+      this.#pushing = false;
+    }
   }
 
   /**
@@ -134,16 +210,37 @@ class SliceSync implements PluginValue {
   #pull(transaction: Transaction): void {
     const previous = this.#range;
     this.#range = this.controller.sliceRange(this.id);
-    const text = this.controller.sliceText(this.id);
-    if (text === this.view.state.doc.toString()) return;
-
-    const head = transaction.changes.mapPos(
-      previous.from + this.view.state.selection.main.head,
+    if (this.json && this.#pushing) return;
+    const source = this.controller.sliceText(this.id);
+    const draft = this.json
+      ? transaction.effects.findLast(
+          (effect) => effect.is(jsonSliceEdit) && effect.value.id === this.id,
+        )?.value.after
+      : undefined;
+    const text =
+      draft?.text ?? (this.json ? jsonLayout(source, true).text : source);
+    if (text === this.view.state.doc.toString() && !draft) return;
+    const oldHead = this.json
+      ? jsonPosition(
+          this.view.state.doc.toString(),
+          transaction.startState.sliceDoc(previous.from, previous.to),
+          this.view.state.selection.main.head,
+        )
+      : this.view.state.selection.main.head;
+    const masterHead = Math.min(
+      Math.max(
+        transaction.changes.mapPos(previous.from + oldHead) - this.#range.from,
+        0,
+      ),
+      source.length,
     );
+    const head =
+      draft?.head ??
+      (this.json ? jsonPosition(source, text, masterHead) : masterHead);
     this.view.dispatch({
       changes: { from: 0, to: this.view.state.doc.length, insert: text },
       selection: EditorSelection.cursor(
-        Math.min(Math.max(head - this.#range.from, 0), text.length),
+        Math.min(Math.max(head, 0), text.length),
       ),
       annotations: fromMaster.of(true),
     });

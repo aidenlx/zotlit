@@ -5,7 +5,11 @@ import type { Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 
-import { workbenchSlice } from "@zotlit/workbench/document";
+import {
+  workbenchSlice,
+  jsonLayout,
+  jsonPosition,
+} from "@zotlit/workbench/document";
 import type {
   WorkbenchDocumentController,
   WorkbenchSliceId,
@@ -86,32 +90,47 @@ export function SliceEditor({
   useEffect(() => {
     const read: SuggestionSource = (position) => {
       const sliceRange = controller.sliceRange(slice);
-      const masterPosition = sliceRange.from + position;
+      const local =
+        language === "json-e" && editor.current
+          ? jsonPosition(
+              editor.current.state.doc.toString(),
+              controller.sliceText(slice),
+              position,
+            )
+          : position;
+      const masterPosition = sliceRange.from + local;
       const region = controller.templateRegions.find(
         (region) =>
           masterPosition >= region.from && masterPosition <= region.to,
       );
-      if (!region) return null;
-      const { root, expression } = region;
+      if (!region && language !== "json-e") return null;
+      const root = region?.root ?? "note";
+      const expression = region?.expression ?? false;
       const supplied = report.current.suggest?.(masterPosition);
       return {
         partials: controller.dependencies,
         ...supplied,
         root,
-        language: region.language,
+        language: language === "json-e" ? "json-e" : region?.language,
         mode: expression ? "expression" : undefined,
-        scope: {
-          from: region.from - sliceRange.from,
-          to: region.to - sliceRange.from,
-        },
+        scope:
+          language === "json-e"
+            ? undefined
+            : {
+                from: region!.from - sliceRange.from,
+                to: region!.to - sliceRange.from,
+              },
         fields: completionFields(root),
       };
     };
     const view = new EditorView({
       state: EditorState.create({
-        doc: controller.sliceText(slice),
+        doc:
+          language === "json-e"
+            ? jsonLayout(controller.sliceText(slice), true).text
+            : controller.sliceText(slice),
         extensions: [
-          workbenchSlice(controller, slice),
+          workbenchSlice(controller, slice, language === "json-e"),
           language === "json-e"
             ? jsonRule
             : slice === "advanced"
@@ -181,7 +200,13 @@ export function SliceEditor({
               report.current.onFocus?.();
             }
             const { from } = controller.sliceRange(slice);
-            report.current.onSelection?.(sliceSelection(update.view, from));
+            report.current.onSelection?.(
+              sliceSelection(
+                update.view,
+                from,
+                language === "json-e" ? controller.sliceText(slice) : undefined,
+              ),
+            );
           }),
         ],
       }),
@@ -191,7 +216,11 @@ export function SliceEditor({
     // A pane mounts unfocused and sends no update, so it reports where its own
     // caret starts — the host follows the pane on screen, not the pane before it.
     report.current.onSelection?.(
-      sliceSelection(view, controller.sliceRange(slice).from),
+      sliceSelection(
+        view,
+        controller.sliceRange(slice).from,
+        language === "json-e" ? controller.sliceText(slice) : undefined,
+      ),
     );
     return () => {
       editor.current = null;
@@ -203,8 +232,19 @@ export function SliceEditor({
     const view = editor.current;
     if (!view || !reveal) return;
     const { from } = controller.sliceRange(slice);
-    const inSlice = (offset: number) =>
-      Math.min(Math.max(offset - from, 0), view.state.doc.length);
+    const inSlice = (offset: number) => {
+      const local = Math.min(
+        Math.max(offset - from, 0),
+        controller.sliceText(slice).length,
+      );
+      return language === "json-e"
+        ? jsonPosition(
+            controller.sliceText(slice),
+            view.state.doc.toString(),
+            local,
+          )
+        : local;
+    };
     view.dispatch({
       selection: EditorSelection.range(
         inSlice(reveal.from),
@@ -213,7 +253,7 @@ export function SliceEditor({
       scrollIntoView: true,
     });
     view.focus();
-  }, [controller, slice, reveal]);
+  }, [controller, slice, reveal, language]);
 
   return (
     <div
@@ -227,7 +267,13 @@ export function SliceEditor({
 function sliceSelection(
   view: EditorView,
   sliceFrom: number,
+  jsonSource?: string,
 ): WorkbenchSliceRange {
   const { main } = view.state.selection;
-  return { from: sliceFrom + main.from, to: sliceFrom + main.to };
+  const map = (position: number) =>
+    sliceFrom +
+    (jsonSource === undefined
+      ? position
+      : jsonPosition(view.state.doc.toString(), jsonSource, position));
+  return { from: map(main.from), to: map(main.to) };
 }

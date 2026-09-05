@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { isolateHistory } from "@codemirror/commands";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
@@ -8,6 +9,7 @@ import { suggestions } from "@/language/suggestions";
 
 import { WorkbenchDocumentController } from "./controller";
 import type { WorkbenchSliceId } from "./controller";
+import { jsonLayout } from "./json-source";
 import { workbenchSlice } from "./slice";
 
 const PROFILE = `---
@@ -32,11 +34,14 @@ interface Slice extends Disposable {
 function open(
   controller: WorkbenchDocumentController,
   id: WorkbenchSliceId,
+  json = false,
 ): Slice {
   const view = new EditorView({
     state: EditorState.create({
-      doc: controller.sliceText(id),
-      extensions: [workbenchSlice(controller, id)],
+      doc: json
+        ? jsonLayout(controller.sliceText(id), true).text
+        : controller.sliceText(id),
+      extensions: [workbenchSlice(controller, id, json)],
     }),
     parent: document.body,
   });
@@ -309,4 +314,85 @@ describe("workbenchSlice", () => {
     expect(advanced.text()).toBe(controller.source);
     expect(advanced.text()).toContain("Hello. # {{ zt.title }}");
   });
+});
+
+const JSON_PROFILE = PROFILE.replace(
+  "language: liquid",
+  'language: liquid\nfrontmatter:\n  - key: title\n    value: {"$eval":"zt.title"}',
+);
+
+it("displays pretty JSON, stores compact JSON, and preserves draft-only undo", () => {
+  const controller = new WorkbenchDocumentController(JSON_PROFILE);
+  using rule = open(controller, "entry:1", true);
+  expect(rule.text()).toBe('{\n  "$eval": "zt.title"\n}');
+  const original = rule.text();
+  rule.view.dispatch({
+    changes: { from: 1, insert: "\n" },
+    userEvent: "input.type",
+  });
+  expect(controller.source).toBe(JSON_PROFILE);
+  expect(rule.text()).toBe('{\n\n  "$eval": "zt.title"\n}');
+  controller.undo();
+  expect(rule.text()).toBe(original);
+  controller.redo();
+  expect(rule.text()).toBe('{\n\n  "$eval": "zt.title"\n}');
+  rule.view.dispatch({
+    changes: {
+      from: 0,
+      to: rule.text().length,
+      insert: '{\n  "$eval": "zt.key"\n}',
+    },
+    userEvent: "input.paste",
+  });
+  expect(controller.source).toBe(JSON_PROFILE.replace('zt.title"', 'zt.key"'));
+  expect(controller.document).not.toBeNull();
+  controller.undo();
+  expect(rule.text()).toBe('{\n\n  "$eval": "zt.title"\n}');
+});
+
+it("retains invalid JSON drafts and translates master edits into formatted offsets", () => {
+  const controller = new WorkbenchDocumentController(JSON_PROFILE);
+  using rule = open(controller, "entry:1", true);
+  rule.view.focus();
+  controller.setFocusedSlice("entry:1");
+  const from = controller.source.indexOf("zt.title");
+  controller.dispatch({
+    changes: { from, to: from + 8, insert: "zt.key" },
+    userEvent: "input.form",
+  });
+  expect(rule.text()).toBe('{\n  "$eval": "zt.key"\n}');
+  rule.view.dispatch({
+    changes: { from: rule.text().length - 1, to: rule.text().length },
+    userEvent: "delete.backward",
+    annotations: isolateHistory.of("before"),
+  });
+  expect(rule.text()).toBe('{\n  "$eval": "zt.key"\n');
+  expect(controller.problems.length).toBeGreaterThan(0);
+  controller.undo();
+  expect(rule.text()).toBe('{\n  "$eval": "zt.key"\n}');
+  expect(controller.document).not.toBeNull();
+});
+
+it("keeps grouped typing aligned across pretty and compact undo and redo", () => {
+  const controller = new WorkbenchDocumentController(JSON_PROFILE);
+  using rule = open(controller, "entry:1", true);
+  const original = rule.text();
+  const at = original.indexOf("zt.title") + 8;
+  for (const [index, insert] of ["A", "B"].entries()) {
+    rule.view.dispatch({
+      changes: { from: at + index, insert },
+      selection: { anchor: at + index + 1 },
+      userEvent: "input.type",
+    });
+  }
+  expect(rule.text()).toBe(original.replace("zt.title", "zt.titleAB"));
+  controller.undo();
+  expect(controller.source).toBe(JSON_PROFILE);
+  expect(rule.text()).toBe(original);
+  controller.redo();
+  expect(controller.source).toBe(
+    JSON_PROFILE.replace('zt.title"', 'zt.titleAB"'),
+  );
+  expect(rule.text()).toBe(original.replace("zt.title", "zt.titleAB"));
+  expect(rule.view.state.selection.main.head).toBe(at + 2);
 });
