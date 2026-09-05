@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 
+import { jsonSyntaxTokens } from "./json-e";
 import { completionEdit, hoverHint, suggestions } from "./suggestions";
 import type { SuggestionConfig } from "./suggestions";
 
@@ -205,4 +206,63 @@ it("replaces the actual dot when a non-identifier key follows whitespace", () =>
     JSON.parse(source.slice(0, edit.from) + edit.insert + source.slice(edit.to))
       .in.$eval,
   ).toBe("obj['paper-title']");
+});
+
+function syntax(source: string) {
+  return jsonSyntaxTokens(source).map(({ from, to, kind }) => [
+    source.slice(from, to),
+    kind,
+  ]);
+}
+
+it("highlights JSON-e operators and only their contextual companion keys", () => {
+  expect(
+    syntax(
+      '{"$if":"true","then":{"then":"literal"},"else":{"$eval":"len(zt.tags)"}}',
+    ),
+  ).toEqual([
+    ["$if", "keyword"],
+    ["true", "keyword"],
+    ["then", "keyword"],
+    ["else", "keyword"],
+    ["$eval", "keyword"],
+    ["len", "functionName"],
+    ["(", "operator"],
+    ["zt", "variableName"],
+    [".", "operator"],
+    ["tags", "variableName"],
+    [")", "operator"],
+  ]);
+  expect(
+    syntax('{"$map":[],"each(item)":"${item}","$$eval":"literal"}'),
+  ).toContainEqual(["each(item)", "keyword"]);
+  expect(syntax('{"$switch":{"true":1,"$default":2}}')).toEqual([
+    ["$switch", "keyword"],
+    ["true", "keyword"],
+    ["$default", "keyword"],
+  ]);
+});
+
+it("highlights interpolation delimiters with raw escape offsets and leaves escaped interpolation literal", () => {
+  expect(syntax('{"text":"${zt.title} $${literal} ${1 + 2}"}')).toEqual([
+    ["${", "operator"],
+    ["zt", "variableName"],
+    [".", "operator"],
+    ["title", "variableName"],
+    ["}", "operator"],
+    ["${", "operator"],
+    ["1", "number"],
+    ["+", "operator"],
+    ["2", "number"],
+    ["}", "operator"],
+  ]);
+  expect(syntax(String.raw`{"\u0024eval":"zt.title"}`)[0]).toEqual([
+    String.raw`\u0024eval`,
+    "keyword",
+  ]);
+  expect(syntax('{"text":"${zt.')).toEqual([
+    ["${", "operator"],
+    ["zt", "variableName"],
+    [".", "operator"],
+  ]);
 });

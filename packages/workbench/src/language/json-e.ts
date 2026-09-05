@@ -20,6 +20,7 @@ export interface JsonExpression {
   text: string;
   offsets: number[];
   scope: Scope;
+  delimiters?: { from: number; to: number }[];
 }
 
 /** Preserve original JSON escape offsets while examining decoded expression text. */
@@ -248,6 +249,12 @@ export function jsonExpressions(
             text: decoded.text.slice(from, to),
             offsets: decoded.offsets.slice(from, to + 1),
             scope: bindings,
+            delimiters: [
+              { from: decoded.offsets[marker]!, to: decoded.offsets[from]! },
+              ...(to < decoded.text.length
+                ? [{ from: decoded.offsets[to]!, to: decoded.offsets[to + 1]! }]
+                : []),
+            ],
           });
           search = to + 1;
         }
@@ -277,6 +284,76 @@ export function jsonExpressions(
   }
   if (root) visit(root, scope);
   return result;
+}
+
+/** Semantic token ranges in source coordinates, reusable by each editor host. */
+export function jsonSyntaxTokens(source: string) {
+  const result: { from: number; to: number; kind: string }[] = [];
+  for (const expression of jsonExpressions(source, {
+    root: "note",
+    partials: [],
+  })) {
+    for (const range of expression.delimiters ?? [])
+      result.push({ ...range, kind: "operator" });
+    const tokens = jsonExpressionTokens(expression.text);
+    for (const [index, token] of tokens.entries()) {
+      const kind =
+        token.text.startsWith("'") || token.text.startsWith('"')
+          ? "string"
+          : ["true", "false", "null", "in"].includes(token.text)
+            ? "keyword"
+            : regex("^[0-9]").test(token.text)
+              ? "number"
+              : regex("^[A-Za-z_]").test(token.text)
+                ? tokens[index + 1]?.text === "("
+                  ? "functionName"
+                  : "variableName"
+                : "operator";
+      result.push({
+        from: expression.offsets[token.from]!,
+        to: expression.offsets[token.to]!,
+        kind,
+      });
+    }
+  }
+  function visit(node: Node, conditions = false) {
+    if (node.type === "object") {
+      const properties = node.children ?? [];
+      const operator = properties
+        .map((p) => p.children?.[0]?.value as string)
+        .find((key) => Object.hasOwn(jsonOperators, key));
+      const siblings = Object.keys(
+        operator ? (jsonOperators[operator]!.siblings ?? {}) : {},
+      );
+      for (const property of properties) {
+        const [key, value] = property.children ?? [];
+        if (!key) continue;
+        const name = key.value as string;
+        if (
+          conditions
+            ? name === "$default"
+            : Object.hasOwn(jsonOperators, name) ||
+              siblings.some((sibling) =>
+                sibling.includes("(")
+                  ? name.startsWith(sibling.slice(0, sibling.indexOf("(") + 1))
+                  : name === sibling,
+              )
+        ) {
+          const decoded = stringSource(source, key);
+          if (decoded.text.length)
+            result.push({
+              from: decoded.offsets[0]!,
+              to: decoded.offsets.at(-1)!,
+              kind: "keyword",
+            });
+        }
+        if (value) visit(value, name === "$switch" || name === "$match");
+      }
+    } else for (const child of node.children ?? []) visit(child);
+  }
+  const root = parseTree(source);
+  if (root) visit(root);
+  return result.sort((left, right) => left.from - right.from);
 }
 
 function jsonType(type: ContractType): string {

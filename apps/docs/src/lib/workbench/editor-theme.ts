@@ -6,9 +6,10 @@ import { templateHighlighting } from "@zotlit/workbench/language";
 export const editorTheme = [
   templateHighlighting,
   EditorView.theme({
-    ".tok-keyword, .tok-operator, .zt-liquid-delimiter, .zt-eta-delimiter": {
-      color: "var(--color-fd-primary)",
-    },
+    ".tok-keyword, .tok-functionName, .tok-operator, .zt-liquid-delimiter, .zt-eta-delimiter":
+      {
+        color: "var(--color-fd-primary)",
+      },
     ".tok-string, .tok-number, .tok-bool": {
       color: "var(--color-fd-muted-foreground)",
     },

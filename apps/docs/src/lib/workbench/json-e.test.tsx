@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
@@ -43,6 +44,11 @@ it.each([false, true])(
     );
     const editor = host.querySelector<HTMLElement>('[contenteditable="true"]')!;
     expect(host.querySelector(".tok-variableName")?.textContent).toBeTruthy();
+    expect(
+      [...host.querySelectorAll(".tok-keyword")].some(
+        (token) => token.textContent === "$eval",
+      ),
+    ).toBe(true);
     await act(async () =>
       editor.dispatchEvent(
         new KeyboardEvent("keydown", {
@@ -66,5 +72,29 @@ it.each([false, true])(
       controller.undo();
     });
     expect(controller.source).toBe(source);
+    const original = '{"$eval":"zt.ti"}';
+    const replacement = JSON.stringify(
+      // oxlint-disable-next-line unicorn/no-thenable -- JSON-e names the branch then.
+      { $if: "true", then: "${zt.title}", else: "literal" },
+      null,
+      advanced ? undefined : 2,
+    );
+    const view = EditorView.findFromDOM(editor)!;
+    const from = advanced ? source.indexOf(original) : 0;
+    await act(async () =>
+      view.dispatch({
+        changes: { from, to: from + original.length, insert: replacement },
+      }),
+    );
+    expect(
+      [...host.querySelectorAll(".tok-keyword")].some(
+        (token) => token.textContent === "then",
+      ),
+    ).toBe(true);
+    expect(
+      [...host.querySelectorAll(".tok-operator")].some(
+        (token) => token.textContent === "${",
+      ),
+    ).toBe(true);
   },
 );

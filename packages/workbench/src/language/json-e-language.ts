@@ -3,36 +3,32 @@ import { closeBrackets } from "@codemirror/autocomplete";
 import { json, jsonLanguage } from "@codemirror/lang-json";
 import { Prec } from "@codemirror/state";
 import type { Range } from "@codemirror/state";
-import { Decoration, ViewPlugin } from "@codemirror/view";
-import type { EditorView, ViewUpdate } from "@codemirror/view";
+import { Decoration, EditorView, ViewPlugin } from "@codemirror/view";
+import type { ViewUpdate } from "@codemirror/view";
 import { classHighlighter, highlightTree } from "@lezer/highlight";
-import { regex } from "arkregex";
 
-import { jsonExpressions, jsonExpressionTokens } from "./json-e";
+import { jsonSyntaxTokens } from "./json-e";
 
 export const jsonRule = [json(), closeBrackets()];
 
 export function embeddedJsonE(
-  read: () => readonly { from: number; to: number }[],
+  read: (source: string) => readonly { from: number; to: number }[],
 ) {
   function decorations(view: EditorView) {
     const marks: Range<Decoration>[] = [];
-    for (const region of read()) {
+    for (const region of read(view.state.doc.toString())) {
       const source = view.state.doc.sliceString(region.from, region.to);
-      const expressions = jsonExpressions(source, {
-        root: "note",
-        partials: [],
-      });
+      const tokens = jsonSyntaxTokens(source);
       if (!jsonLanguage.isActiveAt(view.state, region.from))
         highlightTree(
           jsonLanguage.parser.parse(source),
           classHighlighter,
           (from, to, classes) => {
-            // Split the outer string styling around expression regions.
+            // Keep the outer JSON styling around semantic JSON-e tokens.
             let start = from;
-            for (const expression of expressions) {
-              const left = expression.offsets[0]!;
-              const right = expression.offsets.at(-1)!;
+            for (const token of tokens) {
+              const left = token.from;
+              const right = token.to;
               if (right <= start || left >= to) continue;
               if (start < left)
                 marks.push(
@@ -52,37 +48,29 @@ export function embeddedJsonE(
               );
           },
         );
-      for (const expression of expressions)
-        for (const token of jsonExpressionTokens(expression.text)) {
-          const kind =
-            token.text.startsWith("'") || token.text.startsWith('"')
-              ? "string"
-              : ["true", "false", "null", "in"].includes(token.text)
-                ? "keyword"
-                : regex("^[0-9]").test(token.text)
-                  ? "number"
-                  : regex("^[A-Za-z_]").test(token.text)
-                    ? "variableName"
-                    : "operator";
-          marks.push(
-            Decoration.mark({ class: `tok-${kind}` }).range(
-              region.from + expression.offsets[token.from]!,
-              region.from + expression.offsets[token.to]!,
-            ),
-          );
-        }
+      for (const token of tokens)
+        marks.push(
+          Decoration.mark({ class: `tok-${token.kind}` }).range(
+            region.from + token.from,
+            region.from + token.to,
+          ),
+        );
     }
     return Decoration.set(marks, true);
   }
-  return Prec.highest(
-    ViewPlugin.define(
-      (view) => ({
-        decorations: decorations(view),
-        update(update: ViewUpdate) {
-          if (update.docChanged) this.decorations = decorations(update.view);
-        },
-      }),
-      { decorations: (plugin) => plugin.decorations },
+  const plugin = ViewPlugin.define((view) => ({
+    decorations: decorations(view),
+    update(update: ViewUpdate) {
+      if (update.docChanged) this.decorations = decorations(update.view);
+    },
+  }));
+  // Read regions after the document bridge updates; give only the marks precedence.
+  return [
+    plugin,
+    Prec.highest(
+      EditorView.decorations.of(
+        (view) => view.plugin(plugin)?.decorations ?? Decoration.none,
+      ),
     ),
-  );
+  ];
 }
