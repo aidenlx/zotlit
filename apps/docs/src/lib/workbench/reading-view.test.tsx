@@ -325,24 +325,24 @@ describe("the Markdown toggle", () => {
   });
 });
 
-describe("rendered highlights", () => {
-  /** A note with two highlights, each a callout the format produced. */
+describe("rendered annotations", () => {
+  /** A note with two annotations, each a callout the format produced. */
   const NOTE = [
     "# Title",
     "",
     "Intro.",
     "",
     "> [!note] Page 3",
-    "> First highlight",
+    "> First annotation",
     "",
     "> [!note] Page 5",
-    "> Second highlight",
+    "> Second annotation",
     "",
     "End.",
     "",
   ].join("\n");
-  const FIRST = "> [!note] Page 3\n> First highlight\n";
-  const SECOND = "> [!note] Page 5\n> Second highlight\n";
+  const FIRST = "> [!note] Page 3\n> First annotation\n";
+  const SECOND = "> [!note] Page 5\n> Second annotation\n";
   const marks = [FIRST, SECOND].map((output) => {
     const from = NOTE.indexOf(output);
     return { from, to: from + output.length };
@@ -362,32 +362,32 @@ describe("rendered highlights", () => {
     );
   }
 
-  it("wraps each highlight the format produced, and nothing else", () => {
+  it("wraps each annotation the format produced, and nothing else", () => {
     const blocks = [
-      ...sheet(false).querySelectorAll('[data-zt="highlight-output"]'),
+      ...sheet(false).querySelectorAll('[data-zt="annotation-output"]'),
     ].map((block) => block.textContent);
 
     expect(blocks).toHaveLength(2);
-    expect(blocks[0]).toContain("First highlight");
+    expect(blocks[0]).toContain("First annotation");
     expect(blocks[0]).not.toContain("Intro.");
-    expect(blocks[0]).not.toContain("Second highlight");
-    expect(blocks[1]).toContain("Second highlight");
+    expect(blocks[0]).not.toContain("Second annotation");
+    expect(blocks[1]).toContain("Second annotation");
     expect(blocks[1]).not.toContain("End.");
   });
 
   it("marks the same bytes in the generated Markdown", () => {
     const spans = [
-      ...sheet(true).querySelectorAll('[data-zt="highlight-output"]'),
+      ...sheet(true).querySelectorAll('[data-zt="annotation-output"]'),
     ].map((span) => span.textContent);
 
     expect(spans).toEqual([FIRST, SECOND]);
   });
 
-  it("marks nothing when no highlight was rendered", () => {
+  it("marks nothing when no annotation was rendered", () => {
     const markup = renderToStaticMarkup(
       <ResultSheet markdown={NOTE} properties={[]} showMarkdown={false} />,
     );
 
-    expect(markup).not.toContain("highlight-output");
+    expect(markup).not.toContain("annotation-output");
   });
 });

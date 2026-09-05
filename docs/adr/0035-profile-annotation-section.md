@@ -43,8 +43,8 @@ edits, one undo history, and the invalid-draft rules of
 [ADR 0032](0032-web-workbench-edits-one-source-document.md).
 The Workbench work under [#863](https://github.com/aidenlx/zotlit/issues/863)
 owns that UI implementation and its interaction tests.
-[ADR 0037](0037-highlight-box-opens-on-the-highlight-it-produces.md) amends
-that editor's Basic-mode face: it opens on the rendered highlight, the
+[ADR 0037](0037-annotation-box-opens-on-the-annotation-it-produces.md) amends
+that editor's Basic-mode face: it opens on the rendered annotation, the
 result column keeps the whole note, and a note without a call gets one in
 place.
 

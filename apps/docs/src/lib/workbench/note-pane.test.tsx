@@ -20,10 +20,8 @@ const TWO_CALLS = DEFAULT_PROFILE_SOURCE.replace(
 interface OpenPane extends Disposable {
   controller: WorkbenchDocumentController;
   host: HTMLElement;
-  /** How many times a later call asked for the one highlight editor. */
+  /** How many times a later call asked for the one annotation editor. */
   opened: () => number;
-  /** How many times the box asked for the section in Source. */
-  sourced: () => number;
   /** What the box last told the host about the reader being at the format. */
   emphasis: () => boolean | null;
   /** The box's two faces, by whether each is the one the reader can use. */
@@ -32,7 +30,7 @@ interface OpenPane extends Disposable {
 }
 
 interface PaneOptions {
-  /** The one highlight the render produced, or null for a sample without. */
+  /** The one annotation the render produced, or null for a sample without. */
   preview?: string | null;
   /** The render's own complaint about the format. */
   formatProblem?: string | null;
@@ -43,7 +41,7 @@ interface PaneOptions {
 function openPane(
   source: string,
   {
-    preview = "> One highlight",
+    preview = "> One annotation",
     formatProblem = null,
     count = 3,
   }: PaneOptions = {},
@@ -53,7 +51,6 @@ function openPane(
   document.body.appendChild(host);
   const root = createRoot(host);
   let opened = 0;
-  let sourced = 0;
   let emphasis: boolean | null = null;
   act(() => {
     root.render(
@@ -62,8 +59,7 @@ function openPane(
         preview={preview}
         formatProblem={formatProblem}
         count={count}
-        onOpenHighlight={() => (opened += 1)}
-        onOpenSource={() => (sourced += 1)}
+        onOpenAnnotation={() => (opened += 1)}
         onEmphasis={(on) => (emphasis = on)}
         onEditing={() => {}}
       />,
@@ -73,7 +69,6 @@ function openPane(
     controller,
     host,
     opened: () => opened,
-    sourced: () => sourced,
     emphasis: () => emphasis,
     faces: () => ({
       preview: !host
@@ -105,17 +100,22 @@ function labels(host: HTMLElement): string[] {
 }
 
 describe("the Your note tab", () => {
-  it("opens the highlight editor at the first render call", () => {
+  it("opens the annotation editor at the first render call", () => {
     using pane = openPane(DEFAULT_PROFILE_SOURCE);
 
-    expect(pane.host.textContent).toContain(m.workbench_highlight_label());
+    // What the slot does comes first, the format it uses second.
+    const text = pane.host.textContent;
+    expect(text).toContain(m.workbench_annotation_slot());
+    expect(text.indexOf(m.workbench_annotation_slot())).toBeLessThan(
+      text.indexOf(m.workbench_annotation_label()),
+    );
     expect(labels(pane.host)).toEqual([
       m.workbench_tab_note(),
-      m.workbench_highlight_label(),
+      m.workbench_annotation_label(),
     ]);
     // The box edits the Annotation Section of the same document.
     const editor = pane.host.querySelector(
-      `[aria-label="${m.workbench_highlight_label()}"]`,
+      `[aria-label="${m.workbench_annotation_label()}"]`,
     )!;
     expect(editor.textContent).toContain("{% bq %}");
   });
@@ -136,8 +136,8 @@ describe("the Your note tab", () => {
     using pane = openPane(TWO_CALLS);
     const links = [...pane.host.querySelectorAll("button")].filter(
       (button) =>
-        button.textContent === m.workbench_highlight_label() &&
-        button.title === m.workbench_highlight_chip_hint(),
+        button.textContent === m.workbench_annotation_slot() &&
+        button.title === m.workbench_annotation_chip_hint(),
     );
 
     // Two calls, one editor: the second call carries the name and the way back.
@@ -150,7 +150,7 @@ describe("the Your note tab", () => {
     expect(pane.opened()).toBe(1);
   });
 
-  it("shows one rendered highlight first, and the format's source on request", () => {
+  it("shows one rendered annotation first, and the format's source on request", () => {
     using pane = openPane(DEFAULT_PROFILE_SOURCE, {
       preview: "> Marked text from the paper",
     });
@@ -158,26 +158,28 @@ describe("the Your note tab", () => {
     expect(pane.host.textContent).toContain("Marked text from the paper");
     expect(pane.faces()).toEqual({ preview: true, source: false });
 
-    pane.press(m.workbench_highlight_edit_format());
+    pane.press(m.workbench_annotation_edit_format());
     expect(pane.faces()).toEqual({ preview: false, source: true });
 
-    pane.press(m.workbench_highlight_done());
+    pane.press(m.workbench_annotation_done());
     expect(pane.faces()).toEqual({ preview: true, source: false });
   });
 
   it("folds to its name and back without losing the format's source", () => {
     using pane = openPane(DEFAULT_PROFILE_SOURCE);
     const fold = pane.host.querySelector<HTMLButtonElement>(
-      "[data-highlight-box] [aria-expanded]",
+      "[data-annotation-box] [aria-expanded]",
     )!;
     const body = () =>
       pane.host.querySelector("[data-face=preview]")!.parentElement!;
 
     expect(fold.getAttribute("aria-expanded")).toBe("true");
-    expect(fold.getAttribute("aria-label")).toBe(m.workbench_highlight_close());
+    expect(fold.getAttribute("aria-label")).toBe(
+      m.workbench_annotation_close(),
+    );
     act(() => fold.click());
     expect(fold.getAttribute("aria-expanded")).toBe("false");
-    expect(fold.getAttribute("aria-label")).toBe(m.workbench_highlight_edit());
+    expect(fold.getAttribute("aria-label")).toBe(m.workbench_annotation_edit());
     expect(body().hidden || body().classList.contains("hidden")).toBe(true);
     // Both editors stay mounted, so nothing typed in the format is lost.
     expect(labels(pane.host)).toHaveLength(2);
@@ -185,32 +187,30 @@ describe("the Your note tab", () => {
     expect(fold.getAttribute("aria-expanded")).toBe("true");
   });
 
-  it("says how many highlights the one format is used for", () => {
+  it("says how many annotations the one format is used for", () => {
     using pane = openPane(DEFAULT_PROFILE_SOURCE, { count: 12 });
 
     expect(pane.host.textContent).toContain(
-      m.workbench_highlight_count({ count: 12 }),
+      m.workbench_annotation_count({ count: 12 }),
     );
   });
 
-  it("keeps the real call and the way to Source beside the box", () => {
+  it("shows the real call under its name", () => {
     using pane = openPane(DEFAULT_PROFILE_SOURCE);
 
     expect(pane.host.textContent).toContain(
       "{% render_annotation annotation %}",
     );
-    pane.press(m.workbench_highlight_open_source());
-    expect(pane.sourced()).toBe(1);
   });
 
-  it("points at the sample when it has no highlights", () => {
+  it("points at the sample when it has no annotations", () => {
     using pane = openPane(DEFAULT_PROFILE_SOURCE, { preview: null, count: 0 });
 
     expect(pane.host.textContent).toContain(
-      m.workbench_highlight_preview_empty(),
+      m.workbench_annotation_preview_empty(),
     );
-    expect(pane.host.textContent).toContain(m.workbench_highlight_lede());
-    pane.press(m.workbench_highlight_edit_format());
+    expect(pane.host.textContent).toContain(m.workbench_annotation_label());
+    pane.press(m.workbench_annotation_edit_format());
     expect(pane.faces().source).toBe(true);
   });
 
@@ -220,13 +220,13 @@ describe("the Your note tab", () => {
     });
 
     expect(pane.host.textContent).toContain("Unknown filter: shout");
-    pane.press(m.workbench_highlight_fix());
+    pane.press(m.workbench_annotation_fix());
     expect(pane.faces().source).toBe(true);
   });
 
   it("tells the host while the reader is at the format", () => {
     using pane = openPane(DEFAULT_PROFILE_SOURCE);
-    const box = pane.host.querySelector("[data-highlight-box]")!;
+    const box = pane.host.querySelector("[data-annotation-box]")!;
 
     act(() => {
       box.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));

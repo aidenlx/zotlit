@@ -116,12 +116,12 @@ const PROBLEM_WHERE: Partial<Record<WorkbenchSliceId, () => string>> = {
 const WIDE_LAYOUT = "(min-width: 780px)";
 
 /**
- * The call a note without one is given: the format once per highlight, in
+ * The call a note without one is given: the format once per annotation, in
  * each language the Profile can be written in.
  */
-const HIGHLIGHTS_LOOP =
+const ANNOTATIONS_LOOP =
   "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n";
-const ETA_HIGHLIGHTS_LOOP =
+const ETA_ANNOTATIONS_LOOP =
   "<% for (const annotation of zt.annotations) { %>\n<%~ renderAnnotation(annotation) %>\n<% } %>\n";
 
 export function Workbench() {
@@ -150,11 +150,13 @@ export function Workbench() {
   const [advanced, setAdvanced] = useState(false);
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
   // Which of the note tab's two editors the reader is in, and where the
-  // highlight box opens when they are sent to it from elsewhere.
+  // annotation box opens when they are sent to it from elsewhere.
   const [noteEditor, setNoteEditor] = useState<NoteEditor>("note");
-  const [highlight, setHighlight] = useState<WorkbenchSliceRange | null>(null);
-  // The reader is at the highlight box, so the result column points at every
-  // highlight the one format produced.
+  const [annotation, setAnnotation] = useState<WorkbenchSliceRange | null>(
+    null,
+  );
+  // The reader is at the annotation box, so the result column points at every
+  // annotation the one format produced.
   const [emphasis, setEmphasis] = useState(false);
   // A sentence about the edit just made, which the next edit retires. It is
   // stamped with the revision it belongs to, because the edit that earns it
@@ -256,7 +258,7 @@ export function Workbench() {
   useEffect(() => {
     if (scrolledToOutput.current || advanced || tab !== "note") return;
     const first = resultRegion.current?.querySelector<HTMLElement>(
-      '[data-zt="highlight-output"]',
+      '[data-zt="annotation-output"]',
     );
     if (!first) return;
     scrolledToOutput.current = true;
@@ -347,7 +349,7 @@ export function Workbench() {
   );
 
   const problem = controller.problems[0];
-  // The format's own complaint is shown in the highlight box, so the result
+  // The format's own complaint is shown in the annotation box, so the result
   // column reports everything else.
   const previewProblem = result?.diagnostics.find(
     ({ part }) => part !== "annotation",
@@ -395,7 +397,7 @@ export function Workbench() {
   // The note itself, which is the one result an update rewrites part of, so the
   // update-only Managed Region is offered beside it and nowhere else.
   const showNote = !(!advanced && tab === "properties");
-  // The render's complaint about the format alone, shown in the highlight box
+  // The render's complaint about the format alone, shown in the annotation box
   // where the format is edited rather than in the result column.
   const formatProblem = result?.diagnostics.find(
     ({ part }) => part === "annotation",
@@ -450,36 +452,36 @@ export function Workbench() {
   }
 
   /**
-   * Opens the one editor over the Annotation Section: the highlight box at the
+   * Opens the one editor over the Annotation Section: the annotation box at the
    * first render call, with the format's source showing.
    */
-  function openHighlight() {
+  function openAnnotation() {
     const section = controller.annotationSection;
     if (!section || controller.noteRegions.annotationCalls.length === 0) return;
     setView("edit");
     setAdvanced(false);
     setTab("note");
     setNoteEditor("annotation");
-    setHighlight({ from: section.source.from, to: section.source.from });
+    setAnnotation({ from: section.source.from, to: section.source.from });
   }
 
   /**
    * Gives a note that calls the format nowhere its call: the loop over every
-   * highlight, put where the reader left the caret, so the box opens in the
+   * annotation, put where the reader left the caret, so the box opens in the
    * note. A document that also lacks the section is given one first, and told.
    */
-  function insertHighlights() {
+  function insertAnnotations() {
     const repaired = controller.repairAnnotationSection();
     const language = controller.document?.manifest.language;
     insertSnippet(controller, "note", {
       target: caret,
-      snippet: language === "eta" ? ETA_HIGHLIGHTS_LOOP : HIGHLIGHTS_LOOP,
+      snippet: language === "eta" ? ETA_ANNOTATIONS_LOOP : ANNOTATIONS_LOOP,
     });
     // Both edits have told the subscriber by now, so the sentence is stamped
     // with the revision the reader is looking at.
     if (repaired) {
       setNotice({
-        text: m.workbench_highlight_section_added(),
+        text: m.workbench_annotation_section_added(),
         revision: latestRevision.current,
       });
     }
@@ -488,16 +490,8 @@ export function Workbench() {
     setTab("note");
   }
 
-  /** Opens the Annotation Section as source, in Source mode, at its header. */
-  function openSource() {
-    const section = controller.annotationSection;
-    setView("edit");
-    setAdvanced(true);
-    setReveal(section ? { ...section.header } : null);
-  }
-
-  // The field list follows the pane the reader is in: the highlight box renders
-  // one highlight, the note name renders the filename, and every rule and the
+  // The field list follows the pane the reader is in: the annotation box renders
+  // one annotation, the note name renders the filename, and every rule and the
   // note itself render the note. Advanced holds the whole file, so there alone
   // the caret says which root the reader is writing against.
   const root = useMemo(
@@ -591,7 +585,7 @@ export function Workbench() {
     setNoteEditor("note");
     setOpenRow(null);
     setReveal(null);
-    setHighlight(null);
+    setAnnotation(null);
     setCaret({ from: 0, to: 0 });
   }
 
@@ -1091,7 +1085,7 @@ export function Workbench() {
                     <NotePane
                       controller={controller}
                       reveal={reveal}
-                      highlight={highlight}
+                      annotation={annotation}
                       suggest={suggest}
                       preview={result?.annotation ?? null}
                       formatProblem={
@@ -1099,13 +1093,12 @@ export function Workbench() {
                       }
                       count={sample.roots.annotations.length}
                       onSelection={trackSelection}
-                      onOpenHighlight={openHighlight}
-                      onOpenSource={openSource}
+                      onOpenAnnotation={openAnnotation}
                       onEmphasis={setEmphasis}
                       onEditing={setNoteEditor}
                     />
                     {controller.noteRegions.annotationCalls.length === 0 && (
-                      <AnnotationPointer onInsert={insertHighlights} />
+                      <AnnotationPointer onInsert={insertAnnotations} />
                     )}
                   </>
                 )}
