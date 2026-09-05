@@ -2,7 +2,7 @@
 // own expression through a slice of the master document, and the result column
 // that shows what every row produced beside the frontmatter the note gets.
 
-import { ArrowDown, ArrowUp, ChevronDown, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { entrySlice } from "@zotlit/workbench/document";
@@ -14,12 +14,6 @@ import type {
 import type { RenderedProperty } from "@zotlit/workbench/render";
 
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   NativeSelect,
@@ -151,33 +145,117 @@ export function PropertiesPane({
               key={entry.position}
               className="rounded-md border border-fd-border bg-fd-card"
             >
-              <button
-                type="button"
-                aria-expanded={open}
-                aria-controls={`property-${entry.position}`}
-                onClick={() => onSelect(open ? null : entry.position)}
-                className="flex w-full cursor-pointer items-start gap-3 rounded-md px-4 py-3 text-start hover:bg-fd-muted"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block font-mono text-sm font-medium break-words">
-                    {entry.key ?? m.workbench_properties_spread()}
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] px-3 py-2">
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  aria-controls={`property-${entry.position}`}
+                  onClick={() => onSelect(open ? null : entry.position)}
+                  className="col-span-2 col-start-1 row-start-1 grid min-w-0 cursor-pointer grid-cols-subgrid rounded-md text-start"
+                >
+                  <span className="col-start-1 row-start-1 flex min-h-7 min-w-0 items-center gap-2 pe-2">
+                    <span className="min-w-0 flex-1 font-mono text-sm font-medium break-words">
+                      {entry.key ?? m.workbench_properties_spread()}
+                    </span>
+                    {raised.length > 0 && (
+                      <span className="text-xs font-medium">
+                        {m.workbench_properties_row_problem()}
+                      </span>
+                    )}
                   </span>
-                  <span
-                    className={`mt-1 block text-sm break-words text-fd-muted-foreground ${open ? "" : "line-clamp-2"}`}
+                  {summarize(entry, fields, fold) && (
+                    <span
+                      className={`col-span-2 col-start-1 row-start-2 block min-w-0 text-sm break-words text-fd-muted-foreground ${open ? "" : "line-clamp-2"}`}
+                      title={summarize(entry, fields, fold)}
+                    >
+                      {summarize(entry, fields, fold)}
+                    </span>
+                  )}
+                </button>
+                <div className="z-10 col-start-2 row-start-1 flex items-center gap-0.5 self-start">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 aria-pressed:bg-fd-muted"
+                    aria-label={m.workbench_properties_edit()}
+                    title={m.workbench_properties_edit()}
+                    aria-pressed={open}
+                    aria-expanded={open}
+                    aria-controls={`property-${entry.position}`}
+                    onClick={() => onSelect(open ? null : entry.position)}
                   >
-                    {summarize(entry, fields, fold)}
-                  </span>
-                </span>
-                {raised.length > 0 && (
-                  <span className="text-xs font-medium">
-                    {m.workbench_properties_row_problem()}
-                  </span>
-                )}
-                <ChevronDown
-                  aria-hidden
-                  className={`mt-1 size-4 shrink-0 ${open ? "rotate-180" : ""}`}
-                />
-              </button>
+                    <Pencil aria-hidden />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    aria-label={m.workbench_properties_add_override()}
+                    title={m.workbench_properties_add_override()}
+                    onClick={() => add("property", entry.position)}
+                  >
+                    <Plus aria-hidden />
+                  </Button>
+                  {([-1, 1] as const).map((by) => {
+                    const label =
+                      by === -1
+                        ? m.workbench_properties_move_up()
+                        : m.workbench_properties_move_down();
+                    return (
+                      <Button
+                        key={by}
+                        variant="ghost"
+                        size="icon"
+                        className="size-7"
+                        aria-label={label}
+                        title={label}
+                        disabled={
+                          by === -1
+                            ? entry.position === 1
+                            : entry.position === entries.length
+                        }
+                        onClick={() => {
+                          if (
+                            controller.editManagedEntry({
+                              action: "move",
+                              position: entry.position,
+                              by,
+                            })
+                          ) {
+                            if (open) onSelect(entry.position + by);
+                            else if (selected === entry.position + by)
+                              onSelect(entry.position);
+                          }
+                        }}
+                      >
+                        {by === -1 ? (
+                          <ArrowUp aria-hidden />
+                        ) : (
+                          <ArrowDown aria-hidden />
+                        )}
+                      </Button>
+                    );
+                  })}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    aria-label={m.workbench_properties_remove()}
+                    title={m.workbench_properties_remove()}
+                    onClick={() => {
+                      controller.editManagedEntry({
+                        action: "remove",
+                        position: entry.position,
+                      });
+                      if (open) onSelect(null);
+                      else if (selected !== null && selected > entry.position)
+                        onSelect(selected - 1);
+                    }}
+                  >
+                    <Trash2 aria-hidden />
+                  </Button>
+                </div>
+              </div>
               {open && (
                 <EntryForm
                   key={`${entry.position}:${entry.language}`}
@@ -186,25 +264,6 @@ export function PropertiesPane({
                   produced={fields}
                   diagnostics={raised}
                   focusName={newRow === entry.position}
-                  onAdded={() => add("property", entry.position)}
-                  onMove={(by) => {
-                    if (
-                      controller.editManagedEntry({
-                        action: "move",
-                        position: entry.position,
-                        by,
-                      })
-                    )
-                      onSelect(entry.position + by);
-                  }}
-                  onRemove={() => {
-                    controller.editManagedEntry({
-                      action: "remove",
-                      position: entry.position,
-                    });
-                    onSelect(null);
-                  }}
-                  last={entry.position === entries.length}
                   reveal={reveal}
                   onSelection={onSelection}
                   suggest={suggest}
@@ -219,17 +278,10 @@ export function PropertiesPane({
           <Plus aria-hidden />
           {m.workbench_properties_add()}
         </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" />}>
-            {m.workbench_properties_more_ways()}
-            <ChevronDown aria-hidden />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={() => add("spread")}>
-              {m.workbench_properties_add_spread()}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button variant="ghost" onClick={() => add("spread")}>
+          <Plus aria-hidden />
+          {m.workbench_properties_add_spread()}
+        </Button>
       </div>
     </div>
   );
@@ -241,26 +293,18 @@ interface EntryFormProps {
   produced: readonly RenderedProperty[];
   diagnostics: readonly EntryDiagnostic[];
   focusName: boolean;
-  onAdded: () => void;
-  onMove: (by: -1 | 1) => void;
-  onRemove: () => void;
-  last: boolean;
   reveal?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
   suggest?: SuggestionSource;
 }
 
-/** Edit the name and value first; disclose update behavior and row operations. */
+/** Edit the name, value, and update behavior of a property. */
 function EntryForm({
   controller,
   entry,
   produced,
   diagnostics,
   focusName,
-  onAdded,
-  onMove,
-  onRemove,
-  last,
   reveal,
   onSelection,
   suggest,
@@ -427,66 +471,32 @@ function EntryForm({
           ))}
         </div>
       )}
-      <details>
-        <summary className="cursor-pointer py-1 text-sm text-fd-muted-foreground">
-          {m.workbench_properties_update_options()}
-        </summary>
-        <div className="mt-3 flex flex-col gap-3">
-          <label className="flex flex-col gap-1.5 text-sm">
-            {m.workbench_properties_merge()}
-            <NativeSelect
-              value={entry.merge}
-              onChange={(event) =>
-                controller.editManagedEntry({
-                  action: "set",
-                  position: entry.position,
-                  field: "merge",
-                  value: event.target.value,
-                })
-              }
-              className="w-full"
-            >
-              {Object.entries(MERGE_LABEL).map(([value, label]) => (
-                <NativeSelectOption key={value} value={value}>
-                  {label()}
-                </NativeSelectOption>
-              ))}
-            </NativeSelect>
-          </label>
-          <p className="text-sm text-fd-muted-foreground">
-            {m.workbench_properties_override_hint()}
-          </p>
-        </div>
-      </details>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={<Button variant="outline" className="self-start" />}
-        >
-          {m.workbench_properties_options()}
-          <ChevronDown aria-hidden />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuItem onClick={onAdded}>
-            <Plus aria-hidden />
-            {m.workbench_properties_add_override()}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={entry.position === 1}
-            onClick={() => onMove(-1)}
+      <div className="flex flex-col gap-3">
+        <label className="flex flex-col gap-1.5 text-sm">
+          {m.workbench_properties_merge()}
+          <NativeSelect
+            value={entry.merge}
+            onChange={(event) =>
+              controller.editManagedEntry({
+                action: "set",
+                position: entry.position,
+                field: "merge",
+                value: event.target.value,
+              })
+            }
+            className="w-full"
           >
-            <ArrowUp aria-hidden />
-            {m.workbench_properties_move_up()}
-          </DropdownMenuItem>
-          <DropdownMenuItem disabled={last} onClick={() => onMove(1)}>
-            <ArrowDown aria-hidden />
-            {m.workbench_properties_move_down()}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={onRemove}>
-            <Trash2 aria-hidden />
-            {m.workbench_properties_remove()}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            {Object.entries(MERGE_LABEL).map(([value, label]) => (
+              <NativeSelectOption key={value} value={value}>
+                {label()}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </label>
+        <p className="text-sm text-fd-muted-foreground">
+          {m.workbench_properties_override_hint()}
+        </p>
+      </div>
     </div>
   );
 }

@@ -800,7 +800,7 @@ export function Workbench() {
 
       <main
         id="workbench-editor"
-        className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 min-[780px]:grid min-[780px]:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] min-[780px]:gap-5 min-[780px]:px-6 min-[1180px]:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,0.85fr)]"
+        className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 min-[780px]:grid min-[780px]:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] min-[780px]:gap-5 min-[780px]:px-6 min-[1180px]:grid-cols-[minmax(18rem,0.75fr)_minmax(0,1fr)_minmax(0,0.85fr)]"
       >
         {/* The two the narrow screen shows one of. The pane and the result are
             columns of their own once there is room for both. */}

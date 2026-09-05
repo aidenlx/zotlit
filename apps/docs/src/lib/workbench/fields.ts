@@ -36,8 +36,7 @@ export interface CommonField {
 }
 
 /**
- * The rows each root leads with. Everything outside these lists is one select
- * away, under "Everything else from Zotero".
+ * Familiar labels and preferred order for common fields in each root.
  */
 const COMMON_FIELDS: Record<TemplateRoot, readonly CommonField[]> = {
   note: [
