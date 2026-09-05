@@ -1,5 +1,5 @@
-// One Profile Selection Rule editor: Library scope, flat item-type
-// conditions, and the target Profile.
+// One Profile Selection Rule editor: Library scope, flat item-type,
+// Collection, and Tag conditions, and the target Profile.
 import { customAlphabet } from "nanoid";
 import { Modal, Setting } from "obsidian";
 
@@ -14,17 +14,20 @@ import type {
   LibrarySelector,
 } from "@/services/library-scope/scope";
 import {
+  collectionLabel,
   compileCondition,
   describeProblem,
   flatConditions,
   formatCondition,
   itemTypeLabel,
+  listCollectionChoices,
   MATCH_ALL_EXPRESSION,
 } from "@/services/profile-selection";
 import type {
+  CollectionChoice,
   ConditionProblem,
+  FlatCondition,
   ProfileSelectionRule,
-  RuleCondition,
 } from "@/services/profile-selection";
 
 import type { SettingTabContext } from "./context";
@@ -34,10 +37,10 @@ const mintId = customAlphabet(
   12,
 );
 
-type FlatCondition = Extract<RuleCondition, { kind: "item-type" }>;
-
 /** What a fresh condition tests: the type the ticketed example starts from. */
 const DEFAULT_ITEM_TYPE = "book";
+
+type ConditionKind = FlatCondition["kind"];
 
 /** The editor's mutable draft, rebuilt into a row set on every change. */
 interface RuleDraft {
@@ -73,11 +76,15 @@ export class ProfileSelectionRuleModal extends Modal {
   readonly result = this.#decision.promise;
   #draft: RuleDraft;
 
+  /** The Collections the database offers, read once when the dialog opens. */
+  readonly #collections: readonly CollectionChoice[];
+
   constructor(ctx: SettingTabContext, rule?: ProfileSelectionRule) {
     super(ctx.app);
     this.#ctx = ctx;
     this.#rule = rule;
     this.#draft = initialDraft(rule);
+    this.#collections = availableCollections(ctx);
   }
 
   override onOpen(): void {
@@ -206,7 +213,7 @@ export class ProfileSelectionRuleModal extends Modal {
     const draft = this.#draft;
     new Setting(body)
       .setName(m.settings_profile_rule_conditions())
-      .setDesc(m.settings_profile_rule_conditions_desc())
+      .setDesc(conditionsDesc())
       .setHeading();
     if (!draft.flat) {
       new Setting(body)
@@ -219,8 +226,19 @@ export class ProfileSelectionRuleModal extends Modal {
       const setting = new Setting(body);
       setting.addDropdown((dropdown) =>
         dropdown
-          .addOption("itemType", m.settings_profile_rule_condition_item_type())
-          .setValue("itemType"),
+          .addOption("item-type", m.settings_profile_rule_condition_item_type())
+          .addOption(
+            "collection",
+            m.settings_profile_rule_condition_collection(),
+          )
+          .addOption("tag", m.settings_profile_rule_condition_tag())
+          .setValue(condition.kind)
+          .onChange((value) => {
+            this.#replaceCondition(
+              index,
+              this.#freshCondition(value as ConditionKind, condition.negated),
+            );
+          }),
       );
       setting.addDropdown((dropdown) =>
         dropdown
@@ -228,16 +246,23 @@ export class ProfileSelectionRuleModal extends Modal {
           .addOption("is-not", m.settings_profile_rule_operator_is_not())
           .setValue(condition.negated ? "is-not" : "is")
           .onChange((value) =>
-            this.#updateCondition(index, { negated: value === "is-not" }),
+            this.#replaceCondition(index, {
+              ...condition,
+              negated: value === "is-not",
+            }),
           ),
       );
-      setting.addDropdown((dropdown) => {
-        for (const itemType of ITEM_TYPES)
-          dropdown.addOption(itemType.name, itemTypeLabel(itemType.name));
-        dropdown.setValue(condition.itemType).onChange((value) => {
-          this.#updateCondition(index, { itemType: value });
-        });
-      });
+      switch (condition.kind) {
+        case "item-type":
+          this.#renderItemTypeValue(setting, index, condition);
+          break;
+        case "collection":
+          this.#renderCollectionValue(setting, index, condition);
+          break;
+        case "tag":
+          this.#renderTagValue(setting, index, condition);
+          break;
+      }
       setting.addExtraButton((button) =>
         button
           .setIcon("x")
@@ -256,21 +281,134 @@ export class ProfileSelectionRuleModal extends Modal {
           this.#update({
             conditions: [
               ...draft.conditions,
-              {
-                kind: "item-type",
-                negated: false,
-                itemType: DEFAULT_ITEM_TYPE,
-              },
+              this.#freshCondition("item-type", false),
             ],
           }),
         ),
     );
   }
 
-  #updateCondition(index: number, patch: Partial<FlatCondition>): void {
+  #renderItemTypeValue(
+    setting: Setting,
+    index: number,
+    condition: Extract<FlatCondition, { kind: "item-type" }>,
+  ): void {
+    setting.addDropdown((dropdown) => {
+      for (const itemType of ITEM_TYPES)
+        dropdown.addOption(itemType.name, itemTypeLabel(itemType.name));
+      dropdown.setValue(condition.itemType).onChange((value) => {
+        this.#replaceCondition(index, { ...condition, itemType: value });
+      });
+    });
+  }
+
+  /**
+   * The Collection selector names every Collection by its Library and path.
+   * A reference the database no longer holds stays selected, flagged, so
+   * the user can see what the rule pointed at before choosing a replacement.
+   */
+  #renderCollectionValue(
+    setting: Setting,
+    index: number,
+    condition: Extract<FlatCondition, { kind: "collection" }>,
+  ): void {
+    const choices = this.#collections;
+    const current = collectionValue(condition);
+    const known = choices.some((choice) => collectionValue(choice) === current);
+    setting.setErrorMessage(
+      known
+        ? null
+        : choices.length === 0
+          ? m.settings_profile_rule_collection_none()
+          : m.settings_profile_rule_collection_missing(),
+    );
+    setting.addDropdown((dropdown) => {
+      for (const choice of choices)
+        dropdown.addOption(
+          collectionValue(choice),
+          collectionLabel(choice, {
+            libraries: this.#ctx.libraryScope.libraries,
+            collections: choices,
+          }),
+        );
+      if (!known)
+        dropdown.addOption(
+          current,
+          collectionLabel(condition, {
+            libraries: this.#ctx.libraryScope.libraries,
+          }),
+        );
+      dropdown.setValue(current).onChange((value) => {
+        const choice = choices.find(
+          (candidate) => collectionValue(candidate) === value,
+        );
+        if (!choice) return;
+        this.#replaceCondition(index, {
+          ...condition,
+          library: choice.library,
+          key: choice.key,
+        });
+      });
+    });
+    setting.addDropdown((dropdown) =>
+      dropdown
+        .addOption(
+          "descendants",
+          m.settings_profile_rule_collection_descendants(),
+        )
+        .addOption("direct", m.settings_profile_rule_collection_direct())
+        .setValue(condition.descendants ? "descendants" : "direct")
+        .onChange((value) =>
+          this.#replaceCondition(index, {
+            ...condition,
+            descendants: value === "descendants",
+          }),
+        ),
+    );
+  }
+
+  #renderTagValue(
+    setting: Setting,
+    index: number,
+    condition: Extract<FlatCondition, { kind: "tag" }>,
+  ): void {
+    setting.setErrorMessage(
+      condition.name === "" ? m.settings_profile_rule_tag_empty() : null,
+    );
+    setting.addText((text) =>
+      text
+        .setPlaceholder(m.settings_profile_rule_tag_placeholder())
+        .setValue(condition.name)
+        .onChange((value) =>
+          this.#replaceCondition(index, { ...condition, name: value }),
+        ),
+    );
+  }
+
+  /** A condition of `kind` at its starting value, keeping the operator. */
+  #freshCondition(kind: ConditionKind, negated: boolean): FlatCondition {
+    switch (kind) {
+      case "item-type":
+        return { kind, negated, itemType: DEFAULT_ITEM_TYPE };
+      case "collection": {
+        const first = this.#collections[0];
+        return {
+          kind,
+          negated,
+          library: first?.library ?? { type: "personal" },
+          key: first?.key ?? "",
+          descendants: true,
+        };
+      }
+      case "tag":
+        return { kind, negated, name: "" };
+    }
+  }
+
+  #replaceCondition(index: number, next: FlatCondition): void {
     this.#update({
       conditions: this.#draft.conditions.map((condition, at) =>
-        at === index ? { ...condition, ...patch } : condition,
+        at === index ? next : condition,
       ),
     });
   }
@@ -278,7 +416,8 @@ export class ProfileSelectionRuleModal extends Modal {
   #renderButtons(body: HTMLElement): void {
     const draft = this.#draft;
     const invalid =
-      draft.scope.mode === "selected" && draft.scope.libraries.length === 0;
+      (draft.scope.mode === "selected" && draft.scope.libraries.length === 0) ||
+      draft.conditions.some((condition) => !this.#complete(condition));
     new Setting(body)
       .addButton((button) =>
         button
@@ -297,6 +436,20 @@ export class ProfileSelectionRuleModal extends Modal {
           this.close();
         }),
       );
+  }
+
+  /** Whether a row names something the rule can be saved with. */
+  #complete(condition: FlatCondition): boolean {
+    switch (condition.kind) {
+      case "item-type":
+        return true;
+      case "collection":
+        return this.#collections.some(
+          (choice) => collectionValue(choice) === collectionValue(condition),
+        );
+      case "tag":
+        return condition.name !== "";
+    }
   }
 
   #toRule(): ProfileSelectionRule {
@@ -395,6 +548,30 @@ function addableLibraries(
   return ctx.libraryScope.libraries.filter(
     (library) => !selected.has(selectorKey(library.selector)),
   );
+}
+
+/** Every Collection of every available Library; none while the database is unreadable. */
+function availableCollections(ctx: SettingTabContext): CollectionChoice[] {
+  if (ctx.db.state !== "ready") return [];
+  return listCollectionChoices(ctx.db.client, ctx.libraryScope.libraries);
+}
+
+/** The dropdown value of a Collection: its portable reference. */
+function collectionValue(reference: {
+  library: LibrarySelector;
+  key: string;
+}): string {
+  return `${selectorKey(reference.library)}/${reference.key}`;
+}
+
+function conditionsDesc(): DocumentFragment {
+  const desc = createFragment();
+  desc.append(m.settings_profile_rule_conditions_desc());
+  desc.append(createEl("br"));
+  desc.append(m.settings_profile_rule_collection_help());
+  desc.append(createEl("br"));
+  desc.append(m.settings_profile_rule_tag_help());
+  return desc;
 }
 
 function expressionDesc(problem: ConditionProblem | null): DocumentFragment {
