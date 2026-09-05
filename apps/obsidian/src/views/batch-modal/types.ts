@@ -27,7 +27,7 @@ export interface BatchCounts {
 /** One shared creation destination; the runner owns its current selection. */
 export interface BatchProfileChoice {
   readonly label: string;
-  readonly source: "headless" | "last-used" | "bound" | "asked";
+  readonly source: "headless" | "bound" | "asked";
   choose(): Promise<void>;
 }
 

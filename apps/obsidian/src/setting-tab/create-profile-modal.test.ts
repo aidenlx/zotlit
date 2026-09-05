@@ -4,13 +4,16 @@ import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { BaseNotice } from "@/lib/notice";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { PreparedProfileCreation } from "@/services/profile/service";
 import { defaults } from "@/services/settings/schema";
 
-import { CreateProfileModal, renderProfileCreatedNotice } from "./profiles";
+import { CreateProfileModal } from "./profiles";
 import type { ProfileCreationDeps } from "./profiles";
+
+vi.mock("@/lib/notice", () => ({ BaseNotice: vi.fn() }));
 
 const id = "Bk3Qn7XvT2Lp" as ProfileId;
 function fixture() {
@@ -38,7 +41,6 @@ function fixture() {
     create,
   };
   const prepareCreate = vi.fn(async () => draft);
-  const update = vi.fn();
   const preview = {
     path: "Reading/Paper-7cx.md",
     properties: {
@@ -53,11 +55,10 @@ function fixture() {
     profile: { ...profileReader(), prepareCreate },
     template: { prepareLiteratureNoteTemplateSource: () => ({}) },
     noteFeature: { prepareProfileNote: () => preview },
-    settings: { update },
     zoteroPref: { dataDir: null },
     loadData: async () => null,
   } as unknown as ProfileCreationDeps;
-  return { deps, draft, create, prepareCreate, update, preview };
+  return { deps, draft, create, prepareCreate, preview };
 }
 
 it("shows the preview while refusing a no-op and a colliding label, then enables a differing draft", async () => {
@@ -132,7 +133,7 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
 });
 
 it.each([false, true])(
-  "keeps the prepared note handoff and offers last-used only from settings (context=%s)",
+  "keeps the prepared note handoff and confirms a settings creation without a next-note action (context=%s)",
   async (useForNote) => {
     using label = vi.spyOn(ButtonComponent.prototype, "setButtonText");
     using disabled = vi.spyOn(ButtonComponent.prototype, "setDisabled");
@@ -145,6 +146,7 @@ it.each([false, true])(
         return button instanceof ButtonComponent && button.text === saveLabel;
       })?.[0];
     const f = fixture();
+    vi.mocked(BaseNotice).mockClear();
     const modal = new CreateProfileModal(f.deps, {
       data: { note: {} as never, filename: {} },
       styles: [],
@@ -164,34 +166,16 @@ it.each([false, true])(
     });
     expect(f.create).toHaveBeenCalledOnce();
     expect(f.preview.create).not.toHaveBeenCalled();
-    if (useForNote) {
-      expect(label).not.toHaveBeenCalledWith(m.profile_use_next_note());
-    } else {
-      expect(label).toHaveBeenCalledWith(m.profile_use_next_note());
-      label.mock.instances
-        .filter((button) => button instanceof ButtonComponent)
-        .find((button) => button.text === m.profile_use_next_note())!
-        .click();
-      expect(f.update).toHaveBeenCalledWith({ "note.last-used-profile": id });
-    }
+    expect(vi.mocked(BaseNotice).mock.calls).toEqual(
+      useForNote ? [] : [[m.notice_profile_created({ label: "Reading" })]],
+    );
+    // The created Profile is handed to the caller's operation alone; the
+    // dialog offers no action that keeps it for a later note.
+    expect(
+      label.mock.instances.filter(
+        (button) =>
+          button instanceof ButtonComponent && button.text !== saveLabel,
+      ),
+    ).toHaveLength(0);
   },
 );
-
-it("renders the creation notice and applies its Use next action without opening the dialog", () => {
-  using labeled = vi.spyOn(ButtonComponent.prototype, "setButtonText");
-  const update = vi.fn();
-  const fragment = renderProfileCreatedNotice(
-    { id, label: "Reading" },
-    { update },
-  );
-  expect(fragment.textContent).toContain(
-    m.notice_profile_created({ label: "Reading" }),
-  );
-  expect(labeled).toHaveBeenCalledWith(m.profile_use_next_note());
-  expect(update).not.toHaveBeenCalled();
-  labeled.mock.instances
-    .filter((button) => button instanceof ButtonComponent)
-    .find((button) => button.text === m.profile_use_next_note())!
-    .click();
-  expect(update).toHaveBeenCalledWith({ "note.last-used-profile": id });
-});

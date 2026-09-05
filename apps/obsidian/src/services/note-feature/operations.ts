@@ -178,7 +178,7 @@ export interface CreationProfileSources {
 
 export interface CreationProfileSelection {
   selector: ProfileSelector;
-  source: "headless" | "last-used" | "bound" | "asked";
+  source: "headless" | "bound" | "asked";
   shouldAsk: boolean;
 }
 
@@ -657,14 +657,6 @@ async function resolveCreationProfile(
   sources: CreationProfileSources = {},
 ): Promise<CreationProfileSelection> {
   await Promise.all([ctx.settings.loaded, ctx.profile.ready]);
-  let lastUsed = ctx.settings.current!["note.last-used-profile"];
-  if (lastUsed !== null && !ctx.profile.resolveProfile(lastUsed)) {
-    ctx.settings.update({ "note.last-used-profile": null });
-    logger.debug("Cleared unavailable last-used Profile {selector}", {
-      selector: lastUsed,
-    });
-    lastUsed = null;
-  }
   const shouldAsk = ctx.profile.profiles.length > 0;
   let selection: CreationProfileSelection = {
     selector: DEFAULT_PROFILE,
@@ -675,7 +667,6 @@ async function resolveCreationProfile(
     const candidates = [
       { selector: sources.asked, source: "asked" },
       { selector: sources.headless, source: "headless" },
-      { selector: lastUsed, source: "last-used" },
     ] as const;
     for (const { selector, source } of candidates) {
       if (selector != null && ctx.profile.resolveProfile(selector)) {
@@ -800,7 +791,7 @@ async function createNote(
   for (let attempt = 0; ; attempt++) {
     let fileCreated = false;
     try {
-      const result = await writeNewNote(ctx, item, {
+      return await writeNewNote(ctx, item, {
         client: lease.client,
         tagMemo,
         collectionCache,
@@ -815,10 +806,6 @@ async function createNote(
           options.onFileCreated?.(created);
         },
       });
-      if (result.outcome === "created") {
-        ctx.settings.update({ "note.last-used-profile": requestedProfile });
-      }
-      return result;
     } catch (error) {
       if (
         fileCreated ||

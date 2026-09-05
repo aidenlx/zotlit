@@ -863,17 +863,6 @@ export class ProfileService extends Service {
         },
       });
     }
-    const lastUsed = this.#deps.settings.current!["note.last-used-profile"];
-    if (
-      lastUsed !== null &&
-      lastUsed !== DEFAULT_PROFILE &&
-      !this.#profiles.some(({ id }) => id === lastUsed)
-    ) {
-      this.#deps.settings.update({ "note.last-used-profile": null });
-      logger.debug("Cleared unavailable last-used Profile {selector}", {
-        selector: lastUsed,
-      });
-    }
     logger.debug(
       "Profile scan completed with {profiles} Profiles and {diagnostics} diagnostics",
       {

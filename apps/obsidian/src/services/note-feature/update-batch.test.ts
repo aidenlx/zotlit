@@ -266,6 +266,10 @@ it("classifies conflicting Companion Profiles as kept rows before any write or p
     duplicateRegionCount: 0,
   }));
   deps.noteFeature.writeNoteUpdate = writeNoteUpdate;
+  // A remembered Profile persisted by an earlier version stays inert.
+  Object.assign(deps.settings, {
+    current: { ...defaults, "note.last-used-profile": books },
+  });
   using settingsUpdate = vi.spyOn(deps.settings, "update");
   deps.noteFeature.resolveCreationProfile = vi.fn(async () => ({
     selector: books,
@@ -368,9 +372,7 @@ it("classifies conflicting Companion Profiles as kept rows before any write or p
     failed: 0,
     skipped: 0,
   });
-  expect(settingsUpdate).toHaveBeenCalledExactlyOnceWith({
-    "note.last-used-profile": "default",
-  });
+  expect(settingsUpdate).not.toHaveBeenCalled();
   expect(create).not.toHaveBeenCalled();
   expect(createDefault).toHaveBeenCalledOnce();
   expect(writeNoteUpdate).toHaveBeenCalledOnce();

@@ -492,6 +492,7 @@ describe("Profile source selection", () => {
         stubNoteContext(current, [], options!.resolvers),
     );
     const feature = createNoteFeature(deps);
+    using update = vi.spyOn(deps.settings, "update");
     const profiles = await feature.prepareCreationProfiles(item);
     expect(
       profiles.map(({ selector, folder, citationStyle, document, path }) => ({
@@ -522,29 +523,38 @@ describe("Profile source selection", () => {
       outcome: "created",
       file: { path: "Reading/Shelf/Root.md" },
     });
-    expect(deps.settings.current!["note.last-used-profile"]).toBe(books);
+    expect(update).not.toHaveBeenCalled();
     expect(await profiles[1]!.create()).toMatchObject({
       outcome: "refused",
       diagnostic: { code: "literature-note-exists" },
     });
+    // The next operation starts from Default again: the Books choice above
+    // belonged to its own operation only.
+    expect(await feature.resolveCreationProfile()).toEqual({
+      selector: "default",
+      source: "bound",
+      shouldAsk: true,
+    });
+    expect(update).not.toHaveBeenCalled();
   });
-  it("preselects headless before last-used and lets an asked choice override both", async () => {
+  it("preselects headless over Default, lets an asked choice override it, and ignores a remembered Profile", async () => {
     const books = "Bk3Qn7XvT2Lp" as ProfileId;
     const papers = "Rz9Wm4YfH6Kd" as ProfileId;
     const { deps } = makeUpdateHarness({
       content: "",
       settings: {
-        "note.last-used-profile": books,
         profiles: [
           { id: books, label: "Books" },
           { id: papers, label: "Papers" },
         ],
       },
     });
+    seedRememberedProfile(deps.settings, books);
+    using update = vi.spyOn(deps.settings, "update");
     const feature = createNoteFeature(deps);
     expect(await feature.resolveCreationProfile()).toEqual({
-      selector: books,
-      source: "last-used",
+      selector: "default",
+      source: "bound",
       shouldAsk: true,
     });
     expect(await feature.resolveCreationProfile({ headless: papers })).toEqual({
@@ -558,24 +568,23 @@ describe("Profile source selection", () => {
         asked: "default",
       }),
     ).toEqual({ selector: "default", source: "asked", shouldAsk: true });
-    deps.settings.update({ "note.last-used-profile": null });
     expect(
       await feature.resolveCreationProfile({
         headless: "Missing12345" as ProfileId,
       }),
     ).toEqual({ selector: "default", source: "bound", shouldAsk: true });
+    expect(update).not.toHaveBeenCalled();
   });
-  it("uses Default without a picker when no added Profile resolves, and clears stale memory", async () => {
-    const { deps } = makeUpdateHarness({
-      content: "",
-      settings: { "note.last-used-profile": "Bk3Qn7XvT2Lp" as ProfileId },
-    });
+  it("uses Default without a picker when no added Profile resolves", async () => {
+    const { deps } = makeUpdateHarness({ content: "" });
+    seedRememberedProfile(deps.settings, "Bk3Qn7XvT2Lp" as ProfileId);
+    using update = vi.spyOn(deps.settings, "update");
     expect(
       await createNoteFeature(deps).resolveCreationProfile({
         headless: "Rz9Wm4YfH6Kd" as ProfileId,
       }),
     ).toEqual({ selector: "default", source: "bound", shouldAsk: false });
-    expect(deps.settings.current!["note.last-used-profile"]).toBeNull();
+    expect(update).not.toHaveBeenCalled();
   });
 });
 
@@ -650,10 +659,11 @@ describe("createNote", () => {
       },
     };
 
+    using update = vi.spyOn(deps.settings, "update");
     const file = createdFile(await createNoteFeature(deps).createNote(root));
 
     expect(file.path).toBe("Literature/Root.md");
-    expect(deps.settings.current!["note.last-used-profile"]).toBe("default");
+    expect(update).not.toHaveBeenCalled();
     expect(app.vault.contentByPath.get("Literature/Root.md")).toContain(
       [
         "root:Literature/Root.md|[[Literature/Root.md|Root alias]]",
@@ -867,12 +877,13 @@ describe("createNote", () => {
       },
     };
 
+    using update = vi.spyOn(deps.settings, "update");
     const file = createdFile(
       await createNoteFeature(deps).createNote(item, { profile: profileId }),
     );
 
     expect(file.path).toMatch(/^Literature\/Root_[\w-]{6}\.md$/);
-    expect(deps.settings.current!["note.last-used-profile"]).toBe(profileId);
+    expect(update).not.toHaveBeenCalled();
     expect(create).toHaveBeenCalledTimes(2);
   });
 
@@ -987,9 +998,8 @@ describe("createNote", () => {
     };
     const create = app.vault.create;
 
-    deps.settings.update({
-      "note.last-used-profile": "Bk3Qn7XvT2Lp" as ProfileId,
-    });
+    seedRememberedProfile(deps.settings, "Bk3Qn7XvT2Lp" as ProfileId);
+    using update = vi.spyOn(deps.settings, "update");
     const result = await createNoteFeature(deps).createNote(item);
 
     expect(result).toEqual({
@@ -1002,9 +1012,7 @@ describe("createNote", () => {
       },
     });
     expect(create).not.toHaveBeenCalled();
-    expect(deps.settings.current!["note.last-used-profile"]).toBe(
-      "Bk3Qn7XvT2Lp",
-    );
+    expect(update).not.toHaveBeenCalled();
   });
 
   it("returns a diagnostic that lists every duplicate literature note", async () => {
@@ -4220,6 +4228,17 @@ function makeSettings(
       return current;
     },
   };
+}
+
+/**
+ * Plants the retired `note.last-used-profile` value an earlier ZotLit version
+ * persisted; the feature must neither read it nor write it back.
+ */
+function seedRememberedProfile(
+  settings: NoteFeatureDeps["settings"],
+  selector: ProfileId,
+): void {
+  Object.assign(settings.current!, { "note.last-used-profile": selector });
 }
 
 interface MockNoteApp {

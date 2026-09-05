@@ -116,8 +116,6 @@ it("renders effective folders, style titles, templates, paths and the selected s
   expect(text).toContain(m.modal_profile_preselected());
   expect(text).toContain(m.modal_profile_source_link());
   expect(text).toContain("Reading/2024/Paper.md");
-  modal.renderSuggestion({ ...rows[0]!, source: "last-used" }, el);
-  expect(text).toContain(m.modal_profile_source_last_used());
   modal.renderSuggestion({ ...rows[0]!, current: true }, el);
   expect(text).toContain(m.modal_profile_current());
   modal.onClose();
