@@ -291,8 +291,31 @@ export class WorkbenchDocumentController {
 
   dispatch(spec: TransactionSpec): void {
     const before = this.#state;
-    const changes =
+    let changes =
       spec.changes === undefined ? undefined : splitLineBreaks(spec.changes);
+    // An empty note can share the header's starting offset. Its first edit
+    // creates the structural line break that subsequent note edits leave out.
+    if (
+      changes !== undefined &&
+      this.annotationSection?.header.from === this.sliceRange("note").to
+    ) {
+      const proposed = before.update({ ...spec, changes, filter: false });
+      const note = this.sliceRange("note");
+      if (
+        proposed.annotation(sliceEdit) === "note" &&
+        proposed.changes.mapPos(note.to, 1) > note.from
+      ) {
+        changes = proposed.changes.compose(
+          ChangeSet.of(
+            {
+              from: proposed.changes.mapPos(note.to, 1),
+              insert: "\n",
+            },
+            proposed.newDoc.length,
+          ),
+        );
+      }
+    }
     const transaction = before.update(
       changes === undefined ? spec : { ...spec, changes },
     );
@@ -545,6 +568,19 @@ export class WorkbenchDocumentController {
           ...(range ? { range } : {}),
         },
       ];
+    }
+    // The newline before the header belongs to the document structure. Keep
+    // it outside the note, including retained ranges in invalid drafts and redo.
+    const section = this.annotationSection;
+    const note = this.sliceRange("note");
+    if (
+      section &&
+      source.slice(section.header.from, section.header.to) === ANNOTATION_HEADER
+    ) {
+      this.#ranges.set("note", {
+        from: note.from,
+        to: Math.min(note.to, Math.max(note.from, section.header.from - 1)),
+      });
     }
     this.#regions = noteRegions(source, this.sliceRange("note"));
   }

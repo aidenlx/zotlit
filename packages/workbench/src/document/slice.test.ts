@@ -45,11 +45,87 @@ function open(
 }
 
 describe("workbenchSlice", () => {
+  it.each(["\n", "\r\n"])(
+    "isolates note replacement, deletion, and undo with %j line endings",
+    (lineBreak) => {
+      const source = PROFILE.split("\n").join(lineBreak);
+      const controller = new WorkbenchDocumentController(source);
+      using note = open(controller, "note");
+      using annotation = open(controller, "annotation");
+      const prefix = source.slice(0, source.indexOf("# {{ zt.title }}"));
+      const suffix = `--- zotlit:annotation ---${lineBreak}> {{ zt.text }}${lineBreak}`;
+
+      for (const text of ["replacement", "", "new last line\nnext line"]) {
+        const previous = controller.source;
+        note.view.dispatch({
+          changes: { from: 0, to: note.view.state.doc.length, insert: text },
+        });
+        expect(controller.source).toBe(
+          prefix + text.split("\n").join(lineBreak) + lineBreak + suffix,
+        );
+        expect(note.text()).toBe(text);
+        expect(annotation.text()).toBe("> {{ zt.text }}\n");
+        expect(controller.document).not.toBeNull();
+        expect(controller.undo()).toBe(true);
+        expect(controller.source).toBe(previous);
+        expect(controller.redo()).toBe(true);
+        expect(note.text()).toBe(text);
+      }
+    },
+  );
+
+  it.each(["first", "{% managed %}"])(
+    "creates the structural boundary for an initially empty note containing %j",
+    (text) => {
+      const source = PROFILE.replace("# {{ zt.title }}\n\n", "");
+      const controller = new WorkbenchDocumentController(source);
+      using note = open(controller, "note");
+      using annotation = open(controller, "annotation");
+
+      note.view.dispatch({ changes: { from: 0, insert: text } });
+      note.view.dispatch({ changes: { from: text.length, insert: " last" } });
+
+      expect(controller.source).toBe(
+        source.replace(
+          "--- zotlit:annotation ---",
+          `${text} last\n--- zotlit:annotation ---`,
+        ),
+      );
+      expect(note.text()).toBe(`${text} last`);
+      expect(annotation.text()).toBe("> {{ zt.text }}\n");
+      controller.undo();
+      expect(controller.source).toBe(source);
+      expect(note.text()).toBe("");
+      controller.redo();
+      expect(note.text()).toBe(`${text} last`);
+    },
+  );
+
+  it("keeps the annotation separator separate when typing at the note's end", () => {
+    const controller = new WorkbenchDocumentController(PROFILE);
+    using note = open(controller, "note");
+    using annotation = open(controller, "annotation");
+
+    note.view.dispatch({
+      changes: {
+        from: note.view.state.doc.length,
+        insert: "something i type at last",
+      },
+      userEvent: "input.type",
+    });
+
+    expect(controller.source).toContain(
+      "something i type at last\n--- zotlit:annotation ---\n> {{ zt.text }}\n",
+    );
+    expect(annotation.text()).toBe("> {{ zt.text }}\n");
+    expect(controller.document).not.toBeNull();
+  });
+
   it("opens on the note body alone", () => {
     const controller = new WorkbenchDocumentController(PROFILE);
     using note = open(controller, "note");
 
-    expect(note.text()).toBe("# {{ zt.title }}\n\n");
+    expect(note.text()).toBe("# {{ zt.title }}\n");
   });
 
   it("writes a note edit into the master document", () => {
@@ -76,7 +152,7 @@ describe("workbenchSlice", () => {
 
     controller.undo();
 
-    expect(note.text()).toBe("# {{ zt.title }}\n\n");
+    expect(note.text()).toBe("# {{ zt.title }}\n");
     expect(controller.source).toBe(PROFILE);
   });
 
@@ -150,7 +226,7 @@ describe("workbenchSlice", () => {
     expect(controller.source).toBe(
       PROFILE.replace("---\n# {{", "---\n# extra\n# {{"),
     );
-    expect(note.text()).toBe("# extra\n# {{ zt.title }}\n\n");
+    expect(note.text()).toBe("# extra\n# {{ zt.title }}\n");
   });
 
   it("lands a master edit straddling the focused slice's boundary once", () => {
@@ -162,7 +238,7 @@ describe("workbenchSlice", () => {
     controller.dispatch({ changes: { from: from - 3, to: from + 2 } });
 
     expect(controller.source).toBe(PROFILE.replace("--\n# {{", "{{"));
-    expect(note.text()).toBe("{{ zt.title }}\n\n");
+    expect(note.text()).toBe("{{ zt.title }}\n");
   });
 
   it("moves a slice's offsets when another slice edits the text before it", () => {
@@ -182,7 +258,7 @@ describe("workbenchSlice", () => {
     expect(controller.sliceRange("note").from).toBe(
       before.from + "# hand-written\n".length,
     );
-    expect(note.text()).toBe("# {{ zt.title }}\n\n");
+    expect(note.text()).toBe("# {{ zt.title }}\n");
     expect(controller.source).toContain("# hand-written\nid: reading");
   });
 
