@@ -36,7 +36,7 @@ export function webHover(read: SuggestionSource) {
         if (
           event.buttons ||
           this.view.composing ||
-          this.view.contentDOM.getAttribute("aria-expanded") === "true"
+          this.view.contentDOM.hasAttribute("aria-controls")
         ) {
           this.close();
           return;

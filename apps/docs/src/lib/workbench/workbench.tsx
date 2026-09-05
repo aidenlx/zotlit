@@ -1,9 +1,23 @@
 // The standalone Template Workbench: one master Profile document behind a
 // header, three columns, and the result the reader would get. It folds twice:
-// under 1024 px the field column becomes the sheet the bottom "Add a field"
+// under 1180 px the field column becomes the dialog the toolbar "Add a field"
 // button opens, and under 780 px the pane fills the screen with the result
-// behind a tab of its own.
+// behind a view switch.
 
+import {
+  ArrowLeft,
+  ChevronDown,
+  Code2,
+  Download,
+  FilePlus2,
+  FolderOpen,
+  List,
+  Plus,
+  Redo2,
+  Save,
+  Undo2,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -23,6 +37,25 @@ import {
 } from "@zotlit/workbench/render";
 import type { ProfileRenderResult } from "@zotlit/workbench/render";
 
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { m } from "@/paraglide/messages.js";
 
 import {
@@ -33,7 +66,6 @@ import {
 } from "./annotation";
 import { ConnectionBar } from "./connection-bar";
 import { FieldList } from "./field-list";
-import type { FieldListProps } from "./field-list";
 import { insertSnippet, rootData, templateRootAt } from "./fields";
 import type { SampleItem } from "./fields";
 import {
@@ -81,44 +113,8 @@ const PROBLEM_WHERE: Partial<Record<WorkbenchSliceId, () => string>> = {
   details: m.workbench_problems_where_details,
 };
 
-/** The `{{` popup's own box: the size it is drawn at, and its margin. */
-
-/**
- * The width the result stops being a tab at and becomes the column beside the
- * pane. Every `min-[780px]:` class in this file is the same threshold.
- */
+/** The result becomes a column once both reading and editing have room. */
 const WIDE_LAYOUT = "(min-width: 780px)";
-
-/** The narrow layout's explicit field-search sheet. */
-function FieldDialog({
-  className,
-  onClose,
-  ...list
-}: FieldListProps & {
-  /** Where the box is drawn: the popup's panel, or the sheet's bottom strip. */
-  className: string;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      role="dialog"
-      aria-label={m.workbench_fields_heading()}
-      className={`fixed z-20 flex flex-col border-fd-border bg-fd-card ${className}`}
-    >
-      <div className="grid min-h-0 flex-1 grid-cols-1">
-        {/* A root of its own opens a list of its own, from the top. */}
-        <FieldList key={list.root} {...list} />
-      </div>
-      <button
-        type="button"
-        onClick={onClose}
-        className="mt-2 cursor-pointer self-start border border-fd-border px-2 py-1 text-xs"
-      >
-        {m.workbench_fields_close()}
-      </button>
-    </div>
-  );
-}
 
 export function Workbench() {
   const [controller, setController] = useState(
@@ -149,7 +145,12 @@ export function Workbench() {
   // highlight box opens when they are sent to it from elsewhere.
   const [noteEditor, setNoteEditor] = useState<NoteEditor>("note");
   const [highlight, setHighlight] = useState<WorkbenchSliceRange | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{
+    label: string;
+    run: () => void;
+  } | null>(null);
+  const [fileMessage, setFileMessage] = useState<string | null>(null);
+  const replaceConnected = useRef(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [showManaged, setShowManaged] = useState(false);
   // The Name and folder control a manifest problem opens, as a fresh object
@@ -176,6 +177,7 @@ export function Workbench() {
     connectFromPage,
     cancelConnection,
     disconnect,
+    reloadProfile,
     loadSelectedItem,
     save,
   } = useWorkbenchConnection({
@@ -206,14 +208,15 @@ export function Workbench() {
     // and its undo history where they are: the connection was lost, the work
     // was not. The vault's own bytes become the saved state the draft is
     // measured against, so an unsaved edit stays an unsaved edit.
-    if (drafts.reference === opened.reference) {
+    if (drafts.reference === opened.reference && !replaceConnected.current) {
       drafts.rebase(opened);
       // The text on screen still descends from the revision it was read at, so
       // Save answers for that one: the vault moved, this draft did not.
       if (retainedExpected) saveAgainst(retainedExpected);
       return;
     }
-    drafts.adopt(opened, kept);
+    drafts.adopt(opened, replaceConnected.current ? null : kept);
+    replaceConnected.current = false;
     loadDocument(selected.source);
   }
 
@@ -221,19 +224,11 @@ export function Workbench() {
     () => controller.subscribe(() => setRevision((n) => n + 1)),
     [controller],
   );
+  useEffect(() => setFileMessage(null), [revision]);
   useEffect(() => () => scheduler[Symbol.dispose](), [scheduler]);
   useEffect(() => {
     void ensureTemporal().then(() => setTemporal(true));
   }, []);
-  useEffect(() => {
-    if (!sheet) return;
-    const close = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (sheet) closeSheet();
-    };
-    document.addEventListener("keydown", close);
-    return () => document.removeEventListener("keydown", close);
-  }, [sheet]);
   // The Editor and Result tabs stand under 780 px alone, so a window that grows
   // past them leaves the reader in the pane rather than on a result no tab
   // reads as chosen.
@@ -404,15 +399,10 @@ export function Workbench() {
     );
   }
 
-  /** Leaves the sheet, and the reader on the button that raised it. */
-  function closeSheet() {
-    setSheet(false);
-    addField.current?.focus();
-  }
-
   /** Leaves the note tab, so its second editor does not follow the reader out. */
   function openTab(id: "note" | "properties" | "name") {
     setTab(id);
+    setReveal(null);
     if (id !== "note") setNoteEditor("note");
   }
 
@@ -454,6 +444,32 @@ export function Workbench() {
             : "note",
     [slice, controller.document, controller.filenameSlice, caret.from],
   );
+  const sourceRegion = advanced
+    ? controller.templateRegions.find(
+        (region) => caret.from >= region.from && caret.to <= region.to,
+      )
+    : undefined;
+  const propertyLanguage =
+    !advanced && tab === "properties"
+      ? entries?.find((entry) => entry.position === row)?.language
+      : undefined;
+  const fieldMode =
+    sourceRegion?.language === "json-e" || propertyLanguage === "value"
+      ? "json-e"
+      : sourceRegion?.expression || propertyLanguage === "expr"
+        ? "expression"
+        : "template";
+  const selectedProperty =
+    row === null
+      ? undefined
+      : controller.document?.manifest.frontmatter?.[row - 1];
+  const fieldDisabled =
+    !advanced &&
+    tab === "properties" &&
+    (row === null ||
+      (selectedProperty !== undefined &&
+        "value" in selectedProperty &&
+        typeof selectedProperty.value === "string"));
   const fields = useMemo(
     () => (temporal ? rootData(sample, root) : null),
     [temporal, sample, root],
@@ -476,6 +492,7 @@ export function Workbench() {
 
   /** Puts a snippet where the reader left the caret, then hands focus back. */
   function insert(snippet: string) {
+    if (fieldDisabled) return;
     const head = insertSnippet(controller, slice, {
       target: caret,
       snippet,
@@ -493,6 +510,9 @@ export function Workbench() {
   /** Opens `source` as the document being edited, with a history of its own. */
   function loadDocument(source: string) {
     setController(new WorkbenchDocumentController(source));
+    setResult(null);
+    setFileMessage(null);
+    setShownManifest(null);
     setAdvanced(false);
     setView("edit");
     setSheet(false);
@@ -504,28 +524,48 @@ export function Workbench() {
     setCaret({ from: 0, to: 0 });
   }
 
-  /** Hands the reader their own bytes back, draft or not. */
+  /** Download always returns the exact source, including an unfinished draft. */
   function download() {
     downloadProfile(
       controller.source,
       profileFileName(manifest?.id, { draft: controller.document === null }),
     );
+    if (!canSaveToVault)
+      drafts.rebase({ reference: drafts.reference, source: controller.source });
+    setFileMessage(m.workbench_download_complete());
+  }
+
+  function replaceProfile(label: string, run: () => void) {
+    if (drafts.dirty) setPendingAction({ label, run });
+    else run();
+  }
+
+  function openStandalone(source: string) {
+    drafts.adopt({ reference: "standalone", source }, null);
+    loadDocument(source);
   }
 
   function importFile(file: File | undefined) {
     if (!file) return;
-    void file.text().then(loadDocument);
+    void file.text().then(
+      (source) =>
+        replaceProfile(m.workbench_import(), () => openStandalone(source)),
+      () => setFileMessage(m.workbench_import_failed()),
+    );
   }
 
-  function act(run: () => void) {
-    return () => {
-      setMenuOpen(false);
-      run();
-    };
+  function changeMode(source: boolean) {
+    setView("edit");
+    setReveal(null);
+    setAdvanced(source);
   }
 
   const draft = controller.document === null;
   const connected = connection.state === "connected";
+  const canSaveToVault =
+    connected &&
+    saveTarget?.reference === drafts.reference &&
+    connection.capabilities.includes("selected-profile:save");
   // One input serves both screens, because the handoff is where a reader who
   // cannot edit this Profile reaches for another one.
   const filePicker = (
@@ -544,14 +584,58 @@ export function Workbench() {
   );
   const openFile = () => fileInput.current?.click();
 
+  const replacementDialog = (
+    <Dialog
+      open={pendingAction !== null}
+      onOpenChange={(open) => {
+        if (!open) setPendingAction(null);
+      }}
+    >
+      <DialogContent>
+        <DialogTitle>{m.workbench_replace_heading()}</DialogTitle>
+        <DialogDescription>
+          {m.workbench_replace_body({ name: profile.name })}
+        </DialogDescription>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => {
+              download();
+              const next = pendingAction;
+              setPendingAction(null);
+              next?.run();
+            }}
+          >
+            {m.workbench_replace_download()}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              const next = pendingAction;
+              setPendingAction(null);
+              next?.run();
+            }}
+          >
+            {pendingAction?.label}
+          </Button>
+          <DialogClose render={<Button variant="ghost" />}>
+            {m.workbench_keep_editing()}
+          </DialogClose>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+
   if (unsupported.length > 0) {
     return (
       <>
         {filePicker}
+        {replacementDialog}
         <ProfileHandoff
           reasons={unsupported}
           onDownload={download}
           onImport={openFile}
+          onUndo={controller.canUndo ? () => controller.undo() : undefined}
+          message={fileMessage}
         />
       </>
     );
@@ -560,108 +644,86 @@ export function Workbench() {
   return (
     // The page sits under the site's banner strip, so its height is the window
     // less whatever that strip takes; a dismissed strip leaves the whole window.
-    <div className="flex h-[calc(100dvh-var(--fd-banner-height,0px))] flex-col bg-fd-background text-fd-foreground">
+    <div className="flex min-h-[calc(100dvh-var(--fd-banner-height,0px))] flex-col bg-fd-background text-fd-foreground min-[780px]:h-[calc(100dvh-var(--fd-banner-height,0px))] min-[780px]:min-h-[40rem]">
+      <a
+        href="#workbench-editor"
+        className="sr-only focus:not-sr-only focus:p-3"
+      >
+        {m.workbench_skip_editor()}
+      </a>
       {filePicker}
-      {/* The menu below hangs from this header's own right edge, so a header
-          that wraps under 780 px never carries it off the screen. */}
-      <header className="relative flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-fd-border px-4 py-3 min-[780px]:px-6">
-        <h1 className="font-serif text-xl font-medium">{profile.name}</h1>
-        <p className="text-fd-muted-foreground italic">{profile.description}</p>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <SampleBar
-            sample={sample}
-            connection={connection}
-            {...(sampleItemType !== undefined && !bundledForType
-              ? { unmatchedItemType: sampleItemType }
-              : {})}
-            busy={itemBusy}
-            onShow={setSample}
-            onLoad={() => void loadSelectedItem()}
-          />
-          <div>
-            <button
-              type="button"
-              aria-label={m.workbench_more_actions()}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((open) => !open)}
-              className="cursor-pointer border border-transparent px-2 py-1.5 text-fd-muted-foreground hover:border-fd-border"
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-fd-border px-4 py-3 min-[780px]:px-6">
+        <div className="min-w-0">
+          <p className="mb-1 text-xs text-fd-muted-foreground">
+            {m.workbench_title()}
+          </p>
+          <h1 className="font-serif text-xl font-medium break-words">
+            {profile.name}
+          </h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              disabled={connectionBusy || saveBusy}
+              render={<Button variant="outline" />}
             >
-              <span aria-hidden>···</span>
-            </button>
-            {menuOpen && (
-              <div
-                role="menu"
-                aria-label={m.workbench_more_actions()}
-                className="absolute top-full right-4 z-10 mt-1 flex w-56 flex-col border border-fd-border bg-fd-card p-1 shadow-[4px_4px_0_0_var(--color-fd-border)] min-[780px]:right-6"
+              <FolderOpen aria-hidden />
+              {m.workbench_profile_menu()}
+              <ChevronDown aria-hidden />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={openFile}>
+                <FolderOpen aria-hidden />
+                {m.workbench_import()}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() =>
+                  replaceProfile(m.workbench_start_default(), () =>
+                    openStandalone(DEFAULT_PROFILE_SOURCE),
+                  )
+                }
               >
-                <button
-                  type="button"
-                  role="menuitem"
-                  disabled={!controller.canUndo}
-                  onClick={act(() => controller.undo())}
-                  className="cursor-pointer px-3 py-1.5 text-left text-sm hover:bg-fd-accent disabled:cursor-default disabled:text-fd-muted-foreground"
+                <FilePlus2 aria-hidden />
+                {m.workbench_start_default()}
+              </DropdownMenuItem>
+              {connected && (
+                <DropdownMenuItem
+                  onClick={() =>
+                    replaceProfile(m.workbench_reload_profile(), () => {
+                      replaceConnected.current = true;
+                      reloadProfile();
+                    })
+                  }
                 >
-                  {m.workbench_undo()}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={act(download)}
-                  className="cursor-pointer px-3 py-1.5 text-left text-sm hover:bg-fd-accent"
-                >
-                  {draft
-                    ? m.workbench_download_draft()
-                    : m.workbench_download()}
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={act(openFile)}
-                  className="cursor-pointer px-3 py-1.5 text-left text-sm hover:bg-fd-accent"
-                >
-                  {m.workbench_import()}
-                </button>
-                <button
-                  type="button"
-                  role="menuitemcheckbox"
-                  aria-checked={advanced}
-                  onClick={act(() => {
-                    // Advanced stands over the pane, so opening it from the
-                    // narrow layout's result tab carries the reader to what it
-                    // opened rather than leaving the press reading as nothing.
-                    if (!advanced) setView("edit");
-                    // A reveal belongs to the problem the reader clicked, so
-                    // reopening Advanced from here starts on the caret instead.
-                    setReveal(null);
-                    setAdvanced((on) => !on);
-                  })}
-                  className="cursor-pointer px-3 py-1.5 text-left text-sm hover:bg-fd-accent"
-                >
-                  {m.workbench_advanced()}
-                </button>
-              </div>
-            )}
-          </div>
-          <button
-            type="button"
-            disabled={
-              saveBusy ||
-              (connected && (!saveTarget || controller.document === null))
+                  <FolderOpen aria-hidden />
+                  {m.workbench_reload_profile()}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={download}>
+                <Download aria-hidden />
+                {m.workbench_download_copy()}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button
+            disabled={saveBusy || (canSaveToVault && draft)}
+            onClick={
+              canSaveToVault ? () => void save(controller.source) : download
             }
-            onClick={connected ? () => void save(controller.source) : download}
-            className="cursor-pointer bg-fd-primary px-4 py-1.5 text-sm font-medium text-fd-primary-foreground"
           >
-            {connected
+            {canSaveToVault ? <Save aria-hidden /> : <Download aria-hidden />}
+            {canSaveToVault
               ? saveBusy
                 ? m.workbench_saving()
                 : m.workbench_save()
               : draft
                 ? m.workbench_download_draft()
                 : m.workbench_download()}
-          </button>
+          </Button>
         </div>
       </header>
+
+      {replacementDialog}
 
       <ConnectionBar
         connection={connection}
@@ -669,7 +731,14 @@ export function Workbench() {
         busy={connectionBusy}
         cancellable={connectionCancellable}
         message={connectionMessage}
-        onConnect={connectFromPage}
+        saveBusy={saveBusy}
+        editingConnectedProfile={canSaveToVault}
+        onConnect={() => {
+          // Reconnecting the current vault document preserves its draft and history.
+          if (saveTarget?.reference === drafts.reference) connectFromPage();
+          else
+            replaceProfile(m.workbench_connection_connect(), connectFromPage);
+        }}
         onCancel={cancelConnection}
         onDisconnect={() => void disconnect()}
       />
@@ -684,8 +753,8 @@ export function Workbench() {
             {m.workbench_restore_body()}
           </p>
           <div className="ml-auto flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="outline"
               onClick={() => {
                 const kept = drafts.restore();
                 if (!kept) return;
@@ -693,227 +762,383 @@ export function Workbench() {
                 setSample(kept.snapshot);
                 if (kept.expected) saveAgainst(kept.expected);
               }}
-              className="cursor-pointer bg-fd-primary px-3 py-1 text-sm font-medium text-fd-primary-foreground"
             >
               {m.workbench_restore_accept()}
-            </button>
-            <button
-              type="button"
-              onClick={() => drafts.startClean()}
-              className="cursor-pointer border border-fd-border px-3 py-1 text-sm"
-            >
+            </Button>
+            <Button variant="ghost" onClick={() => drafts.startClean()}>
               {m.workbench_restore_decline()}
-            </button>
+            </Button>
           </div>
         </section>
       )}
 
-      <main className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 min-[780px]:grid min-[780px]:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] min-[780px]:gap-5 min-[780px]:px-6 min-[780px]:py-5 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)_minmax(0,26rem)]">
+      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 pt-4 min-[780px]:px-6">
+        <SampleBar
+          sample={sample}
+          connection={connection}
+          {...(sampleItemType !== undefined && !bundledForType
+            ? { unmatchedItemType: sampleItemType }
+            : {})}
+          busy={itemBusy}
+          onShow={setSample}
+          onLoad={() => void loadSelectedItem()}
+        />
+      </div>
+      <p
+        role="status"
+        className="px-4 pt-2 text-xs text-fd-muted-foreground min-[780px]:px-6"
+      >
+        {fileMessage ??
+          (canSaveToVault
+            ? draft
+              ? m.workbench_save_fix()
+              : drafts.dirty
+                ? m.workbench_unsaved()
+                : m.workbench_saved_profile()
+            : m.workbench_browser_draft())}
+      </p>
+
+      <main
+        id="workbench-editor"
+        className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4 min-[780px]:grid min-[780px]:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] min-[780px]:gap-5 min-[780px]:px-6 min-[1180px]:grid-cols-[minmax(0,14rem)_minmax(0,1fr)_minmax(0,0.85fr)]"
+      >
         {/* The two the narrow screen shows one of. The pane and the result are
             columns of their own once there is room for both. */}
         <div
-          role="tablist"
+          role="group"
           aria-label={m.workbench_view_label()}
-          className="flex gap-5 border-b border-fd-border min-[780px]:hidden"
+          className="flex gap-1 rounded-md bg-fd-muted p-1 min-[780px]:hidden"
         >
           {(["edit", "result"] as const).map((id) => (
-            <button
+            <Button
               key={id}
-              type="button"
-              role="tab"
-              aria-selected={view === id}
+              variant={view === id ? "outline" : "ghost"}
+              aria-pressed={view === id}
+              aria-controls={`workbench-${id}-pane`}
+              className="flex-1"
               onClick={() => {
                 setView(id);
                 setSheet(false);
               }}
-              className="-mb-px cursor-pointer pb-1.5 font-mono text-[0.68rem] font-semibold tracking-widest text-fd-muted-foreground uppercase aria-selected:border-b-2 aria-selected:border-fd-primary aria-selected:text-fd-foreground"
             >
               {id === "edit"
                 ? m.workbench_view_editor()
                 : m.workbench_view_result()}
-            </button>
+            </Button>
           ))}
         </div>
 
         {/* A column of its own where three fit; under that width the same list
             is what "Add a field" opens. */}
-        <div className="hidden min-h-0 min-w-0 grid-cols-1 lg:grid">
-          <FieldList key={root} root={root} data={fields} onInsert={insert} />
+        <div className="hidden min-h-0 min-w-0 grid-cols-1 min-[1180px]:grid">
+          <FieldList
+            key={`${root}:${fieldMode}`}
+            root={root}
+            mode={fieldMode}
+            disabled={fieldDisabled}
+            data={fields}
+            onInsert={insert}
+          />
         </div>
 
         <section
-          className={`min-h-0 flex-1 flex-col ${
+          id="workbench-edit-pane"
+          className={`min-h-80 min-w-0 flex-1 flex-col min-[780px]:min-h-0 ${
             view === "result" ? "hidden min-[780px]:flex" : "flex"
           }`}
         >
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div
+              className="flex items-center gap-1"
+              role="group"
+              aria-label={m.workbench_editing_mode()}
+            >
+              <Button
+                variant={advanced ? "ghost" : "outline"}
+                size="sm"
+                aria-pressed={!advanced}
+                onClick={() => changeMode(false)}
+              >
+                <List aria-hidden />
+                {m.workbench_basic()}
+              </Button>
+              <Button
+                variant={advanced ? "outline" : "ghost"}
+                size="sm"
+                aria-pressed={advanced}
+                onClick={() => changeMode(true)}
+              >
+                <Code2 aria-hidden />
+                {m.workbench_advanced()}
+              </Button>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={m.workbench_undo()}
+                title={m.workbench_undo()}
+                disabled={!controller.canUndo}
+                onClick={() => controller.undo()}
+              >
+                <Undo2 aria-hidden />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={m.workbench_redo()}
+                title={m.workbench_redo()}
+                disabled={!controller.canRedo}
+                onClick={() => controller.redo()}
+              >
+                <Redo2 aria-hidden />
+              </Button>
+              <Button
+                ref={addField}
+                variant="outline"
+                size="sm"
+                onClick={() => setSheet(true)}
+                aria-haspopup="dialog"
+                aria-expanded={sheet}
+                className="min-[1180px]:hidden"
+              >
+                <Plus aria-hidden />
+                {m.workbench_add_field()}
+              </Button>
+            </div>
+          </div>
           {advanced ? (
             <>
-              <h2 className="font-serif text-[1.06rem] font-medium">
-                {m.workbench_advanced_heading()}
-              </h2>
-              <p className="mt-1 mb-2.5 text-xs text-fd-muted-foreground">
-                {m.workbench_advanced_lede()}
-              </p>
+              <div className="mb-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="font-serif text-lg font-medium">
+                    {m.workbench_advanced_heading()}
+                  </h2>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => changeMode(false)}
+                  >
+                    <ArrowLeft aria-hidden />
+                    {m.workbench_back_basic()}
+                  </Button>
+                </div>
+                <p className="mt-1 text-sm leading-relaxed text-fd-muted-foreground">
+                  {m.workbench_advanced_lede()}
+                </p>
+              </div>
+              <>
+                <AnnotationSectionBar
+                  controller={controller}
+                  onGo={setReveal}
+                />
+                <div className="flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-section-header]:bg-fd-accent/60 [&_.zt-section-header]:shadow-[inset_2px_0_0_0_var(--color-fd-primary)]">
+                  <SliceEditor
+                    controller={controller}
+                    slice="advanced"
+                    label={m.workbench_advanced_heading()}
+                    extensions={annotationHeaderMark}
+                    reveal={reveal}
+                    suggest={suggest}
+                    onSelection={trackSelection}
+                  />
+                </div>
+              </>
             </>
           ) : (
-            <>
-              <div
-                role="tablist"
-                aria-label={m.workbench_title()}
-                className="flex gap-5 border-b border-fd-border"
-              >
+            <Tabs
+              className="flex min-h-0 flex-1 flex-col"
+              value={tab}
+              onValueChange={(value) =>
+                openTab(value as "note" | "properties" | "name")
+              }
+            >
+              <TabsList aria-label={m.workbench_title()} className="mb-3">
                 {(["note", "properties", "name"] as const).map((id) => (
-                  <button
+                  <TabsTrigger
                     key={id}
-                    type="button"
-                    role="tab"
-                    aria-selected={tab === id}
-                    onClick={() => openTab(id)}
-                    className="-mb-px cursor-pointer pb-1.5 font-serif text-[1.06rem] font-medium text-fd-muted-foreground aria-selected:border-b-2 aria-selected:border-fd-primary aria-selected:text-fd-foreground"
+                    value={id}
+                    className="min-w-0 flex-1 px-2"
                   >
                     {TAB_LABEL[id]()}
-                  </button>
+                  </TabsTrigger>
                 ))}
-              </div>
-              <p className="mt-2 mb-2.5 text-xs text-fd-muted-foreground">
-                {TAB_LEDE[tab]()}
-              </p>
-            </>
-          )}
-          {advanced ? (
-            <>
-              <AnnotationSectionBar controller={controller} onGo={setReveal} />
-              <div className="flex min-h-0 flex-1 flex-col border border-fd-border bg-fd-card [&_.zt-section-header]:bg-fd-accent/60 [&_.zt-section-header]:shadow-[inset_2px_0_0_0_var(--color-fd-primary)]">
-                <SliceEditor
-                  controller={controller}
-                  slice="advanced"
-                  label={m.workbench_advanced_heading()}
-                  extensions={annotationHeaderMark}
-                  reveal={reveal}
-                  suggest={suggest}
-                  onSelection={trackSelection}
-                />
-              </div>
-            </>
-          ) : tab === "name" ? (
-            <>
-              <NameFolderPane
-                controller={controller}
-                manifest={shownManifest}
-                filename={result?.filename ?? null}
-                citationStyles={citationStyles}
-                focus={focusField}
-                suggest={suggest}
-                {...(connection.state === "connected"
-                  ? { defaults: connection.profileDefaults }
-                  : {})}
-                reveal={reveal}
-                onSelection={trackSelection}
-              />
-              <AnnotationPointer onOpen={openHighlight} />
-            </>
-          ) : tab === "properties" ? (
-            <>
-              {entries === null ? (
-                <p className="text-sm text-fd-muted-foreground">
-                  {m.workbench_properties_source_only()}
+              </TabsList>
+              <TabsContent value={tab} className="flex min-h-0 flex-1 flex-col">
+                <h2 className="sr-only">{TAB_LABEL[tab]()}</h2>
+                <p className="mb-3 text-sm leading-relaxed text-fd-muted-foreground">
+                  {TAB_LEDE[tab]()}
                 </p>
-              ) : (
-                <PropertiesPane
-                  suggest={suggest}
-                  controller={controller}
-                  entries={entries}
-                  properties={result?.properties ?? []}
-                  fold={result?.fold ?? []}
-                  diagnostics={rowProblems}
-                  selected={row}
-                  onSelect={setOpenRow}
-                  reveal={reveal}
-                  onSelection={trackSelection}
-                />
-              )}
-              <AnnotationPointer onOpen={openHighlight} />
-            </>
-          ) : (
-            <NotePane
-              controller={controller}
-              reveal={reveal}
-              highlight={highlight}
-              suggest={suggest}
-              onSelection={trackSelection}
-              onOpenHighlight={openHighlight}
-              onEditing={setNoteEditor}
-            />
+                {tab === "name" ? (
+                  <>
+                    <NameFolderPane
+                      onOpenSource={() => changeMode(true)}
+                      controller={controller}
+                      manifest={shownManifest}
+                      filename={result?.filename ?? null}
+                      citationStyles={citationStyles}
+                      focus={focusField}
+                      suggest={suggest}
+                      {...(connection.state === "connected"
+                        ? { defaults: connection.profileDefaults }
+                        : {})}
+                      reveal={reveal}
+                      onSelection={trackSelection}
+                    />
+                  </>
+                ) : tab === "properties" ? (
+                  <>
+                    {entries === null ? (
+                      <p className="text-sm text-fd-muted-foreground">
+                        {m.workbench_properties_source_only()}
+                        <Button
+                          variant="outline"
+                          className="mt-3"
+                          onClick={() => changeMode(true)}
+                        >
+                          {m.workbench_open_source()}
+                        </Button>
+                      </p>
+                    ) : (
+                      <PropertiesPane
+                        suggest={suggest}
+                        controller={controller}
+                        entries={entries}
+                        properties={result?.properties ?? []}
+                        fold={result?.fold ?? []}
+                        diagnostics={rowProblems}
+                        selected={row}
+                        onSelect={setOpenRow}
+                        reveal={reveal}
+                        onSelection={trackSelection}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <NotePane
+                      controller={controller}
+                      reveal={reveal}
+                      highlight={highlight}
+                      suggest={suggest}
+                      onSelection={trackSelection}
+                      onOpenHighlight={openHighlight}
+                      onEditing={setNoteEditor}
+                    />
+                    {controller.noteRegions.annotationCalls.length === 0 && (
+                      <AnnotationPointer onOpen={openHighlight} />
+                    )}
+                  </>
+                )}
+              </TabsContent>
+            </Tabs>
           )}
-          {/* The field list's way in where it has no column: the same list, the
-              same insertion, opened over the pane it writes into. */}
-          <button
-            ref={addField}
-            type="button"
-            aria-haspopup="dialog"
-            aria-expanded={sheet}
-            onClick={() => setSheet(true)}
-            className="mt-3 cursor-pointer border border-fd-border bg-fd-card px-3 py-2 text-sm font-medium lg:hidden"
-          >
-            {m.workbench_add_field()}
-          </button>
-          {sheet && (
-            <FieldDialog
-              root={root}
-              data={fields}
-              onInsert={insert}
-              onClose={closeSheet}
-              className="inset-x-0 bottom-0 max-h-[75dvh] border-t p-4 shadow-[0_-4px_0_0_var(--color-fd-border)] lg:hidden"
-            />
-          )}
+          <Dialog open={sheet} onOpenChange={setSheet}>
+            <DialogContent
+              finalFocus={addField}
+              className="h-[min(42rem,85dvh)]"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <DialogTitle>{m.workbench_add_field()}</DialogTitle>
+                <DialogClose
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={m.workbench_fields_close()}
+                    />
+                  }
+                >
+                  <X aria-hidden />
+                </DialogClose>
+              </div>
+              <FieldList
+                key={`${root}:${fieldMode}`}
+                root={root}
+                mode={fieldMode}
+                disabled={fieldDisabled}
+                data={fields}
+                onInsert={insert}
+              />
+            </DialogContent>
+          </Dialog>
         </section>
 
         <section
-          className={`min-h-0 flex-1 flex-col ${
+          id="workbench-result-pane"
+          className={`min-h-80 min-w-0 flex-1 flex-col min-[780px]:min-h-0 ${
             view === "result" ? "flex" : "hidden min-[780px]:flex"
           }`}
         >
-          <div className="flex items-baseline gap-3">
-            <h2 className="font-serif text-[1.06rem] font-medium">
+          <div className="mb-3 flex min-h-10 flex-wrap items-center justify-between gap-2">
+            <h2 className="font-serif text-lg font-medium">
               {showAnnotation
                 ? m.workbench_highlight_heading()
-                : showManaged
-                  ? m.workbench_result_managed_heading()
+                : !advanced && tab === "properties"
+                  ? m.workbench_result_fold()
                   : m.workbench_result_heading()}
             </h2>
-            <div className="ml-auto flex items-baseline gap-2">
-              {showNote && (
-                <button
-                  type="button"
-                  aria-pressed={showManaged}
-                  onClick={() => setShowManaged((on) => !on)}
-                  className="cursor-pointer border border-fd-border px-2 py-0.5 font-mono text-[0.62rem] font-semibold tracking-widest text-fd-muted-foreground uppercase aria-pressed:border-fd-primary aria-pressed:text-fd-primary"
-                >
-                  {m.workbench_result_managed_toggle()}
-                </button>
-              )}
-              <button
-                type="button"
-                aria-pressed={showMarkdown}
-                onClick={() => setShowMarkdown((on) => !on)}
-                className="cursor-pointer border border-fd-border px-2 py-0.5 font-mono text-[0.62rem] font-semibold tracking-widest text-fd-muted-foreground uppercase aria-pressed:border-fd-primary aria-pressed:text-fd-primary"
+            <label className="flex items-center gap-2 text-sm">
+              <span className="sr-only">{m.workbench_preview_format()}</span>
+              <NativeSelect
+                value={showMarkdown ? "markdown" : "reading"}
+                onChange={(event) =>
+                  setShowMarkdown(event.target.value === "markdown")
+                }
+                size="sm"
               >
-                {m.workbench_result_markdown_toggle()}
-              </button>
-            </div>
+                <NativeSelectOption value="reading">
+                  {m.workbench_preview_reading()}
+                </NativeSelectOption>
+                <NativeSelectOption value="markdown">
+                  {m.workbench_result_markdown_toggle()}
+                </NativeSelectOption>
+              </NativeSelect>
+            </label>
           </div>
-          <p className="mt-1 mb-2.5 text-xs text-fd-muted-foreground">
+          {showNote && (
+            <label className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-fd-muted-foreground">
+                {m.workbench_preview_show()}
+              </span>
+              <NativeSelect
+                value={showManaged ? "managed" : "whole"}
+                onChange={(event) =>
+                  setShowManaged(event.target.value === "managed")
+                }
+                size="sm"
+              >
+                <NativeSelectOption value="whole">
+                  {m.workbench_preview_whole()}
+                </NativeSelectOption>
+                <NativeSelectOption value="managed">
+                  {m.workbench_result_managed_toggle()}
+                </NativeSelectOption>
+              </NativeSelect>
+            </label>
+          )}
+          <p className="mb-3 text-sm leading-relaxed text-fd-muted-foreground">
             {showAnnotation
               ? m.workbench_highlight_result_lede()
               : showManaged
                 ? m.workbench_result_managed_lede()
                 : m.workbench_result_lede()}
           </p>
-          <div className="min-h-0 flex-1 overflow-auto border border-fd-border bg-fd-card p-5 shadow-[6px_6px_0_0_var(--color-fd-border)]">
+          {result && !renderable && (
+            <p role="status" className="mb-3 text-sm font-medium">
+              {m.workbench_preview_stale()}
+            </p>
+          )}
+          <div
+            role="region"
+            tabIndex={0}
+            aria-label={m.workbench_view_result()}
+            className="min-h-0 flex-1 overflow-auto rounded-md border border-fd-border bg-fd-card p-4 shadow-sm sm:p-6"
+          >
             {result ? (
               <>
                 {!showAnnotation && (
-                  <p className="mb-3 font-mono text-xs text-fd-muted-foreground">
+                  <p className="mb-4 font-mono text-xs break-words text-fd-muted-foreground">
                     <span className="sr-only">
                       {m.workbench_result_filename()}:{" "}
                     </span>

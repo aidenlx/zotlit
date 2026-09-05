@@ -161,7 +161,6 @@ describe("a Workbench Connection", () => {
       source: expect.stringContaining(snippet),
     });
 
-    openMenu(page.host);
     page.press(m.workbench_undo());
     page.press(m.workbench_save());
     await page.waitFor(() => expect(saves()).toHaveLength(2));
@@ -225,7 +224,6 @@ describe("a Workbench Connection", () => {
     // answers for the revision it was read at: the vault moved under this
     // draft, which is no permission to write over the edit that moved it.
     expect(page.host.textContent).not.toContain(m.workbench_restore_heading());
-    openMenu(page.host);
     page.press(m.workbench_advanced());
     expect(sourceView(page.host).state.doc.toString()).toContain(snippet);
 
@@ -346,7 +344,6 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    openMenu(page.host);
     page.press(m.workbench_advanced());
     const view = [...page.host.querySelectorAll<HTMLElement>(".cm-editor")]
       .map((editor) => EditorView.findFromDOM(editor)!)
@@ -552,6 +549,25 @@ describe("a Workbench Connection", () => {
     page.show(SAMPLE_ITEMS[1]!.item.key);
     expect(page.host.textContent).toContain(m.workbench_sample_badge());
     expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[1]!.item.key);
+    act(() =>
+      page.host.querySelector<HTMLElement>("#workbench-sample")!.click(),
+    );
+    const retained = [
+      ...document.querySelectorAll<HTMLElement>('[role="option"]'),
+    ].find((option) =>
+      option.textContent.includes(m.workbench_retained_badge()),
+    )!;
+    act(() => {
+      retained.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          pointerType: "mouse",
+        }),
+      );
+      retained.click();
+    });
+    expect(shownItem(page.host)).toBe(`connected:${SAMPLE_ITEMS[0]!.item.key}`);
+    expect(page.host.textContent).toContain(m.workbench_retained_badge());
   });
 
   it("keeps standalone work separate from a disconnected profile draft", async () => {
@@ -562,6 +578,7 @@ describe("a Workbench Connection", () => {
     page.press(m.workbench_restore_accept());
     await page.settle();
     page.press(m.workbench_connection_connect());
+    press(openSheet(page.host), m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -627,7 +644,6 @@ describe("a Workbench Connection", () => {
       );
     expect(bundles()).toHaveLength(1);
 
-    openMenu(page.host);
     page.press(m.workbench_advanced());
     const view = sourceView(page.host);
     act(() => {
@@ -793,7 +809,6 @@ describe("a draft the parser refuses", () => {
     const rendersOfGoodSource = rendered().length;
     expect(rendersOfGoodSource).toBeGreaterThan(0);
 
-    openMenu(page.host);
     page.press(m.workbench_advanced());
     const view = sourceView(page.host);
     const broken = view.state.doc
@@ -819,7 +834,6 @@ describe("a draft the parser refuses", () => {
 
   it("opens Name and folder for a field that tab writes", async () => {
     using page = open();
-    openMenu(page.host);
     page.press(m.workbench_advanced());
     const view = sourceView(page.host);
     act(() => {
@@ -841,6 +855,30 @@ describe("a draft the parser refuses", () => {
 });
 
 describe("the paper a profile is written for", () => {
+  it("shows paper details and switches samples through the picker", () => {
+    using page = open();
+    act(() =>
+      page.host.querySelector<HTMLElement>("#workbench-sample")!.click(),
+    );
+    const options = [...document.querySelectorAll('[role="option"]')];
+    expect(options.map((option) => option.textContent)).toEqual([
+      "Why Most Published Research Findings Are FalseIoannidis · PLoS Medicine",
+      "Designing reproducible research interfacesRivera & Chen · Proceedings of the Open Research Conference",
+      "Thinking, fast and slowKahneman",
+      "Bicycle Sharing in Developing Countries: A proposal towards sustainable transportation in Brazilian media citiesBatista",
+    ]);
+    act(() => {
+      document.activeElement?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+
+    for (const key of ["CNPF226A", "NW2CPDTC", "I49R3FTL", "IANNP5A2"]) {
+      page.show(key);
+      expect(shownItem(page.host)).toBe(key);
+    }
+  });
+
   it("opens on the bundled sample item its sample item type names", async () => {
     const book = SAMPLE_ITEMS.find(({ item }) => item.itemType === "book")!;
     using page = open();
@@ -905,14 +943,18 @@ describe("the result column", () => {
     using page = open();
 
     expect(page.host.textContent).toContain(m.workbench_result_heading());
-    page.press(m.workbench_result_managed_toggle());
+    const select = [...page.host.querySelectorAll("select")].find((select) =>
+      select.querySelector('option[value="managed"]'),
+    )!;
+    act(() => {
+      select.value = "managed";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
 
     // The part an update rewrites is its own result, so it is read on its own
     // rather than found inside the note a creation gets.
-    expect(page.host.textContent).toContain(
-      m.workbench_result_managed_heading(),
-    );
-    expect(page.host.textContent).not.toContain(m.workbench_result_heading());
+    expect(page.host.textContent).toContain(m.workbench_result_managed_lede());
+    expect(page.host.textContent).toContain(m.workbench_result_heading());
   });
 });
 
@@ -944,11 +986,293 @@ describe("the document's way in and out", () => {
     importFile(page.host, KEPT);
     await page.waitFor(() => expect(title(page.host)).toBe("Kept work"));
 
-    openMenu(page.host);
     page.press(m.workbench_download());
 
     expect(names).toEqual(["zotlit-profile.default.md"]);
     await expect(blobs[0]!.text()).resolves.toBe(KEPT);
+  });
+});
+
+describe("the simplified editing flow", () => {
+  it("keeps one undo history when switching between Basic and Source", () => {
+    using page = open();
+    page.press(m.workbench_advanced());
+    const view = sourceView(page.host);
+    const from = view.state.doc.toString().indexOf("# {{ zt.title }}");
+    act(() =>
+      view.dispatch({
+        changes: { from, insert: "Study notes\n" },
+        userEvent: "input.type",
+      }),
+    );
+
+    page.press(m.workbench_basic());
+    page.press(m.workbench_undo());
+    page.press(m.workbench_advanced());
+    expect(sourceView(page.host).state.doc.toString()).toBe(
+      DEFAULT_PROFILE_SOURCE,
+    );
+    page.press(m.workbench_redo());
+    expect(sourceView(page.host).state.doc.toString()).toContain(
+      "Study notes\n# {{ zt.title }}",
+    );
+  });
+
+  it("keeps an edited draft until the reader confirms opening another file", async () => {
+    using page = open();
+    page.press(m.workbench_advanced());
+    const view = sourceView(page.host);
+    act(() =>
+      view.dispatch({
+        changes: {
+          from: view.state.doc.length,
+          insert: "\nMy highlight format",
+        },
+        userEvent: "input.type",
+      }),
+    );
+    const edited = view.state.doc.toString();
+
+    importFile(page.host, KEPT);
+    await page.waitFor(() =>
+      expect(openSheet(page.host).textContent).toContain(
+        m.workbench_replace_heading(),
+      ),
+    );
+    expect(title(page.host)).toBe("Default");
+    press(openSheet(page.host), m.workbench_keep_editing());
+    expect(sourceView(page.host).state.doc.toString()).toBe(edited);
+
+    importFile(page.host, KEPT);
+    await page.waitFor(() =>
+      expect(openSheet(page.host).textContent).toContain(
+        m.workbench_replace_heading(),
+      ),
+    );
+    press(openSheet(page.host), m.workbench_import());
+    await page.waitFor(() => expect(title(page.host)).toBe("Kept work"));
+  });
+
+  it("can undo an unsupported edit and replace it through the save guard", async () => {
+    using page = open();
+    page.press(m.workbench_advanced());
+    const editLanguage = () => {
+      const view = sourceView(page.host);
+      const from = view.state.doc.toString().indexOf("language: liquid");
+      act(() =>
+        view.dispatch({
+          changes: {
+            from,
+            to: from + "language: liquid".length,
+            insert: "language: eta",
+          },
+          userEvent: "input.type",
+        }),
+      );
+    };
+    editLanguage();
+    expect(title(page.host)).toBe(m.workbench_unsupported_heading());
+    page.press(m.workbench_undo());
+    expect(sourceView(page.host).state.doc.toString()).toBe(
+      DEFAULT_PROFILE_SOURCE,
+    );
+    editLanguage();
+    importFile(page.host, KEPT);
+    await page.waitFor(() =>
+      expect(openSheet(page.host).textContent).toContain(
+        m.workbench_replace_heading(),
+      ),
+    );
+    press(openSheet(page.host), m.workbench_import());
+    await page.waitFor(() => expect(title(page.host)).toBe("Kept work"));
+  });
+
+  it("downloads an imported file without saving over the connected profile", async () => {
+    const requests: BridgeRequest[] = [];
+    vi.stubGlobal("fetch", bridgeFetch(requests));
+    using page = open();
+    page.press(m.workbench_connection_connect());
+    await page.waitFor(() =>
+      expect(title(page.host)).toBe("Connected profile"),
+    );
+
+    importFile(page.host, KEPT);
+    await page.waitFor(() => expect(title(page.host)).toBe("Kept work"));
+    expect(
+      [...page.host.querySelectorAll("button")].some(
+        (button) => button.textContent === m.workbench_save(),
+      ),
+    ).toBe(false);
+    const blobs: Blob[] = [];
+    vi.spyOn(URL, "createObjectURL").mockImplementation((blob) => {
+      blobs.push(blob as Blob);
+      return "blob:profile";
+    });
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    page.press(m.workbench_download());
+    await expect(blobs[0]!.text()).resolves.toBe(KEPT);
+    expect(
+      requests.some(
+        ({ path }) => path === LOCAL_BRIDGE_PATHS.saveSelectedProfile,
+      ),
+    ).toBe(false);
+    await page.settle();
+    expect(JSON.parse(localStorage.getItem(KEY)!).source).toBe(KEPT);
+
+    openMenu(page.host);
+    press(document.body, m.workbench_reload_profile());
+    await page.waitFor(() =>
+      expect(title(page.host)).toBe("Connected profile"),
+    );
+    expect(page.host.textContent).toContain(m.workbench_save());
+  });
+
+  it("opens a new property and inserts a field in value syntax", async () => {
+    using page = open();
+    await page.settle();
+    page.press(m.workbench_tab_properties());
+    page.press(m.workbench_properties_add());
+    const row = page.host.querySelector<HTMLElement>("#property-5")!;
+    expect(row).not.toBeNull();
+    expect(document.activeElement).toBe(row.querySelector("input"));
+    const value = EditorView.findFromDOM(
+      row.querySelector<HTMLElement>(".cm-editor")!,
+    )!;
+    act(() =>
+      value.dispatch({
+        selection: { anchor: 0, head: value.state.doc.length },
+      }),
+    );
+    selectField(page.host, m.workbench_field_authors());
+    expect(page.host.querySelector("code")!.textContent).toBe("zt.authors");
+    page.press(m.workbench_fields_put_in_note());
+    expect(value.state.doc.toString()).toBe("zt.authors");
+    page.press(m.workbench_advanced());
+    expect(sourceView(page.host).state.doc.toString()).toContain(
+      "key: property\n    expr: zt.authors",
+    );
+
+    const source = sourceView(page.host);
+    const from = source.state.doc.toString().lastIndexOf("zt.authors");
+    act(() =>
+      source.dispatch({
+        selection: { anchor: from, head: from + "zt.authors".length },
+      }),
+    );
+    selectField(page.host, m.workbench_field_title());
+    expect(page.host.querySelector("code")!.textContent).toBe("zt.title");
+    page.press(m.workbench_fields_put_in_note());
+    expect(source.state.doc.toString()).toContain(
+      "key: property\n    expr: zt.title",
+    );
+  });
+
+  it("announces the current autocomplete choice after an arrow key", async () => {
+    using page = open();
+    await page.settle();
+    page.press(m.workbench_tab_properties());
+    page.press(m.workbench_properties_add());
+    const value = EditorView.findFromDOM(
+      page.host.querySelector<HTMLElement>("#property-5 .cm-editor")!,
+    )!;
+    act(() => {
+      value.focus();
+      value.dispatch({
+        changes: { from: 0, to: value.state.doc.length, insert: "zt." },
+        selection: { anchor: 3 },
+        userEvent: "input.type",
+      });
+      value.contentDOM.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          code: "Space",
+          ctrlKey: true,
+          bubbles: true,
+        }),
+      );
+    });
+    await page.waitFor(() =>
+      expect(document.querySelector('[role="listbox"]')).not.toBeNull(),
+    );
+    act(() => {
+      value.contentDOM.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+      );
+    });
+    await page.waitFor(() => {
+      const selected = document.querySelector(
+        '[role="option"][aria-selected="true"]',
+      )!;
+      expect(selected.textContent).toContain("Authors");
+      expect(value.contentDOM.getAttribute("aria-activedescendant")).toBe(
+        selected.id,
+      );
+    });
+  });
+
+  it("edits fixed property text without template syntax", async () => {
+    using page = open();
+    await page.settle();
+    page.press(m.workbench_tab_properties());
+    page.press(m.workbench_properties_add());
+    const format = page.host
+      .querySelector("#property-5")!
+      .querySelector("select")!;
+    act(() => {
+      format.value = "text";
+      format.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    page.press(m.workbench_properties_format_reset());
+    const value = page.host.querySelector<HTMLInputElement>(
+      'input[aria-label="Value"]',
+    )!;
+    expect(value).not.toBeNull();
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(value, "To read");
+      value.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    page.press(m.workbench_advanced());
+    expect(sourceView(page.host).state.doc.toString()).toContain(
+      'value: "To read"',
+    );
+    page.press(m.workbench_basic());
+    expect(
+      page.host.querySelector<HTMLInputElement>('input[aria-label="Value"]')
+        ?.value,
+    ).toBe("To read");
+  });
+
+  it("changes property format only after confirmation, with the old value one undo away", async () => {
+    using page = open();
+    await page.settle();
+    page.press(m.workbench_tab_properties());
+    page.press(m.workbench_properties_add());
+    const value = EditorView.findFromDOM(
+      page.host.querySelector<HTMLElement>("#property-5 .cm-editor")!,
+    )!;
+    act(() =>
+      value.dispatch({
+        changes: { from: 0, to: value.state.doc.length, insert: "'To read'" },
+        userEvent: "input.type",
+      }),
+    );
+    const format = page.host
+      .querySelector("#property-5")!
+      .querySelector("select")!;
+    act(() => {
+      format.value = "value";
+      format.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(value.state.doc.toString()).toBe("'To read'");
+    page.press(m.workbench_properties_format_reset());
+    page.press(m.workbench_undo());
+    page.press(m.workbench_advanced());
+    expect(sourceView(page.host).state.doc.toString()).toContain(
+      "expr: 'To read'",
+    );
   });
 });
 
@@ -971,14 +1295,14 @@ describe("the narrow layout", () => {
 
     page.press(m.workbench_add_field());
     const sheet = openSheet(page.host);
-    expect(sheet.getAttribute("aria-label")).toBe(m.workbench_fields_heading());
+    expect(sheet.textContent).toContain(m.workbench_fields_heading());
 
     selectField(sheet, m.workbench_field_title());
     const snippet = sheet.querySelector("code")!.textContent!;
     press(sheet, m.workbench_fields_put_in_note());
 
     // The sheet leaves with the snippet it put in the note.
-    expect(page.host.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     await page.settle();
     expect(JSON.parse(localStorage.getItem(KEY)!).source).toContain(snippet);
   });
@@ -987,7 +1311,6 @@ describe("the narrow layout", () => {
     using page = open();
 
     page.press(m.workbench_view_result());
-    openMenu(page.host);
     page.press(m.workbench_advanced());
 
     // Advanced stands inside the pane, so a press made from the result tab
@@ -996,21 +1319,18 @@ describe("the narrow layout", () => {
     expect(page.host.textContent).toContain(m.workbench_advanced_heading());
   });
 
-  it("leaves the reader on the result when Advanced closes", () => {
+  it("returns to the editor when Basic is selected", () => {
     using page = open();
 
-    openMenu(page.host);
     page.press(m.workbench_advanced());
     page.press(m.workbench_view_result());
-    openMenu(page.host);
-    page.press(m.workbench_advanced());
+    page.press(m.workbench_basic());
 
-    // Closing Advanced opens nothing over the pane, so the result the reader
-    // is reading stays the tab they are on.
-    expect(chosenView(page.host)).toBe(m.workbench_view_result());
+    // Basic reveals the section the reader was editing.
+    expect(chosenView(page.host)).toBe(m.workbench_view_editor());
   });
 
-  it("returns the keyboard to the button the field sheet was opened from", () => {
+  it("returns the keyboard to the button the field sheet was opened from", async () => {
     using page = open();
 
     page.press(m.workbench_add_field());
@@ -1019,7 +1339,7 @@ describe("the narrow layout", () => {
     const button = [...page.host.querySelectorAll("button")].find(
       (candidate) => candidate.textContent === m.workbench_add_field(),
     );
-    expect(document.activeElement).toBe(button);
+    await page.waitFor(() => expect(document.activeElement).toBe(button));
   });
 
   it("leaves the field sheet on Escape", () => {
@@ -1034,7 +1354,7 @@ describe("the narrow layout", () => {
       );
     });
 
-    expect(page.host.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it("returns a widened window to the pane", () => {
@@ -1074,10 +1394,20 @@ function open(): OpenPage {
     host,
     press: (label) => press(host, label),
     show(key) {
-      const select = host.querySelector("select")!;
-      select.value = key;
+      act(() => host.querySelector<HTMLElement>("#workbench-sample")!.click());
+      const label = SAMPLE_ITEMS.find((item) => item.item.key === key)!.item
+        .title;
+      const option = [
+        ...document.querySelectorAll<HTMLElement>('[role="option"]'),
+      ].find((item) => item.textContent.startsWith(label!))!;
       act(() => {
-        select.dispatchEvent(new Event("change", { bubbles: true }));
+        option.dispatchEvent(
+          new PointerEvent("pointerdown", {
+            bubbles: true,
+            pointerType: "mouse",
+          }),
+        );
+        option.click();
       });
     },
     async settle() {
@@ -1098,8 +1428,12 @@ function open(): OpenPage {
 
 /** Presses the button reading exactly `label` inside `scope`. */
 function press(scope: HTMLElement, label: string): void {
-  const target = [...scope.querySelectorAll("button")].find(
-    (button) => button.textContent === label,
+  const target = [
+    ...scope.querySelectorAll<HTMLElement>("button, [role=menuitem]"),
+  ].find(
+    (button) =>
+      button.textContent === label ||
+      button.getAttribute("aria-label") === label,
   );
   if (!target) throw new Error(`No button reads '${label}'.`);
   act(() => target.click());
@@ -1143,12 +1477,9 @@ function importFile(host: HTMLElement, source: string): void {
   });
 }
 
-/** Opens the header's More actions menu, where Advanced is offered. */
+/** Opens the profile file actions through the shadcn menu. */
 function openMenu(host: HTMLElement): void {
-  const button = host.querySelector<HTMLElement>(
-    `button[aria-label="${m.workbench_more_actions()}"]`,
-  )!;
-  act(() => button.click());
+  press(host, m.workbench_profile_menu());
 }
 
 /** Draws the page at `width`, the way a window resized to it does. */
@@ -1161,7 +1492,8 @@ function resize(width: number): void {
 
 /** The field list the narrow layout's "Add a field" opened. */
 function openSheet(host: HTMLElement): HTMLElement {
-  const sheet = host.querySelector<HTMLElement>('[role="dialog"]');
+  const sheet =
+    host.ownerDocument.querySelector<HTMLElement>('[role="dialog"]');
   if (!sheet) throw new Error("No field sheet is open.");
   return sheet;
 }
@@ -1169,9 +1501,9 @@ function openSheet(host: HTMLElement): HTMLElement {
 /** The tab the narrow layout reads as chosen: the pane, or the result. */
 function chosenView(host: HTMLElement): string {
   const tabs = host.querySelector(
-    `[role="tablist"][aria-label="${m.workbench_view_label()}"]`,
+    `[role="group"][aria-label="${m.workbench_view_label()}"]`,
   )!;
-  return tabs.querySelector('[aria-selected="true"]')!.textContent!;
+  return tabs.querySelector('[aria-pressed="true"]')!.textContent!;
 }
 
 /** Every source a render was started over. */
@@ -1191,7 +1523,7 @@ function title(host: HTMLElement): string {
 
 /** The Sample Item the page says it is showing. */
 function shownItem(host: HTMLElement): string {
-  return host.querySelector("select")!.value;
+  return host.querySelector<HTMLInputElement>('input[name="sample"]')!.value;
 }
 
 interface BridgeRequest {

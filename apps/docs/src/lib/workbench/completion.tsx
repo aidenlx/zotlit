@@ -110,11 +110,10 @@ export function webCompletion(read: SuggestionSource) {
 
         render() {
           this.view.contentDOM.setAttribute("aria-autocomplete", "list");
-          this.view.contentDOM.setAttribute(
-            "aria-expanded",
-            String(this.#result !== null),
-          );
+          if (this.#result)
+            this.view.contentDOM.setAttribute("aria-haspopup", "listbox");
           if (!this.#result) {
+            this.view.contentDOM.removeAttribute("aria-haspopup");
             this.view.contentDOM.removeAttribute("aria-activedescendant");
             this.view.contentDOM.removeAttribute("aria-controls");
           }
@@ -140,7 +139,7 @@ export function webCompletion(read: SuggestionSource) {
           queueMicrotask(() => this.#root.unmount());
           for (const attribute of [
             "aria-autocomplete",
-            "aria-expanded",
+            "aria-haspopup",
             "aria-controls",
             "aria-activedescendant",
           ])
@@ -175,9 +174,10 @@ function CompletionPopup({
 }) {
   const list = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    const selected = list.current?.querySelector<HTMLElement>(
-      '[aria-selected="true"]',
-    );
+    // Command applies aria-selected in its own effect. Use our active index so
+    // focus announcements and scrolling follow this keypress, not the last one.
+    const selected =
+      list.current?.querySelectorAll<HTMLElement>("[cmdk-item]")[active];
     if (selected) {
       view.contentDOM.setAttribute("aria-activedescendant", selected.id);
       selected.scrollIntoView({ block: "nearest" });
@@ -222,6 +222,7 @@ function CompletionPopup({
             >
               <Command.List
                 label={m.workbench_completion_label()}
+                aria-expanded="true"
                 ref={list}
                 className="max-h-72 overflow-y-auto p-1"
               >

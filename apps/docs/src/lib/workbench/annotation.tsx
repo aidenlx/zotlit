@@ -1,6 +1,5 @@
-// The Annotation Section away from the note tab: the pointer strip the other
-// two tabs carry to it, the section bar Advanced shows over the whole file with
-// its repair action, and the result column's view of one highlight.
+// Access to the Annotation Section when the note has no render call, the Source
+// mode section bar and its repair action, and the preview of one highlight.
 
 import { StateField } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
@@ -13,29 +12,29 @@ import type {
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
 
+import { Button } from "@/components/ui/button";
 import { m } from "@/paraglide/messages.js";
 
 import { ResultSheet } from "./reading-view";
 
 /**
- * The strip Properties and Name and folder carry: the format lives in the note,
- * and this is the way to it. With no render call to open it at, the host sends
- * the reader to the section in Advanced instead.
+ * Access to the format from the note when it has no render call to open inline.
+ * The host opens the section in Source mode.
  */
 export function AnnotationPointer({ onOpen }: { onOpen: () => void }) {
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="mt-auto flex shrink-0 cursor-pointer flex-wrap items-baseline gap-x-3 gap-y-1 border border-fd-border bg-fd-card px-3 py-2 text-left"
+      className="mt-3 flex shrink-0 cursor-pointer flex-wrap items-baseline gap-x-3 gap-y-1 rounded-md border border-fd-border bg-fd-card px-3 py-3 text-left"
     >
-      <span className="font-mono text-[0.62rem] font-semibold tracking-widest text-fd-primary uppercase">
+      <span className="text-sm font-medium">
         {m.workbench_highlight_heading()}
       </span>
-      <span className="text-xs text-fd-muted-foreground">
+      <span className="text-sm text-fd-muted-foreground">
         {m.workbench_highlight_pointer()}
       </span>
-      <span className="ml-auto text-xs underline underline-offset-2">
+      <span className="ml-auto text-sm underline underline-offset-2">
         {m.workbench_highlight_open()}
       </span>
     </button>
@@ -60,32 +59,34 @@ export function AnnotationSectionBar({
     ({ code }) => code === "missing-annotation-section",
   );
   return (
-    <div className="mb-2 flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1 border border-fd-border bg-fd-card px-3 py-2">
-      <span className="font-mono text-[0.62rem] font-semibold tracking-widest text-fd-primary uppercase">
+    <div className="mb-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-fd-border bg-fd-card px-3 py-2">
+      <span className="text-sm font-medium">
         {m.workbench_section_heading()}
       </span>
       {missing ? (
         <>
-          <span className="text-xs text-fd-muted-foreground">
+          <span className="text-sm text-fd-muted-foreground">
             {m.workbench_section_missing()}
           </span>
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => controller.repairAnnotationSection()}
-            className="ml-auto cursor-pointer border border-fd-border px-2 py-0.5 text-xs"
+            className="ml-auto"
           >
             {m.workbench_section_repair()}
-          </button>
+          </Button>
         </>
       ) : (
         section && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => onGo({ ...section.header })}
-            className="ml-auto cursor-pointer text-xs underline underline-offset-2"
+            className="ml-auto"
           >
             {m.workbench_section_go()}
-          </button>
+          </Button>
         )
       )}
     </div>

@@ -2,7 +2,8 @@
 // own expression through a slice of the master document, and the result column
 // that shows what every row produced beside the frontmatter the note gets.
 
-import { useState } from "react";
+import { ArrowDown, ArrowUp, ChevronDown, Plus, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { entrySlice } from "@zotlit/workbench/document";
 import type {
@@ -12,6 +13,18 @@ import type {
 } from "@zotlit/workbench/document";
 import type { RenderedProperty } from "@zotlit/workbench/render";
 
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/ui/native-select";
 import { m } from "@/paraglide/messages.js";
 
 import { PropertyList, propertyText } from "./reading-view";
@@ -23,11 +36,6 @@ const MERGE_LABEL: Record<string, () => string> = {
   append: m.workbench_properties_merge_append,
   keep: m.workbench_properties_merge_keep,
 };
-
-/** A strategy's own words, or the word the author wrote when it names none. */
-function mergeLabel(merge: string): string {
-  return Object.hasOwn(MERGE_LABEL, merge) ? MERGE_LABEL[merge]!() : merge;
-}
 
 /** A problem one row carries: the text to show, and the entry it names. */
 export interface EntryDiagnostic {
@@ -112,28 +120,28 @@ export function PropertiesPane({
   onSelection,
   suggest,
 }: PropertiesPaneProps) {
-  const [menu, setMenu] = useState<number | null>(null);
   const produced = byEntry(properties);
   const problems = Map.groupBy(
     diagnostics,
     (diagnostic) => diagnostic.position,
   );
+  const [newRow, setNewRow] = useState<number | null>(null);
 
-  function act(run: () => void) {
-    return () => {
-      setMenu(null);
-      run();
-    };
+  function add(kind: "property" | "spread", after = entries.length) {
+    if (controller.editManagedEntry({ action: "add", kind, after })) {
+      setNewRow(after + 1);
+      onSelect(after + 1);
+    }
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto pb-4">
       {entries.length === 0 && (
-        <p className="text-sm text-fd-muted-foreground">
+        <p className="rounded-md border border-dashed border-fd-border p-4 text-sm text-fd-muted-foreground">
           {m.workbench_properties_empty()}
         </p>
       )}
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-3">
         {entries.map((entry) => {
           const fields = produced.get(entry.position) ?? [];
           const raised = problems.get(entry.position) ?? [];
@@ -141,40 +149,62 @@ export function PropertiesPane({
           return (
             <li
               key={entry.position}
-              className="border border-fd-border bg-fd-card"
+              className="rounded-md border border-fd-border bg-fd-card"
             >
               <button
                 type="button"
                 aria-expanded={open}
+                aria-controls={`property-${entry.position}`}
                 onClick={() => onSelect(open ? null : entry.position)}
-                className="flex w-full cursor-pointer items-baseline gap-3 px-3 py-2 text-left"
+                className="flex w-full cursor-pointer items-start gap-3 rounded-md px-4 py-3 text-start hover:bg-fd-muted"
               >
-                <span className="font-mono text-[0.8rem] font-medium">
-                  {entry.key ?? m.workbench_properties_spread()}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-xs text-fd-muted-foreground">
-                  {summarize(entry, fields, fold)}
+                <span className="min-w-0 flex-1">
+                  <span className="block font-mono text-sm font-medium break-words">
+                    {entry.key ?? m.workbench_properties_spread()}
+                  </span>
+                  <span
+                    className={`mt-1 block text-sm break-words text-fd-muted-foreground ${open ? "" : "line-clamp-2"}`}
+                  >
+                    {summarize(entry, fields, fold)}
+                  </span>
                 </span>
                 {raised.length > 0 && (
-                  <span className="border border-fd-primary px-1.5 py-0.5 font-mono text-[0.6rem] font-semibold tracking-widest text-fd-primary uppercase">
+                  <span className="text-xs font-medium">
                     {m.workbench_properties_row_problem()}
                   </span>
                 )}
-                <span className="font-mono text-[0.6rem] font-semibold tracking-widest text-fd-muted-foreground uppercase">
-                  {mergeLabel(entry.merge)}
-                </span>
+                <ChevronDown
+                  aria-hidden
+                  className={`mt-1 size-4 shrink-0 ${open ? "rotate-180" : ""}`}
+                />
               </button>
               {open && (
                 <EntryForm
+                  key={`${entry.position}:${entry.language}`}
                   controller={controller}
                   entry={entry}
                   produced={fields}
                   diagnostics={raised}
-                  menuOpen={menu === entry.position}
-                  onMenu={(openMenu) =>
-                    setMenu(openMenu ? entry.position : null)
-                  }
-                  act={act}
+                  focusName={newRow === entry.position}
+                  onAdded={() => add("property", entry.position)}
+                  onMove={(by) => {
+                    if (
+                      controller.editManagedEntry({
+                        action: "move",
+                        position: entry.position,
+                        by,
+                      })
+                    )
+                      onSelect(entry.position + by);
+                  }}
+                  onRemove={() => {
+                    controller.editManagedEntry({
+                      action: "remove",
+                      position: entry.position,
+                    });
+                    onSelect(null);
+                  }}
+                  last={entry.position === entries.length}
                   reveal={reveal}
                   onSelection={onSelection}
                   suggest={suggest}
@@ -185,31 +215,21 @@ export function PropertiesPane({
         })}
       </ul>
       <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() =>
-            controller.editManagedEntry({ action: "add", kind: "property" })
-          }
-          className="cursor-pointer border border-fd-border px-3 py-1.5 text-sm"
-        >
+        <Button variant="outline" onClick={() => add("property")}>
+          <Plus aria-hidden />
           {m.workbench_properties_add()}
-        </button>
-        <details className="relative">
-          <summary className="cursor-pointer list-none px-2 py-1.5 text-sm text-fd-muted-foreground underline underline-offset-2">
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="ghost" />}>
             {m.workbench_properties_more_ways()}
-          </summary>
-          <div className="absolute left-0 z-10 mt-1 w-64 border border-fd-border bg-fd-card p-1 shadow-[4px_4px_0_0_var(--color-fd-border)]">
-            <button
-              type="button"
-              onClick={() =>
-                controller.editManagedEntry({ action: "add", kind: "spread" })
-              }
-              className="w-full cursor-pointer px-3 py-1.5 text-left text-sm hover:bg-fd-accent"
-            >
+            <ChevronDown aria-hidden />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem onClick={() => add("spread")}>
               {m.workbench_properties_add_spread()}
-            </button>
-          </div>
-        </details>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
@@ -220,205 +240,254 @@ interface EntryFormProps {
   entry: ManagedEntrySource;
   produced: readonly RenderedProperty[];
   diagnostics: readonly EntryDiagnostic[];
-  menuOpen: boolean;
-  onMenu: (open: boolean) => void;
-  act: (run: () => void) => () => void;
+  focusName: boolean;
+  onAdded: () => void;
+  onMove: (by: -1 | 1) => void;
+  onRemove: () => void;
+  last: boolean;
   reveal?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
   suggest?: SuggestionSource;
 }
 
-/**
- * The open row: one source editor over the entry's own expression, one merge
- * control, the read-only fields a spread produced, and the entry operations.
- * A `js` entry has no editor — the web host cannot run it.
- */
+/** Edit the name and value first; disclose update behavior and row operations. */
 function EntryForm({
   controller,
   entry,
   produced,
   diagnostics,
-  menuOpen,
-  onMenu,
-  act,
+  focusName,
+  onAdded,
+  onMove,
+  onRemove,
+  last,
   reveal,
   onSelection,
   suggest,
 }: EntryFormProps) {
+  const [pendingLanguage, setPendingLanguage] = useState<
+    "text" | "expr" | "value" | null
+  >(null);
+  const authored =
+    controller.document?.manifest.frontmatter?.[entry.position - 1];
+  const fixedText =
+    authored && "value" in authored && typeof authored.value === "string"
+      ? authored.value
+      : null;
+  const format =
+    entry.language === "value" && fixedText !== null ? "text" : entry.language;
+  const [name, setName] = useState(entry.key ?? "");
+  useEffect(() => setName(entry.key ?? ""), [entry.key]);
   const spread = entry.key === undefined;
+  const errorId = `property-${entry.position}-errors`;
   return (
-    <div className="flex flex-col gap-2 border-t border-fd-border px-3 py-2.5">
+    <div
+      id={`property-${entry.position}`}
+      className="flex flex-col gap-4 border-t border-fd-border p-4"
+    >
       {entry.key !== undefined && (
-        <label className="flex items-center gap-2 text-xs">
-          <span className="text-fd-muted-foreground">
-            {m.workbench_properties_name()}
-          </span>
-          <input
-            key={entry.key}
-            defaultValue={entry.key}
+        <label className="flex flex-col gap-1.5 text-sm font-medium">
+          {m.workbench_properties_name()}
+          <Input
+            autoFocus={focusName}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onFocus={(event) => {
+              if (focusName) event.target.select();
+            }}
             onBlur={(event) => {
               const value = event.target.value.trim();
-              if (value && value !== entry.key) {
+              if (value && value !== entry.key)
                 controller.editManagedEntry({
                   action: "set",
                   position: entry.position,
                   field: "key",
                   value,
                 });
-              }
             }}
-            className="min-w-0 flex-1 border border-fd-border bg-fd-background px-2 py-1 font-mono text-[0.78rem]"
+            className="bg-fd-background font-mono"
           />
         </label>
       )}
       {entry.language === "js" ? (
-        <p className="text-xs text-fd-muted-foreground">
+        <p className="text-sm text-fd-muted-foreground">
           {m.workbench_properties_javascript()}
         </p>
       ) : (
-        <div className="border border-fd-border bg-fd-background">
-          <SliceEditor
-            controller={controller}
-            slice={entrySlice(entry.position)}
-            label={m.workbench_properties_expression()}
-            language={entry.language === "value" ? "json-e" : "expression"}
-            reveal={reveal}
-            onSelection={onSelection}
-            suggest={suggest}
-          />
-        </div>
-      )}
-      {spread && (
-        <>
-          <PropertyList properties={produced} className="text-xs" />
-          <p className="text-xs text-fd-muted-foreground">
-            {m.workbench_properties_override_hint()}
-          </p>
-        </>
-      )}
-      {diagnostics.map((diagnostic, index) => (
-        <p
-          // The list is rebuilt whole on every render, and two fields of one
-          // spread can raise the same words, so the row's own order is the key.
-          key={index}
-          className="border-l-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs"
-        >
-          {diagnostic.message}
-        </p>
-      ))}
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-2 text-xs">
-          <span className="text-fd-muted-foreground">
-            {m.workbench_properties_merge()}
-          </span>
-          <select
-            value={entry.merge}
-            onChange={(event) =>
-              controller.editManagedEntry({
-                action: "set",
-                position: entry.position,
-                field: "merge",
-                value: event.target.value,
-              })
-            }
-            className="border border-fd-border bg-fd-background px-2 py-1 text-xs"
-          >
-            {Object.entries(MERGE_LABEL).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label()}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="relative ml-auto">
-          <button
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            onClick={() => onMenu(!menuOpen)}
-            className="cursor-pointer border border-fd-border px-2 py-1 text-xs"
-          >
-            {m.workbench_properties_options()}
-          </button>
-          {menuOpen && (
-            <div
-              role="menu"
-              aria-label={m.workbench_properties_options()}
-              className="absolute right-0 z-10 mt-1 flex w-60 flex-col border border-fd-border bg-fd-card p-1 shadow-[4px_4px_0_0_var(--color-fd-border)]"
-            >
-              <MenuItem
-                label={m.workbench_properties_add_override()}
-                onClick={act(() => {
-                  controller.editManagedEntry({
-                    action: "add",
-                    kind: "property",
-                    after: entry.position,
-                  });
-                })}
-              />
-              {entry.language !== "js" && !spread && (
-                <MenuItem
-                  label={
-                    entry.language === "expr"
-                      ? m.workbench_properties_to_rule()
-                      : m.workbench_properties_to_value()
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm font-medium">
+              {m.workbench_properties_expression()}
+            </span>
+            {!spread && (
+              <label className="flex min-w-0 items-center gap-2 text-sm">
+                <span className="sr-only">
+                  {m.workbench_properties_format()}
+                </span>
+                <NativeSelect
+                  value={pendingLanguage ?? format}
+                  onChange={(event) =>
+                    setPendingLanguage(
+                      event.target.value as "text" | "expr" | "value",
+                    )
                   }
-                  onClick={act(() => {
+                  size="sm"
+                >
+                  <NativeSelectOption value="text">
+                    {m.workbench_properties_format_text()}
+                  </NativeSelectOption>
+                  <NativeSelectOption value="expr">
+                    {m.workbench_properties_format_value()}
+                  </NativeSelectOption>
+                  <NativeSelectOption value="value">
+                    {m.workbench_properties_format_rule()}
+                  </NativeSelectOption>
+                </NativeSelect>
+              </label>
+            )}
+          </div>
+          <p className="text-sm leading-relaxed text-fd-muted-foreground">
+            {format === "text"
+              ? m.workbench_properties_text_hint()
+              : entry.language === "expr"
+                ? m.workbench_properties_value_hint()
+                : m.workbench_properties_rule_hint()}
+          </p>
+          {pendingLanguage && pendingLanguage !== format && (
+            <div className="space-y-2 rounded-md border border-fd-border bg-fd-muted p-3 text-sm">
+              <p>{m.workbench_properties_format_confirm()}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
                     controller.editManagedEntry({
                       action: "language",
                       position: entry.position,
-                      language: entry.language === "expr" ? "value" : "expr",
+                      language:
+                        pendingLanguage === "text" ? "value" : pendingLanguage,
+                      ...(pendingLanguage === "text" ? { text: "" } : {}),
                     });
-                  })}
-                />
-              )}
-              <MenuItem
-                label={m.workbench_properties_move_up()}
-                onClick={act(() => {
-                  controller.editManagedEntry({
-                    action: "move",
-                    position: entry.position,
-                    by: -1,
-                  });
-                })}
-              />
-              <MenuItem
-                label={m.workbench_properties_move_down()}
-                onClick={act(() => {
-                  controller.editManagedEntry({
-                    action: "move",
-                    position: entry.position,
-                    by: 1,
-                  });
-                })}
-              />
-              <MenuItem
-                label={m.workbench_properties_remove()}
-                onClick={act(() => {
-                  controller.editManagedEntry({
-                    action: "remove",
-                    position: entry.position,
-                  });
-                })}
+                    setPendingLanguage(null);
+                  }}
+                >
+                  {m.workbench_properties_format_reset()}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setPendingLanguage(null)}
+                >
+                  {m.workbench_cancel()}
+                </Button>
+              </div>
+            </div>
+          )}
+          {format === "text" ? (
+            <Input
+              aria-label={m.workbench_properties_expression()}
+              value={fixedText ?? ""}
+              onChange={(event) =>
+                controller.dispatch({
+                  changes: {
+                    from: entry.expression.from,
+                    to: entry.expression.to,
+                    insert: JSON.stringify(event.target.value),
+                  },
+                  userEvent: "input.type",
+                })
+              }
+              className="bg-fd-background"
+            />
+          ) : (
+            <div className="flex min-h-28 flex-col rounded-md border border-fd-border bg-fd-background">
+              <SliceEditor
+                controller={controller}
+                slice={entrySlice(entry.position)}
+                label={m.workbench_properties_expression()}
+                language={entry.language === "value" ? "json-e" : "expression"}
+                invalid={diagnostics.length > 0}
+                describedBy={diagnostics.length > 0 ? errorId : undefined}
+                reveal={reveal}
+                onSelection={onSelection}
+                suggest={suggest}
               />
             </div>
           )}
         </div>
-      </div>
+      )}
+      {spread && <PropertyList properties={produced} className="text-sm" />}
+      {diagnostics.length > 0 && (
+        <div
+          id={errorId}
+          className="space-y-2 border-s-2 border-fd-foreground ps-3 text-sm"
+        >
+          {diagnostics.map((diagnostic, index) => (
+            <p key={index}>{diagnostic.message}</p>
+          ))}
+        </div>
+      )}
+      <details>
+        <summary className="cursor-pointer py-1 text-sm text-fd-muted-foreground">
+          {m.workbench_properties_update_options()}
+        </summary>
+        <div className="mt-3 flex flex-col gap-3">
+          <label className="flex flex-col gap-1.5 text-sm">
+            {m.workbench_properties_merge()}
+            <NativeSelect
+              value={entry.merge}
+              onChange={(event) =>
+                controller.editManagedEntry({
+                  action: "set",
+                  position: entry.position,
+                  field: "merge",
+                  value: event.target.value,
+                })
+              }
+              className="w-full"
+            >
+              {Object.entries(MERGE_LABEL).map(([value, label]) => (
+                <NativeSelectOption key={value} value={value}>
+                  {label()}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </label>
+          <p className="text-sm text-fd-muted-foreground">
+            {m.workbench_properties_override_hint()}
+          </p>
+        </div>
+      </details>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={<Button variant="outline" className="self-start" />}
+        >
+          {m.workbench_properties_options()}
+          <ChevronDown aria-hidden />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuItem onClick={onAdded}>
+            <Plus aria-hidden />
+            {m.workbench_properties_add_override()}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={entry.position === 1}
+            onClick={() => onMove(-1)}
+          >
+            <ArrowUp aria-hidden />
+            {m.workbench_properties_move_up()}
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={last} onClick={() => onMove(1)}>
+            <ArrowDown aria-hidden />
+            {m.workbench_properties_move_down()}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={onRemove}>
+            <Trash2 aria-hidden />
+            {m.workbench_properties_remove()}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
-  );
-}
-
-function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      role="menuitem"
-      onClick={onClick}
-      className="cursor-pointer px-3 py-1.5 text-left text-sm hover:bg-fd-accent"
-    >
-      {label}
-    </button>
   );
 }
 
@@ -458,9 +527,13 @@ export function PropertiesResult({
   return (
     <div className="flex flex-col gap-4">
       <section>
-        <h3 className="font-mono text-[0.62rem] font-semibold tracking-widest text-fd-muted-foreground uppercase">
+        <h3 className="text-sm font-semibold">{m.workbench_result_fold()}</h3>
+        <PropertyList properties={fold} className="mt-3 text-sm" />
+      </section>
+      <details>
+        <summary className="cursor-pointer py-2 text-sm text-fd-muted-foreground">
           {m.workbench_result_by_entry()}
-        </h3>
+        </summary>
         <ul className="mt-2 flex flex-col gap-2">
           {entries.map((entry) => {
             const fields = produced.get(entry.position) ?? [];
@@ -480,13 +553,7 @@ export function PropertiesResult({
             );
           })}
         </ul>
-      </section>
-      <section>
-        <h3 className="font-mono text-[0.62rem] font-semibold tracking-widest text-fd-muted-foreground uppercase">
-          {m.workbench_result_fold()}
-        </h3>
-        <PropertyList properties={fold} className="mt-2 text-xs" />
-      </section>
+      </details>
     </div>
   );
 }
