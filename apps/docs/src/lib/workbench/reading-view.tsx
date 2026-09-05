@@ -292,7 +292,7 @@ export function ResultSheet({
   markdown: string;
   properties: readonly RenderedProperty[];
   showMarkdown: boolean;
-  /** Where each highlight the format produced landed in `markdown`. */
+  /** Where each annotation the format produced landed in `markdown`. */
   marks?: readonly RenderedRange[];
 }) {
   if (showMarkdown) {
@@ -328,14 +328,14 @@ export function ResultSheet({
 }
 
 /**
- * One highlight's output in the sheet. The tint and ring answer the host's
+ * One annotation's output in the sheet. The tint and ring answer the host's
  * `data-emphasis` on the region around the sheet, so the many outputs light
  * up together while the reader is at the one format that made them.
  */
 const OUTPUT_STYLE =
   "-mx-2 rounded-sm px-2 transition-[background-color,box-shadow] duration-150 ease-[cubic-bezier(0.2,0,0,1)] group-data-emphasis:bg-fd-primary/8 group-data-emphasis:shadow-[0_0_0_2px_var(--color-fd-primary)]";
 
-/** Whether a parsed node's source lies inside a rendered highlight. */
+/** Whether a parsed node's source lies inside a rendered annotation. */
 function within(node: ElementContent, { from, to }: RenderedRange): boolean {
   const start = node.position?.start.offset;
   const end = node.position?.end.offset;
@@ -343,7 +343,7 @@ function within(node: ElementContent, { from, to }: RenderedRange): boolean {
 }
 
 /**
- * The sheet's blocks, with each highlight's run of them gathered into one
+ * The sheet's blocks, with each annotation's run of them gathered into one
  * marked block. The parser writes a bare line break between blocks and gives
  * it no source position, so one inside a run stays with the run.
  */
@@ -376,7 +376,7 @@ function markedBlocks(
     blocks.push(
       <div
         key={`mark-${index}`}
-        data-zt="highlight-output"
+        data-zt="annotation-output"
         className={OUTPUT_STYLE}
       >
         {run}
@@ -386,7 +386,7 @@ function markedBlocks(
   return blocks;
 }
 
-/** The generated Markdown byte for byte, each highlight's bytes in a marked span. */
+/** The generated Markdown byte for byte, each annotation's bytes in a marked span. */
 function markedText(
   markdown: string,
   marks: readonly RenderedRange[],
@@ -397,7 +397,7 @@ function markedText(
     if (from < cursor) continue;
     pieces.push(markdown.slice(cursor, from));
     pieces.push(
-      <span key={from} data-zt="highlight-output" className={OUTPUT_STYLE}>
+      <span key={from} data-zt="annotation-output" className={OUTPUT_STYLE}>
         {markdown.slice(from, to)}
       </span>,
     );

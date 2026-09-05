@@ -1026,7 +1026,7 @@ describe("the simplified editing flow", () => {
       view.dispatch({
         changes: {
           from: view.state.doc.length,
-          insert: "\nMy highlight format",
+          insert: "\nMy annotation format",
         },
         userEvent: "input.type",
       }),
@@ -1276,7 +1276,7 @@ describe("the simplified editing flow", () => {
   });
 });
 
-describe("the highlight box", () => {
+describe("the annotation box", () => {
   /** The default Profile with neither the call nor the section it calls. */
   const SILENT = DEFAULT_PROFILE_SOURCE.replace(
     "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n",
@@ -1287,15 +1287,17 @@ describe("the highlight box", () => {
     keep(SILENT, SAMPLE_ITEMS[1]!);
     using page = open();
     page.press(m.workbench_restore_accept());
-    expect(page.host.textContent).toContain(m.workbench_highlight_insert());
+    expect(page.host.textContent).toContain(m.workbench_annotation_insert());
 
-    page.press(m.workbench_highlight_insert());
+    page.press(m.workbench_annotation_insert());
 
     expect(page.host.textContent).toContain(
-      m.workbench_highlight_section_added(),
+      m.workbench_annotation_section_added(),
     );
-    expect(page.host.textContent).toContain(m.workbench_highlight_label());
-    expect(page.host.textContent).not.toContain(m.workbench_highlight_insert());
+    expect(page.host.textContent).toContain(m.workbench_annotation_label());
+    expect(page.host.textContent).not.toContain(
+      m.workbench_annotation_insert(),
+    );
     // The repaired document renders again, loop and section in place.
     await page.waitFor(() =>
       expect(rendered().at(-1)).toContain("{% render_annotation annotation %}"),
@@ -1305,14 +1307,6 @@ describe("the highlight box", () => {
       "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n",
     );
     expect(source.endsWith("\n--- zotlit:annotation ---\n")).toBe(true);
-  });
-
-  it("opens the section in Source from the box", () => {
-    using page = open();
-
-    page.press(m.workbench_highlight_open_source());
-
-    expect(page.host.textContent).toContain(m.workbench_advanced_heading());
   });
 });
 

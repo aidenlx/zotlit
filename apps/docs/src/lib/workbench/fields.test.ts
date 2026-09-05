@@ -112,7 +112,7 @@ describe("commonRows", () => {
     expect(labels).toContain(m.workbench_field_title());
   });
 
-  it("leads the annotation root with the highlight's own fields", () => {
+  it("leads the annotation root with the annotation's own fields", () => {
     const rows = rowsOf(conferencePaper, "annotation");
     const values = new Map(rows.map((row) => [row.label, row.value]));
     expect(rows[0]?.label).toBe(m.workbench_field_text());
@@ -137,7 +137,7 @@ describe("commonRows", () => {
 });
 
 describe("rootData", () => {
-  it("has no annotation root for a paper with no highlights", () => {
+  it("has no annotation root for a paper with no annotations", () => {
     expect(rootData(journalArticle, "annotation")).toBeNull();
   });
 });

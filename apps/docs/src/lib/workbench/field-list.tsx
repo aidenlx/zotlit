@@ -153,7 +153,7 @@ export function FieldList({
       <div className="min-h-0 flex-1 scrollbar-gutter-stable overflow-auto rounded-md border border-fd-border bg-fd-card">
         {data === null ? (
           <p className="px-3 py-2 text-xs text-fd-muted-foreground">
-            {m.workbench_fields_no_highlights()}
+            {m.workbench_fields_no_annotations()}
           </p>
         ) : (
           <>

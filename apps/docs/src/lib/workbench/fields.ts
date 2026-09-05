@@ -88,7 +88,7 @@ export const ROOT_LABEL: Record<TemplateRoot, () => string> = {
 
 /**
  * The root an editor position writes against: the Annotation Section renders
- * one highlight, the manifest's `filename` value renders the note name, and
+ * one annotation, the manifest's `filename` value renders the note name, and
  * every other position renders the note. The filename range is the controller's
  * own `filenameSlice`, so a caret move reads it rather than re-parsing the
  * manifest; a note name one line cannot hold owns no slice, and a caret inside
@@ -110,7 +110,7 @@ export function templateRootAt(
 /**
  * The Template data the root binds to `zt`, restored from the snapshot the way
  * the renderer restores it, so a row shows the value the template would read.
- * @returns null when the paper carries no such root — a paper with no highlights.
+ * @returns null when the paper carries no such root — a paper with no annotations.
  */
 export function rootData(
   snapshot: SampleItem,

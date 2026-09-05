@@ -24,18 +24,18 @@ export function AnnotationPointer({ onInsert }: { onInsert: () => void }) {
   return (
     <div className="mt-3 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-fd-border bg-fd-card px-3 py-2">
       <span className="text-sm font-medium">
-        {m.workbench_highlight_label()}
+        {m.workbench_annotation_label()}
       </span>
       <span className="text-sm text-fd-muted-foreground">
-        {m.workbench_highlight_pointer()}
+        {m.workbench_annotation_pointer()}
       </span>
       <Button
         variant="outline"
         size="sm"
         onClick={onInsert}
-        className="ml-auto"
+        className="ms-auto"
       >
-        {m.workbench_highlight_insert()}
+        {m.workbench_annotation_insert()}
       </Button>
     </div>
   );

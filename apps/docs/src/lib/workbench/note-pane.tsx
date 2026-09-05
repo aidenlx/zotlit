@@ -1,9 +1,10 @@
 // The Your note tab: the note source, with the two boxes the reader meets in
 // it. The Managed Block reads as the part a note update keeps up to date, and
-// the first annotation render call holds the highlight box — one rendered
-// highlight first, and behind it a second pane over the Annotation Section of
-// the same document, so the format is edited where it is used. Every later
-// call is a chip that leads back to that one box.
+// the first annotation render call holds the annotation box: it says that each
+// annotation is written there, then shows one rendered annotation and, behind it,
+// a second pane over the Annotation Section of the same document, so the
+// format is edited where it is used. Every later call is a chip that leads
+// back to that one box.
 
 import { StateField } from "@codemirror/state";
 import type { EditorState, Extension, Range } from "@codemirror/state";
@@ -33,27 +34,25 @@ export interface NotePaneProps {
   controller: WorkbenchDocumentController;
   /** Master offsets to reveal in the note source. */
   reveal?: WorkbenchSliceRange | null;
-  /** Master offsets to reveal in the highlight box, which also focuses it. */
-  highlight?: WorkbenchSliceRange | null;
+  /** Master offsets to reveal in the annotation box, which also focuses it. */
+  annotation?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
   /** The contract both editors complete and explain against. */
   suggest?: SuggestionSource;
-  /** The one highlight the render produced in this format, or null for a sample without. */
+  /** The one annotation the render produced in this format, or null for a sample without. */
   preview: string | null;
   /** The render's complaint about the format, shown in place of the preview. */
   formatProblem: string | null;
-  /** How many highlights the sample carries, which the one format is used for. */
+  /** How many annotations the sample carries, which the one format is used for. */
   count: number;
-  /** A later render call, or the reader, asked for the highlight editor. */
-  onOpenHighlight: () => void;
-  /** The reader asked for the Annotation Section as source, in Source mode. */
-  onOpenSource: () => void;
+  /** A later render call, or the reader, asked for the annotation editor. */
+  onOpenAnnotation: () => void;
   /** The reader is at the box, so the host can point at what it produced. */
   onEmphasis: (on: boolean) => void;
   onEditing: (editor: NoteEditor) => void;
 }
 
-/** The face of the box: the highlight it produces, or the format that produces it. */
+/** The face of the box: the annotation it produces, or the format that produces it. */
 type Face = "preview" | "source";
 
 /** The one motion the box has: a cross-fade in place. Nothing else moves. */
@@ -64,39 +63,38 @@ const HIDDEN_FACE = "pointer-events-none opacity-0";
 export function NotePane({
   controller,
   reveal,
-  highlight,
+  annotation,
   onSelection,
   suggest,
   preview,
   formatProblem,
   count,
-  onOpenHighlight,
-  onOpenSource,
+  onOpenAnnotation,
   onEmphasis,
   onEditing,
 }: NotePaneProps) {
   // One box for the life of the pane: the widget hands CodeMirror this element
   // and React paints into it, so the editor inside survives every redraw.
   const [box] = useState(() => document.createElement("div"));
-  const open = useRef(onOpenHighlight);
-  open.current = onOpenHighlight;
+  const open = useRef(onOpenAnnotation);
+  open.current = onOpenAnnotation;
   const extensions = useMemo(
     () => noteBoxes(controller, box, () => open.current()),
     [controller, box],
   );
-  // The box opens on the highlight it produces, which is what makes the slot
+  // The box opens on the annotation it produces, which is what makes the slot
   // readable; the source behind it is one press away and stays mounted so the
   // two faces cross-fade rather than rebuild.
   const [expanded, setExpanded] = useState(true);
   const [face, setFace] = useState<Face>("preview");
   useEffect(() => {
-    if (highlight) {
+    if (annotation) {
       setExpanded(true);
       setFace("source");
       // A chip further down the note asked for the box, so bring it back up.
       box.scrollIntoView?.({ block: "nearest" });
     }
-  }, [highlight, box]);
+  }, [annotation, box]);
   const call = controller.noteRegions.annotationCalls[0];
   const hasBox = controller.annotationSection !== null && call !== undefined;
   // Two editors report a caret, and the box's arrives last as it mounts. Only
@@ -134,8 +132,8 @@ export function NotePane({
       {hasBox &&
         createPortal(
           <div
-            data-highlight-box
-            className="group/box my-3 flex flex-col rounded-md border border-fd-border bg-fd-card font-sans"
+            data-annotation-box
+            className="my-2 flex flex-col rounded-md border border-fd-border bg-fd-card font-sans"
             onMouseEnter={() => onEmphasis(true)}
             onMouseLeave={() => onEmphasis(false)}
             onFocus={() => onEmphasis(true)}
@@ -145,52 +143,28 @@ export function NotePane({
               }
             }}
           >
-            <div className="flex items-center gap-x-3 px-3 py-2">
-              {/* The name and lede, and the real call, describe one fact, so
-                  they share one slot: the call takes it while the reader is at
-                  the box. */}
-              <div className="relative min-w-0 flex-1 text-sm">
-                <div
-                  className={`flex min-w-0 items-baseline gap-x-3 ${FADE} group-focus-within/box:opacity-0 group-hover/box:opacity-0`}
-                >
-                  <h3 className="shrink-0 font-medium">
-                    {m.workbench_highlight_label()}
-                  </h3>
-                  <p className="truncate text-fd-muted-foreground">
-                    {count > 0
-                      ? m.workbench_highlight_count({ count })
-                      : m.workbench_highlight_lede()}
-                  </p>
-                </div>
-                <p
-                  className={`absolute inset-0 flex min-w-0 items-center gap-x-3 text-fd-muted-foreground opacity-0 ${FADE} group-focus-within/box:opacity-100 group-hover/box:opacity-100`}
-                >
-                  <code aria-hidden className="truncate font-mono text-xs">
-                    {controller.source.slice(call.call.from, call.call.to)}
-                  </code>
-                  <button
-                    type="button"
-                    onClick={onOpenSource}
-                    className="shrink-0 cursor-pointer underline underline-offset-2"
-                  >
-                    {m.workbench_highlight_open_source()}
-                  </button>
-                </p>
-              </div>
-              {/* Icon-only, so the slot beside it has room for the call. */}
+            {/* First what the placeholder does in the note, with the call
+                itself under it as a faint subtitle. The format that each
+                annotation is written in comes second, as its own labelled
+                row over the preview. */}
+            <div className="flex items-center gap-x-2 ps-3 pe-1.5 pt-1">
+              <h3 className="min-w-0 flex-1 truncate text-sm font-medium">
+                {m.workbench_annotation_slot()}
+              </h3>
               <Button
                 variant="ghost"
                 size="sm"
+                className="min-h-7 px-1.5"
                 aria-expanded={expanded}
                 aria-label={
                   expanded
-                    ? m.workbench_highlight_close()
-                    : m.workbench_highlight_edit()
+                    ? m.workbench_annotation_close()
+                    : m.workbench_annotation_edit()
                 }
                 title={
                   expanded
-                    ? m.workbench_highlight_close()
-                    : m.workbench_highlight_edit()
+                    ? m.workbench_annotation_close()
+                    : m.workbench_annotation_edit()
                 }
                 onClick={() => {
                   setExpanded((value) => !value);
@@ -203,10 +177,39 @@ export function NotePane({
                 />
               </Button>
             </div>
+            <p className="truncate px-3 pb-1.5 font-mono text-[0.68rem] text-fd-muted-foreground/70">
+              {controller.source.slice(call.call.from, call.call.to)}
+            </p>
             <div
               className={
                 expanded
-                  ? "relative flex h-56 flex-col border-t border-fd-border"
+                  ? "flex items-center gap-x-2 border-t border-fd-border py-0.5 ps-3 pe-1.5"
+                  : "hidden"
+              }
+            >
+              <h4 className="shrink-0 text-xs font-medium">
+                {m.workbench_annotation_label()}
+              </h4>
+              <p className="min-w-0 flex-1 truncate text-xs text-fd-muted-foreground">
+                {count > 0 ? m.workbench_annotation_count({ count }) : null}
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="min-h-7 px-2 text-xs"
+                onClick={face === "preview" ? showSource : showPreview}
+              >
+                {face === "source"
+                  ? m.workbench_annotation_done()
+                  : formatProblem !== null
+                    ? m.workbench_annotation_fix()
+                    : m.workbench_annotation_edit_format()}
+              </Button>
+            </div>
+            <div
+              className={
+                expanded
+                  ? "relative flex h-40 flex-col border-t border-fd-border"
                   : "hidden"
               }
             >
@@ -217,12 +220,12 @@ export function NotePane({
               >
                 <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
                   {formatProblem !== null ? (
-                    <p className="border-l-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-sm">
+                    <p className="border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-sm">
                       {formatProblem}
                     </p>
                   ) : preview === null ? (
                     <p className="text-sm text-fd-muted-foreground">
-                      {m.workbench_highlight_preview_empty()}
+                      {m.workbench_annotation_preview_empty()}
                     </p>
                   ) : (
                     <ResultSheet
@@ -231,13 +234,6 @@ export function NotePane({
                       showMarkdown={false}
                     />
                   )}
-                </div>
-                <div className="flex justify-end px-3 pb-2">
-                  <Button variant="outline" size="sm" onClick={showSource}>
-                    {formatProblem !== null
-                      ? m.workbench_highlight_fix()
-                      : m.workbench_highlight_edit_format()}
-                  </Button>
                 </div>
               </div>
               <div
@@ -248,17 +244,12 @@ export function NotePane({
                 <SliceEditor
                   controller={controller}
                   slice="annotation"
-                  label={m.workbench_highlight_label()}
-                  reveal={highlight}
+                  label={m.workbench_annotation_label()}
+                  reveal={annotation}
                   suggest={suggest}
                   onSelection={selection("annotation")}
                   onFocus={() => editing("annotation")}
                 />
-                <div className="flex justify-end border-t border-fd-border px-3 py-2">
-                  <Button variant="outline" size="sm" onClick={showPreview}>
-                    {m.workbench_highlight_done()}
-                  </Button>
-                </div>
               </div>
             </div>
           </div>,
@@ -271,14 +262,14 @@ export function NotePane({
 /**
  * The note source's own decorations: the Managed Block as a marked box with a
  * beginner label in place of each raw tag, and every annotation render call
- * replaced — the first by the highlight box, the rest by a chip leading to it. They are
+ * replaced — the first by the annotation box, the rest by a chip leading to it. They are
  * read from the pane's own text, which is the note body, so they never lag the
  * keystroke that moved them. Block decorations belong to a state field.
  */
 function noteBoxes(
   controller: WorkbenchDocumentController,
   box: HTMLElement,
-  openHighlight: () => void,
+  openAnnotation: () => void,
 ): Extension {
   function build({ doc }: EditorState): DecorationSet {
     const body = doc.toString();
@@ -322,9 +313,9 @@ function noteBoxes(
             index === 0 && editable
               ? new BoxWidget(box)
               : new LinkWidget(
-                  m.workbench_highlight_label(),
-                  m.workbench_highlight_chip_hint(),
-                  openHighlight,
+                  m.workbench_annotation_slot(),
+                  m.workbench_annotation_chip_hint(),
+                  openAnnotation,
                 ),
         }).range(target.from, target.to),
       );
@@ -396,7 +387,7 @@ class LinkWidget extends WidgetType {
   }
 }
 
-/** The place the highlight box is painted into, held across every redraw. */
+/** The place the annotation box is painted into, held across every redraw. */
 class BoxWidget extends WidgetType {
   constructor(readonly box: HTMLElement) {
     super();
