@@ -830,6 +830,37 @@ importers:
         specifier: 'catalog:'
         version: 8.8.5
 
+  packages/filter-expression:
+    dependencies:
+      '@lezer/common':
+        specifier: 'catalog:'
+        version: 1.5.2
+      '@lezer/lr':
+        specifier: 'catalog:'
+        version: 1.4.10
+    devDependencies:
+      '@lezer/generator':
+        specifier: 1.8.0
+        version: 1.8.0
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.1.2
+      '@zotlit/config':
+        specifier: workspace:*
+        version: link:../config
+      oxlint:
+        specifier: 'catalog:'
+        version: 1.70.0(oxlint-tsgolint@0.23.0)
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.5(typescript@7.0.2)
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.6(@types/node@26.1.2)(happy-dom@20.9.0)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+
   packages/item-lookup:
     dependencies:
       '@zotlit/db':
