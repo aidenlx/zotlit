@@ -61,7 +61,12 @@ import {
   itemKeyFromFrontmatter,
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
-import { ruleItem, selectProfileByRules } from "@/services/profile-selection";
+import {
+  collectionLookup,
+  resolveMembershipFacts,
+  ruleItem,
+  selectProfileByRules,
+} from "@/services/profile-selection";
 import type {
   ConditionProblem,
   ProfileSelectionRule,
@@ -745,11 +750,17 @@ async function resolveCreationProfile(
     if (!isAvailable(selector!))
       return stopped({ kind: "invalid-selector", source, selector: selector! });
     selection = { selector: selector!, source, shouldAsk };
-  } else if (sources.item) {
+  } else if (sources.item && settings["profile.selection-rules"].length > 0) {
+    // The Item's actual memberships, read once from one snapshot: rules see
+    // every Collection the Item is filed in, not the one a UI shows it under.
+    using lease = await ctx.db.acquireRead();
     const result = selectProfileByRules(
       settings["profile.selection-rules"],
-      ruleItem(sources.item),
-      { isAvailable },
+      ruleItem(
+        sources.item,
+        resolveMembershipFacts(lease.client, sources.item),
+      ),
+      { isAvailable, hasCollection: collectionLookup(lease.client) },
     );
     switch (result.outcome) {
       case "matched":
