@@ -17,7 +17,7 @@ import { createClient } from "@zotlit/db/client/node";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
-import type { ProfileId } from "@/lib/profile-stamp";
+import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { chooseBatchProfile } from "@/services/batch-profile-choice";
 import type {
   AvailableLibrary,
@@ -25,11 +25,21 @@ import type {
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import { selectorOf } from "@/services/library-scope/scope";
+import { describeRule } from "@/services/profile-selection";
+import type { ProfileSelectionRule } from "@/services/profile-selection";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
-import type { BatchModalOptions, FlatGroupDef } from "@/views/batch-modal";
+import type {
+  BatchModalOptions,
+  BatchProfileChoice,
+  FlatGroupDef,
+} from "@/views/batch-modal";
 
-import type { CreateNoteResult } from "./operations";
+import type {
+  CreateNoteResult,
+  CreationProfileSelection,
+  PreparedCreationProfile,
+} from "./operations";
 import {
   batchCreateOutcome,
   BatchCreateRefusedError,
@@ -347,9 +357,18 @@ it("classifies conflicting Companion Profiles as kept rows before any write or p
   expect(chooseBatchProfile).not.toHaveBeenCalled();
   expect(create).not.toHaveBeenCalled();
   expect(settingsUpdate).not.toHaveBeenCalled();
-  const choice = manifest.options.groups.find(
-    (group: FlatGroupDef) => group.profileChoice,
-  )!.profileChoice!;
+  // Every row carries the Companion's Profile, so the only control is the
+  // explicit all-new override.
+  const choices: BatchProfileChoice[] = manifest.options.groups.find(
+    (group: FlatGroupDef) => group.profileChoices,
+  )!.profileChoices!;
+  expect(choices.map(({ scope }) => scope)).toEqual(["all-new"]);
+  const choice = choices[0]!;
+  expect(choice).toMatchObject({
+    label: "Books",
+    source: "headless",
+    count: 1,
+  });
   vi.mocked(chooseBatchProfile)
     .mockResolvedValueOnce(undefined)
     .mockResolvedValueOnce("default");
@@ -433,7 +452,7 @@ it.each([true, false])(
     );
     expect(
       manifest.options.groups.some(
-        (group: FlatGroupDef) => group.profileChoice,
+        (group: FlatGroupDef) => group.profileChoices,
       ),
     ).toBe(false);
     const onItemSettled = vi.fn();
@@ -454,6 +473,381 @@ it.each([true, false])(
     });
   },
 );
+
+const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
+const ARTICLES = "Ar7Kd2QpX9Mn" as ProfileId;
+const RETIRED_STAMP = "Retired (Qw8Er5Ty2Ui9)";
+const BOOKS_RULE: ProfileSelectionRule = {
+  id: "rule-books",
+  scope: { mode: "all" },
+  expression: 'itemType == "book"',
+  profile: BOOKS,
+};
+const ARTICLES_RULE: ProfileSelectionRule = {
+  id: "rule-articles",
+  scope: { mode: "all" },
+  expression: 'itemType == "journalArticle"',
+  profile: ARTICLES,
+};
+const BROKEN_RULE: ProfileSelectionRule = {
+  id: "rule-broken",
+  scope: { mode: "all" },
+  expression: "itemType ==",
+  profile: BOOKS,
+};
+const BROKEN_PROBLEM = m.modal_profile_problem_broken_rule({
+  rule: describeRule(BROKEN_RULE),
+  problem: m.profile_rule_problem_syntax({ text: "itemType ==" }),
+});
+const FOLDERS: Record<ProfileSelector, string> = {
+  default: "Literature",
+  [BOOKS]: "Books",
+  [ARTICLES]: "Articles",
+};
+
+/**
+ * A mixed batch: rows 1 and 2 match different rules, 3 and 4 match none,
+ * 5 hits a broken rule, 6 has a Books-stamped note, 7 an unstamped note, and
+ * 8 a note with an unknown stamp. Every selection comes from the (stubbed)
+ * shared boundary keyed by the Item it receives.
+ */
+function mixedBatch() {
+  const deps = makeDeps();
+  const cache = {
+    getFileCache: (file: TFile) => ({
+      frontmatter: file.path.startsWith("Books/")
+        ? { "zotlit-profile": `Books (${BOOKS})` }
+        : file.path.startsWith("Reading/")
+          ? { "zotlit-profile": RETIRED_STAMP }
+          : {},
+    }),
+  };
+  const profiles = [
+    { id: BOOKS, label: "Books" },
+    { id: ARTICLES, label: "Articles" },
+  ];
+  deps.profile = profileReader({ ...defaults, profiles }, cache);
+  const selections: Record<number, CreationProfileSelection> = {
+    1: { selector: BOOKS, source: "rule", shouldAsk: true, rule: BOOKS_RULE },
+    2: {
+      selector: ARTICLES,
+      source: "rule",
+      shouldAsk: true,
+      rule: ARTICLES_RULE,
+    },
+    3: { selector: "default", source: "bound", shouldAsk: true },
+    4: { selector: "default", source: "bound", shouldAsk: true },
+    5: {
+      selector: "default",
+      source: "bound",
+      shouldAsk: true,
+      problem: {
+        kind: "broken-rule",
+        rule: BROKEN_RULE,
+        problem: { code: "syntax", from: 0, to: 11, text: "itemType ==" },
+      },
+    },
+  };
+  const resolveCreationProfile = vi.fn(
+    async ({ item }: { item?: { itemID: number } }) =>
+      selections[item!.itemID]!,
+  );
+  deps.noteFeature.resolveCreationProfile =
+    resolveCreationProfile as typeof deps.noteFeature.resolveCreationProfile;
+  const created: { itemID: number; selector: ProfileSelector }[] = [];
+  const plansFor = (itemID: number): PreparedCreationProfile[] =>
+    (["default", BOOKS, ARTICLES] as const).map((selector) => ({
+      selector,
+      label: profiles.find(({ id }) => id === selector)?.label,
+      folder: FOLDERS[selector]!,
+      citationStyle: null,
+      document: undefined,
+      path: `${FOLDERS[selector]}/Item ${itemID}.md`,
+      create: async () => {
+        created.push({ itemID, selector });
+        return {
+          outcome: "created" as const,
+          file: { path: `${FOLDERS[selector]}/Item ${itemID}.md` } as TFile,
+        };
+      },
+    }));
+  deps.noteFeature.prepareBatchCreationProfiles = vi.fn(
+    async (items: readonly { itemID: number }[]) =>
+      new Map(items.map(({ itemID }) => [itemID, plansFor(itemID)])),
+  ) as typeof deps.noteFeature.prepareBatchCreationProfiles;
+  const updated: string[] = [];
+  deps.noteFeature.writeNoteUpdate = async (file) => {
+    updated.push(file.path);
+    return file.path.startsWith("Reading/")
+      ? {
+          bodyUpdated: false,
+          duplicateRegionCount: 0,
+          diagnostic: unknownProfileDiagnostic(RETIRED_STAMP, {
+            path: file.path,
+          }),
+        }
+      : { bodyUpdated: true, duplicateRegionCount: 0 };
+  };
+  const notes: Record<string, string> = {
+    ITEM6: "Books/Old.md",
+    ITEM7: "Literature/Other.md",
+    ITEM8: "Reading/Retired.md",
+  };
+  deps.noteIndex.getNotesByItemKey = (key) =>
+    key in notes ? [{ path: notes[key] } as TFile] : [];
+  itemsIn(new Map([1, 2, 3, 4, 5, 6, 7, 8].map((id) => [id, USER_LIBRARY_ID])));
+  vi.mocked(getItemsByID).mockImplementation((_client, ids) =>
+    ids.map((itemID) => ({ itemID, indexedKey: `ITEM${itemID}` }) as any),
+  );
+  vi.mocked(chooseBatchProfile).mockReset();
+  return { deps, resolveCreationProfile, created, updated };
+}
+
+async function classifyMixedBatch(deps: BatchUpdateDeps) {
+  await runBatchUpdate(deps, [1, 2, 3, 4, 5, 6, 7, 8]);
+  const modal = openedModals.at(-1)!;
+  const manifest = (await modal.onClassify({
+    onProgress: vi.fn(),
+    signal: new AbortController().signal,
+  })) as any;
+  const choices: BatchProfileChoice[] = manifest.options.groups.find(
+    (group: FlatGroupDef) => group.profileChoices,
+  ).profileChoices;
+  const choice = (scope: BatchProfileChoice["scope"]) =>
+    choices.find((entry) => entry.scope === scope)!;
+  const run = () =>
+    modal.onRun({ onItemSettled, signal: new AbortController().signal });
+  const onItemSettled = vi.fn();
+  return {
+    modal,
+    tasks: manifest.options.tasks as Record<string, unknown>[],
+    choices,
+    choice,
+    run,
+    onItemSettled,
+  };
+}
+
+const DEFAULT_LABEL = () => m.settings_profile_default_name();
+
+describe("mixed batch", () => {
+  it("prepares each new row from its own selection and keeps the fallback to unmatched rows", async () => {
+    const { deps, resolveCreationProfile, created, updated } = mixedBatch();
+    const { modal, tasks, choices, choice, run, onItemSettled } =
+      await classifyMixedBatch(deps);
+
+    expect(resolveCreationProfile).toHaveBeenCalledTimes(5);
+    expect(
+      resolveCreationProfile.mock.calls.map(([sources]) => sources),
+    ).toEqual(
+      [1, 2, 3, 4, 5].map((itemID) => ({
+        headless: undefined,
+        item: { itemID, indexedKey: `ITEM${itemID}` },
+      })),
+    );
+    expect(tasks).toMatchObject([
+      {
+        id: 1,
+        profile: "Books",
+        path: "Books/Item 1.md",
+        reason: m.modal_profile_source_rule({ rule: describeRule(BOOKS_RULE) }),
+      },
+      {
+        id: 2,
+        profile: "Articles",
+        path: "Articles/Item 2.md",
+        reason: m.modal_profile_source_rule({
+          rule: describeRule(ARTICLES_RULE),
+        }),
+      },
+      {
+        id: 3,
+        profile: DEFAULT_LABEL(),
+        path: "Literature/Item 3.md",
+        reason: m.batch_profile_reason_unmatched(),
+      },
+      { id: 4, profile: DEFAULT_LABEL(), path: "Literature/Item 4.md" },
+      { id: 5, profile: undefined, path: undefined, reason: BROKEN_PROBLEM },
+      { id: 6, profile: "Books" },
+      { id: 7, profile: DEFAULT_LABEL() },
+      { id: 8, profile: RETIRED_STAMP },
+    ]);
+    expect(choices.map(({ scope }) => scope)).toEqual([
+      "unmatched",
+      "affected",
+      "all-new",
+    ]);
+    expect(choice("unmatched")).toMatchObject({
+      count: 2,
+      label: DEFAULT_LABEL(),
+      source: "bound",
+    });
+    expect(choice("affected")).toMatchObject({ count: 1, label: undefined });
+    expect(choice("all-new")).toMatchObject({ count: 5, label: undefined });
+
+    // The fallback moves the two unmatched rows only.
+    vi.mocked(chooseBatchProfile).mockResolvedValueOnce(BOOKS);
+    await choice("unmatched").choose();
+    expect(chooseBatchProfile).toHaveBeenLastCalledWith(
+      deps,
+      expect.objectContaining({
+        indexedKey: "ITEM3",
+        selection: { selector: "default", source: "bound", shouldAsk: true },
+        problem: undefined,
+      }),
+    );
+    expect(tasks.slice(0, 5)).toMatchObject([
+      { id: 1, profile: "Books", path: "Books/Item 1.md" },
+      { id: 2, profile: "Articles", path: "Articles/Item 2.md" },
+      {
+        id: 3,
+        profile: "Books",
+        path: "Books/Item 3.md",
+        reason: m.batch_profile_source_chosen(),
+      },
+      { id: 4, profile: "Books", path: "Books/Item 4.md" },
+      { id: 5, profile: undefined, path: undefined, reason: BROKEN_PROBLEM },
+    ]);
+    expect(choice("unmatched")).toMatchObject({
+      label: "Books",
+      source: "asked",
+    });
+    expect(choice("affected")).toMatchObject({ count: 1, label: undefined });
+
+    // Cancelling the recovery leaves the affected row without a destination.
+    vi.mocked(chooseBatchProfile).mockResolvedValueOnce(undefined);
+    await choice("affected").choose();
+    expect(chooseBatchProfile).toHaveBeenLastCalledWith(
+      deps,
+      expect.objectContaining({ indexedKey: "ITEM5", problem: BROKEN_PROBLEM }),
+    );
+    expect(tasks[4]).toMatchObject({ id: 5, profile: undefined });
+
+    const result = await run();
+    expect(result).toMatchObject({
+      created: 4,
+      updated: 2,
+      failed: 2,
+      skipped: 0,
+    });
+    expect(created).toEqual([
+      { itemID: 1, selector: BOOKS },
+      { itemID: 2, selector: ARTICLES },
+      { itemID: 3, selector: BOOKS },
+      { itemID: 4, selector: BOOKS },
+    ]);
+    expect(updated).toEqual([
+      "Books/Old.md",
+      "Literature/Other.md",
+      "Reading/Retired.md",
+    ]);
+    expect(onItemSettled).toHaveBeenCalledWith({
+      id: 5,
+      status: "failed",
+      failure: { label: "Item 5", message: BROKEN_PROBLEM },
+    });
+    expect(onItemSettled).toHaveBeenCalledWith({
+      id: 8,
+      status: "failed",
+      failure: {
+        label: "Item 8",
+        message: m.notice_literature_note_profile_unknown({
+          stamp: RETIRED_STAMP,
+        }),
+        recovery: { action: "switch-profile", path: "Reading/Retired.md" },
+      },
+    });
+    const summary = modal.text.runSummary(result, {
+      cancelled: false,
+      aborted: false,
+    });
+    for (const part of [
+      m.batch_profile_created({ count: 3, label: "Books" }),
+      m.batch_profile_created({ count: 1, label: "Articles" }),
+      m.batch_profile_updated({ count: 1, label: "Books" }),
+      m.batch_profile_updated({ count: 1, label: DEFAULT_LABEL() }),
+    ])
+      expect(summary).toContain(part);
+    expect(summary).toContain("2 failed");
+  });
+
+  it("overrides every new note with one explicit Profile and leaves existing notes to their stamps", async () => {
+    const { deps, created, updated } = mixedBatch();
+    const { modal, tasks, choice, run } = await classifyMixedBatch(deps);
+
+    vi.mocked(chooseBatchProfile).mockResolvedValueOnce(ARTICLES);
+    await choice("all-new").choose();
+    expect(tasks).toMatchObject([
+      { id: 1, profile: "Articles", path: "Articles/Item 1.md" },
+      { id: 2, profile: "Articles", path: "Articles/Item 2.md" },
+      { id: 3, profile: "Articles", path: "Articles/Item 3.md" },
+      { id: 4, profile: "Articles", path: "Articles/Item 4.md" },
+      {
+        id: 5,
+        profile: "Articles",
+        path: "Articles/Item 5.md",
+        reason: m.batch_profile_source_chosen(),
+      },
+      { id: 6, profile: "Books" },
+      { id: 7, profile: DEFAULT_LABEL() },
+      { id: 8, profile: RETIRED_STAMP },
+    ]);
+    expect(choice("all-new")).toMatchObject({
+      label: "Articles",
+      source: "asked",
+      count: 5,
+    });
+    expect(choice("unmatched")).toMatchObject({ label: "Articles" });
+    expect(choice("affected")).toMatchObject({ label: "Articles" });
+
+    const result = await run();
+    expect(result).toMatchObject({ created: 5, updated: 2, failed: 1 });
+    expect(created.map(({ selector }) => selector)).toEqual(
+      Array(5).fill(ARTICLES),
+    );
+    expect(updated).toHaveLength(3);
+    const summary = modal.text.runSummary(result, {
+      cancelled: false,
+      aborted: false,
+    });
+    expect(summary).toContain(
+      m.batch_profile_created({ count: 5, label: "Articles" }),
+    );
+    expect(summary).not.toContain(
+      m.batch_profile_created({ count: 1, label: "Books" }),
+    );
+  });
+
+  it("stops a creation whose Profile was removed after the preview and keeps the others frozen", async () => {
+    const { deps, created, resolveCreationProfile } = mixedBatch();
+    const { tasks, run, onItemSettled } = await classifyMixedBatch(deps);
+    resolveCreationProfile.mockClear();
+
+    // Articles disappears between preview and run; the rows keep the
+    // destinations they showed, and no selection is computed again.
+    deps.profile = profileReader({
+      ...defaults,
+      profiles: [{ id: BOOKS, label: "Books" }],
+    });
+    const result = await run();
+    expect(result).toMatchObject({ created: 3, updated: 2, failed: 3 });
+    expect(created).toEqual([
+      { itemID: 1, selector: BOOKS },
+      { itemID: 3, selector: "default" },
+      { itemID: 4, selector: "default" },
+    ]);
+    expect(onItemSettled).toHaveBeenCalledWith({
+      id: 2,
+      status: "failed",
+      failure: {
+        label: "Item 2",
+        message: m.notice_literature_note_profile_unknown({ stamp: ARTICLES }),
+      },
+    });
+    expect(resolveCreationProfile).not.toHaveBeenCalled();
+    expect(tasks[1]).toMatchObject({ id: 2, path: "Articles/Item 2.md" });
+  });
+});
 
 describe("runBatchUpdateAll", () => {
   it("returns db-unavailable when the database is closed", async () => {
