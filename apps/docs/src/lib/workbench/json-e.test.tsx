@@ -72,7 +72,8 @@ it.each([false, true])(
       controller.undo();
     });
     expect(controller.source).toBe(source);
-    const original = '{"$eval":"zt.ti"}';
+    if (!advanced) expect(viewText(editor)).toBe('{\n  "$eval": "zt.ti"\n}');
+    const original = advanced ? '{"$eval":"zt.ti"}' : viewText(editor);
     const replacement = JSON.stringify(
       // oxlint-disable-next-line unicorn/no-thenable -- JSON-e names the branch then.
       { $if: "true", then: "${zt.title}", else: "literal" },
@@ -86,6 +87,9 @@ it.each([false, true])(
         changes: { from, to: from + original.length, insert: replacement },
       }),
     );
+    expect(controller.source).toContain(
+      'value: {"$if":"true","then":"${zt.title}","else":"literal"}',
+    );
     expect(
       [...host.querySelectorAll(".tok-keyword")].some(
         (token) => token.textContent === "then",
@@ -98,3 +102,7 @@ it.each([false, true])(
     ).toBe(true);
   },
 );
+
+function viewText(editor: HTMLElement) {
+  return EditorView.findFromDOM(editor)!.state.doc.toString();
+}

@@ -26,6 +26,11 @@ The complete source is the authority ([ADR 0032](../../docs/adr/0032-web-workben
   small document, no history of its own, an echo-guard annotation across the
   boundary, the child's user event forwarded so keystrokes group into one undo
   step, undo and redo routed to the master, and a wholesale child refresh.
+  Pass `true` as the third argument for a JSON-e property: initialize its text
+  with `jsonLayout(source, true).text` and use `jsonPosition` to map offsets.
+  The editor shows two-space indentation and stores compact JSON in YAML.
+  Draft layout and selections, including whitespace-only edits, use master
+  history effects. Token spelling and string contents remain unchanged.
 - `manifestValueEdit(source, path, value)` — the one targeted YAML patch, so a
   form control changes a single manifest node and every other byte survives.
 - `manifestKeyEdit(source, key, value)` and the controller's `setManifestKey` —
