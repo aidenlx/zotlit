@@ -53,6 +53,7 @@ export function DocsImage({
         (breakpoint) => breakpoint <= optimizedWidth,
       )}
       transformer={cloudflareTransform}
+      background="auto"
       operations={{
         format: "auto",
         fit: "scale-down",
