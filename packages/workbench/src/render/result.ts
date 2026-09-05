@@ -28,7 +28,8 @@ export interface RenderDiagnostic {
   readonly message?: string;
   /** The values a host's own message for `code` reads. */
   readonly params?: Readonly<Record<string, string | number>>;
-  readonly part?: "profile" | "properties" | "render";
+  /** `annotation` names the Annotation Section alone as what failed. */
+  readonly part?: "annotation" | "profile" | "properties" | "render";
   /**
    * 1-based position of the Managed Frontmatter entry that caused it, so the
    * responsible row can carry the diagnostic. Absent when nothing names one,
@@ -68,7 +69,18 @@ export interface ProfileRenderResult extends RenderIdentity {
   readonly creationBody: string | null;
   readonly managedRegion: string | null;
   readonly annotation: string | null;
+  /**
+   * Where each highlight the format rendered landed in `creationBody`, in
+   * reading order, so a host can point at the many outputs of the one format.
+   */
+  readonly annotationRanges: readonly RenderedRange[];
   readonly diagnostics: readonly RenderDiagnostic[];
+}
+
+/** A span of rendered Markdown, as offsets into the body it belongs to. */
+export interface RenderedRange {
+  readonly from: number;
+  readonly to: number;
 }
 
 /** FNV-1a over the source, so a result can name the revision it rendered. */
@@ -94,6 +106,7 @@ export function failedRender(
     creationBody: null,
     managedRegion: null,
     annotation: null,
+    annotationRanges: [],
     diagnostics: [diagnostic],
   };
 }

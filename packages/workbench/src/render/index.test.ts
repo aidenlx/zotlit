@@ -130,6 +130,66 @@ describe("Sample Items", () => {
     }
   });
 
+  it("locates each rendered highlight inside the note it produced", () => {
+    // The conference paper is the Sample Item that carries highlights.
+    const sample = SAMPLE_ITEMS[1]!;
+    const result = renderProfile(DEFAULT_PROFILE_SOURCE, sample);
+    const body = result.creationBody!;
+
+    // One range per highlight, in reading order, none overlapping the last.
+    expect(sample.roots.annotations.length).toBeGreaterThan(0);
+    expect(result.annotationRanges).toHaveLength(
+      sample.roots.annotations.length,
+    );
+    let last = 0;
+    for (const [index, { from, to }] of result.annotationRanges.entries()) {
+      expect(from).toBeGreaterThanOrEqual(last);
+      expect(to).toBeGreaterThan(from);
+      expect(body.slice(from, to)).toContain(
+        sample.roots.annotations[index]!.text as string,
+      );
+      last = to;
+    }
+  });
+
+  it("names the format as the part that failed when it alone cannot render", () => {
+    const broken = DEFAULT_PROFILE_SOURCE.replace(
+      "{{ zt.imgLink | embed }}{{ zt.text }}",
+      "{% if zt.text %}{{ zt.text }}",
+    );
+    const result = renderProfile(broken, SAMPLE_ITEMS[1]!);
+
+    expect(result.creationBody).toBeNull();
+    expect(result.annotation).toBeNull();
+    expect(result.diagnostics.map(({ code, part }) => [code, part])).toEqual([
+      ["render-error", "annotation"],
+    ]);
+    expect(result.diagnostics[0]!.message).toContain("annotation");
+  });
+
+  it("keeps the note preview when a broken format is never called", () => {
+    const silent = DEFAULT_PROFILE_SOURCE.replace(
+      "{% render_annotation annotation %}\n",
+      "",
+    ).replace("{{ zt.imgLink | embed }}{{ zt.text }}", "{% if zt.text %}");
+    const result = renderProfile(silent, SAMPLE_ITEMS[1]!);
+
+    expect(result.creationBody).toContain("## Annotations");
+    expect(result.annotation).toBeNull();
+    expect(result.diagnostics.map(({ part }) => part)).toEqual(["annotation"]);
+  });
+
+  it("locates no highlight when the note calls the format nowhere", () => {
+    const silent = DEFAULT_PROFILE_SOURCE.replace(
+      "{% render_annotation annotation %}\n",
+      "",
+    );
+
+    expect(renderProfile(silent, SAMPLE_ITEMS[1]!).annotationRanges).toEqual(
+      [],
+    );
+  });
+
   it("rejects a stale Sample Item after a contract bump", () => {
     const stale = {
       ...SAMPLE_ITEMS[0]!,

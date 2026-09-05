@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -321,5 +322,72 @@ describe("the Markdown toggle", () => {
     expect(textOf(markup)).not.toContain("%%zt-managed%%");
     expect(markup).toContain("<h1");
     expect(textOf(markup)).toContain("citekey");
+  });
+});
+
+describe("rendered highlights", () => {
+  /** A note with two highlights, each a callout the format produced. */
+  const NOTE = [
+    "# Title",
+    "",
+    "Intro.",
+    "",
+    "> [!note] Page 3",
+    "> First highlight",
+    "",
+    "> [!note] Page 5",
+    "> Second highlight",
+    "",
+    "End.",
+    "",
+  ].join("\n");
+  const FIRST = "> [!note] Page 3\n> First highlight\n";
+  const SECOND = "> [!note] Page 5\n> Second highlight\n";
+  const marks = [FIRST, SECOND].map((output) => {
+    const from = NOTE.indexOf(output);
+    return { from, to: from + output.length };
+  });
+
+  function sheet(showMarkdown: boolean): Document {
+    return new DOMParser().parseFromString(
+      renderToStaticMarkup(
+        <ResultSheet
+          markdown={NOTE}
+          properties={[]}
+          showMarkdown={showMarkdown}
+          marks={marks}
+        />,
+      ),
+      "text/html",
+    );
+  }
+
+  it("wraps each highlight the format produced, and nothing else", () => {
+    const blocks = [
+      ...sheet(false).querySelectorAll('[data-zt="highlight-output"]'),
+    ].map((block) => block.textContent);
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toContain("First highlight");
+    expect(blocks[0]).not.toContain("Intro.");
+    expect(blocks[0]).not.toContain("Second highlight");
+    expect(blocks[1]).toContain("Second highlight");
+    expect(blocks[1]).not.toContain("End.");
+  });
+
+  it("marks the same bytes in the generated Markdown", () => {
+    const spans = [
+      ...sheet(true).querySelectorAll('[data-zt="highlight-output"]'),
+    ].map((span) => span.textContent);
+
+    expect(spans).toEqual([FIRST, SECOND]);
+  });
+
+  it("marks nothing when no highlight was rendered", () => {
+    const markup = renderToStaticMarkup(
+      <ResultSheet markdown={NOTE} properties={[]} showMarkdown={false} />,
+    );
+
+    expect(markup).not.toContain("highlight-output");
   });
 });

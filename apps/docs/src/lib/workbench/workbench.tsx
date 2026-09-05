@@ -60,7 +60,6 @@ import { m } from "@/paraglide/messages.js";
 
 import {
   AnnotationPointer,
-  AnnotationResult,
   AnnotationSectionBar,
   annotationHeaderMark,
 } from "./annotation";
@@ -116,6 +115,15 @@ const PROBLEM_WHERE: Partial<Record<WorkbenchSliceId, () => string>> = {
 /** The result becomes a column once both reading and editing have room. */
 const WIDE_LAYOUT = "(min-width: 780px)";
 
+/**
+ * The call a note without one is given: the format once per highlight, in
+ * each language the Profile can be written in.
+ */
+const HIGHLIGHTS_LOOP =
+  "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n";
+const ETA_HIGHLIGHTS_LOOP =
+  "<% for (const annotation of zt.annotations) { %>\n<%~ renderAnnotation(annotation) %>\n<% } %>\n";
+
 export function Workbench() {
   const [controller, setController] = useState(
     () => new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE),
@@ -145,6 +153,22 @@ export function Workbench() {
   // highlight box opens when they are sent to it from elsewhere.
   const [noteEditor, setNoteEditor] = useState<NoteEditor>("note");
   const [highlight, setHighlight] = useState<WorkbenchSliceRange | null>(null);
+  // The reader is at the highlight box, so the result column points at every
+  // highlight the one format produced.
+  const [emphasis, setEmphasis] = useState(false);
+  // A sentence about the edit just made, which the next edit retires. It is
+  // stamped with the revision it belongs to, because the edit that earns it
+  // and the sentence itself land in one render.
+  const [notice, setNotice] = useState<{
+    text: string;
+    revision: number;
+  } | null>(null);
+  const latestRevision = useRef(0);
+  // The first time the sheet shows what the format produced, the result column
+  // brings the first of those into view, once per visit; after that the column
+  // stays where the reader left it.
+  const resultRegion = useRef<HTMLDivElement>(null);
+  const scrolledToOutput = useRef(false);
   const [pendingAction, setPendingAction] = useState<{
     label: string;
     run: () => void;
@@ -221,10 +245,23 @@ export function Workbench() {
   }
 
   useEffect(
-    () => controller.subscribe(() => setRevision((n) => n + 1)),
+    () =>
+      controller.subscribe(() => {
+        latestRevision.current += 1;
+        setRevision(latestRevision.current);
+      }),
     [controller],
   );
   useEffect(() => setFileMessage(null), [revision]);
+  useEffect(() => {
+    if (scrolledToOutput.current || advanced || tab !== "note") return;
+    const first = resultRegion.current?.querySelector<HTMLElement>(
+      '[data-zt="highlight-output"]',
+    );
+    if (!first) return;
+    scrolledToOutput.current = true;
+    first.scrollIntoView?.({ block: "nearest" });
+  }, [result, advanced, tab]);
   useEffect(() => () => scheduler[Symbol.dispose](), [scheduler]);
   useEffect(() => {
     void ensureTemporal().then(() => setTemporal(true));
@@ -310,7 +347,11 @@ export function Workbench() {
   );
 
   const problem = controller.problems[0];
-  const previewProblem = result?.diagnostics[0];
+  // The format's own complaint is shown in the highlight box, so the result
+  // column reports everything else.
+  const previewProblem = result?.diagnostics.find(
+    ({ part }) => part !== "annotation",
+  );
   // Null while the manifest's list is one the rows cannot edit, which is what
   // sends the reader to Advanced with the source intact.
   const entries = controller.managedEntries;
@@ -351,12 +392,14 @@ export function Workbench() {
         : tab === "note" && noteEditor === "annotation"
           ? "annotation"
           : "note";
-  // The highlight box is the note tab's second editor, so the result column
-  // shows the one highlight while the reader is in it.
-  const showAnnotation = !advanced && slice === "annotation";
   // The note itself, which is the one result an update rewrites part of, so the
   // update-only Managed Region is offered beside it and nowhere else.
-  const showNote = !showAnnotation && !(!advanced && tab === "properties");
+  const showNote = !(!advanced && tab === "properties");
+  // The render's complaint about the format alone, shown in the highlight box
+  // where the format is edited rather than in the result column.
+  const formatProblem = result?.diagnostics.find(
+    ({ part }) => part === "annotation",
+  );
 
   /** Opens the row a diagnostic named, wherever the reader was. */
   function goToEntry(position: number, range?: WorkbenchSliceRange) {
@@ -408,21 +451,49 @@ export function Workbench() {
 
   /**
    * Opens the one editor over the Annotation Section: the highlight box at the
-   * first render call, and the section in Advanced when the note body calls it
-   * nowhere — which is also where a document missing the section is repaired.
+   * first render call, with the format's source showing.
    */
   function openHighlight() {
-    setView("edit");
     const section = controller.annotationSection;
-    if (!section || controller.noteRegions.annotationCalls.length === 0) {
-      setAdvanced(true);
-      setReveal(section ? { ...section.header } : null);
-      return;
-    }
+    if (!section || controller.noteRegions.annotationCalls.length === 0) return;
+    setView("edit");
     setAdvanced(false);
     setTab("note");
     setNoteEditor("annotation");
     setHighlight({ from: section.source.from, to: section.source.from });
+  }
+
+  /**
+   * Gives a note that calls the format nowhere its call: the loop over every
+   * highlight, put where the reader left the caret, so the box opens in the
+   * note. A document that also lacks the section is given one first, and told.
+   */
+  function insertHighlights() {
+    const repaired = controller.repairAnnotationSection();
+    const language = controller.document?.manifest.language;
+    insertSnippet(controller, "note", {
+      target: caret,
+      snippet: language === "eta" ? ETA_HIGHLIGHTS_LOOP : HIGHLIGHTS_LOOP,
+    });
+    // Both edits have told the subscriber by now, so the sentence is stamped
+    // with the revision the reader is looking at.
+    if (repaired) {
+      setNotice({
+        text: m.workbench_highlight_section_added(),
+        revision: latestRevision.current,
+      });
+    }
+    setView("edit");
+    setAdvanced(false);
+    setTab("note");
+  }
+
+  /** Opens the Annotation Section as source, in Source mode, at its header. */
+  function openSource() {
+    const section = controller.annotationSection;
+    setView("edit");
+    setAdvanced(true);
+    setReveal(section ? { ...section.header } : null);
   }
 
   // The field list follows the pane the reader is in: the highlight box renders
@@ -788,7 +859,8 @@ export function Workbench() {
         role="status"
         className="px-4 pt-2 text-xs text-fd-muted-foreground min-[780px]:px-6"
       >
-        {fileMessage ??
+        {(notice?.revision === revision ? notice.text : null) ??
+          fileMessage ??
           (canSaveToVault
             ? draft
               ? m.workbench_save_fix()
@@ -1021,12 +1093,19 @@ export function Workbench() {
                       reveal={reveal}
                       highlight={highlight}
                       suggest={suggest}
+                      preview={result?.annotation ?? null}
+                      formatProblem={
+                        formatProblem ? diagnosticText(formatProblem) : null
+                      }
+                      count={sample.roots.annotations.length}
                       onSelection={trackSelection}
                       onOpenHighlight={openHighlight}
+                      onOpenSource={openSource}
+                      onEmphasis={setEmphasis}
                       onEditing={setNoteEditor}
                     />
                     {controller.noteRegions.annotationCalls.length === 0 && (
-                      <AnnotationPointer onOpen={openHighlight} />
+                      <AnnotationPointer onInsert={insertHighlights} />
                     )}
                   </>
                 )}
@@ -1072,11 +1151,9 @@ export function Workbench() {
         >
           <div className="mb-3 flex min-h-10 flex-wrap items-center justify-between gap-2">
             <h2 className="font-serif text-lg font-medium">
-              {showAnnotation
-                ? m.workbench_highlight_heading()
-                : !advanced && tab === "properties"
-                  ? m.workbench_result_fold()
-                  : m.workbench_result_heading()}
+              {!advanced && tab === "properties"
+                ? m.workbench_result_fold()
+                : m.workbench_result_heading()}
             </h2>
             <label className="flex items-center gap-2 text-sm">
               <span className="sr-only">{m.workbench_preview_format()}</span>
@@ -1118,11 +1195,9 @@ export function Workbench() {
             </label>
           )}
           <p className="mb-3 text-sm leading-relaxed text-fd-muted-foreground">
-            {showAnnotation
-              ? m.workbench_highlight_result_lede()
-              : showManaged
-                ? m.workbench_result_managed_lede()
-                : m.workbench_result_lede()}
+            {showManaged
+              ? m.workbench_result_managed_lede()
+              : m.workbench_result_lede()}
           </p>
           {result && !renderable && (
             <p role="status" className="mb-3 text-sm font-medium">
@@ -1133,18 +1208,18 @@ export function Workbench() {
             role="region"
             tabIndex={0}
             aria-label={m.workbench_view_result()}
-            className="min-h-0 flex-1 overflow-auto rounded-md border border-fd-border bg-fd-card p-4 shadow-sm sm:p-6"
+            ref={resultRegion}
+            data-emphasis={emphasis || undefined}
+            className="group min-h-0 flex-1 overflow-auto rounded-md border border-fd-border bg-fd-card p-4 shadow-sm sm:p-6"
           >
             {result ? (
               <>
-                {!showAnnotation && (
-                  <p className="mb-4 font-mono text-xs break-words text-fd-muted-foreground">
-                    <span className="sr-only">
-                      {m.workbench_result_filename()}:{" "}
-                    </span>
-                    {result.filename}
-                  </p>
-                )}
+                <p className="mb-4 font-mono text-xs break-words text-fd-muted-foreground">
+                  <span className="sr-only">
+                    {m.workbench_result_filename()}:{" "}
+                  </span>
+                  {result.filename}
+                </p>
                 {previewProblem && (
                   <p className="mb-3 border-l-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs">
                     <strong className="font-medium">
@@ -1162,12 +1237,7 @@ export function Workbench() {
                     )}
                   </p>
                 )}
-                {showAnnotation ? (
-                  <AnnotationResult
-                    markdown={result.annotation}
-                    showMarkdown={showMarkdown}
-                  />
-                ) : showNote && showManaged ? (
+                {showNote && showManaged ? (
                   result.managedRegion === null ? (
                     <p className="text-sm text-fd-muted-foreground">
                       {m.workbench_result_managed_none()}
@@ -1194,6 +1264,7 @@ export function Workbench() {
                     // entry merged into, not each entry's own contribution.
                     properties={result.fold}
                     showMarkdown={showMarkdown}
+                    marks={result.annotationRanges}
                   />
                 )}
               </>

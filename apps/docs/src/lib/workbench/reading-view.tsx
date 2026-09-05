@@ -19,7 +19,7 @@ import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 
-import type { RenderedProperty } from "@zotlit/workbench/render";
+import type { RenderedProperty, RenderedRange } from "@zotlit/workbench/render";
 
 import { m } from "@/paraglide/messages.js";
 
@@ -287,10 +287,13 @@ export function ResultSheet({
   markdown,
   properties,
   showMarkdown,
+  marks = [],
 }: {
   markdown: string;
   properties: readonly RenderedProperty[];
   showMarkdown: boolean;
+  /** Where each highlight the format produced landed in `markdown`. */
+  marks?: readonly RenderedRange[];
 }) {
   if (showMarkdown) {
     return (
@@ -300,7 +303,7 @@ export function ResultSheet({
         aria-label={m.workbench_result_markdown_body()}
         className="font-mono text-[0.8rem] leading-relaxed break-words whitespace-pre-wrap"
       >
-        {markdown}
+        {markedText(markdown, marks)}
       </pre>
     );
   }
@@ -318,12 +321,90 @@ export function ResultSheet({
         aria-label={m.workbench_result_body()}
         className={SHEET_STYLE}
       >
-        {parseNote(markdown).children.map((node, index) =>
-          toJsx(node as ElementContent, index),
-        )}
+        {markedBlocks(parseNote(markdown), marks)}
       </div>
     </div>
   );
+}
+
+/**
+ * One highlight's output in the sheet. The tint and ring answer the host's
+ * `data-emphasis` on the region around the sheet, so the many outputs light
+ * up together while the reader is at the one format that made them.
+ */
+const OUTPUT_STYLE =
+  "-mx-2 rounded-sm px-2 transition-[background-color,box-shadow] duration-150 ease-[cubic-bezier(0.2,0,0,1)] group-data-emphasis:bg-fd-primary/8 group-data-emphasis:shadow-[0_0_0_2px_var(--color-fd-primary)]";
+
+/** Whether a parsed node's source lies inside a rendered highlight. */
+function within(node: ElementContent, { from, to }: RenderedRange): boolean {
+  const start = node.position?.start.offset;
+  const end = node.position?.end.offset;
+  return start !== undefined && end !== undefined && start < to && end > from;
+}
+
+/**
+ * The sheet's blocks, with each highlight's run of them gathered into one
+ * marked block. The parser writes a bare line break between blocks and gives
+ * it no source position, so one inside a run stays with the run.
+ */
+function markedBlocks(
+  tree: Root,
+  marks: readonly RenderedRange[],
+): ReactNode[] {
+  const nodes = tree.children as ElementContent[];
+  const blocks: ReactNode[] = [];
+  for (let index = 0; index < nodes.length; ) {
+    const node = nodes[index]!;
+    const mark = marks.find((range) => within(node, range));
+    if (!mark) {
+      blocks.push(toJsx(node, index));
+      index += 1;
+      continue;
+    }
+    const run: ReactNode[] = [];
+    while (index < nodes.length) {
+      const next = nodes[index]!;
+      const between =
+        next.type === "text" &&
+        next.position === undefined &&
+        nodes[index + 1] !== undefined &&
+        within(nodes[index + 1]!, mark);
+      if (!within(next, mark) && !between) break;
+      run.push(toJsx(next, index));
+      index += 1;
+    }
+    blocks.push(
+      <div
+        key={`mark-${index}`}
+        data-zt="highlight-output"
+        className={OUTPUT_STYLE}
+      >
+        {run}
+      </div>,
+    );
+  }
+  return blocks;
+}
+
+/** The generated Markdown byte for byte, each highlight's bytes in a marked span. */
+function markedText(
+  markdown: string,
+  marks: readonly RenderedRange[],
+): ReactNode[] {
+  const pieces: ReactNode[] = [];
+  let cursor = 0;
+  for (const { from, to } of marks) {
+    if (from < cursor) continue;
+    pieces.push(markdown.slice(cursor, from));
+    pieces.push(
+      <span key={from} data-zt="highlight-output" className={OUTPUT_STYLE}>
+        {markdown.slice(from, to)}
+      </span>,
+    );
+    cursor = to;
+  }
+  pieces.push(markdown.slice(cursor));
+  return pieces;
 }
 
 /**

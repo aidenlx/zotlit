@@ -1,5 +1,5 @@
-// Access to the Annotation Section when the note has no render call, the Source
-// mode section bar and its repair action, and the preview of one highlight.
+// Access to the Annotation Section when the note has no render call, and the
+// Source mode section bar with its repair action.
 
 import { StateField } from "@codemirror/state";
 import type { EditorState, Extension } from "@codemirror/state";
@@ -15,29 +15,29 @@ import type {
 import { Button } from "@/components/ui/button";
 import { m } from "@/paraglide/messages.js";
 
-import { ResultSheet } from "./reading-view";
-
 /**
- * Access to the format from the note when it has no render call to open inline.
- * The host opens the section in Source mode.
+ * The format's place under a note that calls it nowhere: the host puts the
+ * call, and the loop around it, where the reader left the caret, and the box
+ * opens there.
  */
-export function AnnotationPointer({ onOpen }: { onOpen: () => void }) {
+export function AnnotationPointer({ onInsert }: { onInsert: () => void }) {
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="mt-3 flex shrink-0 cursor-pointer flex-wrap items-baseline gap-x-3 gap-y-1 rounded-md border border-fd-border bg-fd-card px-3 py-3 text-left"
-    >
+    <div className="mt-3 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-fd-border bg-fd-card px-3 py-2">
       <span className="text-sm font-medium">
-        {m.workbench_highlight_heading()}
+        {m.workbench_highlight_label()}
       </span>
       <span className="text-sm text-fd-muted-foreground">
         {m.workbench_highlight_pointer()}
       </span>
-      <span className="ml-auto text-sm underline underline-offset-2">
-        {m.workbench_highlight_open()}
-      </span>
-    </button>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onInsert}
+        className="ml-auto"
+      >
+        {m.workbench_highlight_insert()}
+      </Button>
+    </div>
   );
 }
 
@@ -119,31 +119,4 @@ function headerMarks({ doc }: EditorState): DecorationSet {
     }
   }
   return Decoration.set(marks);
-}
-
-/**
- * The result column while the reader edits the format: the one highlight the
- * render produced, as the note would carry it.
- */
-export function AnnotationResult({
-  markdown,
-  showMarkdown,
-}: {
-  markdown: string | null;
-  showMarkdown: boolean;
-}) {
-  if (markdown === null) {
-    return (
-      <p className="text-sm text-fd-muted-foreground">
-        {m.workbench_fields_no_highlights()}
-      </p>
-    );
-  }
-  return (
-    <ResultSheet
-      markdown={markdown}
-      properties={[]}
-      showMarkdown={showMarkdown}
-    />
-  );
 }

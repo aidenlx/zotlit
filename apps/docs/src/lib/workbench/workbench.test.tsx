@@ -1276,6 +1276,46 @@ describe("the simplified editing flow", () => {
   });
 });
 
+describe("the highlight box", () => {
+  /** The default Profile with neither the call nor the section it calls. */
+  const SILENT = DEFAULT_PROFILE_SOURCE.replace(
+    "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n",
+    "",
+  ).replace(/\n--- zotlit:annotation ---\n[\s\S]*$/, "\n");
+
+  it("gives a note without the call its loop, and the section it needs, in one press", async () => {
+    keep(SILENT, SAMPLE_ITEMS[1]!);
+    using page = open();
+    page.press(m.workbench_restore_accept());
+    expect(page.host.textContent).toContain(m.workbench_highlight_insert());
+
+    page.press(m.workbench_highlight_insert());
+
+    expect(page.host.textContent).toContain(
+      m.workbench_highlight_section_added(),
+    );
+    expect(page.host.textContent).toContain(m.workbench_highlight_label());
+    expect(page.host.textContent).not.toContain(m.workbench_highlight_insert());
+    // The repaired document renders again, loop and section in place.
+    await page.waitFor(() =>
+      expect(rendered().at(-1)).toContain("{% render_annotation annotation %}"),
+    );
+    const source = rendered().at(-1)!;
+    expect(source).toContain(
+      "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n",
+    );
+    expect(source.endsWith("\n--- zotlit:annotation ---\n")).toBe(true);
+  });
+
+  it("opens the section in Source from the box", () => {
+    using page = open();
+
+    page.press(m.workbench_highlight_open_source());
+
+    expect(page.host.textContent).toContain(m.workbench_advanced_heading());
+  });
+});
+
 describe("the narrow layout", () => {
   it("carries the result on a tab of its own", () => {
     using page = open();
