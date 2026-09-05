@@ -115,7 +115,10 @@ export async function createProfileDialog(
   ]);
   const modal = new CreateProfileModal(deps, { ...options, data, styles });
   modal.open();
-  return modal.result;
+  const created = await modal.result;
+  if (created && !options.useForNote)
+    new BaseNotice(m.notice_profile_created({ label: created.profile.label }));
+  return created;
 }
 
 export class CreateProfileModal extends Modal {
@@ -331,10 +334,6 @@ export class CreateProfileModal extends Modal {
             });
             this.#decision.resolve({ profile, preview: selectedPreview });
             this.close();
-            if (!this.#options.useForNote)
-              new BaseNotice(
-                m.notice_profile_created({ label: profile.label }),
-              );
           } catch (error) {
             logger.error("Failed to create Profile from dialog", { error });
             reason.setText(
