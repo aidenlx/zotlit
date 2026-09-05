@@ -22,7 +22,7 @@ frontmatter:
     expr: zt.collections | collection_paths
     merge: replace
   - key: citekey
-    expr: zt.citationKey
+    value: {"$eval":"zt.citationKey"}
     merge: replace
 ---
 # {{ zt.title }}

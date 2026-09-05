@@ -1563,15 +1563,10 @@ describe("the generated Obsidian vault", () => {
     expr: zt.title
     merge: replace`);
     expect(document).toContain(`  - key: fixture-kind
-    value:
-      $if: 'zt.itemType == "journalArticle"'
-      then: reference/article
-      else: reference/other
+    value: {"$if":"zt.itemType == 'journalArticle'","then":"reference/article","else":"reference/other"}
     merge: replace`);
     expect(document).toContain(`  - key: fixture-obsolete
-    value:
-      $if: 'zt.itemType == "bookSection"'
-      then: retained
+    value: {"$if":"zt.itemType == 'bookSection'","then":"retained"}
     merge: replace`);
   });
 

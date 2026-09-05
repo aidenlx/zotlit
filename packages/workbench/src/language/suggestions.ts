@@ -24,8 +24,10 @@ import {
 } from "./contract";
 import { etaRange } from "./eta-syntax";
 import type { EtaRange } from "./eta-syntax";
+import { jsonSuggestions, jsonHover } from "./json-e";
 import { liquidRanges, STRUCTURAL_TAGS } from "./liquid-ranges";
 import type { LiquidRange } from "./liquid-ranges";
+import { rankSuggestions } from "./matching";
 import { localsAt } from "./scope";
 const JSDOC_LINK = regex("\\{@link (?<target>[^}]+)}", "g");
 const ANNOTATION_SHORTCUT_DETAIL =
@@ -38,7 +40,7 @@ export interface SuggestionConfig {
   /** Source region that owns this render scope, in editor offsets. */
   scope?: { from: number; to: number };
   /** @default "liquid" */
-  language?: TemplateLanguage;
+  language?: TemplateLanguage | "json-e";
   /** Partial names the host has registered, offered after `render` / `include(`. */
   partials: readonly string[];
   /** Serialized Template data for the root; supplies `Sample:` hints. */
@@ -83,7 +85,7 @@ export interface SuggestionResult {
   tagEnd: number;
   root: ContractRoot;
   trigger: string;
-  language: TemplateLanguage;
+  language: TemplateLanguage | "json-e";
   expression?: boolean;
   range: TemplateRange;
   options: Suggestion[];
@@ -521,6 +523,8 @@ export function suggestions(
       })),
     };
   }
+  if (config.language === "json-e")
+    return jsonSuggestions(source, position, config);
   const isEta = config.language === "eta";
   const profile = isEta ? ETA_PROFILE : LIQUID_PROFILE;
   const range = profile.findRange(source, position);
@@ -666,6 +670,25 @@ export function hoverHint(
   position: number,
   config: SuggestionConfig,
 ): SuggestionResult | null {
+  if (config.language === "json-e") {
+    const from = config.scope?.from ?? 0;
+    const to = config.scope?.to ?? source.length;
+    if (position < from || position > to) return null;
+    const result = jsonHover(source.slice(from, to), position - from, config);
+    return result
+      ? {
+          ...result,
+          from: result.from + from,
+          to: result.to + from,
+          tagEnd: result.tagEnd + from,
+          range: {
+            ...result.range,
+            from: result.range.from + from,
+            to: result.range.to + from,
+          },
+        }
+      : null;
+  }
   const from =
     position - (/[\w-]*$/.exec(source.slice(0, position))?.[0].length ?? 0);
   const to =
@@ -676,47 +699,4 @@ export function hoverHint(
     (entry) => entry.label === source.slice(from, to),
   );
   return result && option ? { ...result, from, to, options: [option] } : null;
-}
-
-/** Rank once in the core so host widgets display the same order. */
-function rankSuggestions(
-  options: Suggestion[],
-  query: string,
-  config: SuggestionConfig,
-): Suggestion[] {
-  const fields = config.fields ?? [];
-  return options
-    .map((option, index) => {
-      const common = fields.findIndex((field) => field.path === option.path);
-      const displayLabel = common < 0 ? option.label : fields[common]!.label;
-      const score = query
-        ? Math.min(
-            ...[option.label, displayLabel, option.path ?? ""].map((text) =>
-              matchScore(text, query),
-            ),
-          )
-        : 0;
-      return {
-        option: common < 0 ? option : { ...option, displayLabel },
-        score,
-        order: common < 0 ? fields.length + index : common,
-      };
-    })
-    .filter(({ score }) => Number.isFinite(score))
-    .sort((a, b) => a.score - b.score || a.order - b.order)
-    .map(({ option }) => option);
-}
-
-function matchScore(value: string, search: string): number {
-  const text = value.toLowerCase();
-  const query = search.toLowerCase();
-  if (text === query) return 0;
-  if (text.startsWith(query)) return 1;
-  let offset = 0;
-  for (const char of query) {
-    const found = text.indexOf(char, offset);
-    if (found < 0) return Infinity;
-    offset = found + 1;
-  }
-  return 2;
 }

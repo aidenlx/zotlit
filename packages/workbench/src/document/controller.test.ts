@@ -506,3 +506,20 @@ describe("WorkbenchDocumentController and the Annotation Section", () => {
     );
   });
 });
+
+it("keeps invalid JSON rule drafts in the document and points repair at the row", () => {
+  const source = HAND_WRITTEN.replace(
+    "expr: zt.title",
+    'value: {"$eval":"zt.title",}',
+  );
+  const controller = new WorkbenchDocumentController(source);
+  expect(controller.source).toBe(source);
+  expect(controller.problems).toContainEqual(
+    expect.objectContaining({ code: "invalid-manifest", slice: "entry:1" }),
+  );
+  const comma = source.indexOf(",}");
+  controller.dispatch({ changes: { from: comma, to: comma + 1 } });
+  expect(controller.problems).toEqual([]);
+  controller.undo();
+  expect(controller.source).toBe(source);
+});

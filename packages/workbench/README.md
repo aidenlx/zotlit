@@ -131,12 +131,13 @@ the page, so Reconnect after a blip costs no fresh approval. A refusal (HTTP
 
 ## Language
 
-`@zotlit/workbench/language` holds the editor support for Liquid and Eta
-Templates, ported from the reviewed language prototype:
+`@zotlit/workbench/language` holds the editor support for Liquid, Eta, and JSON-e
+authoring:
 
 - `liquidMarkdown` — the upstream Liquid language over a Markdown base, plus a
   delimiter accent decoration (`zt-liquid-delimiter`).
-- `yamlRule` — the YAML language, for a pane over one Managed Frontmatter rule.
+- `jsonRule` and `embeddedJsonE` — JSON parsing and JSON-e expression token colors
+  in Property rules and Advanced, using the same source regions as completion.
 - `liquidRanges(source)` — a quote-aware delimiter scanner that bounds
   suggestions and hover and marks the Managed Block tags as `structural`.
 - `eta`, `etaLanguage`, `etaRange(source, position)` — a Lezer grammar for
@@ -159,6 +160,12 @@ Regenerate the Eta parser after editing `src/language/eta.grammar`:
 ```sh
 pnpm --filter @zotlit/workbench generate:eta
 ```
+
+JSON-e rules use `jsonc-parser` for incomplete JSON and source ranges. The shared
+resolver handles operator keys, functions, contract paths, bracket members, and
+statically traceable locals. Each rule has its own scope. The JSON-e runtime is
+the semantic-validation authority; the editor does not execute drafts to infer
+local values. JSON syntax errors appear in the document Problems list.
 
 Hosts supply the syntax colors: the Liquid delimiter class above and the Eta
 delimiter class `zt-eta-delimiter`.
