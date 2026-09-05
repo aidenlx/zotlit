@@ -1,11 +1,20 @@
-// The field list: this paper's values under the names a reader knows, with the
-// full Explorer tree behind "Everything else from Zotero". Both lists select a
-// row the same way, and both insert the same snippet.
+// The field list shows every field, with populated fields first and familiar
+// names for common fields. Nested values expand in place.
 
-import { ChevronDown, Copy, Plus } from "lucide-react";
+import {
+  ClipboardType,
+  Code,
+  Copy,
+  FilePlus2,
+  GitBranch,
+  List,
+  Repeat,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
+  copyValue,
+  formatPath,
   buildDisplayTree,
   buildFilteredDisplayTree,
   initialTreeState,
@@ -20,11 +29,13 @@ import type {
 } from "@zotlit/workbench/explorer";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 import { m } from "@/paraglide/messages.js";
 
 import {
@@ -38,10 +49,17 @@ import {
 import type { FieldInsertionMode, TemplateRoot } from "./fields";
 
 const SNIPPET_LABEL: Record<SnippetKind, () => string> = {
-  output: m.workbench_snippet_output,
-  "if-present": m.workbench_snippet_if_present,
-  loop: m.workbench_snippet_loop,
-  joined: m.workbench_snippet_joined,
+  output: m.template_data_explorer_menu_copy_output,
+  "if-present": m.template_data_explorer_menu_copy_if_present,
+  loop: m.template_data_explorer_menu_copy_loop,
+  joined: m.template_data_explorer_menu_copy_joined,
+};
+
+const SNIPPET_ICON = {
+  output: Code,
+  "if-present": GitBranch,
+  loop: Repeat,
+  joined: List,
 };
 
 export interface FieldListProps {
@@ -55,18 +73,9 @@ export interface FieldListProps {
   onInsert: (snippet: string) => void;
 }
 
-/** The selected row: the node it sits on, and the snippet kind it offers. */
-interface RowSelection {
-  readonly key: string;
-  readonly kind: SnippetKind;
-}
-
 interface RowActions {
   readonly mode: FieldInsertionMode;
   readonly disabled: boolean;
-  readonly selected: RowSelection | null;
-  readonly onSelect: (node: DisplayNode) => void;
-  readonly onKind: (kind: SnippetKind) => void;
   readonly onInsert: (snippet: string) => void;
 }
 
@@ -78,48 +87,41 @@ export function FieldList({
   disabled = false,
 }: FieldListProps) {
   const [tree, setTree] = useState<TreeState>(initialTreeState);
-  const [selected, setSelected] = useState<RowSelection | null>(null);
-  const [showAll, setShowAll] = useState(false);
 
   const query = tree.filterQuery;
-  const allOpen = showAll || query.length > 0;
   const nodes = useMemo(
     () => (data ? buildDisplayTree(data, { expanded: new Set() }) : []),
     [data],
   );
   const common = useMemo(() => commonRows(root, nodes), [root, nodes]);
-  const rows = useMemo(
-    () => common.filter((row) => rowMatches(row, query)),
-    [common, query],
-  );
   const explorer = useMemo(() => {
-    if (!allOpen || !data) return [];
-    if (!query) return buildDisplayTree(data, { expanded: tree.expanded });
-    const options = { collapsed: tree.filterCollapsed };
-    return buildFilteredDisplayTree(data, query, options).nodes;
-  }, [allOpen, data, query, tree.expanded, tree.filterCollapsed]);
-
-  // What the foot promises: the fields this paper carries beyond the rows it
-  // leads with, which is what opening the tree adds. The count runs off the
-  // rows the paper actually has, so a common field it carries no key for is
-  // one of the fields the tree adds rather than one it repeats.
-  const rest = nodes.length - common.length;
+    if (!data) return [];
+    const visible = query
+      ? buildFilteredDisplayTree(data, query, {
+          collapsed: tree.filterCollapsed,
+        }).nodes
+      : buildDisplayTree(data, { expanded: tree.expanded });
+    const byKey = new Map(visible.map((node) => [node.key, node]));
+    const commonNodes = common.flatMap((row) => {
+      const node = byKey.get(row.node.key);
+      if (node) return [{ ...node, label: row.label }];
+      return query && rowMatches(row, query)
+        ? [{ ...row.node, label: row.label }]
+        : [];
+    });
+    const commonKeys = new Set(commonNodes.map((node) => node.key));
+    return [
+      ...commonNodes,
+      ...visible.filter((node) => !commonKeys.has(node.key)),
+    ].toSorted(
+      (a, b) =>
+        Number(Boolean(fieldValueText(b))) - Number(Boolean(fieldValueText(a))),
+    );
+  }, [common, data, query, tree.expanded, tree.filterCollapsed]);
 
   const actions: RowActions = {
     mode,
     disabled,
-    selected,
-    onSelect: (node) =>
-      setSelected((current) =>
-        current?.key === node.key
-          ? null
-          : {
-              key: node.key,
-              kind: mode === "template" ? snippetKindsFor(node)[0]! : "output",
-            },
-      ),
-    onKind: (kind) =>
-      setSelected((current) => (current ? { ...current, kind } : null)),
     onInsert,
   };
 
@@ -148,56 +150,24 @@ export function FieldList({
         }
         className="mb-3"
       />
-      <div className="min-h-0 flex-1 overflow-auto rounded-md border border-fd-border bg-fd-card">
+      <div className="min-h-0 flex-1 scrollbar-gutter-stable overflow-auto rounded-md border border-fd-border bg-fd-card">
         {data === null ? (
           <p className="px-3 py-2 text-xs text-fd-muted-foreground">
             {m.workbench_fields_no_highlights()}
           </p>
         ) : (
           <>
-            <ul>
-              {rows.map((row) => (
-                <li
-                  key={row.node.key}
-                  className="border-b border-fd-border/60 last:border-b-0"
-                >
-                  <FieldRowView
-                    node={row.node}
-                    label={row.label}
-                    value={row.value}
-                    actions={actions}
-                  />
-                </li>
-              ))}
-            </ul>
-            {rows.length === 0 && explorer.length === 0 && (
+            {explorer.length === 0 && (
               <p className="px-3 py-2 text-xs text-fd-muted-foreground">
                 {m.workbench_fields_no_matches()}
               </p>
             )}
-            <button
-              type="button"
-              aria-expanded={allOpen}
-              onClick={() => setShowAll((open) => !open)}
-              className="flex w-full cursor-pointer items-center gap-2 border-t border-fd-border px-3 py-3 text-start text-sm text-fd-muted-foreground hover:bg-fd-muted"
-            >
-              <ChevronDown
-                aria-hidden
-                className={`size-4 shrink-0 ${allOpen ? "rotate-180" : ""}`}
-              />
-              <span>{m.workbench_fields_everything_else()}</span>
-              {rest > 0 && <span className="ml-2 font-mono">{rest}</span>}
-            </button>
-            {allOpen && (
-              <ExplorerRows
-                nodes={explorer}
-                depth={0}
-                actions={actions}
-                onToggle={(key) =>
-                  setTree((current) => toggleNode(current, key))
-                }
-              />
-            )}
+            <ExplorerRows
+              nodes={explorer}
+              depth={0}
+              actions={actions}
+              onToggle={(key) => setTree((current) => toggleNode(current, key))}
+            />
           </>
         )}
       </div>
@@ -219,8 +189,15 @@ function ExplorerRows({ nodes, depth, actions, onToggle }: ExplorerRowsProps) {
   const indent = { marginInlineStart: `${depth * 0.75}rem` };
   return (
     <ul>
-      {nodes.map((node) => (
+      {nodes.map((node, index) => (
         <li key={node.key} className="border-b border-fd-border/40">
+          {depth === 0 &&
+            !fieldValueText(node) &&
+            (index === 0 || Boolean(fieldValueText(nodes[index - 1]!))) && (
+              <h3 className="border-y border-fd-border bg-fd-muted px-4 py-2 text-xs font-medium text-fd-foreground">
+                {m.workbench_fields_without_data()}
+              </h3>
+            )}
           <div className="flex items-start">
             {node.kind === "value" && node.expandable ? (
               <button
@@ -229,7 +206,7 @@ function ExplorerRows({ nodes, depth, actions, onToggle }: ExplorerRowsProps) {
                 aria-expanded={node.children !== undefined}
                 onClick={() => onToggle(node.key)}
                 style={indent}
-                className="mt-1.5 min-h-8 min-w-6 cursor-pointer px-1 text-fd-muted-foreground"
+                className="mt-1 min-h-6 min-w-4 cursor-pointer text-fd-muted-foreground"
               >
                 <span aria-hidden>{node.children ? "▾" : "▸"}</span>
               </button>
@@ -267,87 +244,108 @@ interface FieldRowViewProps {
 }
 
 function FieldRowView({ node, label, value, actions }: FieldRowViewProps) {
-  const { selected, onSelect, onKind, onInsert, mode, disabled } = actions;
-  const kind = selected && selected.key === node.key ? selected.kind : null;
-  const snippet = kind ? fieldSnippet(node, mode, kind) : "";
-  const kinds = mode === "template" ? snippetKindsFor(node) : ["output"];
+  const { onInsert, mode, disabled } = actions;
+  const snippet = fieldSnippet(node, mode, "output");
+  const path = formatPath(node.path, "zt");
+  const kinds =
+    mode === "template" ? snippetKindsFor(node) : (["output"] as const);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const rawValue = copyValue(node);
+  const copy = (text: string) => {
+    void navigator.clipboard.writeText(text).then(
+      () => setCopyStatus(m.workbench_field_copy_done()),
+      () => setCopyStatus(m.workbench_field_copy_failed()),
+    );
+  };
 
   return (
-    <div className={kind ? "bg-fd-muted/50" : ""}>
-      <button
-        type="button"
-        aria-expanded={kind !== null}
-        onClick={() => {
-          onSelect(node);
-          setCopyStatus(null);
-        }}
-        className="w-full cursor-pointer px-3 py-2.5 text-start hover:bg-fd-muted"
-      >
-        <span className="block text-sm font-medium">{label}</span>
-        <span
-          className={`mt-0.5 block text-sm break-words text-fd-muted-foreground ${kind ? "max-h-40 overflow-auto" : "line-clamp-2"}`}
-        >
-          {value || "—"}
-        </span>
-      </button>
-      {kind && (
-        <div className="space-y-3 px-3 pb-3">
-          {kinds.length > 1 && (
-            <label className="flex flex-col gap-1.5 text-sm">
-              {m.workbench_field_snippet()}
-              <NativeSelect
-                value={kind}
-                onChange={(event) => onKind(event.target.value as SnippetKind)}
-                className="w-full"
-              >
-                {kinds.map((offered) => (
-                  <NativeSelectOption key={offered} value={offered}>
-                    {SNIPPET_LABEL[offered as SnippetKind]()}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </label>
-          )}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={disabled}
-              onClick={() => onInsert(snippet)}
-            >
-              <Plus aria-hidden />
-              {m.workbench_fields_put_in_note()}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={m.workbench_fields_copy()}
-              title={m.workbench_fields_copy()}
-              onClick={() => {
-                void navigator.clipboard.writeText(snippet).then(
-                  () => setCopyStatus(m.workbench_field_copy_done()),
-                  () => setCopyStatus(m.workbench_field_copy_failed()),
-                );
-              }}
-            >
-              <Copy aria-hidden />
-            </Button>
-          </div>
+    <div className="group @container relative px-2 py-1.5 hover:bg-fd-muted/50">
+      <div className="flex min-h-6 items-center gap-1">
+        <div className="flex min-w-0 flex-1 items-baseline gap-2">
+          <span
+            title={label}
+            className="min-w-0 truncate text-sm leading-tight font-medium"
+          >
+            {label}
+          </span>
           <code
+            title={path}
             dir="ltr"
-            className="block font-mono text-xs break-words whitespace-pre-wrap text-fd-muted-foreground"
+            className="hidden min-w-0 truncate font-mono text-xs font-normal text-fd-muted-foreground @[280px]:block"
           >
-            {snippet}
+            {path}
           </code>
-          <p
-            role="status"
-            className="text-xs text-fd-muted-foreground empty:hidden"
-          >
-            {copyStatus}
-          </p>
         </div>
+        <div className="flex shrink-0 items-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-6"
+            disabled={disabled}
+            aria-label={m.workbench_fields_put_in_note()}
+            title={m.workbench_fields_put_in_note()}
+            onClick={() => onInsert(snippet)}
+          >
+            <FilePlus2 aria-hidden className="size-3.5" />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button variant="ghost" size="icon" className="size-6" />}
+              aria-label={m.template_data_explorer_row_actions()}
+              title={m.template_data_explorer_row_actions()}
+            >
+              <Code aria-hidden className="size-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-44">
+              <DropdownMenuItem
+                className="min-h-7 gap-2 px-2 py-1 text-xs"
+                onClick={() => copy(formatPath(node.path, "zt"))}
+              >
+                <Copy aria-hidden />
+                {m.template_data_explorer_menu_copy_path()}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="min-h-7 gap-2 px-2 py-1 text-xs"
+                disabled={!value || rawValue === null}
+                onClick={() => {
+                  if (value && rawValue !== null) copy(rawValue);
+                }}
+              >
+                <ClipboardType aria-hidden />
+                {m.template_data_explorer_menu_copy_value()}
+              </DropdownMenuItem>
+              <div
+                role="separator"
+                className="my-1 border-t border-fd-border"
+              />
+              {kinds.map((kind) => {
+                const Icon = SNIPPET_ICON[kind];
+                return (
+                  <DropdownMenuItem
+                    key={kind}
+                    className="min-h-7 gap-2 px-2 py-1 text-xs"
+                    onClick={() => copy(fieldSnippet(node, mode, kind))}
+                  >
+                    <Icon aria-hidden />
+                    {SNIPPET_LABEL[kind]()}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+      {value && (
+        <p
+          title={value}
+          className="truncate text-xs leading-normal text-fd-muted-foreground"
+        >
+          {value}
+        </p>
       )}
+      <span role="status" className="sr-only">
+        {copyStatus}
+      </span>
     </div>
   );
 }
