@@ -4,11 +4,16 @@ import type { SettingDefinitionItem, SettingDefinitionList } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import {
-  compileCondition,
+  choicesLookup,
   describeProblem,
   describeRule,
+  diagnoseRule,
+  listCollectionChoices,
 } from "@/services/profile-selection";
-import type { ProfileSelectionRule } from "@/services/profile-selection";
+import type {
+  DescribeOptions,
+  ProfileSelectionRule,
+} from "@/services/profile-selection";
 
 import type { SettingsControlKey, SettingTabContext } from "./context";
 import { editProfileSelectionRule } from "./profile-selection-rule-modal";
@@ -35,6 +40,8 @@ function rulesList(
   ctx: SettingTabContext,
 ): SettingDefinitionList<SettingsControlKey> {
   const rules = ctx.settings.current?.["profile.selection-rules"] ?? [];
+  // Library names and Collection paths are read only when a row needs them.
+  const display = rules.length > 0 ? displayOptions(ctx) : {};
   return {
     type: "list",
     heading: m.settings_profile_rules_heading(),
@@ -57,7 +64,7 @@ function rulesList(
     },
     items: rules.map((rule) => ({
       name: targetLabel(ctx, rule.profile),
-      desc: ruleDesc(ctx, rule),
+      desc: ruleDesc(ctx, rule, display),
       searchable: false,
       render: (setting) => {
         setting.addExtraButton((button) =>
@@ -104,12 +111,25 @@ function targetLabel(
   return profile ? profile.label : selector;
 }
 
+/** Library names and Collection paths, read once per render of the rows. */
+function displayOptions(ctx: SettingTabContext): DescribeOptions {
+  const libraries = ctx.libraryScope.libraries;
+  return {
+    libraries,
+    collections:
+      ctx.db.state === "ready"
+        ? listCollectionChoices(ctx.db.client, libraries)
+        : [],
+  };
+}
+
 function ruleDesc(
   ctx: SettingTabContext,
   rule: ProfileSelectionRule,
+  display: DescribeOptions,
 ): DocumentFragment {
   const desc = createFragment();
-  desc.append(describeRule(rule, { libraries: ctx.libraryScope.libraries }));
+  desc.append(describeRule(rule, display));
   const targetAvailable =
     rule.profile === "default" ||
     ctx.profile.profiles.some(({ id }) => id === rule.profile);
@@ -122,14 +142,16 @@ function ruleDesc(
       }),
     );
   }
-  const { problem } = compileCondition(rule.expression);
+  const { problem } = diagnoseRule(rule, {
+    hasCollection: choicesLookup(display.collections ?? []),
+  });
   if (problem) {
     desc.append(createEl("br"));
     desc.append(
       createSpan({
         cls: "mod-warning",
         text: m.settings_profile_rule_broken({
-          problem: describeProblem(problem),
+          problem: describeProblem(problem, display),
         }),
       }),
     );
