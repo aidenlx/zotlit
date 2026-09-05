@@ -468,8 +468,7 @@ Files with non-canonical names are compiled and available as partials via `{% re
 
 When both a `.liquid.md` and a `.eta.md` file exist for the same template name, the Liquid file takes precedence. The Eta file is ignored regardless of whether <UiLabel name={m.settings_template_js_enable_name()} /> are enabled.
 
-<SettingsPath page={m.settings_page_templates()} /> reports a warning on the
-shadowed file:
+<SettingsPath /> reports a warning on the shadowed file:
 
 > The Eta template at \{path\} is ignored because a Liquid template with the same name takes precedence.
 

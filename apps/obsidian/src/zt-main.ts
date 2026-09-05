@@ -209,7 +209,6 @@ export default class ZotLitPlugin extends Plugin {
 
     this.addSettingTab(
       new ZotLitSettingTab({
-        createProfile: services.createProfile,
         importProfile: services.importProfile,
         profile: services.profile,
         plugin: this,

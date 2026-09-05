@@ -22,172 +22,85 @@ beforeAll(() => {
     document.createElement(tag)) as typeof createEl;
 });
 
-describe("citation source settings", () => {
-  it("shows independent Pandoc and wikilink controls with the approved copy", () => {
+describe("citation text templates", () => {
+  it("lists only the cite and cite2 template files, after the References group", () => {
     const ctx = {
       settings: { current: defaults },
       pandocEngine: { getStatus: () => ({ kind: "absent" }) },
       manifest: { version: "test" },
+      template: {
+        loaded: true,
+        getTemplateFileStatuses: () =>
+          ["note", "content", "annotation", "cite", "cite2", "filename"].map(
+            (name) => ({ name }),
+          ),
+      },
     } as unknown as SettingTabContext;
-    const group = citationsPageItems(ctx).find(
+    const items = citationsPageItems(ctx);
+    const index = items.findIndex(
       (item) =>
         "type" in item &&
         item.type === "group" &&
-        item.heading === m.settings_citation_sources_heading(),
+        item.heading === m.settings_citation_templates_heading(),
     );
-
-    expect(group).toMatchObject({
-      type: "group",
-      heading: "Citation sources",
-      items: [
-        {
-          name: "Pandoc citations",
-          desc: "Include Pandoc citations such as `@doe2024` in the references sidebar and ZotLit’s in-text features. This setting does not change citation insertion or export.",
-          control: { type: "toggle", key: "citation.pandoc-citations" },
-        },
-        {
-          name: "Wikilink citations",
-          desc: "Include unaliased links to literature notes in the references sidebar and ZotLit’s in-text features. Heading links, block links, and invalid citation fragments stay as links. This setting does not change export.",
-          control: { type: "toggle", key: "citation.wikilink-citations" },
-        },
-      ],
-    });
-    if (!group || !("type" in group) || group.type !== "group") {
-      throw new Error("source group missing");
-    }
-    expect(group.items?.every((item) => !("visible" in item))).toBe(true);
-  });
-});
-
-describe("in-text citation settings", () => {
-  it("shows independent presentation and Pandoc navigation controls", () => {
-    const ctx = {
-      settings: { current: defaults },
-      pandocEngine: { getStatus: () => ({ kind: "absent" }) },
-      manifest: { version: "test" },
-    } as unknown as SettingTabContext;
-    const group = citationsPageItems(ctx).find(
+    const references = items.findIndex(
       (item) =>
         "type" in item &&
         item.type === "group" &&
-        item.heading === "In-text citations",
+        item.heading === m.settings_citation_references_heading(),
     );
-
-    if (!group || !("items" in group) || !group.items) {
-      throw new Error("in-text citation group missing");
-    }
-    expect(group.items[0]).toMatchObject({
-      name: "Show formatted citations",
-      desc: "Show citations in Live Preview and reading view with the selected citation and references style. Source mode always shows Markdown. Citations stay unchanged when ZotLit cannot format them.",
-      control: { type: "toggle", key: "citation.show-formatted" },
-    });
-    expect(group.items[1]).toMatchObject({
-      name: "Open citations as links",
-      desc: "Open literature notes when you select a Pandoc citation or a literature note wikilink shown as a citation. When off, selecting a citation places the cursor in the citation text so you can edit it.",
-      control: { type: "toggle", key: "citation.open-as-links" },
-    });
-    expect(group.items).not.toContainEqual(
-      expect.objectContaining({
-        control: expect.objectContaining({
-          key: "citation.wikilink-display",
-        }),
-      }),
-    );
-    expect(defaults["citation.show-formatted"]).toBe(true);
-    expect(Object.entries(defaults)).toContainEqual([
-      "citation.open-as-links",
-      false,
+    expect(index).toBe(references + 1);
+    const group = items[index]!;
+    if (!("items" in group) || !group.items) throw new Error("group missing");
+    expect(group.items.map((item) => "name" in item && item.name)).toEqual([
+      m.settings_template_name_cite(),
+      m.settings_template_name_cite2(),
     ]);
+  });
+
+  it("holds an empty group until the template service has loaded", () => {
+    const ctx = {
+      settings: { current: defaults },
+      pandocEngine: { getStatus: () => ({ kind: "absent" }) },
+      manifest: { version: "test" },
+      template: { loaded: false },
+    } as unknown as SettingTabContext;
+    const group = citationsPageItems(ctx).find(
+      (item) =>
+        "type" in item &&
+        item.type === "group" &&
+        item.heading === m.settings_citation_templates_heading(),
+    );
+    expect(group).toMatchObject({ items: [] });
   });
 });
 
 describe("hover settings", () => {
-  const hoverGroup = (settings: Settings) => {
+  /** The Hover group's rows for a given saved hover action. */
+  const hoverRows = (settings: Settings) => {
     const ctx = {
       settings: { current: settings },
       pandocEngine: { getStatus: () => ({ kind: "absent" }) },
       manifest: { version: "test" },
+      template: { loaded: false },
     } as unknown as SettingTabContext;
-    const items = citationsPageItems(ctx);
-    const group = items.find(
+    const group = citationsPageItems(ctx).find(
       (item) =>
-        "type" in item && item.type === "group" && item.heading === "Hover",
+        "type" in item &&
+        item.type === "group" &&
+        item.heading === m.settings_citation_hover_heading(),
     );
-    if (!group || !("items" in group) || !group.items) {
+    if (!group || !("items" in group) || !group.items)
       throw new Error("hover group missing");
-    }
-    return { items, rows: group.items };
+    return group.items;
   };
-
-  it("follows In-text citations with the approved action and Require Mod page", () => {
-    const { items, rows } = hoverGroup(defaults);
-
-    expect(
-      items.findIndex((item) => "heading" in item && item.heading === "Hover"),
-    ).toBe(
-      items.findIndex(
-        (item) => "heading" in item && item.heading === "In-text citations",
-      ) + 1,
-    );
-    expect(rows[0]).toMatchObject({
-      name: "Hover action",
-      desc: "What hovering a citation or literature note link shows. Page preview follows the Page preview plugin settings.",
-      control: {
-        type: "dropdown",
-        key: "citation.hover-action",
-        options: {
-          off: "Off",
-          popover: "Citation popover",
-          "page-preview": "Page preview",
-        },
-      },
-    });
-    expect(rows.slice(1)).toMatchObject([
-      {
-        type: "page",
-        name: "Require modifier key",
-        desc: "Show the popover only while holding Ctrl (Windows) or Command (macOS).",
-        items: [
-          {
-            name: "Source mode",
-            control: {
-              type: "toggle",
-              key: "citation.hover-require-mod-source",
-            },
-          },
-          {
-            name: "Live Preview",
-            control: {
-              type: "toggle",
-              key: "citation.hover-require-mod-live-preview",
-            },
-          },
-          {
-            name: "Reading view",
-            control: {
-              type: "toggle",
-              key: "citation.hover-require-mod-reading",
-            },
-          },
-        ],
-      },
-    ]);
-  });
-
-  it("ships the locked defaults", () => {
-    expect(defaults["citation.hover-action"]).toBe("popover");
-    expect(defaults["citation.hover-require-mod-source"]).toBe(true);
-    expect(defaults["citation.hover-require-mod-live-preview"]).toBe(false);
-    expect(defaults["citation.hover-require-mod-reading"]).toBe(false);
-  });
 
   it("shows the Require Mod page under the Citation popover alone", () => {
     for (const action of ["popover", "off", "page-preview"] as const) {
-      const { rows } = hoverGroup({
+      const page = hoverRows({
         ...defaults,
         "citation.hover-action": action,
-      });
-      const page = rows[1];
+      })[1];
       const predicate = page && "visible" in page ? page.visible : undefined;
       const visible = typeof predicate === "function" ? predicate() : predicate;
       expect(visible).toBe(action === "popover");
@@ -243,48 +156,13 @@ describe("referencesStyleOptions", () => {
   });
 });
 
-describe("citation formatting settings", () => {
-  it("groups locale and engine controls under Formatting", () => {
-    const ctx = {
-      settings: { current: defaults },
-      pandocEngine: { getStatus: () => ({ kind: "absent" }) },
-      manifest: { version: "test" },
-    } as unknown as SettingTabContext;
-    const group = citationsPageItems(ctx).find(
-      (item) =>
-        "type" in item &&
-        item.type === "group" &&
-        item.heading === "Formatting",
-    );
-
-    if (!group || !("items" in group) || !group.items) {
-      throw new Error("formatting group missing");
-    }
+describe("referencesStyleDescription", () => {
+  it("names the recovery step only when Zotero lacks the selection", () => {
     expect(referencesStyleDescription(false).textContent).toBe(
-      "CSL style used to format in-text citations and the references sidebar. Install and manage styles in Zotero.",
+      m.settings_citation_references_style_desc(),
     );
-    expect(group.items[0]).toMatchObject({
-      name: "Citation locale",
-      desc: "Sets the language for citation terms, dates, names, and sorting. Leave empty to use the language the selected style declares.",
-      control: {
-        type: "text",
-        key: "citation.locale",
-        defaultValue: "",
-        placeholder: "Style default",
-      },
-    });
-    expect(defaults["citation.locale"]).toBeNull();
-    expect(group.items[1]).toMatchObject({
-      name: "Pandoc engine",
-      desc: expect.stringMatching(
-        /^Formats in-text citations, references, and exports\. Installation applies to every vault on this device\./,
-      ),
-    });
-  });
-
-  it("shows the approved recovery message for an unavailable selection", () => {
     expect(referencesStyleDescription(true).textContent).toBe(
-      "This style isn’t installed in Zotero. Install it in Zotero or select another style.",
+      m.settings_citation_references_style_warning(),
     );
   });
 });

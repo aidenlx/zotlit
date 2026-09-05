@@ -11,10 +11,11 @@ import type { SettingTabContext } from "./context";
 export async function duplicateProfileToEditor(
   ctx: Pick<SettingTabContext, "app" | "profile">,
   selector: ProfileSelector,
+  options: { label?: string } = {},
 ): Promise<void> {
   const source = ctx.profile.resolveProfile(selector);
   if (!source) throw new Error(`Unknown Profile: ${selector}`);
-  const copy = await ctx.profile.duplicate(selector);
+  const copy = await ctx.profile.duplicate(selector, options);
   const file = ctx.app.vault.getFileByPath(copy.path);
   if (!file) throw new Error(`Profile document is unavailable: ${copy.path}`);
   ctx.app.setting.close();

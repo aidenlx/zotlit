@@ -73,7 +73,7 @@ describe("Duplicate Profile editor handoff", () => {
         `---\nid: Jk6Lm8Np2Qr4\nname: ${name}\nversion: 1.0.0\n---\n# Keep this body\n`,
       );
       await duplicateProfileToEditor(fixture.ctx, id as ProfileSelector);
-      expect(fixture.duplicate).toHaveBeenCalledWith(id);
+      expect(fixture.duplicate).toHaveBeenCalledWith(id, {});
       expect(fixture.result()).toEqual({
         opened: true,
         closed: true,

@@ -13,7 +13,16 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-ZotLit ships six built-in templates that control literature note filenames, note bodies, annotations, the managed region, and citations. You can override any of them by creating an editable file in your vault.
+ZotLit ships built-in templates that control how citations are inserted. You can override one by creating an editable file in your vault.
+
+<Callout type="info" title="Literature notes come from a template document">
+  The filename, the properties, and the body of a literature note come from its
+  Profile's template document, not from a template row in settings. Open it from
+  the <UiLabel name={m.settings_profile_document_name()} /> row at{" "}
+  <SettingsPath />, or from a Profile's row at{" "}
+  <SettingsPath page={m.settings_page_profiles()} />. See
+  [Settings](/docs/reference/settings#template-document).
+</Callout>
 
 <Callout type="info" title="Looking for a guided walkthrough?">
   The [Customize your annotations](/docs/tutorial/customize-template) tutorial
@@ -25,9 +34,9 @@ ZotLit ships six built-in templates that control literature note filenames, note
 
 <Steps>
   <Step>
-    ### Open template settings
+    ### Open the citation template settings
 
-    In Obsidian, open <SettingsPath page={m.settings_page_templates()} />. Under the <UiLabel name={m.settings_template_files_heading()} /> heading you see a row for each template type: <UiLabel name={m.settings_template_name_filename()} />, <UiLabel name={m.settings_template_name_note()} />, <UiLabel name={m.settings_template_name_annotation()} />, <UiLabel name={m.settings_template_name_content()} />, <UiLabel name={m.settings_template_name_cite()} />, and <UiLabel name={m.settings_template_name_cite2()} />.
+    In Obsidian, open <SettingsPath page={m.settings_page_citations()} />. Under the <UiLabel name={m.settings_citation_templates_heading()} /> heading you see one row per citation template: <UiLabel name={m.settings_template_name_cite()} /> and <UiLabel name={m.settings_template_name_cite2()} />.
 
   </Step>
   <Step>
@@ -37,12 +46,12 @@ ZotLit ships six built-in templates that control literature note filenames, note
 
     A notice confirms the location: "Template saved to `{path}`."
 
-    The file is created at `<template folder>/zotlit-<name>.liquid.md`, where `<template folder>` is the path configured in <SettingsPath page={m.settings_page_templates()} setting={m.settings_template_folder_name()} /> (default: `templates`).
+    The file is created at `<template folder>/zotlit-<name>.liquid.md`, where `<template folder>` is the path configured in <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} /> (default: `templates`).
 
   </Step>
 </Steps>
 
-To create all six template files at once, click the <UiLabel name={m.settings_template_eject_all()} /> button at the top of the Template files section.
+Each row is independent: create an editable file for one citation template and the other keeps its built-in default.
 
 ## Edit the template
 

@@ -89,7 +89,7 @@ Follow [Migrate v1 Eta templates](/docs/how-to/migrate-v1-eta-templates) for the
 
 When you import a Zotero note into your vault, v2 converts the annotation content already in the note directly. Highlights and underlines become inline marks with a `zotero://` backlink, image excerpts become embeds, and your typed comments are kept as written. If you edited an annotation paragraph inside Zotero before importing, those edits are preserved. V1 re-rendered every annotation through the annotation template instead, which discarded in-place edits.
 
-To restore v1-style rendering, open <SettingsPath page={m.settings_page_profiles()} /> and enable <UiLabel name={m.settings_note_import_annotations_template_name()} />. The toggle is off by default. When on, annotation paragraphs are re-rendered through your annotation template with data pulled fresh from Zotero.
+To restore v1-style rendering, open <SettingsPath /> and enable <UiLabel name={m.settings_note_import_annotations_template_name()} /> in the <UiLabel name={m.settings_imported_notes_heading()} /> group. The toggle is off by default. When on, annotation paragraphs are re-rendered through your annotation template with data pulled fresh from Zotero.
 
 <Callout
   type="warn"

@@ -353,16 +353,43 @@ export class ProfileService extends Service {
         );
       return this.#deps.app.vault.cachedRead(file);
     }
-    return builtInDocument(DEFAULT_PROFILE, m.settings_profile_default_name());
+    return this.#builtInDocument();
   }
 
-  async duplicate(selector: ProfileSelector): Promise<LiteratureNoteProfile> {
+  /**
+   * The built-in Default look as a Profile document: the embedded templates
+   * with the Managed Frontmatter the settings tab configured, so an eject or a
+   * duplicate carries the user's properties instead of the shipped defaults.
+   */
+  #builtInDocument(): string {
+    return synthesizeLegacyLiteratureNoteTemplate(
+      {
+        note: { source: DEFAULT_TEMPLATES.note, language: "liquid" },
+        content: { source: DEFAULT_TEMPLATES.content, language: "liquid" },
+        filename: { source: DEFAULT_TEMPLATES.filename, language: "liquid" },
+      },
+      {
+        id: DEFAULT_PROFILE,
+        name: m.settings_profile_default_name(),
+        frontmatter:
+          this.#deps.settings.current?.["note.frontmatter-fields"] ??
+          DEFAULT_FRONTMATTER_FIELDS,
+      },
+    );
+  }
+
+  /** Copy a Profile's document under `label`, or under "<source> copy". */
+  async duplicate(
+    selector: ProfileSelector,
+    options: { label?: string } = {},
+  ): Promise<LiteratureNoteProfile> {
     await this.ready;
     return this.#mutate(async () => {
       const profile = this.resolveProfile(selector);
       if (!profile) throw new Error(`Unknown Profile: ${selector}`);
       const label = profile.label ?? m.settings_profile_default_name();
-      let copyLabel = m.settings_profile_copy_name({ label });
+      const base = options.label ?? m.settings_profile_copy_name({ label });
+      let copyLabel = base;
       let number = 2;
       while (
         this.#profiles.some(
@@ -370,7 +397,7 @@ export class ProfileService extends Service {
             entry.label.toLocaleLowerCase() === copyLabel.toLocaleLowerCase(),
         )
       )
-        copyLabel = `${m.settings_profile_copy_name({ label })} ${number++}`;
+        copyLabel = `${base} ${number++}`;
       const id = mintId() as ProfileId;
       return this.#persist(
         copyLabel,
@@ -610,10 +637,7 @@ export class ProfileService extends Service {
     await ensureParentFolder(this.#deps.app, path);
     let file: TFile;
     try {
-      file = await this.#deps.app.vault.create(
-        path,
-        builtInDocument(DEFAULT_PROFILE, m.settings_profile_default_name()),
-      );
+      file = await this.#deps.app.vault.create(path, this.#builtInDocument());
     } catch (error) {
       if (!isFileExistsError(error)) throw error;
       const existing = this.#deps.app.vault.getFileByPath(path);
@@ -875,17 +899,6 @@ function profileSlug(label: string): string {
     .toLocaleLowerCase()
     .replaceAll(/[^\p{L}\p{N}]+/gu, "-")
     .replaceAll(/^-|-$/g, "");
-}
-
-function builtInDocument(id: ProfileSelector, label: string): string {
-  return synthesizeLegacyLiteratureNoteTemplate(
-    {
-      note: { source: DEFAULT_TEMPLATES.note, language: "liquid" },
-      content: { source: DEFAULT_TEMPLATES.content, language: "liquid" },
-      filename: { source: DEFAULT_TEMPLATES.filename, language: "liquid" },
-    },
-    { id, name: label, frontmatter: DEFAULT_FRONTMATTER_FIELDS },
-  );
 }
 
 const PROFILE_BINDING_KEYS = {

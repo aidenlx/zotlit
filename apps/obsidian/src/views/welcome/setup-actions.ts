@@ -29,7 +29,7 @@ export interface SetupActionsDeps {
 export function createSetupActions(deps: SetupActionsDeps): SetupActions {
   return {
     openSettings: () => {
-      openSettingsTab(deps.app, deps.pluginId, [m.settings_page_database()]);
+      openSettingsTab(deps.app, deps.pluginId, [m.settings_page_zotero()]);
     },
     pickFolder: () => {
       new LiteratureFolderModal(deps.app, (folder) => {

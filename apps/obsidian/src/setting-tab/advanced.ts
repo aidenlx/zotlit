@@ -13,8 +13,9 @@ import { LOG_FILENAME } from "@/services/log/service";
 import type { LogLevel } from "@/services/settings/schema";
 
 import type { SettingsKey, SettingTabContext } from "./context";
+import { templateEngineItems } from "./templates";
 
-const logger = getLogger(["setting-tab", "maintenance"]);
+const logger = getLogger(["setting-tab", "advanced"]);
 
 const LOG_LEVEL_OFF_KEY = "off";
 
@@ -50,8 +51,11 @@ const LOG_LEVEL_OPTIONS: Record<string, string> = (() => {
   return opts;
 })();
 
-/** Items for the "Maintenance" sub-page. */
-export function maintenancePageItems(
+/**
+ * Items for the "Advanced" sub-page: the rows a user touches once — update
+ * notices, the template engine, logging, and recovery actions.
+ */
+export function advancedPageItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
   const fileDisabled = (): boolean => !ctx.settings.current?.["log.to-file"];
@@ -62,41 +66,58 @@ export function maintenancePageItems(
       control: { type: "toggle", key: "release.notices-enabled" },
     },
     {
-      name: m.settings_log_level_name(),
-      desc: m.settings_log_level_desc(),
-      control: {
-        type: "dropdown",
-        key: "log.level",
-        defaultValue: LOG_LEVEL_OFF_KEY,
-        options: LOG_LEVEL_OPTIONS,
-      },
+      type: "group",
+      heading: m.settings_advanced_template_engine_heading(),
+      items: templateEngineItems(ctx),
     },
     {
-      name: m.settings_log_to_file_name(),
-      desc: m.settings_log_to_file_desc(),
-      control: { type: "toggle", key: "log.to-file" },
+      type: "group",
+      heading: m.settings_advanced_logging_heading(),
+      items: [
+        {
+          name: m.settings_log_level_name(),
+          desc: m.settings_log_level_desc(),
+          control: {
+            type: "dropdown",
+            key: "log.level",
+            defaultValue: LOG_LEVEL_OFF_KEY,
+            options: LOG_LEVEL_OPTIONS,
+          },
+        },
+        {
+          name: m.settings_log_to_file_name(),
+          desc: m.settings_log_to_file_desc(),
+          control: { type: "toggle", key: "log.to-file" },
+        },
+        {
+          name: m.settings_log_open_file_name(),
+          desc: m.settings_log_open_file_desc(),
+          disabled: fileDisabled,
+          action: () => void openLogFile(ctx),
+        },
+        {
+          name: m.settings_log_export_name(),
+          desc: m.settings_log_export_desc(),
+          disabled: fileDisabled,
+          action: () => void exportLogArchive(ctx),
+        },
+      ],
     },
     {
-      name: m.settings_log_open_file_name(),
-      desc: m.settings_log_open_file_desc(),
-      disabled: fileDisabled,
-      action: () => void openLogFile(ctx),
-    },
-    {
-      name: m.settings_log_export_name(),
-      desc: m.settings_log_export_desc(),
-      disabled: fileDisabled,
-      action: () => void exportLogArchive(ctx),
-    },
-    {
-      name: m.settings_citation_index_reset_name(),
-      desc: m.settings_citation_index_reset_desc(),
-      action: () => void resetCitationIndex(ctx),
-    },
-    {
-      name: m.settings_language_pack_reset_name(),
-      desc: m.settings_language_pack_reset_desc(),
-      action: () => void resetLanguagePacks(ctx),
+      type: "group",
+      heading: m.settings_advanced_recovery_heading(),
+      items: [
+        {
+          name: m.settings_citation_index_reset_name(),
+          desc: m.settings_citation_index_reset_desc(),
+          action: () => void resetCitationIndex(ctx),
+        },
+        {
+          name: m.settings_language_pack_reset_name(),
+          desc: m.settings_language_pack_reset_desc(),
+          action: () => void resetLanguagePacks(ctx),
+        },
+      ],
     },
   ];
 }
