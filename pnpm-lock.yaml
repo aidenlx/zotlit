@@ -820,6 +820,9 @@ importers:
       '@zotlit/config':
         specifier: workspace:*
         version: link:../config
+      '@zotlit/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@zotlit/scripts':
         specifier: workspace:*
         version: link:../scripts
