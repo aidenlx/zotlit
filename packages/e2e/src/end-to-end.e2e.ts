@@ -524,7 +524,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     const ruleNote = await readFile(join(e2eVaultPath, ruleNotePath), "utf-8");
     expect(ruleNote).toContain(`zotlit-profile: Books (${booksProfile.id})`);
-    expect(ruleNote).toContain(`citekey: ${bookItem.citationKey}`);
+    expect(ruleNote).toContain(`Citation key: ${bookItem.citationKey}`);
     expect(await hasOneIndexedNote(vaultId, bookItem.key)).toBe(true);
 
     // A citation link to the same Item creates directly under the rule's
@@ -830,7 +830,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ).toBe(true);
       const content = await readFile(join(e2eVaultPath, path), "utf-8");
       expect(content).toContain(`zotlit-profile: Books (${booksProfile.id})`);
-      expect(content).toContain(`citekey: ${item.citationKey}`);
+      expect(content).toContain(`Citation key: ${item.citationKey}`);
     }
     const sharedNote = await indexedNote(vaultId, sharedItem.itemID);
     expect(sharedNote.path?.startsWith("literatures/")).toBe(true);
