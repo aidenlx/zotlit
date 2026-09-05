@@ -145,10 +145,14 @@ Templates, ported from the reviewed language prototype:
 - `suggestions(source, position, config)` and `hoverHint(...)` — contract-driven
   field, filter, tag, partial, and snippet options; `rootAt(...)` resolves the
   root in scope at a position.
-- `templateCompletion(read)` — those two as one editor extension: the typing
-  popup and the pointer hint over the same resolution. `read()` answers with
-  the pane's current root, partials, and Item values, so one editor follows the
-  reader between roots and papers.
+- `templateCompletion(read)` — the optional CodeMirror typing popup adapter.
+  `read()` answers with the pane's current root, partials, and Item values.
+- `@zotlit/workbench/completion` exports the editor-independent `hoverHint(...)`
+  resolver: the source range and property facts, including type, description,
+  and sample. Hosts own hover timing, geometry, presentation, and dismissal.
+  The web host uses a shadcn Base UI Hover Card with a 500 ms opening delay.
+  A native Obsidian adapter can render those facts through `HoverPopover`;
+  see the [native hover research](../../docs/research/obsidian-editor-hover.md).
 
 Regenerate the Eta parser after editing `src/language/eta.grammar`:
 
