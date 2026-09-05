@@ -143,9 +143,11 @@ describe("a Workbench Connection", () => {
 
     page.press(m.workbench_add_field());
     const sheet = openSheet(page.host);
-    selectField(sheet, m.workbench_field_title());
-    const snippet = sheet.querySelector("code")!.textContent!;
-    press(sheet, m.workbench_fields_put_in_note());
+    const snippet = "{{ zt.title }}";
+    press(
+      fieldRow(sheet, m.workbench_field_title()),
+      m.workbench_fields_put_in_note(),
+    );
     page.press(m.workbench_save());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_save_conflict()),
@@ -187,9 +189,11 @@ describe("a Workbench Connection", () => {
     );
     page.press(m.workbench_add_field());
     const sheet = openSheet(page.host);
-    selectField(sheet, m.workbench_field_title());
-    const snippet = sheet.querySelector("code")!.textContent!;
-    press(sheet, m.workbench_fields_put_in_note());
+    const snippet = "{{ zt.title }}";
+    press(
+      fieldRow(sheet, m.workbench_field_title()),
+      m.workbench_fields_put_in_note(),
+    );
     await page.settle();
 
     page.press(m.workbench_save());
@@ -261,9 +265,11 @@ describe("a Workbench Connection", () => {
       );
       page.press(m.workbench_add_field());
       const sheet = openSheet(page.host);
-      selectField(sheet, m.workbench_field_title());
-      snippet = sheet.querySelector("code")!.textContent!;
-      press(sheet, m.workbench_fields_put_in_note());
+      snippet = "{{ zt.title }}";
+      press(
+        fieldRow(sheet, m.workbench_field_title()),
+        m.workbench_fields_put_in_note(),
+      );
       await page.settle();
 
       page.press(m.workbench_save());
@@ -584,9 +590,11 @@ describe("a Workbench Connection", () => {
     );
     page.press(m.workbench_add_field());
     const sheet = openSheet(page.host);
-    selectField(sheet, m.workbench_field_title());
-    const snippet = sheet.querySelector("code")!.textContent!;
-    press(sheet, m.workbench_fields_put_in_note());
+    const snippet = "{{ zt.title }}";
+    press(
+      fieldRow(sheet, m.workbench_field_title()),
+      m.workbench_fields_put_in_note(),
+    );
     await page.settle();
 
     page.press(m.workbench_connection_disconnect());
@@ -918,11 +926,7 @@ describe("the field list", () => {
     });
 
     await page.waitFor(() =>
-      expect(
-        [...page.host.querySelectorAll("button")].some(
-          (button) => button.firstElementChild?.textContent === "DOI",
-        ),
-      ).toBe(true),
+      expect(fieldRow(page.host, "DOI").textContent).toContain("zt.DOI"),
     );
     expect(page.host.textContent).not.toContain(
       m.workbench_fields_no_matches(),
@@ -1144,9 +1148,10 @@ describe("the simplified editing flow", () => {
         selection: { anchor: 0, head: value.state.doc.length },
       }),
     );
-    selectField(page.host, m.workbench_field_authors());
-    expect(page.host.querySelector("code")!.textContent).toBe("zt.authors");
-    page.press(m.workbench_fields_put_in_note());
+    press(
+      fieldRow(page.host, m.workbench_field_authors()),
+      m.workbench_fields_put_in_note(),
+    );
     expect(value.state.doc.toString()).toBe("zt.authors");
     page.press(m.workbench_advanced());
     expect(sourceView(page.host).state.doc.toString()).toContain(
@@ -1160,9 +1165,10 @@ describe("the simplified editing flow", () => {
         selection: { anchor: from, head: from + "zt.authors".length },
       }),
     );
-    selectField(page.host, m.workbench_field_title());
-    expect(page.host.querySelector("code")!.textContent).toBe("zt.title");
-    page.press(m.workbench_fields_put_in_note());
+    press(
+      fieldRow(page.host, m.workbench_field_title()),
+      m.workbench_fields_put_in_note(),
+    );
     expect(source.state.doc.toString()).toContain(
       "key: property\n    expr: zt.title",
     );
@@ -1331,9 +1337,11 @@ describe("the narrow layout", () => {
     const sheet = openSheet(page.host);
     expect(sheet.textContent).toContain(m.workbench_fields_heading());
 
-    selectField(sheet, m.workbench_field_title());
-    const snippet = sheet.querySelector("code")!.textContent!;
-    press(sheet, m.workbench_fields_put_in_note());
+    const snippet = "{{ zt.title }}";
+    press(
+      fieldRow(sheet, m.workbench_field_title()),
+      m.workbench_fields_put_in_note(),
+    );
 
     // The sheet leaves with the snippet it put in the note.
     expect(document.querySelector('[role="dialog"]')).toBeNull();
@@ -1473,13 +1481,13 @@ function press(scope: HTMLElement, label: string): void {
   act(() => target.click());
 }
 
-/** Selects the field row named `label`, which reveals what the row offers. */
-function selectField(scope: HTMLElement, label: string): void {
-  const target = [...scope.querySelectorAll("button")].find(
-    (button) => button.firstElementChild?.textContent === label,
-  );
+/** Finds the field row named `label`, including its insertion controls. */
+function fieldRow(scope: HTMLElement, label: string): HTMLLIElement {
+  const target = [...scope.querySelectorAll("span[title]")]
+    .find((span) => span.getAttribute("title") === label)
+    ?.closest("li");
   if (!target) throw new Error(`No field row reads '${label}'.`);
-  act(() => target.click());
+  return target;
 }
 
 /** The whole-document editor Advanced opens over. */
