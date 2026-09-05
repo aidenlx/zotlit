@@ -29,6 +29,7 @@ import {
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { NoteIndex } from "@/services/note-index/service";
+import type { ProfileSelectionRule } from "@/services/profile-selection/schema";
 import { bindProfile } from "@/services/profile/bindings";
 import type {
   NoteProfile,
@@ -144,6 +145,11 @@ export interface ProfileDeletionPlan {
   literatureNotes: TFile[];
   importedNotes: TFile[];
   targets: ProfileDeletionTarget[];
+  /**
+   * Profile Selection Rules whose target is the Profile. Deletion leaves them
+   * as they are — the user repairs or removes each one in the rule editor.
+   */
+  rules: readonly ProfileSelectionRule[];
 }
 
 export interface ProfileDeletionResult {
@@ -690,12 +696,16 @@ export class ProfileService extends Service {
       ];
       return [{ profile, files }];
     });
+    const rules = (
+      this.#deps.settings.current?.["profile.selection-rules"] ?? []
+    ).filter((rule) => rule.profile === id);
     logger.debug("Prepared Profile deletion", {
       id,
       literatureNotes: literatureNotes.length,
       importedNotes: importedNotes.length,
+      rules: rules.length,
     });
-    return { source, literatureNotes, importedNotes, targets };
+    return { source, literatureNotes, importedNotes, targets, rules };
   }
 
   async delete(
