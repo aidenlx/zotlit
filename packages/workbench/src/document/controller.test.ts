@@ -47,7 +47,7 @@ describe("WorkbenchDocumentController", () => {
     const { from, to } = controller.sliceRange("note");
 
     expect(HAND_WRITTEN.slice(from, to)).toBe(
-      "# {{ zt.title }}\n\nRead on {{ zt.dateAdded }}.\n\n",
+      "# {{ zt.title }}\n\nRead on {{ zt.dateAdded }}.\n",
     );
     expect(controller.problems).toEqual([]);
   });
@@ -143,7 +143,7 @@ describe("WorkbenchDocumentController", () => {
     const after = controller.sliceRange("note");
     expect(after.from).toBe(before.from + 4);
     expect(controller.source.slice(after.from, after.to)).toBe(
-      "# {{ zt.title }}\n\nRead on {{ zt.dateAdded }}.\n\n",
+      "# {{ zt.title }}\n\nRead on {{ zt.dateAdded }}.\n",
     );
   });
 
