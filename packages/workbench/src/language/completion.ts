@@ -76,6 +76,10 @@ function option(suggestion: Suggestion): Completion {
     apply: suggestion.insert,
     type: suggestion.category,
     ...(suggestion.type === undefined ? {} : { detail: suggestion.type }),
-    info: suggestion.detail,
+    info: suggestion.syntax
+      ? [suggestion.detail, suggestion.syntax, suggestion.example]
+          .filter(Boolean)
+          .join("\n\n")
+      : suggestion.detail,
   };
 }
