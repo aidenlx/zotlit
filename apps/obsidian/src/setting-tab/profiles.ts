@@ -49,6 +49,7 @@ export {
 } from "./delete-profile-modal";
 import { highlightMappingItems } from "./note-import";
 import { defaultProfileBindingPlaceholder } from "./placeholder";
+import { profileSelectionRuleItems } from "./profile-selection-rules";
 import { shareProfile } from "./share-profile-modal";
 export { shareProfile, ShareProfileModal } from "./share-profile-modal";
 
@@ -155,6 +156,7 @@ export function profilesPage(
       defaultProfileItem(ctx),
       profilesList(ctx),
       ...excludedDocumentItems(ctx),
+      ...profileSelectionRuleItems(ctx),
     ],
   };
 }
