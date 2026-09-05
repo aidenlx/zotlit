@@ -1,19 +1,16 @@
-/**
- * Automatic Profile Selection — the matcher behind the Note Feature's
- * creation boundary.
- *
- * Rules run in user order over the Item's Library scope. A valid nonmatch
- * advances; the first match supplies the target selector and the rule that
- * explains it. Three outcomes stop automatic selection and require an
- * explicit choice instead: an in-scope rule the vault cannot evaluate (its
- * expression is outside the condition contract), an in-scope rule that
- * refers to a Collection the database does not hold, and a matching rule
- * whose target Profile is unavailable. Rules outside the Item's Library
- * scope contribute nothing, not even a problem.
- *
- * Pure: the facts of the Item come in, a selection comes out. The database
- * takes part only through the two lookups the caller injects.
- */
+// Automatic Profile Selection: the pure matcher behind the Note Feature's creation boundary.
+//
+// Rules run in user order over the Item's Library scope. A valid nonmatch
+// advances; the first match supplies the target selector and the rule that
+// explains it. Three outcomes stop automatic selection and require an
+// explicit choice instead: an in-scope rule the vault cannot evaluate (its
+// expression is outside the condition contract), an in-scope rule that
+// refers to a Collection the database does not hold, and a matching rule
+// whose target Profile is unavailable. Rules outside the Item's Library
+// scope contribute nothing, not even a problem.
+//
+// The facts of the Item come in, a selection comes out. The database takes
+// part only through the two lookups the caller injects.
 import type { Item } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
