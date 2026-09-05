@@ -158,7 +158,7 @@ function machineAssets(): Plugin {
   };
 }
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   // `@base-ui/react` imports the named `useSyncExternalStoreWithSelector` from
   // a CommonJS shim. The dev server serves that file raw unless the pre-bundler
   // is told to convert it, and the missing named export stops hydration before
@@ -186,7 +186,9 @@ export default defineConfig({
     paraglideVitePlugin({
       project: "../../project.inlang",
       outdir: "./src/paraglide",
-      outputStructure: "message-modules",
+      // Group messages in dev to avoid one HTTP request per message.
+      outputStructure:
+        command === "serve" ? "locale-modules" : "message-modules",
       strategy: ["baseLocale"],
       emitTsDeclarations: true,
     }),
@@ -219,4 +221,4 @@ export default defineConfig({
     }),
     viteReact(),
   ],
-});
+}));
