@@ -277,12 +277,6 @@ function LibraryChecklist({
 function ConditionsSection() {
   const root = useRuleEditorStore((state) => state.draft.root);
   const headingId = useId();
-  const help = [
-    m.settings_profile_rule_group_help(),
-    m.settings_profile_rule_collection_help(),
-    m.settings_profile_rule_tag_help(),
-    m.settings_profile_rule_expression_help(),
-  ].join(" ");
   return (
     <section
       aria-labelledby={headingId}
@@ -302,7 +296,6 @@ function ConditionsSection() {
         </p>
       </div>
       <GroupEditor group={root} path={[]} />
-      <p className="zt:text-xs zt:text-muted-foreground">{help}</p>
     </section>
   );
 }
