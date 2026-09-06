@@ -798,6 +798,24 @@ describe("CitekeyReading refresh", () => {
     expect(harnessed.rerenders()).toBe(0);
   });
 
+  it("keeps a placed element across a refresh whose answer is equal", async () => {
+    await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
+    const el = section("<p>Blah [@alpha].</p>");
+    await harnessed.process(el, viewedCtx(harnessed, el));
+    const element = el.querySelector<HTMLElement>(".zt-citation")!;
+
+    // Every text goes stale at once, and the rebuilt snapshot answers the same.
+    harnessed.rebuildResolution([]);
+    await settled();
+    harnessed.changeFile("note.md");
+    await settled();
+
+    expect(el.querySelector(".zt-citation")).toBe(element);
+    expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
+    element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(harnessed.popoverRequests).toHaveLength(1);
+  });
+
   it("answers one hover with one popover after a refresh", async () => {
     await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
     const el = section("<p>Blah [@alpha].</p>");

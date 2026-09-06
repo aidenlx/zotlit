@@ -23,6 +23,7 @@ import {
   citedWorks,
   citekeyState,
   literalKeyStateOf,
+  presentedCitationEqual,
   sectionCoordinates,
 } from "@/services/citation-text/present";
 import type {
@@ -53,15 +54,36 @@ import "./style.css";
 
 const logger = getLogger("citekey-reading");
 
+/** One element standing in a citation's place, and what it was built from. */
+interface PlacedCitation {
+  element: HTMLElement;
+  /** The content shown — the source where none was formatted for it. */
+  shown: PresentedCitation | string;
+  /** The key states the element's theme hooks and handlers were chosen by. */
+  states: readonly CitationKeyState[];
+  /** The navigation the element's handlers read, refreshed while it stays. */
+  navigation: CitationNavigation;
+}
+
 /** One held section: its citations, and the elements standing in their place. */
 interface HeldSection {
   citations: readonly SectionCitation[];
   /**
-   * The element standing in each citation's place, and the content it shows —
-   * the source where none was formatted for it. Empty until the first show
+   * The element standing in each citation's place. Empty until the first show
    * puts elements in place.
    */
-  placed: { element: HTMLElement; shown: PresentedCitation | string }[];
+  placed: PlacedCitation[];
+}
+
+/** Whether two placed answers show the same content. */
+function shownEqual(
+  left: PresentedCitation | string,
+  right: PresentedCitation | string,
+): boolean {
+  if (typeof left === "string" || typeof right === "string") {
+    return left === right;
+  }
+  return presentedCitationEqual(left, right);
 }
 
 export interface CitekeyReadingDeps {
@@ -227,9 +249,12 @@ export class CitekeyReading extends Service<void> {
   /**
    * Shows every citation of a section what the document's Held Read holds for
    * it. The first show splits the source text and puts an element in each
-   * citation's place; every later one swaps a rebuilt element for the one there,
-   * so its theme hooks and handlers follow the current answer. A citation the
-   * fresh text holds nothing for keeps what it shows.
+   * citation's place. Every later one keeps an element whose content and key
+   * states the fresh answer equals, refreshing only the navigation its handlers
+   * read — so a hover or popover anchored on it stays anchored — and swaps a
+   * rebuilt element for one they differ from, so its theme hooks and handlers
+   * follow the current answer. A citation the fresh text holds nothing for
+   * keeps what it shows.
    */
   #show(
     el: HTMLElement,
@@ -250,22 +275,40 @@ export class CitekeyReading extends Service<void> {
     // Which occurrence each citation of the section is, so a position-dependent
     // style shows every one of them the text rendered for its own place.
     const coordinates = sectionCoordinates(citations, sectionRange(ctx, el));
-    /** Builds the element citation `index` shows as, and records it as placed. */
+    /**
+     * The element citation `index` shows as: the one placed, where the fresh
+     * answer equals what it was built from, or a rebuilt one recorded in its
+     * place.
+     */
     const place = (citation: SectionCitation, index: number): HTMLElement => {
       const content = this.#showFormatted
         ? text === null
           ? null
           : citationContent(citation, text.value, coordinates[index])
         : null;
-      const shown = content ?? placed[index]?.shown ?? citation.source;
-      const element = this.#citationElement(el.ownerDocument, ctx.sourcePath, {
+      const previous = placed[index];
+      const shown = content ?? previous?.shown ?? citation.source;
+      const states = citationKeyStates(citation, stateOf);
+      const works = text === null ? [] : citedWorks(citation, text.value);
+      const at =
+        content === null ? undefined : { citation, at: coordinates[index] };
+      if (
+        previous !== undefined &&
+        shownEqual(previous.shown, shown) &&
+        previous.states.length === states.length &&
+        previous.states.every((state, i) => state === states[i])
+      ) {
+        Object.assign(previous.navigation, { works, shown: at });
+        return previous.element;
+      }
+      const built = this.#citationElement(el.ownerDocument, ctx.sourcePath, {
         content: shown,
-        states: citationKeyStates(citation, stateOf),
-        works: text === null ? [] : citedWorks(citation, text.value),
-        at: content === null ? undefined : { citation, at: coordinates[index] },
+        states,
+        works,
+        at,
       });
-      placed[index] = { element, shown };
-      return element;
+      placed[index] = { ...built, shown, states };
+      return built.element;
     };
     if (placed.length === 0) {
       replaceCitations(citations, place);
@@ -273,11 +316,15 @@ export class CitekeyReading extends Service<void> {
     }
     for (const [index, citation] of citations.entries()) {
       const previous = placed[index]!.element;
-      previous.replaceWith(place(citation, index));
+      const next = place(citation, index);
+      if (next !== previous) previous.replaceWith(next);
     }
   }
 
-  /** Builds the element one citation shows as, with its handlers attached. */
+  /**
+   * Builds the element one citation shows as, with its handlers attached, and
+   * the navigation those handlers read.
+   */
   #citationElement(
     doc: Document,
     sourcePath: string,
@@ -288,12 +335,12 @@ export class CitekeyReading extends Service<void> {
       at,
     }: {
       content: PresentedCitation | string;
-      states: CitationKeyState[];
+      states: readonly CitationKeyState[];
       works: CitationNavigation["works"];
       /** The occurrence shown in the citation's place, where formatted text is. */
       at: CitationNavigation["shown"];
     },
-  ): HTMLElement {
+  ): { element: HTMLElement; navigation: CitationNavigation } {
     const themeClasses = [
       themeHook.citationKey,
       ...citationStateHooks(citationState(states)),
@@ -334,15 +381,15 @@ export class CitekeyReading extends Service<void> {
     if (this.#navigationEnabled && states.includes("resolved")) {
       markCitationClick(element, "open");
       attachCitationNavigation(element, navigation);
-      return element;
+      return { element, navigation };
     }
     markCitationClick(element, "none");
     if (!this.#navigationEnabled && this.#showFormatted) {
       attachClosedCitationGestures(element, navigation);
-      return element;
+      return { element, navigation };
     }
     attachCitationHover(element, navigation);
-    return element;
+    return { element, navigation };
   }
 
   /**
