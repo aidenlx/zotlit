@@ -18,6 +18,7 @@ import {
   SOURCE_ID_HEADER,
 } from "@zotlit/protocol";
 import {
+  COLLECTIONS,
   findScopeCase,
   ITEMS,
   LITERATURE_NOTE_PROFILES,
@@ -188,18 +189,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        "String(!!document.querySelector('.prompt .is-selected'))",
-        { expected: "true" },
-      ),
-    ).toBe(true);
     // Without an explicit input the picker preselects Default; the Books
     // choice below belongs to this operation alone.
-    const preselected = await obEval(
+    const preselected = await selectSuggestion(
       vaultId,
-      "document.querySelector('.prompt .is-selected').textContent",
+      m.modal_profile_preselected(),
     );
     expect(preselected).toContain(m.settings_profile_default_name());
     expect(preselected).toContain(m.modal_profile_preselected());
@@ -208,17 +202,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String((document.querySelector('.prompt .is-selected')?.textContent??'').includes(${JSON.stringify(booksNotePath)}))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    const selected = await obEval(
-      vaultId,
-      "document.querySelector('.prompt .is-selected').textContent",
-    );
+    const selected = await selectSuggestion(vaultId, booksNotePath);
     expect(selected).toContain(booksProfile.label);
     expect(selected).not.toContain(m.modal_profile_preselected());
     expect(selected).toContain(booksNotePath);
@@ -481,28 +465,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(bookItem.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String((document.querySelector('.prompt .is-selected')?.textContent??'').includes(${JSON.stringify(bookItem.title)}))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await selectSuggestion(vaultId, bookItem.title);
     await obEval(
       vaultId,
       "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
     );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String((document.querySelector('.prompt .is-selected')?.textContent??'').includes(${JSON.stringify(ruleNotePath)}))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    const preselected = await obEval(
-      vaultId,
-      "document.querySelector('.prompt .is-selected').textContent",
-    );
+    const preselected = await selectSuggestion(vaultId, ruleNotePath);
     expect(preselected).toContain(booksProfile.label);
     expect(preselected).toContain(m.modal_profile_preselected());
     expect(preselected).toContain(
@@ -749,24 +717,12 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       "document.querySelector('[data-profile-choice-scope=\"unmatched\"] [data-profile-choice]').click();true",
     );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        "String(!!document.querySelector('.prompt .is-selected'))",
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await selectSuggestion(vaultId, m.modal_profile_preselected());
     await obEval(
       vaultId,
       `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String((document.querySelector('.prompt .is-selected')?.textContent??'').includes(${JSON.stringify(preprintNotePath)}))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await selectSuggestion(vaultId, preprintNotePath);
     await obEval(
       vaultId,
       "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
@@ -869,6 +825,201 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       const note = await indexedNote(vaultId, item.itemID);
       expect(await hasIndexedNotes(vaultId, note.indexedKey, 0)).toBe(true);
     }
+  });
+
+  it("matches a Collection rule through a subcollection, and only directly when asked", async () => {
+    // Item 11 is filed in the Fixture's child collection PERSCHLD alone; a
+    // rule on its parent PERSNAL2 reaches it through the descendant walk and
+    // misses it under direct membership.
+    const childItem = ITEMS.find((item) => item.itemID === 11)!;
+    const childCollection = COLLECTIONS.find(
+      (collection) => collection.key === "PERSCHLD",
+    )!;
+    const parentCollection = COLLECTIONS.find(
+      (collection) =>
+        collection.collectionID === childCollection.parentCollectionID,
+    )!;
+    expect(childItem.collectionIDs).toEqual([childCollection.collectionID]);
+    const seededPath = `literatures/${childItem.literatureNoteName ?? childItem.key}.md`;
+    const ruleNotePath = `books/books-${childItem.citationKey}.md`;
+    const collectionOption = `personal/${parentCollection.key}`;
+    const collectionLabel = m.settings_profile_rule_collection_label({
+      library: m.settings_library_scope_personal(),
+      path: parentCollection.name,
+    });
+    const ruleSummary = m.settings_profile_rule_summary({
+      conditions: m.settings_profile_rule_in_collection({
+        collection: collectionLabel,
+      }),
+      libraries: m.settings_library_scope_personal(),
+    });
+    await cli([`vault=${vaultId}`, "delete", `path=${seededPath}`]);
+    expect(await hasIndexedNotes(vaultId, childItem.key, 0)).toBe(true);
+    const readStoredRules = async () =>
+      JSON.parse(
+        await obEval(
+          vaultId,
+          "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'])",
+        ),
+      ) as (typeof bookRule)[];
+    const rulesBefore = await readStoredRules();
+    expect(rulesBefore).toHaveLength(2);
+
+    // The third rule, through the same labeled controls: the condition kind
+    // switches to Collection, then the re-rendered row offers the Fixture's
+    // collections and the subcollection choice.
+    await obEval(
+      vaultId,
+      `(function(){app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();var tab=app.setting.openTabById('zotlit');app.setting.navigateToSearchResult({tab,pagePath:[${JSON.stringify(m.settings_page_profiles())}]});return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var heading=Array.from(document.querySelectorAll('.setting-item-heading, .setting-item')).find(el=>el.textContent.includes(${JSON.stringify(m.settings_profile_rules_heading())}));var button=heading&&heading.querySelector('button, .clickable-icon');if(!button)return false;button.click();return true;})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(Array.from(document.querySelectorAll('.modal')).some(modal=>modal.textContent.includes(${JSON.stringify(m.settings_profile_rule_title_new())})))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}pick(row(${JSON.stringify(m.settings_profile_rule_scope())}).querySelector('select'),'selected');var libraryRow=row(${JSON.stringify(m.settings_library_scope_personal())});var toggle=libraryRow&&libraryRow.querySelector('.checkbox-container');if(toggle&&!toggle.classList.contains('is-enabled'))toggle.click();var kind=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select:not(.is-measuring)').length===3)[0].querySelectorAll('select:not(.is-measuring)')[0];pick(kind,'collection');return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var rows=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select:not(.is-measuring)').length===4);if(rows.length!==1)return false;var selects=rows[0].querySelectorAll('select:not(.is-measuring)');pick(selects[1],'is');pick(selects[2],${JSON.stringify(collectionOption)});pick(selects[3],'descendants');pick(row(${JSON.stringify(m.settings_profile_rule_target())}).querySelector('select'),${JSON.stringify(booksProfile.id)});return true;})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    const configured = await obEval(
+      vaultId,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}var selects=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select:not(.is-measuring)').length===4)[0].querySelectorAll('select:not(.is-measuring)');var target=row(${JSON.stringify(m.settings_profile_rule_target())}).querySelector('select');return JSON.stringify({collection:selects[2].value,collectionLabel:selects[2].selectedOptions[0].textContent,membership:selects[3].value,target:target.value});})()`,
+    );
+    expect(JSON.parse(configured)).toEqual({
+      collection: collectionOption,
+      collectionLabel,
+      membership: "descendants",
+      target: booksProfile.id,
+    });
+    expect(
+      await clickModalButton(vaultId, m.settings_profile_rule_save()),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(Array.from(document.querySelectorAll('.setting-item')).some(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(ruleSummary)})))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    const stored = await readStoredRules();
+    expect(stored).toHaveLength(3);
+    expect(stored[2]).toMatchObject({
+      scope: { mode: "selected", libraries: [{ type: "personal" }] },
+      expression: `inCollection("personal", ${JSON.stringify(parentCollection.key)})`,
+      profile: booksProfile.id,
+    });
+    const collectionRule = stored[2]!;
+    await obEval(vaultId, "app.setting.close();true");
+
+    // Quick Switch preselects Books through the parent-collection rule and
+    // creates the note there.
+    const quickSwitchSelection = async () => {
+      expect(
+        await obEvalUntil(
+          vaultId,
+          "app.commands.executeCommandById('zotlit:note-quick-switcher')",
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      await obEval(
+        vaultId,
+        `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(childItem.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      );
+      await selectSuggestion(vaultId, childItem.title);
+      await obEval(
+        vaultId,
+        "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+      );
+      return selectSuggestion(vaultId, m.modal_profile_preselected());
+    };
+    // The picker describes the rule without Collection names, so the
+    // Collection reads by its Library and key there.
+    const pickerSummary = m.settings_profile_rule_summary({
+      conditions: m.settings_profile_rule_in_collection({
+        collection: m.settings_profile_rule_collection_label({
+          library: m.settings_library_scope_personal(),
+          path: parentCollection.key,
+        }),
+      }),
+      libraries: m.settings_library_scope_personal(),
+    });
+    const descendantSelection = await quickSwitchSelection();
+    expect(descendantSelection).toContain(booksProfile.label);
+    expect(descendantSelection).toContain(
+      m.modal_profile_source_rule({ rule: pickerSummary }),
+    );
+    expect(descendantSelection).toContain(ruleNotePath);
+    await obEval(
+      vaultId,
+      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+    );
+    expect(
+      await waitFor(async () =>
+        (
+          await readFile(join(e2eVaultPath, ruleNotePath), "utf-8").catch(
+            () => "",
+          )
+        ).includes("%%zt-managed%%"),
+      ),
+    ).toBe(true);
+    const ruleNote = await readFile(join(e2eVaultPath, ruleNotePath), "utf-8");
+    expect(ruleNote).toContain(`zotlit-profile: Books (${booksProfile.id})`);
+    expect(ruleNote).toContain(`Citation key: ${childItem.citationKey}`);
+    expect(await hasOneIndexedNote(vaultId, childItem.key)).toBe(true);
+
+    // Narrowed to direct membership, the same rule no longer reaches the
+    // Item, so Quick Switch falls back to Default.
+    await cli([`vault=${vaultId}`, "delete", `path=${ruleNotePath}`]);
+    expect(await hasIndexedNotes(vaultId, childItem.key, 0)).toBe(true);
+    const directRule = {
+      ...collectionRule,
+      expression: `inCollectionDirectly("personal", ${JSON.stringify(parentCollection.key)})`,
+    };
+    await obEval(
+      vaultId,
+      `app.plugins.plugins.zotlit.services.settings.update({'profile.selection-rules':${JSON.stringify([...rulesBefore, directRule])}});true`,
+    );
+    const directSelection = await quickSwitchSelection();
+    expect(directSelection).toContain(m.settings_profile_default_name());
+    expect(directSelection).not.toContain(booksProfile.label);
+    expect(directSelection).not.toContain(
+      m.modal_profile_source_rule({ rule: "" }),
+    );
+    expect(directSelection).toContain(
+      `literatures/${childItem.citationKey}.md`,
+    );
+    await obEval(
+      vaultId,
+      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));true",
+    );
+    expect(
+      await obEvalUntil(vaultId, "String(!document.querySelector('.prompt'))", {
+        expected: "true",
+      }),
+    ).toBe(true);
+
+    // Leave the deletion flow the two rules it expects.
+    await obEval(
+      vaultId,
+      `app.plugins.plugins.zotlit.services.settings.update({'profile.selection-rules':${JSON.stringify(rulesBefore)}});true`,
+    );
+    expect(await readStoredRules()).toEqual(rulesBefore);
   });
 
   it("deletes Books into Default and applies Default on the next update", async () => {
@@ -1259,6 +1410,30 @@ function noteBody(source: string): string {
   if (!source.startsWith("---\n") || end < 0)
     throw new Error("Missing frontmatter");
   return source.slice(end + 4);
+}
+
+/**
+ * Moves the open prompt's selection onto the suggestion whose text includes
+ * `needle` and returns that row's text. The chooser selects on hover, and a
+ * physical cursor resting over the prompt re-selects the row under it after
+ * every re-render, so the wanted row is hovered explicitly instead of waited
+ * for.
+ */
+async function selectSuggestion(
+  vaultId: string,
+  needle: string,
+): Promise<string> {
+  expect(
+    await obEvalUntil(
+      vaultId,
+      `(function(){var row=Array.from(document.querySelectorAll('.prompt .suggestion-item')).find(el=>el.textContent.includes(${JSON.stringify(needle)}));if(!row)return false;row.dispatchEvent(new MouseEvent('mousemove',{bubbles:true}));return row.classList.contains('is-selected');})()`,
+      { expected: "true" },
+    ),
+  ).toBe(true);
+  return obEval(
+    vaultId,
+    "document.querySelector('.prompt .is-selected').textContent",
+  );
 }
 
 function clickModalButton(vaultId: string, label: string): Promise<boolean> {
