@@ -1,17 +1,14 @@
-// The Your note tab: the note source, with the two boxes the reader meets in
-// it. The Managed Block reads as the part a note update keeps up to date, and
-// the first annotation render call holds the annotation box: it says that each
-// annotation is written there, then shows one rendered annotation and, behind it,
-// a second pane over the Annotation Section of the same document, so the
-// format is edited where it is used. Every later call is a chip that leads
-// back to that one box.
+// Note placement: editable loops and Managed Blocks, with an example disclosure
+// and a route to the shared format at every recognized annotation call.
 
-import { StateField } from "@codemirror/state";
+import { Toggle } from "@base-ui/react/toggle";
+import { MapMode, StateEffect, StateField } from "@codemirror/state";
 import type { EditorState, Extension, Range } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
-import { ChevronDown } from "lucide-react";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Eye, Pencil } from "lucide-react";
+import { Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { noteRegions } from "@zotlit/workbench/document";
@@ -27,98 +24,89 @@ import { ResultSheet } from "./result-sheet";
 import { SliceEditor } from "./slice-editor";
 import type { SuggestionSource } from "./slice-editor";
 
-/** Which of the note tab's two editors the reader is in. */
-export type NoteEditor = "note" | "annotation";
-
 export interface NotePaneProps {
   controller: WorkbenchDocumentController;
-  /** Master offsets to reveal in the note source. */
   reveal?: WorkbenchSliceRange | null;
-  /** Master offsets to reveal in the annotation box, which also focuses it. */
-  annotation?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
-  /** The contract both editors complete and explain against. */
   suggest?: SuggestionSource;
-  /** The one annotation the render produced in this format, or null for a sample without. */
   preview: string | null;
-  /** The render's complaint about the format, shown in place of the preview. */
   formatProblem: string | null;
-  /** How many annotations the sample carries, which the one format is used for. */
-  count: number;
-  /** A later render call, or the reader, asked for the annotation editor. */
+  annotationSelector?: ReactNode;
   onOpenAnnotation: () => void;
-  /** The reader is at the box, so the host can point at what it produced. */
-  onEmphasis: (on: boolean) => void;
-  onEditing: (editor: NoteEditor) => void;
 }
-
-/** The face of the box: the annotation it produces, or the format that produces it. */
-type Face = "preview" | "source";
-
-/** The one motion the box has: a cross-fade in place. Nothing else moves. */
-const FADE = "transition-[opacity] duration-150 ease-[cubic-bezier(0.2,0,0,1)]";
-const FACE_STYLE = `absolute inset-0 flex flex-col ${FADE}`;
-const HIDDEN_FACE = "pointer-events-none opacity-0";
 
 export function NotePane({
   controller,
   reveal,
-  annotation,
   onSelection,
   suggest,
-  preview,
-  formatProblem,
-  count,
-  onOpenAnnotation,
-  onEmphasis,
-  onEditing,
+  ...example
 }: NotePaneProps) {
-  // One box for the life of the pane: the widget hands CodeMirror this element
-  // and React paints into it, so the editor inside survives every redraw.
-  const [box] = useState(() => document.createElement("div"));
-  const open = useRef(onOpenAnnotation);
-  open.current = onOpenAnnotation;
-  const extensions = useMemo(
-    () => noteBoxes(controller, box, () => open.current()),
-    [controller, box],
+  const host = useRef<HTMLDivElement>(null);
+  const previewId = useId();
+  const [opened, setOpened] = useState<{
+    controller: WorkbenchDocumentController;
+    line: number;
+  } | null>(null);
+  const expanded = opened?.controller === controller ? opened.line : null;
+  const localLine =
+    expanded === null ? null : expanded - controller.sliceRange("note").from;
+  // Stable portal hosts let CodeMirror move the shared preview below its call
+  // while React keeps the selector and rendered example alive.
+  const boxes = useMemo(
+    () =>
+      new Map<number, HTMLElement>(
+        controller.noteRegions.annotationCalls.map((_, index) => [
+          index,
+          document.createElement("span"),
+        ]),
+      ),
+    [controller],
   );
-  // The box opens on the annotation it produces, which is what makes the slot
-  // readable; the source behind it is one press away and stays mounted so the
-  // two faces cross-fade rather than rebuild.
-  const [expanded, setExpanded] = useState(true);
-  const [face, setFace] = useState<Face>("preview");
+  const previewHost = useMemo(() => document.createElement("div"), []);
+  const extensions = useMemo(
+    () => noteBoxes(boxes, previewHost),
+    [boxes, previewHost],
+  );
+  // The active line lives in master offsets so both Note and Source edits move
+  // it with the text. Every call on that line reads this one selection.
+  useEffect(
+    () =>
+      controller.subscribe(({ transaction, docChanged }) => {
+        if (!docChanged) return;
+        const { doc } = transaction.state;
+        const lines = new Set(
+          controller.noteRegions.annotationCalls.map(
+            ({ call }) => doc.lineAt(call.to).to,
+          ),
+        );
+        setOpened((current) => {
+          if (current?.controller !== controller) return current;
+          const position = transaction.changes.mapPos(
+            current.line,
+            -1,
+            MapMode.TrackDel,
+          );
+          const line = position === null ? null : doc.lineAt(position).to;
+          return line !== null && lines.has(line) ? { controller, line } : null;
+        });
+      }),
+    [controller],
+  );
   useEffect(() => {
-    if (annotation) {
-      setExpanded(true);
-      setFace("source");
-      // A chip further down the note asked for the box, so bring it back up.
-      box.scrollIntoView?.({ block: "nearest" });
-    }
-  }, [annotation, box]);
-  const call = controller.noteRegions.annotationCalls[0];
-  const hasBox = controller.annotationSection !== null && call !== undefined;
-  // Two editors report a caret, and the box's arrives last as it mounts. Only
-  // the one the reader is in speaks for the pane, so the field list and Put in
-  // note follow the editor on screen rather than the last one built.
-  const active = useRef<NoteEditor>("note");
-  const editing = (editor: NoteEditor) => {
-    active.current = editor;
-    onEditing(editor);
-  };
-  const selection = (editor: NoteEditor) => (range: WorkbenchSliceRange) => {
-    if (active.current === editor) onSelection?.(range);
-  };
-  const showSource = () => {
-    setExpanded(true);
-    setFace("source");
-  };
-  const showPreview = () => {
-    setFace("preview");
-    editing("note");
-  };
-
+    const element = host.current?.querySelector<HTMLElement>(".cm-editor");
+    const view = element && EditorView.findFromDOM(element);
+    view?.dispatch({ effects: expandPreview.of(localLine) });
+  }, [localLine, extensions]);
+  useEffect(() => {
+    const element = host.current?.querySelector<HTMLElement>(".cm-editor");
+    if (element) EditorView.findFromDOM(element)?.requestMeasure();
+  }, [example.preview, example.formatProblem]);
   return (
-    <div className="flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-managed]:bg-fd-muted/60 [&_.zt-managed]:shadow-[inset_2px_0_0_0_var(--color-fd-border)]">
+    <div
+      ref={host}
+      className="flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-managed]:bg-fd-muted/60 [&_.zt-managed]:shadow-[inset_2px_0_0_0_var(--color-fd-border)]"
+    >
       <SliceEditor
         controller={controller}
         slice="note"
@@ -126,169 +114,160 @@ export function NotePane({
         extensions={extensions}
         reveal={reveal}
         suggest={suggest}
-        onSelection={selection("note")}
-        onFocus={() => editing("note")}
+        onSelection={onSelection}
       />
-      {hasBox &&
+      {controller.noteRegions.annotationCalls.map(({ call }, index) => {
+        const line = controller.state.doc.lineAt(call.to).to;
+        return createPortal(
+          <AnnotationPlaceholder
+            expanded={expanded === line}
+            previewId={previewId}
+            onToggle={(pressed) =>
+              setOpened(pressed ? { controller, line } : null)
+            }
+            onOpenAnnotation={example.onOpenAnnotation}
+          />,
+          annotationBox(boxes, index),
+          String(index),
+        );
+      })}
+      {expanded !== null &&
         createPortal(
-          <div
-            data-annotation-box
-            className="my-2 flex flex-col rounded-md border border-fd-border bg-fd-card font-sans"
-            onMouseEnter={() => onEmphasis(true)}
-            onMouseLeave={() => onEmphasis(false)}
-            onFocus={() => onEmphasis(true)}
-            onBlur={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget)) {
-                onEmphasis(false);
-              }
-            }}
-          >
-            {/* First what the placeholder does in the note, with the call
-                itself under it as a faint subtitle. The format that each
-                annotation is written in comes second, as its own labelled
-                row over the preview. */}
-            <div className="flex items-center gap-x-2 ps-3 pe-1.5 pt-1">
-              <h3 className="min-w-0 flex-1 truncate text-sm font-medium">
-                {m.workbench_annotation_slot()}
-              </h3>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="min-h-7 px-1.5"
-                aria-expanded={expanded}
-                aria-label={
-                  expanded
-                    ? m.workbench_annotation_close()
-                    : m.workbench_annotation_edit()
-                }
-                title={
-                  expanded
-                    ? m.workbench_annotation_close()
-                    : m.workbench_annotation_edit()
-                }
-                onClick={() => {
-                  setExpanded((value) => !value);
-                  if (expanded) editing("note");
-                }}
-              >
-                <ChevronDown
-                  aria-hidden
-                  className={expanded ? "rotate-180" : ""}
-                />
-              </Button>
-            </div>
-            <p
-              title={controller.source.slice(call.call.from, call.call.to)}
-              className="truncate px-3 pb-1.5 font-mono text-xs text-fd-muted-foreground"
-            >
-              {controller.source.slice(call.call.from, call.call.to)}
-            </p>
-            <div
-              className={
-                expanded
-                  ? "flex items-center gap-x-2 border-t border-fd-border py-0.5 ps-3 pe-1.5"
-                  : "hidden"
-              }
-            >
-              <h4 className="shrink-0 text-xs font-medium">
-                {m.workbench_annotation_label()}
-              </h4>
-              <p className="min-w-0 flex-1 truncate text-xs text-fd-muted-foreground">
-                {count > 0 ? m.workbench_annotation_count({ count }) : null}
-              </p>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="min-h-7 px-2 text-xs"
-                onClick={face === "preview" ? showSource : showPreview}
-              >
-                {face === "source"
-                  ? m.workbench_annotation_done()
-                  : formatProblem !== null
-                    ? m.workbench_annotation_fix()
-                    : m.workbench_annotation_edit_format()}
-              </Button>
-            </div>
-            <div
-              className={
-                expanded
-                  ? "relative flex h-40 flex-col border-t border-fd-border"
-                  : "hidden"
-              }
-            >
-              <div
-                data-face="preview"
-                inert={face !== "preview"}
-                className={`${FACE_STYLE} ${face === "preview" ? "" : HIDDEN_FACE}`}
-              >
-                <div className="min-h-0 flex-1 overflow-auto px-3 py-2">
-                  {formatProblem !== null ? (
-                    <p className="border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-sm">
-                      {formatProblem}
-                    </p>
-                  ) : preview === null ? (
-                    <p className="text-sm text-fd-muted-foreground">
-                      {m.workbench_annotation_preview_empty()}
-                    </p>
-                  ) : (
-                    <Suspense
-                      fallback={
-                        <p className="text-sm text-fd-muted-foreground">
-                          {m.workbench_result_pending()}
-                        </p>
-                      }
-                    >
-                      <ResultSheet
-                        markdown={preview}
-                        properties={[]}
-                        showMarkdown={false}
-                      />
-                    </Suspense>
-                  )}
-                </div>
-              </div>
-              <div
-                data-face="source"
-                inert={face !== "source"}
-                className={`${FACE_STYLE} ${face === "source" ? "" : HIDDEN_FACE}`}
-              >
-                <SliceEditor
-                  controller={controller}
-                  slice="annotation"
-                  label={m.workbench_annotation_label()}
-                  reveal={annotation}
-                  suggest={suggest}
-                  onSelection={selection("annotation")}
-                  onFocus={() => editing("annotation")}
-                />
-              </div>
-            </div>
-          </div>,
-          box,
+          <AnnotationPreview {...example} id={previewId} />,
+          previewHost,
         )}
     </div>
   );
 }
 
-/**
- * The note source's own decorations: the Managed Block as a marked box with a
- * beginner label in place of each raw tag, and every annotation render call
- * replaced — the first by the annotation box, the rest by a chip leading to it. They are
- * read from the pane's own text, which is the note body, so they never lag the
- * keystroke that moved them. Block decorations belong to a state field.
- */
+function AnnotationPlaceholder({
+  expanded,
+  previewId,
+  onToggle,
+  onOpenAnnotation,
+}: {
+  expanded: boolean;
+  previewId: string;
+  onToggle: (pressed: boolean) => void;
+  onOpenAnnotation: () => void;
+}) {
+  return (
+    <span
+      data-annotation-box
+      className="inline-flex max-w-full items-center gap-1 rounded-md border border-fd-border bg-fd-card p-0.5 ps-2 align-middle text-xs font-medium text-fd-muted-foreground"
+    >
+      <span className="min-w-0 whitespace-normal">
+        {m.workbench_annotation_slot()}
+      </span>
+      <span className="inline-flex shrink-0 items-center">
+        <Toggle
+          render={
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-6 rounded-sm data-pressed:bg-fd-muted [&_svg]:size-3.5"
+            />
+          }
+          aria-label={m.workbench_annotation_preview()}
+          title={m.workbench_annotation_preview()}
+          pressed={expanded}
+          aria-controls={expanded ? previewId : undefined}
+          onPressedChange={onToggle}
+        >
+          <Eye aria-hidden />
+        </Toggle>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-6 rounded-sm [&_svg]:size-3.5"
+          aria-label={m.workbench_annotation_edit_format()}
+          title={m.workbench_annotation_edit_format()}
+          onClick={onOpenAnnotation}
+        >
+          <Pencil aria-hidden />
+        </Button>
+      </span>
+    </span>
+  );
+}
+
+function AnnotationPreview({
+  id,
+  preview,
+  formatProblem,
+  annotationSelector,
+}: Pick<NotePaneProps, "preview" | "formatProblem" | "annotationSelector"> & {
+  id: string;
+}) {
+  return (
+    <div
+      id={id}
+      data-annotation-preview
+      className="border-y border-fd-border px-2 pb-2 font-sans whitespace-normal [&_[role=document]>:first-child]:mt-0 [&_[role=document]>:last-child]:mb-0"
+    >
+      <div className="-mx-2 mb-2 min-w-0 border-b border-fd-border bg-fd-muted/40 px-2 py-1 [&>div]:mb-0">
+        {annotationSelector}
+      </div>
+      {formatProblem !== null && (
+        <p className="mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-sm">
+          {formatProblem}
+        </p>
+      )}
+      {preview !== null ? (
+        <Suspense
+          fallback={
+            <p className="text-sm text-fd-muted-foreground">
+              {m.workbench_result_pending()}
+            </p>
+          }
+        >
+          <ResultSheet
+            markdown={preview}
+            properties={[]}
+            showMarkdown={false}
+          />
+        </Suspense>
+      ) : (
+        formatProblem === null && (
+          <p className="text-sm text-fd-muted-foreground">
+            {m.workbench_result_pending()}
+          </p>
+        )
+      )}
+    </div>
+  );
+}
+
+function annotationBox(
+  boxes: Map<number, HTMLElement>,
+  index: number,
+): HTMLElement {
+  let box = boxes.get(index);
+  if (!box) {
+    box = document.createElement("span");
+    boxes.set(index, box);
+  }
+  return box;
+}
+
+const expandPreview = StateEffect.define<number | null>();
+
 function noteBoxes(
-  controller: WorkbenchDocumentController,
-  box: HTMLElement,
-  openAnnotation: () => void,
+  boxes: Map<number, HTMLElement>,
+  previewHost: HTMLElement,
 ): Extension {
-  function build({ doc }: EditorState): DecorationSet {
+  function build(
+    { doc, selection }: EditorState,
+    expanded: number | null,
+  ): DecorationSet {
     const body = doc.toString();
     const { annotationCalls, managedBlock } = noteRegions(body, {
       from: 0,
       to: body.length,
     });
     const ranges: Range<Decoration>[] = [];
+    const selected = ({ from, to }: WorkbenchSliceRange) =>
+      selection.ranges.some((range) => range.from <= to && range.to >= from);
     if (managedBlock) {
       const last = doc.lineAt(managedBlock.range.to).number;
       for (
@@ -304,115 +283,140 @@ function noteBoxes(
         [managedBlock.open, m.workbench_managed_start()],
         [managedBlock.close, m.workbench_managed_end()],
       ] as const) {
+        if (selected(tag)) continue;
         ranges.push(
-          Decoration.replace({ widget: new LabelWidget(label) }).range(
+          Decoration.replace({ widget: new LabelWidget(label, tag) }).range(
             tag.from,
             tag.to,
           ),
         );
       }
     }
-    // The section the first box edits has to exist; without one every call
-    // links out instead, and the link opens the section in Advanced.
-    const editable = controller.annotationSection !== null;
-    for (const [index, { call, line }] of annotationCalls.entries()) {
-      const target = line ?? call;
+    if (
+      expanded !== null &&
+      annotationCalls.some(({ call }) => doc.lineAt(call.to).to === expanded)
+    ) {
+      ranges.push(
+        Decoration.widget({
+          widget: new PreviewWidget(previewHost),
+          block: true,
+          side: 1,
+        }).range(expanded),
+      );
+    }
+    for (const [index, { call }] of annotationCalls.entries()) {
+      if (selected(call)) continue;
       ranges.push(
         Decoration.replace({
-          block: line !== null,
-          widget:
-            index === 0 && editable
-              ? new BoxWidget(box)
-              : new LinkWidget(
-                  m.workbench_annotation_slot(),
-                  m.workbench_annotation_chip_hint(),
-                  openAnnotation,
-                ),
-        }).range(target.from, target.to),
+          widget: new BoxWidget(annotationBox(boxes, index), call),
+        }).range(call.from, call.to),
       );
     }
     return Decoration.set(ranges, true);
   }
 
-  return StateField.define<DecorationSet>({
-    create: build,
-    update: (value, transaction) =>
-      transaction.docChanged ? build(transaction.state) : value,
-    provide: (field) => EditorView.decorations.from(field),
+  return StateField.define<{
+    expanded: number | null;
+    decorations: DecorationSet;
+  }>({
+    create: (state) => ({ expanded: null, decorations: build(state, null) }),
+    update: (value, transaction) => {
+      let expanded = value.expanded;
+      for (const effect of transaction.effects) {
+        if (effect.is(expandPreview)) expanded = effect.value;
+      }
+      return transaction.docChanged ||
+        transaction.selection ||
+        expanded !== value.expanded
+        ? { expanded, decorations: build(transaction.state, expanded) }
+        : value;
+    },
+    provide: (field) =>
+      EditorView.decorations.from(field, (value) => value.decorations),
   });
 }
 
 /** A beginner name in place of a raw tag the reader does not have to read. */
 class LabelWidget extends WidgetType {
-  constructor(readonly label: string) {
-    super();
-  }
-
-  eq(other: LabelWidget): boolean {
-    return other.label === this.label;
-  }
-
-  toDOM(): HTMLElement {
-    const element = document.createElement("span");
-    element.className =
-      "rounded-sm border border-fd-border bg-fd-card px-2 py-1 text-xs font-medium text-fd-muted-foreground";
-    element.textContent = this.label;
-    return element;
-  }
-}
-
-/**
- * A later render call as a chip: the same name as the box, and the way back to
- * it. The first call is always the one above, so the hint has one direction.
- */
-class LinkWidget extends WidgetType {
   constructor(
     readonly label: string,
-    readonly hint: string,
-    readonly open: () => void,
+    readonly range: WorkbenchSliceRange,
   ) {
     super();
   }
 
-  eq(other: LinkWidget): boolean {
+  eq(other: LabelWidget): boolean {
     return (
       other.label === this.label &&
-      other.hint === this.hint &&
-      other.open === this.open
+      other.range.from === this.range.from &&
+      other.range.to === this.range.to
     );
   }
 
-  toDOM(): HTMLElement {
-    const element = document.createElement("button");
-    element.type = "button";
-    element.title = this.hint;
+  toDOM(view: EditorView): HTMLElement {
+    const element = document.createElement("span");
     element.className =
-      "cursor-pointer rounded-sm border border-dashed border-fd-primary px-2 py-0.5 text-left text-xs font-medium text-fd-primary";
+      "rounded-sm border border-fd-border bg-fd-card px-2 py-1 text-xs font-medium text-fd-muted-foreground";
     element.textContent = this.label;
-    element.addEventListener("click", this.open);
+    revealSourceOnClick(element, view, this.range);
     return element;
-  }
-
-  ignoreEvent(): boolean {
-    return true;
   }
 }
 
 /** The place the annotation box is painted into, held across every redraw. */
 class BoxWidget extends WidgetType {
-  constructor(readonly box: HTMLElement) {
+  constructor(
+    readonly box: HTMLElement,
+    readonly range: WorkbenchSliceRange,
+  ) {
     super();
   }
 
   eq(other: BoxWidget): boolean {
-    return other.box === this.box;
+    return (
+      other.box === this.box &&
+      other.range.from === this.range.from &&
+      other.range.to === this.range.to
+    );
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    revealSourceOnClick(this.box, view, this.range);
+    return this.box;
+  }
+}
+
+/** One full-width block, placed after the line containing the open call. */
+class PreviewWidget extends WidgetType {
+  constructor(readonly host: HTMLElement) {
+    super();
+  }
+
+  eq(other: PreviewWidget): boolean {
+    return other.host === this.host;
   }
 
   toDOM(): HTMLElement {
-    return this.box;
+    return this.host;
   }
+}
 
-  ignoreEvent(): boolean {
-    return true;
-  }
+function revealSourceOnClick(
+  element: HTMLElement,
+  view: EditorView,
+  range: WorkbenchSliceRange,
+): void {
+  element.onclick = (event) => {
+    if (
+      event.target instanceof Element &&
+      event.target.closest("button, [data-annotation-preview]")
+    )
+      return;
+    view.focus();
+    view.dispatch({
+      selection: { anchor: range.to, head: range.from },
+      scrollIntoView: true,
+      userEvent: "select.pointer",
+    });
+  };
 }

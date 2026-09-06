@@ -7,16 +7,10 @@ import type { LocalBridgeConnection } from "@zotlit/workbench/bridge";
 import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
 
 import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { m } from "@/paraglide/messages.js";
 
 import type { SampleItem } from "./fields";
+import { SampleSuggester } from "./sample-suggester";
 
 export function SampleBar({
   sample,
@@ -75,51 +69,33 @@ export function SampleBar({
   }));
   return (
     <div className="mb-2 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <label
-          htmlFor="workbench-sample"
-          className="shrink-0 text-xs text-fd-muted-foreground"
-        >
-          {m.workbench_showing_label()}
-        </label>
-        <Select
-          name="sample"
-          items={options}
-          value={fromVault ? `connected:${sample.item.key}` : sample.item.key}
-          onValueChange={(value) => {
-            const selected = options.find(
-              (option) => option.value === value,
-            )?.sample;
-            if (selected) onShow(selected);
-          }}
-        >
-          <SelectTrigger
-            id="workbench-sample"
-            title={name}
-            className="min-h-8 flex-1 gap-2 px-2 py-1 text-xs sm:text-xs [&_svg]:size-3.5"
-          >
-            <SelectValue className="truncate" />
-          </SelectTrigger>
-          <SelectContent alignItemWithTrigger={false}>
-            {options.map((option) => (
-              <SelectItem
-                key={option.value}
-                value={option.value}
-                label={option.label}
-              >
-                <span className="block font-medium break-words">
-                  {option.label}
-                </span>
-                {option.description && (
-                  <span className="mt-1 block text-xs break-words text-fd-muted-foreground">
-                    {option.description}
-                  </span>
-                )}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <SampleSuggester
+        id="workbench-sample"
+        title={m.workbench_choose_paper()}
+        label={name}
+        selected={fromVault ? `connected:${sample.item.key}` : sample.item.key}
+        groups={[
+          {
+            heading: m.workbench_sample_examples(),
+            options: options.filter(
+              ({ sample }) => sample.provenance.kind === "sample",
+            ),
+          },
+          {
+            heading: m.workbench_sample_loaded(),
+            empty: connected
+              ? m.workbench_sample_not_loaded()
+              : m.workbench_sample_disconnected(),
+            options: options.filter(
+              ({ sample }) => sample.provenance.kind === "connected",
+            ),
+          },
+        ]}
+        onSelect={(value) => {
+          const selected = options.find((option) => option.value === value);
+          if (selected) onShow(selected.sample);
+        }}
+      />
       <span className="text-xs text-fd-muted-foreground">
         {fromVault
           ? current

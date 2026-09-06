@@ -279,14 +279,16 @@ export function SliceEditor({
   // widget in it changes height. An editor that scrolls itself takes that job
   // over with CodeMirror's anchor heuristics, which treat a height change it
   // did not make as the reader scrolling to the bottom and move the pane. The
-  // focus ring sits on the host for the same reason: it frames what is on
-  // screen rather than the whole editor.
+  // focus ring sits outside the scroll container and follows the same tokens
+  // as the site's Input control.
   return (
-    <div
-      ref={host}
-      dir="ltr"
-      className="min-h-0 flex-1 overflow-auto rounded-md [&_.cm-content]:px-3 [&_.cm-content]:py-3 [&_.cm-editor]:min-h-full [&_.cm-gutters]:border-fd-border [&_.cm-gutters]:bg-transparent [&:has(>.cm-editor.cm-focused)]:outline-2 [&:has(>.cm-editor.cm-focused)]:-outline-offset-2 [&:has(>.cm-editor.cm-focused)]:outline-fd-foreground"
-    />
+    <div className="flex min-h-0 flex-1 flex-col rounded-md has-[.cm-content:focus-visible]:outline-2 has-[.cm-content:focus-visible]:outline-offset-2 has-[.cm-content:focus-visible]:outline-fd-ring">
+      <div
+        ref={host}
+        dir="ltr"
+        className="min-h-0 flex-1 overflow-auto rounded-md [&_.cm-content]:min-w-0 [&_.cm-content]:px-3 [&_.cm-content]:py-3 [&_.cm-editor]:min-h-full [&_.cm-gutters]:border-fd-border [&_.cm-gutters]:bg-transparent"
+      />
+    </div>
   );
 }
 

@@ -1,5 +1,7 @@
 # The annotation box opens on the annotation it produces
 
+> **Amended by [ADR 0041](0041-annotation-format-has-its-own-workbench-tab.md).** Annotation formatting has its own tab. Basic shows a collapsed placeholder with an expandable example and an Edit format action; the new tab pairs the format editor with a single-annotation result.
+
 In the web Template Workbench's Basic mode, the first annotation render
 call in the note is the annotation box (ADR 0035). The box now opens on one
 rendered annotation — the sample's first, in the current format — and holds

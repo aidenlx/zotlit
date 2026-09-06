@@ -13,7 +13,7 @@ The required Zotero add-on. Write “ZotLit Companion, the Zotero add-on” on f
 _Avoid_: Zotero companion, ZotLit Zotero companion, companion plugin, Zotero plugin (v1 term), zotero-obsidian-note (v1 product), ZotLit for Zotero
 
 **Template Workbench** _(web)_:
-The human-facing surface at `/workbench` where a Literature Note Profile's document is edited as one object: three columns (fields from this paper, one of three equal tabs — your note, Properties, Name and folder — and the result), Advanced for the whole file. The term is one with the Obsidian glossary's Template Workbench; the host qualifies it ("the web Workbench", "the agent CLI") only where the difference matters. Its beginner face prints "template" and the Profile's name, never Profile, manifest, or frontmatter.
+The human-facing surface at `/workbench` for editing a Literature Note Profile's template document, including its note content, Annotation format, properties, and file destination. The term is one with the Obsidian glossary's Template Workbench; the host qualifies it ("the web Workbench", "the agent CLI") only where the difference matters. Its beginner face prints "template" and the Profile's name, never Profile, manifest, or frontmatter.
 _Avoid_: note layout (the #938 draft's placeholder, retired by #945), web template editor, Profile editor
 
 **UI Label**:

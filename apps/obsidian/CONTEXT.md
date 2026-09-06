@@ -88,6 +88,10 @@ _Avoid_: Profile resolution (resolving an already chosen selector), automatic Pr
 The `{% managed %}` … `{% endmanaged %}` block in a Literature Note Template document's body — a self-contained sub-template supported in both Liquid and Eta. It renders in isolation: variables assigned outside the block are not visible inside, so an update-time render is identical to a create-time render. On create it renders in place within the body; on update it alone re-renders to refill the note's Managed Region. When its tags are Line-Owning Tags, the Managed Region occupies exactly the lines the block occupied. Role-equivalent to the retired `content` Template.
 _Avoid_: managed region (the rendered output in the note, not the template source), content block
 
+**Annotation format**:
+The pattern a Literature Note Profile uses to turn one Annotation into note content. The same format applies wherever that Profile renders annotations.
+_Avoid_: annotation editor (the control used to edit the format)
+
 **Annotation Section**:
 The required final part of a Literature Note Template document, introduced by the standalone `--- zotlit:annotation ---` line, which holds the Profile's single-annotation source and can be empty. It supplies all annotation rendering under that Profile with isolated Annotation Root data, including note calls, shared-partial calls, direct insertion, and Imported Notes.
 _Avoid_: Annotation Block (the retired development format), annotation partial (the section belongs to the Profile document)
@@ -139,12 +143,16 @@ The Template Data Explorer's current root, saved as a JSON file for a bug report
 _Avoid_: template export (suggests rendered note output), data dump (the file follows the published contract, it is not raw state)
 
 **Item Snapshot** _(web Workbench)_:
-The fixed template data for one selected Item, shared by the web Workbench's preview and field palette until an explicit refresh. It includes permitted local link targets and explicit unavailable values where private local data is omitted.
+The fixed template data for one selected Item and its annotations, retained until an explicit refresh. It includes permitted local link targets and explicit unavailable values where private local data is omitted.
 _Avoid_: Template Data Export (the separate inspection artifact), live Item data (a snapshot remains fixed)
 
 **Sample Item** _(web Workbench)_:
 A built-in Item Snapshot the web Workbench ships for standalone use, one per supported Item type, so the preview and field palette work before any Workbench Connection exists. The surface names it as sample data whenever it is the source.
 _Avoid_: fixture item (the Fixture is test infrastructure), demo data, placeholder item
+
+**Sample Annotation** _(web Workbench)_:
+Built-in annotation data representing an annotation type or combination of content fields, offered alongside annotations from the selected Item Snapshot to try an Annotation format. Each example retains its own parent Item and attachment data, independently of the Item Snapshot selected for the note.
+_Avoid_: placeholder annotation (the placeholder marks a call in the note)
 
 **Local Bridge** _(web Workbench)_:
 The loopback-only service the plugin offers the web Workbench for the operations a Workbench Connection grants: Item Snapshots, Profile document read and Save, template dependencies, and citation styles. Its contract is separate from the Companion's local server and the Agent CLI.

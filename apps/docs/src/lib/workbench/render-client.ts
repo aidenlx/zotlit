@@ -1,7 +1,7 @@
 // Browser side of the render Worker, handed to the core's scheduler as its
 // Worker factory.
 
-import { failedRender, profileSourceRevision } from "@zotlit/workbench/render";
+import { failedRender, renderIdentity } from "@zotlit/workbench/render";
 import type {
   ProfileRenderResult,
   RenderRequest,
@@ -25,13 +25,11 @@ export function startRenderWorker(
   // deadline for the one cause it names.
   const fail = (message: string) =>
     deliver(
-      failedRender(
-        {
-          sourceRevision: profileSourceRevision(request.source),
-          snapshotRevision: request.snapshot.revision,
-        },
-        { code: "render-error", message, part: "render" },
-      ),
+      failedRender(renderIdentity(request), {
+        code: "render-error",
+        message,
+        part: "render",
+      }),
     );
   worker.addEventListener("error", (event) =>
     fail(event.message || m.workbench_render_worker_failed()),

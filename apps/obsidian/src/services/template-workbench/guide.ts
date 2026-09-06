@@ -451,11 +451,25 @@ MODEL
   not bundle an unrelated global annotation partial.
 
 EDITING CONTRACT
-  The web Workbench UI remains work under #863. Its first annotation render call
-  offers the annotation editor; later calls link to it, as agreed in #933.
+  The web Workbench has an Annotation tab beside Note, Properties, and
+  Name and folder. It edits the final Annotation Section, including in a Profile
+  whose note has no annotation calls. Each recognized call in Basic is a compact
+  inline Annotation placeholder with a preview arrow and an Edit format action.
+  One read-only preview opens below the call's line, with an annotation chooser.
+  Opening another preview moves this shared block to that call.
+  Annotation calls and managed tags reveal their source when the cursor or
+  selection touches them. Moving away restores the widgets.
   Edits target the final section in one source buffer and undo history, preserving
   unrelated bytes. ADR 0032 retains invalid drafts in memory and blocks Save on
   document or Profile validation errors.
+
+  Searchable suggesters select the paper for the note result and one annotation
+  for the format result. Annotation examples keep their own parent Item and
+  citation data. They include the current Item Snapshot's annotations and six
+  built-in types: highlight, underline, note, text, image, and ink. Selection is
+  kept with the browser draft and stays outside the saved Profile source.
+  Reading previews use bundled image placeholders. Markdown retains the original
+  image references. ADR 0041 records the interaction and selection rules.
 
 INSPECTION
   template-status reports Profiles and their resolved bindings under profiles,

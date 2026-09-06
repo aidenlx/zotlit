@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS, renderProfile } from "./index";
+import {
+  DEFAULT_PROFILE_SOURCE,
+  SAMPLE_ITEMS,
+  SAMPLE_ANNOTATIONS,
+  renderProfile,
+} from "./index";
 import { profileSourceRevision } from "./result";
 import type { ProfileRenderResult } from "./result";
 import { createRenderScheduler } from "./scheduler";
@@ -42,6 +47,46 @@ describe("createRenderScheduler", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
+
+  it.each(["selection", "refresh"])(
+    "drops an old annotation result after %s without changing source or paper",
+    (change) => {
+      const first = SAMPLE_ANNOTATIONS[0]!;
+      const next = {
+        ...first,
+        id: change === "selection" ? "example:new" : first.id,
+        revision: change === "refresh" ? "refreshed" : first.revision,
+        root: { ...first.root, text: "Newest example" },
+      };
+      const workers = fakeWorkers();
+      const results: ProfileRenderResult[] = [];
+      using scheduler = createRenderScheduler({
+        startWorker: workers.startWorker,
+        onResult: (result) => results.push(result),
+      });
+      scheduler.request({
+        source: DEFAULT_PROFILE_SOURCE,
+        snapshot,
+        annotation: first,
+      });
+      vi.advanceTimersByTime(300);
+      scheduler.request({
+        source: DEFAULT_PROFILE_SOURCE,
+        snapshot,
+        annotation: next,
+      });
+      vi.advanceTimersByTime(300);
+      workers.started[0]!.deliver(
+        renderProfile(DEFAULT_PROFILE_SOURCE, snapshot, { annotation: first }),
+      );
+      expect(results).toHaveLength(0);
+      workers.started[1]!.deliver(
+        renderProfile(DEFAULT_PROFILE_SOURCE, snapshot, { annotation: next }),
+      );
+      expect(results).toHaveLength(1);
+      expect(results[0]!.annotation).toContain("Newest example");
+    },
+  );
 
   it("renders once the reader stops typing", () => {
     const workers = fakeWorkers();

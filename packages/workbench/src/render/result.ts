@@ -1,6 +1,8 @@
 // The render result shape and its identity stamp, shared by the renderer and
 // the scheduler that decides which result is still current.
 
+import type { RenderRequest } from "./scheduler";
+
 /**
  * What went wrong, in the vocabulary a host writes its own wording against. One
  * code is one sentence, so a host reads `code` and its `params` rather than the
@@ -49,6 +51,22 @@ export interface RenderedProperty {
 export interface RenderIdentity {
   readonly sourceRevision: string;
   readonly snapshotRevision: string;
+  readonly annotationId?: string;
+  readonly annotationRevision?: string;
+}
+
+export function renderIdentity({
+  source,
+  snapshot,
+  annotation,
+}: RenderRequest): RenderIdentity {
+  return {
+    sourceRevision: profileSourceRevision(source),
+    snapshotRevision: snapshot.revision,
+    ...(annotation
+      ? { annotationId: annotation.id, annotationRevision: annotation.revision }
+      : {}),
+  };
 }
 
 export interface ProfileRenderResult extends RenderIdentity {
@@ -69,6 +87,8 @@ export interface ProfileRenderResult extends RenderIdentity {
   readonly creationBody: string | null;
   readonly managedRegion: string | null;
   readonly annotation: string | null;
+  /** The selected example's computed citation, for matching field and completion values. */
+  readonly annotationCitation: string | null;
   /**
    * Where each highlight the format rendered landed in `creationBody`, in
    * reading order, so a host can point at the many outputs of the one format.
@@ -106,6 +126,7 @@ export function failedRender(
     creationBody: null,
     managedRegion: null,
     annotation: null,
+    annotationCitation: null,
     annotationRanges: [],
     diagnostics: [diagnostic],
   };

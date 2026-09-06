@@ -358,7 +358,7 @@ export function ResultRegion({
       aria-label={m.workbench_view_result()}
       ref={ref}
       data-emphasis={emphasis || undefined}
-      className="group min-h-0 flex-1 overflow-auto rounded-md border border-fd-border bg-fd-card p-4"
+      className="group flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-fd-border bg-fd-card p-4"
     >
       {children}
     </div>

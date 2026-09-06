@@ -11,6 +11,7 @@ import {
   renderProfile,
   restoreTemplateData,
   SAMPLE_ITEMS,
+  SAMPLE_ANNOTATIONS,
 } from "./index";
 
 import { WorkbenchDocumentController } from "#/document/index";
@@ -22,6 +23,41 @@ const SAMPLE_WITH_CITATION = DEFAULT_PROFILE_SOURCE.replace(
 );
 
 describe("Sample Items", () => {
+  it("renders a selected annotation with its own parent while the note keeps its paper", () => {
+    const source = SAMPLE_WITH_CITATION;
+    const result = renderProfile(source, SAMPLE_ITEMS[0]!, {
+      annotation: SAMPLE_ANNOTATIONS[2]!,
+      resources: {
+        dependencies: {
+          templates: [
+            {
+              name: "cite",
+              language: "liquid",
+              source: "{{ zt.citations | pandoc_cite }}",
+            },
+          ],
+          diagnostics: [],
+        },
+        citationStyle: { kind: "default" },
+      },
+    });
+    expect(result.annotation).toContain(
+      "Compare these findings with the replication study.",
+    );
+    expect(result.annotation).toContain(
+      "[@riveraResearchInterfaces2026, {p. 3}]",
+    );
+    expect(result.annotationCitation).toBe(
+      "[@riveraResearchInterfaces2026, {p. 3}]",
+    );
+    expect(result.creationBody).toContain(
+      "# Why Most Published Research Findings Are False",
+    );
+    expect(result.creationBody).not.toContain("Compare these findings");
+    expect(result.annotationRanges).toEqual([]);
+    expect(result.diagnostics).toEqual([]);
+  });
+
   it("ships four current-contract item types", () => {
     expect(
       SAMPLE_ITEMS.map((sample) => [
@@ -55,6 +91,20 @@ describe("Sample Items", () => {
       for (const root of sample.roots.annotations) {
         expect(annotation(root)).toBe(true);
       }
+    }
+    expect(SAMPLE_ANNOTATIONS.map(({ root }) => root.type)).toEqual([
+      "highlight",
+      "underline",
+      "note",
+      "text",
+      "image",
+      "ink",
+    ]);
+    for (const example of SAMPLE_ANNOTATIONS) {
+      expect(annotation(example.root)).toBe(true);
+      expect(() =>
+        restoreTemplateData(example.root, example.descriptors),
+      ).not.toThrow();
     }
   });
 
@@ -179,6 +229,77 @@ describe("Sample Items", () => {
     expect(result.diagnostics.map(({ part }) => part)).toEqual(["annotation"]);
   });
 
+  it("keeps successful note output and its marks when only the selected example fails", () => {
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "{{ zt.imgLink | embed }}{{ zt.text }}",
+      "{% if zt.type == 'note' %}{% render 'missing-example' %}{% endif %}{{ zt.text }}",
+    );
+    const result = renderProfile(source, SAMPLE_ITEMS[1]!, {
+      annotation: SAMPLE_ANNOTATIONS[2]!,
+    });
+    expect(result.annotation).toBeNull();
+    expect(result.creationBody).toContain(
+      "# Designing reproducible research interfaces",
+    );
+    expect(result.annotationRanges).toHaveLength(1);
+    const mark = result.annotationRanges[0]!;
+    expect(result.creationBody!.slice(mark.from, mark.to)).toContain(
+      SAMPLE_ITEMS[1]!.roots.annotations[0]!.text,
+    );
+    expect(result.diagnostics.map(({ part }) => part)).toEqual(["annotation"]);
+  });
+
+  it("keeps a selected example available when the note has a separate error", () => {
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "# {{ zt.title }}",
+      "{% render 'missing-note' %}",
+    );
+    const result = renderProfile(source, SAMPLE_ITEMS[0]!, {
+      annotation: SAMPLE_ANNOTATIONS[0]!,
+    });
+    expect(result.annotation).toContain(
+      "Clear methods make research easier to reproduce.",
+    );
+    expect(result.creationBody).toBeNull();
+    expect(result.diagnostics.map(({ part }) => part)).toEqual(["render"]);
+    expect(result.diagnostics[0]!.message).toContain("missing-note");
+  });
+
+  it("identifies a format error in a note call while the selected example succeeds", () => {
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "{{ zt.imgLink | embed }}{{ zt.text }}",
+      "{% if zt.type == 'highlight' %}{% render 'missing-for-highlight' %}{% endif %}{{ zt.comment }}",
+    );
+    const result = renderProfile(source, SAMPLE_ITEMS[1]!, {
+      annotation: SAMPLE_ANNOTATIONS[2]!,
+    });
+    expect(result.annotation).toContain(
+      "Compare these findings with the replication study.",
+    );
+    expect(result.creationBody).toBeNull();
+    expect(result.diagnostics.map(({ part }) => part)).toEqual(["annotation"]);
+    expect(result.diagnostics[0]!.message).toContain("missing-for-highlight");
+  });
+
+  it("reports both a selected-example error and an unrelated note error", () => {
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "# {{ zt.title }}",
+      "{% render 'missing-note' %}",
+    ).replace(
+      "{{ zt.imgLink | embed }}{{ zt.text }}",
+      "{% render 'missing-example' %}",
+    );
+    const result = renderProfile(source, SAMPLE_ITEMS[0]!, {
+      annotation: SAMPLE_ANNOTATIONS[0]!,
+    });
+    expect(result.diagnostics.map(({ part }) => part)).toEqual([
+      "annotation",
+      "render",
+    ]);
+    expect(result.diagnostics[0]!.message).toContain("missing-example");
+    expect(result.diagnostics[1]!.message).toContain("missing-note");
+  });
+
   it("locates no highlight when the note calls the format nowhere", () => {
     const silent = DEFAULT_PROFILE_SOURCE.replace(
       "{% render_annotation annotation %}\n",
@@ -210,17 +331,19 @@ describe("Sample Items", () => {
     );
 
     const result = renderProfile(source, SAMPLE_ITEMS[0]!, {
-      dependencies: {
-        templates: [
-          {
-            name: "connected-heading",
-            language: "liquid",
-            source: "# Connected: {{ zt.title }}",
-          },
-        ],
-        diagnostics: [],
+      resources: {
+        dependencies: {
+          templates: [
+            {
+              name: "connected-heading",
+              language: "liquid",
+              source: "# Connected: {{ zt.title }}",
+            },
+          ],
+          diagnostics: [],
+        },
+        citationStyle: { kind: "default" },
       },
-      citationStyle: { kind: "default" },
     });
 
     expect(result.creationBody).toContain(
@@ -240,17 +363,19 @@ describe("Sample Items", () => {
     );
 
     const connected = renderProfile(source, paper, {
-      dependencies: {
-        templates: [
-          {
-            name: "cite",
-            language: "liquid",
-            source: "{{ zt.citations | pandoc_cite }}\n",
-          },
-        ],
-        diagnostics: [],
+      resources: {
+        dependencies: {
+          templates: [
+            {
+              name: "cite",
+              language: "liquid",
+              source: "{{ zt.citations | pandoc_cite }}\n",
+            },
+          ],
+          diagnostics: [],
+        },
+        citationStyle: { kind: "default" },
       },
-      citationStyle: { kind: "default" },
     });
 
     // The parent Item with the annotation's page as locator, on one line, the
@@ -267,16 +392,18 @@ describe("Sample Items", () => {
       "{% render 'summary' with zt as zt %}",
     );
     const result = renderProfile(source, SAMPLE_ITEMS[0]!, {
-      dependencies: {
-        templates: [],
-        diagnostics: [
-          {
-            code: "missing-dependency",
-            message: "Template dependency 'summary' is missing.",
-          },
-        ],
+      resources: {
+        dependencies: {
+          templates: [],
+          diagnostics: [
+            {
+              code: "missing-dependency",
+              message: "Template dependency 'summary' is missing.",
+            },
+          ],
+        },
+        citationStyle: { kind: "default" },
       },
-      citationStyle: { kind: "default" },
     });
 
     expect(result.diagnostics).toContainEqual({
@@ -294,8 +421,10 @@ describe("Sample Items", () => {
 
     expect(
       renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!, {
-        dependencies: bundle,
-        citationStyle: { kind: "installed", styleId: "apa", xml: standalone },
+        resources: {
+          dependencies: bundle,
+          citationStyle: { kind: "installed", styleId: "apa", xml: standalone },
+        },
       }).diagnostics,
     ).toEqual([]);
 
@@ -303,11 +432,13 @@ describe("Sample Items", () => {
     // shown under, whatever the Local Bridge called it.
     expect(
       renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!, {
-        dependencies: bundle,
-        citationStyle: {
-          kind: "installed",
-          styleId: "apa",
-          xml: "<html><body>Not a style</body></html>",
+        resources: {
+          dependencies: bundle,
+          citationStyle: {
+            kind: "installed",
+            styleId: "apa",
+            xml: "<html><body>Not a style</body></html>",
+          },
         },
       }).diagnostics,
     ).toContainEqual({
@@ -324,17 +455,19 @@ describe("Sample Items", () => {
     );
 
     const result = renderProfile(source, SAMPLE_ITEMS[0]!, {
-      dependencies: {
-        templates: [
-          {
-            name: "connected-heading",
-            language: "eta",
-            source: "# <%= it.title %>",
-          },
-        ],
-        diagnostics: [],
+      resources: {
+        dependencies: {
+          templates: [
+            {
+              name: "connected-heading",
+              language: "eta",
+              source: "# <%= it.title %>",
+            },
+          ],
+          diagnostics: [],
+        },
+        citationStyle: { kind: "default" },
       },
-      citationStyle: { kind: "default" },
     });
 
     expect(result.diagnostics).toContainEqual({
@@ -349,11 +482,13 @@ describe("Sample Items", () => {
 
   it("reports a selected citation style the Local Bridge could not resolve", () => {
     const result = renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!, {
-      dependencies: { templates: [], diagnostics: [] },
-      citationStyle: {
-        kind: "failed",
-        styleId: "http://www.zotero.org/styles/missing",
-        reason: "style-missing",
+      resources: {
+        dependencies: { templates: [], diagnostics: [] },
+        citationStyle: {
+          kind: "failed",
+          styleId: "http://www.zotero.org/styles/missing",
+          reason: "style-missing",
+        },
       },
     });
 

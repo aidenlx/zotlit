@@ -109,8 +109,11 @@ writes — has no such catch.
 `@zotlit/workbench/render` renders a Profile against an Item Snapshot and
 schedules those renders:
 
-- `renderProfile(source, snapshot)` — the six-part result set with diagnostics,
-  stamped with the source and snapshot revisions. Every Managed Frontmatter
+- `renderProfile(source, snapshot, options)` — the result set with diagnostics,
+  stamped with the source, snapshot, and selected annotation revisions. Options
+  carry the connected resources and an independent annotation example as its
+  serialized root and matching descriptors. Its parent Item supplies its citation;
+  the note keeps rendering against its own snapshot. Every Managed Frontmatter
   entry evaluates on its own against that one snapshot, so `properties` carries
   each entry's own result under the 1-based position that produced it, `fold`
   carries the frontmatter the note gets once every entry has merged, and a
@@ -126,7 +129,10 @@ schedules those renders:
   which is where a Literature Note's citations are rendered.
 - `createRenderScheduler(options)` — one debounce (300 ms), one Worker per
   render terminated on its deadline, and a revision check that drops a result
-  the reader has already typed past. The host supplies the Worker factory.
+  the reader has already typed or selected past. The host supplies the Worker factory.
+- `SAMPLE_ANNOTATIONS` — six built-in annotation examples covering highlight,
+  underline, note, text, image, and ink, with comments, tags, and empty optional
+  fields. Each example carries the matching descriptors needed to restore it.
 
 A `RenderDiagnostic` and a `WorkbenchProblem` name what went wrong by `code`,
 with the values that fill it in `params`. This package holds no Language Pack

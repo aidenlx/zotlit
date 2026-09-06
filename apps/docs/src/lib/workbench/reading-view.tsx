@@ -10,7 +10,13 @@ import type {
   Tag,
   Wikilink,
 } from "@quartz-community/remark-obsidian";
-import type { Element, ElementContent, Properties, Root } from "hast";
+import type {
+  Element,
+  ElementContent,
+  Properties,
+  Root,
+  RootContent,
+} from "hast";
 import { Fragment, createElement } from "react";
 import type { ReactNode } from "react";
 import rehypeCallouts from "rehype-callouts";
@@ -23,6 +29,7 @@ import type { RenderedProperty, RenderedRange } from "@zotlit/workbench/render";
 
 import { m } from "@/paraglide/messages.js";
 
+import imagePlaceholder from "./image-placeholder.svg";
 import { PropertyList } from "./property-list";
 
 /** What an `![[…]]` or `![](…)` embed points at, by the target's file type. */
@@ -108,11 +115,11 @@ function wikilinkMark({ alias, embedded, heading, path }: Wikilink): Element {
     : inertMark("wikilink", target, alias || target);
 }
 
-function embedMark(target: string): Element {
+function embedMark(target: string, kind?: EmbedKind): Element {
   const extension = target.split("#")[0]!.split(".").pop()!.toLowerCase();
-  const kind = EMBED_KIND_BY_EXTENSION.get(extension) ?? "note";
   const mark = inertMark("embed", target);
-  mark.properties["data-embed"] = kind;
+  mark.properties["data-embed"] =
+    kind ?? EMBED_KIND_BY_EXTENSION.get(extension) ?? "note";
   return mark;
 }
 
@@ -126,7 +133,7 @@ function inertTargets(parent: Element | Root): void {
   for (const [index, child] of children.entries()) {
     if (child.type !== "element") continue;
     if (child.tagName === "img") {
-      children[index] = embedMark(String(child.properties.src ?? ""));
+      children[index] = embedMark(String(child.properties.src ?? ""), "image");
       continue;
     }
     inertTargets(child);
@@ -234,7 +241,7 @@ function toProps(
 
 const EMBED_LABEL = {
   audio: m.workbench_embed_file_unavailable,
-  image: m.workbench_embed_image_unavailable,
+  image: m.workbench_image_placeholder,
   note: m.workbench_embed_note_unavailable,
   pdf: m.workbench_embed_file_unavailable,
   video: m.workbench_embed_file_unavailable,
@@ -260,6 +267,16 @@ function EmbedPlaceholder({
       data-embed={kind}
       className="my-1 flex flex-col gap-0.5 border border-dashed border-fd-border px-2 py-1.5"
     >
+      {kind === "image" && (
+        <img
+          src={imagePlaceholder}
+          alt={m.workbench_image_placeholder()}
+          width={640}
+          height={360}
+          loading="lazy"
+          className="my-1 h-auto w-full max-w-sm rounded-sm"
+        />
+      )}
       <span className="font-mono text-[0.62rem] font-semibold tracking-widest text-fd-muted-foreground uppercase">
         {label}
       </span>
@@ -280,6 +297,28 @@ const SHEET_STYLE = [
   "[&_.callout-content]:mt-1 [&_.callout-content>*]:my-1",
 ].join(" ");
 
+/** Text and standalone visual elements count as visible note content. */
+function hasVisibleContent(node: RootContent | Root): boolean {
+  if (node.type === "text") return node.value.trim().length > 0;
+  if (node.type !== "element" && node.type !== "root") return false;
+  if (
+    node.type === "element" &&
+    (node.properties["data-zt"] === "embed" ||
+      ["hr", "br", "input", "img"].includes(node.tagName))
+  ) {
+    return true;
+  }
+  return node.children.some(hasVisibleContent);
+}
+
+function EmptyNote() {
+  return (
+    <p className="grid min-h-24 flex-1 place-items-center px-3 py-6 text-center text-sm text-fd-muted-foreground">
+      {m.workbench_result_empty()}
+    </p>
+  );
+}
+
 /**
  * The result column's body: the generated note as the reader would see it,
  * every target inert, or the generated Markdown byte for byte — which stays the
@@ -298,6 +337,7 @@ export function ResultSheet({
   marks?: readonly RenderedRange[];
 }) {
   if (showMarkdown) {
+    if (!markdown.trim()) return <EmptyNote />;
     return (
       <pre
         dir="ltr"
@@ -309,8 +349,10 @@ export function ResultSheet({
       </pre>
     );
   }
+  const tree = parseNote(markdown);
+  const hasContent = hasVisibleContent(tree);
   return (
-    <div>
+    <div className="flex flex-1 flex-col">
       {properties.length > 0 && (
         <PropertyList
           properties={properties}
@@ -321,9 +363,9 @@ export function ResultSheet({
       <div
         role="document"
         aria-label={m.workbench_result_body()}
-        className={SHEET_STYLE}
+        className={hasContent ? SHEET_STYLE : "flex flex-1 flex-col"}
       >
-        {markedBlocks(parseNote(markdown), marks)}
+        {hasContent ? markedBlocks(tree, marks) : <EmptyNote />}
       </div>
     </div>
   );
