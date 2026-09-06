@@ -11,6 +11,7 @@ import type {
   CitationHoverRequest,
   NavigationPane,
 } from "@/services/citekey-navigation";
+import { NoteIndexStub } from "@/services/note-index/test-stub";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -847,21 +848,6 @@ class CitationTextStub {
 
   emit(event: "changed" | "invalidated" = "invalidated", path?: string): void {
     for (const cb of this.#listeners[event]) cb(path);
-  }
-}
-
-class NoteIndexStub {
-  readonly #listeners: Record<"changed", Set<() => void>> = {
-    changed: new Set(),
-  };
-
-  on(event: "changed", cb: () => void): () => void {
-    this.#listeners[event].add(cb);
-    return () => this.#listeners[event].delete(cb);
-  }
-
-  emit(event: "changed"): void {
-    for (const cb of this.#listeners[event]) cb();
   }
 }
 

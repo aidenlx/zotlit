@@ -185,10 +185,13 @@ export class NoteIndex extends Service<void> {
     );
 
     // `onLayoutReady` and `onCleanCache` are one-shots with no unregister, so
-    // the scan gates on disposal instead.
+    // the scan gates on disposal instead. Callers parked on `whenIndexed()`
+    // are torn down alongside the service and would otherwise wait on
+    // nothing, so disposal settles them.
     stack.defer(() => {
       this.#disposed = true;
       if (this.#fallbackRef) metadataCache.offref(this.#fallbackRef);
+      this.#indexed.resolve();
     });
     this.#app.workspace.onLayoutReady(() => this.#scanWhenCacheClean());
 

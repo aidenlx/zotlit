@@ -2,6 +2,7 @@ import type { Extension } from "@codemirror/state";
 import { MarkdownView } from "obsidian";
 import { describe, expect, it } from "vitest";
 
+import { NoteIndexStub } from "@/services/note-index/test-stub";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -159,21 +160,6 @@ describe("WikilinkEditor redraw", () => {
     expect(dispatched).toEqual([]);
   });
 });
-
-class NoteIndexStub {
-  readonly #listeners: Record<"changed", Set<() => void>> = {
-    changed: new Set(),
-  };
-
-  on(event: "changed", cb: () => void): () => void {
-    this.#listeners[event].add(cb);
-    return () => this.#listeners[event].delete(cb);
-  }
-
-  emit(event: "changed"): void {
-    for (const cb of this.#listeners[event]) cb();
-  }
-}
 
 class CitationTextStub {
   readonly #listeners: Record<

@@ -31,7 +31,6 @@ declare global {
 
 declare module "obsidian" {
   interface MetadataCache {
-    on(name: "initialized", callback: () => any, ctx?: any): EventRef;
     /**
      * Runs `callback` once the cache is clean (no parse in progress, resolver
      * queue idle): at once if it already is, else after the next drain.
