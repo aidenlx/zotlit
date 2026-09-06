@@ -14,6 +14,7 @@ export {
 export {
   createNoteInteractively,
   type InteractiveCreationDeps,
+  type InteractiveCreationOptions,
 } from "./creation-view";
 export {
   createNoteFeature,
@@ -22,6 +23,8 @@ export {
   type CreateNoteResult,
   type CreationProfileSources,
   type CreationProfileSelection,
+  type CreationProfileSource,
+  type CreationSelectionProblem,
   type PreparedCreationProfile,
   type ProfileNotePreview,
   type ProfileNotePreviewOptions,

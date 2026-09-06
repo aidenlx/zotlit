@@ -36,6 +36,8 @@ export interface FlatManifestOptions {
   notFound: readonly { label: string }[];
   /** Ordered group definitions; tasks are bucketed by `kind`. */
   groups: readonly FlatGroupDef[];
+  /** Choices for the whole batch, above its per-Library groups. */
+  profileChoices?: readonly BatchProfileChoice[];
   /** Items classified as up-to-date; shown as a static informational group. */
   upToDate?: readonly BatchRow[];
   upToDateHeader?: (args: { count: number }) => string;
@@ -71,6 +73,13 @@ export class FlatManifest implements BatchManifest {
 
   renderList(parent: HTMLElement, controls?: BatchListControls): void {
     this.#rowIcons.clear();
+    if (this.#options.profileChoices?.length) {
+      const choices = parent.createDiv({
+        cls: "zt:mb-4 zt:flex zt:flex-col zt:gap-2",
+      });
+      for (const choice of this.#options.profileChoices)
+        profileChoiceControl(choices, choice, controls);
+    }
     const byKind = Object.groupBy(this.#options.tasks, (task) => task.kind);
     for (const group of this.#options.groups) {
       const tasks = byKind[group.kind] ?? [];

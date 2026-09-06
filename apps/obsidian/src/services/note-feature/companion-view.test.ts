@@ -90,28 +90,33 @@ function creationHarness(selection: CreationProfileSelection) {
 }
 
 it.each(["open", "update"] as const)(
-  "%s asks with the link preselected, releases the DB before the picker, and opens the confirmed path",
+  "%s creates directly under the link's Profile, releases the DB before preparing, and opens the path",
   async (action) => {
     const harness = creationHarness({
       selector: PAPERS,
       source: "headless",
       shouldAsk: true,
     });
-    vi.mocked(chooseLiteratureNoteProfile).mockImplementation(
-      async (_app, options) => {
-        expect(harness.released).toHaveBeenCalledOnce();
-        expect(options).toMatchObject({
-          preselected: PAPERS,
-          source: "headless",
-          previews: [{ path: "Papers/Study.md" }],
-        });
-        return { id: PAPERS, label: "Papers" };
-      },
-    );
+    vi.mocked(chooseLiteratureNoteProfile).mockClear();
+    harness.prepareCreationProfiles.mockImplementation(async () => {
+      expect(harness.released).toHaveBeenCalledOnce();
+      return [
+        {
+          selector: PAPERS,
+          label: "Papers",
+          folder: "Papers",
+          citationStyle: null,
+          path: harness.file.path,
+          create: harness.create,
+        },
+      ] as never;
+    });
     await openCompanionNote(harness.deps, REF, { action, profile: PAPERS });
     expect(harness.resolveCreationProfile).toHaveBeenCalledExactlyOnceWith({
       headless: PAPERS,
+      item: harness.item,
     });
+    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
     expect(harness.create).toHaveBeenCalledOnce();
     expect(harness.openLinkText).toHaveBeenCalledExactlyOnceWith(
       "Papers/Study.md",
@@ -122,17 +127,60 @@ it.each(["open", "update"] as const)(
   },
 );
 
+it("creates directly when a match selects the Profile for an unqualified link", async () => {
+  const harness = creationHarness({
+    selector: PAPERS,
+    source: "match",
+    shouldAsk: true,
+    reason: m.profile_match_selected({ profile: "Papers" }),
+  });
+  vi.mocked(chooseLiteratureNoteProfile).mockClear();
+  await openCompanionNote(harness.deps, REF, { action: "open" });
+  expect(harness.resolveCreationProfile).toHaveBeenCalledExactlyOnceWith({
+    headless: undefined,
+    item: harness.item,
+  });
+  expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+  expect(harness.create).toHaveBeenCalledOnce();
+  expect(harness.openLinkText).toHaveBeenCalledExactlyOnceWith(
+    "Papers/Study.md",
+    "",
+    false,
+    { active: true },
+  );
+});
+
+it("asks when the selected Profile is unavailable", async () => {
+  const harness = creationHarness({
+    selector: "default",
+    source: "bound",
+    shouldAsk: true,
+    problem: { kind: "unavailable-profile", selector: BOOKS },
+  });
+  vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce(undefined);
+  await openCompanionNote(harness.deps, REF, { action: "open" });
+  expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
+    harness.deps.app,
+    expect.objectContaining({
+      preselected: "default",
+      problem: expect.stringContaining(BOOKS),
+    }),
+  );
+  expect(harness.create).not.toHaveBeenCalled();
+  expect(harness.openLinkText).not.toHaveBeenCalled();
+});
+
 it("leaves a cancelled picker without a note or navigation", async () => {
   const harness = creationHarness({
-    selector: BOOKS,
-    source: "last-used",
+    selector: "default",
+    source: "bound",
     shouldAsk: true,
   });
   vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue(undefined);
   await openCompanionNote(harness.deps, REF, { action: "open" });
   expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
     harness.deps.app,
-    expect.objectContaining({ preselected: BOOKS, source: "last-used" }),
+    expect.objectContaining({ preselected: "default", source: "bound" }),
   );
   expect(harness.create).not.toHaveBeenCalled();
   expect(harness.openLinkText).not.toHaveBeenCalled();

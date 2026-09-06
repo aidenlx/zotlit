@@ -9,8 +9,6 @@ import {
 import type { AutoTrim } from "@zotlit/templates/constants";
 
 import { highlightMappingsSchema } from "@/lib/highlight-mapping";
-import { parseProfileSelector } from "@/lib/profile-stamp";
-import type { ProfileSelector } from "@/lib/profile-stamp";
 import {
   DEFAULT_LIBRARY_SCOPE,
   libraryScopeSchema,
@@ -134,12 +132,6 @@ export const schema = v.object({
   "citation.hover-require-mod-reading": v.boolean(),
 
   "note.default-profile": defaultLiteratureNoteProfileSchema,
-  "note.last-used-profile": v.nullable(
-    v.custom<ProfileSelector>(
-      (value) =>
-        typeof value === "string" && parseProfileSelector(value) !== undefined,
-    ),
-  ),
   "note.template-conversion-pending": v.boolean(),
   "note.template-conversion-result": v.nullable(
     v.object({
@@ -201,7 +193,6 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.hover-require-mod-live-preview": false,
   "citation.hover-require-mod-reading": false,
   "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
-  "note.last-used-profile": null,
   "note.template-conversion-pending": false,
   "note.template-conversion-result": null,
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,

@@ -78,6 +78,7 @@ export async function openCompanionNote(
   if (!item) return;
   const file = await createNoteInteractively(deps, item, {
     headless: options.profile,
+    direct: true,
   });
   if (file) {
     await deps.app.workspace.openLinkText(file.path, "", false, {

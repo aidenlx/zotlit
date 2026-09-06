@@ -7,6 +7,7 @@ import type {
   BatchRunControls,
   BatchRunResult,
 } from "@/services/batch-run";
+import type { CreationProfileSource } from "@/services/note-feature";
 
 export type {
   BatchClassifyControls,
@@ -24,10 +25,18 @@ export interface BatchCounts {
   notFound: number;
 }
 
-/** One shared creation destination; the runner owns its current selection. */
+/** The new rows one batch Profile choice governs. */
+export type BatchProfileChoiceScope = "all-new" | "unresolved" | "affected";
+
+/** One creation destination the runner owns; `scope` limits the rows it governs. */
 export interface BatchProfileChoice {
-  readonly label: string;
-  readonly source: "headless" | "last-used" | "bound" | "asked";
+  /** Absent until the rows share a destination: an affected or all-new choice not yet made. */
+  readonly label?: string;
+  readonly source: CreationProfileSource;
+  /** Absent: every new row shares this one destination. */
+  readonly scope?: BatchProfileChoiceScope;
+  /** How many new rows the choice governs. */
+  readonly count?: number;
   choose(): Promise<void>;
 }
 

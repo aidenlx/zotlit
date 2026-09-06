@@ -44,6 +44,7 @@ export class ShareProfileModal extends Modal {
       author: plan.manifest.author ?? "",
       description: plan.manifest.description ?? "",
       includeFolders: false,
+      includeMatch: true,
     };
   }
 
@@ -99,6 +100,14 @@ export class ShareProfileModal extends Modal {
       .addToggle((toggle) =>
         toggle.setValue(false).onChange((value) => {
           this.#options.includeFolders = value;
+          this.#refresh();
+        }),
+      );
+    new Setting(this.contentEl)
+      .setName(m.profile_share_include_match())
+      .addToggle((toggle) =>
+        toggle.setValue(this.#options.includeMatch!).onChange((value) => {
+          this.#options.includeMatch = value;
           this.#refresh();
         }),
       );

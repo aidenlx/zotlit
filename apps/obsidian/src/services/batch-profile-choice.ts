@@ -16,6 +16,8 @@ export interface BatchProfilePickerOptions {
   indexedKey?: string;
   selection: CreationProfileSelection;
   previews: readonly ProfilePreview[];
+  /** Why automatic selection stopped for the rows the choice governs. */
+  problem?: string;
 }
 
 export async function chooseBatchProfile(
@@ -27,7 +29,14 @@ export async function chooseBatchProfile(
     : [];
   const choice = await chooseLiteratureNoteProfile(deps.app, {
     preselected: options.selection.selector,
+    matchContext: "batch",
     source: options.selection.source,
+    candidates:
+      options.selection.problem?.kind === "overlap"
+        ? options.selection.problem.candidates.map(({ id }) => id)
+        : undefined,
+    reason: options.selection.reason,
+    problem: options.problem,
     previews: options.previews,
     styles,
     onNew: async () => {

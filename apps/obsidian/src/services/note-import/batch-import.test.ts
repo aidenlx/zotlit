@@ -268,7 +268,7 @@ it("lets the batch chip change only orphans while existing and parent stamps rem
   });
   deps.noteFeature.resolveCreationProfile = async () => ({
     selector: papers,
-    source: "last-used",
+    source: "headless",
     shouldAsk: true,
   });
   const existing = { path: "Books/Imported.md" } as TFile;
@@ -346,9 +346,7 @@ it("lets the batch chip change only orphans while existing and parent stamps rem
     failed: 0,
     skipped: 0,
   });
-  expect(settingsUpdate).toHaveBeenCalledExactlyOnceWith({
-    "note.last-used-profile": books,
-  });
+  expect(settingsUpdate).not.toHaveBeenCalled();
   expect(
     options.text.runSummary(result, { cancelled: false, aborted: false }),
   ).toBe(
@@ -363,7 +361,7 @@ it("lets the batch chip change only orphans while existing and parent stamps rem
   );
 });
 
-it("keeps parent-only imports read-only and leaves last-used unchanged", async () => {
+it("keeps parent-only imports read-only without a settings write", async () => {
   const books = "Bk3Qn7XvT2Lp" as ProfileId;
   const { deps } = makeDeps({});
   deps.profile = profileReader({

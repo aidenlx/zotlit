@@ -3,15 +3,23 @@ import { customAlphabet } from "nanoid";
 import { join } from "node:path/posix";
 import type { App, TFile } from "obsidian";
 import pLimit from "p-limit";
-import { parseDocument, stringify as stringifyYaml } from "yaml";
+import { parseDocument } from "yaml";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import {
   TemplateFacade,
+  parseLiteratureNoteTemplate,
   synthesizeLegacyLiteratureNoteTemplate,
+  updateLiteratureNoteTemplateMatch,
 } from "@zotlit/templates/facade";
-import type { LiteratureNoteTemplateManifest } from "@zotlit/templates/facade";
-import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
+import type {
+  LiteratureNoteTemplateManifest,
+  MatchTree,
+} from "@zotlit/templates/facade";
+import {
+  LiteratureNotePackError,
+  updateLiteratureNotePackMetadata,
+} from "@zotlit/templates/literature-note-pack";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import {
@@ -28,7 +36,10 @@ import {
 } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteIndex } from "@/services/note-index/service";
+import { compileProfileMatch } from "@/services/profile-selection";
+import type { ProfileMatch } from "@/services/profile-selection";
 import { bindProfile } from "@/services/profile/bindings";
 import type {
   NoteProfile,
@@ -69,6 +80,7 @@ export interface LiteratureNoteProfile {
   readonly document: string;
   readonly path: string;
   readonly bindings: Partial<ResolvedLiteratureNoteProfileBindings>;
+  readonly match: ProfileMatch;
 }
 
 export interface ProfileCreateOptions {
@@ -91,6 +103,7 @@ export interface ProfileImportOptions {
   folder?: string | null;
   citationStyle?: string | null;
   stripFolders?: boolean;
+  includeMatch?: boolean;
 }
 
 export interface ProfileShareOptions {
@@ -98,6 +111,7 @@ export interface ProfileShareOptions {
   author: string;
   description: string;
   includeFolders?: boolean;
+  includeMatch?: boolean;
 }
 
 export interface PreparedProfileShare {
@@ -112,7 +126,10 @@ export type PreparedProfileImport = {
   profile: ResolvedProfile;
   source: string;
   path: string;
-  import(): Promise<LiteratureNoteProfile>;
+  /** The match choice can change while the target snapshot stays fixed. */
+  import(
+    options?: Pick<ProfileImportOptions, "includeMatch">,
+  ): Promise<LiteratureNoteProfile>;
 } & (
   | { kind: "fresh" }
   | {
@@ -156,6 +173,7 @@ interface ProfileServiceDeps {
   app: App;
   settings: SettingsService;
   template: TemplateService;
+  libraryScope: Pick<LibraryScopeService, "ready" | "libraries" | "on">;
   noteIndex: Pick<NoteIndex, "whenIndexed" | "getNotesByProfile">;
 }
 
@@ -299,6 +317,10 @@ export class ProfileService extends Service {
     const entry: LiteratureNoteProfile = {
       id,
       label,
+      match: compileProfileMatch(
+        look.manifest.match,
+        this.#deps.libraryScope.libraries,
+      ),
       document,
       path: join(folder, document),
       bindings: Object.fromEntries(
@@ -354,6 +376,27 @@ export class ProfileService extends Service {
       return this.#deps.app.vault.cachedRead(file);
     }
     return this.#builtInDocument();
+  }
+
+  async setMatch(id: ProfileId, match: MatchTree | undefined): Promise<void> {
+    await this.ready;
+    return this.#mutate(async () => {
+      await this.#settle();
+      const profile = this.#profiles.find((entry) => entry.id === id);
+      if (!profile) throw new Error(m.profile_import_changed());
+      const file = this.#deps.app.vault.getFileByPath(profile.path);
+      if (!file) throw new Error(m.profile_import_changed());
+      await this.#deps.app.vault.process(file, (source) => {
+        if (parseLiteratureNoteTemplate(source).manifest.id !== id)
+          throw new Error(m.profile_import_changed());
+        return updateLiteratureNoteTemplateMatch(source, match);
+      });
+      await this.#settle();
+      logger.debug("Updated Profile match", {
+        id,
+        removed: match === undefined,
+      });
+    });
   }
 
   /**
@@ -426,7 +469,11 @@ export class ProfileService extends Service {
       ]),
     ) as ProfileBindings;
     const source = await this.#deps.template.exportLiteratureNotePackSource(
-      profileSource(await this.getSource(selector), { id, label, bindings }),
+      updateProfilePackMetadata(await this.getSource(selector), {
+        id,
+        name: label,
+        ...bindings,
+      }),
       { includeFolders: true },
     );
     const facade = new TemplateFacade();
@@ -440,18 +487,17 @@ export class ProfileService extends Service {
       render: (options) => {
         const version = options.version.trim();
         if (!version) throw new Error(m.profile_share_version_required());
-        const headerEnd = source.indexOf("\n---", source.indexOf("---") + 3);
-        const header = parseDocument(source.slice(4, headerEnd));
-        header.set("version", version);
-        for (const key of ["author", "description"] as const) {
-          const value = options[key].trim();
-          if (value) header.set(key, value);
-          else header.delete(key);
-        }
-        return exportLiteratureNotePack(
-          `---\n${header.toString()}---${source.slice(headerEnd + 4)}`,
-          [],
-          { includeFolders: options.includeFolders },
+        return updateProfilePackMetadata(
+          source,
+          {
+            version,
+            author: options.author.trim() || undefined,
+            description: options.description.trim() || undefined,
+            ...(!options.includeFolders
+              ? { folder: undefined, importFolder: undefined }
+              : {}),
+          },
+          { includeMatch: options.includeMatch },
         );
       },
     };
@@ -511,17 +557,26 @@ export class ProfileService extends Service {
       throw new Error(m.settings_profile_id_invalid());
     const id = parsed.manifest.id;
     const held = this.#importTarget(id);
-    const manifest = { ...parsed.manifest };
-    if (options.stripFolders) {
-      delete manifest.folder;
-      delete manifest.importFolder;
-    }
-    if (options.folder === null) delete manifest.folder;
-    else if (options.folder !== undefined) manifest.folder = options.folder;
-    if (options.inheritCitationStyle) delete manifest.citationStyle;
-    else if (options.citationStyle !== undefined)
-      manifest.citationStyle = options.citationStyle;
-    const content = `---\n${stringifyYaml(manifest, { lineWidth: 0 })}---\n${source.slice(parsed.bodyStart)}`;
+    const includeMatch = options.includeMatch !== false;
+    const metadata = {
+      ...(options.stripFolders
+        ? { folder: undefined, importFolder: undefined }
+        : {}),
+      ...(options.folder !== undefined
+        ? { folder: options.folder ?? undefined }
+        : {}),
+      ...(options.inheritCitationStyle
+        ? { citationStyle: undefined }
+        : options.citationStyle !== undefined
+          ? { citationStyle: options.citationStyle }
+          : {}),
+    };
+    const render = (include: boolean) =>
+      updateProfilePackMetadata(source, metadata, { includeMatch: include });
+    const content = render(includeMatch);
+    const { manifest } = new TemplateFacade().parseLiteratureNoteTemplate(
+      content,
+    );
     const folder = this.#deps.settings.current!["template.folder"];
     const slug = profileSlug(manifest.name);
     const plain = `zotlit-profile.${slug}.md`;
@@ -536,6 +591,10 @@ export class ProfileService extends Service {
     const entry: LiteratureNoteProfile = {
       id,
       label: manifest.name,
+      match: compileProfileMatch(
+        manifest.match,
+        this.#deps.libraryScope.libraries,
+      ),
       document,
       path,
       bindings: Object.fromEntries(
@@ -580,24 +639,26 @@ export class ProfileService extends Service {
         document,
         entry,
       }),
-      import: () =>
+      import: ({ includeMatch: approvedMatch = includeMatch } = {}) =>
         this.#mutate(async () => {
           await this.#settle();
           const current = this.#importTarget(id);
           if (current?.path !== held?.path)
             throw new Error(m.profile_import_changed());
+          const importedContent =
+            approvedMatch === includeMatch ? content : render(approvedMatch);
           if (held) {
             const file = this.#deps.app.vault.getFileByPath(path);
             if (!file) throw new Error(m.profile_import_changed());
             await this.#deps.app.vault.process(file, (currentSource) => {
               if (currentSource !== heldSource)
                 throw new Error(m.profile_import_changed());
-              return content;
+              return importedContent;
             });
           } else {
             await ensureParentFolder(this.#deps.app, path);
             try {
-              await this.#deps.app.vault.create(path, content);
+              await this.#deps.app.vault.create(path, importedContent);
             } catch (error) {
               if (isFileExistsError(error))
                 throw new Error(m.profile_import_changed(), { cause: error });
@@ -750,12 +811,18 @@ export class ProfileService extends Service {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#deps.template.ready;
+    await Promise.all([
+      this.#deps.template.ready,
+      this.#deps.libraryScope.ready,
+    ]);
     stack.defer(
       this.#deps.template.on("compile-status-changed", () => this.#scan()),
     );
     stack.defer(
       this.#deps.settings.subscribe(() => this.#events.emit("changed")),
+    );
+    stack.defer(
+      this.#deps.libraryScope.on("libraries-changed", () => this.#scan()),
     );
     this.#scan();
     this.#loaded = true;
@@ -833,9 +900,19 @@ export class ProfileService extends Service {
         continue;
       }
       const manifest = status.validation.manifest;
+      const match = compileProfileMatch(
+        manifest.match,
+        this.#deps.libraryScope.libraries,
+      );
+      if (match.state === "unevaluable")
+        logger.debug("Profile {id} match cannot be evaluated", {
+          id,
+          problem: match.problem,
+        });
       this.#profiles.push({
         id: id as ProfileId,
         label: manifest.name,
+        match,
         document: status.reference,
         path: status.path,
         bindings: {
@@ -861,17 +938,6 @@ export class ProfileService extends Service {
                   manifest.importAnnotationsAsTemplate,
               }),
         },
-      });
-    }
-    const lastUsed = this.#deps.settings.current!["note.last-used-profile"];
-    if (
-      lastUsed !== null &&
-      lastUsed !== DEFAULT_PROFILE &&
-      !this.#profiles.some(({ id }) => id === lastUsed)
-    ) {
-      this.#deps.settings.update({ "note.last-used-profile": null });
-      logger.debug("Cleared unavailable last-used Profile {selector}", {
-        selector: lastUsed,
       });
     }
     logger.debug(
@@ -927,4 +993,21 @@ function profileSource(
   const content = `---\n${header.toString()}---${source.slice(headerEnd + 4)}`;
   facade.parseLiteratureNoteTemplate(content);
   return content;
+}
+
+function updateProfilePackMetadata(
+  source: string,
+  changes: Parameters<typeof updateLiteratureNotePackMetadata>[1],
+  options: Parameters<typeof updateLiteratureNotePackMetadata>[2] = {},
+): string {
+  try {
+    return updateLiteratureNotePackMetadata(source, changes, options);
+  } catch (error) {
+    if (
+      error instanceof LiteratureNotePackError &&
+      error.code === "match-changed"
+    )
+      throw new Error(m.profile_match_metadata_changed(), { cause: error });
+    throw error;
+  }
 }

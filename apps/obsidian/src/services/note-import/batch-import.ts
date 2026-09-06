@@ -512,16 +512,11 @@ function openNoteImportModal(
         abortedHeader: m.batch_update_group_aborted,
       });
     },
-    onRun: (controls) => {
-      if (profileChoice)
-        deps.settings.update({
-          "note.last-used-profile": profileChoice.selector,
-        });
-      return executeImportRun(deps, runnableActions, {
+    onRun: (controls) =>
+      executeImportRun(deps, runnableActions, {
         controls,
         profileCounts: profilesEnabled ? profileCounts : undefined,
-      });
-    },
+      }),
   });
 }
 
@@ -638,16 +633,11 @@ function openChildImportModal(
         abortedHeader: m.batch_update_group_aborted,
       });
     },
-    onRun: (controls) => {
-      if (profileChoice)
-        deps.settings.update({
-          "note.last-used-profile": profileChoice.selector,
-        });
-      return executeImportRun(deps, runnableActions, {
+    onRun: (controls) =>
+      executeImportRun(deps, runnableActions, {
         controls,
         profileCounts: profilesEnabled ? profileCounts : undefined,
-      });
-    },
+      }),
   });
 }
 

@@ -39,6 +39,7 @@ function plan(used = false): ProfileDeletionPlan {
       document: "zotlit-profile.books.md",
       path: "templates/zotlit-profile.books.md",
       bindings: {},
+      match: { state: "absent", summary: m.profile_match_absent() },
     },
     literatureNotes: used ? [literature] : [],
     importedNotes: used ? [imported] : [],

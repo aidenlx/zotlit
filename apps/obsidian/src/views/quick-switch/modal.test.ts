@@ -148,7 +148,7 @@ describe("QuickSwitchModal Profile creation", () => {
         })),
         resolveCreationProfile: vi.fn(async () => ({
           selector: books,
-          source: "last-used" as const,
+          source: "headless" as const,
           shouldAsk: true,
         })),
         prepareCreationProfiles: vi.fn(async () => [preview]),
@@ -158,7 +158,6 @@ describe("QuickSwitchModal Profile creation", () => {
         current: {
           ...defaults,
           ...profileSettings([{ id: books, label: "Books" }]),
-          "note.last-used-profile": books,
         },
       },
     };
@@ -188,7 +187,7 @@ describe("QuickSwitchModal Profile creation", () => {
     expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
   });
 
-  it("passes prepared rows and last-used selection to the picker and cancels silently", async () => {
+  it("passes prepared rows and the resolved selection to the picker and cancels silently", async () => {
     const { modal, deps, books, preview, create, openLinkText } =
       creationDeps();
     vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue(undefined);
@@ -200,7 +199,7 @@ describe("QuickSwitchModal Profile creation", () => {
       preselected: books,
       onNew: expect.any(Function),
       onImport: expect.any(Function),
-      source: "last-used",
+      source: "headless",
       previews: [preview],
       styles: [],
     });

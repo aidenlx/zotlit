@@ -61,8 +61,14 @@ import {
   itemKeyFromFrontmatter,
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
+import {
+  resolveMembershipFacts,
+  matchItem,
+  selectProfileByMatch,
+} from "@/services/profile-selection";
 import { noteProfileSelector } from "@/services/profile/bindings";
 import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
+import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { ProfileAnnotationError } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
@@ -172,15 +178,34 @@ export type CreateNoteResult =
   | { outcome: "refused"; diagnostic: CreateNoteDiagnostic };
 
 export interface CreationProfileSources {
+  /** A Profile a command or Companion link supplied explicitly. */
   headless?: ProfileSelector;
+  /** The user's manual choice for this operation. */
   asked?: ProfileSelector;
+  /** The source Item supplies its Library, type, Tags, and Collections. */
+  item?: Item;
 }
 
-export interface CreationProfileSelection {
+/** Manual choice, explicit operation input, Profile Match, then Default. */
+export type CreationProfileSource = "asked" | "headless" | "match" | "bound";
+
+export type CreationSelectionProblem =
+  | { kind: "overlap"; candidates: readonly LiteratureNoteProfile[] }
+  | { kind: "unavailable-profile"; selector: ProfileSelector }
+  | {
+      kind: "invalid-selector";
+      source: Extract<CreationProfileSource, "asked" | "headless">;
+      selector: ProfileSelector;
+    };
+
+export type CreationProfileSelection = {
   selector: ProfileSelector;
-  source: "headless" | "last-used" | "bound" | "asked";
   shouldAsk: boolean;
-}
+  problem?: CreationSelectionProblem;
+} & (
+  | { source: "match"; reason: string }
+  | { source: "asked" | "headless" | "bound"; reason?: undefined }
+);
 
 /** Effective Profile bindings and the path relevant to the pending action. */
 export interface ProfilePreview {
@@ -652,42 +677,68 @@ function profilePreview(
   };
 }
 
+/** The operation fixes this result; subsequent operations read the current registry. */
 async function resolveCreationProfile(
   ctx: NoteFeatureDeps,
   sources: CreationProfileSources = {},
 ): Promise<CreationProfileSelection> {
   await Promise.all([ctx.settings.loaded, ctx.profile.ready]);
-  let lastUsed = ctx.settings.current!["note.last-used-profile"];
-  if (lastUsed !== null && !ctx.profile.resolveProfile(lastUsed)) {
-    ctx.settings.update({ "note.last-used-profile": null });
-    logger.debug("Cleared unavailable last-used Profile {selector}", {
-      selector: lastUsed,
-    });
-    lastUsed = null;
-  }
   const shouldAsk = ctx.profile.profiles.length > 0;
-  let selection: CreationProfileSelection = {
-    selector: DEFAULT_PROFILE,
-    source: "bound",
-    shouldAsk,
+  const stopped = (
+    problem: CreationSelectionProblem,
+  ): CreationProfileSelection => {
+    logger.debug("Creation Profile selection stopped ({kind})", {
+      kind: problem.kind,
+      indexedKey: sources.item?.indexedKey,
+    });
+    return {
+      selector: DEFAULT_PROFILE,
+      source: "bound",
+      shouldAsk: true,
+      problem,
+    };
   };
-  if (shouldAsk) {
-    const candidates = [
-      { selector: sources.asked, source: "asked" },
-      { selector: sources.headless, source: "headless" },
-      { selector: lastUsed, source: "last-used" },
-    ] as const;
-    for (const { selector, source } of candidates) {
-      if (selector != null && ctx.profile.resolveProfile(selector)) {
-        selection = { selector, source, shouldAsk };
-        break;
-      }
+  for (const source of ["asked", "headless"] as const) {
+    const selector = sources[source];
+    if (selector === undefined) continue;
+    if (!ctx.profile.resolveProfile(selector))
+      return stopped({ kind: "invalid-selector", source, selector });
+    logger.debug("Resolved creation Profile {selector} from {source}", {
+      selector,
+      source,
+      indexedKey: sources.item?.indexedKey,
+    });
+    return { selector, source, shouldAsk };
+  }
+  if (sources.item) {
+    using lease = await ctx.db.acquireRead();
+    const result = selectProfileByMatch(
+      ctx.profile.profiles,
+      matchItem(
+        sources.item,
+        resolveMembershipFacts(lease.client, sources.item),
+      ),
+    );
+    if (result.outcome === "overlap")
+      return stopped({ kind: "overlap", candidates: result.candidates });
+    if (result.outcome === "matched") {
+      logger.debug("Profile Match selected {selector}", {
+        selector: result.profile.id,
+        indexedKey: sources.item.indexedKey,
+      });
+      return {
+        selector: result.profile.id,
+        source: "match",
+        shouldAsk: false,
+        reason: m.profile_match_selected(result.reason),
+      };
     }
   }
-  logger.debug("Resolved creation Profile {selector} from {source}", {
-    ...selection,
+  logger.debug("Creation Profile selection uses Default", {
+    indexedKey: sources.item?.indexedKey,
+    shouldAsk,
   });
-  return selection;
+  return { selector: DEFAULT_PROFILE, source: "bound", shouldAsk };
 }
 
 function refusedCreate(
@@ -800,7 +851,7 @@ async function createNote(
   for (let attempt = 0; ; attempt++) {
     let fileCreated = false;
     try {
-      const result = await writeNewNote(ctx, item, {
+      return await writeNewNote(ctx, item, {
         client: lease.client,
         tagMemo,
         collectionCache,
@@ -815,10 +866,6 @@ async function createNote(
           options.onFileCreated?.(created);
         },
       });
-      if (result.outcome === "created") {
-        ctx.settings.update({ "note.last-used-profile": requestedProfile });
-      }
-      return result;
     } catch (error) {
       if (
         fileCreated ||

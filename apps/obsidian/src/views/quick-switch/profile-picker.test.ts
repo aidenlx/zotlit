@@ -16,6 +16,7 @@ const books: LiteratureNoteProfile = {
   document: "zotlit-profile.books.md",
   path: "templates/zotlit-profile.books.md",
   bindings: {},
+  match: { state: "absent", summary: m.profile_match_absent() },
 };
 
 it("keeps the preselected choice when Obsidian closes before choosing it", async () => {
@@ -116,12 +117,70 @@ it("renders effective folders, style titles, templates, paths and the selected s
   expect(text).toContain(m.modal_profile_preselected());
   expect(text).toContain(m.modal_profile_source_link());
   expect(text).toContain("Reading/2024/Paper.md");
-  modal.renderSuggestion({ ...rows[0]!, source: "last-used" }, el);
-  expect(text).toContain(m.modal_profile_source_last_used());
   modal.renderSuggestion({ ...rows[0]!, current: true }, el);
   expect(text).toContain(m.modal_profile_current());
   modal.onClose();
   await expect(choice).resolves.toBeUndefined();
+});
+
+it("shows the rule behind a preselected choice and the problem that stopped automatic selection", async () => {
+  using opened = vi.spyOn(SuggestModal.prototype, "open");
+  const preview = {
+    selector: books.id,
+    label: "Books",
+    folder: "Reading",
+    citationStyle: null,
+    document: "books.md",
+    path: "Reading/Paper.md",
+  };
+  const choice = chooseLiteratureNoteProfile({} as App, {
+    preselected: books.id,
+    source: "match",
+    reason: "Item type is Book in My Library",
+    previews: [preview],
+  });
+  const modal = opened.mock
+    .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
+  const rows = await modal.getSuggestions("");
+  expect(rows[0]).toMatchObject({
+    id: books.id,
+    source: "match",
+    reason: "Item type is Book in My Library",
+  });
+  const text: string[] = [];
+  const el = {
+    createDiv: ({ text: value }: { text: string }) => {
+      text.push(value);
+      return {
+        createSpan: ({ text: value }: { text: string }) => text.push(value),
+      };
+    },
+  } as unknown as HTMLElement;
+  modal.renderSuggestion(rows[0]!, el);
+  expect(text).toContain("Item type is Book in My Library");
+  modal.onClose();
+  await expect(choice).resolves.toBeUndefined();
+
+  const stopped = chooseLiteratureNoteProfile({} as App, {
+    preselected: "default",
+    source: "bound",
+    problem: "Rule broke. Choose a profile for this note.",
+    previews: [{ ...preview, selector: "default", label: undefined }, preview],
+  });
+  const stoppedModal = opened.mock
+    .instances[1] as SuggestModal<LiteratureNoteProfileChoice>;
+  const stoppedRows = await stoppedModal.getSuggestions("");
+  expect(stoppedRows[0]).toMatchObject({
+    id: "default",
+    preselected: true,
+    problem: "Rule broke. Choose a profile for this note.",
+  });
+  expect(stoppedRows[1]).toMatchObject({ id: books.id, problem: undefined });
+  text.length = 0;
+  stoppedModal.renderSuggestion(stoppedRows[0]!, el);
+  expect(text).toContain("Rule broke. Choose a profile for this note.");
+  stoppedModal.onClose();
+  await expect(stopped).resolves.toBeUndefined();
 });
 
 it("waits for the shared create dialog when New profile is chosen after native close", async () => {
@@ -163,3 +222,67 @@ it("imports from the secondary action without choosing a Profile or starting cre
   expect(onImport).toHaveBeenCalledOnce();
   expect(onNew).not.toHaveBeenCalled();
 });
+
+it.each(["item", "batch"] as const)(
+  "puts every overlap candidate first with a %s match reason",
+  async (matchContext) => {
+    using opened = vi.spyOn(SuggestModal.prototype, "open");
+    const papers = "Rz9Wm4YfH6Kd" as ProfileId;
+    const choice = chooseLiteratureNoteProfile({} as App, {
+      candidates: [books.id, papers],
+      matchContext,
+      problem: m.modal_profile_problem_overlap({ profiles: "Books, Papers" }),
+      previews: [
+        {
+          selector: "default",
+          label: undefined,
+          folder: "Literature",
+          citationStyle: null,
+          document: undefined,
+          path: "Literature/Book.md",
+        },
+        {
+          selector: papers,
+          label: "Papers",
+          folder: "Papers",
+          citationStyle: null,
+          document: "papers.md",
+          path: "Papers/Book.md",
+        },
+        {
+          selector: books.id,
+          label: "Books",
+          folder: "Books",
+          citationStyle: null,
+          document: "books.md",
+          path: "Books/Book.md",
+        },
+      ],
+    });
+    const modal = opened.mock
+      .instances[0] as SuggestModal<LiteratureNoteProfileChoice>;
+    const rows = await modal.getSuggestions("");
+    expect(rows).toMatchObject([
+      { id: papers, candidate: matchContext, preselected: true },
+      { id: books.id, candidate: matchContext, preselected: true },
+      { id: "default", candidate: undefined, preselected: false },
+      { action: "new" },
+    ]);
+    for (const row of rows.slice(0, 2)) {
+      const el = document.createElement("div");
+      modal.renderSuggestion(row, el);
+      expect(el.textContent).toContain(
+        matchContext === "batch"
+          ? m.modal_profile_match_batch_candidate()
+          : m.modal_profile_match_candidate(),
+      );
+      if (matchContext === "batch")
+        expect(el.textContent).not.toContain(m.modal_profile_match_candidate());
+      expect(el.textContent).toContain(
+        m.modal_profile_problem_overlap({ profiles: "Books, Papers" }),
+      );
+    }
+    modal.onClose();
+    await expect(choice).resolves.toBeUndefined();
+  },
+);

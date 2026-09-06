@@ -36,8 +36,9 @@ Picking a style goes:
 3. **Spacing / size** → use Tailwind's default spacing scale (`zt:gap-2`, `zt:p-3`, `zt:mt-4`). Obsidian's `--size-4-N` variables are just fixed multiples of 4px (never overridden by themes) and map 1:1 to Tailwind's scale, so there's no reason to use them directly.
 4. **Radius** → `zt:rounded-sm/md/lg/xl` (mapped to `--radius-s/m/l/xl`).
 5. **Typography** → `zt:text-xs/sm/base/lg` (mapped to Obsidian UI font sizes). See `references/foundations.md#typography`.
-6. **A component CSS variable exists** (e.g. `--modal-background`, `--button-radius`, `--tab-text-color`) → use the arbitrary variable syntax (`zt:bg-(--modal-background)`) or extend `zt-main.css`. See `references/components.md`, `references/editor.md`, `references/window.md`, `references/plugins.md`.
-7. **Nothing fits** → use the arbitrary variable syntax (`zt:bg-(--obsidian-var)`) to reference the Obsidian variable directly. If you want to expose it for user snippets, add a local custom property at your component root (`.zt-foo { --zt-foo-bg: var(--background-secondary); }`) and consume it via `zt:bg-(--zt-foo-bg)`.
+6. **A modal body can outgrow the window** (a form, a list, a builder) → add `mod-scrollable-content` to `modalEl` and put the buttons in a `.modal-button-container` after `contentEl`, so title and buttons stay pinned while the body scrolls. Read [`modal-layout.md`](modal-layout.md) for the exact DOM and the rules it activates.
+7. **A component CSS variable exists** (e.g. `--modal-background`, `--button-radius`, `--tab-text-color`) → use the arbitrary variable syntax (`zt:bg-(--modal-background)`) or extend `zt-main.css`. See `references/components.md`, `references/editor.md`, `references/window.md`, `references/plugins.md`.
+8. **Nothing fits** → use the arbitrary variable syntax (`zt:bg-(--obsidian-var)`) to reference the Obsidian variable directly. If you want to expose it for user snippets, add a local custom property at your component root (`.zt-foo { --zt-foo-bg: var(--background-secondary); }`) and consume it via `zt:bg-(--zt-foo-bg)`.
 
 ## Obsidian element preflights
 

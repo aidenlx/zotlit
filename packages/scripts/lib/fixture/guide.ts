@@ -68,7 +68,11 @@ function collectionsSection(): string {
       entries.length > 1
         ? ` — shared by ${librariesRow(entries)}`
         : ` — ${libraryName(entries[0]!.libraryID)}`;
-    return `  ${key}${flag}`;
+    const parent = COLLECTIONS.find(
+      (c) => c.collectionID === entries[0]!.parentCollectionID,
+    );
+    const nesting = parent ? `, under ${parent.key}` : "";
+    return `  ${key}${flag}${nesting}`;
   });
   return `COLLECTIONS
 

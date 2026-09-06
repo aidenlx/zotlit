@@ -45,7 +45,7 @@
     "arkregex": "catalog:",
     "class-variance-authority": "^0.7.1",
     "cmdk": "1.1.1",
-    "cnfast": "^0.1.0",
+    "cn": "^0.2.4",
     "feed": "^6.0.0",
     "fumadocs-core": "16.15.4",
     "fumadocs-mdx": "15.3.1",
