@@ -1,24 +1,7 @@
-// The condition contract of a Profile Selection Rule: which Filter Expressions a rule's filter may carry, how the editor writes one, and how a filter is matched against the facts of a Zotero Item.
-//
-// A rule stores its conditions as a Rule Filter: an explicit `and` / `or`
-// tree whose leaves are Filter Expressions. The shared language parses far
-// more than a leaf accepts. This module is the gate: a leaf compiles to a
-// `RuleCondition` only when every node belongs to the supported vocabulary,
-// and anything else is a `ConditionProblem` — reported when the rule is
-// edited and again when it is evaluated, so a rule the vault cannot judge
-// never selects a Profile.
-//
-// Supported vocabulary:
-// - `library == "personal"` / `library == "group:<groupID>"` — a stable Library.
-// - `itemType == "<type>"` / `itemType != "<type>"` — the built-in Zotero type.
-// - `tags.contains("<name>")`, `containsAny`, `containsAll`, and `isEmpty` —
-//   exact, case-sensitive tests over manual and automatic Tag names.
-// - `collections.within("<path>")` — filed in that Collection or a descendant;
-//   `contains`, `containsAny`, `containsAll`, and `isEmpty` test direct paths.
-// - `!`, `&&`, `||`, and grouping inside one leaf; the tree above the leaves
-//   is the ordinary way to combine conditions.
+// Compile Profile Match conditions and evaluate them against an Item's Library, type, Tags, and Collections.
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { ExpressionNode } from "@zotlit/filter-expression";
+import type { MatchTree } from "@zotlit/templates/facade";
 import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
 import { selectorKey } from "@/services/library-scope/scope";
@@ -27,9 +10,7 @@ import type {
   LibrarySelector,
 } from "@/services/library-scope/scope";
 
-import type { RuleFilter } from "./schema";
-
-/** The Item field a rule may test. */
+/** The Item field a match may test. */
 export const LIBRARY_FIELD = "library";
 export const ITEM_TYPE_FIELD = "itemType";
 export const TAGS_FIELD = "tags";
@@ -42,12 +23,12 @@ export type ListOperator =
   | "isEmpty";
 export type CollectionOperator = ListOperator | "within";
 
-export type RuleCondition =
+export type MatchCondition =
   | {
       kind: "group";
       /** `all`: every condition must hold; `any`: at least one must. */
       match: "all" | "any";
-      conditions: RuleCondition[];
+      conditions: MatchCondition[];
     }
   | {
       kind: "library";
@@ -76,7 +57,7 @@ export type RuleCondition =
     };
 
 /** A condition the editor shows as one row. */
-export type FlatCondition = Exclude<RuleCondition, { kind: "group" }>;
+export type FlatCondition = Exclude<MatchCondition, { kind: "group" }>;
 
 /** One reason an expression is outside the supported contract. */
 export type ConditionProblem = {
@@ -94,11 +75,11 @@ export type ConditionProblem = {
 };
 
 export type CompiledCondition =
-  | { condition: RuleCondition; problem: null }
+  | { condition: MatchCondition; problem: null }
   | { condition: null; problem: ConditionProblem };
 
 /** The Item facts a condition reads. */
-export interface RuleItemFacts {
+export interface MatchItemFacts {
   /** `null` for a group Library Zotero reports no group ID for. */
   library: LibrarySelector | null;
   itemType: string;
@@ -114,18 +95,18 @@ const KNOWN_ITEM_TYPES = new Set(ITEM_TYPES.map(({ name }) => name));
 const MATCH_ALL_EXPRESSION = "true";
 
 /**
- * Validate a Rule Filter against the supported contract: every leaf compiles,
+ * Validate a Match tree against the supported contract: every leaf compiles,
  * and each group becomes a "Match all" / "Match any" group in tree order.
  * The first problem found, in reading order, is the filter's problem.
  */
 export function compileFilter(
-  filter: RuleFilter,
+  filter: MatchTree,
   libraries?: readonly AvailableLibrary[],
 ): CompiledCondition {
   if (typeof filter === "string") return compileCondition(filter, libraries);
   const match = "and" in filter ? "all" : "any";
   const entries = "and" in filter ? filter.and : filter.or;
-  const conditions: RuleCondition[] = [];
+  const conditions: MatchCondition[] = [];
   for (const entry of entries) {
     const compiled = compileFilter(entry, libraries);
     if (compiled.problem) return compiled;
@@ -175,8 +156,8 @@ export function compileCondition(
 
 /** Whether `condition` holds for an Item with `facts`. */
 export function matchCondition(
-  condition: RuleCondition,
-  facts: RuleItemFacts,
+  condition: MatchCondition,
+  facts: MatchItemFacts,
 ): boolean {
   switch (condition.kind) {
     case "group":
@@ -221,7 +202,7 @@ function matchList(
 }
 
 function matchCollections(
-  condition: Extract<RuleCondition, { kind: "collections" }>,
+  condition: Extract<MatchCondition, { kind: "collections" }>,
   facts: readonly (readonly string[])[],
 ): boolean {
   if (condition.operator === "within") {
@@ -239,10 +220,13 @@ function matchCollections(
 }
 
 /** Write the canonical expression of a condition, as the editor stores it. */
-export function formatCondition(condition: RuleCondition): string {
+export function formatCondition(condition: MatchCondition): string {
   switch (condition.kind) {
     case "group": {
-      if (condition.conditions.length === 0) return MATCH_ALL_EXPRESSION;
+      if (condition.conditions.length === 0)
+        return condition.match === "all"
+          ? MATCH_ALL_EXPRESSION
+          : `!${MATCH_ALL_EXPRESSION}`;
       const operator = condition.match === "all" ? " && " : " || ";
       return condition.conditions
         .map((entry) =>
@@ -276,7 +260,7 @@ export function formatCondition(condition: RuleCondition): string {
   }
 }
 
-function emptyGroup(): RuleCondition {
+function emptyGroup(): MatchCondition {
   return { kind: "group", match: "all", conditions: [] };
 }
 
@@ -293,7 +277,7 @@ class UnsupportedNode extends Error {
 function convert(
   node: ExpressionNode,
   libraries?: readonly AvailableLibrary[],
-): RuleCondition {
+): MatchCondition {
   switch (node.type) {
     case "boolean":
       // `true` is the empty group; `false` never holds and has no GUI form.
@@ -328,15 +312,15 @@ function convert(
 
 /** Same-operator groups merge, so `a && b && c` reads as one flat group. */
 function flatten(
-  condition: RuleCondition,
+  condition: MatchCondition,
   match: "all" | "any",
-): RuleCondition[] {
+): MatchCondition[] {
   return condition.kind === "group" && condition.match === match
     ? condition.conditions
     : [condition];
 }
 
-function negate(condition: RuleCondition): RuleCondition {
+function negate(condition: MatchCondition): MatchCondition {
   if (condition.kind !== "group")
     return { ...condition, negated: !condition.negated };
   // De Morgan keeps the contract closed under `!` without a `not` group.
@@ -351,7 +335,7 @@ function equality(
   node: Extract<ExpressionNode, { type: "binary" }>,
   negated: boolean,
   libraries?: readonly AvailableLibrary[],
-): RuleCondition {
+): MatchCondition {
   const { left, right } = node;
   if (
     left.type !== "identifier" ||
@@ -388,7 +372,7 @@ function equality(
   };
 }
 
-function call(node: Extract<ExpressionNode, { type: "call" }>): RuleCondition {
+function call(node: Extract<ExpressionNode, { type: "call" }>): MatchCondition {
   const { callee, args } = node;
   if (callee.type === "object-access" && callee.object.type === "identifier") {
     const field = callee.object.name;

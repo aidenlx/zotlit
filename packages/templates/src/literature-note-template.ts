@@ -82,6 +82,18 @@ const profileBindingEntries = {
   importAnnotationsAsTemplate: v.optional(v.boolean()),
 };
 
+/** An empty `and` matches every Item; an empty `or` matches none. */
+export type MatchTree =
+  | string
+  | { readonly and: readonly MatchTree[] }
+  | { readonly or: readonly MatchTree[] };
+
+export const matchTreeSchema: v.GenericSchema<MatchTree> = v.union([
+  v.string(),
+  v.strictObject({ and: v.array(v.lazy(() => matchTreeSchema)) }),
+  v.strictObject({ or: v.array(v.lazy(() => matchTreeSchema)) }),
+]);
+
 const manifestSchema = v.pipe(
   v.strictObject({
     id: nonEmptyString,
@@ -93,6 +105,7 @@ const manifestSchema = v.pipe(
     minAppVersion: v.optional(nonEmptyString),
     sampleItemType: v.optional(nonEmptyString),
     filename: nonEmptyTemplateSource,
+    match: v.optional(matchTreeSchema),
     ...profileBindingEntries,
     language: v.optional(v.picklist(["liquid", "eta"]), "liquid"),
     partials: v.optional(partialsSchema),
@@ -103,6 +116,13 @@ const manifestSchema = v.pipe(
       manifest.id !== "default" ||
       Object.keys(profileBindingEntries).every((key) => !(key in manifest)),
     "Default Profile bindings belong in settings",
+  ),
+  v.forward(
+    v.check(
+      (manifest) => manifest.id !== "default" || !("match" in manifest),
+      "Default Profile carries no match",
+    ),
+    ["match"],
   ),
 );
 
@@ -126,6 +146,7 @@ export interface LiteratureNoteTemplateManifest {
   minAppVersion?: string;
   sampleItemType?: string;
   filename: string;
+  match?: MatchTree;
   folder?: string;
   citationStyle?: string | null;
   importFolder?: string;

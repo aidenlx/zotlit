@@ -1,6 +1,5 @@
-// UI seam for Profile Selection Rules: the words a rule, its problem, and an
-// item type are shown by. Every settings row, picker badge, and notice reads
-// the same summary, so the user recognises one rule across surfaces.
+// Human-readable Profile Match conditions and diagnostics shared by settings and creation.
+import type { MatchTree } from "@zotlit/templates/facade";
 import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -13,9 +12,8 @@ import { compileCondition, compileFilter } from "./condition";
 import type {
   ConditionProblem,
   FlatCondition,
-  RuleCondition,
+  MatchCondition,
 } from "./condition";
-import type { ProfileSelectionRule, RuleFilter } from "./schema";
 
 /** The display data a summary uses to name Libraries. */
 export interface DescribeOptions {
@@ -31,21 +29,7 @@ export function itemTypeLabel(name: string): string {
     : entry.labels["en-US"];
 }
 
-/**
- * One line naming what a rule matches: "Library is My Library and item type
- * is Book". Groups read as lists — "and" for all, "or" for any — with a
- * nested group in parentheses. An expression outside the contract is quoted
- * as written.
- * Without `libraries`, a selected Library reads by its stable selector.
- */
-export function describeRule(
-  rule: ProfileSelectionRule,
-  options: DescribeOptions = {},
-): string {
-  return describeConditions(rule.filter, options);
-}
-
-/** The reason a rule cannot be evaluated, for a settings row or a picker. */
+/** The reason a match cannot be evaluated, for a settings row or a picker. */
 export function describeProblem(problem: ConditionProblem): string {
   switch (problem.code) {
     case "empty":
@@ -61,19 +45,17 @@ export function describeProblem(problem: ConditionProblem): string {
   }
 }
 
-function describeConditions(
-  filter: RuleFilter,
-  options: DescribeOptions,
+export function describeMatch(
+  filter: MatchTree,
+  options: DescribeOptions = {},
 ): string {
   const { condition } = compileFilter(filter);
   if (!condition) return describeFilter(filter, options);
-  if (condition.kind === "group" && condition.conditions.length === 0)
-    return m.settings_profile_rule_summary_all_items();
   return describeCondition(condition, options);
 }
 
 /** A broken filter, leaf by leaf: readable leaves in words, the rest as written. */
-function describeFilter(filter: RuleFilter, options: DescribeOptions): string {
+function describeFilter(filter: MatchTree, options: DescribeOptions): string {
   if (typeof filter === "string") {
     const { condition } = compileCondition(filter);
     return condition ? describeCondition(condition, options) : filter.trim();
@@ -93,10 +75,14 @@ function describeFilter(filter: RuleFilter, options: DescribeOptions): string {
 }
 
 function describeCondition(
-  condition: RuleCondition,
+  condition: MatchCondition,
   options: DescribeOptions,
 ): string {
   if (condition.kind !== "group") return describeFlat(condition, options);
+  if (condition.conditions.length === 0)
+    return condition.match === "all"
+      ? m.profile_match_all()
+      : m.profile_match_none();
   return new Intl.ListFormat(runtime.getLocale(), {
     type: condition.match === "all" ? "conjunction" : "disjunction",
   }).format(
@@ -194,4 +180,54 @@ function describeFlat(
       }
     }
   }
+}
+
+export type ProfileMatch =
+  | { state: "absent"; summary: string }
+  | {
+      state: "all" | "evaluable";
+      tree: MatchTree;
+      condition: MatchCondition;
+      summary: string;
+    }
+  | {
+      state: "unevaluable";
+      tree: MatchTree;
+      problem: ConditionProblem;
+      summary: string;
+    };
+
+export function compileProfileMatch(
+  tree: MatchTree | undefined,
+  libraries: readonly AvailableLibrary[],
+): ProfileMatch {
+  if (tree === undefined)
+    return {
+      state: "absent",
+      get summary() {
+        return m.profile_match_absent();
+      },
+    };
+  const { condition, problem } = compileFilter(tree, libraries);
+  if (problem)
+    return {
+      state: "unevaluable",
+      tree,
+      problem,
+      get summary() {
+        return m.profile_match_problem({ problem: describeProblem(problem) });
+      },
+    };
+  const all =
+    condition.kind === "group" &&
+    condition.match === "all" &&
+    condition.conditions.length === 0;
+  return {
+    state: all ? "all" : "evaluable",
+    tree,
+    condition,
+    get summary() {
+      return describeCondition(condition, { libraries });
+    },
+  };
 }

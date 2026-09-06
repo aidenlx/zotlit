@@ -26,7 +26,7 @@ export interface BatchCounts {
 }
 
 /** The new rows one batch Profile choice governs. */
-export type BatchProfileChoiceScope = "all-new" | "unmatched" | "affected";
+export type BatchProfileChoiceScope = "all-new" | "unresolved" | "affected";
 
 /** One creation destination the runner owns; `scope` limits the rows it governs. */
 export interface BatchProfileChoice {

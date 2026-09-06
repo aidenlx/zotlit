@@ -17,6 +17,7 @@ import type {
   AvailableLibrary,
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
+import type { LibraryScopeEvents } from "@/services/library-scope/service";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -305,9 +306,13 @@ export class LibraryScopeStub {
     return this.#current;
   }
 
-  on(_event: "changed", cb: () => void): () => void {
-    this.#listeners.add(cb);
-    return () => this.#listeners.delete(cb);
+  on(
+    _event: keyof LibraryScopeEvents,
+    cb: LibraryScopeEvents[keyof LibraryScopeEvents],
+  ): () => void {
+    const notify = () => cb(this.#current);
+    this.#listeners.add(notify);
+    return () => this.#listeners.delete(notify);
   }
 
   /** Narrow or widen the scope over the Libraries the database already holds. */

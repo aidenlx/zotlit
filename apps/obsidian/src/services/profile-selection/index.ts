@@ -1,14 +1,4 @@
 export {
-  DEFAULT_PROFILE_SELECTION_RULES,
-  PROFILE_SELECTION_RULES_KEY,
-  profileSelectionRuleSchema,
-  profileSelectionRulesSchema,
-  ruleFilterSchema,
-  type ProfileSelectionRule,
-  type ProfileSelectionRules,
-  type RuleFilter,
-} from "./schema";
-export {
   compileCondition,
   compileFilter,
   formatCondition,
@@ -16,24 +6,20 @@ export {
   type CompiledCondition,
   type ConditionProblem,
   type FlatCondition,
-  type RuleCondition,
-  type RuleItemFacts,
+  type MatchCondition,
+  type MatchItemFacts,
 } from "./condition";
 export {
   listCollectionChoices,
   resolveMembershipFacts,
   type CollectionChoice,
 } from "./facts";
+export { matchItem, selectProfileByMatch, type MatchSelection } from "./select";
 export {
-  diagnoseRule,
-  ruleItem,
-  selectProfileByRules,
-  type RuleItem,
-  type RuleSelection,
-} from "./select";
-export {
+  compileProfileMatch,
+  type ProfileMatch,
   describeProblem,
-  describeRule,
+  describeMatch,
   itemTypeLabel,
   type DescribeOptions,
 } from "./describe";
