@@ -22,19 +22,13 @@ import type {
   LibrarySelector,
   LibraryScope,
 } from "@/services/library-scope/scope";
-import {
-  choicesLookup,
-  collectionKey,
-  collectionLabel,
-  itemTypeLabel,
-} from "@/services/profile-selection";
+import { itemTypeLabel } from "@/services/profile-selection";
 
 import { ChipInput } from "./ChipInput";
 import {
   appendAt,
   asExpression,
   asLabelled,
-  describeOptions,
   draftInvalid,
   freshCondition,
   freshGroup,
@@ -531,7 +525,7 @@ function ConditionRow({
                 <DropdownItem value="item-type">
                   {m.settings_profile_rule_condition_item_type()}
                 </DropdownItem>
-                <DropdownItem value="collection">
+                <DropdownItem value="collections">
                   {m.settings_profile_rule_condition_collection()}
                 </DropdownItem>
                 <DropdownItem value="tags">
@@ -658,7 +652,6 @@ function ConditionValue({
   condition: Exclude<RowCondition, { kind: "expression" }>;
   onChange: (next: RowCondition) => void;
 }) {
-  const deps = useRuleEditorStore((state) => state.deps);
   switch (condition.kind) {
     case "item-type":
       return (
@@ -677,62 +670,8 @@ function ConditionValue({
           ))}
         </Dropdown>
       );
-    case "collection": {
-      // A reference the database no longer holds stays selected, flagged, so
-      // the user can see what the rule pointed at before choosing a replacement.
-      const current = collectionKey(condition);
-      const known = choicesLookup(deps.collections)(condition);
-      return (
-        <>
-          <Dropdown
-            // A Library-and-path label needs room: wrap before it is crushed.
-            className="zt:min-w-48 zt:flex-1"
-            aria-label={m.settings_profile_rule_value()}
-            value={current}
-            onChange={(value) => {
-              const choice = deps.collections.find(
-                (candidate) => collectionKey(candidate) === value,
-              );
-              if (choice)
-                onChange({
-                  ...condition,
-                  library: choice.library,
-                  key: choice.key,
-                });
-            }}
-          >
-            {deps.collections.map((choice) => (
-              <DropdownItem
-                key={collectionKey(choice)}
-                value={collectionKey(choice)}
-              >
-                {collectionLabel(choice, describeOptions(deps))}
-              </DropdownItem>
-            ))}
-            {!known && (
-              <DropdownItem value={current}>
-                {collectionLabel(condition, { libraries: deps.libraries })}
-              </DropdownItem>
-            )}
-          </Dropdown>
-          <Dropdown
-            className="zt:min-w-0 zt:flex-1"
-            aria-label={m.settings_profile_rule_collection_scope()}
-            value={condition.descendants ? "descendants" : "direct"}
-            onChange={(value) =>
-              onChange({ ...condition, descendants: value === "descendants" })
-            }
-          >
-            <DropdownItem value="descendants">
-              {m.settings_profile_rule_collection_descendants()}
-            </DropdownItem>
-            <DropdownItem value="direct">
-              {m.settings_profile_rule_collection_direct()}
-            </DropdownItem>
-          </Dropdown>
-        </>
-      );
-    }
+    case "collections":
+      return null;
     case "tags": {
       if (condition.operator === "isEmpty") return null;
       if (

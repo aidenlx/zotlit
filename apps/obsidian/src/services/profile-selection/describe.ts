@@ -6,26 +6,21 @@ import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import { libraryLabel, selectorLabel } from "@/services/library-scope/label";
-import type {
-  AvailableLibrary,
-  LibrarySelector,
-} from "@/services/library-scope/scope";
+import type { AvailableLibrary } from "@/services/library-scope/scope";
+import type { LibrarySelector } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
 
 import { compileCondition, compileFilter } from "./condition";
 import type {
-  CollectionReference,
   ConditionProblem,
   FlatCondition,
   RuleCondition,
 } from "./condition";
-import type { CollectionChoice } from "./facts";
 import type { ProfileSelectionRule, RuleFilter } from "./schema";
 
-/** The display data a summary names Libraries and Collections by. */
+/** The display data a summary uses to name Libraries. */
 export interface DescribeOptions {
   libraries?: readonly AvailableLibrary[];
-  collections?: readonly CollectionChoice[];
 }
 
 /** The label of a built-in Zotero item type in the active locale. */
@@ -42,24 +37,20 @@ export function itemTypeLabel(name: string): string {
  * Library". Groups read as lists — "and" for all, "or" for any — with a
  * nested group in parentheses. An expression outside the contract is quoted
  * as written.
- * Without `libraries`, a selected Library reads by its stable selector;
- * without `collections`, a Collection reads by its Library and key.
+ * Without `libraries`, a selected Library reads by its stable selector.
  */
 export function describeRule(
   rule: ProfileSelectionRule,
   options: DescribeOptions = {},
 ): string {
   return m.settings_profile_rule_summary({
-    conditions: describeConditions(rule.filter, options),
+    conditions: describeConditions(rule.filter),
     libraries: describeScope(rule, options.libraries ?? []),
   });
 }
 
 /** The reason a rule cannot be evaluated, for a settings row or a picker. */
-export function describeProblem(
-  problem: ConditionProblem,
-  options: DescribeOptions = {},
-): string {
+export function describeProblem(problem: ConditionProblem): string {
   switch (problem.code) {
     case "empty":
       return m.profile_rule_problem_empty();
@@ -69,53 +60,22 @@ export function describeProblem(
       return m.profile_rule_problem_unsupported({ text: problem.text });
     case "unknown-item-type":
       return m.profile_rule_problem_unknown_item_type({ text: problem.text });
-    case "unknown-library":
-      return m.profile_rule_problem_unknown_library({ text: problem.text });
-    case "missing-collection":
-      return m.profile_rule_problem_missing_collection({
-        collection: collectionLabel(problem, options),
-      });
   }
 }
 
-/**
- * How a Collection reads: "My Library: Project / Drafts" when the database
- * offers it, else its Library and key — the same reference the rule stores.
- */
-export function collectionLabel(
-  reference: CollectionReference,
-  options: DescribeOptions = {},
-): string {
-  const key = selectorKey(reference.library);
-  const library = options.libraries?.find(
-    (candidate) => selectorKey(candidate.selector) === key,
-  );
-  const choice = options.collections?.find(
-    (candidate) =>
-      selectorKey(candidate.library) === key && candidate.key === reference.key,
-  );
-  return m.settings_profile_rule_collection_label({
-    library: library ? libraryLabel(library) : selectorLabel(reference.library),
-    path: choice ? choice.path.join(" / ") : reference.key,
-  });
-}
-
-function describeConditions(
-  filter: RuleFilter,
-  options: DescribeOptions,
-): string {
+function describeConditions(filter: RuleFilter): string {
   const { condition } = compileFilter(filter);
-  if (!condition) return describeFilter(filter, options);
+  if (!condition) return describeFilter(filter);
   if (condition.kind === "group" && condition.conditions.length === 0)
     return m.settings_profile_rule_summary_all_items();
-  return describeCondition(condition, options);
+  return describeCondition(condition);
 }
 
 /** A broken filter, leaf by leaf: readable leaves in words, the rest as written. */
-function describeFilter(filter: RuleFilter, options: DescribeOptions): string {
+function describeFilter(filter: RuleFilter): string {
   if (typeof filter === "string") {
     const { condition } = compileCondition(filter);
-    return condition ? describeCondition(condition, options) : filter.trim();
+    return condition ? describeCondition(condition) : filter.trim();
   }
   const all = "and" in filter;
   return new Intl.ListFormat(runtime.getLocale(), {
@@ -123,36 +83,30 @@ function describeFilter(filter: RuleFilter, options: DescribeOptions): string {
   }).format(
     (all ? filter.and : filter.or).map((entry) =>
       typeof entry === "string"
-        ? describeFilter(entry, options)
+        ? describeFilter(entry)
         : m.settings_profile_rule_summary_group({
-            conditions: describeFilter(entry, options),
+            conditions: describeFilter(entry),
           }),
     ),
   );
 }
 
-function describeCondition(
-  condition: RuleCondition,
-  options: DescribeOptions,
-): string {
-  if (condition.kind !== "group") return describeFlat(condition, options);
+function describeCondition(condition: RuleCondition): string {
+  if (condition.kind !== "group") return describeFlat(condition);
   return new Intl.ListFormat(runtime.getLocale(), {
     type: condition.match === "all" ? "conjunction" : "disjunction",
   }).format(
     condition.conditions.map((entry) =>
       entry.kind === "group"
         ? m.settings_profile_rule_summary_group({
-            conditions: describeCondition(entry, options),
+            conditions: describeCondition(entry),
           })
-        : describeFlat(entry, options),
+        : describeFlat(entry),
     ),
   );
 }
 
-function describeFlat(
-  condition: FlatCondition,
-  options: DescribeOptions,
-): string {
+function describeFlat(condition: FlatCondition): string {
   switch (condition.kind) {
     case "item-type": {
       const type = itemTypeLabel(condition.values[0]);
@@ -160,15 +114,36 @@ function describeFlat(
         ? m.settings_profile_rule_item_type_is_not({ type })
         : m.settings_profile_rule_item_type_is({ type });
     }
-    case "collection": {
-      const collection = collectionLabel(condition, options);
-      if (condition.descendants)
-        return condition.negated
-          ? m.settings_profile_rule_not_in_collection({ collection })
-          : m.settings_profile_rule_in_collection({ collection });
-      return condition.negated
-        ? m.settings_profile_rule_not_in_collection_direct({ collection })
-        : m.settings_profile_rule_in_collection_direct({ collection });
+    case "collections": {
+      const collections = new Intl.ListFormat(runtime.getLocale()).format(
+        condition.values.map((path) => path.join("/")),
+      );
+      switch (condition.operator) {
+        case "within":
+          return condition.negated
+            ? m.settings_profile_rule_collections_not_inside({ collections })
+            : m.settings_profile_rule_collections_inside({ collections });
+        case "contains":
+          return condition.negated
+            ? m.settings_profile_rule_collections_are_not({ collections })
+            : m.settings_profile_rule_collections_are({ collections });
+        case "containsAny":
+          return condition.negated
+            ? m.settings_profile_rule_collections_are_not_any_of({
+                collections,
+              })
+            : m.settings_profile_rule_collections_are_any_of({ collections });
+        case "containsAll":
+          return condition.negated
+            ? m.settings_profile_rule_collections_are_not_all_of({
+                collections,
+              })
+            : m.settings_profile_rule_collections_are_all_of({ collections });
+        case "isEmpty":
+          return condition.negated
+            ? m.settings_profile_rule_collections_are_not_empty()
+            : m.settings_profile_rule_collections_are_empty();
+      }
     }
     case "tags": {
       const tags = new Intl.ListFormat(runtime.getLocale()).format(

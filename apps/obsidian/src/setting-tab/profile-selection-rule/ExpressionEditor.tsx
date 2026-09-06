@@ -17,6 +17,7 @@ import { useMemo } from "react";
 
 import { cn } from "@/lib/utils";
 import {
+  COLLECTIONS_FIELD,
   ITEM_TYPE_FIELD,
   TAGS_FIELD,
 } from "@/services/profile-selection/condition";
@@ -29,14 +30,19 @@ import "./style.css";
  */
 const tokens = new MatchDecorator({
   regexp:
-    /"(?:[^"\\]|\\.)*"|\b(?:true|false)\b|\b(?:inCollectionDirectly|inCollection|containsAny|containsAll|contains|isEmpty)\b|\b(?:itemType|tags)\b|==|!=|&&|\|\||!|[(),]/g,
+    /"(?:[^"\\]|\\.)*"|\b(?:true|false)\b|\b(?:within|containsAny|containsAll|contains|isEmpty)\b|\b(?:itemType|tags|collections)\b|==|!=|&&|\|\||!|[(),]/g,
   decoration: (match) => Decoration.mark({ class: tokenClass(match[0]) }),
 });
 
 function tokenClass(text: string): string {
   if (text.startsWith('"')) return "zt-expr-string";
   if (text === "true" || text === "false") return "zt-expr-keyword";
-  if (text === ITEM_TYPE_FIELD || text === TAGS_FIELD) return "zt-expr-field";
+  if (
+    text === ITEM_TYPE_FIELD ||
+    text === TAGS_FIELD ||
+    text === COLLECTIONS_FIELD
+  )
+    return "zt-expr-field";
   if (/^[(),]$/.test(text)) return "zt-expr-punctuation";
   if (/^[a-z]/i.test(text)) return "zt-expr-function";
   return "zt-expr-operator";

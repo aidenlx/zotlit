@@ -62,7 +62,6 @@ import {
   noteKeyFromFrontmatter,
 } from "@/services/note-index/service";
 import {
-  collectionLookup,
   resolveMembershipFacts,
   ruleItem,
   selectProfileByRules,
@@ -770,7 +769,7 @@ async function resolveCreationProfile(
         sources.item,
         resolveMembershipFacts(lease.client, sources.item),
       ),
-      { isAvailable, hasCollection: collectionLookup(lease.client) },
+      { isAvailable },
     );
     switch (result.outcome) {
       case "matched":

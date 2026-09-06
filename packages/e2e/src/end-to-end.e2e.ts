@@ -842,17 +842,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(childItem.collectionIDs).toEqual([childCollection.collectionID]);
     const seededPath = `literatures/${childItem.literatureNoteName ?? childItem.key}.md`;
     const ruleNotePath = `books/books-${childItem.citationKey}.md`;
-    const collectionOption = `personal/${parentCollection.key}`;
-    const collectionLabel = m.settings_profile_rule_collection_label({
-      library: m.settings_library_scope_personal(),
-      path: parentCollection.name,
-    });
-    const ruleSummary = m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_in_collection({
-        collection: collectionLabel,
-      }),
-      libraries: m.settings_library_scope_personal(),
-    });
+    const collectionPath = parentCollection.name;
     await cli([`vault=${vaultId}`, "delete", `path=${seededPath}`]);
     expect(await hasIndexedNotes(vaultId, childItem.key, 0)).toBe(true);
     const readStoredRules = async () =>
@@ -865,71 +855,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const rulesBefore = await readStoredRules();
     expect(rulesBefore).toHaveLength(2);
 
-    // The third rule, through the same labeled controls: the condition kind
-    // switches to Collection, then the re-rendered row offers the Fixture's
-    // collections and the subcollection choice.
-    await obEval(
-      vaultId,
-      `(function(){app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();var tab=app.setting.openTabById('zotlit');app.setting.navigateToSearchResult({tab,pagePath:[${JSON.stringify(m.settings_page_profiles())}]});return true;})()`,
-    );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(function(){var heading=Array.from(document.querySelectorAll('.setting-item-heading, .setting-item')).find(el=>el.textContent.includes(${JSON.stringify(m.settings_profile_rules_heading())}));var button=heading&&heading.querySelector('button, .clickable-icon');if(!button)return false;button.click();return true;})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(Array.from(document.querySelectorAll('.modal')).some(modal=>modal.textContent.includes(${JSON.stringify(m.settings_profile_rule_title_new())})))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}pick(row(${JSON.stringify(m.settings_profile_rule_scope())}).querySelector('select'),'selected');var libraryRow=row(${JSON.stringify(m.settings_library_scope_personal())});var toggle=libraryRow&&libraryRow.querySelector('.checkbox-container');if(toggle&&!toggle.classList.contains('is-enabled'))toggle.click();var kind=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select:not(.is-measuring)').length===3)[0].querySelectorAll('select:not(.is-measuring)')[0];pick(kind,'collection');return true;})()`,
-    );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var rows=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select:not(.is-measuring)').length===4);if(rows.length!==1)return false;var selects=rows[0].querySelectorAll('select:not(.is-measuring)');pick(selects[1],'is');pick(selects[2],${JSON.stringify(collectionOption)});pick(selects[3],'descendants');pick(row(${JSON.stringify(m.settings_profile_rule_target())}).querySelector('select'),${JSON.stringify(booksProfile.id)});return true;})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    const configured = await obEval(
-      vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}var selects=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select:not(.is-measuring)').length===4)[0].querySelectorAll('select:not(.is-measuring)');var target=row(${JSON.stringify(m.settings_profile_rule_target())}).querySelector('select');return JSON.stringify({collection:selects[2].value,collectionLabel:selects[2].selectedOptions[0].textContent,membership:selects[3].value,target:target.value});})()`,
-    );
-    expect(JSON.parse(configured)).toEqual({
-      collection: collectionOption,
-      collectionLabel,
-      membership: "descendants",
-      target: booksProfile.id,
-    });
-    expect(
-      await clickModalButton(vaultId, m.settings_profile_rule_save()),
-    ).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(Array.from(document.querySelectorAll('.setting-item')).some(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(ruleSummary)})))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    const stored = await readStoredRules();
-    expect(stored).toHaveLength(3);
-    expect(stored[2]).toMatchObject({
+    const collectionRule = {
+      id: "e2e-collection-path",
       scope: { mode: "selected", libraries: [{ type: "personal" }] },
       filter: {
-        and: [
-          `inCollection("personal", ${JSON.stringify(parentCollection.key)})`,
-        ],
+        and: [`collections.within(${JSON.stringify(collectionPath)})`],
       },
       profile: booksProfile.id,
-    });
-    const collectionRule = stored[2]!;
-    await obEval(vaultId, "app.setting.close();true");
+    } as const;
+    await obEval(
+      vaultId,
+      `(function(){var settings=app.plugins.plugins.zotlit.services.settings;settings.update({'profile.selection-rules':[...settings.current['profile.selection-rules'],${JSON.stringify(collectionRule)}]});return true;})()`,
+    );
+    const stored = await readStoredRules();
+    expect(stored).toHaveLength(3);
+    expect(stored[2]).toMatchObject(collectionRule);
 
     // Quick Switch preselects Books through the parent-collection rule and
     // creates the note there.
@@ -952,14 +892,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       return selectSuggestion(vaultId, m.modal_profile_preselected());
     };
-    // The picker describes the rule without Collection names, so the
-    // Collection reads by its Library and key there.
     const pickerSummary = m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_in_collection({
-        collection: m.settings_profile_rule_collection_label({
-          library: m.settings_library_scope_personal(),
-          path: parentCollection.key,
-        }),
+      conditions: m.settings_profile_rule_collections_inside({
+        collections: collectionPath,
       }),
       libraries: m.settings_library_scope_personal(),
     });
@@ -994,9 +929,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const directRule = {
       ...collectionRule,
       filter: {
-        and: [
-          `inCollectionDirectly("personal", ${JSON.stringify(parentCollection.key)})`,
-        ],
+        and: [`collections.contains(${JSON.stringify(collectionPath)})`],
       },
     };
     await obEval(
