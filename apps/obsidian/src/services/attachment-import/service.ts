@@ -117,6 +117,11 @@ export interface AttachmentImport {
    */
   resolveLink(opts: ResolveLinkOptions): TemplateLink;
   flush(): Promise<AttachmentImportResult>;
+  /**
+   * Drop every copy queued since the last `flush()` without importing it, so
+   * a handle kept across drags carries nothing from a drag that never landed.
+   */
+  discard(): void;
 }
 
 export class AttachmentImportService extends Service<void> {
@@ -432,6 +437,13 @@ class AttachmentImportBatch implements AttachmentImport {
     };
     logger.debug("Imported attachments", { ...result });
     return result;
+  }
+
+  discard(): void {
+    const dropped = this.#items.splice(0).length;
+    if (dropped > 0) {
+      logger.debug("Discarded queued attachment imports", { dropped });
+    }
   }
 
   /**

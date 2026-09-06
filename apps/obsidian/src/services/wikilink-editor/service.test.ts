@@ -2,6 +2,7 @@ import type { Extension } from "@codemirror/state";
 import { MarkdownView } from "obsidian";
 import { describe, expect, it } from "vitest";
 
+import { NoteIndexStub } from "@/services/note-index/test-stub";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -91,10 +92,6 @@ describe("WikilinkEditor redraw", () => {
 
     noteIndex.emit("changed");
     expect(dispatched).toEqual(["note.md", "other.md"]);
-
-    dispatched.length = 0;
-    noteIndex.emit("rebuilt");
-    expect(dispatched).toEqual(["note.md", "other.md"]);
   });
 
   it("redraws when a gating setting changes", async () => {
@@ -163,22 +160,6 @@ describe("WikilinkEditor redraw", () => {
     expect(dispatched).toEqual([]);
   });
 });
-
-class NoteIndexStub {
-  readonly #listeners: Record<"changed" | "rebuilt", Set<() => void>> = {
-    changed: new Set(),
-    rebuilt: new Set(),
-  };
-
-  on(event: "changed" | "rebuilt", cb: () => void): () => void {
-    this.#listeners[event].add(cb);
-    return () => this.#listeners[event].delete(cb);
-  }
-
-  emit(event: "changed" | "rebuilt"): void {
-    for (const cb of this.#listeners[event]) cb();
-  }
-}
 
 class CitationTextStub {
   readonly #listeners: Record<

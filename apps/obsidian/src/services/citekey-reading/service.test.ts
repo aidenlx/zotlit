@@ -3,6 +3,7 @@ import { Keymap, MarkdownView } from "obsidian";
 import type {
   MarkdownPostProcessor,
   MarkdownPostProcessorContext,
+  MarkdownRenderChild,
   TFile,
 } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -60,7 +61,11 @@ function viewedCtx(
   harness.views.push(
     Object.assign(Object.create(MarkdownView.prototype) as MarkdownView, {
       containerEl: el,
-      previewMode: { rerender: () => undefined },
+      previewMode: {
+        rerender: () => {
+          harness.rerendered();
+        },
+      },
     }),
   );
   return harness.ctx;
@@ -84,6 +89,18 @@ interface Harness extends AsyncDisposable {
   popoverRequests: CitationHoverRequest[];
   /** Every note the rendered citations of this harness asked to open. */
   opened: [citekey: string, pane: unknown][];
+  /** How often the reading views were asked to render again. */
+  rerenders: () => number;
+  /** Counts one render-again request from a view. */
+  rerendered: () => void;
+  /** Replaces what the render answers from here on. */
+  renderAs: (renderText: (source: string, index: number) => string) => void;
+  /** Reports one file changed, the way the metadata cache does after an edit. */
+  changeFile: (path: string) => void;
+  /** Replaces the Ambiguous keys and reports a citekey resolution snapshot rebuild. */
+  rebuildResolution: (ambiguous: readonly string[]) => void;
+  /** Tears every rendered section down, the way Obsidian does on a re-render. */
+  unloadSections: () => void;
 }
 
 async function makeHarness({
@@ -119,6 +136,12 @@ async function makeHarness({
   const opened: [citekey: string, pane: unknown][] = [];
   const occurrences = literalOccurrences(body);
   let process: MarkdownPostProcessor | undefined;
+  let rerenders = 0;
+  let render = renderText;
+  const metadataListeners = new Map<string, (file: { path: string }) => void>();
+  const indexListeners = new Map<string, () => void>();
+  const children: MarkdownRenderChild[] = [];
+  let ambiguous = ambiguousKeys;
 
   const citationText = stack.use(
     new CitationText({
@@ -128,7 +151,10 @@ async function makeHarness({
           getFileByPath: (path: string) => ({ path }) as TFile,
         },
         metadataCache: {
-          on: () => ({ e: { offref: () => undefined } }),
+          on: (event: string, cb: (file: { path: string }) => void) => {
+            metadataListeners.set(event, cb);
+            return { e: { offref: () => undefined } };
+          },
           getFileCache: () => ({}),
         },
       },
@@ -138,7 +164,10 @@ async function makeHarness({
           Promise.resolve({ occurrences, citations: cited }),
         citekeyOf: () => null,
         whenResolved: () => Promise.resolve(),
-        on: () => () => undefined,
+        on: (event: string, cb: () => void) => {
+          indexListeners.set(event, cb);
+          return () => undefined;
+        },
       },
       noteIndex: {
         on: () => () => undefined,
@@ -152,7 +181,7 @@ async function makeHarness({
             ? await formatCitations(citations)
             : formats
               ? citations.map((source, index) =>
-                  rendered(renderText(source, index)),
+                  rendered(render(source, index)),
                 )
               : null;
           if (value === null) {
@@ -207,7 +236,7 @@ async function makeHarness({
         resolveCitekey: (citekey: string) =>
           resolutionPending
             ? null
-            : ambiguousKeys.includes(citekey)
+            : ambiguous.includes(citekey)
               ? { kind: "ambiguous", candidates: [] }
               : { kind: "missing" },
       },
@@ -233,6 +262,10 @@ async function makeHarness({
       sourcePath: "note.md",
       getSectionInfo: () =>
         lines && { text: body, lineStart: lines.from, lineEnd: lines.to },
+      addChild: (child: MarkdownRenderChild) => {
+        children.push(child);
+        child.load();
+      },
     }) as never;
 
   return {
@@ -243,6 +276,21 @@ async function makeHarness({
     views,
     popoverRequests,
     opened,
+    rerenders: () => rerenders,
+    rerendered: () => {
+      rerenders += 1;
+    },
+    renderAs: (renderText) => {
+      render = renderText;
+    },
+    changeFile: (path) => metadataListeners.get("changed")?.({ path }),
+    rebuildResolution: (keys) => {
+      ambiguous = keys;
+      indexListeners.get("resolution-changed")?.();
+    },
+    unloadSections: () => {
+      for (const child of children.splice(0)) child.unload();
+    },
     [Symbol.asyncDispose]: () => resources.disposeAsync(),
   };
 }
@@ -658,6 +706,144 @@ describe("CitekeyReading", () => {
     await process(section("<p>Two [@alpha].</p>"), ctx);
 
     expect(citationRequests).toHaveLength(1);
+  });
+});
+
+describe("CitekeyReading refresh", () => {
+  /** Waits for the replacement read a change starts to commit. */
+  const settled = () => vi.waitFor(() => undefined, { timeout: 1000 });
+
+  it("refreshes a rendered citation in place when its document's text changes", async () => {
+    await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
+    const el = section("<p>Blah [@alpha].</p>");
+    await harnessed.process(el, viewedCtx(harnessed, el));
+    const block = el.firstElementChild;
+    expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
+
+    harnessed.renderAs((source) => `‹${source}›`);
+    harnessed.changeFile("note.md");
+    // The stale text stays while the replacement read runs.
+    expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
+    await vi.waitFor(() =>
+      expect(el.textContent).toBe(`Blah ‹[@${ALPHA_KEY}]›.`),
+    );
+
+    expect(el.firstElementChild).toBe(block);
+    expect(el.querySelectorAll(".zt-citation")).toHaveLength(1);
+    expect(harnessed.rerenders()).toBe(0);
+  });
+
+  it("leaves another document's sections alone", async () => {
+    await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
+    const el = section("<p>Blah [@alpha].</p>");
+    await harnessed.process(el, viewedCtx(harnessed, el));
+
+    harnessed.renderAs((source) => `‹${source}›`);
+    harnessed.changeFile("other.md");
+    await settled();
+
+    expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
+    expect(harnessed.rerenders()).toBe(0);
+  });
+
+  it("fills a section in that rendered while its text was pending", async () => {
+    let settle: ((value: readonly RenderedCitation[]) => void) | undefined;
+    const pending = new Promise<readonly RenderedCitation[]>((resolve) => {
+      settle = resolve;
+    });
+    await using harnessed = await makeHarness({
+      body: "Blah [@alpha].",
+      formatCitations: () => pending,
+    });
+    const el = section("<p>Blah [@alpha].</p>");
+    await harnessed.process(el, viewedCtx(harnessed, el));
+    expect(el.textContent).toBe("Blah [@alpha].");
+
+    settle?.([rendered("«[@alpha]»")]);
+    await vi.waitFor(() => expect(el.textContent).toBe("Blah «[@alpha]»."));
+
+    expect(el.querySelector(".zt-citation")).not.toBeNull();
+    expect(harnessed.rerenders()).toBe(0);
+  });
+
+  it("keeps the current text when the fresh text holds nothing for a citation", async () => {
+    await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
+    const el = section("<p>Blah [@alpha].</p>");
+    await harnessed.process(el, viewedCtx(harnessed, el));
+
+    harnessed.renderAs(() => "");
+    harnessed.changeFile("note.md");
+    await settled();
+
+    expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
+  });
+
+  it("follows the citekey resolution snapshot in place when it rebuilds", async () => {
+    await using harnessed = await makeHarness({
+      body: "[@twin]",
+      cited: [citation("twin", null)],
+    });
+    const el = section("<p>[@twin]</p>");
+    await harnessed.process(el, viewedCtx(harnessed, el));
+    expect(
+      el.querySelector(`.${themeHook.citationKeyUnresolved}`),
+    ).not.toBeNull();
+
+    harnessed.rebuildResolution(["twin"]);
+
+    expect(
+      el.querySelector(`.${themeHook.citationKeyAmbiguous}`),
+    ).not.toBeNull();
+    expect(el.querySelector(`.${themeHook.citationKeyUnresolved}`)).toBeNull();
+    expect(harnessed.rerenders()).toBe(0);
+  });
+
+  it("keeps a placed element across a refresh whose answer is equal", async () => {
+    await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
+    const el = section("<p>Blah [@alpha].</p>");
+    await harnessed.process(el, viewedCtx(harnessed, el));
+    const element = el.querySelector<HTMLElement>(".zt-citation")!;
+
+    // Every text goes stale at once, and the rebuilt snapshot answers the same.
+    harnessed.rebuildResolution([]);
+    await settled();
+    harnessed.changeFile("note.md");
+    await settled();
+
+    expect(el.querySelector(".zt-citation")).toBe(element);
+    expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
+    element.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    expect(harnessed.popoverRequests).toHaveLength(1);
+  });
+
+  it("answers one hover with one popover after a refresh", async () => {
+    await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
+    const el = section("<p>Blah [@alpha].</p>");
+    await harnessed.process(el, viewedCtx(harnessed, el));
+
+    harnessed.renderAs((source) => `‹${source}›`);
+    harnessed.changeFile("note.md");
+    await vi.waitFor(() =>
+      expect(el.textContent).toBe(`Blah ‹[@${ALPHA_KEY}]›.`),
+    );
+    el.querySelector<HTMLElement>(".zt-citation")!.dispatchEvent(
+      new MouseEvent("mouseover", { bubbles: true }),
+    );
+
+    expect(harnessed.popoverRequests).toHaveLength(1);
+  });
+
+  it("leaves a section Obsidian tore down alone", async () => {
+    await using harnessed = await makeHarness({ body: "Blah [@alpha]." });
+    const el = section("<p>Blah [@alpha].</p>");
+    await harnessed.process(el, viewedCtx(harnessed, el));
+    harnessed.unloadSections();
+
+    harnessed.renderAs((source) => `‹${source}›`);
+    harnessed.changeFile("note.md");
+    await settled();
+
+    expect(el.textContent).toBe(`Blah «[@${ALPHA_KEY}]».`);
   });
 });
 

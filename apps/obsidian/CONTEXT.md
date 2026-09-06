@@ -268,7 +268,7 @@ _Avoid_: reading-mode wikilink widget (a widget is the Live Preview decoration)
 The set of Libraries used for discovery and unqualified batch operations. It is either All Libraries or a non-empty set of Selected Libraries; unavailable selections remain part of the scope while available Libraries continue to serve discovery.
 
 **Note Index**:
-A vault-wide in-memory index mapping `zotero-key` to Literature Notes and `zotero-note-key` to Imported Notes. It also resolves a wikilink linkpath to the Indexed Key of the Literature Note it points at. Metadata-cache changes keep the mappings current, and the Literature Note key set answers the Companion's `GET /literature-notes` note-status query after the first full scan settles.
+A vault-wide in-memory index mapping `zotero-key` to Literature Notes and `zotero-note-key` to Imported Notes. It also resolves a wikilink linkpath to the Indexed Key of the Literature Note it points at. One Full Scan populates it when the metadata cache is complete; per-file metadata-cache changes and vault renames keep the mappings current after that, and the Literature Note key set answers the Companion's `GET /literature-notes` note-status query once the Full Scan settles.
 
 **Citation Index**:
 The plugin-owned, internal vault-wide index of Citation Occurrences across both citation syntaxes — literal Pandoc citations and Literature Note wikilinks. It tracks derived source facts independently of which citation sources the user includes; the Document Citation Set applies those choices for citation-aware consumers. Reset Citation Index remains a Diagnostics recovery action that rebuilds this derived data without changing vault files.
