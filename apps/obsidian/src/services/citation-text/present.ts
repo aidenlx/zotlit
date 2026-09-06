@@ -390,7 +390,9 @@ export function showCitation(
     element.replaceChildren(content);
     return;
   }
-  element.replaceChildren();
+  // The render owns the element's children: its first mount clears what was
+  // there — a native link's text — and every later one diffs against what it
+  // rendered, so showing the same element again rewrites it in place.
   renderInlineContent(element, {
     nodes: content.text.content,
     serials: content.serials,

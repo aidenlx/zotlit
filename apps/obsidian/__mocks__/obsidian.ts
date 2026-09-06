@@ -98,6 +98,46 @@ export class MarkdownView {
 }
 
 /**
+ * Stand-in for Obsidian's `Component`: the load/unload pair and the child
+ * list, which is what a post-processor's `ctx.addChild` hangs a render child
+ * on and what Obsidian tears down with the section.
+ */
+export class Component {
+  #loaded = false;
+  readonly #children: Component[] = [];
+
+  load(): void {
+    if (this.#loaded) return;
+    this.#loaded = true;
+    this.onload();
+    for (const child of this.#children) child.load();
+  }
+
+  unload(): void {
+    if (!this.#loaded) return;
+    this.#loaded = false;
+    for (const child of this.#children) child.unload();
+    this.onunload();
+  }
+
+  addChild<T extends Component>(child: T): T {
+    this.#children.push(child);
+    if (this.#loaded) child.load();
+    return child;
+  }
+
+  onload(): void {}
+  onunload(): void {}
+}
+
+/** Stand-in for `MarkdownRenderChild`: a component bound to one element. */
+export class MarkdownRenderChild extends Component {
+  constructor(readonly containerEl: HTMLElement) {
+    super();
+  }
+}
+
+/**
  * Stand-in for Obsidian's own hover popover: the element a plugin fills, the
  * unload hook its content is torn down through, and the placement `position()`
  * records as an inline style. Placement is inert here — a test that asserts a
