@@ -402,9 +402,8 @@ class CitationIndexStub {
 
 class NoteIndexStub {
   readonly #notes: Record<string, { path: string }[]>;
-  readonly #listeners: Record<"changed" | "rebuilt", Set<() => void>> = {
+  readonly #listeners: Record<"changed", Set<() => void>> = {
     changed: new Set(),
-    rebuilt: new Set(),
   };
 
   constructor(notes: Record<string, { path: string }[]> = {}) {
@@ -419,12 +418,12 @@ class NoteIndexStub {
     return Promise.resolve();
   }
 
-  on(event: "changed" | "rebuilt", cb: () => void): () => void {
+  on(event: "changed", cb: () => void): () => void {
     this.#listeners[event].add(cb);
     return () => this.#listeners[event].delete(cb);
   }
 
-  emit(event: "changed" | "rebuilt"): void {
+  emit(event: "changed"): void {
     for (const cb of this.#listeners[event]) cb();
   }
 }
