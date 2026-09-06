@@ -51,7 +51,7 @@ const unavailableRule: ProfileSelectionRule = {
 const collectionRule: ProfileSelectionRule = {
   id: "rule-4",
   scope: { mode: "all" },
-  filter: 'inCollection("personal", "DRFT0001") && hasTag("Read")',
+  filter: 'inCollection("personal", "DRFT0001") && tags.contains("Read")',
   profile: profileAId,
 };
 
@@ -134,12 +134,12 @@ describe("Profile Selection Rules settings", () => {
       {
         ...groupRule,
         filter:
-          'itemType == "book" || (hasTag("Read") && !inCollection("personal", "DRFT0001"))',
+          'itemType == "book" || (tags.contains("Read") && !inCollection("personal", "DRFT0001"))',
       },
     ]);
     const desc = (list(ctx).items![0] as { desc: DocumentFragment }).desc;
     expect(desc.textContent).toContain(
-      `${m.settings_profile_rule_item_type_is({ type: "Book" })} or (${m.settings_profile_rule_has_tag({ tag: "Read" })} and ${m.settings_profile_rule_not_in_collection({ collection: "My Library: Project / Drafts" })})`,
+      `${m.settings_profile_rule_item_type_is({ type: "Book" })} or (${m.settings_profile_rule_tags_contain({ tags: "Read" })} and ${m.settings_profile_rule_not_in_collection({ collection: "My Library: Project / Drafts" })})`,
     );
   });
 
@@ -167,9 +167,46 @@ describe("Profile Selection Rules settings", () => {
       }),
     );
     expect(desc.textContent).toContain(
-      m.settings_profile_rule_has_tag({ tag: "Read" }),
+      m.settings_profile_rule_tags_contain({ tags: "Read" }),
     );
     expect(desc.querySelector(".mod-warning")).toBeNull();
+  });
+
+  it.each([
+    [
+      'tags.contains("Read")',
+      m.settings_profile_rule_tags_contain({ tags: "Read" }),
+    ],
+    [
+      '!tags.contains("Read")',
+      m.settings_profile_rule_tags_do_not_contain({ tags: "Read" }),
+    ],
+    [
+      'tags.containsAny("Read", "To read")',
+      m.settings_profile_rule_tags_contain_any({ tags: "Read and To read" }),
+    ],
+    [
+      '!tags.containsAny("Read", "To read")',
+      m.settings_profile_rule_tags_do_not_contain_any({
+        tags: "Read and To read",
+      }),
+    ],
+    [
+      'tags.containsAll("Read", "To read")',
+      m.settings_profile_rule_tags_contain_all({ tags: "Read and To read" }),
+    ],
+    [
+      '!tags.containsAll("Read", "To read")',
+      m.settings_profile_rule_tags_do_not_contain_all({
+        tags: "Read and To read",
+      }),
+    ],
+    ["tags.isEmpty()", m.settings_profile_rule_tags_are_empty()],
+    ["!tags.isEmpty()", m.settings_profile_rule_tags_are_not_empty()],
+  ])("summarizes %s in words", (filter, summary) => {
+    const ctx = context([{ ...groupRule, filter }]);
+    const desc = (list(ctx).items![0] as { desc: DocumentFragment }).desc;
+    expect(desc.textContent).toContain(summary);
   });
 
   it("flags a Collection reference the database lacks as a broken rule", () => {

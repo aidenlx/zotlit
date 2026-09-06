@@ -531,7 +531,7 @@ function ConditionRow({
                 <DropdownItem value="collection">
                   {m.settings_profile_rule_condition_collection()}
                 </DropdownItem>
-                <DropdownItem value="tag">
+                <DropdownItem value="tags">
                   {m.settings_profile_rule_condition_tag()}
                 </DropdownItem>
               </Dropdown>
@@ -596,8 +596,10 @@ function ConditionValue({
         <Dropdown
           className="zt:min-w-0 zt:flex-1"
           aria-label={m.settings_profile_rule_value()}
-          value={condition.itemType}
-          onChange={(itemType) => onChange({ ...condition, itemType })}
+          value={condition.values[0]}
+          onChange={(itemType) =>
+            onChange({ ...condition, values: [itemType] })
+          }
         >
           {ITEM_TYPES.map((itemType) => (
             <DropdownItem key={itemType.name} value={itemType.name}>
@@ -664,16 +666,16 @@ function ConditionValue({
         </>
       );
     }
-    case "tag":
+    case "tags":
       return (
         <input
           type="text"
           className="zt:min-w-0 zt:flex-1"
           aria-label={m.settings_profile_rule_value()}
           placeholder={m.settings_profile_rule_tag_placeholder()}
-          value={condition.name}
+          value={condition.values[0] ?? ""}
           onChange={(event) =>
-            onChange({ ...condition, name: event.currentTarget.value })
+            onChange({ ...condition, values: [event.currentTarget.value] })
           }
         />
       );

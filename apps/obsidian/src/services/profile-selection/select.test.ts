@@ -21,6 +21,13 @@ import type {
 const books = "Bk3Qn7XvT2Lp" as ProfileId;
 const papers = "Rz9Wm4YfH6Kd" as ProfileId;
 
+const itemType = (value: string, negated = false): RuleCondition => ({
+  kind: "item-type",
+  operator: "is",
+  negated,
+  values: [value],
+});
+
 function rule(
   overrides: Partial<ProfileSelectionRule> & { id: string },
 ): ProfileSelectionRule {
@@ -61,28 +68,21 @@ function facts(overrides: Partial<RuleItemFacts> = {}): RuleItemFacts {
 describe("condition contract", () => {
   it("compiles item-type equality, negation, and flat groups", () => {
     expect(compileCondition('itemType == "book"')).toEqual({
-      condition: { kind: "item-type", negated: false, itemType: "book" },
+      condition: itemType("book"),
       problem: null,
     });
     expect(compileCondition('itemType != "book"').condition).toEqual({
-      kind: "item-type",
-      negated: true,
-      itemType: "book",
+      ...itemType("book", true),
     });
     expect(compileCondition('!(itemType == "book")').condition).toEqual({
-      kind: "item-type",
-      negated: true,
-      itemType: "book",
+      ...itemType("book", true),
     });
     expect(
       compileCondition('itemType != "book" && itemType != "thesis"').condition,
     ).toEqual({
       kind: "group",
       match: "all",
-      conditions: [
-        { kind: "item-type", negated: true, itemType: "book" },
-        { kind: "item-type", negated: true, itemType: "thesis" },
-      ],
+      conditions: [itemType("book", true), itemType("thesis", true)],
     });
     expect(compileCondition(" true ").condition).toEqual({
       kind: "group",
@@ -99,14 +99,11 @@ describe("condition contract", () => {
       kind: "group",
       match: "any",
       conditions: [
-        { kind: "item-type", negated: false, itemType: "book" },
+        itemType("book"),
         {
           kind: "group",
           match: "all",
-          conditions: [
-            { kind: "item-type", negated: false, itemType: "thesis" },
-            { kind: "item-type", negated: true, itemType: "letter" },
-          ],
+          conditions: [itemType("thesis"), itemType("letter", true)],
         },
       ],
     });
@@ -117,25 +114,40 @@ describe("condition contract", () => {
       compileFilter({
         and: [
           'itemType != "book"',
-          { or: ['hasTag("Read")', 'hasTag("Read") && itemType == "thesis"'] },
+          {
+            or: [
+              'tags.contains("Read")',
+              'tags.contains("Read") && itemType == "thesis"',
+            ],
+          },
         ],
       }).condition,
     ).toEqual({
       kind: "group",
       match: "all",
       conditions: [
-        { kind: "item-type", negated: true, itemType: "book" },
+        itemType("book", true),
         {
           kind: "group",
           match: "any",
           conditions: [
-            { kind: "tag", negated: false, name: "Read" },
+            {
+              kind: "tags",
+              operator: "contains",
+              negated: false,
+              values: ["Read"],
+            },
             {
               kind: "group",
               match: "all",
               conditions: [
-                { kind: "tag", negated: false, name: "Read" },
-                { kind: "item-type", negated: false, itemType: "thesis" },
+                {
+                  kind: "tags",
+                  operator: "contains",
+                  negated: false,
+                  values: ["Read"],
+                },
+                itemType("thesis"),
               ],
             },
           ],
@@ -149,9 +161,7 @@ describe("condition contract", () => {
       conditions: [],
     });
     expect(compileFilter('itemType == "book"').condition).toEqual({
-      kind: "item-type",
-      negated: false,
-      itemType: "book",
+      ...itemType("book"),
     });
     expect(
       compileFilter({ or: ['itemType == "book"', "", 'title == "x"'] }).problem,
@@ -193,10 +203,7 @@ describe("condition contract", () => {
     const condition: RuleCondition = {
       kind: "group",
       match: "all",
-      conditions: [
-        { kind: "item-type", negated: false, itemType: "book" },
-        { kind: "item-type", negated: true, itemType: "bookSection" },
-      ],
+      conditions: [itemType("book"), itemType("bookSection", true)],
     };
     const expression = formatCondition(condition);
     expect(expression).toBe('itemType == "book" && itemType != "bookSection"');
@@ -209,14 +216,11 @@ describe("condition contract", () => {
         kind: "group",
         match: "any",
         conditions: [
-          { kind: "item-type", negated: false, itemType: "book" },
+          itemType("book"),
           {
             kind: "group",
             match: "all",
-            conditions: [
-              { kind: "item-type", negated: false, itemType: "thesis" },
-              { kind: "item-type", negated: true, itemType: "letter" },
-            ],
+            conditions: [itemType("thesis"), itemType("letter", true)],
           },
         ],
       }),
@@ -266,15 +270,17 @@ describe("condition contract", () => {
       key: "PROJ0001",
       descendants: false,
     });
-    expect(compileCondition('hasTag("Read Later")').condition).toEqual({
-      kind: "tag",
+    expect(compileCondition('tags.contains("Read Later")').condition).toEqual({
+      kind: "tags",
+      operator: "contains",
       negated: false,
-      name: "Read Later",
+      values: ["Read Later"],
     });
-    expect(compileCondition('!hasTag("Read Later")').condition).toEqual({
-      kind: "tag",
+    expect(compileCondition('!tags.contains("Read Later")').condition).toEqual({
+      kind: "tags",
+      operator: "contains",
       negated: true,
-      name: "Read Later",
+      values: ["Read Later"],
     });
     expect(
       compileCondition('inCollection("mine", "PROJ0001")').problem,
@@ -288,13 +294,84 @@ describe("condition contract", () => {
     expect(compileCondition('inCollection("personal")').problem).toMatchObject({
       code: "unsupported",
     });
-    expect(compileCondition("hasTag(1)").problem).toMatchObject({
+    expect(compileCondition("hasTag(1)").problem).toEqual({
       code: "unsupported",
+      from: 0,
+      to: 6,
+      text: "hasTag",
+    });
+    expect(compileCondition('hasTag("Read")').problem).toEqual({
+      code: "unsupported",
+      from: 0,
+      to: 6,
+      text: "hasTag",
     });
     expect(compileCondition('inCollection("personal", "A")').condition).toEqual(
       expect.objectContaining({ kind: "collection" }),
     );
   });
+
+  it.each([
+    ['tags.contains("Read")', "contains", ["Read"]],
+    ['tags.containsAny("Read", "To read")', "containsAny", ["Read", "To read"]],
+    ['tags.containsAll("Read", "To read")', "containsAll", ["Read", "To read"]],
+    ["tags.isEmpty()", "isEmpty", []],
+  ] as const)("compiles and formats %s", (expression, operator, values) => {
+    const condition = compileCondition(expression).condition;
+    expect(condition).toEqual({
+      kind: "tags",
+      operator,
+      negated: false,
+      values,
+    });
+    expect(formatCondition(condition!)).toBe(expression);
+    const negated = compileCondition(`!${expression}`).condition;
+    expect(negated).toEqual({
+      kind: "tags",
+      operator,
+      negated: true,
+      values,
+    });
+    expect(formatCondition(negated!)).toBe(`!${expression}`);
+  });
+
+  it.each([
+    'hasTag("Read")',
+    'labels.contains("Read")',
+    'tags.includes("Read")',
+    "tags.contains()",
+    'tags.contains("Read", "Later")',
+    "tags.containsAny()",
+    "tags.containsAll()",
+    'tags.isEmpty("Read")',
+    "tags.contains(1)",
+    'tags.containsAny("Read", 1)',
+  ])("reports unsupported Tag expression %s", (expression) => {
+    expect(compileCondition(expression)).toEqual({
+      condition: null,
+      problem: expect.objectContaining({ code: "unsupported" }),
+    });
+  });
+
+  it.each([
+    { expression: "tags.contains(1)", from: 14, to: 15, text: "1" },
+    {
+      expression: 'tags.containsAny("Read", 1)',
+      from: 25,
+      to: 26,
+      text: "1",
+    },
+  ] as const)(
+    "reports the offending argument range for $expression",
+    ({ expression, from, to, text }) => {
+      expect(compileCondition(expression).problem).toEqual({
+        code: "unsupported",
+        from,
+        to,
+        text,
+      });
+    },
+  );
 
   it("writes Collection and Tag conditions canonically and reads them back", () => {
     const condition: RuleCondition = {
@@ -315,13 +392,18 @@ describe("condition contract", () => {
           key: "SUB00001",
           descendants: false,
         },
-        { kind: "tag", negated: false, name: 'say "hi"' },
-        { kind: "item-type", negated: false, itemType: "book" },
+        {
+          kind: "tags",
+          operator: "contains",
+          negated: false,
+          values: ['say "hi"'],
+        },
+        itemType("book"),
       ],
     };
     const expression = formatCondition(condition);
     expect(expression).toBe(
-      'inCollection("group:118", "PROJ0001") && !inCollectionDirectly("personal", "SUB00001") && hasTag("say \\"hi\\"") && itemType == "book"',
+      'inCollection("group:118", "PROJ0001") && !inCollectionDirectly("personal", "SUB00001") && tags.contains("say \\"hi\\"") && itemType == "book"',
     );
     expect(compileCondition(expression).condition).toEqual(condition);
   });
@@ -350,12 +432,17 @@ describe("condition contract", () => {
       }),
     ).toBe(false);
     expect(match('inCollection("personal", "PROJ0001")', facts())).toBe(false);
-    expect(match('hasTag("Read")')).toBe(true);
-    expect(match('hasTag("READ")')).toBe(true);
-    expect(match('hasTag("read")')).toBe(false);
-    expect(match('!hasTag("read")')).toBe(true);
-    expect(match('hasTag("Read") && itemType == "book"')).toBe(true);
-    expect(match('hasTag("Read") && itemType == "thesis"')).toBe(false);
+    expect(match('tags.contains("Read")')).toBe(true);
+    expect(match('tags.contains("READ")')).toBe(true);
+    expect(match('tags.contains("read")')).toBe(false);
+    expect(match('!tags.contains("read")')).toBe(true);
+    expect(match('tags.containsAny("missing", "Read")')).toBe(true);
+    expect(match('tags.containsAll("Read", "READ")')).toBe(true);
+    expect(match('tags.containsAll("Read", "missing")')).toBe(false);
+    expect(match("tags.isEmpty()", facts())).toBe(true);
+    expect(match("!tags.isEmpty()", facts())).toBe(false);
+    expect(match('tags.contains("Read") && itemType == "book"')).toBe(true);
+    expect(match('tags.contains("Read") && itemType == "thesis"')).toBe(false);
   });
 });
 

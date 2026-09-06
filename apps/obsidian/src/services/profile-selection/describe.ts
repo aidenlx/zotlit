@@ -155,7 +155,7 @@ function describeFlat(
 ): string {
   switch (condition.kind) {
     case "item-type": {
-      const type = itemTypeLabel(condition.itemType);
+      const type = itemTypeLabel(condition.values[0]);
       return condition.negated
         ? m.settings_profile_rule_item_type_is_not({ type })
         : m.settings_profile_rule_item_type_is({ type });
@@ -170,10 +170,29 @@ function describeFlat(
         ? m.settings_profile_rule_not_in_collection_direct({ collection })
         : m.settings_profile_rule_in_collection_direct({ collection });
     }
-    case "tag":
-      return condition.negated
-        ? m.settings_profile_rule_has_not_tag({ tag: condition.name })
-        : m.settings_profile_rule_has_tag({ tag: condition.name });
+    case "tags": {
+      const tags = new Intl.ListFormat(runtime.getLocale()).format(
+        condition.values,
+      );
+      switch (condition.operator) {
+        case "contains":
+          return condition.negated
+            ? m.settings_profile_rule_tags_do_not_contain({ tags })
+            : m.settings_profile_rule_tags_contain({ tags });
+        case "containsAny":
+          return condition.negated
+            ? m.settings_profile_rule_tags_do_not_contain_any({ tags })
+            : m.settings_profile_rule_tags_contain_any({ tags });
+        case "containsAll":
+          return condition.negated
+            ? m.settings_profile_rule_tags_do_not_contain_all({ tags })
+            : m.settings_profile_rule_tags_contain_all({ tags });
+        case "isEmpty":
+          return condition.negated
+            ? m.settings_profile_rule_tags_are_not_empty()
+            : m.settings_profile_rule_tags_are_empty();
+      }
+    }
   }
 }
 

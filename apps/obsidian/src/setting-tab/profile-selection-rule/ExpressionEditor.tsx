@@ -17,10 +17,8 @@ import { useMemo } from "react";
 
 import { cn } from "@/lib/utils";
 import {
-  HAS_TAG_FUNCTION,
-  IN_COLLECTION_DIRECTLY_FUNCTION,
-  IN_COLLECTION_FUNCTION,
   ITEM_TYPE_FIELD,
+  TAGS_FIELD,
 } from "@/services/profile-selection/condition";
 
 import "./style.css";
@@ -30,24 +28,15 @@ import "./style.css";
  * colours, so the expression reads like code without a language of its own.
  */
 const tokens = new MatchDecorator({
-  regexp: new RegExp(
-    [
-      String.raw`"(?:[^"\\]|\\.)*"`,
-      String.raw`\b(?:true|false)\b`,
-      String.raw`\b(?:${IN_COLLECTION_DIRECTLY_FUNCTION}|${IN_COLLECTION_FUNCTION}|${HAS_TAG_FUNCTION})\b`,
-      String.raw`\b${ITEM_TYPE_FIELD}\b`,
-      String.raw`==|!=|&&|\|\||!`,
-      String.raw`[(),]`,
-    ].join("|"),
-    "g",
-  ),
+  regexp:
+    /"(?:[^"\\]|\\.)*"|\b(?:true|false)\b|\b(?:inCollectionDirectly|inCollection|containsAny|containsAll|contains|isEmpty)\b|\b(?:itemType|tags)\b|==|!=|&&|\|\||!|[(),]/g,
   decoration: (match) => Decoration.mark({ class: tokenClass(match[0]) }),
 });
 
 function tokenClass(text: string): string {
   if (text.startsWith('"')) return "zt-expr-string";
   if (text === "true" || text === "false") return "zt-expr-keyword";
-  if (text === ITEM_TYPE_FIELD) return "zt-expr-field";
+  if (text === ITEM_TYPE_FIELD || text === TAGS_FIELD) return "zt-expr-field";
   if (/^[(),]$/.test(text)) return "zt-expr-punctuation";
   if (/^[a-z]/i.test(text)) return "zt-expr-function";
   return "zt-expr-operator";
