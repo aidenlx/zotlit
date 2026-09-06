@@ -288,13 +288,13 @@ describe("ProfileMatchModal", () => {
     let row = conditionRows(modal)[0]!;
     expect(rowSelects(row)[2]!.value).toBe("group:5");
     expect(rowError(row)).toBe(
-      m.profile_rule_problem_unknown_library({ text: '"group:5"' }),
+      m.profile_match_problem_unknown_library({ text: '"group:5"' }),
     );
     expect(saveEnabled(modal)).toBe(false);
     await click(toggle(row, m.settings_profile_match_edit_as_expression()));
     row = conditionRows(modal)[0]!;
     expect(rowError(row)).toBe(
-      m.profile_rule_problem_unknown_library({ text: '"group:5"' }),
+      m.profile_match_problem_unknown_library({ text: '"group:5"' }),
     );
     await typeExpression(row, 'library == "personal"');
     expect(saveEnabled(modal)).toBe(true);
@@ -424,19 +424,19 @@ describe("ProfileMatchModal", () => {
     ).toBe(true);
     expect(editor(row()).state.doc.toString()).toBe('title == "Zotero"');
     expect(rowError(row())).toBe(
-      m.profile_rule_problem_unsupported({ text: 'title == "Zotero"' }),
+      m.profile_match_problem_unsupported({ text: 'title == "Zotero"' }),
     );
     expect(saveEnabled(modal)).toBe(false);
     expect(editor(row()).state.doc.toString()).toBe('title == "Zotero"');
     // Each keystroke is checked; a half-typed expression names the gap.
     await typeExpression(row(), 'tags.contains("Read") &&');
-    expect(rowError(row())).toBe(m.profile_rule_problem_syntax({ text: "" }));
+    expect(rowError(row())).toBe(m.profile_match_problem_syntax({ text: "" }));
     expect(saveEnabled(modal)).toBe(false);
     await typeExpression(row(), "");
-    expect(rowError(row())).toBe(m.profile_rule_problem_empty());
+    expect(rowError(row())).toBe(m.profile_match_problem_empty());
     await typeExpression(row(), 'tags.contains("Read") && itemType == "novel"');
     expect(rowError(row())).toBe(
-      m.profile_rule_problem_unknown_item_type({ text: '"novel"' }),
+      m.profile_match_problem_unknown_item_type({ text: '"novel"' }),
     );
     // Operators stay inside the leaf; the tree above is the ordinary grouping.
     await typeExpression(row(), 'tags.contains("Read") && itemType == "book"');

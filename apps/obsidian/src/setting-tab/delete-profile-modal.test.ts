@@ -76,9 +76,6 @@ it("confirms an unused Profile with configured trash and no target control", asy
     `${m.settings_profile_delete_unused()}\n\n${m.settings_profile_delete_confirm_body()}`,
   );
   expect(modal.contentEl.querySelector("input")).toBeNull();
-  expect(modal.contentEl.textContent).not.toContain(
-    m.settings_profile_delete_rules_repair(),
-  );
   expect(action).toHaveBeenCalledWith(m.settings_profile_delete());
   modal.close();
   await expect(decision).resolves.toBeUndefined();

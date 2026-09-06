@@ -436,25 +436,30 @@ describe("Profile document matches at creation preparation", () => {
     [
       'library == "group:2"',
       "unknown-library",
-      () => m.profile_rule_problem_unknown_library({ text: '"group:2"' }),
+      () => m.profile_match_problem_unknown_library({ text: '"group:2"' }),
     ],
     [
       'library != "group:999"',
       "unknown-library",
-      () => m.profile_rule_problem_unknown_library({ text: '"group:999"' }),
+      () => m.profile_match_problem_unknown_library({ text: '"group:999"' }),
     ],
     [
       'itemType == "novel"',
       "unknown-item-type",
-      () => m.profile_rule_problem_unknown_item_type({ text: '"novel"' }),
+      () => m.profile_match_problem_unknown_item_type({ text: '"novel"' }),
     ],
-    ["library ==", "syntax", () => m.profile_rule_problem_syntax({ text: "" })],
+    [
+      "library ==",
+      "syntax",
+      () => m.profile_match_problem_syntax({ text: "" }),
+    ],
     [
       'title == "BOOK0001"',
       "unsupported",
-      () => m.profile_rule_problem_unsupported({ text: 'title == "BOOK0001"' }),
+      () =>
+        m.profile_match_problem_unsupported({ text: 'title == "BOOK0001"' }),
     ],
-    [" ", "empty", () => m.profile_rule_problem_empty()],
+    [" ", "empty", () => m.profile_match_problem_empty()],
   ] as const)(
     "keeps the document with %s active, shows its diagnostic, and skips it for every Item",
     async (match, code, problem) => {
@@ -545,7 +550,7 @@ describe("Profile document matches at creation preparation", () => {
     expect(f.libraryScope.current).toBe(selected);
     expect(f.profile.profiles[0]?.match).toMatchObject({
       state: "evaluable",
-      summary: m.settings_profile_rule_library_is({ library: "Remote team" }),
+      summary: m.settings_profile_match_library_is({ library: "Remote team" }),
     });
     f.client.$client.exec(
       "update groups set name = 'Research team' where groupID = 999",

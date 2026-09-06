@@ -164,7 +164,7 @@ describe("Profile row Match action", () => {
       ).disabled,
     ).toBe(true);
     expect(openedModal(open.mock.contexts).contentEl.textContent).toContain(
-      m.profile_rule_problem_unsupported({ text: 'title == "Books"' }),
+      m.profile_match_problem_unsupported({ text: 'title == "Books"' }),
     );
     await act(() =>
       modalButton(

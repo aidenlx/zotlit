@@ -114,14 +114,14 @@ it("tells the unmatched fallback, the affected recovery, and the all-new overrid
         kind: "create",
         path: "Books/Matched book.md",
         profile: "Books",
-        reason: m.modal_profile_source_rule({ rule: "Item type is Book" }),
+        reason: m.profile_match_selected({ profile: "Books" }),
       },
       {
         id: 2,
-        label: "Broken rule paper",
+        label: "Unavailable profile paper",
         kind: "create",
-        reason: m.modal_profile_problem_unavailable_target({
-          rule: "Item type is Thesis",
+        reason: m.modal_profile_problem_unavailable_profile({
+          selector: "Theses",
         }),
       },
     ],
@@ -153,10 +153,12 @@ it("tells the unmatched fallback, the affected recovery, and the all-new overrid
   ])
     expect(container.textContent).toContain(help);
   expect(container.textContent).not.toContain(m.batch_profile_source_chosen());
-  expect(container.textContent).toContain("Item type is Book");
   expect(container.textContent).toContain(
-    m.modal_profile_problem_unavailable_target({
-      rule: "Item type is Thesis",
+    m.profile_match_selected({ profile: "Books" }),
+  );
+  expect(container.textContent).toContain(
+    m.modal_profile_problem_unavailable_profile({
+      selector: "Theses",
     }),
   );
   expect(container.querySelectorAll("[data-profile-stamp]")).toHaveLength(1);
