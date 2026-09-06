@@ -29,12 +29,12 @@ import {
   appendAt,
   asExpression,
   asLabelled,
+  conditionIssue,
   draftInvalid,
   freshCondition,
   freshGroup,
   removeAt,
   replaceAt,
-  rowIssue,
   scopeIssue,
   updateGroup,
   vacuous,
@@ -468,7 +468,7 @@ function ConditionRow({
   const root = useRuleEditorStore((state) => state.draft.root);
   const deps = useRuleEditorStore((state) => state.deps);
   const replace = (next: RowCondition) => setRoot(replaceAt(root, path, next));
-  const issue = rowIssue(condition, deps);
+  const issue = conditionIssue(condition, deps);
   const labelled =
     condition.kind === "expression" ? asLabelled(condition) : null;
   const hasResponsiveValue =
