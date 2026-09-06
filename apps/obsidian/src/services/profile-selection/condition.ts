@@ -10,13 +10,13 @@
 //
 // Supported vocabulary:
 // - `itemType == "<type>"` / `itemType != "<type>"` — the built-in Zotero type.
+// - `tags.contains("<name>")`, `containsAny`, `containsAll`, and `isEmpty` —
+//   exact, case-sensitive tests over manual and automatic Tag names.
 // - `inCollection("<library>", "<key>")` — filed in the Collection or any of
 //   its descendants; `inCollectionDirectly(...)` — filed in it itself. The
 //   Library is the portable `personal` / `group:<groupID>` reference and the
 //   key is Zotero's Collection key, so a reference survives a rename and
 //   tells identical names or keys in different Libraries apart.
-// - `hasTag("<name>")` — an exact, case-sensitive Tag name; manual and
-//   automatic applications both count.
 // - `!`, `&&`, `||`, and grouping inside one leaf; the tree above the leaves
 //   is the ordinary way to combine conditions.
 //
@@ -40,7 +40,13 @@ export const ITEM_TYPE_FIELD = "itemType";
 /** The membership predicates a rule may call. */
 export const IN_COLLECTION_FUNCTION = "inCollection";
 export const IN_COLLECTION_DIRECTLY_FUNCTION = "inCollectionDirectly";
-export const HAS_TAG_FUNCTION = "hasTag";
+export const TAGS_FIELD = "tags";
+
+export type ListOperator =
+  | "contains"
+  | "containsAny"
+  | "containsAll"
+  | "isEmpty";
 
 /** A portable reference to one Collection: its Library and Zotero key. */
 export interface CollectionReference {
@@ -55,7 +61,12 @@ export type RuleCondition =
       match: "all" | "any";
       conditions: RuleCondition[];
     }
-  | { kind: "item-type"; negated: boolean; itemType: string }
+  | {
+      kind: "item-type";
+      operator: "is";
+      negated: boolean;
+      values: [string];
+    }
   | {
       kind: "collection";
       negated: boolean;
@@ -64,7 +75,12 @@ export type RuleCondition =
       /** Whether descendants of the Collection count as membership. */
       descendants: boolean;
     }
-  | { kind: "tag"; negated: boolean; name: string };
+  | {
+      kind: "tags";
+      operator: ListOperator;
+      negated: boolean;
+      values: string[];
+    };
 
 /** A condition the editor shows as one row. */
 export type FlatCondition = Exclude<RuleCondition, { kind: "group" }>;
@@ -178,11 +194,31 @@ export function matchCondition(
         ? condition.conditions.every((entry) => matchCondition(entry, facts))
         : condition.conditions.some((entry) => matchCondition(entry, facts));
     case "item-type":
-      return (facts.itemType === condition.itemType) !== condition.negated;
+      return (facts.itemType === condition.values[0]) !== condition.negated;
     case "collection":
       return isInCollection(condition, facts) !== condition.negated;
-    case "tag":
-      return facts.tags.includes(condition.name) !== condition.negated;
+    case "tags":
+      return (
+        matchList(condition.operator, condition.values, facts.tags) !==
+        condition.negated
+      );
+  }
+}
+
+function matchList(
+  operator: ListOperator,
+  values: readonly string[],
+  facts: readonly string[],
+): boolean {
+  switch (operator) {
+    case "contains":
+      return facts.includes(values[0]!);
+    case "containsAny":
+      return values.some((value) => facts.includes(value));
+    case "containsAll":
+      return values.every((value) => facts.includes(value));
+    case "isEmpty":
+      return facts.length === 0;
   }
 }
 
@@ -230,7 +266,7 @@ export function formatCondition(condition: RuleCondition): string {
         .join(operator);
     }
     case "item-type":
-      return `${ITEM_TYPE_FIELD} ${condition.negated ? "!=" : "=="} ${JSON.stringify(condition.itemType)}`;
+      return `${ITEM_TYPE_FIELD} ${condition.negated ? "!=" : "=="} ${JSON.stringify(condition.values[0])}`;
     case "collection": {
       const name = condition.descendants
         ? IN_COLLECTION_FUNCTION
@@ -238,8 +274,11 @@ export function formatCondition(condition: RuleCondition): string {
       const call = `${name}(${JSON.stringify(selectorKey(condition.library))}, ${JSON.stringify(condition.key)})`;
       return condition.negated ? `!${call}` : call;
     }
-    case "tag": {
-      const call = `${HAS_TAG_FUNCTION}(${JSON.stringify(condition.name)})`;
+    case "tags": {
+      const args = condition.values
+        .map((value) => JSON.stringify(value))
+        .join(", ");
+      const call = `${TAGS_FIELD}.${condition.operator}(${args})`;
       return condition.negated ? `!${call}` : call;
     }
   }
@@ -328,16 +367,46 @@ function equality(
     throw new UnsupportedNode("unsupported", node.from, node.to);
   if (!KNOWN_ITEM_TYPES.has(right.value))
     throw new UnsupportedNode("unknown-item-type", right.from, right.to);
-  return { kind: "item-type", negated, itemType: right.value };
+  return {
+    kind: "item-type",
+    operator: "is",
+    negated,
+    values: [right.value],
+  };
 }
 
 function call(node: Extract<ExpressionNode, { type: "call" }>): RuleCondition {
   const { callee, args } = node;
+  if (
+    callee.type === "object-access" &&
+    callee.object.type === "identifier" &&
+    callee.object.name === TAGS_FIELD
+  ) {
+    const operator = callee.property as ListOperator;
+    const arityIsValid =
+      (operator === "contains" && args.length === 1) ||
+      ((operator === "containsAny" || operator === "containsAll") &&
+        args.length >= 1) ||
+      (operator === "isEmpty" && args.length === 0);
+    if (!arityIsValid)
+      throw new UnsupportedNode("unsupported", callee.from, callee.to);
+    const invalid = args.find((arg) => arg.type !== "string");
+    if (invalid)
+      throw new UnsupportedNode("unsupported", invalid.from, invalid.to);
+    return {
+      kind: "tags",
+      operator,
+      negated: false,
+      values: args.map(
+        (arg) => (arg as Extract<ExpressionNode, { type: "string" }>).value,
+      ),
+    };
+  }
   if (callee.type !== "identifier")
-    throw new UnsupportedNode("unsupported", node.from, node.to);
+    throw new UnsupportedNode("unsupported", callee.from, callee.to);
+  if (callee.name === "hasTag")
+    throw new UnsupportedNode("unsupported", callee.from, callee.to);
   const strings = args.every((arg) => arg.type === "string") ? args : null;
-  if (callee.name === HAS_TAG_FUNCTION && strings?.length === 1)
-    return { kind: "tag", negated: false, name: strings[0]!.value };
   const descendants = callee.name === IN_COLLECTION_FUNCTION;
   if (
     (descendants || callee.name === IN_COLLECTION_DIRECTLY_FUNCTION) &&

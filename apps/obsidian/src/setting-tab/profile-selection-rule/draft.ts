@@ -76,7 +76,12 @@ export function initialDraft(rule?: ProfileSelectionRule): RuleDraft {
       kind: "group",
       match: "all",
       conditions: [
-        { kind: "item-type", negated: false, itemType: DEFAULT_ITEM_TYPE },
+        {
+          kind: "item-type",
+          operator: "is",
+          negated: false,
+          values: [DEFAULT_ITEM_TYPE],
+        },
       ],
     },
   };
@@ -105,9 +110,18 @@ function editorNode(filter: RuleFilter): EditorCondition {
     };
   }
   const { condition } = compileCondition(filter);
-  return condition && condition.kind !== "group"
+  return condition && visuallyEditable(condition)
     ? condition
     : { kind: "expression", text: filter };
+}
+
+function visuallyEditable(
+  condition: RuleCondition,
+): condition is FlatCondition {
+  return (
+    condition.kind !== "group" &&
+    (condition.kind !== "tags" || condition.operator === "contains")
+  );
 }
 
 /** The filter a tree stores: rows as canonical expressions, expression rows as typed. */
@@ -203,7 +217,7 @@ export function freshCondition(
 ): FlatCondition {
   switch (kind) {
     case "item-type":
-      return { kind, negated, itemType: DEFAULT_ITEM_TYPE };
+      return { kind, operator: "is", negated, values: [DEFAULT_ITEM_TYPE] };
     case "collection": {
       const first = collections[0];
       return {
@@ -214,8 +228,8 @@ export function freshCondition(
         descendants: true,
       };
     }
-    case "tag":
-      return { kind, negated, name: "" };
+    case "tags":
+      return { kind, operator: "contains", negated, values: [""] };
   }
 }
 
@@ -232,7 +246,7 @@ export function asLabelled(
   condition: ExpressionCondition,
 ): FlatCondition | null {
   const compiled = compileCondition(condition.text).condition;
-  return compiled && compiled.kind !== "group" ? compiled : null;
+  return compiled && visuallyEditable(compiled) ? compiled : null;
 }
 
 /**
@@ -273,8 +287,10 @@ export function conditionIssue(
             { code: "missing-collection", ...condition },
             describeOptions(deps),
           );
-    case "tag":
-      return condition.name === "" ? m.settings_profile_rule_tag_empty() : null;
+    case "tags":
+      return condition.values.some((value) => value === "")
+        ? m.settings_profile_rule_tag_empty()
+        : null;
     case "expression": {
       const { condition: compiled, problem } = compileCondition(condition.text);
       if (problem) return describeProblem(problem, describeOptions(deps));

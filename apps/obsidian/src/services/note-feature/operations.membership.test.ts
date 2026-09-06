@@ -486,18 +486,18 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
   });
 
   it("matches Tag names exactly and case-sensitively across manual and automatic applications", async () => {
-    const read = rule({ id: "read", filter: 'hasTag("Read")' });
+    const read = rule({ id: "read", filter: 'tags.contains("Read")' });
     const upper = rule({
       id: "upper",
-      filter: 'hasTag("READ")',
+      filter: 'tags.contains("READ")',
       profile: papers,
     });
     const lower = rule({
       id: "lower",
-      filter: 'hasTag("read")',
+      filter: 'tags.contains("read")',
       profile: "default",
     });
-    const auto = rule({ id: "auto", filter: 'hasTag("auto-tag")' });
+    const auto = rule({ id: "auto", filter: 'tags.contains("auto-tag")' });
     const { deps } = harness([lower, upper, read]);
     const feature = createNoteFeature(deps);
     // "read" matches nothing; the automatic "READ" wins before manual "Read".
@@ -517,12 +517,37 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
     ).toEqual({ selector: "default", source: "bound", shouldAsk: true });
   });
 
+  it.each([
+    ["manual Tag", personalBook, 'tags.contains("Read")'],
+    ["automatic Tag", article, 'tags.contains("auto-tag")'],
+    ["case-distinct automatic Tag", personalBook, 'tags.contains("READ")'],
+  ] as const)(
+    "creates a note selected by a %s",
+    async (_case, item, filter) => {
+      const matching = rule({ id: "matching", filter });
+      const { deps, vault } = harness([matching]);
+      const feature = createNoteFeature(deps);
+      const selection = await feature.resolveCreationProfile({ item });
+      expect(selection).toMatchObject({ selector: books, rule: matching });
+
+      await expect(
+        feature.createNote(item, { profile: selection.selector }),
+      ).resolves.toMatchObject({
+        outcome: "created",
+        file: { path: `Reading/${item.key}.md` },
+      });
+      expect(vault.get(`Reading/${item.key}.md`)).toContain(
+        `${FIELD_LITERATURE_NOTE_PROFILE}: Books (${books})`,
+      );
+    },
+  );
+
   it("combines Collection and Tag conditions with the item type and the Library scope", async () => {
     const combined = rule({
       id: "combined",
       scope: { mode: "selected", libraries: [{ type: "personal" }] },
       filter:
-        'inCollection("personal", "PROJ0001") && hasTag("Read") && itemType == "book"',
+        'inCollection("personal", "PROJ0001") && tags.contains("Read") && itemType == "book"',
     });
     const anyProject = rule({
       id: "any-project",
@@ -548,18 +573,19 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
       id: "project-papers",
       scope: { mode: "selected", libraries: [{ type: "personal" }] },
       filter:
-        '(inCollection("personal", "PROJ0001") || hasTag("auto-tag")) && itemType != "book"',
+        '(inCollection("personal", "PROJ0001") || tags.contains("auto-tag")) && itemType != "book"',
       profile: papers,
     });
     // Neither tagged Read nor an article.
     const untouched = rule({
       id: "untouched",
-      filter: '!(hasTag("Read") || itemType == "journalArticle")',
+      filter: '!(tags.contains("Read") || itemType == "journalArticle")',
     });
     // Tagged READ (automatic) but not filed directly in Project.
     const readElsewhere = rule({
       id: "read-elsewhere",
-      filter: 'hasTag("READ") && !inCollectionDirectly("personal", "PROJ0001")',
+      filter:
+        'tags.contains("READ") && !inCollectionDirectly("personal", "PROJ0001")',
       profile: "default",
     });
     const feature = createNoteFeature(
@@ -589,7 +615,7 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
   it("keeps a previewed selection fixed while Tags and memberships change, and lets the next operation see the change", async () => {
     const read = rule({
       id: "read",
-      filter: 'hasTag("Read") && inCollection("personal", "OTHR0001")',
+      filter: 'tags.contains("Read") && inCollection("personal", "OTHR0001")',
     });
     const { deps, client, vault } = harness([read]);
     const feature = createNoteFeature(deps);
