@@ -1,8 +1,7 @@
 // The expression surface: a CodeMirror editor over the Filter Expression,
-// dressed as Obsidian's own formula editor (the Bases filter and formula
-// inputs). CodeMirror comes from Obsidian's bundle — every `@codemirror/*`
-// import is external — and `@uiw/react-codemirror` is the React binding
-// over it.
+// styled as an Obsidian text input on Obsidian's public tokens. CodeMirror
+// comes from Obsidian's bundle — every `@codemirror/*` import is external —
+// and `@uiw/react-codemirror` is the React binding over it.
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { bracketMatching } from "@codemirror/language";
 import {
@@ -16,6 +15,7 @@ import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import CodeMirror from "@uiw/react-codemirror";
 import { useMemo } from "react";
 
+import { cn } from "@/lib/utils";
 import {
   HAS_TAG_FUNCTION,
   IN_COLLECTION_DIRECTLY_FUNCTION,
@@ -23,10 +23,11 @@ import {
   ITEM_TYPE_FIELD,
 } from "@/services/profile-selection/condition";
 
+import "./style.css";
+
 /**
- * The contract's vocabulary, coloured with the token classes Obsidian's
- * editor theme already styles (`.cm-string`, `.cm-builtin`, …), so the
- * expression reads like code in every theme without a highlighter of ours.
+ * The contract's vocabulary, marked with the token classes `style.css`
+ * colours, so the expression reads like code without a language of its own.
  */
 const tokens = new MatchDecorator({
   regexp: new RegExp(
@@ -44,12 +45,12 @@ const tokens = new MatchDecorator({
 });
 
 function tokenClass(text: string): string {
-  if (text.startsWith('"')) return "cm-string";
-  if (text === "true" || text === "false") return "cm-keyword";
-  if (text === ITEM_TYPE_FIELD) return "cm-variable";
-  if (/^[(),]$/.test(text)) return "cm-bracket";
-  if (/^[a-z]/i.test(text)) return "cm-builtin";
-  return "cm-operator";
+  if (text.startsWith('"')) return "zt-expr-string";
+  if (text === "true" || text === "false") return "zt-expr-keyword";
+  if (text === ITEM_TYPE_FIELD) return "zt-expr-field";
+  if (/^[(),]$/.test(text)) return "zt-expr-punctuation";
+  if (/^[a-z]/i.test(text)) return "zt-expr-function";
+  return "zt-expr-operator";
 }
 
 const highlight = ViewPlugin.fromClass(
@@ -103,7 +104,14 @@ export function ExpressionEditor({
   );
   return (
     <CodeMirror
-      className="formula-editor zt:min-h-[calc(var(--input-height)*2)]"
+      className={cn(
+        "zt-expression-editor",
+        // An Obsidian text input's box: surface, border, radius, focus ring.
+        "zt:flex zt:min-h-[calc(var(--input-height)*2)] zt:w-full zt:items-center",
+        "zt:rounded-(--input-radius) zt:border-(length:--input-border-width) zt:border-border zt:bg-input",
+        "zt:focus-within:border-border-focus zt:hover:border-border-hover",
+        "zt:focus-within:ring-(length:--input-border-width-focus) zt:focus-within:ring-border-focus",
+      )}
       value={value}
       onChange={onChange}
       extensions={extensions}
