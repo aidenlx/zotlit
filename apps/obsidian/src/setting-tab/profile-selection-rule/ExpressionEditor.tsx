@@ -1,7 +1,7 @@
 // The expression row's control: a CodeMirror editor over one Filter
-// Expression, styled as an Obsidian text input on Obsidian's public tokens. CodeMirror
-// comes from Obsidian's bundle — every `@codemirror/*` import is external —
-// and `@uiw/react-codemirror` is the React binding over it.
+// Expression, filling the row's statement box on Obsidian's public tokens.
+// CodeMirror comes from Obsidian's bundle — every `@codemirror/*` import is
+// external — and `@uiw/react-codemirror` is the React binding over it.
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { bracketMatching } from "@codemirror/language";
 import {
@@ -108,11 +108,9 @@ export function ExpressionEditor({
     <CodeMirror
       className={cn(
         "zt-expression-editor",
-        // An Obsidian text input's box: surface, border, radius, focus ring.
-        "zt:flex zt:min-h-(--input-height) zt:items-center",
-        "zt:rounded-(--input-radius) zt:border-(length:--input-border-width) zt:border-border zt:bg-input",
-        "zt:focus-within:border-border-focus zt:hover:border-border-hover",
-        "zt:focus-within:ring-(length:--input-border-width-focus) zt:focus-within:ring-border-focus",
+        // The statement box around it owns the border, radius and focus ring;
+        // the editor fills that box on the same surface as its controls.
+        "zt:flex zt:min-h-(--input-height) zt:items-center zt:bg-input",
         className,
       )}
       value={value}
