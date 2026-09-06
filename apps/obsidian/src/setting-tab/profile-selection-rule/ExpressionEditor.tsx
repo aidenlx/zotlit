@@ -97,9 +97,8 @@ export function ExpressionEditor({
     <CodeMirror
       className={cn(
         "zt-expression-editor",
-        // The statement box around it owns the border, radius and focus ring;
-        // the editor fills that box on the same surface as its controls.
-        "zt:flex zt:min-h-(--input-height) zt:items-center zt:bg-input",
+        // The statement frame owns the shared surface and focus boundary.
+        "zt:flex zt:min-h-(--input-height) zt:items-center",
         className,
       )}
       value={value}

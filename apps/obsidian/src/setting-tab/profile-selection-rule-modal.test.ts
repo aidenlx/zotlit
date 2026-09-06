@@ -113,6 +113,14 @@ async function type(input: HTMLInputElement, value: string) {
   });
 }
 
+async function key(input: HTMLInputElement, value: string) {
+  await act(() => {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: value, bubbles: true }),
+    );
+  });
+}
+
 async function check(input: HTMLInputElement, checked: boolean) {
   await act(() => {
     input.checked = checked;
@@ -133,6 +141,14 @@ function buttonNamed(
 async function click(element: Element) {
   await act(() => {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+}
+
+async function mouseDown(element: Element) {
+  await act(() => {
+    element.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+    );
   });
 }
 
@@ -304,7 +320,7 @@ describe("ProfileSelectionRuleModal", () => {
     const modal = await open(context());
     // The root condition becomes the exclusion: not tagged "Read".
     await choose(rowSelects(conditionRows(modal)[0]!)[0]!, "tags");
-    await choose(rowSelects(conditionRows(modal)[0]!)[1]!, "is-not");
+    await choose(rowSelects(conditionRows(modal)[0]!)[1]!, "does-not-contain");
     await type(
       conditionRows(modal)[0]!.querySelector<HTMLInputElement>(
         "input[type=text]",
@@ -357,7 +373,7 @@ describe("ProfileSelectionRuleModal", () => {
           .map((select) => select.value),
       ),
     ).toEqual([
-      ["tags", "is-not"],
+      ["tags", "does-not-contain"],
       ["item-type", "is"],
       ["item-type", "is"],
     ]);
@@ -470,7 +486,7 @@ describe("ProfileSelectionRuleModal", () => {
     const second = () => conditionRows(modal)[1]!;
     expect(rowSelects(first()).map((select) => select.value)).toEqual([
       "tags",
-      "is-not",
+      "does-not-contain",
     ]);
     expect(rowSelects(second())).toEqual([]);
     expect(editor(second()).state.doc.toString()).toBe(
@@ -491,7 +507,7 @@ describe("ProfileSelectionRuleModal", () => {
     await click(toggle(second(), m.settings_profile_rule_edit_visually()));
     expect(rowSelects(second()).map((select) => select.value)).toEqual([
       "tags",
-      "is",
+      "contains",
     ]);
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toMatchObject({
@@ -503,12 +519,8 @@ describe("ProfileSelectionRuleModal", () => {
   });
 
   it.each([
-    'tags.containsAny("Read", "To read")',
     '!tags.containsAny("Read", "To read")',
-    'tags.containsAll("Read", "To read")',
     '!tags.containsAll("Read", "To read")',
-    "tags.isEmpty()",
-    "!tags.isEmpty()",
   ])(
     "keeps %s as an expression through save and reopen",
     async (expression) => {
@@ -548,11 +560,206 @@ describe("ProfileSelectionRuleModal", () => {
     const row = conditionRows(modal)[0]!;
     expect(rowSelects(row).map((select) => select.value)).toEqual([
       "tags",
-      "is",
+      "contains",
     ]);
     expect(row.querySelector<HTMLInputElement>("input[type=text]")?.value).toBe(
       "Read",
     );
+  });
+
+  it("offers the ordered Tag operators and defaults to contains", async () => {
+    const modal = await open(context());
+    const row = conditionRows(modal)[0]!;
+    await choose(rowSelects(row)[0]!, "tags");
+    const operator = rowSelects(row)[1]!;
+    expect(operator.value).toBe("contains");
+    expect(
+      [...operator.options].map(({ value, textContent }) => [
+        value,
+        textContent,
+      ]),
+    ).toEqual([
+      ["contains", m.settings_profile_rule_tag_contains()],
+      ["does-not-contain", m.settings_profile_rule_tag_does_not_contain()],
+      ["containsAny", m.settings_profile_rule_tag_contains_any()],
+      ["containsAll", m.settings_profile_rule_tag_contains_all()],
+      ["isEmpty", m.settings_profile_rule_tag_is_empty()],
+      ["is-not-empty", m.settings_profile_rule_tag_is_not_empty()],
+    ]);
+  });
+
+  it.each([
+    ["contains", ["Read"], 'tags.contains("Read")'],
+    ["does-not-contain", ["Read"], '!tags.contains("Read")'],
+    ["containsAny", ["Read", "To read"], 'tags.containsAny("Read", "To read")'],
+    ["containsAll", ["Read", "To read"], 'tags.containsAll("Read", "To read")'],
+    ["isEmpty", [], "tags.isEmpty()"],
+    ["is-not-empty", [], "!tags.isEmpty()"],
+  ] as const)(
+    "saves and reopens the labelled Tag operator %s",
+    async (operator, values, expression) => {
+      const modal = await open(context());
+      const row = () => conditionRows(modal)[0]!;
+      await choose(rowSelects(row())[0]!, "tags");
+      await choose(rowSelects(row())[1]!, operator);
+      const input = row().querySelector<HTMLInputElement>("input[type=text]");
+      if (values.length === 1) await type(input!, values[0]!);
+      else
+        for (const value of values) {
+          await type(
+            row().querySelector<HTMLInputElement>("input[type=text]")!,
+            value,
+          );
+          await key(
+            row().querySelector<HTMLInputElement>("input[type=text]")!,
+            "Enter",
+          );
+        }
+      await click(buttonNamed(modal, m.settings_profile_rule_save()));
+      const saved = await modal.result;
+      expect(saved?.filter).toEqual({ and: [expression] });
+
+      const reopened = await open(context(), saved!);
+      const reopenedRow = conditionRows(reopened)[0]!;
+      expect(rowSelects(reopenedRow).map((select) => select.value)).toEqual([
+        "tags",
+        operator,
+      ]);
+      expect(
+        [...reopenedRow.querySelectorAll("[data-chip-input] span > span")].map(
+          (chip) => chip.textContent,
+        ),
+      ).toEqual(values.length > 1 ? [...values] : []);
+      if (values.length === 1)
+        expect(
+          reopenedRow.querySelector<HTMLInputElement>("input[type=text]")
+            ?.value,
+        ).toBe(values[0]);
+      if (values.length === 0)
+        expect(reopenedRow.querySelector("input[type=text]")).toBeNull();
+    },
+  );
+
+  it("commits and removes Tag chips from the keyboard and remove button", async () => {
+    const modal = await open(context());
+    const row = () => conditionRows(modal)[0]!;
+    await choose(rowSelects(row())[0]!, "tags");
+    await choose(rowSelects(row())[1]!, "containsAny");
+    const input = () =>
+      row().querySelector<HTMLInputElement>("input[type=text]")!;
+    await type(input(), "Read");
+    await key(input(), ",");
+    await type(input(), "Review");
+    await key(input(), "Enter");
+    const chipInput = row().querySelector<HTMLElement>("[data-chip-input]")!;
+    expect(chipInput.querySelector("datalist")).toBeNull();
+    await key(input(), "Backspace");
+    expect(
+      chipInput.querySelector(
+        `[aria-label="${m.settings_profile_rule_chip_remove({ value: "Review" })}"]`,
+      ),
+    ).toBeNull();
+    await click(
+      chipInput.querySelector(
+        `[aria-label="${m.settings_profile_rule_chip_remove({ value: "Read" })}"]`,
+      )!,
+    );
+    expect(rowError(row())).toBe(m.settings_profile_rule_tag_empty());
+  });
+
+  it("focuses the Tag input from unused control space and removes without committing its draft", async () => {
+    const modal = await open(context());
+    const row = () => conditionRows(modal)[0]!;
+    await choose(rowSelects(row())[0]!, "tags");
+    await choose(rowSelects(row())[1]!, "containsAny");
+    const chipInput = row().querySelector<HTMLElement>("[data-chip-input]")!;
+    const input =
+      chipInput.querySelector<HTMLInputElement>("input[type=text]")!;
+
+    await mouseDown(chipInput);
+    expect(document.activeElement).toBe(input);
+    await type(input, "Read");
+    await key(input, "Enter");
+    await type(input, "pending");
+    const remove = chipInput.querySelector<HTMLElement>(
+      `[aria-label="${m.settings_profile_rule_chip_remove({ value: "Read" })}"]`,
+    )!;
+    await mouseDown(remove);
+    expect(document.activeElement).toBe(input);
+    await click(remove);
+
+    expect(input.value).toBe("pending");
+    expect(chipInput.textContent).not.toContain("Read");
+    await key(input, "Enter");
+    expect(chipInput.textContent).toContain("pending");
+  });
+
+  it("round-trips a multi-value Tag row through expression text", async () => {
+    const modal = await open(context(), {
+      id: "tag-expression-roundtrip",
+      scope: { mode: "all" },
+      filter: 'tags.containsAny("Read", "Review")',
+      profile: "default",
+    });
+    const row = () => conditionRows(modal)[0]!;
+    expect(rowSelects(row()).map((select) => select.value)).toEqual([
+      "tags",
+      "containsAny",
+    ]);
+    await click(toggle(row(), m.settings_profile_rule_edit_as_expression()));
+    expect(editor(row()).state.doc.toString()).toBe(
+      'tags.containsAny("Read", "Review")',
+    );
+    await click(toggle(row(), m.settings_profile_rule_edit_visually()));
+    expect(rowSelects(row()).map((select) => select.value)).toEqual([
+      "tags",
+      "containsAny",
+    ]);
+    await click(buttonNamed(modal, m.settings_profile_rule_save()));
+    await expect(modal.result).resolves.toMatchObject({
+      filter: { and: ['tags.containsAny("Read", "Review")'] },
+    });
+  });
+
+  it("resets a changed kind and keeps or trims Tag values when the operator changes", async () => {
+    const modal = await open(context());
+    const row = () => conditionRows(modal)[0]!;
+    await choose(rowSelects(row())[0]!, "tags");
+    await choose(rowSelects(row())[1]!, "containsAll");
+    for (const value of ["Read", "Review"]) {
+      await type(
+        row().querySelector<HTMLInputElement>("input[type=text]")!,
+        value,
+      );
+      await key(
+        row().querySelector<HTMLInputElement>("input[type=text]")!,
+        "Enter",
+      );
+    }
+    await choose(rowSelects(row())[1]!, "isEmpty");
+    expect(row().querySelector("input[type=text]")).toBeNull();
+    await choose(rowSelects(row())[1]!, "containsAny");
+    expect(row().textContent).toContain("Read");
+    expect(row().textContent).toContain("Review");
+    await choose(rowSelects(row())[1]!, "contains");
+    expect(
+      row().querySelector<HTMLInputElement>("input[type=text]")!.value,
+    ).toBe("Read");
+    await choose(rowSelects(row())[1]!, "does-not-contain");
+    await choose(rowSelects(row())[0]!, "item-type");
+    expect(rowSelects(row()).map((select) => select.value)).toEqual([
+      "item-type",
+      "is",
+      "book",
+    ]);
+    await choose(rowSelects(row())[0]!, "tags");
+    expect(rowSelects(row()).map((select) => select.value)).toEqual([
+      "tags",
+      "contains",
+    ]);
+    expect(
+      row().querySelector<HTMLInputElement>("input[type=text]")!.value,
+    ).toBe("");
   });
 
   it("offers every Collection by Library and path and saves its portable reference", async () => {

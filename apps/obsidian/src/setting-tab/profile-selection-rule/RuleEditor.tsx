@@ -29,6 +29,7 @@ import {
   itemTypeLabel,
 } from "@/services/profile-selection";
 
+import { ChipInput } from "./ChipInput";
 import {
   appendAt,
   asExpression,
@@ -55,12 +56,7 @@ import type {
 import { ExpressionEditor } from "./ExpressionEditor";
 import { useRuleEditorStore } from "./store";
 
-/**
- * The controls Obsidian nests inside a box of its own — a Property editor, a
- * Bases filter row — read these tokens for their border, radius and surface.
- * Flattening them there lets the box own all three, so the controls read as
- * segments of one control instead of a line of loose ones.
- */
+/** Native controls flatten into the statement frame's shared surface. */
 const flatControls = cn(
   "zt:[--input-border-width-focus:0px] zt:[--input-border-width:0px]",
   "zt:[--input-radius:0px] zt:[--input-shadow:none]",
@@ -68,24 +64,22 @@ const flatControls = cn(
   "zt:[--dropdown-background-hover:var(--background-modifier-form-field-hover)]",
 );
 
-/** One statement's box: an input's surface, ring and radius around its controls. */
+/** One statement frame: the shared surface, boundary, radius, and focus ring. */
 const statementBox = cn(
-  "zt:flex zt:items-center zt:overflow-hidden zt:rounded-md zt:bg-input",
+  "zt:min-w-0 zt:items-start zt:overflow-hidden zt:rounded-md zt:bg-input",
   "zt:ring-1 zt:ring-border-hover",
   "zt:focus-within:ring-2 zt:focus-within:ring-border-focus",
   "zt:[--icon-size:var(--icon-s)] zt:[--icon-stroke:var(--icon-s-stroke-width)]",
   flatControls,
 );
 
-/**
- * The controls of one statement. They sit on the box's own surface, so the
- * hairline the gap leaves between them is what separates one from the next.
- */
+/** Flat controls wrap as units and use real hairline separators. */
 const statementControls =
-  "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-center zt:gap-px zt:bg-border";
+  "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-start zt:*:border-s zt:*:border-border zt:*:first:border-s-0";
 
 /** A statement's own buttons, at the trailing end of its box. */
-const statementActions = "zt:flex zt:shrink-0 zt:items-center zt:p-0.5";
+const statementActions =
+  "zt:flex zt:h-(--input-height) zt:shrink-0 zt:items-center zt:border-s zt:border-border zt:px-0.5";
 
 /** The buttons that grow a group, quiet enough to sit under its statements. */
 const quietButton = cn(
@@ -492,15 +486,24 @@ function ConditionRow({
   const issue = rowIssue(condition, deps);
   const labelled =
     condition.kind === "expression" ? asLabelled(condition) : null;
+  const hasMultipleValues =
+    condition.kind === "tags" &&
+    (condition.operator === "containsAny" ||
+      condition.operator === "containsAll");
   return (
     <div className="zt:flex zt:flex-col">
       <div
         className={cn(
           statementBox,
-          issue !== null && "zt:ring-(--background-modifier-error)",
+          hasMultipleValues
+            ? "zt:@container zt:grid zt:grid-cols-[auto_auto_1fr_auto]"
+            : "zt:flex",
+          issue !== null && "zt:ring-1 zt:ring-(--background-modifier-error)",
         )}
       >
-        <div className={statementControls}>
+        <div
+          className={cn(statementControls, hasMultipleValues && "zt:contents")}
+        >
           {condition.kind === "expression" ? (
             <ExpressionEditor
               className="zt:min-w-48 zt:flex-1"
@@ -519,7 +522,7 @@ function ConditionRow({
                   replace(
                     freshCondition(
                       value as ConditionKind,
-                      condition.negated,
+                      false,
                       deps.collections,
                     ),
                   )
@@ -535,25 +538,17 @@ function ConditionRow({
                   {m.settings_profile_rule_condition_tag()}
                 </DropdownItem>
               </Dropdown>
-              <Dropdown
-                aria-label={m.settings_profile_rule_operator()}
-                value={condition.negated ? "is-not" : "is"}
-                onChange={(value) =>
-                  replace({ ...condition, negated: value === "is-not" })
-                }
-              >
-                <DropdownItem value="is">
-                  {m.settings_profile_rule_operator_is()}
-                </DropdownItem>
-                <DropdownItem value="is-not">
-                  {m.settings_profile_rule_operator_is_not()}
-                </DropdownItem>
-              </Dropdown>
+              <ConditionOperator condition={condition} onChange={replace} />
               <ConditionValue condition={condition} onChange={replace} />
             </>
           )}
         </div>
-        <div className={statementActions}>
+        <div
+          className={cn(
+            statementActions,
+            hasMultipleValues && "zt:col-start-4 zt:row-start-1",
+          )}
+        >
           {condition.kind === "expression" ? (
             <IconButton
               icon="list-filter"
@@ -579,6 +574,80 @@ function ConditionRow({
       </div>
       <ErrorText>{issue}</ErrorText>
     </div>
+  );
+}
+
+function ConditionOperator({
+  condition,
+  onChange,
+}: {
+  condition: Exclude<RowCondition, { kind: "expression" }>;
+  onChange: (next: RowCondition) => void;
+}) {
+  if (condition.kind !== "tags")
+    return (
+      <Dropdown
+        aria-label={m.settings_profile_rule_operator()}
+        value={condition.negated ? "is-not" : "is"}
+        onChange={(value) =>
+          onChange({ ...condition, negated: value === "is-not" })
+        }
+      >
+        <DropdownItem value="is">
+          {m.settings_profile_rule_operator_is()}
+        </DropdownItem>
+        <DropdownItem value="is-not">
+          {m.settings_profile_rule_operator_is_not()}
+        </DropdownItem>
+      </Dropdown>
+    );
+
+  const value = condition.negated
+    ? condition.operator === "isEmpty"
+      ? "is-not-empty"
+      : "does-not-contain"
+    : condition.operator;
+  const change = (operator: string) => {
+    const negated =
+      operator === "does-not-contain" || operator === "is-not-empty";
+    const nextOperator =
+      operator === "does-not-contain"
+        ? "contains"
+        : operator === "is-not-empty"
+          ? "isEmpty"
+          : (operator as typeof condition.operator);
+    const values =
+      nextOperator === "contains"
+        ? condition.values.slice(0, 1)
+        : condition.values;
+    onChange({ ...condition, operator: nextOperator, negated, values });
+  };
+  return (
+    <Dropdown
+      className="zt:shrink-0"
+      aria-label={m.settings_profile_rule_operator()}
+      value={value}
+      onChange={change}
+    >
+      <DropdownItem value="contains">
+        {m.settings_profile_rule_tag_contains()}
+      </DropdownItem>
+      <DropdownItem value="does-not-contain">
+        {m.settings_profile_rule_tag_does_not_contain()}
+      </DropdownItem>
+      <DropdownItem value="containsAny">
+        {m.settings_profile_rule_tag_contains_any()}
+      </DropdownItem>
+      <DropdownItem value="containsAll">
+        {m.settings_profile_rule_tag_contains_all()}
+      </DropdownItem>
+      <DropdownItem value="isEmpty">
+        {m.settings_profile_rule_tag_is_empty()}
+      </DropdownItem>
+      <DropdownItem value="is-not-empty">
+        {m.settings_profile_rule_tag_is_not_empty()}
+      </DropdownItem>
+    </Dropdown>
   );
 }
 
@@ -647,8 +716,6 @@ function ConditionValue({
             )}
           </Dropdown>
           <Dropdown
-            // Last in the row, so it takes the space left over — the colour
-            // behind the controls stays a hairline between them.
             className="zt:min-w-0 zt:flex-1"
             aria-label={m.settings_profile_rule_collection_scope()}
             value={condition.descendants ? "descendants" : "direct"}
@@ -666,7 +733,19 @@ function ConditionValue({
         </>
       );
     }
-    case "tags":
+    case "tags": {
+      if (condition.operator === "isEmpty") return null;
+      if (
+        condition.operator === "containsAny" ||
+        condition.operator === "containsAll"
+      )
+        return (
+          <ChipInput
+            values={condition.values}
+            onChange={(values) => onChange({ ...condition, values })}
+            placeholder={m.settings_profile_rule_tag_placeholder()}
+          />
+        );
       return (
         <input
           type="text"
@@ -679,5 +758,6 @@ function ConditionValue({
           }
         />
       );
+    }
   }
 }
