@@ -128,7 +128,7 @@ describe("CitekeyEditor Profile creation", () => {
       rule: {
         id: "book",
         scope: { mode: "all" },
-        expression: 'itemType == "book"',
+        filter: 'itemType == "book"',
         profile: books,
       },
     });

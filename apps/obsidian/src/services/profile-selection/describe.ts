@@ -12,7 +12,7 @@ import type {
 } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
 
-import { compileCondition } from "./condition";
+import { compileCondition, compileFilter } from "./condition";
 import type {
   CollectionReference,
   ConditionProblem,
@@ -20,7 +20,7 @@ import type {
   RuleCondition,
 } from "./condition";
 import type { CollectionChoice } from "./facts";
-import type { ProfileSelectionRule } from "./schema";
+import type { ProfileSelectionRule, RuleFilter } from "./schema";
 
 /** The display data a summary names Libraries and Collections by. */
 export interface DescribeOptions {
@@ -50,7 +50,7 @@ export function describeRule(
   options: DescribeOptions = {},
 ): string {
   return m.settings_profile_rule_summary({
-    conditions: describeConditions(rule.expression, options),
+    conditions: describeConditions(rule.filter, options),
     libraries: describeScope(rule, options.libraries ?? []),
   });
 }
@@ -61,6 +61,8 @@ export function describeProblem(
   options: DescribeOptions = {},
 ): string {
   switch (problem.code) {
+    case "empty":
+      return m.profile_rule_problem_empty();
     case "syntax":
       return m.profile_rule_problem_syntax({ text: problem.text });
     case "unsupported":
@@ -99,14 +101,34 @@ export function collectionLabel(
 }
 
 function describeConditions(
-  expression: string,
+  filter: RuleFilter,
   options: DescribeOptions,
 ): string {
-  const { condition } = compileCondition(expression);
-  if (!condition) return expression.trim();
+  const { condition } = compileFilter(filter);
+  if (!condition) return describeFilter(filter, options);
   if (condition.kind === "group" && condition.conditions.length === 0)
     return m.settings_profile_rule_summary_all_items();
   return describeCondition(condition, options);
+}
+
+/** A broken filter, leaf by leaf: readable leaves in words, the rest as written. */
+function describeFilter(filter: RuleFilter, options: DescribeOptions): string {
+  if (typeof filter === "string") {
+    const { condition } = compileCondition(filter);
+    return condition ? describeCondition(condition, options) : filter.trim();
+  }
+  const all = "and" in filter;
+  return new Intl.ListFormat(runtime.getLocale(), {
+    type: all ? "conjunction" : "disjunction",
+  }).format(
+    (all ? filter.and : filter.or).map((entry) =>
+      typeof entry === "string"
+        ? describeFilter(entry, options)
+        : m.settings_profile_rule_summary_group({
+            conditions: describeFilter(entry, options),
+          }),
+    ),
+  );
 }
 
 function describeCondition(

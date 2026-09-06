@@ -1,10 +1,12 @@
-// The condition contract of a Profile Selection Rule: which Filter Expressions a rule may carry, how the editor writes one, and how one is matched against the facts of a Zotero Item.
+// The condition contract of a Profile Selection Rule: which Filter Expressions a rule's filter may carry, how the editor writes one, and how a filter is matched against the facts of a Zotero Item.
 //
-// The shared language parses far more than a rule accepts. This module is the
-// gate: an expression compiles to a `RuleCondition` only when every node
-// belongs to the supported vocabulary, and anything else is a
-// `ConditionProblem` — reported when the rule is edited and again when it is
-// evaluated, so a rule the vault cannot judge never selects a Profile.
+// A rule stores its conditions as a Rule Filter: an explicit `and` / `or`
+// tree whose leaves are Filter Expressions. The shared language parses far
+// more than a leaf accepts. This module is the gate: a leaf compiles to a
+// `RuleCondition` only when every node belongs to the supported vocabulary,
+// and anything else is a `ConditionProblem` — reported when the rule is
+// edited and again when it is evaluated, so a rule the vault cannot judge
+// never selects a Profile.
 //
 // Supported vocabulary:
 // - `itemType == "<type>"` / `itemType != "<type>"` — the built-in Zotero type.
@@ -15,7 +17,8 @@
 //   tells identical names or keys in different Libraries apart.
 // - `hasTag("<name>")` — an exact, case-sensitive Tag name; manual and
 //   automatic applications both count.
-// - `!`, `&&`, `||`, and grouping.
+// - `!`, `&&`, `||`, and grouping inside one leaf; the tree above the leaves
+//   is the ordinary way to combine conditions.
 //
 // Whether a referenced Collection exists is not a compile-time question: the
 // evaluator checks `collectionReferences` against the database and reports a
@@ -29,6 +32,8 @@ import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
 import { selectorKey } from "@/services/library-scope/scope";
 import type { LibrarySelector } from "@/services/library-scope/scope";
+
+import type { RuleFilter } from "./schema";
 
 /** The Item field a rule may test. */
 export const ITEM_TYPE_FIELD = "itemType";
@@ -67,7 +72,12 @@ export type FlatCondition = Exclude<RuleCondition, { kind: "group" }>;
 /** One reason an expression is outside the supported contract. */
 export type ConditionProblem =
   | {
-      code: "syntax" | "unsupported" | "unknown-item-type" | "unknown-library";
+      code:
+        | "empty"
+        | "syntax"
+        | "unsupported"
+        | "unknown-item-type"
+        | "unknown-library";
       /** Source range of the offending node, for the editor to point at. */
       from: number;
       to: number;
@@ -100,18 +110,41 @@ export interface RuleItemFacts {
 
 const KNOWN_ITEM_TYPES = new Set(ITEM_TYPES.map(({ name }) => name));
 
-/** The expression an empty "Match all" group writes: it holds for every Item. */
-export const MATCH_ALL_EXPRESSION = "true";
+/** The expression of an empty "Match all" group: it holds for every Item. */
+const MATCH_ALL_EXPRESSION = "true";
 
 /**
- * Validate an expression against the supported contract.
+ * Validate a Rule Filter against the supported contract: every leaf compiles,
+ * and each group becomes a "Match all" / "Match any" group in tree order.
+ * The first problem found, in reading order, is the filter's problem.
+ */
+export function compileFilter(filter: RuleFilter): CompiledCondition {
+  if (typeof filter === "string") return compileCondition(filter);
+  const match = "and" in filter ? "all" : "any";
+  const entries = "and" in filter ? filter.and : filter.or;
+  const conditions: RuleCondition[] = [];
+  for (const entry of entries) {
+    const compiled = compileFilter(entry);
+    if (compiled.problem) return compiled;
+    conditions.push(compiled.condition);
+  }
+  return { condition: { kind: "group", match, conditions }, problem: null };
+}
+
+/**
+ * Validate one Filter Expression against the supported contract.
  *
- * A blank expression is the empty "Match all" group. `true` on its own is the
- * same group, which is how {@link formatCondition} writes it.
+ * A blank expression is a problem, since a leaf has to test something;
+ * `true` is the empty "Match all" group, which is how {@link formatCondition}
+ * writes it.
  */
 export function compileCondition(expression: string): CompiledCondition {
   const source = expression.trim();
-  if (source === "") return { condition: emptyGroup(), problem: null };
+  if (source === "")
+    return {
+      condition: null,
+      problem: { code: "empty", from: 0, to: 0, text: "" },
+    };
   const parsed = parseExpressionAst(source);
   if (parsed.error) {
     const { from, to } = parsed.error;

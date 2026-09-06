@@ -4,7 +4,7 @@
 // advances; the first match supplies the target selector and the rule that
 // explains it. Three outcomes stop automatic selection and require an
 // explicit choice instead: an in-scope rule the vault cannot evaluate (its
-// expression is outside the condition contract), an in-scope rule that
+// filter is outside the condition contract), an in-scope rule that
 // refers to a Collection the database does not hold, and a matching rule
 // whose target Profile is unavailable. Rules outside the Item's Library
 // scope contribute nothing, not even a problem.
@@ -21,7 +21,7 @@ import type { LibrarySelector } from "@/services/library-scope/scope";
 
 import {
   collectionReferences,
-  compileCondition,
+  compileFilter,
   matchCondition,
 } from "./condition";
 import type {
@@ -128,15 +128,15 @@ export function selectProfileByRules(
 }
 
 /**
- * Whether a rule can be evaluated: its expression compiles and every
- * Collection it refers to exists. The settings list shows the same problem
- * the evaluator would stop on, so a rule is repaired where it is edited.
+ * Whether a rule can be evaluated: its filter compiles and every Collection
+ * it refers to exists. The settings list shows the same problem the
+ * evaluator would stop on, so a rule is repaired where it is edited.
  */
 export function diagnoseRule(
-  rule: Pick<ProfileSelectionRule, "expression">,
+  rule: Pick<ProfileSelectionRule, "filter">,
   options: { hasCollection: (reference: CollectionReference) => boolean },
 ): CompiledCondition {
-  const compiled = compileCondition(rule.expression);
+  const compiled = compileFilter(rule.filter);
   if (compiled.problem) return compiled;
   const missing = collectionReferences(compiled.condition).find(
     (reference) => !options.hasCollection(reference),

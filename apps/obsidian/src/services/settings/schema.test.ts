@@ -71,7 +71,7 @@ describe("schema/defaults invariants", () => {
       {
         id: "r1",
         scope: { mode: "all" },
-        expression: 'itemType == "book"',
+        filter: 'itemType == "book"',
         profile: "Bk3Qn7XvT2Lp",
       },
       {
@@ -80,7 +80,7 @@ describe("schema/defaults invariants", () => {
           mode: "selected",
           libraries: [{ type: "group", groupID: 118 }],
         },
-        expression: "",
+        filter: { and: [] },
         profile: "default",
       },
     ];

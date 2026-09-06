@@ -80,7 +80,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   let bookRule: {
     id: string;
     scope: unknown;
-    expression: string;
+    filter: unknown;
     profile: string;
   };
   let m: typeof import("@obsidian-messages");
@@ -446,7 +446,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(stored).toHaveLength(1);
     expect(stored[0]).toMatchObject({
       scope: { mode: "selected", libraries: [{ type: "personal" }] },
-      expression: 'itemType == "book"',
+      filter: { and: ['itemType == "book"'] },
       profile: booksProfile.id,
     });
     bookRule = stored[0]!;
@@ -630,14 +630,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         vaultId,
         "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'])",
       ),
-    ) as { scope: unknown; expression: string; profile: string }[];
+    ) as { scope: unknown; filter: unknown; profile: string }[];
     expect(stored).toHaveLength(2);
     expect(stored[1]).toMatchObject({
       scope: {
         mode: "selected",
         libraries: [{ type: "group", groupID: sharedLibrary.groupID }],
       },
-      expression: 'itemType == "journalArticle"',
+      filter: { and: ['itemType == "journalArticle"'] },
       profile: "default",
     });
     await obEval(vaultId, "app.setting.close();true");
@@ -921,7 +921,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(stored).toHaveLength(3);
     expect(stored[2]).toMatchObject({
       scope: { mode: "selected", libraries: [{ type: "personal" }] },
-      expression: `inCollection("personal", ${JSON.stringify(parentCollection.key)})`,
+      filter: {
+        and: [
+          `inCollection("personal", ${JSON.stringify(parentCollection.key)})`,
+        ],
+      },
       profile: booksProfile.id,
     });
     const collectionRule = stored[2]!;
@@ -989,7 +993,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(await hasIndexedNotes(vaultId, childItem.key, 0)).toBe(true);
     const directRule = {
       ...collectionRule,
-      expression: `inCollectionDirectly("personal", ${JSON.stringify(parentCollection.key)})`,
+      filter: {
+        and: [
+          `inCollectionDirectly("personal", ${JSON.stringify(parentCollection.key)})`,
+        ],
+      },
     };
     await obEval(
       vaultId,

@@ -11,7 +11,7 @@ const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
 const booksRule = {
   id: "books",
   scope: { mode: "all" },
-  expression: 'itemType == "book"',
+  filter: 'itemType == "book"',
   profile: BOOKS,
 } as const;
 const parseLiteratureNoteTemplate = (source: string) =>

@@ -1,7 +1,8 @@
 // The rule editor's body: the target Profile, the Library scope, and the
 // conditions — a filter builder in the shape of Obsidian's Bases filter
-// editor, or the Filter Expression as code. The Save and Cancel buttons
-// render into the modal's own button container, outside the scrolling body.
+// editor, where a row is a labelled test or a Filter Expression as code. The
+// Save and Cancel buttons render into the modal's own button container,
+// outside the scrolling body.
 import { useId } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -26,13 +27,13 @@ import {
   collectionLabel,
   itemTypeLabel,
 } from "@/services/profile-selection";
-import type { FlatCondition } from "@/services/profile-selection";
 
 import {
   appendAt,
+  asExpression,
+  asLabelled,
   describeOptions,
   draftInvalid,
-  expressionIssue,
   freshCondition,
   freshGroup,
   removeAt,
@@ -47,6 +48,7 @@ import type {
   ConditionKind,
   ConditionPath,
   GroupMatch,
+  RowCondition,
   RuleDraft,
 } from "./draft";
 import { ExpressionEditor } from "./ExpressionEditor";
@@ -275,6 +277,12 @@ function LibraryChecklist({
 function ConditionsSection() {
   const root = useRuleEditorStore((state) => state.draft.root);
   const headingId = useId();
+  const help = [
+    m.settings_profile_rule_group_help(),
+    m.settings_profile_rule_collection_help(),
+    m.settings_profile_rule_tag_help(),
+    m.settings_profile_rule_expression_help(),
+  ].join(" ");
   return (
     <section
       aria-labelledby={headingId}
@@ -293,48 +301,9 @@ function ConditionsSection() {
           {m.settings_profile_rule_conditions_desc()}
         </p>
       </div>
-      {root ? <GroupEditor group={root} path={[]} /> : <ExpressionSurface />}
-      <p className="zt:text-xs zt:text-muted-foreground">
-        {root
-          ? [
-              m.settings_profile_rule_group_help(),
-              m.settings_profile_rule_collection_help(),
-              m.settings_profile_rule_tag_help(),
-            ].join(" ")
-          : m.settings_profile_rule_expression_help()}
-      </p>
+      <GroupEditor group={root} path={[]} />
+      <p className="zt:text-xs zt:text-muted-foreground">{help}</p>
     </section>
-  );
-}
-
-/** The stored expression as code, validated on every keystroke. */
-function ExpressionSurface() {
-  const expression = useRuleEditorStore((state) => state.draft.expression);
-  const draft = useRuleEditorStore((state) => state.draft);
-  const deps = useRuleEditorStore((state) => state.deps);
-  const setExpression = useRuleEditorStore((state) => state.setExpression);
-  const editVisually = useRuleEditorStore((state) => state.editVisually);
-  const issue = expressionIssue(draft, deps);
-  const labelId = useId();
-  return (
-    <div className="zt:flex zt:flex-col zt:gap-1.5">
-      <div className="zt:flex zt:items-center zt:justify-between zt:gap-2">
-        <span id={labelId} className="zt:text-sm zt:text-muted-foreground">
-          {m.settings_profile_rule_expression()}
-        </span>
-        <button type="button" disabled={issue !== null} onClick={editVisually}>
-          {m.settings_profile_rule_edit_visually()}
-        </button>
-      </div>
-      <ExpressionEditor
-        value={expression}
-        onChange={setExpression}
-        labelledBy={labelId}
-        invalid={issue !== null}
-        placeholder={m.settings_profile_rule_expression_placeholder()}
-      />
-      <ErrorText>{issue}</ErrorText>
-    </div>
   );
 }
 
@@ -350,11 +319,8 @@ function GroupEditor({
   path: ConditionPath;
 }) {
   const setRoot = useRuleEditorStore((state) => state.setRoot);
-  const root = useRuleEditorStore((state) => state.draft.root!);
+  const root = useRuleEditorStore((state) => state.draft.root);
   const collections = useRuleEditorStore((state) => state.deps.collections);
-  const editAsExpression = useRuleEditorStore(
-    (state) => state.editAsExpression,
-  );
   const nested = path.length > 0;
   const matchLabel = useId();
   const setMatch = (match: GroupMatch) =>
@@ -392,16 +358,12 @@ function GroupEditor({
             </DropdownItem>
           </Dropdown>
         </div>
-        {nested ? (
+        {nested && (
           <IconButton
             icon="x"
             {...tooltipAttrs(m.settings_profile_rule_remove_group())}
             onClick={() => setRoot(removeAt(root, path))}
           />
-        ) : (
-          <button type="button" onClick={editAsExpression}>
-            {m.settings_profile_rule_edit_as_expression()}
-          </button>
         )}
       </div>
       <ErrorText>
@@ -460,63 +422,102 @@ function GroupEditor({
   );
 }
 
-/** One condition: what it tests, whether it is negated, and its value. */
+/**
+ * One condition: what it tests, whether it is negated, and its value — or,
+ * toggled to an expression row, the Filter Expression as code, checked on
+ * every keystroke. The toggle back is refused while the text reads as more
+ * than one labelled test.
+ */
 function ConditionRow({
   condition,
   path,
 }: {
-  condition: FlatCondition;
+  condition: RowCondition;
   path: ConditionPath;
 }) {
   const setRoot = useRuleEditorStore((state) => state.setRoot);
-  const root = useRuleEditorStore((state) => state.draft.root!);
+  const root = useRuleEditorStore((state) => state.draft.root);
   const deps = useRuleEditorStore((state) => state.deps);
-  const replace = (next: FlatCondition) => setRoot(replaceAt(root, path, next));
+  const replace = (next: RowCondition) => setRoot(replaceAt(root, path, next));
+  const issue = rowIssue(condition, deps);
+  const labelled =
+    condition.kind === "expression" ? asLabelled(condition) : null;
   return (
     <div className="zt:flex zt:items-start zt:gap-2">
       <div className="zt:flex zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-1">
         <div className="zt:flex zt:flex-wrap zt:items-center zt:gap-1.5">
-          <Dropdown
-            aria-label={m.settings_profile_rule_condition_kind()}
-            value={condition.kind}
-            onChange={(value) =>
-              replace(
-                freshCondition(
-                  value as ConditionKind,
-                  condition.negated,
-                  deps.collections,
-                ),
-              )
-            }
-          >
-            <DropdownItem value="item-type">
-              {m.settings_profile_rule_condition_item_type()}
-            </DropdownItem>
-            <DropdownItem value="collection">
-              {m.settings_profile_rule_condition_collection()}
-            </DropdownItem>
-            <DropdownItem value="tag">
-              {m.settings_profile_rule_condition_tag()}
-            </DropdownItem>
-          </Dropdown>
-          <Dropdown
-            aria-label={m.settings_profile_rule_operator()}
-            value={condition.negated ? "is-not" : "is"}
-            onChange={(value) =>
-              replace({ ...condition, negated: value === "is-not" })
-            }
-          >
-            <DropdownItem value="is">
-              {m.settings_profile_rule_operator_is()}
-            </DropdownItem>
-            <DropdownItem value="is-not">
-              {m.settings_profile_rule_operator_is_not()}
-            </DropdownItem>
-          </Dropdown>
-          <ConditionValue condition={condition} onChange={replace} />
+          {condition.kind === "expression" ? (
+            <ExpressionEditor
+              className="zt:min-w-48 zt:flex-1"
+              label={m.settings_profile_rule_expression()}
+              value={condition.text}
+              onChange={(text) => replace({ ...condition, text })}
+              invalid={issue !== null}
+              placeholder={m.settings_profile_rule_expression_placeholder()}
+            />
+          ) : (
+            <>
+              <Dropdown
+                aria-label={m.settings_profile_rule_condition_kind()}
+                value={condition.kind}
+                onChange={(value) =>
+                  replace(
+                    freshCondition(
+                      value as ConditionKind,
+                      condition.negated,
+                      deps.collections,
+                    ),
+                  )
+                }
+              >
+                <DropdownItem value="item-type">
+                  {m.settings_profile_rule_condition_item_type()}
+                </DropdownItem>
+                <DropdownItem value="collection">
+                  {m.settings_profile_rule_condition_collection()}
+                </DropdownItem>
+                <DropdownItem value="tag">
+                  {m.settings_profile_rule_condition_tag()}
+                </DropdownItem>
+              </Dropdown>
+              <Dropdown
+                aria-label={m.settings_profile_rule_operator()}
+                value={condition.negated ? "is-not" : "is"}
+                onChange={(value) =>
+                  replace({ ...condition, negated: value === "is-not" })
+                }
+              >
+                <DropdownItem value="is">
+                  {m.settings_profile_rule_operator_is()}
+                </DropdownItem>
+                <DropdownItem value="is-not">
+                  {m.settings_profile_rule_operator_is_not()}
+                </DropdownItem>
+              </Dropdown>
+              <ConditionValue condition={condition} onChange={replace} />
+            </>
+          )}
         </div>
-        <ErrorText>{rowIssue(condition, deps)}</ErrorText>
+        <ErrorText>{issue}</ErrorText>
       </div>
+      {condition.kind === "expression" ? (
+        <IconButton
+          icon="list-filter"
+          className="zt:shrink-0"
+          disabled={labelled === null}
+          {...tooltipAttrs(m.settings_profile_rule_edit_visually())}
+          onClick={() => {
+            if (labelled) replace(labelled);
+          }}
+        />
+      ) : (
+        <IconButton
+          icon="code"
+          className="zt:shrink-0"
+          {...tooltipAttrs(m.settings_profile_rule_edit_as_expression())}
+          onClick={() => replace(asExpression(condition))}
+        />
+      )}
       <IconButton
         icon="x"
         className="zt:shrink-0"
@@ -531,8 +532,8 @@ function ConditionValue({
   condition,
   onChange,
 }: {
-  condition: FlatCondition;
-  onChange: (next: FlatCondition) => void;
+  condition: Exclude<RowCondition, { kind: "expression" }>;
+  onChange: (next: RowCondition) => void;
 }) {
   const deps = useRuleEditorStore((state) => state.deps);
   switch (condition.kind) {

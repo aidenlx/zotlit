@@ -1,5 +1,5 @@
-// The expression surface: a CodeMirror editor over the Filter Expression,
-// styled as an Obsidian text input on Obsidian's public tokens. CodeMirror
+// The expression row's control: a CodeMirror editor over one Filter
+// Expression, styled as an Obsidian text input on Obsidian's public tokens. CodeMirror
 // comes from Obsidian's bundle — every `@codemirror/*` import is external —
 // and `@uiw/react-codemirror` is the React binding over it.
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -79,38 +79,41 @@ export interface ExpressionEditorProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
-  /** The id of the visible label that names the editor. */
-  labelledBy: string;
+  /** The accessible name of the editor. */
+  label: string;
   invalid: boolean;
+  className?: string;
 }
 
 export function ExpressionEditor({
   value,
   onChange,
   placeholder,
-  labelledBy,
+  label,
   invalid,
+  className,
 }: ExpressionEditorProps) {
   // The accessible name and validity live on CodeMirror's own textbox.
   const extensions = useMemo(
     () => [
       ...baseExtensions,
       EditorView.contentAttributes.of({
-        "aria-labelledby": labelledBy,
+        "aria-label": label,
         "aria-invalid": String(invalid),
       }),
     ],
-    [labelledBy, invalid],
+    [label, invalid],
   );
   return (
     <CodeMirror
       className={cn(
         "zt-expression-editor",
         // An Obsidian text input's box: surface, border, radius, focus ring.
-        "zt:flex zt:min-h-[calc(var(--input-height)*2)] zt:w-full zt:items-center",
+        "zt:flex zt:min-h-(--input-height) zt:items-center",
         "zt:rounded-(--input-radius) zt:border-(length:--input-border-width) zt:border-border zt:bg-input",
         "zt:focus-within:border-border-focus zt:hover:border-border-hover",
         "zt:focus-within:ring-(length:--input-border-width-focus) zt:focus-within:ring-border-focus",
+        className,
       )}
       value={value}
       onChange={onChange}

@@ -3,15 +3,17 @@ export {
   PROFILE_SELECTION_RULES_KEY,
   profileSelectionRuleSchema,
   profileSelectionRulesSchema,
+  ruleFilterSchema,
   type ProfileSelectionRule,
   type ProfileSelectionRules,
+  type RuleFilter,
 } from "./schema";
 export {
   collectionReferences,
   compileCondition,
+  compileFilter,
   formatCondition,
   matchCondition,
-  MATCH_ALL_EXPRESSION,
   type CollectionReference,
   type CompiledCondition,
   type ConditionProblem,

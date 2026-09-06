@@ -84,8 +84,12 @@ _Avoid_: Profile binding (a Profile's configuration), saved search (a Zotero sea
 The choice of a Literature Note Profile for a new Literature Note from the source Item's first matching Profile Selection Rule. Existing notes retain their recorded Profile membership.
 _Avoid_: Profile resolution (resolving an already chosen selector), automatic Profile switch (changing an existing note's membership)
 
+**Rule Filter**:
+The conditions a Profile Selection Rule stores: an explicit `and` / `or` tree, in the shape of an Obsidian Bases `filters` block, whose leaves are Rule conditions. An empty `and` root matches every Item. The rule editor mirrors the tree; each leaf is one row.
+_Avoid_: filter (bare), query, search
+
 **Rule condition**:
-The Filter Expression a Profile Selection Rule stores, restricted to the supported condition contract: built-in Zotero item type tests, Collection membership tests (filed in a Collection or any of its descendants, or in the Collection itself, referenced by Library selector and Collection key), and exact Tag name tests, combined with `&&`, `||`, `!`, and grouping. The rule editor writes the canonical expression; an expression outside the contract is a broken rule, never a silent nonmatch. Library scope is a separate part of the rule, not a condition. The language itself is the Filter Expression context (`packages/filter-expression/CONTEXT.md`).
+One leaf of a Rule Filter: a Filter Expression restricted to the supported condition contract — built-in Zotero item type tests, Collection membership tests (filed in a Collection or any of its descendants, or in the Collection itself, referenced by Library selector and Collection key), and exact Tag name tests, which `&&`, `||`, `!`, and grouping may still combine inside the leaf. The rule editor writes the canonical expression for a labelled row and keeps an expression row as written; a leaf outside the contract is a broken rule, never a silent nonmatch. Library scope is a separate part of the rule, not a condition. The language itself is the Filter Expression context (`packages/filter-expression/CONTEXT.md`).
 _Avoid_: filter (bare), query, search
 
 **Selection source**:
