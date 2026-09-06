@@ -206,12 +206,9 @@ export class CitationText extends Service<void> {
     );
     // Renaming or creating a Literature Note is a cross-document input: which
     // Literature Note a wikilink resolves to decides what a citekey here
-    // reaches. Only `changed` is listened for, and it reports just the edits
-    // that move a mapping. Its `rebuilt` counterpart rides Obsidian's
-    // `resolved` event, which fires after every batch of edits in the vault,
-    // and dropping there would put back the wholesale flush this holds text to
-    // avoid; a rescan that finds a moved mapping in steady state has already
-    // emitted `changed` for it.
+    // reaches. The Note Index reports every moved mapping as `changed`, and
+    // its one Full Scan per session is silent, so nothing here flushes text
+    // wholesale.
     stack.defer(
       this.#noteIndex.on("changed", () => this.#documents.invalidate()),
     );

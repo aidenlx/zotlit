@@ -118,7 +118,6 @@ export class WikilinkEditor extends Service<void> {
     // changing any document; the Note Index's own invalidation is coarse, so
     // every change redraws every open editor.
     stack.defer(this.#noteIndex.on("changed", () => this.#redraw()));
-    stack.defer(this.#noteIndex.on("rebuilt", () => this.#redraw()));
     stack.defer(
       this.#citationIndex.on("resolution-changed", () => this.#redraw()),
     );

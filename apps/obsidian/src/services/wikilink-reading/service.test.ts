@@ -551,15 +551,6 @@ describe("WikilinkReading rerender", () => {
     expect(rerenders()).toBe(1);
   });
 
-  it("leaves the reading views alone when the Note Index rescans", async () => {
-    // A rescan rides every batch of edits in the vault, and one that moved a
-    // mapping reports `changed` for it.
-    await using harnessed = await harness();
-
-    harnessed.noteIndex.emit("rebuilt");
-    expect(harnessed.rerenders()).toBe(0);
-  });
-
   it("renders again when a gating setting changes", async () => {
     await using harnessed = await harness({
       "citation.wikilink-citations": false,
@@ -860,17 +851,16 @@ class CitationTextStub {
 }
 
 class NoteIndexStub {
-  readonly #listeners: Record<"changed" | "rebuilt", Set<() => void>> = {
+  readonly #listeners: Record<"changed", Set<() => void>> = {
     changed: new Set(),
-    rebuilt: new Set(),
   };
 
-  on(event: "changed" | "rebuilt", cb: () => void): () => void {
+  on(event: "changed", cb: () => void): () => void {
     this.#listeners[event].add(cb);
     return () => this.#listeners[event].delete(cb);
   }
 
-  emit(event: "changed" | "rebuilt"): void {
+  emit(event: "changed"): void {
     for (const cb of this.#listeners[event]) cb();
   }
 }

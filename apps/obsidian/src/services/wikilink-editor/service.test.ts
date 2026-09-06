@@ -91,10 +91,6 @@ describe("WikilinkEditor redraw", () => {
 
     noteIndex.emit("changed");
     expect(dispatched).toEqual(["note.md", "other.md"]);
-
-    dispatched.length = 0;
-    noteIndex.emit("rebuilt");
-    expect(dispatched).toEqual(["note.md", "other.md"]);
   });
 
   it("redraws when a gating setting changes", async () => {
@@ -165,17 +161,16 @@ describe("WikilinkEditor redraw", () => {
 });
 
 class NoteIndexStub {
-  readonly #listeners: Record<"changed" | "rebuilt", Set<() => void>> = {
+  readonly #listeners: Record<"changed", Set<() => void>> = {
     changed: new Set(),
-    rebuilt: new Set(),
   };
 
-  on(event: "changed" | "rebuilt", cb: () => void): () => void {
+  on(event: "changed", cb: () => void): () => void {
     this.#listeners[event].add(cb);
     return () => this.#listeners[event].delete(cb);
   }
 
-  emit(event: "changed" | "rebuilt"): void {
+  emit(event: "changed"): void {
     for (const cb of this.#listeners[event]) cb();
   }
 }
