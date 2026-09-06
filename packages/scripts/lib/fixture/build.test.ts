@@ -18,6 +18,8 @@ import {
   getAttachmentsByParents,
   getCitekeysByLibrary,
   getCollectionIDByKey,
+  getCollectionIDsByItem,
+  getCollectionNodesByLibrary,
   getIndexedItemIDsByLibrary,
   getIndexedItemIDsByCollection,
   getIndexedItemsByID,
@@ -937,6 +939,27 @@ describe("the generated Zotero database", () => {
     expect(
       getCollectionIDByKey(db, { libraryID: 3, collectionKey: "SHAREDCL" }),
     ).toBe(3);
+  });
+
+  it("nests one collection under another so descendant and direct membership differ", () => {
+    using db = openClient();
+
+    expect(
+      getCollectionNodesByLibrary(db, 1)
+        .map(({ key, parentCollectionID }) => ({ key, parentCollectionID }))
+        .sort((a, b) => a.key.localeCompare(b.key)),
+    ).toEqual([
+      { key: "PERSCHLD", parentCollectionID: 4 },
+      { key: "PERSNAL2", parentCollectionID: null },
+      { key: "SHAREDCL", parentCollectionID: null },
+    ]);
+    expect(getCollectionIDsByItem(db, 11)).toEqual([5]);
+    expect(
+      getIndexedItemIDsByCollection(db, {
+        libraryID: 1,
+        collectionKey: "PERSNAL2",
+      }),
+    ).toContain(11);
   });
 
   it("carries controlled modification times, including cross- and same-Library ties", () => {
