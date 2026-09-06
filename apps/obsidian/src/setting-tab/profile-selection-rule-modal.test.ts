@@ -202,7 +202,7 @@ function expressionError(modal: ProfileSelectionRuleModal): string | null {
   return (
     modal.contentEl
       .querySelector(".cm-editor")!
-      .closest(".formula-editor")!
+      .closest(".zt-expression-editor")!
       .parentElement!.querySelector("[role=alert]")?.textContent ?? null
   );
 }
