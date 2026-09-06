@@ -1,4 +1,4 @@
-// One-key YAML range edits that preserve the surrounding Profile document bytes.
+// YAML range edits that preserve the surrounding Profile document bytes.
 import { isMap, isNode, isScalar, parseDocument } from "yaml";
 
 import {
@@ -12,7 +12,23 @@ export function updateLiteratureNoteTemplateManifestKey(
   key: string,
   value: unknown,
 ): string {
+  return updateLiteratureNoteTemplateManifestKeys(source, { [key]: value });
+}
+
+/** Validate related key edits together, after aliases in removed fields are gone. */
+export function updateLiteratureNoteTemplateManifestKeys(
+  source: string,
+  changes: Readonly<Record<string, unknown>>,
+): string {
   parseLiteratureNoteTemplate(source);
+  let result = source;
+  for (const [key, value] of Object.entries(changes))
+    result = editManifestKey(result, key, value);
+  parseLiteratureNoteTemplate(result);
+  return result;
+}
+
+function editManifestKey(source: string, key: string, value: unknown): string {
   const { from, to } = literatureNoteTemplateManifestRange(source);
   const header = source.slice(from, to);
   const doc = parseDocument(header, { keepSourceTokens: true });
@@ -88,6 +104,5 @@ export function updateLiteratureNoteTemplateManifestKey(
       edit.text +
       result.slice(from + edit.to);
   }
-  parseLiteratureNoteTemplate(result);
   return result;
 }

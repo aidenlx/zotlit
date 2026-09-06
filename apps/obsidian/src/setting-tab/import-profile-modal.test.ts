@@ -1,3 +1,4 @@
+import { ToggleComponent, settingsOf } from "@mock/obsidian";
 // @vitest-environment happy-dom
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,7 +9,9 @@ import { expect, it, vi } from "vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import * as nativeDialog from "@/lib/require";
+import { describeMatch } from "@/services/profile-selection";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import type { PreparedProfileImport } from "@/services/profile/service";
 
 import { ImportProfileModal, createProfileImporter } from "./profiles";
@@ -21,6 +24,9 @@ function observeButtons() {
     vi.spyOn(ButtonComponent.prototype, "setButtonText"),
   );
   const clicks = stack.use(vi.spyOn(ButtonComponent.prototype, "onClick"));
+  const disabled = stack.use(
+    vi.spyOn(ButtonComponent.prototype, "setDisabled"),
+  );
   const cleanup = stack.move();
   return {
     click(label: string) {
@@ -31,6 +37,14 @@ function observeButtons() {
       return clicks.mock.calls[clicks.mock.instances.indexOf(instance)]![0](
         {} as MouseEvent,
       );
+    },
+    disabled(label: string) {
+      const instance =
+        labels.mock.instances[
+          labels.mock.calls.findLastIndex(([text]) => text === label)
+        ];
+      const index = disabled.mock.instances.lastIndexOf(instance!);
+      return disabled.mock.calls[index]?.[0] ?? false;
     },
     labels: () => labels.mock.calls.map(([label]) => label),
     [Symbol.dispose]: () => cleanup.dispose(),
@@ -124,6 +138,7 @@ it("opens fresh consent with metadata, recipient preview, editable bindings and 
   await vi.waitFor(() =>
     expect(f.prepareImport).toHaveBeenCalledWith("IMPORTED SOURCE", {
       citationStyle: null,
+      includeMatch: true,
     }),
   );
   text.mock.calls[0]![0]("Reading");
@@ -131,6 +146,7 @@ it("opens fresh consent with metadata, recipient preview, editable bindings and 
     expect(f.prepareImport).toHaveBeenLastCalledWith("IMPORTED SOURCE", {
       folder: "Reading",
       citationStyle: null,
+      includeMatch: true,
     }),
   );
   expect(f.save).not.toHaveBeenCalled();
@@ -308,5 +324,158 @@ it.each(["empty", "read-error", "file-cancel"] as const)(
     await vi.waitFor(() => expect(f.opened).toHaveBeenCalledOnce());
     (f.opened.mock.instances[0] as ImportProfileModal).onClose();
     await expect(retry).resolves.toBeUndefined();
+  },
+);
+
+const incomingMatch = 'library == "group:987654"';
+const incomingPrefix = `---
+# Sender's layout
+id: Ry4Ua8Nv2Mx6
+name: Shared
+version: 2.0.0
+contract: 2
+filename: '{{ zt.title }}'
+`;
+const incomingSuffix = `# Body stays intact
+---
+{% managed %}Incoming body{% endmanaged %}
+--- zotlit:annotation ---
+Annotation`;
+const incoming = `${incomingPrefix}match: '${incomingMatch}'\n${incomingSuffix}`;
+const importedPath = "templates/zotlit-profile.shared.md";
+
+function matchToggle(modal: ImportProfileModal) {
+  return [
+    modal.contentEl,
+    ...modal.contentEl.querySelectorAll<HTMLElement>("*"),
+  ]
+    .flatMap(settingsOf)
+    .findLast(({ name }) => name === m.profile_import_include_match())
+    ?.components.find((component) => component instanceof ToggleComponent);
+}
+
+async function realImportFixture(held: boolean, source = incoming) {
+  await using stack = new AsyncDisposableStack();
+  const f = stack.use(
+    await profileServiceFixture(
+      held ? { [importedPath]: incoming.replace("2.0.0", "1.0.0") } : {},
+    ),
+  );
+  const deps = {
+    ...f,
+    noteFeature: {
+      prepareProfileNote: () => ({
+        path: "Reading/Paper.md",
+        properties: {},
+        body: "Preview",
+      }),
+    },
+  } as unknown as ImportProfileDeps;
+  const plan = await f.profile.prepareImport(source);
+  const modal = new ImportProfileModal(deps, {
+    source,
+    plan,
+    data: { note: {} as never, filename: {} },
+    styles: [],
+  });
+  modal.contentEl = document.createElement("div");
+  modal.modalEl = document.createElement("div");
+  const cleanup = stack.move();
+  return { ...f, modal, [Symbol.asyncDispose]: () => cleanup.disposeAsync() };
+}
+
+it.each([
+  { held: false, includeMatch: true },
+  { held: false, includeMatch: false },
+  { held: true, includeMatch: true },
+  { held: true, includeMatch: false },
+])(
+  "writes consented match bytes for held=$held and includeMatch=$includeMatch",
+  async ({ held, includeMatch }) => {
+    await using f = await realImportFixture(held);
+    using buttons = observeButtons();
+    f.modal.onOpen();
+    expect(f.modal.contentEl.textContent).toContain(
+      describeMatch(incomingMatch),
+    );
+    expect(matchToggle(f.modal)?.getValue()).toBe(true);
+    if (!held)
+      await vi.waitFor(() =>
+        expect(f.modal.contentEl.textContent).toContain("Preview"),
+      );
+    if (!includeMatch) {
+      matchToggle(f.modal)!.toggle(false);
+      await vi.waitFor(() => {
+        const name = held
+          ? m.profile_import_replace()
+          : m.profile_import_confirm();
+        expect(buttons.disabled(name)).toBe(false);
+      });
+    }
+    await buttons.click(
+      held ? m.profile_import_replace() : m.profile_import_confirm(),
+    );
+    await expect(f.modal.result).resolves.toMatchObject({ id });
+    expect(f.vault.contents.get(importedPath)).toBe(
+      includeMatch ? incoming : incomingPrefix + incomingSuffix,
+    );
+  },
+);
+
+it.each([false, true])(
+  "shows absent summary and no checkbox for held=%s",
+  async (held) => {
+    await using f = await realImportFixture(
+      held,
+      incomingPrefix + incomingSuffix,
+    );
+    const before = new Map(f.vault.contents);
+    f.modal.onOpen();
+    expect(f.modal.contentEl.textContent).toContain(m.profile_match_absent());
+    expect(matchToggle(f.modal)).toBeUndefined();
+    f.modal.onClose();
+    await expect(f.modal.result).resolves.toBeUndefined();
+    expect(f.vault.contents).toEqual(before);
+  },
+);
+
+it("retains unchecked consent when a fresh ID becomes Replace, and cancels without writes", async () => {
+  await using f = await realImportFixture(false);
+  using buttons = observeButtons();
+  f.modal.onOpen();
+  await vi.waitFor(() =>
+    expect(f.modal.contentEl.textContent).toContain("Preview"),
+  );
+  f.vault.createFile(importedPath, incoming.replace("2.0.0", "1.0.0"));
+  matchToggle(f.modal)!.toggle(false);
+  await vi.waitFor(() =>
+    expect(buttons.labels()).toContain(m.profile_import_replace()),
+  );
+  expect(matchToggle(f.modal)?.getValue()).toBe(false);
+  expect(f.modal.contentEl.textContent).toContain(describeMatch(incomingMatch));
+  const before = new Map(f.vault.contents);
+  f.modal.onClose();
+  await expect(f.modal.result).resolves.toBeUndefined();
+  expect(f.vault.contents).toEqual(before);
+});
+
+it.each(["3.0.0", "1.0.0"])(
+  "keeps Replace consent stale after the local file changes to %s and Match is toggled",
+  async (version) => {
+    await using f = await realImportFixture(true);
+    using buttons = observeButtons();
+    f.modal.onOpen();
+    const changed = incoming
+      .replace("2.0.0", version)
+      .replace("Incoming body", "New local body");
+    f.vault.modifyFile(importedPath, changed);
+    matchToggle(f.modal)!.toggle(false);
+    await vi.waitFor(() =>
+      expect(buttons.disabled(m.profile_import_replace())).toBe(false),
+    );
+    await buttons.click(m.profile_import_replace());
+    expect(f.vault.contents.get(importedPath)).toBe(changed);
+    expect(f.modal.contentEl.textContent).toContain(m.profile_import_changed());
+    f.modal.onClose();
   },
 );
