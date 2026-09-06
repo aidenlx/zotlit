@@ -60,7 +60,7 @@ export function ChipInput({
             <IconButton
               icon="x"
               className="zt:size-5 zt:shrink-0 zt:p-0"
-              {...tooltipAttrs(m.settings_profile_rule_chip_remove({ value }))}
+              {...tooltipAttrs(m.settings_profile_match_chip_remove({ value }))}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => onChange(values.filter((_, at) => at !== index))}
             />
@@ -79,7 +79,7 @@ export function ChipInput({
           "zt:[field-sizing:content] zt:w-auto zt:max-w-full zt:min-w-[2ch] zt:flex-none zt:[--background-modifier-form-field:transparent] zt:[--input-border-width:0px] zt:[--input-height:auto] zt:[--input-padding:0px] zt:[--input-radius:0px] zt:[--input-shadow:none]",
           hint && "zt:self-center",
         )}
-        aria-label={m.settings_profile_rule_value()}
+        aria-label={m.settings_profile_match_value()}
         placeholder={values.length === 0 ? placeholder : ""}
         value={draft}
         list={suggestions?.length ? suggestionsId : undefined}

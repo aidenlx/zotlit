@@ -65,47 +65,6 @@ describe("schema/defaults invariants", () => {
     ).toBe(false);
   });
 
-  it("keeps Profile Selection Rules ordered, identified, and portable", () => {
-    const entry = schema.entries["profile.selection-rules"];
-    const rules = [
-      {
-        id: "r1",
-        scope: { mode: "all" },
-        filter: 'itemType == "book"',
-        profile: "Bk3Qn7XvT2Lp",
-      },
-      {
-        id: "r2",
-        scope: {
-          mode: "selected",
-          libraries: [{ type: "group", groupID: 118 }],
-        },
-        filter: { and: [] },
-        profile: "default",
-      },
-    ];
-    expect(v.safeParse(entry, rules)).toMatchObject({
-      success: true,
-      output: rules,
-    });
-    expect(
-      v.safeParse(entry, [rules[0], { ...rules[1], id: "r1" }]).success,
-    ).toBe(false);
-    expect(
-      v.safeParse(entry, [{ ...rules[0], profile: "not-a-profile" }]).success,
-    ).toBe(false);
-    // Local database Library ids never persist: a selector is the identity.
-    expect(
-      v.safeParse(entry, [
-        {
-          ...rules[1],
-          scope: { mode: "selected", libraries: [{ libraryID: 2 }] },
-        },
-      ]).success,
-    ).toBe(false);
-    expect(defaults["profile.selection-rules"]).toEqual([]);
-  });
-
   it("keeps Profile documents and Pack records out of settings", () => {
     expect(schema.entries).not.toHaveProperty("note.profiles");
     expect(schema.entries).not.toHaveProperty("note.template-pack-installs");

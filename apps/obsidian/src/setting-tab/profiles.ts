@@ -49,7 +49,7 @@ export {
 } from "./delete-profile-modal";
 import { highlightMappingItems } from "./note-import";
 import { defaultProfileBindingPlaceholder } from "./placeholder";
-import { profileSelectionRuleItems } from "./profile-selection-rules";
+import { editProfileMatch } from "./profile-match-modal";
 import { shareProfile } from "./share-profile-modal";
 export { shareProfile, ShareProfileModal } from "./share-profile-modal";
 
@@ -156,7 +156,6 @@ export function profilesPage(
       defaultProfileItem(ctx),
       profilesList(ctx),
       ...excludedDocumentItems(ctx),
-      ...profileSelectionRuleItems(ctx),
     ],
   };
 }
@@ -214,9 +213,25 @@ function profilesList(
       name: profile.label,
       // Its document names it: that file is what every icon on the row acts on,
       // and it is what tells two Profiles of the same label apart.
-      desc: profile.document,
+      desc: (() => {
+        const description = document.createDocumentFragment();
+        description.append(profile.document);
+        description.createDiv({
+          text: m.settings_profile_match_status({ state: profile.match.state }),
+        });
+        return description;
+      })(),
       searchable: false,
       render: (setting) => {
+        setting.addButton((button) =>
+          button
+            .setButtonText(m.settings_profile_match_action())
+            .setDisabled(locked)
+            .onClick(
+              () =>
+                void runAction(() => editProfileMatch(ctx, profile.id), ctx),
+            ),
+        );
         setting.addExtraButton((button) =>
           button
             .setIcon("pencil")

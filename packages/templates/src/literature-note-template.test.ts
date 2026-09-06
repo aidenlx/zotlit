@@ -1433,3 +1433,71 @@ describe("where a Profile document is repaired", () => {
     },
   );
 });
+
+describe("Profile Match manifest", () => {
+  const source = (manifest: string) => `---
+id: Bk3Qn7XvT2Lp
+name: Books
+version: 1.0.0
+contract: 2
+filename: book
+${manifest}
+---
+Body
+--- zotlit:annotation ---
+Annotation`;
+
+  it("accepts nested string leaves with structural validation and preserves absent match", () => {
+    const facade = new TemplateFacade();
+    expect(
+      facade.parseLiteratureNoteTemplate(source("")).manifest,
+    ).not.toHaveProperty("match");
+    expect(
+      facade.parseLiteratureNoteTemplate(
+        source(`match:
+  and:
+    - 'itemType == "book"'
+    - or:
+        - 'tags.contains("Read")'
+        - "unreadable ???"`),
+      ).manifest.match,
+    ).toEqual({
+      and: [
+        'itemType == "book"',
+        { or: ['tags.contains("Read")', "unreadable ???"] },
+      ],
+    });
+  });
+
+  it.each([
+    "match: true",
+    "match: null",
+    "match: []",
+    "match: {and: [], or: []}",
+    "match: {not: []}",
+    "match: {and: [23]}",
+  ])("rejects a structurally invalid match: %s", (match) => {
+    expect(() =>
+      new TemplateFacade().parseLiteratureNoteTemplate(source(match)),
+    ).toThrow(expect.objectContaining({ code: "invalid-manifest" }));
+  });
+
+  it.each([
+    'match: "true"',
+    'match: " "',
+    "match: {and: []}",
+    "match: {or: []}",
+  ])("excludes Default when it carries %s", (match) => {
+    expect(() =>
+      new TemplateFacade().parseLiteratureNoteTemplate(
+        source(match).replace("id: Bk3Qn7XvT2Lp", "id: default"),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: "invalid-manifest",
+        message: expect.stringContaining("Default Profile carries no match"),
+        manifestPath: ["match"],
+      }),
+    );
+  });
+});

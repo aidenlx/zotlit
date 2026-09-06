@@ -127,17 +127,12 @@ it.each(["open", "update"] as const)(
   },
 );
 
-it("creates directly when a rule selects the Profile for an unqualified link", async () => {
+it("creates directly when a match selects the Profile for an unqualified link", async () => {
   const harness = creationHarness({
     selector: PAPERS,
-    source: "rule",
+    source: "match",
     shouldAsk: true,
-    rule: {
-      id: "article",
-      scope: { mode: "all" },
-      filter: 'itemType == "journalArticle"',
-      profile: PAPERS,
-    },
+    reason: m.profile_match_selected({ profile: "Papers" }),
   });
   vi.mocked(chooseLiteratureNoteProfile).mockClear();
   await openCompanionNote(harness.deps, REF, { action: "open" });
@@ -155,18 +150,12 @@ it("creates directly when a rule selects the Profile for an unqualified link", a
   );
 });
 
-it("asks with the link's Profile when the rule that matched has an unavailable target", async () => {
-  const rule = {
-    id: "article",
-    scope: { mode: "all" as const },
-    filter: 'itemType == "journalArticle"',
-    profile: BOOKS,
-  };
+it("asks when the selected Profile is unavailable", async () => {
   const harness = creationHarness({
     selector: "default",
     source: "bound",
     shouldAsk: true,
-    problem: { kind: "unavailable-target", rule, selector: BOOKS },
+    problem: { kind: "unavailable-profile", selector: BOOKS },
   });
   vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce(undefined);
   await openCompanionNote(harness.deps, REF, { action: "open" });
@@ -174,9 +163,7 @@ it("asks with the link's Profile when the rule that matched has an unavailable t
     harness.deps.app,
     expect.objectContaining({
       preselected: "default",
-      problem: expect.stringContaining(
-        m.settings_profile_rule_item_type_is({ type: "Journal Article" }),
-      ),
+      problem: expect.stringContaining(BOOKS),
     }),
   );
   expect(harness.create).not.toHaveBeenCalled();

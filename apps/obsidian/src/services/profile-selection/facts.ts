@@ -9,7 +9,7 @@ import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
 import type { AvailableLibrary } from "@/services/library-scope/scope";
 
-import type { RuleItemFacts } from "./condition";
+import type { MatchItemFacts } from "./condition";
 
 /** One Collection the editor offers, with the words it is shown by. */
 export interface CollectionChoice {
@@ -24,7 +24,7 @@ export interface CollectionChoice {
 export function resolveMembershipFacts(
   client: NodeDatabaseClient,
   item: Pick<Item, "itemID" | "libraryID">,
-): Pick<RuleItemFacts, "tags" | "collections"> {
+): Pick<MatchItemFacts, "tags" | "collections"> {
   const tags = resolveItemTags(client, item.itemID, new Map()).map(
     ({ tag }) => tag.name,
   );

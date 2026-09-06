@@ -1,7 +1,6 @@
 // UI seam for a creation selection: the words its reason and its problem are
 // shown by. Shared by the picker badge and the batch rows.
 import * as m from "@/lib/i18n/generated/messages";
-import { describeProblem, describeRule } from "@/services/profile-selection";
 
 import type {
   CreationProfileSource,
@@ -17,8 +16,8 @@ export function describeSelectionSource(
       return m.batch_profile_source_companion();
     case "asked":
       return m.batch_profile_source_chosen();
-    case "rule":
-      return m.batch_profile_source_rule();
+    case "match":
+      return m.batch_profile_source_match();
     case "bound":
       return undefined;
   }
@@ -29,14 +28,13 @@ export function describeSelectionProblem(
   problem: CreationSelectionProblem,
 ): string {
   switch (problem.kind) {
-    case "broken-rule":
-      return m.modal_profile_problem_broken_rule({
-        rule: describeRule(problem.rule),
-        problem: describeProblem(problem.problem),
+    case "overlap":
+      return m.modal_profile_problem_overlap({
+        profiles: problem.candidates.map(({ label }) => label).join(", "),
       });
-    case "unavailable-target":
-      return m.modal_profile_problem_unavailable_target({
-        rule: describeRule(problem.rule),
+    case "unavailable-profile":
+      return m.modal_profile_problem_unavailable_profile({
+        selector: problem.selector,
       });
     case "invalid-selector":
       return m.modal_profile_problem_invalid_selector({

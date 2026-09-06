@@ -1,13 +1,8 @@
-// The rule editor's draft and the pure operations over it: what a fresh rule
-// starts as, how the condition tree changes, how it reads from and writes to
-// the stored Rule Filter, and what keeps a draft from being saved. The tree
-// mirrors the filter: every group is an explicit `and` / `or`, and a leaf is
-// a row — an item-type, Collection, or Tag condition when its expression
-// reads as one, else the expression as written.
+import type { MatchTree } from "@zotlit/templates/facade";
+
+// Match editor drafts preserve groups and leaves outside the labelled controls.
 import * as m from "@/lib/i18n/generated/messages";
-import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
-import type { LibraryScope } from "@/services/library-scope/scope";
 import {
   compileCondition,
   describeProblem,
@@ -16,9 +11,7 @@ import {
 import type {
   CollectionChoice,
   FlatCondition,
-  ProfileSelectionRule,
-  RuleCondition,
-  RuleFilter,
+  MatchCondition,
 } from "@/services/profile-selection";
 
 /** What a fresh condition tests: the type the ticketed example starts from. */
@@ -45,43 +38,28 @@ export type EditorCondition = ConditionGroup | RowCondition;
 /** A child's position in the tree: the index at each nesting level. */
 export type ConditionPath = readonly number[];
 
-export interface RuleDraft {
-  profile: ProfileSelector;
-  scope: LibraryScope;
+export interface MatchDraft {
   root: ConditionGroup;
 }
 
 /** What the editor reads from the plugin while it is open. */
-export interface RuleEditorDeps {
-  profiles: readonly { id: ProfileSelector; label: string }[];
+export interface MatchEditorDeps {
   libraries: readonly AvailableLibrary[];
   /** The Collections the database offers, read once when the dialog opens. */
   collections: readonly CollectionChoice[];
 }
 
-/** A new rule opens with one item-type condition; an existing rule opens on its filter. */
-export function initialDraft(rule?: ProfileSelectionRule): RuleDraft {
-  if (rule)
-    return {
-      profile: rule.profile,
-      scope: rule.scope,
-      root: fromFilter(rule.filter),
-    };
+/** An absent match starts with one item-type condition. */
+export function initialDraft(match?: MatchTree): MatchDraft {
   return {
-    profile: "default",
-    scope: { mode: "all" },
-    root: {
-      kind: "group",
-      match: "all",
-      conditions: [
-        {
-          kind: "item-type",
-          operator: "is",
-          negated: false,
-          values: [DEFAULT_ITEM_TYPE],
-        },
-      ],
-    },
+    root:
+      match === undefined
+        ? {
+            kind: "group",
+            match: "all",
+            conditions: [freshCondition("item-type", false)],
+          }
+        : fromFilter(match),
   };
 }
 
@@ -91,14 +69,14 @@ export function initialDraft(rule?: ProfileSelectionRule): RuleDraft {
  * problem, or an expression that combines tests — stays as written in an
  * expression row. A lone leaf sits in a "Match all" group.
  */
-export function fromFilter(filter: RuleFilter): ConditionGroup {
+export function fromFilter(filter: MatchTree): ConditionGroup {
   const node = editorNode(filter);
   return node.kind === "group"
     ? node
     : { kind: "group", match: "all", conditions: [node] };
 }
 
-function editorNode(filter: RuleFilter): EditorCondition {
+function editorNode(filter: MatchTree): EditorCondition {
   if (typeof filter !== "string") {
     const all = "and" in filter;
     return {
@@ -114,7 +92,7 @@ function editorNode(filter: RuleFilter): EditorCondition {
 }
 
 function visuallyEditable(
-  condition: RuleCondition,
+  condition: MatchCondition,
 ): condition is FlatCondition {
   return (
     condition.kind !== "group" &&
@@ -127,7 +105,7 @@ function visuallyEditable(
 }
 
 /** The filter a tree stores: rows as canonical expressions, expression rows as typed. */
-export function toFilter(group: ConditionGroup): RuleFilter {
+export function toFilter(group: ConditionGroup): MatchTree {
   const entries = group.conditions.map((condition) =>
     condition.kind === "group"
       ? toFilter(condition)
@@ -139,19 +117,10 @@ export function toFilter(group: ConditionGroup): RuleFilter {
 }
 
 /** The tree a compiled condition reads as: a lone condition sits in a "Match all" group. */
-export function asGroup(condition: RuleCondition): ConditionGroup {
+export function asGroup(condition: MatchCondition): ConditionGroup {
   return condition.kind === "group"
     ? condition
     : { kind: "group", match: "all", conditions: [condition] };
-}
-
-/**
- * Whether a group holds nothing to judge. An empty root "Match all" group
- * is the deliberate catch-all; an empty "Match any" group or an empty nested
- * group has no meaning the user asked for and is refused.
- */
-export function vacuous(group: ConditionGroup, isRoot: boolean): boolean {
-  return group.conditions.length === 0 && (!isRoot || group.match === "any");
 }
 
 /** `root` with the group at `path` replaced by `fn`'s result. */
@@ -217,6 +186,8 @@ export function freshCondition(
   negated: boolean,
 ): RowCondition {
   switch (kind) {
+    case "library":
+      return { kind, operator: "is", negated, values: ["personal"] };
     case "item-type":
       return { kind, operator: "is", negated, values: [DEFAULT_ITEM_TYPE] };
     case "collections":
@@ -260,9 +231,16 @@ export function freshGroup(parent: GroupMatch): ConditionGroup {
  */
 export function conditionIssue(
   condition: RowCondition,
-  deps: RuleEditorDeps,
+  deps: MatchEditorDeps,
 ): string | null {
   switch (condition.kind) {
+    case "library": {
+      const { problem } = compileCondition(
+        formatCondition(condition),
+        deps.libraries,
+      );
+      return problem ? describeProblem(problem) : null;
+    }
     case "item-type":
       return null;
     case "collections":
@@ -272,50 +250,44 @@ export function conditionIssue(
             (path) =>
               path.length === 0 || path.some((segment) => segment === ""),
           ))
-        ? m.settings_profile_rule_collection_empty()
+        ? m.settings_profile_match_collection_empty()
         : null;
     case "tags":
       return condition.operator !== "isEmpty" &&
         (condition.values.length === 0 ||
           condition.values.some((value) => value === ""))
-        ? m.settings_profile_rule_tag_empty()
+        ? m.settings_profile_match_tag_empty()
         : null;
     case "expression": {
-      const { condition: compiled, problem } = compileCondition(condition.text);
+      const { condition: compiled, problem } = compileCondition(
+        condition.text,
+        deps.libraries,
+      );
       if (problem) return describeProblem(problem);
-      return treeIssue(asGroup(compiled), true, deps);
+      return treeIssue(asGroup(compiled), deps);
     }
   }
 }
 
-/** The first incomplete condition or vacuous group, as the user reads it. */
+/** The first incomplete condition, as the user reads it. */
 export function treeIssue(
   group: ConditionGroup,
-  isRoot: boolean,
-  deps: RuleEditorDeps,
+  deps: MatchEditorDeps,
 ): string | null {
-  if (vacuous(group, isRoot)) return m.settings_profile_rule_group_empty();
   for (const condition of group.conditions) {
     const issue =
       condition.kind === "group"
-        ? treeIssue(condition, false, deps)
+        ? treeIssue(condition, deps)
         : conditionIssue(condition, deps);
     if (issue) return issue;
   }
   return null;
 }
 
-/** Whether the Libraries row refuses the draft. */
-export function scopeIssue(scope: LibraryScope): string | null {
-  return scope.mode === "selected" && scope.libraries.length === 0
-    ? m.settings_profile_rule_scope_empty()
-    : null;
-}
-
-/** Whether anything keeps the rule from being saved. */
-export function draftInvalid(draft: RuleDraft, deps: RuleEditorDeps): boolean {
-  return (
-    scopeIssue(draft.scope) !== null ||
-    treeIssue(draft.root, true, deps) !== null
-  );
+/** Whether anything keeps the match from being saved. */
+export function draftInvalid(
+  draft: MatchDraft,
+  deps: MatchEditorDeps,
+): boolean {
+  return treeIssue(draft.root, deps) !== null;
 }

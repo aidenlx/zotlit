@@ -6,6 +6,7 @@ import type { Item } from "@zotlit/db";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
+import type { LiteratureNoteProfile } from "@/services/profile/service";
 import { chooseLiteratureNoteProfile } from "@/views/quick-switch/profile-picker";
 
 import { createNoteInteractively } from "./index";
@@ -20,16 +21,20 @@ vi.mock("@/views/quick-switch/profile-picker", () => ({
 }));
 
 const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
-const BOOK_RULE = {
-  id: "book",
-  scope: { mode: "all" as const },
-  filter: 'itemType == "book"',
-  profile: BOOKS,
-};
-const BOOK_RULE_SUMMARY = m.settings_profile_rule_summary({
-  conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
-  libraries: m.settings_library_scope_all(),
-});
+const MATCH_REASON = m.profile_match_selected({ profile: "Books" });
+const BOOK_PROFILE = {
+  id: BOOKS,
+  label: "Books",
+  document: "books.md",
+  path: "templates/books.md",
+  bindings: {},
+  match: {
+    state: "all",
+    summary: m.profile_match_all(),
+    tree: "true",
+    condition: { kind: "group", match: "all", conditions: [] },
+  },
+} satisfies LiteratureNoteProfile;
 
 function booksPreview(
   overrides: Partial<PreparedCreationProfile> = {},
@@ -122,113 +127,76 @@ it("creates a note from the New profile dialog's prepared callback without re-re
   expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
 });
 
-it("resolves the selection from the Item and hands the picker its rule reason, problem, and previews", async () => {
-  const books = "Bk3Qn7XvT2Lp" as ProfileId;
-  const rule = {
-    id: "book",
-    scope: { mode: "all" as const },
-    filter: 'itemType == "book"',
-    profile: books,
+it("opens overlap with every candidate identity, a visible reason, and frozen previews", async () => {
+  const preview = booksPreview();
+  const papers = {
+    ...BOOK_PROFILE,
+    id: "Rz9Wm4YfH6Kd" as ProfileId,
+    label: "Papers",
   };
-  const preview = {
-    selector: books,
-    label: "Books",
-    folder: "Books",
-    citationStyle: null,
-    document: "books.md",
-    path: "Books/Paper.md",
-    create: vi.fn(async () => ({
-      outcome: "created" as const,
-      file: { path: "Books/Paper.md" } as TFile,
-    })),
-  };
-  const resolveCreationProfile = vi.fn(async () => ({
-    selector: books,
-    source: "rule" as const,
+  const selection: CreationProfileSelection = {
+    selector: "default",
+    source: "bound",
     shouldAsk: true,
-    rule,
-  }));
-  const deps = {
-    app: {} as App,
-    zoteroPref: { dataDir: null },
-    noteFeature: {
-      resolveCreationProfile,
-      prepareCreationProfiles: vi.fn(async () => [preview]),
-      createNote: vi.fn(),
-    },
-  } as unknown as InteractiveCreationDeps;
+    problem: { kind: "overlap", candidates: [BOOK_PROFILE, papers] },
+  };
+  const deps = directDeps(selection, [preview]);
   const item = { indexedKey: "ABCD2345" } as Item;
-  vi.mocked(chooseLiteratureNoteProfile).mockResolvedValue({
-    id: books,
+  vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce({
+    id: BOOKS,
     label: "Books",
   });
-  await expect(createNoteInteractively(deps, item)).resolves.toMatchObject({
+  expect(await createNoteInteractively(deps, item)).toMatchObject({
     path: "Books/Paper.md",
   });
-  expect(resolveCreationProfile).toHaveBeenCalledExactlyOnceWith({ item });
+  expect(
+    deps.noteFeature.resolveCreationProfile,
+  ).toHaveBeenCalledExactlyOnceWith({ item });
   expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
     deps.app,
     expect.objectContaining({
-      preselected: books,
-      source: "rule",
-      reason: m.settings_profile_rule_summary({
-        conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
-        libraries: m.settings_library_scope_all(),
-      }),
-      problem: undefined,
+      candidates: [BOOKS, papers.id],
+      problem: m.modal_profile_problem_overlap({ profiles: "Books, Papers" }),
       previews: [preview],
     }),
   );
   expect(preview.create).toHaveBeenCalledOnce();
   expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
+});
 
-  resolveCreationProfile.mockResolvedValueOnce({
-    selector: "default",
-    source: "bound",
-    shouldAsk: true,
-    problem: { kind: "unavailable-target", rule, selector: books },
-  } as never);
-  vi.mocked(chooseLiteratureNoteProfile).mockResolvedValueOnce(undefined);
-  await expect(createNoteInteractively(deps, item)).resolves.toBeNull();
-  expect(chooseLiteratureNoteProfile).toHaveBeenLastCalledWith(
-    deps.app,
-    expect.objectContaining({
-      preselected: "default",
-      problem: m.modal_profile_problem_unavailable_target({
-        rule: m.settings_profile_rule_summary({
-          conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
-          libraries: m.settings_library_scope_all(),
-        }),
+it.each([false, true])(
+  "creates a unique match directly and reports its reason and path (direct=%s)",
+  async (direct) => {
+    using shown = successNotice();
+    vi.mocked(chooseLiteratureNoteProfile).mockClear();
+    const preview = booksPreview();
+    const deps = directDeps(
+      {
+        selector: BOOKS,
+        source: "match",
+        shouldAsk: false,
+        reason: MATCH_REASON,
+      },
+      [booksPreview({ selector: "default", label: undefined }), preview],
+    );
+    const item = { indexedKey: "ABCD2345" } as Item;
+    await expect(
+      createNoteInteractively(deps, item, { direct }),
+    ).resolves.toMatchObject({ path: "Books/Paper.md" });
+    expect(
+      deps.noteFeature.resolveCreationProfile,
+    ).toHaveBeenCalledExactlyOnceWith({ item });
+    expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
+    expect(preview.create).toHaveBeenCalledOnce();
+    expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
+    expect(shown.notices).toEqual([
+      m.notice_created_note_from_match({
+        reason: MATCH_REASON,
+        path: "Books/Paper.md",
       }),
-    }),
-  );
-});
-
-it("creates directly under a rule-selected Profile and reports the Profile and path", async () => {
-  using shown = successNotice();
-  vi.mocked(chooseLiteratureNoteProfile).mockClear();
-  const preview = booksPreview();
-  const deps = directDeps(
-    { selector: BOOKS, source: "rule", shouldAsk: true, rule: BOOK_RULE },
-    [booksPreview({ selector: "default", label: undefined }), preview],
-  );
-  const item = { indexedKey: "ABCD2345" } as Item;
-  await expect(
-    createNoteInteractively(deps, item, { direct: true }),
-  ).resolves.toMatchObject({ path: "Books/Paper.md" });
-  expect(
-    deps.noteFeature.resolveCreationProfile,
-  ).toHaveBeenCalledExactlyOnceWith({ item });
-  expect(chooseLiteratureNoteProfile).not.toHaveBeenCalled();
-  expect(preview.create).toHaveBeenCalledOnce();
-  expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
-  expect(shown.notices).toEqual([
-    m.notice_created_note_under_profile({
-      profile: "Books",
-      path: "Books/Paper.md",
-    }),
-  ]);
-});
+    ]);
+  },
+);
 
 it("creates directly under an explicit Profile, naming Default when it is the one chosen", async () => {
   using shown = successNotice();
@@ -298,9 +266,8 @@ it("keeps explicit recovery on the direct path when automatic selection stopped"
       source: "bound",
       shouldAsk: true,
       problem: {
-        kind: "broken-rule",
-        rule: BOOK_RULE,
-        problem: { code: "syntax", from: 0, to: 1, text: "?" },
+        kind: "overlap",
+        candidates: [BOOK_PROFILE],
       },
     },
     [booksPreview({ selector: "default", label: undefined }), booksPreview()],
@@ -315,7 +282,7 @@ it("keeps explicit recovery on the direct path when automatic selection stopped"
     deps.app,
     expect.objectContaining({
       preselected: "default",
-      problem: expect.stringContaining(BOOK_RULE_SUMMARY),
+      problem: expect.stringContaining("Books"),
     }),
   );
   expect(deps.noteFeature.createNote).not.toHaveBeenCalled();
@@ -323,16 +290,14 @@ it("keeps explicit recovery on the direct path when automatic selection stopped"
 
 it.each([
   {
-    name: "rule",
+    name: "match",
     selection: {
       selector: BOOKS,
-      source: "rule",
+      source: "match",
       shouldAsk: true,
-      rule: BOOK_RULE,
+      reason: MATCH_REASON,
     } satisfies CreationProfileSelection,
-    problem: m.modal_profile_problem_unavailable_target({
-      rule: BOOK_RULE_SUMMARY,
-    }),
+    problem: m.modal_profile_problem_unavailable_profile({ selector: BOOKS }),
   },
   {
     name: "link",
@@ -341,7 +306,7 @@ it.each([
       source: "headless",
       shouldAsk: true,
     } satisfies CreationProfileSelection,
-    problem: m.modal_profile_problem_invalid_selector({ selector: BOOKS }),
+    problem: m.modal_profile_problem_unavailable_profile({ selector: BOOKS }),
   },
 ])(
   "asks for another choice when the $name-selected Profile is unavailable at preparation",

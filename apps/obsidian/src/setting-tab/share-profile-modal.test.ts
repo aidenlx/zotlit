@@ -227,3 +227,70 @@ it("does not write when the Share sheet closes while the save dialog is open", a
     code: "ENOENT",
   });
 });
+
+it.each([true, false])(
+  "shares the checkbox choice as exact text with includeMatch=%s",
+  async (includeMatch) => {
+    const prefix = `---
+# Keep sender formatting
+id: Bk3Qn7XvT2Lp
+name: 'Books'
+version: 1.0.0
+contract: 2
+filename: '{{ zt.title }}'
+folder: Books
+importFolder: Imported
+citationStyle: null
+importColoredHighlights: false
+importAnnotationsAsTemplate: false
+`;
+    const match = `match: 'collections.within("Unknown/Reading")'\n`;
+    const suffix = `---
+{% managed %}Body{% endmanaged %}
+--- zotlit:annotation ---
+Annotation`;
+    const original = prefix + match + suffix;
+    await using stack = new AsyncDisposableStack();
+    const f = stack.use(
+      await profileServiceFixture({
+        "templates/zotlit-profile.books.md": original,
+      }),
+    );
+    const folder = await mkdtemp(join(tmpdir(), "zotlit-share-match-"));
+    stack.defer(() => rm(folder, { recursive: true, force: true }));
+    const filePath = join(folder, "Books.md");
+    stack.use(
+      vi.spyOn(nativeDialog, "requireDialog").mockReturnValue({
+        showSaveDialog: async () => ({ canceled: false, filePath }),
+      } as unknown as ReturnType<typeof nativeDialog.requireDialog>),
+    );
+    using clipboard = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockResolvedValue();
+    const modal = new ShareProfileModal(
+      f.app,
+      await f.profile.prepareShare(id),
+    );
+    modal.contentEl = document.createElement("div");
+    using controls = observeControls(modal.contentEl);
+    modal.onOpen();
+    expect(controls.toggle(m.profile_share_include_match()).getValue()).toBe(
+      true,
+    );
+    controls.toggle(m.profile_share_folders()).toggle(true);
+    if (!includeMatch)
+      controls.toggle(m.profile_share_include_match()).toggle(false);
+    await controls.click(m.profile_share_copy());
+    expect(clipboard).toHaveBeenCalledWith(
+      prefix + (includeMatch ? match : "") + suffix,
+    );
+    await controls.click(m.profile_share_save());
+    expect(await readFile(filePath, "utf8")).toBe(
+      prefix + (includeMatch ? match : "") + suffix,
+    );
+    expect(f.vault.contents.get("templates/zotlit-profile.books.md")).toBe(
+      original,
+    );
+    modal.onClose();
+  },
+);

@@ -4,6 +4,7 @@ import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { batchGroups } from "@/services/batch-scope";
 
 import { BatchModal, FlatManifest } from "./index";
 import type { BatchProfileChoice } from "./index";
@@ -86,7 +87,7 @@ it.each([
 
 it("tells the unmatched fallback, the affected recovery, and the all-new override apart", () => {
   const unmatched: BatchProfileChoice = {
-    scope: "unmatched",
+    scope: "unresolved",
     count: 2,
     label: "Default",
     source: "bound",
@@ -113,14 +114,14 @@ it("tells the unmatched fallback, the affected recovery, and the all-new overrid
         kind: "create",
         path: "Books/Matched book.md",
         profile: "Books",
-        reason: m.modal_profile_source_rule({ rule: "Item type is Book" }),
+        reason: m.profile_match_selected({ profile: "Books" }),
       },
       {
         id: 2,
-        label: "Broken rule paper",
+        label: "Unavailable profile paper",
         kind: "create",
-        reason: m.modal_profile_problem_unavailable_target({
-          rule: "Item type is Thesis",
+        reason: m.modal_profile_problem_unavailable_profile({
+          selector: "Theses",
         }),
       },
     ],
@@ -128,9 +129,9 @@ it("tells the unmatched fallback, the affected recovery, and the all-new overrid
       {
         kind: "create",
         header: m.batch_update_group_create,
-        profileChoices: [unmatched, affected, override],
       },
     ],
+    profileChoices: [unmatched, affected, override],
     notFound: [],
     notFoundHeader: m.batch_update_group_not_found,
     abortedHeader: m.batch_update_group_aborted,
@@ -141,21 +142,23 @@ it("tells the unmatched fallback, the affected recovery, and the all-new overrid
     ...container.querySelectorAll<HTMLButtonElement>("[data-profile-choice]"),
   ];
   expect(controls.map((button) => button.textContent)).toEqual([
-    m.batch_profile_unmatched_destination({ count: 2, label: "Default" }),
+    m.batch_profile_unresolved_destination({ count: 2, label: "Default" }),
     m.batch_profile_affected_choose({ count: 1 }),
     m.batch_profile_override_all(),
   ]);
   for (const help of [
-    m.batch_profile_unmatched_help(),
-    m.batch_profile_affected_help(),
+    m.batch_profile_unresolved_help(),
+    m.batch_profile_recovery_help(),
     m.batch_profile_override_all_help(),
   ])
     expect(container.textContent).toContain(help);
   expect(container.textContent).not.toContain(m.batch_profile_source_chosen());
-  expect(container.textContent).toContain("Item type is Book");
   expect(container.textContent).toContain(
-    m.modal_profile_problem_unavailable_target({
-      rule: "Item type is Thesis",
+    m.profile_match_selected({ profile: "Books" }),
+  );
+  expect(container.textContent).toContain(
+    m.modal_profile_problem_unavailable_profile({
+      selector: "Theses",
     }),
   );
   expect(container.querySelectorAll("[data-profile-stamp]")).toHaveLength(1);
@@ -173,6 +176,72 @@ it("tells the unmatched fallback, the affected recovery, and the all-new overrid
       ?.textContent,
   ).toContain(m.batch_profile_override_all_destination({ label: "Articles" }));
   expect(container.textContent).toContain(m.batch_profile_source_chosen());
+});
+
+it("renders one shared fallback and all-new override above Library groups", () => {
+  const choice: BatchProfileChoice = {
+    scope: "unresolved",
+    count: 2,
+    source: "bound",
+    choose: vi.fn(),
+  };
+  const override: BatchProfileChoice = {
+    scope: "all-new",
+    count: 2,
+    source: "bound",
+    choose: vi.fn(),
+  };
+  const chooseProfile = vi.fn();
+  const manifest = new FlatManifest({
+    tasks: [
+      { id: 1, label: "Unmatched paper", kind: "1:create" },
+      { id: 2, label: "Overlapping paper", kind: "12:create" },
+    ],
+    groups: batchGroups(
+      [
+        { libraryID: 1, label: "My Library" },
+        { libraryID: 12, label: "Reading group" },
+      ],
+      [
+        {
+          kind: "create",
+          header: m.batch_update_group_create,
+        },
+      ],
+    ),
+    profileChoices: [choice, override],
+    notFound: [],
+    notFoundHeader: m.batch_update_group_not_found,
+    abortedHeader: m.batch_update_group_aborted,
+  });
+  const container = document.createElement("div");
+  manifest.renderList(container, { chooseProfile });
+  const fallbacks = container.querySelectorAll<HTMLButtonElement>(
+    '[data-profile-choice-scope="unresolved"] [data-profile-choice]',
+  );
+  expect(fallbacks).toHaveLength(1);
+  expect(fallbacks[0]!.closest("details")).toBeNull();
+  const overrides = container.querySelectorAll<HTMLButtonElement>(
+    '[data-profile-choice-scope="all-new"] [data-profile-choice]',
+  );
+  expect(overrides).toHaveLength(1);
+  expect(overrides[0]!.closest("details")).toBeNull();
+  expect(
+    [...container.querySelectorAll("summary")].map((node) => node.textContent),
+  ).toEqual([
+    m.batch_group_library({
+      library: "My Library",
+      group: m.batch_update_group_create({ count: 1 }),
+    }),
+    m.batch_group_library({
+      library: "Reading group",
+      group: m.batch_update_group_create({ count: 1 }),
+    }),
+  ]);
+  fallbacks[0]!.click();
+  expect(chooseProfile).toHaveBeenCalledExactlyOnceWith(choice);
+  overrides[0]!.click();
+  expect(chooseProfile).toHaveBeenLastCalledWith(override);
 });
 
 it("names completed Profile groups with their own counts and retains kept rows", () => {

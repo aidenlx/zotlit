@@ -6,13 +6,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
+import type { MatchTree } from "@zotlit/templates/facade";
 
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
-import type { ProfileSelectionRule } from "@/services/profile-selection";
 
 import type { SettingTabContext } from "./context";
-import { ProfileSelectionRuleModal } from "./profile-selection-rule-modal";
+import { ProfileMatchModal } from "./profile-match-modal";
 
 vi.mock("zustand", () => import("../views/__fixtures__/zustand"));
 
@@ -29,8 +29,13 @@ const team = {
  * A Zotero database with two Libraries holding a Collection of the same name
  * and key: My Library's "Project" has a "Drafts" child; Team's stands alone.
  */
-function fixtureDb() {
-  const client = createClient(":memory:");
+function context(
+  overrides: Record<string, unknown> = {},
+): SettingTabContext & Disposable {
+  using stack = new DisposableStack();
+  const client = stack.adopt(createClient(":memory:"), ({ $client }) =>
+    $client.close(),
+  );
   createFixtureSchema(client.$client);
   client.$client.exec(`
     insert into libraries (libraryID, type) values (1, 'user'), (2, 'group');
@@ -41,20 +46,18 @@ function fixtureDb() {
         (101, 'Drafts', 100, 1, 'DRFT0001'),
         (200, 'Project', null, 2, 'PROJ0001');
   `);
-  return { state: "ready", client };
-}
-
-function context(overrides: Record<string, unknown> = {}): SettingTabContext {
-  return {
+  const ctx = {
     app: {} as App,
     profile: { profiles: [{ id: profileAId, label: "Books", document: "" }] },
     libraryScope: { libraries: [] },
-    db: fixtureDb(),
+    db: { state: "ready", client },
     ...overrides,
   } as unknown as SettingTabContext;
+  const cleanup = stack.move();
+  return Object.assign(ctx, { [Symbol.dispose]: () => cleanup.dispose() });
 }
 
-const opened: ProfileSelectionRuleModal[] = [];
+const opened: ProfileMatchModal[] = [];
 
 afterEach(async () => {
   for (const modal of opened.splice(0)) await act(() => modal.onClose());
@@ -64,9 +67,9 @@ afterEach(async () => {
 /** Open the dialog into a real modal element, as Obsidian would. */
 async function open(
   ctx: SettingTabContext,
-  rule?: ProfileSelectionRule,
-): Promise<ProfileSelectionRuleModal> {
-  const modal = new ProfileSelectionRuleModal(ctx, rule);
+  options?: { match?: MatchTree },
+): Promise<ProfileMatchModal> {
+  const modal = new ProfileMatchModal(ctx, { label: "Books", ...options });
   modal.modalEl = document.createElement("div");
   modal.contentEl = document.createElement("div");
   modal.modalEl.append(modal.contentEl);
@@ -121,16 +124,9 @@ async function key(input: HTMLInputElement, value: string) {
   });
 }
 
-async function check(input: HTMLInputElement, checked: boolean) {
-  await act(() => {
-    input.checked = checked;
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-}
-
 /** Save and Cancel live in the modal's button container, beside the content. */
 function buttonNamed(
-  modal: ProfileSelectionRuleModal,
+  modal: ProfileMatchModal,
   text: string,
 ): HTMLButtonElement {
   return [...modal.modalEl.querySelectorAll("button")].find(
@@ -152,23 +148,15 @@ async function mouseDown(element: Element) {
   });
 }
 
-function saveEnabled(modal: ProfileSelectionRuleModal): boolean {
-  return !buttonNamed(modal, m.settings_profile_rule_save()).disabled;
-}
-
-/** The error text of the field whose control is `select`, or `null`. */
-function fieldError(select: HTMLSelectElement): string | null {
-  return (
-    select.parentElement!.parentElement!.querySelector("[role=alert]")
-      ?.textContent ?? null
-  );
+function saveEnabled(modal: ProfileMatchModal): boolean {
+  return !buttonNamed(modal, m.settings_profile_match_save()).disabled;
 }
 
 /** The condition rows, in reading order: each is the element around one remove button. */
-function conditionRows(modal: ProfileSelectionRuleModal): HTMLElement[] {
+function conditionRows(modal: ProfileMatchModal): HTMLElement[] {
   return [
     ...modal.contentEl.querySelectorAll<HTMLElement>(
-      `[aria-label="${m.settings_profile_rule_remove_condition()}"]`,
+      `[aria-label="${m.settings_profile_match_remove_condition()}"]`,
     ),
   ].map((button) => button.closest("li")!);
 }
@@ -191,18 +179,14 @@ function rowError(row: HTMLElement): string | null {
 }
 
 /** The nested group card: the one that names itself "Group". */
-function nestedGroup(modal: ProfileSelectionRuleModal): HTMLElement {
-  return selectNamed(modal.contentEl, m.settings_profile_rule_group()).closest(
+function nestedGroup(modal: ProfileMatchModal): HTMLElement {
+  return selectNamed(modal.contentEl, m.settings_profile_match_group()).closest(
     "div.zt\\:border",
   )!;
 }
 
-function groupError(group: HTMLElement): string | null {
-  return group.querySelector(":scope > [role=alert]")?.textContent ?? null;
-}
-
 /** The buttons of the root group's own footer, after every nested one. */
-function rootButton(modal: ProfileSelectionRuleModal, text: string) {
+function rootButton(modal: ProfileMatchModal, text: string) {
   return [...modal.contentEl.querySelectorAll("button")]
     .filter((button) => button.textContent === text)
     .at(-1)!;
@@ -222,86 +206,107 @@ async function typeExpression(row: HTMLElement, text: string) {
   );
 }
 
-describe("ProfileSelectionRuleModal", () => {
-  it("saves a new rule after choosing a target Profile and an item type", async () => {
-    const modal = await open(context());
-    await choose(
-      selectNamed(modal.contentEl, m.settings_profile_rule_target()),
-      profileAId,
-    );
+describe("ProfileMatchModal", () => {
+  it("saves a new match with an item type and no target Profile control", async () => {
+    using modalContext = context();
+    const modal = await open(modalContext);
+    expect(modal.contentEl.querySelectorAll("select")).toHaveLength(4);
     const [, , itemType] = rowSelects(conditionRows(modal)[0]!);
     expect(options(itemType!).some(({ value }) => value === "book")).toBe(true);
     await choose(itemType!, "book");
-    await click(buttonNamed(modal, m.settings_profile_rule_save()));
+    await click(buttonNamed(modal, m.settings_profile_match_save()));
     await expect(modal.result).resolves.toMatchObject({
-      scope: { mode: "all" },
-      filter: { and: ['itemType == "book"'] },
-      profile: profileAId,
+      match: { and: ['itemType == "book"'] },
     });
   });
 
-  it("disables Save with no library checked, then persists canonical order once checked", async () => {
-    const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
-    const modal = await open(ctx);
-    const scope = () =>
-      selectNamed(modal.contentEl, m.settings_profile_rule_scope());
-    await choose(scope(), "selected");
-    const checkbox = (label: string) =>
-      [...modal.contentEl.querySelectorAll("label")]
-        .find((row) => row.textContent?.startsWith(label))!
-        .querySelector<HTMLInputElement>("input[type=checkbox]")!;
-    // Switching to Selected starts with My Library checked.
-    expect(checkbox(m.settings_library_scope_personal()).checked).toBe(true);
-    await check(checkbox(m.settings_library_scope_personal()), false);
-    expect(fieldError(scope())).toBe(m.settings_profile_rule_scope_empty());
-    expect(saveEnabled(modal)).toBe(false);
-    await check(checkbox(m.settings_library_scope_personal()), true);
-    await check(checkbox("Team"), true);
-    expect(fieldError(scope())).toBeNull();
-    expect(saveEnabled(modal)).toBe(true);
-    await click(buttonNamed(modal, m.settings_profile_rule_save()));
-    await expect(modal.result).resolves.toMatchObject({
-      scope: {
-        mode: "selected",
-        libraries: [{ type: "personal" }, { type: "group", groupID: 5 }],
-      },
+  it("saves a Library condition through labelled and expression controls without a scope field", async () => {
+    using modalContext = context({
+      libraryScope: { libraries: [myLibrary, team] },
     });
-  });
-
-  it("preselects the target Profile, libraries, and conditions of an existing rule", async () => {
-    const ctx = context({ libraryScope: { libraries: [team] } });
-    const modal = await open(ctx, {
-      id: "rule-1",
-      scope: { mode: "selected", libraries: [{ type: "group", groupID: 5 }] },
-      filter: { and: ['itemType != "thesis"'] },
-      profile: profileAId,
-    });
-    expect(
-      selectNamed(modal.contentEl, m.settings_profile_rule_target()).value,
-    ).toBe(profileAId);
-    expect(
-      selectNamed(modal.contentEl, m.settings_profile_rule_scope()).value,
-    ).toBe("selected");
-    const teamRow = [...modal.contentEl.querySelectorAll("label")].find((row) =>
-      row.textContent?.startsWith("Team"),
-    )!;
-    expect(teamRow.querySelector<HTMLInputElement>("input")!.checked).toBe(
-      true,
-    );
-    const [kind, operator, itemType] = rowSelects(conditionRows(modal)[0]!);
-    expect([kind!.value, operator!.value, itemType!.value]).toEqual([
-      "item-type",
-      "is-not",
-      "thesis",
+    const modal = await open(modalContext);
+    expect(selectNamed(modal.contentEl, "Scope")).toBeUndefined();
+    let row = conditionRows(modal)[0]!;
+    await choose(rowSelects(row)[0]!, "library");
+    row = conditionRows(modal)[0]!;
+    expect(options(rowSelects(row)[2]!)).toEqual([
+      { value: "personal", label: m.settings_library_scope_personal() },
+      { value: "group:5", label: "Team" },
     ]);
+    await choose(rowSelects(row)[2]!, "group:5");
+    await choose(rowSelects(conditionRows(modal)[0]!)[1]!, "is-not");
+    row = conditionRows(modal)[0]!;
+    await click(toggle(row, m.settings_profile_match_edit_as_expression()));
+    row = conditionRows(modal)[0]!;
+    expect(editor(row).state.doc.toString()).toBe('library != "group:5"');
+    await click(toggle(row, m.settings_profile_match_edit_visually()));
+    expect(
+      rowSelects(conditionRows(modal)[0]!).map(({ value }) => value),
+    ).toEqual(["library", "is-not", "group:5"]);
+    await click(buttonNamed(modal, m.settings_profile_match_save()));
+    await expect(modal.result).resolves.toEqual({
+      action: "save",
+
+      match: { and: ['library != "group:5"'] },
+    });
+  });
+
+  it("loads Library and item-type conditions from an existing match", async () => {
+    using ctx = context({ libraryScope: { libraries: [team] } });
+    const modal = await open(ctx, {
+      match: { and: ['library == "group:5"', 'itemType != "thesis"'] },
+    });
+    expect(
+      rowSelects(conditionRows(modal)[0]!).map(({ value }) => value),
+    ).toEqual(["library", "is", "group:5"]);
+    expect(
+      rowSelects(conditionRows(modal)[1]!).map(({ value }) => value),
+    ).toEqual(["item-type", "is-not", "thesis"]);
+  });
+
+  it("saves the current store before the editor renders a changed control", async () => {
+    using modalContext = context();
+    const modal = await open(modalContext, { match: 'itemType == "book"' });
+    const itemType = rowSelects(conditionRows(modal)[0]!)[2]!;
+    const save = buttonNamed(modal, m.settings_profile_match_save());
+    await act(() => {
+      itemType.value = "thesis";
+      itemType.dispatchEvent(new Event("change", { bubbles: true }));
+      save.click();
+    });
+    await expect(modal.result).resolves.toEqual({
+      action: "save",
+      match: { and: ['itemType == "thesis"'] },
+    });
+  });
+
+  it("shows an unknown Library diagnostic in labelled and expression rows", async () => {
+    using modalContext = context({ libraryScope: { libraries: [myLibrary] } });
+    const modal = await open(modalContext, {
+      match: 'library == "group:5"',
+    });
+    let row = conditionRows(modal)[0]!;
+    expect(rowSelects(row)[2]!.value).toBe("group:5");
+    expect(rowError(row)).toBe(
+      m.profile_match_problem_unknown_library({ text: '"group:5"' }),
+    );
+    expect(saveEnabled(modal)).toBe(false);
+    await click(toggle(row, m.settings_profile_match_edit_as_expression()));
+    row = conditionRows(modal)[0]!;
+    expect(rowError(row)).toBe(
+      m.profile_match_problem_unknown_library({ text: '"group:5"' }),
+    );
+    await typeExpression(row, 'library == "personal"');
+    expect(saveEnabled(modal)).toBe(true);
   });
 
   it("starts with Match all and writes alternatives once switched to Match any", async () => {
-    const modal = await open(context());
+    using modalContext = context();
+    const modal = await open(modalContext);
     const match = () =>
-      selectNamed(modal.contentEl, m.settings_profile_rule_match());
+      selectNamed(modal.contentEl, m.settings_profile_match_match());
     expect(match().value).toBe("all");
-    await click(rootButton(modal, m.settings_profile_rule_add_condition()));
+    await click(rootButton(modal, m.settings_profile_match_add_condition()));
     await choose(rowSelects(conditionRows(modal)[1]!)[0]!, "tags");
     await type(
       conditionRows(modal)[1]!.querySelector<HTMLInputElement>(
@@ -310,14 +315,15 @@ describe("ProfileSelectionRuleModal", () => {
       "Read",
     );
     await choose(match(), "any");
-    await click(buttonNamed(modal, m.settings_profile_rule_save()));
+    await click(buttonNamed(modal, m.settings_profile_match_save()));
     await expect(modal.result).resolves.toMatchObject({
-      filter: { or: ['itemType == "book"', 'tags.contains("Read")'] },
+      match: { or: ['itemType == "book"', 'tags.contains("Read")'] },
     });
   });
 
   it("nests a group with its own match beside an exclusion, and reads it back", async () => {
-    const modal = await open(context());
+    using modalContext = context();
+    const modal = await open(modalContext);
     // The root condition becomes the exclusion: not tagged "Read".
     await choose(rowSelects(conditionRows(modal)[0]!)[0]!, "tags");
     await choose(rowSelects(conditionRows(modal)[0]!)[1]!, "does-not-contain");
@@ -328,43 +334,41 @@ describe("ProfileSelectionRuleModal", () => {
       "Read",
     );
     // A group under a "Match all" root starts as "Match any" with one row.
-    await click(rootButton(modal, m.settings_profile_rule_add_group()));
+    await click(rootButton(modal, m.settings_profile_match_add_group()));
     expect(
-      selectNamed(modal.contentEl, m.settings_profile_rule_group()).value,
+      selectNamed(modal.contentEl, m.settings_profile_match_group()).value,
     ).toBe("any");
     // The nested footer comes before the root footer.
     await click(
       nestedGroup(modal).querySelector("button")!.textContent ===
-        m.settings_profile_rule_add_condition()
+        m.settings_profile_match_add_condition()
         ? nestedGroup(modal).querySelector("button")!
         : [...nestedGroup(modal).querySelectorAll("button")].find(
             (button) =>
-              button.textContent === m.settings_profile_rule_add_condition(),
+              button.textContent === m.settings_profile_match_add_condition(),
           )!,
     );
     const nested = conditionRows(modal).slice(1);
     expect(nested).toHaveLength(2);
     await choose(rowSelects(nested[1]!)[2]!, "thesis");
-    await click(buttonNamed(modal, m.settings_profile_rule_save()));
-    const filter = {
+    await click(buttonNamed(modal, m.settings_profile_match_save()));
+    const match = {
       and: [
         '!tags.contains("Read")',
         { or: ['itemType == "book"', 'itemType == "thesis"'] },
       ],
     };
-    await expect(modal.result).resolves.toMatchObject({ filter });
+    await expect(modal.result).resolves.toMatchObject({ match });
 
-    const reopened = await open(context(), {
-      id: "nested",
-      scope: { mode: "all" },
-      filter,
-      profile: "default",
+    using reopenedContext = context();
+    const reopened = await open(reopenedContext, {
+      match,
     });
     expect(
-      selectNamed(reopened.contentEl, m.settings_profile_rule_match()).value,
+      selectNamed(reopened.contentEl, m.settings_profile_match_match()).value,
     ).toBe("all");
     expect(
-      selectNamed(reopened.contentEl, m.settings_profile_rule_group()).value,
+      selectNamed(reopened.contentEl, m.settings_profile_match_group()).value,
     ).toBe("any");
     expect(
       conditionRows(reopened).map((row) =>
@@ -380,106 +384,85 @@ describe("ProfileSelectionRuleModal", () => {
     // Removing the group leaves the exclusion on its own.
     await click(
       nestedGroup(reopened).querySelector(
-        `[aria-label="${m.settings_profile_rule_remove_group()}"]`,
+        `[aria-label="${m.settings_profile_match_remove_group()}"]`,
       )!,
     );
-    await click(buttonNamed(reopened, m.settings_profile_rule_save()));
+    await click(buttonNamed(reopened, m.settings_profile_match_save()));
     await expect(reopened.result).resolves.toMatchObject({
-      id: "nested",
-      filter: { and: ['!tags.contains("Read")'] },
+      match: { and: ['!tags.contains("Read")'] },
     });
   });
 
-  it("refuses an empty nested group until it has a condition or is removed", async () => {
-    const modal = await open(context());
-    await click(rootButton(modal, m.settings_profile_rule_add_group()));
-    expect(groupError(nestedGroup(modal))).toBeNull();
-    // Remove the group's only condition.
-    await click(
-      conditionRows(modal)[1]!.querySelector(
-        `[aria-label="${m.settings_profile_rule_remove_condition()}"]`,
-      )!,
-    );
-    expect(groupError(nestedGroup(modal))).toBe(
-      m.settings_profile_rule_group_empty(),
-    );
-    expect(saveEnabled(modal)).toBe(false);
-    await click(
-      [...nestedGroup(modal).querySelectorAll("button")].find(
-        (button) =>
-          button.textContent === m.settings_profile_rule_add_condition(),
-      )!,
-    );
-    expect(groupError(nestedGroup(modal))).toBeNull();
-    expect(saveEnabled(modal)).toBe(true);
-  });
+  it.each([
+    { and: [] },
+    { or: [] },
+    { and: [{ or: [] }, { and: [] }] },
+  ] satisfies MatchTree[])(
+    "preserves valid empty groups: %j",
+    async (match) => {
+      using modalContext = context();
+      const modal = await open(modalContext, { match });
+      expect(saveEnabled(modal)).toBe(true);
+      await click(buttonNamed(modal, m.settings_profile_match_save()));
+      await expect(modal.result).resolves.toEqual({ action: "save", match });
+    },
+  );
 
   it("keeps a leaf outside the contract as an expression row until it is corrected", async () => {
-    const modal = await open(context(), {
-      id: "rule-2",
-      scope: { mode: "all" },
-      filter: 'title == "Zotero"',
-      profile: "default",
+    using modalContext = context();
+    const modal = await open(modalContext, {
+      match: 'title == "Zotero"',
     });
     // A lone leaf sits in a "Match all" group.
     expect(
-      selectNamed(modal.contentEl, m.settings_profile_rule_match()).value,
+      selectNamed(modal.contentEl, m.settings_profile_match_match()).value,
     ).toBe("all");
     const row = () => conditionRows(modal)[0]!;
     expect(rowSelects(row())).toEqual([]);
-    expect(toggleDisabled(row(), m.settings_profile_rule_edit_visually())).toBe(
-      true,
-    );
+    expect(
+      toggleDisabled(row(), m.settings_profile_match_edit_visually()),
+    ).toBe(true);
     expect(editor(row()).state.doc.toString()).toBe('title == "Zotero"');
     expect(rowError(row())).toBe(
-      m.profile_rule_problem_unsupported({ text: 'title == "Zotero"' }),
-    );
-    expect(saveEnabled(modal)).toBe(false);
-    // Editing the target alone cannot save the rule around the bad leaf.
-    await choose(
-      selectNamed(modal.contentEl, m.settings_profile_rule_target()),
-      profileAId,
+      m.profile_match_problem_unsupported({ text: 'title == "Zotero"' }),
     );
     expect(saveEnabled(modal)).toBe(false);
     expect(editor(row()).state.doc.toString()).toBe('title == "Zotero"');
     // Each keystroke is checked; a half-typed expression names the gap.
     await typeExpression(row(), 'tags.contains("Read") &&');
-    expect(rowError(row())).toBe(m.profile_rule_problem_syntax({ text: "" }));
+    expect(rowError(row())).toBe(m.profile_match_problem_syntax({ text: "" }));
     expect(saveEnabled(modal)).toBe(false);
     await typeExpression(row(), "");
-    expect(rowError(row())).toBe(m.profile_rule_problem_empty());
+    expect(rowError(row())).toBe(m.profile_match_problem_empty());
     await typeExpression(row(), 'tags.contains("Read") && itemType == "novel"');
     expect(rowError(row())).toBe(
-      m.profile_rule_problem_unknown_item_type({ text: '"novel"' }),
+      m.profile_match_problem_unknown_item_type({ text: '"novel"' }),
     );
     // Operators stay inside the leaf; the tree above is the ordinary grouping.
     await typeExpression(row(), 'tags.contains("Read") && itemType == "book"');
     expect(rowError(row())).toBeNull();
     expect(saveEnabled(modal)).toBe(true);
     // Two tests in one leaf have no labelled row, so the toggle stays off.
-    expect(toggleDisabled(row(), m.settings_profile_rule_edit_visually())).toBe(
-      true,
-    );
-    await click(buttonNamed(modal, m.settings_profile_rule_save()));
+    expect(
+      toggleDisabled(row(), m.settings_profile_match_edit_visually()),
+    ).toBe(true);
+    await click(buttonNamed(modal, m.settings_profile_match_save()));
     await expect(modal.result).resolves.toEqual({
-      id: "rule-2",
-      scope: { mode: "all" },
-      filter: { and: ['tags.contains("Read") && itemType == "book"'] },
-      profile: profileAId,
+      action: "save",
+
+      match: { and: ['tags.contains("Read") && itemType == "book"'] },
     });
   });
 
   it("switches a row between a labelled test and its expression without changing meaning", async () => {
-    const modal = await open(context(), {
-      id: "rule-3",
-      scope: { mode: "all" },
-      filter: {
+    using modalContext = context();
+    const modal = await open(modalContext, {
+      match: {
         and: [
           '!tags.contains("Read")',
           'itemType == "book" || tags.contains("Read Later")',
         ],
       },
-      profile: "default",
     });
     // A leaf that combines tests is shown as written: rows take one test each.
     const first = () => conditionRows(modal)[0]!;
@@ -493,26 +476,25 @@ describe("ProfileSelectionRuleModal", () => {
       'itemType == "book" || tags.contains("Read Later")',
     );
     // A row turned into an expression keeps its meaning as text.
-    await click(toggle(first(), m.settings_profile_rule_edit_as_expression()));
+    await click(toggle(first(), m.settings_profile_match_edit_as_expression()));
     expect(editor(first()).state.doc.toString()).toBe('!tags.contains("Read")');
     // An expression that reads as one test turns back into that row.
     await typeExpression(first(), 'itemType != "thesis"');
-    await click(toggle(first(), m.settings_profile_rule_edit_visually()));
+    await click(toggle(first(), m.settings_profile_match_edit_visually()));
     expect(rowSelects(first()).map((select) => select.value)).toEqual([
       "item-type",
       "is-not",
       "thesis",
     ]);
     await typeExpression(second(), 'tags.contains("Read Later")');
-    await click(toggle(second(), m.settings_profile_rule_edit_visually()));
+    await click(toggle(second(), m.settings_profile_match_edit_visually()));
     expect(rowSelects(second()).map((select) => select.value)).toEqual([
       "tags",
       "contains",
     ]);
-    await click(buttonNamed(modal, m.settings_profile_rule_save()));
+    await click(buttonNamed(modal, m.settings_profile_match_save()));
     await expect(modal.result).resolves.toMatchObject({
-      id: "rule-3",
-      filter: {
+      match: {
         and: ['itemType != "thesis"', 'tags.contains("Read Later")'],
       },
     });
@@ -524,38 +506,35 @@ describe("ProfileSelectionRuleModal", () => {
   ])(
     "keeps %s as an expression through save and reopen",
     async (expression) => {
-      const original = await open(context(), {
-        id: "extended-tags",
-        scope: { mode: "all" },
-        filter: expression,
-        profile: "default",
+      using originalContext = context();
+      const original = await open(originalContext, {
+        match: expression,
       });
       const originalRow = conditionRows(original)[0]!;
       expect(rowSelects(originalRow)).toEqual([]);
       expect(editor(originalRow).state.doc.toString()).toBe(expression);
       expect(
-        toggleDisabled(originalRow, m.settings_profile_rule_edit_visually()),
+        toggleDisabled(originalRow, m.settings_profile_match_edit_visually()),
       ).toBe(true);
-      await click(buttonNamed(original, m.settings_profile_rule_save()));
+      await click(buttonNamed(original, m.settings_profile_match_save()));
       const saved = await original.result;
-      expect(saved?.filter).toEqual({ and: [expression] });
+      expect(saved?.match).toEqual({ and: [expression] });
 
-      const reopened = await open(context(), saved!);
+      using reopenedContext = context();
+      const reopened = await open(reopenedContext, saved!);
       const reopenedRow = conditionRows(reopened)[0]!;
       expect(rowSelects(reopenedRow)).toEqual([]);
       expect(editor(reopenedRow).state.doc.toString()).toBe(expression);
       expect(
-        toggleDisabled(reopenedRow, m.settings_profile_rule_edit_visually()),
+        toggleDisabled(reopenedRow, m.settings_profile_match_edit_visually()),
       ).toBe(true);
     },
   );
 
   it("opens the supported contains expression as a labelled Tag row", async () => {
-    const modal = await open(context(), {
-      id: "contains-tag",
-      scope: { mode: "all" },
-      filter: 'tags.contains("Read")',
-      profile: "default",
+    using modalContext = context();
+    const modal = await open(modalContext, {
+      match: 'tags.contains("Read")',
     });
     const row = conditionRows(modal)[0]!;
     expect(rowSelects(row).map((select) => select.value)).toEqual([
@@ -568,7 +547,8 @@ describe("ProfileSelectionRuleModal", () => {
   });
 
   it("offers the ordered Tag operators and defaults to contains", async () => {
-    const modal = await open(context());
+    using modalContext = context();
+    const modal = await open(modalContext);
     const row = conditionRows(modal)[0]!;
     await choose(rowSelects(row)[0]!, "tags");
     const operator = rowSelects(row)[1]!;
@@ -579,12 +559,12 @@ describe("ProfileSelectionRuleModal", () => {
         textContent,
       ]),
     ).toEqual([
-      ["contains", m.settings_profile_rule_tag_contains()],
-      ["does-not-contain", m.settings_profile_rule_tag_does_not_contain()],
-      ["containsAny", m.settings_profile_rule_tag_contains_any()],
-      ["containsAll", m.settings_profile_rule_tag_contains_all()],
-      ["isEmpty", m.settings_profile_rule_tag_is_empty()],
-      ["is-not-empty", m.settings_profile_rule_tag_is_not_empty()],
+      ["contains", m.settings_profile_match_tag_contains()],
+      ["does-not-contain", m.settings_profile_match_tag_does_not_contain()],
+      ["containsAny", m.settings_profile_match_tag_contains_any()],
+      ["containsAll", m.settings_profile_match_tag_contains_all()],
+      ["isEmpty", m.settings_profile_match_tag_is_empty()],
+      ["is-not-empty", m.settings_profile_match_tag_is_not_empty()],
     ]);
   });
 
@@ -598,7 +578,8 @@ describe("ProfileSelectionRuleModal", () => {
   ] as const)(
     "saves and reopens the labelled Tag operator %s",
     async (operator, values, expression) => {
-      const modal = await open(context());
+      using modalContext = context();
+      const modal = await open(modalContext);
       const row = () => conditionRows(modal)[0]!;
       await choose(rowSelects(row())[0]!, "tags");
       await choose(rowSelects(row())[1]!, operator);
@@ -615,11 +596,12 @@ describe("ProfileSelectionRuleModal", () => {
             "Enter",
           );
         }
-      await click(buttonNamed(modal, m.settings_profile_rule_save()));
+      await click(buttonNamed(modal, m.settings_profile_match_save()));
       const saved = await modal.result;
-      expect(saved?.filter).toEqual({ and: [expression] });
+      expect(saved?.match).toEqual({ and: [expression] });
 
-      const reopened = await open(context(), saved!);
+      using reopenedContext = context();
+      const reopened = await open(reopenedContext, saved!);
       const reopenedRow = conditionRows(reopened)[0]!;
       expect(rowSelects(reopenedRow).map((select) => select.value)).toEqual([
         "tags",
@@ -641,7 +623,8 @@ describe("ProfileSelectionRuleModal", () => {
   );
 
   it("commits and removes Tag chips from the keyboard and remove button", async () => {
-    const modal = await open(context());
+    using modalContext = context();
+    const modal = await open(modalContext);
     const row = () => conditionRows(modal)[0]!;
     await choose(rowSelects(row())[0]!, "tags");
     await choose(rowSelects(row())[1]!, "containsAny");
@@ -656,19 +639,20 @@ describe("ProfileSelectionRuleModal", () => {
     await key(input(), "Backspace");
     expect(
       chipInput.querySelector(
-        `[aria-label="${m.settings_profile_rule_chip_remove({ value: "Review" })}"]`,
+        `[aria-label="${m.settings_profile_match_chip_remove({ value: "Review" })}"]`,
       ),
     ).toBeNull();
     await click(
       chipInput.querySelector(
-        `[aria-label="${m.settings_profile_rule_chip_remove({ value: "Read" })}"]`,
+        `[aria-label="${m.settings_profile_match_chip_remove({ value: "Read" })}"]`,
       )!,
     );
-    expect(rowError(row())).toBe(m.settings_profile_rule_tag_empty());
+    expect(rowError(row())).toBe(m.settings_profile_match_tag_empty());
   });
 
   it("focuses the Tag input from unused control space and removes without committing its draft", async () => {
-    const modal = await open(context());
+    using modalContext = context();
+    const modal = await open(modalContext);
     const row = () => conditionRows(modal)[0]!;
     await choose(rowSelects(row())[0]!, "tags");
     await choose(rowSelects(row())[1]!, "containsAny");
@@ -682,7 +666,7 @@ describe("ProfileSelectionRuleModal", () => {
     await key(input, "Enter");
     await type(input, "pending");
     const remove = chipInput.querySelector<HTMLElement>(
-      `[aria-label="${m.settings_profile_rule_chip_remove({ value: "Read" })}"]`,
+      `[aria-label="${m.settings_profile_match_chip_remove({ value: "Read" })}"]`,
     )!;
     await mouseDown(remove);
     expect(document.activeElement).toBe(input);
@@ -695,34 +679,33 @@ describe("ProfileSelectionRuleModal", () => {
   });
 
   it("round-trips a multi-value Tag row through expression text", async () => {
-    const modal = await open(context(), {
-      id: "tag-expression-roundtrip",
-      scope: { mode: "all" },
-      filter: 'tags.containsAny("Read", "Review")',
-      profile: "default",
+    using modalContext = context();
+    const modal = await open(modalContext, {
+      match: 'tags.containsAny("Read", "Review")',
     });
     const row = () => conditionRows(modal)[0]!;
     expect(rowSelects(row()).map((select) => select.value)).toEqual([
       "tags",
       "containsAny",
     ]);
-    await click(toggle(row(), m.settings_profile_rule_edit_as_expression()));
+    await click(toggle(row(), m.settings_profile_match_edit_as_expression()));
     expect(editor(row()).state.doc.toString()).toBe(
       'tags.containsAny("Read", "Review")',
     );
-    await click(toggle(row(), m.settings_profile_rule_edit_visually()));
+    await click(toggle(row(), m.settings_profile_match_edit_visually()));
     expect(rowSelects(row()).map((select) => select.value)).toEqual([
       "tags",
       "containsAny",
     ]);
-    await click(buttonNamed(modal, m.settings_profile_rule_save()));
+    await click(buttonNamed(modal, m.settings_profile_match_save()));
     await expect(modal.result).resolves.toMatchObject({
-      filter: { and: ['tags.containsAny("Read", "Review")'] },
+      match: { and: ['tags.containsAny("Read", "Review")'] },
     });
   });
 
   it("resets a changed kind and keeps or trims Tag values when the operator changes", async () => {
-    const modal = await open(context());
+    using modalContext = context();
+    const modal = await open(modalContext);
     const row = () => conditionRows(modal)[0]!;
     await choose(rowSelects(row())[0]!, "tags");
     await choose(rowSelects(row())[1]!, "containsAll");
@@ -798,7 +781,7 @@ describe("ProfileSelectionRuleModal", () => {
   ] as const)(
     "omits populated $kind values for $emptyOperator while preserving its direct operator draft",
     async ({ kind, emptyOperator, values, expression }) => {
-      const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
+      using ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
       const prepare = async () => {
         const modal = await open(ctx);
         const row = () => conditionRows(modal)[0]!;
@@ -827,56 +810,57 @@ describe("ProfileSelectionRuleModal", () => {
       ).toEqual([...values]);
       await choose(rowSelects(toggled.row())[1]!, emptyOperator);
       await click(
-        toggle(toggled.row(), m.settings_profile_rule_edit_as_expression()),
+        toggle(toggled.row(), m.settings_profile_match_edit_as_expression()),
       );
       expect(editor(toggled.row()).state.doc.toString()).toBe(expression);
 
       const saved = await prepare();
-      await click(buttonNamed(saved.modal, m.settings_profile_rule_save()));
+      await click(buttonNamed(saved.modal, m.settings_profile_match_save()));
       await expect(saved.modal.result).resolves.toMatchObject({
-        filter: { and: [expression] },
+        match: { and: [expression] },
       });
     },
   );
 
   it("offers ordered Collection operators, defaults to is inside, and uses one row selector", async () => {
-    const modal = await open(
-      context({ libraryScope: { libraries: [myLibrary, team] } }),
-    );
+    using modalContext = context({
+      libraryScope: { libraries: [myLibrary, team] },
+    });
+    const modal = await open(modalContext);
     const row = conditionRows(modal)[0]!;
     await choose(rowSelects(row)[0]!, "collections");
     const operator = rowSelects(row)[1]!;
     expect(row.querySelector("[data-condition-row]")).not.toBeNull();
     expect(operator.value).toBe("within");
     expect(options(operator)).toEqual([
-      { value: "within", label: m.settings_profile_rule_collection_within() },
+      { value: "within", label: m.settings_profile_match_collection_within() },
       {
         value: "not-within",
-        label: m.settings_profile_rule_collection_not_within(),
+        label: m.settings_profile_match_collection_not_within(),
       },
       {
         value: "contains",
-        label: m.settings_profile_rule_collection_contains(),
+        label: m.settings_profile_match_collection_contains(),
       },
       {
         value: "not-contains",
-        label: m.settings_profile_rule_collection_not_contains(),
+        label: m.settings_profile_match_collection_not_contains(),
       },
       {
         value: "containsAny",
-        label: m.settings_profile_rule_collection_contains_any(),
+        label: m.settings_profile_match_collection_contains_any(),
       },
       {
         value: "containsAll",
-        label: m.settings_profile_rule_collection_contains_all(),
+        label: m.settings_profile_match_collection_contains_all(),
       },
       {
         value: "isEmpty",
-        label: m.settings_profile_rule_collection_is_empty(),
+        label: m.settings_profile_match_collection_is_empty(),
       },
       {
         value: "is-not-empty",
-        label: m.settings_profile_rule_collection_is_not_empty(),
+        label: m.settings_profile_match_collection_is_not_empty(),
       },
     ]);
     expect(rowSelects(row)).toHaveLength(2);
@@ -907,7 +891,7 @@ describe("ProfileSelectionRuleModal", () => {
   ] as const)(
     "saves and reopens Collection operator %s",
     async (operator, values, expression) => {
-      const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
+      using ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
       const modal = await open(ctx);
       const row = () => conditionRows(modal)[0]!;
       await choose(rowSelects(row())[0]!, "collections");
@@ -923,9 +907,9 @@ describe("ProfileSelectionRuleModal", () => {
             "Enter",
           );
       }
-      await click(buttonNamed(modal, m.settings_profile_rule_save()));
+      await click(buttonNamed(modal, m.settings_profile_match_save()));
       const saved = await modal.result;
-      expect(saved?.filter).toEqual({ and: [expression] });
+      expect(saved?.match).toEqual({ and: [expression] });
 
       const reopened = await open(ctx, saved!);
       const reopenedRow = conditionRows(reopened)[0]!;
@@ -937,9 +921,10 @@ describe("ProfileSelectionRuleModal", () => {
   );
 
   it("shares sorted, deduplicated Collection suggestions and accepts unknown paths", async () => {
-    const modal = await open(
-      context({ libraryScope: { libraries: [myLibrary, team] } }),
-    );
+    using modalContext = context({
+      libraryScope: { libraries: [myLibrary, team] },
+    });
+    const modal = await open(modalContext);
     const row = () => conditionRows(modal)[0]!;
     await choose(rowSelects(row())[0]!, "collections");
     const suggestions = () =>
@@ -952,34 +937,31 @@ describe("ProfileSelectionRuleModal", () => {
       "Future/Research",
     );
     expect(row().textContent).toContain(
-      m.settings_profile_rule_collection_not_found(),
+      m.settings_profile_match_collection_not_found(),
     );
     expect(saveEnabled(modal)).toBe(true);
     await choose(rowSelects(row())[1]!, "containsAny");
     expect(suggestions()).toEqual(["Project", "Project/Drafts"]);
     expect(row().textContent).toContain(
-      m.settings_profile_rule_collection_not_found(),
+      m.settings_profile_match_collection_not_found(),
     );
-    await click(buttonNamed(modal, m.settings_profile_rule_save()));
+    await click(buttonNamed(modal, m.settings_profile_match_save()));
     await expect(modal.result).resolves.toMatchObject({
-      filter: { and: ['collections.containsAny("Future/Research")'] },
+      match: { and: ['collections.containsAny("Future/Research")'] },
     });
   });
 
   it("round-trips labelled Collection text and preserves negated any/all expressions", async () => {
-    const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
+    using ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
     const labelled = await open(ctx, {
-      id: "collection-labelled",
-      scope: { mode: "all" },
-      filter: 'collections.within("Project/Drafts")',
-      profile: "default",
+      match: 'collections.within("Project/Drafts")',
     });
     const row = () => conditionRows(labelled)[0]!;
-    await click(toggle(row(), m.settings_profile_rule_edit_as_expression()));
+    await click(toggle(row(), m.settings_profile_match_edit_as_expression()));
     expect(editor(row()).state.doc.toString()).toBe(
       'collections.within("Project/Drafts")',
     );
-    await click(toggle(row(), m.settings_profile_rule_edit_visually()));
+    await click(toggle(row(), m.settings_profile_match_edit_visually()));
     expect(rowSelects(row()).map((select) => select.value)).toEqual([
       "collections",
       "within",
@@ -990,26 +972,24 @@ describe("ProfileSelectionRuleModal", () => {
       '!collections.containsAll("Project", "Other")',
     ]) {
       const modal = await open(ctx, {
-        id: "collection-expression",
-        scope: { mode: "all" },
-        filter: expression,
-        profile: "default",
+        match: expression,
       });
       const expressionRow = conditionRows(modal)[0]!;
       expect(rowSelects(expressionRow)).toEqual([]);
       expect(editor(expressionRow).state.doc.toString()).toBe(expression);
-      await click(buttonNamed(modal, m.settings_profile_rule_save()));
+      await click(buttonNamed(modal, m.settings_profile_match_save()));
       await expect(modal.result).resolves.toMatchObject({
-        filter: { and: [expression] },
+        match: { and: [expression] },
       });
     }
   });
 
   it("saves a Tag condition as typed and refuses an empty name", async () => {
-    const modal = await open(context());
+    using modalContext = context();
+    const modal = await open(modalContext);
     const row = () => conditionRows(modal)[0]!;
     await choose(rowSelects(row())[0]!, "tags");
-    expect(rowError(row())).toBe(m.settings_profile_rule_tag_empty());
+    expect(rowError(row())).toBe(m.settings_profile_match_tag_empty());
     expect(saveEnabled(modal)).toBe(false);
     await type(
       row().querySelector<HTMLInputElement>("input[type=text]")!,
@@ -1017,16 +997,17 @@ describe("ProfileSelectionRuleModal", () => {
     );
     expect(rowError(row())).toBeNull();
     expect(saveEnabled(modal)).toBe(true);
-    await click(buttonNamed(modal, m.settings_profile_rule_save()));
+    await click(buttonNamed(modal, m.settings_profile_match_save()));
     await expect(modal.result).resolves.toMatchObject({
-      filter: { and: ['tags.contains("Read Later")'] },
+      match: { and: ['tags.contains("Read Later")'] },
     });
   });
 
   it("pins Save and Cancel in the modal's button container, outside the content", async () => {
-    const modal = await open(context());
-    const footer = modal.modalEl.querySelector(".modal-button-container")!;
-    expect(modal.modalEl.classList.contains("mod-scrollable-content")).toBe(
+    using modalContext = context();
+    const modal = await open(modalContext);
+    const footer = modal.modalEl.querySelector(".zt-profile-match-footer")!;
+    expect(modal.modalEl.classList.contains("zt-profile-match-modal")).toBe(
       true,
     );
     expect(modal.contentEl.contains(footer)).toBe(false);
@@ -1034,11 +1015,30 @@ describe("ProfileSelectionRuleModal", () => {
       [...footer.querySelectorAll("button")].map(
         (button) => button.textContent,
       ),
-    ).toEqual([m.settings_profile_rule_save(), m.modal_cancel()]);
+    ).toEqual([m.settings_profile_match_save(), m.modal_cancel()]);
+  });
+
+  it("offers all three footer actions and permits removal of an invalid expression", async () => {
+    using modalContext = context();
+    const modal = await open(modalContext, { match: 'title == "Zotero"' });
+    const footer = modal.modalEl.querySelector(".zt-profile-match-footer")!;
+    expect(
+      [...footer.querySelectorAll("button")].map(
+        (button) => button.textContent,
+      ),
+    ).toEqual([
+      m.settings_profile_match_remove(),
+      m.settings_profile_match_save(),
+      m.modal_cancel(),
+    ]);
+    expect(saveEnabled(modal)).toBe(false);
+    await click(buttonNamed(modal, m.settings_profile_match_remove()));
+    await expect(modal.result).resolves.toEqual({ action: "remove" });
   });
 
   it("resolves undefined on cancel", async () => {
-    const modal = await open(context());
+    using modalContext = context();
+    const modal = await open(modalContext);
     await click(buttonNamed(modal, m.modal_cancel()));
     await expect(modal.result).resolves.toBeUndefined();
   });
