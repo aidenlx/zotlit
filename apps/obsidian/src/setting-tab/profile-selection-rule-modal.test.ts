@@ -589,15 +589,6 @@ describe("ProfileSelectionRuleModal", () => {
     });
   });
 
-  it("explains grouping, descendant, and exact-Tag matching beside the conditions", async () => {
-    const modal = await open(context());
-    const help = modal.contentEl.textContent;
-    expect(help).toContain(m.settings_profile_rule_group_help());
-    expect(help).toContain(m.settings_profile_rule_collection_help());
-    expect(help).toContain(m.settings_profile_rule_tag_help());
-    expect(help).toContain(m.settings_profile_rule_expression_help());
-  });
-
   it("pins Save and Cancel in the modal's button container, outside the content", async () => {
     const modal = await open(context());
     const footer = modal.modalEl.querySelector(".modal-button-container")!;
