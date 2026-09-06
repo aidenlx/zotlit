@@ -118,10 +118,10 @@ function visuallyEditable(
 ): condition is FlatCondition {
   return (
     condition.kind !== "group" &&
-    condition.kind !== "collections" &&
-    (condition.kind !== "tags" ||
+    ((condition.kind !== "collections" && condition.kind !== "tags") ||
       !condition.negated ||
       condition.operator === "contains" ||
+      condition.operator === "within" ||
       condition.operator === "isEmpty")
   );
 }
@@ -215,16 +215,12 @@ export function appendAt(
 export function freshCondition(
   kind: ConditionKind,
   negated: boolean,
-  collections: readonly CollectionChoice[],
 ): RowCondition {
   switch (kind) {
     case "item-type":
       return { kind, operator: "is", negated, values: [DEFAULT_ITEM_TYPE] };
     case "collections":
-      return {
-        kind: "expression",
-        text: `collections.within(${JSON.stringify(collections[0]?.path.join("/") ?? "")})`,
-      };
+      return { kind, operator: "within", negated, values: [] };
     case "tags":
       return { kind, operator: "contains", negated, values: [] };
   }
@@ -250,14 +246,11 @@ export function asLabelled(
  * A new group takes the other match and one condition, so it starts as the
  * alternative or exception the user reached for.
  */
-export function freshGroup(
-  parent: GroupMatch,
-  collections: readonly CollectionChoice[],
-): ConditionGroup {
+export function freshGroup(parent: GroupMatch): ConditionGroup {
   return {
     kind: "group",
     match: parent === "all" ? "any" : "all",
-    conditions: [freshCondition("item-type", false, collections)],
+    conditions: [freshCondition("item-type", false)],
   };
 }
 
@@ -273,7 +266,14 @@ export function conditionIssue(
     case "item-type":
       return null;
     case "collections":
-      return null;
+      return condition.operator !== "isEmpty" &&
+        (condition.values.length === 0 ||
+          condition.values.some(
+            (path) =>
+              path.length === 0 || path.some((segment) => segment === ""),
+          ))
+        ? m.settings_profile_rule_collection_empty()
+        : null;
     case "tags":
       return condition.operator !== "isEmpty" &&
         (condition.values.length === 0 ||

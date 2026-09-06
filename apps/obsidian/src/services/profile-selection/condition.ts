@@ -226,16 +226,20 @@ export function formatCondition(condition: RuleCondition): string {
     case "item-type":
       return `${ITEM_TYPE_FIELD} ${condition.negated ? "!=" : "=="} ${JSON.stringify(condition.values[0])}`;
     case "collections": {
-      const args = condition.values
-        .map((path) => JSON.stringify(path.join("/")))
-        .join(", ");
+      const args =
+        condition.operator === "isEmpty"
+          ? ""
+          : condition.values
+              .map((path) => JSON.stringify(path.join("/")))
+              .join(", ");
       const call = `${COLLECTIONS_FIELD}.${condition.operator}(${args})`;
       return condition.negated ? `!${call}` : call;
     }
     case "tags": {
-      const args = condition.values
-        .map((value) => JSON.stringify(value))
-        .join(", ");
+      const args =
+        condition.operator === "isEmpty"
+          ? ""
+          : condition.values.map((value) => JSON.stringify(value)).join(", ");
       const call = `${TAGS_FIELD}.${condition.operator}(${args})`;
       return condition.negated ? `!${call}` : call;
     }

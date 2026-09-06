@@ -763,64 +763,246 @@ describe("ProfileSelectionRuleModal", () => {
   });
 
   it.each([
-    'collections.within("Project/Drafts")',
-    '!collections.within("Project/Drafts")',
-    'collections.contains("Project/Drafts")',
-    '!collections.contains("Project/Drafts")',
-    'collections.containsAny("Project/Drafts", "Other")',
-    '!collections.containsAny("Project/Drafts", "Other")',
-    'collections.containsAll("Project/Drafts", "Other")',
-    '!collections.containsAll("Project/Drafts", "Other")',
-    "collections.isEmpty()",
-    "!collections.isEmpty()",
-  ])(
-    "keeps %s as an expression through save and reopen",
-    async (expression) => {
+    {
+      kind: "tags",
+      emptyOperator: "isEmpty",
+      values: ["Read", "Review"],
+      expression: "tags.isEmpty()",
+    },
+    {
+      kind: "tags",
+      emptyOperator: "is-not-empty",
+      values: ["Read", "Review"],
+      expression: "!tags.isEmpty()",
+    },
+    {
+      kind: "collections",
+      emptyOperator: "isEmpty",
+      values: [
+        "Future/Research",
+        "Personal only/Personal child",
+        "An extraordinarily long collection path/WithUnbrokenSegment012345678901234567890",
+      ],
+      expression: "collections.isEmpty()",
+    },
+    {
+      kind: "collections",
+      emptyOperator: "is-not-empty",
+      values: [
+        "Future/Research",
+        "Personal only/Personal child",
+        "An extraordinarily long collection path/WithUnbrokenSegment012345678901234567890",
+      ],
+      expression: "!collections.isEmpty()",
+    },
+  ] as const)(
+    "omits populated $kind values for $emptyOperator while preserving its direct operator draft",
+    async ({ kind, emptyOperator, values, expression }) => {
       const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
-      const original = await open(ctx, {
-        id: "collection-expression",
-        scope: { mode: "all" },
-        filter: expression,
-        profile: "default",
-      });
-      const originalRow = conditionRows(original)[0]!;
-      expect(rowSelects(originalRow)).toEqual([]);
-      expect(editor(originalRow).state.doc.toString()).toBe(expression);
+      const prepare = async () => {
+        const modal = await open(ctx);
+        const row = () => conditionRows(modal)[0]!;
+        await choose(rowSelects(row())[0]!, kind);
+        await choose(rowSelects(row())[1]!, "containsAll");
+        for (const value of values) {
+          await type(
+            row().querySelector<HTMLInputElement>("input[type=text]")!,
+            value,
+          );
+          await key(
+            row().querySelector<HTMLInputElement>("input[type=text]")!,
+            "Enter",
+          );
+        }
+        await choose(rowSelects(row())[1]!, emptyOperator);
+        return { modal, row };
+      };
+
+      const toggled = await prepare();
+      await choose(rowSelects(toggled.row())[1]!, "containsAll");
       expect(
-        toggleDisabled(originalRow, m.settings_profile_rule_edit_visually()),
-      ).toBe(true);
-      expect(saveEnabled(original)).toBe(true);
-      await click(buttonNamed(original, m.settings_profile_rule_save()));
-      const saved = await original.result;
+        [
+          ...toggled.row().querySelectorAll("[data-chip-input] span > span"),
+        ].map((chip) => chip.textContent),
+      ).toEqual([...values]);
+      await choose(rowSelects(toggled.row())[1]!, emptyOperator);
+      await click(
+        toggle(toggled.row(), m.settings_profile_rule_edit_as_expression()),
+      );
+      expect(editor(toggled.row()).state.doc.toString()).toBe(expression);
+
+      const saved = await prepare();
+      await click(buttonNamed(saved.modal, m.settings_profile_rule_save()));
+      await expect(saved.modal.result).resolves.toMatchObject({
+        filter: { and: [expression] },
+      });
+    },
+  );
+
+  it("offers ordered Collection operators, defaults to is inside, and uses one row selector", async () => {
+    const modal = await open(
+      context({ libraryScope: { libraries: [myLibrary, team] } }),
+    );
+    const row = conditionRows(modal)[0]!;
+    await choose(rowSelects(row)[0]!, "collections");
+    const operator = rowSelects(row)[1]!;
+    expect(row.querySelector("[data-condition-row]")).not.toBeNull();
+    expect(operator.value).toBe("within");
+    expect(options(operator)).toEqual([
+      { value: "within", label: m.settings_profile_rule_collection_within() },
+      {
+        value: "not-within",
+        label: m.settings_profile_rule_collection_not_within(),
+      },
+      {
+        value: "contains",
+        label: m.settings_profile_rule_collection_contains(),
+      },
+      {
+        value: "not-contains",
+        label: m.settings_profile_rule_collection_not_contains(),
+      },
+      {
+        value: "containsAny",
+        label: m.settings_profile_rule_collection_contains_any(),
+      },
+      {
+        value: "containsAll",
+        label: m.settings_profile_rule_collection_contains_all(),
+      },
+      {
+        value: "isEmpty",
+        label: m.settings_profile_rule_collection_is_empty(),
+      },
+      {
+        value: "is-not-empty",
+        label: m.settings_profile_rule_collection_is_not_empty(),
+      },
+    ]);
+    expect(rowSelects(row)).toHaveLength(2);
+    expect(row.querySelectorAll("input[type=text]")).toHaveLength(1);
+  });
+
+  it.each([
+    ["within", ["Project/Drafts"], 'collections.within("Project/Drafts")'],
+    ["not-within", ["Project/Drafts"], '!collections.within("Project/Drafts")'],
+    ["contains", ["Project/Drafts"], 'collections.contains("Project/Drafts")'],
+    [
+      "not-contains",
+      ["Project/Drafts"],
+      '!collections.contains("Project/Drafts")',
+    ],
+    [
+      "containsAny",
+      ["Project", "Project/Drafts"],
+      'collections.containsAny("Project", "Project/Drafts")',
+    ],
+    [
+      "containsAll",
+      ["Project", "Project/Drafts"],
+      'collections.containsAll("Project", "Project/Drafts")',
+    ],
+    ["isEmpty", [], "collections.isEmpty()"],
+    ["is-not-empty", [], "!collections.isEmpty()"],
+  ] as const)(
+    "saves and reopens Collection operator %s",
+    async (operator, values, expression) => {
+      const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
+      const modal = await open(ctx);
+      const row = () => conditionRows(modal)[0]!;
+      await choose(rowSelects(row())[0]!, "collections");
+      await choose(rowSelects(row())[1]!, operator);
+      for (const value of values) {
+        await type(
+          row().querySelector<HTMLInputElement>("input[type=text]")!,
+          value,
+        );
+        if (values.length > 1)
+          await key(
+            row().querySelector<HTMLInputElement>("input[type=text]")!,
+            "Enter",
+          );
+      }
+      await click(buttonNamed(modal, m.settings_profile_rule_save()));
+      const saved = await modal.result;
       expect(saved?.filter).toEqual({ and: [expression] });
 
       const reopened = await open(ctx, saved!);
       const reopenedRow = conditionRows(reopened)[0]!;
-      expect(rowSelects(reopenedRow)).toEqual([]);
-      expect(editor(reopenedRow).state.doc.toString()).toBe(expression);
-      expect(
-        toggleDisabled(reopenedRow, m.settings_profile_rule_edit_visually()),
-      ).toBe(true);
+      expect(rowSelects(reopenedRow).map((select) => select.value)).toEqual([
+        "collections",
+        operator,
+      ]);
     },
   );
 
-  it("switches a labelled row to a Collection expression without hidden controls", async () => {
+  it("shares sorted, deduplicated Collection suggestions and accepts unknown paths", async () => {
     const modal = await open(
       context({ libraryScope: { libraries: [myLibrary, team] } }),
     );
     const row = () => conditionRows(modal)[0]!;
     await choose(rowSelects(row())[0]!, "collections");
-    expect(rowSelects(row())).toEqual([]);
-    expect(editor(row()).state.doc.toString()).toBe(
-      'collections.within("Project")',
+    const suggestions = () =>
+      [...row().querySelectorAll<HTMLOptionElement>("datalist option")].map(
+        (option) => option.value,
+      );
+    expect(suggestions()).toEqual(["Project", "Project/Drafts"]);
+    await type(
+      row().querySelector<HTMLInputElement>("input[type=text]")!,
+      "Future/Research",
     );
-    expect(toggleDisabled(row(), m.settings_profile_rule_edit_visually())).toBe(
-      true,
+    expect(row().textContent).toContain(
+      m.settings_profile_rule_collection_not_found(),
+    );
+    expect(saveEnabled(modal)).toBe(true);
+    await choose(rowSelects(row())[1]!, "containsAny");
+    expect(suggestions()).toEqual(["Project", "Project/Drafts"]);
+    expect(row().textContent).toContain(
+      m.settings_profile_rule_collection_not_found(),
     );
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toMatchObject({
-      filter: { and: ['collections.within("Project")'] },
+      filter: { and: ['collections.containsAny("Future/Research")'] },
     });
+  });
+
+  it("round-trips labelled Collection text and preserves negated any/all expressions", async () => {
+    const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
+    const labelled = await open(ctx, {
+      id: "collection-labelled",
+      scope: { mode: "all" },
+      filter: 'collections.within("Project/Drafts")',
+      profile: "default",
+    });
+    const row = () => conditionRows(labelled)[0]!;
+    await click(toggle(row(), m.settings_profile_rule_edit_as_expression()));
+    expect(editor(row()).state.doc.toString()).toBe(
+      'collections.within("Project/Drafts")',
+    );
+    await click(toggle(row(), m.settings_profile_rule_edit_visually()));
+    expect(rowSelects(row()).map((select) => select.value)).toEqual([
+      "collections",
+      "within",
+    ]);
+
+    for (const expression of [
+      '!collections.containsAny("Project", "Other")',
+      '!collections.containsAll("Project", "Other")',
+    ]) {
+      const modal = await open(ctx, {
+        id: "collection-expression",
+        scope: { mode: "all" },
+        filter: expression,
+        profile: "default",
+      });
+      const expressionRow = conditionRows(modal)[0]!;
+      expect(rowSelects(expressionRow)).toEqual([]);
+      expect(editor(expressionRow).state.doc.toString()).toBe(expression);
+      await click(buttonNamed(modal, m.settings_profile_rule_save()));
+      await expect(modal.result).resolves.toMatchObject({
+        filter: { and: [expression] },
+      });
+    }
   });
 
   it("saves a Tag condition as typed and refuses an empty name", async () => {
