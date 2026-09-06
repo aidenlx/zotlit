@@ -133,7 +133,7 @@ function ruleDesc(
       }),
     );
   }
-  const { problem } = diagnoseRule(rule);
+  const { problem } = diagnoseRule(rule, display.libraries ?? []);
   if (problem) {
     desc.append(createEl("br"));
     desc.append(

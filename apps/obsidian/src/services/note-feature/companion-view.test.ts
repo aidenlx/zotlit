@@ -134,7 +134,6 @@ it("creates directly when a rule selects the Profile for an unqualified link", a
     shouldAsk: true,
     rule: {
       id: "article",
-      scope: { mode: "all" },
       filter: 'itemType == "journalArticle"',
       profile: PAPERS,
     },
@@ -158,7 +157,6 @@ it("creates directly when a rule selects the Profile for an unqualified link", a
 it("asks with the link's Profile when the rule that matched has an unavailable target", async () => {
   const rule = {
     id: "article",
-    scope: { mode: "all" as const },
     filter: 'itemType == "journalArticle"',
     profile: BOOKS,
   };

@@ -104,16 +104,72 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   // the batch flow so the deletion warning names a rule the GUI produced.
   let bookRule: {
     id: string;
-    scope: unknown;
     filter: unknown;
     profile: string;
   };
   let m: typeof import("@obsidian-messages");
   const bookRuleSummary = () =>
-    m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
-      libraries: m.settings_library_scope_personal(),
-    });
+    `${m.settings_profile_rule_item_type_is({ type: "Book" })} and ${m.settings_profile_rule_library_is({ library: m.settings_library_scope_personal() })}`;
+
+  function ruleEditorReady(title: string): Promise<boolean> {
+    return obEvalUntil(
+      vaultId,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);if(modal?.querySelector('.modal-title')?.textContent!==${JSON.stringify(title)})return false;var row=modal.querySelector('[data-condition-row]');var labels=Array.from(modal.querySelectorAll('[id]'));var target=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_target())});return String(!!target&&!!row?.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_condition_kind())}]')&&!!row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]')&&!!row.querySelector('[aria-label=${JSON.stringify(m.settings_profile_rule_value())}]')&&Array.from(modal.querySelectorAll('button')).some(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_rule_save())}));})()`,
+      { expected: "true" },
+    );
+  }
+
+  function conditionReady({
+    row = 0,
+    kind,
+    operator,
+    value,
+  }: {
+    row?: number;
+    kind: "item-type" | "library" | "collections";
+    operator: string;
+    value: string;
+  }): Promise<boolean> {
+    // A kind change replaces the value control and its options on the next render.
+    const valueControl =
+      kind === "collections" ? 'input[type="text"]' : "select";
+    return obEvalUntil(
+      vaultId,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}[aria-label=${JSON.stringify(m.settings_profile_rule_value())}]')?.value===${JSON.stringify(value)});})()`,
+      { expected: "true" },
+    );
+  }
+
+  async function addLibraryCondition(selector: string): Promise<void> {
+    await obEval(
+      vaultId,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);Array.from(modal.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_rule_add_condition())}).click();return true;})()`,
+    );
+    expect(
+      await conditionReady({
+        row: 1,
+        kind: "item-type",
+        operator: "is",
+        value: "book",
+      }),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var row=Array.from(Array.from(document.querySelectorAll('.modal')).at(-1).querySelectorAll('[data-condition-row]')).at(-1);var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_condition_kind())}]');kind.value='library';kind.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+    );
+    expect(
+      await conditionReady({
+        row: 1,
+        kind: "library",
+        operator: "is",
+        value: "personal",
+      }),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var row=Array.from(Array.from(document.querySelectorAll('.modal')).at(-1).querySelectorAll('[data-condition-row]')).at(-1);var value=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_value())}]');value.value=${JSON.stringify(selector)};value.dispatchEvent(new Event('change',{bubbles:true}));return value.value;})()`,
+    );
+  }
 
   beforeAll(async () => {
     // The dev build generates this facade; unreachable runs never load it.
@@ -453,31 +509,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(Array.from(document.querySelectorAll('.modal')).some(modal=>modal.textContent.includes(${JSON.stringify(m.settings_profile_rule_title_new())})))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));var scope=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_scope())});scope.value='selected';scope.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+    expect(await ruleEditorReady(m.settings_profile_rule_title_new())).toBe(
+      true,
     );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var checkbox=Array.from(modal.querySelectorAll('label')).find(label=>label.textContent?.startsWith(${JSON.stringify(m.settings_library_scope_personal())}))?.querySelector('input[type=checkbox]');return String(checkbox?.checked===true);})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    await addLibraryCondition("personal");
     const configured = await obEval(
       vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));function named(name){return Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var row=modal.querySelector('[data-condition-row]');var operator=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]');var value=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_value())}]');pick(operator,'is');pick(value,'book');var target=named(${JSON.stringify(m.settings_profile_rule_target())});pick(target,${JSON.stringify(booksProfile.id)});return JSON.stringify({scope:named(${JSON.stringify(m.settings_profile_rule_scope())}).value,library:Array.from(modal.querySelectorAll('label')).find(label=>label.textContent?.startsWith(${JSON.stringify(m.settings_library_scope_personal())}))?.querySelector('input[type=checkbox]')?.checked===true,type:value.value,target:target.value});})()`,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));function named(name){return Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var row=modal.querySelector('[data-condition-row]');var operator=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]');var value=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_value())}]');pick(operator,'is');pick(value,'book');var target=named(${JSON.stringify(m.settings_profile_rule_target())});pick(target,${JSON.stringify(booksProfile.id)});return JSON.stringify({type:value.value,target:target.value});})()`,
     );
     expect(JSON.parse(configured)).toEqual({
-      scope: "selected",
-      library: true,
       type: "book",
       target: booksProfile.id,
     });
@@ -501,8 +541,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ) as (typeof bookRule)[];
     expect(stored).toHaveLength(1);
     expect(stored[0]).toMatchObject({
-      scope: { mode: "selected", libraries: [{ type: "personal" }] },
-      filter: { and: ['itemType == "book"'] },
+      filter: { and: ['itemType == "book"', 'library == "personal"'] },
       profile: booksProfile.id,
     });
     bookRule = stored[0]!;
@@ -642,31 +681,10 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(Array.from(document.querySelectorAll('.modal')).some(modal=>modal.textContent.includes(${JSON.stringify(m.settings_profile_rule_title_new())})))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));var scope=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_scope())});scope.value='selected';scope.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+    expect(await ruleEditorReady(m.settings_profile_rule_title_new())).toBe(
+      true,
     );
-    // The editor re-renders after every toggle, so each Library row is
-    // looked up afresh until it shows the wanted state.
-    for (const [name, enabled] of [
-      [m.settings_library_scope_personal(), false],
-      [sharedLibrary.name, true],
-    ] as const) {
-      expect(
-        await obEvalUntil(
-          vaultId,
-          `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var checkbox=Array.from(modal.querySelectorAll('label')).find(label=>label.textContent?.startsWith(${JSON.stringify(name)}))?.querySelector('input[type=checkbox]');if(!checkbox)return false;if(checkbox.checked===${enabled})return true;checkbox.click();return false;})()`,
-          { expected: "true" },
-        ),
-      ).toBe(true);
-    }
+    await addLibraryCondition(`group:${sharedLibrary.groupID}`);
     const configured = await obEval(
       vaultId,
       `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var row=modal.querySelector('[data-condition-row]');var operator=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]');var value=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_value())}]');pick(operator,'is');pick(value,'journalArticle');var target=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_target())});pick(target,'default');return JSON.stringify({type:value.value,target:target.value});})()`,
@@ -683,14 +701,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         vaultId,
         "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'])",
       ),
-    ) as { scope: unknown; filter: unknown; profile: string }[];
+    ) as { filter: unknown; profile: string }[];
     expect(stored).toHaveLength(2);
     expect(stored[1]).toMatchObject({
-      scope: {
-        mode: "selected",
-        libraries: [{ type: "group", groupID: sharedLibrary.groupID }],
+      filter: {
+        and: [
+          'itemType == "journalArticle"',
+          `library == "group:${sharedLibrary.groupID}"`,
+        ],
       },
-      filter: { and: ['itemType == "journalArticle"'] },
       profile: "default",
     });
     await obEval(vaultId, "app.setting.close();true");
@@ -737,18 +756,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
 
     // Each new row shows its Profile, reason, and destination before the run.
-    const booksRule = m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
-      libraries: m.settings_library_scope_personal(),
-    });
-    const sharedRule = m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_item_type_is({
-        type: "Journal Article",
-      }),
-      libraries: m.settings_library_scope_group({
-        groupID: sharedLibrary.groupID!,
-      }),
-    });
+    const booksRule = bookRuleSummary();
+    const sharedRule = `${m.settings_profile_rule_item_type_is({ type: "Journal Article" })} and ${m.settings_profile_rule_library_is({ library: m.settings_library_scope_group({ groupID: sharedLibrary.groupID! }) })}`;
     const bookNotePath = `books/books-${bookItem.citationKey}.md`;
     const preprintNotePath = `books/books-${preprintItem.citationKey}.md`;
     const labNotePath = `books/books-${labItem.citationKey}.md`;
@@ -925,17 +934,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(Array.from(document.querySelectorAll('.modal')).some(modal=>modal.textContent.includes(${JSON.stringify(m.settings_profile_rule_title_new())})))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    expect(await ruleEditorReady(m.settings_profile_rule_title_new())).toBe(
+      true,
+    );
     await obEval(
       vaultId,
       `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal.querySelector('[data-condition-row]');var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_condition_kind())}]');kind.value='collections';kind.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
     );
+    expect(
+      await conditionReady({
+        kind: "collections",
+        operator: "within",
+        value: "",
+      }),
+    ).toBe(true);
     await obEval(
       vaultId,
       `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal.querySelector('[data-condition-row]');var input=row.querySelector('input[type=text]');input.value=${JSON.stringify(collectionPath)};input.dispatchEvent(new Event('input',{bubbles:true}));var target=modal.querySelector('select[aria-labelledby]');var labels=Array.from(modal.querySelectorAll('[id]'));target=Array.from(modal.querySelectorAll('select')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_target())});target.value=${JSON.stringify(booksProfile.id)};target.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
@@ -947,7 +959,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(stored).toHaveLength(3);
     const collectionRule = stored[2]!;
     expect(collectionRule).toMatchObject({
-      scope: { mode: "all" },
       filter: {
         and: [`collections.within(${JSON.stringify(collectionPath)})`],
       },
@@ -975,11 +986,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       return selectSuggestion(vaultId, m.modal_profile_preselected());
     };
-    const pickerSummary = m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_collections_inside({
-        collections: collectionPath,
-      }),
-      libraries: m.settings_library_scope_all(),
+    const pickerSummary = m.settings_profile_rule_collections_inside({
+      collections: collectionPath,
     });
     const descendantSelection = await quickSwitchSelection();
     expect(descendantSelection).toContain(booksProfile.label);
@@ -1017,6 +1025,16 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
+    expect(await ruleEditorReady(m.settings_profile_rule_title_edit())).toBe(
+      true,
+    );
+    expect(
+      await conditionReady({
+        kind: "collections",
+        operator: "within",
+        value: collectionPath,
+      }),
+    ).toBe(true);
     expect(
       JSON.parse(
         await obEval(
@@ -1034,6 +1052,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       vaultId,
       `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal.querySelector('[data-condition-row]');var operator=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
     );
+    expect(
+      await conditionReady({
+        kind: "collections",
+        operator: "contains",
+        value: collectionPath,
+      }),
+    ).toBe(true);
     expect(
       await clickModalButton(vaultId, m.settings_profile_rule_save()),
     ).toBe(true);
@@ -1242,13 +1267,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(Array.from(document.querySelectorAll('.modal')).some(modal=>modal.textContent.includes(${JSON.stringify(m.settings_profile_rule_title_edit())})))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
+    expect(await ruleEditorReady(m.settings_profile_rule_title_edit())).toBe(
+      true,
+    );
     expect(
       await obEval(
         vaultId,
@@ -1256,11 +1277,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ),
     ).toBe("default");
     expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));var target=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_target())});return String(target?.value==='default'&&!Array.from(target.options).some(option=>option.value===${JSON.stringify(booksProfile.id)})&&!Array.from(modal.querySelectorAll('[role=alert]')).some(alert=>alert.textContent===${JSON.stringify(m.settings_profile_rule_target_unavailable())}));})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
       await clickModalButton(vaultId, m.settings_profile_rule_save()),
     ).toBe(true);
-    await waitFor(
-      async () => (await readStoredRules())[0]?.profile === "default",
-    );
+    expect(
+      await waitFor(
+        async () => (await readStoredRules())[0]?.profile === "default",
+      ),
+    ).toBe(true);
     expect(await readStoredRules()).toEqual([
       { ...bookRule, profile: "default" },
       sharedRule,
@@ -1492,7 +1522,7 @@ async function selectSuggestion(
 function clickModalButton(vaultId: string, label: string): Promise<boolean> {
   return obEvalUntil(
     vaultId,
-    `(function(){var button=Array.from(document.querySelectorAll('.modal button')).find(button=>button.textContent.trim()===${JSON.stringify(label)});if(!button||button.disabled)return false;button.click();return true;})()`,
+    `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var button=modal&&Array.from(modal.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(label)});if(!button||button.disabled)return false;button.click();return true;})()`,
     { expected: "true" },
   );
 }

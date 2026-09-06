@@ -10,6 +10,7 @@ import {
   getChildNotesByParentIDs,
   getZoteroIdentity,
   getItemsByKey,
+  getLibraries,
   resolveIndexedKeyLibrary,
   resolveItemTags,
 } from "@zotlit/db";
@@ -56,6 +57,7 @@ import type {
 } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
 import type { AttachmentImport } from "@/services/attachment-import/service";
+import { resolveLibraryScope } from "@/services/library-scope/scope";
 import type { NoteImport } from "@/services/note-import/service";
 import {
   itemKeyFromFrontmatter,
@@ -769,7 +771,12 @@ async function resolveCreationProfile(
         sources.item,
         resolveMembershipFacts(lease.client, sources.item),
       ),
-      { isAvailable },
+      {
+        isAvailable,
+        libraries: resolveLibraryScope(getLibraries(lease.client), {
+          mode: "all",
+        }).available,
+      },
     );
     switch (result.outcome) {
       case "matched":

@@ -15,7 +15,6 @@ const books = "Bk3Qn7XvT2Lp" as ProfileId;
 const papers = "Rz9Wm4YfH6Kd" as ProfileId;
 const booksRule = {
   id: "books",
-  scope: { mode: "all" },
   filter: 'itemType == "book"',
   profile: books,
 } as const;
@@ -105,10 +104,7 @@ it("warns about referencing rules without a target control when no notes use the
   const text = modal.contentEl.textContent;
   expect(text).toContain(m.settings_profile_delete_rules_count({ count: 1 }));
   expect(text).toContain(
-    m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
-      libraries: m.settings_library_scope_all(),
-    }),
+    m.settings_profile_rule_item_type_is({ type: "Book" }),
   );
   expect(text).toContain(m.settings_profile_delete_rules_repair());
   // The warning is not a gate: the delete action resolves as before.
@@ -136,14 +132,8 @@ it("lists every referencing rule below the note target chooser", async () => {
   expect(
     Array.from(modal.contentEl.querySelectorAll("li"), (li) => li.textContent),
   ).toEqual([
-    m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
-      libraries: m.settings_library_scope_all(),
-    }),
-    m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_item_type_is({ type: "Thesis" }),
-      libraries: m.settings_library_scope_all(),
-    }),
+    m.settings_profile_rule_item_type_is({ type: "Book" }),
+    m.settings_profile_rule_item_type_is({ type: "Thesis" }),
   ]);
   expect(text).toContain(m.settings_profile_delete_rules_repair());
   modal.close();

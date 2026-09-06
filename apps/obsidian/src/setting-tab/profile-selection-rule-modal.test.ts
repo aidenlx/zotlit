@@ -121,13 +121,6 @@ async function key(input: HTMLInputElement, value: string) {
   });
 }
 
-async function check(input: HTMLInputElement, checked: boolean) {
-  await act(() => {
-    input.checked = checked;
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-}
-
 /** Save and Cancel live in the modal's button container, beside the content. */
 function buttonNamed(
   modal: ProfileSelectionRuleModal,
@@ -154,14 +147,6 @@ async function mouseDown(element: Element) {
 
 function saveEnabled(modal: ProfileSelectionRuleModal): boolean {
   return !buttonNamed(modal, m.settings_profile_rule_save()).disabled;
-}
-
-/** The error text of the field whose control is `select`, or `null`. */
-function fieldError(select: HTMLSelectElement): string | null {
-  return (
-    select.parentElement!.parentElement!.querySelector("[role=alert]")
-      ?.textContent ?? null
-  );
 }
 
 /** The condition rows, in reading order: each is the element around one remove button. */
@@ -234,66 +219,112 @@ describe("ProfileSelectionRuleModal", () => {
     await choose(itemType!, "book");
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toMatchObject({
-      scope: { mode: "all" },
       filter: { and: ['itemType == "book"'] },
       profile: profileAId,
     });
   });
 
-  it("disables Save with no library checked, then persists canonical order once checked", async () => {
-    const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
-    const modal = await open(ctx);
-    const scope = () =>
-      selectNamed(modal.contentEl, m.settings_profile_rule_scope());
-    await choose(scope(), "selected");
-    const checkbox = (label: string) =>
-      [...modal.contentEl.querySelectorAll("label")]
-        .find((row) => row.textContent?.startsWith(label))!
-        .querySelector<HTMLInputElement>("input[type=checkbox]")!;
-    // Switching to Selected starts with My Library checked.
-    expect(checkbox(m.settings_library_scope_personal()).checked).toBe(true);
-    await check(checkbox(m.settings_library_scope_personal()), false);
-    expect(fieldError(scope())).toBe(m.settings_profile_rule_scope_empty());
-    expect(saveEnabled(modal)).toBe(false);
-    await check(checkbox(m.settings_library_scope_personal()), true);
-    await check(checkbox("Team"), true);
-    expect(fieldError(scope())).toBeNull();
-    expect(saveEnabled(modal)).toBe(true);
+  it("saves a Library condition through labelled and expression controls without a scope field", async () => {
+    const modal = await open(
+      context({ libraryScope: { libraries: [myLibrary, team] } }),
+    );
+    expect(
+      selectNamed(modal.contentEl, m.settings_profile_rule_scope()),
+    ).toBeUndefined();
+    let row = conditionRows(modal)[0]!;
+    await choose(rowSelects(row)[0]!, "library");
+    row = conditionRows(modal)[0]!;
+    expect(options(rowSelects(row)[2]!)).toEqual([
+      { value: "personal", label: m.settings_library_scope_personal() },
+      { value: "group:5", label: "Team" },
+    ]);
+    await choose(rowSelects(row)[2]!, "group:5");
+    await choose(rowSelects(conditionRows(modal)[0]!)[1]!, "is-not");
+    row = conditionRows(modal)[0]!;
+    await click(toggle(row, m.settings_profile_rule_edit_as_expression()));
+    row = conditionRows(modal)[0]!;
+    expect(editor(row).state.doc.toString()).toBe('library != "group:5"');
+    await click(toggle(row, m.settings_profile_rule_edit_visually()));
+    expect(
+      rowSelects(conditionRows(modal)[0]!).map(({ value }) => value),
+    ).toEqual(["library", "is-not", "group:5"]);
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
-    await expect(modal.result).resolves.toMatchObject({
-      scope: {
-        mode: "selected",
-        libraries: [{ type: "personal" }, { type: "group", groupID: 5 }],
-      },
+    await expect(modal.result).resolves.toEqual({
+      id: expect.any(String),
+      filter: { and: ['library != "group:5"'] },
+      profile: "default",
     });
   });
 
-  it("preselects the target Profile, libraries, and conditions of an existing rule", async () => {
+  it("preselects the target Profile and Library and item-type conditions of an existing rule", async () => {
     const ctx = context({ libraryScope: { libraries: [team] } });
     const modal = await open(ctx, {
       id: "rule-1",
-      scope: { mode: "selected", libraries: [{ type: "group", groupID: 5 }] },
-      filter: { and: ['itemType != "thesis"'] },
+      filter: { and: ['library == "group:5"', 'itemType != "thesis"'] },
       profile: profileAId,
     });
     expect(
       selectNamed(modal.contentEl, m.settings_profile_rule_target()).value,
     ).toBe(profileAId);
     expect(
-      selectNamed(modal.contentEl, m.settings_profile_rule_scope()).value,
-    ).toBe("selected");
-    const teamRow = [...modal.contentEl.querySelectorAll("label")].find((row) =>
-      row.textContent?.startsWith("Team"),
-    )!;
-    expect(teamRow.querySelector<HTMLInputElement>("input")!.checked).toBe(
-      true,
+      rowSelects(conditionRows(modal)[0]!).map(({ value }) => value),
+    ).toEqual(["library", "is", "group:5"]);
+    expect(
+      rowSelects(conditionRows(modal)[1]!).map(({ value }) => value),
+    ).toEqual(["item-type", "is-not", "thesis"]);
+  });
+
+  it("saves a repaired target before the editor renders the change", async () => {
+    const rule: ProfileSelectionRule = {
+      id: "rule-repair",
+      filter: { and: ['itemType == "book"', 'library == "personal"'] },
+      profile: profileAId,
+    };
+    const modal = await open(
+      context({
+        profile: { profiles: [] },
+        libraryScope: { libraries: [myLibrary] },
+      }),
+      rule,
     );
-    const [kind, operator, itemType] = rowSelects(conditionRows(modal)[0]!);
-    expect([kind!.value, operator!.value, itemType!.value]).toEqual([
-      "item-type",
-      "is-not",
-      "thesis",
-    ]);
+    const target = selectNamed(
+      modal.contentEl,
+      m.settings_profile_rule_target(),
+    );
+    const save = buttonNamed(modal, m.settings_profile_rule_save());
+    await act(() => {
+      target.value = "default";
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+      save.click();
+    });
+    await expect(modal.result).resolves.toEqual({
+      ...rule,
+      profile: "default",
+    });
+  });
+
+  it("shows an unknown Library diagnostic in labelled and expression rows", async () => {
+    const modal = await open(
+      context({ libraryScope: { libraries: [myLibrary] } }),
+      {
+        id: "rule-unknown",
+        filter: 'library == "group:5"',
+        profile: profileAId,
+      },
+    );
+    let row = conditionRows(modal)[0]!;
+    expect(rowSelects(row)[2]!.value).toBe("group:5");
+    expect(rowError(row)).toBe(
+      m.profile_rule_problem_unknown_library({ text: '"group:5"' }),
+    );
+    expect(saveEnabled(modal)).toBe(false);
+    await click(toggle(row, m.settings_profile_rule_edit_as_expression()));
+    row = conditionRows(modal)[0]!;
+    expect(rowError(row)).toBe(
+      m.profile_rule_problem_unknown_library({ text: '"group:5"' }),
+    );
+    await typeExpression(row, 'library == "personal"');
+    expect(saveEnabled(modal)).toBe(true);
   });
 
   it("starts with Match all and writes alternatives once switched to Match any", async () => {
@@ -356,7 +387,7 @@ describe("ProfileSelectionRuleModal", () => {
 
     const reopened = await open(context(), {
       id: "nested",
-      scope: { mode: "all" },
+
       filter,
       profile: "default",
     });
@@ -417,7 +448,6 @@ describe("ProfileSelectionRuleModal", () => {
   it("keeps a leaf outside the contract as an expression row until it is corrected", async () => {
     const modal = await open(context(), {
       id: "rule-2",
-      scope: { mode: "all" },
       filter: 'title == "Zotero"',
       profile: "default",
     });
@@ -463,7 +493,6 @@ describe("ProfileSelectionRuleModal", () => {
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toEqual({
       id: "rule-2",
-      scope: { mode: "all" },
       filter: { and: ['tags.contains("Read") && itemType == "book"'] },
       profile: profileAId,
     });
@@ -472,7 +501,6 @@ describe("ProfileSelectionRuleModal", () => {
   it("switches a row between a labelled test and its expression without changing meaning", async () => {
     const modal = await open(context(), {
       id: "rule-3",
-      scope: { mode: "all" },
       filter: {
         and: [
           '!tags.contains("Read")',
@@ -526,7 +554,6 @@ describe("ProfileSelectionRuleModal", () => {
     async (expression) => {
       const original = await open(context(), {
         id: "extended-tags",
-        scope: { mode: "all" },
         filter: expression,
         profile: "default",
       });
@@ -553,7 +580,6 @@ describe("ProfileSelectionRuleModal", () => {
   it("opens the supported contains expression as a labelled Tag row", async () => {
     const modal = await open(context(), {
       id: "contains-tag",
-      scope: { mode: "all" },
       filter: 'tags.contains("Read")',
       profile: "default",
     });
@@ -697,7 +723,6 @@ describe("ProfileSelectionRuleModal", () => {
   it("round-trips a multi-value Tag row through expression text", async () => {
     const modal = await open(context(), {
       id: "tag-expression-roundtrip",
-      scope: { mode: "all" },
       filter: 'tags.containsAny("Read", "Review")',
       profile: "default",
     });
@@ -970,7 +995,6 @@ describe("ProfileSelectionRuleModal", () => {
     const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
     const labelled = await open(ctx, {
       id: "collection-labelled",
-      scope: { mode: "all" },
       filter: 'collections.within("Project/Drafts")',
       profile: "default",
     });
@@ -991,7 +1015,6 @@ describe("ProfileSelectionRuleModal", () => {
     ]) {
       const modal = await open(ctx, {
         id: "collection-expression",
-        scope: { mode: "all" },
         filter: expression,
         profile: "default",
       });

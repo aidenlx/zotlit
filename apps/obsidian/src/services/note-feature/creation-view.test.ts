@@ -22,13 +22,11 @@ vi.mock("@/views/quick-switch/profile-picker", () => ({
 const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
 const BOOK_RULE = {
   id: "book",
-  scope: { mode: "all" as const },
   filter: 'itemType == "book"',
   profile: BOOKS,
 };
-const BOOK_RULE_SUMMARY = m.settings_profile_rule_summary({
-  conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
-  libraries: m.settings_library_scope_all(),
+const BOOK_RULE_SUMMARY = m.settings_profile_rule_item_type_is({
+  type: "Book",
 });
 
 function booksPreview(
@@ -126,7 +124,6 @@ it("resolves the selection from the Item and hands the picker its rule reason, p
   const books = "Bk3Qn7XvT2Lp" as ProfileId;
   const rule = {
     id: "book",
-    scope: { mode: "all" as const },
     filter: 'itemType == "book"',
     profile: books,
   };
@@ -171,10 +168,7 @@ it("resolves the selection from the Item and hands the picker its rule reason, p
     expect.objectContaining({
       preselected: books,
       source: "rule",
-      reason: m.settings_profile_rule_summary({
-        conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
-        libraries: m.settings_library_scope_all(),
-      }),
+      reason: m.settings_profile_rule_item_type_is({ type: "Book" }),
       problem: undefined,
       previews: [preview],
     }),
@@ -195,10 +189,7 @@ it("resolves the selection from the Item and hands the picker its rule reason, p
     expect.objectContaining({
       preselected: "default",
       problem: m.modal_profile_problem_unavailable_target({
-        rule: m.settings_profile_rule_summary({
-          conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
-          libraries: m.settings_library_scope_all(),
-        }),
+        rule: m.settings_profile_rule_item_type_is({ type: "Book" }),
       }),
     }),
   );

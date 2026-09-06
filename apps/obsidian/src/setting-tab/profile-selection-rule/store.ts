@@ -5,7 +5,6 @@ import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import type { LibraryScope } from "@/services/library-scope/scope";
 import type { ProfileSelectionRule } from "@/services/profile-selection";
 
 import { initialDraft } from "./draft";
@@ -15,7 +14,6 @@ export interface RuleEditorState {
   draft: RuleDraft;
   deps: RuleEditorDeps;
   setProfile: (profile: ProfileSelector) => void;
-  setScope: (scope: LibraryScope) => void;
   setRoot: (root: ConditionGroup) => void;
 }
 
@@ -29,7 +27,6 @@ export function createRuleEditorStore(
     draft: initialDraft(rule),
     deps,
     setProfile: (profile) => set({ draft: { ...get().draft, profile } }),
-    setScope: (scope) => set({ draft: { ...get().draft, scope } }),
     setRoot: (root) => set({ draft: { ...get().draft, root } }),
   }));
 }

@@ -615,19 +615,16 @@ describe("Profile source selection", () => {
     const papers = "Rz9Wm4YfH6Kd" as ProfileId;
     const thesisRule = {
       id: "thesis",
-      scope: { mode: "all" },
       filter: 'itemType == "thesis"',
       profile: papers,
     } as const;
     const bookRule = {
       id: "book",
-      scope: { mode: "selected", libraries: [{ type: "personal" }] },
-      filter: 'itemType == "book"',
+      filter: 'library == "personal" && itemType == "book"',
       profile: books,
     } as const;
     const anyRule = {
       id: "any",
-      scope: { mode: "all" },
       filter: { and: [] },
       profile: "default",
     } as const;
@@ -697,30 +694,26 @@ describe("Profile source selection", () => {
       shouldAsk: true,
     });
   });
-  it("stops at a broken in-scope rule or an unavailable target and ignores rules outside the Item's Library", async () => {
+  it("stops at a broken rule or an unavailable target", async () => {
     const books = "Bk3Qn7XvT2Lp" as ProfileId;
     const gone = "Rz9Wm4YfH6Kd" as ProfileId;
     const brokenGroupRule = {
       id: "broken-group",
-      scope: { mode: "selected", libraries: [{ type: "group", groupID: 118 }] },
-      filter: "itemType ==",
+      filter: { and: ['library == "group:118"', "itemType =="] },
       profile: books,
     } as const;
     const goneRule = {
       id: "gone",
-      scope: { mode: "all" },
       filter: 'itemType == "book"',
       profile: gone,
     } as const;
     const bookRule = {
       id: "book",
-      scope: { mode: "all" },
       filter: 'itemType == "book"',
       profile: books,
     } as const;
     const brokenRule = {
       id: "broken",
-      scope: { mode: "all" },
       filter: 'title == "x"',
       profile: books,
     } as const;
@@ -737,7 +730,11 @@ describe("Profile source selection", () => {
       selector: "default",
       source: "bound",
       shouldAsk: true,
-      problem: { kind: "unavailable-target", rule: goneRule, selector: gone },
+      problem: {
+        kind: "broken-rule",
+        rule: brokenGroupRule,
+        problem: { code: "syntax", from: 11, to: 11, text: "" },
+      },
     });
     expect(
       await feature.resolveCreationProfile({
@@ -824,7 +821,6 @@ describe("Profile source selection", () => {
     const books = "Bk3Qn7XvT2Lp" as ProfileId;
     const bookRule = {
       id: "book",
-      scope: { mode: "all" },
       filter: 'itemType == "book"',
       profile: books,
     } as const;
@@ -4475,8 +4471,11 @@ function compileDocumentFrontmatter(
 
 function makeDb(): SyncRenderDeps["db"] {
   const client = createClient(":memory:");
-  // The Zotero fixture schema, empty: membership facts read as none.
+  // Known Libraries with no memberships.
   createFixtureSchema(client.$client);
+  client.$client.exec(
+    "insert into libraries (libraryID, type) values (1, 'user'), (2, 'group'); insert into groups (groupID, libraryID, name) values (118, 2, 'Team');",
+  );
   return {
     state: "ready",
     client,

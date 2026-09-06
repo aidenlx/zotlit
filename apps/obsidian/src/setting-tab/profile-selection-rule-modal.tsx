@@ -1,4 +1,4 @@
-// One Profile Selection Rule editor: Library scope, grouped item-type,
+// One Profile Selection Rule editor: grouped Library, item-type,
 // Collection, Tag, and expression conditions, and the target Profile. The
 // editor's tree mirrors the stored Rule Filter. This is the modal shell; the
 // editor itself is the React tree under `profile-selection-rule/`.
@@ -15,7 +15,7 @@ import type {
 } from "@/services/profile-selection";
 
 import type { SettingTabContext } from "./context";
-import { toFilter } from "./profile-selection-rule/draft";
+import { draftInvalid, toFilter } from "./profile-selection-rule/draft";
 import type { RuleEditorDeps } from "./profile-selection-rule/draft";
 import { RuleEditor } from "./profile-selection-rule/RuleEditor";
 import {
@@ -77,10 +77,11 @@ export class ProfileSelectionRuleModal extends Modal {
       <RuleEditorStoreProvider value={this.#store}>
         <RuleEditor
           footer={footer}
-          onSave={(draft) => {
+          onSave={() => {
+            const { draft, deps } = this.#store.getState();
+            if (draftInvalid(draft, deps)) return;
             this.#decision.resolve({
               id: this.#rule?.id ?? mintId(),
-              scope: draft.scope,
               filter: toFilter(draft.root),
               profile: draft.profile,
             });

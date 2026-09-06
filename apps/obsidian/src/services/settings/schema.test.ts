@@ -70,17 +70,12 @@ describe("schema/defaults invariants", () => {
     const rules = [
       {
         id: "r1",
-        scope: { mode: "all" },
         filter: 'itemType == "book"',
         profile: "Bk3Qn7XvT2Lp",
       },
       {
         id: "r2",
-        scope: {
-          mode: "selected",
-          libraries: [{ type: "group", groupID: 118 }],
-        },
-        filter: { and: [] },
+        filter: 'library == "group:118"',
         profile: "default",
       },
     ];
@@ -94,15 +89,9 @@ describe("schema/defaults invariants", () => {
     expect(
       v.safeParse(entry, [{ ...rules[0], profile: "not-a-profile" }]).success,
     ).toBe(false);
-    // Local database Library ids never persist: a selector is the identity.
-    expect(
-      v.safeParse(entry, [
-        {
-          ...rules[1],
-          scope: { mode: "selected", libraries: [{ libraryID: 2 }] },
-        },
-      ]).success,
-    ).toBe(false);
+    // Rules carry Library conditions inside the filter; the schema has no scope field.
+    const parsed = v.parse(entry, [{ ...rules[0], scope: { mode: "all" } }]);
+    expect(parsed[0]).not.toHaveProperty("scope");
     expect(defaults["profile.selection-rules"]).toEqual([]);
   });
 

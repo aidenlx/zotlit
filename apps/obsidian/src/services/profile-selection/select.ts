@@ -1,11 +1,9 @@
 // Automatic Profile Selection: the pure matcher behind the Note Feature's creation boundary.
 //
-// Rules run in user order over the Item's Library scope. A valid nonmatch
-// advances; the first match supplies the target selector and the rule that
-// explains it. Three outcomes stop automatic selection and require an
-// explicit choice instead: an in-scope rule the vault cannot evaluate, and a
-// matching rule whose target Profile is unavailable. Rules outside the Item's
-// Library scope contribute nothing, not even a problem.
+// Rules run in user order. A valid nonmatch advances; the first match supplies
+// the target selector and the rule that explains it. An unevaluable rule or
+// a matching rule whose target Profile is unavailable requires an explicit
+// choice instead. Library membership is tested by the filter itself.
 //
 // The facts of the Item come in, a selection comes out. The database takes
 // part only through the Profile lookup the caller injects.
@@ -14,8 +12,7 @@ import type { Item } from "@zotlit/db";
 
 import { getLogger } from "@/lib/log";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import { selectorKey } from "@/services/library-scope/scope";
-import type { LibrarySelector } from "@/services/library-scope/scope";
+import type { AvailableLibrary } from "@/services/library-scope/scope";
 
 import { compileFilter, matchCondition } from "./condition";
 import type {
@@ -48,7 +45,7 @@ export type RuleSelection =
  * The facts of a database Item, as rules read them: its Library and type
  * from the Item row, its memberships from `resolveMembershipFacts`. An Item
  * of a Library that is neither the user Library nor a known group has no
- * Library selector, so only rules scoped to all Libraries see it.
+ * Library selector; it still supplies its other facts to rules.
  */
 export function ruleItem(
   item: Pick<Item, "libraryID" | "groupID" | "fields">,
@@ -77,11 +74,11 @@ export function selectProfileByRules(
   item: RuleItem,
   options: {
     isAvailable: (selector: ProfileSelector) => boolean;
+    libraries: readonly AvailableLibrary[];
   },
 ): RuleSelection {
   for (const rule of rules) {
-    if (!inScope(rule, item.library)) continue;
-    const { condition, problem } = diagnoseRule(rule);
+    const { condition, problem } = diagnoseRule(rule, options.libraries);
     if (problem) {
       logger.debug("Profile Selection Rule {id} cannot be evaluated", {
         id: rule.id,
@@ -119,16 +116,7 @@ export function selectProfileByRules(
  */
 export function diagnoseRule(
   rule: Pick<ProfileSelectionRule, "filter">,
+  libraries: readonly AvailableLibrary[],
 ): CompiledCondition {
-  return compileFilter(rule.filter);
-}
-
-function inScope(
-  rule: ProfileSelectionRule,
-  library: LibrarySelector | null,
-): boolean {
-  if (rule.scope.mode === "all") return true;
-  if (library === null) return false;
-  const key = selectorKey(library);
-  return rule.scope.libraries.some((selector) => selectorKey(selector) === key);
+  return compileFilter(rule.filter, libraries);
 }

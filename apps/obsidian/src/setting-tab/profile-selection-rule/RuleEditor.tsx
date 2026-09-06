@@ -1,5 +1,4 @@
-// The rule editor's body: the target Profile, the Library scope, and the
-// conditions — a filter builder in the shape of Obsidian's Bases filter
+// The rule editor's body: the target Profile and its conditions — a filter builder in the shape of Obsidian's Bases filter
 // editor, where a row is a labelled test or a Filter Expression as code. The
 // Save and Cancel buttons render into the modal's own button container,
 // outside the scrolling body.
@@ -16,12 +15,8 @@ import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import { cn, tooltipAttrs } from "@/lib/utils";
-import { libraryLabel, selectorLabel } from "@/services/library-scope/label";
-import { compareSelectors, selectorKey } from "@/services/library-scope/scope";
-import type {
-  LibrarySelector,
-  LibraryScope,
-} from "@/services/library-scope/scope";
+import { libraryLabel } from "@/services/library-scope/label";
+import { selectorKey } from "@/services/library-scope/scope";
 import { itemTypeLabel } from "@/services/profile-selection";
 
 import { ChipInput } from "./ChipInput";
@@ -35,7 +30,6 @@ import {
   freshGroup,
   removeAt,
   replaceAt,
-  scopeIssue,
   updateGroup,
   vacuous,
 } from "./draft";
@@ -45,7 +39,6 @@ import type {
   ConditionPath,
   GroupMatch,
   RowCondition,
-  RuleDraft,
 } from "./draft";
 import { ExpressionEditor } from "./ExpressionEditor";
 import { useRuleEditorStore } from "./store";
@@ -93,7 +86,7 @@ const quietDropdown = cn(
 export interface RuleEditorProps {
   /** The modal's button container; Save and Cancel render there. */
   footer: HTMLElement;
-  onSave: (draft: RuleDraft) => void;
+  onSave: () => void;
   onCancel: () => void;
 }
 
@@ -101,7 +94,6 @@ export function RuleEditor({ footer, onSave, onCancel }: RuleEditorProps) {
   return (
     <div className="zt:flex zt:flex-col zt:gap-4">
       <ProfileField />
-      <LibrariesField />
       <ConditionsSection />
       {createPortal(<Footer onSave={onSave} onCancel={onCancel} />, footer)}
     </div>
@@ -114,13 +106,7 @@ function Footer({ onSave, onCancel }: Omit<RuleEditorProps, "footer">) {
   const invalid = draftInvalid(draft, deps);
   return (
     <>
-      <Button
-        variant="cta"
-        disabled={invalid}
-        onClick={() => {
-          if (!invalid) onSave(draft);
-        }}
-      >
+      <Button variant="cta" disabled={invalid} onClick={onSave}>
         {m.settings_profile_rule_save()}
       </Button>
       <Button onClick={onCancel}>{m.modal_cancel()}</Button>
@@ -134,13 +120,11 @@ function Field({
   desc,
   error,
   control,
-  children,
 }: {
   name: string;
   desc: string;
   error: string | null;
   control: (labelId: string) => ReactNode;
-  children?: ReactNode;
 }) {
   const labelId = useId();
   return (
@@ -160,7 +144,6 @@ function Field({
         </div>
         <div className="zt:shrink-0">{control(labelId)}</div>
       </div>
-      {children}
     </div>
   );
 }
@@ -205,116 +188,6 @@ function ProfileField() {
         </Dropdown>
       )}
     />
-  );
-}
-
-function LibrariesField() {
-  const scope = useRuleEditorStore((state) => state.draft.scope);
-  const libraries = useRuleEditorStore((state) => state.deps.libraries);
-  const setScope = useRuleEditorStore((state) => state.setScope);
-  /** Where switching Libraries to Selected starts: My Library, when available. */
-  const starting = (): LibrarySelector[] =>
-    libraries.some((library) => library.selector.type === "personal")
-      ? [{ type: "personal" }]
-      : [];
-  return (
-    <Field
-      name={m.settings_profile_rule_scope()}
-      desc={m.settings_profile_rule_scope_desc()}
-      error={scopeIssue(scope)}
-      control={(labelId) => (
-        <Dropdown
-          aria-labelledby={labelId}
-          value={scope.mode}
-          onChange={(value) =>
-            setScope(
-              value === "all"
-                ? { mode: "all" }
-                : { mode: "selected", libraries: starting() },
-            )
-          }
-        >
-          <DropdownItem value="all">
-            {m.settings_library_scope_all()}
-          </DropdownItem>
-          <DropdownItem value="selected">
-            {m.settings_library_scope_selected()}
-          </DropdownItem>
-        </Dropdown>
-      )}
-    >
-      {scope.mode === "selected" && (
-        <LibraryChecklist scope={scope} onChange={setScope} />
-      )}
-    </Field>
-  );
-}
-
-/**
- * Every selected Library, available or not, then every available Library
- * this rule does not select — one checkbox each.
- */
-function LibraryChecklist({
-  scope,
-  onChange,
-}: {
-  scope: Extract<LibraryScope, { mode: "selected" }>;
-  onChange: (scope: LibraryScope) => void;
-}) {
-  const libraries = useRuleEditorStore((state) => state.deps.libraries);
-  const byKey = new Map(
-    libraries.map((library) => [selectorKey(library.selector), library]),
-  );
-  const selected = new Set(scope.libraries.map(selectorKey));
-  const rows = [
-    ...scope.libraries.map((selector) => {
-      const library = byKey.get(selectorKey(selector));
-      return {
-        selector,
-        label: library ? libraryLabel(library) : selectorLabel(selector),
-        unavailable: library === undefined,
-        checked: true,
-      };
-    }),
-    ...libraries
-      .filter((library) => !selected.has(selectorKey(library.selector)))
-      .map((library) => ({
-        selector: library.selector,
-        label: libraryLabel(library),
-        unavailable: false,
-        checked: false,
-      })),
-  ];
-  return (
-    <ul className="zt:flex zt:flex-col zt:gap-1.5 zt:rounded-md zt:bg-card zt:p-3">
-      {rows.map((row) => (
-        <li key={selectorKey(row.selector)}>
-          <label className="zt:flex zt:items-center zt:gap-2 zt:text-sm">
-            <input
-              type="checkbox"
-              checked={row.checked}
-              onChange={(event) =>
-                onChange({
-                  mode: "selected",
-                  libraries: event.currentTarget.checked
-                    ? [...scope.libraries, row.selector].sort(compareSelectors)
-                    : scope.libraries.filter(
-                        (candidate) =>
-                          selectorKey(candidate) !== selectorKey(row.selector),
-                      ),
-                })
-              }
-            />
-            <span>{row.label}</span>
-            {row.unavailable && (
-              <span className="zt:text-xs zt:text-muted-foreground">
-                {m.settings_library_scope_unavailable()}
-              </span>
-            )}
-          </label>
-        </li>
-      ))}
-    </ul>
   );
 }
 
@@ -507,6 +380,9 @@ function ConditionRow({
                   replace(freshCondition(value as ConditionKind, false))
                 }
               >
+                <DropdownItem value="library">
+                  {m.settings_profile_rule_condition_library()}
+                </DropdownItem>
                 <DropdownItem value="item-type">
                   {m.settings_profile_rule_condition_item_type()}
                 </DropdownItem>
@@ -563,7 +439,7 @@ function ConditionOperator({
   condition: Exclude<RowCondition, { kind: "expression" }>;
   onChange: (next: RowCondition) => void;
 }) {
-  if (condition.kind === "item-type")
+  if (condition.kind === "item-type" || condition.kind === "library")
     return (
       <Dropdown
         aria-label={m.settings_profile_rule_operator()}
@@ -691,9 +567,37 @@ function ConditionValue({
   condition: Exclude<RowCondition, { kind: "expression" }>;
   onChange: (next: RowCondition) => void;
 }) {
-  const collections = useRuleEditorStore((state) => state.deps.collections);
+  const deps = useRuleEditorStore((state) => state.deps);
+  const collections = deps.collections;
   const suggestionsId = useId();
   switch (condition.kind) {
+    case "library": {
+      const available = deps.libraries.some(
+        ({ selector }) => selectorKey(selector) === condition.values[0],
+      );
+      return (
+        <Dropdown
+          className="zt:min-w-0 zt:flex-1"
+          {...tooltipAttrs(m.settings_profile_rule_value())}
+          value={condition.values[0]}
+          onChange={(value) => onChange({ ...condition, values: [value] })}
+        >
+          {deps.libraries.map((library) => (
+            <DropdownItem
+              key={selectorKey(library.selector)}
+              value={selectorKey(library.selector)}
+            >
+              {libraryLabel(library)}
+            </DropdownItem>
+          ))}
+          {!available && (
+            <DropdownItem value={condition.values[0]}>
+              {condition.values[0]}
+            </DropdownItem>
+          )}
+        </Dropdown>
+      );
+    }
     case "item-type":
       return (
         <Dropdown

@@ -127,7 +127,6 @@ describe("CitekeyEditor Profile creation", () => {
       shouldAsk: true,
       rule: {
         id: "book",
-        scope: { mode: "all" },
         filter: 'itemType == "book"',
         profile: books,
       },

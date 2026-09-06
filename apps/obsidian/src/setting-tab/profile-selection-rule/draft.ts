@@ -2,12 +2,11 @@
 // starts as, how the condition tree changes, how it reads from and writes to
 // the stored Rule Filter, and what keeps a draft from being saved. The tree
 // mirrors the filter: every group is an explicit `and` / `or`, and a leaf is
-// a row — an item-type, Collection, or Tag condition when its expression
+// a row — a Library, item-type, Collection, or Tag condition when its expression
 // reads as one, else the expression as written.
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
-import type { LibraryScope } from "@/services/library-scope/scope";
 import {
   compileCondition,
   describeProblem,
@@ -47,7 +46,6 @@ export type ConditionPath = readonly number[];
 
 export interface RuleDraft {
   profile: ProfileSelector;
-  scope: LibraryScope;
   root: ConditionGroup;
 }
 
@@ -64,12 +62,10 @@ export function initialDraft(rule?: ProfileSelectionRule): RuleDraft {
   if (rule)
     return {
       profile: rule.profile,
-      scope: rule.scope,
       root: fromFilter(rule.filter),
     };
   return {
     profile: "default",
-    scope: { mode: "all" },
     root: {
       kind: "group",
       match: "all",
@@ -217,6 +213,8 @@ export function freshCondition(
   negated: boolean,
 ): RowCondition {
   switch (kind) {
+    case "library":
+      return { kind, operator: "is", negated, values: ["personal"] };
     case "item-type":
       return { kind, operator: "is", negated, values: [DEFAULT_ITEM_TYPE] };
     case "collections":
@@ -263,6 +261,13 @@ export function conditionIssue(
   deps: RuleEditorDeps,
 ): string | null {
   switch (condition.kind) {
+    case "library": {
+      const { problem } = compileCondition(
+        formatCondition(condition),
+        deps.libraries,
+      );
+      return problem ? describeProblem(problem) : null;
+    }
     case "item-type":
       return null;
     case "collections":
@@ -281,7 +286,10 @@ export function conditionIssue(
         ? m.settings_profile_rule_tag_empty()
         : null;
     case "expression": {
-      const { condition: compiled, problem } = compileCondition(condition.text);
+      const { condition: compiled, problem } = compileCondition(
+        condition.text,
+        deps.libraries,
+      );
       if (problem) return describeProblem(problem);
       return treeIssue(asGroup(compiled), true, deps);
     }
@@ -305,17 +313,7 @@ export function treeIssue(
   return null;
 }
 
-/** Whether the Libraries row refuses the draft. */
-export function scopeIssue(scope: LibraryScope): string | null {
-  return scope.mode === "selected" && scope.libraries.length === 0
-    ? m.settings_profile_rule_scope_empty()
-    : null;
-}
-
 /** Whether anything keeps the rule from being saved. */
 export function draftInvalid(draft: RuleDraft, deps: RuleEditorDeps): boolean {
-  return (
-    scopeIssue(draft.scope) !== null ||
-    treeIssue(draft.root, true, deps) !== null
-  );
+  return treeIssue(draft.root, true, deps) !== null;
 }
