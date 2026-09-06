@@ -25,8 +25,6 @@ import type {
   ResolvedLibraryScope,
 } from "@/services/library-scope/scope";
 import { selectorOf } from "@/services/library-scope/scope";
-import { describeRule } from "@/services/profile-selection";
-import type { ProfileSelectionRule } from "@/services/profile-selection";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type {
@@ -359,9 +357,7 @@ it("classifies conflicting Companion Profiles as kept rows before any write or p
   expect(settingsUpdate).not.toHaveBeenCalled();
   // Every row carries the Companion's Profile, so the only control is the
   // explicit all-new override.
-  const choices: BatchProfileChoice[] = manifest.options.groups.find(
-    (group: FlatGroupDef) => group.profileChoices,
-  )!.profileChoices!;
+  const choices: BatchProfileChoice[] = manifest.options.profileChoices;
   expect(choices.map(({ scope }) => scope)).toEqual(["all-new"]);
   const choice = choices[0]!;
   expect(choice).toMatchObject({
@@ -450,11 +446,7 @@ it.each([true, false])(
     expect(manifest.options.tasks[0].profile).toBe(
       additionalProfiles ? stamp : undefined,
     );
-    expect(
-      manifest.options.groups.some(
-        (group: FlatGroupDef) => group.profileChoices,
-      ),
-    ).toBe(false);
+    expect(manifest.options.profileChoices).toBeUndefined();
     const onItemSettled = vi.fn();
     expect(
       await options.onRun({
@@ -477,27 +469,8 @@ it.each([true, false])(
 const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
 const ARTICLES = "Ar7Kd2QpX9Mn" as ProfileId;
 const RETIRED_STAMP = "Retired (Qw8Er5Ty2Ui9)";
-const BOOKS_RULE: ProfileSelectionRule = {
-  id: "rule-books",
-  scope: { mode: "all" },
-  filter: 'itemType == "book"',
-  profile: BOOKS,
-};
-const ARTICLES_RULE: ProfileSelectionRule = {
-  id: "rule-articles",
-  scope: { mode: "all" },
-  filter: 'itemType == "journalArticle"',
-  profile: ARTICLES,
-};
-const BROKEN_RULE: ProfileSelectionRule = {
-  id: "rule-broken",
-  scope: { mode: "all" },
-  filter: "itemType ==",
-  profile: BOOKS,
-};
-const BROKEN_PROBLEM = m.modal_profile_problem_broken_rule({
-  rule: describeRule(BROKEN_RULE),
-  problem: m.profile_rule_problem_syntax({ text: "itemType ==" }),
+const INVALID_PROBLEM = m.modal_profile_problem_invalid_selector({
+  selector: "Missing12345",
 });
 const FOLDERS: Record<ProfileSelector, string> = {
   default: "Literature",
@@ -506,8 +479,8 @@ const FOLDERS: Record<ProfileSelector, string> = {
 };
 
 /**
- * A mixed batch: rows 1 and 2 match different rules, 3 and 4 match none,
- * 5 hits a broken rule, 6 has a Books-stamped note, 7 an unstamped note, and
+ * A mixed batch: rows 1 and 2 match different matches, 3 and 4 match none,
+ * 5 has an invalid explicit selector, 6 has a Books-stamped note, 7 an unstamped note, and
  * 8 a note with an unknown stamp. Every selection comes from the (stubbed)
  * shared boundary keyed by the Item it receives.
  */
@@ -528,12 +501,17 @@ function mixedBatch() {
   ];
   deps.profile = profileReader({ ...defaults, profiles }, cache);
   const selections: Record<number, CreationProfileSelection> = {
-    1: { selector: BOOKS, source: "rule", shouldAsk: true, rule: BOOKS_RULE },
+    1: {
+      selector: BOOKS,
+      source: "match",
+      shouldAsk: false,
+      reason: m.profile_match_selected({ profile: "Books" }),
+    },
     2: {
       selector: ARTICLES,
-      source: "rule",
+      source: "match",
       shouldAsk: true,
-      rule: ARTICLES_RULE,
+      reason: m.profile_match_selected({ profile: "Articles" }),
     },
     3: { selector: "default", source: "bound", shouldAsk: true },
     4: { selector: "default", source: "bound", shouldAsk: true },
@@ -542,9 +520,9 @@ function mixedBatch() {
       source: "bound",
       shouldAsk: true,
       problem: {
-        kind: "broken-rule",
-        rule: BROKEN_RULE,
-        problem: { code: "syntax", from: 0, to: 11, text: "itemType ==" },
+        kind: "invalid-selector",
+        source: "headless",
+        selector: "Missing12345" as ProfileId,
       },
     },
   };
@@ -600,7 +578,7 @@ function mixedBatch() {
     ids.map((itemID) => ({ itemID, indexedKey: `ITEM${itemID}` }) as any),
   );
   vi.mocked(chooseBatchProfile).mockReset();
-  return { deps, resolveCreationProfile, created, updated };
+  return { deps, resolveCreationProfile, created, updated, selections };
 }
 
 async function classifyMixedBatch(deps: BatchUpdateDeps) {
@@ -610,9 +588,7 @@ async function classifyMixedBatch(deps: BatchUpdateDeps) {
     onProgress: vi.fn(),
     signal: new AbortController().signal,
   })) as any;
-  const choices: BatchProfileChoice[] = manifest.options.groups.find(
-    (group: FlatGroupDef) => group.profileChoices,
-  ).profileChoices;
+  const choices: BatchProfileChoice[] = manifest.options.profileChoices;
   const choice = (scope: BatchProfileChoice["scope"]) =>
     choices.find((entry) => entry.scope === scope)!;
   const run = () =>
@@ -650,34 +626,32 @@ describe("mixed batch", () => {
         id: 1,
         profile: "Books",
         path: "Books/Item 1.md",
-        reason: m.modal_profile_source_rule({ rule: describeRule(BOOKS_RULE) }),
+        reason: m.profile_match_selected({ profile: "Books" }),
       },
       {
         id: 2,
         profile: "Articles",
         path: "Articles/Item 2.md",
-        reason: m.modal_profile_source_rule({
-          rule: describeRule(ARTICLES_RULE),
-        }),
+        reason: m.profile_match_selected({ profile: "Articles" }),
       },
       {
         id: 3,
         profile: DEFAULT_LABEL(),
         path: "Literature/Item 3.md",
-        reason: m.batch_profile_reason_unmatched(),
+        reason: m.profile_match_unmatched(),
       },
       { id: 4, profile: DEFAULT_LABEL(), path: "Literature/Item 4.md" },
-      { id: 5, profile: undefined, path: undefined, reason: BROKEN_PROBLEM },
+      { id: 5, profile: undefined, path: undefined, reason: INVALID_PROBLEM },
       { id: 6, profile: "Books" },
       { id: 7, profile: DEFAULT_LABEL() },
       { id: 8, profile: RETIRED_STAMP },
     ]);
     expect(choices.map(({ scope }) => scope)).toEqual([
-      "unmatched",
+      "unresolved",
       "affected",
       "all-new",
     ]);
-    expect(choice("unmatched")).toMatchObject({
+    expect(choice("unresolved")).toMatchObject({
       count: 2,
       label: DEFAULT_LABEL(),
       source: "bound",
@@ -687,7 +661,7 @@ describe("mixed batch", () => {
 
     // The fallback moves the two unmatched rows only.
     vi.mocked(chooseBatchProfile).mockResolvedValueOnce(BOOKS);
-    await choice("unmatched").choose();
+    await choice("unresolved").choose();
     expect(chooseBatchProfile).toHaveBeenLastCalledWith(
       deps,
       expect.objectContaining({
@@ -706,9 +680,9 @@ describe("mixed batch", () => {
         reason: m.batch_profile_source_chosen(),
       },
       { id: 4, profile: "Books", path: "Books/Item 4.md" },
-      { id: 5, profile: undefined, path: undefined, reason: BROKEN_PROBLEM },
+      { id: 5, profile: undefined, path: undefined, reason: INVALID_PROBLEM },
     ]);
-    expect(choice("unmatched")).toMatchObject({
+    expect(choice("unresolved")).toMatchObject({
       label: "Books",
       source: "asked",
     });
@@ -719,7 +693,10 @@ describe("mixed batch", () => {
     await choice("affected").choose();
     expect(chooseBatchProfile).toHaveBeenLastCalledWith(
       deps,
-      expect.objectContaining({ indexedKey: "ITEM5", problem: BROKEN_PROBLEM }),
+      expect.objectContaining({
+        indexedKey: "ITEM5",
+        problem: INVALID_PROBLEM,
+      }),
     );
     expect(tasks[4]).toMatchObject({ id: 5, profile: undefined });
 
@@ -744,7 +721,7 @@ describe("mixed batch", () => {
     expect(onItemSettled).toHaveBeenCalledWith({
       id: 5,
       status: "failed",
-      failure: { label: "Item 5", message: BROKEN_PROBLEM },
+      failure: { label: "Item 5", message: INVALID_PROBLEM },
     });
     expect(onItemSettled).toHaveBeenCalledWith({
       id: 8,
@@ -797,7 +774,7 @@ describe("mixed batch", () => {
       source: "asked",
       count: 5,
     });
-    expect(choice("unmatched")).toMatchObject({ label: "Articles" });
+    expect(choice("unresolved")).toMatchObject({ label: "Articles" });
     expect(choice("affected")).toMatchObject({ label: "Articles" });
 
     const result = await run();
@@ -1033,4 +1010,65 @@ describe("runBatchUpdateAll", () => {
       expect(openedModals).toHaveLength(0);
     });
   });
+});
+
+it("uses one fallback for unmatched and distinct overlaps, exposing all candidates and preserving unique matches", async () => {
+  const { deps, selections, created } = mixedBatch();
+  const profiles = deps.profile.profiles;
+  const extra = {
+    ...profiles[0]!,
+    id: "Mn4Vb8GhJ2Rt" as ProfileId,
+    label: "Manual",
+  };
+  selections[4] = {
+    selector: "default",
+    source: "bound",
+    shouldAsk: true,
+    problem: { kind: "overlap", candidates: profiles },
+  };
+  selections[5] = {
+    selector: "default",
+    source: "bound",
+    shouldAsk: true,
+    problem: { kind: "overlap", candidates: [profiles[1]!, extra] },
+  };
+  const { tasks, choices, choice, run } = await classifyMixedBatch(deps);
+  expect(choices.map(({ scope }) => scope)).toEqual(["unresolved", "all-new"]);
+  expect(choice("unresolved")).toMatchObject({ count: 3, label: undefined });
+  vi.mocked(chooseBatchProfile).mockResolvedValueOnce(BOOKS);
+  await choice("unresolved").choose();
+  expect(chooseBatchProfile).toHaveBeenLastCalledWith(
+    deps,
+    expect.objectContaining({
+      selection: expect.objectContaining({
+        problem: { kind: "overlap", candidates: [...profiles, extra] },
+      }),
+      problem: `${m.modal_profile_problem_overlap({ profiles: "Books, Articles" })} ${m.modal_profile_problem_overlap({ profiles: "Articles, Manual" })}`,
+    }),
+  );
+  expect(tasks.slice(0, 5)).toMatchObject([
+    {
+      id: 1,
+      profile: "Books",
+      path: "Books/Item 1.md",
+      reason: m.profile_match_selected({ profile: "Books" }),
+    },
+    {
+      id: 2,
+      profile: "Articles",
+      path: "Articles/Item 2.md",
+      reason: m.profile_match_selected({ profile: "Articles" }),
+    },
+    { id: 3, profile: "Books", path: "Books/Item 3.md" },
+    { id: 4, profile: "Books", path: "Books/Item 4.md" },
+    { id: 5, profile: "Books", path: "Books/Item 5.md" },
+  ]);
+  expect(await run()).toMatchObject({ created: 5 });
+  expect(created.map(({ selector }) => selector)).toEqual([
+    BOOKS,
+    ARTICLES,
+    BOOKS,
+    BOOKS,
+    BOOKS,
+  ]);
 });

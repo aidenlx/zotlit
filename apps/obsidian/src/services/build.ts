@@ -108,15 +108,6 @@ export function buildServices(
       noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
     })
     .use({
-      profile: ({ settings, template, noteIndex }) =>
-        new ProfileService({
-          app: plugin.app,
-          settings,
-          template,
-          noteIndex,
-        }),
-    })
-    .use({
       zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
     })
     .use({
@@ -130,6 +121,20 @@ export function buildServices(
     .use({
       attachmentImport: ({ settings, zoteroPref }) =>
         new AttachmentImportService({ app: plugin.app, settings, zoteroPref }),
+    })
+    .use({
+      libraryScope: ({ db, settings }) =>
+        new LibraryScopeService({ db, settings }),
+    })
+    .use({
+      profile: ({ settings, template, noteIndex, libraryScope }) =>
+        new ProfileService({
+          app: plugin.app,
+          settings,
+          template,
+          noteIndex,
+          libraryScope,
+        }),
     })
     .useValue({
       noteImport: ({
@@ -147,10 +152,6 @@ export function buildServices(
           zoteroPref,
           attachmentImport,
         }),
-    })
-    .use({
-      libraryScope: ({ db, settings }) =>
-        new LibraryScopeService({ db, settings }),
     })
     .use({
       templateMigration: ({

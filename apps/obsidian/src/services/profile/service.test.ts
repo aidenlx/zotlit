@@ -8,12 +8,6 @@ import type { ProfileId } from "@/lib/profile-stamp";
 import { profileServiceFixture as harness } from "./__fixtures__/service";
 
 const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
-const booksRule = {
-  id: "books",
-  scope: { mode: "all" },
-  filter: 'itemType == "book"',
-  profile: BOOKS,
-} as const;
 const parseLiteratureNoteTemplate = (source: string) =>
   new TemplateFacade().parseLiteratureNoteTemplate(source);
 beforeEach(() => vi.useFakeTimers());
@@ -765,10 +759,6 @@ describe("ProfileService", () => {
         vault.deleteFile(file.path);
       });
     fixture.indexNotes();
-    const papersRule = { ...booksRule, id: "papers", profile: papers };
-    fixture.settings.update({
-      "profile.selection-rules": [booksRule, papersRule],
-    });
     const plan = await profile.prepareDelete(BOOKS);
     expect(plan.literatureNotes).toEqual([literature]);
     expect(plan.importedNotes).toEqual([imported]);
@@ -776,8 +766,6 @@ describe("ProfileService", () => {
       "default",
       papers,
     ]);
-    // Only the rules that select Books are affected.
-    expect(plan.rules).toEqual([booksRule]);
     const pending = profile.delete(BOOKS, papers, { move: true });
     await vi.advanceTimersByTimeAsync(500);
     await expect(pending).resolves.toEqual({
@@ -800,25 +788,18 @@ describe("ProfileService", () => {
     expect(vault.contents.get("templates/shared.liquid.md")).toBe(
       "Shared partial",
     );
-    // The replacement moved the notes only: the rule still targets Books.
-    expect(fixture.settings.current?.["profile.selection-rules"]).toEqual([
-      booksRule,
-      papersRule,
-    ]);
     expect(profile.resolveProfile(BOOKS)).toBeUndefined();
   });
 
-  it("lists referencing rules for a Profile no note uses and keeps them after deletion", async () => {
+  it("deletes an unused Profile document", async () => {
     await using fixture = await harness({
       "templates/zotlit-profile.books.md": document(),
     });
-    const { profile, vault, settings } = fixture;
-    settings.update({ "profile.selection-rules": [booksRule] });
+    const { profile, vault } = fixture;
     fixture.indexNotes();
     const plan = await profile.prepareDelete(BOOKS);
     expect(plan.literatureNotes).toEqual([]);
     expect(plan.importedNotes).toEqual([]);
-    expect(plan.rules).toEqual([booksRule]);
     const pending = profile.delete(BOOKS, "default");
     await vi.advanceTimersByTimeAsync(500);
     await expect(pending).resolves.toEqual({
@@ -827,19 +808,16 @@ describe("ProfileService", () => {
       movedFiles: 0,
     });
     expect(vault.files.has("templates/zotlit-profile.books.md")).toBe(false);
-    expect(settings.current?.["profile.selection-rules"]).toEqual([booksRule]);
   });
 
-  it("keeps rule references when the Profile document is removed outside ZotLit", async () => {
+  it("removes a Profile when its document is removed outside ZotLit", async () => {
     await using fixture = await harness({
       "templates/zotlit-profile.books.md": document(),
     });
-    const { profile, vault, settings } = fixture;
-    settings.update({ "profile.selection-rules": [booksRule] });
+    const { profile, vault } = fixture;
     vault.deleteFile("templates/zotlit-profile.books.md");
     await vi.advanceTimersByTimeAsync(500);
     expect(profile.resolveProfile(BOOKS)).toBeUndefined();
-    expect(settings.current?.["profile.selection-rules"]).toEqual([booksRule]);
   });
 
   it("keeps the Profile document when a requested note move fails", async () => {
@@ -862,5 +840,89 @@ describe("ProfileService", () => {
       document(),
     );
     expect(vault.contents.get("Books/Paper.md")).toBe("User text");
+  });
+});
+
+describe("Profile Match document writes", () => {
+  it.each(["\n", "\r\n"])(
+    "updates and removes only match bytes with %j line endings, then refreshes the registry",
+    async (eol) => {
+      const path = "templates/zotlit-profile.books.md";
+      const source = document(
+        BOOKS,
+        "match:\n  and:\n    - 'tags.contains(\"Read\")'\n# Keep the next comment",
+      )
+        .replace("name: Books", "name :  Books  # Keep spacing")
+        .replaceAll("\n", eol);
+      await using f = await harness({ [path]: source });
+      const save = f.profile.setMatch(BOOKS, { or: [] });
+      await vi.advanceTimersByTimeAsync(500);
+      await save;
+      expect(f.vault.contents.get(path)).toBe(
+        source.replace(
+          ["match:", "  and:", "    - 'tags.contains(\"Read\")'"].join(eol),
+          `match:${eol}  {"or":[]}`,
+        ),
+      );
+      expect(f.profile.profiles[0]!.match).toMatchObject({
+        state: "evaluable",
+        tree: { or: [] },
+      });
+      expect(f.profile.profiles[0]!.match.summary).toBe(m.profile_match_none());
+      const remove = f.profile.setMatch(BOOKS, undefined);
+      await vi.advanceTimersByTimeAsync(500);
+      await remove;
+      expect(f.vault.contents.get(path)).toBe(
+        source.replace(
+          ["match:", "  and:", "    - 'tags.contains(\"Read\")'", ""].join(eol),
+          "",
+        ),
+      );
+      expect(f.profile.profiles[0]!.match).toMatchObject({
+        state: "absent",
+        summary: m.profile_match_absent(),
+      });
+    },
+  );
+
+  it("uses the latest document bytes and clears an invalid expression diagnostic", async () => {
+    const path = "templates/zotlit-profile.books.md";
+    await using f = await harness({
+      [path]: document(BOOKS, "match: 'title == \"Books\"'"),
+    });
+    expect(f.profile.profiles[0]!.match.state).toBe("unevaluable");
+    const edited = document(
+      BOOKS,
+      "match: 'title == \"Current\"'\n# A hand edit",
+      "Current books",
+    );
+    f.vault.modifyFile(path, edited);
+    const save = f.profile.setMatch(BOOKS, { and: [] });
+    await vi.advanceTimersByTimeAsync(1000);
+    await save;
+    expect(f.vault.contents.get(path)).toBe(
+      edited.replace("match: 'title == \"Current\"'", 'match: {"and":[]}'),
+    );
+    expect(f.profile.profiles[0]).toMatchObject({
+      label: "Current books",
+      match: { state: "all", summary: m.profile_match_all() },
+    });
+    const remove = f.profile.setMatch(BOOKS, undefined);
+    await vi.advanceTimersByTimeAsync(500);
+    await remove;
+    expect(f.profile.profiles[0]!.match.state).toBe("absent");
+  });
+
+  it("keeps the current file when a document replacement changes its identity", async () => {
+    const path = "templates/zotlit-profile.books.md";
+    await using f = await harness({ [path]: document() });
+    const replacement = document("Other1234567");
+    f.vault.modifyFile(path, replacement);
+    const rejected = expect(
+      f.profile.setMatch(BOOKS, { and: [] }),
+    ).rejects.toThrow();
+    await vi.advanceTimersByTimeAsync(500);
+    await rejected;
+    expect(f.vault.contents.get(path)).toBe(replacement);
   });
 });

@@ -402,7 +402,8 @@ MODEL
   A Literature Note Profile is a zotlit-profile.<slug>.md document directly
   inside the template folder. Its manifest id is the stable twelve-character
   Profile ID; name is its label. Rename the file freely while keeping the
-  zotlit-profile. prefix. Edit the file to change its look or bindings.
+  zotlit-profile. prefix. Edit the file to change its look, bindings, or
+  Profile Match.
 
   The flat manifest keys folder, citationStyle, importFolder,
   importColoredHighlights, and importAnnotationsAsTemplate override the
@@ -411,7 +412,38 @@ MODEL
 
   The default Profile has id=default. Its bindings live in settings. Its
   built-in look can be ejected to zotlit-profile.default.md, whose manifest
-  has id: default and carries no bindings. Restore trashes that document.
+  has id: default and carries neither bindings nor match. Restore trashes that
+  document. Default is the fallback for automatic Profile selection.
+
+PROFILE MATCH
+  A non-default Profile may declare match in its manifest. The value is a Match
+  condition string or nested and/or objects containing arrays of Match trees.
+  An absent match keeps the Profile manual-only. An empty and array or the
+  expression true matches every item; an empty or array matches no items.
+
+  Match conditions compare library to personal or group:<groupID> and itemType
+  to a built-in Zotero type. tags and collections support contains, containsAny,
+  containsAll, and isEmpty. collections.within(path) includes subcollections.
+  Collection paths join ancestor names with /. Tag names are exact and
+  case-sensitive across manual and automatic Tags. Negation uses !.
+
+  One matching Profile selects it; multiple matches open the candidate picker.
+  Manual choices take precedence, then selectors from a command or ZotLit
+  Companion, the Zotero add-on, then the Profile Match, then Default. Each batch
+  item selects independently. A preview keeps its chosen Profile and destination;
+  existing notes keep their Profile.
+
+  Syntax errors, unsupported conditions, unknown item types, and unavailable
+  Libraries make a match unevaluable. Automatic selection skips that Profile;
+  its settings row shows Needs attention, and Match… shows the diagnostic.
+  An unknown Collection path is a valid nonmatch; negation still applies.
+
+  The Match… editor writes only match in the template document. Save keeps all
+  other document bytes; Remove match restores manual-only use. Share and Import
+  include match conditions by default. Clearing the corresponding checkbox
+  omits match from the written document. Names stay as declared.
+
+NOTE MEMBERSHIP AND SOURCES
 
   A note records its Profile in the zotlit-profile property, written as the
   Profile label, one space, and the Profile id in parentheses: Reading notes
@@ -462,7 +494,9 @@ INSPECTION
   documents under documents, and excluded files under profileDiagnostics.
   invalid-profile-document names a broken file. duplicate-profile-id names all
   paths claiming one ID; each is excluded until the collision is fixed.
-  Duplicate labels remain usable. Identity comes from the manifest ID.
+  Duplicate labels remain usable. Identity comes from the manifest ID. Read the
+  template document for its Profile Match; template-status lists the Profile's
+  identity and bindings, plus document validation and exclusion diagnostics.
 
 RENDER
   ${DOCUMENT_RENDER_SYNOPSIS}

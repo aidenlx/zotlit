@@ -20,7 +20,7 @@ Settings moved in ZotLit 2.1. [Where settings moved](#moved) maps each old locat
 
 ## Main page [#main]
 
-The main page opens when you select ZotLit in Obsidian's settings. It holds the settings of the default Profile, the one every new literature note uses until you choose another.
+The main page opens when you select ZotLit in Obsidian's settings. It holds the default Profile's settings. New literature notes use this Profile when no other Profile is selected.
 
 The top of the page links to the release notes, the documentation, the community, and the bug report form. Reminders appear in the same place, such as the template conversion reminder.
 
@@ -99,66 +99,85 @@ See [Import Zotero notes](/docs/how-to/import-zotero-notes) for how the mappings
 
 ## Literature note profiles [#profiles]
 
-Open this page from <SettingsPath page={m.settings_page_profiles()} />. A Profile is a folder, a citation style, and a look that some notes use instead of the default.
+Open this page from <SettingsPath page={m.settings_page_profiles()} />. A Profile's template document defines its note folder, citation style, and appearance. It can also carry a Profile Match: conditions that select the Profile automatically for new literature notes.
 
 The first row is <UiLabel name={m.settings_profile_default_name()} />, the default Profile: <UiLabel name={m.settings_profile_default_desc()} /> Its one action is <UiLabel name={m.settings_profile_share()} />.
 
 The <UiLabel name={m.settings_profile_other_heading()} /> list holds every other Profile. Its header carries two buttons: **+** copies the default Profile's document, names it <UiLabel name={m.settings_profile_numbered_name({ number: 1 })} />, and opens it with the name selected so you can rename it. <UiLabel name={m.command_import_profile_name()} /> reads a Profile in from your clipboard or a file. Until you add one, the list reads <UiLabel name={m.settings_profile_empty_desc()} />.
 
-Each added Profile has one row, which summarizes what differs from the default Profile and offers these actions:
+Each added Profile has one row with its template document name and a short Profile Match status:
 
-| Action                                            | Effect                                                                                                                                                           |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| <UiLabel name={m.settings_template_open()} />     | Opens the Profile's document in the editor. The document is the editor.                                                                                          |
-| <UiLabel name={m.settings_profile_duplicate()} /> | Creates a copy of the Profile under a new name.                                                                                                                  |
-| <UiLabel name={m.settings_profile_share()} />     | Copies the Profile, or saves it as a file, so someone else can read it in.                                                                                       |
-| <UiLabel name={m.settings_profile_delete()} />    | Moves the Profile document to Obsidian's configured trash after notes switch. Lists the rules that select the Profile; they keep their target for you to repair. |
+| Status                                                                       | Meaning                                                                                 |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| <UiLabel name={m.settings_profile_match_status({ state: "absent" })} />      | The Profile has no Profile Match. You can select it manually.                           |
+| <UiLabel name={m.settings_profile_match_status({ state: "evaluable" })} />   | The Profile has Match conditions that ZotLit can evaluate.                              |
+| <UiLabel name={m.settings_profile_match_status({ state: "all" })} />         | The Profile Match accepts every item.                                                   |
+| <UiLabel name={m.settings_profile_match_status({ state: "unevaluable" })} /> | ZotLit cannot evaluate the Profile Match. Open the Match editor to inspect the problem. |
 
-A new Profile starts identical to the default one, so give it a folder or a citation style in its document — a Profile that differs from the default in nothing has no effect on any note.
+Each row offers these actions:
+
+| Action                                               | Effect                                                                        |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------- |
+| <UiLabel name={m.settings_profile_match_action()} /> | Opens the Match editor for this Profile.                                      |
+| <UiLabel name={m.settings_template_open()} />        | Opens the Profile's template document in the editor.                          |
+| <UiLabel name={m.settings_profile_duplicate()} />    | Creates a copy of the Profile under a new name.                               |
+| <UiLabel name={m.settings_profile_share()} />        | Copies the Profile, or saves it as a file, so someone else can read it in.    |
+| <UiLabel name={m.settings_profile_delete()} />       | Moves the Profile document to Obsidian's configured trash after notes switch. |
+
+A new Profile starts with the default Profile's template. Its own document can set a folder, citation style, appearance, or Profile Match.
 
 Each Profile is edited in its own document. Deleting a Profile that notes still use asks where those notes go first.
 
-The deletion dialog also lists every rule under [Automatic profile selection](#profile-selection-rules) that selects the Profile, even when no note uses it. The two effects are separate: the replacement you select moves those notes only, and each listed rule keeps the deleted Profile as its target. Deletion proceeds after the warning; repair or remove each rule yourself afterwards. Deleting a Profile document outside Obsidian leaves the same rule references.
+### Profile Match [#profile-match]
 
-### Automatic profile selection [#profile-selection-rules]
+A Match condition tests a Zotero item's Library, item type, Tags, or Collections. The Profile Match groups these conditions in the Profile's template document. The default Profile is the fallback and has no Profile Match or Match editor.
 
-The <UiLabel name={m.settings_profile_rules_heading()} /> list on the same page holds the rules that choose a Profile for a **new** literature note from its Zotero item. Rules run from the top; the first rule that matches selects the Profile, so place specific rules above broad ones and drag rows to reorder them. Each rule has:
+Select <UiLabel name={m.settings_profile_match_action()} /> on a Profile row to edit its Match conditions.
 
-| Field                                                   | Meaning                                                                                                                                                                                    |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <UiLabel name={m.settings_profile_rule_scope()} />      | The Zotero libraries the rule applies to. A new rule starts at <UiLabel name={m.settings_library_scope_all()} />; restrict it to selected libraries to keep personal and group work apart. |
-| <UiLabel name={m.settings_profile_rule_conditions()} /> | Conditions on the item's type, Tags, and Collections, grouped under <UiLabel name={m.settings_profile_rule_match()} />. A rule with no conditions matches every item in its libraries.     |
-| <UiLabel name={m.settings_profile_rule_target()} />     | The Profile a matching note is created under, including <UiLabel name={m.settings_profile_default_name()} />.                                                                              |
-
-Rules refer to a Profile by its stable ID, so renaming a Profile or its document keeps the rule. Rules stay in this vault: sharing or importing a Profile never carries them.
+| Action                                               | Effect                                                                                                                                   |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.settings_profile_match_save()} />   | Saves the Profile Match in the template document. The rest of the document stays unchanged.                                              |
+| <UiLabel name={m.modal_cancel()} />                  | Closes the editor without saving changes.                                                                                                |
+| <UiLabel name={m.settings_profile_match_remove()} /> | Removes the existing Profile Match and returns the Profile to manual selection. Available when the document already has a Profile Match. |
 
 #### Groups and exclusions
 
-A new rule starts with one group set to <UiLabel name={m.settings_profile_rule_match_all()} />. Switch it to <UiLabel name={m.settings_profile_rule_match_any()} /> when alternatives should select the same Profile, for example items in either of two project Collections. <UiLabel name={m.settings_profile_rule_add_group()} /> nests a group with its own match setting inside the current one, so a rule can require a Tag **and** any of several item types. A nested group needs at least one condition; remove it with <UiLabel name={m.settings_profile_rule_remove_group()} />.
+A new Profile Match opens with one item type condition in a group set to <UiLabel name={m.settings_profile_match_match_all()} />. Every condition in that group must match. With <UiLabel name={m.settings_profile_match_match_any()} />, any one condition can match, such as either of two project Collections.
+
+<UiLabel name={m.settings_profile_match_add_condition()} /> adds a row.
+<UiLabel name={m.settings_profile_match_add_group()} /> nests a group with its
+own match setting. For example, a Profile Match can require a Tag and any of
+several item types. Remove a row with
+<UiLabel name={m.settings_profile_match_remove_condition()} />, or a nested
+group with <UiLabel name={m.settings_profile_match_remove_group()} />.
+
+An empty Profile Match set to <UiLabel name={m.settings_profile_match_match_all()} /> accepts every item. Set to <UiLabel name={m.settings_profile_match_match_any()} />, it accepts none. Removing the Profile Match makes the Profile available for manual selection only.
+
+The <UiLabel name={m.settings_profile_match_condition_library()} /> and <UiLabel name={m.settings_profile_match_condition_item_type()} /> rows use <UiLabel name={m.settings_profile_match_operator_is()} /> or <UiLabel name={m.settings_profile_match_operator_is_not()} /> with a value from a dropdown. A Library condition limits the match to personal or group work. Exclusions can separate Profiles that would otherwise match the same items.
 
 #### Tag and Collection rows
 
 Each condition uses one frame for its field, operator, and value. A single-value Collection field stays inline. Multi-value chips stay inline when space permits and move to a second line at narrow widths.
 
-The <UiLabel name={m.settings_profile_rule_condition_tag()} /> row has these operators:
+The <UiLabel name={m.settings_profile_match_condition_tag()} /> row has these operators:
 
-- <UiLabel name={m.settings_profile_rule_tag_contains()} />
-- <UiLabel name={m.settings_profile_rule_tag_does_not_contain()} />
-- <UiLabel name={m.settings_profile_rule_tag_contains_any()} />
-- <UiLabel name={m.settings_profile_rule_tag_contains_all()} />
-- <UiLabel name={m.settings_profile_rule_tag_is_empty()} />
-- <UiLabel name={m.settings_profile_rule_tag_is_not_empty()} />
+- <UiLabel name={m.settings_profile_match_tag_contains()} />
+- <UiLabel name={m.settings_profile_match_tag_does_not_contain()} />
+- <UiLabel name={m.settings_profile_match_tag_contains_any()} />
+- <UiLabel name={m.settings_profile_match_tag_contains_all()} />
+- <UiLabel name={m.settings_profile_match_tag_is_empty()} />
+- <UiLabel name={m.settings_profile_match_tag_is_not_empty()} />
 
-The <UiLabel name={m.settings_profile_rule_condition_collection()} /> row has these operators:
+The <UiLabel name={m.settings_profile_match_condition_collection()} /> row has these operators:
 
-- <UiLabel name={m.settings_profile_rule_collection_within()} />
-- <UiLabel name={m.settings_profile_rule_collection_not_within()} />
-- <UiLabel name={m.settings_profile_rule_collection_contains()} />
-- <UiLabel name={m.settings_profile_rule_collection_not_contains()} />
-- <UiLabel name={m.settings_profile_rule_collection_contains_any()} />
-- <UiLabel name={m.settings_profile_rule_collection_contains_all()} />
-- <UiLabel name={m.settings_profile_rule_collection_is_empty()} />
-- <UiLabel name={m.settings_profile_rule_collection_is_not_empty()} />
+- <UiLabel name={m.settings_profile_match_collection_within()} />
+- <UiLabel name={m.settings_profile_match_collection_not_within()} />
+- <UiLabel name={m.settings_profile_match_collection_contains()} />
+- <UiLabel name={m.settings_profile_match_collection_not_contains()} />
+- <UiLabel name={m.settings_profile_match_collection_contains_any()} />
+- <UiLabel name={m.settings_profile_match_collection_contains_all()} />
+- <UiLabel name={m.settings_profile_match_collection_is_empty()} />
+- <UiLabel name={m.settings_profile_match_collection_is_not_empty()} />
 
 The any-of and all-of operators accept multiple values as chips. Enter a value and press `Enter`, or type a comma, to add a chip. Use its remove button, or press `Backspace` in an empty input, to remove a chip. The other membership operators accept one value. The empty operators have no value control.
 
@@ -168,7 +187,7 @@ Collection fields suggest Collection paths from all connected Libraries. Each pa
 
 #### Expression conditions
 
-The Match tree contains Match conditions in explicit `and` / `or` groups, in the shape of an Obsidian Bases `filters` block. Each Match condition is a Filter Expression that the visual row writes for you. Select <UiLabel name={m.settings_profile_rule_edit_as_expression()} /> on a row to edit the expression as text.
+Each visual row writes its Match condition as an expression. Select <UiLabel name={m.settings_profile_match_edit_as_expression()} /> on a row to edit that expression as text. An expression set to `true` matches every item.
 
 `tags` and `collections` are list fields. They support these functions:
 
@@ -180,21 +199,55 @@ The Match tree contains Match conditions in explicit `and` / `or` groups, in the
 | `isEmpty`     | The list has no values.                                          | `collections.isEmpty()`                         |
 | `within`      | The Item is in the Collection path or one of its subcollections. | `collections.within("Project/Drafts")`          |
 
-`within` is available only on `collections`. It is the Within test shown as <UiLabel name={m.settings_profile_rule_collection_within()} />. `collections.contains("Project/Drafts")`, shown as <UiLabel name={m.settings_profile_rule_collection_contains()} />, tests direct filing only.
+`within` is available only on `collections`. It is the Within test shown as <UiLabel name={m.settings_profile_match_collection_within()} />. `collections.contains("Project/Drafts")`, shown as <UiLabel name={m.settings_profile_match_collection_contains()} />, tests direct filing only.
 
-The exclamation mark (`!`) is the only negation. For example, `!tags.contains("Read")` means <UiLabel name={m.settings_profile_rule_tag_does_not_contain()} />, and `!collections.isEmpty()` means <UiLabel name={m.settings_profile_rule_collection_is_not_empty()} />. The `&&` and `||` operators and parentheses combine tests. A negated `containsAny` or `containsAll` expression remains an expression row because the visual rows have no corresponding negated operator.
+The exclamation mark (`!`) is the only negation. For example, `!tags.contains("Read")` means <UiLabel name={m.settings_profile_match_tag_does_not_contain()} />, and `!collections.isEmpty()` means <UiLabel name={m.settings_profile_match_collection_is_not_empty()} />. The `&&` and `||` operators and parentheses combine tests. A negated `containsAny` or `containsAll` expression remains an expression row because the visual rows have no corresponding negated operator.
 
-Switching a row preserves its Match condition. A row turned into an expression keeps the condition as text, and <UiLabel name={m.settings_profile_rule_edit_visually()} /> turns a supported single test back into a labelled row. An expression that combines several tests stays as written in its expression row until you change it.
+Switching a row preserves its Match condition. A row turned into an expression keeps the condition as text, and <UiLabel name={m.settings_profile_match_edit_visually()} /> turns a supported single test back into a labelled row. An expression that combines several tests stays as written in its expression row until you change it.
 
 A Collection path contains the root Collection name first, followed by each child name, joined by `/`. For example, `Project/Drafts/Review` identifies the `Review` Collection under `Drafts`, under `Project`. A Collection name that contains `/` is ambiguous because paths have no escape syntax.
 
 The same path text applies across Libraries. ZotLit evaluates it only against Collections in the Item's own Library. Renaming any Collection in the path changes the path, so update the Match condition after a rename.
 
-An absent Collection path is valid. A positive membership test for that path is false for an Item whose Library does not contain it. Negation follows ordinary Boolean behavior, so negating that false test makes it true. The editor shows <UiLabel name={m.settings_profile_rule_collection_not_found()} /> for each absent value, and <UiLabel name={m.settings_profile_rule_save()} /> remains available.
+An absent Collection path is valid. A positive membership test for that path is false for an Item whose Library does not contain it. Negation follows ordinary Boolean behavior, so negating that false test makes it true. The editor shows <UiLabel name={m.settings_profile_match_collection_not_found()} /> for each absent value, and <UiLabel name={m.settings_profile_match_save()} /> remains available.
 
-Only a Match condition outside the supported condition contract makes the Profile Match unevaluable. This includes a syntax error, an unsupported field or function, an incorrect number of arguments, or a non-text argument.
+ZotLit skips a Profile Match that it cannot evaluate. Causes include invalid expression syntax, unsupported fields or functions, incorrect arguments, an unknown Library, or an unknown item type. The Profile row shows <UiLabel name={m.settings_profile_match_status({ state: "unevaluable" })} />; the Match editor shows the diagnostic and disables <UiLabel name={m.settings_profile_match_save()} /> until you correct it.
 
-When you create a note from the quick switcher, the Profile picker preselects the rule's Profile, names the rule, and shows the resulting path; choosing another Profile overrides the rule for that note only. When you follow a citation or a Zotero link, a Profile named by the link or selected by a rule creates the note at once, and a notice reports the Profile and the path. An item that matches no rule preselects <UiLabel name={m.settings_profile_default_name()} />, or uses it directly when no other Profile exists. A rule that cannot be evaluated, or one whose Profile has been deleted, stops automatic selection and asks you to choose, even when <UiLabel name={m.settings_profile_default_name()} /> is the only Profile left; the rule row shows the problem so you can repair it. Select <UiLabel name={m.settings_profile_rules_edit()} /> on the row to give the rule another Profile, or delete the row. The repaired rule serves the next new note. Existing notes keep their recorded Profile — rules never move a note.
+Other Profiles continue to take part in automatic selection. A template document that ZotLit cannot load appears in <UiLabel name={m.settings_profile_excluded_heading()} /> and takes no part in selection.
+
+#### Selection for new notes
+
+When exactly one Profile Match fits an item, ZotLit uses that Profile and creates the literature note directly. The creation notice reports the Profile, the match reason, and the note path.
+
+When two or more Profiles match, the Profile picker opens with the matching candidates identified. Select a Profile for the current operation. Exclusions in the Match conditions can prevent future overlaps.
+
+When none matches, the picker preselects <UiLabel name={m.settings_profile_default_name()} />. ZotLit uses it directly when no other Profile exists.
+
+Selection follows this order:
+
+1. Your manual choice for the current operation.
+2. A Profile supplied by a command or a link from ZotLit Companion, the Zotero add-on.
+3. The one matching Profile.
+4. The default Profile.
+
+Once a creation preview is ready, its Profile and destination stay fixed for that operation. Changes to Match conditions apply to the next operation.
+
+In a batch, ZotLit selects a Profile separately for each item. A shared fallback choice covers unmatched or overlapping items; items with one matching Profile keep that selection. <UiLabel name={m.batch_profile_override_all()} /> applies your choice to every new note in the batch.
+
+Existing notes keep their recorded Profile when Match conditions change. The changes apply to new notes.
+
+### Share and import [#profile-share-import]
+
+The <UiLabel name={m.settings_profile_share()} /> dialog and import consent dialog control whether a Profile carries its Match conditions:
+
+| Control                                             | Default | Effect                                                                                                                    |
+| --------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------- |
+| <UiLabel name={m.profile_share_include_match()} />  | On      | Includes the Profile Match in the shared copy or file. Turning it off omits the Profile Match from that output.           |
+| <UiLabel name={m.profile_import_include_match()} /> | On      | Saves the incoming Profile Match with the imported Profile. Turning it off imports the Profile for manual selection only. |
+
+The import consent dialog describes the incoming Match conditions in words. When the incoming Profile has no Profile Match, the dialog shows <UiLabel name={m.profile_match_absent()} /> and hides <UiLabel name={m.profile_import_include_match()} />.
+
+Library references, Collection paths, and Tag names stay as written during sharing and import. Review the imported conditions against your own Libraries, Collections, and Tags in the Match editor.
 
 ## Citations
 

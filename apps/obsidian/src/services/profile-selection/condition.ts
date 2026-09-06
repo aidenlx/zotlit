@@ -1,30 +1,17 @@
-// The condition contract of a Profile Selection Rule: which Filter Expressions a rule's filter may carry, how the editor writes one, and how a filter is matched against the facts of a Zotero Item.
-//
-// A rule stores its conditions as a Rule Filter: an explicit `and` / `or`
-// tree whose leaves are Filter Expressions. The shared language parses far
-// more than a leaf accepts. This module is the gate: a leaf compiles to a
-// `RuleCondition` only when every node belongs to the supported vocabulary,
-// and anything else is a `ConditionProblem` — reported when the rule is
-// edited and again when it is evaluated, so a rule the vault cannot judge
-// never selects a Profile.
-//
-// Supported vocabulary:
-// - `itemType == "<type>"` / `itemType != "<type>"` — the built-in Zotero type.
-// - `tags.contains("<name>")`, `containsAny`, `containsAll`, and `isEmpty` —
-//   exact, case-sensitive tests over manual and automatic Tag names.
-// - `collections.within("<path>")` — filed in that Collection or a descendant;
-//   `contains`, `containsAny`, `containsAll`, and `isEmpty` test direct paths.
-// - `!`, `&&`, `||`, and grouping inside one leaf; the tree above the leaves
-//   is the ordinary way to combine conditions.
+// Compile Profile Match conditions and evaluate them against an Item's Library, type, Tags, and Collections.
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { ExpressionNode } from "@zotlit/filter-expression";
+import type { MatchTree } from "@zotlit/templates/facade";
 import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
-import type { LibrarySelector } from "@/services/library-scope/scope";
+import { selectorKey } from "@/services/library-scope/scope";
+import type {
+  AvailableLibrary,
+  LibrarySelector,
+} from "@/services/library-scope/scope";
 
-import type { RuleFilter } from "./schema";
-
-/** The Item field a rule may test. */
+/** The Item field a match may test. */
+export const LIBRARY_FIELD = "library";
 export const ITEM_TYPE_FIELD = "itemType";
 export const TAGS_FIELD = "tags";
 export const COLLECTIONS_FIELD = "collections";
@@ -36,12 +23,18 @@ export type ListOperator =
   | "isEmpty";
 export type CollectionOperator = ListOperator | "within";
 
-export type RuleCondition =
+export type MatchCondition =
   | {
       kind: "group";
       /** `all`: every condition must hold; `any`: at least one must. */
       match: "all" | "any";
-      conditions: RuleCondition[];
+      conditions: MatchCondition[];
+    }
+  | {
+      kind: "library";
+      operator: "is";
+      negated: boolean;
+      values: [string];
     }
   | {
       kind: "item-type";
@@ -64,11 +57,16 @@ export type RuleCondition =
     };
 
 /** A condition the editor shows as one row. */
-export type FlatCondition = Exclude<RuleCondition, { kind: "group" }>;
+export type FlatCondition = Exclude<MatchCondition, { kind: "group" }>;
 
 /** One reason an expression is outside the supported contract. */
 export type ConditionProblem = {
-  code: "empty" | "syntax" | "unsupported" | "unknown-item-type";
+  code:
+    | "empty"
+    | "syntax"
+    | "unsupported"
+    | "unknown-item-type"
+    | "unknown-library";
   /** Source range of the offending node, for the editor to point at. */
   from: number;
   to: number;
@@ -77,11 +75,11 @@ export type ConditionProblem = {
 };
 
 export type CompiledCondition =
-  | { condition: RuleCondition; problem: null }
+  | { condition: MatchCondition; problem: null }
   | { condition: null; problem: ConditionProblem };
 
 /** The Item facts a condition reads. */
-export interface RuleItemFacts {
+export interface MatchItemFacts {
   /** `null` for a group Library Zotero reports no group ID for. */
   library: LibrarySelector | null;
   itemType: string;
@@ -97,17 +95,20 @@ const KNOWN_ITEM_TYPES = new Set(ITEM_TYPES.map(({ name }) => name));
 const MATCH_ALL_EXPRESSION = "true";
 
 /**
- * Validate a Rule Filter against the supported contract: every leaf compiles,
+ * Validate a Match tree against the supported contract: every leaf compiles,
  * and each group becomes a "Match all" / "Match any" group in tree order.
  * The first problem found, in reading order, is the filter's problem.
  */
-export function compileFilter(filter: RuleFilter): CompiledCondition {
-  if (typeof filter === "string") return compileCondition(filter);
+export function compileFilter(
+  filter: MatchTree,
+  libraries?: readonly AvailableLibrary[],
+): CompiledCondition {
+  if (typeof filter === "string") return compileCondition(filter, libraries);
   const match = "and" in filter ? "all" : "any";
   const entries = "and" in filter ? filter.and : filter.or;
-  const conditions: RuleCondition[] = [];
+  const conditions: MatchCondition[] = [];
   for (const entry of entries) {
-    const compiled = compileFilter(entry);
+    const compiled = compileFilter(entry, libraries);
     if (compiled.problem) return compiled;
     conditions.push(compiled.condition);
   }
@@ -119,9 +120,12 @@ export function compileFilter(filter: RuleFilter): CompiledCondition {
  *
  * A blank expression is a problem, since a leaf has to test something;
  * `true` is the empty "Match all" group, which is how {@link formatCondition}
- * writes it.
+ * writes it. Supplying `libraries` also checks that named Libraries exist.
  */
-export function compileCondition(expression: string): CompiledCondition {
+export function compileCondition(
+  expression: string,
+  libraries?: readonly AvailableLibrary[],
+): CompiledCondition {
   const source = expression.trim();
   if (source === "")
     return {
@@ -137,7 +141,7 @@ export function compileCondition(expression: string): CompiledCondition {
     };
   }
   try {
-    return { condition: convert(parsed.ast), problem: null };
+    return { condition: convert(parsed.ast, libraries), problem: null };
   } catch (error) {
     if (error instanceof UnsupportedNode) {
       const { code, from, to } = error;
@@ -152,14 +156,20 @@ export function compileCondition(expression: string): CompiledCondition {
 
 /** Whether `condition` holds for an Item with `facts`. */
 export function matchCondition(
-  condition: RuleCondition,
-  facts: RuleItemFacts,
+  condition: MatchCondition,
+  facts: MatchItemFacts,
 ): boolean {
   switch (condition.kind) {
     case "group":
       return condition.match === "all"
         ? condition.conditions.every((entry) => matchCondition(entry, facts))
         : condition.conditions.some((entry) => matchCondition(entry, facts));
+    case "library":
+      return (
+        (facts.library !== null &&
+          selectorKey(facts.library) === condition.values[0]) !==
+        condition.negated
+      );
     case "item-type":
       return (facts.itemType === condition.values[0]) !== condition.negated;
     case "collections":
@@ -192,7 +202,7 @@ function matchList(
 }
 
 function matchCollections(
-  condition: Extract<RuleCondition, { kind: "collections" }>,
+  condition: Extract<MatchCondition, { kind: "collections" }>,
   facts: readonly (readonly string[])[],
 ): boolean {
   if (condition.operator === "within") {
@@ -210,10 +220,13 @@ function matchCollections(
 }
 
 /** Write the canonical expression of a condition, as the editor stores it. */
-export function formatCondition(condition: RuleCondition): string {
+export function formatCondition(condition: MatchCondition): string {
   switch (condition.kind) {
     case "group": {
-      if (condition.conditions.length === 0) return MATCH_ALL_EXPRESSION;
+      if (condition.conditions.length === 0)
+        return condition.match === "all"
+          ? MATCH_ALL_EXPRESSION
+          : `!${MATCH_ALL_EXPRESSION}`;
       const operator = condition.match === "all" ? " && " : " || ";
       return condition.conditions
         .map((entry) =>
@@ -223,8 +236,9 @@ export function formatCondition(condition: RuleCondition): string {
         )
         .join(operator);
     }
+    case "library":
     case "item-type":
-      return `${ITEM_TYPE_FIELD} ${condition.negated ? "!=" : "=="} ${JSON.stringify(condition.values[0])}`;
+      return `${condition.kind === "library" ? LIBRARY_FIELD : ITEM_TYPE_FIELD} ${condition.negated ? "!=" : "=="} ${JSON.stringify(condition.values[0])}`;
     case "collections": {
       const args =
         condition.operator === "isEmpty"
@@ -246,7 +260,7 @@ export function formatCondition(condition: RuleCondition): string {
   }
 }
 
-function emptyGroup(): RuleCondition {
+function emptyGroup(): MatchCondition {
   return { kind: "group", match: "all", conditions: [] };
 }
 
@@ -260,16 +274,20 @@ class UnsupportedNode extends Error {
   }
 }
 
-function convert(node: ExpressionNode): RuleCondition {
+function convert(
+  node: ExpressionNode,
+  libraries?: readonly AvailableLibrary[],
+): MatchCondition {
   switch (node.type) {
     case "boolean":
       // `true` is the empty group; `false` never holds and has no GUI form.
       if (node.value) return emptyGroup();
       break;
     case "group":
-      return convert(node.expression);
+      return convert(node.expression, libraries);
     case "unary":
-      if (node.operator === "!") return negate(convert(node.operand));
+      if (node.operator === "!")
+        return negate(convert(node.operand, libraries));
       break;
     case "binary":
       if (node.operator === "&&" || node.operator === "||") {
@@ -278,13 +296,13 @@ function convert(node: ExpressionNode): RuleCondition {
           kind: "group",
           match,
           conditions: [
-            ...flatten(convert(node.left), match),
-            ...flatten(convert(node.right), match),
+            ...flatten(convert(node.left, libraries), match),
+            ...flatten(convert(node.right, libraries), match),
           ],
         };
       }
       if (node.operator === "==" || node.operator === "!=")
-        return equality(node, node.operator === "!=");
+        return equality(node, node.operator === "!=", libraries);
       break;
     case "call":
       return call(node);
@@ -294,15 +312,15 @@ function convert(node: ExpressionNode): RuleCondition {
 
 /** Same-operator groups merge, so `a && b && c` reads as one flat group. */
 function flatten(
-  condition: RuleCondition,
+  condition: MatchCondition,
   match: "all" | "any",
-): RuleCondition[] {
+): MatchCondition[] {
   return condition.kind === "group" && condition.match === match
     ? condition.conditions
     : [condition];
 }
 
-function negate(condition: RuleCondition): RuleCondition {
+function negate(condition: MatchCondition): MatchCondition {
   if (condition.kind !== "group")
     return { ...condition, negated: !condition.negated };
   // De Morgan keeps the contract closed under `!` without a `not` group.
@@ -316,14 +334,34 @@ function negate(condition: RuleCondition): RuleCondition {
 function equality(
   node: Extract<ExpressionNode, { type: "binary" }>,
   negated: boolean,
-): RuleCondition {
+  libraries?: readonly AvailableLibrary[],
+): MatchCondition {
   const { left, right } = node;
   if (
     left.type !== "identifier" ||
-    left.name !== ITEM_TYPE_FIELD ||
+    (left.name !== ITEM_TYPE_FIELD && left.name !== LIBRARY_FIELD) ||
     right.type !== "string"
   )
     throw new UnsupportedNode("unsupported", node.from, node.to);
+  if (left.name === LIBRARY_FIELD) {
+    const groupID = right.value.startsWith("group:")
+      ? Number(right.value.slice(6))
+      : Number.NaN;
+    const valid =
+      right.value === "personal" ||
+      (Number.isSafeInteger(groupID) &&
+        groupID > 0 &&
+        right.value === `group:${groupID}`);
+    if (
+      !valid ||
+      (libraries !== undefined &&
+        !libraries.some(
+          ({ selector }) => selectorKey(selector) === right.value,
+        ))
+    )
+      throw new UnsupportedNode("unknown-library", right.from, right.to);
+    return { kind: "library", operator: "is", negated, values: [right.value] };
+  }
   if (!KNOWN_ITEM_TYPES.has(right.value))
     throw new UnsupportedNode("unknown-item-type", right.from, right.to);
   return {
@@ -334,7 +372,7 @@ function equality(
   };
 }
 
-function call(node: Extract<ExpressionNode, { type: "call" }>): RuleCondition {
+function call(node: Extract<ExpressionNode, { type: "call" }>): MatchCondition {
   const { callee, args } = node;
   if (callee.type === "object-access" && callee.object.type === "identifier") {
     const field = callee.object.name;

@@ -1,17 +1,19 @@
 import { Eta } from "eta/core";
 import { TagToken, Tokenizer } from "liquidjs";
-import { stringify as stringifyYaml } from "yaml";
 
 import type { TemplateLanguage } from "./constants";
 import { parseLiteratureNoteTemplate } from "./literature-note-template";
 import type {
   LiteratureNoteTemplateDocument,
+  LiteratureNoteTemplateManifest,
   LiteratureNoteTemplatePartial,
 } from "./literature-note-template";
+import { updateLiteratureNoteTemplateManifestKeys } from "./literature-note-template-manifest-edit";
 
 export type { LiteratureNoteTemplatePartial } from "./literature-note-template";
 
 export type LiteratureNotePackErrorCode =
+  | "match-changed"
   | "missing-partial"
   | "install-refused"
   | "revert-refused";
@@ -111,11 +113,64 @@ export function literatureNoteTemplateDependencies(
   return [...new Set(names)].filter((name) => name !== "annotation").sort();
 }
 
+/** The fields Share and Import can change while retaining authored template text. */
+export function updateLiteratureNotePackMetadata(
+  source: string,
+  changes: Partial<
+    Pick<
+      LiteratureNoteTemplateManifest,
+      | "id"
+      | "name"
+      | "version"
+      | "author"
+      | "description"
+      | "folder"
+      | "citationStyle"
+      | "importFolder"
+      | "importColoredHighlights"
+      | "importAnnotationsAsTemplate"
+      | "partials"
+    >
+  >,
+  options: { readonly includeMatch?: boolean } = {},
+): string {
+  const original = parseLiteratureNoteTemplate(source).manifest;
+  const edits = Object.fromEntries(
+    Object.entries({
+      ...changes,
+      ...(options.includeMatch === false ? { match: undefined } : {}),
+    }).filter(
+      ([key, value]) =>
+        JSON.stringify(
+          original[key as keyof LiteratureNoteTemplateManifest],
+        ) !== JSON.stringify(value),
+    ),
+  );
+  const content = updateLiteratureNoteTemplateManifestKeys(source, edits);
+  if (
+    options.includeMatch !== false &&
+    JSON.stringify(parseLiteratureNoteTemplate(content).manifest.match) !==
+      JSON.stringify(original.match)
+  )
+    throw new LiteratureNotePackError(
+      "match-changed",
+      "These metadata changes would also change the match conditions.",
+      {
+        recovery:
+          "Write the match conditions independently of the metadata before changing these fields.",
+      },
+    );
+  return content;
+}
+
 /** Export reachable partials, keeping folder bindings only when requested. */
 export function exportLiteratureNotePack(
   source: string,
   availablePartials: readonly LiteratureNoteTemplatePartial[],
-  options: { readonly includeFolders?: boolean } = {},
+  options: {
+    readonly includeFolders?: boolean;
+    readonly includeMatch?: boolean;
+  } = {},
 ): string {
   const document = parseLiteratureNoteTemplate(source);
   const available = new Map(
@@ -151,19 +206,20 @@ export function exportLiteratureNotePack(
     !options.includeFolders &&
     (document.manifest.folder !== undefined ||
       document.manifest.importFolder !== undefined);
-  if (bundled.size === 0 && !stripFolders) return source;
+  if (bundled.size === 0 && !stripFolders && options.includeMatch !== false)
+    return source;
 
   const partials = [...bundled.values()].sort((a, b) =>
     a.name.localeCompare(b.name),
   );
-  const exported = { ...document.manifest };
-  if (stripFolders) {
-    delete exported.folder;
-    delete exported.importFolder;
-  }
-  if (bundled.size > 0) exported.partials = partials;
-  const manifest = stringifyYaml(exported, { lineWidth: 0 });
-  return `---\n${manifest}---\n${source.slice(document.bodyStart)}`;
+  return updateLiteratureNotePackMetadata(
+    source,
+    {
+      ...(stripFolders ? { folder: undefined, importFolder: undefined } : {}),
+      ...(bundled.size > 0 ? { partials } : {}),
+    },
+    { includeMatch: options.includeMatch },
+  );
 }
 
 /** Compare candidate bytes with effective files and prior Pack ownership. */

@@ -6,9 +6,15 @@ import { SettingsService } from "@/services/settings/service";
 import { TemplateService } from "@/services/template/service";
 import { MockVault, PluginStub } from "@/services/template/test-vault";
 
+import { LibraryScopeService } from "@/services/library-scope/service";
+import type { DatabaseService } from "@/services/database/service";
+
 import { ProfileService } from "@/services/profile/service";
 
-export async function profileServiceFixture(files: Record<string, string> = {}) {
+export async function profileServiceFixture(
+  files: Record<string, string> = {},
+  db?: DatabaseService,
+) {
   await using stack = new AsyncDisposableStack();
   const vault = new MockVault();
   const metadataListeners = new Map<string, () => void>();
@@ -53,8 +59,12 @@ export async function profileServiceFixture(files: Record<string, string> = {}) 
   const noteIndex = stack.use(
     new NoteIndex({ app, plugin: plugin as unknown as Plugin }),
   );
+  const libraryScope = stack.use(new LibraryScopeService({ settings,
+    db: db ?? { ready: Promise.resolve(), state: "ready", client: {}, on: () => () => {} } as unknown as DatabaseService,
+    ...(db ? {} : { loadLibraries: () => [{ libraryID: 1, type: "user", groupID: null, name: null }] }),
+  }));
   const profile = stack.use(
-    new ProfileService({ app, settings, template, noteIndex }),
+    new ProfileService({ app, settings, template, noteIndex, libraryScope }),
   );
   await profile.ready;
   const cleanup = stack.move();
@@ -64,6 +74,7 @@ export async function profileServiceFixture(files: Record<string, string> = {}) 
     settings,
     template,
     profile,
+    libraryScope,
     indexNotes: () => metadataListeners.get("resolved")!(),
     [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
   };

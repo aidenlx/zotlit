@@ -1,22 +1,19 @@
-// UI seam for Profile Selection Rules: the words a rule, its problem, and an
-// item type are shown by. Every settings row, picker badge, and notice reads
-// the same summary, so the user recognises one rule across surfaces.
+// Human-readable Profile Match conditions and diagnostics shared by settings and creation.
+import type { MatchTree } from "@zotlit/templates/facade";
 import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import { libraryLabel, selectorLabel } from "@/services/library-scope/label";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
-import type { LibrarySelector } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
 
 import { compileCondition, compileFilter } from "./condition";
 import type {
   ConditionProblem,
   FlatCondition,
-  RuleCondition,
+  MatchCondition,
 } from "./condition";
-import type { ProfileSelectionRule, RuleFilter } from "./schema";
 
 /** The display data a summary uses to name Libraries. */
 export interface DescribeOptions {
@@ -32,50 +29,36 @@ export function itemTypeLabel(name: string): string {
     : entry.labels["en-US"];
 }
 
-/**
- * One line naming what a rule matches and where: "Item type is Book in My
- * Library". Groups read as lists — "and" for all, "or" for any — with a
- * nested group in parentheses. An expression outside the contract is quoted
- * as written.
- * Without `libraries`, a selected Library reads by its stable selector.
- */
-export function describeRule(
-  rule: ProfileSelectionRule,
-  options: DescribeOptions = {},
-): string {
-  return m.settings_profile_rule_summary({
-    conditions: describeConditions(rule.filter),
-    libraries: describeScope(rule, options.libraries ?? []),
-  });
-}
-
-/** The reason a rule cannot be evaluated, for a settings row or a picker. */
+/** The reason a match cannot be evaluated, for a settings row or a picker. */
 export function describeProblem(problem: ConditionProblem): string {
   switch (problem.code) {
     case "empty":
-      return m.profile_rule_problem_empty();
+      return m.profile_match_problem_empty();
     case "syntax":
-      return m.profile_rule_problem_syntax({ text: problem.text });
+      return m.profile_match_problem_syntax({ text: problem.text });
     case "unsupported":
-      return m.profile_rule_problem_unsupported({ text: problem.text });
+      return m.profile_match_problem_unsupported({ text: problem.text });
+    case "unknown-library":
+      return m.profile_match_problem_unknown_library({ text: problem.text });
     case "unknown-item-type":
-      return m.profile_rule_problem_unknown_item_type({ text: problem.text });
+      return m.profile_match_problem_unknown_item_type({ text: problem.text });
   }
 }
 
-function describeConditions(filter: RuleFilter): string {
+export function describeMatch(
+  filter: MatchTree,
+  options: DescribeOptions = {},
+): string {
   const { condition } = compileFilter(filter);
-  if (!condition) return describeFilter(filter);
-  if (condition.kind === "group" && condition.conditions.length === 0)
-    return m.settings_profile_rule_summary_all_items();
-  return describeCondition(condition);
+  if (!condition) return describeFilter(filter, options);
+  return describeCondition(condition, options);
 }
 
 /** A broken filter, leaf by leaf: readable leaves in words, the rest as written. */
-function describeFilter(filter: RuleFilter): string {
+function describeFilter(filter: MatchTree, options: DescribeOptions): string {
   if (typeof filter === "string") {
     const { condition } = compileCondition(filter);
-    return condition ? describeCondition(condition) : filter.trim();
+    return condition ? describeCondition(condition, options) : filter.trim();
   }
   const all = "and" in filter;
   return new Intl.ListFormat(runtime.getLocale(), {
@@ -83,36 +66,64 @@ function describeFilter(filter: RuleFilter): string {
   }).format(
     (all ? filter.and : filter.or).map((entry) =>
       typeof entry === "string"
-        ? describeFilter(entry)
-        : m.settings_profile_rule_summary_group({
-            conditions: describeFilter(entry),
+        ? describeFilter(entry, options)
+        : m.settings_profile_match_summary_group({
+            conditions: describeFilter(entry, options),
           }),
     ),
   );
 }
 
-function describeCondition(condition: RuleCondition): string {
-  if (condition.kind !== "group") return describeFlat(condition);
+function describeCondition(
+  condition: MatchCondition,
+  options: DescribeOptions,
+): string {
+  if (condition.kind !== "group") return describeFlat(condition, options);
+  if (condition.conditions.length === 0)
+    return condition.match === "all"
+      ? m.profile_match_all()
+      : m.profile_match_none();
   return new Intl.ListFormat(runtime.getLocale(), {
     type: condition.match === "all" ? "conjunction" : "disjunction",
   }).format(
     condition.conditions.map((entry) =>
       entry.kind === "group"
-        ? m.settings_profile_rule_summary_group({
-            conditions: describeCondition(entry),
+        ? m.settings_profile_match_summary_group({
+            conditions: describeCondition(entry, options),
           })
-        : describeFlat(entry),
+        : describeFlat(entry, options),
     ),
   );
 }
 
-function describeFlat(condition: FlatCondition): string {
+function describeFlat(
+  condition: FlatCondition,
+  options: DescribeOptions,
+): string {
   switch (condition.kind) {
+    case "library": {
+      const found = options.libraries?.find(
+        ({ selector }) => selectorKey(selector) === condition.values[0],
+      );
+      const library = found
+        ? libraryLabel(found)
+        : selectorLabel(
+            condition.values[0] === "personal"
+              ? { type: "personal" }
+              : {
+                  type: "group",
+                  groupID: Number(condition.values[0].slice(6)),
+                },
+          );
+      return condition.negated
+        ? m.settings_profile_match_library_is_not({ library })
+        : m.settings_profile_match_library_is({ library });
+    }
     case "item-type": {
       const type = itemTypeLabel(condition.values[0]);
       return condition.negated
-        ? m.settings_profile_rule_item_type_is_not({ type })
-        : m.settings_profile_rule_item_type_is({ type });
+        ? m.settings_profile_match_item_type_is_not({ type })
+        : m.settings_profile_match_item_type_is({ type });
     }
     case "collections": {
       const collections = new Intl.ListFormat(runtime.getLocale()).format(
@@ -121,28 +132,28 @@ function describeFlat(condition: FlatCondition): string {
       switch (condition.operator) {
         case "within":
           return condition.negated
-            ? m.settings_profile_rule_collections_not_inside({ collections })
-            : m.settings_profile_rule_collections_inside({ collections });
+            ? m.settings_profile_match_collections_not_inside({ collections })
+            : m.settings_profile_match_collections_inside({ collections });
         case "contains":
           return condition.negated
-            ? m.settings_profile_rule_collections_are_not({ collections })
-            : m.settings_profile_rule_collections_are({ collections });
+            ? m.settings_profile_match_collections_are_not({ collections })
+            : m.settings_profile_match_collections_are({ collections });
         case "containsAny":
           return condition.negated
-            ? m.settings_profile_rule_collections_are_not_any_of({
+            ? m.settings_profile_match_collections_are_not_any_of({
                 collections,
               })
-            : m.settings_profile_rule_collections_are_any_of({ collections });
+            : m.settings_profile_match_collections_are_any_of({ collections });
         case "containsAll":
           return condition.negated
-            ? m.settings_profile_rule_collections_are_not_all_of({
+            ? m.settings_profile_match_collections_are_not_all_of({
                 collections,
               })
-            : m.settings_profile_rule_collections_are_all_of({ collections });
+            : m.settings_profile_match_collections_are_all_of({ collections });
         case "isEmpty":
           return condition.negated
-            ? m.settings_profile_rule_collections_are_not_empty()
-            : m.settings_profile_rule_collections_are_empty();
+            ? m.settings_profile_match_collections_are_not_empty()
+            : m.settings_profile_match_collections_are_empty();
       }
     }
     case "tags": {
@@ -152,44 +163,71 @@ function describeFlat(condition: FlatCondition): string {
       switch (condition.operator) {
         case "contains":
           return condition.negated
-            ? m.settings_profile_rule_tags_do_not_contain({ tags })
-            : m.settings_profile_rule_tags_contain({ tags });
+            ? m.settings_profile_match_tags_do_not_contain({ tags })
+            : m.settings_profile_match_tags_contain({ tags });
         case "containsAny":
           return condition.negated
-            ? m.settings_profile_rule_tags_do_not_contain_any({ tags })
-            : m.settings_profile_rule_tags_contain_any({ tags });
+            ? m.settings_profile_match_tags_do_not_contain_any({ tags })
+            : m.settings_profile_match_tags_contain_any({ tags });
         case "containsAll":
           return condition.negated
-            ? m.settings_profile_rule_tags_do_not_contain_all({ tags })
-            : m.settings_profile_rule_tags_contain_all({ tags });
+            ? m.settings_profile_match_tags_do_not_contain_all({ tags })
+            : m.settings_profile_match_tags_contain_all({ tags });
         case "isEmpty":
           return condition.negated
-            ? m.settings_profile_rule_tags_are_not_empty()
-            : m.settings_profile_rule_tags_are_empty();
+            ? m.settings_profile_match_tags_are_not_empty()
+            : m.settings_profile_match_tags_are_empty();
       }
     }
   }
 }
 
-function describeScope(
-  rule: ProfileSelectionRule,
-  libraries: readonly AvailableLibrary[],
-): string {
-  if (rule.scope.mode === "all") return m.settings_library_scope_all();
-  const byKey = new Map(
-    libraries.map((library) => [selectorKey(library.selector), library]),
-  );
-  return new Intl.ListFormat(runtime.getLocale(), {
-    type: "conjunction",
-  }).format(
-    rule.scope.libraries.map((selector) => scopeLabel(selector, byKey)),
-  );
-}
+export type ProfileMatch =
+  | { state: "absent"; summary: string }
+  | {
+      state: "all" | "evaluable";
+      tree: MatchTree;
+      condition: MatchCondition;
+      summary: string;
+    }
+  | {
+      state: "unevaluable";
+      tree: MatchTree;
+      problem: ConditionProblem;
+      summary: string;
+    };
 
-function scopeLabel(
-  selector: LibrarySelector,
-  byKey: ReadonlyMap<string, AvailableLibrary>,
-): string {
-  const library = byKey.get(selectorKey(selector));
-  return library ? libraryLabel(library) : selectorLabel(selector);
+export function compileProfileMatch(
+  tree: MatchTree | undefined,
+  libraries: readonly AvailableLibrary[],
+): ProfileMatch {
+  if (tree === undefined)
+    return {
+      state: "absent",
+      get summary() {
+        return m.profile_match_absent();
+      },
+    };
+  const { condition, problem } = compileFilter(tree, libraries);
+  if (problem)
+    return {
+      state: "unevaluable",
+      tree,
+      problem,
+      get summary() {
+        return m.profile_match_problem({ problem: describeProblem(problem) });
+      },
+    };
+  const all =
+    condition.kind === "group" &&
+    condition.match === "all" &&
+    condition.conditions.length === 0;
+  return {
+    state: all ? "all" : "evaluable",
+    tree,
+    condition,
+    get summary() {
+      return describeCondition(condition, { libraries });
+    },
+  };
 }

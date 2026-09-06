@@ -63,15 +63,12 @@ import {
 } from "@/services/note-index/service";
 import {
   resolveMembershipFacts,
-  ruleItem,
-  selectProfileByRules,
-} from "@/services/profile-selection";
-import type {
-  ConditionProblem,
-  ProfileSelectionRule,
+  matchItem,
+  selectProfileByMatch,
 } from "@/services/profile-selection";
 import { noteProfileSelector } from "@/services/profile/bindings";
 import type { NoteProfile, ResolvedProfile } from "@/services/profile/bindings";
+import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { ProfileAnnotationError } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
@@ -185,35 +182,16 @@ export interface CreationProfileSources {
   headless?: ProfileSelector;
   /** The user's manual choice for this operation. */
   asked?: ProfileSelector;
-  /**
-   * The Item the note is created for. Supplies the facts Profile Selection
-   * Rules read; omitted, no rule takes part.
-   */
+  /** The source Item supplies its Library, type, Tags, and Collections. */
   item?: Item;
 }
 
-/**
- * Where a creation Profile came from, in priority order: `asked` (a manual
- * choice for this operation) over `headless` (explicit operation input) over
- * `rule` (the first matching Profile Selection Rule) over `bound` (Default).
- */
-export type CreationProfileSource = "asked" | "headless" | "rule" | "bound";
+/** Manual choice, explicit operation input, Profile Match, then Default. */
+export type CreationProfileSource = "asked" | "headless" | "match" | "bound";
 
-/**
- * Why automatic selection stopped. The selection falls back to Default with
- * `shouldAsk` set, so the user chooses explicitly for the affected Item.
- */
 export type CreationSelectionProblem =
-  | {
-      kind: "broken-rule";
-      rule: ProfileSelectionRule;
-      problem: ConditionProblem;
-    }
-  | {
-      kind: "unavailable-target";
-      rule: ProfileSelectionRule;
-      selector: ProfileSelector;
-    }
+  | { kind: "overlap"; candidates: readonly LiteratureNoteProfile[] }
+  | { kind: "unavailable-profile"; selector: ProfileSelector }
   | {
       kind: "invalid-selector";
       source: Extract<CreationProfileSource, "asked" | "headless">;
@@ -222,20 +200,11 @@ export type CreationSelectionProblem =
 
 export type CreationProfileSelection = {
   selector: ProfileSelector;
-  /**
-   * Whether the creation surface should confirm the selection: other
-   * Profiles exist, or automatic selection stopped with a `problem`.
-   */
   shouldAsk: boolean;
   problem?: CreationSelectionProblem;
 } & (
-  | {
-      source: "rule";
-      /** The rule that selected the Profile. */
-      rule: ProfileSelectionRule;
-    }
-  | { source: "asked" | "headless"; rule?: undefined }
-  | { source: "bound"; rule?: undefined }
+  | { source: "match"; reason: string }
+  | { source: "asked" | "headless" | "bound"; reason?: undefined }
 );
 
 /** Effective Profile bindings and the path relevant to the pending action. */
@@ -708,26 +677,16 @@ function profilePreview(
   };
 }
 
-/**
- * Choose the Profile a new Literature Note is created under: the manual
- * choice, else the explicit input, else the first matching Profile Selection
- * Rule, else Default. An invalid explicit selector, an unevaluable in-scope
- * rule, or a matched rule with an unavailable target stops there with a
- * `problem` — the surface asks for an explicit choice instead of advancing
- * to a lower-priority source.
- */
+/** The operation fixes this result; subsequent operations read the current registry. */
 async function resolveCreationProfile(
   ctx: NoteFeatureDeps,
   sources: CreationProfileSources = {},
 ): Promise<CreationProfileSelection> {
-  const [settings] = await Promise.all([
-    ctx.settings.loaded,
-    ctx.profile.ready,
-  ]);
+  await Promise.all([ctx.settings.loaded, ctx.profile.ready]);
   const shouldAsk = ctx.profile.profiles.length > 0;
-  const isAvailable = (selector: ProfileSelector) =>
-    ctx.profile.resolveProfile(selector) !== undefined;
-  const stopped = (problem: CreationSelectionProblem) => {
+  const stopped = (
+    problem: CreationSelectionProblem,
+  ): CreationProfileSelection => {
     logger.debug("Creation Profile selection stopped ({kind})", {
       kind: problem.kind,
       indexedKey: sources.item?.indexedKey,
@@ -737,72 +696,49 @@ async function resolveCreationProfile(
       source: "bound",
       shouldAsk: true,
       problem,
-    } as const;
+    };
   };
-  let selection: CreationProfileSelection = {
-    selector: DEFAULT_PROFILE,
-    source: "bound",
-    shouldAsk,
-  };
-  const explicit = (["asked", "headless"] as const).map((source) => ({
-    source,
-    selector: sources[source],
-  }));
-  const named = explicit.find(
-    (
-      entry,
-    ): entry is { source: "asked" | "headless"; selector: ProfileSelector } =>
-      entry.selector !== undefined,
-  );
-  if (named) {
-    const { selector, source } = named;
-    if (!isAvailable(selector))
+  for (const source of ["asked", "headless"] as const) {
+    const selector = sources[source];
+    if (selector === undefined) continue;
+    if (!ctx.profile.resolveProfile(selector))
       return stopped({ kind: "invalid-selector", source, selector });
-    selection = { selector, source, shouldAsk };
-  } else if (sources.item && settings["profile.selection-rules"].length > 0) {
-    // The Item's actual memberships, read once from one snapshot: rules see
-    // every Collection the Item is filed in, not the one a UI shows it under.
+    logger.debug("Resolved creation Profile {selector} from {source}", {
+      selector,
+      source,
+      indexedKey: sources.item?.indexedKey,
+    });
+    return { selector, source, shouldAsk };
+  }
+  if (sources.item) {
     using lease = await ctx.db.acquireRead();
-    const result = selectProfileByRules(
-      settings["profile.selection-rules"],
-      ruleItem(
+    const result = selectProfileByMatch(
+      ctx.profile.profiles,
+      matchItem(
         sources.item,
         resolveMembershipFacts(lease.client, sources.item),
       ),
-      { isAvailable },
     );
-    switch (result.outcome) {
-      case "matched":
-        selection = {
-          selector: result.selector,
-          source: "rule",
-          shouldAsk,
-          rule: result.rule,
-        };
-        break;
-      case "broken":
-        return stopped({
-          kind: "broken-rule",
-          rule: result.rule,
-          problem: result.problem,
-        });
-      case "unavailable-target":
-        return stopped({
-          kind: "unavailable-target",
-          rule: result.rule,
-          selector: result.selector,
-        });
-      case "unmatched":
-        break;
+    if (result.outcome === "overlap")
+      return stopped({ kind: "overlap", candidates: result.candidates });
+    if (result.outcome === "matched") {
+      logger.debug("Profile Match selected {selector}", {
+        selector: result.profile.id,
+        indexedKey: sources.item.indexedKey,
+      });
+      return {
+        selector: result.profile.id,
+        source: "match",
+        shouldAsk: false,
+        reason: m.profile_match_selected(result.reason),
+      };
     }
   }
-  logger.debug("Resolved creation Profile {selector} from {source}", {
-    selector: selection.selector,
-    source: selection.source,
-    rule: selection.rule?.id,
+  logger.debug("Creation Profile selection uses Default", {
     indexedKey: sources.item?.indexedKey,
+    shouldAsk,
   });
-  return selection;
+  return { selector: DEFAULT_PROFILE, source: "bound", shouldAsk };
 }
 
 function refusedCreate(

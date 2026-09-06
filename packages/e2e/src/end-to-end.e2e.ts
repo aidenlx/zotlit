@@ -100,20 +100,148 @@ async function openProfilesSettings(vaultId: string, pageName: string) {
 describe.skipIf(!reachable)("End-to-end Run", () => {
   let vaultId = "";
   let booksNotePath = "";
-  // The rule the settings UI configured below; it stays in place through
-  // the batch flow so the deletion warning names a rule the GUI produced.
-  let bookRule: {
-    id: string;
-    scope: unknown;
-    filter: unknown;
-    profile: string;
-  };
   let m: typeof import("@obsidian-messages");
-  const bookRuleSummary = () =>
-    m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
-      libraries: m.settings_library_scope_personal(),
-    });
+  const articlesProfile = {
+    id: "Ar7Kd2QpX9Mn",
+    label: "Articles",
+    document: "zotlit-profile.articles.md",
+  };
+  const bookMatch = { and: ['itemType == "book"', 'library == "personal"'] };
+
+  function conditionReady({
+    row = 0,
+    kind,
+    operator,
+    value,
+  }: {
+    row?: number;
+    kind: "item-type" | "library" | "collections";
+    operator: string;
+    value: string;
+  }): Promise<boolean> {
+    // A kind change replaces the value control and its options on the next render.
+    const valueControl =
+      kind === "collections" ? 'input[type="text"]' : "select";
+    return obEvalUntil(
+      vaultId,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}[aria-label=${JSON.stringify(m.settings_profile_match_value())}]')?.value===${JSON.stringify(value)});})()`,
+      { expected: "true" },
+    );
+  }
+
+  async function addLibraryCondition(selector: string): Promise<void> {
+    await obEval(
+      vaultId,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);Array.from(modal.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
+    );
+    expect(
+      await conditionReady({
+        row: 1,
+        kind: "item-type",
+        operator: "is",
+        value: "book",
+      }),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var row=Array.from(Array.from(document.querySelectorAll('.modal')).at(-1).querySelectorAll('[data-condition-row]')).at(-1);var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]');kind.value='library';kind.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+    );
+    expect(
+      await conditionReady({
+        row: 1,
+        kind: "library",
+        operator: "is",
+        value: "personal",
+      }),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var row=Array.from(Array.from(document.querySelectorAll('.modal')).at(-1).querySelectorAll('[data-condition-row]')).at(-1);var value=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_value())}]');value.value=${JSON.stringify(selector)};value.dispatchEvent(new Event('change',{bubbles:true}));return value.value;})()`,
+    );
+  }
+
+  async function openMatchEditor(): Promise<void> {
+    await openProfilesSettings(vaultId, m.settings_page_profiles());
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(booksProfile.document)}));var button=row&&Array.from(row.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_action())});if(!button||button.disabled)return false;button.click();return true;})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var modal=document.querySelector('.zt-profile-match-modal');return String(modal?.querySelector('.modal-title')?.textContent===${JSON.stringify(m.settings_profile_match_title({ profile: booksProfile.label }))}&&!!modal.querySelector('[data-condition-row] select')&&!!modal.querySelector('.zt-profile-match-footer'));})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+  }
+
+  async function saveMatch(match: unknown): Promise<void> {
+    expect(
+      await clickModalButton(vaultId, m.settings_profile_match_save()),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(JSON.stringify(app.plugins.plugins.zotlit.services.profile.profiles.find(p=>p.id===${JSON.stringify(booksProfile.id)})?.match.tree)===${JSON.stringify(JSON.stringify(match))})`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+  }
+
+  /** Hand-written Match trees exercise the same document boundary as external editors. */
+  async function writeMatch(
+    profile: { id: string; document: string },
+    match: unknown,
+  ) {
+    const path = join(e2eVaultPath, "templates", profile.document);
+    const source = await readFile(path, "utf-8");
+    const headerEnd = source.indexOf("\n---\n", 4);
+    const header = source
+      .slice(0, headerEnd)
+      .split("\n")
+      .filter((line) => !line.startsWith("match:"))
+      .join("\n");
+    await writeFile(
+      path,
+      `${header}\nmatch: ${JSON.stringify(match)}${source.slice(headerEnd)}`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(JSON.stringify(app.plugins.plugins.zotlit.services.profile.profiles.find(p=>p.id===${JSON.stringify(profile.id)})?.match.tree)===${JSON.stringify(JSON.stringify(match))})`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+  }
+
+  async function quickSwitchCreate(item: { title: string }) {
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "app.commands.executeCommandById('zotlit:note-quick-switcher')",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(!!document.querySelector('.prompt input'))",
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(item.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+    );
+    await selectSuggestion(vaultId, item.title);
+    await obEval(
+      vaultId,
+      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+    );
+  }
 
   beforeAll(async () => {
     // The dev build generates this facade; unreachable runs never load it.
@@ -428,143 +556,59 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(await hasOneIndexedNote(vaultId, createTargetItem.key)).toBe(true);
   });
 
-  it("creates a note under the Profile a rule configured through the settings UI selects", async () => {
-    // Item 61 is a My Library book with no seeded Books note of its own; the
-    // rule below sends every My Library book to Books.
+  it("creates under a document match and reports the matched Profile and path", async () => {
     const bookItem = ITEMS.find((item) => item.itemID === 61)!;
     const seededPath = `literatures/${bookItem.literatureNoteName ?? bookItem.key}.md`;
-    const ruleNotePath = `books/books-${bookItem.citationKey}.md`;
+    const notePath = `books/books-${bookItem.citationKey}.md`;
     await cli([`vault=${vaultId}`, "delete", `path=${seededPath}`]);
+    expect(await hasIndexedNotes(vaultId, bookItem.key, 0)).toBe(true);
+    await openMatchEditor();
     expect(
-      await obEvalUntil(
-        vaultId,
-        `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(bookItem.key)}).length)`,
-        { expected: "0" },
-      ),
+      await conditionReady({
+        kind: "item-type",
+        operator: "is",
+        value: "book",
+      }),
     ).toBe(true);
-
-    // Configure the rule through the Profiles page: + on the rule list, then
-    // the editor's labeled controls, then Save.
-    await openProfilesSettings(vaultId, m.settings_page_profiles());
+    await addLibraryCondition("personal");
+    await saveMatch(bookMatch);
+    const description = `${booksProfile.document}${m.settings_profile_match_status({ state: "evaluable" })}`;
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var heading=Array.from(document.querySelectorAll('.setting-item-heading, .setting-item')).find(el=>el.textContent.includes(${JSON.stringify(m.settings_profile_rules_heading())}));var button=heading&&heading.querySelector('button, .clickable-icon');if(!button)return false;button.click();return true;})()`,
+        `String(Array.from(document.querySelectorAll('.setting-item')).some(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent===${JSON.stringify(description)}))`,
         { expected: "true" },
       ),
     ).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(Array.from(document.querySelectorAll('.modal')).some(modal=>modal.textContent.includes(${JSON.stringify(m.settings_profile_rule_title_new())})))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));var scope=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_scope())});scope.value='selected';scope.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
-    );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var checkbox=Array.from(modal.querySelectorAll('label')).find(label=>label.textContent?.startsWith(${JSON.stringify(m.settings_library_scope_personal())}))?.querySelector('input[type=checkbox]');return String(checkbox?.checked===true);})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    const configured = await obEval(
-      vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));function named(name){return Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var row=modal.querySelector('[data-condition-row]');var operator=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]');var value=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_value())}]');pick(operator,'is');pick(value,'book');var target=named(${JSON.stringify(m.settings_profile_rule_target())});pick(target,${JSON.stringify(booksProfile.id)});return JSON.stringify({scope:named(${JSON.stringify(m.settings_profile_rule_scope())}).value,library:Array.from(modal.querySelectorAll('label')).find(label=>label.textContent?.startsWith(${JSON.stringify(m.settings_library_scope_personal())}))?.querySelector('input[type=checkbox]')?.checked===true,type:value.value,target:target.value});})()`,
-    );
-    expect(JSON.parse(configured)).toEqual({
-      scope: "selected",
-      library: true,
-      type: "book",
-      target: booksProfile.id,
-    });
-    expect(
-      await clickModalButton(vaultId, m.settings_profile_rule_save()),
-    ).toBe(true);
-    const ruleSummary = bookRuleSummary();
-    // The list persists the rule and shows it after the tab re-renders.
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(Array.from(document.querySelectorAll('.setting-item')).some(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(ruleSummary)})))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    const stored = JSON.parse(
-      await obEval(
-        vaultId,
-        "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'])",
-      ),
-    ) as (typeof bookRule)[];
-    expect(stored).toHaveLength(1);
-    expect(stored[0]).toMatchObject({
-      scope: { mode: "selected", libraries: [{ type: "personal" }] },
-      filter: { and: ['itemType == "book"'] },
-      profile: booksProfile.id,
-    });
-    bookRule = stored[0]!;
     await obEval(vaultId, "app.setting.close();true");
-
-    // Quick Switch preselects the rule's Profile, names the rule, and shows
-    // the destination; Enter creates the note there.
-    expect(
-      await obEvalUntil(
-        vaultId,
-        "app.commands.executeCommandById('zotlit:note-quick-switcher')",
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(bookItem.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
-    );
-    await selectSuggestion(vaultId, bookItem.title);
-    await obEval(
-      vaultId,
-      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
-    const preselected = await selectSuggestion(vaultId, ruleNotePath);
-    expect(preselected).toContain(booksProfile.label);
-    expect(preselected).toContain(m.modal_profile_preselected());
-    expect(preselected).toContain(
-      m.modal_profile_source_rule({ rule: ruleSummary }),
-    );
-    expect(preselected).toContain(ruleNotePath);
-    await obEval(
-      vaultId,
-      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await using notices = await observeNotices(vaultId);
+    await quickSwitchCreate(bookItem);
     expect(
       await waitFor(async () =>
         (
-          await readFile(join(e2eVaultPath, ruleNotePath), "utf-8").catch(
-            () => "",
-          )
+          await readFile(join(e2eVaultPath, notePath), "utf-8").catch(() => "")
         ).includes("%%zt-managed%%"),
       ),
     ).toBe(true);
-    const ruleNote = await readFile(join(e2eVaultPath, ruleNotePath), "utf-8");
-    expect(ruleNote).toContain(`zotlit-profile: Books (${booksProfile.id})`);
-    expect(ruleNote).toContain(`Citation key: ${bookItem.citationKey}`);
+    expect(
+      await obEval(vaultId, "String(!!document.querySelector('.prompt'))"),
+    ).toBe("false");
+    expect(await notices.read()).toContain(
+      m.notice_created_note_from_match({
+        reason: m.profile_match_selected({ profile: booksProfile.label }),
+        path: notePath,
+      }),
+    );
+    expect(await readFile(join(e2eVaultPath, notePath), "utf-8")).toContain(
+      `zotlit-profile: Books (${booksProfile.id})`,
+    );
     expect(await hasOneIndexedNote(vaultId, bookItem.key)).toBe(true);
 
-    // A citation link to the same Item creates directly under the rule's
-    // Profile: no picker, and the notice names the Profile and the path.
-    await cli([`vault=${vaultId}`, "delete", `path=${ruleNotePath}`]);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(bookItem.key)}).length)`,
-        { expected: "0" },
-      ),
-    ).toBe(true);
-    await using notices = await observeNotices(vaultId);
+    await cli([`vault=${vaultId}`, "delete", `path=${notePath}`]);
+    expect(await hasIndexedNotes(vaultId, bookItem.key, 0)).toBe(true);
     await obEval(
       vaultId,
-      `(async function(){var plugin=app.plugins.plugins.zotlit;plugin.services.settings.update({'citation.pandoc-citations':true,'citation.open-as-links':true});var file=await app.vault.create('Rule flow source.md',${JSON.stringify(`[@${bookItem.citationKey}]\n`)});var leaf=app.workspace.getLeaf(false);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.setCursor({line:0,ch:5});return true;})()`,
+      `(async function(){var plugin=app.plugins.plugins.zotlit;plugin.services.settings.update({'citation.pandoc-citations':true,'citation.open-as-links':true});var file=await app.vault.create('Match flow source.md',${JSON.stringify(`[@${bookItem.citationKey}]\n`)});var leaf=app.workspace.getLeaf(false);await leaf.openFile(file,{state:{mode:'source',source:true}});leaf.view.editor.setCursor({line:0,ch:5});return true;})()`,
     );
     expect(
       await obEvalUntil(
@@ -576,9 +620,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await waitFor(async () =>
         (
-          await readFile(join(e2eVaultPath, ruleNotePath), "utf-8").catch(
-            () => "",
-          )
+          await readFile(join(e2eVaultPath, notePath), "utf-8").catch(() => "")
         ).includes("%%zt-managed%%"),
       ),
     ).toBe(true);
@@ -586,129 +628,61 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       await obEval(vaultId, "String(!!document.querySelector('.prompt'))"),
     ).toBe("false");
     expect(await notices.read()).toContain(
-      m.notice_created_note_under_profile({
-        profile: booksProfile.label,
-        path: ruleNotePath,
+      m.notice_created_note_from_match({
+        reason: m.profile_match_selected({ profile: booksProfile.label }),
+        path: notePath,
       }),
     );
-    const linkedNote = await readFile(
-      join(e2eVaultPath, ruleNotePath),
-      "utf-8",
-    );
-    expect(linkedNote).toContain(`zotlit-profile: Books (${booksProfile.id})`);
     expect(await hasOneIndexedNote(vaultId, bookItem.key)).toBe(true);
-
-    // Leave the later Profile flows what they expect: one Books note, and
-    // the rule in place for the mixed-Library batch and the deletion warning.
-    await cli([`vault=${vaultId}`, "delete", `path=${ruleNotePath}`]);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(app.plugins.plugins.zotlit.services.noteIndex.getNotesByItemKey(${JSON.stringify(bookItem.key)}).length)`,
-        { expected: "0" },
-      ),
-    ).toBe(true);
+    await cli([`vault=${vaultId}`, "delete", `path=${notePath}`]);
+    expect(await hasIndexedNotes(vaultId, bookItem.key, 0)).toBe(true);
   });
 
-  it("creates each new note of a mixed-Library selection under its own rule result", async () => {
-    // Rows of the batch: Item 61 (My Library book) matches the Books rule of
-    // the previous test; Item 6 (Shared Reading article) matches the Default
-    // rule configured below; Items 57 (My Library preprint) and 9 (Lab
-    // Archive article, outside both rules' Libraries) match nothing; Item 7
-    // keeps its Books note and Item 1 its unstamped Default note.
+  it("keeps per-Item matches in a mixed-Library batch with one unmatched-or-overlap fallback", async () => {
     const bookItem = ITEMS.find((item) => item.itemID === 61)!;
     const sharedItem = ITEMS.find((item) => item.itemID === 6)!;
     const preprintItem = ITEMS.find((item) => item.itemID === 57)!;
     const labItem = ITEMS.find((item) => item.itemID === 9)!;
     const sharedLibrary = LIBRARIES.find(
-      (library) => library.libraryID === sharedItem.libraryID,
+      ({ libraryID }) => libraryID === sharedItem.libraryID,
+    )!;
+    const labLibrary = LIBRARIES.find(
+      ({ libraryID }) => libraryID === labItem.libraryID,
     )!;
     const creating = [bookItem, sharedItem, preprintItem, labItem];
-    const selection = [...creating, booksProfileTargetItem, targetItem];
     for (const item of [sharedItem, preprintItem, labItem]) {
       const note = await indexedNote(vaultId, item.itemID);
       if (note.path)
         await cli([`vault=${vaultId}`, "delete", `path=${note.path}`]);
       expect(await hasIndexedNotes(vaultId, note.indexedKey, 0)).toBe(true);
     }
-
-    // The second rule, through the same labeled controls: Shared Reading
-    // articles use Default, an explicit match rather than a fallback.
-    await openProfilesSettings(vaultId, m.settings_page_profiles());
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(function(){var heading=Array.from(document.querySelectorAll('.setting-item-heading, .setting-item')).find(el=>el.textContent.includes(${JSON.stringify(m.settings_profile_rules_heading())}));var button=heading&&heading.querySelector('button, .clickable-icon');if(!button)return false;button.click();return true;})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(Array.from(document.querySelectorAll('.modal')).some(modal=>modal.textContent.includes(${JSON.stringify(m.settings_profile_rule_title_new())})))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));var scope=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_scope())});scope.value='selected';scope.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+    const articlesSource = (
+      await readFile(
+        join(e2eVaultPath, "templates", booksProfile.document),
+        "utf-8",
+      )
+    )
+      .replace(`id: ${booksProfile.id}`, `id: ${articlesProfile.id}`)
+      .replace("name: Books", "name: Articles")
+      .replace("folder: books", "folder: articles")
+      .replace("filename: 'books-", "filename: 'articles-");
+    await writeFile(
+      join(e2eVaultPath, "templates", articlesProfile.document),
+      articlesSource,
     );
-    // The editor re-renders after every toggle, so each Library row is
-    // looked up afresh until it shows the wanted state.
-    for (const [name, enabled] of [
-      [m.settings_library_scope_personal(), false],
-      [sharedLibrary.name, true],
-    ] as const) {
-      expect(
-        await obEvalUntil(
-          vaultId,
-          `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var checkbox=Array.from(modal.querySelectorAll('label')).find(label=>label.textContent?.startsWith(${JSON.stringify(name)}))?.querySelector('input[type=checkbox]');if(!checkbox)return false;if(checkbox.checked===${enabled})return true;checkbox.click();return false;})()`,
-          { expected: "true" },
-        ),
-      ).toBe(true);
-    }
-    const configured = await obEval(
-      vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var row=modal.querySelector('[data-condition-row]');var operator=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]');var value=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_value())}]');pick(operator,'is');pick(value,'journalArticle');var target=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_target())});pick(target,'default');return JSON.stringify({type:value.value,target:target.value});})()`,
-    );
-    expect(JSON.parse(configured)).toEqual({
-      type: "journalArticle",
-      target: "default",
-    });
-    expect(
-      await clickModalButton(vaultId, m.settings_profile_rule_save()),
-    ).toBe(true);
-    const stored = JSON.parse(
-      await obEval(
-        vaultId,
-        "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'])",
-      ),
-    ) as { scope: unknown; filter: unknown; profile: string }[];
-    expect(stored).toHaveLength(2);
-    expect(stored[1]).toMatchObject({
-      scope: {
-        mode: "selected",
-        libraries: [{ type: "group", groupID: sharedLibrary.groupID }],
-      },
-      filter: { and: ['itemType == "journalArticle"'] },
-      profile: "default",
-    });
-    await obEval(vaultId, "app.setting.close();true");
-    expect(
-      await obEvalUntil(
-        vaultId,
-        "String(document.querySelector('.modal')===null)",
+    const labMatch = `library == "group:${labLibrary.groupID}"`;
+    await writeMatch(booksProfile, { or: [bookMatch, labMatch] });
+    await writeMatch(articlesProfile, {
+      or: [
         {
-          expected: "true",
+          and: [
+            'itemType == "journalArticle"',
+            `library == "group:${sharedLibrary.groupID}"`,
+          ],
         },
-      ),
-    ).toBe(true);
-
-    // The Companion pushes the selection over HTTP, the batch transport
-    // documented in packages/protocol; the plugin answers with its
-    // confirmation modal. The request leaves from this process, as the
-    // Companion's does: a renderer fetch would preflight without the
-    // protocol header and be rejected.
+        labMatch,
+      ],
+    });
     const server = JSON.parse(
       await obEval(
         vaultId,
@@ -724,98 +698,89 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
           [SOURCE_ID_HEADER]: server.sourceId,
         },
-        body: JSON.stringify({ items: selection.map((item) => item.itemID) }),
+        body: JSON.stringify({
+          items: [...creating, booksProfileTargetItem, targetItem].map(
+            ({ itemID }) => itemID,
+          ),
+        }),
       },
     );
     expect(pushed.status).toBe(204);
     expect(
       await obEvalUntil(
         vaultId,
-        `String(Array.from(document.querySelectorAll('.modal button')).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_confirm_button())}))`,
+        `String(Array.from(Array.from(document.querySelectorAll('.modal')).at(-1)?.querySelectorAll('button')??[]).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_confirm_button())}))`,
         { expected: "true" },
       ),
     ).toBe(true);
-
-    // Each new row shows its Profile, reason, and destination before the run.
-    const booksRule = m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_item_type_is({ type: "Book" }),
-      libraries: m.settings_library_scope_personal(),
-    });
-    const sharedRule = m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_item_type_is({
-        type: "Journal Article",
-      }),
-      libraries: m.settings_library_scope_group({
-        groupID: sharedLibrary.groupID!,
-      }),
-    });
-    const bookNotePath = `books/books-${bookItem.citationKey}.md`;
-    const preprintNotePath = `books/books-${preprintItem.citationKey}.md`;
-    const labNotePath = `books/books-${labItem.citationKey}.md`;
+    const bookPath = `books/books-${bookItem.citationKey}.md`;
+    const articlesPath = `articles/articles-${sharedItem.citationKey}.md`;
+    const preprintPath = `books/books-${preprintItem.citationKey}.md`;
+    const labPath = `books/books-${labItem.citationKey}.md`;
     const confirmation = await obEval(
       vaultId,
-      "document.querySelector('.modal').textContent",
+      "Array.from(document.querySelectorAll('.modal')).at(-1).textContent",
     );
     for (const text of [
-      ...creating.map((item) => item.title),
-      bookNotePath,
-      m.modal_profile_source_rule({ rule: booksRule }),
-      m.modal_profile_source_rule({ rule: sharedRule }),
-      m.batch_profile_reason_unmatched(),
-      m.batch_profile_unmatched_destination({
-        count: 2,
-        label: m.settings_profile_default_name(),
-      }),
-      m.batch_profile_unmatched_help(),
-      m.batch_profile_override_all(),
+      bookPath,
+      articlesPath,
+      m.profile_match_selected({ profile: booksProfile.label }),
+      m.profile_match_selected({ profile: articlesProfile.label }),
+      m.profile_match_unmatched(),
+      m.batch_profile_unresolved_help(),
       m.batch_profile_override_all_help(),
+      m.modal_profile_problem_overlap({ profiles: "Articles, Books" }),
     ])
       expect(confirmation).toContain(text);
-    expect(confirmation).not.toContain(m.batch_profile_affected_help());
-
-    // The fallback moves the two unmatched rows to Books; the rows a rule
-    // matched keep their own Profile.
+    for (const scope of ["unresolved", "all-new"])
+      expect(
+        await obEval(
+          vaultId,
+          `String(Array.from(document.querySelectorAll('.modal')).at(-1).querySelectorAll('[data-profile-choice-scope=${scope}]').length)`,
+        ),
+      ).toBe("1");
+    expect(confirmation).not.toContain(m.batch_profile_recovery_help());
     await obEval(
       vaultId,
-      "document.querySelector('[data-profile-choice-scope=\"unmatched\"] [data-profile-choice]').click();true",
+      "Array.from(document.querySelectorAll('.modal')).at(-1).querySelector('[data-profile-choice-scope=unresolved] [data-profile-choice]').click();true",
     );
-    await selectSuggestion(vaultId, m.modal_profile_preselected());
-    await obEval(
+    const candidate = await selectSuggestion(
       vaultId,
-      `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `articles/articles-${preprintItem.citationKey}.md`,
     );
-    await selectSuggestion(vaultId, preprintNotePath);
+    expect(candidate).toContain(m.modal_profile_match_batch_candidate());
+    expect(candidate).not.toContain(m.modal_profile_match_candidate());
+    expect(candidate).toContain(articlesProfile.label);
     await obEval(
       vaultId,
-      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
+      `(function(){var input=Array.from(document.querySelectorAll('.prompt')).at(-1).querySelector('input');input.value=${JSON.stringify(booksProfile.label)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+    );
+    await selectSuggestion(vaultId, preprintPath);
+    await obEval(
+      vaultId,
+      "Array.from(document.querySelectorAll('.prompt')).at(-1).querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
     );
     expect(
       await obEvalUntil(
         vaultId,
-        `String((document.querySelector('.modal')?.textContent??'').includes(${JSON.stringify(
-          m.batch_profile_unmatched_destination({
-            count: 2,
-            label: booksProfile.label,
-          }),
-        )}))`,
+        `String((Array.from(document.querySelectorAll('.modal')).at(-1)?.textContent??'').includes(${JSON.stringify(m.batch_profile_unresolved_destination({ count: 2, label: booksProfile.label }))}))`,
         { expected: "true" },
       ),
     ).toBe(true);
     const chosen = await obEval(
       vaultId,
-      "document.querySelector('.modal').textContent",
+      "Array.from(document.querySelectorAll('.modal')).at(-1).textContent",
     );
     for (const text of [
-      bookNotePath,
-      preprintNotePath,
-      labNotePath,
-      m.modal_profile_source_rule({ rule: booksRule }),
-      m.modal_profile_source_rule({ rule: sharedRule }),
+      bookPath,
+      articlesPath,
+      preprintPath,
+      labPath,
+      m.profile_match_selected({ profile: booksProfile.label }),
+      m.profile_match_selected({ profile: articlesProfile.label }),
       m.batch_profile_source_chosen(),
     ])
       expect(chosen).toContain(text);
-    expect(chosen).not.toContain(m.batch_profile_reason_unmatched());
-
     await using notices = await observeNotices(vaultId);
     expect(
       await clickModalButton(vaultId, m.batch_update_confirm_button()),
@@ -823,22 +788,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String(Array.from(document.querySelectorAll('.modal button')).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_close())}))`,
+        `String(Array.from(Array.from(document.querySelectorAll('.modal')).at(-1)?.querySelectorAll('button')??[]).some(button=>button.textContent.trim()===${JSON.stringify(m.batch_update_close())}))`,
         { expected: "true" },
       ),
     ).toBe(true);
-    // Summary groups follow the Profiles the run wrote: Books for the rule
-    // match and the two fallback rows, Default for the explicit Default rule.
     const summary = await obEval(
       vaultId,
-      "document.querySelector('.modal').textContent",
+      "Array.from(document.querySelectorAll('.modal')).at(-1).textContent",
     );
     for (const text of [
       m.batch_profile_created({ count: 3, label: booksProfile.label }),
-      m.batch_profile_created({
-        count: 1,
-        label: m.settings_profile_default_name(),
-      }),
+      m.batch_profile_created({ count: 1, label: articlesProfile.label }),
       m.batch_profile_updated({ count: 1, label: booksProfile.label }),
       m.batch_profile_updated({
         count: 1,
@@ -849,216 +809,92 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect((await notices.read()).join("\n")).toContain(text);
     }
     expect(await clickModalButton(vaultId, m.batch_update_close())).toBe(true);
-
-    for (const [item, path] of [
-      [bookItem, bookNotePath],
-      [preprintItem, preprintNotePath],
-      [labItem, labNotePath],
+    for (const [item, path, label, id] of [
+      [bookItem, bookPath, booksProfile.label, booksProfile.id],
+      [preprintItem, preprintPath, booksProfile.label, booksProfile.id],
+      [labItem, labPath, booksProfile.label, booksProfile.id],
+      [sharedItem, articlesPath, articlesProfile.label, articlesProfile.id],
     ] as const) {
-      expect(
-        await waitFor(async () =>
-          (
-            await readFile(join(e2eVaultPath, path), "utf-8").catch(() => "")
-          ).includes("%%zt-managed%%"),
-        ),
-      ).toBe(true);
       const content = await readFile(join(e2eVaultPath, path), "utf-8");
-      expect(content).toContain(`zotlit-profile: Books (${booksProfile.id})`);
-      expect(content).toContain(`Citation key: ${item.citationKey}`);
-    }
-    const sharedNote = await indexedNote(vaultId, sharedItem.itemID);
-    expect(sharedNote.path?.startsWith("literatures/")).toBe(true);
-    expect(
-      await readFile(join(e2eVaultPath, sharedNote.path!), "utf-8"),
-    ).not.toContain("zotlit-profile:");
-    for (const item of creating) {
+      expect(content).toContain(`zotlit-profile: ${label} (${id})`);
       const note = await indexedNote(vaultId, item.itemID);
       expect(await hasOneIndexedNote(vaultId, note.indexedKey)).toBe(true);
-    }
-    expect(await hasOneIndexedNote(vaultId, createTargetItem.key)).toBe(true);
-
-    // Leave the deletion flow one Books note; both rules stay for its warning.
-    for (const [item, path] of [
-      [bookItem, bookNotePath],
-      [preprintItem, preprintNotePath],
-      [labItem, labNotePath],
-    ] as const) {
       await cli([`vault=${vaultId}`, "delete", `path=${path}`]);
-      const note = await indexedNote(vaultId, item.itemID);
       expect(await hasIndexedNotes(vaultId, note.indexedKey, 0)).toBe(true);
     }
+    await cli([
+      `vault=${vaultId}`,
+      "delete",
+      `path=templates/${articlesProfile.document}`,
+    ]);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.id===${JSON.stringify(articlesProfile.id)}))`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await writeMatch(booksProfile, bookMatch);
   });
 
-  it("matches a Collection rule through a subcollection, and only directly when asked", async () => {
-    // Item 11 is filed in the Fixture's child collection PERSCHLD alone; a
-    // rule on its parent PERSNAL2 reaches it through the descendant walk and
-    // misses it under direct membership.
-    const childItem = ITEMS.find((item) => item.itemID === 11)!;
-    const childCollection = COLLECTIONS.find(
-      (collection) => collection.key === "PERSCHLD",
-    )!;
-    const parentCollection = COLLECTIONS.find(
-      (collection) =>
-        collection.collectionID === childCollection.parentCollectionID,
+  it("matches a Collection path through descendants and keeps direct filing separate", async () => {
+    const childItem = ITEMS.find(({ itemID }) => itemID === 11)!;
+    const childCollection = COLLECTIONS.find(({ key }) => key === "PERSCHLD")!;
+    const parent = COLLECTIONS.find(
+      ({ collectionID }) => collectionID === childCollection.parentCollectionID,
     )!;
     expect(childItem.collectionIDs).toEqual([childCollection.collectionID]);
     const seededPath = `literatures/${childItem.literatureNoteName ?? childItem.key}.md`;
-    const ruleNotePath = `books/books-${childItem.citationKey}.md`;
-    const collectionPath = parentCollection.name;
+    const notePath = `books/books-${childItem.citationKey}.md`;
     await cli([`vault=${vaultId}`, "delete", `path=${seededPath}`]);
     expect(await hasIndexedNotes(vaultId, childItem.key, 0)).toBe(true);
-    const readStoredRules = async () =>
-      JSON.parse(
-        await obEval(
-          vaultId,
-          "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'])",
-        ),
-      ) as (typeof bookRule)[];
-    const rulesBefore = await readStoredRules();
-    expect(rulesBefore).toHaveLength(2);
-
-    await openProfilesSettings(vaultId, m.settings_page_profiles());
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(function(){var heading=Array.from(document.querySelectorAll('.setting-item-heading, .setting-item')).find(el=>el.textContent.includes(${JSON.stringify(m.settings_profile_rules_heading())}));var button=heading&&heading.querySelector('button, .clickable-icon');if(!button)return false;button.click();return true;})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(Array.from(document.querySelectorAll('.modal')).some(modal=>modal.textContent.includes(${JSON.stringify(m.settings_profile_rule_title_new())})))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    await obEval(
-      vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal.querySelector('[data-condition-row]');var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_condition_kind())}]');kind.value='collections';kind.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+    await writeMatch(
+      booksProfile,
+      `collections.within(${JSON.stringify(parent.name)})`,
     );
-    await obEval(
-      vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal.querySelector('[data-condition-row]');var input=row.querySelector('input[type=text]');input.value=${JSON.stringify(collectionPath)};input.dispatchEvent(new Event('input',{bubbles:true}));var target=modal.querySelector('select[aria-labelledby]');var labels=Array.from(modal.querySelectorAll('[id]'));target=Array.from(modal.querySelectorAll('select')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_target())});target.value=${JSON.stringify(booksProfile.id)};target.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
-    );
-    expect(
-      await clickModalButton(vaultId, m.settings_profile_rule_save()),
-    ).toBe(true);
-    const stored = await readStoredRules();
-    expect(stored).toHaveLength(3);
-    const collectionRule = stored[2]!;
-    expect(collectionRule).toMatchObject({
-      scope: { mode: "all" },
-      filter: {
-        and: [`collections.within(${JSON.stringify(collectionPath)})`],
-      },
-      profile: booksProfile.id,
-    });
-
-    // Quick Switch preselects Books through the parent-collection rule and
-    // creates the note there.
-    const quickSwitchSelection = async () => {
-      expect(
-        await obEvalUntil(
-          vaultId,
-          "app.commands.executeCommandById('zotlit:note-quick-switcher')",
-          { expected: "true" },
-        ),
-      ).toBe(true);
-      await obEval(
-        vaultId,
-        `(function(){var input=document.querySelector('.prompt input');input.value=${JSON.stringify(childItem.title)};input.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
-      );
-      await selectSuggestion(vaultId, childItem.title);
-      await obEval(
-        vaultId,
-        "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-      );
-      return selectSuggestion(vaultId, m.modal_profile_preselected());
-    };
-    const pickerSummary = m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_collections_inside({
-        collections: collectionPath,
-      }),
-      libraries: m.settings_library_scope_all(),
-    });
-    const descendantSelection = await quickSwitchSelection();
-    expect(descendantSelection).toContain(booksProfile.label);
-    expect(descendantSelection).toContain(
-      m.modal_profile_source_rule({ rule: pickerSummary }),
-    );
-    expect(descendantSelection).toContain(ruleNotePath);
-    await obEval(
-      vaultId,
-      "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));true",
-    );
+    await quickSwitchCreate(childItem);
     expect(
       await waitFor(async () =>
         (
-          await readFile(join(e2eVaultPath, ruleNotePath), "utf-8").catch(
-            () => "",
-          )
+          await readFile(join(e2eVaultPath, notePath), "utf-8").catch(() => "")
         ).includes("%%zt-managed%%"),
       ),
     ).toBe(true);
-    const ruleNote = await readFile(join(e2eVaultPath, ruleNotePath), "utf-8");
-    expect(ruleNote).toContain(`zotlit-profile: Books (${booksProfile.id})`);
-    expect(ruleNote).toContain(`Citation key: ${childItem.citationKey}`);
-    expect(await hasOneIndexedNote(vaultId, childItem.key)).toBe(true);
-
-    // Narrowed to direct membership, the same rule no longer reaches the
-    // Item, so Quick Switch falls back to Default.
-    await cli([`vault=${vaultId}`, "delete", `path=${ruleNotePath}`]);
+    expect(await readFile(join(e2eVaultPath, notePath), "utf-8")).toContain(
+      `zotlit-profile: Books (${booksProfile.id})`,
+    );
+    await cli([`vault=${vaultId}`, "delete", `path=${notePath}`]);
     expect(await hasIndexedNotes(vaultId, childItem.key, 0)).toBe(true);
-    await openProfilesSettings(vaultId, m.settings_page_profiles());
+    await openMatchEditor();
     expect(
-      await obEvalUntil(
-        vaultId,
-        `(function(){var edits=Array.from(document.querySelectorAll('[aria-label=${JSON.stringify(m.settings_profile_rules_edit())}]'));var edit=edits.find(button=>{var row=button.closest('.setting-item');return row?.textContent.includes(${JSON.stringify(collectionPath)})&&row.textContent.includes(${JSON.stringify(booksProfile.label)});});if(!edit)return false;edit.click();return true;})()`,
-        { expected: "true" },
-      ),
+      await conditionReady({
+        kind: "collections",
+        operator: "within",
+        value: parent.name,
+      }),
     ).toBe(true);
-    expect(
-      JSON.parse(
-        await obEval(
-          vaultId,
-          `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal.querySelector('[data-condition-row]');var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_condition_kind())}]');var operator=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]');var value=row.querySelector('input[type=text]');var labels=Array.from(modal.querySelectorAll('[id]'));var target=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_target())});return JSON.stringify({kind:kind.value,operator:operator.value,value:value.value,target:target.value});})()`,
-        ),
-      ),
-    ).toEqual({
-      kind: "collections",
-      operator: "within",
-      value: collectionPath,
-      target: booksProfile.id,
-    });
     await obEval(
       vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal.querySelector('[data-condition-row]');var operator=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+      `(function(){var operator=document.querySelector('.zt-profile-match-modal [data-condition-row] select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
     );
     expect(
-      await clickModalButton(vaultId, m.settings_profile_rule_save()),
+      await conditionReady({
+        kind: "collections",
+        operator: "contains",
+        value: parent.name,
+      }),
     ).toBe(true);
-    const directFilter = {
-      and: [`collections.contains(${JSON.stringify(collectionPath)})`],
-    };
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(function(){var rules=app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'];var rule=rules.find(rule=>rule.id===${JSON.stringify(collectionRule.id)});return String(JSON.stringify(rule?.filter)===${JSON.stringify(JSON.stringify(directFilter))});})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    const directStored = await readStoredRules();
-    const directRule = directStored.find(({ id }) => id === collectionRule.id);
-    expect(directRule?.filter).toEqual(directFilter);
-    const directSelection = await quickSwitchSelection();
-    expect(directSelection).toContain(m.settings_profile_default_name());
-    expect(directSelection).not.toContain(booksProfile.label);
-    expect(directSelection).not.toContain(
-      m.modal_profile_source_rule({ rule: "" }),
+    await saveMatch({
+      and: [`collections.contains(${JSON.stringify(parent.name)})`],
+    });
+    await obEval(vaultId, "app.setting.close();true");
+    await quickSwitchCreate(childItem);
+    const fallback = await selectSuggestion(
+      vaultId,
+      m.modal_profile_preselected(),
     );
-    expect(directSelection).toContain(
-      `literatures/${childItem.citationKey}.md`,
-    );
+    expect(fallback).toContain(m.settings_profile_default_name());
+    expect(fallback).toContain(`literatures/${childItem.citationKey}.md`);
     await obEval(
       vaultId,
       "document.querySelector('.prompt input').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,which:27,bubbles:true}));true",
@@ -1068,13 +904,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         expected: "true",
       }),
     ).toBe(true);
-
-    // Leave the deletion flow the two rules it expects.
-    await obEval(
-      vaultId,
-      `app.plugins.plugins.zotlit.services.settings.update({'profile.selection-rules':${JSON.stringify(rulesBefore)}});true`,
-    );
-    expect(await readStoredRules()).toEqual(rulesBefore);
+    expect(await hasIndexedNotes(vaultId, childItem.key, 0)).toBe(true);
+    await writeMatch(booksProfile, bookMatch);
   });
 
   it("deletes Books into Default and applies Default on the next update", async () => {
@@ -1084,20 +915,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       "utf-8",
     );
     const exterior = "My discussion stays outside the managed region.";
-    // The earlier flows left two rules: the GUI-configured Books rule the
-    // deletion dialog warns about, and the Shared Reading rule on Default.
-    const readStoredRules = async () =>
-      JSON.parse(
-        await obEval(
-          vaultId,
-          "JSON.stringify(app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'])",
-        ),
-      ) as (typeof bookRule)[];
-    const rulesBefore = await readStoredRules();
-    expect(rulesBefore).toHaveLength(2);
-    expect(rulesBefore[0]).toEqual(bookRule);
-    const sharedRule = rulesBefore[1]!;
-    expect(sharedRule.profile).toBe("default");
     await obEval(
       vaultId,
       `(async function(){app.vault.setConfig('trashOption','local');var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});await app.vault.append(file,${JSON.stringify(`\n${exterior}\n`)});return true;})()`,
@@ -1112,7 +929,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(row=>row.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&row.querySelector('.setting-item-description')?.textContent===${JSON.stringify(booksProfile.document)});var button=row&&Array.from(row.querySelectorAll('.clickable-icon')).at(-1);if(!button)return false;button.click();return true;})()`,
+        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(row=>row.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&row.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(booksProfile.document)}));var button=row&&Array.from(row.querySelectorAll('.clickable-icon')).at(-1);if(!button)return false;button.click();return true;})()`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -1149,13 +966,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(deletionDialog).toContain(
       m.settings_profile_delete_move_confirm({ count: 1 }),
     );
-    // The warning lists the rule and says it needs manual repair; the
-    // delete action stays available.
-    expect(deletionDialog).toContain(
-      m.settings_profile_delete_rules_count({ count: 1 }),
-    );
-    expect(deletionDialog).toContain(bookRuleSummary());
-    expect(deletionDialog).toContain(m.settings_profile_delete_rules_repair());
     expect(
       await clickModalButton(
         vaultId,
@@ -1228,56 +1038,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     expect(updated).toContain(exterior);
 
-    // Moving the note into Default left the rule's target alone: it still
-    // names the deleted Books ID; the Default rule is untouched.
-    expect(await readStoredRules()).toEqual([bookRule, sharedRule]);
-
-    // Manual repair through the existing rule editor: the row shows the
-    // unavailable target, the editor's Profile control takes Default.
-    await openProfilesSettings(vaultId, m.settings_page_profiles());
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.id)}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(m.settings_profile_rule_target_unavailable())}));var button=row&&row.querySelector('.clickable-icon');if(!button)return false;button.click();return true;})()`,
+        `String(!app.plugins.plugins.zotlit.services.profile.profiles.some(p=>p.id===${JSON.stringify(booksProfile.id)}))`,
         { expected: "true" },
       ),
     ).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(Array.from(document.querySelectorAll('.modal')).some(modal=>modal.textContent.includes(${JSON.stringify(m.settings_profile_rule_title_edit())})))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    expect(
-      await obEval(
-        vaultId,
-        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));var select=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_target())});select.value='default';select.dispatchEvent(new Event('change',{bubbles:true}));return select.value;})()`,
-      ),
-    ).toBe("default");
-    expect(
-      await clickModalButton(vaultId, m.settings_profile_rule_save()),
-    ).toBe(true);
-    await waitFor(
-      async () => (await readStoredRules())[0]?.profile === "default",
-    );
-    expect(await readStoredRules()).toEqual([
-      { ...bookRule, profile: "default" },
-      sharedRule,
-    ]);
-    // The list shows the repaired rule under Default without the warning.
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(Array.from(document.querySelectorAll('.setting-item')).some(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_default_name())}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(bookRuleSummary())})&&!el.textContent.includes(${JSON.stringify(m.settings_profile_rule_target_unavailable())})))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    // Leave the later flows without rules, as the earlier rule flow did.
-    await obEval(
-      vaultId,
-      "app.plugins.plugins.zotlit.services.settings.update({'profile.selection-rules':[]});app.setting.close();true",
-    );
+    await obEval(vaultId, "app.setting.close();true");
   });
 
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
@@ -1479,20 +1247,20 @@ async function selectSuggestion(
   expect(
     await obEvalUntil(
       vaultId,
-      `(function(){var row=Array.from(document.querySelectorAll('.prompt .suggestion-item')).find(el=>el.textContent.includes(${JSON.stringify(needle)}));if(!row)return false;row.dispatchEvent(new MouseEvent('mousemove',{bubbles:true}));return row.classList.contains('is-selected');})()`,
+      `(function(){var prompt=Array.from(document.querySelectorAll('.prompt')).at(-1);var row=Array.from(prompt?.querySelectorAll('.suggestion-item')??[]).find(el=>el.textContent.includes(${JSON.stringify(needle)}));if(!row)return false;row.dispatchEvent(new MouseEvent('mousemove',{bubbles:true}));return row.classList.contains('is-selected');})()`,
       { expected: "true" },
     ),
   ).toBe(true);
   return obEval(
     vaultId,
-    "document.querySelector('.prompt .is-selected').textContent",
+    "Array.from(document.querySelectorAll('.prompt')).at(-1).querySelector('.is-selected').textContent",
   );
 }
 
 function clickModalButton(vaultId: string, label: string): Promise<boolean> {
   return obEvalUntil(
     vaultId,
-    `(function(){var button=Array.from(document.querySelectorAll('.modal button')).find(button=>button.textContent.trim()===${JSON.stringify(label)});if(!button||button.disabled)return false;button.click();return true;})()`,
+    `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var button=modal&&Array.from(modal.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(label)});if(!button||button.disabled)return false;button.click();return true;})()`,
     { expected: "true" },
   );
 }
