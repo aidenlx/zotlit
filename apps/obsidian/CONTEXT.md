@@ -76,13 +76,41 @@ The value a note or an operation resolves its Literature Note Profile against: a
 The step that turns a Profile selector or a note's Profile stamp into the Literature Note Profile an operation runs under — the default Profile when nothing names one, otherwise the Profile whose ID matches, with its sparse bindings merged over the default Profile. A stamp that names no configured Profile resolves to an unknown result that keeps the stamp verbatim; it never resolves to the default Profile.
 _Avoid_: profile lookup, profile find
 
-**Profile Selection Rule**:
-A vault-owned rule that associates conditions on a Zotero Item with a Literature Note Profile for a new Literature Note. Its position in the ordered rule list defines its priority.
-_Avoid_: Profile binding (a Profile's configuration), saved search (a Zotero search definition)
+**Profile Match**:
+The condition block a Literature Note Profile carries in its manifest (`match`) that declares which Zotero Items create new Literature Notes under that Profile. A Profile has at most one; the Default Profile has none and is the fallback. It travels with the Profile document, and the sender or recipient chooses whether a shared Profile keeps it.
+_Avoid_: Profile Selection Rule, selection rule, rule list, Profile binding (a Profile's configuration), saved search (a Zotero search definition), claim
 
 **Automatic Profile Selection**:
-The choice of a Literature Note Profile for a new Literature Note from the source Item's first matching Profile Selection Rule. Existing notes retain their recorded Profile membership.
-_Avoid_: Profile resolution (resolving an already chosen selector), automatic Profile switch (changing an existing note's membership)
+The choice of a Literature Note Profile for a new Literature Note as the one Profile whose Profile Match matches the source Item. Two or more matching Profiles are a Selection problem, never a race. Existing notes retain their recorded Profile membership.
+_Avoid_: Profile resolution (resolving an already chosen selector), automatic Profile switch (changing an existing note's membership), priority, rule order
+
+**Match tree**:
+The value of a Profile Match: an explicit `and` / `or` tree, in the shape of an Obsidian Bases `filters` block, whose leaves are Match conditions. The match editor mirrors the tree; each leaf is one row.
+_Avoid_: Rule Filter, filter (bare), query, search
+
+**Match condition**:
+One leaf of a Match tree: a Filter Expression restricted to the supported condition contract — Library tests, built-in Zotero item type tests, and list tests on the Item's Tags and Collection paths, which `&&`, `||`, `!`, and grouping may still combine inside the leaf. A Library is referenced as `personal` or `group:<groupID>` — the group ID is assigned by zotero.org and is the same for every member — and Tags and Collections by name, so the leaf reads the same in any vault; Library scope is an ordinary condition. The match editor writes the canonical expression for a labelled row and keeps an expression row as written; a leaf outside the contract makes the Profile Match unevaluable. The language itself is the Filter Expression context (`packages/filter-expression/CONTEXT.md`).
+_Avoid_: Rule condition, Library scope (as a separate part), Collection key (as a reference), global membership function (`hasTag`, `inCollection`), filter (bare), query, search
+
+**List field**:
+An Item property a Match condition tests as an Obsidian Bases list: `tags`, the Item's Tag names, and `collections`, the Item's Collection paths. A list test is a list function on the field — `contains`, `containsAny`, `containsAll`, `isEmpty` — and `!` is the only negation; the Item type is a plain value, not a list.
+_Avoid_: membership predicate, tag test (as a distinct condition kind), field registry
+
+**Collection path**:
+The names of a Collection's ancestors and itself, root first, joined by `/` without escaping; the Item's `collections` field holds one per Collection the Item is filed in directly. A path names the same Collection in every Library that holds that path, and a rename of any name on it changes the path.
+_Avoid_: Collection key (as a reference), Collection label, folder path
+
+**Within test**:
+The list test `collections.within(path)`: the Item is filed in the Collection at `path` or in any of its subcollections. The default Collection test in the match editor, shown as "is inside"; `collections.contains(path)`, shown as "is", tests direct filing alone.
+_Avoid_: descendants option, subcollection scope, include subcollections (as a separate control)
+
+**Selection source**:
+Where a new Literature Note's Profile came from, in priority order: the manual choice for the current operation, the Profile a command or Companion link supplied, the Profile whose Profile Match matches, and Default. Creation surfaces show the source beside the selected Profile; a match source names its Profile.
+_Avoid_: last-used Profile, remembered Profile (retired)
+
+**Selection problem**:
+The outcome that stops Automatic Profile Selection and requires an explicit choice for the affected Item: two or more Profiles whose Profile Match matches the Item, or an invalid explicitly supplied Profile selector. A Profile Match that cannot be evaluated — an unknown Collection path, a leaf outside the contract, a syntax error — is a nonmatch for every Item and a diagnostic on that Profile's settings row, never a Selection problem.
+_Avoid_: rule error (too broad), broken rule, fallback
 
 **Managed Block**:
 The `{% managed %}` … `{% endmanaged %}` block in a Literature Note Template document's body — a self-contained sub-template supported in both Liquid and Eta. It renders in isolation: variables assigned outside the block are not visible inside, so an update-time render is identical to a create-time render. On create it renders in place within the body; on update it alone re-renders to refill the note's Managed Region. When its tags are Line-Owning Tags, the Managed Region occupies exactly the lines the block occupied. Role-equivalent to the retired `content` Template.

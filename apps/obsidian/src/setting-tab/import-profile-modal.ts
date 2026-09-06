@@ -9,6 +9,7 @@ import { BaseNotice } from "@/lib/notice";
 import { requireDialog } from "@/lib/require";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
+import { describeMatch } from "@/services/profile-selection";
 import type {
   LiteratureNoteProfile,
   PreparedProfileImport,
@@ -171,6 +172,7 @@ export class ImportProfileModal extends Modal {
     LiteratureNoteProfile | undefined
   >();
   readonly result = this.#decision.promise;
+  readonly #options: ProfileImportOptions = { includeMatch: true };
   #closed = false;
   #saving = false;
   #revision = 0;
@@ -208,6 +210,7 @@ export class ImportProfileModal extends Modal {
       }),
     });
     const error = this.contentEl.createEl("p", { attr: { role: "status" } });
+    this.#match(this.contentEl);
     new Setting(this.contentEl)
       .addButton((button) =>
         button
@@ -251,7 +254,7 @@ export class ImportProfileModal extends Modal {
     if (initial.manifest.description)
       controls.createEl("p", { text: initial.manifest.description });
     const base = this.#deps.profile.resolveProfile("default")!;
-    const options: ProfileImportOptions = {};
+    const options = this.#options;
     const incomingStyle = initial.profile.bindings["citation.references-style"];
     const missingStyle =
       incomingStyle !== null &&
@@ -259,6 +262,7 @@ export class ImportProfileModal extends Modal {
         ? incomingStyle
         : undefined;
     if (missingStyle) options.citationStyle = null;
+    this.#match(controls, () => void update());
     field(m.settings_profile_folder_name()).addText((text) =>
       text
         .setValue(initial.manifest.folder ?? "")
@@ -383,6 +387,23 @@ export class ImportProfileModal extends Modal {
       });
     void update();
   }
+  #match(container: HTMLElement, onChange?: () => void): void {
+    const match = this.#plan.manifest.match;
+    container.createEl("p", {
+      cls: "zt:text-sm zt:text-muted-foreground",
+      text:
+        match === undefined ? m.profile_match_absent() : describeMatch(match),
+    });
+    if (match === undefined) return;
+    new Setting(container)
+      .setName(m.profile_import_include_match())
+      .addToggle((toggle) =>
+        toggle.setValue(this.#options.includeMatch!).onChange((value) => {
+          this.#options.includeMatch = value;
+          onChange?.();
+        }),
+      );
+  }
   async #save(
     plan: PreparedProfileImport,
     button: ButtonComponent,
@@ -392,7 +413,9 @@ export class ImportProfileModal extends Modal {
     this.#saving = true;
     button.setDisabled(true);
     try {
-      const profile = await plan.import();
+      const profile = await plan.import({
+        includeMatch: this.#options.includeMatch,
+      });
       this.#decision.resolve(profile);
       this.close();
       new BaseNotice(profileImportNotice(profile));

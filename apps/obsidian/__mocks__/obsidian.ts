@@ -741,6 +741,10 @@ export class Setting {
     return this;
   }
 
+  setHeading(): this {
+    return this;
+  }
+
   addDropdown(cb: (dropdown: DropdownComponent) => unknown): this {
     return this.#add(new DropdownComponent(this.containerEl), cb);
   }

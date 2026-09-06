@@ -6,6 +6,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
 import { cn } from "@/lib/utils";
 import type { BatchFailure } from "@/services/batch-run";
+import { describeSelectionSource } from "@/services/note-feature/selection-copy";
 
 import type { BatchListControls, BatchProfileChoice } from "./types";
 
@@ -23,8 +24,9 @@ export function profileChoiceControl(
 ): void {
   const container = parent.createDiv({
     cls: "zt:flex zt:flex-wrap zt:items-center zt:gap-2 zt:normal-case zt:tracking-normal zt:font-normal",
+    attr: choice.scope ? { "data-profile-choice-scope": choice.scope } : {},
   });
-  const text = m.batch_profile_destination({ label: choice.label });
+  const text = profileChoiceText(choice);
   if (controls) {
     const button = container.createEl("button", {
       text,
@@ -39,18 +41,57 @@ export function profileChoiceControl(
     container.createSpan({ text });
   }
   const source =
-    choice.source === "headless"
-      ? m.batch_profile_source_companion()
-      : choice.source === "last-used"
-        ? m.modal_profile_source_last_used()
-        : choice.source === "asked"
-          ? m.batch_profile_source_chosen()
-          : undefined;
+    choice.label === undefined
+      ? undefined
+      : describeSelectionSource(choice.source);
   if (source)
     container.createSpan({
       text: source,
       cls: "zt:text-xs zt:text-(--text-muted)",
     });
+  const help = profileChoiceHelp(choice.scope);
+  if (help)
+    container.createDiv({
+      text: help,
+      cls: "zt:basis-full zt:text-xs zt:text-(--text-muted)",
+    });
+}
+
+/** The control's own words: which rows it governs and where they go. */
+function profileChoiceText({ label, count = 0, scope }: BatchProfileChoice) {
+  switch (scope) {
+    case "unresolved":
+      return m.batch_profile_unresolved_destination({
+        count,
+        label: label ?? "",
+      });
+    case "affected":
+      return label === undefined
+        ? m.batch_profile_affected_choose({ count })
+        : m.batch_profile_affected_destination({ count, label });
+    case "all-new":
+      return label === undefined
+        ? m.batch_profile_override_all()
+        : m.batch_profile_override_all_destination({ label });
+    default:
+      return m.batch_profile_destination({ label: label ?? "" });
+  }
+}
+
+/** One line telling a fallback apart from an override. */
+function profileChoiceHelp(
+  scope: BatchProfileChoice["scope"],
+): string | undefined {
+  switch (scope) {
+    case "unresolved":
+      return m.batch_profile_unresolved_help();
+    case "affected":
+      return m.batch_profile_recovery_help();
+    case "all-new":
+      return m.batch_profile_override_all_help();
+    default:
+      return undefined;
+  }
 }
 
 export type RowStatus = "pending" | "done" | "skipped" | "failed";

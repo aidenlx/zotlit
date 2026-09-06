@@ -17,7 +17,6 @@ import type {
   ProfileService,
   PreparedProfileCreation,
 } from "@/services/profile/service";
-import type { SettingsService } from "@/services/settings/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import { loadLiteratureNoteTemplateMigrationData } from "@/services/template/migration";
 import type { LiteratureNoteTemplateMigrationDataDeps } from "@/services/template/migration";
@@ -52,7 +51,6 @@ export interface ProfileCreationDeps {
     "ready" | "prepareLiteratureNoteTemplateSource"
   >;
   noteFeature: Pick<NoteFeature, "prepareProfileNote">;
-  settings: Pick<SettingsService, "update">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   loadData: (options?: {
     indexedKey?: string;
@@ -117,7 +115,10 @@ export async function createProfileDialog(
   ]);
   const modal = new CreateProfileModal(deps, { ...options, data, styles });
   modal.open();
-  return modal.result;
+  const created = await modal.result;
+  if (created && !options.useForNote)
+    new BaseNotice(m.notice_profile_created({ label: created.profile.label }));
+  return created;
 }
 
 export class CreateProfileModal extends Modal {
@@ -333,10 +334,6 @@ export class CreateProfileModal extends Modal {
             });
             this.#decision.resolve({ profile, preview: selectedPreview });
             this.close();
-            if (!this.#options.useForNote)
-              new BaseNotice(
-                renderProfileCreatedNotice(profile, this.#deps.settings),
-              );
           } catch (error) {
             logger.error("Failed to create Profile from dialog", { error });
             reason.setText(
@@ -358,22 +355,4 @@ export class CreateProfileModal extends Modal {
     this.#decision.resolve(undefined);
     this.contentEl.empty();
   }
-}
-
-/** The confirmation and next-note action are independently renderable. */
-export function renderProfileCreatedNotice(
-  profile: Pick<LiteratureNoteProfile, "id" | "label">,
-  settings: Pick<SettingsService, "update">,
-): DocumentFragment {
-  return BaseNotice.render((notice) =>
-    notice
-      .setTitle(m.notice_profile_created({ label: profile.label }))
-      .addAction((action) =>
-        action
-          .setButtonText(m.profile_use_next_note())
-          .onClick(() =>
-            settings.update({ "note.last-used-profile": profile.id }),
-          ),
-      ),
-  );
 }

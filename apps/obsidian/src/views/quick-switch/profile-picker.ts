@@ -23,7 +23,12 @@ export interface LiteratureNoteProfileChoice {
   unavailable?: string;
   preselected?: boolean;
   current?: boolean;
+  candidate?: "item" | "batch";
   source?: CreationProfileSelection["source"];
+  /** Why the match selected this Profile. */
+  reason?: string;
+  /** Why automatic selection stopped, shown above the preselected choice. */
+  problem?: string;
 }
 
 type ProfilePickerRow =
@@ -32,8 +37,12 @@ type ProfilePickerRow =
 
 interface ProfilePickerOptions {
   preselected?: ProfileSelector;
+  candidates?: readonly ProfileSelector[];
+  matchContext?: "item" | "batch";
   current?: ProfileSelector;
   source?: CreationProfileSelection["source"];
+  reason?: string;
+  problem?: string;
   previews?: readonly ProfilePreview[];
   styles?: readonly InstalledCslStyle[];
   onNew?: () => Promise<LiteratureNoteProfileChoice | undefined>;
@@ -109,17 +118,33 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
           })),
         ];
     for (const choice of this.#choices) {
-      choice.preselected = choice.id === options.preselected;
+      choice.candidate = options.candidates?.includes(choice.id)
+        ? (options.matchContext ?? "item")
+        : undefined;
+      choice.preselected = options.candidates?.length
+        ? choice.candidate !== undefined
+        : choice.id === options.preselected;
       choice.current = choice.id === options.current;
       choice.source = choice.preselected ? options.source : undefined;
+      choice.reason = choice.preselected ? options.reason : undefined;
+      choice.problem = choice.preselected ? options.problem : undefined;
     }
-    const selectedIndex = this.#choices.findIndex(
-      ({ id }) => id === options.preselected,
-    );
-    if (selectedIndex > 0)
-      this.#choices.unshift(...this.#choices.splice(selectedIndex, 1));
+    this.#choices.sort((a, b) => Number(b.preselected) - Number(a.preselected));
+    if (
+      options.problem &&
+      !this.#choices.some(({ preselected }) => preselected)
+    )
+      this.contentEl.createDiv({
+        text: options.problem,
+        cls: "zt:text-(--text-warning)",
+        attr: { role: "status" },
+      });
     this.#resolve = options.resolve;
-    this.setPlaceholder(m.modal_profile_choose_placeholder());
+    this.setPlaceholder(
+      options.candidates?.length
+        ? m.modal_profile_overlap_placeholder()
+        : m.modal_profile_choose_placeholder(),
+    );
   }
 
   override getSuggestions(query: string): ProfilePickerRow[] {
@@ -216,18 +241,30 @@ export function renderProfileChoice(
   });
   if (choice.preselected)
     label.createSpan({
-      text: choice.current
-        ? m.modal_profile_current()
-        : m.modal_profile_preselected(),
+      text: choice.candidate
+        ? choice.candidate === "batch"
+          ? m.modal_profile_match_batch_candidate()
+          : m.modal_profile_match_candidate()
+        : choice.current
+          ? m.modal_profile_current()
+          : m.modal_profile_preselected(),
       cls: PROFILE_BADGE_CLASS,
     });
-  const source =
-    choice.source === "last-used"
-      ? m.modal_profile_source_last_used()
-      : choice.source === "headless"
-        ? m.modal_profile_source_link()
-        : undefined;
-  if (source) label.createSpan({ text: source, cls: PROFILE_BADGE_CLASS });
+  if (choice.source === "headless")
+    label.createSpan({
+      text: m.modal_profile_source_link(),
+      cls: PROFILE_BADGE_CLASS,
+    });
+  if (choice.source === "match" && choice.reason)
+    label.createSpan({
+      text: choice.reason,
+      cls: PROFILE_BADGE_CLASS,
+    });
+  if (choice.problem)
+    el.createDiv({
+      text: choice.problem,
+      cls: "suggestion-note zt:text-(--text-warning)",
+    });
   if (choice.detail)
     el.createDiv({ text: choice.detail, cls: "suggestion-note" });
   if (choice.path)

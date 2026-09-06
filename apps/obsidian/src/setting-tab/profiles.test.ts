@@ -127,12 +127,14 @@ describe("Profile settings", () => {
           id: "Bk3Qn7XvT2Lp",
           label: "Books",
           document: "zotlit-profile.one.md",
+          match: { state: "absent", summary: m.profile_match_absent() },
           bindings: {},
         },
         {
           id: "Rz9Wm4YfH6Kd",
           label: "Books",
           document: "zotlit-profile.two.md",
+          match: { state: "all", summary: m.profile_match_all() },
           bindings: {},
         },
       ],
@@ -151,11 +153,15 @@ describe("Profile settings", () => {
     expect(list(page, m.settings_profile_other_heading()).items).toEqual([
       expect.objectContaining({
         name: "Books",
-        desc: "zotlit-profile.one.md",
+        desc: expect.objectContaining({
+          textContent: `zotlit-profile.one.md${m.settings_profile_match_status({ state: "absent" })}`,
+        }),
       }),
       expect.objectContaining({
         name: "Books",
-        desc: "zotlit-profile.two.md",
+        desc: expect.objectContaining({
+          textContent: `zotlit-profile.two.md${m.settings_profile_match_status({ state: "all" })}`,
+        }),
       }),
     ]);
     // A refused document never shares the list with the Profiles that loaded.
@@ -255,8 +261,18 @@ it("adds a Profile from Default under the first unused number, with no dialog", 
   }));
   ctx.profile = {
     profiles: [
-      { id: "Bk3Qn7XvT2Lp", label: "Profile 1", bindings: {} },
-      { id: "Rz9Wm4YfH6Kd", label: "Profile 3", bindings: {} },
+      {
+        id: "Bk3Qn7XvT2Lp",
+        label: "Profile 1",
+        bindings: {},
+        match: { state: "absent", summary: m.profile_match_absent() },
+      },
+      {
+        id: "Rz9Wm4YfH6Kd",
+        label: "Profile 3",
+        bindings: {},
+        match: { state: "absent", summary: m.profile_match_absent() },
+      },
     ],
     diagnostics: [],
     loaded: true,
@@ -293,5 +309,47 @@ it("asks the import flow for its own source", async () => {
   button.click();
   await vi.waitFor(() =>
     expect(ctx.importProfile).toHaveBeenCalledExactlyOnceWith(),
+  );
+});
+
+it("shows a short match status for each non-default row", () => {
+  const ctx = context();
+  const states = ["absent", "all", "evaluable", "unevaluable"] as const;
+  const summaries = [
+    m.profile_match_absent(),
+    m.profile_match_all(),
+    m.settings_profile_match_tags_contain({ tags: "Read" }),
+    m.profile_match_problem({
+      problem: m.profile_match_problem_unknown_library({ text: '"group:999"' }),
+    }),
+  ];
+  ctx.profile = {
+    diagnostics: [],
+    loaded: true,
+    defaultDocumentPath: "templates/zotlit-profile.default.md",
+    profiles: summaries.map((summary, index) => ({
+      id: `Profile${index}`,
+      label: `Profile ${index}`,
+      document: `zotlit-profile.${index}.md`,
+      path: "",
+      bindings: {},
+      match: { state: states[index], summary },
+    })),
+  } as unknown as SettingTabContext["profile"];
+  const page = profilesPage(ctx);
+  const rows = list(page, m.settings_profile_other_heading()).items!;
+  for (const [index, row] of rows.entries()) {
+    const desc = (row as { desc: DocumentFragment }).desc;
+    expect(desc.firstElementChild?.textContent).toBe(
+      m.settings_profile_match_status({ state: states[index]! }),
+    );
+    expect(desc.textContent).toBe(
+      `zotlit-profile.${index}.md${m.settings_profile_match_status({ state: states[index]! })}`,
+    );
+  }
+  const defaultRow = page.items![0]!;
+  expect(defaultRow).toMatchObject({ name: m.settings_profile_default_name() });
+  expect((defaultRow as { desc?: unknown }).desc).not.toBeInstanceOf(
+    DocumentFragment,
   );
 });

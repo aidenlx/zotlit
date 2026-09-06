@@ -47,6 +47,13 @@ export default defineConfig({
     // that merge into a plain assignment instead.
     environment: "node",
     clearMocks: true,
+    server: {
+      deps: {
+        // Run through Vite so its `react` import lands on the Preact alias
+        // like our own sources; externalized, it would load real React.
+        inline: ["@uiw/react-codemirror"],
+      },
+    },
     setupFiles: ["./vitest.setup.js"],
     // `// @vitest-environment` can't name a project by file path (its pragma only accepts `[\w-]+`), so the split happens here instead.
     projects: [

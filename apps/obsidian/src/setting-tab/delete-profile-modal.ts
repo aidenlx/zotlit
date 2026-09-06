@@ -1,4 +1,5 @@
-// Profile deletion gathers target and file-move consent in the same dialog.
+// Profile deletion gathers target and file-move consent in the same dialog,
+// and names the Profile Selection Rules the user must repair afterwards.
 import { dirname } from "node:path/posix";
 import { ConfirmationModal } from "obsidian";
 import type { App } from "obsidian";

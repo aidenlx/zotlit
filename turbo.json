@@ -50,6 +50,7 @@
     "//#lint:repo:deps": {
       "dependsOn": [
         "@zotlit/db#build",
+        "@zotlit/filter-expression#build",
         "@zotlit/item-lookup#build",
         "@zotlit/obsidian#generate:language-packs",
         "@zotlit/protocol#build",
@@ -68,6 +69,7 @@
     "//#review:plugin:deps": {
       "dependsOn": [
         "@zotlit/db#build",
+        "@zotlit/filter-expression#build",
         "@zotlit/item-lookup#build",
         "@zotlit/obsidian#generate:language-packs",
         "@zotlit/protocol#build",

@@ -490,10 +490,11 @@ function seedDatabase(
   );
 
   insert(
-    "insert into collections (collectionID, collectionName, libraryID, key) values (?, ?, ?, ?)",
+    "insert into collections (collectionID, collectionName, parentCollectionID, libraryID, key) values (?, ?, ?, ?, ?)",
     COLLECTIONS.map((collection) => [
       collection.collectionID,
       collection.name,
+      collection.parentCollectionID ?? null,
       collection.libraryID,
       collection.key,
     ]),
