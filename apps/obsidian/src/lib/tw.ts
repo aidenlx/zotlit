@@ -1,5 +1,5 @@
-import { extendTailwindMerge } from "tailwind-merge";
 import { createTV } from "tailwind-variants";
+import { extendTailwindMerge } from "cn/config";
 
 /** Tailwind v4 `prefix(zt)` — prefix string only, no combining character. */
 const PREFIX = "zt";

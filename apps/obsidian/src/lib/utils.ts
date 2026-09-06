@@ -1,9 +1,9 @@
-import { clsx } from "clsx";
-import type { ClassValue } from "clsx";
 import type { TooltipOptions } from "obsidian";
 import type { KeyboardEvent, MouseEvent } from "react";
 
 import { twMerge } from "@/lib/tw";
+import { clsx } from 'cn';
+import type { ClassValue } from 'cn';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
