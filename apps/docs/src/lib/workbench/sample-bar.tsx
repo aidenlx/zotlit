@@ -1,4 +1,4 @@
-// The paper the page is shown against, in the header: which Item it is, where
+// The paper the page is shown against, beside the result: which Item it is, where
 // it came from, and the one request that loads or refreshes a connected one.
 
 import { useEffect, useState } from "react";
@@ -74,9 +74,12 @@ export function SampleBar({
       .join(" · "),
   }));
   return (
-    <>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2">
-        <label htmlFor="workbench-sample" className="text-sm font-medium">
+    <div className="mb-2 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <label
+          htmlFor="workbench-sample"
+          className="shrink-0 text-xs text-fd-muted-foreground"
+        >
           {m.workbench_showing_label()}
         </label>
         <Select
@@ -93,9 +96,9 @@ export function SampleBar({
           <SelectTrigger
             id="workbench-sample"
             title={name}
-            className="w-full flex-1 basis-64"
+            className="min-h-8 flex-1 gap-2 px-2 py-1 text-xs sm:text-xs [&_svg]:size-3.5"
           >
-            <SelectValue className="break-words whitespace-normal" />
+            <SelectValue className="truncate" />
           </SelectTrigger>
           <SelectContent alignItemWithTrigger={false}>
             {options.map((option) => (
@@ -116,21 +119,27 @@ export function SampleBar({
             ))}
           </SelectContent>
         </Select>
-        <span className="text-xs text-fd-muted-foreground">
-          {fromVault
-            ? current
-              ? m.workbench_connected_badge()
-              : m.workbench_retained_badge()
-            : m.workbench_sample_badge()}
-        </span>
       </div>
+      <span className="text-xs text-fd-muted-foreground">
+        {fromVault
+          ? current
+            ? m.workbench_connected_badge()
+            : m.workbench_retained_badge()
+          : m.workbench_sample_badge()}
+      </span>
       {unmatchedItemType !== undefined && (
         <span className="text-xs text-fd-muted-foreground">
           {m.workbench_sample_type_missing({ itemType: unmatchedItemType })}
         </span>
       )}
       {connected && (
-        <Button variant="outline" size="sm" disabled={busy} onClick={onLoad}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="min-h-8 px-2 py-1 text-xs"
+          disabled={busy}
+          onClick={onLoad}
+        >
           {busy
             ? m.workbench_loading_item()
             : fromVault && sample.item.key === connection.selectedItem.key
@@ -138,6 +147,6 @@ export function SampleBar({
               : m.workbench_load_item()}
         </Button>
       )}
-    </>
+    </div>
   );
 }

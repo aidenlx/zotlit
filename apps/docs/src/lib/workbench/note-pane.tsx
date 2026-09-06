@@ -118,7 +118,7 @@ export function NotePane({
   };
 
   return (
-    <div className="flex min-h-80 flex-1 flex-col rounded-md border border-fd-border bg-fd-card min-[780px]:min-h-0 [&_.zt-managed]:bg-fd-muted/60 [&_.zt-managed]:shadow-[inset_2px_0_0_0_var(--color-fd-border)]">
+    <div className="flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-managed]:bg-fd-muted/60 [&_.zt-managed]:shadow-[inset_2px_0_0_0_var(--color-fd-border)]">
       <SliceEditor
         controller={controller}
         slice="note"
@@ -177,7 +177,10 @@ export function NotePane({
                 />
               </Button>
             </div>
-            <p className="truncate px-3 pb-1.5 font-mono text-[0.68rem] text-fd-muted-foreground/70">
+            <p
+              title={controller.source.slice(call.call.from, call.call.to)}
+              className="truncate px-3 pb-1.5 font-mono text-xs text-fd-muted-foreground"
+            >
               {controller.source.slice(call.call.from, call.call.to)}
             </p>
             <div
