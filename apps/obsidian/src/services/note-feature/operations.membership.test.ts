@@ -147,7 +147,7 @@ function rule(
 ): ProfileSelectionRule {
   return {
     scope: { mode: "all" },
-    expression: "",
+    filter: { and: [] },
     profile: books,
     ...overrides,
   };
@@ -326,12 +326,12 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
   it("tells identical Collection names and keys apart by their portable Library reference", async () => {
     const groupProject = rule({
       id: "group-project",
-      expression: 'inCollection("group:118", "PROJ0001")',
+      filter: 'inCollection("group:118", "PROJ0001")',
       profile: papers,
     });
     const myProject = rule({
       id: "my-project",
-      expression: 'inCollection("personal", "PROJ0001")',
+      filter: 'inCollection("personal", "PROJ0001")',
     });
     const feature = createNoteFeature(harness([groupProject, myProject]).deps);
     // The personal book sits in Drafts, a child of My Library's Project.
@@ -360,11 +360,11 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
   it("includes subcollections by default and limits a direct-only condition to the Collection itself", async () => {
     const directProject = rule({
       id: "direct-project",
-      expression: 'inCollectionDirectly("personal", "PROJ0001")',
+      filter: 'inCollectionDirectly("personal", "PROJ0001")',
     });
     const directDrafts = rule({
       id: "direct-drafts",
-      expression: 'inCollectionDirectly("personal", "DRFT0001")',
+      filter: 'inCollectionDirectly("personal", "DRFT0001")',
       profile: papers,
     });
     const feature = createNoteFeature(
@@ -381,7 +381,7 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
   it("reads every Collection the Item is filed in, not the one a screen shows it under", async () => {
     const other = rule({
       id: "other",
-      expression: 'inCollection("personal", "OTHR0001")',
+      filter: 'inCollection("personal", "OTHR0001")',
     });
     const feature = createNoteFeature(harness([other]).deps);
     expect(
@@ -397,7 +397,7 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
   it("keeps matching after a Collection rename and shows the new path", async () => {
     const drafts = rule({
       id: "drafts",
-      expression: 'inCollection("personal", "DRFT0001")',
+      filter: 'inCollection("personal", "DRFT0001")',
     });
     const { deps, client } = harness([drafts]);
     const feature = createNoteFeature(deps);
@@ -421,11 +421,11 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
   it("stops on a missing or trashed Collection reference instead of advancing to Default", async () => {
     const gone = rule({
       id: "gone",
-      expression: 'inCollection("personal", "GONE0000")',
+      filter: 'inCollection("personal", "GONE0000")',
     });
     const drafts = rule({
       id: "drafts",
-      expression: 'inCollection("personal", "DRFT0001")',
+      filter: 'inCollection("personal", "DRFT0001")',
     });
     const catchAll = rule({ id: "catch-all", profile: "default" });
     const { deps, client } = harness([gone, catchAll]);
@@ -449,7 +449,7 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
     // A reference to a Library this database lacks is just as unevaluable.
     deps.settings.update({
       "profile.selection-rules": [
-        { ...gone, expression: 'inCollection("group:999", "PROJ0001")' },
+        { ...gone, filter: 'inCollection("group:999", "PROJ0001")' },
         catchAll,
       ],
     });
@@ -486,18 +486,18 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
   });
 
   it("matches Tag names exactly and case-sensitively across manual and automatic applications", async () => {
-    const read = rule({ id: "read", expression: 'hasTag("Read")' });
+    const read = rule({ id: "read", filter: 'hasTag("Read")' });
     const upper = rule({
       id: "upper",
-      expression: 'hasTag("READ")',
+      filter: 'hasTag("READ")',
       profile: papers,
     });
     const lower = rule({
       id: "lower",
-      expression: 'hasTag("read")',
+      filter: 'hasTag("read")',
       profile: "default",
     });
-    const auto = rule({ id: "auto", expression: 'hasTag("auto-tag")' });
+    const auto = rule({ id: "auto", filter: 'hasTag("auto-tag")' });
     const { deps } = harness([lower, upper, read]);
     const feature = createNoteFeature(deps);
     // "read" matches nothing; the automatic "READ" wins before manual "Read".
@@ -521,12 +521,12 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
     const combined = rule({
       id: "combined",
       scope: { mode: "selected", libraries: [{ type: "personal" }] },
-      expression:
+      filter:
         'inCollection("personal", "PROJ0001") && hasTag("Read") && itemType == "book"',
     });
     const anyProject = rule({
       id: "any-project",
-      expression:
+      filter:
         'inCollection("personal", "PROJ0001") || inCollection("group:118", "PROJ0001")',
       profile: papers,
     });
@@ -547,20 +547,19 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
     const projectPapers = rule({
       id: "project-papers",
       scope: { mode: "selected", libraries: [{ type: "personal" }] },
-      expression:
+      filter:
         '(inCollection("personal", "PROJ0001") || hasTag("auto-tag")) && itemType != "book"',
       profile: papers,
     });
     // Neither tagged Read nor an article.
     const untouched = rule({
       id: "untouched",
-      expression: '!(hasTag("Read") || itemType == "journalArticle")',
+      filter: '!(hasTag("Read") || itemType == "journalArticle")',
     });
     // Tagged READ (automatic) but not filed directly in Project.
     const readElsewhere = rule({
       id: "read-elsewhere",
-      expression:
-        'hasTag("READ") && !inCollectionDirectly("personal", "PROJ0001")',
+      filter: 'hasTag("READ") && !inCollectionDirectly("personal", "PROJ0001")',
       profile: "default",
     });
     const feature = createNoteFeature(
@@ -590,7 +589,7 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
   it("keeps a previewed selection fixed while Tags and memberships change, and lets the next operation see the change", async () => {
     const read = rule({
       id: "read",
-      expression: 'hasTag("Read") && inCollection("personal", "OTHR0001")',
+      filter: 'hasTag("Read") && inCollection("personal", "OTHR0001")',
     });
     const { deps, client, vault } = harness([read]);
     const feature = createNoteFeature(deps);

@@ -148,13 +148,22 @@ function fieldError(select: HTMLSelectElement): string | null {
   );
 }
 
-/** The condition rows, in reading order: each is the element around one kind dropdown. */
+/** The condition rows, in reading order: each is the element around one remove button. */
 function conditionRows(modal: ProfileSelectionRuleModal): HTMLElement[] {
   return [
-    ...modal.contentEl.querySelectorAll<HTMLSelectElement>(
-      `select[aria-label="${m.settings_profile_rule_condition_kind()}"]`,
+    ...modal.contentEl.querySelectorAll<HTMLElement>(
+      `[aria-label="${m.settings_profile_rule_remove_condition()}"]`,
     ),
-  ].map((select) => select.closest("li")!);
+  ].map((button) => button.closest("li")!);
+}
+
+/** The row's toggle between its labelled controls and its expression. */
+function toggle(row: HTMLElement, label: string): HTMLElement {
+  return row.querySelector<HTMLElement>(`[aria-label="${label}"]`)!;
+}
+
+function toggleDisabled(row: HTMLElement, label: string): boolean {
+  return toggle(row, label).getAttribute("tabindex") === "-1";
 }
 
 function rowSelects(row: HTMLElement): HTMLSelectElement[] {
@@ -183,27 +192,17 @@ function rootButton(modal: ProfileSelectionRuleModal, text: string) {
     .at(-1)!;
 }
 
-function editor(modal: ProfileSelectionRuleModal): EditorView {
-  return EditorView.findFromDOM(
-    modal.contentEl.querySelector<HTMLElement>(".cm-editor")!,
-  )!;
+/** The expression row's editor. */
+function editor(row: HTMLElement): EditorView {
+  return EditorView.findFromDOM(row.querySelector<HTMLElement>(".cm-editor")!)!;
 }
 
-async function typeExpression(modal: ProfileSelectionRuleModal, text: string) {
-  const view = editor(modal);
+async function typeExpression(row: HTMLElement, text: string) {
+  const view = editor(row);
   await act(() =>
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: text },
     }),
-  );
-}
-
-function expressionError(modal: ProfileSelectionRuleModal): string | null {
-  return (
-    modal.contentEl
-      .querySelector(".cm-editor")!
-      .closest(".zt-expression-editor")!
-      .parentElement!.querySelector("[role=alert]")?.textContent ?? null
   );
 }
 
@@ -220,7 +219,7 @@ describe("ProfileSelectionRuleModal", () => {
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toMatchObject({
       scope: { mode: "all" },
-      expression: 'itemType == "book"',
+      filter: { and: ['itemType == "book"'] },
       profile: profileAId,
     });
   });
@@ -258,7 +257,7 @@ describe("ProfileSelectionRuleModal", () => {
     const modal = await open(ctx, {
       id: "rule-1",
       scope: { mode: "selected", libraries: [{ type: "group", groupID: 5 }] },
-      expression: 'itemType != "thesis"',
+      filter: { and: ['itemType != "thesis"'] },
       profile: profileAId,
     });
     expect(
@@ -297,7 +296,7 @@ describe("ProfileSelectionRuleModal", () => {
     await choose(match(), "any");
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toMatchObject({
-      expression: 'itemType == "book" || hasTag("Read")',
+      filter: { or: ['itemType == "book"', 'hasTag("Read")'] },
     });
   });
 
@@ -331,14 +330,18 @@ describe("ProfileSelectionRuleModal", () => {
     expect(nested).toHaveLength(2);
     await choose(rowSelects(nested[1]!)[2]!, "thesis");
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
-    const expression =
-      '!hasTag("Read") && (itemType == "book" || itemType == "thesis")';
-    await expect(modal.result).resolves.toMatchObject({ expression });
+    const filter = {
+      and: [
+        '!hasTag("Read")',
+        { or: ['itemType == "book"', 'itemType == "thesis"'] },
+      ],
+    };
+    await expect(modal.result).resolves.toMatchObject({ filter });
 
     const reopened = await open(context(), {
       id: "nested",
       scope: { mode: "all" },
-      expression,
+      filter,
       profile: "default",
     });
     expect(
@@ -367,7 +370,7 @@ describe("ProfileSelectionRuleModal", () => {
     await click(buttonNamed(reopened, m.settings_profile_rule_save()));
     await expect(reopened.result).resolves.toMatchObject({
       id: "nested",
-      expression: '!hasTag("Read")',
+      filter: { and: ['!hasTag("Read")'] },
     });
   });
 
@@ -395,102 +398,102 @@ describe("ProfileSelectionRuleModal", () => {
     expect(saveEnabled(modal)).toBe(true);
   });
 
-  it("keeps an expression outside the contract intact in the expression editor until it is corrected", async () => {
+  it("keeps a leaf outside the contract as an expression row until it is corrected", async () => {
     const modal = await open(context(), {
       id: "rule-2",
       scope: { mode: "all" },
-      expression: 'title == "Zotero"',
+      filter: 'title == "Zotero"',
       profile: "default",
     });
+    // A lone leaf sits in a "Match all" group.
     expect(
-      modal.contentEl.querySelector(
-        `select[aria-label="${m.settings_profile_rule_match()}"]`,
-      ),
-    ).toBeNull();
-    const visually = () =>
-      buttonNamed(modal, m.settings_profile_rule_edit_visually());
-    expect(editor(modal).state.doc.toString()).toBe('title == "Zotero"');
-    expect(expressionError(modal)).toBe(
+      selectNamed(modal.contentEl, m.settings_profile_rule_match()).value,
+    ).toBe("all");
+    const row = () => conditionRows(modal)[0]!;
+    expect(rowSelects(row())).toEqual([]);
+    expect(toggleDisabled(row(), m.settings_profile_rule_edit_visually())).toBe(
+      true,
+    );
+    expect(editor(row()).state.doc.toString()).toBe('title == "Zotero"');
+    expect(rowError(row())).toBe(
       m.profile_rule_problem_unsupported({ text: 'title == "Zotero"' }),
     );
     expect(saveEnabled(modal)).toBe(false);
-    expect(visually().disabled).toBe(true);
-    // Editing the target alone cannot save the rule around the bad expression.
+    // Editing the target alone cannot save the rule around the bad leaf.
     await choose(
       selectNamed(modal.contentEl, m.settings_profile_rule_target()),
       profileAId,
     );
     expect(saveEnabled(modal)).toBe(false);
-    expect(editor(modal).state.doc.toString()).toBe('title == "Zotero"');
+    expect(editor(row()).state.doc.toString()).toBe('title == "Zotero"');
     // Each keystroke is checked; a half-typed expression names the gap.
-    await typeExpression(modal, 'hasTag("Read") &&');
-    expect(expressionError(modal)).toBe(
-      m.profile_rule_problem_syntax({ text: "" }),
-    );
+    await typeExpression(row(), 'hasTag("Read") &&');
+    expect(rowError(row())).toBe(m.profile_rule_problem_syntax({ text: "" }));
     expect(saveEnabled(modal)).toBe(false);
-    await typeExpression(modal, 'hasTag("Read") && itemType == "novel"');
-    expect(expressionError(modal)).toBe(
+    await typeExpression(row(), "");
+    expect(rowError(row())).toBe(m.profile_rule_problem_empty());
+    await typeExpression(row(), 'hasTag("Read") && itemType == "novel"');
+    expect(rowError(row())).toBe(
       m.profile_rule_problem_unknown_item_type({ text: '"novel"' }),
     );
-    await typeExpression(modal, 'hasTag("Read") && itemType == "book"');
-    expect(expressionError(modal)).toBeNull();
+    // Operators stay inside the leaf; the tree above is the ordinary grouping.
+    await typeExpression(row(), 'hasTag("Read") && itemType == "book"');
+    expect(rowError(row())).toBeNull();
     expect(saveEnabled(modal)).toBe(true);
-    expect(visually().disabled).toBe(false);
+    // Two tests in one leaf have no labelled row, so the toggle stays off.
+    expect(toggleDisabled(row(), m.settings_profile_rule_edit_visually())).toBe(
+      true,
+    );
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toEqual({
       id: "rule-2",
       scope: { mode: "all" },
-      expression: 'hasTag("Read") && itemType == "book"',
+      filter: { and: ['hasTag("Read") && itemType == "book"'] },
       profile: profileAId,
     });
   });
 
-  it("round-trips between the visual and expression editors without changing meaning", async () => {
-    const written = '!(itemType == "book" || hasTag("Read"))';
+  it("switches a row between a labelled test and its expression without changing meaning", async () => {
     const modal = await open(context(), {
       id: "rule-3",
       scope: { mode: "all" },
-      expression: written,
+      filter: {
+        and: ['!hasTag("Read")', 'itemType == "book" || hasTag("Read Later")'],
+      },
       profile: "default",
     });
-    // The negated alternative reads as two exclusions under "Match all".
-    expect(
-      selectNamed(modal.contentEl, m.settings_profile_rule_match()).value,
-    ).toBe("all");
-    expect(
-      conditionRows(modal).map((row) => rowSelects(row)[1]!.value),
-    ).toEqual(["is-not", "is-not"]);
-    // Untouched, the expression editor shows the text as written.
-    await click(
-      buttonNamed(modal, m.settings_profile_rule_edit_as_expression()),
+    // A leaf that combines tests is shown as written: rows take one test each.
+    const first = () => conditionRows(modal)[0]!;
+    const second = () => conditionRows(modal)[1]!;
+    expect(rowSelects(first()).map((select) => select.value)).toEqual([
+      "tag",
+      "is-not",
+    ]);
+    expect(rowSelects(second())).toEqual([]);
+    expect(editor(second()).state.doc.toString()).toBe(
+      'itemType == "book" || hasTag("Read Later")',
     );
-    expect(editor(modal).state.doc.toString()).toBe(written);
-    await click(buttonNamed(modal, m.settings_profile_rule_edit_visually()));
-    // A visual edit writes the canonical expression.
-    await choose(rowSelects(conditionRows(modal)[0]!)[1]!, "is");
-    await click(
-      buttonNamed(modal, m.settings_profile_rule_edit_as_expression()),
-    );
-    expect(editor(modal).state.doc.toString()).toBe(
-      'itemType == "book" && !hasTag("Read")',
-    );
-    // A typed group comes back as a nested "Match any" group.
-    await typeExpression(
-      modal,
-      'itemType == "book" && (hasTag("Read") || hasTag("Read Later"))',
-    );
-    await click(buttonNamed(modal, m.settings_profile_rule_edit_visually()));
-    expect(
-      selectNamed(modal.contentEl, m.settings_profile_rule_group()).value,
-    ).toBe("any");
-    expect(
-      conditionRows(modal).map((row) => rowSelects(row)[0]!.value),
-    ).toEqual(["item-type", "tag", "tag"]);
+    // A row turned into an expression keeps its meaning as text.
+    await click(toggle(first(), m.settings_profile_rule_edit_as_expression()));
+    expect(editor(first()).state.doc.toString()).toBe('!hasTag("Read")');
+    // An expression that reads as one test turns back into that row.
+    await typeExpression(first(), 'itemType != "thesis"');
+    await click(toggle(first(), m.settings_profile_rule_edit_visually()));
+    expect(rowSelects(first()).map((select) => select.value)).toEqual([
+      "item-type",
+      "is-not",
+      "thesis",
+    ]);
+    await typeExpression(second(), 'hasTag("Read Later")');
+    await click(toggle(second(), m.settings_profile_rule_edit_visually()));
+    expect(rowSelects(second()).map((select) => select.value)).toEqual([
+      "tag",
+      "is",
+    ]);
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toMatchObject({
       id: "rule-3",
-      expression:
-        'itemType == "book" && (hasTag("Read") || hasTag("Read Later"))',
+      filter: { and: ['itemType != "thesis"', 'hasTag("Read Later")'] },
     });
   });
 
@@ -511,7 +514,7 @@ describe("ProfileSelectionRuleModal", () => {
     await choose(rowSelects(row())[1]!, "is-not");
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toMatchObject({
-      expression: '!inCollection("personal", "DRFT0001")',
+      filter: { and: ['!inCollection("personal", "DRFT0001")'] },
     });
   });
 
@@ -524,7 +527,7 @@ describe("ProfileSelectionRuleModal", () => {
     await choose(rowSelects(row())[3]!, "direct");
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toMatchObject({
-      expression: 'inCollectionDirectly("group:5", "PROJ0001")',
+      filter: { and: ['inCollectionDirectly("group:5", "PROJ0001")'] },
     });
   });
 
@@ -533,7 +536,7 @@ describe("ProfileSelectionRuleModal", () => {
     const kept = await open(ctx, {
       id: "kept",
       scope: { mode: "all" },
-      expression: 'inCollectionDirectly("personal", "DRFT0001")',
+      filter: 'inCollectionDirectly("personal", "DRFT0001")',
       profile: "default",
     });
     expect(
@@ -545,7 +548,7 @@ describe("ProfileSelectionRuleModal", () => {
     const stale = await open(ctx, {
       id: "stale",
       scope: { mode: "all" },
-      expression: 'inCollection("group:5", "GONE0000")',
+      filter: 'inCollection("group:5", "GONE0000")',
       profile: "default",
     });
     const row = () => conditionRows(stale)[0]!;
@@ -564,7 +567,7 @@ describe("ProfileSelectionRuleModal", () => {
     await click(buttonNamed(stale, m.settings_profile_rule_save()));
     await expect(stale.result).resolves.toMatchObject({
       id: "stale",
-      expression: 'inCollection("personal", "PROJ0001")',
+      filter: { and: ['inCollection("personal", "PROJ0001")'] },
     });
   });
 
@@ -582,7 +585,7 @@ describe("ProfileSelectionRuleModal", () => {
     expect(saveEnabled(modal)).toBe(true);
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toMatchObject({
-      expression: 'hasTag("Read Later")',
+      filter: { and: ['hasTag("Read Later")'] },
     });
   });
 
@@ -592,6 +595,7 @@ describe("ProfileSelectionRuleModal", () => {
     expect(help).toContain(m.settings_profile_rule_group_help());
     expect(help).toContain(m.settings_profile_rule_collection_help());
     expect(help).toContain(m.settings_profile_rule_tag_help());
+    expect(help).toContain(m.settings_profile_rule_expression_help());
   });
 
   it("pins Save and Cancel in the modal's button container, outside the content", async () => {

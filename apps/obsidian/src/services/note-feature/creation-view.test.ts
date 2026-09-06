@@ -23,7 +23,7 @@ const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
 const BOOK_RULE = {
   id: "book",
   scope: { mode: "all" as const },
-  expression: 'itemType == "book"',
+  filter: 'itemType == "book"',
   profile: BOOKS,
 };
 const BOOK_RULE_SUMMARY = m.settings_profile_rule_summary({
@@ -127,7 +127,7 @@ it("resolves the selection from the Item and hands the picker its rule reason, p
   const rule = {
     id: "book",
     scope: { mode: "all" as const },
-    expression: 'itemType == "book"',
+    filter: 'itemType == "book"',
     profile: books,
   };
   const preview = {

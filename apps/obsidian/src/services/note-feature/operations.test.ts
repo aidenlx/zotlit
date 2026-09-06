@@ -616,19 +616,19 @@ describe("Profile source selection", () => {
     const thesisRule = {
       id: "thesis",
       scope: { mode: "all" },
-      expression: 'itemType == "thesis"',
+      filter: 'itemType == "thesis"',
       profile: papers,
     } as const;
     const bookRule = {
       id: "book",
       scope: { mode: "selected", libraries: [{ type: "personal" }] },
-      expression: 'itemType == "book"',
+      filter: 'itemType == "book"',
       profile: books,
     } as const;
     const anyRule = {
       id: "any",
       scope: { mode: "all" },
-      expression: "",
+      filter: { and: [] },
       profile: "default",
     } as const;
     const { deps } = makeUpdateHarness({
@@ -703,25 +703,25 @@ describe("Profile source selection", () => {
     const brokenGroupRule = {
       id: "broken-group",
       scope: { mode: "selected", libraries: [{ type: "group", groupID: 118 }] },
-      expression: "itemType ==",
+      filter: "itemType ==",
       profile: books,
     } as const;
     const goneRule = {
       id: "gone",
       scope: { mode: "all" },
-      expression: 'itemType == "book"',
+      filter: 'itemType == "book"',
       profile: gone,
     } as const;
     const bookRule = {
       id: "book",
       scope: { mode: "all" },
-      expression: 'itemType == "book"',
+      filter: 'itemType == "book"',
       profile: books,
     } as const;
     const brokenRule = {
       id: "broken",
       scope: { mode: "all" },
-      expression: 'title == "x"',
+      filter: 'title == "x"',
       profile: books,
     } as const;
     const { deps } = makeUpdateHarness({
@@ -756,7 +756,7 @@ describe("Profile source selection", () => {
     // A valid nonmatch of the unavailable target advances to the book rule.
     deps.settings.update({
       "profile.selection-rules": [
-        { ...goneRule, expression: 'itemType == "thesis"' },
+        { ...goneRule, filter: 'itemType == "thesis"' },
         bookRule,
       ],
     });
@@ -825,7 +825,7 @@ describe("Profile source selection", () => {
     const bookRule = {
       id: "book",
       scope: { mode: "all" },
-      expression: 'itemType == "book"',
+      filter: 'itemType == "book"',
       profile: books,
     } as const;
     const { deps } = makeUpdateHarness({

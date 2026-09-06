@@ -6,6 +6,7 @@ import type { LibrarySelector } from "@/services/library-scope/scope";
 
 import {
   compileCondition,
+  compileFilter,
   formatCondition,
   matchCondition,
   ruleItem,
@@ -25,7 +26,7 @@ function rule(
 ): ProfileSelectionRule {
   return {
     scope: { mode: "all" },
-    expression: 'itemType == "book"',
+    filter: 'itemType == "book"',
     profile: books,
     ...overrides,
   };
@@ -83,11 +84,6 @@ describe("condition contract", () => {
         { kind: "item-type", negated: true, itemType: "thesis" },
       ],
     });
-    expect(compileCondition("").condition).toEqual({
-      kind: "group",
-      match: "all",
-      conditions: [],
-    });
     expect(compileCondition(" true ").condition).toEqual({
       kind: "group",
       match: "all",
@@ -116,7 +112,59 @@ describe("condition contract", () => {
     });
   });
 
-  it("reports syntax errors, unsupported vocabulary, and unknown item types", () => {
+  it("compiles a filter tree: explicit groups over leaves, first problem wins", () => {
+    expect(
+      compileFilter({
+        and: [
+          'itemType != "book"',
+          { or: ['hasTag("Read")', 'hasTag("Read") && itemType == "thesis"'] },
+        ],
+      }).condition,
+    ).toEqual({
+      kind: "group",
+      match: "all",
+      conditions: [
+        { kind: "item-type", negated: true, itemType: "book" },
+        {
+          kind: "group",
+          match: "any",
+          conditions: [
+            { kind: "tag", negated: false, name: "Read" },
+            {
+              kind: "group",
+              match: "all",
+              conditions: [
+                { kind: "tag", negated: false, name: "Read" },
+                { kind: "item-type", negated: false, itemType: "thesis" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    // An empty "and" holds for every Item; a lone leaf needs no group.
+    expect(compileFilter({ and: [] }).condition).toEqual({
+      kind: "group",
+      match: "all",
+      conditions: [],
+    });
+    expect(compileFilter('itemType == "book"').condition).toEqual({
+      kind: "item-type",
+      negated: false,
+      itemType: "book",
+    });
+    expect(
+      compileFilter({ or: ['itemType == "book"', "", 'title == "x"'] }).problem,
+    ).toEqual({ code: "empty", from: 0, to: 0, text: "" });
+  });
+
+  it("reports blank, syntax errors, unsupported vocabulary, and unknown item types", () => {
+    expect(compileCondition("  ").problem).toEqual({
+      code: "empty",
+      from: 0,
+      to: 0,
+      text: "",
+    });
     expect(compileCondition("itemType ==")).toEqual({
       condition: null,
       problem: { code: "syntax", from: 11, to: 11, text: "" },
@@ -316,7 +364,7 @@ describe("selectProfileByRules", () => {
   const groupBook = facts({ library: { type: "group", groupID: 4200309 } });
 
   it("uses the first matching rule in user order and advances past a valid nonmatch", () => {
-    const first = rule({ id: "first", expression: 'itemType == "thesis"' });
+    const first = rule({ id: "first", filter: 'itemType == "thesis"' });
     const second = rule({ id: "second", profile: "default" });
     const third = rule({ id: "third", profile: books });
     expect(
@@ -352,7 +400,7 @@ describe("selectProfileByRules", () => {
   });
 
   it("stops at an earlier unevaluable in-scope rule instead of advancing", () => {
-    const broken = rule({ id: "broken", expression: 'title == "x"' });
+    const broken = rule({ id: "broken", filter: 'title == "x"' });
     const later = rule({ id: "later" });
     expect(
       selectProfileByRules([broken, later], personalBook, available),
@@ -363,7 +411,7 @@ describe("selectProfileByRules", () => {
     });
     const outOfScope = rule({
       id: "out",
-      expression: "itemType ==",
+      filter: "itemType ==",
       scope: { mode: "selected", libraries: [{ type: "group", groupID: 118 }] },
     });
     expect(
@@ -384,7 +432,7 @@ describe("selectProfileByRules", () => {
     const nonmatch = rule({
       id: "nonmatch",
       profile: papers,
-      expression: 'itemType == "thesis"',
+      filter: 'itemType == "thesis"',
     });
     expect(
       selectProfileByRules([nonmatch, later], personalBook, available),
@@ -394,11 +442,11 @@ describe("selectProfileByRules", () => {
   it("breaks on a Collection reference the database lacks instead of advancing", () => {
     const stale = rule({
       id: "stale",
-      expression: 'inCollection("personal", "GONE0000")',
+      filter: 'inCollection("personal", "GONE0000")',
     });
     const foreign = rule({
       id: "foreign",
-      expression: '!inCollection("group:999", "PROJ0001")',
+      filter: '!inCollection("group:999", "PROJ0001")',
     });
     const later = rule({ id: "later" });
     expect(
@@ -426,7 +474,7 @@ describe("selectProfileByRules", () => {
     // A known Collection the Item is not in is a valid nonmatch.
     const elsewhere = rule({
       id: "elsewhere",
-      expression: 'inCollection("personal", "PROJ0001")',
+      filter: 'inCollection("personal", "PROJ0001")',
       profile: "default",
     });
     expect(

@@ -1,11 +1,13 @@
 // The persisted shape of Profile Selection Rules: one vault-owned ordered list, priority order being list order.
 //
 // Each rule records an explicit Library scope (the same stable selectors
-// Library Scope persists), one Filter Expression, and one target Profile
-// selector. The expression is stored as text: its validity against the
-// supported condition contract is judged when a rule is edited or evaluated
-// (`condition.ts`), so a rule that a later version cannot read stays on disk
-// for the user to repair rather than being dropped by the settings load.
+// Library Scope persists), one Rule Filter, and one target Profile selector.
+// The filter is an explicit `and` / `or` tree, in the shape of an Obsidian
+// Bases `filters` block, whose leaves are Filter Expressions stored as text.
+// A leaf's validity against the supported condition contract is judged when
+// a rule is edited or evaluated (`condition.ts`), so a rule that a later
+// version cannot read stays on disk for the user to repair rather than being
+// dropped by the settings load.
 // See docs/adr/0038-profile-selection-rules-belong-to-the-vault.md.
 import * as v from "valibot";
 
@@ -21,13 +23,35 @@ const profileSelector = v.custom<ProfileSelector>(
   "Profile selector must be a Profile ID or `default`",
 );
 
+/**
+ * The conditions of a rule: a Filter Expression, or a group that holds for
+ * every (`and`) or at least one (`or`) of its entries. An empty `and` group
+ * holds for every Item; an empty `or` group holds for none.
+ */
+export type RuleFilter =
+  | string
+  | { readonly and: readonly RuleFilter[] }
+  | { readonly or: readonly RuleFilter[] };
+
+export const ruleFilterSchema: v.GenericSchema<RuleFilter> = v.union([
+  v.string(),
+  v.pipe(
+    v.strictObject({ and: v.array(v.lazy(() => ruleFilterSchema)) }),
+    v.readonly(),
+  ),
+  v.pipe(
+    v.strictObject({ or: v.array(v.lazy(() => ruleFilterSchema)) }),
+    v.readonly(),
+  ),
+]);
+
 export const profileSelectionRuleSchema = v.pipe(
   v.object({
     /** Stable identity of the rule inside this vault's list. */
     id: v.pipe(v.string(), v.nonEmpty()),
     scope: libraryScopeSchema,
-    /** The Filter Expression the rule's conditions are stored as. */
-    expression: v.string(),
+    /** The conditions the rule's match is judged by. */
+    filter: ruleFilterSchema,
     /** The Profile the rule selects, by stable ID or `default`. */
     profile: profileSelector,
   }),

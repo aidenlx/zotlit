@@ -16,7 +16,7 @@ const papers = "Rz9Wm4YfH6Kd" as ProfileId;
 const booksRule = {
   id: "books",
   scope: { mode: "all" },
-  expression: 'itemType == "book"',
+  filter: 'itemType == "book"',
   profile: books,
 } as const;
 function plan(
@@ -122,7 +122,7 @@ it("lists every referencing rule below the note target chooser", async () => {
   const thesisRule = {
     ...booksRule,
     id: "thesis",
-    expression: 'itemType == "thesis"',
+    filter: 'itemType == "thesis"',
   };
   void confirmProfileDeletion({} as App, {
     plan: plan(true, [booksRule, thesisRule]),

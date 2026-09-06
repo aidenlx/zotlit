@@ -480,19 +480,19 @@ const RETIRED_STAMP = "Retired (Qw8Er5Ty2Ui9)";
 const BOOKS_RULE: ProfileSelectionRule = {
   id: "rule-books",
   scope: { mode: "all" },
-  expression: 'itemType == "book"',
+  filter: 'itemType == "book"',
   profile: BOOKS,
 };
 const ARTICLES_RULE: ProfileSelectionRule = {
   id: "rule-articles",
   scope: { mode: "all" },
-  expression: 'itemType == "journalArticle"',
+  filter: 'itemType == "journalArticle"',
   profile: ARTICLES,
 };
 const BROKEN_RULE: ProfileSelectionRule = {
   id: "rule-broken",
   scope: { mode: "all" },
-  expression: "itemType ==",
+  filter: "itemType ==",
   profile: BOOKS,
 };
 const BROKEN_PROBLEM = m.modal_profile_problem_broken_rule({

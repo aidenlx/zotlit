@@ -5,7 +5,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import {
   choicesLookup,
-  compileCondition,
+  compileFilter,
   describeProblem,
   describeRule,
   diagnoseRule,
@@ -151,7 +151,7 @@ function ruleDesc(
     ? diagnoseRule(rule, {
         hasCollection: choicesLookup(display.collections),
       })
-    : compileCondition(rule.expression);
+    : compileFilter(rule.filter);
   if (problem) {
     desc.append(createEl("br"));
     desc.append(

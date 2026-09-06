@@ -30,35 +30,35 @@ const missingId = "missingXXXXX" as ProfileId;
 const groupRule: ProfileSelectionRule = {
   id: "rule-1",
   scope: { mode: "all" },
-  expression: 'itemType == "book"',
+  filter: 'itemType == "book"',
   profile: profileAId,
 };
 
 const brokenRule: ProfileSelectionRule = {
   id: "rule-2",
   scope: { mode: "all" },
-  expression: "itemType == ",
+  filter: "itemType == ",
   profile: "default",
 };
 
 const unavailableRule: ProfileSelectionRule = {
   id: "rule-3",
   scope: { mode: "all" },
-  expression: "true",
+  filter: "true",
   profile: missingId,
 };
 
 const collectionRule: ProfileSelectionRule = {
   id: "rule-4",
   scope: { mode: "all" },
-  expression: 'inCollection("personal", "DRFT0001") && hasTag("Read")',
+  filter: 'inCollection("personal", "DRFT0001") && hasTag("Read")',
   profile: profileAId,
 };
 
 const staleCollectionRule: ProfileSelectionRule = {
   id: "rule-5",
   scope: { mode: "all" },
-  expression: 'inCollection("personal", "GONE0000")',
+  filter: 'inCollection("personal", "GONE0000")',
   profile: profileAId,
 };
 
@@ -144,7 +144,7 @@ describe("Profile Selection Rules settings", () => {
     const ctx = context([
       {
         ...groupRule,
-        expression:
+        filter:
           'itemType == "book" || (hasTag("Read") && !inCollection("personal", "DRFT0001"))',
       },
     ]);
@@ -235,7 +235,7 @@ describe("Profile Selection Rules settings", () => {
 
   it("opens the editor for an existing rule from its pencil button, then persists the edit in place", async () => {
     const ctx = context([groupRule, brokenRule]);
-    const edited: ProfileSelectionRule = { ...brokenRule, expression: "true" };
+    const edited: ProfileSelectionRule = { ...brokenRule, filter: "true" };
     vi.mocked(editProfileSelectionRule).mockResolvedValue(edited);
     const rows = list(ctx).items!;
     const setting = render(rows[1]!);

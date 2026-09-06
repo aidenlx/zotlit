@@ -1,8 +1,7 @@
 // One Profile Selection Rule editor: Library scope, grouped item-type,
-// Collection, and Tag conditions, and the target Profile. The stored Filter
-// Expression is the one source; the visual editor and the expression editor
-// are two surfaces over it. This is the modal shell; the editor itself is the
-// React tree under `profile-selection-rule/`.
+// Collection, Tag, and expression conditions, and the target Profile. The
+// editor's tree mirrors the stored Rule Filter. This is the modal shell; the
+// editor itself is the React tree under `profile-selection-rule/`.
 import { customAlphabet } from "nanoid";
 import { Modal } from "obsidian";
 import { createRoot } from "react-dom/client";
@@ -16,6 +15,7 @@ import type {
 } from "@/services/profile-selection";
 
 import type { SettingTabContext } from "./context";
+import { toFilter } from "./profile-selection-rule/draft";
 import type { RuleEditorDeps } from "./profile-selection-rule/draft";
 import { RuleEditor } from "./profile-selection-rule/RuleEditor";
 import {
@@ -81,7 +81,7 @@ export class ProfileSelectionRuleModal extends Modal {
             this.#decision.resolve({
               id: this.#rule?.id ?? mintId(),
               scope: draft.scope,
-              expression: draft.expression,
+              filter: toFilter(draft.root),
               profile: draft.profile,
             });
             this.close();

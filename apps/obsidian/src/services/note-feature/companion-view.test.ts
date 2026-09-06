@@ -135,7 +135,7 @@ it("creates directly when a rule selects the Profile for an unqualified link", a
     rule: {
       id: "article",
       scope: { mode: "all" },
-      expression: 'itemType == "journalArticle"',
+      filter: 'itemType == "journalArticle"',
       profile: PAPERS,
     },
   });
@@ -159,7 +159,7 @@ it("asks with the link's Profile when the rule that matched has an unavailable t
   const rule = {
     id: "article",
     scope: { mode: "all" as const },
-    expression: 'itemType == "journalArticle"',
+    filter: 'itemType == "journalArticle"',
     profile: BOOKS,
   };
   const harness = creationHarness({
