@@ -9,14 +9,12 @@ import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
 import type { LibraryScope } from "@/services/library-scope/scope";
 import {
-  choicesLookup,
   compileCondition,
   describeProblem,
   formatCondition,
 } from "@/services/profile-selection";
 import type {
   CollectionChoice,
-  DescribeOptions,
   FlatCondition,
   ProfileSelectionRule,
   RuleCondition,
@@ -120,6 +118,7 @@ function visuallyEditable(
 ): condition is FlatCondition {
   return (
     condition.kind !== "group" &&
+    condition.kind !== "collections" &&
     (condition.kind !== "tags" ||
       !condition.negated ||
       condition.operator === "contains" ||
@@ -217,20 +216,15 @@ export function freshCondition(
   kind: ConditionKind,
   negated: boolean,
   collections: readonly CollectionChoice[],
-): FlatCondition {
+): RowCondition {
   switch (kind) {
     case "item-type":
       return { kind, operator: "is", negated, values: [DEFAULT_ITEM_TYPE] };
-    case "collection": {
-      const first = collections[0];
+    case "collections":
       return {
-        kind,
-        negated,
-        library: first?.library ?? { type: "personal" },
-        key: first?.key ?? "",
-        descendants: true,
+        kind: "expression",
+        text: `collections.within(${JSON.stringify(collections[0]?.path.join("/") ?? "")})`,
       };
-    }
     case "tags":
       return { kind, operator: "contains", negated, values: [] };
   }
@@ -267,14 +261,9 @@ export function freshGroup(
   };
 }
 
-export function describeOptions(deps: RuleEditorDeps): DescribeOptions {
-  return { libraries: deps.libraries, collections: deps.collections };
-}
-
 /**
  * What keeps one row from being saved, as the user reads it. An expression
- * row answers through the same tree checks as the visual rows, so it refuses
- * what they would flag — a Collection the database lacks included.
+ * row answers through the same tree checks as the visual rows.
  */
 export function conditionIssue(
   condition: RowCondition,
@@ -283,13 +272,8 @@ export function conditionIssue(
   switch (condition.kind) {
     case "item-type":
       return null;
-    case "collection":
-      return choicesLookup(deps.collections)(condition)
-        ? null
-        : describeProblem(
-            { code: "missing-collection", ...condition },
-            describeOptions(deps),
-          );
+    case "collections":
+      return null;
     case "tags":
       return condition.operator !== "isEmpty" &&
         (condition.values.length === 0 ||
@@ -298,28 +282,17 @@ export function conditionIssue(
         : null;
     case "expression": {
       const { condition: compiled, problem } = compileCondition(condition.text);
-      if (problem) return describeProblem(problem, describeOptions(deps));
+      if (problem) return describeProblem(problem);
       return treeIssue(asGroup(compiled), true, deps);
     }
   }
 }
 
-/**
- * What a condition's own row says about it: the row names a missing
- * Collection in its own words, since the dropdown beside it already shows
- * which Collection that is.
- */
+/** What a condition's own row says about it. */
 export function rowIssue(
   condition: RowCondition,
   deps: RuleEditorDeps,
 ): string | null {
-  if (
-    condition.kind === "collection" &&
-    !choicesLookup(deps.collections)(condition)
-  )
-    return deps.collections.length === 0
-      ? m.settings_profile_rule_collection_none()
-      : m.settings_profile_rule_collection_missing();
   return conditionIssue(condition, deps);
 }
 

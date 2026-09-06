@@ -9,12 +9,10 @@ export {
   type RuleFilter,
 } from "./schema";
 export {
-  collectionReferences,
   compileCondition,
   compileFilter,
   formatCondition,
   matchCondition,
-  type CollectionReference,
   type CompiledCondition,
   type ConditionProblem,
   type FlatCondition,
@@ -22,9 +20,6 @@ export {
   type RuleItemFacts,
 } from "./condition";
 export {
-  choicesLookup,
-  collectionKey,
-  collectionLookup,
   listCollectionChoices,
   resolveMembershipFacts,
   type CollectionChoice,
@@ -37,7 +32,6 @@ export {
   type RuleSelection,
 } from "./select";
 export {
-  collectionLabel,
   describeProblem,
   describeRule,
   itemTypeLabel,

@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import type { ProfileId } from "@/lib/profile-stamp";
-import { selectorKey } from "@/services/library-scope/scope";
-import type { LibrarySelector } from "@/services/library-scope/scope";
 
 import {
   compileCondition,
@@ -39,18 +37,8 @@ function rule(
   };
 }
 
-/** The Collections the "database" holds: My Library PROJ0001 and SUB00001. */
-const KNOWN_COLLECTIONS = new Set(["personal/PROJ0001", "personal/SUB00001"]);
-
 const available = {
   isAvailable: (selector: string) => selector !== papers,
-  hasCollection: ({
-    library,
-    key,
-  }: {
-    library: LibrarySelector;
-    key: string;
-  }) => KNOWN_COLLECTIONS.has(`${selectorKey(library)}/${key}`),
 };
 
 /** A My Library Item with no memberships unless given. */
@@ -60,7 +48,6 @@ function facts(overrides: Partial<RuleItemFacts> = {}): RuleItemFacts {
     itemType: "book",
     tags: [],
     collections: [],
-    collectionAncestors: [],
     ...overrides,
   };
 }
@@ -185,9 +172,9 @@ describe("condition contract", () => {
       to: 15,
       text: 'title == "book"',
     });
-    expect(compileCondition('inCollection("ABCD1234")').problem).toMatchObject({
-      code: "unsupported",
-    });
+    expect(
+      compileCondition('collections.within("Project")').problem,
+    ).toBeNull();
     expect(compileCondition('itemType == "novel"').problem).toEqual({
       code: "unknown-item-type",
       from: 12,
@@ -249,26 +236,23 @@ describe("condition contract", () => {
     expect(matchCondition(none, facts({ itemType: "letter" }))).toBe(true);
   });
 
-  it("compiles Collection and Tag predicates with portable Library references", () => {
-    expect(compileCondition('inCollection("personal", "PROJ0001")')).toEqual({
+  it("compiles Collection paths and Tag predicates", () => {
+    expect(compileCondition('collections.within("Project/Drafts")')).toEqual({
       condition: {
-        kind: "collection",
+        kind: "collections",
+        operator: "within",
         negated: false,
-        library: { type: "personal" },
-        key: "PROJ0001",
-        descendants: true,
+        values: [["Project", "Drafts"]],
       },
       problem: null,
     });
     expect(
-      compileCondition('!inCollectionDirectly("group:118", "PROJ0001")')
-        .condition,
+      compileCondition('!collections.contains("Project/Drafts")').condition,
     ).toEqual({
-      kind: "collection",
+      kind: "collections",
+      operator: "contains",
       negated: true,
-      library: { type: "group", groupID: 118 },
-      key: "PROJ0001",
-      descendants: false,
+      values: [["Project", "Drafts"]],
     });
     expect(compileCondition('tags.contains("Read Later")').condition).toEqual({
       kind: "tags",
@@ -282,18 +266,6 @@ describe("condition contract", () => {
       negated: true,
       values: ["Read Later"],
     });
-    expect(
-      compileCondition('inCollection("mine", "PROJ0001")').problem,
-    ).toEqual({ code: "unknown-library", from: 13, to: 19, text: '"mine"' });
-    expect(compileCondition('inCollection("group:0", "X")').problem).toEqual({
-      code: "unknown-library",
-      from: 13,
-      to: 22,
-      text: '"group:0"',
-    });
-    expect(compileCondition('inCollection("personal")').problem).toMatchObject({
-      code: "unsupported",
-    });
     expect(compileCondition("hasTag(1)").problem).toEqual({
       code: "unsupported",
       from: 0,
@@ -306,10 +278,55 @@ describe("condition contract", () => {
       to: 6,
       text: "hasTag",
     });
-    expect(compileCondition('inCollection("personal", "A")').condition).toEqual(
-      expect.objectContaining({ kind: "collection" }),
-    );
+    expect(compileCondition('inCollection("personal", "A")').problem).toEqual({
+      code: "unsupported",
+      from: 0,
+      to: 12,
+      text: "inCollection",
+    });
+    expect(
+      compileCondition('inCollectionDirectly("personal", "A")').problem,
+    ).toEqual({
+      code: "unsupported",
+      from: 0,
+      to: 20,
+      text: "inCollectionDirectly",
+    });
   });
+
+  it.each([
+    ['collections.within("Project/Drafts")', "within", [["Project", "Drafts"]]],
+    [
+      'collections.contains("Project/Drafts")',
+      "contains",
+      [["Project", "Drafts"]],
+    ],
+    [
+      'collections.containsAny("Project/Drafts", "Other")',
+      "containsAny",
+      [["Project", "Drafts"], ["Other"]],
+    ],
+    [
+      'collections.containsAll("Project/Drafts", "Other")',
+      "containsAll",
+      [["Project", "Drafts"], ["Other"]],
+    ],
+    ["collections.isEmpty()", "isEmpty", []],
+  ] as const)(
+    "compiles, negates, and formats %s",
+    (expression, operator, values) => {
+      const condition = compileCondition(expression).condition;
+      expect(condition).toEqual({
+        kind: "collections",
+        operator,
+        negated: false,
+        values,
+      });
+      expect(formatCondition(condition!)).toBe(expression);
+      const negated = compileCondition(`!${expression}`).condition;
+      expect(formatCondition(negated!)).toBe(`!${expression}`);
+    },
+  );
 
   it.each([
     ['tags.contains("Read")', "contains", ["Read"]],
@@ -354,6 +371,25 @@ describe("condition contract", () => {
   });
 
   it.each([
+    'collections.includes("Project")',
+    "collections.within()",
+    'collections.within("Project", "Drafts")',
+    "collections.contains()",
+    'collections.contains("Project", "Drafts")',
+    "collections.containsAny()",
+    "collections.containsAll()",
+    'collections.isEmpty("Project")',
+    "collections.contains(1)",
+    'collections.containsAny("Project", 1)',
+    'tags.within("Project")',
+  ])("reports unsupported Collection expression %s", (expression) => {
+    expect(compileCondition(expression)).toEqual({
+      condition: null,
+      problem: expect.objectContaining({ code: "unsupported" }),
+    });
+  });
+
+  it.each([
     { expression: "tags.contains(1)", from: 14, to: 15, text: "1" },
     {
       expression: 'tags.containsAny("Read", 1)',
@@ -378,20 +414,8 @@ describe("condition contract", () => {
       kind: "group",
       match: "all",
       conditions: [
-        {
-          kind: "collection",
-          negated: false,
-          library: { type: "group", groupID: 118 },
-          key: "PROJ0001",
-          descendants: true,
-        },
-        {
-          kind: "collection",
-          negated: true,
-          library: { type: "personal" },
-          key: "SUB00001",
-          descendants: false,
-        },
+        compileCondition('collections.within("Project")').condition!,
+        compileCondition('!collections.contains("Project/Drafts")').condition!,
         {
           kind: "tags",
           operator: "contains",
@@ -403,35 +427,39 @@ describe("condition contract", () => {
     };
     const expression = formatCondition(condition);
     expect(expression).toBe(
-      'inCollection("group:118", "PROJ0001") && !inCollectionDirectly("personal", "SUB00001") && tags.contains("say \\"hi\\"") && itemType == "book"',
+      'collections.within("Project") && !collections.contains("Project/Drafts") && tags.contains("say \\"hi\\"") && itemType == "book"',
     );
     expect(compileCondition(expression).condition).toEqual(condition);
   });
 
-  it("matches memberships: descendants by default, direct only on request, exact Tag names", () => {
-    // Filed directly in SUB00001, whose parent is PROJ0001; tagged "Read"
-    // (manual) and "READ" (automatic) — both reach the facts as names.
+  it("matches Collection paths by segments and direct path equality", () => {
     const item = facts({
-      tags: ["Read", "READ"],
-      collections: ["SUB00001", "OTHR0001"],
-      collectionAncestors: ["PROJ0001"],
+      collections: [["Project", "Drafts", "2024"], ["Other"]],
     });
     const match = (expression: string, subject = item) =>
       matchCondition(compileCondition(expression).condition!, subject);
-    expect(match('inCollection("personal", "PROJ0001")')).toBe(true);
-    expect(match('inCollectionDirectly("personal", "PROJ0001")')).toBe(false);
-    expect(match('inCollectionDirectly("personal", "SUB00001")')).toBe(true);
-    expect(match('inCollection("personal", "OTHR0001")')).toBe(true);
-    expect(match('!inCollection("personal", "OTHR0001")')).toBe(false);
-    // The same key in another Library is a different Collection.
-    expect(match('inCollection("group:118", "PROJ0001")')).toBe(false);
+    expect(match('collections.within("Project/Drafts")')).toBe(true);
+    expect(match('collections.within("Project/Draft")')).toBe(false);
+    expect(match('collections.contains("Project/Drafts")')).toBe(false);
+    expect(match('collections.contains("Project/Drafts/2024")')).toBe(true);
+    expect(match('collections.containsAny("Missing", "Other")')).toBe(true);
     expect(
-      match('inCollection("personal", "PROJ0001")', {
-        ...item,
-        library: { type: "group", groupID: 118 },
-      }),
-    ).toBe(false);
-    expect(match('inCollection("personal", "PROJ0001")', facts())).toBe(false);
+      match('collections.containsAll("Other", "Project/Drafts/2024")'),
+    ).toBe(true);
+    expect(match('collections.containsAll("Other", "Missing")')).toBe(false);
+    expect(match("collections.isEmpty()", facts())).toBe(true);
+    expect(match("!collections.isEmpty()", facts())).toBe(false);
+    expect(match('collections.within("Unknown/Path")')).toBe(false);
+  });
+
+  it("matches exact Tag names", () => {
+    // Tagged "Read"
+    // (manual) and "READ" (automatic) — both reach the facts as names.
+    const item = facts({
+      tags: ["Read", "READ"],
+    });
+    const match = (expression: string, subject = item) =>
+      matchCondition(compileCondition(expression).condition!, subject);
     expect(match('tags.contains("Read")')).toBe(true);
     expect(match('tags.contains("READ")')).toBe(true);
     expect(match('tags.contains("read")')).toBe(false);
@@ -526,42 +554,18 @@ describe("selectProfileByRules", () => {
     ).toEqual({ outcome: "matched", rule: later, selector: books });
   });
 
-  it("breaks on a Collection reference the database lacks instead of advancing", () => {
+  it("treats an unknown Collection path as an ordinary nonmatch", () => {
     const stale = rule({
       id: "stale",
-      filter: 'inCollection("personal", "GONE0000")',
-    });
-    const foreign = rule({
-      id: "foreign",
-      filter: '!inCollection("group:999", "PROJ0001")',
+      filter: 'collections.within("Unknown/Path")',
     });
     const later = rule({ id: "later" });
     expect(
       selectProfileByRules([stale, later], personalBook, available),
-    ).toEqual({
-      outcome: "broken",
-      rule: stale,
-      problem: {
-        code: "missing-collection",
-        library: { type: "personal" },
-        key: "GONE0000",
-      },
-    });
-    expect(
-      selectProfileByRules([foreign, later], personalBook, available),
-    ).toEqual({
-      outcome: "broken",
-      rule: foreign,
-      problem: {
-        code: "missing-collection",
-        library: { type: "group", groupID: 999 },
-        key: "PROJ0001",
-      },
-    });
-    // A known Collection the Item is not in is a valid nonmatch.
+    ).toEqual({ outcome: "matched", rule: later, selector: books });
     const elsewhere = rule({
       id: "elsewhere",
-      filter: 'inCollection("personal", "PROJ0001")',
+      filter: 'collections.within("Project")',
       profile: "default",
     });
     expect(
@@ -570,7 +574,7 @@ describe("selectProfileByRules", () => {
     expect(
       selectProfileByRules(
         [elsewhere, later],
-        facts({ collections: ["SUB00001"], collectionAncestors: ["PROJ0001"] }),
+        facts({ collections: [["Project", "Drafts"]] }),
         available,
       ),
     ).toEqual({ outcome: "matched", rule: elsewhere, selector: "default" });
@@ -579,8 +583,7 @@ describe("selectProfileByRules", () => {
   it("reads the Library, item type, and memberships of a database Item", () => {
     const memberships = {
       tags: ["Read"],
-      collections: ["SUB00001"],
-      collectionAncestors: ["PROJ0001"],
+      collections: [["Project", "Drafts"]],
     };
     expect(
       ruleItem(
@@ -607,7 +610,7 @@ describe("selectProfileByRules", () => {
   it("gives an Item of an unknown group Library no selector, so a personal-scoped rule skips it", () => {
     const orphan = ruleItem(
       { libraryID: 7, groupID: null, fields: { itemType: "book" } as never },
-      { tags: [], collections: [], collectionAncestors: [] },
+      { tags: [], collections: [] },
     );
     expect(orphan.library).toBeNull();
     const personal = rule({

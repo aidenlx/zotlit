@@ -762,77 +762,64 @@ describe("ProfileSelectionRuleModal", () => {
     ).toBe("");
   });
 
-  it("offers every Collection by Library and path and saves its portable reference", async () => {
-    const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
-    const modal = await open(ctx);
+  it.each([
+    'collections.within("Project/Drafts")',
+    '!collections.within("Project/Drafts")',
+    'collections.contains("Project/Drafts")',
+    '!collections.contains("Project/Drafts")',
+    'collections.containsAny("Project/Drafts", "Other")',
+    '!collections.containsAny("Project/Drafts", "Other")',
+    'collections.containsAll("Project/Drafts", "Other")',
+    '!collections.containsAll("Project/Drafts", "Other")',
+    "collections.isEmpty()",
+    "!collections.isEmpty()",
+  ])(
+    "keeps %s as an expression through save and reopen",
+    async (expression) => {
+      const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
+      const original = await open(ctx, {
+        id: "collection-expression",
+        scope: { mode: "all" },
+        filter: expression,
+        profile: "default",
+      });
+      const originalRow = conditionRows(original)[0]!;
+      expect(rowSelects(originalRow)).toEqual([]);
+      expect(editor(originalRow).state.doc.toString()).toBe(expression);
+      expect(
+        toggleDisabled(originalRow, m.settings_profile_rule_edit_visually()),
+      ).toBe(true);
+      expect(saveEnabled(original)).toBe(true);
+      await click(buttonNamed(original, m.settings_profile_rule_save()));
+      const saved = await original.result;
+      expect(saved?.filter).toEqual({ and: [expression] });
+
+      const reopened = await open(ctx, saved!);
+      const reopenedRow = conditionRows(reopened)[0]!;
+      expect(rowSelects(reopenedRow)).toEqual([]);
+      expect(editor(reopenedRow).state.doc.toString()).toBe(expression);
+      expect(
+        toggleDisabled(reopenedRow, m.settings_profile_rule_edit_visually()),
+      ).toBe(true);
+    },
+  );
+
+  it("switches a labelled row to a Collection expression without hidden controls", async () => {
+    const modal = await open(
+      context({ libraryScope: { libraries: [myLibrary, team] } }),
+    );
     const row = () => conditionRows(modal)[0]!;
-    await choose(rowSelects(row())[0]!, "collection");
-    const [, , collection, membership] = rowSelects(row());
-    expect(options(collection!).map(({ label }) => label)).toEqual([
-      "My Library: Project",
-      "My Library: Project / Drafts",
-      "Team: Project",
-    ]);
-    // Descendants are included until the user asks for direct membership.
-    expect(membership!.value).toBe("descendants");
-    await choose(collection!, "personal/DRFT0001");
-    await choose(rowSelects(row())[1]!, "is-not");
+    await choose(rowSelects(row())[0]!, "collections");
+    expect(rowSelects(row())).toEqual([]);
+    expect(editor(row()).state.doc.toString()).toBe(
+      'collections.within("Project")',
+    );
+    expect(toggleDisabled(row(), m.settings_profile_rule_edit_visually())).toBe(
+      true,
+    );
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toMatchObject({
-      filter: { and: ['!inCollection("personal", "DRFT0001")'] },
-    });
-  });
-
-  it("writes the direct-membership form and tells same-key Collections apart by Library", async () => {
-    const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
-    const modal = await open(ctx);
-    const row = () => conditionRows(modal)[0]!;
-    await choose(rowSelects(row())[0]!, "collection");
-    await choose(rowSelects(row())[2]!, "group:5/PROJ0001");
-    await choose(rowSelects(row())[3]!, "direct");
-    await click(buttonNamed(modal, m.settings_profile_rule_save()));
-    await expect(modal.result).resolves.toMatchObject({
-      filter: { and: ['inCollectionDirectly("group:5", "PROJ0001")'] },
-    });
-  });
-
-  it("preselects an existing Collection condition and flags one the database lacks", async () => {
-    const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
-    const kept = await open(ctx, {
-      id: "kept",
-      scope: { mode: "all" },
-      filter: 'inCollectionDirectly("personal", "DRFT0001")',
-      profile: "default",
-    });
-    expect(
-      rowSelects(conditionRows(kept)[0]!).map((select) => select.value),
-    ).toEqual(["collection", "is", "personal/DRFT0001", "direct"]);
-    expect(rowError(conditionRows(kept)[0]!)).toBeNull();
-    expect(saveEnabled(kept)).toBe(true);
-
-    const stale = await open(ctx, {
-      id: "stale",
-      scope: { mode: "all" },
-      filter: 'inCollection("group:5", "GONE0000")',
-      profile: "default",
-    });
-    const row = () => conditionRows(stale)[0]!;
-    expect(rowError(row())).toBe(m.settings_profile_rule_collection_missing());
-    // The stale reference stays visible by its Library and key.
-    const collection = () => rowSelects(row())[2]!;
-    expect(collection().value).toBe("group:5/GONE0000");
-    expect(
-      options(collection()).find(({ value }) => value === "group:5/GONE0000")
-        ?.label,
-    ).toBe("Team: GONE0000");
-    expect(saveEnabled(stale)).toBe(false);
-    await choose(collection(), "personal/PROJ0001");
-    expect(rowError(row())).toBeNull();
-    expect(saveEnabled(stale)).toBe(true);
-    await click(buttonNamed(stale, m.settings_profile_rule_save()));
-    await expect(stale.result).resolves.toMatchObject({
-      id: "stale",
-      filter: { and: ['inCollection("personal", "PROJ0001")'] },
+      filter: { and: ['collections.within("Project")'] },
     });
   });
 
