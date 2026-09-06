@@ -52,8 +52,14 @@ import {
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { m } from "@/paraglide/messages.js";
 
-import { AnnotationPointer, AnnotationSectionBar } from "./annotation";
+import {
+  AnnotationPane,
+  AnnotationPointer,
+  AnnotationSampleBar,
+  AnnotationSectionBar,
+} from "./annotation";
 import { annotationHeaderMark } from "./annotation-mark";
+import { annotationSamples } from "./annotation-samples";
 import { ConnectionBar } from "./connection-bar";
 import { FieldList } from "./field-list";
 import { insertSnippet, rootData, templateRootAt } from "./fields";
@@ -70,7 +76,6 @@ import {
 import { ProfileHandoff } from "./handoff";
 import { NameFolderPane } from "./name-folder";
 import { NotePane } from "./note-pane";
-import type { NoteEditor } from "./note-pane";
 import { diagnosticText, problemText } from "./problems";
 import { PropertiesPane, PropertiesResult } from "./properties-tab";
 import type { EntryDiagnostic } from "./properties-tab";
@@ -96,6 +101,7 @@ const PROBLEM_WHERE: Partial<Record<WorkbenchSliceId, () => string>> = {
   note: m.workbench_problems_where_note,
   filename: m.workbench_problems_where_filename,
   details: m.workbench_problems_where_details,
+  annotation: m.workbench_annotation_label,
 };
 
 /** The result becomes a column once both reading and editing have room. */
@@ -126,7 +132,21 @@ export function Workbench() {
   );
   const [revision, setRevision] = useState(0);
   const [sample, setSample] = useState<SampleItem>(DEFAULT_SAMPLE);
-  const [tab, setTab] = useState<"note" | "properties" | "name">("note");
+  const [annotationChoice, setAnnotationChoice] = useState<string | null>(null);
+  const { current: itemAnnotations, example: selectedAnnotation } = useMemo(
+    () => annotationSamples(sample, annotationChoice),
+    [sample, annotationChoice],
+  );
+  useEffect(
+    () => setAnnotationChoice(selectedAnnotation.id),
+    [selectedAnnotation.id],
+  );
+  const annotationResult =
+    result?.annotationId === selectedAnnotation.id &&
+    result.annotationRevision === selectedAnnotation.revision
+      ? result
+      : null;
+  const [tab, setTab] = useState<WorkbenchTab>("note");
   // Which of the two the narrow screen is showing, and whether the field list
   // is open over it. Both are the narrow layout's alone: a wide screen shows
   // the pane, the result, and the field list at once.
@@ -135,15 +155,6 @@ export function Workbench() {
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [advanced, setAdvanced] = useState(false);
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
-  // Which of the note tab's two editors the reader is in, and where the
-  // annotation box opens when they are sent to it from elsewhere.
-  const [noteEditor, setNoteEditor] = useState<NoteEditor>("note");
-  const [annotation, setAnnotation] = useState<WorkbenchSliceRange | null>(
-    null,
-  );
-  // The reader is at the annotation box, so the result column points at every
-  // annotation the one format produced.
-  const [emphasis, setEmphasis] = useState(false);
   // A sentence about the edit just made, which the next edit retires. It is
   // stamped with the revision it belongs to, because the edit that earns it
   // and the sentence itself land in one render.
@@ -152,11 +163,6 @@ export function Workbench() {
     revision: number;
   } | null>(null);
   const latestRevision = useRef(0);
-  // The first time the sheet shows what the format produced, the result column
-  // brings the first of those into view, once per visit; after that the column
-  // stays where the reader left it.
-  const resultRegion = useRef<HTMLDivElement>(null);
-  const scrolledToOutput = useRef(false);
   const [pendingAction, setPendingAction] = useState<{
     label: string;
     run: () => void;
@@ -169,6 +175,7 @@ export function Workbench() {
   // every time, so selecting the same problem twice opens it again.
   const [focusField, setFocusField] = useState<{ field: string } | null>(null);
   const [caret, setCaret] = useState<WorkbenchSliceRange>({ from: 0, to: 0 });
+  const noteCaret = useRef(caret);
   // The field list restores the snapshot the way the renderer does, so it waits
   // for the same Temporal the restoration needs.
   const [temporal, setTemporal] = useState(
@@ -203,6 +210,7 @@ export function Workbench() {
     controller,
     revision,
     sample,
+    annotationSelection: selectedAnnotation.id,
     saveTarget,
   });
 
@@ -241,15 +249,6 @@ export function Workbench() {
     [controller],
   );
   useEffect(() => setFileMessage(null), [revision]);
-  useEffect(() => {
-    if (scrolledToOutput.current || advanced || tab !== "note") return;
-    const first = resultRegion.current?.querySelector<HTMLElement>(
-      '[data-zt="annotation-output"]',
-    );
-    if (!first) return;
-    scrolledToOutput.current = true;
-    first.scrollIntoView?.({ block: "nearest" });
-  }, [result, advanced, tab]);
   useEffect(() => () => scheduler[Symbol.dispose](), [scheduler]);
   useEffect(() => {
     void ensureTemporal().then(() => setTemporal(true));
@@ -288,12 +287,14 @@ export function Workbench() {
     scheduler.request({
       source: controller.source,
       snapshot: sample,
+      annotation: selectedAnnotation,
       ...(resources ? { resources } : {}),
     });
   }, [
     scheduler,
     controller,
     sample,
+    selectedAnnotation,
     revision,
     renderable,
     resources,
@@ -335,10 +336,9 @@ export function Workbench() {
   );
 
   const problem = controller.problems[0];
-  // The format's own complaint is shown in the annotation box, so the result
-  // column reports everything else.
+  // A failed note call also needs a route to the format from its empty result.
   const previewProblem = result?.diagnostics.find(
-    ({ part }) => part !== "annotation",
+    ({ part }) => part !== "annotation" || result.creationBody === null,
   );
   // Null while the manifest's list is one the rows cannot edit, which is what
   // sends the reader to Advanced with the source intact.
@@ -377,15 +377,16 @@ export function Workbench() {
       ? entrySlice(row)
       : tab === "name" && controller.filenameSlice
         ? "filename"
-        : tab === "note" && noteEditor === "annotation"
+        : tab === "annotation"
           ? "annotation"
           : "note";
   // The note itself, which is the one result an update rewrites part of, so the
   // update-only Managed Region is offered beside it and nowhere else.
-  const showNote = !(!advanced && tab === "properties");
+  const showAnnotation = !advanced && tab === "annotation";
+  const showNote = advanced || (tab !== "properties" && tab !== "annotation");
   // The render's complaint about the format alone, shown in the annotation box
   // where the format is edited rather than in the result column.
-  const formatProblem = result?.diagnostics.find(
+  const formatProblem = annotationResult?.diagnostics.find(
     ({ part }) => part === "annotation",
   );
 
@@ -415,7 +416,10 @@ export function Workbench() {
     setAdvanced(id === "advanced");
     if (id === "note") {
       setTab("note");
-      setNoteEditor("note");
+    }
+    if (id === "annotation" || problem.code === "missing-annotation-section") {
+      openAnnotation();
+      return;
     }
     if (id === "filename" || id === "details") setTab("name");
     // A fresh object every time, so selecting the same problem twice reveals it
@@ -430,25 +434,21 @@ export function Workbench() {
     );
   }
 
-  /** Leaves the note tab, so its second editor does not follow the reader out. */
-  function openTab(id: "note" | "properties" | "name") {
+  /** Changes the authoring surface while keeping the note's position. */
+  function openTab(id: WorkbenchTab) {
     setTab(id);
     setReveal(null);
-    if (id !== "note") setNoteEditor("note");
+    if (id === "note") setCaret(noteCaret.current);
   }
 
-  /**
-   * Opens the one editor over the Annotation Section: the annotation box at the
-   * first render call, with the format's source showing.
-   */
   function openAnnotation() {
-    const section = controller.annotationSection;
-    if (!section || controller.noteRegions.annotationCalls.length === 0) return;
     setView("edit");
     setAdvanced(false);
-    setTab("note");
-    setNoteEditor("annotation");
-    setAnnotation({ from: section.source.from, to: section.source.from });
+    setTab("annotation");
+    const section = controller.annotationSection;
+    setReveal(
+      section ? { from: section.source.from, to: section.source.from } : null,
+    );
   }
 
   /**
@@ -515,15 +515,32 @@ export function Workbench() {
       ? undefined
       : controller.document?.manifest.frontmatter?.[row - 1];
   const fieldDisabled =
-    !advanced &&
-    tab === "properties" &&
-    (row === null ||
-      (selectedProperty !== undefined &&
-        "value" in selectedProperty &&
-        typeof selectedProperty.value === "string"));
+    (showAnnotation && !controller.annotationSection) ||
+    (!advanced &&
+      tab === "properties" &&
+      (row === null ||
+        (selectedProperty !== undefined &&
+          "value" in selectedProperty &&
+          typeof selectedProperty.value === "string")));
+  const annotationData = useMemo(() => {
+    if (!temporal) return null;
+    const data = rootData(sample, "annotation", selectedAnnotation)!;
+    data.citation = annotationResult?.annotationCitation ?? null;
+    return data;
+  }, [
+    temporal,
+    sample,
+    selectedAnnotation,
+    annotationResult?.annotationCitation,
+  ]);
   const fields = useMemo(
-    () => (temporal ? rootData(sample, root) : null),
-    [temporal, sample, root],
+    () =>
+      !temporal
+        ? null
+        : root === "annotation"
+          ? annotationData
+          : rootData(sample, root),
+    [temporal, sample, root, annotationData],
   );
   /**
    * What the editor's own completion and hover resolve against: the root the
@@ -537,7 +554,11 @@ export function Workbench() {
       controller.filenameSlice,
       position,
     );
-    const data = rootData(sample, currentRoot);
+    const data = !temporal
+      ? null
+      : currentRoot === "annotation"
+        ? annotationData
+        : rootData(sample, currentRoot);
     return { root: currentRoot, partials, ...(data ? { sample: data } : {}) };
   };
 
@@ -568,11 +589,10 @@ export function Workbench() {
     setView("edit");
     setSheet(false);
     setTab("note");
-    setNoteEditor("note");
     setOpenRow(null);
     setReveal(null);
-    setAnnotation(null);
-    setCaret({ from: 0, to: 0 });
+    noteCaret.current = { from: 0, to: 0 };
+    setCaret(noteCaret.current);
   }
 
   /** Download always returns the exact source, including an unfinished draft. */
@@ -609,6 +629,7 @@ export function Workbench() {
     setView("edit");
     setReveal(null);
     setAdvanced(source);
+    if (!source && tab === "note") setCaret(noteCaret.current);
   }
 
   const draft = controller.document === null;
@@ -804,6 +825,7 @@ export function Workbench() {
                     if (!kept) return;
                     loadDocument(kept.source);
                     setSample(kept.snapshot);
+                    setAnnotationChoice(kept.annotationSelection ?? null);
                     if (kept.expected) saveAgainst(kept.expected);
                   }}
                 >
@@ -856,7 +878,7 @@ export function Workbench() {
             sheetOpen={sheet}
             onAddField={() => setSheet(true)}
           />
-          {advanced ? (
+          {advanced && (
             <>
               <div className="mb-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -896,18 +918,52 @@ export function Workbench() {
                 </div>
               </>
             </>
-          ) : (
-            <Tabs
-              className="flex min-h-0 flex-1 flex-col"
-              value={tab}
-              onValueChange={(value) => openTab(value as WorkbenchTab)}
+          )}
+          <Tabs
+            hidden={advanced}
+            className="flex min-h-0 flex-1 flex-col [&[hidden]]:hidden"
+            value={tab}
+            onValueChange={(value) => openTab(value as WorkbenchTab)}
+          >
+            <div className="mb-2 flex shrink-0 items-center gap-1">
+              <PaneTabList />
+              <WorkbenchHelp title={TAB_LABEL[tab]()} compact>
+                {TAB_LEDE[tab]()}
+              </WorkbenchHelp>
+            </div>
+            <TabsContent
+              value="note"
+              keepMounted
+              className="flex min-h-0 flex-1 flex-col [&[hidden]]:hidden"
             >
-              <div className="mb-2 flex shrink-0 items-center gap-1">
-                <PaneTabList />
-                <WorkbenchHelp title={TAB_LABEL[tab]()} compact>
-                  {TAB_LEDE[tab]()}
-                </WorkbenchHelp>
-              </div>
+              <h2 className="sr-only">{m.workbench_tab_note()}</h2>
+              <NotePane
+                controller={controller}
+                reveal={!advanced && tab === "note" ? reveal : null}
+                suggest={suggest}
+                preview={annotationResult?.annotation ?? null}
+                annotationSelector={
+                  <AnnotationSampleBar
+                    id="workbench-inline-annotation-sample"
+                    current={itemAnnotations}
+                    example={selectedAnnotation}
+                    onSelect={setAnnotationChoice}
+                  />
+                }
+                formatProblem={
+                  formatProblem ? diagnosticText(formatProblem) : null
+                }
+                onSelection={(selection) => {
+                  noteCaret.current = selection;
+                  if (!advanced && tab === "note") trackSelection(selection);
+                }}
+                onOpenAnnotation={openAnnotation}
+              />
+              {controller.noteRegions.annotationCalls.length === 0 && (
+                <AnnotationPointer onInsert={insertAnnotations} />
+              )}
+            </TabsContent>
+            {!advanced && tab !== "note" && (
               <TabsContent value={tab} className="flex min-h-0 flex-1 flex-col">
                 <h2 className="sr-only">{TAB_LABEL[tab]()}</h2>
                 {tab === "name" ? (
@@ -927,6 +983,16 @@ export function Workbench() {
                       onSelection={trackSelection}
                     />
                   </>
+                ) : tab === "annotation" ? (
+                  <AnnotationPane
+                    controller={controller}
+                    reveal={reveal}
+                    suggest={suggest}
+                    problem={
+                      formatProblem ? diagnosticText(formatProblem) : null
+                    }
+                    onSelection={trackSelection}
+                  />
                 ) : tab === "properties" ? (
                   <>
                     {entries === null ? (
@@ -955,31 +1021,10 @@ export function Workbench() {
                       />
                     )}
                   </>
-                ) : (
-                  <>
-                    <NotePane
-                      controller={controller}
-                      reveal={reveal}
-                      annotation={annotation}
-                      suggest={suggest}
-                      preview={result?.annotation ?? null}
-                      formatProblem={
-                        formatProblem ? diagnosticText(formatProblem) : null
-                      }
-                      count={sample.roots.annotations.length}
-                      onSelection={trackSelection}
-                      onOpenAnnotation={openAnnotation}
-                      onEmphasis={setEmphasis}
-                      onEditing={setNoteEditor}
-                    />
-                    {controller.noteRegions.annotationCalls.length === 0 && (
-                      <AnnotationPointer onInsert={insertAnnotations} />
-                    )}
-                  </>
-                )}
+                ) : null}
               </TabsContent>
-            </Tabs>
-          )}
+            )}
+          </Tabs>
           <Dialog open={sheet} onOpenChange={setSheet}>
             <DialogContent
               finalFocus={addField}
@@ -1015,21 +1060,32 @@ export function Workbench() {
       }
       result={
         <>
-          <SampleBar
-            sample={sample}
-            connection={connection}
-            {...(sampleItemType !== undefined && !bundledForType
-              ? { unmatchedItemType: sampleItemType }
-              : {})}
-            busy={itemBusy}
-            onShow={setSample}
-            onLoad={() => void loadSelectedItem()}
-          />
+          <div className={showAnnotation ? "hidden" : "contents"}>
+            <SampleBar
+              sample={sample}
+              connection={connection}
+              {...(sampleItemType !== undefined && !bundledForType
+                ? { unmatchedItemType: sampleItemType }
+                : {})}
+              busy={itemBusy}
+              onShow={setSample}
+              onLoad={() => void loadSelectedItem()}
+            />
+          </div>
+          {showAnnotation && (
+            <AnnotationSampleBar
+              current={itemAnnotations}
+              example={selectedAnnotation}
+              onSelect={setAnnotationChoice}
+            />
+          )}
           <ResultHeader
             heading={
-              !advanced && tab === "properties"
-                ? m.workbench_result_fold()
-                : m.workbench_result_heading()
+              showAnnotation
+                ? m.workbench_annotation_example()
+                : !advanced && tab === "properties"
+                  ? m.workbench_result_fold()
+                  : m.workbench_result_heading()
             }
             showMarkdown={showMarkdown}
             onShowMarkdown={setShowMarkdown}
@@ -1062,9 +1118,11 @@ export function Workbench() {
             }
             help={
               <WorkbenchHelp title={m.workbench_result_heading()} compact>
-                {showManaged
-                  ? m.workbench_result_managed_lede()
-                  : m.workbench_result_lede()}
+                {showAnnotation
+                  ? m.workbench_annotation_lede()
+                  : showManaged
+                    ? m.workbench_result_managed_lede()
+                    : m.workbench_result_lede()}
               </WorkbenchHelp>
             }
           />
@@ -1073,21 +1131,37 @@ export function Workbench() {
               {m.workbench_preview_stale()}
             </p>
           )}
-          <ResultRegion ref={resultRegion} emphasis={emphasis}>
+          <ResultRegion emphasis={false}>
             {result ? (
               <Suspense fallback={pending}>
-                <p className="mb-4 font-mono text-xs break-words text-fd-muted-foreground">
-                  <span className="sr-only">
-                    {m.workbench_result_filename()}:{" "}
-                  </span>
-                  {result.filename}
-                </p>
-                {previewProblem && (
+                {!showAnnotation && (
+                  <header
+                    className="-mx-4 -mt-4 mb-4 rounded-t-md border-b border-fd-border bg-fd-muted/40 px-3 py-1.5 text-xs font-medium"
+                    title={result.filename ?? undefined}
+                  >
+                    <p className="truncate">
+                      <span className="sr-only">
+                        {m.workbench_result_filename()}:{" "}
+                      </span>
+                      {result.filename}
+                    </p>
+                  </header>
+                )}
+                {!showAnnotation && previewProblem && (
                   <p className="mb-3 border-l-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs">
                     <strong className="font-medium">
                       {m.workbench_preview_problem()}
                     </strong>{" "}
                     {diagnosticText(previewProblem)}{" "}
+                    {previewProblem.part === "annotation" && (
+                      <button
+                        type="button"
+                        onClick={openAnnotation}
+                        className="cursor-pointer underline underline-offset-2"
+                      >
+                        {m.workbench_annotation_edit_format()}
+                      </button>
+                    )}
                     {previewProblem.position !== undefined && (
                       <button
                         type="button"
@@ -1099,7 +1173,17 @@ export function Workbench() {
                     )}
                   </p>
                 )}
-                {showNote && showManaged ? (
+                {showAnnotation ? (
+                  annotationResult ? (
+                    <ResultSheet
+                      markdown={annotationResult.annotation ?? ""}
+                      properties={[]}
+                      showMarkdown={showMarkdown}
+                    />
+                  ) : (
+                    pending
+                  )
+                ) : showNote && showManaged ? (
                   result.managedRegion === null ? (
                     <p className="text-sm text-fd-muted-foreground">
                       {m.workbench_result_managed_none()}
@@ -1155,12 +1239,14 @@ export function Workbench() {
                 onClick={() => goToProblem(problem)}
                 className="cursor-pointer underline underline-offset-2"
               >
-                {entryPosition(problem.slice) === null
-                  ? (
-                      PROBLEM_WHERE[problem.slice] ??
-                      m.workbench_problems_where_advanced
-                    )()
-                  : m.workbench_problems_where_entry()}
+                {problem.code === "missing-annotation-section"
+                  ? m.workbench_annotation_label()
+                  : entryPosition(problem.slice) === null
+                    ? (
+                        PROBLEM_WHERE[problem.slice] ??
+                        m.workbench_problems_where_advanced
+                      )()
+                    : m.workbench_problems_where_entry()}
               </button>
             </p>
           </section>

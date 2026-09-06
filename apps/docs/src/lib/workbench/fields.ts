@@ -16,7 +16,7 @@ import type {
   TemplateEngine,
 } from "@zotlit/workbench/explorer";
 import { restoreTemplateData } from "@zotlit/workbench/render";
-import type { SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import type { AnnotationExample, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 
 import { m } from "@/paraglide/messages.js";
 
@@ -115,6 +115,7 @@ export function templateRootAt(
 export function rootData(
   snapshot: SampleItem,
   root: TemplateRoot,
+  example?: AnnotationExample,
 ): Record<string, unknown> | null {
   if (root !== "annotation") {
     return restoreTemplateData(
@@ -122,8 +123,9 @@ export function rootData(
       snapshot.descriptors[root],
     );
   }
-  const annotation = snapshot.roots.annotations[0];
-  const descriptors = snapshot.descriptors.annotations[0];
+  const annotation = example?.root ?? snapshot.roots.annotations[0];
+  const descriptors =
+    example?.descriptors ?? snapshot.descriptors.annotations[0];
   return annotation && descriptors
     ? restoreTemplateData(annotation, descriptors)
     : null;

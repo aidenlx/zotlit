@@ -67,12 +67,14 @@ describe("diagnosticText", () => {
       DEFAULT_PROFILE_SOURCE,
       SAMPLE_ITEMS[0]!,
       {
-        dependencies: { templates: [], diagnostics: [] },
-        citationStyle: {
-          kind: "failed",
-          styleId: "apa",
-          reason: "parent-missing",
-          parentId: "apa-base",
+        resources: {
+          dependencies: { templates: [], diagnostics: [] },
+          citationStyle: {
+            kind: "failed",
+            styleId: "apa",
+            reason: "parent-missing",
+            parentId: "apa-base",
+          },
         },
       },
     ).diagnostics;

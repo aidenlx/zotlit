@@ -14,7 +14,7 @@ import {
   narrowBaseDataToCiteItemData,
   withAnnotationCitation,
 } from "@zotlit/db";
-import type { TemplateAnnotation } from "@zotlit/db";
+import type { AnnotationTemplateContext, TemplateAnnotation } from "@zotlit/db";
 import { inlineCitation, replaceSuffixMarkers } from "@zotlit/templates";
 import { TemplateFacade } from "@zotlit/templates/facade";
 import type { ManagedFrontmatterEntry } from "@zotlit/templates/facade";
@@ -26,14 +26,14 @@ import {
 import type { EvaluatedFrontmatterField } from "@zotlit/templates/frontmatter-merge";
 
 import { restoreTemplateData } from "./restore-template-data";
-import { failedRender, profileSourceRevision } from "./result";
+import { failedRender, renderIdentity } from "./result";
 import type {
   ProfileRenderResult,
   RenderDiagnostic,
   RenderedProperty,
   RenderedRange,
 } from "./result";
-import type { RenderResources } from "./scheduler";
+import type { RenderOptions } from "./scheduler";
 
 import book from "#/samples/book.json" with { type: "json" };
 import conferencePaper from "#/samples/conference-paper.json" with { type: "json" };
@@ -41,7 +41,7 @@ import journalArticle from "#/samples/journal-article.json" with { type: "json" 
 import thesis from "#/samples/thesis.json" with { type: "json" };
 
 export { DEFAULT_PROFILE_SOURCE } from "./default-profile";
-export { failedRender, profileSourceRevision } from "./result";
+export { failedRender, profileSourceRevision, renderIdentity } from "./result";
 export type {
   ProfileRenderResult,
   RenderDiagnostic,
@@ -52,12 +52,15 @@ export type {
 export { createRenderScheduler } from "./scheduler";
 export type {
   RenderRequest,
+  RenderOptions,
   RenderResources,
   RenderScheduler,
   RenderSchedulerOptions,
   RenderWorkerHandle,
 } from "./scheduler";
 export { restoreTemplateData } from "./restore-template-data";
+export { SAMPLE_ANNOTATIONS } from "./sample-annotations";
+export type { AnnotationExample } from "./sample-annotations";
 
 export const SAMPLE_ITEMS = [
   journalArticle,
@@ -69,12 +72,10 @@ export const SAMPLE_ITEMS = [
 export function renderProfile(
   source: string,
   snapshot: ItemSnapshot,
-  resources?: RenderResources,
+  options: RenderOptions = {},
 ): ProfileRenderResult {
-  const identity = {
-    sourceRevision: profileSourceRevision(source),
-    snapshotRevision: snapshot.revision,
-  };
+  const { resources, annotation: example } = options;
+  const identity = renderIdentity({ source, snapshot, ...options });
   if (snapshot.contractVersion !== CONTRACT_VERSION) {
     return failedRender(identity, {
       code: "contract-version-mismatch",
@@ -117,6 +118,9 @@ export function renderProfile(
       })),
     ...citationStyleDiagnostics(resources?.citationStyle),
   ];
+  let preview: string | null = null;
+  let annotationCitation: string | null = null;
+  let formatFailure: RenderDiagnostic | null = null;
 
   try {
     for (const partial of supported) {
@@ -148,33 +152,33 @@ export function renderProfile(
     // as the format's and a host can show it where the format is edited. The
     // note goes on rendering: one that never calls the format keeps its
     // preview, and one that does fails on the same fault, reported once.
-    let rendered: string[] = [];
-    let formatFailure: RenderDiagnostic | null = null;
     try {
-      rendered = annotations.map((annotation) =>
-        facade.renderLiteratureNoteTemplateAnnotation(document, annotation),
-      );
+      const selected = example
+        ? withRenderedCitation(
+            facade,
+            restoreTemplateData(example.root, example.descriptors),
+            defined.has(CITE_TEMPLATE),
+          )
+        : annotations[0];
+      if (selected) {
+        preview = facade.renderLiteratureNoteTemplateAnnotation(
+          document,
+          selected,
+        );
+        annotationCitation = selected.citation;
+      }
     } catch (error) {
+      preview = null;
       formatFailure = {
         code: "render-error",
         message: errorMessage(error),
         part: "annotation",
       };
     }
-    let creationBody: string;
-    try {
-      creationBody = facade.renderLiteratureNoteTemplateForCreate(
-        document,
-        note,
-      );
-    } catch (error) {
-      if (!formatFailure) throw error;
-      const failure = failedRender(identity, formatFailure);
-      return {
-        ...failure,
-        diagnostics: [...resourceDiagnostics, ...failure.diagnostics],
-      };
-    }
+    const creationBody = facade.renderLiteratureNoteTemplateForCreate(
+      document,
+      note,
+    );
     const frontmatter = evaluateFrontmatter(
       facade,
       document.manifest.frontmatter ?? [],
@@ -195,8 +199,24 @@ export function renderProfile(
         document,
         note,
       ),
-      annotation: rendered[0] ?? null,
-      annotationRanges: locateOutputs(creationBody, rendered),
+      annotation: preview,
+      annotationCitation,
+      annotationRanges: locateOutputs(
+        creationBody,
+        annotations.flatMap((annotation) => {
+          // Marks belong only to successful outputs of the note's own annotations.
+          try {
+            return [
+              facade.renderLiteratureNoteTemplateAnnotation(
+                document,
+                annotation,
+              ),
+            ];
+          } catch {
+            return [];
+          }
+        }),
+      ),
       diagnostics: [
         ...resourceDiagnostics,
         ...(formatFailure ? [formatFailure] : []),
@@ -207,11 +227,24 @@ export function renderProfile(
     const failure = failedRender(identity, {
       code: "render-error",
       message: errorMessage(error),
-      part: "render",
+      part: isAnnotationError(error) ? "annotation" : "render",
     });
+    // Direct format renders use a profile-qualified name; note calls use the
+    // registered partial name. Match those names to report the same fault once.
+    const sameFormatFailure =
+      formatFailure?.message?.replace(
+        `file:${document.manifest.id}:annotation,`,
+        "file:annotation,",
+      ) === errorMessage(error);
     return {
       ...failure,
-      diagnostics: [...resourceDiagnostics, ...failure.diagnostics],
+      annotation: preview,
+      annotationCitation,
+      diagnostics: [
+        ...resourceDiagnostics,
+        ...(formatFailure ? [formatFailure] : []),
+        ...(sameFormatFailure ? [] : failure.diagnostics),
+      ],
     };
   }
 }
@@ -231,7 +264,7 @@ function withRenderedCitation(
   facade: TemplateFacade,
   restored: Record<string, unknown>,
   hasCiteTemplate: boolean,
-): object {
+): AnnotationTemplateContext {
   const annotation = restored as unknown as TemplateAnnotation;
   return withAnnotationCitation(annotation, () => {
     const parent = annotation.parentItem;
@@ -410,6 +443,18 @@ function rendered({
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Liquid retains the source token when a note call fails inside the format. */
+function isAnnotationError(error: unknown): boolean {
+  if (!(error instanceof Error) || !("token" in error)) return false;
+  const { token } = error;
+  return (
+    typeof token === "object" &&
+    token !== null &&
+    "file" in token &&
+    token.file === "annotation"
+  );
 }
 
 /**

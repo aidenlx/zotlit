@@ -27,6 +27,7 @@ describe("WorkbenchSkeleton", () => {
     expect(tabs.map((tab) => tab.textContent)).toEqual([
       m.workbench_tab_note(),
       m.workbench_tab_properties(),
+      m.workbench_tab_annotation(),
       m.workbench_tab_name_and_folder(),
     ]);
     for (const tab of tabs)

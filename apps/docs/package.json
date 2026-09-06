@@ -82,6 +82,7 @@
     "happy-dom": "catalog:",
     "oxlint": "catalog:",
     "schema-dts": "^2.0.0",
+    "shadcn": "^4.20.1",
     "tailwindcss": "catalog:",
     "takumi-js": "^2.3.0",
     "typescript": "catalog:",

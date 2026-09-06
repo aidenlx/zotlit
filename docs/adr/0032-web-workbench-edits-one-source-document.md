@@ -45,7 +45,8 @@ popup presentation, file access, and transport. This keeps the editing
 contract consistent when the web surface is ported to Obsidian;
 [#931](https://github.com/aidenlx/zotlit/issues/931) owns the transport
 contract. The three-column layout and default depth from #938, the language
-interactions from #932, and inline Annotation editing from #933 remain
-the shell's settled inputs. The detailed Properties, metadata, preview,
+interactions from #932, and the Annotation tab from
+[ADR 0041](0041-annotation-format-has-its-own-workbench-tab.md) are the shell's
+settled inputs. The detailed Properties, metadata, preview,
 data exploration, and onboarding prototypes remain with their respective
 child tickets under #863.

@@ -21,7 +21,7 @@ type NoteElement = Extract<NoteNode, { type: "element" }>;
 /** The unavailable text each embed kind shows, one per placeholder in the spec. */
 const UNAVAILABLE_LABEL: Record<string, string> = {
   audio: m.workbench_embed_file_unavailable(),
-  image: m.workbench_embed_image_unavailable(),
+  image: m.workbench_image_placeholder(),
   note: m.workbench_embed_note_unavailable(),
   pdf: m.workbench_embed_file_unavailable(),
   video: m.workbench_embed_file_unavailable(),
@@ -223,11 +223,28 @@ describe("inert marks", () => {
       />,
     );
 
-    expect(textOf(markup)).toContain(m.workbench_embed_image_unavailable());
+    expect(textOf(markup)).toContain(m.workbench_image_placeholder());
     expect(textOf(markup)).toContain(m.workbench_embed_note_unavailable());
     expect(textOf(markup)).toContain(m.workbench_embed_file_unavailable());
     expect(markup).not.toContain("<a ");
     expect(markup).not.toContain("href=");
+  });
+
+  it("shows bundled image placeholders while preserving image targets in Markdown", () => {
+    const markdown =
+      "![[private/figure.png]]\n\n![Chart](file:///Users/researcher/figure.png)\n\n![Remote](https://example.com/image?id=7)";
+    const reading = renderToStaticMarkup(
+      <ResultSheet markdown={markdown} properties={[]} showMarkdown={false} />,
+    );
+    expect(reading.split("<img ")).toHaveLength(4);
+    expect(reading).not.toContain('src="file:');
+    expect(reading).not.toContain('src="https:');
+    expect(reading).not.toContain('src="private/');
+    const source = renderToStaticMarkup(
+      <ResultSheet markdown={markdown} properties={[]} showMarkdown />,
+    );
+    expect(textOf(source)).toBe(markdown);
+    expect(source).not.toContain("<img ");
   });
 });
 
@@ -287,9 +304,39 @@ describe("the Properties list", () => {
     );
 
     expect(textOf(markup)).toBe(
-      `doi${m.workbench_property_unset()}abstract${m.workbench_property_empty()}citekeyioannidisWhyMost2005`,
+      `doi${m.workbench_property_unset()}abstract${m.workbench_property_empty()}citekeyioannidisWhyMost2005${m.workbench_result_empty()}`,
     );
   });
+});
+
+describe("an empty note preview", () => {
+  it.each(["", "  \n", "%% hidden comment %%", "<!-- hidden comment -->"])(
+    "shows a placeholder for invisible output %j",
+    (markdown) => {
+      const markup = renderToStaticMarkup(
+        <ResultSheet
+          markdown={markdown}
+          properties={[]}
+          showMarkdown={false}
+        />,
+      );
+      expect(textOf(markup)).toBe(m.workbench_result_empty());
+    },
+  );
+
+  it.each(["---", "![[figure.png]]", "Visible note"])(
+    "keeps visible output %j",
+    (markdown) => {
+      const markup = renderToStaticMarkup(
+        <ResultSheet
+          markdown={markdown}
+          properties={[]}
+          showMarkdown={false}
+        />,
+      );
+      expect(textOf(markup)).not.toContain(m.workbench_result_empty());
+    },
+  );
 });
 
 describe("the Markdown toggle", () => {

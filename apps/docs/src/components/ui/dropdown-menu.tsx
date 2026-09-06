@@ -43,7 +43,7 @@ export function DropdownMenuItem({
     <MenuPrimitive.Item
       data-slot="dropdown-menu-item"
       className={cn(
-        "relative flex min-h-10 cursor-default items-center gap-2 rounded-sm px-3 py-2 text-sm data-disabled:opacity-50 data-highlighted:bg-fd-muted [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+        "relative flex min-h-10 cursor-default items-center gap-2 rounded-sm px-3 py-2 text-sm data-highlighted:bg-fd-muted data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
         className,
       )}
       {...props}

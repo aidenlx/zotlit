@@ -35,18 +35,17 @@ lookup and byte-verification baseline. Profile formats remain unreleased,
 so this replaces the development format directly. Profile selection,
 stamps, inheritance, preview safety, and JavaScript consent are unchanged.
 
-The inline editing agreement from
-[#933](https://github.com/aidenlx/zotlit/issues/933) remains: the first
-annotation render call offers the editor and later calls link to it.
-Edits change the final section in the same document, using targeted source
+The Annotation tab from
+[ADR 0041](0041-annotation-format-has-its-own-workbench-tab.md) edits the final
+section independently of calls in the note. Edits use targeted source
 edits, one undo history, and the invalid-draft rules of
 [ADR 0032](0032-web-workbench-edits-one-source-document.md).
 The Workbench work under [#863](https://github.com/aidenlx/zotlit/issues/863)
 owns that UI implementation and its interaction tests.
-[ADR 0037](0037-annotation-box-opens-on-the-annotation-it-produces.md) amends
-that editor's Basic-mode face: it opens on the rendered annotation, the
-result column keeps the whole note, and a note without a call gets one in
-place.
+[ADR 0037](0037-annotation-box-opens-on-the-annotation-it-produces.md) records
+the earlier inline editor. ADR 0041 replaces that editor with an expandable
+preview placeholder and a tab action. A note without a call retains the
+insertion action recorded in ADR 0037.
 
 This amends the annotation layout in ADRs 0027 and 0028 and the annotation
 lookup in ADR 0034. Managed Block behavior remains as recorded. The fixed

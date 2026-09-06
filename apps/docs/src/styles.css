@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "shadcn/tailwind.css";
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
@@ -138,6 +139,18 @@
 }
 
 @theme inline {
+  /* shadcn controls share the site's semantic palette. */
+  --color-background: var(--color-fd-background);
+  --color-foreground: var(--color-fd-foreground);
+  --color-popover: var(--color-fd-popover);
+  --color-popover-foreground: var(--color-fd-popover-foreground);
+  --color-muted: var(--color-fd-muted);
+  --color-muted-foreground: var(--color-fd-muted-foreground);
+  --color-border: var(--color-fd-border);
+  --color-input: var(--color-fd-border);
+  --color-ring: var(--color-fd-ring);
+  --color-destructive: var(--color-fd-primary);
+
   /* Sans is the app-wide default: preflight's html font-family rule reads
      --default-font-family, which resolves to --font-sans, so Inter reaches
      everywhere — portaled dialogs and the not-found page included. */

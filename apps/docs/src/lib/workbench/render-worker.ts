@@ -24,5 +24,5 @@ const scope = globalThis as unknown as {
 await ensureTemporal();
 
 scope.addEventListener("message", ({ data }) => {
-  scope.postMessage(renderProfile(data.source, data.snapshot, data.resources));
+  scope.postMessage(renderProfile(data.source, data.snapshot, data));
 });

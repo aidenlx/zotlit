@@ -5,7 +5,11 @@
 import { useEffect, useState } from "react";
 
 import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
-import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import {
+  DEFAULT_PROFILE_SOURCE,
+  SAMPLE_ITEMS,
+  SAMPLE_ANNOTATIONS,
+} from "@zotlit/workbench/render";
 
 import type { SampleItem } from "./fields";
 import { clearDraft, readDraft, writeDraft } from "./transfer";
@@ -30,12 +34,14 @@ interface DocumentBaseline {
   readonly reference: string;
   readonly source: string;
   readonly snapshot: string;
+  readonly annotationSelection: string;
 }
 
 const STANDALONE_BASELINE: DocumentBaseline = {
   reference: STANDALONE_DOCUMENT,
   source: DEFAULT_PROFILE_SOURCE,
   snapshot: snapshotIdentity(DEFAULT_SAMPLE),
+  annotationSelection: SAMPLE_ANNOTATIONS[0]!.id,
 };
 
 /** The last visit's work, and the state it was measured against. */
@@ -68,12 +74,14 @@ export function useWorkbenchDraft({
   controller,
   revision,
   sample,
+  annotationSelection,
   saveTarget,
 }: {
   readonly controller: WorkbenchDocumentController;
   /** Counts the controller's changes, so the autosave follows the text. */
   readonly revision: number;
   readonly sample: SampleItem;
+  readonly annotationSelection: string;
   /** The connected document revision retained across a lost connection. */
   readonly saveTarget: SaveTarget | null;
 }): WorkbenchDraftKeeper {
@@ -95,7 +103,8 @@ export function useWorkbenchDraft({
     snapshotIdentity(sample) ===
       (reference === STANDALONE_DOCUMENT
         ? STANDALONE_BASELINE.snapshot
-        : baseline.snapshot);
+        : baseline.snapshot) &&
+    annotationSelection === STANDALONE_BASELINE.annotationSelection;
   const expected =
     saveTarget?.reference === reference ? saveTarget.expected : undefined;
 
@@ -107,7 +116,8 @@ export function useWorkbenchDraft({
       const stillWaiting =
         reference === restorable.baseline.reference &&
         controller.source === restorable.baseline.source &&
-        snapshotIdentity(sample) === restorable.baseline.snapshot;
+        snapshotIdentity(sample) === restorable.baseline.snapshot &&
+        annotationSelection === restorable.baseline.annotationSelection;
       if (stillWaiting) return;
       setRestorable(null);
       return;
@@ -119,6 +129,7 @@ export function useWorkbenchDraft({
         writeDraft(reference, {
           source,
           snapshot: sample,
+          annotationSelection,
           ...(expected ? { expected } : {}),
         });
     }, AUTOSAVE_MS);
@@ -130,6 +141,7 @@ export function useWorkbenchDraft({
     expected,
     controller,
     sample,
+    annotationSelection,
     revision,
   ]);
 
@@ -142,6 +154,7 @@ export function useWorkbenchDraft({
         reference: opened,
         source,
         snapshot: snapshotIdentity(sample),
+        annotationSelection,
       };
       setReference(opened);
       setBaseline(next);
@@ -152,6 +165,7 @@ export function useWorkbenchDraft({
         reference: saved,
         source,
         snapshot: snapshotIdentity(sample),
+        annotationSelection,
       });
     },
     restore() {

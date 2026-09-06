@@ -7,13 +7,18 @@ import type {
 } from "#/bridge/contracts";
 import type { ItemSnapshot } from "#/snapshot/index";
 
-import { failedRender, profileSourceRevision } from "./result";
+import { failedRender, renderIdentity } from "./result";
 import type { ProfileRenderResult, RenderIdentity } from "./result";
+import type { AnnotationExample } from "./sample-annotations";
 
-export interface RenderRequest {
+export interface RenderOptions {
+  readonly annotation?: AnnotationExample;
+  readonly resources?: RenderResources;
+}
+
+export interface RenderRequest extends RenderOptions {
   readonly source: string;
   readonly snapshot: ItemSnapshot;
-  readonly resources?: RenderResources;
 }
 
 export interface RenderResources {
@@ -67,10 +72,12 @@ export function createRenderScheduler({
 
   function settle(result: ProfileRenderResult): void {
     // The identity stamp is the whole staleness check: a result that names a
-    // revision pair the reader has already moved past is dropped unread.
+    // source, paper, or annotation the reader has moved past is dropped unread.
     if (
       result.sourceRevision !== current?.sourceRevision ||
-      result.snapshotRevision !== current.snapshotRevision
+      result.snapshotRevision !== current.snapshotRevision ||
+      result.annotationId !== current.annotationId ||
+      result.annotationRevision !== current.annotationRevision
     ) {
       return;
     }
@@ -79,10 +86,7 @@ export function createRenderScheduler({
   }
 
   function start(request: RenderRequest): void {
-    const identity: RenderIdentity = {
-      sourceRevision: profileSourceRevision(request.source),
-      snapshotRevision: request.snapshot.revision,
-    };
+    const identity = renderIdentity(request);
     current = identity;
     worker = startWorker(request, settle);
     deadline = setTimeout(() => {

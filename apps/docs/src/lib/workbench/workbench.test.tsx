@@ -10,19 +10,30 @@ import {
   LOCAL_BRIDGE_PATHS,
 } from "@zotlit/workbench/bridge";
 import type { SaveSelectedProfileResponse } from "@zotlit/workbench/bridge";
-import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
-import type { RenderRequest } from "@zotlit/workbench/render";
+import {
+  DEFAULT_PROFILE_SOURCE,
+  SAMPLE_ITEMS,
+  renderProfile,
+} from "@zotlit/workbench/render";
+import type {
+  ProfileRenderResult,
+  RenderRequest,
+} from "@zotlit/workbench/render";
 
 import { m } from "@/paraglide/messages.js";
 
 import { Workbench } from "./workbench";
 
-// A render needs a Worker, which this environment has none of; the page under
-// test is asked only whether it starts one.
+// The browser Worker boundary delivers real renderer output in this DOM host.
 const { startRenderWorker } = vi.hoisted(() => ({
-  startRenderWorker: vi.fn((_request: RenderRequest) => ({
-    terminate: () => {},
-  })),
+  startRenderWorker: vi.fn(
+    (
+      _request: RenderRequest,
+      _deliver: (result: ProfileRenderResult) => void,
+    ) => ({
+      terminate: () => {},
+    }),
+  ),
 }));
 vi.mock("./render-client", () => ({ startRenderWorker }));
 
@@ -45,6 +56,7 @@ const FIXTURE_CSL_STYLE =
 // This environment carries no Storage of its own, so each test starts on one
 // that behaves as a browser's does.
 beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   installStorage("localStorage");
   installStorage("sessionStorage");
   window.history.replaceState(null, "", "/workbench");
@@ -53,6 +65,18 @@ beforeEach(() => {
     vi.fn(() => Promise.reject(new Error("No Local Bridge is running."))),
   );
   startRenderWorker.mockClear();
+  startRenderWorker.mockImplementation((request, deliver) => {
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled)
+        deliver(renderProfile(request.source, request.snapshot, request));
+    });
+    return {
+      terminate: () => {
+        cancelled = true;
+      },
+    };
+  });
 });
 
 // The viewport is one window the whole file shares, so a test that draws the
@@ -80,6 +104,18 @@ describe("a Workbench Connection", () => {
     ).toBe(true);
     expect(page.host.textContent).toContain("Fixture vault");
     expect(page.host.textContent).toContain(m.workbench_save());
+
+    page.press(m.workbench_choose_paper());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      m.workbench_sample_not_loaded(),
+    );
+    act(() => {
+      document
+        .querySelector('[role="dialog"] [role="combobox"]')!
+        .dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        );
+    });
 
     page.press(m.workbench_load_item());
     await page.waitFor(() =>
@@ -556,7 +592,7 @@ describe("a Workbench Connection", () => {
 
     page.show(SAMPLE_ITEMS[1]!.item.key);
     expect(page.host.textContent).toContain(m.workbench_sample_badge());
-    expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[1]!.item.key);
+    expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[1]!.item.title);
     act(() =>
       page.host.querySelector<HTMLElement>("#workbench-sample")!.click(),
     );
@@ -574,7 +610,7 @@ describe("a Workbench Connection", () => {
       );
       retained.click();
     });
-    expect(shownItem(page.host)).toBe(`connected:${SAMPLE_ITEMS[0]!.item.key}`);
+    expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[0]!.item.title);
     expect(page.host.textContent).toContain(m.workbench_retained_badge());
   });
 
@@ -748,14 +784,14 @@ describe("the kept draft on the next visit", () => {
     // The prompt stands over the document a fresh visit opens on.
     expect(page.host.textContent).toContain(m.workbench_restore_heading());
     expect(title(page.host)).toBe("Default");
-    expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[0]!.item.key);
+    expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[0]!.item.title);
 
     page.press(m.workbench_restore_accept());
 
     // Both halves come back together: the draft, and the paper it was shown
     // against.
     expect(title(page.host)).toBe("Kept work");
-    expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[1]!.item.key);
+    expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[1]!.item.title);
     expect(page.host.textContent).not.toContain(m.workbench_restore_heading());
   });
 
@@ -780,7 +816,7 @@ describe("the kept draft on the next visit", () => {
     // visit is offered the paper this one chose rather than the older draft.
     expect(page.host.textContent).not.toContain(m.workbench_restore_heading());
     await page.settle();
-    expect(JSON.parse(localStorage.getItem(KEY)!)).toEqual({
+    expect(JSON.parse(localStorage.getItem(KEY)!)).toMatchObject({
       source: DEFAULT_PROFILE_SOURCE,
       snapshot: SAMPLE_ITEMS[2],
     });
@@ -866,6 +902,41 @@ describe("a draft the parser refuses", () => {
 });
 
 describe("the paper a profile is written for", () => {
+  it("searches paper details in a dialog and restores focus without changing a dismissed choice", async () => {
+    using page = open();
+    page.press(m.workbench_choose_paper());
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const input = dialog.querySelector<HTMLInputElement>('[role="combobox"]')!;
+    await page.waitFor(() => expect(document.activeElement).toBe(input));
+    expect(dialog.textContent).toContain(m.workbench_sample_loaded());
+    expect(dialog.textContent).toContain(m.workbench_sample_disconnected());
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, "Kahneman");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.waitFor(() =>
+      expect(dialog.querySelectorAll('[role="option"]')).toHaveLength(1),
+    );
+    expect(dialog.textContent).toContain("Thinking, fast and slow");
+    act(() => {
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await page.waitFor(() =>
+      expect(document.activeElement).toBe(
+        page.host.querySelector("#workbench-sample"),
+      ),
+    );
+    expect(
+      page.host.querySelector("#workbench-sample")?.parentElement?.textContent,
+    ).toContain("Why Most Published Research Findings Are False");
+  });
+
   it("shows paper details and switches samples through the picker", () => {
     using page = open();
     act(() =>
@@ -886,7 +957,9 @@ describe("the paper a profile is written for", () => {
 
     for (const key of ["CNPF226A", "NW2CPDTC", "I49R3FTL", "IANNP5A2"]) {
       page.show(key);
-      expect(shownItem(page.host)).toBe(key);
+      expect(shownItem(page.host)).toBe(
+        SAMPLE_ITEMS.find((sample) => sample.item.key === key)!.item.title,
+      );
     }
   });
 
@@ -896,7 +969,9 @@ describe("the paper a profile is written for", () => {
 
     importFile(page.host, withSampleItemType("book"));
 
-    await page.waitFor(() => expect(shownItem(page.host)).toBe(book.item.key));
+    await page.waitFor(() =>
+      expect(shownItem(page.host)).toBe(book.item.title),
+    );
   });
 
   it("names a type no bundled sample carries, and keeps the paper on screen", async () => {
@@ -909,7 +984,7 @@ describe("the paper a profile is written for", () => {
         m.workbench_sample_type_missing({ itemType: "webpage" }),
       ),
     );
-    expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[0]!.item.key);
+    expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[0]!.item.title);
   });
 });
 
@@ -1292,6 +1367,545 @@ describe("the simplified editing flow", () => {
 });
 
 describe("the annotation box", () => {
+  it("routes a failing note call to the format while keeping a successful example", async () => {
+    keep(
+      DEFAULT_PROFILE_SOURCE.replace(
+        "{{ zt.imgLink | embed }}{{ zt.text }}",
+        "{% if zt.type == 'highlight' %}{% render 'missing-for-highlight' %}{% endif %}{{ zt.comment }}",
+      ),
+      SAMPLE_ITEMS[1]!,
+    );
+    using page = open();
+    page.press(m.workbench_restore_accept());
+    page.press(m.workbench_tab_annotation());
+    chooseAnnotation(page, "Compare these findings");
+    await page.waitFor(() =>
+      expect(resultText(page.host)).toContain(
+        "Compare these findings with the replication study.",
+      ),
+    );
+    expect(
+      page.host.querySelector("#annotation-problem")?.textContent,
+    ).toContain("missing-for-highlight");
+    page.press(m.workbench_tab_note());
+    expect(resultText(page.host)).toContain("missing-for-highlight");
+    press(
+      page.host.querySelector<HTMLElement>(
+        `[role="region"][aria-label="${m.workbench_view_result()}"]`,
+      )!,
+      m.workbench_annotation_edit_format(),
+    );
+    expect(chosenTab(page.host)).toBe(m.workbench_tab_annotation());
+  });
+
+  it("repairs a missing section from Annotation without inserting a note call", async () => {
+    keep(SILENT, SAMPLE_ITEMS[0]!);
+    using page = open();
+    page.press(m.workbench_restore_accept());
+    await page.settle();
+    page.press(m.workbench_tab_annotation());
+    page.press(m.workbench_section_repair());
+    await page.settle();
+    expect(rendered().at(-1)).toBe(`${SILENT}--- zotlit:annotation ---\n`);
+    expect(rendered().at(-1)).not.toContain("render_annotation");
+    expect(
+      page.host.querySelector(
+        `[role="textbox"][aria-label="${m.workbench_annotation_label()}"]`,
+      ),
+    ).not.toBeNull();
+  });
+
+  it("offers section repair after deleting it from Source", async () => {
+    using page = open();
+    page.press(m.workbench_advanced());
+    const source = sourceView(page.host);
+    const from = source.state.doc
+      .toString()
+      .indexOf("--- zotlit:annotation ---");
+    act(() =>
+      source.dispatch({ changes: { from, to: source.state.doc.length } }),
+    );
+    page.press(m.workbench_annotation_label());
+    expect(chosenTab(page.host)).toBe(m.workbench_tab_annotation());
+    page.press(m.workbench_section_repair());
+    await page.settle();
+    expect(rendered().at(-1)).toBe(
+      `${DEFAULT_PROFILE_SOURCE.slice(0, from)}--- zotlit:annotation ---\n`,
+    );
+  });
+
+  it("reveals annotation and managed tags while the selection touches their source", async () => {
+    keep(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[1]!);
+    using page = open();
+    page.press(m.workbench_restore_accept());
+    await page.settle();
+    const note = EditorView.findFromDOM(
+      page.host.querySelector<HTMLElement>(".cm-editor")!,
+    )!;
+    const content = note.contentDOM;
+    const text = note.state.doc.toString();
+    const call = text.indexOf("{% render_annotation annotation %}");
+    const managed = text.indexOf("{% managed %}");
+    const endmanaged = text.indexOf("{% endmanaged %}");
+    expect(content.textContent).not.toContain("{% render_annotation");
+    expect(content.textContent).not.toContain("{% managed %}");
+    expect(content.textContent).not.toContain("{% endmanaged %}");
+
+    for (const position of [
+      call,
+      call + 10,
+      call + "{% render_annotation annotation %}".length,
+    ]) {
+      act(() => note.dispatch({ selection: { anchor: position } }));
+      expect(content.textContent).toContain(
+        "{% render_annotation annotation %}",
+      );
+      expect(content.textContent).not.toContain("{% managed %}");
+    }
+    act(() =>
+      note.dispatch({
+        selection: { anchor: managed + 3, head: endmanaged + 4 },
+      }),
+    );
+    expect(content.textContent).toContain("{% managed %}");
+    expect(content.textContent).toContain("{% render_annotation annotation %}");
+    expect(content.textContent).toContain("{% endmanaged %}");
+
+    act(() => note.dispatch({ selection: { anchor: 0 } }));
+    expect(content.textContent).not.toContain("{% render_annotation");
+    expect(content.textContent).not.toContain("{% managed %}");
+    expect(content.textContent).not.toContain("{% endmanaged %}");
+    expect(note.state.doc.toString()).toBe(text);
+  });
+
+  it("preserves an item annotation by identity on refresh and falls back when it leaves", async () => {
+    const paper = SAMPLE_ITEMS[1]!;
+    const base = paper.roots.annotations[0]!;
+    const first = {
+      ...base,
+      key: "FIRST001",
+      indexedKey: "FIRST001",
+      text: "First annotation on this paper.",
+    };
+    const second = {
+      ...base,
+      key: "SECOND01",
+      indexedKey: "SECOND01",
+      text: "Second annotation on this paper.",
+    };
+    const snapshot = (annotations: (typeof first)[], revision: string) => ({
+      ...paper,
+      revision,
+      roots: { ...paper.roots, annotations },
+      descriptors: {
+        ...paper.descriptors,
+        annotations: annotations.map((annotation) => ({
+          ...paper.descriptors.annotations[0]!,
+          stringCoercions:
+            paper.descriptors.annotations[0]!.stringCoercions.map((entry) =>
+              entry.path.length === 0
+                ? { ...entry, value: annotation.text }
+                : entry,
+            ),
+        })),
+      },
+    });
+    let loaded = snapshot([first, second], "initial");
+    vi.stubGlobal("fetch", bridgeFetch([], { item: () => loaded }));
+    using page = open();
+    page.press(m.workbench_connection_connect());
+    await page.waitFor(() =>
+      expect(title(page.host)).toBe("Connected profile"),
+    );
+    page.press(m.workbench_load_item());
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(m.workbench_connected_badge()),
+    );
+    page.press(m.workbench_tab_annotation());
+    chooseAnnotation(page, "Second annotation on this paper.");
+    await page.settle();
+    await page.waitFor(() =>
+      expect(resultText(page.host)).toContain(
+        "Second annotation on this paper.",
+      ),
+    );
+
+    loaded = snapshot(
+      [{ ...second, text: "Updated second annotation." }, first],
+      "reordered",
+    );
+    page.press(m.workbench_tab_note());
+    page.press(m.workbench_refresh_item());
+    await page.settle();
+    page.press(m.workbench_tab_annotation());
+    await page.waitFor(() =>
+      expect(resultText(page.host)).toContain("Updated second annotation."),
+    );
+
+    loaded = snapshot([first], "removed");
+    page.press(m.workbench_tab_note());
+    page.press(m.workbench_refresh_item());
+    await page.settle();
+    page.press(m.workbench_tab_annotation());
+    await page.waitFor(() =>
+      expect(resultText(page.host)).toContain(
+        "First annotation on this paper.",
+      ),
+    );
+
+    loaded = snapshot([], "empty");
+    page.press(m.workbench_tab_note());
+    page.press(m.workbench_refresh_item());
+    await page.settle();
+    page.press(m.workbench_tab_annotation());
+    await page.waitFor(() =>
+      expect(resultText(page.host)).toContain(
+        "Clear methods make research easier to reproduce.",
+      ),
+    );
+  });
+
+  it("keeps a built-in choice across paper changes and restores it with the browser draft", async () => {
+    {
+      using page = open();
+      page.press(m.workbench_tab_annotation());
+      chooseAnnotation(page, "Report the assumptions behind each result.");
+      page.press(m.workbench_tab_note());
+      page.show(SAMPLE_ITEMS[2]!.item.key);
+      page.press(m.workbench_tab_annotation());
+      await page.settle();
+      await page.waitFor(() =>
+        expect(resultText(page.host)).toContain(
+          "Report the assumptions behind each result.",
+        ),
+      );
+      page.press(m.workbench_advanced());
+      expect(sourceView(page.host).state.doc.toString()).toBe(
+        DEFAULT_PROFILE_SOURCE,
+      );
+    }
+    using restored = open();
+    restored.press(m.workbench_restore_accept());
+    restored.press(m.workbench_tab_annotation());
+    await restored.settle();
+    await restored.waitFor(() =>
+      expect(resultText(restored.host)).toContain(
+        "Report the assumptions behind each result.",
+      ),
+    );
+    restored.press(m.workbench_tab_note());
+    expect(resultText(restored.host)).toContain("Thinking, fast and slow");
+  });
+
+  it("uses the selected example for fields and preview while leaving the paper unchanged", async () => {
+    using page = open();
+    page.press(m.workbench_tab_annotation());
+    await page.settle();
+    await page.waitFor(() =>
+      expect(
+        page.host.querySelector(
+          `[role="region"][aria-label="${m.workbench_view_result()}"]`,
+        )?.textContent,
+      ).toContain("Clear methods make research easier to reproduce."),
+    );
+    page.press(m.workbench_choose_annotation());
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog.textContent).toContain(m.workbench_annotation_from_item());
+    expect(dialog.textContent).toContain(m.workbench_annotation_empty());
+    const input = dialog.querySelector<HTMLInputElement>('[role="combobox"]')!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, "replication");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.waitFor(() =>
+      expect(
+        dialog.querySelector('[role="option"][aria-selected="true"]')
+          ?.textContent,
+      ).toContain("replication study"),
+    );
+    act(() => {
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+      );
+    });
+    await page.settle();
+    expect(
+      page.host.querySelector(
+        `[role="region"][aria-label="${m.workbench_view_result()}"]`,
+      )?.textContent,
+    ).toContain("Compare these findings with the replication study.");
+    expect(
+      fieldRow(page.host, m.workbench_field_comment()).textContent,
+    ).toContain("Compare these findings with the replication study.");
+    page.press(m.workbench_tab_note());
+    expect(
+      page.host.querySelector(
+        `[role="region"][aria-label="${m.workbench_view_result()}"]`,
+      )?.textContent,
+    ).toContain("Why Most Published Research Findings Are False");
+    expect(
+      page.host.querySelector(
+        `[role="region"][aria-label="${m.workbench_view_result()}"]`,
+      )?.textContent,
+    ).not.toContain("Compare these findings");
+    const placeholder = page.host.querySelector<HTMLElement>(
+      "[data-annotation-box]",
+    )!;
+    act(() =>
+      placeholder.querySelector<HTMLButtonElement>("[aria-pressed]")!.click(),
+    );
+    await page.waitFor(() =>
+      expect(
+        page.host.querySelector("[data-annotation-preview]")?.textContent,
+      ).toContain("Compare these findings with the replication study."),
+    );
+    const note = EditorView.findFromDOM(
+      page.host.querySelector<HTMLElement>(".cm-editor")!,
+    )!;
+    const sourceBefore = note.state.doc.toString();
+    press(
+      page.host.querySelector<HTMLElement>("[data-annotation-preview]")!,
+      m.workbench_choose_annotation(),
+    );
+    const inlineDialog =
+      document.querySelector<HTMLElement>('[role="dialog"]')!;
+    act(() =>
+      [...inlineDialog.querySelectorAll<HTMLElement>('[role="option"]')]
+        .find((option) => option.textContent?.includes("Clear methods"))!
+        .click(),
+    );
+    await page.settle();
+    expect(note.state.doc.toString()).toBe(sourceBefore);
+    expect(
+      page.host.querySelector("[data-annotation-preview]")?.textContent,
+    ).toContain("Clear methods make research easier to reproduce.");
+    page.press(m.workbench_tab_annotation());
+    expect(resultText(page.host)).toContain(
+      "Clear methods make research easier to reproduce.",
+    );
+  });
+
+  it("opens the shared format from any collapsed placeholder and preserves the note on return", async () => {
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "# {{ zt.title }}",
+      '# {{ zt.title }}\n\nBefore {% render "annotation" with annotation as zt %} after',
+    );
+    keep(source, SAMPLE_ITEMS[1]!);
+    using page = open();
+    page.press(m.workbench_restore_accept());
+    await page.settle();
+    const placeholders = [
+      ...page.host.querySelectorAll<HTMLElement>("[data-annotation-box]"),
+    ];
+    expect(placeholders).toHaveLength(2);
+    for (const placeholder of placeholders) {
+      expect(
+        placeholder
+          .querySelector("[aria-pressed]")
+          ?.getAttribute("aria-pressed"),
+      ).toBe("false");
+      expect(placeholder.textContent).not.toContain("{% render");
+      expect(placeholder.querySelector(".cm-editor")).toBeNull();
+      expect(placeholder.closest(".cm-line")).not.toBeNull();
+    }
+    const note = EditorView.findFromDOM(
+      page.host.querySelector<HTMLElement>(".cm-editor")!,
+    )!;
+    act(() => note.dispatch({ selection: { anchor: 4 } }));
+    act(() =>
+      placeholders[1]!
+        .querySelector<HTMLButtonElement>("[aria-pressed]")!
+        .click(),
+    );
+    expect(
+      page.host.querySelectorAll("[data-annotation-preview]"),
+    ).toHaveLength(1);
+    expect(
+      placeholders[1]!.querySelector("[data-annotation-preview]"),
+    ).toBeNull();
+    const preview = page.host.querySelector<HTMLElement>(
+      "[data-annotation-preview]",
+    )!;
+    expect(preview.closest(".cm-line")).toBeNull();
+    act(() =>
+      placeholders[0]!
+        .querySelector<HTMLButtonElement>("[aria-pressed]")!
+        .click(),
+    );
+    expect(
+      placeholders[1]!
+        .querySelector("[aria-pressed]")
+        ?.getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(
+      page.host.querySelectorAll("[data-annotation-preview]"),
+    ).toHaveLength(1);
+    act(() =>
+      placeholders[1]!
+        .querySelector<HTMLButtonElement>("[aria-pressed]")!
+        .click(),
+    );
+    press(placeholders[1]!, m.workbench_annotation_edit_format());
+    expect(chosenTab(page.host)).toBe(m.workbench_tab_annotation());
+    page.press(m.workbench_tab_note());
+    expect(
+      EditorView.findFromDOM(
+        page.host.querySelector<HTMLElement>(".cm-editor")!,
+      ),
+    ).toBe(note);
+    expect(note.state.selection.main.head).toBe(4);
+    expect(
+      placeholders[1]!
+        .querySelector("[aria-pressed]")
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(note.state.doc.toString()).toContain(
+      '{% render "annotation" with annotation as zt %}',
+    );
+    page.press(m.workbench_advanced());
+    page.press(m.workbench_basic());
+    expect(
+      EditorView.findFromDOM(
+        page.host.querySelector<HTMLElement>(".cm-editor")!,
+      ),
+    ).toBe(note);
+    expect(note.state.selection.main.head).toBe(4);
+    expect(
+      placeholders[1]!
+        .querySelector("[aria-pressed]")
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("shares preview toggles on one line and turns other lines off", async () => {
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "# {{ zt.title }}",
+      "# {{ zt.title }}\n\n{% render_annotation zt.annotations[0] %} {% render_annotation zt.annotations[0] %}",
+    );
+    keep(source, SAMPLE_ITEMS[1]!);
+    using page = open();
+    page.press(m.workbench_restore_accept());
+    await page.settle();
+    const toggles = [
+      ...page.host.querySelectorAll<HTMLButtonElement>(
+        "[data-annotation-box] [aria-pressed]",
+      ),
+    ];
+    expect(toggles).toHaveLength(3);
+    const states = () =>
+      toggles.map((toggle) => toggle.getAttribute("aria-pressed"));
+    act(() => toggles[0]!.click());
+    expect(states()).toEqual(["true", "true", "false"]);
+    expect(
+      page.host.querySelectorAll("[data-annotation-preview]"),
+    ).toHaveLength(1);
+    act(() => toggles[2]!.click());
+    expect(states()).toEqual(["false", "false", "true"]);
+    act(() => toggles[1]!.click());
+    expect(states()).toEqual(["true", "true", "false"]);
+    act(() => toggles[0]!.click());
+    expect(states()).toEqual(["false", "false", "false"]);
+    expect(page.host.querySelector("[data-annotation-preview]")).toBeNull();
+  });
+
+  it("keeps the preview on its line through Note and Source edits", async () => {
+    const call = "{% render_annotation zt.annotations[0] %}";
+    keep(
+      DEFAULT_PROFILE_SOURCE.replace(
+        "# {{ zt.title }}",
+        `# {{ zt.title }}\n\n${call}`,
+      ),
+      SAMPLE_ITEMS[1]!,
+    );
+    using page = open();
+    page.press(m.workbench_restore_accept());
+    await page.settle();
+    const toggles = () => [
+      ...page.host.querySelectorAll<HTMLButtonElement>(
+        "[data-annotation-box] [aria-pressed]",
+      ),
+    ];
+    const states = () =>
+      toggles().map((toggle) => toggle.getAttribute("aria-pressed"));
+    act(() => toggles()[0]!.click());
+    const note = EditorView.findFromDOM(
+      page.host.querySelector<HTMLElement>(".cm-editor")!,
+    )!;
+    act(() =>
+      note.dispatch({
+        changes: { from: 0, insert: "Earlier note text\n\n" },
+        selection: { anchor: 0 },
+      }),
+    );
+    expect(states()).toEqual(["true", "false"]);
+    expect(
+      page.host.querySelectorAll("[data-annotation-preview]"),
+    ).toHaveLength(1);
+
+    page.press(m.workbench_advanced());
+    const source = sourceView(page.host);
+    act(() =>
+      source.dispatch({
+        changes: {
+          from: source.state.doc.toString().indexOf("# {{ zt.title }}"),
+          insert: `Another paragraph\n${call}\n\n`,
+        },
+        selection: { anchor: 0 },
+      }),
+    );
+    page.press(m.workbench_basic());
+    expect(states()).toEqual(["false", "true", "false"]);
+    expect(
+      page.host.querySelectorAll("[data-annotation-preview]"),
+    ).toHaveLength(1);
+
+    const from = note.state.doc.toString().lastIndexOf(call);
+    act(() =>
+      note.dispatch({
+        changes: { from, to: from + call.length },
+        selection: { anchor: 0 },
+      }),
+    );
+    expect(states()).toEqual(["false", "false"]);
+    expect(page.host.querySelector("[data-annotation-preview]")).toBeNull();
+  });
+
+  it("edits the shared annotation format on its own tab without a note call", async () => {
+    const source = DEFAULT_PROFILE_SOURCE.replace(
+      "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n",
+      "",
+    );
+    keep(source, SAMPLE_ITEMS[1]!);
+    using page = open();
+    page.press(m.workbench_restore_accept());
+    page.press(m.workbench_tab_annotation());
+    expect(chosenTab(page.host)).toBe(m.workbench_tab_annotation());
+    const format = EditorView.findFromDOM(
+      page.host.querySelector<HTMLElement>(
+        `[aria-label="${m.workbench_annotation_label()}"]`,
+      )!,
+    )!;
+    act(() =>
+      format.dispatch({
+        changes: {
+          from: 0,
+          to: format.state.doc.length,
+          insert: "Example: {{ zt.text }}",
+        },
+        userEvent: "input.type",
+      }),
+    );
+    page.press(m.workbench_advanced());
+    expect(sourceView(page.host).state.doc.toString()).toBe(
+      `${source.slice(0, source.indexOf("--- zotlit:annotation ---"))}--- zotlit:annotation ---\nExample: {{ zt.text }}`,
+    );
+    page.press(m.workbench_undo());
+    expect(sourceView(page.host).state.doc.toString()).toBe(source);
+  });
+
   /** The default Profile with neither the call nor the section it calls. */
   const SILENT = DEFAULT_PROFILE_SOURCE.replace(
     "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n",
@@ -1309,7 +1923,7 @@ describe("the annotation box", () => {
     expect(page.host.textContent).toContain(
       m.workbench_annotation_section_added(),
     );
-    expect(page.host.textContent).toContain(m.workbench_annotation_label());
+    expect(page.host.textContent).toContain(m.workbench_tab_annotation());
     expect(page.host.textContent).not.toContain(
       m.workbench_annotation_insert(),
     );
@@ -1499,6 +2113,25 @@ function fieldRow(scope: HTMLElement, label: string): HTMLLIElement {
   return target;
 }
 
+function chooseAnnotation(page: OpenPage, text: string): void {
+  page.press(m.workbench_choose_annotation());
+  const option = [
+    ...document.querySelectorAll<HTMLElement>(
+      '[role="dialog"] [role="option"]',
+    ),
+  ].find((row) => row.textContent.includes(text));
+  if (!option) throw new Error(`No annotation reads '${text}'.`);
+  act(() => option.click());
+}
+
+function resultText(host: HTMLElement): string {
+  return (
+    host.querySelector(
+      `[role="region"][aria-label="${m.workbench_view_result()}"]`,
+    )?.textContent ?? ""
+  );
+}
+
 /** The whole-document editor Advanced opens over. */
 function sourceView(host: HTMLElement): EditorView {
   const view = [...host.querySelectorAll<HTMLElement>(".cm-editor")]
@@ -1574,7 +2207,12 @@ function title(host: HTMLElement): string {
 
 /** The Sample Item the page says it is showing. */
 function shownItem(host: HTMLElement): string {
-  return host.querySelector<HTMLInputElement>('input[name="sample"]')!.value;
+  return (
+    host
+      .querySelector("#workbench-sample")
+      ?.parentElement?.querySelector("span[title]")
+      ?.getAttribute("title") ?? ""
+  );
 }
 
 interface BridgeRequest {
@@ -1585,6 +2223,7 @@ interface BridgeRequest {
 }
 
 interface BridgeFixtureOptions {
+  readonly item?: () => (typeof SAMPLE_ITEMS)[number];
   readonly builtInAbsent?: boolean;
   readonly conflictOnce?: {
     readonly revision: string;
@@ -1666,6 +2305,7 @@ function bridgeFetch(
       );
     }
 
+    const item = options.item?.() ?? SAMPLE_ITEMS[0]!;
     const grant = {
       credential: "fixture-credential",
       installation: {
@@ -1678,8 +2318,8 @@ function bridgeFetch(
       templateDataContractVersion: SAMPLE_ITEMS[0]!.contractVersion,
       capabilities: [...BRIDGE_CAPABILITIES],
       selectedItem: {
-        key: SAMPLE_ITEMS[0]!.item.key,
-        title: SAMPLE_ITEMS[0]!.item.title,
+        key: item.item.key,
+        title: item.item.title,
       },
       selectedProfile: { id: "default", name: "Connected profile" },
       profileDefaults: {
@@ -1779,7 +2419,7 @@ function bridgeResponse({
       ];
     case LOCAL_BRIDGE_PATHS.selectedItem:
       return {
-        ...SAMPLE_ITEMS[0],
+        ...(options.item?.() ?? SAMPLE_ITEMS[0]),
         provenance: {
           kind: "connected",
           installationId: "fixture-installation",

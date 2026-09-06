@@ -17,12 +17,14 @@ import type { SampleItem } from "./fields";
 export interface WorkbenchDraft {
   readonly source: string;
   readonly snapshot: SampleItem;
+  readonly annotationSelection?: string;
   readonly expected?: SaveSelectedProfileRequest["expected"];
 }
 
 const draftSchema = v.object({
   source: v.string(),
   snapshot: itemSnapshotSchema,
+  annotationSelection: v.optional(v.string()),
   expected: v.optional(expectedProfileRevisionSchema),
 });
 
