@@ -1,9 +1,15 @@
 // The fan-out the reading-mode surfaces share. A reading view holds what a
-// Markdown post-processor produced, so a service whose data changed outside the
-// document has to ask the views to render that Markdown again.
+// Markdown post-processor produced. A surface rewrites what it placed there for
+// as long as the section stays on screen, and asks the views to render that
+// Markdown again only when structure changes: which links it touches at all,
+// or whether it touches them.
 
-import { MarkdownView } from "obsidian";
+import { MarkdownRenderChild, MarkdownView } from "obsidian";
 import type { App, MarkdownPostProcessorContext } from "obsidian";
+
+import { getLogger } from "@/lib/log";
+
+const logger = getLogger("reading-view");
 
 /** The document offsets one rendered reading-view section covers. */
 export interface SectionRange {
@@ -63,4 +69,56 @@ export function rerenderReadingViews(app: App): number {
     rendered += 1;
   }
   return rendered;
+}
+
+/** One held section: the document it shows, and the rewrite that refreshes it. */
+interface LiveSection {
+  path: string;
+  show: () => void;
+}
+
+/**
+ * The sections a reading surface rendered into and Obsidian still shows.
+ *
+ * Holding a section hangs a render child on its post-processor context, which
+ * Obsidian unloads with the section — on a view close, a re-render, an embed
+ * torn down — and that unload drops the section here. Holding a section already
+ * held replaces its rewrite and keeps the child.
+ */
+export class LiveSections {
+  readonly #sections = new Map<HTMLElement, LiveSection>();
+
+  /**
+   * @param el the rendered section.
+   * @param ctx the post-processor context the section was rendered under.
+   * @param show rewrites what the surface placed in `el` from current data.
+   */
+  hold(
+    el: HTMLElement,
+    ctx: MarkdownPostProcessorContext,
+    show: () => void,
+  ): void {
+    const held = this.#sections.get(el);
+    if (held !== undefined) {
+      held.show = show;
+      return;
+    }
+    this.#sections.set(el, { path: ctx.sourcePath, show });
+    const child = new MarkdownRenderChild(el);
+    child.onunload = () => {
+      this.#sections.delete(el);
+    };
+    ctx.addChild(child);
+  }
+
+  /** Rewrites the live sections of one document, or every live section. */
+  refresh(path?: string): void {
+    let count = 0;
+    for (const section of this.#sections.values()) {
+      if (path !== undefined && section.path !== path) continue;
+      section.show();
+      count += 1;
+    }
+    logger.trace("Refreshed live sections", { path, count });
+  }
 }

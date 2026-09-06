@@ -58,7 +58,12 @@ export type FormatWikilinkRun = (
 ) => PresentedCitation | null;
 
 /** The Citation Runs of one rendered section, as their anchors carry them. */
-export type SectionRuns = RunMember<HTMLAnchorElement>[][];
+export type SectionRuns = (readonly RunMember<HTMLAnchorElement>[])[];
+
+/** @returns whether `root` holds an internal link at all, Citation or not. */
+export function hasInternalLink(root: HTMLElement): boolean {
+  return root.querySelector(INTERNAL_LINK) !== null;
+}
 
 /**
  * The Citation Runs of one rendered section, in document order.
