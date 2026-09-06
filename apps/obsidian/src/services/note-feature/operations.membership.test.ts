@@ -50,6 +50,10 @@ vi.mock("@zotlit/db", async (importOriginal) => {
   };
 });
 
+vi.stubGlobal("Temporal", {
+  Now: { instant: () => ({}) as Temporal.Instant },
+});
+
 const books = "Bk3Qn7XvT2Lp" as ProfileId;
 const papers = "Rz9Wm4YfH6Kd" as ProfileId;
 
@@ -323,81 +327,98 @@ function harness(rules: readonly ProfileSelectionRule[]): Harness {
 }
 
 describe("Profile Selection Rules over Collection and Tag rows", () => {
-  it("tells identical Collection names and keys apart by their portable Library reference", async () => {
-    const groupProject = rule({
-      id: "group-project",
-      filter: 'inCollection("group:118", "PROJ0001")',
-      profile: papers,
+  it("uses one Collection path in both Libraries and creates notes with that Profile", async () => {
+    const project = rule({
+      id: "project",
+      filter: 'collections.within("Project")',
     });
-    const myProject = rule({
-      id: "my-project",
-      filter: 'inCollection("personal", "PROJ0001")',
-    });
-    const feature = createNoteFeature(harness([groupProject, myProject]).deps);
-    // The personal book sits in Drafts, a child of My Library's Project.
+    const { deps, vault } = harness([project]);
+    const feature = createNoteFeature(deps);
     expect(
       await feature.resolveCreationProfile({ item: personalBook }),
-    ).toEqual({
-      selector: books,
-      source: "rule",
-      shouldAsk: true,
-      rule: myProject,
-    });
+    ).toMatchObject({ selector: books, source: "rule", rule: project });
     expect(await feature.resolveCreationProfile({ item: groupBook })).toEqual({
-      selector: papers,
-      source: "rule",
-      shouldAsk: true,
-      rule: groupProject,
-    });
-    expect(await feature.resolveCreationProfile({ item: article })).toEqual({
       selector: books,
       source: "rule",
       shouldAsk: true,
-      rule: myProject,
+      rule: project,
     });
+    for (const item of [personalBook, groupBook]) {
+      await expect(
+        feature.createNote(item, { profile: books }),
+      ).resolves.toMatchObject({
+        outcome: "created",
+      });
+      expect(vault.get(`Reading/${item.key}.md`)).toContain(
+        `${FIELD_LITERATURE_NOTE_PROFILE}: Books (${books})`,
+      );
+    }
   });
 
   it("includes subcollections by default and limits a direct-only condition to the Collection itself", async () => {
     const directProject = rule({
       id: "direct-project",
-      filter: 'inCollectionDirectly("personal", "PROJ0001")',
+      filter: 'collections.contains("Project")',
     });
     const directDrafts = rule({
       id: "direct-drafts",
-      filter: 'inCollectionDirectly("personal", "DRFT0001")',
+      filter: 'collections.contains("Project/Drafts")',
       profile: papers,
     });
-    const feature = createNoteFeature(
-      harness([directProject, directDrafts]).deps,
-    );
+    const { deps, vault } = harness([directProject, directDrafts]);
+    const feature = createNoteFeature(deps);
     expect(
       await feature.resolveCreationProfile({ item: personalBook }),
     ).toMatchObject({ selector: papers, rule: directDrafts });
-    expect(
-      await feature.resolveCreationProfile({ item: article }),
-    ).toMatchObject({ selector: books, rule: directProject });
+    const directSelection = await feature.resolveCreationProfile({
+      item: article,
+    });
+    expect(directSelection).toMatchObject({
+      selector: books,
+      rule: directProject,
+    });
+    await expect(
+      feature.createNote(article, { profile: directSelection.selector }),
+    ).resolves.toMatchObject({
+      outcome: "created",
+      file: { path: "Reading/ARTC0001.md" },
+    });
+    expect(vault.get("Reading/ARTC0001.md")).toContain(
+      `${FIELD_LITERATURE_NOTE_PROFILE}: Books (${books})`,
+    );
   });
 
   it("reads every Collection the Item is filed in, not the one a screen shows it under", async () => {
     const other = rule({
       id: "other",
-      filter: 'inCollection("personal", "OTHR0001")',
+      filter: 'collections.contains("Other")',
     });
-    const feature = createNoteFeature(harness([other]).deps);
-    expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({ selector: books, rule: other });
+    const { deps, vault } = harness([other]);
+    const feature = createNoteFeature(deps);
+    const otherSelection = await feature.resolveCreationProfile({
+      item: personalBook,
+    });
+    expect(otherSelection).toMatchObject({ selector: books, rule: other });
     expect(await feature.resolveCreationProfile({ item: article })).toEqual({
       selector: "default",
       source: "bound",
       shouldAsk: true,
     });
+    await expect(
+      feature.createNote(personalBook, { profile: otherSelection.selector }),
+    ).resolves.toMatchObject({
+      outcome: "created",
+      file: { path: "Reading/BOOK0001.md" },
+    });
+    expect(vault.get("Reading/BOOK0001.md")).toContain(
+      `${FIELD_LITERATURE_NOTE_PROFILE}: Books (${books})`,
+    );
   });
 
-  it("keeps matching after a Collection rename and shows the new path", async () => {
+  it("uses current Collection names in facts and suggestions after a rename", async () => {
     const drafts = rule({
       id: "drafts",
-      filter: 'inCollection("personal", "DRFT0001")',
+      filter: 'collections.contains("Project/Drafts")',
     });
     const { deps, client } = harness([drafts]);
     const feature = createNoteFeature(deps);
@@ -406,98 +427,74 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
     );
     expect(
       await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({ selector: books, rule: drafts });
-    expect(
-      listCollectionChoices(client, [
-        { selector: { type: "personal" }, libraryID: 1, name: null },
-      ]).map(({ key, path }) => [key, path.join(" / ")]),
-    ).toEqual([
-      ["OTHR0001", "Other"],
-      ["PROJ0001", "Project"],
-      ["DRFT0001", "Project / Manuscripts"],
-    ]);
-  });
-
-  it("stops on a missing or trashed Collection reference instead of advancing to Default", async () => {
-    const gone = rule({
-      id: "gone",
-      filter: 'inCollection("personal", "GONE0000")',
-    });
-    const drafts = rule({
-      id: "drafts",
-      filter: 'inCollection("personal", "DRFT0001")',
-    });
-    const catchAll = rule({ id: "catch-all", profile: "default" });
-    const { deps, client } = harness([gone, catchAll]);
-    const feature = createNoteFeature(deps);
-    expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
     ).toEqual({
       selector: "default",
       source: "bound",
       shouldAsk: true,
-      problem: {
-        kind: "broken-rule",
-        rule: gone,
-        problem: {
-          code: "missing-collection",
-          library: { type: "personal" },
-          key: "GONE0000",
-        },
-      },
-    });
-    // A reference to a Library this database lacks is just as unevaluable.
-    deps.settings.update({
-      "profile.selection-rules": [
-        { ...gone, filter: 'inCollection("group:999", "PROJ0001")' },
-        catchAll,
-      ],
     });
     expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({
-      problem: {
-        kind: "broken-rule",
-        problem: {
-          code: "missing-collection",
-          library: { type: "group", groupID: 999 },
-        },
-      },
+      listCollectionChoices(client, [
+        { selector: { type: "personal" }, libraryID: 1, name: null },
+      ]).map(({ path }) => path.join(" / ")),
+    ).toEqual(["Other", "Project", "Project / Manuscripts"]);
+  });
+
+  it("treats unknown and trashed Collection paths as ordinary nonmatches", async () => {
+    const gone = rule({
+      id: "gone",
+      filter: 'collections.within("Gone")',
     });
-    // Drafts matches until Zotero trashes it; then the rule is broken, not
-    // a nonmatch that the catch-all would quietly absorb.
+    const drafts = rule({
+      id: "drafts",
+      filter: 'collections.within("Project")',
+    });
+    const catchAll = rule({ id: "catch-all" });
+    const { deps, client, vault } = harness([gone, catchAll]);
+    const feature = createNoteFeature(deps);
+    expect(
+      await feature.resolveCreationProfile({ item: personalBook }),
+    ).toMatchObject({ selector: books, source: "rule", rule: catchAll });
     deps.settings.update({ "profile.selection-rules": [drafts, catchAll] });
     expect(
       await feature.resolveCreationProfile({ item: personalBook }),
     ).toMatchObject({ selector: books, rule: drafts });
     client.$client.exec(
-      "insert into deletedCollections (collectionID) values (101)",
+      "insert into deletedCollections (collectionID) values (100)",
     );
-    expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({
-      selector: "default",
-      problem: {
-        kind: "broken-rule",
-        rule: drafts,
-        problem: { code: "missing-collection", key: "DRFT0001" },
-      },
+    const trashedParentSelection = await feature.resolveCreationProfile({
+      item: personalBook,
     });
+    expect(trashedParentSelection).toMatchObject({
+      selector: books,
+      source: "rule",
+      rule: catchAll,
+    });
+    await expect(
+      feature.createNote(personalBook, {
+        profile: trashedParentSelection.selector,
+      }),
+    ).resolves.toMatchObject({
+      outcome: "created",
+      file: { path: "Reading/BOOK0001.md" },
+    });
+    expect(vault.get("Reading/BOOK0001.md")).toContain(
+      `${FIELD_LITERATURE_NOTE_PROFILE}: Books (${books})`,
+    );
   });
 
   it("matches Tag names exactly and case-sensitively across manual and automatic applications", async () => {
-    const read = rule({ id: "read", filter: 'hasTag("Read")' });
+    const read = rule({ id: "read", filter: 'tags.contains("Read")' });
     const upper = rule({
       id: "upper",
-      filter: 'hasTag("READ")',
+      filter: 'tags.contains("READ")',
       profile: papers,
     });
     const lower = rule({
       id: "lower",
-      filter: 'hasTag("read")',
+      filter: 'tags.contains("read")',
       profile: "default",
     });
-    const auto = rule({ id: "auto", filter: 'hasTag("auto-tag")' });
+    const auto = rule({ id: "auto", filter: 'tags.contains("auto-tag")' });
     const { deps } = harness([lower, upper, read]);
     const feature = createNoteFeature(deps);
     // "read" matches nothing; the automatic "READ" wins before manual "Read".
@@ -517,17 +514,41 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
     ).toEqual({ selector: "default", source: "bound", shouldAsk: true });
   });
 
+  it.each([
+    ["manual Tag", personalBook, 'tags.contains("Read")'],
+    ["automatic Tag", article, 'tags.contains("auto-tag")'],
+    ["case-distinct automatic Tag", personalBook, 'tags.contains("READ")'],
+  ] as const)(
+    "creates a note selected by a %s",
+    async (_case, item, filter) => {
+      const matching = rule({ id: "matching", filter });
+      const { deps, vault } = harness([matching]);
+      const feature = createNoteFeature(deps);
+      const selection = await feature.resolveCreationProfile({ item });
+      expect(selection).toMatchObject({ selector: books, rule: matching });
+
+      await expect(
+        feature.createNote(item, { profile: selection.selector }),
+      ).resolves.toMatchObject({
+        outcome: "created",
+        file: { path: `Reading/${item.key}.md` },
+      });
+      expect(vault.get(`Reading/${item.key}.md`)).toContain(
+        `${FIELD_LITERATURE_NOTE_PROFILE}: Books (${books})`,
+      );
+    },
+  );
+
   it("combines Collection and Tag conditions with the item type and the Library scope", async () => {
     const combined = rule({
       id: "combined",
       scope: { mode: "selected", libraries: [{ type: "personal" }] },
       filter:
-        'inCollection("personal", "PROJ0001") && hasTag("Read") && itemType == "book"',
+        'collections.within("Project") && tags.contains("Read") && itemType == "book"',
     });
     const anyProject = rule({
       id: "any-project",
-      filter:
-        'inCollection("personal", "PROJ0001") || inCollection("group:118", "PROJ0001")',
+      filter: 'collections.within("Project")',
       profile: papers,
     });
     const feature = createNoteFeature(harness([combined, anyProject]).deps);
@@ -548,18 +569,18 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
       id: "project-papers",
       scope: { mode: "selected", libraries: [{ type: "personal" }] },
       filter:
-        '(inCollection("personal", "PROJ0001") || hasTag("auto-tag")) && itemType != "book"',
+        '(collections.within("Project") || tags.contains("auto-tag")) && itemType != "book"',
       profile: papers,
     });
     // Neither tagged Read nor an article.
     const untouched = rule({
       id: "untouched",
-      filter: '!(hasTag("Read") || itemType == "journalArticle")',
+      filter: '!(tags.contains("Read") || itemType == "journalArticle")',
     });
     // Tagged READ (automatic) but not filed directly in Project.
     const readElsewhere = rule({
       id: "read-elsewhere",
-      filter: 'hasTag("READ") && !inCollectionDirectly("personal", "PROJ0001")',
+      filter: 'tags.contains("READ") && !collections.contains("Project")',
       profile: "default",
     });
     const feature = createNoteFeature(
@@ -589,7 +610,7 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
   it("keeps a previewed selection fixed while Tags and memberships change, and lets the next operation see the change", async () => {
     const read = rule({
       id: "read",
-      filter: 'hasTag("Read") && inCollection("personal", "OTHR0001")',
+      filter: 'tags.contains("Read") && collections.contains("Other")',
     });
     const { deps, client, vault } = harness([read]);
     const feature = createNoteFeature(deps);

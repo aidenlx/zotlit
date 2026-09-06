@@ -8,6 +8,7 @@
 
 import { execFile } from "node:child_process";
 import { cp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -70,7 +71,31 @@ async function isObsidianReachable(): Promise<boolean> {
   return result?.stdout.trim().startsWith("ready ") ?? false;
 }
 
+async function availableLoopbackPort(): Promise<number> {
+  await using server = createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+  if (typeof address === "string" || address === null)
+    throw new Error("Loopback server did not receive a TCP port");
+  return address.port;
+}
+
 const reachable = await isObsidianReachable();
+
+async function openProfilesSettings(vaultId: string, pageName: string) {
+  await obEval(
+    vaultId,
+    "app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();true",
+  );
+  await obEval(vaultId, "app.setting.openTabById('zotlit');true");
+  await obEval(
+    vaultId,
+    `app.setting.navigateToSearchResult({tab:app.setting.activeTab,pagePath:[${JSON.stringify(pageName)}]});true`,
+  );
+}
 
 describe.skipIf(!reachable)("End-to-end Run", () => {
   let vaultId = "";
@@ -108,6 +133,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // to the Fixture profile and database, and confirms the plugin loaded.
     const created = await runVaultScript(["create", e2eVaultPath]);
     vaultId = created.stdout.trim().split("\n")[0]!.trim();
+    const serverPort = await availableLoopbackPort();
+    await obEval(
+      vaultId,
+      `app.plugins.plugins.zotlit.services.settings.update({'server.enabled':false,'server.port':${serverPort}});true`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(!app.plugins.plugins.zotlit.services.liveUpdate.available&&app.plugins.plugins.zotlit.services.settings.current['server.port']===${serverPort})`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      "app.plugins.plugins.zotlit.services.settings.update({'server.enabled':true});true",
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(app.plugins.plugins.zotlit.services.liveUpdate.available&&app.plugins.plugins.zotlit.services.settings.current['server.port']===${serverPort})`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
   }, 180000);
 
   afterAll(async () => {
@@ -397,10 +445,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // Configure the rule through the Profiles page: + on the rule list, then
     // the editor's labeled controls, then Save.
-    await obEval(
-      vaultId,
-      `(function(){app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();var tab=app.setting.openTabById('zotlit');app.setting.navigateToSearchResult({tab,pagePath:[${JSON.stringify(m.settings_page_profiles())}]});return true;})()`,
-    );
+    await openProfilesSettings(vaultId, m.settings_page_profiles());
     expect(
       await obEvalUntil(
         vaultId,
@@ -415,9 +460,20 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));var scope=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_scope())});scope.value='selected';scope.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+    );
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var checkbox=Array.from(modal.querySelectorAll('label')).find(label=>label.textContent?.startsWith(${JSON.stringify(m.settings_library_scope_personal())}))?.querySelector('input[type=checkbox]');return String(checkbox?.checked===true);})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
     const configured = await obEval(
       vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var scope=row(${JSON.stringify(m.settings_profile_rule_scope())}).querySelector('select');pick(scope,'selected');var libraryRow=Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_library_scope_personal())});var toggle=libraryRow&&libraryRow.querySelector('.checkbox-container');if(toggle&&!toggle.classList.contains('is-enabled'))toggle.click();var selects=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select:not(.is-measuring)').length===3)[0].querySelectorAll('select:not(.is-measuring)');pick(selects[1],'is');pick(selects[2],'book');var target=row(${JSON.stringify(m.settings_profile_rule_target())}).querySelector('select');pick(target,${JSON.stringify(booksProfile.id)});return JSON.stringify({scope:scope.value,library:!!toggle,type:selects[2].value,target:target.value});})()`,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));function named(name){return Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var row=modal.querySelector('[data-condition-row]');var operator=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]');var value=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_value())}]');pick(operator,'is');pick(value,'book');var target=named(${JSON.stringify(m.settings_profile_rule_target())});pick(target,${JSON.stringify(booksProfile.id)});return JSON.stringify({scope:named(${JSON.stringify(m.settings_profile_rule_scope())}).value,library:Array.from(modal.querySelectorAll('label')).find(label=>label.textContent?.startsWith(${JSON.stringify(m.settings_library_scope_personal())}))?.querySelector('input[type=checkbox]')?.checked===true,type:value.value,target:target.value});})()`,
     );
     expect(JSON.parse(configured)).toEqual({
       scope: "selected",
@@ -578,10 +634,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // The second rule, through the same labeled controls: Shared Reading
     // articles use Default, an explicit match rather than a fallback.
-    await obEval(
-      vaultId,
-      `(function(){app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();var tab=app.setting.openTabById('zotlit');app.setting.navigateToSearchResult({tab,pagePath:[${JSON.stringify(m.settings_page_profiles())}]});return true;})()`,
-    );
+    await openProfilesSettings(vaultId, m.settings_page_profiles());
     expect(
       await obEvalUntil(
         vaultId,
@@ -598,7 +651,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var scope=Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_rule_scope())}).querySelector('select');scope.value='selected';scope.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));var scope=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_scope())});scope.value='selected';scope.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
     );
     // The editor re-renders after every toggle, so each Library row is
     // looked up afresh until it shows the wanted state.
@@ -609,14 +662,14 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEvalUntil(
           vaultId,
-          `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(name)});var toggle=row&&row.querySelector('.checkbox-container');if(!toggle)return false;if(toggle.classList.contains('is-enabled')===${enabled})return true;toggle.click();return false;})()`,
+          `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var checkbox=Array.from(modal.querySelectorAll('label')).find(label=>label.textContent?.startsWith(${JSON.stringify(name)}))?.querySelector('input[type=checkbox]');if(!checkbox)return false;if(checkbox.checked===${enabled})return true;checkbox.click();return false;})()`,
           { expected: "true" },
         ),
       ).toBe(true);
     }
     const configured = await obEval(
       vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var selects=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select:not(.is-measuring)').length===3)[0].querySelectorAll('select:not(.is-measuring)');pick(selects[1],'is');pick(selects[2],'journalArticle');var target=row(${JSON.stringify(m.settings_profile_rule_target())}).querySelector('select');pick(target,'default');return JSON.stringify({type:selects[2].value,target:target.value});})()`,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var row=modal.querySelector('[data-condition-row]');var operator=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]');var value=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_value())}]');pick(operator,'is');pick(value,'journalArticle');var target=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_target())});pick(target,'default');return JSON.stringify({type:value.value,target:target.value});})()`,
     );
     expect(JSON.parse(configured)).toEqual({
       type: "journalArticle",
@@ -641,6 +694,15 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       profile: "default",
     });
     await obEval(vaultId, "app.setting.close();true");
+    expect(
+      await obEvalUntil(
+        vaultId,
+        "String(document.querySelector('.modal')===null)",
+        {
+          expected: "true",
+        },
+      ),
+    ).toBe(true);
 
     // The Companion pushes the selection over HTTP, the batch transport
     // documented in packages/protocol; the plugin answers with its
@@ -842,17 +904,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(childItem.collectionIDs).toEqual([childCollection.collectionID]);
     const seededPath = `literatures/${childItem.literatureNoteName ?? childItem.key}.md`;
     const ruleNotePath = `books/books-${childItem.citationKey}.md`;
-    const collectionOption = `personal/${parentCollection.key}`;
-    const collectionLabel = m.settings_profile_rule_collection_label({
-      library: m.settings_library_scope_personal(),
-      path: parentCollection.name,
-    });
-    const ruleSummary = m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_in_collection({
-        collection: collectionLabel,
-      }),
-      libraries: m.settings_library_scope_personal(),
-    });
+    const collectionPath = parentCollection.name;
     await cli([`vault=${vaultId}`, "delete", `path=${seededPath}`]);
     expect(await hasIndexedNotes(vaultId, childItem.key, 0)).toBe(true);
     const readStoredRules = async () =>
@@ -865,13 +917,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const rulesBefore = await readStoredRules();
     expect(rulesBefore).toHaveLength(2);
 
-    // The third rule, through the same labeled controls: the condition kind
-    // switches to Collection, then the re-rendered row offers the Fixture's
-    // collections and the subcollection choice.
-    await obEval(
-      vaultId,
-      `(function(){app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();var tab=app.setting.openTabById('zotlit');app.setting.navigateToSearchResult({tab,pagePath:[${JSON.stringify(m.settings_page_profiles())}]});return true;})()`,
-    );
+    await openProfilesSettings(vaultId, m.settings_page_profiles());
     expect(
       await obEvalUntil(
         vaultId,
@@ -888,48 +934,25 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}pick(row(${JSON.stringify(m.settings_profile_rule_scope())}).querySelector('select'),'selected');var libraryRow=row(${JSON.stringify(m.settings_library_scope_personal())});var toggle=libraryRow&&libraryRow.querySelector('.checkbox-container');if(toggle&&!toggle.classList.contains('is-enabled'))toggle.click();var kind=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select:not(.is-measuring)').length===3)[0].querySelectorAll('select:not(.is-measuring)')[0];pick(kind,'collection');return true;})()`,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal.querySelector('[data-condition-row]');var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_condition_kind())}]');kind.value='collections';kind.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
     );
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}function pick(select,value){select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}var rows=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select:not(.is-measuring)').length===4);if(rows.length!==1)return false;var selects=rows[0].querySelectorAll('select:not(.is-measuring)');pick(selects[1],'is');pick(selects[2],${JSON.stringify(collectionOption)});pick(selects[3],'descendants');pick(row(${JSON.stringify(m.settings_profile_rule_target())}).querySelector('select'),${JSON.stringify(booksProfile.id)});return true;})()`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
-    const configured = await obEval(
+    await obEval(
       vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);function row(name){return Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===name);}var selects=Array.from(modal.querySelectorAll('.setting-item')).filter(el=>el.querySelectorAll('select:not(.is-measuring)').length===4)[0].querySelectorAll('select:not(.is-measuring)');var target=row(${JSON.stringify(m.settings_profile_rule_target())}).querySelector('select');return JSON.stringify({collection:selects[2].value,collectionLabel:selects[2].selectedOptions[0].textContent,membership:selects[3].value,target:target.value});})()`,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal.querySelector('[data-condition-row]');var input=row.querySelector('input[type=text]');input.value=${JSON.stringify(collectionPath)};input.dispatchEvent(new Event('input',{bubbles:true}));var target=modal.querySelector('select[aria-labelledby]');var labels=Array.from(modal.querySelectorAll('[id]'));target=Array.from(modal.querySelectorAll('select')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_target())});target.value=${JSON.stringify(booksProfile.id)};target.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
     );
-    expect(JSON.parse(configured)).toEqual({
-      collection: collectionOption,
-      collectionLabel,
-      membership: "descendants",
-      target: booksProfile.id,
-    });
     expect(
       await clickModalButton(vaultId, m.settings_profile_rule_save()),
     ).toBe(true);
-    expect(
-      await obEvalUntil(
-        vaultId,
-        `String(Array.from(document.querySelectorAll('.setting-item')).some(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(ruleSummary)})))`,
-        { expected: "true" },
-      ),
-    ).toBe(true);
     const stored = await readStoredRules();
     expect(stored).toHaveLength(3);
-    expect(stored[2]).toMatchObject({
-      scope: { mode: "selected", libraries: [{ type: "personal" }] },
+    const collectionRule = stored[2]!;
+    expect(collectionRule).toMatchObject({
+      scope: { mode: "all" },
       filter: {
-        and: [
-          `inCollection("personal", ${JSON.stringify(parentCollection.key)})`,
-        ],
+        and: [`collections.within(${JSON.stringify(collectionPath)})`],
       },
       profile: booksProfile.id,
     });
-    const collectionRule = stored[2]!;
-    await obEval(vaultId, "app.setting.close();true");
 
     // Quick Switch preselects Books through the parent-collection rule and
     // creates the note there.
@@ -952,16 +975,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       return selectSuggestion(vaultId, m.modal_profile_preselected());
     };
-    // The picker describes the rule without Collection names, so the
-    // Collection reads by its Library and key there.
     const pickerSummary = m.settings_profile_rule_summary({
-      conditions: m.settings_profile_rule_in_collection({
-        collection: m.settings_profile_rule_collection_label({
-          library: m.settings_library_scope_personal(),
-          path: parentCollection.key,
-        }),
+      conditions: m.settings_profile_rule_collections_inside({
+        collections: collectionPath,
       }),
-      libraries: m.settings_library_scope_personal(),
+      libraries: m.settings_library_scope_all(),
     });
     const descendantSelection = await quickSwitchSelection();
     expect(descendantSelection).toContain(booksProfile.label);
@@ -991,18 +1009,47 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     // Item, so Quick Switch falls back to Default.
     await cli([`vault=${vaultId}`, "delete", `path=${ruleNotePath}`]);
     expect(await hasIndexedNotes(vaultId, childItem.key, 0)).toBe(true);
-    const directRule = {
-      ...collectionRule,
-      filter: {
-        and: [
-          `inCollectionDirectly("personal", ${JSON.stringify(parentCollection.key)})`,
-        ],
-      },
-    };
+    await openProfilesSettings(vaultId, m.settings_page_profiles());
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var edits=Array.from(document.querySelectorAll('[aria-label=${JSON.stringify(m.settings_profile_rules_edit())}]'));var edit=edits.find(button=>{var row=button.closest('.setting-item');return row?.textContent.includes(${JSON.stringify(collectionPath)})&&row.textContent.includes(${JSON.stringify(booksProfile.label)});});if(!edit)return false;edit.click();return true;})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal.querySelector('[data-condition-row]');var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_condition_kind())}]');var operator=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]');var value=row.querySelector('input[type=text]');var labels=Array.from(modal.querySelectorAll('[id]'));var target=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_target())});return JSON.stringify({kind:kind.value,operator:operator.value,value:value.value,target:target.value});})()`,
+        ),
+      ),
+    ).toEqual({
+      kind: "collections",
+      operator: "within",
+      value: collectionPath,
+      target: booksProfile.id,
+    });
     await obEval(
       vaultId,
-      `app.plugins.plugins.zotlit.services.settings.update({'profile.selection-rules':${JSON.stringify([...rulesBefore, directRule])}});true`,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal.querySelector('[data-condition-row]');var operator=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
     );
+    expect(
+      await clickModalButton(vaultId, m.settings_profile_rule_save()),
+    ).toBe(true);
+    const directFilter = {
+      and: [`collections.contains(${JSON.stringify(collectionPath)})`],
+    };
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var rules=app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'];var rule=rules.find(rule=>rule.id===${JSON.stringify(collectionRule.id)});return String(JSON.stringify(rule?.filter)===${JSON.stringify(JSON.stringify(directFilter))});})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    const directStored = await readStoredRules();
+    const directRule = directStored.find(({ id }) => id === collectionRule.id);
+    expect(directRule?.filter).toEqual(directFilter);
     const directSelection = await quickSwitchSelection();
     expect(directSelection).toContain(m.settings_profile_default_name());
     expect(directSelection).not.toContain(booksProfile.label);
@@ -1053,8 +1100,9 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(sharedRule.profile).toBe("default");
     await obEval(
       vaultId,
-      `(async function(){app.vault.setConfig('trashOption','local');app.vault.setConfig('settingsPopoutWindow',false);var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});await app.vault.append(file,${JSON.stringify(`\n${exterior}\n`)});app.setting.open();var tab=app.setting.openTabById('zotlit');app.setting.navigateToSearchResult({tab,pagePath:[${JSON.stringify(m.settings_page_profiles())}]});return true;})()`,
+      `(async function(){app.vault.setConfig('trashOption','local');var file=app.vault.getAbstractFileByPath(${JSON.stringify(booksNotePath)});await app.vault.append(file,${JSON.stringify(`\n${exterior}\n`)});return true;})()`,
     );
+    await openProfilesSettings(vaultId, m.settings_page_profiles());
     const beforeMove = await readFile(
       join(e2eVaultPath, booksNotePath),
       "utf-8",
@@ -1186,10 +1234,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
 
     // Manual repair through the existing rule editor: the row shows the
     // unavailable target, the editor's Profile control takes Default.
-    await obEval(
-      vaultId,
-      `(function(){app.setting.open();var tab=app.setting.openTabById('zotlit');app.setting.navigateToSearchResult({tab,pagePath:[${JSON.stringify(m.settings_page_profiles())}]});return true;})()`,
-    );
+    await openProfilesSettings(vaultId, m.settings_page_profiles());
     expect(
       await obEvalUntil(
         vaultId,
@@ -1207,7 +1252,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEval(
         vaultId,
-        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=Array.from(modal.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_rule_target())});var select=row.querySelector('select');select.value='default';select.dispatchEvent(new Event('change',{bubbles:true}));return select.value;})()`,
+        `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var labels=Array.from(modal.querySelectorAll('[id]'));var select=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_target())});select.value='default';select.dispatchEvent(new Event('change',{bubbles:true}));return select.value;})()`,
       ),
     ).toBe("default");
     expect(

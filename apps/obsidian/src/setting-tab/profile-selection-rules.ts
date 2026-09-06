@@ -4,12 +4,9 @@ import type { SettingDefinitionItem, SettingDefinitionList } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import {
-  choicesLookup,
-  compileFilter,
   describeProblem,
   describeRule,
   diagnoseRule,
-  listCollectionChoices,
 } from "@/services/profile-selection";
 import type {
   DescribeOptions,
@@ -41,7 +38,7 @@ function rulesList(
   ctx: SettingTabContext,
 ): SettingDefinitionList<SettingsControlKey> {
   const rules = ctx.settings.current?.["profile.selection-rules"] ?? [];
-  // Library names and Collection paths are read only when a row needs them.
+  // Library names are read only when a row needs them.
   const display = rules.length > 0 ? displayOptions(ctx) : {};
   return {
     type: "list",
@@ -112,20 +109,9 @@ function targetLabel(
   return profile ? profile.label : selector;
 }
 
-/**
- * Library names and Collection paths, read once per render of the rows.
- * `collections` stays absent until the database is ready, so a reference is
- * judged missing only against Collections that were actually listed.
- */
+/** Library names, read once per render of the rows. */
 function displayOptions(ctx: SettingTabContext): DescribeOptions {
-  const libraries = ctx.libraryScope.libraries;
-  return {
-    libraries,
-    collections:
-      ctx.db.state === "ready"
-        ? listCollectionChoices(ctx.db.client, libraries)
-        : undefined,
-  };
+  return { libraries: ctx.libraryScope.libraries };
 }
 
 function ruleDesc(
@@ -147,18 +133,14 @@ function ruleDesc(
       }),
     );
   }
-  const { problem } = display.collections
-    ? diagnoseRule(rule, {
-        hasCollection: choicesLookup(display.collections),
-      })
-    : compileFilter(rule.filter);
+  const { problem } = diagnoseRule(rule);
   if (problem) {
     desc.append(createEl("br"));
     desc.append(
       createSpan({
         cls: "mod-warning",
         text: m.settings_profile_rule_broken({
-          problem: describeProblem(problem, display),
+          problem: describeProblem(problem),
         }),
       }),
     );

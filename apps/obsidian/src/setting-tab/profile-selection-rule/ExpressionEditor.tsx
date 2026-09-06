@@ -17,10 +17,9 @@ import { useMemo } from "react";
 
 import { cn } from "@/lib/utils";
 import {
-  HAS_TAG_FUNCTION,
-  IN_COLLECTION_DIRECTLY_FUNCTION,
-  IN_COLLECTION_FUNCTION,
+  COLLECTIONS_FIELD,
   ITEM_TYPE_FIELD,
+  TAGS_FIELD,
 } from "@/services/profile-selection/condition";
 
 import "./style.css";
@@ -30,24 +29,20 @@ import "./style.css";
  * colours, so the expression reads like code without a language of its own.
  */
 const tokens = new MatchDecorator({
-  regexp: new RegExp(
-    [
-      String.raw`"(?:[^"\\]|\\.)*"`,
-      String.raw`\b(?:true|false)\b`,
-      String.raw`\b(?:${IN_COLLECTION_DIRECTLY_FUNCTION}|${IN_COLLECTION_FUNCTION}|${HAS_TAG_FUNCTION})\b`,
-      String.raw`\b${ITEM_TYPE_FIELD}\b`,
-      String.raw`==|!=|&&|\|\||!`,
-      String.raw`[(),]`,
-    ].join("|"),
-    "g",
-  ),
+  regexp:
+    /"(?:[^"\\]|\\.)*"|\b(?:true|false)\b|\b(?:within|containsAny|containsAll|contains|isEmpty)\b|\b(?:itemType|tags|collections)\b|==|!=|&&|\|\||!|[(),]/g,
   decoration: (match) => Decoration.mark({ class: tokenClass(match[0]) }),
 });
 
 function tokenClass(text: string): string {
   if (text.startsWith('"')) return "zt-expr-string";
   if (text === "true" || text === "false") return "zt-expr-keyword";
-  if (text === ITEM_TYPE_FIELD) return "zt-expr-field";
+  if (
+    text === ITEM_TYPE_FIELD ||
+    text === TAGS_FIELD ||
+    text === COLLECTIONS_FIELD
+  )
+    return "zt-expr-field";
   if (/^[(),]$/.test(text)) return "zt-expr-punctuation";
   if (/^[a-z]/i.test(text)) return "zt-expr-function";
   return "zt-expr-operator";
@@ -108,9 +103,8 @@ export function ExpressionEditor({
     <CodeMirror
       className={cn(
         "zt-expression-editor",
-        // The statement box around it owns the border, radius and focus ring;
-        // the editor fills that box on the same surface as its controls.
-        "zt:flex zt:min-h-(--input-height) zt:items-center zt:bg-input",
+        // The statement frame owns the shared surface and focus boundary.
+        "zt:flex zt:min-h-(--input-height) zt:items-center",
         className,
       )}
       value={value}

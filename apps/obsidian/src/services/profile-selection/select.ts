@@ -3,14 +3,12 @@
 // Rules run in user order over the Item's Library scope. A valid nonmatch
 // advances; the first match supplies the target selector and the rule that
 // explains it. Three outcomes stop automatic selection and require an
-// explicit choice instead: an in-scope rule the vault cannot evaluate (its
-// filter is outside the condition contract), an in-scope rule that
-// refers to a Collection the database does not hold, and a matching rule
-// whose target Profile is unavailable. Rules outside the Item's Library
-// scope contribute nothing, not even a problem.
+// explicit choice instead: an in-scope rule the vault cannot evaluate, and a
+// matching rule whose target Profile is unavailable. Rules outside the Item's
+// Library scope contribute nothing, not even a problem.
 //
 // The facts of the Item come in, a selection comes out. The database takes
-// part only through the two lookups the caller injects.
+// part only through the Profile lookup the caller injects.
 import { USER_LIBRARY_ID } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
@@ -19,13 +17,8 @@ import type { ProfileSelector } from "@/lib/profile-stamp";
 import { selectorKey } from "@/services/library-scope/scope";
 import type { LibrarySelector } from "@/services/library-scope/scope";
 
-import {
-  collectionReferences,
-  compileFilter,
-  matchCondition,
-} from "./condition";
+import { compileFilter, matchCondition } from "./condition";
 import type {
-  CollectionReference,
   CompiledCondition,
   ConditionProblem,
   RuleItemFacts,
@@ -59,10 +52,7 @@ export type RuleSelection =
  */
 export function ruleItem(
   item: Pick<Item, "libraryID" | "groupID" | "fields">,
-  memberships: Pick<
-    RuleItemFacts,
-    "tags" | "collections" | "collectionAncestors"
-  >,
+  memberships: Pick<RuleItemFacts, "tags" | "collections">,
 ): RuleItem {
   return {
     library:
@@ -81,20 +71,17 @@ export function ruleItem(
  *
  * @param options.isAvailable whether a selector resolves to a Profile now —
  * the registry's answer, so an unavailable target is reported, never used.
- * @param options.hasCollection whether the database holds a referenced
- * Collection — a missing one breaks the rule instead of failing to match.
  */
 export function selectProfileByRules(
   rules: readonly ProfileSelectionRule[],
   item: RuleItem,
   options: {
     isAvailable: (selector: ProfileSelector) => boolean;
-    hasCollection: (reference: CollectionReference) => boolean;
   },
 ): RuleSelection {
   for (const rule of rules) {
     if (!inScope(rule, item.library)) continue;
-    const { condition, problem } = diagnoseRule(rule, options);
+    const { condition, problem } = diagnoseRule(rule);
     if (problem) {
       logger.debug("Profile Selection Rule {id} cannot be evaluated", {
         id: rule.id,
@@ -128,22 +115,12 @@ export function selectProfileByRules(
 }
 
 /**
- * Whether a rule can be evaluated: its filter compiles and every Collection
- * it refers to exists. The settings list shows the same problem the
- * evaluator would stop on, so a rule is repaired where it is edited.
+ * Whether a rule can be evaluated: its filter compiles against the contract.
  */
 export function diagnoseRule(
   rule: Pick<ProfileSelectionRule, "filter">,
-  options: { hasCollection: (reference: CollectionReference) => boolean },
 ): CompiledCondition {
-  const compiled = compileFilter(rule.filter);
-  if (compiled.problem) return compiled;
-  const missing = collectionReferences(compiled.condition).find(
-    (reference) => !options.hasCollection(reference),
-  );
-  return missing
-    ? { condition: null, problem: { code: "missing-collection", ...missing } }
-    : compiled;
+  return compileFilter(rule.filter);
 }
 
 function inScope(
