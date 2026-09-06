@@ -80,6 +80,8 @@ export interface FixtureCollection {
    */
   key: string;
   name: string;
+  /** Parent in the same Library; absent for a top-level collection. */
+  parentCollectionID?: number;
 }
 
 /**
@@ -90,12 +92,23 @@ export interface FixtureCollection {
  */
 export const BUILD_TIMESTAMP = "2026-08-19 08:00:00";
 
-/** `SHAREDCL` repeats in three Libraries, so a collection target must name one. */
+/**
+ * `SHAREDCL` repeats in three Libraries, so a collection target must name one.
+ * `PERSCHLD` nests under `PERSNAL2`, so a descendant walk and a direct
+ * membership check give different answers for the one Item filed there.
+ */
 export const COLLECTIONS: readonly FixtureCollection[] = [
   { collectionID: 1, libraryID: 1, key: "SHAREDCL", name: "Shared key" },
   { collectionID: 2, libraryID: 2, key: "SHAREDCL", name: "Shared key" },
   { collectionID: 3, libraryID: 3, key: "SHAREDCL", name: "Shared key" },
   { collectionID: 4, libraryID: 1, key: "PERSNAL2", name: "Personal only" },
+  {
+    collectionID: 5,
+    libraryID: 1,
+    key: "PERSCHLD",
+    name: "Personal child",
+    parentCollectionID: 4,
+  },
 ];
 
 /**
@@ -342,7 +355,7 @@ export const ITEMS: readonly FixtureItem[] = [
     date: "2017",
     creators: [author("Kim", "Tie")],
     dateModified: "2025-03-01 12:00:00",
-    collectionIDs: [],
+    collectionIDs: [5],
   },
   {
     itemID: 12,
