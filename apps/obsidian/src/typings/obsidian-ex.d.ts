@@ -31,8 +31,14 @@ declare global {
 
 declare module "obsidian" {
   interface MetadataCache {
-    initialized: boolean;
     on(name: "initialized", callback: () => any, ctx?: any): EventRef;
+    /**
+     * Runs `callback` once the cache is clean (no parse in progress, resolver
+     * queue idle): at once if it already is, else after the next drain.
+     * Internal; shape verified against Obsidian 1.13.7. Optional so a build
+     * that drops it is a runtime branch, not a crash.
+     */
+    onCleanCache?(callback: () => void): void;
   }
   interface App {
     /** Stable per-vault id, the namespace Obsidian gives its own IndexedDB databases. */

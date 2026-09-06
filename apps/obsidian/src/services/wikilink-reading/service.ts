@@ -132,8 +132,8 @@ export class WikilinkReading extends Service<void> {
     stack.defer(this.#display.watch(this.#settings, () => this.#rerender()));
     // Creating, deleting, or renaming a Literature Note changes which links
     // are Citations without changing any document, so every open reading view
-    // renders again. A rescan that moved no mapping reports `changed` for
-    // none, and its `rebuilt` rides every batch of edits in the vault.
+    // renders again. The Note Index reports every moved mapping as `changed`;
+    // its one Full Scan per session is silent.
     stack.defer(this.#noteIndex.on("changed", () => this.#rerender()));
     // What a placed Citation says follows its document's Held Read: the live
     // sections of that document rewrite on its change, and every live section
