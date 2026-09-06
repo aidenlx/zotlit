@@ -11,6 +11,7 @@ import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
 import { Button } from "@/components/obsidian/button";
 import { Dropdown, DropdownItem } from "@/components/obsidian/dropdown";
+import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileSelector } from "@/lib/profile-stamp";
@@ -53,6 +54,53 @@ import type {
 } from "./draft";
 import { ExpressionEditor } from "./ExpressionEditor";
 import { useRuleEditorStore } from "./store";
+
+/**
+ * The controls Obsidian nests inside a box of its own — a Property editor, a
+ * Bases filter row — read these tokens for their border, radius and surface.
+ * Flattening them there lets the box own all three, so the controls read as
+ * segments of one control instead of a line of loose ones.
+ */
+const flatControls = cn(
+  "zt:[--input-border-width-focus:0px] zt:[--input-border-width:0px]",
+  "zt:[--input-radius:0px] zt:[--input-shadow:none]",
+  "zt:[--dropdown-background:var(--background-modifier-form-field)]",
+  "zt:[--dropdown-background-hover:var(--background-modifier-form-field-hover)]",
+);
+
+/** One statement's box: an input's surface, ring and radius around its controls. */
+const statementBox = cn(
+  "zt:flex zt:items-center zt:overflow-hidden zt:rounded-md zt:bg-input",
+  "zt:ring-1 zt:ring-border-hover",
+  "zt:focus-within:ring-2 zt:focus-within:ring-border-focus",
+  "zt:[--icon-size:var(--icon-s)] zt:[--icon-stroke:var(--icon-s-stroke-width)]",
+  flatControls,
+);
+
+/**
+ * The controls of one statement. They sit on the box's own surface, so the
+ * hairline the gap leaves between them is what separates one from the next.
+ */
+const statementControls =
+  "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-center zt:gap-px zt:bg-border";
+
+/** A statement's own buttons, at the trailing end of its box. */
+const statementActions = "zt:flex zt:shrink-0 zt:items-center zt:p-0.5";
+
+/** The buttons that grow a group, quiet enough to sit under its statements. */
+const quietButton = cn(
+  "zt:gap-1.5 zt:*:text-muted-foreground",
+  "zt:[--input-shadow:none] zt:[--interactive-normal:transparent]",
+  "zt:[--interactive-hover:var(--background-modifier-hover)]",
+  "zt:[--icon-size:var(--icon-s)] zt:[--icon-stroke:var(--icon-s-stroke-width)]",
+);
+
+/** A group's match dropdown, flat against the group it heads. */
+const quietDropdown = cn(
+  "zt:text-sm zt:[--input-shadow:none]",
+  "zt:[--dropdown-background:transparent]",
+  "zt:[--dropdown-background-hover:var(--background-modifier-hover)]",
+);
 
 export interface RuleEditorProps {
   /** The modal's button container; Save and Cancel render there. */
@@ -111,10 +159,15 @@ function Field({
     <div className="zt:flex zt:flex-col zt:gap-2">
       <div className="zt:flex zt:items-center zt:justify-between zt:gap-4">
         <div className="zt:min-w-0">
-          <div id={labelId} className="zt:text-base">
+          <div
+            id={labelId}
+            className="zt:text-sm zt:leading-(--line-height-tight)"
+          >
             {name}
           </div>
-          <p className="zt:text-sm zt:text-muted-foreground">{desc}</p>
+          <p className="zt:pt-1 zt:text-xs zt:leading-(--line-height-tight) zt:text-pretty zt:text-muted-foreground">
+            {desc}
+          </p>
           <ErrorText>{error}</ErrorText>
         </div>
         <div className="zt:shrink-0">{control(labelId)}</div>
@@ -128,7 +181,10 @@ function Field({
 function ErrorText({ children }: { children: string | null }) {
   if (children === null) return null;
   return (
-    <p role="alert" className="zt:text-xs zt:text-(--text-error)">
+    <p
+      role="alert"
+      className="zt:pt-1 zt:text-xs zt:leading-(--line-height-tight) zt:text-pretty zt:text-(--text-error)"
+    >
       {children}
     </p>
   );
@@ -287,11 +343,11 @@ function ConditionsSection() {
           id={headingId}
           role="heading"
           aria-level={3}
-          className="zt:text-base"
+          className="zt:text-base zt:leading-(--line-height-tight) zt:font-semibold"
         >
           {m.settings_profile_rule_conditions()}
         </div>
-        <p className="zt:text-sm zt:text-muted-foreground">
+        <p className="zt:pt-1 zt:text-sm zt:leading-(--line-height-tight) zt:text-pretty zt:text-muted-foreground">
           {m.settings_profile_rule_conditions_desc()}
         </p>
       </div>
@@ -315,7 +371,6 @@ function GroupEditor({
   const root = useRuleEditorStore((state) => state.draft.root);
   const collections = useRuleEditorStore((state) => state.deps.collections);
   const nested = path.length > 0;
-  const matchLabel = useId();
   const setMatch = (match: GroupMatch) =>
     setRoot(updateGroup(root, path, (target) => ({ ...target, match })));
   return (
@@ -326,20 +381,18 @@ function GroupEditor({
           "zt:rounded-md zt:border zt:border-border zt:bg-card zt:p-1.5",
       )}
     >
-      <div className="zt:flex zt:items-center zt:justify-between zt:gap-2">
-        <div className="zt:flex zt:items-center zt:gap-2">
-          {nested && (
-            <span
-              id={matchLabel}
-              className="zt:text-sm zt:text-muted-foreground"
-            >
-              {m.settings_profile_rule_group()}
-            </span>
-          )}
+      <div className="zt:flex zt:items-center zt:justify-between zt:gap-2 zt:pb-0.5">
+        <div className="zt:flex zt:min-w-0 zt:items-center zt:gap-2">
+          {/* The card and its own match name the group; a "Group" label beside
+              them repeats what both already say, so it stays for screen
+              readers alone. */}
           <Dropdown
-            className="zt:text-sm"
-            aria-label={nested ? undefined : m.settings_profile_rule_match()}
-            aria-labelledby={nested ? matchLabel : undefined}
+            className={quietDropdown}
+            aria-label={
+              nested
+                ? m.settings_profile_rule_group()
+                : m.settings_profile_rule_match()
+            }
             value={group.match}
             onChange={(value) => setMatch(value as GroupMatch)}
           >
@@ -387,9 +440,10 @@ function GroupEditor({
           ))}
         </ul>
       )}
-      <div className="zt:flex zt:gap-1.5">
+      <div className="zt:flex zt:gap-1.5 zt:pt-1">
         <button
           type="button"
+          className={quietButton}
           onClick={() =>
             setRoot(
               appendAt(
@@ -400,15 +454,18 @@ function GroupEditor({
             )
           }
         >
-          {m.settings_profile_rule_add_condition()}
+          <Icon name="plus" />
+          <span>{m.settings_profile_rule_add_condition()}</span>
         </button>
         <button
           type="button"
+          className={quietButton}
           onClick={() =>
             setRoot(appendAt(root, path, freshGroup(group.match, collections)))
           }
         >
-          {m.settings_profile_rule_add_group()}
+          <Icon name="plus" />
+          <span>{m.settings_profile_rule_add_group()}</span>
         </button>
       </div>
     </div>
@@ -436,9 +493,14 @@ function ConditionRow({
   const labelled =
     condition.kind === "expression" ? asLabelled(condition) : null;
   return (
-    <div className="zt:flex zt:items-start zt:gap-2">
-      <div className="zt:flex zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-1">
-        <div className="zt:flex zt:flex-wrap zt:items-center zt:gap-1.5">
+    <div className="zt:flex zt:flex-col">
+      <div
+        className={cn(
+          statementBox,
+          issue !== null && "zt:ring-(--background-modifier-error)",
+        )}
+      >
+        <div className={statementControls}>
           {condition.kind === "expression" ? (
             <ExpressionEditor
               className="zt:min-w-48 zt:flex-1"
@@ -491,32 +553,31 @@ function ConditionRow({
             </>
           )}
         </div>
-        <ErrorText>{issue}</ErrorText>
+        <div className={statementActions}>
+          {condition.kind === "expression" ? (
+            <IconButton
+              icon="list-filter"
+              disabled={labelled === null}
+              {...tooltipAttrs(m.settings_profile_rule_edit_visually())}
+              onClick={() => {
+                if (labelled) replace(labelled);
+              }}
+            />
+          ) : (
+            <IconButton
+              icon="code"
+              {...tooltipAttrs(m.settings_profile_rule_edit_as_expression())}
+              onClick={() => replace(asExpression(condition))}
+            />
+          )}
+          <IconButton
+            icon="x"
+            {...tooltipAttrs(m.settings_profile_rule_remove_condition())}
+            onClick={() => setRoot(removeAt(root, path))}
+          />
+        </div>
       </div>
-      {condition.kind === "expression" ? (
-        <IconButton
-          icon="list-filter"
-          className="zt:shrink-0"
-          disabled={labelled === null}
-          {...tooltipAttrs(m.settings_profile_rule_edit_visually())}
-          onClick={() => {
-            if (labelled) replace(labelled);
-          }}
-        />
-      ) : (
-        <IconButton
-          icon="code"
-          className="zt:shrink-0"
-          {...tooltipAttrs(m.settings_profile_rule_edit_as_expression())}
-          onClick={() => replace(asExpression(condition))}
-        />
-      )}
-      <IconButton
-        icon="x"
-        className="zt:shrink-0"
-        {...tooltipAttrs(m.settings_profile_rule_remove_condition())}
-        onClick={() => setRoot(removeAt(root, path))}
-      />
+      <ErrorText>{issue}</ErrorText>
     </div>
   );
 }
@@ -584,6 +645,9 @@ function ConditionValue({
             )}
           </Dropdown>
           <Dropdown
+            // Last in the row, so it takes the space left over — the colour
+            // behind the controls stays a hairline between them.
+            className="zt:min-w-0 zt:flex-1"
             aria-label={m.settings_profile_rule_collection_scope()}
             value={condition.descendants ? "descendants" : "direct"}
             onChange={(value) =>
