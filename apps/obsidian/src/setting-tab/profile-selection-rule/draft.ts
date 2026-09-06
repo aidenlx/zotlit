@@ -120,7 +120,10 @@ function visuallyEditable(
 ): condition is FlatCondition {
   return (
     condition.kind !== "group" &&
-    (condition.kind !== "tags" || condition.operator === "contains")
+    (condition.kind !== "tags" ||
+      !condition.negated ||
+      condition.operator === "contains" ||
+      condition.operator === "isEmpty")
   );
 }
 
@@ -229,7 +232,7 @@ export function freshCondition(
       };
     }
     case "tags":
-      return { kind, operator: "contains", negated, values: [""] };
+      return { kind, operator: "contains", negated, values: [] };
   }
 }
 
@@ -288,7 +291,9 @@ export function conditionIssue(
             describeOptions(deps),
           );
     case "tags":
-      return condition.values.some((value) => value === "")
+      return condition.operator !== "isEmpty" &&
+        (condition.values.length === 0 ||
+          condition.values.some((value) => value === ""))
         ? m.settings_profile_rule_tag_empty()
         : null;
     case "expression": {
