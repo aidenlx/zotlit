@@ -288,14 +288,6 @@ export function conditionIssue(
   }
 }
 
-/** What a condition's own row says about it. */
-export function rowIssue(
-  condition: RowCondition,
-  deps: RuleEditorDeps,
-): string | null {
-  return conditionIssue(condition, deps);
-}
-
 /** The first incomplete condition or vacuous group, as the user reads it. */
 export function treeIssue(
   group: ConditionGroup,
