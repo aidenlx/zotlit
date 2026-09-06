@@ -945,7 +945,8 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     const stored = await readStoredRules();
     expect(stored).toHaveLength(3);
-    expect(stored[2]).toMatchObject({
+    const collectionRule = stored[2]!;
+    expect(collectionRule).toMatchObject({
       scope: { mode: "all" },
       filter: {
         and: [`collections.within(${JSON.stringify(collectionPath)})`],
@@ -1012,10 +1013,23 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.textContent.includes(${JSON.stringify(collectionPath)})&&el.textContent.includes(${JSON.stringify(booksProfile.label)}));var edit=row&&row.querySelector('[aria-label=${JSON.stringify(m.settings_profile_rules_edit())}]');if(!edit)return false;edit.click();return true;})()`,
+        `(function(){var edits=Array.from(document.querySelectorAll('[aria-label=${JSON.stringify(m.settings_profile_rules_edit())}]'));var edit=edits.find(button=>{var row=button.closest('.setting-item');return row?.textContent.includes(${JSON.stringify(collectionPath)})&&row.textContent.includes(${JSON.stringify(booksProfile.label)});});if(!edit)return false;edit.click();return true;})()`,
         { expected: "true" },
       ),
     ).toBe(true);
+    expect(
+      JSON.parse(
+        await obEval(
+          vaultId,
+          `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal.querySelector('[data-condition-row]');var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_condition_kind())}]');var operator=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]');var value=row.querySelector('input[type=text]');var labels=Array.from(modal.querySelectorAll('[id]'));var target=Array.from(modal.querySelectorAll('select[aria-labelledby]')).find(select=>labels.find(label=>label.id===select.getAttribute('aria-labelledby'))?.textContent===${JSON.stringify(m.settings_profile_rule_target())});return JSON.stringify({kind:kind.value,operator:operator.value,value:value.value,target:target.value});})()`,
+        ),
+      ),
+    ).toEqual({
+      kind: "collections",
+      operator: "within",
+      value: collectionPath,
+      target: booksProfile.id,
+    });
     await obEval(
       vaultId,
       `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal.querySelector('[data-condition-row]');var operator=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_rule_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
@@ -1023,12 +1037,19 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await clickModalButton(vaultId, m.settings_profile_rule_save()),
     ).toBe(true);
+    const directFilter = {
+      and: [`collections.contains(${JSON.stringify(collectionPath)})`],
+    };
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var rules=app.plugins.plugins.zotlit.services.settings.current['profile.selection-rules'];var rule=rules.find(rule=>rule.id===${JSON.stringify(collectionRule.id)});return String(JSON.stringify(rule?.filter)===${JSON.stringify(JSON.stringify(directFilter))});})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
     const directStored = await readStoredRules();
-    expect(directStored[2]).toMatchObject({
-      filter: {
-        and: [`collections.contains(${JSON.stringify(collectionPath)})`],
-      },
-    });
+    const directRule = directStored.find(({ id }) => id === collectionRule.id);
+    expect(directRule?.filter).toEqual(directFilter);
     const directSelection = await quickSwitchSelection();
     expect(directSelection).toContain(m.settings_profile_default_name());
     expect(directSelection).not.toContain(booksProfile.label);
