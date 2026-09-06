@@ -1,7 +1,7 @@
 // The persisted shape of Profile Selection Rules: one vault-owned ordered list, priority order being list order.
 //
-// Each rule records an explicit Library scope (the same stable selectors
-// Library Scope persists), one Rule Filter, and one target Profile selector.
+// Each rule records one Rule Filter and one target Profile selector.
+// Library membership is an ordinary condition inside that filter.
 // The filter is an explicit `and` / `or` tree, in the shape of an Obsidian
 // Bases `filters` block, whose leaves are Filter Expressions stored as text.
 // A leaf's validity against the supported condition contract is judged when
@@ -13,7 +13,6 @@ import * as v from "valibot";
 
 import { parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
-import { libraryScopeSchema } from "@/services/library-scope/scope";
 
 export const PROFILE_SELECTION_RULES_KEY = "profile.selection-rules";
 
@@ -49,7 +48,6 @@ export const profileSelectionRuleSchema = v.pipe(
   v.object({
     /** Stable identity of the rule inside this vault's list. */
     id: v.pipe(v.string(), v.nonEmpty()),
-    scope: libraryScopeSchema,
     /** The conditions the rule's match is judged by. */
     filter: ruleFilterSchema,
     /** The Profile the rule selects, by stable ID or `default`. */

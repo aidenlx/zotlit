@@ -10,7 +10,6 @@ import { profileServiceFixture as harness } from "./__fixtures__/service";
 const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
 const booksRule = {
   id: "books",
-  scope: { mode: "all" },
   filter: 'itemType == "book"',
   profile: BOOKS,
 } as const;

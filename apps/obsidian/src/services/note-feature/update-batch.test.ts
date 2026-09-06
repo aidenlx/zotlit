@@ -479,19 +479,16 @@ const ARTICLES = "Ar7Kd2QpX9Mn" as ProfileId;
 const RETIRED_STAMP = "Retired (Qw8Er5Ty2Ui9)";
 const BOOKS_RULE: ProfileSelectionRule = {
   id: "rule-books",
-  scope: { mode: "all" },
   filter: 'itemType == "book"',
   profile: BOOKS,
 };
 const ARTICLES_RULE: ProfileSelectionRule = {
   id: "rule-articles",
-  scope: { mode: "all" },
   filter: 'itemType == "journalArticle"',
   profile: ARTICLES,
 };
 const BROKEN_RULE: ProfileSelectionRule = {
   id: "rule-broken",
-  scope: { mode: "all" },
   filter: "itemType ==",
   profile: BOOKS,
 };

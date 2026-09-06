@@ -29,35 +29,30 @@ const missingId = "missingXXXXX" as ProfileId;
 
 const groupRule: ProfileSelectionRule = {
   id: "rule-1",
-  scope: { mode: "all" },
   filter: 'itemType == "book"',
   profile: profileAId,
 };
 
 const brokenRule: ProfileSelectionRule = {
   id: "rule-2",
-  scope: { mode: "all" },
   filter: "itemType == ",
   profile: "default",
 };
 
 const unavailableRule: ProfileSelectionRule = {
   id: "rule-3",
-  scope: { mode: "all" },
   filter: "true",
   profile: missingId,
 };
 
 const collectionRule: ProfileSelectionRule = {
   id: "rule-4",
-  scope: { mode: "all" },
   filter: 'collections.within("Project/Drafts") && tags.contains("Read")',
   profile: profileAId,
 };
 
 const unknownCollectionRule: ProfileSelectionRule = {
   id: "rule-5",
-  scope: { mode: "all" },
   filter: 'collections.within("Future/Research")',
   profile: profileAId,
 };
@@ -140,6 +135,26 @@ describe("Profile Selection Rules settings", () => {
     const desc = (list(ctx).items![0] as { desc: DocumentFragment }).desc;
     expect(desc.textContent).toContain(
       `${m.settings_profile_rule_item_type_is({ type: "Book" })} or (${m.settings_profile_rule_tags_contain({ tags: "Read" })} and ${m.settings_profile_rule_collections_not_inside({ collections: "Project/Drafts" })})`,
+    );
+  });
+
+  it("describes Library conditions by their labels and marks an unknown Library", () => {
+    const ctx = context([
+      { ...groupRule, filter: 'library == "personal"' },
+      { ...groupRule, id: "unknown-library", filter: 'library != "group:118"' },
+    ]);
+    const rows = list(ctx).items!;
+    expect((rows[0] as { desc: DocumentFragment }).desc.textContent).toBe(
+      m.settings_profile_rule_library_is({
+        library: m.settings_library_scope_personal(),
+      }),
+    );
+    expect((rows[1] as { desc: DocumentFragment }).desc.textContent).toContain(
+      m.settings_profile_rule_broken({
+        problem: m.profile_rule_problem_unknown_library({
+          text: '"group:118"',
+        }),
+      }),
     );
   });
 

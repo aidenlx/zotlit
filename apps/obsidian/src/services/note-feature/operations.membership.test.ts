@@ -20,7 +20,11 @@ import {
 } from "@/lib/constants";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { SourceOrigin } from "@/services/attachment-import/service";
-import { listCollectionChoices } from "@/services/profile-selection";
+import {
+  listCollectionChoices,
+  resolveMembershipFacts,
+  ruleItem,
+} from "@/services/profile-selection";
 import type { ProfileSelectionRule } from "@/services/profile-selection";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import type { ProfileFixtureSettings } from "@/services/profile/__fixtures__/reader";
@@ -150,7 +154,6 @@ function rule(
   overrides: Partial<ProfileSelectionRule> & { id: string },
 ): ProfileSelectionRule {
   return {
-    scope: { mode: "all" },
     filter: { and: [] },
     profile: books,
     ...overrides,
@@ -327,6 +330,79 @@ function harness(rules: readonly ProfileSelectionRule[]): Harness {
 }
 
 describe("Profile Selection Rules over Collection and Tag rows", () => {
+  it("reads Library selectors, exact Tag names, and complete Collection paths from Item facts", () => {
+    const { client } = harness([]);
+    expect(
+      ruleItem(personalBook, resolveMembershipFacts(client, personalBook)),
+    ).toEqual({
+      library: { type: "personal" },
+      itemType: "book",
+      tags: expect.arrayContaining(["Read", "READ"]),
+      collections: [["Project", "Drafts"], ["Other"]],
+    });
+    expect(
+      ruleItem(groupBook, resolveMembershipFacts(client, groupBook)),
+    ).toEqual({
+      library: { type: "group", groupID: 118 },
+      itemType: "book",
+      tags: [],
+      collections: [["Project"]],
+    });
+  });
+
+  it("selects through Library conditions alone across the personal and group Libraries", async () => {
+    const group = rule({
+      id: "group",
+      filter: 'library == "group:118"',
+      profile: papers,
+    });
+    const personal = rule({ id: "personal", filter: 'library == "personal"' });
+    const { deps } = harness([group, personal]);
+    const feature = createNoteFeature(deps);
+    expect(
+      await feature.resolveCreationProfile({ item: personalBook }),
+    ).toMatchObject({ selector: books, source: "rule", rule: personal });
+    expect(
+      await feature.resolveCreationProfile({ item: groupBook }),
+    ).toMatchObject({ selector: papers, source: "rule", rule: group });
+    expect(
+      await feature.resolveCreationProfile({ item: article }),
+    ).toMatchObject({ selector: books, source: "rule", rule: personal });
+    const excluded = rule({ id: "excluded", filter: 'library != "group:118"' });
+    deps.settings.update({ "profile.selection-rules": [excluded] });
+    expect(await feature.resolveCreationProfile({ item: groupBook })).toEqual({
+      selector: "default",
+      source: "bound",
+      shouldAsk: true,
+    });
+    expect(
+      await feature.resolveCreationProfile({ item: personalBook }),
+    ).toMatchObject({ selector: books, rule: excluded });
+  });
+
+  it.each([
+    ['library == "group:2"', "unknown-library"],
+    ['library != "group:999"', "unknown-library"],
+    ['itemType == "novel"', "unknown-item-type"],
+    ["library ==", "syntax"],
+    ['title == "BOOK0001"', "unsupported"],
+    [" ", "empty"],
+  ])(
+    "reports the problem kind of %s at creation preparation",
+    async (filter, code) => {
+      const invalid = rule({ id: "invalid", filter });
+      const feature = createNoteFeature(harness([invalid]).deps);
+      for (const item of [personalBook, groupBook]) {
+        expect(await feature.resolveCreationProfile({ item })).toMatchObject({
+          selector: "default",
+          source: "bound",
+          shouldAsk: true,
+          problem: { kind: "broken-rule", rule: invalid, problem: { code } },
+        });
+      }
+    },
+  );
+
   it("uses one Collection path in both Libraries and creates notes with that Profile", async () => {
     const project = rule({
       id: "project",
@@ -539,12 +615,11 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
     },
   );
 
-  it("combines Collection and Tag conditions with the item type and the Library scope", async () => {
+  it("combines Collection and Tag conditions with the item type and a Library condition", async () => {
     const combined = rule({
       id: "combined",
-      scope: { mode: "selected", libraries: [{ type: "personal" }] },
       filter:
-        'collections.within("Project") && tags.contains("Read") && itemType == "book"',
+        'library == "personal" && collections.within("Project") && tags.contains("Read") && itemType == "book"',
     });
     const anyProject = rule({
       id: "any-project",
@@ -563,13 +638,12 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
     ).toMatchObject({ selector: papers, rule: anyProject });
   });
 
-  it("judges nested alternatives and exclusions by hand-derived outcomes within the Library scope", async () => {
+  it("judges nested alternatives and exclusions by hand-derived outcomes with a Library condition", async () => {
     // My Library only: in Project (or tagged auto-tag) and not a book.
     const projectPapers = rule({
       id: "project-papers",
-      scope: { mode: "selected", libraries: [{ type: "personal" }] },
       filter:
-        '(collections.within("Project") || tags.contains("auto-tag")) && itemType != "book"',
+        'library == "personal" && (collections.within("Project") || tags.contains("auto-tag")) && itemType != "book"',
       profile: papers,
     });
     // Neither tagged Read nor an article.

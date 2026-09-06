@@ -7,7 +7,6 @@ import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import { libraryLabel, selectorLabel } from "@/services/library-scope/label";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
-import type { LibrarySelector } from "@/services/library-scope/scope";
 import { selectorKey } from "@/services/library-scope/scope";
 
 import { compileCondition, compileFilter } from "./condition";
@@ -33,8 +32,8 @@ export function itemTypeLabel(name: string): string {
 }
 
 /**
- * One line naming what a rule matches and where: "Item type is Book in My
- * Library". Groups read as lists — "and" for all, "or" for any — with a
+ * One line naming what a rule matches: "Library is My Library and item type
+ * is Book". Groups read as lists — "and" for all, "or" for any — with a
  * nested group in parentheses. An expression outside the contract is quoted
  * as written.
  * Without `libraries`, a selected Library reads by its stable selector.
@@ -43,10 +42,7 @@ export function describeRule(
   rule: ProfileSelectionRule,
   options: DescribeOptions = {},
 ): string {
-  return m.settings_profile_rule_summary({
-    conditions: describeConditions(rule.filter),
-    libraries: describeScope(rule, options.libraries ?? []),
-  });
+  return describeConditions(rule.filter, options);
 }
 
 /** The reason a rule cannot be evaluated, for a settings row or a picker. */
@@ -58,24 +54,29 @@ export function describeProblem(problem: ConditionProblem): string {
       return m.profile_rule_problem_syntax({ text: problem.text });
     case "unsupported":
       return m.profile_rule_problem_unsupported({ text: problem.text });
+    case "unknown-library":
+      return m.profile_rule_problem_unknown_library({ text: problem.text });
     case "unknown-item-type":
       return m.profile_rule_problem_unknown_item_type({ text: problem.text });
   }
 }
 
-function describeConditions(filter: RuleFilter): string {
+function describeConditions(
+  filter: RuleFilter,
+  options: DescribeOptions,
+): string {
   const { condition } = compileFilter(filter);
-  if (!condition) return describeFilter(filter);
+  if (!condition) return describeFilter(filter, options);
   if (condition.kind === "group" && condition.conditions.length === 0)
     return m.settings_profile_rule_summary_all_items();
-  return describeCondition(condition);
+  return describeCondition(condition, options);
 }
 
 /** A broken filter, leaf by leaf: readable leaves in words, the rest as written. */
-function describeFilter(filter: RuleFilter): string {
+function describeFilter(filter: RuleFilter, options: DescribeOptions): string {
   if (typeof filter === "string") {
     const { condition } = compileCondition(filter);
-    return condition ? describeCondition(condition) : filter.trim();
+    return condition ? describeCondition(condition, options) : filter.trim();
   }
   const all = "and" in filter;
   return new Intl.ListFormat(runtime.getLocale(), {
@@ -83,31 +84,55 @@ function describeFilter(filter: RuleFilter): string {
   }).format(
     (all ? filter.and : filter.or).map((entry) =>
       typeof entry === "string"
-        ? describeFilter(entry)
+        ? describeFilter(entry, options)
         : m.settings_profile_rule_summary_group({
-            conditions: describeFilter(entry),
+            conditions: describeFilter(entry, options),
           }),
     ),
   );
 }
 
-function describeCondition(condition: RuleCondition): string {
-  if (condition.kind !== "group") return describeFlat(condition);
+function describeCondition(
+  condition: RuleCondition,
+  options: DescribeOptions,
+): string {
+  if (condition.kind !== "group") return describeFlat(condition, options);
   return new Intl.ListFormat(runtime.getLocale(), {
     type: condition.match === "all" ? "conjunction" : "disjunction",
   }).format(
     condition.conditions.map((entry) =>
       entry.kind === "group"
         ? m.settings_profile_rule_summary_group({
-            conditions: describeCondition(entry),
+            conditions: describeCondition(entry, options),
           })
-        : describeFlat(entry),
+        : describeFlat(entry, options),
     ),
   );
 }
 
-function describeFlat(condition: FlatCondition): string {
+function describeFlat(
+  condition: FlatCondition,
+  options: DescribeOptions,
+): string {
   switch (condition.kind) {
+    case "library": {
+      const found = options.libraries?.find(
+        ({ selector }) => selectorKey(selector) === condition.values[0],
+      );
+      const library = found
+        ? libraryLabel(found)
+        : selectorLabel(
+            condition.values[0] === "personal"
+              ? { type: "personal" }
+              : {
+                  type: "group",
+                  groupID: Number(condition.values[0].slice(6)),
+                },
+          );
+      return condition.negated
+        ? m.settings_profile_rule_library_is_not({ library })
+        : m.settings_profile_rule_library_is({ library });
+    }
     case "item-type": {
       const type = itemTypeLabel(condition.values[0]);
       return condition.negated
@@ -169,27 +194,4 @@ function describeFlat(condition: FlatCondition): string {
       }
     }
   }
-}
-
-function describeScope(
-  rule: ProfileSelectionRule,
-  libraries: readonly AvailableLibrary[],
-): string {
-  if (rule.scope.mode === "all") return m.settings_library_scope_all();
-  const byKey = new Map(
-    libraries.map((library) => [selectorKey(library.selector), library]),
-  );
-  return new Intl.ListFormat(runtime.getLocale(), {
-    type: "conjunction",
-  }).format(
-    rule.scope.libraries.map((selector) => scopeLabel(selector, byKey)),
-  );
-}
-
-function scopeLabel(
-  selector: LibrarySelector,
-  byKey: ReadonlyMap<string, AvailableLibrary>,
-): string {
-  const library = byKey.get(selectorKey(selector));
-  return library ? libraryLabel(library) : selectorLabel(selector);
 }

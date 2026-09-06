@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ProfileId } from "@/lib/profile-stamp";
+import type { AvailableLibrary } from "@/services/library-scope/scope";
 
 import {
   compileCondition,
@@ -30,14 +31,24 @@ function rule(
   overrides: Partial<ProfileSelectionRule> & { id: string },
 ): ProfileSelectionRule {
   return {
-    scope: { mode: "all" },
     filter: 'itemType == "book"',
     profile: books,
     ...overrides,
   };
 }
 
+const libraries: AvailableLibrary[] = [
+  { selector: { type: "personal" }, libraryID: 1, name: null },
+  { selector: { type: "group", groupID: 118 }, libraryID: 5, name: "Team" },
+  {
+    selector: { type: "group", groupID: 4200309 },
+    libraryID: 2,
+    name: "Archive",
+  },
+];
+
 const available = {
+  libraries,
   isAvailable: (selector: string) => selector !== papers,
 };
 
@@ -53,6 +64,93 @@ function facts(overrides: Partial<RuleItemFacts> = {}): RuleItemFacts {
 }
 
 describe("condition contract", () => {
+  it("compiles and matches stable Library selectors with equality and negation", () => {
+    expect(compileCondition('library == "personal"', libraries)).toEqual({
+      condition: {
+        kind: "library",
+        operator: "is",
+        negated: false,
+        values: ["personal"],
+      },
+      problem: null,
+    });
+    expect(compileCondition('!(library == "group:118")', libraries)).toEqual({
+      condition: {
+        kind: "library",
+        operator: "is",
+        negated: true,
+        values: ["group:118"],
+      },
+      problem: null,
+    });
+    const group = compileFilter(
+      { and: ['library == "group:118"', 'itemType == "book"'] },
+      libraries,
+    ).condition!;
+    expect(
+      matchCondition(
+        group,
+        facts({ library: { type: "group", groupID: 118 } }),
+      ),
+    ).toBe(true);
+    expect(
+      matchCondition(group, facts({ library: { type: "group", groupID: 5 } })),
+    ).toBe(false);
+    expect(matchCondition(group, facts())).toBe(false);
+    const other = compileCondition(
+      'library != "personal"',
+      libraries,
+    ).condition!;
+    expect(matchCondition(other, facts())).toBe(false);
+    expect(
+      matchCondition(
+        other,
+        facts({ library: { type: "group", groupID: 118 } }),
+      ),
+    ).toBe(true);
+    expect(formatCondition(other)).toBe('library != "personal"');
+  });
+
+  it.each([
+    "group:5",
+    "group:0",
+    "group:0118",
+    "group:1e2",
+    "personal:1",
+    "Team",
+    "2",
+  ])("reports an unknown Library for %s", (selector) => {
+    const expression = `library == "${selector}"`;
+    expect(compileCondition(expression, libraries)).toEqual({
+      condition: null,
+      problem: {
+        code: "unknown-library",
+        from: 11,
+        to: expression.length,
+        text: `"${selector}"`,
+      },
+    });
+  });
+
+  it("diagnoses unknown Libraries throughout a tree before matching any Item", () => {
+    const unknown = rule({
+      id: "unknown",
+      filter: { or: ['itemType == "book"', 'library != "group:5"'] },
+    });
+    expect(selectProfileByRules([unknown], facts(), available)).toMatchObject({
+      outcome: "broken",
+      rule: unknown,
+      problem: { code: "unknown-library", text: '"group:5"' },
+    });
+    // A source-only parse still preserves a well-formed selector for the editor.
+    expect(compileCondition('library == "group:5"').condition).toEqual({
+      kind: "library",
+      operator: "is",
+      negated: false,
+      values: ["group:5"],
+    });
+  });
+
   it("compiles item-type equality, negation, and flat groups", () => {
     expect(compileCondition('itemType == "book"')).toEqual({
       condition: itemType("book"),
@@ -543,14 +641,14 @@ describe("selectProfileByRules", () => {
     });
   });
 
-  it("evaluates a rule only within its Library scope", () => {
+  it("selects by Library leaves alone using stable group IDs", () => {
     const personalOnly = rule({
       id: "personal",
-      scope: { mode: "selected", libraries: [{ type: "personal" }] },
+      filter: 'library == "personal"',
     });
     const groupOnly = rule({
       id: "group",
-      scope: { mode: "selected", libraries: [{ type: "group", groupID: 118 }] },
+      filter: 'library == "group:118"',
       profile: "default",
     });
     expect(
@@ -564,7 +662,7 @@ describe("selectProfileByRules", () => {
     ).toEqual({ outcome: "unmatched" });
   });
 
-  it("stops at an earlier unevaluable in-scope rule instead of advancing", () => {
+  it("stops at an earlier unevaluable rule instead of advancing", () => {
     const broken = rule({ id: "broken", filter: 'title == "x"' });
     const later = rule({ id: "later" });
     expect(
@@ -574,14 +672,17 @@ describe("selectProfileByRules", () => {
       rule: broken,
       problem: { code: "unsupported", from: 0, to: 12, text: 'title == "x"' },
     });
-    const outOfScope = rule({
-      id: "out",
-      filter: "itemType ==",
-      scope: { mode: "selected", libraries: [{ type: "group", groupID: 118 }] },
+    const brokenGroup = rule({
+      id: "broken-group",
+      filter: { and: ['library == "group:118"', "itemType =="] },
     });
     expect(
-      selectProfileByRules([outOfScope, later], personalBook, available),
-    ).toEqual({ outcome: "matched", rule: later, selector: books });
+      selectProfileByRules([brokenGroup, later], personalBook, available),
+    ).toMatchObject({
+      outcome: "broken",
+      rule: brokenGroup,
+      problem: { code: "syntax" },
+    });
   });
 
   it("reports a matching rule whose target is unavailable, distinct from a nonmatch", () => {
@@ -657,7 +758,7 @@ describe("selectProfileByRules", () => {
     });
   });
 
-  it("gives an Item of an unknown group Library no selector, so a personal-scoped rule skips it", () => {
+  it("gives an Item of an unknown group Library no selector, so a personal Library condition skips it", () => {
     const orphan = ruleItem(
       { libraryID: 7, groupID: null, fields: { itemType: "book" } as never },
       { tags: [], collections: [] },
@@ -665,7 +766,7 @@ describe("selectProfileByRules", () => {
     expect(orphan.library).toBeNull();
     const personal = rule({
       id: "personal",
-      scope: { mode: "selected", libraries: [{ type: "personal" }] },
+      filter: 'library == "personal"',
     });
     expect(selectProfileByRules([personal], orphan, available)).toEqual({
       outcome: "unmatched",
