@@ -29,6 +29,7 @@
     "@std/async": "catalog:",
     "@std/collections": "catalog:",
     "@std/ini": "jsr:0.225.2",
+    "@uiw/react-codemirror": "^4.25.11",
     "@zotlit/db": "workspace:*",
     "@zotlit/filter-expression": "workspace:*",
     "@zotlit/item-lookup": "workspace:*",
@@ -56,6 +57,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@codemirror/commands": "catalog:",
     "@codemirror/language": "catalog:",
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:",
