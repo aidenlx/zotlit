@@ -33,8 +33,8 @@ import {
   withUnavailableLibraries,
 } from "@/services/batch-scope";
 import type { BatchLibrary, BatchTarget } from "@/services/batch-scope";
-import { describeRule } from "@/services/profile-selection";
 import type { ResolvedProfile } from "@/services/profile/bindings";
+import type { LiteratureNoteProfile } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 import { InertTemplateError } from "@/services/template/errors";
 import { BatchModal, FlatManifest } from "@/views/batch-modal";
@@ -74,11 +74,10 @@ export interface BatchUpdateDeps
   extends SingleUpdateDeps, BatchProfilePickerDeps {}
 
 /**
- * How a new row's automatic selection ended. The unmatched fallback and the
- * broken-rule recovery address rows by it, so a later choice for one group
- * leaves the other groups' selections in place.
+ * Selection origin keeps the unresolved fallback and explicit recovery scoped
+ * to their original rows when the user changes a destination.
  */
-type CreationOrigin = "selected" | "unmatched" | "affected";
+type CreationOrigin = "selected" | "unresolved" | "affected";
 
 type CreateAction = {
   kind: "create";
@@ -262,14 +261,17 @@ export async function runBatchUpdate(
       );
       const chosen = await chooseBatchProfile(deps, {
         indexedKey: first.indexedKey,
-        selection: first.selection ?? {
-          selector: DEFAULT_PROFILE,
-          source: "bound",
-          shouldAsk: true,
-        },
+        selection: fallbackSelection(rows()),
         problem:
-          first.selection?.problem &&
-          describeSelectionProblem(first.selection.problem),
+          [
+            ...new Set(
+              rows().flatMap(({ selection }) =>
+                selection?.problem
+                  ? [describeSelectionProblem(selection.problem)]
+                  : [],
+              ),
+            ),
+          ].join(" ") || undefined,
         previews: plans.get(first.itemID) ?? [],
       });
       if (chosen === undefined) return;
@@ -339,26 +341,26 @@ export async function runBatchUpdate(
           creationItems,
           { signal: controls.signal },
         );
-        // One rule result per new note; an explicit batch Profile outranks
-        // the rules, and a stopped selection leaves the row without a
-        // destination until the user chooses one for the affected rows.
+        // Each Item keeps its own result and prepared destination. Overlap
+        // rows need a choice; the fallback also covers unmatched Items.
         for (const action of creations()) {
           const selection = await deps.noteFeature.resolveCreationProfile({
             headless: profile,
             item: creationItems.find((item) => item.itemID === action.itemID),
           });
-          action.origin = selection.problem
-            ? "affected"
-            : selection.source === "bound"
-              ? "unmatched"
-              : "selected";
+          action.origin =
+            selection.problem && selection.problem.kind !== "overlap"
+              ? "affected"
+              : selection.source === "bound"
+                ? "unresolved"
+                : "selected";
           assign(action, selection);
         }
         const rowsOf = (origin: CreationOrigin) => () =>
           creations().filter((action) => action.origin === origin);
         profileChoices = [
-          ...(rowsOf("unmatched")().length > 0
-            ? [choiceFor("unmatched", rowsOf("unmatched"))]
+          ...(rowsOf("unresolved")().length > 0
+            ? [choiceFor("unresolved", rowsOf("unresolved"))]
             : []),
           ...(rowsOf("affected")().length > 0
             ? [choiceFor("affected", rowsOf("affected"))]
@@ -383,12 +385,12 @@ export async function runBatchUpdate(
       return new FlatManifest({
         tasks,
         notFound: classified.notFound,
+        profileChoices,
         groups: batchGroups(classified.libraries, [
           { kind: "update", header: m.batch_update_group_update },
           {
             kind: "create",
             header: m.batch_update_group_create,
-            profileChoices,
           },
         ]),
         // Non-actionable, so it rides the static informational slot rather than
@@ -428,6 +430,31 @@ function sharedProfile(
     : undefined;
 }
 
+/** Aggregate every overlap so a shared fallback exposes all candidate identities. */
+function fallbackSelection(
+  rows: readonly CreateAction[],
+): CreationProfileSelection {
+  const candidates = new Map<ProfileSelector, LiteratureNoteProfile>();
+  for (const { selection } of rows)
+    if (selection?.problem?.kind === "overlap")
+      for (const candidate of selection.problem.candidates)
+        candidates.set(candidate.id, candidate);
+  if (candidates.size)
+    return {
+      selector: DEFAULT_PROFILE,
+      source: "bound",
+      shouldAsk: true,
+      problem: { kind: "overlap", candidates: [...candidates.values()] },
+    };
+  return (
+    rows[0]?.selection ?? {
+      selector: DEFAULT_PROFILE,
+      source: "bound",
+      shouldAsk: true,
+    }
+  );
+}
+
 /** A new row's chip, frozen destination, and the reason behind them. */
 function creationRow(
   action: BatchAction & CreateAction,
@@ -443,14 +470,12 @@ function creationRow(
   };
 }
 
-/** Why a new row goes where it goes: its problem, its rule, or its source. */
+/** Why a new row goes where it goes: its problem, its match, or its source. */
 function creationReason(selection: CreationProfileSelection): string {
   if (selection.problem) return describeSelectionProblem(selection.problem);
-  if (selection.source === "rule")
-    return m.modal_profile_source_rule({ rule: describeRule(selection.rule) });
+  if (selection.source === "match") return selection.reason;
   return (
-    describeSelectionSource(selection.source) ??
-    m.batch_profile_reason_unmatched()
+    describeSelectionSource(selection.source) ?? m.profile_match_unmatched()
   );
 }
 

@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { getItemsByID } from "@zotlit/db";
 import type { Item } from "@zotlit/db";
 
+import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
@@ -120,16 +121,12 @@ describe("CitekeyEditor Profile creation", () => {
     });
   });
 
-  it("creates directly under a rule-selected Profile without the picker", async () => {
+  it("creates directly under a match-selected Profile without the picker", async () => {
     const h = fixture({
       selector: books,
-      source: "rule",
+      source: "match",
       shouldAsk: true,
-      rule: {
-        id: "book",
-        filter: 'itemType == "book"',
-        profile: books,
-      },
+      reason: m.profile_match_selected({ profile: "Books" }),
     });
     await using service = h.service;
     await service.ready;

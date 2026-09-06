@@ -60,8 +60,8 @@ export function profileChoiceControl(
 /** The control's own words: which rows it governs and where they go. */
 function profileChoiceText({ label, count = 0, scope }: BatchProfileChoice) {
   switch (scope) {
-    case "unmatched":
-      return m.batch_profile_unmatched_destination({
+    case "unresolved":
+      return m.batch_profile_unresolved_destination({
         count,
         label: label ?? "",
       });
@@ -83,10 +83,10 @@ function profileChoiceHelp(
   scope: BatchProfileChoice["scope"],
 ): string | undefined {
   switch (scope) {
-    case "unmatched":
-      return m.batch_profile_unmatched_help();
+    case "unresolved":
+      return m.batch_profile_unresolved_help();
     case "affected":
-      return m.batch_profile_affected_help();
+      return m.batch_profile_recovery_help();
     case "all-new":
       return m.batch_profile_override_all_help();
     default:

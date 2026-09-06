@@ -8,11 +8,6 @@ import type { ProfileId } from "@/lib/profile-stamp";
 import { profileServiceFixture as harness } from "./__fixtures__/service";
 
 const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
-const booksRule = {
-  id: "books",
-  filter: 'itemType == "book"',
-  profile: BOOKS,
-} as const;
 const parseLiteratureNoteTemplate = (source: string) =>
   new TemplateFacade().parseLiteratureNoteTemplate(source);
 beforeEach(() => vi.useFakeTimers());
@@ -764,10 +759,6 @@ describe("ProfileService", () => {
         vault.deleteFile(file.path);
       });
     fixture.indexNotes();
-    const papersRule = { ...booksRule, id: "papers", profile: papers };
-    fixture.settings.update({
-      "profile.selection-rules": [booksRule, papersRule],
-    });
     const plan = await profile.prepareDelete(BOOKS);
     expect(plan.literatureNotes).toEqual([literature]);
     expect(plan.importedNotes).toEqual([imported]);
@@ -775,8 +766,6 @@ describe("ProfileService", () => {
       "default",
       papers,
     ]);
-    // Only the rules that select Books are affected.
-    expect(plan.rules).toEqual([booksRule]);
     const pending = profile.delete(BOOKS, papers, { move: true });
     await vi.advanceTimersByTimeAsync(500);
     await expect(pending).resolves.toEqual({
@@ -799,25 +788,18 @@ describe("ProfileService", () => {
     expect(vault.contents.get("templates/shared.liquid.md")).toBe(
       "Shared partial",
     );
-    // The replacement moved the notes only: the rule still targets Books.
-    expect(fixture.settings.current?.["profile.selection-rules"]).toEqual([
-      booksRule,
-      papersRule,
-    ]);
     expect(profile.resolveProfile(BOOKS)).toBeUndefined();
   });
 
-  it("lists referencing rules for a Profile no note uses and keeps them after deletion", async () => {
+  it("deletes an unused Profile document", async () => {
     await using fixture = await harness({
       "templates/zotlit-profile.books.md": document(),
     });
-    const { profile, vault, settings } = fixture;
-    settings.update({ "profile.selection-rules": [booksRule] });
+    const { profile, vault } = fixture;
     fixture.indexNotes();
     const plan = await profile.prepareDelete(BOOKS);
     expect(plan.literatureNotes).toEqual([]);
     expect(plan.importedNotes).toEqual([]);
-    expect(plan.rules).toEqual([booksRule]);
     const pending = profile.delete(BOOKS, "default");
     await vi.advanceTimersByTimeAsync(500);
     await expect(pending).resolves.toEqual({
@@ -826,19 +808,16 @@ describe("ProfileService", () => {
       movedFiles: 0,
     });
     expect(vault.files.has("templates/zotlit-profile.books.md")).toBe(false);
-    expect(settings.current?.["profile.selection-rules"]).toEqual([booksRule]);
   });
 
-  it("keeps rule references when the Profile document is removed outside ZotLit", async () => {
+  it("removes a Profile when its document is removed outside ZotLit", async () => {
     await using fixture = await harness({
       "templates/zotlit-profile.books.md": document(),
     });
-    const { profile, vault, settings } = fixture;
-    settings.update({ "profile.selection-rules": [booksRule] });
+    const { profile, vault } = fixture;
     vault.deleteFile("templates/zotlit-profile.books.md");
     await vi.advanceTimersByTimeAsync(500);
     expect(profile.resolveProfile(BOOKS)).toBeUndefined();
-    expect(settings.current?.["profile.selection-rules"]).toEqual([booksRule]);
   });
 
   it("keeps the Profile document when a requested note move fails", async () => {

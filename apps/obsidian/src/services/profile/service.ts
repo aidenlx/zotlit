@@ -28,8 +28,10 @@ import {
 } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
+import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteIndex } from "@/services/note-index/service";
-import type { ProfileSelectionRule } from "@/services/profile-selection/schema";
+import { compileProfileMatch } from "@/services/profile-selection";
+import type { ProfileMatch } from "@/services/profile-selection";
 import { bindProfile } from "@/services/profile/bindings";
 import type {
   NoteProfile,
@@ -70,6 +72,7 @@ export interface LiteratureNoteProfile {
   readonly document: string;
   readonly path: string;
   readonly bindings: Partial<ResolvedLiteratureNoteProfileBindings>;
+  readonly match: ProfileMatch;
 }
 
 export interface ProfileCreateOptions {
@@ -145,11 +148,6 @@ export interface ProfileDeletionPlan {
   literatureNotes: TFile[];
   importedNotes: TFile[];
   targets: ProfileDeletionTarget[];
-  /**
-   * Profile Selection Rules whose target is the Profile. Deletion leaves them
-   * as they are — the user repairs or removes each one in the rule editor.
-   */
-  rules: readonly ProfileSelectionRule[];
 }
 
 export interface ProfileDeletionResult {
@@ -162,6 +160,7 @@ interface ProfileServiceDeps {
   app: App;
   settings: SettingsService;
   template: TemplateService;
+  libraryScope: Pick<LibraryScopeService, "ready" | "libraries" | "on">;
   noteIndex: Pick<NoteIndex, "whenIndexed" | "getNotesByProfile">;
 }
 
@@ -305,6 +304,10 @@ export class ProfileService extends Service {
     const entry: LiteratureNoteProfile = {
       id,
       label,
+      match: compileProfileMatch(
+        look.manifest.match,
+        this.#deps.libraryScope.libraries,
+      ),
       document,
       path: join(folder, document),
       bindings: Object.fromEntries(
@@ -542,6 +545,10 @@ export class ProfileService extends Service {
     const entry: LiteratureNoteProfile = {
       id,
       label: manifest.name,
+      match: compileProfileMatch(
+        manifest.match,
+        this.#deps.libraryScope.libraries,
+      ),
       document,
       path,
       bindings: Object.fromEntries(
@@ -696,16 +703,12 @@ export class ProfileService extends Service {
       ];
       return [{ profile, files }];
     });
-    const rules = (
-      this.#deps.settings.current?.["profile.selection-rules"] ?? []
-    ).filter((rule) => rule.profile === id);
     logger.debug("Prepared Profile deletion", {
       id,
       literatureNotes: literatureNotes.length,
       importedNotes: importedNotes.length,
-      rules: rules.length,
     });
-    return { source, literatureNotes, importedNotes, targets, rules };
+    return { source, literatureNotes, importedNotes, targets };
   }
 
   async delete(
@@ -760,12 +763,18 @@ export class ProfileService extends Service {
 
   async #load(): Promise<void> {
     await using stack = new AsyncDisposableStack();
-    await this.#deps.template.ready;
+    await Promise.all([
+      this.#deps.template.ready,
+      this.#deps.libraryScope.ready,
+    ]);
     stack.defer(
       this.#deps.template.on("compile-status-changed", () => this.#scan()),
     );
     stack.defer(
       this.#deps.settings.subscribe(() => this.#events.emit("changed")),
+    );
+    stack.defer(
+      this.#deps.libraryScope.on("libraries-changed", () => this.#scan()),
     );
     this.#scan();
     this.#loaded = true;
@@ -843,9 +852,19 @@ export class ProfileService extends Service {
         continue;
       }
       const manifest = status.validation.manifest;
+      const match = compileProfileMatch(
+        manifest.match,
+        this.#deps.libraryScope.libraries,
+      );
+      if (match.state === "unevaluable")
+        logger.debug("Profile {id} match cannot be evaluated", {
+          id,
+          problem: match.problem,
+        });
       this.#profiles.push({
         id: id as ProfileId,
         label: manifest.name,
+        match,
         document: status.reference,
         path: status.path,
         bindings: {

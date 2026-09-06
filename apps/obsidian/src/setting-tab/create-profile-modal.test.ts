@@ -30,6 +30,7 @@ function fixture() {
     document: "zotlit-profile.reading.md",
     path: "templates/zotlit-profile.reading.md",
     bindings: {},
+    match: { state: "absent" as const, summary: m.profile_match_absent() },
   }));
   const draft: PreparedProfileCreation = {
     profile,

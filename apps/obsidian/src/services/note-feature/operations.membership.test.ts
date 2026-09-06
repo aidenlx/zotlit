@@ -1,51 +1,48 @@
-/**
- * Automatic Profile Selection by Collection and Tag membership, exercised
- * through the Note Feature's creation operations against real relational
- * rows: a two-Library Zotero database whose Collections share names and keys
- * across Libraries, nest, and hold one Item in several places, and whose
- * Tags differ by case and origin.
- */
-import { TFile, TFolder } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
+// Creation preparation and registry behavior over Profile documents and relational Item rows.
+import type { TFile } from "obsidian";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 import type { Item, NoteTemplateContext } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
+import { createNanoEvents } from "@zotlit/shared/nanoevents";
+import type { MatchTree } from "@zotlit/templates/facade";
 import type { ItemFields } from "@zotlit/zotero-types";
 
 import {
   FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
 } from "@/lib/constants";
+import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
-import type { SourceOrigin } from "@/services/attachment-import/service";
+import { DatabaseError } from "@/services/database/service";
+import type {
+  DatabaseEvents,
+  DatabaseService,
+} from "@/services/database/service";
 import {
   listCollectionChoices,
   resolveMembershipFacts,
-  ruleItem,
+  matchItem,
 } from "@/services/profile-selection";
-import type { ProfileSelectionRule } from "@/services/profile-selection";
-import { profileReader } from "@/services/profile/__fixtures__/reader";
-import type { ProfileFixtureSettings } from "@/services/profile/__fixtures__/reader";
-import { defaults as settingsDefaults } from "@/services/settings/schema";
-import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
+import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 
-import type { NoteFeatureDeps, SyncRenderDeps } from "./context";
+import type { SyncRenderDeps } from "./context";
 import { createNoteFeature } from "./operations";
 
 vi.mock("@zotlit/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@zotlit/db")>();
   return {
     ...actual,
-    // The template context is not under test; every relational read a rule
-    // needs (Tags, Collections, Libraries) runs against the fixture rows.
+    // Rendering context is independent of match facts; all relational matching reads are real.
     fetchNoteContext: vi.fn(
       (_client: unknown, item: Item): NoteTemplateContext =>
         ({
           indexedKey: item.indexedKey,
-          citationKey: (item.fields as { citationKey: string }).citationKey,
-          title: (item.fields as { title: string }).title,
+          citationKey: item.key.toLowerCase(),
+          title: item.key,
           notePath: "",
           noteLink: () => "",
           relatedItems: [],
@@ -54,12 +51,11 @@ vi.mock("@zotlit/db", async (importOriginal) => {
   };
 });
 
-vi.stubGlobal("Temporal", {
-  Now: { instant: () => ({}) as Temporal.Instant },
-});
-
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => vi.useRealTimers());
 const books = "Bk3Qn7XvT2Lp" as ProfileId;
 const papers = "Rz9Wm4YfH6Kd" as ProfileId;
+const manual = "Mn4Vb8GhJ2Rt" as ProfileId;
 
 /**
  * My Library (1) and the "Lab Archive" group (2, groupID 118).
@@ -150,141 +146,101 @@ function item(input: {
   };
 }
 
-function rule(
-  overrides: Partial<ProfileSelectionRule> & { id: string },
-): ProfileSelectionRule {
-  return {
-    filter: { and: [] },
-    profile: books,
-    ...overrides,
-  };
+function profileDocument(id: string, match?: MatchTree, extra = ""): string {
+  const label = id === books ? "Books" : id === papers ? "Papers" : "Manual";
+  return `---
+${stringifyYaml({
+  id,
+  name: label,
+  version: "1.0.0",
+  contract: 2,
+  filename: "{{ zt.title }}",
+  ...(id === "default" ? {} : { folder: id === books ? "Reading" : label }),
+  ...(match === undefined ? {} : { match }),
+})}${extra}
+---
+# {{ zt.title }}
+{% managed %}DOCUMENT BODY{% endmanaged %}
+--- zotlit:annotation ---
+Annotation`;
 }
 
-/** The Books document: notes land under `Reading/<title>.md`. */
-function booksDocument(): ResolvedLiteratureNoteTemplate {
-  return {
-    reference: "books.md",
-    path: "templates/books.md",
-    manifest: {
-      id: "books",
-      name: "Books",
-      version: "1.0.0",
-      author: "ZotLit",
-      description: "Books fixture",
-      contract: 1,
-      filename: "{{ zt.title }}",
-      language: "liquid",
-    },
-    frontmatter: undefined,
-    hasManagedBlock: true,
-    renderForCreate: () => "DOCUMENT BODY",
-    renderForUpdate: () => null,
-    renderAnnotation: () => "",
-    renderFilename: (data) => (data as { title: string }).title,
-  };
-}
-
-interface Harness {
-  deps: SyncRenderDeps;
-  client: NodeDatabaseClient;
-  /** Every note the vault holds, by path. */
-  vault: Map<string, string>;
-}
-
-function harness(rules: readonly ProfileSelectionRule[]): Harness {
+async function harness(
+  matches: Partial<Record<ProfileId, MatchTree | undefined>> = {},
+  extraFiles: Record<string, string> = {},
+) {
+  await using stack = new AsyncDisposableStack();
   const client = createClient(":memory:");
+  stack.defer(() => client.$client.close());
   seed(client);
-  const vault = new Map<string, string>();
-  const files = new Map<string, TFile>();
-  const notesByItemKey = new Map<string, TFile[]>();
-  const root = new TFolder();
-  root.path = "/";
-  const current: ProfileFixtureSettings = {
-    ...settingsDefaults,
-    "profile.selection-rules": rules,
-    profiles: [
+  const events = createNanoEvents<DatabaseEvents>();
+  let readable = true;
+  const db = {
+    ready: Promise.resolve(),
+    get state() {
+      return readable ? ("ready" as const) : ("degraded" as const);
+    },
+    client,
+    acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
+    on: events.on.bind(events),
+  };
+  const fixture = stack.use(
+    await profileServiceFixture(
       {
-        id: books,
-        label: "Books",
-        document: "books.md",
-        bindings: { "note.literature-folder": "Reading" },
+        ...Object.fromEntries(
+          Object.entries(matches).map(([id, match]) => [
+            `templates/zotlit-profile.${id}.md`,
+            profileDocument(id, match),
+          ]),
+        ),
+        ...extraFiles,
       },
-      { id: papers, label: "Papers" },
-    ],
+      db as DatabaseService,
+    ),
+  );
+  const { app, vault, profile, template, settings } = fixture;
+  const notesByKey = new Map<string, TFile[]>();
+  app.metadataCache.getFileCache = (file) => {
+    const text = vault.contents.get(file.path) ?? "";
+    return text.startsWith("---\n")
+      ? { frontmatter: parseYaml(text.split("---\n")[1]!) }
+      : null;
   };
-  const settings: NoteFeatureDeps["settings"] = {
-    current,
-    loaded: Promise.resolve(current),
-    update: (patch) => {
-      Object.assign(
-        current,
-        typeof patch === "function" ? patch(current) : patch,
-      );
-      return current;
-    },
+  const create = vault.create.bind(vault);
+  vault.create = async (path, content) => {
+    const file = await create(path, content);
+    const indexedKey =
+      app.metadataCache.getFileCache(file)?.frontmatter?.[FIELD_ZOTERO_KEY];
+    if (indexedKey)
+      notesByKey.set(indexedKey, [...(notesByKey.get(indexedKey) ?? []), file]);
+    return file;
   };
-  const app = {
-    metadataCache: {
-      getFileCache: (file: TFile) => {
-        const stamp = vault
-          .get(file.path)
-          ?.match(new RegExp(`${FIELD_LITERATURE_NOTE_PROFILE}: (.*)`))?.[1];
-        return stamp
-          ? { frontmatter: { [FIELD_LITERATURE_NOTE_PROFILE]: stamp } }
-          : null;
-      },
-    },
-    vault: {
-      getAbstractFileByPath: (path: string) => files.get(path) ?? null,
-      getRoot: () => root,
-      createFolder: async () => new TFolder(),
-      create: async (path: string, content: string) => {
-        vault.set(path, content);
-        const file = new TFile();
-        file.path = path;
-        file.name = path.split("/").at(-1)!;
-        file.basename = file.name.replace(/\.md$/, "");
-        file.extension = "md";
-        files.set(path, file);
-        return file;
-      },
-      process: async () => "",
-    },
-    fileManager: {
-      generateMarkdownLink: () => "",
-      processFrontMatter: async () => {},
-      renameFile: async () => {},
-    },
-  } as unknown as NoteFeatureDeps["app"];
+  app.fileManager.generateMarkdownLink = () => "";
+  app.fileManager.processFrontMatter = async (file, update) => {
+    const data = app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    update(data);
+    const source = vault.contents.get(file.path)!;
+    vault.modifyFile(
+      file.path,
+      `---\n${stringifyYaml(data)}---\n${source.slice(source.indexOf("---\n", 4) + 4)}`,
+    );
+  };
   const deps: SyncRenderDeps = {
     app,
+    db,
+    profile,
+    template,
     settings,
-    profile: profileReader(() => current, app.metadataCache),
-    template: {
-      ready: Promise.resolve(),
-      loaded: true,
-      frontmatterFields: [],
-      getLiteratureNoteTemplate: (reference) =>
-        reference === "books.md" ? booksDocument() : undefined,
-      renderProfileAnnotation: () => "",
-      renderFilename: (data) => (data as { title: string }).title,
-      render: () => "",
-    },
-    db: {
-      state: "ready",
-      client,
-      acquireRead: async () => ({ client, [Symbol.dispose]() {} }),
-    },
     noteIndex: {
       ready: Promise.resolve(),
       whenIndexed: async () => {},
+      getNotesByItemKey: (key) => notesByKey.get(key) ?? [],
       getImportedNoteByNoteKey: () => [],
-      getNotesByItemKey: (indexedKey) => notesByItemKey.get(indexedKey) ?? [],
     },
     zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
     attachmentImport: {
       prepare: async () => ({
-        decide: (path: string, origin: SourceOrigin) => ({
+        decide: (path, origin) => ({
           approved: false,
           path,
           origin,
@@ -312,28 +268,35 @@ function harness(rules: readonly ProfileSelectionRule[]): Harness {
       }),
     },
   };
-  // The Note Index sees every note this harness creates.
-  const create = app.vault.create;
-  app.vault.create = async (path: string, content: string) => {
-    const file = await create(path, content);
-    const indexedKey = content.match(
-      new RegExp(`${FIELD_ZOTERO_KEY}: (\\S+)`),
-    )?.[1];
-    if (indexedKey)
-      notesByItemKey.set(indexedKey, [
-        ...(notesByItemKey.get(indexedKey) ?? []),
-        file,
-      ]);
-    return file;
+  const cleanup = stack.move();
+  return {
+    ...fixture,
+    client,
+    deps,
+    feature: createNoteFeature(deps),
+    refreshLibraries: () => events.emit("changed"),
+    setReadable: (next: boolean) => {
+      readable = next;
+      if (next) events.emit("changed");
+      else events.emit("degraded", new DatabaseError("Unavailable"));
+    },
+    async editMatch(id: ProfileId, match?: MatchTree) {
+      vault.modifyFile(
+        `templates/zotlit-profile.${id}.md`,
+        profileDocument(id, match),
+      );
+      await vi.advanceTimersByTimeAsync(500);
+      expect(await template.waitUntilSettled(5000)).toBe("settled");
+    },
+    [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
   };
-  return { deps, client, vault };
 }
 
-describe("Profile Selection Rules over Collection and Tag rows", () => {
-  it("reads Library selectors, exact Tag names, and complete Collection paths from Item facts", () => {
-    const { client } = harness([]);
+describe("Profile document matches at creation preparation", () => {
+  it("resolves Library selectors, exact Tag names, and full Collection paths from relational rows", async () => {
+    await using f = await harness();
     expect(
-      ruleItem(personalBook, resolveMembershipFacts(client, personalBook)),
+      matchItem(personalBook, resolveMembershipFacts(f.client, personalBook)),
     ).toEqual({
       library: { type: "personal" },
       itemType: "book",
@@ -341,385 +304,426 @@ describe("Profile Selection Rules over Collection and Tag rows", () => {
       collections: [["Project", "Drafts"], ["Other"]],
     });
     expect(
-      ruleItem(groupBook, resolveMembershipFacts(client, groupBook)),
+      matchItem(groupBook, resolveMembershipFacts(f.client, groupBook)),
     ).toEqual({
       library: { type: "group", groupID: 118 },
       itemType: "book",
       tags: [],
       collections: [["Project"]],
     });
+    expect(
+      await f.feature.resolveCreationProfile({ item: personalBook }),
+    ).toEqual({ selector: "default", source: "bound", shouldAsk: false });
   });
 
-  it("selects through Library conditions alone across the personal and group Libraries", async () => {
-    const group = rule({
-      id: "group",
-      filter: 'library == "group:118"',
-      profile: papers,
+  it("selects each Item independently, exposes overlap candidates, and lets manual and explicit inputs win", async () => {
+    await using f = await harness({
+      [books]:
+        'library == "personal" && tags.contains("Read") && collections.within("Project")',
+      [papers]: 'library == "group:118"',
+      [manual]: undefined,
     });
-    const personal = rule({ id: "personal", filter: 'library == "personal"' });
-    const { deps } = harness([group, personal]);
-    const feature = createNoteFeature(deps);
+    const selections = await Promise.all(
+      [personalBook, groupBook, article].map((item) =>
+        f.feature.resolveCreationProfile({ item }),
+      ),
+    );
+    expect(selections).toEqual([
+      {
+        selector: books,
+        source: "match",
+        shouldAsk: false,
+        reason: m.profile_match_selected({ profile: "Books" }),
+      },
+      {
+        selector: papers,
+        source: "match",
+        shouldAsk: false,
+        reason: m.profile_match_selected({ profile: "Papers" }),
+      },
+      { selector: "default", source: "bound", shouldAsk: true },
+    ]);
+    const plans = await f.feature.prepareBatchCreationProfiles([
+      personalBook,
+      groupBook,
+      article,
+    ]);
+    expect(plans.get(1)?.find(({ selector }) => selector === books)?.path).toBe(
+      "Reading/BOOK0001.md",
+    );
     expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({ selector: books, source: "rule", rule: personal });
+      plans.get(2)?.find(({ selector }) => selector === papers)?.path,
+    ).toBe("Papers/BOOK0002.md");
+    await f.editMatch(papers, 'itemType == "book"');
+    const overlap = await f.feature.resolveCreationProfile({
+      item: personalBook,
+    });
+    expect(overlap).toMatchObject({
+      source: "bound",
+      shouldAsk: true,
+      problem: { kind: "overlap" },
+    });
     expect(
-      await feature.resolveCreationProfile({ item: groupBook }),
-    ).toMatchObject({ selector: papers, source: "rule", rule: group });
+      overlap.problem?.kind === "overlap" &&
+        overlap.problem.candidates.map(({ id }) => id),
+    ).toEqual([books, papers]);
     expect(
-      await feature.resolveCreationProfile({ item: article }),
-    ).toMatchObject({ selector: books, source: "rule", rule: personal });
-    const excluded = rule({ id: "excluded", filter: 'library != "group:118"' });
-    deps.settings.update({ "profile.selection-rules": [excluded] });
-    expect(await feature.resolveCreationProfile({ item: groupBook })).toEqual({
+      await f.feature.resolveCreationProfile({
+        item: personalBook,
+        headless: manual,
+      }),
+    ).toEqual({ selector: manual, source: "headless", shouldAsk: true });
+    expect(
+      await f.feature.resolveCreationProfile({
+        item: personalBook,
+        headless: books,
+        asked: "default",
+      }),
+    ).toEqual({ selector: "default", source: "asked", shouldAsk: true });
+    await f.editMatch(manual, 'library == "group:999"');
+    expect(
+      await f.feature.resolveCreationProfile({
+        item: personalBook,
+        asked: manual,
+        headless: papers,
+      }),
+    ).toEqual({ selector: manual, source: "asked", shouldAsk: true });
+    expect(
+      await f.feature.resolveCreationProfile({
+        item: personalBook,
+        headless: manual,
+      }),
+    ).toMatchObject({ selector: manual, source: "headless" });
+    expect(
+      (await f.feature.resolveCreationProfile({ item: personalBook })).problem
+        ?.kind,
+    ).toBe("overlap");
+  });
+
+  it("distinguishes absent, catch-all, evaluable empty-any, and unevaluable registry states", async () => {
+    await using f = await harness({
+      [books]: undefined,
+      [papers]: { and: [] },
+      [manual]: { or: [] },
+    });
+    expect(
+      f.profile.profiles.map(({ id, match }) => [
+        id,
+        match.state,
+        match.summary,
+      ]),
+    ).toEqual([
+      [books, "absent", m.profile_match_absent()],
+      [manual, "evaluable", m.profile_match_none()],
+      [papers, "all", m.profile_match_all()],
+    ]);
+    expect(
+      await f.feature.resolveCreationProfile({ item: article }),
+    ).toMatchObject({ selector: papers, source: "match" });
+    await f.editMatch(papers, "true");
+    expect(
+      f.profile.profiles.find(({ id }) => id === papers)?.match.state,
+    ).toBe("all");
+    await f.editMatch(papers, undefined);
+    expect(await f.feature.resolveCreationProfile({ item: article })).toEqual({
       selector: "default",
       source: "bound",
       shouldAsk: true,
     });
-    expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({ selector: books, rule: excluded });
   });
 
   it.each([
-    ['library == "group:2"', "unknown-library"],
-    ['library != "group:999"', "unknown-library"],
-    ['itemType == "novel"', "unknown-item-type"],
-    ["library ==", "syntax"],
-    ['title == "BOOK0001"', "unsupported"],
-    [" ", "empty"],
-  ])(
-    "reports the problem kind of %s at creation preparation",
-    async (filter, code) => {
-      const invalid = rule({ id: "invalid", filter });
-      const feature = createNoteFeature(harness([invalid]).deps);
-      for (const item of [personalBook, groupBook]) {
-        expect(await feature.resolveCreationProfile({ item })).toMatchObject({
-          selector: "default",
-          source: "bound",
-          shouldAsk: true,
-          problem: { kind: "broken-rule", rule: invalid, problem: { code } },
-        });
-      }
+    [
+      'library == "group:2"',
+      "unknown-library",
+      () => m.profile_rule_problem_unknown_library({ text: '"group:2"' }),
+    ],
+    [
+      'library != "group:999"',
+      "unknown-library",
+      () => m.profile_rule_problem_unknown_library({ text: '"group:999"' }),
+    ],
+    [
+      'itemType == "novel"',
+      "unknown-item-type",
+      () => m.profile_rule_problem_unknown_item_type({ text: '"novel"' }),
+    ],
+    ["library ==", "syntax", () => m.profile_rule_problem_syntax({ text: "" })],
+    [
+      'title == "BOOK0001"',
+      "unsupported",
+      () => m.profile_rule_problem_unsupported({ text: 'title == "BOOK0001"' }),
+    ],
+    [" ", "empty", () => m.profile_rule_problem_empty()],
+  ] as const)(
+    "keeps the document with %s active, shows its diagnostic, and skips it for every Item",
+    async (match, code, problem) => {
+      await using f = await harness({
+        [books]: { or: ["true", match] },
+        [papers]: 'library == "group:118"',
+      });
+      const entry = f.profile.profiles.find(({ id }) => id === books)!;
+      expect(entry.match).toMatchObject({
+        state: "unevaluable",
+        problem: { code },
+      });
+      expect(entry.match.summary).toBe(
+        m.profile_match_problem({ problem: problem() }),
+      );
+      expect(f.profile.diagnostics).toEqual([]);
+      expect(
+        await f.feature.resolveCreationProfile({ item: personalBook }),
+      ).toEqual({ selector: "default", source: "bound", shouldAsk: true });
+      expect(
+        await f.feature.resolveCreationProfile({ item: groupBook }),
+      ).toMatchObject({ selector: papers, source: "match" });
+      expect(
+        await f.feature.resolveCreationProfile({
+          item: groupBook,
+          headless: books,
+        }),
+      ).toMatchObject({ selector: books, source: "headless" });
     },
   );
 
-  it("uses one Collection path in both Libraries and creates notes with that Profile", async () => {
-    const project = rule({
-      id: "project",
-      filter: 'collections.within("Project")',
-    });
-    const { deps, vault } = harness([project]);
-    const feature = createNoteFeature(deps);
+  it("excludes Default with match, failed manifests, and colliding documents from selection", async () => {
+    await using f = await harness(
+      { [books]: "true" },
+      {
+        "templates/zotlit-profile.default.md": profileDocument(
+          "default",
+          "true",
+        ),
+        "templates/zotlit-profile.duplicate.md": profileDocument(books, "true"),
+        "templates/zotlit-profile.invalid.md": profileDocument(
+          papers,
+          "true",
+          "unknown: true",
+        ),
+      },
+    );
+    expect(f.profile.profiles).toEqual([]);
+    expect(f.profile.resolveProfile("default")).toBeUndefined();
+    expect(f.profile.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "templates/zotlit-profile.default.md",
+          message: expect.stringContaining("Default Profile carries no match"),
+        }),
+        expect.objectContaining({
+          path: "templates/zotlit-profile.duplicate.md",
+          code: "duplicate-profile-id",
+        }),
+        expect.objectContaining({
+          path: "templates/zotlit-profile.invalid.md",
+          code: "invalid-profile-document",
+        }),
+      ]),
+    );
     expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({ selector: books, source: "rule", rule: project });
-    expect(await feature.resolveCreationProfile({ item: groupBook })).toEqual({
-      selector: books,
-      source: "rule",
-      shouldAsk: true,
-      rule: project,
+      await f.feature.resolveCreationProfile({ item: personalBook }),
+    ).toMatchObject({ source: "bound" });
+  });
+
+  it("recompiles when an unselected Library appears, is renamed, disappears, or becomes unavailable", async () => {
+    await using f = await harness({ [books]: 'library == "group:999"' });
+    f.settings.update({
+      "zotero.library-scope": {
+        mode: "selected",
+        libraries: [{ type: "personal" }],
+      },
     });
-    for (const item of [personalBook, groupBook]) {
-      await expect(
-        feature.createNote(item, { profile: books }),
-      ).resolves.toMatchObject({
-        outcome: "created",
+    const selected = f.libraryScope.current;
+    expect(f.profile.profiles[0]?.match).toMatchObject({
+      state: "unevaluable",
+      problem: { code: "unknown-library" },
+    });
+    f.client.$client.exec(
+      "insert into libraries (libraryID, type) values (9, 'group'); insert into groups (groupID, libraryID, name) values (999, 9, 'Remote team')",
+    );
+    f.refreshLibraries();
+    expect(f.libraryScope.current).toBe(selected);
+    expect(f.profile.profiles[0]?.match).toMatchObject({
+      state: "evaluable",
+      summary: m.settings_profile_rule_library_is({ library: "Remote team" }),
+    });
+    f.client.$client.exec(
+      "update groups set name = 'Research team' where groupID = 999",
+    );
+    f.refreshLibraries();
+    expect(f.libraryScope.current).toBe(selected);
+    expect(f.profile.profiles[0]?.match.summary).toContain("Research team");
+    f.setReadable(false);
+    expect(f.profile.profiles[0]?.match.state).toBe("unevaluable");
+    f.setReadable(true);
+    expect(f.profile.profiles[0]?.match.state).toBe("evaluable");
+    f.client.$client.exec(
+      "delete from groups where groupID = 999; delete from libraries where libraryID = 9",
+    );
+    f.refreshLibraries();
+    expect(f.profile.profiles[0]?.match.state).toBe("unevaluable");
+  });
+
+  it("uses Collection paths in both Libraries and separates descendant from direct filing", async () => {
+    await using f = await harness({ [books]: 'collections.within("Project")' });
+    for (const item of [personalBook, groupBook, article])
+      expect(await f.feature.resolveCreationProfile({ item })).toMatchObject({
+        selector: books,
+        source: "match",
       });
-      expect(vault.get(`Reading/${item.key}.md`)).toContain(
-        `${FIELD_LITERATURE_NOTE_PROFILE}: Books (${books})`,
-      );
-    }
-  });
-
-  it("includes subcollections by default and limits a direct-only condition to the Collection itself", async () => {
-    const directProject = rule({
-      id: "direct-project",
-      filter: 'collections.contains("Project")',
-    });
-    const directDrafts = rule({
-      id: "direct-drafts",
-      filter: 'collections.contains("Project/Drafts")',
-      profile: papers,
-    });
-    const { deps, vault } = harness([directProject, directDrafts]);
-    const feature = createNoteFeature(deps);
+    await f.editMatch(books, 'collections.contains("Project")');
     expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({ selector: papers, rule: directDrafts });
-    const directSelection = await feature.resolveCreationProfile({
-      item: article,
-    });
-    expect(directSelection).toMatchObject({
-      selector: books,
-      rule: directProject,
-    });
-    await expect(
-      feature.createNote(article, { profile: directSelection.selector }),
-    ).resolves.toMatchObject({
-      outcome: "created",
-      file: { path: "Reading/ARTC0001.md" },
-    });
-    expect(vault.get("Reading/ARTC0001.md")).toContain(
-      `${FIELD_LITERATURE_NOTE_PROFILE}: Books (${books})`,
-    );
+      await f.feature.resolveCreationProfile({ item: personalBook }),
+    ).toMatchObject({ source: "bound" });
+    expect(
+      await f.feature.resolveCreationProfile({ item: article }),
+    ).toMatchObject({ selector: books });
+    await f.editMatch(books, 'collections.contains("Other")');
+    expect(
+      await f.feature.resolveCreationProfile({ item: personalBook }),
+    ).toMatchObject({ selector: books });
+    expect(
+      await f.feature.resolveCreationProfile({ item: groupBook }),
+    ).toMatchObject({ source: "bound" });
   });
 
-  it("reads every Collection the Item is filed in, not the one a screen shows it under", async () => {
-    const other = rule({
-      id: "other",
-      filter: 'collections.contains("Other")',
-    });
-    const { deps, vault } = harness([other]);
-    const feature = createNoteFeature(deps);
-    const otherSelection = await feature.resolveCreationProfile({
-      item: personalBook,
-    });
-    expect(otherSelection).toMatchObject({ selector: books, rule: other });
-    expect(await feature.resolveCreationProfile({ item: article })).toEqual({
-      selector: "default",
-      source: "bound",
-      shouldAsk: true,
-    });
-    await expect(
-      feature.createNote(personalBook, { profile: otherSelection.selector }),
-    ).resolves.toMatchObject({
-      outcome: "created",
-      file: { path: "Reading/BOOK0001.md" },
-    });
-    expect(vault.get("Reading/BOOK0001.md")).toContain(
-      `${FIELD_LITERATURE_NOTE_PROFILE}: Books (${books})`,
-    );
-  });
-
-  it("uses current Collection names in facts and suggestions after a rename", async () => {
-    const drafts = rule({
-      id: "drafts",
-      filter: 'collections.contains("Project/Drafts")',
-    });
-    const { deps, client } = harness([drafts]);
-    const feature = createNoteFeature(deps);
-    client.$client.exec(
+  it("uses renamed and trashed Collections as current facts; unknown paths stay evaluable nonmatches", async () => {
+    await using f = await harness({ [books]: 'collections.within("Gone")' });
+    expect(f.profile.profiles[0]?.match.state).toBe("evaluable");
+    expect(
+      await f.feature.resolveCreationProfile({ item: personalBook }),
+    ).toMatchObject({ source: "bound" });
+    await f.editMatch(books, 'collections.contains("Project/Drafts")');
+    f.client.$client.exec(
       "update collections set collectionName = 'Manuscripts' where collectionID = 101",
     );
     expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toEqual({
-      selector: "default",
-      source: "bound",
-      shouldAsk: true,
-    });
+      await f.feature.resolveCreationProfile({ item: personalBook }),
+    ).toMatchObject({ source: "bound" });
     expect(
-      listCollectionChoices(client, [
-        { selector: { type: "personal" }, libraryID: 1, name: null },
-      ]).map(({ path }) => path.join(" / ")),
-    ).toEqual(["Other", "Project", "Project / Manuscripts"]);
-  });
-
-  it("treats unknown and trashed Collection paths as ordinary nonmatches", async () => {
-    const gone = rule({
-      id: "gone",
-      filter: 'collections.within("Gone")',
-    });
-    const drafts = rule({
-      id: "drafts",
-      filter: 'collections.within("Project")',
-    });
-    const catchAll = rule({ id: "catch-all" });
-    const { deps, client, vault } = harness([gone, catchAll]);
-    const feature = createNoteFeature(deps);
-    expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({ selector: books, source: "rule", rule: catchAll });
-    deps.settings.update({ "profile.selection-rules": [drafts, catchAll] });
-    expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({ selector: books, rule: drafts });
-    client.$client.exec(
+      listCollectionChoices(f.client, f.libraryScope.libraries).map(
+        ({ path }) => path.join("/"),
+      ),
+    ).toContain("Project/Manuscripts");
+    await f.editMatch(books, 'collections.within("Project")');
+    f.client.$client.exec(
       "insert into deletedCollections (collectionID) values (100)",
     );
-    const trashedParentSelection = await feature.resolveCreationProfile({
-      item: personalBook,
-    });
-    expect(trashedParentSelection).toMatchObject({
-      selector: books,
-      source: "rule",
-      rule: catchAll,
-    });
-    await expect(
-      feature.createNote(personalBook, {
-        profile: trashedParentSelection.selector,
-      }),
-    ).resolves.toMatchObject({
-      outcome: "created",
-      file: { path: "Reading/BOOK0001.md" },
-    });
-    expect(vault.get("Reading/BOOK0001.md")).toContain(
-      `${FIELD_LITERATURE_NOTE_PROFILE}: Books (${books})`,
-    );
-  });
-
-  it("matches Tag names exactly and case-sensitively across manual and automatic applications", async () => {
-    const read = rule({ id: "read", filter: 'tags.contains("Read")' });
-    const upper = rule({
-      id: "upper",
-      filter: 'tags.contains("READ")',
-      profile: papers,
-    });
-    const lower = rule({
-      id: "lower",
-      filter: 'tags.contains("read")',
-      profile: "default",
-    });
-    const auto = rule({ id: "auto", filter: 'tags.contains("auto-tag")' });
-    const { deps } = harness([lower, upper, read]);
-    const feature = createNoteFeature(deps);
-    // "read" matches nothing; the automatic "READ" wins before manual "Read".
     expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({ selector: papers, rule: upper });
-    deps.settings.update({ "profile.selection-rules": [lower, read] });
+      await f.feature.resolveCreationProfile({ item: personalBook }),
+    ).toMatchObject({ source: "bound" });
     expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({ selector: books, rule: read });
-    deps.settings.update({ "profile.selection-rules": [lower, auto] });
-    expect(
-      await feature.resolveCreationProfile({ item: article }),
-    ).toMatchObject({ selector: books, rule: auto });
-    expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toEqual({ selector: "default", source: "bound", shouldAsk: true });
+      await f.feature.resolveCreationProfile({ item: groupBook }),
+    ).toMatchObject({ selector: books });
   });
 
   it.each([
-    ["manual Tag", personalBook, 'tags.contains("Read")'],
-    ["automatic Tag", article, 'tags.contains("auto-tag")'],
-    ["case-distinct automatic Tag", personalBook, 'tags.contains("READ")'],
+    [personalBook, 'tags.contains("Read")'],
+    [personalBook, 'tags.contains("READ")'],
+    [article, 'tags.contains("auto-tag")'],
   ] as const)(
-    "creates a note selected by a %s",
-    async (_case, item, filter) => {
-      const matching = rule({ id: "matching", filter });
-      const { deps, vault } = harness([matching]);
-      const feature = createNoteFeature(deps);
-      const selection = await feature.resolveCreationProfile({ item });
-      expect(selection).toMatchObject({ selector: books, rule: matching });
-
-      await expect(
-        feature.createNote(item, { profile: selection.selector }),
-      ).resolves.toMatchObject({
+    "creates with the Profile selected by exact manual or automatic Tag names",
+    async (item, match) => {
+      await using f = await harness({
+        [books]: match,
+        [papers]: 'tags.contains("read")',
+      });
+      const selection = await f.feature.resolveCreationProfile({ item });
+      expect(selection).toMatchObject({ selector: books, source: "match" });
+      const preview = (await f.feature.prepareCreationProfiles(item)).find(
+        ({ selector }) => selector === selection.selector,
+      )!;
+      expect(await preview.create()).toMatchObject({
         outcome: "created",
         file: { path: `Reading/${item.key}.md` },
       });
-      expect(vault.get(`Reading/${item.key}.md`)).toContain(
+      expect(f.vault.contents.get(`Reading/${item.key}.md`)).toContain(
         `${FIELD_LITERATURE_NOTE_PROFILE}: Books (${books})`,
       );
     },
   );
 
-  it("combines Collection and Tag conditions with the item type and a Library condition", async () => {
-    const combined = rule({
-      id: "combined",
-      filter:
-        'library == "personal" && collections.within("Project") && tags.contains("Read") && itemType == "book"',
+  it("expresses precedence through disjoint alternatives and exclusions", async () => {
+    await using f = await harness({
+      [papers]: {
+        and: [
+          'library == "personal"',
+          {
+            or: ['collections.within("Project")', 'tags.contains("auto-tag")'],
+          },
+          'itemType != "book"',
+        ],
+      },
+      [books]: '!(tags.contains("Read") || itemType == "journalArticle")',
+      [manual]: 'tags.contains("READ") && !collections.contains("Project")',
     });
-    const anyProject = rule({
-      id: "any-project",
-      filter: 'collections.within("Project")',
-      profile: papers,
-    });
-    const feature = createNoteFeature(harness([combined, anyProject]).deps);
-    expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({ selector: books, rule: combined });
-    expect(
-      await feature.resolveCreationProfile({ item: article }),
-    ).toMatchObject({ selector: papers, rule: anyProject });
-    expect(
-      await feature.resolveCreationProfile({ item: groupBook }),
-    ).toMatchObject({ selector: papers, rule: anyProject });
-  });
-
-  it("judges nested alternatives and exclusions by hand-derived outcomes with a Library condition", async () => {
-    // My Library only: in Project (or tagged auto-tag) and not a book.
-    const projectPapers = rule({
-      id: "project-papers",
-      filter:
-        'library == "personal" && (collections.within("Project") || tags.contains("auto-tag")) && itemType != "book"',
-      profile: papers,
-    });
-    // Neither tagged Read nor an article.
-    const untouched = rule({
-      id: "untouched",
-      filter: '!(tags.contains("Read") || itemType == "journalArticle")',
-    });
-    // Tagged READ (automatic) but not filed directly in Project.
-    const readElsewhere = rule({
-      id: "read-elsewhere",
-      filter: 'tags.contains("READ") && !collections.contains("Project")',
-      profile: "default",
-    });
-    const feature = createNoteFeature(
-      harness([projectPapers, untouched, readElsewhere]).deps,
+    const selections = await Promise.all(
+      [article, groupBook, personalBook].map((item) =>
+        f.feature.resolveCreationProfile({ item }),
+      ),
     );
-    // The article is filed directly in Project and is not a book.
-    expect(
-      await feature.resolveCreationProfile({ item: article }),
-    ).toMatchObject({ selector: papers, rule: projectPapers });
-    // The personal book reaches Project through Drafts but is a book, and
-    // carries "Read", so only the third rule holds: READ and not directly
-    // in Project.
-    expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({
-      selector: "default",
-      source: "rule",
-      rule: readElsewhere,
-    });
-    // The group book is outside the first rule's scope; it has no Tags and
-    // is a book, so the negated alternative holds.
-    expect(
-      await feature.resolveCreationProfile({ item: groupBook }),
-    ).toMatchObject({ selector: books, rule: untouched });
+    expect(selections.map(({ selector }) => selector)).toEqual([
+      papers,
+      books,
+      manual,
+    ]);
   });
 
-  it("keeps a previewed selection fixed while Tags and memberships change, and lets the next operation see the change", async () => {
-    const read = rule({
-      id: "read",
-      filter: 'tags.contains("Read") && collections.contains("Other")',
+  it("freezes the preview across match and Item edits, and keeps existing note membership", async () => {
+    await using f = await harness({
+      [books]: 'tags.contains("Read") && collections.contains("Other")',
+      [papers]: 'itemType == "journalArticle"',
     });
-    const { deps, client, vault } = harness([read]);
-    const feature = createNoteFeature(deps);
-    expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toMatchObject({ selector: books, source: "rule", rule: read });
-    const previews = await feature.prepareCreationProfiles(personalBook);
-    const preview = previews.find(({ selector }) => selector === books)!;
+    const selection = await f.feature.resolveCreationProfile({
+      item: personalBook,
+    });
+    const preview = (
+      await f.feature.prepareCreationProfiles(personalBook)
+    ).find(({ selector }) => selector === selection.selector)!;
     expect(preview.path).toBe("Reading/BOOK0001.md");
-    // Zotero removes the Tag and the membership after the preview.
-    client.$client.exec(`
-      delete from itemTags where itemID = 1 and tagID = 1;
-      delete from collectionItems where itemID = 1 and collectionID = 102;
-    `);
-    await expect(preview.create()).resolves.toMatchObject({
+    await f.editMatch(books, 'itemType == "thesis"');
+    await f.editMatch(papers, 'itemType == "book"');
+    f.client.$client.exec(
+      "delete from itemTags where itemID = 1; delete from collectionItems where itemID = 1",
+    );
+    expect(selection).toMatchObject({
+      selector: books,
+      reason: m.profile_match_selected({ profile: "Books" }),
+    });
+    const created = await preview.create();
+    expect(created).toMatchObject({
       outcome: "created",
       file: { path: "Reading/BOOK0001.md" },
     });
-    expect(vault.get("Reading/BOOK0001.md")).toContain(
-      `${FIELD_LITERATURE_NOTE_PROFILE}: Books (${books})`,
-    );
-    // The next operation reads the changed rows: no match, so Default.
     expect(
-      await feature.resolveCreationProfile({ item: personalBook }),
-    ).toEqual({ selector: "default", source: "bound", shouldAsk: true });
-    // The existing note keeps its recorded membership; nothing recreates it.
-    await expect(
-      feature.createNote(personalBook, { profile: "default" }),
-    ).resolves.toMatchObject({
+      await f.feature.resolveCreationProfile({ item: personalBook }),
+    ).toMatchObject({ selector: papers });
+    expect(
+      created.outcome === "created" && f.profile.profileOf(created.file),
+    ).toMatchObject({ ok: true, profile: { selector: books } });
+    expect(
+      await f.feature.createNote(personalBook, { profile: papers }),
+    ).toMatchObject({
       outcome: "refused",
       diagnostic: { code: "literature-note-exists" },
     });
-    expect(vault.get("Reading/BOOK0001.md")).toContain(
+    expect(f.vault.contents.get("Reading/BOOK0001.md")).toContain(
       `${FIELD_LITERATURE_NOTE_PROFILE}: Books (${books})`,
     );
-    expect(vault.size).toBe(1);
+    expect(f.vault.contents.has("Papers/BOOK0001.md")).toBe(false);
+  });
+
+  it("stops a prepared write if its Profile document disappears", async () => {
+    await using f = await harness({ [books]: "true" });
+    const preview = (
+      await f.feature.prepareCreationProfiles(personalBook)
+    ).find(({ selector }) => selector === books)!;
+    f.vault.deleteFile(`templates/zotlit-profile.${books}.md`);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await preview.create()).toMatchObject({
+      outcome: "refused",
+      diagnostic: { code: "unknown-literature-note-profile" },
+    });
+    expect(f.vault.contents.has("Reading/BOOK0001.md")).toBe(false);
   });
 });

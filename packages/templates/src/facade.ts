@@ -62,6 +62,7 @@ export type {
   LiteratureNoteTemplateDocument,
   LiteratureNoteTemplateErrorCode,
   LiteratureNoteTemplateManifest,
+  MatchTree,
   ManagedBlock,
   ManagedFrontmatterEntry,
   SynthesizedLiteratureNoteTemplateManifest,

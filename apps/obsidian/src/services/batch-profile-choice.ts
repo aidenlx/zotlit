@@ -29,7 +29,13 @@ export async function chooseBatchProfile(
     : [];
   const choice = await chooseLiteratureNoteProfile(deps.app, {
     preselected: options.selection.selector,
+    matchContext: "batch",
     source: options.selection.source,
+    candidates:
+      options.selection.problem?.kind === "overlap"
+        ? options.selection.problem.candidates.map(({ id }) => id)
+        : undefined,
+    reason: options.selection.reason,
     problem: options.problem,
     previews: options.previews,
     styles,
