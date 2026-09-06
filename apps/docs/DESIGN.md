@@ -115,6 +115,30 @@ The Archivo wordmark subset needs no preload — it sits under Vite's
 
 ## Per-surface
 
+### Template Workbench (`/workbench`)
+
+The Workbench is a compact editing utility. Inter carries the title, pane
+headings, tabs, and controls in sentence case: 16 px for the Profile name,
+14 px for controls and pane headings, and 12 px for supporting status.
+Template tabs fit their labels and use 12 px text in a 32 px strip.
+The field search uses a 32 px control with 12 px text on desktop.
+The toolbar row follows the same 32 px height and 12 px text, with 14 px
+icons. Basic and Source share a segmented control with 28 px buttons.
+Undo, redo, field Help, Add a field, and the sample controls align to this row.
+In the three-column layout, the field list, note editor, and note preview
+content share a top edge. Search, template tabs, and preview controls each
+occupy a 32 px row above that edge. The preview heading and controls stay
+on one line, with compact selectors that share the remaining width.
+Template source uses IBM Plex Mono at 14 px with a unitless 1.5 line height.
+Below 640 px, editor text uses 16 px to keep mobile input readable.
+The rendered note keeps the reading view's content typography.
+
+File and connection actions share one header. The field list, template, and
+result use the remaining height, with 12 px outer insets and column gaps.
+The sample picker belongs with the result. Guidance opens from a visible Help
+control beside each task, and draft status sits below the panes. The existing
+780 px and 1180 px layout folds keep the editor usable on narrow screens.
+
 ### Landing (`src/routes/_home/index.tsx`)
 
 Serif content throughout (the landing is hero + feature index, no markdown

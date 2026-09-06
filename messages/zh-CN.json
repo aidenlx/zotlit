@@ -1,6 +1,11 @@
 {
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "hello": "世界",
+  "workbench_help": "帮助",
+  "workbench_fields_heading": "模板字段",
+  "workbench_fields_root_note": "笔记",
+  "workbench_fields_root_annotation": "标注",
+  "workbench_fields_root_filename": "笔记名称",
   "settings_log_level_name": "日志级别",
   "settings_log_level_desc": "要记录的最低严重性。选择关闭以禁用。",
   "settings_log_level_off": "关闭",

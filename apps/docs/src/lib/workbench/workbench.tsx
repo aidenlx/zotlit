@@ -65,6 +65,7 @@ import {
   ResultHeader,
   ResultRegion,
   WorkbenchFrame,
+  WorkbenchHelp,
 } from "./frame";
 import { ProfileHandoff } from "./handoff";
 import { NameFolderPane } from "./name-folder";
@@ -642,7 +643,9 @@ export function Workbench() {
       }}
     >
       <DialogContent>
-        <DialogTitle>{m.workbench_replace_heading()}</DialogTitle>
+        <DialogTitle className="font-sans text-base font-semibold">
+          {m.workbench_replace_heading()}
+        </DialogTitle>
         <DialogDescription>
           {m.workbench_replace_body({ name: profile.name })}
         </DialogDescription>
@@ -705,7 +708,7 @@ export function Workbench() {
           <DropdownMenu>
             <DropdownMenuTrigger
               disabled={connectionBusy || saveBusy}
-              render={<Button variant="outline" />}
+              render={<Button variant="outline" size="sm" />}
             >
               <ProfileMenuLabel />
             </DropdownMenuTrigger>
@@ -744,6 +747,7 @@ export function Workbench() {
             </DropdownMenuContent>
           </DropdownMenu>
           <Button
+            size="sm"
             disabled={saveBusy || (canSaveToVault && draft)}
             onClick={
               canSaveToVault ? () => void save(controller.source) : download
@@ -760,29 +764,27 @@ export function Workbench() {
           </Button>
         </>
       }
+      connection={
+        <ConnectionBar
+          connection={connection}
+          website={window.location.origin}
+          busy={connectionBusy}
+          cancellable={connectionCancellable}
+          message={connectionMessage}
+          saveBusy={saveBusy}
+          editingConnectedProfile={canSaveToVault}
+          onConnect={() => {
+            // Reconnecting the current vault document preserves its draft and history.
+            if (saveTarget?.reference === drafts.reference) connectFromPage();
+            else
+              replaceProfile(m.workbench_connection_connect(), connectFromPage);
+          }}
+          onCancel={cancelConnection}
+          onDisconnect={() => void disconnect()}
+        />
+      }
       strips={
         <>
-          <ConnectionBar
-            connection={connection}
-            website={window.location.origin}
-            busy={connectionBusy}
-            cancellable={connectionCancellable}
-            message={connectionMessage}
-            saveBusy={saveBusy}
-            editingConnectedProfile={canSaveToVault}
-            onConnect={() => {
-              // Reconnecting the current vault document preserves its draft and history.
-              if (saveTarget?.reference === drafts.reference) connectFromPage();
-              else
-                replaceProfile(
-                  m.workbench_connection_connect(),
-                  connectFromPage,
-                );
-            }}
-            onCancel={cancelConnection}
-            onDisconnect={() => void disconnect()}
-          />
-
           {drafts.restorable && (
             <section
               aria-label={m.workbench_restore_heading()}
@@ -794,7 +796,7 @@ export function Workbench() {
               <p className="text-sm text-fd-muted-foreground">
                 {m.workbench_restore_body()}
               </p>
-              <div className="ml-auto flex items-center gap-2">
+              <div className="ms-auto flex items-center gap-2">
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -814,18 +816,6 @@ export function Workbench() {
             </section>
           )}
         </>
-      }
-      sample={
-        <SampleBar
-          sample={sample}
-          connection={connection}
-          {...(sampleItemType !== undefined && !bundledForType
-            ? { unmatchedItemType: sampleItemType }
-            : {})}
-          busy={itemBusy}
-          onShow={setSample}
-          onLoad={() => void loadSelectedItem()}
-        />
       }
       status={
         (notice?.revision === revision ? notice.text : null) ??
@@ -868,11 +858,16 @@ export function Workbench() {
           />
           {advanced ? (
             <>
-              <div className="mb-3">
+              <div className="mb-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="font-serif text-lg font-medium">
-                    {m.workbench_advanced_heading()}
-                  </h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-sm font-semibold">
+                      {m.workbench_advanced_heading()}
+                    </h2>
+                    <WorkbenchHelp title={m.workbench_advanced_heading()}>
+                      {m.workbench_advanced_lede()}
+                    </WorkbenchHelp>
+                  </div>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -882,9 +877,6 @@ export function Workbench() {
                     {m.workbench_back_basic()}
                   </Button>
                 </div>
-                <p className="mt-1 text-sm leading-relaxed text-fd-muted-foreground">
-                  {m.workbench_advanced_lede()}
-                </p>
               </div>
               <>
                 <AnnotationSectionBar
@@ -910,12 +902,14 @@ export function Workbench() {
               value={tab}
               onValueChange={(value) => openTab(value as WorkbenchTab)}
             >
-              <PaneTabList />
+              <div className="mb-2 flex shrink-0 items-center gap-1">
+                <PaneTabList />
+                <WorkbenchHelp title={TAB_LABEL[tab]()} compact>
+                  {TAB_LEDE[tab]()}
+                </WorkbenchHelp>
+              </div>
               <TabsContent value={tab} className="flex min-h-0 flex-1 flex-col">
                 <h2 className="sr-only">{TAB_LABEL[tab]()}</h2>
-                <p className="mb-3 text-sm leading-relaxed text-fd-muted-foreground">
-                  {TAB_LEDE[tab]()}
-                </p>
                 {tab === "name" ? (
                   <>
                     <NameFolderPane
@@ -992,7 +986,9 @@ export function Workbench() {
               className="h-[min(42rem,85dvh)]"
             >
               <div className="flex items-center justify-between gap-3">
-                <DialogTitle>{m.workbench_add_field()}</DialogTitle>
+                <DialogTitle className="font-sans text-base font-semibold">
+                  {m.workbench_add_field()}
+                </DialogTitle>
                 <DialogClose
                   render={
                     <Button
@@ -1019,6 +1015,16 @@ export function Workbench() {
       }
       result={
         <>
+          <SampleBar
+            sample={sample}
+            connection={connection}
+            {...(sampleItemType !== undefined && !bundledForType
+              ? { unmatchedItemType: sampleItemType }
+              : {})}
+            busy={itemBusy}
+            onShow={setSample}
+            onLoad={() => void loadSelectedItem()}
+          />
           <ResultHeader
             heading={
               !advanced && tab === "properties"
@@ -1027,33 +1033,41 @@ export function Workbench() {
             }
             showMarkdown={showMarkdown}
             onShowMarkdown={setShowMarkdown}
+            controls={
+              showNote && (
+                <label className="flex min-w-0 items-center text-xs min-[1180px]:flex-1">
+                  <span className="sr-only">{m.workbench_preview_show()}</span>
+                  <NativeSelect
+                    value={showManaged ? "managed" : "whole"}
+                    onChange={(event) =>
+                      setShowManaged(event.target.value === "managed")
+                    }
+                    size="xs"
+                    className="w-full"
+                    title={
+                      showManaged
+                        ? m.workbench_result_managed_toggle()
+                        : m.workbench_preview_whole()
+                    }
+                  >
+                    <NativeSelectOption value="whole">
+                      {m.workbench_preview_whole()}
+                    </NativeSelectOption>
+                    <NativeSelectOption value="managed">
+                      {m.workbench_result_managed_toggle()}
+                    </NativeSelectOption>
+                  </NativeSelect>
+                </label>
+              )
+            }
+            help={
+              <WorkbenchHelp title={m.workbench_result_heading()} compact>
+                {showManaged
+                  ? m.workbench_result_managed_lede()
+                  : m.workbench_result_lede()}
+              </WorkbenchHelp>
+            }
           />
-          {showNote && (
-            <label className="mb-3 flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-fd-muted-foreground">
-                {m.workbench_preview_show()}
-              </span>
-              <NativeSelect
-                value={showManaged ? "managed" : "whole"}
-                onChange={(event) =>
-                  setShowManaged(event.target.value === "managed")
-                }
-                size="sm"
-              >
-                <NativeSelectOption value="whole">
-                  {m.workbench_preview_whole()}
-                </NativeSelectOption>
-                <NativeSelectOption value="managed">
-                  {m.workbench_result_managed_toggle()}
-                </NativeSelectOption>
-              </NativeSelect>
-            </label>
-          )}
-          <p className="mb-3 text-sm leading-relaxed text-fd-muted-foreground">
-            {showManaged
-              ? m.workbench_result_managed_lede()
-              : m.workbench_result_lede()}
-          </p>
           {result && !renderable && (
             <p role="status" className="mb-3 text-sm font-medium">
               {m.workbench_preview_stale()}

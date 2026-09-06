@@ -285,7 +285,7 @@ export function SliceEditor({
     <div
       ref={host}
       dir="ltr"
-      className="min-h-0 flex-1 overflow-auto rounded-md [&_.cm-content]:px-3 [&_.cm-content]:py-3 [&_.cm-content]:font-mono [&_.cm-content]:text-base sm:[&_.cm-content]:text-sm [&_.cm-editor]:min-h-full [&_.cm-gutters]:border-fd-border [&_.cm-gutters]:bg-transparent [&_.cm-scroller]:leading-relaxed [&:has(>.cm-editor.cm-focused)]:outline-2 [&:has(>.cm-editor.cm-focused)]:-outline-offset-2 [&:has(>.cm-editor.cm-focused)]:outline-fd-foreground"
+      className="min-h-0 flex-1 overflow-auto rounded-md [&_.cm-content]:px-3 [&_.cm-content]:py-3 [&_.cm-editor]:min-h-full [&_.cm-gutters]:border-fd-border [&_.cm-gutters]:bg-transparent [&:has(>.cm-editor.cm-focused)]:outline-2 [&:has(>.cm-editor.cm-focused)]:-outline-offset-2 [&:has(>.cm-editor.cm-focused)]:outline-fd-foreground"
     />
   );
 }

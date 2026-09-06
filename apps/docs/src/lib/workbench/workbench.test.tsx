@@ -201,7 +201,8 @@ describe("a Workbench Connection", () => {
       expect(page.host.textContent).toContain(m.workbench_save_conflict()),
     );
 
-    page.press(m.workbench_connection_disconnect());
+    page.press(m.workbench_connection_to_vault({ vault: "Fixture vault" }));
+    press(document.body, m.workbench_connection_disconnect());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
         m.workbench_connection_disconnected_notice(),
@@ -220,7 +221,7 @@ describe("a Workbench Connection", () => {
     page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
-        m.workbench_connection_disconnect(),
+        m.workbench_connection_to_vault({ vault: "Fixture vault" }),
       ),
     );
 
@@ -407,7 +408,7 @@ describe("a Workbench Connection", () => {
     );
 
     expect(page.host.textContent).toContain(
-      m.workbench_connection_disconnect(),
+      m.workbench_connection_to_vault({ vault: "Fixture vault" }),
     );
     page.press(m.workbench_save());
     await page.waitFor(() =>
@@ -441,7 +442,7 @@ describe("a Workbench Connection", () => {
     page.press(m.workbench_connection_reconnect());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
-        m.workbench_connection_disconnect(),
+        m.workbench_connection_to_vault({ vault: "Fixture vault" }),
       ),
     );
   });
@@ -468,7 +469,7 @@ describe("a Workbench Connection", () => {
     page.press(m.workbench_connection_reconnect());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
-        m.workbench_connection_disconnect(),
+        m.workbench_connection_to_vault({ vault: "Fixture vault" }),
       ),
     );
 
@@ -543,7 +544,8 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_connected_badge()),
     );
-    page.press(m.workbench_connection_disconnect());
+    page.press(m.workbench_connection_to_vault({ vault: "Fixture vault" }));
+    press(document.body, m.workbench_connection_disconnect());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_retained_badge()),
     );
@@ -597,7 +599,8 @@ describe("a Workbench Connection", () => {
     );
     await page.settle();
 
-    page.press(m.workbench_connection_disconnect());
+    page.press(m.workbench_connection_to_vault({ vault: "Fixture vault" }));
+    press(document.body, m.workbench_connection_disconnect());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
         m.workbench_connection_disconnected_notice(),
@@ -957,7 +960,13 @@ describe("the result column", () => {
 
     // The part an update rewrites is its own result, so it is read on its own
     // rather than found inside the note a creation gets.
-    expect(page.host.textContent).toContain(m.workbench_result_managed_lede());
+    press(
+      page.host.querySelector<HTMLElement>("#workbench-result-pane")!,
+      m.workbench_help(),
+    );
+    expect(document.querySelector("[role=dialog]")?.textContent).toContain(
+      m.workbench_result_managed_lede(),
+    );
     expect(page.host.textContent).toContain(m.workbench_result_heading());
   });
 });

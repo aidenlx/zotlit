@@ -47,6 +47,7 @@ import {
   rowMatches,
 } from "./fields";
 import type { FieldInsertionMode, TemplateRoot } from "./fields";
+import { WorkbenchHelp } from "./frame";
 
 const SNIPPET_LABEL: Record<SnippetKind, () => string> = {
   output: m.template_data_explorer_menu_copy_output,
@@ -127,19 +128,19 @@ export function FieldList({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="font-serif text-lg font-medium">
+      <div className="mb-2 flex min-h-8 shrink-0 flex-wrap items-center gap-1.5">
+        <h2 className="text-xs font-semibold">
           {m.workbench_fields_heading()}
         </h2>
-        <span className="text-xs text-fd-muted-foreground">
+        <span className="me-auto text-xs text-fd-muted-foreground">
           {ROOT_LABEL[root]()}
         </span>
+        <WorkbenchHelp title={m.workbench_fields_heading()} compact>
+          {disabled
+            ? m.workbench_properties_insert_hint()
+            : m.workbench_fields_lede()}
+        </WorkbenchHelp>
       </div>
-      <p className="mt-2 mb-3 text-sm leading-relaxed text-fd-muted-foreground">
-        {disabled
-          ? m.workbench_properties_insert_hint()
-          : m.workbench_fields_lede()}
-      </p>
       <Input
         type="search"
         value={query}
@@ -148,7 +149,7 @@ export function FieldList({
         onChange={(event) =>
           setTree((current) => setFilter(current, event.target.value))
         }
-        className="mb-3"
+        className="mb-2 min-h-8 shrink-0 px-2 py-1 sm:text-xs"
       />
       <div className="min-h-0 flex-1 scrollbar-gutter-stable overflow-auto rounded-md border border-fd-border bg-fd-card">
         {data === null ? (

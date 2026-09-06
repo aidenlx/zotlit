@@ -6,6 +6,14 @@ import { templateHighlighting } from "@zotlit/workbench/language";
 export const editorTheme = [
   templateHighlighting,
   EditorView.theme({
+    ".cm-scroller": {
+      fontFamily: "var(--font-mono)",
+      fontSize: "1rem",
+      lineHeight: "1.5",
+    },
+    "@media (min-width: 40rem)": {
+      ".cm-scroller": { fontSize: "0.875rem" },
+    },
     // The pane host draws the focus ring, so the editor's own stays off.
     "&.cm-focused": { outline: "none" },
     ".tok-keyword, .tok-functionName, .tok-operator, .zt-liquid-delimiter, .zt-eta-delimiter":
