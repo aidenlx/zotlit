@@ -124,27 +124,75 @@ The deletion dialog also lists every rule under [Automatic profile selection](#p
 
 The <UiLabel name={m.settings_profile_rules_heading()} /> list on the same page holds the rules that choose a Profile for a **new** literature note from its Zotero item. Rules run from the top; the first rule that matches selects the Profile, so place specific rules above broad ones and drag rows to reorder them. Each rule has:
 
-| Field                                                   | Meaning                                                                                                                                                                                                                                                                                                            |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| <UiLabel name={m.settings_profile_rule_scope()} />      | The Zotero libraries the rule applies to. A new rule starts at <UiLabel name={m.settings_library_scope_all()} />; restrict it to selected libraries to keep personal and group work apart.                                                                                                                         |
-| <UiLabel name={m.settings_profile_rule_conditions()} /> | Conditions (<UiLabel name={m.settings_profile_rule_operator_is()} /> or <UiLabel name={m.settings_profile_rule_operator_is_not()} />) on the item's type, a collection, or a tag, grouped under <UiLabel name={m.settings_profile_rule_match()} />. A rule with no conditions matches every item in its libraries. |
-| <UiLabel name={m.settings_profile_rule_target()} />     | The Profile a matching note is created under, including <UiLabel name={m.settings_profile_default_name()} />.                                                                                                                                                                                                      |
+| Field                                                   | Meaning                                                                                                                                                                                    |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| <UiLabel name={m.settings_profile_rule_scope()} />      | The Zotero libraries the rule applies to. A new rule starts at <UiLabel name={m.settings_library_scope_all()} />; restrict it to selected libraries to keep personal and group work apart. |
+| <UiLabel name={m.settings_profile_rule_conditions()} /> | Conditions on the item's type, Tags, and Collections, grouped under <UiLabel name={m.settings_profile_rule_match()} />. A rule with no conditions matches every item in its libraries.     |
+| <UiLabel name={m.settings_profile_rule_target()} />     | The Profile a matching note is created under, including <UiLabel name={m.settings_profile_default_name()} />.                                                                              |
 
 Rules refer to a Profile by its stable ID, so renaming a Profile or its document keeps the rule. Rules stay in this vault: sharing or importing a Profile never carries them.
 
 #### Groups and exclusions
 
-A new rule starts with one group set to <UiLabel name={m.settings_profile_rule_match_all()} />. Switch it to <UiLabel name={m.settings_profile_rule_match_any()} /> when alternatives should select the same Profile, for example items in either of two project collections. <UiLabel name={m.settings_profile_rule_add_group()} /> nests a group with its own match setting inside the current one, so a rule can require a tag **and** any of several item types. Choose <UiLabel name={m.settings_profile_rule_operator_is_not()} /> on a condition to exclude an item type, a collection, or a tag. A nested group needs at least one condition; remove it with <UiLabel name={m.settings_profile_rule_remove_group()} />.
+A new rule starts with one group set to <UiLabel name={m.settings_profile_rule_match_all()} />. Switch it to <UiLabel name={m.settings_profile_rule_match_any()} /> when alternatives should select the same Profile, for example items in either of two project Collections. <UiLabel name={m.settings_profile_rule_add_group()} /> nests a group with its own match setting inside the current one, so a rule can require a Tag **and** any of several item types. A nested group needs at least one condition; remove it with <UiLabel name={m.settings_profile_rule_remove_group()} />.
+
+#### Tag and Collection rows
+
+Each condition uses one frame for its field, operator, and value. A single-value Collection field stays inline. Multi-value chips stay inline when space permits and move to a second line at narrow widths.
+
+The <UiLabel name={m.settings_profile_rule_condition_tag()} /> row has these operators:
+
+- <UiLabel name={m.settings_profile_rule_tag_contains()} />
+- <UiLabel name={m.settings_profile_rule_tag_does_not_contain()} />
+- <UiLabel name={m.settings_profile_rule_tag_contains_any()} />
+- <UiLabel name={m.settings_profile_rule_tag_contains_all()} />
+- <UiLabel name={m.settings_profile_rule_tag_is_empty()} />
+- <UiLabel name={m.settings_profile_rule_tag_is_not_empty()} />
+
+The <UiLabel name={m.settings_profile_rule_condition_collection()} /> row has these operators:
+
+- <UiLabel name={m.settings_profile_rule_collection_within()} />
+- <UiLabel name={m.settings_profile_rule_collection_not_within()} />
+- <UiLabel name={m.settings_profile_rule_collection_contains()} />
+- <UiLabel name={m.settings_profile_rule_collection_not_contains()} />
+- <UiLabel name={m.settings_profile_rule_collection_contains_any()} />
+- <UiLabel name={m.settings_profile_rule_collection_contains_all()} />
+- <UiLabel name={m.settings_profile_rule_collection_is_empty()} />
+- <UiLabel name={m.settings_profile_rule_collection_is_not_empty()} />
+
+The any-of and all-of operators accept multiple values as chips. Enter a value and press `Enter`, or type a comma, to add a chip. Use its remove button, or press `Backspace` in an empty input, to remove a chip. The other membership operators accept one value. The empty operators have no value control.
+
+Tag names are free text. Matching is exact and case-sensitive. Tags added manually and tags added automatically by Zotero count alike.
+
+Collection fields suggest Collection paths from all connected Libraries. Each path appears once, even when several Libraries contain it. You can also enter a path that is absent from the suggestions.
 
 #### Expression conditions
 
-A rule stores its conditions as explicit `and` / `or` groups, the shape of an Obsidian Bases `filters` block, and each condition is a filter expression the visual row writes for you. Select <UiLabel name={m.settings_profile_rule_edit_as_expression()} /> on a row to edit that expression as text, where `&&`, `||`, `!`, and parentheses combine `itemType == "book"`, `inCollection("personal", "KEY")`, `inCollectionDirectly("group:12", "KEY")`, and `hasTag("name")`. Libraries are `"personal"` or `"group:<ID>"`; collections are named by their key. The editor checks the expression as you type and refuses any other field or function, so a rule cannot grow into a general metadata query.
+The Match tree contains Match conditions in explicit `and` / `or` groups, in the shape of an Obsidian Bases `filters` block. Each Match condition is a Filter Expression that the visual row writes for you. Select <UiLabel name={m.settings_profile_rule_edit_as_expression()} /> on a row to edit the expression as text.
 
-Switching a row never changes what a rule means: a row turned into an expression keeps its condition as text, and <UiLabel name={m.settings_profile_rule_edit_visually()} /> turns an expression that reads as one item type, collection, or tag test back into that row. An expression that combines several tests, or one that is invalid, stays as written in its expression row until you change it.
+`tags` and `collections` are list fields. They support these functions:
 
-A collection condition lists every collection by its library and path, so two collections with the same name stay distinct, and it stores the collection's key together with its library, so renaming the collection keeps the rule. It matches items in the collection and in any of its subcollections; choose <UiLabel name={m.settings_profile_rule_collection_direct()} /> to match direct membership only. Matching reads every collection the item is filed in, whichever collection you opened it from. A collection that no longer exists in Zotero leaves the rule broken until you pick another one.
+| Function      | Meaning                                                          | Example                                         |
+| ------------- | ---------------------------------------------------------------- | ----------------------------------------------- |
+| `contains`    | The list contains the one value.                                 | `tags.contains("Read")`                         |
+| `containsAny` | The list contains at least one supplied value.                   | `tags.containsAny("Read", "Review")`            |
+| `containsAll` | The list contains every supplied value.                          | `collections.containsAll("Project", "Archive")` |
+| `isEmpty`     | The list has no values.                                          | `collections.isEmpty()`                         |
+| `within`      | The Item is in the Collection path or one of its subcollections. | `collections.within("Project/Drafts")`          |
 
-A tag condition matches the tag name exactly, including capitalization, and counts tags added by hand and tags Zotero added automatically alike.
+`within` is available only on `collections`. It is the Within test shown as <UiLabel name={m.settings_profile_rule_collection_within()} />. `collections.contains("Project/Drafts")`, shown as <UiLabel name={m.settings_profile_rule_collection_contains()} />, tests direct filing only.
+
+The exclamation mark (`!`) is the only negation. For example, `!tags.contains("Read")` means <UiLabel name={m.settings_profile_rule_tag_does_not_contain()} />, and `!collections.isEmpty()` means <UiLabel name={m.settings_profile_rule_collection_is_not_empty()} />. The `&&` and `||` operators and parentheses combine tests. A negated `containsAny` or `containsAll` expression remains an expression row because the visual rows have no corresponding negated operator.
+
+Switching a row preserves its Match condition. A row turned into an expression keeps the condition as text, and <UiLabel name={m.settings_profile_rule_edit_visually()} /> turns a supported single test back into a labelled row. An expression that combines several tests stays as written in its expression row until you change it.
+
+A Collection path contains the root Collection name first, followed by each child name, joined by `/`. For example, `Project/Drafts/Review` identifies the `Review` Collection under `Drafts`, under `Project`. A Collection name that contains `/` is ambiguous because paths have no escape syntax.
+
+The same path text applies across Libraries. ZotLit evaluates it only against Collections in the Item's own Library. Renaming any Collection in the path changes the path, so update the Match condition after a rename.
+
+An absent Collection path is valid. A positive membership test for that path is false for an Item whose Library does not contain it. Negation follows ordinary Boolean behavior, so negating that false test makes it true. The editor shows <UiLabel name={m.settings_profile_rule_collection_not_found()} /> for each absent value, and <UiLabel name={m.settings_profile_rule_save()} /> remains available.
+
+Only a Match condition outside the supported condition contract makes the Profile Match unevaluable. This includes a syntax error, an unsupported field or function, an incorrect number of arguments, or a non-text argument.
 
 When you create a note from the quick switcher, the Profile picker preselects the rule's Profile, names the rule, and shows the resulting path; choosing another Profile overrides the rule for that note only. When you follow a citation or a Zotero link, a Profile named by the link or selected by a rule creates the note at once, and a notice reports the Profile and the path. An item that matches no rule preselects <UiLabel name={m.settings_profile_default_name()} />, or uses it directly when no other Profile exists. A rule that cannot be evaluated, or one whose Profile has been deleted, stops automatic selection and asks you to choose, even when <UiLabel name={m.settings_profile_default_name()} /> is the only Profile left; the rule row shows the problem so you can repair it. Select <UiLabel name={m.settings_profile_rules_edit()} /> on the row to give the rule another Profile, or delete the row. The repaired rule serves the next new note. Existing notes keep their recorded Profile — rules never move a note.
 
