@@ -1,0 +1,10 @@
+---
+version: "2.1.3"
+date: "2026-09-07"
+description: "Reading view stability, reliable annotation drag-and-drop"
+---
+
+## Bug Fixes
+
+- Fixed Reading view flickering, jumping to the top, and resetting embedded content whenever any file in the vault changed ([discussion #993](https://github.com/aidenlx/zotlit/discussions/993)). Toggling a checkbox in an Obsidian Base embedded in a note, or editing any other note, caused ZotLit to rerender every open Reading view. ZotLit now updates only the citations that actually changed. Scroll position, selected Base view, and embedded state all remain where you left them. Hover states and popovers on citations also stay open through Zotero database refreshes.
+- Fixed dragging annotations from the Annotation Panel sometimes inserting only the raw highlight text instead of the rendered template output ([discussion #966](https://github.com/aidenlx/zotlit/discussions/966)). The more plugins were loaded, the more often this happened. The drag handle now stays ready between preparations. When it is briefly unavailable (during a note switch or right after a drop), the annotation card dims its handle and cancels the drag with a notice instead of silently falling back to plain text.
