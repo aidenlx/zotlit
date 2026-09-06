@@ -352,6 +352,56 @@ describe("condition contract", () => {
     expect(formatCondition(negated!)).toBe(`!${expression}`);
   });
 
+  it.each<{ condition: RuleCondition; expression: string }>([
+    {
+      condition: {
+        kind: "tags",
+        operator: "isEmpty",
+        negated: false,
+        values: ["Read", "Review"],
+      },
+      expression: "tags.isEmpty()",
+    },
+    {
+      condition: {
+        kind: "tags",
+        operator: "isEmpty",
+        negated: true,
+        values: ["Read", "Review"],
+      },
+      expression: "!tags.isEmpty()",
+    },
+    {
+      condition: {
+        kind: "collections",
+        operator: "isEmpty",
+        negated: false,
+        values: [
+          ["Future", "Research"],
+          ["Personal only", "Personal child"],
+        ],
+      },
+      expression: "collections.isEmpty()",
+    },
+    {
+      condition: {
+        kind: "collections",
+        operator: "isEmpty",
+        negated: true,
+        values: [
+          ["Future", "Research"],
+          ["Personal only", "Personal child"],
+        ],
+      },
+      expression: "!collections.isEmpty()",
+    },
+  ])(
+    "formats a populated zero-arity condition as $expression",
+    ({ condition, expression }) => {
+      expect(formatCondition(condition)).toBe(expression);
+    },
+  );
+
   it.each([
     'hasTag("Read")',
     'labels.contains("Read")',

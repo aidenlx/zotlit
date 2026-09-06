@@ -357,7 +357,6 @@ function GroupEditor({
 }) {
   const setRoot = useRuleEditorStore((state) => state.setRoot);
   const root = useRuleEditorStore((state) => state.draft.root);
-  const collections = useRuleEditorStore((state) => state.deps.collections);
   const nested = path.length > 0;
   const setMatch = (match: GroupMatch) =>
     setRoot(updateGroup(root, path, (target) => ({ ...target, match })));
@@ -433,13 +432,7 @@ function GroupEditor({
           type="button"
           className={quietButton}
           onClick={() =>
-            setRoot(
-              appendAt(
-                root,
-                path,
-                freshCondition("item-type", false, collections),
-              ),
-            )
+            setRoot(appendAt(root, path, freshCondition("item-type", false)))
           }
         >
           <Icon name="plus" />
@@ -448,9 +441,7 @@ function GroupEditor({
         <button
           type="button"
           className={quietButton}
-          onClick={() =>
-            setRoot(appendAt(root, path, freshGroup(group.match, collections)))
-          }
+          onClick={() => setRoot(appendAt(root, path, freshGroup(group.match)))}
         >
           <Icon name="plus" />
           <span>{m.settings_profile_rule_add_group()}</span>
@@ -480,23 +471,23 @@ function ConditionRow({
   const issue = rowIssue(condition, deps);
   const labelled =
     condition.kind === "expression" ? asLabelled(condition) : null;
-  const hasMultipleValues =
-    condition.kind === "tags" &&
+  const hasResponsiveValue =
+    (condition.kind === "tags" || condition.kind === "collections") &&
     (condition.operator === "containsAny" ||
       condition.operator === "containsAll");
   return (
-    <div className="zt:flex zt:flex-col">
+    <div className="zt:flex zt:flex-col" data-condition-row="">
       <div
         className={cn(
           statementBox,
-          hasMultipleValues
+          hasResponsiveValue
             ? "zt:@container zt:grid zt:grid-cols-[auto_auto_1fr_auto]"
             : "zt:flex",
           issue !== null && "zt:ring-1 zt:ring-(--background-modifier-error)",
         )}
       >
         <div
-          className={cn(statementControls, hasMultipleValues && "zt:contents")}
+          className={cn(statementControls, hasResponsiveValue && "zt:contents")}
         >
           {condition.kind === "expression" ? (
             <ExpressionEditor
@@ -513,13 +504,7 @@ function ConditionRow({
                 aria-label={m.settings_profile_rule_condition_kind()}
                 value={condition.kind}
                 onChange={(value) =>
-                  replace(
-                    freshCondition(
-                      value as ConditionKind,
-                      false,
-                      deps.collections,
-                    ),
-                  )
+                  replace(freshCondition(value as ConditionKind, false))
                 }
               >
                 <DropdownItem value="item-type">
@@ -540,7 +525,7 @@ function ConditionRow({
         <div
           className={cn(
             statementActions,
-            hasMultipleValues && "zt:col-start-4 zt:row-start-1",
+            hasResponsiveValue && "zt:col-start-4 zt:row-start-1",
           )}
         >
           {condition.kind === "expression" ? (
@@ -578,7 +563,7 @@ function ConditionOperator({
   condition: Exclude<RowCondition, { kind: "expression" }>;
   onChange: (next: RowCondition) => void;
 }) {
-  if (condition.kind !== "tags")
+  if (condition.kind === "item-type")
     return (
       <Dropdown
         aria-label={m.settings_profile_rule_operator()}
@@ -599,11 +584,34 @@ function ConditionOperator({
   const value = condition.negated
     ? condition.operator === "isEmpty"
       ? "is-not-empty"
-      : "does-not-contain"
+      : condition.kind === "collections" && condition.operator === "within"
+        ? "not-within"
+        : condition.kind === "collections"
+          ? "not-contains"
+          : "does-not-contain"
     : condition.operator;
   const change = (operator: string) => {
     const negated =
-      operator === "does-not-contain" || operator === "is-not-empty";
+      operator === "does-not-contain" ||
+      operator === "not-within" ||
+      operator === "not-contains" ||
+      operator === "is-not-empty";
+    if (condition.kind === "collections") {
+      const nextOperator =
+        operator === "not-contains"
+          ? "contains"
+          : operator === "not-within"
+            ? "within"
+            : operator === "is-not-empty"
+              ? "isEmpty"
+              : (operator as typeof condition.operator);
+      const values =
+        nextOperator === "contains" || nextOperator === "within"
+          ? condition.values.slice(0, 1)
+          : condition.values;
+      onChange({ ...condition, operator: nextOperator, negated, values });
+      return;
+    }
     const nextOperator =
       operator === "does-not-contain"
         ? "contains"
@@ -623,24 +631,55 @@ function ConditionOperator({
       value={value}
       onChange={change}
     >
-      <DropdownItem value="contains">
-        {m.settings_profile_rule_tag_contains()}
-      </DropdownItem>
-      <DropdownItem value="does-not-contain">
-        {m.settings_profile_rule_tag_does_not_contain()}
-      </DropdownItem>
-      <DropdownItem value="containsAny">
-        {m.settings_profile_rule_tag_contains_any()}
-      </DropdownItem>
-      <DropdownItem value="containsAll">
-        {m.settings_profile_rule_tag_contains_all()}
-      </DropdownItem>
-      <DropdownItem value="isEmpty">
-        {m.settings_profile_rule_tag_is_empty()}
-      </DropdownItem>
-      <DropdownItem value="is-not-empty">
-        {m.settings_profile_rule_tag_is_not_empty()}
-      </DropdownItem>
+      {condition.kind === "collections" ? (
+        <>
+          <DropdownItem value="within">
+            {m.settings_profile_rule_collection_within()}
+          </DropdownItem>
+          <DropdownItem value="not-within">
+            {m.settings_profile_rule_collection_not_within()}
+          </DropdownItem>
+          <DropdownItem value="contains">
+            {m.settings_profile_rule_collection_contains()}
+          </DropdownItem>
+          <DropdownItem value="not-contains">
+            {m.settings_profile_rule_collection_not_contains()}
+          </DropdownItem>
+          <DropdownItem value="containsAny">
+            {m.settings_profile_rule_collection_contains_any()}
+          </DropdownItem>
+          <DropdownItem value="containsAll">
+            {m.settings_profile_rule_collection_contains_all()}
+          </DropdownItem>
+          <DropdownItem value="isEmpty">
+            {m.settings_profile_rule_collection_is_empty()}
+          </DropdownItem>
+          <DropdownItem value="is-not-empty">
+            {m.settings_profile_rule_collection_is_not_empty()}
+          </DropdownItem>
+        </>
+      ) : (
+        <>
+          <DropdownItem value="contains">
+            {m.settings_profile_rule_tag_contains()}
+          </DropdownItem>
+          <DropdownItem value="does-not-contain">
+            {m.settings_profile_rule_tag_does_not_contain()}
+          </DropdownItem>
+          <DropdownItem value="containsAny">
+            {m.settings_profile_rule_tag_contains_any()}
+          </DropdownItem>
+          <DropdownItem value="containsAll">
+            {m.settings_profile_rule_tag_contains_all()}
+          </DropdownItem>
+          <DropdownItem value="isEmpty">
+            {m.settings_profile_rule_tag_is_empty()}
+          </DropdownItem>
+          <DropdownItem value="is-not-empty">
+            {m.settings_profile_rule_tag_is_not_empty()}
+          </DropdownItem>
+        </>
+      )}
     </Dropdown>
   );
 }
@@ -652,6 +691,8 @@ function ConditionValue({
   condition: Exclude<RowCondition, { kind: "expression" }>;
   onChange: (next: RowCondition) => void;
 }) {
+  const collections = useRuleEditorStore((state) => state.deps.collections);
+  const suggestionsId = useId();
   switch (condition.kind) {
     case "item-type":
       return (
@@ -670,8 +711,63 @@ function ConditionValue({
           ))}
         </Dropdown>
       );
-    case "collections":
-      return null;
+    case "collections": {
+      if (condition.operator === "isEmpty") return null;
+      const suggestions = collections.map(({ path }) => path.join("/"));
+      const hint = (value: string) =>
+        suggestions.includes(value)
+          ? null
+          : m.settings_profile_rule_collection_not_found();
+      if (
+        condition.operator === "containsAny" ||
+        condition.operator === "containsAll"
+      )
+        return (
+          <ChipInput
+            values={condition.values.map((path) => path.join("/"))}
+            onChange={(values) =>
+              onChange({
+                ...condition,
+                values: values.map((value) => value.split("/")),
+              })
+            }
+            placeholder={m.settings_profile_rule_collection_placeholder()}
+            suggestions={suggestions}
+            hint={hint}
+          />
+        );
+      const value = condition.values[0]?.join("/") ?? "";
+      return (
+        <div className="zt:flex zt:min-w-0 zt:flex-1 zt:flex-col">
+          <input
+            type="text"
+            className="zt:w-full zt:min-w-0"
+            aria-label={m.settings_profile_rule_value()}
+            placeholder={m.settings_profile_rule_collection_placeholder()}
+            value={value}
+            list={suggestions.length ? suggestionsId : undefined}
+            onChange={(event) =>
+              onChange({
+                ...condition,
+                values: [event.currentTarget.value.split("/")],
+              })
+            }
+          />
+          {value !== "" && hint(value) && (
+            <span className="zt:px-2 zt:pb-1 zt:text-xs zt:leading-tight zt:text-muted-foreground">
+              {hint(value)}
+            </span>
+          )}
+          {suggestions.length ? (
+            <datalist id={suggestionsId}>
+              {suggestions.map((suggestion) => (
+                <option key={suggestion} value={suggestion} />
+              ))}
+            </datalist>
+          ) : null}
+        </div>
+      );
+    }
     case "tags": {
       if (condition.operator === "isEmpty") return null;
       if (
