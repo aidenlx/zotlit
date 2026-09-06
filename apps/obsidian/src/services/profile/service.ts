@@ -8,9 +8,14 @@ import { parseDocument, stringify as stringifyYaml } from "yaml";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import {
   TemplateFacade,
+  parseLiteratureNoteTemplate,
+  updateLiteratureNoteTemplateMatch,
   synthesizeLegacyLiteratureNoteTemplate,
 } from "@zotlit/templates/facade";
-import type { LiteratureNoteTemplateManifest } from "@zotlit/templates/facade";
+import type {
+  LiteratureNoteTemplateManifest,
+  MatchTree,
+} from "@zotlit/templates/facade";
 import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
 
 import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
@@ -363,6 +368,27 @@ export class ProfileService extends Service {
       return this.#deps.app.vault.cachedRead(file);
     }
     return this.#builtInDocument();
+  }
+
+  async setMatch(id: ProfileId, match: MatchTree | undefined): Promise<void> {
+    await this.ready;
+    return this.#mutate(async () => {
+      await this.#settle();
+      const profile = this.#profiles.find((entry) => entry.id === id);
+      if (!profile) throw new Error(m.profile_import_changed());
+      const file = this.#deps.app.vault.getFileByPath(profile.path);
+      if (!file) throw new Error(m.profile_import_changed());
+      await this.#deps.app.vault.process(file, (source) => {
+        if (parseLiteratureNoteTemplate(source).manifest.id !== id)
+          throw new Error(m.profile_import_changed());
+        return updateLiteratureNoteTemplateMatch(source, match);
+      });
+      await this.#settle();
+      logger.debug("Updated Profile match", {
+        id,
+        removed: match === undefined,
+      });
+    });
   }
 
   /**
