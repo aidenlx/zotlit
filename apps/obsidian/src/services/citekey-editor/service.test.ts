@@ -10,6 +10,7 @@ import type { CitekeyResolution } from "@/services/citation-index/service";
 import type { DocumentCitations } from "@/services/citation-text/service";
 import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import type { AvailableLibrary } from "@/services/library-scope/scope";
+import { NoteIndexStub } from "@/services/note-index/test-stub";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -397,34 +398,6 @@ class CitationIndexStub {
 
   emit(): void {
     for (const cb of this.#listeners) cb();
-  }
-}
-
-class NoteIndexStub {
-  readonly #notes: Record<string, { path: string }[]>;
-  readonly #listeners: Record<"changed", Set<() => void>> = {
-    changed: new Set(),
-  };
-
-  constructor(notes: Record<string, { path: string }[]> = {}) {
-    this.#notes = notes;
-  }
-
-  getNotesByItemKey(indexedKey: string): { path: string }[] {
-    return this.#notes[indexedKey] ?? [];
-  }
-
-  whenIndexed(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  on(event: "changed", cb: () => void): () => void {
-    this.#listeners[event].add(cb);
-    return () => this.#listeners[event].delete(cb);
-  }
-
-  emit(event: "changed"): void {
-    for (const cb of this.#listeners[event]) cb();
   }
 }
 

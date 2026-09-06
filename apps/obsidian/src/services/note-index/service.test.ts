@@ -313,6 +313,17 @@ describe("NoteIndex", () => {
     expect(paths(service.getNotesByItemKey(ITEM_A))).toEqual(["paper.md"]);
   });
 
+  it("whenIndexed settles when the service is disposed before the Full Scan", async () => {
+    const { service } = await makeHarness({
+      "paper.md": cache({ itemKey: ITEM_A }),
+    });
+    const gate = service.whenIndexed();
+
+    await service[Symbol.asyncDispose]();
+
+    await expect(gate).resolves.toBeUndefined();
+  });
+
   it("whenIndexed settles on an empty vault", async () => {
     const { service, metadataCache, workspace } = await makeHarness({});
 
