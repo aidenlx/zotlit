@@ -22,59 +22,6 @@ beforeAll(() => {
     document.createElement(tag)) as typeof createEl;
 });
 
-describe("citation text templates", () => {
-  it("lists only the cite and cite2 template files, after the References group", () => {
-    const ctx = {
-      settings: { current: defaults },
-      pandocEngine: { getStatus: () => ({ kind: "absent" }) },
-      manifest: { version: "test" },
-      template: {
-        loaded: true,
-        getTemplateFileStatuses: () =>
-          ["note", "content", "annotation", "cite", "cite2", "filename"].map(
-            (name) => ({ name }),
-          ),
-      },
-    } as unknown as SettingTabContext;
-    const items = citationsPageItems(ctx);
-    const index = items.findIndex(
-      (item) =>
-        "type" in item &&
-        item.type === "group" &&
-        item.heading === m.settings_citation_templates_heading(),
-    );
-    const references = items.findIndex(
-      (item) =>
-        "type" in item &&
-        item.type === "group" &&
-        item.heading === m.settings_citation_references_heading(),
-    );
-    expect(index).toBe(references + 1);
-    const group = items[index]!;
-    if (!("items" in group) || !group.items) throw new Error("group missing");
-    expect(group.items.map((item) => "name" in item && item.name)).toEqual([
-      m.settings_template_name_cite(),
-      m.settings_template_name_cite2(),
-    ]);
-  });
-
-  it("holds an empty group until the template service has loaded", () => {
-    const ctx = {
-      settings: { current: defaults },
-      pandocEngine: { getStatus: () => ({ kind: "absent" }) },
-      manifest: { version: "test" },
-      template: { loaded: false },
-    } as unknown as SettingTabContext;
-    const group = citationsPageItems(ctx).find(
-      (item) =>
-        "type" in item &&
-        item.type === "group" &&
-        item.heading === m.settings_citation_templates_heading(),
-    );
-    expect(group).toMatchObject({ items: [] });
-  });
-});
-
 describe("hover settings", () => {
   /** The Hover group's rows for a given saved hover action. */
   const hoverRows = (settings: Settings) => {

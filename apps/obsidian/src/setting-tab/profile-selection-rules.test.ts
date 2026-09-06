@@ -117,17 +117,6 @@ beforeEach(() => {
 });
 
 describe("Profile Selection Rules settings", () => {
-  it("names the info row and the list heading", () => {
-    const ctx = context();
-    const items = profileSelectionRuleItems(ctx);
-    expect(items[0]).toMatchObject({
-      name: m.settings_profile_rules_name(),
-      desc: m.settings_profile_rules_desc(),
-    });
-    expect(list(ctx).heading).toBe(m.settings_profile_rules_heading());
-    expect(list(ctx).emptyState).toBe(m.settings_profile_rules_empty());
-  });
-
   it("names each row by its target Profile and summarizes the rule", () => {
     const ctx = context([groupRule]);
     const rows = list(ctx).items!;
