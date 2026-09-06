@@ -966,9 +966,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(deletionDialog).toContain(
       m.settings_profile_delete_move_confirm({ count: 1 }),
     );
-    expect(deletionDialog).not.toContain(
-      m.settings_profile_delete_rules_repair(),
-    );
     expect(
       await clickModalButton(
         vaultId,

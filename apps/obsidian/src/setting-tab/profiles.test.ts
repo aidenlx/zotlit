@@ -318,9 +318,9 @@ it("shows a short match status for each non-default row", () => {
   const summaries = [
     m.profile_match_absent(),
     m.profile_match_all(),
-    m.settings_profile_rule_tags_contain({ tags: "Read" }),
+    m.settings_profile_match_tags_contain({ tags: "Read" }),
     m.profile_match_problem({
-      problem: m.profile_rule_problem_unknown_library({ text: '"group:999"' }),
+      problem: m.profile_match_problem_unknown_library({ text: '"group:999"' }),
     }),
   ];
   ctx.profile = {

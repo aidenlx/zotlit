@@ -33,15 +33,15 @@ export function itemTypeLabel(name: string): string {
 export function describeProblem(problem: ConditionProblem): string {
   switch (problem.code) {
     case "empty":
-      return m.profile_rule_problem_empty();
+      return m.profile_match_problem_empty();
     case "syntax":
-      return m.profile_rule_problem_syntax({ text: problem.text });
+      return m.profile_match_problem_syntax({ text: problem.text });
     case "unsupported":
-      return m.profile_rule_problem_unsupported({ text: problem.text });
+      return m.profile_match_problem_unsupported({ text: problem.text });
     case "unknown-library":
-      return m.profile_rule_problem_unknown_library({ text: problem.text });
+      return m.profile_match_problem_unknown_library({ text: problem.text });
     case "unknown-item-type":
-      return m.profile_rule_problem_unknown_item_type({ text: problem.text });
+      return m.profile_match_problem_unknown_item_type({ text: problem.text });
   }
 }
 
@@ -67,7 +67,7 @@ function describeFilter(filter: MatchTree, options: DescribeOptions): string {
     (all ? filter.and : filter.or).map((entry) =>
       typeof entry === "string"
         ? describeFilter(entry, options)
-        : m.settings_profile_rule_summary_group({
+        : m.settings_profile_match_summary_group({
             conditions: describeFilter(entry, options),
           }),
     ),
@@ -88,7 +88,7 @@ function describeCondition(
   }).format(
     condition.conditions.map((entry) =>
       entry.kind === "group"
-        ? m.settings_profile_rule_summary_group({
+        ? m.settings_profile_match_summary_group({
             conditions: describeCondition(entry, options),
           })
         : describeFlat(entry, options),
@@ -116,14 +116,14 @@ function describeFlat(
                 },
           );
       return condition.negated
-        ? m.settings_profile_rule_library_is_not({ library })
-        : m.settings_profile_rule_library_is({ library });
+        ? m.settings_profile_match_library_is_not({ library })
+        : m.settings_profile_match_library_is({ library });
     }
     case "item-type": {
       const type = itemTypeLabel(condition.values[0]);
       return condition.negated
-        ? m.settings_profile_rule_item_type_is_not({ type })
-        : m.settings_profile_rule_item_type_is({ type });
+        ? m.settings_profile_match_item_type_is_not({ type })
+        : m.settings_profile_match_item_type_is({ type });
     }
     case "collections": {
       const collections = new Intl.ListFormat(runtime.getLocale()).format(
@@ -132,28 +132,28 @@ function describeFlat(
       switch (condition.operator) {
         case "within":
           return condition.negated
-            ? m.settings_profile_rule_collections_not_inside({ collections })
-            : m.settings_profile_rule_collections_inside({ collections });
+            ? m.settings_profile_match_collections_not_inside({ collections })
+            : m.settings_profile_match_collections_inside({ collections });
         case "contains":
           return condition.negated
-            ? m.settings_profile_rule_collections_are_not({ collections })
-            : m.settings_profile_rule_collections_are({ collections });
+            ? m.settings_profile_match_collections_are_not({ collections })
+            : m.settings_profile_match_collections_are({ collections });
         case "containsAny":
           return condition.negated
-            ? m.settings_profile_rule_collections_are_not_any_of({
+            ? m.settings_profile_match_collections_are_not_any_of({
                 collections,
               })
-            : m.settings_profile_rule_collections_are_any_of({ collections });
+            : m.settings_profile_match_collections_are_any_of({ collections });
         case "containsAll":
           return condition.negated
-            ? m.settings_profile_rule_collections_are_not_all_of({
+            ? m.settings_profile_match_collections_are_not_all_of({
                 collections,
               })
-            : m.settings_profile_rule_collections_are_all_of({ collections });
+            : m.settings_profile_match_collections_are_all_of({ collections });
         case "isEmpty":
           return condition.negated
-            ? m.settings_profile_rule_collections_are_not_empty()
-            : m.settings_profile_rule_collections_are_empty();
+            ? m.settings_profile_match_collections_are_not_empty()
+            : m.settings_profile_match_collections_are_empty();
       }
     }
     case "tags": {
@@ -163,20 +163,20 @@ function describeFlat(
       switch (condition.operator) {
         case "contains":
           return condition.negated
-            ? m.settings_profile_rule_tags_do_not_contain({ tags })
-            : m.settings_profile_rule_tags_contain({ tags });
+            ? m.settings_profile_match_tags_do_not_contain({ tags })
+            : m.settings_profile_match_tags_contain({ tags });
         case "containsAny":
           return condition.negated
-            ? m.settings_profile_rule_tags_do_not_contain_any({ tags })
-            : m.settings_profile_rule_tags_contain_any({ tags });
+            ? m.settings_profile_match_tags_do_not_contain_any({ tags })
+            : m.settings_profile_match_tags_contain_any({ tags });
         case "containsAll":
           return condition.negated
-            ? m.settings_profile_rule_tags_do_not_contain_all({ tags })
-            : m.settings_profile_rule_tags_contain_all({ tags });
+            ? m.settings_profile_match_tags_do_not_contain_all({ tags })
+            : m.settings_profile_match_tags_contain_all({ tags });
         case "isEmpty":
           return condition.negated
-            ? m.settings_profile_rule_tags_are_not_empty()
-            : m.settings_profile_rule_tags_are_empty();
+            ? m.settings_profile_match_tags_are_not_empty()
+            : m.settings_profile_match_tags_are_empty();
       }
     }
   }
