@@ -1,118 +1,68 @@
-// The database side of Profile Selection Rules: the membership facts a rule reads of an Item, whether a referenced Collection exists, and the Collections the editor offers.
-//
-// Every Collection reference is portable — a Library selector plus Zotero's
-// Collection key — and local `libraryID`s are resolved here, per database
-// snapshot, so the same rule means the same thing on every device.
+// The database side of Profile Selection Rules: Item membership facts and the Collection paths the editor offers.
 import {
   getCollectionIDsByItem,
   getCollectionNodesByLibrary,
-  getLibraries,
   resolveItemTags,
 } from "@zotlit/db";
 import type { CollectionNode, Item } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
-import { selectorKey, selectorOf } from "@/services/library-scope/scope";
-import type {
-  AvailableLibrary,
-  LibrarySelector,
-} from "@/services/library-scope/scope";
+import type { AvailableLibrary } from "@/services/library-scope/scope";
 
-import type { CollectionReference, RuleItemFacts } from "./condition";
+import type { RuleItemFacts } from "./condition";
 
 /** One Collection the editor offers, with the words it is shown by. */
-export interface CollectionChoice extends CollectionReference {
+export interface CollectionChoice {
   /** Root-to-leaf Collection names, this Collection last. */
   path: readonly string[];
 }
 
 /**
- * The Item's actual memberships: every Tag name applied to it, the keys of
- * the Collections it is filed in, and the keys of their live ancestors.
+ * The Item's actual memberships: every Tag name and each direct Collection's
+ * root-first path.
  */
 export function resolveMembershipFacts(
   client: NodeDatabaseClient,
   item: Pick<Item, "itemID" | "libraryID">,
-): Pick<RuleItemFacts, "tags" | "collections" | "collectionAncestors"> {
+): Pick<RuleItemFacts, "tags" | "collections"> {
   const tags = resolveItemTags(client, item.itemID, new Map()).map(
     ({ tag }) => tag.name,
   );
   const nodes = nodeMap(getCollectionNodesByLibrary(client, item.libraryID));
-  const collections: string[] = [];
-  const ancestors = new Set<string>();
+  const collections: string[][] = [];
   for (const collectionID of getCollectionIDsByItem(client, item.itemID)) {
     const node = nodes.get(collectionID);
     if (!node) continue;
-    collections.push(node.key);
-    for (const ancestor of ancestorsOf(node, nodes))
-      ancestors.add(ancestor.key);
+    collections.push(
+      [...ancestorsOf(node, nodes).toReversed(), node].map(
+        ({ collectionName }) => collectionName,
+      ),
+    );
   }
-  return { tags, collections, collectionAncestors: [...ancestors] };
+  return { tags, collections };
 }
 
 /**
- * Whether the database holds a referenced Collection — the check that keeps
- * a stale or foreign reference a broken rule rather than a nonmatch.
- */
-export function collectionLookup(
-  client: NodeDatabaseClient,
-): (reference: CollectionReference) => boolean {
-  const libraryIDs = new Map(
-    getLibraries(client).flatMap((library) => {
-      const selector = selectorOf(library);
-      return selector ? [[selectorKey(selector), library.libraryID]] : [];
-    }),
-  );
-  const keysByLibrary = new Map<number, Set<string>>();
-  return ({ library, key }) => {
-    const libraryID = libraryIDs.get(selectorKey(library));
-    if (libraryID === undefined) return false;
-    let keys = keysByLibrary.get(libraryID);
-    if (!keys) {
-      keys = new Set(
-        getCollectionNodesByLibrary(client, libraryID).map((node) => node.key),
-      );
-      keysByLibrary.set(libraryID, keys);
-    }
-    return keys.has(key);
-  };
-}
-
-/** One string per Collection reference: the Library selector key and the Collection key. */
-export function collectionKey({ library, key }: CollectionReference): string {
-  return `${selectorKey(library)}/${key}`;
-}
-
-/** The existence check {@link collectionLookup} makes, over listed choices. */
-export function choicesLookup(
-  choices: readonly CollectionChoice[],
-): (reference: CollectionReference) => boolean {
-  const known = new Set(choices.map(collectionKey));
-  return (reference) => known.has(collectionKey(reference));
-}
-
-/**
- * Every live Collection of the given Libraries, in Library order and then by
- * path, for the editor's Collection selector.
+ * Every distinct live Collection path across the given Libraries, sorted.
  */
 export function listCollectionChoices(
   client: NodeDatabaseClient,
   libraries: readonly AvailableLibrary[],
 ): CollectionChoice[] {
-  return libraries.flatMap(({ selector, libraryID }) =>
-    libraryChoices(selector, getCollectionNodesByLibrary(client, libraryID)),
-  );
+  const byPath = new Map<string, CollectionChoice>();
+  for (const { libraryID } of libraries) {
+    for (const choice of libraryChoices(
+      getCollectionNodesByLibrary(client, libraryID),
+    ))
+      byPath.set(choice.path.join("/"), choice);
+  }
+  return [...byPath.values()].sort((a, b) => comparePaths(a.path, b.path));
 }
 
-function libraryChoices(
-  library: LibrarySelector,
-  rows: readonly CollectionNode[],
-): CollectionChoice[] {
+function libraryChoices(rows: readonly CollectionNode[]): CollectionChoice[] {
   const nodes = nodeMap(rows);
   return [...nodes.values()]
     .map((node) => ({
-      library,
-      key: node.key,
       path: [...ancestorsOf(node, nodes).toReversed(), node].map(
         ({ collectionName }) => collectionName,
       ),

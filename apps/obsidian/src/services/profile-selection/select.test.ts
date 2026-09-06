@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import type { ProfileId } from "@/lib/profile-stamp";
-import { selectorKey } from "@/services/library-scope/scope";
-import type { LibrarySelector } from "@/services/library-scope/scope";
 
 import {
   compileCondition,
@@ -21,6 +19,13 @@ import type {
 const books = "Bk3Qn7XvT2Lp" as ProfileId;
 const papers = "Rz9Wm4YfH6Kd" as ProfileId;
 
+const itemType = (value: string, negated = false): RuleCondition => ({
+  kind: "item-type",
+  operator: "is",
+  negated,
+  values: [value],
+});
+
 function rule(
   overrides: Partial<ProfileSelectionRule> & { id: string },
 ): ProfileSelectionRule {
@@ -32,18 +37,8 @@ function rule(
   };
 }
 
-/** The Collections the "database" holds: My Library PROJ0001 and SUB00001. */
-const KNOWN_COLLECTIONS = new Set(["personal/PROJ0001", "personal/SUB00001"]);
-
 const available = {
   isAvailable: (selector: string) => selector !== papers,
-  hasCollection: ({
-    library,
-    key,
-  }: {
-    library: LibrarySelector;
-    key: string;
-  }) => KNOWN_COLLECTIONS.has(`${selectorKey(library)}/${key}`),
 };
 
 /** A My Library Item with no memberships unless given. */
@@ -53,7 +48,6 @@ function facts(overrides: Partial<RuleItemFacts> = {}): RuleItemFacts {
     itemType: "book",
     tags: [],
     collections: [],
-    collectionAncestors: [],
     ...overrides,
   };
 }
@@ -61,28 +55,21 @@ function facts(overrides: Partial<RuleItemFacts> = {}): RuleItemFacts {
 describe("condition contract", () => {
   it("compiles item-type equality, negation, and flat groups", () => {
     expect(compileCondition('itemType == "book"')).toEqual({
-      condition: { kind: "item-type", negated: false, itemType: "book" },
+      condition: itemType("book"),
       problem: null,
     });
     expect(compileCondition('itemType != "book"').condition).toEqual({
-      kind: "item-type",
-      negated: true,
-      itemType: "book",
+      ...itemType("book", true),
     });
     expect(compileCondition('!(itemType == "book")').condition).toEqual({
-      kind: "item-type",
-      negated: true,
-      itemType: "book",
+      ...itemType("book", true),
     });
     expect(
       compileCondition('itemType != "book" && itemType != "thesis"').condition,
     ).toEqual({
       kind: "group",
       match: "all",
-      conditions: [
-        { kind: "item-type", negated: true, itemType: "book" },
-        { kind: "item-type", negated: true, itemType: "thesis" },
-      ],
+      conditions: [itemType("book", true), itemType("thesis", true)],
     });
     expect(compileCondition(" true ").condition).toEqual({
       kind: "group",
@@ -99,14 +86,11 @@ describe("condition contract", () => {
       kind: "group",
       match: "any",
       conditions: [
-        { kind: "item-type", negated: false, itemType: "book" },
+        itemType("book"),
         {
           kind: "group",
           match: "all",
-          conditions: [
-            { kind: "item-type", negated: false, itemType: "thesis" },
-            { kind: "item-type", negated: true, itemType: "letter" },
-          ],
+          conditions: [itemType("thesis"), itemType("letter", true)],
         },
       ],
     });
@@ -117,25 +101,40 @@ describe("condition contract", () => {
       compileFilter({
         and: [
           'itemType != "book"',
-          { or: ['hasTag("Read")', 'hasTag("Read") && itemType == "thesis"'] },
+          {
+            or: [
+              'tags.contains("Read")',
+              'tags.contains("Read") && itemType == "thesis"',
+            ],
+          },
         ],
       }).condition,
     ).toEqual({
       kind: "group",
       match: "all",
       conditions: [
-        { kind: "item-type", negated: true, itemType: "book" },
+        itemType("book", true),
         {
           kind: "group",
           match: "any",
           conditions: [
-            { kind: "tag", negated: false, name: "Read" },
+            {
+              kind: "tags",
+              operator: "contains",
+              negated: false,
+              values: ["Read"],
+            },
             {
               kind: "group",
               match: "all",
               conditions: [
-                { kind: "tag", negated: false, name: "Read" },
-                { kind: "item-type", negated: false, itemType: "thesis" },
+                {
+                  kind: "tags",
+                  operator: "contains",
+                  negated: false,
+                  values: ["Read"],
+                },
+                itemType("thesis"),
               ],
             },
           ],
@@ -149,9 +148,7 @@ describe("condition contract", () => {
       conditions: [],
     });
     expect(compileFilter('itemType == "book"').condition).toEqual({
-      kind: "item-type",
-      negated: false,
-      itemType: "book",
+      ...itemType("book"),
     });
     expect(
       compileFilter({ or: ['itemType == "book"', "", 'title == "x"'] }).problem,
@@ -175,9 +172,9 @@ describe("condition contract", () => {
       to: 15,
       text: 'title == "book"',
     });
-    expect(compileCondition('inCollection("ABCD1234")').problem).toMatchObject({
-      code: "unsupported",
-    });
+    expect(
+      compileCondition('collections.within("Project")').problem,
+    ).toBeNull();
     expect(compileCondition('itemType == "novel"').problem).toEqual({
       code: "unknown-item-type",
       from: 12,
@@ -193,10 +190,7 @@ describe("condition contract", () => {
     const condition: RuleCondition = {
       kind: "group",
       match: "all",
-      conditions: [
-        { kind: "item-type", negated: false, itemType: "book" },
-        { kind: "item-type", negated: true, itemType: "bookSection" },
-      ],
+      conditions: [itemType("book"), itemType("bookSection", true)],
     };
     const expression = formatCondition(condition);
     expect(expression).toBe('itemType == "book" && itemType != "bookSection"');
@@ -209,14 +203,11 @@ describe("condition contract", () => {
         kind: "group",
         match: "any",
         conditions: [
-          { kind: "item-type", negated: false, itemType: "book" },
+          itemType("book"),
           {
             kind: "group",
             match: "all",
-            conditions: [
-              { kind: "item-type", negated: false, itemType: "thesis" },
-              { kind: "item-type", negated: true, itemType: "letter" },
-            ],
+            conditions: [itemType("thesis"), itemType("letter", true)],
           },
         ],
       }),
@@ -245,117 +236,291 @@ describe("condition contract", () => {
     expect(matchCondition(none, facts({ itemType: "letter" }))).toBe(true);
   });
 
-  it("compiles Collection and Tag predicates with portable Library references", () => {
-    expect(compileCondition('inCollection("personal", "PROJ0001")')).toEqual({
+  it("compiles Collection paths and Tag predicates", () => {
+    expect(compileCondition('collections.within("Project/Drafts")')).toEqual({
       condition: {
-        kind: "collection",
+        kind: "collections",
+        operator: "within",
         negated: false,
-        library: { type: "personal" },
-        key: "PROJ0001",
-        descendants: true,
+        values: [["Project", "Drafts"]],
       },
       problem: null,
     });
     expect(
-      compileCondition('!inCollectionDirectly("group:118", "PROJ0001")')
-        .condition,
+      compileCondition('!collections.contains("Project/Drafts")').condition,
     ).toEqual({
-      kind: "collection",
+      kind: "collections",
+      operator: "contains",
       negated: true,
-      library: { type: "group", groupID: 118 },
-      key: "PROJ0001",
-      descendants: false,
+      values: [["Project", "Drafts"]],
     });
-    expect(compileCondition('hasTag("Read Later")').condition).toEqual({
-      kind: "tag",
+    expect(compileCondition('tags.contains("Read Later")').condition).toEqual({
+      kind: "tags",
+      operator: "contains",
       negated: false,
-      name: "Read Later",
+      values: ["Read Later"],
     });
-    expect(compileCondition('!hasTag("Read Later")').condition).toEqual({
-      kind: "tag",
+    expect(compileCondition('!tags.contains("Read Later")').condition).toEqual({
+      kind: "tags",
+      operator: "contains",
       negated: true,
-      name: "Read Later",
+      values: ["Read Later"],
+    });
+    expect(compileCondition("hasTag(1)").problem).toEqual({
+      code: "unsupported",
+      from: 0,
+      to: 6,
+      text: "hasTag",
+    });
+    expect(compileCondition('hasTag("Read")').problem).toEqual({
+      code: "unsupported",
+      from: 0,
+      to: 6,
+      text: "hasTag",
+    });
+    expect(compileCondition('inCollection("personal", "A")').problem).toEqual({
+      code: "unsupported",
+      from: 0,
+      to: 12,
+      text: "inCollection",
     });
     expect(
-      compileCondition('inCollection("mine", "PROJ0001")').problem,
-    ).toEqual({ code: "unknown-library", from: 13, to: 19, text: '"mine"' });
-    expect(compileCondition('inCollection("group:0", "X")').problem).toEqual({
-      code: "unknown-library",
-      from: 13,
-      to: 22,
-      text: '"group:0"',
-    });
-    expect(compileCondition('inCollection("personal")').problem).toMatchObject({
+      compileCondition('inCollectionDirectly("personal", "A")').problem,
+    ).toEqual({
       code: "unsupported",
+      from: 0,
+      to: 20,
+      text: "inCollectionDirectly",
     });
-    expect(compileCondition("hasTag(1)").problem).toMatchObject({
-      code: "unsupported",
-    });
-    expect(compileCondition('inCollection("personal", "A")').condition).toEqual(
-      expect.objectContaining({ kind: "collection" }),
-    );
   });
+
+  it.each([
+    ['collections.within("Project/Drafts")', "within", [["Project", "Drafts"]]],
+    [
+      'collections.contains("Project/Drafts")',
+      "contains",
+      [["Project", "Drafts"]],
+    ],
+    [
+      'collections.containsAny("Project/Drafts", "Other")',
+      "containsAny",
+      [["Project", "Drafts"], ["Other"]],
+    ],
+    [
+      'collections.containsAll("Project/Drafts", "Other")',
+      "containsAll",
+      [["Project", "Drafts"], ["Other"]],
+    ],
+    ["collections.isEmpty()", "isEmpty", []],
+  ] as const)(
+    "compiles, negates, and formats %s",
+    (expression, operator, values) => {
+      const condition = compileCondition(expression).condition;
+      expect(condition).toEqual({
+        kind: "collections",
+        operator,
+        negated: false,
+        values,
+      });
+      expect(formatCondition(condition!)).toBe(expression);
+      const negated = compileCondition(`!${expression}`).condition;
+      expect(formatCondition(negated!)).toBe(`!${expression}`);
+    },
+  );
+
+  it.each([
+    ['tags.contains("Read")', "contains", ["Read"]],
+    ['tags.containsAny("Read", "To read")', "containsAny", ["Read", "To read"]],
+    ['tags.containsAll("Read", "To read")', "containsAll", ["Read", "To read"]],
+    ["tags.isEmpty()", "isEmpty", []],
+  ] as const)("compiles and formats %s", (expression, operator, values) => {
+    const condition = compileCondition(expression).condition;
+    expect(condition).toEqual({
+      kind: "tags",
+      operator,
+      negated: false,
+      values,
+    });
+    expect(formatCondition(condition!)).toBe(expression);
+    const negated = compileCondition(`!${expression}`).condition;
+    expect(negated).toEqual({
+      kind: "tags",
+      operator,
+      negated: true,
+      values,
+    });
+    expect(formatCondition(negated!)).toBe(`!${expression}`);
+  });
+
+  it.each<{ condition: RuleCondition; expression: string }>([
+    {
+      condition: {
+        kind: "tags",
+        operator: "isEmpty",
+        negated: false,
+        values: ["Read", "Review"],
+      },
+      expression: "tags.isEmpty()",
+    },
+    {
+      condition: {
+        kind: "tags",
+        operator: "isEmpty",
+        negated: true,
+        values: ["Read", "Review"],
+      },
+      expression: "!tags.isEmpty()",
+    },
+    {
+      condition: {
+        kind: "collections",
+        operator: "isEmpty",
+        negated: false,
+        values: [
+          ["Future", "Research"],
+          ["Personal only", "Personal child"],
+        ],
+      },
+      expression: "collections.isEmpty()",
+    },
+    {
+      condition: {
+        kind: "collections",
+        operator: "isEmpty",
+        negated: true,
+        values: [
+          ["Future", "Research"],
+          ["Personal only", "Personal child"],
+        ],
+      },
+      expression: "!collections.isEmpty()",
+    },
+  ])(
+    "formats a populated zero-arity condition as $expression",
+    ({ condition, expression }) => {
+      expect(formatCondition(condition)).toBe(expression);
+    },
+  );
+
+  it.each([
+    'hasTag("Read")',
+    'labels.contains("Read")',
+    'tags.includes("Read")',
+    "tags.contains()",
+    'tags.contains("Read", "Later")',
+    "tags.containsAny()",
+    "tags.containsAll()",
+    'tags.isEmpty("Read")',
+    "tags.contains(1)",
+    'tags.containsAny("Read", 1)',
+  ])("reports unsupported Tag expression %s", (expression) => {
+    expect(compileCondition(expression)).toEqual({
+      condition: null,
+      problem: expect.objectContaining({ code: "unsupported" }),
+    });
+  });
+
+  it.each([
+    'collections.includes("Project")',
+    "collections.within()",
+    'collections.within("Project", "Drafts")',
+    "collections.contains()",
+    'collections.contains("Project", "Drafts")',
+    "collections.containsAny()",
+    "collections.containsAll()",
+    'collections.isEmpty("Project")',
+    "collections.contains(1)",
+    'collections.containsAny("Project", 1)',
+    'tags.within("Project")',
+  ])("reports unsupported Collection expression %s", (expression) => {
+    expect(compileCondition(expression)).toEqual({
+      condition: null,
+      problem: expect.objectContaining({ code: "unsupported" }),
+    });
+  });
+
+  it.each([
+    { expression: "tags.contains(1)", from: 14, to: 15, text: "1" },
+    {
+      expression: 'tags.containsAny("Read", 1)',
+      from: 25,
+      to: 26,
+      text: "1",
+    },
+  ] as const)(
+    "reports the offending argument range for $expression",
+    ({ expression, from, to, text }) => {
+      expect(compileCondition(expression).problem).toEqual({
+        code: "unsupported",
+        from,
+        to,
+        text,
+      });
+    },
+  );
 
   it("writes Collection and Tag conditions canonically and reads them back", () => {
     const condition: RuleCondition = {
       kind: "group",
       match: "all",
       conditions: [
+        compileCondition('collections.within("Project")').condition!,
+        compileCondition('!collections.contains("Project/Drafts")').condition!,
         {
-          kind: "collection",
+          kind: "tags",
+          operator: "contains",
           negated: false,
-          library: { type: "group", groupID: 118 },
-          key: "PROJ0001",
-          descendants: true,
+          values: ['say "hi"'],
         },
-        {
-          kind: "collection",
-          negated: true,
-          library: { type: "personal" },
-          key: "SUB00001",
-          descendants: false,
-        },
-        { kind: "tag", negated: false, name: 'say "hi"' },
-        { kind: "item-type", negated: false, itemType: "book" },
+        itemType("book"),
       ],
     };
     const expression = formatCondition(condition);
     expect(expression).toBe(
-      'inCollection("group:118", "PROJ0001") && !inCollectionDirectly("personal", "SUB00001") && hasTag("say \\"hi\\"") && itemType == "book"',
+      'collections.within("Project") && !collections.contains("Project/Drafts") && tags.contains("say \\"hi\\"") && itemType == "book"',
     );
     expect(compileCondition(expression).condition).toEqual(condition);
   });
 
-  it("matches memberships: descendants by default, direct only on request, exact Tag names", () => {
-    // Filed directly in SUB00001, whose parent is PROJ0001; tagged "Read"
-    // (manual) and "READ" (automatic) — both reach the facts as names.
+  it("matches Collection paths by segments and direct path equality", () => {
     const item = facts({
-      tags: ["Read", "READ"],
-      collections: ["SUB00001", "OTHR0001"],
-      collectionAncestors: ["PROJ0001"],
+      collections: [["Project", "Drafts", "2024"], ["Other"]],
     });
     const match = (expression: string, subject = item) =>
       matchCondition(compileCondition(expression).condition!, subject);
-    expect(match('inCollection("personal", "PROJ0001")')).toBe(true);
-    expect(match('inCollectionDirectly("personal", "PROJ0001")')).toBe(false);
-    expect(match('inCollectionDirectly("personal", "SUB00001")')).toBe(true);
-    expect(match('inCollection("personal", "OTHR0001")')).toBe(true);
-    expect(match('!inCollection("personal", "OTHR0001")')).toBe(false);
-    // The same key in another Library is a different Collection.
-    expect(match('inCollection("group:118", "PROJ0001")')).toBe(false);
+    expect(match('collections.within("Project/Drafts")')).toBe(true);
+    expect(match('collections.within("Project/Draft")')).toBe(false);
+    expect(match('collections.contains("Project/Drafts")')).toBe(false);
+    expect(match('collections.contains("Project/Drafts/2024")')).toBe(true);
+    expect(match('collections.containsAny("Missing", "Other")')).toBe(true);
     expect(
-      match('inCollection("personal", "PROJ0001")', {
-        ...item,
-        library: { type: "group", groupID: 118 },
-      }),
-    ).toBe(false);
-    expect(match('inCollection("personal", "PROJ0001")', facts())).toBe(false);
-    expect(match('hasTag("Read")')).toBe(true);
-    expect(match('hasTag("READ")')).toBe(true);
-    expect(match('hasTag("read")')).toBe(false);
-    expect(match('!hasTag("read")')).toBe(true);
-    expect(match('hasTag("Read") && itemType == "book"')).toBe(true);
-    expect(match('hasTag("Read") && itemType == "thesis"')).toBe(false);
+      match('collections.containsAll("Other", "Project/Drafts/2024")'),
+    ).toBe(true);
+    expect(match('collections.containsAll("Other", "Missing")')).toBe(false);
+    expect(match("collections.isEmpty()", facts())).toBe(true);
+    expect(match("!collections.isEmpty()", facts())).toBe(false);
+    expect(match('collections.within("Unknown/Path")')).toBe(false);
+  });
+
+  it("matches exact Tag names", () => {
+    // Tagged "Read"
+    // (manual) and "READ" (automatic) — both reach the facts as names.
+    const item = facts({
+      tags: ["Read", "READ"],
+    });
+    const match = (expression: string, subject = item) =>
+      matchCondition(compileCondition(expression).condition!, subject);
+    expect(match('tags.contains("Read")')).toBe(true);
+    expect(match('tags.contains("READ")')).toBe(true);
+    expect(match('tags.contains("read")')).toBe(false);
+    expect(match('!tags.contains("read")')).toBe(true);
+    expect(match('tags.containsAny("missing", "Read")')).toBe(true);
+    expect(match('tags.containsAll("Read", "READ")')).toBe(true);
+    expect(match('tags.containsAll("Read", "missing")')).toBe(false);
+    expect(match("tags.isEmpty()", facts())).toBe(true);
+    expect(match("!tags.isEmpty()", facts())).toBe(false);
+    expect(match('tags.contains("Read") && itemType == "book"')).toBe(true);
+    expect(match('tags.contains("Read") && itemType == "thesis"')).toBe(false);
   });
 });
 
@@ -439,42 +604,18 @@ describe("selectProfileByRules", () => {
     ).toEqual({ outcome: "matched", rule: later, selector: books });
   });
 
-  it("breaks on a Collection reference the database lacks instead of advancing", () => {
+  it("treats an unknown Collection path as an ordinary nonmatch", () => {
     const stale = rule({
       id: "stale",
-      filter: 'inCollection("personal", "GONE0000")',
-    });
-    const foreign = rule({
-      id: "foreign",
-      filter: '!inCollection("group:999", "PROJ0001")',
+      filter: 'collections.within("Unknown/Path")',
     });
     const later = rule({ id: "later" });
     expect(
       selectProfileByRules([stale, later], personalBook, available),
-    ).toEqual({
-      outcome: "broken",
-      rule: stale,
-      problem: {
-        code: "missing-collection",
-        library: { type: "personal" },
-        key: "GONE0000",
-      },
-    });
-    expect(
-      selectProfileByRules([foreign, later], personalBook, available),
-    ).toEqual({
-      outcome: "broken",
-      rule: foreign,
-      problem: {
-        code: "missing-collection",
-        library: { type: "group", groupID: 999 },
-        key: "PROJ0001",
-      },
-    });
-    // A known Collection the Item is not in is a valid nonmatch.
+    ).toEqual({ outcome: "matched", rule: later, selector: books });
     const elsewhere = rule({
       id: "elsewhere",
-      filter: 'inCollection("personal", "PROJ0001")',
+      filter: 'collections.within("Project")',
       profile: "default",
     });
     expect(
@@ -483,7 +624,7 @@ describe("selectProfileByRules", () => {
     expect(
       selectProfileByRules(
         [elsewhere, later],
-        facts({ collections: ["SUB00001"], collectionAncestors: ["PROJ0001"] }),
+        facts({ collections: [["Project", "Drafts"]] }),
         available,
       ),
     ).toEqual({ outcome: "matched", rule: elsewhere, selector: "default" });
@@ -492,8 +633,7 @@ describe("selectProfileByRules", () => {
   it("reads the Library, item type, and memberships of a database Item", () => {
     const memberships = {
       tags: ["Read"],
-      collections: ["SUB00001"],
-      collectionAncestors: ["PROJ0001"],
+      collections: [["Project", "Drafts"]],
     };
     expect(
       ruleItem(
@@ -520,7 +660,7 @@ describe("selectProfileByRules", () => {
   it("gives an Item of an unknown group Library no selector, so a personal-scoped rule skips it", () => {
     const orphan = ruleItem(
       { libraryID: 7, groupID: null, fields: { itemType: "book" } as never },
-      { tags: [], collections: [], collectionAncestors: [] },
+      { tags: [], collections: [] },
     );
     expect(orphan.library).toBeNull();
     const personal = rule({

@@ -113,6 +113,14 @@ async function type(input: HTMLInputElement, value: string) {
   });
 }
 
+async function key(input: HTMLInputElement, value: string) {
+  await act(() => {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: value, bubbles: true }),
+    );
+  });
+}
+
 async function check(input: HTMLInputElement, checked: boolean) {
   await act(() => {
     input.checked = checked;
@@ -133,6 +141,14 @@ function buttonNamed(
 async function click(element: Element) {
   await act(() => {
     element.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+}
+
+async function mouseDown(element: Element) {
+  await act(() => {
+    element.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+    );
   });
 }
 
@@ -286,7 +302,7 @@ describe("ProfileSelectionRuleModal", () => {
       selectNamed(modal.contentEl, m.settings_profile_rule_match());
     expect(match().value).toBe("all");
     await click(rootButton(modal, m.settings_profile_rule_add_condition()));
-    await choose(rowSelects(conditionRows(modal)[1]!)[0]!, "tag");
+    await choose(rowSelects(conditionRows(modal)[1]!)[0]!, "tags");
     await type(
       conditionRows(modal)[1]!.querySelector<HTMLInputElement>(
         "input[type=text]",
@@ -296,15 +312,15 @@ describe("ProfileSelectionRuleModal", () => {
     await choose(match(), "any");
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toMatchObject({
-      filter: { or: ['itemType == "book"', 'hasTag("Read")'] },
+      filter: { or: ['itemType == "book"', 'tags.contains("Read")'] },
     });
   });
 
   it("nests a group with its own match beside an exclusion, and reads it back", async () => {
     const modal = await open(context());
     // The root condition becomes the exclusion: not tagged "Read".
-    await choose(rowSelects(conditionRows(modal)[0]!)[0]!, "tag");
-    await choose(rowSelects(conditionRows(modal)[0]!)[1]!, "is-not");
+    await choose(rowSelects(conditionRows(modal)[0]!)[0]!, "tags");
+    await choose(rowSelects(conditionRows(modal)[0]!)[1]!, "does-not-contain");
     await type(
       conditionRows(modal)[0]!.querySelector<HTMLInputElement>(
         "input[type=text]",
@@ -332,7 +348,7 @@ describe("ProfileSelectionRuleModal", () => {
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     const filter = {
       and: [
-        '!hasTag("Read")',
+        '!tags.contains("Read")',
         { or: ['itemType == "book"', 'itemType == "thesis"'] },
       ],
     };
@@ -357,7 +373,7 @@ describe("ProfileSelectionRuleModal", () => {
           .map((select) => select.value),
       ),
     ).toEqual([
-      ["tag", "is-not"],
+      ["tags", "does-not-contain"],
       ["item-type", "is"],
       ["item-type", "is"],
     ]);
@@ -370,7 +386,7 @@ describe("ProfileSelectionRuleModal", () => {
     await click(buttonNamed(reopened, m.settings_profile_rule_save()));
     await expect(reopened.result).resolves.toMatchObject({
       id: "nested",
-      filter: { and: ['!hasTag("Read")'] },
+      filter: { and: ['!tags.contains("Read")'] },
     });
   });
 
@@ -427,17 +443,17 @@ describe("ProfileSelectionRuleModal", () => {
     expect(saveEnabled(modal)).toBe(false);
     expect(editor(row()).state.doc.toString()).toBe('title == "Zotero"');
     // Each keystroke is checked; a half-typed expression names the gap.
-    await typeExpression(row(), 'hasTag("Read") &&');
+    await typeExpression(row(), 'tags.contains("Read") &&');
     expect(rowError(row())).toBe(m.profile_rule_problem_syntax({ text: "" }));
     expect(saveEnabled(modal)).toBe(false);
     await typeExpression(row(), "");
     expect(rowError(row())).toBe(m.profile_rule_problem_empty());
-    await typeExpression(row(), 'hasTag("Read") && itemType == "novel"');
+    await typeExpression(row(), 'tags.contains("Read") && itemType == "novel"');
     expect(rowError(row())).toBe(
       m.profile_rule_problem_unknown_item_type({ text: '"novel"' }),
     );
     // Operators stay inside the leaf; the tree above is the ordinary grouping.
-    await typeExpression(row(), 'hasTag("Read") && itemType == "book"');
+    await typeExpression(row(), 'tags.contains("Read") && itemType == "book"');
     expect(rowError(row())).toBeNull();
     expect(saveEnabled(modal)).toBe(true);
     // Two tests in one leaf have no labelled row, so the toggle stays off.
@@ -448,7 +464,7 @@ describe("ProfileSelectionRuleModal", () => {
     await expect(modal.result).resolves.toEqual({
       id: "rule-2",
       scope: { mode: "all" },
-      filter: { and: ['hasTag("Read") && itemType == "book"'] },
+      filter: { and: ['tags.contains("Read") && itemType == "book"'] },
       profile: profileAId,
     });
   });
@@ -458,7 +474,10 @@ describe("ProfileSelectionRuleModal", () => {
       id: "rule-3",
       scope: { mode: "all" },
       filter: {
-        and: ['!hasTag("Read")', 'itemType == "book" || hasTag("Read Later")'],
+        and: [
+          '!tags.contains("Read")',
+          'itemType == "book" || tags.contains("Read Later")',
+        ],
       },
       profile: "default",
     });
@@ -466,16 +485,16 @@ describe("ProfileSelectionRuleModal", () => {
     const first = () => conditionRows(modal)[0]!;
     const second = () => conditionRows(modal)[1]!;
     expect(rowSelects(first()).map((select) => select.value)).toEqual([
-      "tag",
-      "is-not",
+      "tags",
+      "does-not-contain",
     ]);
     expect(rowSelects(second())).toEqual([]);
     expect(editor(second()).state.doc.toString()).toBe(
-      'itemType == "book" || hasTag("Read Later")',
+      'itemType == "book" || tags.contains("Read Later")',
     );
     // A row turned into an expression keeps its meaning as text.
     await click(toggle(first(), m.settings_profile_rule_edit_as_expression()));
-    expect(editor(first()).state.doc.toString()).toBe('!hasTag("Read")');
+    expect(editor(first()).state.doc.toString()).toBe('!tags.contains("Read")');
     // An expression that reads as one test turns back into that row.
     await typeExpression(first(), 'itemType != "thesis"');
     await click(toggle(first(), m.settings_profile_rule_edit_visually()));
@@ -484,97 +503,512 @@ describe("ProfileSelectionRuleModal", () => {
       "is-not",
       "thesis",
     ]);
-    await typeExpression(second(), 'hasTag("Read Later")');
+    await typeExpression(second(), 'tags.contains("Read Later")');
     await click(toggle(second(), m.settings_profile_rule_edit_visually()));
     expect(rowSelects(second()).map((select) => select.value)).toEqual([
-      "tag",
-      "is",
+      "tags",
+      "contains",
     ]);
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toMatchObject({
       id: "rule-3",
-      filter: { and: ['itemType != "thesis"', 'hasTag("Read Later")'] },
+      filter: {
+        and: ['itemType != "thesis"', 'tags.contains("Read Later")'],
+      },
     });
   });
 
-  it("offers every Collection by Library and path and saves its portable reference", async () => {
-    const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
-    const modal = await open(ctx);
-    const row = () => conditionRows(modal)[0]!;
-    await choose(rowSelects(row())[0]!, "collection");
-    const [, , collection, membership] = rowSelects(row());
-    expect(options(collection!).map(({ label }) => label)).toEqual([
-      "My Library: Project",
-      "My Library: Project / Drafts",
-      "Team: Project",
+  it.each([
+    '!tags.containsAny("Read", "To read")',
+    '!tags.containsAll("Read", "To read")',
+  ])(
+    "keeps %s as an expression through save and reopen",
+    async (expression) => {
+      const original = await open(context(), {
+        id: "extended-tags",
+        scope: { mode: "all" },
+        filter: expression,
+        profile: "default",
+      });
+      const originalRow = conditionRows(original)[0]!;
+      expect(rowSelects(originalRow)).toEqual([]);
+      expect(editor(originalRow).state.doc.toString()).toBe(expression);
+      expect(
+        toggleDisabled(originalRow, m.settings_profile_rule_edit_visually()),
+      ).toBe(true);
+      await click(buttonNamed(original, m.settings_profile_rule_save()));
+      const saved = await original.result;
+      expect(saved?.filter).toEqual({ and: [expression] });
+
+      const reopened = await open(context(), saved!);
+      const reopenedRow = conditionRows(reopened)[0]!;
+      expect(rowSelects(reopenedRow)).toEqual([]);
+      expect(editor(reopenedRow).state.doc.toString()).toBe(expression);
+      expect(
+        toggleDisabled(reopenedRow, m.settings_profile_rule_edit_visually()),
+      ).toBe(true);
+    },
+  );
+
+  it("opens the supported contains expression as a labelled Tag row", async () => {
+    const modal = await open(context(), {
+      id: "contains-tag",
+      scope: { mode: "all" },
+      filter: 'tags.contains("Read")',
+      profile: "default",
+    });
+    const row = conditionRows(modal)[0]!;
+    expect(rowSelects(row).map((select) => select.value)).toEqual([
+      "tags",
+      "contains",
     ]);
-    // Descendants are included until the user asks for direct membership.
-    expect(membership!.value).toBe("descendants");
-    await choose(collection!, "personal/DRFT0001");
-    await choose(rowSelects(row())[1]!, "is-not");
-    await click(buttonNamed(modal, m.settings_profile_rule_save()));
-    await expect(modal.result).resolves.toMatchObject({
-      filter: { and: ['!inCollection("personal", "DRFT0001")'] },
-    });
+    expect(row.querySelector<HTMLInputElement>("input[type=text]")?.value).toBe(
+      "Read",
+    );
   });
 
-  it("writes the direct-membership form and tells same-key Collections apart by Library", async () => {
-    const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
-    const modal = await open(ctx);
+  it("offers the ordered Tag operators and defaults to contains", async () => {
+    const modal = await open(context());
+    const row = conditionRows(modal)[0]!;
+    await choose(rowSelects(row)[0]!, "tags");
+    const operator = rowSelects(row)[1]!;
+    expect(operator.value).toBe("contains");
+    expect(
+      [...operator.options].map(({ value, textContent }) => [
+        value,
+        textContent,
+      ]),
+    ).toEqual([
+      ["contains", m.settings_profile_rule_tag_contains()],
+      ["does-not-contain", m.settings_profile_rule_tag_does_not_contain()],
+      ["containsAny", m.settings_profile_rule_tag_contains_any()],
+      ["containsAll", m.settings_profile_rule_tag_contains_all()],
+      ["isEmpty", m.settings_profile_rule_tag_is_empty()],
+      ["is-not-empty", m.settings_profile_rule_tag_is_not_empty()],
+    ]);
+  });
+
+  it.each([
+    ["contains", ["Read"], 'tags.contains("Read")'],
+    ["does-not-contain", ["Read"], '!tags.contains("Read")'],
+    ["containsAny", ["Read", "To read"], 'tags.containsAny("Read", "To read")'],
+    ["containsAll", ["Read", "To read"], 'tags.containsAll("Read", "To read")'],
+    ["isEmpty", [], "tags.isEmpty()"],
+    ["is-not-empty", [], "!tags.isEmpty()"],
+  ] as const)(
+    "saves and reopens the labelled Tag operator %s",
+    async (operator, values, expression) => {
+      const modal = await open(context());
+      const row = () => conditionRows(modal)[0]!;
+      await choose(rowSelects(row())[0]!, "tags");
+      await choose(rowSelects(row())[1]!, operator);
+      const input = row().querySelector<HTMLInputElement>("input[type=text]");
+      if (values.length === 1) await type(input!, values[0]!);
+      else
+        for (const value of values) {
+          await type(
+            row().querySelector<HTMLInputElement>("input[type=text]")!,
+            value,
+          );
+          await key(
+            row().querySelector<HTMLInputElement>("input[type=text]")!,
+            "Enter",
+          );
+        }
+      await click(buttonNamed(modal, m.settings_profile_rule_save()));
+      const saved = await modal.result;
+      expect(saved?.filter).toEqual({ and: [expression] });
+
+      const reopened = await open(context(), saved!);
+      const reopenedRow = conditionRows(reopened)[0]!;
+      expect(rowSelects(reopenedRow).map((select) => select.value)).toEqual([
+        "tags",
+        operator,
+      ]);
+      expect(
+        [...reopenedRow.querySelectorAll("[data-chip-input] span > span")].map(
+          (chip) => chip.textContent,
+        ),
+      ).toEqual(values.length > 1 ? [...values] : []);
+      if (values.length === 1)
+        expect(
+          reopenedRow.querySelector<HTMLInputElement>("input[type=text]")
+            ?.value,
+        ).toBe(values[0]);
+      if (values.length === 0)
+        expect(reopenedRow.querySelector("input[type=text]")).toBeNull();
+    },
+  );
+
+  it("commits and removes Tag chips from the keyboard and remove button", async () => {
+    const modal = await open(context());
     const row = () => conditionRows(modal)[0]!;
-    await choose(rowSelects(row())[0]!, "collection");
-    await choose(rowSelects(row())[2]!, "group:5/PROJ0001");
-    await choose(rowSelects(row())[3]!, "direct");
+    await choose(rowSelects(row())[0]!, "tags");
+    await choose(rowSelects(row())[1]!, "containsAny");
+    const input = () =>
+      row().querySelector<HTMLInputElement>("input[type=text]")!;
+    await type(input(), "Read");
+    await key(input(), ",");
+    await type(input(), "Review");
+    await key(input(), "Enter");
+    const chipInput = row().querySelector<HTMLElement>("[data-chip-input]")!;
+    expect(chipInput.querySelector("datalist")).toBeNull();
+    await key(input(), "Backspace");
+    expect(
+      chipInput.querySelector(
+        `[aria-label="${m.settings_profile_rule_chip_remove({ value: "Review" })}"]`,
+      ),
+    ).toBeNull();
+    await click(
+      chipInput.querySelector(
+        `[aria-label="${m.settings_profile_rule_chip_remove({ value: "Read" })}"]`,
+      )!,
+    );
+    expect(rowError(row())).toBe(m.settings_profile_rule_tag_empty());
+  });
+
+  it("focuses the Tag input from unused control space and removes without committing its draft", async () => {
+    const modal = await open(context());
+    const row = () => conditionRows(modal)[0]!;
+    await choose(rowSelects(row())[0]!, "tags");
+    await choose(rowSelects(row())[1]!, "containsAny");
+    const chipInput = row().querySelector<HTMLElement>("[data-chip-input]")!;
+    const input =
+      chipInput.querySelector<HTMLInputElement>("input[type=text]")!;
+
+    await mouseDown(chipInput);
+    expect(document.activeElement).toBe(input);
+    await type(input, "Read");
+    await key(input, "Enter");
+    await type(input, "pending");
+    const remove = chipInput.querySelector<HTMLElement>(
+      `[aria-label="${m.settings_profile_rule_chip_remove({ value: "Read" })}"]`,
+    )!;
+    await mouseDown(remove);
+    expect(document.activeElement).toBe(input);
+    await click(remove);
+
+    expect(input.value).toBe("pending");
+    expect(chipInput.textContent).not.toContain("Read");
+    await key(input, "Enter");
+    expect(chipInput.textContent).toContain("pending");
+  });
+
+  it("round-trips a multi-value Tag row through expression text", async () => {
+    const modal = await open(context(), {
+      id: "tag-expression-roundtrip",
+      scope: { mode: "all" },
+      filter: 'tags.containsAny("Read", "Review")',
+      profile: "default",
+    });
+    const row = () => conditionRows(modal)[0]!;
+    expect(rowSelects(row()).map((select) => select.value)).toEqual([
+      "tags",
+      "containsAny",
+    ]);
+    await click(toggle(row(), m.settings_profile_rule_edit_as_expression()));
+    expect(editor(row()).state.doc.toString()).toBe(
+      'tags.containsAny("Read", "Review")',
+    );
+    await click(toggle(row(), m.settings_profile_rule_edit_visually()));
+    expect(rowSelects(row()).map((select) => select.value)).toEqual([
+      "tags",
+      "containsAny",
+    ]);
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toMatchObject({
-      filter: { and: ['inCollectionDirectly("group:5", "PROJ0001")'] },
+      filter: { and: ['tags.containsAny("Read", "Review")'] },
     });
   });
 
-  it("preselects an existing Collection condition and flags one the database lacks", async () => {
-    const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
-    const kept = await open(ctx, {
-      id: "kept",
-      scope: { mode: "all" },
-      filter: 'inCollectionDirectly("personal", "DRFT0001")',
-      profile: "default",
-    });
+  it("resets a changed kind and keeps or trims Tag values when the operator changes", async () => {
+    const modal = await open(context());
+    const row = () => conditionRows(modal)[0]!;
+    await choose(rowSelects(row())[0]!, "tags");
+    await choose(rowSelects(row())[1]!, "containsAll");
+    for (const value of ["Read", "Review"]) {
+      await type(
+        row().querySelector<HTMLInputElement>("input[type=text]")!,
+        value,
+      );
+      await key(
+        row().querySelector<HTMLInputElement>("input[type=text]")!,
+        "Enter",
+      );
+    }
+    await choose(rowSelects(row())[1]!, "isEmpty");
+    expect(row().querySelector("input[type=text]")).toBeNull();
+    await choose(rowSelects(row())[1]!, "containsAny");
+    expect(row().textContent).toContain("Read");
+    expect(row().textContent).toContain("Review");
+    await choose(rowSelects(row())[1]!, "contains");
     expect(
-      rowSelects(conditionRows(kept)[0]!).map((select) => select.value),
-    ).toEqual(["collection", "is", "personal/DRFT0001", "direct"]);
-    expect(rowError(conditionRows(kept)[0]!)).toBeNull();
-    expect(saveEnabled(kept)).toBe(true);
+      row().querySelector<HTMLInputElement>("input[type=text]")!.value,
+    ).toBe("Read");
+    await choose(rowSelects(row())[1]!, "does-not-contain");
+    await choose(rowSelects(row())[0]!, "item-type");
+    expect(rowSelects(row()).map((select) => select.value)).toEqual([
+      "item-type",
+      "is",
+      "book",
+    ]);
+    await choose(rowSelects(row())[0]!, "tags");
+    expect(rowSelects(row()).map((select) => select.value)).toEqual([
+      "tags",
+      "contains",
+    ]);
+    expect(
+      row().querySelector<HTMLInputElement>("input[type=text]")!.value,
+    ).toBe("");
+  });
 
-    const stale = await open(ctx, {
-      id: "stale",
+  it.each([
+    {
+      kind: "tags",
+      emptyOperator: "isEmpty",
+      values: ["Read", "Review"],
+      expression: "tags.isEmpty()",
+    },
+    {
+      kind: "tags",
+      emptyOperator: "is-not-empty",
+      values: ["Read", "Review"],
+      expression: "!tags.isEmpty()",
+    },
+    {
+      kind: "collections",
+      emptyOperator: "isEmpty",
+      values: [
+        "Future/Research",
+        "Personal only/Personal child",
+        "An extraordinarily long collection path/WithUnbrokenSegment012345678901234567890",
+      ],
+      expression: "collections.isEmpty()",
+    },
+    {
+      kind: "collections",
+      emptyOperator: "is-not-empty",
+      values: [
+        "Future/Research",
+        "Personal only/Personal child",
+        "An extraordinarily long collection path/WithUnbrokenSegment012345678901234567890",
+      ],
+      expression: "!collections.isEmpty()",
+    },
+  ] as const)(
+    "omits populated $kind values for $emptyOperator while preserving its direct operator draft",
+    async ({ kind, emptyOperator, values, expression }) => {
+      const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
+      const prepare = async () => {
+        const modal = await open(ctx);
+        const row = () => conditionRows(modal)[0]!;
+        await choose(rowSelects(row())[0]!, kind);
+        await choose(rowSelects(row())[1]!, "containsAll");
+        for (const value of values) {
+          await type(
+            row().querySelector<HTMLInputElement>("input[type=text]")!,
+            value,
+          );
+          await key(
+            row().querySelector<HTMLInputElement>("input[type=text]")!,
+            "Enter",
+          );
+        }
+        await choose(rowSelects(row())[1]!, emptyOperator);
+        return { modal, row };
+      };
+
+      const toggled = await prepare();
+      await choose(rowSelects(toggled.row())[1]!, "containsAll");
+      expect(
+        [
+          ...toggled.row().querySelectorAll("[data-chip-input] span > span"),
+        ].map((chip) => chip.textContent),
+      ).toEqual([...values]);
+      await choose(rowSelects(toggled.row())[1]!, emptyOperator);
+      await click(
+        toggle(toggled.row(), m.settings_profile_rule_edit_as_expression()),
+      );
+      expect(editor(toggled.row()).state.doc.toString()).toBe(expression);
+
+      const saved = await prepare();
+      await click(buttonNamed(saved.modal, m.settings_profile_rule_save()));
+      await expect(saved.modal.result).resolves.toMatchObject({
+        filter: { and: [expression] },
+      });
+    },
+  );
+
+  it("offers ordered Collection operators, defaults to is inside, and uses one row selector", async () => {
+    const modal = await open(
+      context({ libraryScope: { libraries: [myLibrary, team] } }),
+    );
+    const row = conditionRows(modal)[0]!;
+    await choose(rowSelects(row)[0]!, "collections");
+    const operator = rowSelects(row)[1]!;
+    expect(row.querySelector("[data-condition-row]")).not.toBeNull();
+    expect(operator.value).toBe("within");
+    expect(options(operator)).toEqual([
+      { value: "within", label: m.settings_profile_rule_collection_within() },
+      {
+        value: "not-within",
+        label: m.settings_profile_rule_collection_not_within(),
+      },
+      {
+        value: "contains",
+        label: m.settings_profile_rule_collection_contains(),
+      },
+      {
+        value: "not-contains",
+        label: m.settings_profile_rule_collection_not_contains(),
+      },
+      {
+        value: "containsAny",
+        label: m.settings_profile_rule_collection_contains_any(),
+      },
+      {
+        value: "containsAll",
+        label: m.settings_profile_rule_collection_contains_all(),
+      },
+      {
+        value: "isEmpty",
+        label: m.settings_profile_rule_collection_is_empty(),
+      },
+      {
+        value: "is-not-empty",
+        label: m.settings_profile_rule_collection_is_not_empty(),
+      },
+    ]);
+    expect(rowSelects(row)).toHaveLength(2);
+    expect(row.querySelectorAll("input[type=text]")).toHaveLength(1);
+  });
+
+  it.each([
+    ["within", ["Project/Drafts"], 'collections.within("Project/Drafts")'],
+    ["not-within", ["Project/Drafts"], '!collections.within("Project/Drafts")'],
+    ["contains", ["Project/Drafts"], 'collections.contains("Project/Drafts")'],
+    [
+      "not-contains",
+      ["Project/Drafts"],
+      '!collections.contains("Project/Drafts")',
+    ],
+    [
+      "containsAny",
+      ["Project", "Project/Drafts"],
+      'collections.containsAny("Project", "Project/Drafts")',
+    ],
+    [
+      "containsAll",
+      ["Project", "Project/Drafts"],
+      'collections.containsAll("Project", "Project/Drafts")',
+    ],
+    ["isEmpty", [], "collections.isEmpty()"],
+    ["is-not-empty", [], "!collections.isEmpty()"],
+  ] as const)(
+    "saves and reopens Collection operator %s",
+    async (operator, values, expression) => {
+      const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
+      const modal = await open(ctx);
+      const row = () => conditionRows(modal)[0]!;
+      await choose(rowSelects(row())[0]!, "collections");
+      await choose(rowSelects(row())[1]!, operator);
+      for (const value of values) {
+        await type(
+          row().querySelector<HTMLInputElement>("input[type=text]")!,
+          value,
+        );
+        if (values.length > 1)
+          await key(
+            row().querySelector<HTMLInputElement>("input[type=text]")!,
+            "Enter",
+          );
+      }
+      await click(buttonNamed(modal, m.settings_profile_rule_save()));
+      const saved = await modal.result;
+      expect(saved?.filter).toEqual({ and: [expression] });
+
+      const reopened = await open(ctx, saved!);
+      const reopenedRow = conditionRows(reopened)[0]!;
+      expect(rowSelects(reopenedRow).map((select) => select.value)).toEqual([
+        "collections",
+        operator,
+      ]);
+    },
+  );
+
+  it("shares sorted, deduplicated Collection suggestions and accepts unknown paths", async () => {
+    const modal = await open(
+      context({ libraryScope: { libraries: [myLibrary, team] } }),
+    );
+    const row = () => conditionRows(modal)[0]!;
+    await choose(rowSelects(row())[0]!, "collections");
+    const suggestions = () =>
+      [...row().querySelectorAll<HTMLOptionElement>("datalist option")].map(
+        (option) => option.value,
+      );
+    expect(suggestions()).toEqual(["Project", "Project/Drafts"]);
+    await type(
+      row().querySelector<HTMLInputElement>("input[type=text]")!,
+      "Future/Research",
+    );
+    expect(row().textContent).toContain(
+      m.settings_profile_rule_collection_not_found(),
+    );
+    expect(saveEnabled(modal)).toBe(true);
+    await choose(rowSelects(row())[1]!, "containsAny");
+    expect(suggestions()).toEqual(["Project", "Project/Drafts"]);
+    expect(row().textContent).toContain(
+      m.settings_profile_rule_collection_not_found(),
+    );
+    await click(buttonNamed(modal, m.settings_profile_rule_save()));
+    await expect(modal.result).resolves.toMatchObject({
+      filter: { and: ['collections.containsAny("Future/Research")'] },
+    });
+  });
+
+  it("round-trips labelled Collection text and preserves negated any/all expressions", async () => {
+    const ctx = context({ libraryScope: { libraries: [myLibrary, team] } });
+    const labelled = await open(ctx, {
+      id: "collection-labelled",
       scope: { mode: "all" },
-      filter: 'inCollection("group:5", "GONE0000")',
+      filter: 'collections.within("Project/Drafts")',
       profile: "default",
     });
-    const row = () => conditionRows(stale)[0]!;
-    expect(rowError(row())).toBe(m.settings_profile_rule_collection_missing());
-    // The stale reference stays visible by its Library and key.
-    const collection = () => rowSelects(row())[2]!;
-    expect(collection().value).toBe("group:5/GONE0000");
-    expect(
-      options(collection()).find(({ value }) => value === "group:5/GONE0000")
-        ?.label,
-    ).toBe("Team: GONE0000");
-    expect(saveEnabled(stale)).toBe(false);
-    await choose(collection(), "personal/PROJ0001");
-    expect(rowError(row())).toBeNull();
-    expect(saveEnabled(stale)).toBe(true);
-    await click(buttonNamed(stale, m.settings_profile_rule_save()));
-    await expect(stale.result).resolves.toMatchObject({
-      id: "stale",
-      filter: { and: ['inCollection("personal", "PROJ0001")'] },
-    });
+    const row = () => conditionRows(labelled)[0]!;
+    await click(toggle(row(), m.settings_profile_rule_edit_as_expression()));
+    expect(editor(row()).state.doc.toString()).toBe(
+      'collections.within("Project/Drafts")',
+    );
+    await click(toggle(row(), m.settings_profile_rule_edit_visually()));
+    expect(rowSelects(row()).map((select) => select.value)).toEqual([
+      "collections",
+      "within",
+    ]);
+
+    for (const expression of [
+      '!collections.containsAny("Project", "Other")',
+      '!collections.containsAll("Project", "Other")',
+    ]) {
+      const modal = await open(ctx, {
+        id: "collection-expression",
+        scope: { mode: "all" },
+        filter: expression,
+        profile: "default",
+      });
+      const expressionRow = conditionRows(modal)[0]!;
+      expect(rowSelects(expressionRow)).toEqual([]);
+      expect(editor(expressionRow).state.doc.toString()).toBe(expression);
+      await click(buttonNamed(modal, m.settings_profile_rule_save()));
+      await expect(modal.result).resolves.toMatchObject({
+        filter: { and: [expression] },
+      });
+    }
   });
 
   it("saves a Tag condition as typed and refuses an empty name", async () => {
     const modal = await open(context());
     const row = () => conditionRows(modal)[0]!;
-    await choose(rowSelects(row())[0]!, "tag");
+    await choose(rowSelects(row())[0]!, "tags");
     expect(rowError(row())).toBe(m.settings_profile_rule_tag_empty());
     expect(saveEnabled(modal)).toBe(false);
     await type(
@@ -585,7 +1019,7 @@ describe("ProfileSelectionRuleModal", () => {
     expect(saveEnabled(modal)).toBe(true);
     await click(buttonNamed(modal, m.settings_profile_rule_save()));
     await expect(modal.result).resolves.toMatchObject({
-      filter: { and: ['hasTag("Read Later")'] },
+      filter: { and: ['tags.contains("Read Later")'] },
     });
   });
 

@@ -51,14 +51,14 @@ const unavailableRule: ProfileSelectionRule = {
 const collectionRule: ProfileSelectionRule = {
   id: "rule-4",
   scope: { mode: "all" },
-  filter: 'inCollection("personal", "DRFT0001") && hasTag("Read")',
+  filter: 'collections.within("Project/Drafts") && tags.contains("Read")',
   profile: profileAId,
 };
 
-const staleCollectionRule: ProfileSelectionRule = {
+const unknownCollectionRule: ProfileSelectionRule = {
   id: "rule-5",
   scope: { mode: "all" },
-  filter: 'inCollection("personal", "GONE0000")',
+  filter: 'collections.within("Future/Research")',
   profile: profileAId,
 };
 
@@ -134,12 +134,12 @@ describe("Profile Selection Rules settings", () => {
       {
         ...groupRule,
         filter:
-          'itemType == "book" || (hasTag("Read") && !inCollection("personal", "DRFT0001"))',
+          'itemType == "book" || (tags.contains("Read") && !collections.within("Project/Drafts"))',
       },
     ]);
     const desc = (list(ctx).items![0] as { desc: DocumentFragment }).desc;
     expect(desc.textContent).toContain(
-      `${m.settings_profile_rule_item_type_is({ type: "Book" })} or (${m.settings_profile_rule_has_tag({ tag: "Read" })} and ${m.settings_profile_rule_not_in_collection({ collection: "My Library: Project / Drafts" })})`,
+      `${m.settings_profile_rule_item_type_is({ type: "Book" })} or (${m.settings_profile_rule_tags_contain({ tags: "Read" })} and ${m.settings_profile_rule_collections_not_inside({ collections: "Project/Drafts" })})`,
     );
   });
 
@@ -158,34 +158,123 @@ describe("Profile Selection Rules settings", () => {
     expect(desc.textContent).toContain("This rule cannot be evaluated");
   });
 
-  it("names a Collection condition by its Library and path, and a Tag by its exact name", () => {
+  it("names a Collection condition by path and a Tag by its exact name", () => {
     const ctx = context([collectionRule]);
     const desc = (list(ctx).items![0] as { desc: DocumentFragment }).desc;
     expect(desc.textContent).toContain(
-      m.settings_profile_rule_in_collection({
-        collection: "My Library: Project / Drafts",
+      m.settings_profile_rule_collections_inside({
+        collections: "Project/Drafts",
       }),
     );
     expect(desc.textContent).toContain(
-      m.settings_profile_rule_has_tag({ tag: "Read" }),
+      m.settings_profile_rule_tags_contain({ tags: "Read" }),
     );
     expect(desc.querySelector(".mod-warning")).toBeNull();
   });
 
-  it("flags a Collection reference the database lacks as a broken rule", () => {
-    const ctx = context([staleCollectionRule]);
+  it.each([
+    [
+      'collections.within("Project/Drafts")',
+      m.settings_profile_rule_collections_inside({
+        collections: "Project/Drafts",
+      }),
+    ],
+    [
+      '!collections.within("Project/Drafts")',
+      m.settings_profile_rule_collections_not_inside({
+        collections: "Project/Drafts",
+      }),
+    ],
+    [
+      'collections.contains("Project/Drafts")',
+      m.settings_profile_rule_collections_are({
+        collections: "Project/Drafts",
+      }),
+    ],
+    [
+      '!collections.contains("Project/Drafts")',
+      m.settings_profile_rule_collections_are_not({
+        collections: "Project/Drafts",
+      }),
+    ],
+    [
+      'collections.containsAny("Project/Drafts", "Other")',
+      m.settings_profile_rule_collections_are_any_of({
+        collections: "Project/Drafts and Other",
+      }),
+    ],
+    [
+      '!collections.containsAny("Project/Drafts", "Other")',
+      m.settings_profile_rule_collections_are_not_any_of({
+        collections: "Project/Drafts and Other",
+      }),
+    ],
+    [
+      'collections.containsAll("Project/Drafts", "Other")',
+      m.settings_profile_rule_collections_are_all_of({
+        collections: "Project/Drafts and Other",
+      }),
+    ],
+    [
+      '!collections.containsAll("Project/Drafts", "Other")',
+      m.settings_profile_rule_collections_are_not_all_of({
+        collections: "Project/Drafts and Other",
+      }),
+    ],
+    ["collections.isEmpty()", m.settings_profile_rule_collections_are_empty()],
+    [
+      "!collections.isEmpty()",
+      m.settings_profile_rule_collections_are_not_empty(),
+    ],
+    [
+      'tags.contains("Read")',
+      m.settings_profile_rule_tags_contain({ tags: "Read" }),
+    ],
+    [
+      '!tags.contains("Read")',
+      m.settings_profile_rule_tags_do_not_contain({ tags: "Read" }),
+    ],
+    [
+      'tags.containsAny("Read", "To read")',
+      m.settings_profile_rule_tags_contain_any({ tags: "Read and To read" }),
+    ],
+    [
+      '!tags.containsAny("Read", "To read")',
+      m.settings_profile_rule_tags_do_not_contain_any({
+        tags: "Read and To read",
+      }),
+    ],
+    [
+      'tags.containsAll("Read", "To read")',
+      m.settings_profile_rule_tags_contain_all({ tags: "Read and To read" }),
+    ],
+    [
+      '!tags.containsAll("Read", "To read")',
+      m.settings_profile_rule_tags_do_not_contain_all({
+        tags: "Read and To read",
+      }),
+    ],
+    ["tags.isEmpty()", m.settings_profile_rule_tags_are_empty()],
+    ["!tags.isEmpty()", m.settings_profile_rule_tags_are_not_empty()],
+  ])("summarizes %s in words", (filter, summary) => {
+    const ctx = context([{ ...groupRule, filter }]);
     const desc = (list(ctx).items![0] as { desc: DocumentFragment }).desc;
-    expect(desc.querySelector(".mod-warning")?.textContent).toBe(
-      m.settings_profile_rule_broken({
-        problem: m.profile_rule_problem_missing_collection({
-          collection: "My Library: GONE0000",
-        }),
+    expect(desc.textContent).toContain(summary);
+  });
+
+  it("treats an unknown Collection path as an ordinary condition", () => {
+    const ctx = context([unknownCollectionRule]);
+    const desc = (list(ctx).items![0] as { desc: DocumentFragment }).desc;
+    expect(desc.querySelector(".mod-warning")).toBeNull();
+    expect(desc.textContent).toContain(
+      m.settings_profile_rule_collections_inside({
+        collections: "Future/Research",
       }),
     );
   });
 
   it("judges only the expression while the database is not ready", () => {
-    const ctx = context([staleCollectionRule, brokenRule]);
+    const ctx = context([unknownCollectionRule, brokenRule]);
     (ctx as { db: unknown }).db = { state: "loading" };
     const rows = list(ctx).items!;
     expect(

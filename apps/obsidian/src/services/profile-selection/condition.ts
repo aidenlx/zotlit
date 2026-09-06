@@ -10,43 +10,31 @@
 //
 // Supported vocabulary:
 // - `itemType == "<type>"` / `itemType != "<type>"` — the built-in Zotero type.
-// - `inCollection("<library>", "<key>")` — filed in the Collection or any of
-//   its descendants; `inCollectionDirectly(...)` — filed in it itself. The
-//   Library is the portable `personal` / `group:<groupID>` reference and the
-//   key is Zotero's Collection key, so a reference survives a rename and
-//   tells identical names or keys in different Libraries apart.
-// - `hasTag("<name>")` — an exact, case-sensitive Tag name; manual and
-//   automatic applications both count.
+// - `tags.contains("<name>")`, `containsAny`, `containsAll`, and `isEmpty` —
+//   exact, case-sensitive tests over manual and automatic Tag names.
+// - `collections.within("<path>")` — filed in that Collection or a descendant;
+//   `contains`, `containsAny`, `containsAll`, and `isEmpty` test direct paths.
 // - `!`, `&&`, `||`, and grouping inside one leaf; the tree above the leaves
 //   is the ordinary way to combine conditions.
-//
-// Whether a referenced Collection exists is not a compile-time question: the
-// evaluator checks `collectionReferences` against the database and reports a
-// `missing-collection` problem, keeping a stale reference distinct from an
-// ordinary nonmatch.
-import { regex } from "arkregex";
-
 import { parseExpressionAst } from "@zotlit/filter-expression";
 import type { ExpressionNode } from "@zotlit/filter-expression";
 import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
-import { selectorKey } from "@/services/library-scope/scope";
 import type { LibrarySelector } from "@/services/library-scope/scope";
 
 import type { RuleFilter } from "./schema";
 
 /** The Item field a rule may test. */
 export const ITEM_TYPE_FIELD = "itemType";
-/** The membership predicates a rule may call. */
-export const IN_COLLECTION_FUNCTION = "inCollection";
-export const IN_COLLECTION_DIRECTLY_FUNCTION = "inCollectionDirectly";
-export const HAS_TAG_FUNCTION = "hasTag";
+export const TAGS_FIELD = "tags";
+export const COLLECTIONS_FIELD = "collections";
 
-/** A portable reference to one Collection: its Library and Zotero key. */
-export interface CollectionReference {
-  library: LibrarySelector;
-  key: string;
-}
+export type ListOperator =
+  | "contains"
+  | "containsAny"
+  | "containsAll"
+  | "isEmpty";
+export type CollectionOperator = ListOperator | "within";
 
 export type RuleCondition =
   | {
@@ -55,41 +43,38 @@ export type RuleCondition =
       match: "all" | "any";
       conditions: RuleCondition[];
     }
-  | { kind: "item-type"; negated: boolean; itemType: string }
   | {
-      kind: "collection";
+      kind: "item-type";
+      operator: "is";
       negated: boolean;
-      library: LibrarySelector;
-      key: string;
-      /** Whether descendants of the Collection count as membership. */
-      descendants: boolean;
+      values: [string];
     }
-  | { kind: "tag"; negated: boolean; name: string };
+  | {
+      kind: "collections";
+      operator: CollectionOperator;
+      negated: boolean;
+      /** Root-first paths, split into segments at compile time. */
+      values: (readonly string[])[];
+    }
+  | {
+      kind: "tags";
+      operator: ListOperator;
+      negated: boolean;
+      values: string[];
+    };
 
 /** A condition the editor shows as one row. */
 export type FlatCondition = Exclude<RuleCondition, { kind: "group" }>;
 
 /** One reason an expression is outside the supported contract. */
-export type ConditionProblem =
-  | {
-      code:
-        | "empty"
-        | "syntax"
-        | "unsupported"
-        | "unknown-item-type"
-        | "unknown-library";
-      /** Source range of the offending node, for the editor to point at. */
-      from: number;
-      to: number;
-      /** The offending source text (empty for a missing token). */
-      text: string;
-    }
-  | {
-      /** A referenced Collection the database does not hold. */
-      code: "missing-collection";
-      library: LibrarySelector;
-      key: string;
-    };
+export type ConditionProblem = {
+  code: "empty" | "syntax" | "unsupported" | "unknown-item-type";
+  /** Source range of the offending node, for the editor to point at. */
+  from: number;
+  to: number;
+  /** The offending source text (empty for a missing token). */
+  text: string;
+};
 
 export type CompiledCondition =
   | { condition: RuleCondition; problem: null }
@@ -102,10 +87,8 @@ export interface RuleItemFacts {
   itemType: string;
   /** Every Tag name applied to the Item, manual and automatic alike. */
   tags: readonly string[];
-  /** Keys of the Collections the Item is filed in directly. */
-  collections: readonly string[];
-  /** Keys of every live ancestor of those Collections. */
-  collectionAncestors: readonly string[];
+  /** Root-first paths of the Collections the Item is filed in directly. */
+  collections: readonly (readonly string[])[];
 }
 
 const KNOWN_ITEM_TYPES = new Set(ITEM_TYPES.map(({ name }) => name));
@@ -178,41 +161,52 @@ export function matchCondition(
         ? condition.conditions.every((entry) => matchCondition(entry, facts))
         : condition.conditions.some((entry) => matchCondition(entry, facts));
     case "item-type":
-      return (facts.itemType === condition.itemType) !== condition.negated;
-    case "collection":
-      return isInCollection(condition, facts) !== condition.negated;
-    case "tag":
-      return facts.tags.includes(condition.name) !== condition.negated;
+      return (facts.itemType === condition.values[0]) !== condition.negated;
+    case "collections":
+      return (
+        matchCollections(condition, facts.collections) !== condition.negated
+      );
+    case "tags":
+      return (
+        matchList(condition.operator, condition.values, facts.tags) !==
+        condition.negated
+      );
   }
 }
 
-function isInCollection(
-  condition: Extract<RuleCondition, { kind: "collection" }>,
-  facts: RuleItemFacts,
+function matchList(
+  operator: ListOperator,
+  values: readonly string[],
+  facts: readonly string[],
 ): boolean {
-  if (
-    facts.library === null ||
-    selectorKey(facts.library) !== selectorKey(condition.library)
-  )
-    return false;
-  return (
-    facts.collections.includes(condition.key) ||
-    (condition.descendants && facts.collectionAncestors.includes(condition.key))
-  );
+  switch (operator) {
+    case "contains":
+      return facts.includes(values[0]!);
+    case "containsAny":
+      return values.some((value) => facts.includes(value));
+    case "containsAll":
+      return values.every((value) => facts.includes(value));
+    case "isEmpty":
+      return facts.length === 0;
+  }
 }
 
-/** Every Collection a condition refers to, in source order. */
-export function collectionReferences(
-  condition: RuleCondition,
-): CollectionReference[] {
-  switch (condition.kind) {
-    case "group":
-      return condition.conditions.flatMap(collectionReferences);
-    case "collection":
-      return [{ library: condition.library, key: condition.key }];
-    default:
-      return [];
+function matchCollections(
+  condition: Extract<RuleCondition, { kind: "collections" }>,
+  facts: readonly (readonly string[])[],
+): boolean {
+  if (condition.operator === "within") {
+    const expected = condition.values[0]!;
+    return facts.some((path) =>
+      expected.every((segment, index) => path[index] === segment),
+    );
   }
+  const paths = facts.map((path) => path.join("/"));
+  return matchList(
+    condition.operator,
+    condition.values.map((path) => path.join("/")),
+    paths,
+  );
 }
 
 /** Write the canonical expression of a condition, as the editor stores it. */
@@ -230,16 +224,23 @@ export function formatCondition(condition: RuleCondition): string {
         .join(operator);
     }
     case "item-type":
-      return `${ITEM_TYPE_FIELD} ${condition.negated ? "!=" : "=="} ${JSON.stringify(condition.itemType)}`;
-    case "collection": {
-      const name = condition.descendants
-        ? IN_COLLECTION_FUNCTION
-        : IN_COLLECTION_DIRECTLY_FUNCTION;
-      const call = `${name}(${JSON.stringify(selectorKey(condition.library))}, ${JSON.stringify(condition.key)})`;
+      return `${ITEM_TYPE_FIELD} ${condition.negated ? "!=" : "=="} ${JSON.stringify(condition.values[0])}`;
+    case "collections": {
+      const args =
+        condition.operator === "isEmpty"
+          ? ""
+          : condition.values
+              .map((path) => JSON.stringify(path.join("/")))
+              .join(", ");
+      const call = `${COLLECTIONS_FIELD}.${condition.operator}(${args})`;
       return condition.negated ? `!${call}` : call;
     }
-    case "tag": {
-      const call = `${HAS_TAG_FUNCTION}(${JSON.stringify(condition.name)})`;
+    case "tags": {
+      const args =
+        condition.operator === "isEmpty"
+          ? ""
+          : condition.values.map((value) => JSON.stringify(value)).join(", ");
+      const call = `${TAGS_FIELD}.${condition.operator}(${args})`;
       return condition.negated ? `!${call}` : call;
     }
   }
@@ -251,10 +252,7 @@ function emptyGroup(): RuleCondition {
 
 class UnsupportedNode extends Error {
   constructor(
-    readonly code: Exclude<
-      ConditionProblem,
-      { code: "missing-collection" }
-    >["code"],
+    readonly code: ConditionProblem["code"],
     readonly from: number,
     readonly to: number,
   ) {
@@ -328,42 +326,56 @@ function equality(
     throw new UnsupportedNode("unsupported", node.from, node.to);
   if (!KNOWN_ITEM_TYPES.has(right.value))
     throw new UnsupportedNode("unknown-item-type", right.from, right.to);
-  return { kind: "item-type", negated, itemType: right.value };
+  return {
+    kind: "item-type",
+    operator: "is",
+    negated,
+    values: [right.value],
+  };
 }
 
 function call(node: Extract<ExpressionNode, { type: "call" }>): RuleCondition {
   const { callee, args } = node;
-  if (callee.type !== "identifier")
-    throw new UnsupportedNode("unsupported", node.from, node.to);
-  const strings = args.every((arg) => arg.type === "string") ? args : null;
-  if (callee.name === HAS_TAG_FUNCTION && strings?.length === 1)
-    return { kind: "tag", negated: false, name: strings[0]!.value };
-  const descendants = callee.name === IN_COLLECTION_FUNCTION;
-  if (
-    (descendants || callee.name === IN_COLLECTION_DIRECTLY_FUNCTION) &&
-    strings?.length === 2
-  ) {
-    const [library, key] = strings;
-    return {
-      kind: "collection",
-      negated: false,
-      library: parseLibraryReference(library!),
-      key: key!.value,
-      descendants,
-    };
+  if (callee.type === "object-access" && callee.object.type === "identifier") {
+    const field = callee.object.name;
+    const operator = callee.property as CollectionOperator;
+    const isTags = field === TAGS_FIELD;
+    const isCollections = field === COLLECTIONS_FIELD;
+    const arityIsValid =
+      (operator === "contains" && args.length === 1) ||
+      ((operator === "containsAny" || operator === "containsAll") &&
+        args.length >= 1) ||
+      (operator === "isEmpty" && args.length === 0) ||
+      (isCollections && operator === "within" && args.length === 1);
+    if ((!isTags && !isCollections) || !arityIsValid)
+      throw new UnsupportedNode("unsupported", callee.from, callee.to);
+    const invalid = args.find((arg) => arg.type !== "string");
+    if (invalid)
+      throw new UnsupportedNode("unsupported", invalid.from, invalid.to);
+    const values = args.map(
+      (arg) => (arg as Extract<ExpressionNode, { type: "string" }>).value,
+    );
+    return isTags
+      ? {
+          kind: "tags",
+          operator: operator as ListOperator,
+          negated: false,
+          values,
+        }
+      : {
+          kind: "collections",
+          operator,
+          negated: false,
+          values: values.map((path) => path.split("/")),
+        };
   }
+  if (callee.type !== "identifier")
+    throw new UnsupportedNode("unsupported", callee.from, callee.to);
+  if (
+    callee.name === "hasTag" ||
+    callee.name === "inCollection" ||
+    callee.name === "inCollectionDirectly"
+  )
+    throw new UnsupportedNode("unsupported", callee.from, callee.to);
   throw new UnsupportedNode("unsupported", node.from, node.to);
-}
-
-const GROUP_REFERENCE = regex("^group:(?<groupID>[1-9]\\d*)$");
-
-/** Read the portable `personal` / `group:<groupID>` Library reference. */
-function parseLibraryReference(
-  node: Extract<ExpressionNode, { type: "string" }>,
-): LibrarySelector {
-  if (node.value === "personal") return { type: "personal" };
-  const groupID = GROUP_REFERENCE.exec(node.value)?.groups.groupID;
-  if (groupID === undefined)
-    throw new UnsupportedNode("unknown-library", node.from, node.to);
-  return { type: "group", groupID: Number(groupID) };
 }

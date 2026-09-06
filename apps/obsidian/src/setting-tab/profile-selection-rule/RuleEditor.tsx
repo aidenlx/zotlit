@@ -22,24 +22,19 @@ import type {
   LibrarySelector,
   LibraryScope,
 } from "@/services/library-scope/scope";
-import {
-  choicesLookup,
-  collectionKey,
-  collectionLabel,
-  itemTypeLabel,
-} from "@/services/profile-selection";
+import { itemTypeLabel } from "@/services/profile-selection";
 
+import { ChipInput } from "./ChipInput";
 import {
   appendAt,
   asExpression,
   asLabelled,
-  describeOptions,
+  conditionIssue,
   draftInvalid,
   freshCondition,
   freshGroup,
   removeAt,
   replaceAt,
-  rowIssue,
   scopeIssue,
   updateGroup,
   vacuous,
@@ -55,12 +50,7 @@ import type {
 import { ExpressionEditor } from "./ExpressionEditor";
 import { useRuleEditorStore } from "./store";
 
-/**
- * The controls Obsidian nests inside a box of its own — a Property editor, a
- * Bases filter row — read these tokens for their border, radius and surface.
- * Flattening them there lets the box own all three, so the controls read as
- * segments of one control instead of a line of loose ones.
- */
+/** Native controls flatten into the statement frame's shared surface. */
 const flatControls = cn(
   "zt:[--input-border-width-focus:0px] zt:[--input-border-width:0px]",
   "zt:[--input-radius:0px] zt:[--input-shadow:none]",
@@ -68,24 +58,22 @@ const flatControls = cn(
   "zt:[--dropdown-background-hover:var(--background-modifier-form-field-hover)]",
 );
 
-/** One statement's box: an input's surface, ring and radius around its controls. */
+/** One statement frame: the shared surface, boundary, radius, and focus ring. */
 const statementBox = cn(
-  "zt:flex zt:items-center zt:overflow-hidden zt:rounded-md zt:bg-input",
+  "zt:min-w-0 zt:items-start zt:overflow-hidden zt:rounded-md zt:bg-input",
   "zt:ring-1 zt:ring-border-hover",
   "zt:focus-within:ring-2 zt:focus-within:ring-border-focus",
   "zt:[--icon-size:var(--icon-s)] zt:[--icon-stroke:var(--icon-s-stroke-width)]",
   flatControls,
 );
 
-/**
- * The controls of one statement. They sit on the box's own surface, so the
- * hairline the gap leaves between them is what separates one from the next.
- */
+/** Flat controls wrap as units and use real hairline separators. */
 const statementControls =
-  "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-center zt:gap-px zt:bg-border";
+  "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-start zt:*:border-s zt:*:border-border zt:*:first:border-s-0";
 
 /** A statement's own buttons, at the trailing end of its box. */
-const statementActions = "zt:flex zt:shrink-0 zt:items-center zt:p-0.5";
+const statementActions =
+  "zt:flex zt:h-(--input-height) zt:shrink-0 zt:items-center zt:border-s zt:border-border zt:px-0.5";
 
 /** The buttons that grow a group, quiet enough to sit under its statements. */
 const quietButton = cn(
@@ -369,7 +357,6 @@ function GroupEditor({
 }) {
   const setRoot = useRuleEditorStore((state) => state.setRoot);
   const root = useRuleEditorStore((state) => state.draft.root);
-  const collections = useRuleEditorStore((state) => state.deps.collections);
   const nested = path.length > 0;
   const setMatch = (match: GroupMatch) =>
     setRoot(updateGroup(root, path, (target) => ({ ...target, match })));
@@ -445,13 +432,7 @@ function GroupEditor({
           type="button"
           className={quietButton}
           onClick={() =>
-            setRoot(
-              appendAt(
-                root,
-                path,
-                freshCondition("item-type", false, collections),
-              ),
-            )
+            setRoot(appendAt(root, path, freshCondition("item-type", false)))
           }
         >
           <Icon name="plus" />
@@ -460,9 +441,7 @@ function GroupEditor({
         <button
           type="button"
           className={quietButton}
-          onClick={() =>
-            setRoot(appendAt(root, path, freshGroup(group.match, collections)))
-          }
+          onClick={() => setRoot(appendAt(root, path, freshGroup(group.match)))}
         >
           <Icon name="plus" />
           <span>{m.settings_profile_rule_add_group()}</span>
@@ -489,18 +468,27 @@ function ConditionRow({
   const root = useRuleEditorStore((state) => state.draft.root);
   const deps = useRuleEditorStore((state) => state.deps);
   const replace = (next: RowCondition) => setRoot(replaceAt(root, path, next));
-  const issue = rowIssue(condition, deps);
+  const issue = conditionIssue(condition, deps);
   const labelled =
     condition.kind === "expression" ? asLabelled(condition) : null;
+  const hasResponsiveValue =
+    (condition.kind === "tags" || condition.kind === "collections") &&
+    (condition.operator === "containsAny" ||
+      condition.operator === "containsAll");
   return (
-    <div className="zt:flex zt:flex-col">
+    <div className="zt:flex zt:flex-col" data-condition-row="">
       <div
         className={cn(
           statementBox,
-          issue !== null && "zt:ring-(--background-modifier-error)",
+          hasResponsiveValue
+            ? "zt:@container zt:grid zt:grid-cols-[auto_auto_1fr_auto]"
+            : "zt:flex",
+          issue !== null && "zt:ring-1 zt:ring-(--background-modifier-error)",
         )}
       >
-        <div className={statementControls}>
+        <div
+          className={cn(statementControls, hasResponsiveValue && "zt:contents")}
+        >
           {condition.kind === "expression" ? (
             <ExpressionEditor
               className="zt:min-w-48 zt:flex-1"
@@ -516,44 +504,30 @@ function ConditionRow({
                 aria-label={m.settings_profile_rule_condition_kind()}
                 value={condition.kind}
                 onChange={(value) =>
-                  replace(
-                    freshCondition(
-                      value as ConditionKind,
-                      condition.negated,
-                      deps.collections,
-                    ),
-                  )
+                  replace(freshCondition(value as ConditionKind, false))
                 }
               >
                 <DropdownItem value="item-type">
                   {m.settings_profile_rule_condition_item_type()}
                 </DropdownItem>
-                <DropdownItem value="collection">
+                <DropdownItem value="collections">
                   {m.settings_profile_rule_condition_collection()}
                 </DropdownItem>
-                <DropdownItem value="tag">
+                <DropdownItem value="tags">
                   {m.settings_profile_rule_condition_tag()}
                 </DropdownItem>
               </Dropdown>
-              <Dropdown
-                aria-label={m.settings_profile_rule_operator()}
-                value={condition.negated ? "is-not" : "is"}
-                onChange={(value) =>
-                  replace({ ...condition, negated: value === "is-not" })
-                }
-              >
-                <DropdownItem value="is">
-                  {m.settings_profile_rule_operator_is()}
-                </DropdownItem>
-                <DropdownItem value="is-not">
-                  {m.settings_profile_rule_operator_is_not()}
-                </DropdownItem>
-              </Dropdown>
+              <ConditionOperator condition={condition} onChange={replace} />
               <ConditionValue condition={condition} onChange={replace} />
             </>
           )}
         </div>
-        <div className={statementActions}>
+        <div
+          className={cn(
+            statementActions,
+            hasResponsiveValue && "zt:col-start-4 zt:row-start-1",
+          )}
+        >
           {condition.kind === "expression" ? (
             <IconButton
               icon="list-filter"
@@ -582,6 +556,134 @@ function ConditionRow({
   );
 }
 
+function ConditionOperator({
+  condition,
+  onChange,
+}: {
+  condition: Exclude<RowCondition, { kind: "expression" }>;
+  onChange: (next: RowCondition) => void;
+}) {
+  if (condition.kind === "item-type")
+    return (
+      <Dropdown
+        aria-label={m.settings_profile_rule_operator()}
+        value={condition.negated ? "is-not" : "is"}
+        onChange={(value) =>
+          onChange({ ...condition, negated: value === "is-not" })
+        }
+      >
+        <DropdownItem value="is">
+          {m.settings_profile_rule_operator_is()}
+        </DropdownItem>
+        <DropdownItem value="is-not">
+          {m.settings_profile_rule_operator_is_not()}
+        </DropdownItem>
+      </Dropdown>
+    );
+
+  const value = condition.negated
+    ? condition.operator === "isEmpty"
+      ? "is-not-empty"
+      : condition.kind === "collections" && condition.operator === "within"
+        ? "not-within"
+        : condition.kind === "collections"
+          ? "not-contains"
+          : "does-not-contain"
+    : condition.operator;
+  const change = (operator: string) => {
+    const negated =
+      operator === "does-not-contain" ||
+      operator === "not-within" ||
+      operator === "not-contains" ||
+      operator === "is-not-empty";
+    if (condition.kind === "collections") {
+      const nextOperator =
+        operator === "not-contains"
+          ? "contains"
+          : operator === "not-within"
+            ? "within"
+            : operator === "is-not-empty"
+              ? "isEmpty"
+              : (operator as typeof condition.operator);
+      const values =
+        nextOperator === "contains" || nextOperator === "within"
+          ? condition.values.slice(0, 1)
+          : condition.values;
+      onChange({ ...condition, operator: nextOperator, negated, values });
+      return;
+    }
+    const nextOperator =
+      operator === "does-not-contain"
+        ? "contains"
+        : operator === "is-not-empty"
+          ? "isEmpty"
+          : (operator as typeof condition.operator);
+    const values =
+      nextOperator === "contains"
+        ? condition.values.slice(0, 1)
+        : condition.values;
+    onChange({ ...condition, operator: nextOperator, negated, values });
+  };
+  return (
+    <Dropdown
+      className="zt:shrink-0"
+      aria-label={m.settings_profile_rule_operator()}
+      value={value}
+      onChange={change}
+    >
+      {condition.kind === "collections" ? (
+        <>
+          <DropdownItem value="within">
+            {m.settings_profile_rule_collection_within()}
+          </DropdownItem>
+          <DropdownItem value="not-within">
+            {m.settings_profile_rule_collection_not_within()}
+          </DropdownItem>
+          <DropdownItem value="contains">
+            {m.settings_profile_rule_collection_contains()}
+          </DropdownItem>
+          <DropdownItem value="not-contains">
+            {m.settings_profile_rule_collection_not_contains()}
+          </DropdownItem>
+          <DropdownItem value="containsAny">
+            {m.settings_profile_rule_collection_contains_any()}
+          </DropdownItem>
+          <DropdownItem value="containsAll">
+            {m.settings_profile_rule_collection_contains_all()}
+          </DropdownItem>
+          <DropdownItem value="isEmpty">
+            {m.settings_profile_rule_collection_is_empty()}
+          </DropdownItem>
+          <DropdownItem value="is-not-empty">
+            {m.settings_profile_rule_collection_is_not_empty()}
+          </DropdownItem>
+        </>
+      ) : (
+        <>
+          <DropdownItem value="contains">
+            {m.settings_profile_rule_tag_contains()}
+          </DropdownItem>
+          <DropdownItem value="does-not-contain">
+            {m.settings_profile_rule_tag_does_not_contain()}
+          </DropdownItem>
+          <DropdownItem value="containsAny">
+            {m.settings_profile_rule_tag_contains_any()}
+          </DropdownItem>
+          <DropdownItem value="containsAll">
+            {m.settings_profile_rule_tag_contains_all()}
+          </DropdownItem>
+          <DropdownItem value="isEmpty">
+            {m.settings_profile_rule_tag_is_empty()}
+          </DropdownItem>
+          <DropdownItem value="is-not-empty">
+            {m.settings_profile_rule_tag_is_not_empty()}
+          </DropdownItem>
+        </>
+      )}
+    </Dropdown>
+  );
+}
+
 function ConditionValue({
   condition,
   onChange,
@@ -589,15 +691,18 @@ function ConditionValue({
   condition: Exclude<RowCondition, { kind: "expression" }>;
   onChange: (next: RowCondition) => void;
 }) {
-  const deps = useRuleEditorStore((state) => state.deps);
+  const collections = useRuleEditorStore((state) => state.deps.collections);
+  const suggestionsId = useId();
   switch (condition.kind) {
     case "item-type":
       return (
         <Dropdown
           className="zt:min-w-0 zt:flex-1"
           aria-label={m.settings_profile_rule_value()}
-          value={condition.itemType}
-          onChange={(itemType) => onChange({ ...condition, itemType })}
+          value={condition.values[0]}
+          onChange={(itemType) =>
+            onChange({ ...condition, values: [itemType] })
+          }
         >
           {ITEM_TYPES.map((itemType) => (
             <DropdownItem key={itemType.name} value={itemType.name}>
@@ -606,76 +711,88 @@ function ConditionValue({
           ))}
         </Dropdown>
       );
-    case "collection": {
-      // A reference the database no longer holds stays selected, flagged, so
-      // the user can see what the rule pointed at before choosing a replacement.
-      const current = collectionKey(condition);
-      const known = choicesLookup(deps.collections)(condition);
-      return (
-        <>
-          <Dropdown
-            // A Library-and-path label needs room: wrap before it is crushed.
-            className="zt:min-w-48 zt:flex-1"
-            aria-label={m.settings_profile_rule_value()}
-            value={current}
-            onChange={(value) => {
-              const choice = deps.collections.find(
-                (candidate) => collectionKey(candidate) === value,
-              );
-              if (choice)
-                onChange({
-                  ...condition,
-                  library: choice.library,
-                  key: choice.key,
-                });
-            }}
-          >
-            {deps.collections.map((choice) => (
-              <DropdownItem
-                key={collectionKey(choice)}
-                value={collectionKey(choice)}
-              >
-                {collectionLabel(choice, describeOptions(deps))}
-              </DropdownItem>
-            ))}
-            {!known && (
-              <DropdownItem value={current}>
-                {collectionLabel(condition, { libraries: deps.libraries })}
-              </DropdownItem>
-            )}
-          </Dropdown>
-          <Dropdown
-            // Last in the row, so it takes the space left over — the colour
-            // behind the controls stays a hairline between them.
-            className="zt:min-w-0 zt:flex-1"
-            aria-label={m.settings_profile_rule_collection_scope()}
-            value={condition.descendants ? "descendants" : "direct"}
-            onChange={(value) =>
-              onChange({ ...condition, descendants: value === "descendants" })
+    case "collections": {
+      if (condition.operator === "isEmpty") return null;
+      const suggestions = collections.map(({ path }) => path.join("/"));
+      const hint = (value: string) =>
+        suggestions.includes(value)
+          ? null
+          : m.settings_profile_rule_collection_not_found();
+      if (
+        condition.operator === "containsAny" ||
+        condition.operator === "containsAll"
+      )
+        return (
+          <ChipInput
+            values={condition.values.map((path) => path.join("/"))}
+            onChange={(values) =>
+              onChange({
+                ...condition,
+                values: values.map((value) => value.split("/")),
+              })
             }
-          >
-            <DropdownItem value="descendants">
-              {m.settings_profile_rule_collection_descendants()}
-            </DropdownItem>
-            <DropdownItem value="direct">
-              {m.settings_profile_rule_collection_direct()}
-            </DropdownItem>
-          </Dropdown>
-        </>
+            placeholder={m.settings_profile_rule_collection_placeholder()}
+            suggestions={suggestions}
+            hint={hint}
+          />
+        );
+      const value = condition.values[0]?.join("/") ?? "";
+      return (
+        <div className="zt:flex zt:min-w-0 zt:flex-1 zt:flex-col">
+          <input
+            type="text"
+            className="zt:w-full zt:min-w-0"
+            aria-label={m.settings_profile_rule_value()}
+            placeholder={m.settings_profile_rule_collection_placeholder()}
+            value={value}
+            list={suggestions.length ? suggestionsId : undefined}
+            onChange={(event) =>
+              onChange({
+                ...condition,
+                values: [event.currentTarget.value.split("/")],
+              })
+            }
+          />
+          {value !== "" && hint(value) && (
+            <span className="zt:px-2 zt:pb-1 zt:text-xs zt:leading-tight zt:text-muted-foreground">
+              {hint(value)}
+            </span>
+          )}
+          {suggestions.length ? (
+            <datalist id={suggestionsId}>
+              {suggestions.map((suggestion) => (
+                <option key={suggestion} value={suggestion} />
+              ))}
+            </datalist>
+          ) : null}
+        </div>
       );
     }
-    case "tag":
+    case "tags": {
+      if (condition.operator === "isEmpty") return null;
+      if (
+        condition.operator === "containsAny" ||
+        condition.operator === "containsAll"
+      )
+        return (
+          <ChipInput
+            values={condition.values}
+            onChange={(values) => onChange({ ...condition, values })}
+            placeholder={m.settings_profile_rule_tag_placeholder()}
+          />
+        );
       return (
         <input
           type="text"
           className="zt:min-w-0 zt:flex-1"
           aria-label={m.settings_profile_rule_value()}
           placeholder={m.settings_profile_rule_tag_placeholder()}
-          value={condition.name}
+          value={condition.values[0] ?? ""}
           onChange={(event) =>
-            onChange({ ...condition, name: event.currentTarget.value })
+            onChange({ ...condition, values: [event.currentTarget.value] })
           }
         />
       );
+    }
   }
 }
