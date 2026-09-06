@@ -49,6 +49,7 @@ export {
 } from "./delete-profile-modal";
 import { highlightMappingItems } from "./note-import";
 import { defaultProfileBindingPlaceholder } from "./placeholder";
+import { editProfileMatch } from "./profile-match-modal";
 import { shareProfile } from "./share-profile-modal";
 export { shareProfile, ShareProfileModal } from "./share-profile-modal";
 
@@ -215,11 +216,22 @@ function profilesList(
       desc: (() => {
         const description = document.createDocumentFragment();
         description.append(profile.document);
-        description.createDiv({ text: profile.match.summary });
+        description.createDiv({
+          text: m.settings_profile_match_status({ state: profile.match.state }),
+        });
         return description;
       })(),
       searchable: false,
       render: (setting) => {
+        setting.addButton((button) =>
+          button
+            .setButtonText(m.settings_profile_match_action())
+            .setDisabled(locked)
+            .onClick(
+              () =>
+                void runAction(() => editProfileMatch(ctx, profile.id), ctx),
+            ),
+        );
         setting.addExtraButton((button) =>
           button
             .setIcon("pencil")

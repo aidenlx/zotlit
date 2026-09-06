@@ -44,6 +44,8 @@ import type {
 } from "./literature-note-template";
 import { formatManagedRegion } from "./obsidian";
 
+export { updateLiteratureNoteTemplateMatch } from "./literature-note-template-match";
+
 export type { TemplateLanguage } from "./constants";
 
 export {

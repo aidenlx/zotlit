@@ -108,7 +108,90 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   };
   const bookMatch = { and: ['itemType == "book"', 'library == "personal"'] };
 
-  /** This ticket edits the document by hand; the match editor arrives in #988. */
+  function conditionReady({
+    row = 0,
+    kind,
+    operator,
+    value,
+  }: {
+    row?: number;
+    kind: "item-type" | "library" | "collections";
+    operator: string;
+    value: string;
+  }): Promise<boolean> {
+    // A kind change replaces the value control and its options on the next render.
+    const valueControl =
+      kind === "collections" ? 'input[type="text"]' : "select";
+    return obEvalUntil(
+      vaultId,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}[aria-label=${JSON.stringify(m.settings_profile_match_value())}]')?.value===${JSON.stringify(value)});})()`,
+      { expected: "true" },
+    );
+  }
+
+  async function addLibraryCondition(selector: string): Promise<void> {
+    await obEval(
+      vaultId,
+      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);Array.from(modal.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
+    );
+    expect(
+      await conditionReady({
+        row: 1,
+        kind: "item-type",
+        operator: "is",
+        value: "book",
+      }),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var row=Array.from(Array.from(document.querySelectorAll('.modal')).at(-1).querySelectorAll('[data-condition-row]')).at(-1);var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]');kind.value='library';kind.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+    );
+    expect(
+      await conditionReady({
+        row: 1,
+        kind: "library",
+        operator: "is",
+        value: "personal",
+      }),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var row=Array.from(Array.from(document.querySelectorAll('.modal')).at(-1).querySelectorAll('[data-condition-row]')).at(-1);var value=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_value())}]');value.value=${JSON.stringify(selector)};value.dispatchEvent(new Event('change',{bubbles:true}));return value.value;})()`,
+    );
+  }
+
+  async function openMatchEditor(): Promise<void> {
+    await openProfilesSettings(vaultId, m.settings_page_profiles());
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(booksProfile.document)}));var button=row&&Array.from(row.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_action())});if(!button||button.disabled)return false;button.click();return true;})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `(function(){var modal=document.querySelector('.zt-profile-match-modal');return String(modal?.querySelector('.modal-title')?.textContent===${JSON.stringify(m.settings_profile_match_title({ profile: booksProfile.label }))}&&!!modal.querySelector('[data-condition-row] select')&&!!modal.querySelector('.zt-profile-match-footer'));})()`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+  }
+
+  async function saveMatch(match: unknown): Promise<void> {
+    expect(
+      await clickModalButton(vaultId, m.settings_profile_match_save()),
+    ).toBe(true);
+    expect(
+      await obEvalUntil(
+        vaultId,
+        `String(JSON.stringify(app.plugins.plugins.zotlit.services.profile.profiles.find(p=>p.id===${JSON.stringify(booksProfile.id)})?.match.tree)===${JSON.stringify(JSON.stringify(match))})`,
+        { expected: "true" },
+      ),
+    ).toBe(true);
+  }
+
+  /** Hand-written Match trees exercise the same document boundary as external editors. */
   async function writeMatch(
     profile: { id: string; document: string },
     match: unknown,
@@ -479,13 +562,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const notePath = `books/books-${bookItem.citationKey}.md`;
     await cli([`vault=${vaultId}`, "delete", `path=${seededPath}`]);
     expect(await hasIndexedNotes(vaultId, bookItem.key, 0)).toBe(true);
-    await writeMatch(booksProfile, bookMatch);
-    await openProfilesSettings(vaultId, m.settings_page_profiles());
-    const summary = `${m.settings_profile_rule_item_type_is({ type: "Book" })} and ${m.settings_profile_rule_library_is({ library: m.settings_library_scope_personal() })}`;
+    await openMatchEditor();
+    expect(
+      await conditionReady({
+        kind: "item-type",
+        operator: "is",
+        value: "book",
+      }),
+    ).toBe(true);
+    await addLibraryCondition("personal");
+    await saveMatch(bookMatch);
+    const description = `${booksProfile.document}${m.settings_profile_match_status({ state: "evaluable" })}`;
     expect(
       await obEvalUntil(
         vaultId,
-        `String(Array.from(document.querySelectorAll('.setting-item')).some(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent?.includes(${JSON.stringify(summary)})))`,
+        `String(Array.from(document.querySelectorAll('.setting-item')).some(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(booksProfile.label)}&&el.querySelector('.setting-item-description')?.textContent===${JSON.stringify(description)}))`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -774,10 +865,29 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     );
     await cli([`vault=${vaultId}`, "delete", `path=${notePath}`]);
     expect(await hasIndexedNotes(vaultId, childItem.key, 0)).toBe(true);
-    await writeMatch(
-      booksProfile,
-      `collections.contains(${JSON.stringify(parent.name)})`,
+    await openMatchEditor();
+    expect(
+      await conditionReady({
+        kind: "collections",
+        operator: "within",
+        value: parent.name,
+      }),
+    ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var operator=document.querySelector('.zt-profile-match-modal [data-condition-row] select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
     );
+    expect(
+      await conditionReady({
+        kind: "collections",
+        operator: "contains",
+        value: parent.name,
+      }),
+    ).toBe(true);
+    await saveMatch({
+      and: [`collections.contains(${JSON.stringify(parent.name)})`],
+    });
+    await obEval(vaultId, "app.setting.close();true");
     await quickSwitchCreate(childItem);
     const fallback = await selectSuggestion(
       vaultId,
