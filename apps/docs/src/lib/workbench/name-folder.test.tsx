@@ -11,6 +11,7 @@ import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 import { m } from "@zotlit/workbench/ui";
 
 import { NameFolderPane } from "./name-folder";
+import { WebTestHost } from "./test-host";
 
 /**
  * A Profile of the reader's own, which is what carries bindings: one folder
@@ -74,11 +75,13 @@ function openPane(source: string): OpenPane {
   const root = createRoot(host);
   act(() => {
     root.render(
-      <NameFolderPane
-        controller={controller}
-        manifest={controller.document!.manifest}
-        filename="Tufte1983Visual"
-      />,
+      <WebTestHost>
+        <NameFolderPane
+          controller={controller}
+          manifest={controller.document!.manifest}
+          filename="Tufte1983Visual"
+        />
+      </WebTestHost>,
     );
   });
   return {

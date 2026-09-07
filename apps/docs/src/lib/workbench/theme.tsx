@@ -1,15 +1,19 @@
+import { EditorView } from "@codemirror/view";
+import { Code2, Eye, Pencil, List, Redo2, Undo2 } from "lucide-react";
 // The web's look for the Workbench UI: the site's Tailwind classes for each
 // part of the shared tree, and Lucide for its icons. The tree carries no class
 // of its own (ADR 0044); the control sizes are the kit's Workbench variants.
-
-import { Code2, List, Redo2, Undo2 } from "lucide-react";
 
 import type { WorkbenchIcon, WorkbenchTheme } from "@zotlit/workbench/ui";
 
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 
+import { editorTheme } from "./editor-theme";
+
 const ICON: Record<WorkbenchIcon, typeof List> = {
+  preview: Eye,
+  edit: Pencil,
   basic: List,
   advanced: Code2,
   undo: Undo2,
@@ -19,7 +23,44 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
 const historyButton = buttonVariants({ variant: "ghost", size: "icon-sm" });
 
 export const WEB_THEME: WorkbenchTheme = {
+  editorExtension: (slice, language) => [
+    editorTheme,
+    ...(slice === "filename" ||
+    language === "expression" ||
+    language === "json-e"
+      ? [EditorView.theme({ ".cm-content": { minHeight: "5rem" } })]
+      : []),
+  ],
   classes: {
+    sliceEditor: {
+      "slice-editor":
+        "flex min-h-0 flex-1 flex-col rounded-md has-[.cm-content:focus-visible]:outline-2 has-[.cm-content:focus-visible]:outline-offset-2 has-[.cm-content:focus-visible]:outline-fd-ring",
+      "slice-scroll":
+        "min-h-0 flex-1 overflow-auto rounded-md [&_.cm-content]:min-w-0 [&_.cm-content]:px-3 [&_.cm-content]:py-3 [&_.cm-editor]:min-h-full [&_.cm-gutters]:border-fd-border [&_.cm-gutters]:bg-transparent",
+    },
+    notePane: {
+      "annotation-toggle": cn(
+        buttonVariants({ variant: "ghost", size: "icon-2xs" }),
+        "aria-pressed:bg-fd-muted",
+      ),
+      "annotation-edit": buttonVariants({ variant: "ghost", size: "icon-2xs" }),
+      "note-pane":
+        "flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card [&_.zt-managed]:bg-fd-muted/60 [&_.zt-managed]:shadow-[inset_2px_0_0_0_var(--color-fd-border)]",
+      "annotation-box":
+        "inline-flex max-w-full items-center gap-1 rounded-md border border-fd-border bg-fd-card p-0.5 ps-2 align-middle text-xs font-medium text-fd-muted-foreground",
+      "annotation-label": "min-w-0 whitespace-normal",
+      "annotation-actions": "inline-flex shrink-0 items-center",
+      "annotation-preview":
+        "border-y border-fd-border px-2 pb-2 font-sans whitespace-normal [&_[role=document]>:first-child]:mt-0 [&_[role=document]>:last-child]:mb-0",
+      "annotation-selector":
+        "-mx-2 mb-2 min-w-0 border-b border-fd-border bg-fd-muted/40 px-2 py-1 [&>div]:mb-0",
+      "annotation-problem":
+        "mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-sm",
+      pending: "text-sm text-fd-muted-foreground",
+      "managed-label":
+        "rounded-sm border border-fd-border bg-fd-card px-2 py-1 text-xs font-medium text-fd-muted-foreground",
+      "managed-line": "zt-managed",
+    },
     tabBar: {
       "tab-bar": "flex min-w-0 flex-wrap gap-0.5 rounded-md bg-fd-muted p-0.5",
       tab: "flex min-h-7 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-sm px-2 py-0.5 text-xs font-medium text-fd-muted-foreground data-[state=active]:bg-fd-card data-[state=active]:text-fd-foreground data-[state=active]:shadow-sm [&_svg]:size-4",

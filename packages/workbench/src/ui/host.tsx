@@ -8,9 +8,12 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "#/document/controller";
+import type { SuggestionSource } from "#/language/completion";
+import type { RenderedProperty, RenderedRange } from "#/render/result";
 import type { RenderSchedulerOptions } from "#/render/scheduler";
+import type { Extension } from "@codemirror/state";
 import { createContext, useContext } from "react";
-import type { HTMLAttributes, ReactNode } from "react";
+import type { ComponentType, HTMLAttributes, ReactNode } from "react";
 
 import type { WorkbenchIcon } from "./theme";
 
@@ -109,6 +112,13 @@ export interface WorkbenchPersistence {
   ): void;
 }
 
+export interface WorkbenchMarkdownProps {
+  readonly markdown: string;
+  readonly properties: readonly RenderedProperty[];
+  readonly showMarkdown: boolean;
+  readonly marks?: readonly RenderedRange[];
+}
+
 export interface WorkbenchHost {
   menu(request: WorkbenchMenuRequest): void;
   dialog(request: WorkbenchDialogRequest): WorkbenchDialogHandle;
@@ -122,6 +132,10 @@ export interface WorkbenchHost {
   notice(text: string): void;
   /** Renders one request; the tree schedules through `createRenderScheduler`. */
   render: RenderSchedulerOptions["startWorker"];
+  /** The host reading view for a rendered note or annotation. */
+  markdown: ComponentType<WorkbenchMarkdownProps>;
+  /** Completion and hover presentation over the shared editor. */
+  editorPopups?(read: SuggestionSource): Extension;
   matchData: WorkbenchMatchData;
   /** The focused slice editor, or `null` when none has had focus. */
   insertTarget(): WorkbenchInsertTarget | null;
@@ -155,4 +169,9 @@ export function useWorkbenchHost(): WorkbenchHost {
 export function useTooltip(text: string): HTMLAttributes<HTMLElement> {
   const host = useContext(HostContext);
   return host?.tooltip(text) ?? { title: text };
+}
+
+/** The host, when the surface is mounted inside one. */
+export function useOptionalHost(): WorkbenchHost | null {
+  return useContext(HostContext);
 }

@@ -61,3 +61,18 @@ export type {
   WorkbenchParts,
   WorkbenchTheme,
 } from "./theme";
+
+export { NotePane } from "./note-pane";
+export type { NotePaneProps } from "./note-pane";
+export { SliceEditor } from "./slice-editor";
+export type {
+  SliceEditorProps,
+  SliceLanguage,
+  SuggestionSource,
+} from "./slice-editor";
+export { useOptionalHost } from "./host";
+export type { WorkbenchMarkdownProps } from "./host";
+
+export { COMMON_FIELDS, completionFields } from "./completion-fields";
+export type { CommonField } from "./completion-fields";
+export { tagDescription } from "./tag-help";

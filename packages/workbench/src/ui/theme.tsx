@@ -2,14 +2,32 @@
 // the icons it draws. The tree marks its parts with `data-part` and their
 // state with `data-state`, and carries no class of its own (ADR 0044).
 
+import type { WorkbenchSliceId } from "#/document/controller";
+import type { Extension } from "@codemirror/state";
 import { createContext, useContext } from "react";
 import type { ReactNode } from "react";
+
+import type { SliceLanguage } from "./slice-editor";
 
 /**
  * Every component of the tree and the parts it marks. A component that joins
  * the tree adds its entry here, so a host's class map is checked against it.
  */
 export interface WorkbenchParts {
+  sliceEditor: "slice-editor" | "slice-scroll";
+  notePane:
+    | "note-pane"
+    | "annotation-box"
+    | "annotation-label"
+    | "annotation-actions"
+    | "annotation-preview"
+    | "annotation-selector"
+    | "annotation-problem"
+    | "pending"
+    | "managed-label"
+    | "managed-line"
+    | "annotation-toggle"
+    | "annotation-edit";
   tabBar: "tab-bar" | "tab";
   tabPanel: "tab-panel";
   editToolbar:
@@ -37,10 +55,20 @@ export type WorkbenchClassMap = {
 };
 
 /** The icons the tree asks for, named by role so each host picks the glyph. */
-export type WorkbenchIcon = "basic" | "advanced" | "undo" | "redo";
+export type WorkbenchIcon =
+  | "basic"
+  | "advanced"
+  | "undo"
+  | "redo"
+  | "preview"
+  | "edit";
 
 export interface WorkbenchTheme {
   readonly classes?: WorkbenchClassMap;
+  readonly editorExtension?: (
+    slice: WorkbenchSliceId,
+    language: SliceLanguage,
+  ) => Extension;
   /** Draws a named icon; a host without one draws none. */
   readonly icon?: (name: WorkbenchIcon) => ReactNode;
 }
@@ -91,4 +119,9 @@ export function useParts<C extends WorkbenchComponent>(
 export function useIcon(): (name: WorkbenchIcon) => ReactNode {
   const { icon } = useContext(ThemeContext);
   return (name) => icon?.(name) ?? null;
+}
+
+/** The CodeMirror presentation supplied by the host theme. */
+export function useEditorExtension() {
+  return useContext(ThemeContext).editorExtension;
 }

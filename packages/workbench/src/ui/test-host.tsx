@@ -57,6 +57,7 @@ export function fakeHost(): FakeHost {
       deliver(failedRender(renderIdentity(request), { code: "render-error" }));
       return { terminate() {} };
     },
+    markdown: ({ markdown }) => <div role="document">{markdown}</div>,
     matchData: {
       tags: () => Promise.resolve(["reading", "methods"]),
       collections: () => Promise.resolve(["Thesis/Chapter 1"]),
