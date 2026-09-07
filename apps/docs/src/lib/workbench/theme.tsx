@@ -21,6 +21,7 @@ import {
 import type { WorkbenchIcon, WorkbenchTheme } from "@zotlit/workbench/ui";
 
 import { buttonVariants } from "@/components/ui/button";
+import { inputVariants } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
 
 import { editorTheme } from "./editor-theme";
@@ -43,8 +44,7 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
 
 const historyButton = buttonVariants({ variant: "ghost", size: "icon-sm" });
 
-const nameInput =
-  "min-h-8 w-full min-w-0 rounded-md border border-fd-border bg-fd-card px-2 py-1 text-base placeholder:text-fd-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring disabled:cursor-default disabled:opacity-50 aria-invalid:border-fd-foreground sm:text-xs";
+const nameInput = inputVariants({ size: "xs" });
 
 export const WEB_THEME: WorkbenchTheme = {
   editorExtension: (slice, language) => [
@@ -133,8 +133,7 @@ export const WEB_THEME: WorkbenchTheme = {
       actions: "flex flex-wrap items-center gap-2",
       form: "flex flex-col gap-3 border-t border-fd-border p-2.5",
       field: "flex flex-col gap-1 text-xs font-medium",
-      "name-input":
-        "min-h-8 w-full min-w-0 rounded-md border border-fd-border bg-fd-background px-2 py-1 text-base placeholder:text-fd-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring disabled:cursor-default disabled:opacity-50 aria-invalid:border-fd-foreground sm:text-xs font-mono",
+      "name-input": cn(nameInput, "bg-fd-background font-mono"),
       hint: "text-xs leading-normal text-pretty text-fd-muted-foreground",
       "field-group": "flex flex-col gap-1.5",
       "expression-header":
@@ -145,8 +144,7 @@ export const WEB_THEME: WorkbenchTheme = {
         "flex flex-col gap-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal",
       text: "text-pretty",
       "confirm-actions": "flex flex-wrap gap-2",
-      "text-input":
-        "min-h-8 w-full min-w-0 rounded-md border border-fd-border bg-fd-background px-2 py-1 text-base placeholder:text-fd-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring disabled:cursor-default disabled:opacity-50 aria-invalid:border-fd-foreground sm:text-xs",
+      "text-input": cn(nameInput, "bg-fd-background"),
       expression:
         "flex min-h-28 flex-col rounded-md border border-fd-border bg-fd-background",
       diagnostics:
