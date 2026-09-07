@@ -600,15 +600,20 @@ function EditorHeader({ view }: { view: ProfileEditorView }) {
       layout="linear"
       leading={
         <button
-          className="zt:min-w-0 zt:truncate"
+          className="zt-profile-editor-item zt:min-w-0 zt:truncate"
+          {...tooltipAttrs(item?.title ?? m.profile_editor_choose_paper())}
           onClick={() => void view.chooseItem()}
         >
           {item?.title ?? m.profile_editor_choose_paper()}
         </button>
       }
     >
-      <button onClick={() => void view.openMarkdown()}>
-        {m.profile_editor_open_markdown()}
+      <button
+        className="clickable-icon"
+        {...tooltipAttrs(m.profile_editor_open_markdown())}
+        onClick={() => void view.openMarkdown()}
+      >
+        <Icon name="file-code" />
       </button>
       <button
         className="clickable-icon"
