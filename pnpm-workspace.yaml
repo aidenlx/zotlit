@@ -13,6 +13,7 @@ allowBuilds:
   workerd: true
 
 catalog:
+  nanoid: ^5.1.16
   "@hono/node-server": ^2.0.10
   "@codemirror/autocomplete": 6.20.3
   "@codemirror/commands": 6.11.0

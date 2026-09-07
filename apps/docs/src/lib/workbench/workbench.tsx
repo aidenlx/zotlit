@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   Download,
+  ExternalLink,
   FilePlus2,
   FolderOpen,
   Save,
@@ -94,7 +95,12 @@ import { startRenderWorker } from "./render-client";
 import { SampleBar } from "./sample-bar";
 import { ensureTemporal } from "./temporal";
 import { WEB_THEME } from "./theme";
-import { downloadProfile, profileFileName } from "./transfer";
+import {
+  downloadProfile,
+  profileFileName,
+  openProfileInObsidian,
+  createProfileHandoffSource,
+} from "./transfer";
 import { unsupportedDependencies, unsupportedProblems } from "./unsupported";
 import { useWorkbenchConnection } from "./use-workbench-connection";
 import type { ProfileHydration } from "./use-workbench-connection";
@@ -161,6 +167,7 @@ export function Workbench() {
     label: string;
     run: () => void;
   } | null>(null);
+  const [handoffSource] = useState(createProfileHandoffSource);
   const [fileMessage, setFileMessage] = useState<string | null>(null);
   const replaceConnected = useRef(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
@@ -598,6 +605,15 @@ export function Workbench() {
     setCaret(noteCaret.current);
   }
 
+  async function openInObsidian() {
+    try {
+      await openProfileInObsidian(handoffSource(controller.source));
+      setFileMessage(m.workbench_open_obsidian_copied());
+    } catch {
+      setFileMessage(m.workbench_open_obsidian_failed());
+    }
+  }
+
   /** Download always returns the exact source, including an unfinished draft. */
   function download() {
     downloadProfile(
@@ -716,6 +732,7 @@ export function Workbench() {
         <ProfileHandoff
           reasons={unsupported}
           onDownload={download}
+          onOpenInObsidian={() => void openInObsidian()}
           onImport={openFile}
           onUndo={controller.canUndo ? () => controller.undo() : undefined}
           message={fileMessage}
@@ -764,6 +781,10 @@ export function Workbench() {
                   {m.workbench_reload_profile()}
                 </DropdownMenuItem>
               )}
+              <DropdownMenuItem onClick={() => void openInObsidian()}>
+                <ExternalLink aria-hidden />
+                {m.workbench_open_obsidian()}
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={download}>
                 <Download aria-hidden />
                 {m.workbench_download_copy()}

@@ -2,6 +2,10 @@ import * as v from "valibot";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildImportProfileProtocolUrl,
+  parseImportProfileProtocolQuery,
+} from "./url";
+import {
   batchUpdateRequestSchema,
   buildBatchProtocolUrl,
   buildExploreProtocolUrl,
@@ -392,5 +396,27 @@ describe("protocolSourceMatches", () => {
 
   it("rejects when expected is null", () => {
     expect(protocolSourceMatches(query, null)).toBe(false);
+  });
+});
+
+describe("clipboard Profile handoff", () => {
+  it("carries only the clipboard flag and accepts Obsidian's action metadata", () => {
+    expect(buildImportProfileProtocolUrl()).toBe(
+      "obsidian://zotlit/import-profile?clipboard=true",
+    );
+    expect(
+      parseImportProfileProtocolQuery({
+        action: "zotlit/import-profile",
+        clipboard: "true",
+      }),
+    ).toEqual({ clipboard: "true" });
+  });
+  it.each([
+    {},
+    { clipboard: "false" },
+    { source: "document" },
+    { clipboard: true },
+  ])("refuses a handoff without the explicit clipboard flag: %o", (query) => {
+    expect(() => parseImportProfileProtocolQuery(query)).toThrow();
   });
 });

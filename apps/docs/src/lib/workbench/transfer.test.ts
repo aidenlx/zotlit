@@ -6,6 +6,8 @@ import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 
 import {
   clearDraft,
+  openProfileInObsidian,
+  createProfileHandoffSource,
   downloadProfile,
   profileFileName,
   readDraft,
@@ -126,3 +128,51 @@ async function capture(
   }
   return { name: names[0]!, text: await blobs[0]!.text() };
 }
+
+describe("Open in Obsidian", () => {
+  it("waits for the exact source to reach the clipboard before opening the URI", async () => {
+    const clipboard = Promise.withResolvers<void>();
+    const writeText = vi.fn(() => clipboard.promise);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const opened: string[] = [];
+    using _click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        opened.push(this.href);
+      });
+    const source = "---\r\nid: Research1234\r\n---\r\nA paper.";
+    const handoff = openProfileInObsidian(source);
+    expect(writeText).toHaveBeenCalledWith(source);
+    expect(opened).toEqual([]);
+    clipboard.resolve();
+    await handoff;
+    expect(opened).toEqual(["obsidian://zotlit/import-profile?clipboard=true"]);
+    vi.unstubAllGlobals();
+  });
+  it("keeps Obsidian closed when copying fails", async () => {
+    vi.stubGlobal("navigator", {
+      clipboard: { writeText: () => Promise.reject(new Error("Denied")) },
+    });
+    using click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
+    await expect(openProfileInObsidian("A paper")).rejects.toThrow("Denied");
+    expect(click).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+});
+
+it("hands Default off as one repeatable copy while preserving source and later edits", () => {
+  const prepare = createProfileHandoffSource();
+  const source = DEFAULT_PROFILE_SOURCE.replaceAll("\n", "\r\n");
+  const first = prepare(source);
+  const parsed = new WorkbenchDocumentController(first);
+  const id = parsed.document!.manifest.id;
+  expect(id).not.toBe("default");
+  expect(id).toHaveLength(12);
+  expect(first).toBe(source.replace("id: default", `id: ${id}`));
+  const edited = source.replace("version: 1.0.0", "version: 1.0.1");
+  expect(prepare(edited)).toBe(edited.replace("id: default", `id: ${id}`));
+  expect(prepare(first)).toBe(first);
+  expect(source).toContain("id: default");
+});
