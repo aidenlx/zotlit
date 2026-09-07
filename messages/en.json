@@ -1268,7 +1268,7 @@
   "workbench_connection_disconnect": "Disconnect",
   "workbench_connection_reconnect": "Reconnect to Obsidian",
   "workbench_connection_revoked": "Obsidian ended this connection. Open the template workbench from Obsidian again, or download your draft.",
-  "workbench_connection_version_mismatch": "Update ZotLit in Obsidian, then reconnect. You can keep editing and download your draft.",
+  "workbench_connection_version_mismatch": "Update ZotLit in Obsidian, then open the template workbench from Obsidian again. You can keep editing and download your draft.",
   "workbench_connection_failed": "Could not connect: {message}. Open Obsidian with ZotLit enabled, then try again.",
   "workbench_connection_disconnected_notice": "Disconnected. Keep editing here, reconnect, or download your draft.",
   "workbench_load_item": "Load item",

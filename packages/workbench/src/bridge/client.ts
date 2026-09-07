@@ -40,6 +40,9 @@ import type {
 
 const CREDENTIAL_STORAGE_KEY = "zotlit.local-bridge.credential";
 
+/** The highest port a Local Server can have bound. */
+const MAX_TCP_PORT = 65_535;
+
 /**
  * What the tab keeps: the grant, and the port the launch URL named. The port is
  * kept beside the credential because a Local Server binds the first free port
@@ -141,11 +144,11 @@ export class LocalBridgeClient {
       );
     }
     const port = Number(parameters.get(CONNECT_FRAGMENT_PORT));
-    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    if (!Number.isInteger(port) || port < 1 || port > MAX_TCP_PORT) {
       throw new LocalBridgeProtocolError(
         400,
-        "missing-bridge-port",
-        "The URL fragment has no Local Bridge port.",
+        "invalid-bridge-port",
+        "The URL fragment names no usable Local Bridge port.",
       );
     }
     this.#port = port;

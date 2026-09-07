@@ -365,7 +365,6 @@ export function useWorkbenchConnection({
     citationStyles,
     saveAgainst,
     connectionBusy,
-    /** Whether a kept credential and port are still here to present. */
     resumable: bridge.resumable,
     itemBusy,
     saveBusy,

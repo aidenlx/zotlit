@@ -8,7 +8,10 @@ import yargs from "yargs";
 import type { Argv } from "yargs";
 import { hideBin } from "yargs/helpers";
 
-import { DOCS_DEV_SERVER_ORIGIN } from "@zotlit/workbench/bridge";
+import {
+  DOCS_DEV_SERVER_ORIGIN,
+  localBridgeOrigin,
+} from "@zotlit/workbench/bridge";
 
 import { DEV_VAULT_CASE_ENV } from "#dev-vault";
 import {
@@ -314,7 +317,7 @@ const cli = yargs(hideBin(process.argv))
         conflictNextSave: argv["conflict-next-save"],
       });
       console.log(
-        `Mock Local Bridge listening at http://127.0.0.1:${argv.port} for ${argv.origin}`,
+        `Mock Local Bridge listening at ${localBridgeOrigin(argv.port)} for ${argv.origin}`,
       );
       console.log(`One-time code: ${bridge.initialOneTimeCode}`);
     },

@@ -8,6 +8,7 @@ import {
   BRIDGE_CAPABILITIES,
   BRIDGE_VERSION,
   LOCAL_BRIDGE_PATHS,
+  connectFragment,
 } from "@zotlit/workbench/bridge";
 import type { SaveSelectedProfileResponse } from "@zotlit/workbench/bridge";
 import {
@@ -376,6 +377,21 @@ describe("a Workbench Connection", () => {
       m.workbench_connection_open_from_obsidian(),
     );
     expect(page.host.textContent).toContain(m.workbench_download());
+  });
+
+  it("opens on a Sample Item when the launch chose none", async () => {
+    vi.stubGlobal("fetch", bridgeFetch([], { noSelectedItem: true }));
+    using page = launch();
+
+    await page.waitFor(() =>
+      expect(title(page.host)).toBe("Connected profile"),
+    );
+
+    // The grant names no Item, so the page runs on the Sample Item it opens
+    // with and says so, and offers nothing to load from the vault.
+    expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[0]!.item.title);
+    expect(page.host.textContent).toContain(m.workbench_sample_badge());
+    expect(page.host.textContent).not.toContain(m.workbench_load_item());
   });
 
   it("keeps editing when the bridge reports another contract version", async () => {
@@ -2044,7 +2060,7 @@ interface OpenPage extends Disposable {
 
 /** The page as Obsidian opens it: the launch fragment already in the URL. */
 function launch(code = "fixture-code", port = PORT): OpenPage {
-  window.location.hash = `#zotlit-connect=${code}&port=${port}`;
+  window.location.hash = connectFragment(code, port);
   return open();
 }
 
@@ -2237,6 +2253,8 @@ interface BridgeFixtureOptions {
   readonly bridgeVersion?: number;
   /** Refuses the code exchange, the way a used or expired code is refused. */
   readonly codeRefused?: boolean;
+  /** Grants no Item, the way a launch that chose none does. */
+  readonly noSelectedItem?: boolean;
   /** Answers the selected Item 401, the way a revoked credential does. */
   readonly revokeAfterConnect?: boolean;
   readonly save?: SaveSelectedProfileResponse;
@@ -2321,10 +2339,9 @@ function bridgeFetch(
       bridgeVersion: options.bridgeVersion ?? BRIDGE_VERSION,
       templateDataContractVersion: SAMPLE_ITEMS[0]!.contractVersion,
       capabilities: [...BRIDGE_CAPABILITIES],
-      selectedItem: {
-        key: item.item.key,
-        title: item.item.title,
-      },
+      selectedItem: options.noSelectedItem
+        ? null
+        : { key: item.item.key, title: item.item.title },
       selectedProfile: { id: "default", name: "Connected profile" },
       profileDefaults: {
         folder: "fixture-literature",
