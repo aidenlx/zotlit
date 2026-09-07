@@ -215,6 +215,12 @@ export class TemplateDataExplorerView extends ItemView {
     this.#root = createRoot(this.contentEl);
     this.register(
       subscribeActiveProfileEditor(this.app, (editor) => {
+        logger.debug("Explorer editor handoff", {
+          previousProfile: this.#activeEditor?.file?.path ?? null,
+          profile: editor?.file?.path ?? null,
+          root: editor?.store.getState().root ?? null,
+          mode: editor?.preview ? "profile" : "standalone",
+        });
         this.#activeEditor = editor;
         this.#mount();
       }),
@@ -240,6 +246,7 @@ export class TemplateDataExplorerView extends ItemView {
         editor.provide(
           <ProfileExplorer
             editor={editor}
+            deps={this.#deps}
             isEtaEnabled={() => this.#deps.templates.javascriptTemplatesEnabled}
           />,
         ),

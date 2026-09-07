@@ -23,6 +23,9 @@ describe("shared Data Explorer", () => {
       />,
     );
     render(ui);
+    expect(
+      screen.getAllByRole("treeitem")[0]?.textContent?.startsWith("A paper"),
+    ).toBe(true);
     expect(screen.getAllByRole("treeitem")[0]?.textContent).toContain(
       m.workbench_field_title(),
     );
