@@ -57,6 +57,10 @@ _Avoid_: profile file, profile record, profile settings, profile document (in UI
 The built-in Literature Note Profile every vault has. Its bindings record is total and lives in plugin settings, and its look is the built-in template until the user ejects `zotlit-profile.default.md` (manifest `id: default`, which carries no bindings); it is the one Profile that is a settings record rather than a Profile document.
 _Avoid_: global settings, vault settings
 
+**Eject**:
+The moment `zotlit-profile.default.md` first exists in the template folder, from which point the Default Profile's look is that document rather than the built-in template. User-facing copy names the action "Customize"; the file's existence is the whole of the state.
+_Avoid_: customize (the verb on the surface, not the state), unlock, export default template, detach
+
 **Profile stamp**:
 The whole `zotlit-profile` system frontmatter value that records a note's Literature Note Profile. It carries a Profile hint followed by the Profile ID in parentheses; a stamp that is a bare Profile ID is also valid. Every ZotLit write of a stamped note re-emits the stamp with the Profile's current label.
 _Avoid_: profile field, profile reference
@@ -182,13 +186,21 @@ _Avoid_: fixture item (the Fixture is test infrastructure), demo data, placehold
 Built-in annotation data representing an annotation type or combination of content fields, offered alongside annotations from the selected Item Snapshot to try an Annotation format. Each example retains its own parent Item and attachment data, independently of the Item Snapshot selected for the note.
 _Avoid_: placeholder annotation (the placeholder marks a call in the note)
 
+**Local Server**:
+The plugin's one loopback HTTP listener on the desktop, started on plugin load when enabled, hosting Live Update for the Companion and the Local Bridge for the web Workbench. Each hosted service has its own toggle; the server toggle governs both.
+_Avoid_: Live Update server (one hosted service, not the listener), bridge server, local API, HTTP server (the implementation, not the concept)
+
 **Local Bridge** _(web Workbench)_:
-The loopback-only service the plugin offers the web Workbench for the operations a Workbench Connection grants: Item Snapshots, Profile document read and Save, template dependencies, and citation styles. Its contract is separate from the Companion's local server and the Agent CLI.
-_Avoid_: Companion server, Live Update server (the Companion-facing listener), bridge server, local API
+The service the Local Server hosts for the web Workbench, answering only the operations a Workbench Connection grants: Item Snapshots, Profile document read and Save, template dependencies, and citation styles. Its contract is separate from Live Update and the Agent CLI.
+_Avoid_: Companion server, Live Update server (the Companion-facing service), bridge server, local API
 
 **Workbench Connection** _(web Workbench)_:
 A temporary, explicitly approved session between one web Workbench page and one vault, naming the website, the vault, the selected Item, the selected Profile, and the granted operations. Disconnect or plugin shutdown ends it; standalone use continues without one.
 _Avoid_: pairing, link (the Obsidian URI verb), login, bridge session
+
+**Connection code** _(web Workbench)_:
+A single-use code the plugin mints for one launch of the web Workbench and places in the opened URL's fragment, which the page exchanges for a Workbench Connection. It expires after one use or two minutes.
+_Avoid_: token (the session credential the exchange returns), pairing code, login code, one-time password
 
 ### Agent CLI
 
