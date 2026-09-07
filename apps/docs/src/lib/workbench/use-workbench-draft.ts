@@ -61,6 +61,8 @@ interface SavedDocument {
   readonly source: string;
   /** The vault it was read from, which keeps two vaults' drafts apart. */
   readonly installationId?: string;
+  readonly snapshot?: SampleItem;
+  readonly annotationSelection?: string;
 }
 
 export interface WorkbenchDraftKeeper {
@@ -158,12 +160,21 @@ export function useWorkbenchDraft({
     location,
     dirty: controller.source !== baseline.source,
     restorable,
-    adopt({ reference: opened, source, installationId }, kept) {
+    adopt(
+      {
+        reference: opened,
+        source,
+        installationId,
+        snapshot,
+        annotationSelection: selectedAnnotation,
+      },
+      kept,
+    ) {
       const next = {
         reference: opened,
         source,
-        snapshot: snapshotIdentity(sample),
-        annotationSelection,
+        snapshot: snapshotIdentity(snapshot ?? sample),
+        annotationSelection: selectedAnnotation ?? annotationSelection,
       };
       setLocation(
         installationId === undefined
@@ -173,12 +184,17 @@ export function useWorkbenchDraft({
       setBaseline(next);
       setRestorable(kept ? { draft: kept, baseline: next } : null);
     },
-    rebase({ reference: saved, source }) {
+    rebase({
+      reference: saved,
+      source,
+      snapshot,
+      annotationSelection: selectedAnnotation,
+    }) {
       setBaseline({
         reference: saved,
         source,
-        snapshot: snapshotIdentity(sample),
-        annotationSelection,
+        snapshot: snapshotIdentity(snapshot ?? sample),
+        annotationSelection: selectedAnnotation ?? annotationSelection,
       });
     },
     restore() {

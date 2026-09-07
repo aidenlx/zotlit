@@ -287,3 +287,29 @@ it("refuses a document reference outside this Workbench Connection", async () =>
   });
   expect(bridge.vault.contents.get(BOOKS_PATH)).toBe(BOOKS_SOURCE);
 });
+
+it("refuses an installed Eta dependency without writing the Profile", async () => {
+  await using bridge = await harness({
+    files: {
+      [BOOKS_PATH]: BOOKS_SOURCE,
+      "templates/zotlit-byline.eta.md": "<%= it.zt.title %>",
+    },
+  });
+  bridge.app.saveLocalStorage = vi.fn();
+  await bridge.template.setJavascriptTemplatesEnabled(true);
+  const res = await bridge.save({
+    reference: BOOKS_PROFILE,
+    expected: { state: "revision", revision: REVISION.books },
+    source: BOOKS_EDITED.replace(
+      "# {{ zt.title }}",
+      "# {{ zt.title }}\n{% render 'byline' %}",
+    ),
+  });
+
+  await expect(res.json()).resolves.toEqual({
+    state: "refused",
+    reason: "unsupported-profile",
+  });
+  expect(bridge.vault.contents.get(BOOKS_PATH)).toBe(BOOKS_SOURCE);
+  expect(bridge.saved).toEqual([]);
+});

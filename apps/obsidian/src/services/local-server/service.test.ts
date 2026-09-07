@@ -1,6 +1,6 @@
 import { Hono } from "hono/tiny";
 import { createServer } from "node:net";
-import type { AddressInfo, Server } from "node:net";
+import type { AddressInfo } from "node:net";
 import { expect, it } from "vitest";
 
 import {
@@ -25,24 +25,21 @@ const companionHeaders = {
 
 /** A port nothing holds, so the listener binds without racing a fixed one. */
 async function freePort(): Promise<number> {
-  const probe = createServer();
+  await using probe = createServer();
   await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
   const { port } = probe.address() as AddressInfo;
-  await new Promise<void>((resolve) => probe.close(() => resolve()));
   return port;
 }
 
 /** Hold a port for the duration of a test, the way a second vault would. */
-async function holdPort(port: number): Promise<Server & AsyncDisposable> {
-  const holder = createServer();
+async function holdPort(port: number): Promise<AsyncDisposable> {
+  await using stack = new AsyncDisposableStack();
+  const holder = stack.use(createServer());
   await new Promise<void>((resolve, reject) => {
     holder.once("error", reject);
     holder.listen(port, "127.0.0.1", resolve);
   });
-  return Object.assign(holder, {
-    [Symbol.asyncDispose]: () =>
-      new Promise<void>((resolve) => holder.close(() => resolve())),
-  });
+  return stack.move();
 }
 
 interface SettingsStub {
