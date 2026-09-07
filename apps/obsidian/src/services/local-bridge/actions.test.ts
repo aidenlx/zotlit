@@ -49,11 +49,19 @@ function harness(
   const commands: Command[] = [];
   const menuHandlers: FileMenuHandler[] = [];
   const customize = vi.fn(() => Promise.resolve());
+  const app = {
+    workspace: {
+      getActiveFile: () => file,
+      on: (event: string, handler: unknown) => {
+        if (event === "file-menu")
+          menuHandlers.push(handler as FileMenuHandler);
+        return event;
+      },
+    },
+    metadataCache: { getFileCache: () => ({ frontmatter }) },
+  };
   const deps: CustomizeActionDeps = {
-    app: {
-      workspace: { getActiveFile: () => file },
-      metadataCache: { getFileCache: () => ({ frontmatter }) },
-    } as unknown as CustomizeActionDeps["app"],
+    app: app as unknown as CustomizeActionDeps["app"],
     settings: {
       current: { ...defaults, "server.workbench": workbench },
     } as unknown as CustomizeActionDeps["settings"],
@@ -66,16 +74,7 @@ function harness(
 
   addCustomizeActions(
     {
-      app: {
-        workspace: {
-          ...deps.app.workspace,
-          on: (event: string, handler: unknown) => {
-            if (event === "file-menu")
-              menuHandlers.push(handler as FileMenuHandler);
-            return event;
-          },
-        },
-      } as unknown as Plugin["app"],
+      app: app as unknown as Plugin["app"],
       addCommand: (command) => {
         commands.push(command);
         return command;
