@@ -12,16 +12,20 @@ import { gte } from "semver";
 import { CONTRACT_VERSION } from "@zotlit/db";
 import { TemplateFacade } from "@zotlit/templates/facade";
 import type { LiteratureNoteTemplateManifest } from "@zotlit/templates/facade";
+import { LiteratureNotePackError } from "@zotlit/templates/literature-note-pack";
 import type {
   SaveSelectedProfileRequest,
   SaveSelectedProfileResponse,
 } from "@zotlit/workbench/bridge";
 
+import { getLogger } from "@/lib/log";
 import type { ProfileService } from "@/services/profile/service";
 import type { TemplateService } from "@/services/template/service";
 
 import { ProfileDocumentMissingError, profileSelector } from "./reads";
 import type { BridgeProfileReader } from "./reads";
+
+const logger = getLogger("local-bridge");
 
 /** The Profile service as the write boundary uses it: the reads plus the write. */
 export type BridgeProfileWriter = BridgeProfileReader &
@@ -68,7 +72,7 @@ export function createLocalBridgeSave(
       if (!selector || !deps.profile.resolveProfile(selector)) {
         throw new ProfileDocumentMissingError(profileId);
       }
-      const refusal = await refuseSource(deps, request.source, profileId);
+      const refusal = await sourceRefusal(deps, request.source, profileId);
       if (refusal) return refusal;
       const write = await deps.profile.saveSource(
         selector,
@@ -105,17 +109,18 @@ export function isUnsupportedProfile(
 }
 
 /**
- * The Save this vault refuses. A draft that parses can still fail to compile or
- * call a partial no vault holds, so every source the Profile renders is
- * compiled and its dependencies resolved before anything reaches the file.
+ * The refusal this draft earns, or `undefined` for one the vault accepts. A
+ * draft that parses can still fail to compile or call a partial no vault holds,
+ * so every source the Profile renders is compiled and its dependencies resolved
+ * before anything reaches the file.
  */
-async function refuseSource(
+async function sourceRefusal(
   deps: LocalBridgeSaveDeps,
   source: string,
   profileId: string,
 ): Promise<SaveSelectedProfileResponse | undefined> {
+  const facade = new TemplateFacade();
   try {
-    const facade = new TemplateFacade();
     const document = facade.parseLiteratureNoteTemplate(source);
     if (document.manifest.id !== profileId) {
       return { state: "refused", reason: "invalid-source" };
@@ -127,11 +132,37 @@ async function refuseSource(
       facade.define(partial.name, partial.source, partial.language);
     }
     facade.compileLiteratureNoteTemplate(document);
+  } catch (error) {
+    return invalidSource(profileId, error);
+  }
+  try {
     // The partials this draft calls, resolved the way the dependency bundle
     // resolves them: a call this vault cannot answer refuses the Save rather
-    // than leaving behind a Profile the next render cannot run.
+    // than leaving behind a Profile the next render cannot run. A vault fault
+    // while reading a partial is the route's own failure, not a refusal.
     await deps.template.exportLiteratureNotePackSource(source);
-  } catch {
-    return { state: "refused", reason: "invalid-source" };
+  } catch (error) {
+    if (!(error instanceof LiteratureNotePackError)) throw error;
+    return invalidSource(profileId, error);
   }
+  return undefined;
+}
+
+/** The refusal an unparsable, uncompilable, or unresolvable draft earns. */
+function invalidSource(
+  profileId: string,
+  error: unknown,
+): SaveSelectedProfileResponse {
+  // The cause by name only: an error message can quote the draft.
+  logger.debug("Refused a Local Bridge Save at the source gate", {
+    operation: "selected-profile:save",
+    profileId,
+    cause:
+      error instanceof LiteratureNotePackError
+        ? error.code
+        : error instanceof Error
+          ? error.name
+          : typeof error,
+  });
+  return { state: "refused", reason: "invalid-source" };
 }

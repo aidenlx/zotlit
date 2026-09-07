@@ -394,7 +394,7 @@ export class ProfileService extends Service {
       );
     if (profile.document) {
       const file = this.#deps.app.vault.getFileByPath(
-        join(this.#deps.settings.current!["template.folder"], profile.document),
+        this.#documentPath(profile),
       );
       if (!file)
         throw new Error(
@@ -428,19 +428,24 @@ export class ProfileService extends Service {
         throw new Error(
           m.settings_profile_source_unavailable({ profile: selector }),
         );
-      const path = profile.document
-        ? join(
-            this.#deps.settings.current!["template.folder"],
-            profile.document,
-          )
-        : this.defaultDocumentPath;
-      const write = await this.#writeDocument(path, source, expected);
+      const write = await this.#writeDocument(
+        this.#documentPath(profile),
+        source,
+        expected,
+      );
       if (write.state === "saved") {
         await this.#settle();
         logger.debug("Saved a Profile document", { selector });
       }
       return write;
     });
+  }
+
+  /** The vault path a Profile's document has, or would have once ejected. */
+  #documentPath(profile: ResolvedProfile): string {
+    return profile.document
+      ? join(this.#deps.settings.current!["template.folder"], profile.document)
+      : this.defaultDocumentPath;
   }
 
   /**
