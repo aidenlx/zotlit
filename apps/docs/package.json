@@ -7,7 +7,7 @@
     "#zotlit-release.json": "./zotlit-release.json"
   },
   "scripts": {
-    "dev": "pnpm generate:i18n && vite dev --port 3000",
+    "dev": "pnpm generate:i18n --output-structure locale-modules --is-server \"import.meta.env?.SSR ?? typeof window === 'undefined'\" && vite dev --port 3000",
     "build": "pnpm generate:i18n && vite build",
     "preview": "pnpm generate:i18n && vite preview",
     "deploy": "pnpm generate:i18n && vite build && wrangler deploy",
