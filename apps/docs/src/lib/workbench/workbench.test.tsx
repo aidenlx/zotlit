@@ -274,6 +274,37 @@ describe("a Workbench Connection", () => {
     },
   );
 
+  it("keeps the persisted draft and Restore offer when the launch paper recovers on reconnect", async () => {
+    const key = "zotlit.workbench.draft.fixture-installation.profile:default";
+    const kept = JSON.stringify({
+      source: KEPT,
+      snapshot: SAMPLE_ITEMS[2],
+      expected: { state: "revision", revision: "revision-1" },
+    });
+    localStorage.setItem(key, kept);
+    vi.stubGlobal("fetch", bridgeFetch([], { initialItemFailure: true }));
+    using page = launch();
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(
+        m.workbench_connection_reconnect(),
+      ),
+    );
+    expect(page.host.textContent).toContain(m.workbench_restore_heading());
+    page.press(m.workbench_connection_reconnect());
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(m.workbench_connected_badge()),
+    );
+    await page.settle();
+    expect(page.host.textContent).toContain(m.workbench_restore_heading());
+    expect(localStorage.getItem(key)).toBe(kept);
+    page.press(m.workbench_restore_accept());
+    await page.settle();
+    expect(title(page.host)).toBe("Kept work");
+    expect(startRenderWorker.mock.calls.at(-1)?.[0].snapshot.item.key).toBe(
+      SAMPLE_ITEMS[2]!.item.key,
+    );
+  });
+
   it("keeps the loaded draft when Save reports a revision conflict", async () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal(
