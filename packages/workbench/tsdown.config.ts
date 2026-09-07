@@ -18,7 +18,8 @@ export default defineConfig({
     // A host's dev server resolves the `development` condition, so it reads
     // the source and hot-updates an edit here without a rebuild; a production
     // build, Node, and the type checker keep the built `default` entry. The
-    // Node-only `snapshot` entry stays as it is.
+    // `snapshot` entry ships built only, under `default`, so the plugin bundle
+    // resolves it with the conditions its own build sets.
     customExports(exports) {
       for (const [name, file] of Object.entries(SOURCE)) {
         exports[`./${name}`] = {
@@ -28,7 +29,7 @@ export default defineConfig({
       }
       exports["./snapshot"] = {
         types: "./dist/snapshot.d.mts",
-        node: "./dist/snapshot.mjs",
+        default: "./dist/snapshot.mjs",
       };
       return exports;
     },

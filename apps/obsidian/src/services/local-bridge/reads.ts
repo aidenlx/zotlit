@@ -16,7 +16,6 @@ import annotationSchema from "@zotlit/db/contract/annotation.schema.json" with {
 import filenameSchema from "@zotlit/db/contract/filename.schema.json" with { type: "json" };
 import noteSchema from "@zotlit/db/contract/note.schema.json" with { type: "json" };
 import { TemplateFacade } from "@zotlit/templates/facade";
-import { LiteratureNotePackError } from "@zotlit/templates/literature-note-pack";
 import type {
   InstalledCitationStyle,
   SelectedCitationStyleRequest,
@@ -51,14 +50,6 @@ import { collectVaultTargets } from "./vault-targets";
 /** The Profile service as the bridge reads it: the registry plus exact source. */
 export type BridgeProfileReader = ProfileReader &
   Pick<ProfileService, "getSource">;
-
-/**
- * The document reference a Save addresses: the Profile id and nothing else, so
- * no vault path crosses and the page can key a draft on it.
- */
-export function profileDocumentReference(profileId: string): string {
-  return profileId;
-}
 
 /**
  * The revision both sides compare a document by: the SHA-256 of its exact
@@ -156,7 +147,9 @@ export function createLocalBridgeReads(
         id: profileId,
         name: resolved.label ?? m.settings_profile_default_name(),
       };
-      const reference = profileDocumentReference(profileId);
+      // The document reference a Save addresses is the Profile id and nothing
+      // else, so no vault path crosses and the page can key a draft on it.
+      const reference = profileId;
       const source = await readSource(deps.profile, selector, profileId);
       // A built-in Default that was never ejected has no file: the source is the
       // document an eject would write, and the page learns it is still absent.
@@ -190,38 +183,44 @@ export function createLocalBridgeReads(
   };
 }
 
+/** The partial the page renders an annotation's citation through. */
+const CITE_PARTIAL = "cite";
+
 /**
  * The partials this exact draft calls, resolved through the vault's own pack
  * export — which offers the installed partials and the built-in `cite` alike.
- * A call no vault can answer and a partial the web Workbench cannot run are
- * diagnostics rather than a refusal, so the page keeps rendering what it can.
+ * `cite` is bundled whether the draft calls it or not, because the page renders
+ * each annotation's citation through it the way Obsidian does. A call no vault
+ * can answer and a partial the web Workbench cannot run are diagnostics rather
+ * than a refusal, so the page keeps every partial that did resolve.
  */
 async function dependencyBundle(
   template: Pick<TemplateService, "exportLiteratureNotePackSource">,
   source: string,
 ): Promise<TemplateDependenciesResponse> {
-  let bundled: string;
-  try {
-    bundled = await template.exportLiteratureNotePackSource(source);
-  } catch (error) {
-    if (!(error instanceof LiteratureNotePackError)) throw error;
-    return {
-      templates: [],
-      diagnostics: [{ code: "missing-dependency", message: error.message }],
-    };
-  }
+  const missing: string[] = [];
+  const bundled = await template.exportLiteratureNotePackSource(source, {
+    include: [CITE_PARTIAL],
+    onMissingPartial: (name) => missing.push(name),
+  });
   const { manifest } = new TemplateFacade().parseLiteratureNoteTemplate(
     bundled,
   );
   const partials = manifest.partials ?? [];
   return {
     templates: partials.filter(({ language }) => language === "liquid"),
-    diagnostics: partials
-      .filter(({ language }) => language !== "liquid")
-      .map(({ name }) => ({
-        code: "unsupported-dependency" as const,
-        message: `Template dependency '${name}' uses an unsupported language.`,
+    diagnostics: [
+      ...missing.map((name) => ({
+        code: "missing-dependency" as const,
+        message: `Template dependency '${name}' is missing from this vault.`,
       })),
+      ...partials
+        .filter(({ language }) => language !== "liquid")
+        .map(({ name }) => ({
+          code: "unsupported-dependency" as const,
+          message: `Template dependency '${name}' uses an unsupported language.`,
+        })),
+    ],
   };
 }
 

@@ -6,6 +6,7 @@
 import type { App } from "obsidian";
 
 import {
+  annotationHasCacheImage,
   getAnnotationsByParent,
   getAttachmentsByParents,
   getChildNotesByParentIDs,
@@ -22,9 +23,6 @@ import {
 } from "@/lib/ensure-folder";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
-
-/** Zotero annotation types that carry an excerpt image. */
-const IMAGE_ANNOTATION_TYPES = new Set([3, 4]);
 
 export interface VaultTargetDeps {
   app: App;
@@ -100,7 +98,7 @@ async function annotationImageTargets(
       client,
       attachment.itemID,
     )) {
-      if (!IMAGE_ANNOTATION_TYPES.has(annotation.type)) continue;
+      if (!annotationHasCacheImage(annotation.type)) continue;
       const path = joinFolderPath(folder, `${annotation.key}.png`);
       if (deps.app.vault.getFileByPath(path)) {
         images[annotation.indexedKey] = path;

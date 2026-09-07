@@ -170,8 +170,9 @@ export function createLocalBridgeApp(
   });
 
   app.get(LOCAL_BRIDGE_PATHS.templateSchema, (context) => {
+    const schema = deps.reads.templateSchema();
     logger.debug("Answered a Local Bridge read", { operation: "schema" });
-    return context.json(deps.reads.templateSchema());
+    return context.json(schema);
   });
 
   app.post(LOCAL_BRIDGE_PATHS.selectedItem, async (context) => {
@@ -187,12 +188,13 @@ export function createLocalBridgeApp(
         message: "This Workbench Connection has no selected Item.",
       });
     }
-    logger.debug("Answered a Local Bridge read", {
-      operation: "selected-item",
-      itemKey: item.key,
-    });
     try {
-      return context.json(await deps.reads.selectedItem(item));
+      const snapshot = await deps.reads.selectedItem(item);
+      logger.debug("Answered a Local Bridge read", {
+        operation: "selected-item",
+        itemKey: item.key,
+      });
+      return context.json(snapshot);
     } catch (error) {
       if (!(error instanceof SelectedItemUnavailableError)) throw error;
       return refuse(context, {
@@ -205,12 +207,13 @@ export function createLocalBridgeApp(
 
   app.get(LOCAL_BRIDGE_PATHS.selectedProfile, async (context) => {
     const profileId = context.get("connection").profileId;
-    logger.debug("Answered a Local Bridge read", {
-      operation: "selected-profile",
-      profileId,
-    });
     try {
-      return context.json(await deps.reads.selectedProfile(profileId));
+      const selected = await deps.reads.selectedProfile(profileId);
+      logger.debug("Answered a Local Bridge read", {
+        operation: "selected-profile",
+        profileId,
+      });
+      return context.json(selected);
     } catch (error) {
       if (!(error instanceof ProfileDocumentMissingError)) throw error;
       return refuse(context, {
@@ -227,17 +230,19 @@ export function createLocalBridgeApp(
       templateDependenciesRequestSchema,
     );
     if (!request.success) return invalidRequest(context, request.issues);
-    logger.debug("Answered a Local Bridge read", { operation: "dependencies" });
-    return context.json(
-      await deps.reads.templateDependencies(request.output.source),
+    const dependencies = await deps.reads.templateDependencies(
+      request.output.source,
     );
+    logger.debug("Answered a Local Bridge read", { operation: "dependencies" });
+    return context.json(dependencies);
   });
 
   app.get(LOCAL_BRIDGE_PATHS.citationStyles, async (context) => {
+    const styles = await deps.reads.citationStyles();
     logger.debug("Answered a Local Bridge read", {
       operation: "citation-styles",
     });
-    return context.json(await deps.reads.citationStyles());
+    return context.json(styles);
   });
 
   app.post(LOCAL_BRIDGE_PATHS.selectedCitationStyle, async (context) => {
@@ -246,10 +251,11 @@ export function createLocalBridgeApp(
       selectedCitationStyleRequestSchema,
     );
     if (!request.success) return invalidRequest(context, request.issues);
+    const style = await deps.reads.selectedCitationStyle(request.output);
     logger.debug("Answered a Local Bridge read", {
       operation: "selected-citation-style",
     });
-    return context.json(await deps.reads.selectedCitationStyle(request.output));
+    return context.json(style);
   });
 
   // The Save lands on its own ticket. Until then an authorized page gets a
@@ -261,6 +267,17 @@ export function createLocalBridgeApp(
       message: "This plugin build does not answer that operation yet.",
     }),
   );
+
+  // A fault the routes do not name still answers the one error shape the page
+  // parses, and the record stays a category and a message.
+  app.onError((error, context) => {
+    logger.error("A Local Bridge operation failed", { error });
+    return refuse(context, {
+      status: 500,
+      code: "operation-failed",
+      message: "This operation failed in the plugin.",
+    });
+  });
 
   return app;
 }
@@ -307,7 +324,7 @@ function invalidRequest(
 function refuse(
   context: Context,
   error: {
-    readonly status: 400 | 401 | 403 | 409 | 501;
+    readonly status: 400 | 401 | 403 | 409 | 500 | 501;
     readonly code: string;
     readonly message: string;
   },
