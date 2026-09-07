@@ -179,6 +179,7 @@
   "instruction_insert_secondary_citation": "插入备用引文",
   "instruction_open_lit_note": "打开文献笔记",
   "instruction_new_pane": "在新窗格中打开",
+  "instruction_select": "选择",
   "settings_db_file_name": "Zotero 数据库",
   "settings_db_file_desc": "根据 Zotero 配置文件自动确定。",
   "settings_db_companion_name": "ZotLit Companion（Zotero 扩展）",

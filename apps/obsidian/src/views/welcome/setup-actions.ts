@@ -57,6 +57,11 @@ class LiteratureFolderModal extends FuzzySuggestModal<TFolder> {
     super(app);
     this.#onChoose = onChoose;
     this.setPlaceholder(m.welcome_pick_folder_placeholder());
+    this.setInstructions([
+      { command: "↑↓", purpose: m.instruction_navigate() },
+      { command: "↵", purpose: m.instruction_select() },
+      { command: "esc", purpose: m.instruction_dismiss() },
+    ]);
   }
 
   override getItems(): TFolder[] {

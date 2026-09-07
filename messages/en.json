@@ -221,6 +221,7 @@
   "instruction_insert_secondary_citation": "to insert secondary citation",
   "instruction_open_lit_note": "to open literature note",
   "instruction_new_pane": "to open in new pane",
+  "instruction_select": "to select",
   "settings_db_file_name": "Zotero database",
   "settings_db_file_desc": "Resolved from your Zotero profile.",
   "settings_db_companion_name": "ZotLit Companion, the Zotero add-on",

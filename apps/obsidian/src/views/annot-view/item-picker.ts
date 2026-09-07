@@ -27,6 +27,11 @@ class ItemPickerModal extends SuggestModal<SearchHit> {
     this.#deps = deps;
     this.limit = DEFAULT_LIMIT;
     this.setPlaceholder(m.annot_view_link_placeholder());
+    this.setInstructions([
+      { command: "↑↓", purpose: m.instruction_navigate() },
+      { command: "↵", purpose: m.instruction_select() },
+      { command: "esc", purpose: m.instruction_dismiss() },
+    ]);
   }
 
   override getSuggestions(query: string): SearchHit[] | Promise<SearchHit[]> {

@@ -50,7 +50,10 @@ interface ProfilePickerOptions {
 }
 
 const PROFILE_BADGE_CLASS =
-  "zt:rounded-sm zt:bg-muted zt:px-1.5 zt:py-0.5 zt:text-xs zt:text-muted-foreground";
+  "zt:rounded-sm zt:bg-muted zt:px-1.5 zt:py-0.5 zt:text-xs zt:leading-tight zt:whitespace-nowrap zt:text-muted-foreground";
+
+/** Secondary line under a Profile label; the color comes from the caller. */
+const PROFILE_NOTE_CLASS = "zt:text-xs zt:leading-tight";
 
 export function chooseLiteratureNoteProfile(
   app: App,
@@ -91,7 +94,6 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
     super(app);
     this.#onNew = options.onNew;
     this.#onImport = options.onImport;
-    this.contentEl.addClass("zt-root");
     this.#choices = options.previews
       ? options.previews.map((preview) =>
           profilePreviewChoice(preview, { styles: options.styles }),
@@ -130,21 +132,30 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
       choice.problem = choice.preselected ? options.problem : undefined;
     }
     this.#choices.sort((a, b) => Number(b.preselected) - Number(a.preselected));
+    // A SuggestModal empties `modalEl`, so `contentEl` never reaches the
+    // screen; the status line sits between the input and the results.
     if (
       options.problem &&
       !this.#choices.some(({ preselected }) => preselected)
     )
-      this.contentEl.createDiv({
-        text: options.problem,
-        cls: "zt:text-(--text-warning)",
-        attr: { role: "status" },
-      });
+      this.resultContainerEl.before(
+        this.modalEl.createDiv({
+          text: options.problem,
+          cls: "zt:px-6 zt:py-2 zt:text-sm zt:text-(--text-warning)",
+          attr: { role: "status" },
+        }),
+      );
     this.#resolve = options.resolve;
     this.setPlaceholder(
       options.candidates?.length
         ? m.modal_profile_overlap_placeholder()
         : m.modal_profile_choose_placeholder(),
     );
+    this.setInstructions([
+      { command: "↑↓", purpose: m.instruction_navigate() },
+      { command: "↵", purpose: m.instruction_select() },
+      { command: "esc", purpose: m.instruction_dismiss() },
+    ]);
   }
 
   override getSuggestions(query: string): ProfilePickerRow[] {
@@ -159,14 +170,14 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
 
   override renderSuggestion(choice: ProfilePickerRow, el: HTMLElement): void {
     if ("action" in choice) {
-      const row = el.createDiv({
+      el.addClass("mod-complex");
+      el.createDiv({
         text: choice.label,
-        cls: "zt:flex zt:items-center zt:gap-2",
+        cls: "suggestion-content zt:min-w-0",
       });
       if (this.#onImport) {
-        const button = row.createEl("button", {
+        const button = el.createDiv("suggestion-aux").createEl("button", {
           text: m.profile_import_from_text_file(),
-          cls: "zt:ml-auto",
         });
         button.addEventListener("keydown", (event) => {
           if (event.key === "Enter" || event.key === " ")
@@ -235,9 +246,10 @@ export function renderProfileChoice(
   choice: LiteratureNoteProfileChoice,
   el: HTMLElement,
 ): void {
+  el.classList.add("zt:flex", "zt:flex-col", "zt:gap-0.5");
   const label = el.createDiv({
     text: choice.label,
-    cls: "zt:flex zt:items-center zt:gap-2",
+    cls: "zt:flex zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1",
   });
   if (choice.preselected)
     label.createSpan({
@@ -263,20 +275,24 @@ export function renderProfileChoice(
   if (choice.problem)
     el.createDiv({
       text: choice.problem,
-      cls: "suggestion-note zt:text-(--text-warning)",
+      cls: `${PROFILE_NOTE_CLASS} zt:text-(--text-warning)`,
     });
   if (choice.detail)
-    el.createDiv({ text: choice.detail, cls: "suggestion-note" });
+    el.createDiv({
+      text: choice.detail,
+      cls: `${PROFILE_NOTE_CLASS} zt:text-muted-foreground`,
+    });
   if (choice.path)
     el.createDiv({
       text: choice.path,
-      cls: "suggestion-note zt:font-mono zt:whitespace-pre-line",
+      cls: `${PROFILE_NOTE_CLASS} zt:font-mono zt:whitespace-pre-line zt:text-muted-foreground`,
     });
   if (choice.unavailable) {
     el.setAttribute("aria-disabled", "true");
+    el.addClass("mod-downranked");
     el.createDiv({
       text: choice.unavailable,
-      cls: "suggestion-note zt:text-destructive",
+      cls: `${PROFILE_NOTE_CLASS} zt:text-destructive`,
     });
   }
 }
