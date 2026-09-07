@@ -39,9 +39,9 @@ function textOf(markup: string): string {
  * end of the bindings section when it is the last one.
  */
 function bindingRow(markup: string, key: string): string {
-  const start = markup.indexOf(`for="workbench-field-${key}"`);
+  const start = markup.indexOf(`-field-${key}"`);
   expect(start).toBeGreaterThan(-1);
-  const next = markup.indexOf('for="workbench-field-', start + 1);
+  const next = markup.indexOf('for="', start + 1);
   const section = markup.indexOf("</section>", start);
   return markup.slice(start, next === -1 ? section : Math.min(next, section));
 }
@@ -107,7 +107,7 @@ describe("the Name and folder tab", () => {
     );
     expect(
       tab.host
-        .querySelector("#workbench-field-importAnnotationsAsTemplate")
+        .querySelector('[id$="-field-importAnnotationsAsTemplate"]')
         ?.hasAttribute("disabled"),
     ).toBe(true);
     expect(
@@ -263,7 +263,7 @@ describe("the Name and folder tab", () => {
 
     act(() => {
       select.value = "eta";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
+      select.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
     const confirmation = tab.host.querySelector('[role="alert"]')!;
