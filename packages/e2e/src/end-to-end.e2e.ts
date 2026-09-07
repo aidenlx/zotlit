@@ -269,7 +269,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String(!app.plugins.plugins.zotlit.services.liveUpdate.available&&app.plugins.plugins.zotlit.services.settings.current['server.port']===${serverPort})`,
+        `String(!app.plugins.plugins.zotlit.services.localServer.available&&app.plugins.plugins.zotlit.services.settings.current['server.port']===${serverPort})`,
         { expected: "true" },
       ),
     ).toBe(true);
@@ -280,7 +280,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String(app.plugins.plugins.zotlit.services.liveUpdate.available&&app.plugins.plugins.zotlit.services.settings.current['server.port']===${serverPort})`,
+        `String(app.plugins.plugins.zotlit.services.localServer.available&&app.plugins.plugins.zotlit.services.settings.current['server.port']===${serverPort})`,
         { expected: "true" },
       ),
     ).toBe(true);

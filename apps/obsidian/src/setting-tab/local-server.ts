@@ -1,4 +1,6 @@
-import type { SettingDefinition, SettingGroupItem } from "obsidian";
+// The Advanced page's Local server group: the one loopback listener, the
+// toggle of each service it hosts, and the port it actually bound.
+import type { SettingGroupItem } from "obsidian";
 
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
@@ -10,16 +12,32 @@ function serverEnabled(ctx: SettingTabContext): () => boolean {
   return () => ctx.settings.current?.["server.enabled"] ?? false;
 }
 
-/** The Zotero page's Live updates rows: the receive toggle and its port. */
-export function liveUpdatesItems(
+/**
+ * The Local server rows: the listener toggle, one toggle per hosted service,
+ * the configured address, and the port in use.
+ */
+export function localServerItems(
   ctx: SettingTabContext,
 ): SettingGroupItem<SettingsKey>[] {
   const enabled = serverEnabled(ctx);
+  const port = ctx.localServer.effectivePort;
   return [
     {
-      name: m.settings_live_updates_enabled_name(),
-      desc: enabledDescription(),
+      name: m.settings_local_server_enabled_name(),
+      desc: m.settings_local_server_enabled_desc(),
       control: { type: "toggle", key: "server.enabled" },
+    },
+    {
+      name: m.settings_live_updates_enabled_name(),
+      desc: liveUpdateDescription(),
+      visible: enabled,
+      control: { type: "toggle", key: "server.live-update" },
+    },
+    {
+      name: m.settings_local_server_workbench_name(),
+      desc: m.settings_local_server_workbench_desc(),
+      visible: enabled,
+      control: { type: "toggle", key: "server.workbench" },
     },
     {
       name: m.settings_live_updates_port_name(),
@@ -35,26 +53,28 @@ export function liveUpdatesItems(
         max: 65535,
       },
     },
+    {
+      name: m.settings_local_server_active_port_name(),
+      desc:
+        port === null
+          ? m.settings_local_server_active_port_none()
+          : m.settings_local_server_active_port_desc({ port }),
+      visible: enabled,
+    },
+    {
+      name: m.settings_live_updates_hostname_name(),
+      desc: m.settings_live_updates_hostname_desc(),
+      visible: enabled,
+      control: {
+        type: "text",
+        key: "server.hostname",
+        placeholder: defaultPlaceholder("server.hostname"),
+      },
+    },
   ];
 }
 
-/** The hostname row, shown under the Zotero page's Advanced group while receiving. */
-export function liveUpdatesHostnameItem(
-  ctx: SettingTabContext,
-): SettingDefinition<SettingsKey> {
-  return {
-    name: m.settings_live_updates_hostname_name(),
-    desc: m.settings_live_updates_hostname_desc(),
-    visible: serverEnabled(ctx),
-    control: {
-      type: "text",
-      key: "server.hostname",
-      placeholder: defaultPlaceholder("server.hostname"),
-    },
-  };
-}
-
-function enabledDescription(): DocumentFragment {
+function liveUpdateDescription(): DocumentFragment {
   const frag = createFragment();
   frag.append(m.settings_live_updates_enabled_desc());
 

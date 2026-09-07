@@ -16,7 +16,7 @@ import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
 import { LibraryScopeService } from "./library-scope/service";
-import { LiveUpdateService } from "./live-update/service";
+import { LocalServerService } from "./local-server/service";
 import { LoggingService } from "./log/service";
 import { createNoteFeature } from "./note-feature";
 import type { NoteFeature } from "./note-feature";
@@ -111,8 +111,8 @@ export function buildServices(
       zoteroPref: () => new ZoteroPrefService({ app: plugin.app }),
     })
     .use({
-      liveUpdate: ({ settings, zoteroPref, noteIndex }) =>
-        new LiveUpdateService({ settings, zoteroPref, noteIndex }),
+      localServer: ({ settings, zoteroPref, noteIndex }) =>
+        new LocalServerService({ settings, zoteroPref, noteIndex }),
     })
     .use({
       db: ({ settings, zoteroPref }) =>
