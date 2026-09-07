@@ -1,5 +1,5 @@
-// The "Zotero" page: how ZotLit talks to Zotero — connection, libraries, live
-// updates, and the device-scoped overrides behind them.
+// The "Zotero" page: how ZotLit talks to Zotero — connection, libraries, and
+// the device-scoped overrides behind them.
 import type { SettingDefinitionItem } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -7,7 +7,6 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { databaseAdvancedItems, databaseConnectionItems } from "./database";
 import { libraryScopeRow, selectedLibrariesList } from "./library-scope";
-import { liveUpdatesHostnameItem, liveUpdatesItems } from "./live-updates";
 
 export function zoteroPageItems(
   ctx: SettingTabContext,
@@ -28,13 +27,8 @@ export function zoteroPageItems(
     selectedLibrariesList(ctx),
     {
       type: "group",
-      heading: m.settings_page_live_updates(),
-      items: liveUpdatesItems(ctx),
-    },
-    {
-      type: "group",
       heading: m.settings_db_advanced(),
-      items: [...databaseAdvancedItems(ctx), liveUpdatesHostnameItem(ctx)],
+      items: databaseAdvancedItems(ctx),
     },
   ];
 }

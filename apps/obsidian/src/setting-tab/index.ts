@@ -25,6 +25,7 @@ import { citationsPageItems } from "./citations";
 import type {
   AttachmentImportActions,
   CitationIndexActions,
+  LocalServerActions,
   PandocEngineActions,
   ReleaseTabActions,
   SettingsControlKey,
@@ -50,6 +51,7 @@ export interface ZotLitSettingTabOptions {
   db: DatabaseService;
   libraryScope: LibraryScopeService;
   zoteroPref: ZoteroPrefService;
+  localServer: LocalServerActions;
   attachmentImport: AttachmentImportActions;
   citationIndex: CitationIndexActions;
   template: TemplateService;
@@ -65,6 +67,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #db: DatabaseService;
   readonly #libraryScope: LibraryScopeService;
   readonly #zoteroPref: ZoteroPrefService;
+  readonly #localServer: LocalServerActions;
   readonly #attachmentImport: AttachmentImportActions;
   readonly #citationIndex: CitationIndexActions;
   readonly #profile: ProfileService;
@@ -80,6 +83,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     db,
     libraryScope,
     zoteroPref,
+    localServer,
     attachmentImport,
     citationIndex,
     template,
@@ -95,6 +99,10 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#db = db;
     this.#libraryScope = libraryScope;
     this.#zoteroPref = zoteroPref;
+    this.#localServer = localServer;
+    // The Local server rows name the port the listener actually bound, so a
+    // bind, a rebind, and a close each rebuild them.
+    plugin.register(localServer.on("listening", () => this.#requestUpdate()));
     this.#attachmentImport = attachmentImport;
     this.#citationIndex = citationIndex;
     this.#template = template;
@@ -198,6 +206,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
       db: this.#db,
       libraryScope: this.#libraryScope,
       zoteroPref: this.#zoteroPref,
+      localServer: this.#localServer,
       attachmentImport: this.#attachmentImport,
       citationIndex: this.#citationIndex,
       template: this.#template,

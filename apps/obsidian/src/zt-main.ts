@@ -216,6 +216,7 @@ export default class ZotLitPlugin extends Plugin {
         db: services.db,
         libraryScope: services.libraryScope,
         zoteroPref: services.zoteroPref,
+        localServer: services.localServer,
         attachmentImport: services.attachmentImport,
         citationIndex: services.citationIndex,
         template: services.template,
@@ -283,14 +284,14 @@ export default class ZotLitPlugin extends Plugin {
         noteFeature: services.noteFeature,
         noteIndex: services.noteIndex,
         batchImport: services.batchImport,
-        liveUpdate: services.liveUpdate,
+        liveUpdate: services.localServer,
       }),
     );
 
     registerAnnotView(this, {
       app: this.app,
       db: services.db,
-      liveUpdate: services.liveUpdate,
+      liveUpdate: services.localServer,
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
       noteIndex: services.noteIndex,
@@ -423,7 +424,7 @@ export default class ZotLitPlugin extends Plugin {
     // Checkpoint attempt has settled; feed it into the same coalesced refresh
     // lane as the filesystem watchers.
     stack.defer(
-      services.liveUpdate.on("db/updated", () => {
+      services.localServer.on("db/updated", () => {
         services.db.notifyExternalChange();
       }),
     );

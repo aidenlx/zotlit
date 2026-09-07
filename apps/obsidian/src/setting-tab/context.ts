@@ -5,6 +5,7 @@ import type { AttachmentImportService } from "@/services/attachment-import/servi
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { LocalServerService } from "@/services/local-server/service";
 import type { PandocEngineService } from "@/services/pandoc/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { ReleaseService } from "@/services/release/service";
@@ -31,6 +32,12 @@ export type ReleaseTabActions = Pick<
 export type PandocEngineActions = Pick<
   PandocEngineService,
   "getStatus" | "subscribe" | "install" | "uninstall"
+>;
+
+/** The Local Server surface the setting tab needs: the bound port and its edges. */
+export type LocalServerActions = Pick<
+  LocalServerService,
+  "effectivePort" | "on"
 >;
 
 /** The Citation Index surface the setting tab needs: the recovery hatch. */
@@ -64,6 +71,8 @@ export interface SettingTabContext {
   /** The live Library Scope the Library scope rows read and repair. */
   libraryScope: LibraryScopeService;
   zoteroPref: ZoteroPrefService;
+  /** The one loopback listener, read by the Local server rows. */
+  localServer: LocalServerActions;
   /** The approved-folder store the Attachments page lists and mutates. */
   attachmentImport: AttachmentImportActions;
   /** The vault-wide Citation Index, reset from the Maintenance page. */

@@ -143,6 +143,8 @@ export const schema = v.object({
   "note.import-highlight-mappings": highlightMappingsSchema,
 
   "server.enabled": v.boolean(),
+  "server.live-update": v.boolean(),
+  "server.workbench": v.boolean(),
   "server.port": serverPort,
   "server.hostname": v.string(),
 
@@ -197,6 +199,8 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
   "note.import-highlight-mappings": {},
   "server.enabled": false,
+  "server.live-update": true,
+  "server.workbench": true,
   "server.port": 9091,
   "server.hostname": "127.0.0.1",
   "template.folder": "templates",

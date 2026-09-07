@@ -13,6 +13,7 @@ import { LOG_FILENAME } from "@/services/log/service";
 import type { LogLevel } from "@/services/settings/schema";
 
 import type { SettingsKey, SettingTabContext } from "./context";
+import { localServerItems } from "./local-server";
 import { templateEngineItems } from "./templates";
 
 const logger = getLogger(["setting-tab", "advanced"]);
@@ -69,6 +70,11 @@ export function advancedPageItems(
       type: "group",
       heading: m.settings_advanced_template_engine_heading(),
       items: templateEngineItems(ctx),
+    },
+    {
+      type: "group",
+      heading: m.settings_advanced_local_server_heading(),
+      items: localServerItems(ctx),
     },
     {
       type: "group",

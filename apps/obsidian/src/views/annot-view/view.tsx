@@ -25,7 +25,7 @@ import type {
 } from "@/services/attachment-import/service";
 import type { DatabaseService } from "@/services/database/service";
 import type { ItemLookup } from "@/services/item-lookup/service";
-import type { LiveUpdateService } from "@/services/live-update/service";
+import type { LocalServerService } from "@/services/local-server/service";
 import type { NoteFeature } from "@/services/note-feature";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -67,7 +67,7 @@ const FILTER_STORAGE_KEY_PREFIX = "zotlit-annot-filter-";
 export interface AnnotViewDeps {
   app: App;
   db: Pick<DatabaseService, "state" | "client" | "on" | "ready" | "refresh">;
-  liveUpdate: Pick<LiveUpdateService, "available" | "readerTarget" | "on">;
+  liveUpdate: Pick<LocalServerService, "available" | "readerTarget" | "on">;
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   noteFeature: Pick<
     NoteFeature,
