@@ -1,6 +1,12 @@
 // Source selection opens one consent sheet for a fresh or held Profile ID.
 import { readFile } from "node:fs/promises";
-import { Modal, Setting, SuggestModal, stringifyYaml } from "obsidian";
+import {
+  DropdownComponent,
+  Modal,
+  SuggestModal,
+  TextComponent,
+  ToggleComponent,
+} from "obsidian";
 import type { App, ButtonComponent } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -23,12 +29,18 @@ import type {
   ProfileCreationDeps,
   ProfileDialogServices,
 } from "./create-profile-modal";
+import {
+  NOTE_CLASS,
+  dialogFooter,
+  field,
+  footerButton,
+  frameDialog,
+  note,
+  previewPanel,
+  twoColumns,
+} from "./profile-dialog";
 
 const logger = getLogger(["setting-tab", "profile-import"]);
-const WIDE_MODAL_CLASSES = [
-  "zt:[--dialog-width:var(--modal-width)]",
-  "zt:[--dialog-max-width:var(--modal-max-width)]",
-];
 type ImportSource = "clipboard" | "file";
 export type ImportProfile = (options?: {
   indexedKey?: string;
@@ -193,66 +205,52 @@ export class ImportProfileModal extends Modal {
     this.#styles = options.styles;
   }
   override onOpen(): void {
-    this.containerEl.addClasses(["zt-root"]);
     this.setTitle(m.command_import_profile_name());
     if (this.#plan.kind === "replace") this.#replace(this.#plan);
     else this.#fresh(this.#source, this.#plan);
   }
   #replace(plan: Extract<PreparedProfileImport, { kind: "replace" }>): void {
-    this.modalEl.classList.remove(...WIDE_MODAL_CLASSES);
+    frameDialog(this, { wide: false });
     this.contentEl.empty();
+    this.contentEl.addClass("zt:flex", "zt:flex-col", "zt:gap-4");
     this.setTitle(m.profile_import_replace_title({ label: plan.held.label }));
     this.contentEl.createEl("p", {
+      cls: "zt:text-pretty",
       text: m.profile_import_replace_effects({
         version: plan.held.version,
         literature: plan.held.literatureNotes,
         imported: plan.held.importedNotes,
       }),
     });
-    const error = this.contentEl.createEl("p", { attr: { role: "status" } });
     this.#match(this.contentEl);
-    new Setting(this.contentEl)
-      .addButton((button) =>
-        button
-          .setButtonText(m.profile_import_cancel())
-          .onClick(() => this.close()),
-      )
-      .addButton((button) =>
-        button
-          .setButtonText(m.profile_import_replace())
-          .setWarning()
-          .onClick(() => this.#save(plan, button, error)),
-      );
+    const error = note(this.contentEl, { status: true });
+    const footer = dialogFooter(this);
+    const button = footerButton(footer, m.profile_import_replace(), () =>
+      this.#save(plan, button, error),
+    ).setWarning();
+    footerButton(footer, m.profile_import_cancel(), () => this.close());
   }
   #fresh(source: string, initial: PreparedProfileImport): void {
-    this.modalEl.addClasses(WIDE_MODAL_CLASSES);
+    frameDialog(this, { wide: true });
     this.contentEl.empty();
-    const layout = this.contentEl.createDiv({
-      cls: "zt:grid zt:grid-cols-1 zt:gap-6 zt:md:grid-cols-2",
+    const { controls, preview } = twoColumns(this.contentEl);
+    const header = controls.createDiv({ cls: "zt:flex zt:flex-col zt:gap-1" });
+    header.createDiv({
+      text: initial.manifest.name,
+      cls: "zt:text-base zt:leading-(--line-height-tight) zt:font-semibold",
+      attr: { role: "heading", "aria-level": "3" },
     });
-    const controls = layout.createDiv({ cls: "zt:min-w-0" });
-    const preview = layout.createDiv({ cls: "zt:min-w-0" });
-    const field = (name: string) => {
-      const setting = new Setting(controls).setName(name);
-      setting.settingEl.addClasses([
-        "zt:flex-col",
-        "zt:items-stretch",
-        "zt:gap-2",
-      ]);
-      setting.controlEl.addClasses([
-        "zt:min-w-0",
-        "zt:w-full",
-        "zt:[&>*]:w-full",
-        "zt:[&>*]:min-w-0",
-      ]);
-      return setting;
-    };
-    controls.createEl("h3", { text: initial.manifest.name });
-    controls.createEl("p", { text: initial.manifest.version });
-    if (initial.manifest.author)
-      controls.createEl("p", { text: initial.manifest.author });
+    header.createDiv({
+      cls: NOTE_CLASS,
+      text: [initial.manifest.version, initial.manifest.author]
+        .filter(Boolean)
+        .join(" · "),
+    });
     if (initial.manifest.description)
-      controls.createEl("p", { text: initial.manifest.description });
+      header.createEl("p", {
+        cls: "zt:text-sm zt:leading-(--line-height-tight) zt:text-pretty",
+        text: initial.manifest.description,
+      });
     const base = this.#deps.profile.resolveProfile("default")!;
     const options = this.#options;
     const incomingStyle = initial.profile.bindings["citation.references-style"];
@@ -263,84 +261,85 @@ export class ImportProfileModal extends Modal {
         : undefined;
     if (missingStyle) options.citationStyle = null;
     this.#match(controls, () => void update());
-    field(m.settings_profile_folder_name()).addText((text) =>
-      text
-        .setValue(initial.manifest.folder ?? "")
-        .setPlaceholder(
-          m.settings_profile_same_as_default({
-            value: base.bindings["note.literature-folder"] || "/",
-          }),
-        )
-        .onChange((value) => {
-          options.folder = value || null;
-          void update();
+    new TextComponent(field(controls, m.settings_profile_folder_name()))
+      .setValue(initial.manifest.folder ?? "")
+      .setPlaceholder(
+        m.settings_profile_same_as_default({
+          value: base.bindings["note.literature-folder"] || "/",
         }),
-    );
-    field(m.settings_profile_citation_style_name()).addDropdown((dropdown) => {
-      const baseStyle =
-        this.#styles.find(
-          ({ id }) => id === base.bindings["citation.references-style"],
-        )?.title ??
-        base.bindings["citation.references-style"] ??
-        m.settings_citation_references_style_default();
-      dropdown.addOption(
-        "inherit",
-        m.settings_profile_same_as_default({ value: baseStyle }),
-      );
-      dropdown.addOption(
-        "none",
-        m.settings_citation_references_style_default(),
-      );
-      for (const style of this.#styles)
-        dropdown.addOption(style.id, style.title);
-      dropdown
-        .setValue(
-          missingStyle || initial.manifest.citationStyle === null
-            ? "none"
-            : (initial.manifest.citationStyle ?? "inherit"),
-        )
-        .onChange((value) => {
-          options.inheritCitationStyle = value === "inherit";
-          if (value === "inherit") delete options.citationStyle;
-          else options.citationStyle = value === "none" ? null : value;
-          void update();
-        });
-    });
-    if (missingStyle)
-      controls.createEl("p", {
-        text: m.profile_import_missing_style({ style: missingStyle }),
-        cls: "zt:text-sm zt:text-muted-foreground",
+      )
+      .onChange((value) => {
+        options.folder = value || null;
+        void update();
       });
-    controls.createEl("p", {
+    const styleField = field(
+      controls,
+      m.settings_profile_citation_style_name(),
+    );
+    const style = new DropdownComponent(styleField);
+    const baseStyle =
+      this.#styles.find(
+        ({ id }) => id === base.bindings["citation.references-style"],
+      )?.title ??
+      base.bindings["citation.references-style"] ??
+      m.settings_citation_references_style_default();
+    style.addOption(
+      "inherit",
+      m.settings_profile_same_as_default({ value: baseStyle }),
+    );
+    style.addOption("none", m.settings_citation_references_style_default());
+    for (const item of this.#styles) style.addOption(item.id, item.title);
+    style
+      .setValue(
+        missingStyle || initial.manifest.citationStyle === null
+          ? "none"
+          : (initial.manifest.citationStyle ?? "inherit"),
+      )
+      .onChange((value) => {
+        options.inheritCitationStyle = value === "inherit";
+        if (value === "inherit") delete options.citationStyle;
+        else options.citationStyle = value === "none" ? null : value;
+        void update();
+      });
+    if (missingStyle)
+      note(controls, {
+        text: m.profile_import_missing_style({ style: missingStyle }),
+      }).set(m.profile_import_missing_style({ style: missingStyle }), "error");
+    const facts = controls.createDiv({ cls: "zt:flex zt:flex-col zt:gap-1" });
+    facts.createEl("p", {
+      cls: NOTE_CLASS,
       text: m.profile_import_contents({ path: initial.path }),
     });
     if (initial.manifest.partials?.length)
-      controls.createEl("p", {
+      facts.createEl("p", {
+        cls: NOTE_CLASS,
         text: m.profile_import_partials({
           names: initial.manifest.partials.map(({ name }) => name).join(", "),
         }),
       });
-    controls.createEl("p", { text: m.profile_import_none_changed() });
-    preview.createEl("h3", { text: m.settings_profile_preview_path() });
-    const path = preview.createEl("code", { cls: "zt:break-all" });
-    preview.createEl("h3", { text: m.settings_profile_preview_properties() });
-    const properties = preview.createEl("pre", {
-      cls: "zt:overflow-auto zt:whitespace-pre-wrap zt:text-xs",
+    facts.createEl("p", {
+      cls: NOTE_CLASS,
+      text: m.profile_import_none_changed(),
     });
-    preview.createEl("h3", { text: m.settings_profile_preview_body() });
-    const body = preview.createEl("pre", {
-      cls: "zt:max-h-72 zt:overflow-auto zt:whitespace-pre-wrap zt:text-xs",
+    const error = note(controls, { status: true });
+    const panel = previewPanel(preview, {
+      path: m.settings_profile_preview_path(),
+      properties: m.settings_profile_preview_properties(),
+      body: m.settings_profile_preview_body(),
     });
-    const error = controls.createEl("p", { attr: { role: "status" } });
     let current: PreparedProfileImport | undefined;
-    let button: ButtonComponent;
+    const footer = dialogFooter(this);
+    const button = footerButton(footer, m.profile_import_confirm(), () => {
+      if (current) void this.#save(current, button, error);
+    })
+      .setCta()
+      .setDisabled(true);
+    footerButton(footer, m.profile_import_cancel(), () => this.close());
     const update = async () => {
       const revision = ++this.#revision;
       current = undefined;
       button.setDisabled(true);
-      path.setText("");
-      properties.setText("");
-      body.setText("");
+      panel.set(undefined);
       try {
         const plan = await this.#deps.profile.prepareImport(source, options);
         if (this.#closed || revision !== this.#revision) return;
@@ -350,64 +349,56 @@ export class ImportProfileModal extends Modal {
         }
         if (!this.#data)
           throw new Error(m.settings_profile_preview_unavailable());
-        const rendered = this.#deps.noteFeature.prepareProfileNote({
-          profile: plan.profile,
-          document: this.#deps.template.prepareLiteratureNoteTemplateSource(
-            plan.source,
-          ),
-          ...this.#data,
-        });
-        path.setText(rendered.path);
-        properties.setText(stringifyYaml(rendered.properties));
-        body.setText(rendered.body);
+        panel.set(
+          this.#deps.noteFeature.prepareProfileNote({
+            profile: plan.profile,
+            document: this.#deps.template.prepareLiteratureNoteTemplateSource(
+              plan.source,
+            ),
+            ...this.#data,
+          }),
+        );
         current = plan;
-        error.setText("");
+        error.set("");
         button.setDisabled(this.#saving);
       } catch (cause) {
         logger.debug("Refused Profile import preview", { cause });
         if (revision === this.#revision && !this.#closed)
-          error.setText(
+          error.set(
             Error.isError(cause) ? cause.message : m.profile_import_invalid(),
+            "error",
           );
       }
     };
-    new Setting(controls)
-      .addButton((value) =>
-        value
-          .setButtonText(m.profile_import_cancel())
-          .onClick(() => this.close()),
-      )
-      .addButton((value) => {
-        button = value;
-        button
-          .setButtonText(m.profile_import_confirm())
-          .setCta()
-          .setDisabled(true)
-          .onClick(() => current && this.#save(current, button, error));
-      });
     void update();
   }
   #match(container: HTMLElement, onChange?: () => void): void {
     const match = this.#plan.manifest.match;
-    container.createEl("p", {
-      cls: "zt:text-sm zt:text-muted-foreground",
+    const group = container.createDiv({ cls: "zt:flex zt:flex-col zt:gap-2" });
+    group.createEl("p", {
+      cls: NOTE_CLASS,
       text:
         match === undefined ? m.profile_match_absent() : describeMatch(match),
     });
     if (match === undefined) return;
-    new Setting(container)
-      .setName(m.profile_import_include_match())
-      .addToggle((toggle) =>
-        toggle.setValue(this.#options.includeMatch!).onChange((value) => {
-          this.#options.includeMatch = value;
-          onChange?.();
-        }),
-      );
+    const row = group.createDiv({
+      cls: "zt:flex zt:items-center zt:justify-between zt:gap-3",
+    });
+    row.createSpan({
+      text: m.profile_import_include_match(),
+      cls: "zt:text-sm zt:leading-(--line-height-tight)",
+    });
+    new ToggleComponent(row)
+      .setValue(this.#options.includeMatch!)
+      .onChange((value) => {
+        this.#options.includeMatch = value;
+        onChange?.();
+      });
   }
   async #save(
     plan: PreparedProfileImport,
     button: ButtonComponent,
-    error: HTMLElement,
+    error: { set(text: string, tone?: "muted" | "error"): void },
   ): Promise<void> {
     if (this.#saving) return;
     this.#saving = true;
@@ -421,8 +412,9 @@ export class ImportProfileModal extends Modal {
       new BaseNotice(profileImportNotice(profile));
     } catch (cause) {
       logger.error("Failed to write imported Profile", { cause });
-      error.setText(
+      error.set(
         Error.isError(cause) ? cause.message : m.notice_profile_action_failed(),
+        "error",
       );
       this.#saving = false;
       button.setDisabled(false);

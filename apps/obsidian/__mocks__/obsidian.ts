@@ -646,8 +646,8 @@ export class Modal {
   static instances: Modal[] = [];
 
   containerEl: HTMLElement = noticeElStub;
-  modalEl: HTMLElement = noticeElStub;
-  contentEl: HTMLElement = containerElStub();
+  modalEl: HTMLElement = elementOrStub();
+  contentEl: HTMLElement = elementOrStub();
 
   title = "";
   isOpen = false;
@@ -682,6 +682,14 @@ export class Modal {
   onClose(): void {}
 }
 
+/** A real element under a DOM environment, so a dialog can build its body and
+ * footer; the row-only stub elsewhere. */
+function elementOrStub(): HTMLElement {
+  return globalThis.document
+    ? document.createElement("div")
+    : containerElStub();
+}
+
 /** Minimal container a `Setting` row attaches itself to. */
 function containerElStub(): HTMLElement {
   return {
@@ -696,6 +704,24 @@ const settingRows = new WeakMap<HTMLElement, Setting[]>();
 /** The rows built on one container, in the order they were built. */
 export function settingsOf(containerEl: HTMLElement): Setting[] {
   return settingRows.get(containerEl) ?? [];
+}
+
+type Control =
+  | ButtonComponent
+  | DropdownComponent
+  | TextComponent
+  | ToggleComponent;
+const controls = new WeakMap<HTMLElement, Control[]>();
+function registerControl(containerEl: HTMLElement, control: Control): void {
+  const list = controls.get(containerEl) ?? [];
+  list.push(control);
+  controls.set(containerEl, list);
+}
+
+/** The controls built directly on one container, in the order built; a dialog
+ * that lays its own fields out (no `Setting` row) is read through this. */
+export function controlsOf(containerEl: HTMLElement): Control[] {
+  return controls.get(containerEl) ?? [];
 }
 
 /**
@@ -797,7 +823,9 @@ export class DropdownComponent {
   #value = "";
   #changed: ((value: string) => unknown) | null = null;
 
-  constructor(readonly containerEl: HTMLElement) {}
+  constructor(readonly containerEl: HTMLElement) {
+    registerControl(containerEl, this);
+  }
 
   addOption(value: string, label: string): this {
     this.options.push({ value, label });
@@ -830,7 +858,7 @@ export class DropdownComponent {
 function inputElStub(): HTMLInputElement {
   const input = {
     value: "",
-    addClass: (_className: string) => {},
+    addClass: (..._classNames: string[]) => {},
     placeholder: "",
     validationMessage: "",
     setCustomValidity: (message: string) => {
@@ -846,7 +874,9 @@ export class TextComponent {
 
   #changed: ((value: string) => unknown) | null = null;
 
-  constructor(readonly containerEl: HTMLElement) {}
+  constructor(readonly containerEl: HTMLElement) {
+    registerControl(containerEl, this);
+  }
 
   getValue(): string {
     return this.inputEl.value;
@@ -879,7 +909,9 @@ export class TextAreaComponent extends TextComponent {}
 export class ToggleComponent {
   #value = false;
   #changed: ((value: boolean) => unknown) | undefined;
-  constructor(readonly containerEl: HTMLElement) {}
+  constructor(readonly containerEl: HTMLElement) {
+    registerControl(containerEl, this);
+  }
   getValue(): boolean {
     return this.#value;
   }
@@ -968,7 +1000,9 @@ export class ButtonComponent {
 
   #clicked: ((evt: MouseEvent) => unknown) | null = null;
 
-  constructor(readonly containerEl: HTMLElement) {}
+  constructor(readonly containerEl: HTMLElement) {
+    registerControl(containerEl, this);
+  }
 
   onClick(cb: (evt: MouseEvent) => unknown): this {
     this.#clicked = cb;
@@ -1016,7 +1050,9 @@ export class ConfirmationModal {
   setTitle(_title: string): this {
     return this;
   }
-  setContent(_content: string): this {
+  setContent(content: string | DocumentFragment): this {
+    if (typeof content === "string") this.contentEl.textContent = content;
+    else this.contentEl.replaceChildren(content);
     return this;
   }
   addCheckbox(_label: string, _changed: (value: boolean) => void): this {

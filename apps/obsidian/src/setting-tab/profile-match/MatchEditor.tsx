@@ -155,11 +155,11 @@ function ConditionsSection() {
           id={headingId}
           role="heading"
           aria-level={3}
-          className="zt:text-base zt:leading-(--line-height-tight) zt:font-semibold"
+          className="zt:text-sm zt:leading-(--line-height-tight) zt:font-semibold"
         >
           {m.settings_profile_match_conditions()}
         </div>
-        <p className="zt:pt-1 zt:text-sm zt:leading-(--line-height-tight) zt:text-pretty zt:text-muted-foreground">
+        <p className="zt:pt-1 zt:text-xs zt:leading-(--line-height-tight) zt:text-pretty zt:text-muted-foreground">
           {m.settings_profile_match_conditions_desc()}
         </p>
       </div>

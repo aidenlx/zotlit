@@ -1,5 +1,5 @@
-import { Modal, Setting, setIcon } from "obsidian";
-import type { App, ButtonComponent } from "obsidian";
+import { ButtonComponent, Modal, setIcon } from "obsidian";
+import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -14,10 +14,10 @@ const logger = getLogger("batch-modal");
 
 /**
  * Imperative loading → confirm → progress → summary modal for a batch run, in a
- * single fixed-size shell (matches the `setting-tab/frontmatter-modal.ts` style,
- * not React). The phases swap the body content and footer buttons but never
- * resize the window: the body is a `flex-1` scroll region between an auto-height
- * header and footer.
+ * single fixed-size shell (imperative DOM, not React). The phases swap the body
+ * content and footer buttons but never resize the window: the body is a fixed
+ * height scroll region under Obsidian's pinned title, and the buttons sit in
+ * Obsidian's pinned `.modal-button-container` after it.
  *
  * The loading phase runs {@link BatchModalOptions.onClassify} behind a
  * determinate bar (its synchronous DB classification is the only real UI-freeze
@@ -56,6 +56,7 @@ export class BatchModal extends Modal {
 
   override onOpen(): void {
     this.setTitle(this.#options.text.title);
+    this.modalEl.addClass("mod-scrollable-content");
     this.contentEl.addClass("zt-root");
     void this.#classify();
   }
@@ -117,6 +118,16 @@ export class BatchModal extends Modal {
     return contentEl.createDiv({ cls: "zt:flex zt:flex-col zt:h-[60vh]" });
   }
 
+  /** The pinned button row for the current phase, replacing the last one. */
+  #renderFooter(): HTMLElement {
+    this.modalEl.querySelector(":scope > .modal-button-container")?.remove();
+    return this.modalEl.createDiv({ cls: "modal-button-container zt-root" });
+  }
+
+  #button(footer: HTMLElement, text: string, onClick: () => void) {
+    return new ButtonComponent(footer).setButtonText(text).onClick(onClick);
+  }
+
   #renderConfirm(): void {
     const manifest = this.#manifestOrThrow;
     const shell = this.#renderShell();
@@ -149,18 +160,14 @@ export class BatchModal extends Modal {
       },
     });
 
-    const footer = new Setting(shell).addButton((btn) =>
-      btn.setButtonText(m.modal_cancel()).onClick(() => this.close()),
-    );
-    if (manifest.counts.actionable > 0) {
-      footer.addButton((btn) => {
-        runButton = btn;
-        btn
-          .setButtonText(this.#options.text.confirmButton)
-          .setCta()
-          .onClick(() => void this.#run());
-      });
-    }
+    const footer = this.#renderFooter();
+    if (manifest.counts.actionable > 0)
+      runButton = this.#button(
+        footer,
+        this.#options.text.confirmButton,
+        () => void this.#run(),
+      ).setCta();
+    this.#button(footer, m.modal_cancel(), () => this.close());
   }
 
   /**
@@ -182,12 +189,8 @@ export class BatchModal extends Modal {
       cls: "zt:text-sm zt:tabular-nums zt:text-(--text-muted)",
     });
     this.#setBar(0, this.#options.total);
-    // Spacer fills the fixed-height shell so the footer stays pinned to the bottom.
-    shell.createDiv({ cls: "zt:flex-1 zt:min-h-0" });
 
-    new Setting(shell).addButton((btn) =>
-      btn.setButtonText(m.modal_cancel()).onClick(() => this.close()),
-    );
+    this.#button(this.#renderFooter(), m.modal_cancel(), () => this.close());
   }
 
   #renderProgress(): void {
@@ -215,16 +218,14 @@ export class BatchModal extends Modal {
     this.#renderFailedPanel(shell);
     this.#manifestOrThrow.renderList(this.#renderDisclosure(shell, false));
 
-    new Setting(shell).addButton((btn) =>
-      btn.setButtonText(m.modal_cancel()).onClick(() => {
-        this.#runAbort?.abort();
-        btn
-          .setButtonText(
-            this.#options.text.cancelling ?? m.batch_update_cancelling(),
-          )
-          .setDisabled(true);
-      }),
-    );
+    const cancel = this.#button(this.#renderFooter(), m.modal_cancel(), () => {
+      this.#runAbort?.abort();
+      cancel
+        .setButtonText(
+          this.#options.text.cancelling ?? m.batch_update_cancelling(),
+        )
+        .setDisabled(true);
+    });
   }
 
   /**
@@ -418,11 +419,10 @@ export class BatchModal extends Modal {
     }
     this.#manifestOrThrow.renderSummary(details, this.#finalStatus);
 
-    new Setting(shell).addButton((btn) =>
-      btn
-        .setButtonText(this.#options.text.closeButton ?? m.batch_update_close())
-        .setCta()
-        .onClick(() => this.close()),
-    );
+    this.#button(
+      this.#renderFooter(),
+      this.#options.text.closeButton ?? m.batch_update_close(),
+      () => this.close(),
+    ).setCta();
   }
 }

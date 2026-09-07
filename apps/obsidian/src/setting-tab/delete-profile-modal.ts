@@ -29,7 +29,7 @@ export function confirmProfileDeletion(
     ProfileDeletionConsent | undefined
   >();
   const modal = new ConfirmationModal(app);
-  modal.contentEl.addClass("zt-root");
+  modal.contentEl.addClasses(["zt-root", "zt:flex", "zt:flex-col", "zt:gap-4"]);
   modal.setTitle(
     m.settings_profile_delete_confirm_title({ label: plan.source.label }),
   );
@@ -39,29 +39,34 @@ export function confirmProfileDeletion(
     plan.targets[0];
   let move = false;
   modal.setContent(
-    count
-      ? [
-          m.settings_profile_delete_literature_count({
-            count: plan.literatureNotes.length,
-          }),
-          m.settings_profile_delete_imported_count({
-            count: plan.importedNotes.length,
-          }),
-          m.settings_profile_delete_move_desc(),
-        ].join("\n\n")
-      : `${m.settings_profile_delete_unused()}\n\n${m.settings_profile_delete_confirm_body()}`,
+    paragraphs(
+      count
+        ? [
+            m.settings_profile_delete_literature_count({
+              count: plan.literatureNotes.length,
+            }),
+            m.settings_profile_delete_imported_count({
+              count: plan.importedNotes.length,
+            }),
+            m.settings_profile_delete_move_desc(),
+          ]
+        : [
+            m.settings_profile_delete_unused(),
+            m.settings_profile_delete_confirm_body(),
+          ],
+    ),
   );
   if (count) {
     const group = modal.contentEl.createEl("fieldset", {
-      cls: "zt:my-4 zt:space-y-2",
+      cls: "zt:flex zt:flex-col zt:gap-2",
     });
     group.createEl("legend", {
       text: m.settings_profile_delete_target(),
-      cls: "zt:mb-2 zt:font-semibold",
+      cls: "zt:mb-2 zt:text-sm zt:leading-(--line-height-tight) zt:font-semibold",
     });
     const rows = plan.targets.map((entry) => {
       const label = group.createEl("label", {
-        cls: "zt:flex zt:items-start zt:gap-2 zt:rounded-sm zt:border zt:border-border zt:p-2",
+        cls: "zt:flex zt:items-start zt:gap-2 zt:rounded-md zt:border zt:border-border zt:p-2 zt:has-checked:border-border-hover zt:has-checked:bg-muted",
       });
       const radio = label.createEl("input", {
         type: "radio",
@@ -83,9 +88,12 @@ export function confirmProfileDeletion(
       );
       return { entry, radio, content, choice };
     });
-    modal.contentEl.createEl("p", { text: m.modal_profile_switch_effects() });
+    modal.contentEl.createEl("p", {
+      text: m.modal_profile_switch_effects(),
+      cls: "zt:text-pretty",
+    });
     const moveLabel = modal.contentEl.createEl("label", {
-      cls: "zt:my-4 zt:flex zt:items-center zt:gap-2",
+      cls: "zt:flex zt:items-center zt:gap-2",
     });
     const checkbox = moveLabel.createEl("input", { type: "checkbox" });
     const caption = moveLabel.createSpan();
@@ -96,10 +104,7 @@ export function confirmProfileDeletion(
       for (const row of rows) {
         row.radio.checked = row.entry === target;
         row.content.empty();
-        renderProfileChoice(
-          { ...row.choice, preselected: row.radio.checked },
-          row.content,
-        );
+        renderProfileChoice(row.choice, row.content);
       }
       const folders = [
         ...new Set(
@@ -143,4 +148,13 @@ export function confirmProfileDeletion(
   modal.setCloseCallback(() => resolve(undefined));
   modal.open();
   return promise;
+}
+
+/** Body text as separate paragraphs; a plain string would run them together. */
+function paragraphs(texts: string[]): DocumentFragment {
+  const fragment = createFragment();
+  const stack = fragment.createDiv({ cls: "zt:flex zt:flex-col zt:gap-2" });
+  for (const text of texts)
+    stack.createEl("p", { text, cls: "zt:text-pretty" });
+  return fragment;
 }

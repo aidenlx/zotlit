@@ -16,6 +16,14 @@ import type {
   ProfileShareOptions,
 } from "@/services/profile/service";
 
+import {
+  NOTE_CLASS,
+  dialogFooter,
+  footerButton,
+  frameDialog,
+  note,
+} from "./profile-dialog";
+
 const logger = getLogger(["setting-tab", "profile-share"]);
 
 export async function shareProfile(
@@ -30,7 +38,7 @@ export class ShareProfileModal extends Modal {
   readonly #plan: PreparedProfileShare;
   readonly #options: ProfileShareOptions;
   #source: string | undefined;
-  #reason: HTMLElement | undefined;
+  #reason: { set(text: string, tone?: "muted" | "error"): void } | undefined;
   #bump: ButtonComponent | undefined;
   readonly #outputs: ButtonComponent[] = [];
   #busy = false;
@@ -49,7 +57,7 @@ export class ShareProfileModal extends Modal {
   }
 
   override onOpen(): void {
-    this.contentEl.addClass("zt-root");
+    frameDialog(this);
     this.setTitle(m.profile_share_title({ label: this.#plan.manifest.name }));
     let version: TextComponent;
     new Setting(this.contentEl)
@@ -80,16 +88,21 @@ export class ShareProfileModal extends Modal {
           this.#refresh();
         }),
       );
-    new Setting(this.contentEl)
+    const description = new Setting(this.contentEl)
       .setName(m.profile_share_description())
-      .addTextArea((text) =>
+      .addTextArea((text) => {
+        text.inputEl.addClass("zt:w-full", "zt:resize-y");
+        text.inputEl.rows = 3;
         text.setValue(this.#options.description).onChange((value) => {
           this.#options.description = value;
           this.#refresh();
-        }),
-      );
+        });
+      });
+    // Stacked so the text area gets the row's full width.
+    description.settingEl.addClasses(["zt:flex-col", "zt:gap-2"]);
+    description.controlEl.addClass("zt:w-full");
     this.contentEl.createEl("p", {
-      cls: "zt:text-sm zt:text-muted-foreground",
+      cls: `${NOTE_CLASS} zt:pb-3`,
       text: this.#plan.partials.length
         ? m.profile_share_partials({ names: this.#plan.partials.join(", ") })
         : m.profile_share_no_partials(),
@@ -111,27 +124,17 @@ export class ShareProfileModal extends Modal {
           this.#refresh();
         }),
       );
-    this.#reason = this.contentEl.createEl("p", {
-      cls: "zt:text-sm zt:text-muted-foreground",
-      attr: { role: "status" },
-    });
-    new Setting(this.contentEl)
-      .addButton((button) =>
-        button.setButtonText(m.modal_cancel()).onClick(() => this.close()),
-      )
-      .addButton((button) => {
-        this.#outputs.push(button);
-        button
-          .setButtonText(m.profile_share_copy())
-          .onClick(() => this.#output("clipboard"));
-      })
-      .addButton((button) => {
-        this.#outputs.push(button);
-        button
-          .setButtonText(m.profile_share_save())
-          .setCta()
-          .onClick(() => this.#output("file"));
-      });
+    this.#reason = note(this.contentEl, { status: true });
+    const footer = dialogFooter(this);
+    this.#outputs.push(
+      footerButton(footer, m.profile_share_copy(), () =>
+        this.#output("clipboard"),
+      ),
+      footerButton(footer, m.profile_share_save(), () =>
+        this.#output("file"),
+      ).setCta(),
+    );
+    footerButton(footer, m.modal_cancel(), () => this.close());
     this.#refresh();
   }
 
@@ -143,11 +146,12 @@ export class ShareProfileModal extends Modal {
   #refresh(): void {
     try {
       this.#source = this.#plan.render(this.#options);
-      this.#reason?.setText("");
+      this.#reason?.set("");
     } catch (error) {
       this.#source = undefined;
-      this.#reason?.setText(
+      this.#reason?.set(
         Error.isError(error) ? error.message : m.profile_share_failed(),
+        "error",
       );
     }
     this.#bump?.setDisabled(!inc(this.#options.version, "patch"));
