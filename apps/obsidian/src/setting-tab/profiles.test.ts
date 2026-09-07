@@ -1,5 +1,10 @@
 // @vitest-environment happy-dom
-import { ButtonComponent, ExtraButtonComponent, Setting } from "@mock/obsidian";
+import {
+  ButtonComponent,
+  ExtraButtonComponent,
+  Menu,
+  Setting,
+} from "@mock/obsidian";
 import type {
   ExtraButtonComponent as ObsidianExtraButton,
   Setting as ObsidianSetting,
@@ -75,6 +80,38 @@ function list(
 }
 
 describe("Profile settings", () => {
+  it("keeps Edit primary and offers Customize in each Profile's more menu", () => {
+    const ctx = context();
+    ctx.profile = {
+      diagnostics: [],
+      loaded: true,
+      defaultDocumentPath: "templates/zotlit-profile.default.md",
+      profiles: [
+        {
+          id: "Bk3Qn7XvT2Lp",
+          label: "Books",
+          document: "zotlit-profile.books.md",
+          path: "templates/zotlit-profile.books.md",
+          match: { state: "absent" },
+          bindings: {},
+        },
+      ],
+    } as unknown as SettingTabContext["profile"];
+    const row = list(profilesPage(ctx), m.settings_profile_other_heading())
+      .items![0]!;
+    expect(buttonLabels(row)[0]).toBe(m.profile_editor_edit());
+    const more = render(row)
+      .components.filter(
+        (component) => component instanceof ExtraButtonComponent,
+      )
+      .find((button) => button.icon === "more-horizontal")!;
+    Object.assign(more, { extraSettingsEl: document.createElement("button") });
+    more.click();
+    expect(Menu.instances.at(-1)?.items.map((item) => item.title)).toEqual([
+      m.profile_editor_customize(),
+      m.profile_editor_open_markdown(),
+    ]);
+  });
   it("points Properties at the template document instead of a field list", () => {
     const ctx = context();
     const builtIn = literatureNoteItems(ctx).find(

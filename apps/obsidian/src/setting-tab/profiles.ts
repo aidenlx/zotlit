@@ -7,6 +7,8 @@ import type {
   SettingDefinitionPage,
 } from "obsidian";
 
+import { m as shared } from "@zotlit/workbench/ui";
+
 import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -14,7 +16,10 @@ import { BaseNotice } from "@/lib/notice";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { SettingsService } from "@/services/settings/service";
-import { customizeProfile } from "@/views/profile-editor/register";
+import {
+  customizeProfile,
+  openProfileEditor,
+} from "@/views/profile-editor/register";
 
 import { referencesStyleDefinition } from "./citations";
 import type {
@@ -227,12 +232,12 @@ function profilesList(
       render: (setting) => {
         setting.addButton((button) =>
           button
-            .setButtonText(m.profile_editor_customize())
+            .setButtonText(m.profile_editor_edit())
             .setDisabled(locked)
             .onClick(() => {
               const file = ctx.app.vault.getFileByPath(profile.path);
               if (file)
-                void runAction(() => customizeProfile(ctx.app, file), ctx);
+                void runAction(() => openProfileEditor(ctx.app, file), ctx);
             }),
         );
         setting.addButton((button) =>
@@ -247,14 +252,33 @@ function profilesList(
         setting.addExtraButton((button) =>
           button
             .setIcon("more-horizontal")
-            .setTooltip(m.profile_editor_open_markdown())
+            .setTooltip(shared.workbench_more_actions())
             .onClick(() => {
               const menu = new Menu();
               menu.addItem((item) =>
                 item
+                  .setTitle(m.profile_editor_customize())
+                  .setIcon("pencil")
+                  .setDisabled(locked)
+                  .onClick(
+                    () =>
+                      void runAction(async () => {
+                        const file = ctx.app.vault.getFileByPath(profile.path);
+                        if (file) await customizeProfile(ctx.app, file);
+                      }, ctx),
+                  ),
+              );
+              menu.addItem((item) =>
+                item
                   .setTitle(m.profile_editor_open_markdown())
                   .setIcon("file-text")
-                  .onClick(() => void openDocument(ctx, profile.path)),
+                  .onClick(
+                    () =>
+                      void runAction(
+                        () => openDocument(ctx, profile.path),
+                        ctx,
+                      ),
+                  ),
               );
               const bounds = button.extraSettingsEl.getBoundingClientRect();
               menu.showAtPosition({ x: bounds.left, y: bounds.bottom });
