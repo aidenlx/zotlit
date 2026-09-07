@@ -49,6 +49,7 @@ export interface RenderedProperty {
 }
 
 export interface RenderIdentity {
+  readonly previewMode?: "create" | "update";
   readonly sourceRevision: string;
   readonly snapshotRevision: string;
   readonly annotationId?: string;
@@ -59,8 +60,10 @@ export function renderIdentity({
   source,
   snapshot,
   annotation,
+  mode,
 }: RenderRequest): RenderIdentity {
   return {
+    ...(mode ? { previewMode: mode } : {}),
     sourceRevision: profileSourceRevision(source),
     snapshotRevision: snapshot.revision,
     ...(annotation

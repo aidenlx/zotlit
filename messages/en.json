@@ -1132,6 +1132,7 @@
   "workbench_preview_live": "Live",
   "workbench_preview_on_demand": "On demand",
   "workbench_preview_run": "Run",
+  "workbench_preview_paused": "Live preview paused",
   "workbench_preview_stop": "Stop",
   "workbench_preview_format": "Preview format",
   "workbench_preview_reading": "Reading view",

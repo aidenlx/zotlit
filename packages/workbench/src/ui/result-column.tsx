@@ -4,9 +4,10 @@ import type { ProfileRenderResult } from "#/render/result";
 import { Suspense } from "react";
 import type { ReactNode, Ref } from "react";
 
-import { useWorkbenchHost } from "./host";
+import { useWorkbenchHost, useTooltip } from "./host";
 import { m } from "./paraglide/messages.js";
 import { diagnosticText } from "./problems";
+import { WorkbenchSelect, WorkbenchOption } from "./select";
 import { useParts } from "./theme";
 
 /** The result pane's heading beside the reading-or-Markdown choice. */
@@ -31,19 +32,20 @@ export function ResultHeader({
         {controls}
         <label {...part("label")}>
           <span {...part("label-text")}>{m.workbench_preview_format()}</span>
-          <select
+          <WorkbenchSelect
             value={showMarkdown ? "markdown" : "reading"}
             disabled={onShowMarkdown === undefined}
             onInput={(event) =>
               onShowMarkdown?.(event.currentTarget.value === "markdown")
             }
-            {...part("select")}
           >
-            <option value="reading">{m.workbench_preview_reading()}</option>
-            <option value="markdown">
+            <WorkbenchOption value="reading">
+              {m.workbench_preview_reading()}
+            </WorkbenchOption>
+            <WorkbenchOption value="markdown">
               {m.workbench_result_markdown_toggle()}
-            </option>
-          </select>
+            </WorkbenchOption>
+          </WorkbenchSelect>
         </label>
         {help}
       </div>
@@ -109,6 +111,12 @@ export function ResultColumn({
 }: ResultColumnProps) {
   const part = useParts("resultColumn");
   const Markdown = useWorkbenchHost().markdown;
+  const selectorTooltip = useTooltip(
+    showManaged
+      ? m.workbench_result_managed_toggle()
+      : m.workbench_preview_whole(),
+  );
+  const filenameTooltip = useTooltip(result?.filename ?? "");
   const showAnnotation = mode === "annotation";
   const showNote = mode === "note";
   const previewProblem = result?.diagnostics.find(
@@ -131,23 +139,20 @@ export function ResultColumn({
           showNote && (
             <label {...part("label")}>
               <span {...part("label-text")}>{m.workbench_preview_show()}</span>
-              <select
+              <WorkbenchSelect
                 value={showManaged ? "managed" : "whole"}
                 onInput={(event) =>
                   onShowManaged(event.currentTarget.value === "managed")
                 }
-                {...part("select")}
-                title={
-                  showManaged
-                    ? m.workbench_result_managed_toggle()
-                    : m.workbench_preview_whole()
-                }
+                {...selectorTooltip}
               >
-                <option value="whole">{m.workbench_preview_whole()}</option>
-                <option value="managed">
+                <WorkbenchOption value="whole">
+                  {m.workbench_preview_whole()}
+                </WorkbenchOption>
+                <WorkbenchOption value="managed">
                   {m.workbench_result_managed_toggle()}
-                </option>
-              </select>
+                </WorkbenchOption>
+              </WorkbenchSelect>
             </label>
           )
         }
@@ -162,10 +167,7 @@ export function ResultColumn({
         {result ? (
           <Suspense fallback={pending}>
             {!showAnnotation && (
-              <header
-                {...part("filename")}
-                title={result.filename ?? undefined}
-              >
+              <header {...part("filename")} {...filenameTooltip}>
                 <p {...part("filename-text")}>
                   <span {...part("label-text")}>
                     {m.workbench_result_filename()}:{" "}

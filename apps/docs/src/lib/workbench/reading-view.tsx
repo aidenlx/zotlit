@@ -357,7 +357,7 @@ export function ResultSheet({
         <PropertyList
           properties={properties}
           label={m.workbench_result_properties()}
-          className="mb-4 border-b border-fd-border pb-3 text-xs"
+          variant="note"
         />
       )}
       <div

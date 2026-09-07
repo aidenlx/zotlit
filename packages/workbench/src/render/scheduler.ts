@@ -12,6 +12,8 @@ import type { ProfileRenderResult, RenderIdentity } from "./result";
 import type { AnnotationExample } from "./sample-annotations";
 
 export interface RenderOptions {
+  /** Update uses a synthesized note when the host has no existing note. */
+  readonly mode?: "create" | "update";
   readonly annotation?: AnnotationExample;
   readonly resources?: RenderResources;
 }
@@ -38,6 +40,7 @@ export interface RenderSchedulerOptions {
     deliver: (result: ProfileRenderResult) => void,
   ) => RenderWorkerHandle;
   readonly onResult: (result: ProfileRenderResult) => void;
+  readonly onBusy?: (busy: boolean) => void;
   /** Quiet time after the last edit before a render starts. @default 300 */
   readonly debounceMs?: number;
   /** Time a render may take before its Worker is terminated. @default 2000 */
@@ -47,11 +50,16 @@ export interface RenderSchedulerOptions {
 export interface RenderScheduler extends Disposable {
   /** Queues a render of `request`, replacing any render still in flight. */
   request(request: RenderRequest): void;
+  /** Starts now, replacing queued or running work. */
+  run(request: RenderRequest): void;
+  /** Pauses queued work; a render already in flight can finish. */
+  pause(): void;
 }
 
 export function createRenderScheduler({
   startWorker,
   onResult,
+  onBusy,
   debounceMs = 300,
   deadlineMs = 2000,
 }: RenderSchedulerOptions): RenderScheduler {
@@ -68,6 +76,7 @@ export function createRenderScheduler({
     worker?.terminate();
     worker = undefined;
     current = undefined;
+    onBusy?.(false);
   }
 
   function settle(result: ProfileRenderResult): void {
@@ -77,7 +86,8 @@ export function createRenderScheduler({
       result.sourceRevision !== current?.sourceRevision ||
       result.snapshotRevision !== current.snapshotRevision ||
       result.annotationId !== current.annotationId ||
-      result.annotationRevision !== current.annotationRevision
+      result.annotationRevision !== current.annotationRevision ||
+      result.previewMode !== current.previewMode
     ) {
       return;
     }
@@ -88,7 +98,17 @@ export function createRenderScheduler({
   function start(request: RenderRequest): void {
     const identity = renderIdentity(request);
     current = identity;
-    worker = startWorker(request, settle);
+    pending = undefined;
+    onBusy?.(true);
+    const started = startWorker(request, (result) => {
+      if (current === identity) settle(result);
+    });
+    // A host may answer synchronously, before it returns the worker handle.
+    if (current !== identity) {
+      started.terminate();
+      return;
+    }
+    worker = started;
     deadline = setTimeout(() => {
       settle(
         failedRender(identity, {
@@ -104,6 +124,14 @@ export function createRenderScheduler({
     request(request) {
       stop();
       pending = setTimeout(() => start(request), debounceMs);
+    },
+    run(request) {
+      stop();
+      start(request);
+    },
+    pause() {
+      clearTimeout(pending);
+      pending = undefined;
     },
     [Symbol.dispose]: stop,
   };

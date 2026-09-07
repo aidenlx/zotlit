@@ -461,7 +461,7 @@ function EntryForm({
           )}
         </div>
       )}
-      {spread && <PropertyList properties={produced} className="text-xs" />}
+      {spread && <PropertyList properties={produced} variant="spread" />}
       {diagnostics.length > 0 && (
         <div
           id={errorId}
@@ -542,7 +542,7 @@ export function PropertiesResult({
     <div className="flex flex-col gap-4">
       <section>
         <h3 className="text-xs font-semibold">{m.workbench_result_fold()}</h3>
-        <PropertyList properties={fold} className="mt-2 text-xs" />
+        <PropertyList properties={fold} variant="fold" />
       </section>
       <details>
         <summary className="cursor-pointer py-1 text-xs text-fd-muted-foreground">

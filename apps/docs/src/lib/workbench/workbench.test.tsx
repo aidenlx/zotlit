@@ -1029,7 +1029,7 @@ describe("the result column", () => {
     )!;
     act(() => {
       select.value = "managed";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
+      select.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
     // The part an update rewrites is its own result, so it is read on its own
@@ -2451,3 +2451,93 @@ function installStorage(name: "localStorage" | "sessionStorage"): void {
     },
   });
 }
+
+describe("preview scheduling", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function choose(scope: HTMLElement, label: string, value: string) {
+    const control = [...scope.querySelectorAll("label")]
+      .find((node) => node.textContent?.includes(label))!
+      .querySelector("select")!;
+    act(() => {
+      control.value = value;
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  function editNote(scope: HTMLElement, text: string) {
+    const content = scope.querySelector<HTMLElement>(
+      `[aria-label="${m.workbench_tab_note()}"][contenteditable]`,
+    )!;
+    const view = EditorView.findFromDOM(content)!;
+    act(() =>
+      view.dispatch({
+        changes: { from: 0, insert: text },
+        userEvent: "input.type",
+      }),
+    );
+  }
+
+  it("waits 300 ms after the latest edit and runs on demand immediately", async () => {
+    using page = open();
+    await act(async () => vi.advanceTimersByTimeAsync(299));
+    expect(startRenderWorker).not.toHaveBeenCalled();
+    editNote(page.host, "An introduction\n");
+    await act(async () => vi.advanceTimersByTimeAsync(299));
+    expect(startRenderWorker).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(startRenderWorker).toHaveBeenCalledTimes(1);
+    choose(page.host, m.workbench_preview_refresh(), "demand");
+    editNote(page.host, "Another introduction\n");
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(startRenderWorker).toHaveBeenCalledTimes(1);
+    expect(page.host.textContent).toContain(m.workbench_preview_stale());
+    page.press(m.workbench_preview_run());
+    expect(startRenderWorker).toHaveBeenCalledTimes(2);
+    expect(startRenderWorker.mock.calls[1]![0].source).toContain(
+      "Another introduction",
+    );
+  });
+
+  it("pauses queued and future work while an in-flight render completes", async () => {
+    const terminate = vi.fn<() => void>();
+    startRenderWorker.mockImplementation(() => ({ terminate }));
+    using page = open();
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    const [request, deliver] = startRenderWorker.mock.calls[0]!;
+    page.press(m.workbench_preview_stop());
+    expect(page.host.textContent).toContain(m.workbench_preview_paused());
+    expect(terminate).not.toHaveBeenCalled();
+    editNote(page.host, "Later edit\n");
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(startRenderWorker).toHaveBeenCalledTimes(1);
+    act(() =>
+      deliver(renderProfile(request.source, request.snapshot, request)),
+    );
+    expect(terminate).toHaveBeenCalledOnce();
+    expect(page.host.textContent).toContain("ioannidisWhyMost2005");
+    choose(page.host, m.workbench_preview_refresh(), "live");
+    page.press(m.workbench_preview_stop());
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(startRenderWorker).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes create and update inputs while preserving the synthesized note's outside text", async () => {
+    using page = open();
+    editNote(page.host, "My own introduction\n");
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(startRenderWorker.mock.lastCall![0].mode).toBe("create");
+    choose(page.host, m.workbench_preview_mode(), "update");
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    const request = startRenderWorker.mock.lastCall![0];
+    expect(request.mode).toBe("update");
+    const result = renderProfile(request.source, request.snapshot, request);
+    expect(result.creationBody).toContain("My own introduction");
+    expect(result.creationBody).toContain("%%zt-managed%%");
+    expect(result.fold.length).toBeGreaterThan(0);
+    expect(page.host.querySelector('[role="document"]')?.textContent).toContain(
+      "My own introduction",
+    );
+  });
+});

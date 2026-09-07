@@ -688,3 +688,12 @@ describe("Managed Frontmatter rows", () => {
     });
   });
 });
+
+it("keeps a synthesized update note without a Managed Region unchanged", () => {
+  const manifestEnd = DEFAULT_PROFILE_SOURCE.indexOf("\n---\n") + 5;
+  const source = `${DEFAULT_PROFILE_SOURCE.slice(0, manifestEnd)}Personal notes.\n--- zotlit:annotation ---\nAn annotation.\n`;
+  const result = renderProfile(source, SAMPLE_ITEMS[0]!, { mode: "update" });
+  expect(result.previewMode).toBe("update");
+  expect(result.managedRegion).toBeNull();
+  expect(result.creationBody).toBe("Personal notes.\n");
+});

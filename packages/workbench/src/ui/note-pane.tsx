@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { useDocumentRevision } from "./editor";
-import { useOptionalHost } from "./host";
+import { useOptionalHost, useTooltip } from "./host";
 import { m } from "./paraglide/messages.js";
 import { SliceEditor } from "./slice-editor";
 import type { SuggestionSource } from "./slice-editor";
@@ -157,6 +157,8 @@ function AnnotationPlaceholder({
 }) {
   const part = useParts("notePane");
   const icon = useIcon();
+  const previewTooltip = useTooltip(m.workbench_annotation_preview());
+  const editTooltip = useTooltip(m.workbench_annotation_edit_format());
   return (
     <span data-annotation-box {...part("annotation-box")}>
       <span {...part("annotation-label")}>{m.workbench_annotation_slot()}</span>
@@ -165,7 +167,7 @@ function AnnotationPlaceholder({
           type="button"
           {...part("annotation-toggle", expanded ? "active" : "inactive")}
           aria-label={m.workbench_annotation_preview()}
-          title={m.workbench_annotation_preview()}
+          {...previewTooltip}
           aria-pressed={expanded}
           aria-controls={expanded ? previewId : undefined}
           onClick={() => onToggle(!expanded)}
@@ -176,7 +178,7 @@ function AnnotationPlaceholder({
           type="button"
           {...part("annotation-edit")}
           aria-label={m.workbench_annotation_edit_format()}
-          title={m.workbench_annotation_edit_format()}
+          {...editTooltip}
           onClick={onOpenAnnotation}
         >
           {icon("edit")}
