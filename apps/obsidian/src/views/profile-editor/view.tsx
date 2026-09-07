@@ -68,6 +68,8 @@ import {
   NativePreviewSession,
   useNativePreview,
 } from "@/views/note-preview/session";
+import { exportTemplateDataFile } from "@/views/template-data-explorer/export-file";
+import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
 import {
   lastTemplateItem,
   rememberTemplateItem,
@@ -83,6 +85,7 @@ const logger = getLogger(["views", "profile-editor"]);
 export type ProfileEditorDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   render?: WorkbenchHost["render"];
   nativePreview?: NativeRenderDeps;
+  pluginVersion?: string;
 };
 
 export class ProfileEditorView extends TextFileView {
@@ -97,6 +100,8 @@ export class ProfileEditorView extends TextFileView {
   #root: Root | null = null;
   #unsubscribe: (() => void) | null = null;
   #insertTarget: WorkbenchInsertTarget | null = null;
+  #insertRequest: WorkbenchInsertTarget | null = null;
+  readonly #insertListeners = new Set<() => void>();
   #choosePending: Promise<void> | null = null;
   #prompted = false;
   #closed = false;
@@ -232,6 +237,75 @@ export class ProfileEditorView extends TextFileView {
   get controller(): WorkbenchDocumentController {
     return this.#controller;
   }
+  /** The last focused slice remains the insertion target while a sidebar has focus. */
+  get insertTarget(): WorkbenchInsertTarget | null {
+    return this.#insertTarget;
+  }
+  subscribeInsertion = (listener: () => void): (() => void) => {
+    this.#insertListeners.add(listener);
+    return () => {
+      this.#insertListeners.delete(listener);
+    };
+  };
+
+  insertField(snippet: string): boolean {
+    const target = this.#insertTarget;
+    if (!target) return false;
+    const range = this.#controller.sliceRange(target.slice);
+    const from = Math.min(Math.max(target.range.from, range.from), range.to);
+    const to = Math.min(Math.max(target.range.to, from), range.to);
+    this.#controller.dispatch({
+      changes: { from, to, insert: snippet },
+      userEvent: "input.complete",
+    });
+    const cursor = from + snippet.length;
+    this.#focusTarget({
+      slice: target.slice,
+      range: { from: cursor, to: cursor },
+    });
+    return true;
+  }
+
+  exploreAnnotation(key: string): boolean {
+    const preview = this.preview;
+    const section = this.#controller.annotationSection;
+    const example = preview?.state
+      .getState()
+      .current.find((example) => example.root.key === key);
+    if (!preview || !section || !example) return false;
+    preview.select(example.id);
+    this.#focusTarget({
+      slice: "annotation",
+      range: { from: section.source.from, to: section.source.from },
+    });
+    return true;
+  }
+
+  #focusTarget(target: WorkbenchInsertTarget): void {
+    this.#insertRequest = target;
+    this.#insertTarget = target;
+    for (const listener of this.#insertListeners) listener();
+    const state = this.store.getState();
+    state.setAdvanced(target.slice === "advanced");
+    state.setTab(
+      entryPosition(target.slice) !== null
+        ? "properties"
+        : target.slice === "filename"
+          ? "name"
+          : target.slice === "annotation"
+            ? "annotation"
+            : "note",
+    );
+    state.setRoot(
+      this.#controller.templateRegions.find(
+        (region) =>
+          target.range.from >= region.from && target.range.to <= region.to,
+      )?.root ?? "note",
+    );
+    this.app.workspace.setActiveLeaf(this.leaf, { focus: false });
+    this.#mount();
+  }
+
   override getViewType(): string {
     return PROFILE_EDITOR_VIEW_TYPE;
   }
@@ -254,6 +328,8 @@ export class ProfileEditorView extends TextFileView {
       });
       this.preview?.attach(this.#controller);
       this.#insertTarget = null;
+      this.#insertRequest = null;
+      for (const listener of this.#insertListeners) listener();
       this.#subscribe();
       this.#mount();
     } else this.#controller.applyExternalSource(source);
@@ -331,8 +407,45 @@ export class ProfileEditorView extends TextFileView {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
   }
+  templateDataTarget(): TemplateDataExportTarget | null {
+    const { item, root } = this.store.getState();
+    if (!item) return null;
+    if (root !== "annotation") return { indexedKey: item.id, root };
+    const preview = this.preview?.state.getState();
+    const example = preview?.example;
+    const indexedKey = example?.root.indexedKey;
+    if (
+      typeof indexedKey === "string" &&
+      preview?.current.some((current) => current.id === example?.id)
+    )
+      return { indexedKey, root };
+    return { indexedKey: item.id, root: "note" };
+  }
+
+  templateDataExportLabel(): string {
+    return this.store.getState().root === "annotation" &&
+      this.templateDataTarget()?.root === "note"
+      ? m.template_data_explorer_export_selected_paper()
+      : m.template_data_explorer_menu_export_json();
+  }
+
   override onPaneMenu(menu: Menu, source: string): void {
     super.onPaneMenu(menu, source);
+    const target = this.templateDataTarget();
+    const pluginVersion = this.#deps.pluginVersion;
+    if (target && pluginVersion)
+      menu.addItem((item) =>
+        item
+          .setTitle(this.templateDataExportLabel())
+          .setIcon("file-json")
+          .onClick(
+            () =>
+              void exportTemplateDataFile(this.#deps, {
+                ...target,
+                pluginVersion,
+              }),
+          ),
+      );
     menu.addItem((item) =>
       item
         .setTitle(m.profile_editor_open_markdown())
@@ -426,6 +539,17 @@ export class ProfileEditorView extends TextFileView {
     this.#unsubscribe = this.#controller.subscribe(
       ({ docChanged, transaction }) => {
         if (!docChanged) return;
+        if (this.#insertTarget) {
+          const { slice, range } = this.#insertTarget;
+          this.#insertTarget = {
+            slice,
+            range: {
+              from: transaction.changes.mapPos(range.from, 1),
+              to: transaction.changes.mapPos(range.to, 1),
+            },
+          };
+          for (const listener of this.#insertListeners) listener();
+        }
         this.data = this.#controller.source;
         if (transaction.annotation(externalEdit) !== true) this.requestSave();
       },
@@ -460,8 +584,10 @@ export class ProfileEditorView extends TextFileView {
       this.provide(
         <EditorContent
           view={this}
+          insertRequest={this.#insertRequest}
           onSelection={(target) => {
             this.#insertTarget = target;
+            for (const listener of this.#insertListeners) listener();
             const root =
               this.#controller.templateRegions.find(
                 (region) =>
@@ -479,9 +605,11 @@ export class ProfileEditorView extends TextFileView {
 
 function EditorContent({
   view,
+  insertRequest,
   onSelection,
 }: {
   view: ProfileEditorView;
+  insertRequest: WorkbenchInsertTarget | null;
   onSelection: (target: WorkbenchInsertTarget) => void;
 }) {
   const controller = view.controller;
@@ -497,6 +625,12 @@ function EditorContent({
   const [selected, setSelected] = useState<number | null>(null);
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
   const [fieldFocus, setFieldFocus] = useState<{ field: string } | null>(null);
+  useEffect(() => {
+    if (!insertRequest) return;
+    const position = entryPosition(insertRequest.slice);
+    if (position !== null) setSelected(position);
+    setReveal(insertRequest.range);
+  }, [insertRequest]);
   const manifest = useRef(controller.document?.manifest ?? null);
   if (controller.document) manifest.current = controller.document.manifest;
   const firstProblem = controller.problems[0] ?? null;

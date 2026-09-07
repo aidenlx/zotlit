@@ -25,7 +25,11 @@ export function registerProfileEditor(
       file.basename.startsWith("zotlit-profile."));
   plugin.registerView(
     PROFILE_EDITOR_VIEW_TYPE,
-    (leaf) => new ProfileEditorView(leaf, deps),
+    (leaf) =>
+      new ProfileEditorView(leaf, {
+        ...deps,
+        pluginVersion: plugin.manifest.version,
+      }),
   );
   plugin.addCommand({
     id: "open-profile-editor",
