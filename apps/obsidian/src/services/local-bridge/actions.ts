@@ -10,18 +10,15 @@ import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import { profileRecoveryNotice } from "@/lib/profile-recovery";
 import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
-import {
-  isLiteratureNote,
-  itemKeyFromFrontmatter,
-} from "@/services/note-index/service";
+import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
+import { isLiteratureNote } from "@/services/note-index/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 
-import { workbenchEnabled } from "./customize";
-import type { CustomizeAction } from "./customize";
+import { noteItem, workbenchEnabled } from "./customize";
+import type { CustomizeAction, CustomizeRequest } from "./customize";
 
 export interface CustomizeActionDeps {
-  app: App;
   settings: Pick<SettingsService, "current">;
   /** The stamp reader: which Profile this note belongs to, if any. */
   profile: Pick<ProfileService, "loaded" | "profileOf">;
@@ -33,30 +30,31 @@ export function addCustomizeActions(
   plugin: Pick<Plugin, "addCommand" | "registerEvent" | "app">,
   deps: CustomizeActionDeps,
 ): void {
+  const { app } = plugin;
   plugin.addCommand({
     id: "customize-note-template",
     name: m.command_customize_note_template_name(),
     checkCallback: (checking) => {
-      const file = plugin.app.workspace.getActiveFile();
-      if (!customizable(file, deps)) return false;
+      const file = app.workspace.getActiveFile();
+      if (!customizable(file, app, deps)) return false;
       if (checking) return true;
-      void customizeNote(file, deps);
+      void customizeNote(file, app, deps);
       return true;
     },
   });
 
   plugin.registerEvent(
-    plugin.app.workspace.on("file-menu", (menu, file, source) => {
+    app.workspace.on("file-menu", (menu, file, source) => {
       // A multi-file selection acts on files, not on the one note a template
       // is customized for.
       if (source === "files-menu") return;
-      if (!customizable(file, deps)) return;
+      if (!customizable(file, app, deps)) return;
       menu.addItem((item) =>
         item
           .setSection("zotlit")
           .setTitle(m.command_customize_note_template_name())
           .setIcon("paintbrush")
-          .onClick(() => void customizeNote(file, deps)),
+          .onClick(() => void customizeNote(file, app, deps)),
       );
     }),
   );
@@ -68,6 +66,7 @@ export function addCustomizeActions(
  */
 function customizable(
   file: TAbstractFile | null,
+  app: App,
   deps: CustomizeActionDeps,
 ): file is TFile {
   return (
@@ -75,29 +74,36 @@ function customizable(
     file.extension === "md" &&
     workbenchEnabled(deps.settings) &&
     deps.profile.loaded &&
-    isLiteratureNote(file, deps.app)
+    isLiteratureNote(file, app)
   );
 }
 
 /**
- * The note's own template, in the Workbench. A stamp naming a Profile the
- * vault no longer holds ends here with the diagnostic that names it, so the
- * researcher learns what is wrong in Obsidian rather than in a browser tab.
+ * What Customize on this note opens: the note's own Profile and paper. A stamp
+ * naming a Profile the vault no longer holds answers with the diagnostic that
+ * names it instead, so the researcher learns what is wrong in Obsidian rather
+ * than in a browser tab.
  */
-function customizeNote(file: TFile, deps: CustomizeActionDeps): Promise<void> {
+export function noteCustomizeRequest(
+  file: TFile,
+  app: App,
+  deps: Pick<CustomizeActionDeps, "profile">,
+): CustomizeRequest | UnknownProfileDiagnostic {
   const note = deps.profile.profileOf(file);
-  if (!note.ok) {
-    new BaseNotice(
-      profileRecoveryNotice(
-        deps.app,
-        unknownProfileDiagnostic(note.stamped.stamp, { path: file.path }),
-      ),
-    );
+  if (!note.ok)
+    return unknownProfileDiagnostic(note.stamped.stamp, { path: file.path });
+  return { profileId: note.profile.selector, item: noteItem(app, file) };
+}
+
+function customizeNote(
+  file: TFile,
+  app: App,
+  deps: CustomizeActionDeps,
+): Promise<void> {
+  const request = noteCustomizeRequest(file, app, deps);
+  if ("code" in request) {
+    new BaseNotice(profileRecoveryNotice(app, request));
     return Promise.resolve();
   }
-  const key = itemKeyFromFrontmatter(deps.app.metadataCache.getFileCache(file));
-  return deps.customize({
-    profileId: note.profile.selector,
-    item: key === null ? null : { key, title: file.basename },
-  });
+  return deps.customize(request);
 }

@@ -505,9 +505,10 @@ function defaultDocumentItem(
 
 /**
  * The Default row of the Profiles page: named there, above the other Profiles.
- * Customizing and sharing are its actions. Duplicating Default carries no bindings and copies
- * its document verbatim, so the copy differs from Default in nothing — the very
- * profile `prepareCreate` refuses to mint. Add profile is that path.
+ * Customizing and sharing are its actions. Duplicating Default carries no
+ * bindings and copies its document verbatim, so the copy differs from Default
+ * in nothing — the very profile `prepareCreate` refuses to mint. Add profile is
+ * that path.
  */
 function defaultProfileItem(
   ctx: SettingTabContext,
