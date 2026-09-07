@@ -8,8 +8,7 @@ import {
   renderProfile,
   SAMPLE_ITEMS,
 } from "@zotlit/workbench/render";
-
-import { m } from "@/paraglide/messages.js";
+import { m } from "@zotlit/workbench/ui";
 
 import { PropertiesPane, PropertiesResult } from "./properties-tab";
 

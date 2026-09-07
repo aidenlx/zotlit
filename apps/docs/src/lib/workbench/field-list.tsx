@@ -27,6 +27,7 @@ import type {
   SnippetKind,
   TreeState,
 } from "@zotlit/workbench/explorer";
+import { m } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -36,7 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { m } from "@/paraglide/messages.js";
+import { m as site } from "@/paraglide/messages.js";
 
 import {
   FIELD_TRIGGER,
@@ -50,10 +51,10 @@ import type { FieldInsertionMode, TemplateRoot } from "./fields";
 import { WorkbenchHelp } from "./frame";
 
 const SNIPPET_LABEL: Record<SnippetKind, () => string> = {
-  output: m.template_data_explorer_menu_copy_output,
-  "if-present": m.template_data_explorer_menu_copy_if_present,
-  loop: m.template_data_explorer_menu_copy_loop,
-  joined: m.template_data_explorer_menu_copy_joined,
+  output: site.template_data_explorer_menu_copy_output,
+  "if-present": site.template_data_explorer_menu_copy_if_present,
+  loop: site.template_data_explorer_menu_copy_loop,
+  joined: site.template_data_explorer_menu_copy_joined,
 };
 
 const SNIPPET_ICON = {
@@ -292,8 +293,8 @@ function FieldRowView({ node, label, value, actions }: FieldRowViewProps) {
           <DropdownMenu>
             <DropdownMenuTrigger
               render={<Button variant="ghost" size="icon-2xs" />}
-              aria-label={m.template_data_explorer_row_actions()}
-              title={m.template_data_explorer_row_actions()}
+              aria-label={site.template_data_explorer_row_actions()}
+              title={site.template_data_explorer_row_actions()}
             >
               <Code aria-hidden className="size-3.5" />
             </DropdownMenuTrigger>
@@ -303,7 +304,7 @@ function FieldRowView({ node, label, value, actions }: FieldRowViewProps) {
                 onClick={() => copy(formatPath(node.path, "zt"))}
               >
                 <Copy aria-hidden />
-                {m.template_data_explorer_menu_copy_path()}
+                {site.template_data_explorer_menu_copy_path()}
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="min-h-7 gap-2 px-2 py-1 text-xs"
@@ -313,7 +314,7 @@ function FieldRowView({ node, label, value, actions }: FieldRowViewProps) {
                 }}
               >
                 <ClipboardType aria-hidden />
-                {m.template_data_explorer_menu_copy_value()}
+                {site.template_data_explorer_menu_copy_value()}
               </DropdownMenuItem>
               <div
                 role="separator"

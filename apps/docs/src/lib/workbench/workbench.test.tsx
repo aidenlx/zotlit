@@ -19,8 +19,7 @@ import type {
   ProfileRenderResult,
   RenderRequest,
 } from "@zotlit/workbench/render";
-
-import { m } from "@/paraglide/messages.js";
+import { m } from "@zotlit/workbench/ui";
 
 import { Workbench } from "./workbench";
 

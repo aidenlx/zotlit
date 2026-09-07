@@ -40,15 +40,21 @@
       "types": "./dist/snapshot.d.mts",
       "node": "./dist/snapshot.mjs"
     },
+    "./ui": {
+      "development": "./src/ui/index.tsx",
+      "default": "./dist/ui.mjs"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsdown",
-    "dev": "tsdown --watch",
-    "typecheck": "tsc --noEmit -p tsconfig.lib.json",
-    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
+    "build": "pnpm generate:i18n && tsdown",
+    "dev": "pnpm generate:i18n && tsdown --watch",
+    "typecheck": "pnpm generate:i18n && tsc --noEmit -p tsconfig.lib.json",
+    "typecheck:test": "pnpm generate:i18n && tsc --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
-    "test": "vitest run",
+    "test": "pnpm generate:i18n && vitest run",
+    "generate:i18n": "node scripts/generate-i18n.ts",
+    "postinstall": "pnpm generate:i18n",
     "generate:eta": "lezer-generator src/language/eta.grammar -o src/language/eta-parser.ts --typeScript"
   },
   "dependencies": {
@@ -66,20 +72,30 @@
     "arkregex": "catalog:",
     "jsonc-parser": "^3.3.1",
     "valibot": "catalog:",
-    "yaml": "catalog:"
+    "yaml": "catalog:",
+    "zustand": "catalog:"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "catalog:",
     "@codemirror/language": "catalog:",
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:",
+    "@inlang/paraglide-js": "^2.24.1",
     "@lezer/generator": "1.8.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/preact": "^3.2.4",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "@zotlit/config": "workspace:*",
     "@zotlit/zotero-types": "workspace:*",
     "ajv": "catalog:",
     "happy-dom": "catalog:",
     "oxlint": "catalog:",
+    "preact": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
@@ -88,6 +104,16 @@
     "@codemirror/autocomplete": "catalog:",
     "@codemirror/language": "catalog:",
     "@codemirror/state": "catalog:",
-    "@codemirror/view": "catalog:"
+    "@codemirror/view": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
   }
 }

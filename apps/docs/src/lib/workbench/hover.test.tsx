@@ -4,7 +4,7 @@ import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 
-import { m } from "@/paraglide/messages.js";
+import { m } from "@zotlit/workbench/ui";
 
 import { webCompletion } from "./completion";
 import { webHover } from "./hover";

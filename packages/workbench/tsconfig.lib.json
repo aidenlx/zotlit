@@ -18,8 +18,15 @@
     "outDir": "dist",
     "rootDir": "src",
     "isolatedDeclarations": false,
+    "jsx": "react-jsx",
     "types": []
   },
-  "include": ["./src/**/*.ts"],
-  "exclude": ["./node_modules", "./dist/**/*", "./src/**/*.test.ts"]
+  "include": ["./src/**/*.ts", "./src/**/*.tsx"],
+  "exclude": [
+    "./node_modules",
+    "./dist/**/*",
+    "./src/**/*.test.ts",
+    "./src/**/*.test.tsx",
+    "./src/ui/test-host.tsx"
+  ]
 }

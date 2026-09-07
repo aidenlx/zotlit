@@ -7,9 +7,9 @@ import type {
   BridgeCapability,
   LocalBridgeConnection,
 } from "@zotlit/workbench/bridge";
+import { m } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
-import { m } from "@/paraglide/messages.js";
 
 interface ConnectionBarProps {
   readonly connection: LocalBridgeConnection;

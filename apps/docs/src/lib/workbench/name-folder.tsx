@@ -15,6 +15,7 @@ import type {
   WorkbenchDocumentController,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
+import { m } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +24,6 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
-import { m } from "@/paraglide/messages.js";
 
 import { SliceEditor } from "./slice-editor";
 import type { SuggestionSource } from "./slice-editor";

@@ -17,16 +17,14 @@ import type {
 } from "@zotlit/workbench/explorer";
 import { restoreTemplateData } from "@zotlit/workbench/render";
 import type { AnnotationExample, SAMPLE_ITEMS } from "@zotlit/workbench/render";
-
-import { m } from "@/paraglide/messages.js";
+import { m } from "@zotlit/workbench/ui";
+import type { TemplateRoot } from "@zotlit/workbench/ui";
+export type { TemplateRoot } from "@zotlit/workbench/ui";
 
 export type SampleItem = (typeof SAMPLE_ITEMS)[number];
 
 /** The parsed Profile document, named without depending on the templates package. */
 type ProfileDocument = NonNullable<WorkbenchDocumentController["document"]>;
-
-/** The Template data an editor position writes against. */
-export type TemplateRoot = "note" | "annotation" | "filename";
 
 export interface CommonField {
   /** Top-level key on the root object, which is also its display-node key. */

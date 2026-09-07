@@ -47,6 +47,7 @@ catalog:
   monkey-around: 3.0.0
   oxfmt: ^0.55.0
   oxlint: ^1.70.0
+  preact: ^10.29.7
   react: ^19.2.0
   react-dom: ^19.2.0
   semver: ^7.7.2
@@ -56,6 +57,7 @@ catalog:
   valibot: ^1.0.0
   vite: ^8.1.5
   vitest: ^4.0.13
+  zustand: ^5.0.14
   zx: ^8.8.5
 
 # zotero-types declares two transitive deps as GitHub specs, which

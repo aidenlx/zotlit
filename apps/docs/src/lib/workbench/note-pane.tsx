@@ -16,9 +16,9 @@ import type {
   WorkbenchDocumentController,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
+import { m } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
-import { m } from "@/paraglide/messages.js";
 
 import { ResultSheet } from "./result-sheet";
 import { SliceEditor } from "./slice-editor";

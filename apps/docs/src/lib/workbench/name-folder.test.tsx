@@ -8,8 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { InstalledCitationStyle } from "@zotlit/workbench/bridge";
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
-
-import { m } from "@/paraglide/messages.js";
+import { m } from "@zotlit/workbench/ui";
 
 import { NameFolderPane } from "./name-folder";
 

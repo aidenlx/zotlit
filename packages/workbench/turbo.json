@@ -1,0 +1,32 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    // The `ui` subpath's Paraglide facade over the root catalog's
+    // `workbench_*` namespace; build, typecheck, and test regenerate it too.
+    "generate:i18n": {
+      "inputs": [
+        "scripts/generate-i18n.ts",
+        "$TURBO_ROOT$/packages/config/paraglide.ts",
+        "$TURBO_ROOT$/project.inlang/settings.json",
+        "$TURBO_ROOT$/messages/**"
+      ],
+      "outputs": ["src/ui/paraglide/**"],
+      "outputLogs": "errors-only"
+    },
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/project.inlang/settings.json",
+        "$TURBO_ROOT$/messages/**"
+      ]
+    },
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/project.inlang/settings.json",
+        "$TURBO_ROOT$/messages/**"
+      ]
+    }
+  }
+}

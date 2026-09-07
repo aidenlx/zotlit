@@ -18,8 +18,7 @@ import type {
 } from "@zotlit/workbench/bridge";
 import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import type { RenderResources } from "@zotlit/workbench/render";
-
-import { m } from "@/paraglide/messages.js";
+import { m } from "@zotlit/workbench/ui";
 
 import type { SampleItem } from "./fields";
 import { readDraft } from "./transfer";

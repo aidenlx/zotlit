@@ -1,15 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { WorkbenchDocumentController } from "@zotlit/workbench/document";
+import { m } from "./paraglide/messages.js";
+import { diagnosticText, problemText } from "./problems";
+
+import { WorkbenchDocumentController } from "#/document/controller";
 import {
   DEFAULT_PROFILE_SOURCE,
   renderProfile,
   SAMPLE_ITEMS,
-} from "@zotlit/workbench/render";
-
-import { m } from "@/paraglide/messages.js";
-
-import { diagnosticText, problemText } from "./problems";
+} from "#/render/index";
 
 describe("problemText", () => {
   it("writes the web host's own codes in the reader's catalog", () => {

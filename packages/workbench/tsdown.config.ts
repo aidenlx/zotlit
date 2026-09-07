@@ -8,6 +8,7 @@ const SOURCE = {
   render: "./src/render/index.ts",
   explorer: "./src/explorer/index.ts",
   bridge: "./src/bridge/index.ts",
+  ui: "./src/ui/index.tsx",
 };
 
 export default defineConfig({

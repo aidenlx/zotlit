@@ -12,6 +12,7 @@ import type {
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
 import type { RenderedProperty } from "@zotlit/workbench/render";
+import { m } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +20,6 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
-import { m } from "@/paraglide/messages.js";
 
 import { PropertyList, propertyText } from "./property-list";
 import { SliceEditor } from "./slice-editor";

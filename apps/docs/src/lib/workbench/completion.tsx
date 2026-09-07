@@ -13,8 +13,7 @@ import type {
   SuggestionResult,
   SuggestionSource,
 } from "@zotlit/workbench/language";
-
-import { m } from "@/paraglide/messages.js";
+import { m } from "@zotlit/workbench/ui";
 
 /** The editor owns the query and keys; React owns the Command list and Base UI popup. */
 export function webCompletion(read: SuggestionSource) {

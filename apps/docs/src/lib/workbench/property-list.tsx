@@ -5,8 +5,7 @@
 import { Fragment } from "react";
 
 import type { RenderedProperty } from "@zotlit/workbench/render";
-
-import { m } from "@/paraglide/messages.js";
+import { m } from "@zotlit/workbench/ui";
 
 /**
  * A property grid — the name beside the value, or beside the reason it has

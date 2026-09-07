@@ -15,7 +15,7 @@
     "cf-typegen": "wrangler types",
     "cf-typegen:check": "wrangler types --check",
     "codegen": "fumadocs-mdx",
-    "generate:i18n": "paraglide-js compile --project ../../project.inlang --outdir ./src/paraglide --strategy baseLocale --output-structure message-modules --emit-ts-declarations --silent",
+    "generate:i18n": "node scripts/generate-i18n.ts",
     "generate:template-data": "node scripts/generate-template-data.ts",
     "postinstall": "fumadocs-mdx && pnpm generate:i18n",
     "typecheck": "pnpm cf-typegen:check && pnpm generate:i18n && tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
@@ -61,7 +61,8 @@
     "semver": "catalog:",
     "unified": "11.0.5",
     "unpic": "^4.2.2",
-    "valibot": "catalog:"
+    "valibot": "catalog:",
+    "zustand": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.53.1",

@@ -1,7 +1,6 @@
 // Localized descriptions for the shared Liquid tag syntax catalog.
 import type { LiquidTagName } from "@zotlit/workbench/completion";
-
-import { m } from "@/paraglide/messages.js";
+import { m } from "@zotlit/workbench/ui";
 
 const DESCRIPTIONS = {
   assign: m.workbench_tag_assign,
