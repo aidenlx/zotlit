@@ -42,7 +42,7 @@ const KEY = "zotlit.workbench.draft.standalone";
 /** The Local Server port the launch fragment names, which every request rides. */
 const PORT = 23_120;
 const BRIDGE_ORIGIN = `http://127.0.0.1:${PORT}`;
-/** Quiet time after the last change, plus room for the write to land. */
+/** Time to advance past the autosave and render debounces. */
 const SETTLE_MS = 700;
 /** The width this environment opens on, which every test starts from. */
 const DEFAULT_WIDTH = window.innerWidth;
@@ -60,6 +60,8 @@ const FIXTURE_CSL_STYLE =
 // This environment carries no Storage of its own, so each test starts on one
 // that behaves as a browser's does.
 beforeEach(() => {
+  // Control debounce time while CodeMirror keeps the DOM's animation frames.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   installStorage("localStorage");
   installStorage("sessionStorage");
@@ -87,6 +89,7 @@ beforeEach(() => {
 // page at another width hands the next one back the width it opened on.
 afterEach(() => {
   resize(DEFAULT_WIDTH);
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -99,7 +102,6 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    expect(title(page.host)).toBe("Connected profile");
     expect(
       requests.every(
         ({ receiver }) => receiverName(receiver) !== "LocalBridgeClient",
@@ -116,7 +118,12 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_connected_badge()),
     );
-    expect(page.host.textContent).toContain(m.workbench_connected_badge());
+    page.press(m.workbench_refresh_item());
+    await page.waitFor(() =>
+      expect(
+        requests.filter(({ path }) => path === LOCAL_BRIDGE_PATHS.selectedItem),
+      ).toHaveLength(2),
+    );
     await page.settle();
     expect(startRenderWorker.mock.calls.at(-1)?.[0].resources).toEqual({
       dependencies: {
@@ -142,14 +149,17 @@ describe("a Workbench Connection", () => {
         m.workbench_save_complete({ vault: "Fixture vault" }),
       ),
     );
-    expect(page.host.textContent).toContain(
-      m.workbench_save_complete({ vault: "Fixture vault" }),
-    );
     expect(requests.find(({ path }) => path.endsWith("/save"))?.body).toEqual({
       reference: "profile:default",
       expected: { state: "revision", revision: "revision-1" },
       source: CONNECTED,
     });
+    const allowed = new Set([window.location.origin, BRIDGE_ORIGIN]);
+    expect(
+      [...new Set(requests.map(({ origin }) => origin))].filter(
+        (origin) => !allowed.has(origin),
+      ),
+    ).toEqual([]);
   });
 
   it("opens the bound group paper even when the Profile names a Sample Item type", async () => {
@@ -614,37 +624,6 @@ describe("a Workbench Connection", () => {
     });
   });
 
-  it("sends no request to a host other than this page and the bridge", async () => {
-    const requests: BridgeRequest[] = [];
-    vi.stubGlobal("fetch", bridgeFetch(requests));
-    using page = launch();
-
-    await page.waitFor(() =>
-      expect(title(page.host)).toBe("Connected profile"),
-    );
-    page.press(m.workbench_refresh_item());
-    await page.waitFor(() =>
-      expect(page.host.textContent).toContain(m.workbench_connected_badge()),
-    );
-    await page.settle();
-    page.press(m.workbench_save());
-    await page.waitFor(() =>
-      expect(page.host.textContent).toContain(
-        m.workbench_save_complete({ vault: "Fixture vault" }),
-      ),
-    );
-
-    // Connect, render, and Save have all run, and every request any module on
-    // the page made rode this one stub.
-    expect(requests.length).toBeGreaterThan(0);
-    const allowed = new Set([window.location.origin, BRIDGE_ORIGIN]);
-    expect(
-      [...new Set(requests.map(({ origin }) => origin))].filter(
-        (origin) => !allowed.has(origin),
-      ),
-    ).toEqual([]);
-  });
-
   it("keeps editing when the bridge reports another contract version", async () => {
     vi.stubGlobal(
       "fetch",
@@ -738,7 +717,7 @@ describe("a Workbench Connection", () => {
     );
   });
 
-  it("offers Reconnect after the Local Bridge disappears", async () => {
+  it("offers Reconnect after the Local Bridge disappears and reuses the credential", async () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal(
       "fetch",
@@ -764,35 +743,6 @@ describe("a Workbench Connection", () => {
         m.workbench_connection_to_vault({ vault: "Fixture vault" }),
       ),
     );
-  });
-
-  it("reconnects on the kept credential without a fresh approval", async () => {
-    const requests: BridgeRequest[] = [];
-    vi.stubGlobal(
-      "fetch",
-      bridgeFetch(requests, { itemNetworkFailureOnce: true }),
-    );
-    using page = launch();
-
-    await page.waitFor(() =>
-      expect(title(page.host)).toBe("Connected profile"),
-    );
-    page.press(m.workbench_refresh_item());
-    await page.waitFor(() =>
-      expect(page.host.textContent).toContain(
-        m.workbench_connection_reconnect(),
-      ),
-    );
-
-    page.press(m.workbench_connection_reconnect());
-    await page.waitFor(() =>
-      expect(page.host.textContent).toContain(
-        m.workbench_connection_to_vault({ vault: "Fixture vault" }),
-      ),
-    );
-
-    // The blip left the grant intact, so Reconnect re-checked it instead of
-    // asking Obsidian to approve the page a second time.
     expect(
       requests.filter(({ path }) => path === LOCAL_BRIDGE_PATHS.codeBootstrap),
     ).toHaveLength(1);
@@ -2313,7 +2263,7 @@ interface OpenPage extends Disposable {
   press: (label: string) => void;
   /** Picks the Sample Item the page is shown against. */
   show: (key: string) => void;
-  /** Waits out the autosave's quiet time and the render's own. */
+  /** Advances through the autosave's quiet time and the render's own. */
   settle: () => Promise<void>;
   /** Waits until immediate Local Bridge responses produce `assertion`. */
   waitFor: (assertion: () => void) => Promise<void>;
@@ -2352,13 +2302,14 @@ function open(): OpenPage {
       });
     },
     async settle() {
-      await act(() => new Promise((resolve) => setTimeout(resolve, SETTLE_MS)));
+      // Commit pending effects before advancing the timers they schedule.
+      await act(async () => {});
+      await act(() => vi.advanceTimersByTimeAsync(SETTLE_MS));
     },
     async waitFor(assertion) {
-      await vi.waitFor(async () => {
-        await act(async () => {});
-        assertion();
-      });
+      // A polling timeout must not leave act() running after page disposal.
+      await act(async () => {});
+      await vi.waitFor(assertion);
     },
     [Symbol.dispose]() {
       act(() => root.unmount());

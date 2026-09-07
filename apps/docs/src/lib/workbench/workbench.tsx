@@ -12,7 +12,14 @@ import {
   Save,
   X,
 } from "lucide-react";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   entryPosition,
@@ -584,17 +591,20 @@ export function Workbench() {
   };
 
   /** Puts a snippet where the reader left the caret, then hands focus back. */
-  function insert(snippet: string) {
-    if (fieldDisabled) return;
-    const head = insertSnippet(controller, slice, {
-      target: caret,
-      snippet,
-    });
-    // The sheet stands over the pane it writes into, so it leaves with the
-    // snippet it put there.
-    setSheet(false);
-    setReveal({ from: head, to: head });
-  }
+  const insert = useCallback(
+    (snippet: string) => {
+      if (fieldDisabled) return;
+      const head = insertSnippet(controller, slice, {
+        target: caret,
+        snippet,
+      });
+      // The sheet stands over the pane it writes into, so it leaves with the
+      // snippet it put there.
+      setSheet(false);
+      setReveal({ from: head, to: head });
+    },
+    [fieldDisabled, controller, slice, caret],
+  );
 
   function trackSelection(selection: WorkbenchSliceRange) {
     setCaret(selection);
