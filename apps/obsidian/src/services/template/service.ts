@@ -1,7 +1,6 @@
-import type { Extension } from "@codemirror/state";
 import { dirname, join } from "node:path/posix";
 import { TFile } from "obsidian";
-import type { App, EventRef, Plugin, TAbstractFile } from "obsidian";
+import type { App, EventRef, TAbstractFile } from "obsidian";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type {
@@ -51,8 +50,6 @@ import {
   TEMPLATE_NAMES,
 } from "./defaults";
 import type { TemplateName } from "./defaults";
-import { bracketExtension } from "./editor/bracket";
-import { EtaSuggest } from "./editor/suggest";
 import { InertTemplateError } from "./errors";
 import { normalizeVaultPath } from "./path";
 
@@ -75,7 +72,6 @@ export interface TemplateServiceEvents {
 }
 
 export interface TemplateServiceOptions {
-  plugin: Plugin;
   app: App;
   settings: SettingsService;
 }
@@ -207,7 +203,6 @@ interface SettledWaiter {
 export type SettleOutcome = "settled" | "timeout" | "init-failed";
 
 export class TemplateService extends Service<void> {
-  readonly #plugin;
   readonly #app;
   readonly #settings;
   readonly #facade = new TemplateFacade({
@@ -230,7 +225,6 @@ export class TemplateService extends Service<void> {
   >();
   readonly #literatureNoteDocumentErrors = new Map<string, Error>();
   readonly #settledWaiters = new Set<SettledWaiter>();
-  readonly #autoPairExtensions: Extension[] = [];
 
   #javascriptTemplatesEnabled: boolean;
 
@@ -247,13 +241,11 @@ export class TemplateService extends Service<void> {
 
   #lastTemplateFolder = "";
   #lastAutoTrim: [AutoTrim, AutoTrim] = [false, false];
-  #lastAutoPairEta = false;
 
   ready: Promise<void>;
 
   constructor(options: TemplateServiceOptions) {
     super();
-    this.#plugin = options.plugin;
     this.#app = options.app;
     this.#settings = options.settings;
     this.#javascriptTemplatesEnabled =
@@ -834,7 +826,6 @@ export class TemplateService extends Service<void> {
       snapshot["template.auto-trim-leading"],
       snapshot["template.auto-trim-trailing"],
     ];
-    this.#lastAutoPairEta = snapshot["template.auto-pair-eta"];
     this.#facade.setAutoTrim(this.#lastAutoTrim);
     this.#compileFrontmatter(snapshot["note.frontmatter-fields"]);
 
@@ -846,8 +837,6 @@ export class TemplateService extends Service<void> {
     stack.defer(this.#registerVaultEvents());
     await this.#rebuildFolder(this.#lastTemplateFolder);
 
-    stack.defer(this.#registerAutoPair());
-    stack.defer(this.#registerEtaSuggest());
     stack.defer(
       this.#settings.subscribe((settings) => {
         if (settings === null) return;
@@ -874,40 +863,22 @@ export class TemplateService extends Service<void> {
     };
   }
 
-  #registerAutoPair(): () => void {
-    this.#setAutoPairEnabled(this.#lastAutoPairEta, false);
-    this.#plugin.registerEditorExtension(this.#autoPairExtensions);
-    return () => {
-      this.#autoPairExtensions.length = 0;
-      this.#app.workspace.updateOptions();
-    };
-  }
-
-  #registerEtaSuggest(): () => void {
-    const suggest = new EtaSuggest(this.#app);
-    this.#plugin.registerEditorSuggest(suggest);
-    return () => suggest.close();
-  }
-
   #onSettingsChanged(settings: Readonly<Settings>): void {
     const folder = normalizeVaultPath(settings["template.folder"]);
     const autoTrim: [AutoTrim, AutoTrim] = [
       settings["template.auto-trim-leading"],
       settings["template.auto-trim-trailing"],
     ];
-    const autoPairEta = settings["template.auto-pair-eta"];
 
     const folderChanged = folder !== this.#lastTemplateFolder;
     const autoTrimChanged =
       autoTrim[0] !== this.#lastAutoTrim[0] ||
       autoTrim[1] !== this.#lastAutoTrim[1];
-    const autoPairChanged = autoPairEta !== this.#lastAutoPairEta;
 
     const frontmatterFields = settings["note.frontmatter-fields"];
 
     this.#lastTemplateFolder = folder;
     this.#lastAutoTrim = autoTrim;
-    this.#lastAutoPairEta = autoPairEta;
 
     if (frontmatterFields !== this.#lastFrontmatterFields) {
       this.#compileFrontmatter(frontmatterFields);
@@ -923,8 +894,6 @@ export class TemplateService extends Service<void> {
         logger.warn("Template folder rebuild failed", { error, folder });
       });
     }
-
-    if (autoPairChanged) this.#setAutoPairEnabled(autoPairEta, true);
   }
 
   async #rebuildFolder(folder: string): Promise<void> {
@@ -1230,14 +1199,6 @@ export class TemplateService extends Service<void> {
 
   #isWatchedTemplatePath(path: string): boolean {
     return isWatchedTemplatePath(path, this.#currentTemplateFolder());
-  }
-
-  #setAutoPairEnabled(enabled: boolean, updateWorkspace: boolean): void {
-    this.#autoPairExtensions.length = 0;
-    if (enabled) {
-      this.#autoPairExtensions.push(bracketExtension(this.#app.vault));
-    }
-    if (updateWorkspace) this.#app.workspace.updateOptions();
   }
 
   /**

@@ -36,10 +36,6 @@ export class MockVault {
     return this.files.get(path) ?? null;
   }
 
-  getConfig(name: "autoPairBrackets" | "autoPairMarkdown"): boolean {
-    return name === "autoPairBrackets" || name === "autoPairMarkdown";
-  }
-
   on(name: VaultEvent, callback: VaultCallback): EventRef {
     this.#listeners[name].add(callback);
     return { e: this, name, callback } as unknown as EventRef;
@@ -170,9 +166,6 @@ export class MockVault {
 }
 
 export class PluginStub {
-  readonly editorExtensions: unknown[] = [];
-  readonly editorSuggests: unknown[] = [];
-
   constructor(
     readonly app: App,
     public data: unknown,
@@ -184,14 +177,6 @@ export class PluginStub {
 
   async saveData(data: unknown): Promise<void> {
     this.data = data;
-  }
-
-  registerEditorExtension(extension: unknown): void {
-    this.editorExtensions.push(extension);
-  }
-
-  registerEditorSuggest(suggest: unknown): void {
-    this.editorSuggests.push(suggest);
   }
 }
 

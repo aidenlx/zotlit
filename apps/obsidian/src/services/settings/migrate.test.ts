@@ -57,7 +57,6 @@ describe("migrateLegacyV0", () => {
       "server.port": 9099,
       "server.hostname": "localhost",
       "template.folder": "Templates",
-      "template.auto-pair-eta": true,
       "template.auto-trim-leading": "nl",
       "template.auto-trim-trailing": "slurp",
       "zotero.auto-refresh": false,

@@ -141,7 +141,6 @@ const V0_KEY_MAP: ReadonlyArray<
   ["enableServer", "server.enabled"],
   ["serverPort", "server.port"],
   ["serverHostname", "server.hostname"],
-  ["autoPairEta", "template.auto-pair-eta"],
   ["autoRefresh", "zotero.auto-refresh"],
   ["imgExcerptPath", "attachment.folder-path"],
 ];

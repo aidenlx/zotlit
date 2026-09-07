@@ -1,4 +1,4 @@
-import type { App, Plugin } from "obsidian";
+import type { App } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
@@ -517,14 +517,12 @@ partials:
         else localStorage.set(key, data);
       },
     } as unknown as Harness["app"];
-    const plugin = new PluginStub(app, { __VERSION__: 1 });
     const settings = {
       current: null,
       loaded: loaded.promise,
       subscribe: vi.fn(() => () => {}),
     } as unknown as SettingsService;
     await using service = new TemplateService({
-      plugin: plugin as unknown as Plugin,
       app,
       settings,
     });
@@ -548,14 +546,12 @@ partials:
       loadLocalStorage: () => null,
       saveLocalStorage: () => {},
     } as unknown as Harness["app"];
-    const plugin = new PluginStub(app, { __VERSION__: 1 });
     const settings = {
       current: null,
       loaded: loaded.promise,
       subscribe: vi.fn(() => () => {}),
     } as unknown as SettingsService;
     const service = new TemplateService({
-      plugin: plugin as unknown as Plugin,
       app,
       settings,
     });
@@ -1203,18 +1199,6 @@ partials:
     expect(templatePath("", "note", "eta")).toBe("zotlit-note.eta.md");
   });
 
-  it("toggles the auto-pair extension array from settings", async () => {
-    const { app, plugin, settings } = await makeHarness();
-    const extensions = plugin.editorExtensions[0] as unknown[];
-
-    expect(extensions).toHaveLength(0);
-
-    settings.update({ "template.auto-pair-eta": true });
-
-    expect(extensions).toHaveLength(1);
-    expect(app.workspace.updateOptions).toHaveBeenCalledTimes(1);
-  });
-
   it("unsubscribes vault events on dispose", async () => {
     const vault = new MockVault();
     vault.addFile("templates/zotlit-note.eta.md", "first <%= zt.title %>");
@@ -1684,7 +1668,6 @@ async function makeHarness(options?: {
   await settings.ready;
 
   const service = new TemplateService({
-    plugin: plugin as unknown as Plugin,
     app,
     settings,
   });

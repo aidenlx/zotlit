@@ -861,8 +861,6 @@
   "settings_frontmatter_merge_keep": "Keep existing",
   "settings_template_folder_name": "Template folder",
   "settings_template_folder_desc": "Where editable template files are created and loaded from.",
-  "settings_template_auto_pair_name": "Auto-pair Eta tags",
-  "settings_template_auto_pair_desc": "Insert a matching `%>` while editing templates.",
   "settings_template_trim_leading_name": "Trim whitespace before tags",
   "settings_template_trim_trailing_name": "Trim whitespace after tags",
   "settings_template_trim_desc": "Strip a newline, strip all whitespace, or keep it.",

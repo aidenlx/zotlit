@@ -654,8 +654,6 @@
   "settings_frontmatter_merge_keep": "保留现有值",
   "settings_template_folder_name": "模板文件夹",
   "settings_template_folder_desc": "创建和加载可编辑模板文件的位置。",
-  "settings_template_auto_pair_name": "自动配对 Eta 标签",
-  "settings_template_auto_pair_desc": "编辑模板时插入匹配的 `%>`。",
   "settings_template_trim_leading_name": "移除标签前的空白",
   "settings_template_trim_trailing_name": "移除标签后的空白",
   "settings_template_trim_desc": "删除换行符、删除所有空格或保留它。",

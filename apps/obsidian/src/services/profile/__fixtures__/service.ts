@@ -54,7 +54,7 @@ export async function profileServiceFixture(
     }),
   );
   const template = stack.use(
-    new TemplateService({ app, plugin: plugin as unknown as Plugin, settings }),
+    new TemplateService({ app, settings }),
   );
   const noteIndex = stack.use(
     new NoteIndex({ app, plugin: plugin as unknown as Plugin }),
