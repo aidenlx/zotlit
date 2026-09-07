@@ -105,6 +105,39 @@ describe("the web host", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  it("keeps empty groups and returns keyboard focus to the originating chooser", async () => {
+    const anchor = document.getElementById("anchor")!;
+    anchor.focus();
+    const answer = host.suggester({
+      anchor,
+      title: "Choose an annotation",
+      selected: "a",
+      groups: [
+        {
+          label: "Current Item",
+          options: [],
+          empty: "This Item has no annotations.",
+        },
+        {
+          label: "Examples",
+          options: [{ id: "a", label: "Example annotation" }],
+        },
+      ],
+    });
+    await act(async () => {});
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "This Item has no annotations.",
+    );
+    expect(
+      document.querySelector('[role="option"]')?.getAttribute("aria-label"),
+    ).toBe(m.workbench_sample_selected({ name: "Example annotation" }));
+    await act(async () => {
+      document.querySelector<HTMLElement>('[role="option"]')!.click();
+    });
+    await expect(answer).resolves.toBe("a");
+    await vi.waitFor(() => expect(document.activeElement).toBe(anchor));
+  });
+
   it("offers a searchable picker and resolves the option chosen", async () => {
     const answer = host.suggester({
       title: "Choose a paper",

@@ -81,3 +81,19 @@ export type { ResultColumnProps } from "./result-column";
 export { PropertyList, PropertyValue, propertyText } from "./property-list";
 
 export { PreviewControls } from "./preview-controls";
+
+export { PropertiesPane, PropertiesResult } from "./properties-tab";
+export type {
+  EntryDiagnostic,
+  PropertiesPaneProps,
+  PropertiesResultProps,
+} from "./properties-tab";
+export {
+  AnnotationPane,
+  AnnotationPointer,
+  AnnotationSampleBar,
+  AnnotationSectionBar,
+} from "./annotation";
+export { annotationSamples } from "./annotation-samples";
+export { SampleSuggester } from "./sample-suggester";
+export type { SampleOption } from "./sample-suggester";
