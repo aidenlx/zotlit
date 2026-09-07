@@ -11,8 +11,12 @@ import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import { annotationSamples } from "@zotlit/workbench/ui";
 import type { WorkbenchStore } from "@zotlit/workbench/ui";
 
+import { getLogger } from "@/lib/log";
+
 import { renderNativeProfile } from "./render";
 import type { NativeRenderDeps, NativeRenderResult } from "./render";
+
+const logger = getLogger(["note-preview", "session"]);
 
 export interface NativePreviewState {
   result: NativeRenderResult | null;
@@ -111,6 +115,10 @@ export class NativePreviewSession implements Disposable {
   }
   changed(): void {
     this.#generation++;
+    logger.trace("Preview source changed", {
+      generation: this.#generation,
+      live: this.#store.getState().preview.live,
+    });
     this.state.setState({ busy: false });
     this.pause();
     if (this.#store.getState().preview.live)
@@ -119,11 +127,19 @@ export class NativePreviewSession implements Disposable {
       }, 300);
   }
   pause(): void {
+    if (this.#timer !== undefined)
+      logger.trace("Cancelled queued preview", {
+        generation: this.#generation,
+      });
     clearTimeout(this.#timer);
     this.#timer = undefined;
   }
   async #loadSnapshot(): Promise<void> {
     const generation = ++this.#dataGeneration;
+    logger.debug("Loading preview data", {
+      generation,
+      item: this.#store.getState().item?.id,
+    });
     this.#generation++;
     this.pause();
     this.state.setState({ ...EMPTY_PREVIEW });
@@ -153,7 +169,18 @@ export class NativePreviewSession implements Disposable {
           },
         );
       }
-      if (generation !== this.#dataGeneration || this.#closed) return;
+      if (generation !== this.#dataGeneration || this.#closed) {
+        logger.debug("Discarded stale preview data", {
+          generation,
+          current: this.#dataGeneration,
+          closed: this.#closed,
+        });
+        return;
+      }
+      logger.debug("Preview data loaded", {
+        generation,
+        revision: snapshot.revision,
+      });
       this.state.setState({
         snapshot,
         ...annotationSamples(snapshot, this.#selection),
@@ -173,6 +200,10 @@ export class NativePreviewSession implements Disposable {
     if (!snapshot || !example) return;
     this.pause();
     const generation = ++this.#generation;
+    logger.debug("Preview render started", {
+      generation,
+      revision: snapshot.revision,
+    });
     this.state.setState({ busy: true });
     try {
       const result = await renderNativeProfile(this.#deps, {
@@ -181,8 +212,18 @@ export class NativePreviewSession implements Disposable {
         mode: this.#store.getState().preview.mode,
         annotation: example,
       });
-      if (generation === this.#generation && !this.#closed)
+      if (generation === this.#generation && !this.#closed) {
+        logger.debug("Preview render published", {
+          generation,
+          diagnostics: result.diagnostics.length,
+        });
         this.state.setState({ result });
+      } else
+        logger.debug("Discarded stale preview render", {
+          generation,
+          current: this.#generation,
+          closed: this.#closed,
+        });
     } catch (error) {
       if (generation === this.#generation && !this.#closed)
         this.#failed(error, snapshot.revision);
@@ -192,6 +233,11 @@ export class NativePreviewSession implements Disposable {
     }
   }
   #failed(error: unknown, snapshotRevision: string): void {
+    logger.debug("Preview failed", {
+      error,
+      snapshotRevision,
+      generation: this.#generation,
+    });
     this.state.setState({
       result: {
         ...failedRender(
@@ -212,6 +258,10 @@ export class NativePreviewSession implements Disposable {
     });
   }
   [Symbol.dispose](): void {
+    logger.debug("Preview session closed", {
+      generation: this.#generation,
+      dataGeneration: this.#dataGeneration,
+    });
     this.#closed = true;
     this.#generation++;
     this.#dataGeneration++;

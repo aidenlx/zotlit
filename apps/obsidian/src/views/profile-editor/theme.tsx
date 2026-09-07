@@ -79,14 +79,14 @@ export const profileEditorTheme: WorkbenchTheme = {
       redo: "clickable-icon",
     },
     previewControls: {
-      controls: `${row} zt:flex-wrap`,
+      controls: cn(row, "zt:flex-wrap"),
       label: row,
       paused: "zt:text-muted",
     },
     resultHeader: {
       header: stack,
       heading: "zt:text-base zt:font-semibold",
-      controls: `${row} zt:flex-wrap`,
+      controls: cn(row, "zt:flex-wrap"),
       label: row,
     },
     resultRegion: { region: stack },
