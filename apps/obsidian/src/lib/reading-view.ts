@@ -11,6 +11,11 @@ import { getLogger } from "@/lib/log";
 
 const logger = getLogger("reading-view");
 
+/** Draft previews supply their own citations while keeping the real path for native links. */
+export function isDraftMarkdown(element: HTMLElement): boolean {
+  return element.closest("[data-zotlit-draft]") !== null;
+}
+
 /** The document offsets one rendered reading-view section covers. */
 export interface SectionRange {
   from: number;
