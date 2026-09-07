@@ -95,6 +95,25 @@ afterEach(() => {
 });
 
 describe("a Workbench Connection", () => {
+  it("keeps connection setup in the bottom status control", () => {
+    using page = open();
+    expect(page.host.querySelector("header")?.textContent).not.toContain(
+      m.docs_workbench_not_connected(),
+    );
+    expect(page.host.querySelector("footer")?.textContent).toContain(
+      m.docs_workbench_not_connected(),
+    );
+    expect(page.host.textContent).not.toContain(
+      m.workbench_connection_open_from_obsidian(),
+    );
+    page.press(m.docs_workbench_not_connected());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      m.workbench_connection_open_from_obsidian(),
+    );
+    page.press(m.docs_workbench_not_connected());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
   it("connects from a fragment, loads the selected Item, and saves a new revision", async () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal("fetch", bridgeFetch(requests));
@@ -497,19 +516,26 @@ describe("a Workbench Connection", () => {
     });
   });
 
-  it("shows the Open-from-Obsidian guidance when the code is refused", async () => {
+  it("keeps a refused connection link in the status area with recovery guidance", async () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal("fetch", bridgeFetch(requests, { codeRefused: true }));
     using page = launch();
 
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
-        m.workbench_connection_open_from_obsidian(),
+        m.docs_workbench_connection_link_expired(),
       ),
     );
 
-    // A Connection starts in Obsidian, so a refused code leaves the page with
-    // guidance rather than a Connect button.
+    expect(page.host.querySelector("header")?.textContent).not.toContain(
+      m.docs_workbench_connection_link_expired(),
+    );
+    expect(page.host.querySelector("footer")?.textContent).toContain(
+      m.docs_workbench_connection_link_expired(),
+    );
+    expect(page.host.querySelector("header")?.textContent).not.toContain(
+      m.docs_workbench_not_connected(),
+    );
     expect(page.host.textContent).not.toContain(
       m.workbench_connection_reconnect(),
     );
@@ -528,9 +554,7 @@ describe("a Workbench Connection", () => {
       expect(page.host.textContent).toContain(m.workbench_connection_revoked()),
     );
 
-    expect(page.host.textContent).toContain(
-      m.workbench_connection_open_from_obsidian(),
-    );
+    expect(page.host.textContent).toContain(m.docs_workbench_not_connected());
     expect(page.host.textContent).toContain(m.workbench_download());
   });
 
@@ -638,9 +662,7 @@ describe("a Workbench Connection", () => {
       ),
     );
 
-    expect(page.host.textContent).toContain(
-      m.workbench_connection_open_from_obsidian(),
-    );
+    expect(page.host.textContent).toContain(m.docs_workbench_not_connected());
     expect(page.host.textContent).toContain(m.workbench_download());
   });
 

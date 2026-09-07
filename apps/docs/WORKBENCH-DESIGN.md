@@ -20,10 +20,11 @@ sentence case, including labels and pane headings.
 
 ## Protect the editing space
 
-Keep file and connection actions in one header. Place the sample picker with
-the result it changes. Put optional guidance behind a visible Help control
-beside its task, and routine draft status below the panes. Keep errors and
-required confirmations in the flow with their recovery actions visible.
+Keep the Profile name and file actions in the header. Place the sample picker
+with the result it changes. Put optional guidance behind a visible Help control
+beside its task. Give connection state, draft status, and persistent action
+failures a dedicated status area below the panes; keep that area visible in
+short viewports. Keep required confirmations beside the action they affect.
 
 One piece of guidance stands in the flow: the getting-started strip a page
 opened from Obsidian carries under the header, naming the three tasks of the
@@ -42,6 +43,12 @@ The [shared frame](src/lib/workbench/frame.tsx) keeps the loading and interactiv
 shells consistent. Coordinate pane headers with its control row when a control
 needs more space.
 
+The bottom status row carries a compact connection control and a short draft
+state. Put setup instructions in the connection popover and persistent failures
+in a bounded recovery area above the row. Routine action confirmations use
+toasts. In the connected popover, show Vault, Profile, and Item first; put
+website and access permissions behind **Connection details**.
+
 ## Control vocabulary
 
 Use the kit's size variants for button, input, and select height, internal
@@ -57,6 +64,7 @@ in the kit so the header, toolbar, forms, and notices change together.
 | Icon button on the control row (undo, redo, close) | `Button size="icon-sm"` | 32 px |
 | Icon button inside a list row or card | `Button size="icon-xs"` | 28 px |
 | Icon button inline in a chip or compact list row | `Button size="icon-2xs"` | 24 px |
+| Action menu | `DropdownMenuContent size="xs"` | 32 px minimum rows, 12 px text, 14 px icons |
 | Text input, native select | `size="xs"` | 32 px, 12 px text on desktop |
 
 Treat text-bearing control heights as minimums. Let them grow for wrapped
@@ -64,6 +72,40 @@ labels and mobile text. The kit owns the values in
 [Button](src/components/ui/button.tsx), [Input](src/components/ui/input.tsx),
 and [NativeSelect](src/components/ui/native-select.tsx). Marketing and docs
 chrome keep their `sm` and `default` sizes.
+
+Menus use the same density as their triggers, with 4 px outer insets and 8 px
+horizontal row padding. Let labels wrap within the viewport.
+
+## Popovers and editor cards
+
+Compose button-triggered popovers with the shared
+[Popover kit](src/components/ui/popover.tsx), following the
+[shadcn Base UI Popover](https://ui.shadcn.com/docs/components/base/popover)
+composition: trigger, content, header, title, and description. Help at every
+pane and the connection control use this kit. Dismiss with Escape, an outside
+press, or the trigger; return focus to the trigger. Keep the title row devoted
+to the heading and omit close buttons.
+
+Use 12 px text, a semibold title, muted guidance, and 12 px content padding.
+Keep 8 px between a title and its explanation or between related facts, and
+16 px between separate groups. Align labels and values to shared edges, with
+wrapping columns for long names and translated labels. Connection facts lead;
+access details sit behind the visible disclosure and Disconnect follows them.
+
+Use the menu surface: semantic popover colors, an 8 px radius, a subtle ring,
+and the shared elevation shadow. Content has a preferred width of 320 px,
+16 px viewport clearance, and a scrollable height bounded by the available
+space. Place panels 6 px from their anchor; let collision handling flip and
+shift them. Keep frequent popover feedback immediate.
+
+Completion uses the same Popover content with a caret anchor and keeps focus
+in the editor. Its list uses 4 px insets, 4 px item radii, 32 px minimum rows,
+and a scroll limit of 288 px or the available height, whichever is smaller.
+Keep the selected suggestion visible as the user moves through the list.
+Field hover cards retain Base UI Hover Card behavior and use the same surface,
+text, spacing, wrapping, and viewport bounds. Titles, paths, types, and syntax
+wrap inside these cards; sample values may scroll. These editor surfaces keep
+their existing keyboard and pointer lifecycle.
 
 ## Type and wording by role
 

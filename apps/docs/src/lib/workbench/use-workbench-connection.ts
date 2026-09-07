@@ -422,6 +422,13 @@ function connectionFailureMessage(
   connection: LocalBridgeConnection,
 ): string {
   if (
+    error instanceof LocalBridgeProtocolError &&
+    error.code === "invalid-one-time-code" &&
+    connection.state === "disconnected"
+  ) {
+    return m.docs_workbench_connection_link_expired();
+  }
+  if (
     error instanceof LocalBridgeUnavailableError &&
     connection.state === "unavailable"
   ) {

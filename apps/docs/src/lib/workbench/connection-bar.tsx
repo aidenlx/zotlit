@@ -1,7 +1,12 @@
-// The header's connection control, with identity and permissions in its popover.
+// Connection state and recovery in the Workbench status area.
 
-import { Popover } from "@base-ui/react/popover";
-import { ChevronDown, Unplug, X } from "lucide-react";
+import {
+  ChevronDown,
+  LoaderCircle,
+  Plug,
+  TriangleAlert,
+  Unplug,
+} from "lucide-react";
 
 import type {
   BridgeCapability,
@@ -9,6 +14,13 @@ import type {
 } from "@zotlit/workbench/bridge";
 
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTitle,
+  PopoverDescription,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { m } from "@/paraglide/messages.js";
 
 interface ConnectionBarProps {
@@ -19,7 +31,6 @@ interface ConnectionBarProps {
   readonly busy: boolean;
   /** True while a kept credential and port are still here to present. */
   readonly resumable: boolean;
-  readonly message: string | null;
   readonly onReconnect: () => void;
   readonly onDisconnect: () => void;
 }
@@ -43,7 +54,6 @@ export function ConnectionBar({
   editingConnectedProfile,
   busy,
   resumable,
-  message,
   onReconnect,
   onDisconnect,
 }: ConnectionBarProps) {
@@ -53,51 +63,63 @@ export function ConnectionBar({
       aria-label={m.workbench_connection_heading()}
       className="flex min-w-0 flex-wrap items-center gap-2"
     >
-      {connected ? (
-        <Popover.Root>
-          <Popover.Trigger
+      {resumable && !connected ? (
+        <Button
+          variant="outline"
+          size="xs"
+          disabled={saveBusy || busy}
+          onClick={onReconnect}
+        >
+          {busy ? (
+            <LoaderCircle aria-hidden className="motion-safe:animate-spin" />
+          ) : (
+            <Unplug aria-hidden />
+          )}
+          {busy
+            ? m.workbench_connection_connecting()
+            : m.workbench_connection_reconnect()}
+        </Button>
+      ) : (
+        <Popover>
+          <PopoverTrigger
+            disabled={saveBusy || busy}
             render={
               <Button variant="outline" size="xs" className="max-w-full" />
             }
           >
-            <span
-              className="size-1.5 shrink-0 rounded-full bg-fd-primary"
-              aria-hidden
-            />
-            <span className="min-w-0 text-start break-words">
-              {m.workbench_connection_to_vault({
-                vault: connection.installation.vault,
-              })}
+            {busy ? (
+              <LoaderCircle aria-hidden className="motion-safe:animate-spin" />
+            ) : connected ? (
+              <Plug aria-hidden />
+            ) : (
+              <Unplug aria-hidden />
+            )}
+            <span className="max-w-56 min-w-0 truncate text-start">
+              {busy
+                ? m.workbench_connection_connecting()
+                : connected
+                  ? m.workbench_connection_to_vault({
+                      vault: connection.installation.vault,
+                    })
+                  : m.docs_workbench_not_connected()}
             </span>
             <ChevronDown aria-hidden />
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Positioner
-              side="bottom"
-              align="end"
-              sideOffset={6}
-              className="z-50"
-            >
-              <Popover.Popup className="max-h-(--available-height) w-96 max-w-[calc(100vw-2rem)] space-y-3 overflow-auto rounded-md border border-fd-border bg-fd-popover p-3 text-fd-popover-foreground shadow-lg">
-                <div className="flex items-center justify-between gap-3">
-                  <Popover.Title className="text-sm font-semibold">
-                    {m.workbench_connection_heading()}
-                  </Popover.Title>
-                  <Popover.Close
-                    render={<Button variant="ghost" size="icon-sm" />}
-                    aria-label={m.workbench_fields_close()}
-                  >
-                    <X aria-hidden />
-                  </Popover.Close>
-                </div>
-                <dl className="flex flex-col gap-2 text-sm text-fd-muted-foreground">
-                  <ConnectionDatum
-                    label={m.workbench_connection_website()}
-                    value={website}
-                  />
+          </PopoverTrigger>
+          <PopoverContent
+            side="top"
+            className={connected ? "space-y-4" : "space-y-2"}
+          >
+            <PopoverTitle>{m.workbench_connection_heading()}</PopoverTitle>
+            {connected ? (
+              <>
+                <dl className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-3 gap-y-2">
                   <ConnectionDatum
                     label={m.workbench_connection_vault()}
                     value={connection.installation.vault}
+                  />
+                  <ConnectionDatum
+                    label={m.workbench_connection_profile()}
+                    value={connection.selectedProfile.name}
                   />
                   <ConnectionDatum
                     label={m.workbench_connection_item()}
@@ -108,22 +130,39 @@ export function ConnectionBar({
                           connection.selectedItem.key)
                     }
                   />
-                  <ConnectionDatum
-                    label={m.workbench_connection_profile()}
-                    value={connection.selectedProfile.name}
-                  />
-                  <ConnectionDatum
-                    label={m.workbench_connection_access()}
-                    value={connection.capabilities
-                      .map((capability) => CAPABILITY_LABEL[capability]())
-                      .join(", ")}
-                  />
                 </dl>
                 {editingConnectedProfile && (
-                  <p className="text-sm leading-normal text-fd-muted-foreground">
+                  <PopoverDescription>
                     {m.workbench_connection_save_hint()}
-                  </p>
+                  </PopoverDescription>
                 )}
+                <details className="group/details">
+                  <summary className="flex min-h-6 cursor-pointer list-none items-center gap-1 font-medium [&::-webkit-details-marker]:hidden">
+                    <ChevronDown
+                      aria-hidden
+                      className="size-3.5 shrink-0 -rotate-90 group-open/details:rotate-0 rtl:rotate-90 rtl:group-open/details:rotate-0"
+                    />
+                    {m.docs_workbench_connection_details()}
+                  </summary>
+                  <dl className="mt-2 grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-3 gap-y-2">
+                    <ConnectionDatum
+                      label={m.workbench_connection_website()}
+                      value={website}
+                    />
+                    <dt className="text-fd-muted-foreground">
+                      {m.workbench_connection_access()}
+                    </dt>
+                    <dd>
+                      <ul className="space-y-1">
+                        {connection.capabilities.map((capability) => (
+                          <li key={capability}>
+                            {CAPABILITY_LABEL[capability]()}
+                          </li>
+                        ))}
+                      </ul>
+                    </dd>
+                  </dl>
+                </details>
                 <Button
                   variant="outline"
                   size="xs"
@@ -133,47 +172,47 @@ export function ConnectionBar({
                   <Unplug aria-hidden />
                   {m.workbench_connection_disconnect()}
                 </Button>
-              </Popover.Popup>
-            </Popover.Positioner>
-          </Popover.Portal>
-        </Popover.Root>
-      ) : resumable ? (
-        <Button
-          variant="outline"
-          size="xs"
-          title={connectionStatus(connection)}
-          disabled={saveBusy || busy}
-          onClick={onReconnect}
-        >
-          {busy
-            ? m.workbench_connection_connecting()
-            : m.workbench_connection_reconnect()}
-        </Button>
-      ) : (
-        // A Workbench Connection starts in Obsidian, so a page holding nothing
-        // to present says where to start it rather than offering a Connect
-        // button no plugin can honour.
-        <p className="max-w-prose text-sm leading-normal text-pretty text-fd-muted-foreground">
-          {m.workbench_connection_open_from_obsidian()}
-        </p>
+              </>
+            ) : (
+              <PopoverDescription>
+                {m.workbench_connection_open_from_obsidian()}
+              </PopoverDescription>
+            )}
+          </PopoverContent>
+        </Popover>
       )}
-      <p
-        role="status"
-        className="max-w-prose basis-full text-sm leading-normal text-pretty empty:hidden"
-      >
-        {message ??
-          (connection.state === "unavailable"
-            ? connectionStatus(connection)
-            : null)}
-      </p>
     </section>
   );
 }
 
-function connectionStatus(connection: LocalBridgeConnection): string {
-  if (connection.state !== "unavailable") {
-    return m.workbench_connection_disconnected();
-  }
+export function ConnectionNotice({
+  connection,
+  message,
+}: {
+  readonly connection: LocalBridgeConnection;
+  readonly message: string | null;
+}) {
+  const text =
+    message ??
+    (connection.state === "unavailable" ? connectionStatus(connection) : null);
+  return (
+    <div role="status" className="shrink-0 empty:hidden">
+      {text && (
+        <div className="flex items-start gap-2 border-s-2 border-b border-s-fd-primary border-b-fd-border bg-fd-accent/40 px-3 py-2 text-xs leading-normal">
+          <TriangleAlert
+            aria-hidden
+            className="mt-0.5 size-3.5 shrink-0 text-fd-primary"
+          />
+          <p className="min-w-0 text-pretty break-words">{text}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function connectionStatus(
+  connection: Extract<LocalBridgeConnection, { state: "unavailable" }>,
+): string {
   switch (connection.reason) {
     case "connection-lost":
       return m.workbench_connection_disconnected_notice();
@@ -192,9 +231,9 @@ function ConnectionDatum({
   readonly value: string;
 }) {
   return (
-    <div className="flex flex-wrap gap-x-2">
-      <dt className="font-medium text-fd-foreground">{label}</dt>
+    <>
+      <dt className="text-fd-muted-foreground">{label}</dt>
       <dd className="min-w-0 break-words">{value}</dd>
-    </div>
+    </>
   );
 }

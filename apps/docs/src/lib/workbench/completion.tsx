@@ -1,5 +1,4 @@
 // Web presentation for the shared Template Completion results. CodeMirror keeps focus.
-import { Popover } from "@base-ui/react/popover";
 import { Prec } from "@codemirror/state";
 import { ViewPlugin } from "@codemirror/view";
 import type { EditorView, ViewUpdate } from "@codemirror/view";
@@ -14,6 +13,7 @@ import type {
   SuggestionSource,
 } from "@zotlit/workbench/language";
 
+import { Popover, PopoverContent } from "@/components/ui/popover";
 import { m } from "@/paraglide/messages.js";
 
 /** The editor owns the query and keys; React owns the Command list and Base UI popup. */
@@ -194,86 +194,78 @@ function CompletionPopup({
     },
   };
   return (
-    <Popover.Root
+    <Popover
       open
       modal={false}
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
     >
-      <Popover.Portal>
-        <Popover.Positioner
-          anchor={anchor}
-          sideOffset={5}
-          align="start"
-          className="z-50"
+      <PopoverContent
+        anchor={anchor}
+        initialFocus={false}
+        finalFocus={false}
+        onMouseDown={(event) => event.preventDefault()}
+        className="overflow-hidden p-0"
+      >
+        <Command
+          label={m.workbench_completion_label()}
+          shouldFilter={false}
+          value={String(active)}
+          onValueChange={(value) => onSelect(Number(value))}
         >
-          <Popover.Popup
-            initialFocus={false}
-            finalFocus={false}
-            onMouseDown={(event) => event.preventDefault()}
-            className="w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-md border border-fd-border bg-fd-popover text-fd-popover-foreground shadow-lg"
+          <Command.List
+            label={m.workbench_completion_label()}
+            aria-expanded="true"
+            ref={list}
+            className="max-h-[min(18rem,var(--available-height))] overflow-y-auto overscroll-contain p-1"
           >
-            <Command
-              label={m.workbench_completion_label()}
-              shouldFilter={false}
-              value={String(active)}
-              onValueChange={(value) => onSelect(Number(value))}
-            >
-              <Command.List
-                label={m.workbench_completion_label()}
-                aria-expanded="true"
-                ref={list}
-                className="max-h-72 overflow-y-auto p-1"
+            {result.options.map((option, index) => (
+              <Command.Item
+                key={`${option.category}:${option.label}`}
+                value={String(index)}
+                onSelect={() => onAccept(index)}
+                className="flex min-h-8 cursor-default flex-col gap-0.5 rounded-sm px-2 py-1.5 text-xs aria-selected:bg-fd-accent aria-selected:text-fd-accent-foreground"
               >
-                {result.options.map((option, index) => (
-                  <Command.Item
-                    key={`${option.category}:${option.label}`}
-                    value={String(index)}
-                    onSelect={() => onAccept(index)}
-                    className="flex cursor-default flex-col gap-0.5 rounded-sm px-2 py-1.5 text-xs aria-selected:bg-fd-accent aria-selected:text-fd-accent-foreground"
-                  >
-                    <span className="flex items-baseline gap-2">
-                      <span className="font-medium">
-                        {option.displayLabel ?? option.label}
-                      </span>
-                      <span className="ms-auto truncate font-mono text-xs text-fd-muted-foreground">
-                        {option.type}
-                      </span>
+                <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <span className="max-w-full min-w-0 font-medium">
+                    {option.displayLabel ?? option.label}
+                  </span>
+                  <span className="ms-auto max-w-full min-w-0 font-mono text-xs text-fd-muted-foreground">
+                    {option.type}
+                  </span>
+                </span>
+                {option.path && (
+                  <span className="font-mono text-xs text-fd-muted-foreground">
+                    {option.path}
+                  </span>
+                )}
+                {option.syntax && index === active && (
+                  <>
+                    <span className="whitespace-normal text-fd-muted-foreground">
+                      {option.detail}
                     </span>
-                    {option.path && (
-                      <span className="font-mono text-xs text-fd-muted-foreground">
-                        {option.path}
-                      </span>
-                    )}
-                    {option.syntax && index === active && (
-                      <>
-                        <span className="whitespace-normal text-fd-muted-foreground">
-                          {option.detail}
-                        </span>
-                        <code className="break-words whitespace-pre-wrap">
-                          {option.syntax}
-                        </code>
-                      </>
-                    )}
-                    {option.example && (!option.syntax || index === active) && (
-                      <span
-                        className={
-                          option.syntax
-                            ? "break-words whitespace-pre-wrap text-fd-muted-foreground"
-                            : "truncate text-fd-muted-foreground"
-                        }
-                      >
-                        {option.example}
-                      </span>
-                    )}
-                  </Command.Item>
-                ))}
-              </Command.List>
-            </Command>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+                    <code className="break-words whitespace-pre-wrap">
+                      {option.syntax}
+                    </code>
+                  </>
+                )}
+                {option.example && (!option.syntax || index === active) && (
+                  <span
+                    className={
+                      option.syntax
+                        ? "break-words whitespace-pre-wrap text-fd-muted-foreground"
+                        : "truncate text-fd-muted-foreground"
+                    }
+                  >
+                    {option.example}
+                  </span>
+                )}
+              </Command.Item>
+            ))}
+          </Command.List>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
