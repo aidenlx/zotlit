@@ -26,6 +26,7 @@ import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { registerLibraryScopeCli } from "./services/library-scope/cli";
 import { registerLibraryScopeNotices } from "./services/library-scope/notices";
+import { addCustomizeActions } from "./services/local-bridge/actions";
 import { createCustomize } from "./services/local-bridge/customize";
 import { createLaunchSheet } from "./services/local-bridge/launch-sheet";
 import { registerWorkbenchSavedNotice } from "./services/local-bridge/notices";
@@ -244,6 +245,12 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
 
+    addCustomizeActions(this, {
+      app: this.app,
+      settings: services.settings,
+      profile: services.profile,
+      customize,
+    });
     addProfileActions(this, { importProfile: services.importProfile });
     addDatabaseActions(this, { db: services.db });
     addReleaseActions(this, { release: services.release });

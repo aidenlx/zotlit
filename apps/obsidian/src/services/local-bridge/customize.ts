@@ -50,6 +50,17 @@ export function setLaunchSheetSkipped(
   store.saveLocalStorage(LAUNCH_SHEET_KEY, skipped ? "1" : null);
 }
 
+/**
+ * Whether the web Template Workbench is offered at all: the toggle under the
+ * Local server. Every entry that leads to {@link CustomizeAction} reads it, so
+ * off means no door rather than a door that fails.
+ */
+export function workbenchEnabled(
+  settings: Pick<SettingsService, "current">,
+): boolean {
+  return settings.current?.["server.workbench"] ?? false;
+}
+
 /** What an entry action asks Customize to open. */
 export interface CustomizeRequest {
   readonly profileId: ProfileSelector;

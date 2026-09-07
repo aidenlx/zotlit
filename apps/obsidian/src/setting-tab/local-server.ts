@@ -7,9 +7,9 @@ import * as m from "@/lib/i18n/generated/messages";
 import {
   launchSheetSkipped,
   setLaunchSheetSkipped,
+  workbenchEnabled,
 } from "@/services/local-bridge/customize";
 
-import { workbenchEnabled } from "./context";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { defaultPlaceholder } from "./placeholder";
 
@@ -93,7 +93,7 @@ function confirmBeforeOpeningItem(
   return {
     name: m.settings_local_server_workbench_confirm_name(),
     desc: m.settings_local_server_workbench_confirm_desc(),
-    visible: () => enabled() && workbenchEnabled(ctx),
+    visible: () => enabled() && workbenchEnabled(ctx.settings),
     render: (setting) => {
       setting.addToggle((toggle) =>
         toggle

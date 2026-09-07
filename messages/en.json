@@ -40,6 +40,7 @@
   "notice_library_scope_invalid_action": "Open settings",
   "command_open_lit_note_name": "Open literature note quick switcher",
   "command_switch_literature_note_profile_name": "Switch literature note profile",
+  "command_customize_note_template_name": "Customize this note's template",
   "command_open_citekey_name": "Open citation key under cursor",
   "command_open_citekey_new_tab_name": "Open citation key under cursor in new tab",
   "command_open_citekey_right_name": "Open citation key under cursor to the right",
