@@ -30,10 +30,9 @@ const ITEM = { key: "IANNP5A2", title: "Why research findings are false" };
 
 /** A port nothing holds, so the listener binds without racing a fixed one. */
 async function freePort(): Promise<number> {
-  const probe = createServer();
+  await using probe = createServer();
   await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
   const { port } = probe.address() as AddressInfo;
-  await new Promise<void>((resolve) => probe.close(() => resolve()));
   return port;
 }
 
@@ -159,22 +158,27 @@ async function harness(
     ...options.settings,
   });
   const device = makeDevice(options.device);
-  const localServer = new LocalServerService({
-    settings: settings.service,
-    zoteroPref: { sourceId: "a1b2c3d4" } as unknown as ZoteroPrefService,
-    noteIndex: {
-      whenIndexed: () => Promise.resolve(),
-      getIndexedItemKeys: () => [],
-    },
-  } as never);
-  const bridge = new LocalBridgeService({
-    app: device.app,
-    settings: settings.service,
-    profile: PROFILES,
-    localServer,
-    ...READ_DEPS,
-    pluginVersion: "2.1.1",
-  });
+  await using stack = new AsyncDisposableStack();
+  const localServer = stack.use(
+    new LocalServerService({
+      settings: settings.service,
+      zoteroPref: { sourceId: "a1b2c3d4" } as unknown as ZoteroPrefService,
+      noteIndex: {
+        whenIndexed: () => Promise.resolve(),
+        getIndexedItemKeys: () => [],
+      },
+    } as never),
+  );
+  const bridge = stack.use(
+    new LocalBridgeService({
+      app: device.app,
+      settings: settings.service,
+      profile: PROFILES,
+      localServer,
+      ...READ_DEPS,
+      pluginVersion: "2.1.1",
+    }),
+  );
   await bridge.ready;
   const bound = await whenListening(localServer);
   const call = (path: string, init: CallInit = {}): Promise<Response> =>
@@ -182,6 +186,7 @@ async function harness(
       ...init,
       headers: { Origin: DOCS_SITE_URL, ...init.headers },
     });
+  const lifetime = stack.move();
   return {
     bridge,
     settings,
@@ -198,8 +203,7 @@ async function harness(
       return grant.credential;
     },
     async [Symbol.asyncDispose]() {
-      await bridge[Symbol.asyncDispose]();
-      await localServer[Symbol.asyncDispose]();
+      await lifetime[Symbol.asyncDispose]();
     },
   };
 }
@@ -294,7 +298,7 @@ it("keeps the installation id across a reload and mints a fresh one per device",
 });
 
 it("revokes the credential when the plugin unloads", async () => {
-  const bridge = await harness();
+  await using bridge = await harness();
   const credential = await bridge.connect();
   expect(bridge.bridge.connection).not.toBe(null);
 
@@ -305,7 +309,6 @@ it("revokes the credential when the plugin unloads", async () => {
     headers: authorized(credential),
   });
   expect(res.status).toBe(401);
-  await bridge[Symbol.asyncDispose]();
 });
 
 it("ends the session on both sides when Obsidian disconnects", async () => {

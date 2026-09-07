@@ -30,6 +30,7 @@ export interface ProfileHydration {
   /** The vault the document was read from, which keys the draft it belongs to. */
   readonly installationId: string;
   readonly kept: WorkbenchDraft | null;
+  readonly snapshot: SampleItem | null;
   /** The revision the retained in-memory draft still descends from. */
   readonly retainedExpected?: SaveSelectedProfileRequest["expected"];
 }
@@ -76,6 +77,7 @@ export function useWorkbenchConnection({
   // mirrored rather than read through the client on every render, so the
   // header follows it the way it follows the connection itself.
   const [resumable, setResumable] = useState(() => bridge.resumable);
+  const loadedLaunchItem = useRef(false);
   const [saveTarget, setSaveTarget] = useState<SaveTarget | null>(null);
   const [resources, setResources] = useState<RenderResources | undefined>();
   const [citationStyles, setCitationStyles] = useState<
@@ -156,12 +158,25 @@ export function useWorkbenchConnection({
         ? saveTarget.expected
         : kept?.expected;
 
+    // The first hydration loads the launch paper before exposing Restore, so a
+    // late response cannot replace the snapshot the reader just restored.
+    let snapshot: SampleItem | null = null;
+    let itemFailure: unknown;
+    if (!loadedLaunchItem.current && grant.selectedItem) {
+      try {
+        snapshot = await bridge.loadSelectedItem();
+        loadedLaunchItem.current = true;
+      } catch (error) {
+        itemFailure = error;
+      }
+    }
     setResources({ dependencies, citationStyle });
     setCitationStyles(styles);
     setLoadedStyleId(styleId);
     setSaveTarget({ reference, expected: currentExpected });
 
-    onHydrate({ selected, installationId, kept, retainedExpected });
+    onHydrate({ selected, installationId, kept, retainedExpected, snapshot });
+    if (itemFailure) throw itemFailure;
     if (
       kept?.expected &&
       !sameExpectedRevision(kept.expected, currentExpected)

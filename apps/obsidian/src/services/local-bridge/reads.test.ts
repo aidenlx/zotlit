@@ -576,3 +576,24 @@ function seed(sqlite: DatabaseSync): void {
       values (1, 1, 'http://zotero.org/users/12345/items/RELA2345');
   `);
 }
+
+it("keeps malformed draft excerpts out of operation failure logs", async () => {
+  await using bridge = await harness();
+  const marker = "PRIVATE-DRAFT-EXCERPT";
+  const res = await bridge.request(LOCAL_BRIDGE_PATHS.templateDependencies, {
+    method: "POST",
+    body: JSON.stringify({ source: `---\nname: [${marker}\n---\n` }),
+  });
+
+  expect(res.status).toBe(500);
+  await expect(res.json()).resolves.toMatchObject({
+    error: { code: "operation-failed" },
+  });
+  const failures = captured.filter((record) => record.level === "error");
+  expect(failures).toHaveLength(1);
+  expect(failures[0]!.properties).toEqual({
+    operation: LOCAL_BRIDGE_PATHS.templateDependencies,
+    reason: "operation-failed",
+  });
+  expect(loggedText()).not.toContain(marker);
+});

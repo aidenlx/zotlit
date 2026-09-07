@@ -116,7 +116,12 @@ async function sourceRefusal(
     // resolves them: a call this vault cannot answer refuses the Save rather
     // than leaving behind a Profile the next render cannot run. A vault fault
     // while reading a partial is the route's own failure, not a refusal.
-    await deps.template.exportLiteratureNotePackSource(source);
+    const bundled = await deps.template.exportLiteratureNotePackSource(source);
+    const document = facade.parseLiteratureNoteTemplate(bundled);
+    if (
+      unsupportedProfileReason(document.manifest, deps.pluginVersion) !== null
+    )
+      return { state: "refused", reason: "unsupported-profile" };
   } catch (error) {
     if (!(error instanceof LiteratureNotePackError)) throw error;
     return invalidSource(profileId, error);

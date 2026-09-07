@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import * as m from "@/lib/i18n/generated/messages";
+
 import { subscribeWorkbenchSaved, workbenchSavedNotice } from "./notices";
 import type { LocalBridgeService } from "./service";
 
@@ -9,8 +11,8 @@ describe("workbenchSavedNotice", () => {
     const notice = workbenchSavedNotice(updateAll);
 
     expect(notice).toMatchObject({
-      title: "Template document saved from the web Workbench.",
-      action: "Update all notes",
+      title: m.notice_workbench_profile_saved(),
+      action: m.notice_workbench_profile_saved_action(),
     });
 
     notice.updateAll();
