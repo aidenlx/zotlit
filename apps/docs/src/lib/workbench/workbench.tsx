@@ -672,6 +672,7 @@ export function Workbench() {
         </DialogDescription>
         <div className="flex flex-wrap gap-2">
           <Button
+            size="xs"
             onClick={() => {
               download();
               const next = pendingAction;
@@ -683,6 +684,7 @@ export function Workbench() {
           </Button>
           <Button
             variant="outline"
+            size="xs"
             onClick={() => {
               const next = pendingAction;
               setPendingAction(null);
@@ -691,7 +693,7 @@ export function Workbench() {
           >
             {pendingAction?.label}
           </Button>
-          <DialogClose render={<Button variant="ghost" />}>
+          <DialogClose render={<Button variant="ghost" size="xs" />}>
             {m.workbench_keep_editing()}
           </DialogClose>
         </div>
@@ -729,7 +731,7 @@ export function Workbench() {
           <DropdownMenu>
             <DropdownMenuTrigger
               disabled={connectionBusy || saveBusy}
-              render={<Button variant="outline" size="sm" />}
+              render={<Button variant="outline" size="xs" />}
             >
               <ProfileMenuLabel />
             </DropdownMenuTrigger>
@@ -768,7 +770,7 @@ export function Workbench() {
             </DropdownMenuContent>
           </DropdownMenu>
           <Button
-            size="sm"
+            size="xs"
             disabled={saveBusy || (canSaveToVault && draft)}
             onClick={
               canSaveToVault ? () => void save(controller.source) : download
@@ -809,17 +811,16 @@ export function Workbench() {
           {drafts.restorable && (
             <section
               aria-label={m.workbench_restore_heading()}
-              className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-2 border-b border-fd-border bg-fd-accent/40 px-4 py-3 min-[780px]:px-6"
+              className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-s-2 border-b border-s-fd-primary border-b-fd-border bg-fd-accent/40 px-3 py-2 text-xs leading-normal"
             >
-              <p className="text-sm font-medium">
-                {m.workbench_restore_heading()}
-              </p>
-              <p className="text-sm text-fd-muted-foreground">
+              <p className="font-semibold">{m.workbench_restore_heading()}</p>
+              <p className="text-pretty text-fd-muted-foreground">
                 {m.workbench_restore_body()}
               </p>
               <div className="ms-auto flex items-center gap-2">
                 <Button
                   variant="outline"
+                  size="xs"
                   onClick={() => {
                     const kept = drafts.restore();
                     if (!kept) return;
@@ -831,7 +832,11 @@ export function Workbench() {
                 >
                   {m.workbench_restore_accept()}
                 </Button>
-                <Button variant="ghost" onClick={() => drafts.startClean()}>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => drafts.startClean()}
+                >
                   {m.workbench_restore_decline()}
                 </Button>
               </div>
@@ -880,25 +885,23 @@ export function Workbench() {
           />
           {advanced && (
             <>
-              <div className="mb-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-sm font-semibold">
-                      {m.workbench_advanced_heading()}
-                    </h2>
-                    <WorkbenchHelp title={m.workbench_advanced_heading()}>
-                      {m.workbench_advanced_lede()}
-                    </WorkbenchHelp>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => changeMode(false)}
-                  >
-                    <ArrowLeft aria-hidden />
-                    {m.workbench_back_basic()}
-                  </Button>
+              <div className="mb-2 flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <h2 className="text-xs font-semibold">
+                    {m.workbench_advanced_heading()}
+                  </h2>
+                  <WorkbenchHelp title={m.workbench_advanced_heading()}>
+                    {m.workbench_advanced_lede()}
+                  </WorkbenchHelp>
                 </div>
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() => changeMode(false)}
+                >
+                  <ArrowLeft aria-hidden />
+                  {m.workbench_back_basic()}
+                </Button>
               </div>
               <>
                 <AnnotationSectionBar
@@ -927,7 +930,7 @@ export function Workbench() {
           >
             <div className="mb-2 flex shrink-0 items-center gap-1">
               <PaneTabList />
-              <WorkbenchHelp title={TAB_LABEL[tab]()} compact>
+              <WorkbenchHelp title={TAB_LABEL[tab]()}>
                 {TAB_LEDE[tab]()}
               </WorkbenchHelp>
             </div>
@@ -996,11 +999,12 @@ export function Workbench() {
                 ) : tab === "properties" ? (
                   <>
                     {entries === null ? (
-                      <p className="text-sm text-fd-muted-foreground">
+                      <p className="text-xs leading-normal text-pretty text-fd-muted-foreground">
                         {m.workbench_properties_source_only()}
                         <Button
                           variant="outline"
-                          className="mt-3"
+                          size="xs"
+                          className="mt-2"
                           onClick={() => changeMode(true)}
                         >
                           {m.workbench_open_source()}
@@ -1038,7 +1042,7 @@ export function Workbench() {
                   render={
                     <Button
                       variant="ghost"
-                      size="icon"
+                      size="icon-sm"
                       aria-label={m.workbench_fields_close()}
                     />
                   }
@@ -1117,7 +1121,7 @@ export function Workbench() {
               )
             }
             help={
-              <WorkbenchHelp title={m.workbench_result_heading()} compact>
+              <WorkbenchHelp title={m.workbench_result_heading()}>
                 {showAnnotation
                   ? m.workbench_annotation_lede()
                   : showManaged
@@ -1127,7 +1131,7 @@ export function Workbench() {
             }
           />
           {result && !renderable && (
-            <p role="status" className="mb-3 text-sm font-medium">
+            <p role="status" className="mb-2 text-xs font-medium">
               {m.workbench_preview_stale()}
             </p>
           )}
@@ -1148,8 +1152,8 @@ export function Workbench() {
                   </header>
                 )}
                 {!showAnnotation && previewProblem && (
-                  <p className="mb-3 border-l-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs">
-                    <strong className="font-medium">
+                  <p className="mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty">
+                    <strong className="font-semibold">
                       {m.workbench_preview_problem()}
                     </strong>{" "}
                     {diagnosticText(previewProblem)}{" "}
@@ -1224,12 +1228,10 @@ export function Workbench() {
         problem && (
           <section
             aria-label={m.workbench_problems_heading()}
-            className="shrink-0 border-t border-fd-border bg-fd-accent/40 px-4 py-3 min-[780px]:px-6"
+            className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1 border-s-2 border-t border-s-fd-primary border-t-fd-border bg-fd-accent/40 px-3 py-2 text-xs leading-normal"
           >
-            <p className="font-mono text-[0.68rem] font-semibold tracking-widest text-fd-primary uppercase">
-              {m.workbench_problems_heading()}
-            </p>
-            <p className="mt-1 text-sm">
+            <p className="font-semibold">{m.workbench_problems_heading()}</p>
+            <p className="min-w-0 text-pretty">
               {problemText(problem).message}{" "}
               <span className="text-fd-muted-foreground">
                 {problemText(problem).recovery}

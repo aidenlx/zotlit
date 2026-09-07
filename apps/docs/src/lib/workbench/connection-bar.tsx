@@ -61,7 +61,7 @@ export function ConnectionBar({
         <Popover.Root>
           <Popover.Trigger
             render={
-              <Button variant="outline" size="sm" className="max-w-full" />
+              <Button variant="outline" size="xs" className="max-w-full" />
             }
           >
             <span
@@ -88,9 +88,7 @@ export function ConnectionBar({
                     {m.workbench_connection_heading()}
                   </Popover.Title>
                   <Popover.Close
-                    render={
-                      <Button variant="ghost" size="icon" className="size-8" />
-                    }
+                    render={<Button variant="ghost" size="icon-sm" />}
                     aria-label={m.workbench_fields_close()}
                   >
                     <X aria-hidden />
@@ -130,7 +128,7 @@ export function ConnectionBar({
                 )}
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="xs"
                   disabled={busy || saveBusy}
                   onClick={onDisconnect}
                 >
@@ -144,7 +142,7 @@ export function ConnectionBar({
       ) : (
         <Button
           variant="outline"
-          size="sm"
+          size="xs"
           title={connectionStatus(connection)}
           disabled={saveBusy || (busy && !cancellable)}
           onClick={onAction}

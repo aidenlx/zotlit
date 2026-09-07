@@ -237,12 +237,12 @@ function CompletionPopup({
                       <span className="font-medium">
                         {option.displayLabel ?? option.label}
                       </span>
-                      <span className="ml-auto truncate font-mono text-[0.65rem] text-fd-muted-foreground">
+                      <span className="ms-auto truncate font-mono text-xs text-fd-muted-foreground">
                         {option.type}
                       </span>
                     </span>
                     {option.path && (
-                      <span className="font-mono text-[0.65rem] text-fd-muted-foreground">
+                      <span className="font-mono text-xs text-fd-muted-foreground">
                         {option.path}
                       </span>
                     )}

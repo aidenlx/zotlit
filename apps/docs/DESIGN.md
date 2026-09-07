@@ -139,6 +139,74 @@ The sample picker belongs with the result. Guidance opens from a visible Help
 control beside each task, and draft status sits below the panes. The existing
 780 px and 1180 px layout folds keep the editor usable on narrow screens.
 
+Every form inside the Workbench follows the same density, so the Properties
+rows, the Name and folder cards, and the handoff screen read as one utility:
+
+- **One control row.** Inputs, selects, and buttons in a pane are the 32 px
+  `xs` size with 12 px text (`Button size="xs"`, `Input size="xs"`,
+  `NativeSelect size="xs"`). Icon buttons inside a row are 28 px.
+- **Labels and headings at 12 px.** Section headings and card summaries are
+  12 px semibold; form labels are 12 px medium, set directly above their
+  control with a 4 px gap; supporting hints are 12 px muted with
+  `text-pretty`. Body sentences in a pane stay at 14 px only where they are
+  the pane's sole content.
+- **Space carries the grouping.** 4 px label-to-control, 8 px between rows
+  inside a card, 12 px between fields in a form, 16 px between groups. Cards
+  inset 10 px horizontally and 8 px vertically; a disclosure card carries a
+  chevron in its summary and no duplicate heading inside.
+- **One notice shape.** Every inline notice — the restore prompt, the Problems
+  strip, a preview problem, the format and language confirmations, the
+  annotation section bar — is 12 px text on `bg-fd-accent/40` with a 2 px
+  `border-s` accent bar, 12 px horizontal and 8 px vertical padding, its
+  actions in `xs` buttons at the trailing edge. Notice headings are Inter
+  semibold in sentence case, the same voice as pane headings.
+- **Logical properties.** Direction-dependent spacing uses `ms-`, `ps-`,
+  and `border-s`, so the RTL mirror needs no second set of classes.
+
+The header follows the same row: Connect, the Profile menu, and Download or
+Save are `xs` outline and primary buttons beside the 16 px Profile name, so
+the primary action reads as a control of the utility, level with the field
+search and the toolbar.
+
+#### Control vocabulary
+
+Every control in the Workbench names one kit variant and nothing else. Layout
+classes (`flex-1`, `ms-auto`, `mt-2`) and state classes
+(`aria-pressed:*`, `data-pressed:*`) may sit beside it; sizes, paddings,
+and font sizes may not.
+
+| Role | Variant | Size |
+| --- | --- | --- |
+| Header action, pane action, form button, notice action | `Button size="xs"` | 32 px, 12 px text, 14 px icon |
+| Segment inside a segmented control | `Button size="2xs"` | 28 px in a 32 px pill |
+| Icon button on the control row (undo, redo, close) | `Button size="icon-sm"` | 32 px |
+| Icon button inside a list row or card | `Button size="icon-xs"` | 28 px |
+| Icon button inline in a chip or compact list row | `Button size="icon-2xs"` | 24 px |
+| Text input, native select | `size="xs"` | 32 px, 12 px text on desktop |
+
+The Workbench is the only surface that composes from these variants; the
+docs-site `sm` and `default` sizes stay on the marketing and docs chrome.
+
+#### Enforcement
+
+Three tiers hold the system, each catching what the one above cannot, and a
+correction lands in the narrowest tier that holds it for good:
+
+1. **Kit variants** carry every size (`src/components/ui/button.tsx`,
+   `input.tsx`, `native-select.tsx`).
+2. **`src/lib/workbench/design.test.ts`** runs with `pnpm test` and rejects
+   the mechanical drift: a size or spacing utility on a `Button`, a text
+   control without `size="xs"`, a physical direction class, an arbitrary
+   font size, an uppercase label in the chrome. The rendered note
+   (`reading-view.tsx`) is content typography and exempt from the type rules.
+3. **This section** carries the judgement calls. The `/design-review` skill
+   reads it, runs the check, renders the touched surfaces at 1440 px and
+   640 px, and hands the rest to the `better-*` skills with these values as
+   the density system.
+
+A rule earns a line here, a variant in the kit, and a case in the check at the
+same time; a class at a call site is the outcome the system exists to prevent.
+
 ### Landing (`src/routes/_home/index.tsx`)
 
 Serif content throughout (the landing is hero + feature index, no markdown

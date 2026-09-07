@@ -126,6 +126,7 @@ export function WorkbenchFrame({
               variant={view === id ? "outline" : "ghost"}
               aria-pressed={view === id}
               aria-controls={`workbench-${id}-pane`}
+              size="xs"
               className="flex-1"
               disabled={onView === undefined}
               onClick={() => onView?.(id)}
@@ -214,8 +215,8 @@ export function EditToolbar({
       >
         <Button
           variant="ghost"
-          size="sm"
-          className="min-h-7 gap-1.5 rounded-sm px-2 py-0.5 text-xs text-fd-muted-foreground aria-pressed:bg-fd-card aria-pressed:text-fd-foreground aria-pressed:shadow-sm [&_svg]:size-3.5"
+          size="2xs"
+          className="rounded-sm text-fd-muted-foreground aria-pressed:bg-fd-card aria-pressed:text-fd-foreground aria-pressed:shadow-sm"
           aria-pressed={!advanced}
           disabled={onMode === undefined}
           onClick={() => onMode?.(false)}
@@ -225,8 +226,8 @@ export function EditToolbar({
         </Button>
         <Button
           variant="ghost"
-          size="sm"
-          className="min-h-7 gap-1.5 rounded-sm px-2 py-0.5 text-xs text-fd-muted-foreground aria-pressed:bg-fd-card aria-pressed:text-fd-foreground aria-pressed:shadow-sm [&_svg]:size-3.5"
+          size="2xs"
+          className="rounded-sm text-fd-muted-foreground aria-pressed:bg-fd-card aria-pressed:text-fd-foreground aria-pressed:shadow-sm"
           aria-pressed={advanced}
           disabled={onMode === undefined}
           onClick={() => onMode?.(true)}
@@ -238,8 +239,7 @@ export function EditToolbar({
       <div className="flex items-center gap-1">
         <Button
           variant="ghost"
-          size="icon"
-          className="size-8 [&_svg]:size-3.5"
+          size="icon-sm"
           aria-label={m.workbench_undo()}
           title={m.workbench_undo()}
           disabled={!canUndo}
@@ -249,8 +249,7 @@ export function EditToolbar({
         </Button>
         <Button
           variant="ghost"
-          size="icon"
-          className="size-8 [&_svg]:size-3.5"
+          size="icon-sm"
           aria-label={m.workbench_redo()}
           title={m.workbench_redo()}
           disabled={!canRedo}
@@ -261,12 +260,12 @@ export function EditToolbar({
         <Button
           ref={addFieldRef}
           variant="outline"
-          size="sm"
+          size="xs"
           disabled={onAddField === undefined}
           onClick={onAddField}
           aria-haspopup="dialog"
           aria-expanded={sheetOpen}
-          className="min-h-8 gap-1.5 px-2 py-1 text-xs min-[1180px]:hidden [&_svg]:size-3.5"
+          className="min-[1180px]:hidden"
         >
           <Plus aria-hidden />
           {m.workbench_add_field()}
@@ -369,27 +368,13 @@ export function ResultRegion({
 export function WorkbenchHelp({
   title,
   children,
-  compact = false,
 }: {
   title: string;
   children: ReactNode;
-  compact?: boolean;
 }) {
   return (
     <Popover.Root>
-      <Popover.Trigger
-        render={
-          <Button
-            variant="ghost"
-            size="sm"
-            className={
-              compact
-                ? "min-h-8 gap-1.5 px-2 py-1 text-xs [&_svg]:size-3.5"
-                : undefined
-            }
-          />
-        }
-      >
+      <Popover.Trigger render={<Button variant="ghost" size="xs" />}>
         <CircleHelp aria-hidden />
         {m.workbench_help()}
       </Popover.Trigger>
@@ -406,9 +391,7 @@ export function WorkbenchHelp({
                 {title}
               </Popover.Title>
               <Popover.Close
-                render={
-                  <Button variant="ghost" size="icon" className="size-8" />
-                }
+                render={<Button variant="ghost" size="icon-sm" />}
                 aria-label={m.workbench_fields_close()}
               >
                 <X aria-hidden />
@@ -442,10 +425,10 @@ export function WorkbenchSkeleton() {
       name={m.workbench_loading()}
       actions={
         <>
-          <Button variant="outline" size="sm" disabled>
+          <Button variant="outline" size="xs" disabled>
             <ProfileMenuLabel />
           </Button>
-          <Button size="sm" disabled>
+          <Button size="xs" disabled>
             <Download aria-hidden />
             {m.workbench_download()}
           </Button>

@@ -149,7 +149,7 @@ export function webHover(read: SuggestionSource) {
                   >
                     <div className="flex items-baseline gap-2">
                       <strong>{option.displayLabel ?? option.label}</strong>
-                      <span className="ml-auto font-mono text-fd-muted-foreground">
+                      <span className="ms-auto font-mono text-fd-muted-foreground">
                         {option.type}
                       </span>
                     </div>

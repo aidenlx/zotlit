@@ -100,7 +100,7 @@ export function AnnotationPane({
         <p
           id="annotation-problem"
           role="status"
-          className="mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-sm"
+          className="mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty"
         >
           {problem}
         </p>
@@ -125,16 +125,14 @@ export function AnnotationPane({
  */
 export function AnnotationPointer({ onInsert }: { onInsert: () => void }) {
   return (
-    <div className="mt-3 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-fd-border bg-fd-card px-3 py-2">
-      <span className="text-sm font-medium">
-        {m.workbench_annotation_label()}
-      </span>
-      <span className="text-sm text-fd-muted-foreground">
+    <div className="mt-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-fd-border bg-fd-card px-2.5 py-1.5 text-xs leading-normal">
+      <span className="font-semibold">{m.workbench_annotation_label()}</span>
+      <span className="text-pretty text-fd-muted-foreground">
         {m.workbench_annotation_pointer()}
       </span>
       <Button
         variant="outline"
-        size="sm"
+        size="xs"
         onClick={onInsert}
         className="ms-auto"
       >
@@ -162,20 +160,18 @@ export function AnnotationSectionBar({
     ({ code }) => code === "missing-annotation-section",
   );
   return (
-    <div className="mb-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-fd-border bg-fd-card px-3 py-2">
-      <span className="text-sm font-medium">
-        {m.workbench_section_heading()}
-      </span>
+    <div className="mb-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-fd-border bg-fd-card px-2.5 py-1.5 text-xs leading-normal">
+      <span className="font-semibold">{m.workbench_section_heading()}</span>
       {missing ? (
         <>
-          <span className="text-sm text-fd-muted-foreground">
+          <span className="text-pretty text-fd-muted-foreground">
             {m.workbench_section_missing()}
           </span>
           <Button
             variant="outline"
-            size="sm"
+            size="xs"
             onClick={() => controller.repairAnnotationSection()}
-            className="ml-auto"
+            className="ms-auto"
           >
             {m.workbench_section_repair()}
           </Button>
@@ -184,9 +180,9 @@ export function AnnotationSectionBar({
         section && (
           <Button
             variant="ghost"
-            size="sm"
+            size="xs"
             onClick={() => onGo({ ...section.header })}
-            className="ml-auto"
+            className="ms-auto"
           >
             {m.workbench_section_go()}
           </Button>

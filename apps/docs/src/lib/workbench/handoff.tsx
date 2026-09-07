@@ -26,41 +26,43 @@ export function ProfileHandoff({
   message,
 }: ProfileHandoffProps) {
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center bg-fd-background px-4 py-6 text-fd-foreground">
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-fd-background px-3 py-6 font-sans text-sm leading-normal text-fd-foreground">
       <section
         aria-labelledby="workbench-handoff"
-        className="flex w-full max-w-xl flex-col gap-4 rounded-md border border-fd-border bg-fd-card p-5 shadow-sm sm:p-6"
+        className="flex w-full max-w-xl flex-col gap-3 rounded-md border border-fd-border bg-fd-card p-4"
       >
-        <h1 id="workbench-handoff" className="font-serif text-xl font-medium">
+        <h1 id="workbench-handoff" className="text-base font-semibold">
           {m.workbench_unsupported_heading()}
         </h1>
-        <p className="text-sm">{m.workbench_unsupported_lede()}</p>
-        <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-fd-muted-foreground">
+        <p className="text-pretty">{m.workbench_unsupported_lede()}</p>
+        <ul className="flex list-disc flex-col gap-1 ps-5 text-fd-muted-foreground">
           {reasons.map((reason) => (
-            <li key={reason.id}>{reason.message}</li>
+            <li key={reason.id} className="text-pretty">
+              {reason.message}
+            </li>
           ))}
         </ul>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={onDownload}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="xs" onClick={onDownload}>
             {m.workbench_unsupported_download()}
           </Button>
-          <Button variant="outline" onClick={onImport}>
+          <Button variant="outline" size="xs" onClick={onImport}>
             {m.workbench_import()}
           </Button>
           {onUndo && (
-            <Button variant="outline" onClick={onUndo}>
+            <Button variant="outline" size="xs" onClick={onUndo}>
               {m.workbench_undo()}
             </Button>
           )}
           <a
             href="/docs/concepts/javascript-templates"
-            className="text-sm text-fd-primary underline underline-offset-2"
+            className="ms-auto text-fd-primary underline underline-offset-2"
           >
             {m.workbench_unsupported_docs()}
           </a>
         </div>
         {message && (
-          <p role="status" className="text-sm">
+          <p role="status" className="text-xs text-fd-muted-foreground">
             {message}
           </p>
         )}
