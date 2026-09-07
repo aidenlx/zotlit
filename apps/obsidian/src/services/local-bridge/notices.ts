@@ -16,6 +16,13 @@ export interface WorkbenchSavedNoticeDeps {
   updateAll: () => Promise<BatchUpdateResult>;
 }
 
+interface WorkbenchSavedNoticeCopy {
+  title: string;
+  action: string;
+  /** Runs the Update all notes flow the action offers. */
+  updateAll: () => void;
+}
+
 /**
  * Show one Notice for each Save the page lands, offering the Update all notes
  * flow. The Save itself leaves every Literature Note as it was, so this action
@@ -26,20 +33,48 @@ export interface WorkbenchSavedNoticeDeps {
 export function registerWorkbenchSavedNotice(
   deps: WorkbenchSavedNoticeDeps,
 ): () => void {
-  return deps.localBridge.on("profile-saved", () => {
-    const notice = new BaseNotice(
-      BaseNotice.render((renderer) => {
-        renderer.setTitle(m.notice_workbench_profile_saved());
-        renderer.addAction((button) => {
-          button
-            .setButtonText(m.notice_workbench_profile_saved_action())
-            .onClick(() => {
-              notice.hide();
-              void runUpdateAllWithNotice(deps.updateAll);
-            });
-        });
-      }),
-      SAVED_NOTICE_DURATION_MS,
-    );
+  const copy = workbenchSavedNotice(() => {
+    void runUpdateAllWithNotice(deps.updateAll);
   });
+  return subscribeWorkbenchSaved(deps.localBridge, () =>
+    showWorkbenchSaved(copy),
+  );
+}
+
+/** The copy of the saved Notice, with the action bound to the flow it runs. */
+export function workbenchSavedNotice(
+  updateAll: () => void,
+): WorkbenchSavedNoticeCopy {
+  return {
+    title: m.notice_workbench_profile_saved(),
+    action: m.notice_workbench_profile_saved_action(),
+    updateAll,
+  };
+}
+
+/**
+ * Subscribe the Notice to the bridge's Save events without coupling its
+ * trigger to rendering: one Notice per Save that landed, none for a refusal.
+ */
+export function subscribeWorkbenchSaved(
+  localBridge: Pick<LocalBridgeService, "on">,
+  showNotice: () => void,
+): () => void {
+  return localBridge.on("profile-saved", () => showNotice());
+}
+
+function showWorkbenchSaved(copy: WorkbenchSavedNoticeCopy): BaseNotice {
+  const notice = new BaseNotice(
+    BaseNotice.render((renderer) => {
+      renderer.setTitle(copy.title);
+      renderer.addAction((button) => {
+        button.setButtonText(copy.action).onClick(() => {
+          notice.hide();
+          copy.updateAll();
+        });
+      });
+    }),
+    SAVED_NOTICE_DURATION_MS,
+  );
+  return notice;
 }

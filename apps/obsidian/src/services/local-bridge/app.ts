@@ -297,7 +297,7 @@ export function createLocalBridgeApp(
       });
       return context.json(outcome);
     }
-    logger.info("Saved a Profile document from the web Workbench", {
+    logger.debug("Saved a Profile document from the web Workbench", {
       operation: "selected-profile:save",
       profileId,
     });
