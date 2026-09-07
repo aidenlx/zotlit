@@ -659,7 +659,27 @@
     {
       "path": "zt.attachments[0].fileLink",
       "reason": "The Attachment has no permitted vault-relative target."
+    },
+    {
+      "path": "zt.weblink",
+      "reason": "A personal-library web link carries the Zotero account name, so it is not included in Item Snapshots."
+    },
+    {
+      "path": "annotations[0].zt.fileLink",
+      "reason": "The Attachment has no permitted vault-relative target."
+    },
+    {
+      "path": "annotations[0].zt.parentItem.weblink",
+      "reason": "A personal-library web link carries the Zotero account name, so it is not included in Item Snapshots."
+    },
+    {
+      "path": "annotations[0].zt.parentAttachment.filePath",
+      "reason": "Attachment paths are not included in Item Snapshots."
+    },
+    {
+      "path": "annotations[0].zt.parentAttachment.fileLink",
+      "reason": "The Attachment has no permitted vault-relative target."
     }
   ],
-  "revision": "739d7d98b72f404808b4aad5ff44d9005eff7da1fd4e3d0f00f48ca54eaf54ce"
+  "revision": "e949e2741959b150993a7847065ac76114257ff15d18110def73f8e5b54e93fa"
 }

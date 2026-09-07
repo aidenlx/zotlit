@@ -6,8 +6,8 @@ import {
   SOURCE_ID_HEADER,
 } from "@zotlit/protocol";
 
-import { createLiveUpdateApp } from "./app";
-import type { LiveUpdateAppDeps } from "./app";
+import { createLiveUpdateApp } from "./live-update-app";
+import type { LiveUpdateAppDeps } from "./live-update-app";
 
 const SOURCE_ID = "a1b2c3d4";
 
@@ -25,6 +25,7 @@ function makeDeps(
   overrides: Partial<LiveUpdateAppDeps> = {},
 ): LiveUpdateAppDeps {
   return {
+    enabled: () => true,
     sourceId: () => SOURCE_ID,
     noteIndex: {
       whenIndexed: () => Promise.resolve(),
@@ -36,6 +37,25 @@ function makeDeps(
     ...overrides,
   };
 }
+
+describe("the Live updates toggle", () => {
+  it("answers 404 on every route while it is off", async () => {
+    const app = createLiveUpdateApp(makeDeps({ enabled: () => false }));
+
+    const status = await Promise.all(
+      [
+        app.request("/literature-notes", { headers: headers() }),
+        app.request("/notify", {
+          method: "POST",
+          headers: { ...headers(), "content-type": "application/json" },
+          body: JSON.stringify({ event: "db/updated" }),
+        }),
+      ].map(async (res) => (await res).status),
+    );
+
+    expect(status).toEqual([404, 404]);
+  });
+});
 
 describe("GET /literature-notes", () => {
   it("returns the indexed keys with a 200", async () => {

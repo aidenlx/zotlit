@@ -7,7 +7,7 @@ import {
   Save,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // The standalone Template Workbench: one master Profile document behind a
 // header, three columns, and the result the reader would get. It folds twice:
 // under 1180 px the field column becomes the dialog the toolbar "Add a field"
@@ -78,9 +78,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { toast } from "@/components/ui/toast";
 
 import { annotationHeaderMark } from "./annotation-mark";
-import { ConnectionBar } from "./connection-bar";
+import { ConnectionBar, ConnectionNotice } from "./connection-bar";
 import { FieldList } from "./field-list";
 import { insertSnippet, rootData, templateRootAt } from "./fields";
 import type { SampleItem } from "./fields";
@@ -156,13 +157,6 @@ export function Workbench() {
   const [sheet, setSheet] = useState(false);
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
-  // A sentence about the edit just made, which the next edit retires. It is
-  // stamped with the revision it belongs to, because the edit that earns it
-  // and the sentence itself land in one render.
-  const [notice, setNotice] = useState<{
-    text: string;
-    revision: number;
-  } | null>(null);
   const latestRevision = useRef(0);
   const [pendingAction, setPendingAction] = useState<{
     label: string;
@@ -191,12 +185,11 @@ export function Workbench() {
     citationStyles,
     saveAgainst,
     connectionBusy,
-    connectionCancellable,
+    resumable,
     itemBusy,
     saveBusy,
     message: connectionMessage,
-    connectFromPage,
-    cancelConnection,
+    reconnect,
     disconnect,
     reloadProfile,
     loadSelectedItem,
@@ -219,19 +212,36 @@ export function Workbench() {
   /** Opens the Profile a connection hydrated, with what it kept beside it. */
   function openSelectedProfile({
     selected,
+    installationId,
     kept,
     retainedExpected,
+    snapshot,
   }: ProfileHydration) {
     const opened = {
       reference: selected.document.reference,
       source: selected.source,
+      installationId,
+      ...(snapshot
+        ? {
+            snapshot,
+            annotationSelection: annotationSamples(snapshot, annotationChoice)
+              .example.id,
+          }
+        : {}),
     };
     // A connection that comes back to the document already open leaves the text
     // and its undo history where they are: the connection was lost, the work
-    // was not. The vault's own bytes become the saved state the draft is
-    // measured against, so an unsaved edit stays an unsaved edit.
-    if (drafts.reference === opened.reference && !replaceConnected.current) {
+    // was not. The vault counts as part of that identity, so the same reference
+    // read out of another vault is another document and opens as one. The
+    // vault's own bytes become the saved state the draft is measured against,
+    // so an unsaved edit stays an unsaved edit.
+    if (
+      drafts.location.reference === opened.reference &&
+      drafts.location.installationId === opened.installationId &&
+      !replaceConnected.current
+    ) {
       drafts.rebase(opened);
+      if (snapshot) setSample(snapshot);
       // The text on screen still descends from the revision it was read at, so
       // Save answers for that one: the vault moved, this draft did not.
       if (retainedExpected) saveAgainst(retainedExpected);
@@ -240,6 +250,7 @@ export function Workbench() {
     drafts.adopt(opened, replaceConnected.current ? null : kept);
     replaceConnected.current = false;
     loadDocument(selected.source);
+    if (snapshot) setSample(snapshot);
   }
 
   useEffect(
@@ -344,7 +355,10 @@ export function Workbench() {
     (item) => item.item.itemType === sampleItemType,
   );
   useEffect(() => {
-    if (bundledForType) setSample(bundledForType);
+    if (bundledForType)
+      setSample((held) =>
+        held.provenance.kind === "connected" ? held : bundledForType,
+      );
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- one selection per named type, not per parse of the same manifest
   }, [sampleItemType]);
 
@@ -404,7 +418,7 @@ export function Workbench() {
   const showAnnotation = !advanced && tab === "annotation";
   const { host, overlays } = useWebHost({
     snapshot: sample,
-    notice: (text) => setNotice({ text, revision: latestRevision.current }),
+    notice: (text) => toast.add({ title: text, type: "info" }),
     insertTarget: () => ({ slice, range: caret }),
   });
   // The render's complaint about the format alone, shown in the annotation box
@@ -477,9 +491,9 @@ export function Workbench() {
     // Both edits have told the subscriber by now, so the sentence is stamped
     // with the revision the reader is looking at.
     if (repaired) {
-      setNotice({
-        text: m.workbench_annotation_section_added(),
-        revision: latestRevision.current,
+      toast.add({
+        title: m.workbench_annotation_section_added(),
+        type: "info",
       });
     }
     setView("edit");
@@ -574,17 +588,20 @@ export function Workbench() {
   };
 
   /** Puts a snippet where the reader left the caret, then hands focus back. */
-  function insert(snippet: string) {
-    if (fieldDisabled) return;
-    const head = insertSnippet(controller, slice, {
-      target: caret,
-      snippet,
-    });
-    // The sheet stands over the pane it writes into, so it leaves with the
-    // snippet it put there.
-    setSheet(false);
-    setReveal({ from: head, to: head });
-  }
+  const insert = useCallback(
+    (snippet: string) => {
+      if (fieldDisabled) return;
+      const head = insertSnippet(controller, slice, {
+        target: caret,
+        snippet,
+      });
+      // The sheet stands over the pane it writes into, so it leaves with the
+      // snippet it put there.
+      setSheet(false);
+      setReveal({ from: head, to: head });
+    },
+    [fieldDisabled, controller, slice, caret],
+  );
 
   function trackSelection(selection: WorkbenchSliceRange) {
     setCaret(selection);
@@ -622,8 +639,8 @@ export function Workbench() {
       profileFileName(manifest?.id, { draft: controller.document === null }),
     );
     if (!canSaveToVault)
-      drafts.rebase({ reference: drafts.reference, source: controller.source });
-    setFileMessage(m.workbench_download_complete());
+      drafts.rebase({ ...drafts.location, source: controller.source });
+    toast.add({ title: m.workbench_download_complete(), type: "success" });
   }
 
   function replaceProfile(label: string, run: () => void) {
@@ -660,7 +677,7 @@ export function Workbench() {
   const connected = connection.state === "connected";
   const canSaveToVault =
     connected &&
-    saveTarget?.reference === drafts.reference &&
+    saveTarget?.reference === drafts.location.reference &&
     connection.capabilities.includes("selected-profile:save");
   // One input serves both screens, because the handoff is where a reader who
   // cannot edit this Profile reaches for another one.
@@ -754,7 +771,7 @@ export function Workbench() {
             >
               <ProfileMenuLabel />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" size="xs">
               <DropdownMenuItem onClick={openFile}>
                 <FolderOpen aria-hidden />
                 {m.workbench_import()}
@@ -815,22 +832,30 @@ export function Workbench() {
           connection={connection}
           website={window.location.origin}
           busy={connectionBusy}
-          cancellable={connectionCancellable}
-          message={connectionMessage}
+          resumable={resumable}
           saveBusy={saveBusy}
           editingConnectedProfile={canSaveToVault}
-          onConnect={() => {
+          onReconnect={() => {
             // Reconnecting the current vault document preserves its draft and history.
-            if (saveTarget?.reference === drafts.reference) connectFromPage();
-            else
-              replaceProfile(m.workbench_connection_connect(), connectFromPage);
+            if (saveTarget?.reference === drafts.location.reference)
+              reconnect();
+            else replaceProfile(m.workbench_connection_reconnect(), reconnect);
           }}
-          onCancel={cancelConnection}
           onDisconnect={() => void disconnect()}
+        />
+      }
+      notifications={
+        <ConnectionNotice
+          connection={connection}
+          message={fileMessage ?? connectionMessage}
         />
       }
       strips={
         <>
+          {/* The getting-started lede stands over a page Obsidian opened, and
+              over that page alone: a standalone reader has no vault to send a
+              template to. */}
+
           {drafts.restorable && (
             <section
               aria-label={m.workbench_restore_heading()}
@@ -848,7 +873,9 @@ export function Workbench() {
                     const kept = drafts.restore();
                     if (!kept) return;
                     loadDocument(kept.source);
-                    setSample(kept.snapshot);
+                    // A tab that closed on a vault paper comes back to the
+                    // text alone, so the paper on screen stands.
+                    if (kept.snapshot) setSample(kept.snapshot);
                     setAnnotationChoice(kept.annotationSelection ?? null);
                     if (kept.expected) saveAgainst(kept.expected);
                   }}
@@ -868,15 +895,13 @@ export function Workbench() {
         </>
       }
       status={
-        (notice?.revision === revision ? notice.text : null) ??
-        fileMessage ??
-        (canSaveToVault
+        canSaveToVault
           ? draft
             ? m.workbench_save_fix()
             : drafts.dirty
               ? m.workbench_unsaved()
               : m.workbench_saved_profile()
-          : m.workbench_browser_draft())
+          : m.workbench_browser_draft()
       }
       view={view}
       onView={(next) => {
@@ -902,7 +927,7 @@ export function Workbench() {
               onClick={() => setSheet(true)}
             />
           </EditToolbar>
-          <StartHere />
+          <StartHere connected={connected} />
           {advanced && (
             <>
               <div className="mb-2 flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-2">

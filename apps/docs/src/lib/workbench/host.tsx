@@ -158,6 +158,13 @@ export function useWebHost({
       persistence: {
         read(scope, key) {
           try {
+            if (
+              scope === "device" &&
+              key === "start-here-dismissed" &&
+              localStorage.getItem("zotlit.workbench.start-here.dismissed") !==
+                null
+            )
+              return "true";
             return localStorage.getItem(`${STORAGE_PREFIX}.${scope}.${key}`);
           } catch {
             return null;
@@ -196,7 +203,7 @@ export function useWebHost({
         }}
       >
         {menu && (
-          <DropdownMenuContent anchor={menu.anchor} align="end">
+          <DropdownMenuContent anchor={menu.anchor} align="end" size="xs">
             {menu.items.map((item) => (
               <DropdownMenuItem
                 key={item.label}
@@ -211,7 +218,7 @@ export function useWebHost({
                 <MenuPrimitive.SubmenuTrigger className="flex min-h-10 w-full items-center rounded-sm px-3 py-2 text-sm data-highlighted:bg-fd-muted">
                   {group.label}
                 </MenuPrimitive.SubmenuTrigger>
-                <DropdownMenuContent>
+                <DropdownMenuContent size="xs">
                   {group.items.map((item) => (
                     <DropdownMenuItem
                       key={item.label}
@@ -365,11 +372,12 @@ export function useWebHost({
               side="top"
               align="start"
               sideOffset={6}
+              collisionPadding={16}
               className="z-50"
             >
               <PreviewCard.Popup
                 data-slot="hover-card-content"
-                className="w-80 max-w-[calc(100vw-2rem)] space-y-2 rounded-md border border-fd-border bg-fd-popover p-3 text-xs text-fd-popover-foreground shadow-lg"
+                className="max-h-(--available-height) w-80 max-w-[calc(100vw-2rem)] space-y-2 overflow-y-auto overscroll-contain rounded-lg bg-fd-popover p-3 text-xs leading-normal break-words text-fd-popover-foreground shadow-lg ring-1 ring-fd-border"
               >
                 {hoverCard.content}
               </PreviewCard.Popup>

@@ -1,20 +1,70 @@
 ---
 title: "Template Workbench"
-description: "How agents inspect, edit, and test ZotLit templates and configure managed frontmatter without writing Liquid or Eta."
+description: "How the web Template Workbench connects to Obsidian, what it shares, and how the agent Workbench differs."
 introduced: "2.0.0"
 updated: "2.1.0"
 ---
 
 import { Card, Cards } from "fumadocs-ui/components/card";
 import { Callout } from "@/components/callout";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+The web Template Workbench previews template edits in your browser and saves them to the vault you opened it from.
+
+## Web editing
+
+The web editor works with a selected template document and paper. Opening it from a literature note selects that note's template and paper. A launch without a paper uses a sample item.
+
+The editor supports Liquid templates. Eta templates and templates that need JavaScript open in Obsidian.
+
+The first save creates an editable document from the built-in template. This operation is called Eject. Existing notes change when you update them.
+
+See [How to customize a template](/docs/how-to/customize-a-template) for the editing steps.
+
+## Local Server and browser access [#local-server]
+
+The Local Server connects ZotLit Companion and the web Workbench to your vault on this computer. Each service has its own toggle. By default, the server listens on this computer's loopback address, and each vault has its own port.
+
+The Local Bridge is the part of the Local Server that connects the web Workbench. It accepts connections from this computer only, even when the server hostname allows wider access for Live Update.
+
+A Workbench Connection grants the page access to one selected template and paper. It starts in Obsidian through <UiLabel name={m.settings_template_customize()} />. The confirmation names the website, vault, selected paper, template, and granted access. Opening the website by itself gives it no access to your vault.
+
+Obsidian sends a Connection code in the launch URL. The page exchanges this single-use code for its Workbench Connection. The code expires after two minutes.
+
+Released builds allow the Stable Docs and Pre-release Docs websites. A development build also allows the local docs development server. The plugin opens the docs website selected for its release line.
+
+### What the page receives
+
+The page receives the selected paper's bibliographic and custom fields, creators, tags, collection paths, dates, and Extra field. It also receives annotation text, comments, colors, page labels, authors, dates, and tags. Related items follow the same rules.
+
+The template document, the partial templates it uses, and the citation style are included. Attachment file names and types, child-note titles, Zotero backlinks, and vault-relative note and image links are available for preview.
+
+Absolute file paths, attachment contents and file links, child-note bodies, annotation image data, and cache paths stay in Obsidian. Personal-library web links are unavailable in the preview; group-library web links remain available. Fields outside the declared template data fields and custom fields are omitted.
+
+Rendering happens in your browser. The connected editing workflow sends requests to the docs website and the Local Server. It does not upload the selected paper or template to a rendering service.
+
+### How long access lasts
+
+Only one Workbench Connection can access a vault at a time. A new connection replaces the previous one. Disconnecting, turning off the web Workbench, unloading ZotLit, or quitting Obsidian ends the connection.
+
+Turning off the Local Server stops requests until the server starts again; the tab can then reconnect.
+
+The selected paper and connection details stay in the browser tab's session storage. Draft text remains in browser storage, separated by vault installation and template document. Closing the tab removes its session data; it does not erase the draft text.
+
+The <UiLabel name={m.settings_local_server_workbench_connection_name()} /> row on the <UiLabel name={m.settings_page_advanced()} /> settings page shows the connected website and template. Its <UiLabel name={m.settings_local_server_workbench_disconnect()} /> action ends access immediately. See [Local Server settings](/docs/reference/settings#local-server) for defaults and controls.
+
+## Agent Workbench
+
+An agent can also edit and test templates through the Obsidian CLI. This is a separate interface from the web editor.
 
 Describe the note you want. Your agent edits and tests its templates against your Zotero library, so you do not need to write Liquid or Eta yourself.
 
-## When to use it
+### When to use it
 
 Use the Template Workbench when you know how the rendered Markdown should look. Describe the result in plain language. The Workbench can also help an agent diagnose incorrect output or rendering errors.
 
-## How the parts fit together
+### How the parts fit together
 
 The **Template Workbench** is a set of ZotLit commands in the Obsidian CLI. It lets an agent inspect current template state and source. The agent can also inspect template data from your Zotero library and render changes in memory. The Workbench also configures managed frontmatter through the same CLI.
 
@@ -29,7 +79,7 @@ obsidian help zotlit
 obsidian zotlit:template-guide
 ```
 
-## Inspection and editing have separate boundaries
+### Inspection and editing have separate boundaries
 
 The Workbench inspects Zotero data and renders templates in memory. These operations do not write to your vault or Zotero library.
 
@@ -42,13 +92,13 @@ Frontmatter commands write to plugin settings, not vault files or Zotero data.
   the Workbench. The agent's own data-handling policies apply.
 </Callout>
 
-## JavaScript templates keep their consent boundary
+### JavaScript templates keep their consent boundary
 
 Liquid remains available without extra consent. Eta templates and JavaScript managed frontmatter fields require the JavaScript Templates gate.
 
 You enable this gate explicitly on each device. The Workbench does not change this setting. An agent must ask you to enable it in ZotLit settings.
 
-## Managed frontmatter configuration
+### Managed frontmatter configuration
 
 Managed frontmatter fields are YAML properties in literature note frontmatter whose values come from template expressions. ZotLit re-evaluates them on every note update. The Workbench can manage these field templates through CLI commands: an agent can list configured fields, evaluate them against a Zotero item, and add, patch, reorder, or remove entries.
 
@@ -60,7 +110,7 @@ For the full command reference, use the built-in guide:
 obsidian zotlit:template-guide topic=frontmatter
 ```
 
-## Template Workbench and Template Data Explorer
+### Template Workbench and Template Data Explorer
 
 The Template Workbench gives an agent data and in-memory rendering through the command line. The agent can then edit and test your template files.
 
@@ -78,7 +128,7 @@ Both use the same side-effect-free data resolution. Browsing and rendering do no
   />
   <Card
     title="Customize a template"
-    description="Create and edit template files in Obsidian."
+    description="Preview template edits in your browser and save them to Obsidian."
     href="/docs/how-to/customize-a-template"
   />
   <Card

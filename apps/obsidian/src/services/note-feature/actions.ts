@@ -129,7 +129,7 @@ export function addNoteFeatureActions(
     id: "update-all-notes",
     name: m.command_update_all_notes_name(),
     callback() {
-      void handleUpdateAll(deps.updateAll);
+      void runUpdateAllWithNotice(deps.updateAll);
     },
   });
 
@@ -345,7 +345,11 @@ function handleChildImport(
   );
 }
 
-async function handleUpdateAll(
+/**
+ * Run the Update all notes flow and report its outcome — the batch confirm
+ * modal the command opens, reused wherever else that flow is offered.
+ */
+export async function runUpdateAllWithNotice(
   updateAll: () => Promise<BatchUpdateResult>,
 ): Promise<void> {
   await toast.promise(updateAll(), {

@@ -8,6 +8,7 @@ import {
   BRIDGE_CAPABILITIES,
   BRIDGE_VERSION,
   LOCAL_BRIDGE_PATHS,
+  connectFragment,
 } from "@zotlit/workbench/bridge";
 import type { SaveSelectedProfileResponse } from "@zotlit/workbench/bridge";
 import {
@@ -20,6 +21,8 @@ import type {
   RenderRequest,
 } from "@zotlit/workbench/render";
 import { m } from "@zotlit/workbench/ui";
+
+import { Toaster } from "@/components/ui/toast";
 
 import { Workbench } from "./workbench";
 
@@ -39,6 +42,12 @@ vi.mock("./render-client", () => ({ startRenderWorker }));
 export { startRenderWorker };
 
 export const KEY = "zotlit.workbench.draft.standalone";
+export const PORT = 23_120;
+export const BRIDGE_ORIGIN = `http://127.0.0.1:${PORT}`;
+export function launch(code = "fixture-code", port = PORT): OpenPage {
+  window.location.hash = connectFragment(code, port);
+  return open();
+}
 
 /** Quiet time after the last change, plus room for the write to land. */
 export const SETTLE_MS = 700;
@@ -133,7 +142,14 @@ export function open(): OpenPage {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
-  act(() => root.render(<Workbench />));
+  act(() =>
+    root.render(
+      <>
+        <Workbench />
+        <Toaster />
+      </>,
+    ),
+  );
   return {
     host,
     press: (label) => press(host, label),
@@ -306,13 +322,14 @@ export function shownItem(host: HTMLElement): string {
 }
 
 export interface BridgeRequest {
+  readonly origin: string;
   readonly path: string;
   readonly body: unknown;
   readonly receiver: unknown;
-  readonly signal?: AbortSignal | null;
 }
 
 export interface BridgeFixtureOptions {
+  readonly source?: string;
   readonly item?: () => (typeof SAMPLE_ITEMS)[number];
   readonly builtInAbsent?: boolean;
   readonly conflictOnce?: {
@@ -320,11 +337,19 @@ export interface BridgeFixtureOptions {
     readonly source: string;
   };
   readonly itemNetworkFailureOnce?: boolean;
+  readonly initialItemFailure?: boolean;
   readonly etaDependency?: boolean;
   /** The sentence a bridge sends instead of handing a partial over. */
   readonly dependencyRefusal?: string;
   readonly itemProtocolFailureOnce?: boolean;
-  readonly loopbackPending?: boolean;
+  /** The version the bridge reports, which the page measures against its own. */
+  readonly bridgeVersion?: number;
+  /** Refuses the code exchange, the way a used or expired code is refused. */
+  readonly codeRefused?: boolean;
+  /** Grants no Item, the way a launch that chose none does. */
+  readonly noSelectedItem?: boolean;
+  /** Answers the selected Item 401, the way a revoked credential does. */
+  readonly revokeAfterConnect?: boolean;
   readonly save?: SaveSelectedProfileResponse;
 }
 
@@ -337,10 +362,13 @@ export function bridgeFetch(
   requests: BridgeRequest[],
   options: BridgeFixtureOptions = {},
 ): typeof fetch {
-  let selectedSource = CONNECTED;
+  let selectedSource = options.source ?? CONNECTED;
   let selectedRevision = "revision-1";
   let conflictPending = options.conflictOnce !== undefined;
-  let itemNetworkFailurePending = options.itemNetworkFailureOnce === true;
+  let itemReads = 0;
+  let itemNetworkFailurePending =
+    options.itemNetworkFailureOnce === true ||
+    options.initialItemFailure === true;
   let itemProtocolFailurePending = options.itemProtocolFailureOnce === true;
   return async function (
     this: typeof globalThis,
@@ -353,35 +381,44 @@ export function bridgeFetch(
     const body =
       typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
     requests.push({
+      origin: url.origin,
       path: url.pathname,
       body,
       receiver: this,
-      signal: init?.signal,
     });
 
+    if (url.pathname === LOCAL_BRIDGE_PATHS.selectedItem) itemReads += 1;
+
     if (
-      url.pathname === LOCAL_BRIDGE_PATHS.loopbackBootstrap &&
-      options.loopbackPending
+      (options.codeRefused &&
+        url.pathname === LOCAL_BRIDGE_PATHS.codeBootstrap) ||
+      (options.revokeAfterConnect &&
+        itemReads > 1 &&
+        url.pathname === LOCAL_BRIDGE_PATHS.selectedItem)
     ) {
-      return new Promise<Response>((_resolve, reject) => {
-        const signal = init?.signal;
-        if (!signal) throw new Error("The loopback probe has no abort signal.");
-        signal.addEventListener("abort", () => reject(signal.reason), {
-          once: true,
-        });
-      });
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: "invalid-one-time-code",
+            message: "The Workbench Connection is no longer available.",
+          },
+        }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      );
     }
 
     if (
       url.pathname === LOCAL_BRIDGE_PATHS.selectedItem &&
-      itemNetworkFailurePending
+      itemNetworkFailurePending &&
+      (options.initialItemFailure || itemReads > 1)
     ) {
       itemNetworkFailurePending = false;
       throw new TypeError("The Local Bridge disappeared.");
     }
     if (
       url.pathname === LOCAL_BRIDGE_PATHS.selectedItem &&
-      itemProtocolFailurePending
+      itemProtocolFailurePending &&
+      itemReads > 1
     ) {
       itemProtocolFailurePending = false;
       return new Response(
@@ -398,19 +435,14 @@ export function bridgeFetch(
     const item = options.item?.() ?? SAMPLE_ITEMS[0]!;
     const grant = {
       credential: "fixture-credential",
-      installation: {
-        id: "fixture-installation",
-        vault: "Fixture vault",
-        zoteroSourceId: "fixture-source",
-      },
+      installation: { id: "fixture-installation", vault: "Fixture vault" },
       pluginVersion: "2.1.1",
-      bridgeVersion: BRIDGE_VERSION,
+      bridgeVersion: options.bridgeVersion ?? BRIDGE_VERSION,
       templateDataContractVersion: SAMPLE_ITEMS[0]!.contractVersion,
       capabilities: [...BRIDGE_CAPABILITIES],
-      selectedItem: {
-        key: item.item.key,
-        title: item.item.title,
-      },
+      selectedItem: options.noSelectedItem
+        ? null
+        : { key: item.item.indexedKey, title: item.item.title },
       selectedProfile: { id: "default", name: "Connected profile" },
       profileDefaults: {
         folder: "fixture-literature",
@@ -468,8 +500,6 @@ export function bridgeResponse({
   switch (path) {
     case LOCAL_BRIDGE_PATHS.codeBootstrap:
       return grant;
-    case LOCAL_BRIDGE_PATHS.loopbackBootstrap:
-      return { state: "approved", connection: grant };
     case LOCAL_BRIDGE_PATHS.resumeSession:
       return grant;
     case LOCAL_BRIDGE_PATHS.templateDependencies:
@@ -525,13 +555,13 @@ export function bridgeResponse({
   }
 }
 
-export function isStyleRequest(
+function isStyleRequest(
   value: unknown,
 ): value is { readonly styleId: unknown } {
   return typeof value === "object" && value !== null && "styleId" in value;
 }
 
-export function installStorage(name: "localStorage" | "sessionStorage"): void {
+function installStorage(name: "localStorage" | "sessionStorage"): void {
   const entries = new Map<string, string>();
   Object.defineProperty(globalThis, name, {
     configurable: true,

@@ -287,6 +287,44 @@ pnpm fixture && pnpm exec turbo run test --filter=@zotlit/scripts
 
 Commit the regenerated template and style archive with all related version changes.
 
+## Run the mock Local Bridge
+
+The mock Local Bridge connects the web Template Workbench to Fixture data without a running Obsidian. It uses bridge contract version 2 and requires a Connection code before it creates a Workbench Connection.
+
+Run these commands from the workspace root in separate terminals:
+
+```sh
+pnpm --filter @zotlit/docs dev
+```
+
+```sh
+pnpm fixture bridge
+```
+
+The bridge command builds the Fixture and plugin bundles, then listens on `127.0.0.1:23120`. It prints a one-use Connection code. Open this URL, replacing `<code>` with the printed value:
+
+```text
+http://localhost:3000/workbench#zotlit-connect=<code>&port=23120
+```
+
+The default allowed origin is `http://localhost:3000`, the docs development server's origin. The hostname is part of the origin: use `localhost` for the page. The page exchanges the code, removes the fragment, and loads the Fixture's Books Profile and selected Item. Save writes to the Fixture Vault. Restart the bridge to rebuild the Fixture and receive a fresh code.
+
+| Flag | Default | Effect |
+| --- | --- | --- |
+| `--port <number>` | `23120` | Sets the bridge's loopback port. Use the same value in the launch URL's `port` field. |
+| `--origin <origin>` | `http://localhost:3000` | Sets the one allowed Workbench origin, including its scheme, hostname, and port. |
+| `--conflict-next-save` | `false` | Makes the next Save encounter an external revision, for conflict handling checks. |
+
+For example, start a bridge on another port and make its next Save conflict:
+
+```sh
+pnpm fixture bridge --port 23121 --conflict-next-save
+```
+
+Open `http://localhost:3000/workbench#zotlit-connect=<code>&port=23121` with this process's printed code. The refused Save keeps the draft available for editing.
+
+Press `Ctrl-C` to stop the bridge. These flags belong to the Fixture mock; the plugin's allowed docs origins are fixed in code.
+
 ## Run the End-to-end Run suite
 
 An End-to-end Run starts the plugin in a real desktop Obsidian window. The plugin reads the Fixture Zotero data directory from disk.

@@ -15,6 +15,8 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
+import { m as shared } from "@zotlit/workbench/ui";
+
 import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
@@ -30,6 +32,7 @@ import {
 function context(): SettingTabContext {
   return {
     app: { vault: { getFileByPath: () => null } },
+    customize: vi.fn(() => Promise.resolve()),
     settings: {
       current: defaults,
       updateDefaultLiteratureNoteProfileBindings: vi.fn(),
@@ -77,6 +80,67 @@ function list(
   );
   if (!found) throw new Error(`No list headed ${heading}`);
   return found;
+}
+
+/** The Template document row of the main page. */
+function documentRow(ctx: SettingTabContext): SettingDefinitionItem {
+  const row = literatureNoteItems(ctx).find(
+    (item) =>
+      "name" in item && item.name === m.settings_profile_document_name(),
+  );
+  if (!row) throw new Error("No Template document row");
+  return row;
+}
+
+/** The tooltips a `render` row's icon buttons carry, in order. */
+function extraButtonTooltips(row: SettingDefinitionItem): string[] {
+  return render(row)
+    .components.filter((control) => control instanceof ExtraButtonComponent)
+    .map((button) => button.tooltip);
+}
+
+/** The Customize icon on a Profile row, absent while the Workbench is off. */
+function customizeIcon(
+  row: SettingDefinitionItem,
+): ExtraButtonComponent | undefined {
+  return render(row)
+    .components.filter((control) => control instanceof ExtraButtonComponent)
+    .find(({ tooltip }) => tooltip === m.settings_template_customize());
+}
+
+/** The Profiles page with one Profile beside Default. */
+function pageWithOneProfile(ctx: SettingTabContext): {
+  defaultRow: SettingDefinitionItem;
+  profileRow: SettingDefinitionItem;
+} {
+  ctx.profile = {
+    profiles: [
+      {
+        id: "Bk3Qn7XvT2Lp",
+        label: "Books",
+        document: "zotlit-profile.books.md",
+        path: "templates/zotlit-profile.books.md",
+        bindings: {},
+        match: { state: "absent", summary: m.profile_match_absent() },
+      },
+    ],
+    diagnostics: [],
+    loaded: true,
+    defaultDocumentPath: "templates/zotlit-profile.default.md",
+  } as unknown as SettingTabContext["profile"];
+  const page = profilesPage(ctx);
+  return {
+    defaultRow: page.items![0]!,
+    profileRow: list(page, m.settings_profile_other_heading()).items![0]!,
+  };
+}
+
+function customizeButton(row: SettingDefinitionItem): ButtonComponent {
+  const button = render(row)
+    .components.filter((control) => control instanceof ButtonComponent)
+    .find(({ text }) => text === m.settings_template_customize());
+  if (!button) throw new Error("No Customize button");
+  return button;
 }
 
 describe("Profile settings", () => {
@@ -138,6 +202,91 @@ describe("Profile settings", () => {
     // The document exists, so the same action edits it instead.
     expect(buttonLabels(ejected)).toEqual([m.settings_template_open()]);
     expect(buttonIcons(ejected)).toEqual(["pencil"]);
+  });
+
+  it("offers the connected Customize action beside native customization", async () => {
+    const ctx = context();
+    // The native action remains available beside the connected launch.
+    expect(buttonLabels(documentRow(ctx))).toEqual([
+      m.profile_editor_customize(),
+      m.settings_template_customize(),
+    ]);
+
+    ctx.app = {
+      vault: { getFileByPath: (path: string) => ({ path }) as TFile },
+    } as unknown as SettingTabContext["app"];
+    expect(buttonLabels(documentRow(ctx))).toEqual([
+      m.profile_editor_customize(),
+      m.settings_profile_document_restore(),
+      m.settings_template_customize(),
+    ]);
+
+    customizeButton(documentRow(ctx)).click();
+    await Promise.resolve();
+    expect(ctx.customize).toHaveBeenCalledWith({ profileId: "default" });
+  });
+
+  it("keeps native customization while the web Template Workbench is off", () => {
+    const ctx = context();
+    ctx.settings = {
+      current: { ...defaults, "server.workbench": false },
+      updateDefaultLiteratureNoteProfileBindings: vi.fn(),
+    } as unknown as SettingTabContext["settings"];
+
+    expect(buttonLabels(documentRow(ctx))).toEqual([
+      m.profile_editor_customize(),
+    ]);
+
+    ctx.app = {
+      vault: { getFileByPath: (path: string) => ({ path }) as TFile },
+    } as unknown as SettingTabContext["app"];
+    expect(buttonLabels(documentRow(ctx))).toEqual([
+      m.profile_editor_customize(),
+      m.settings_profile_document_restore(),
+    ]);
+  });
+
+  it("keeps native Default customization and offers connected Profile customization", async () => {
+    const ctx = context();
+    const { defaultRow, profileRow } = pageWithOneProfile(ctx);
+
+    expect(extraButtonTooltips(defaultRow)).toEqual([
+      m.settings_profile_share(),
+    ]);
+    expect(extraButtonTooltips(profileRow)).toEqual([
+      m.settings_template_customize(),
+      shared.workbench_more_actions(),
+      m.settings_profile_duplicate(),
+      m.settings_profile_share(),
+    ]);
+
+    expect(buttonLabels(defaultRow)).toContain(m.profile_editor_customize());
+
+    // The row's own Profile is what its Customize opens, not the default.
+    customizeIcon(profileRow)!.click();
+    await vi.waitFor(() =>
+      expect(ctx.customize).toHaveBeenCalledWith({
+        profileId: "Bk3Qn7XvT2Lp",
+      }),
+    );
+  });
+
+  it("drops Customize from every Profile row while the Workbench is off", () => {
+    const ctx = context();
+    ctx.settings = {
+      current: { ...defaults, "server.workbench": false },
+      updateDefaultLiteratureNoteProfileBindings: vi.fn(),
+    } as unknown as SettingTabContext["settings"];
+    const { defaultRow, profileRow } = pageWithOneProfile(ctx);
+
+    expect(extraButtonTooltips(defaultRow)).toEqual([
+      m.settings_profile_share(),
+    ]);
+    expect(extraButtonTooltips(profileRow)).toEqual([
+      shared.workbench_more_actions(),
+      m.settings_profile_duplicate(),
+      m.settings_profile_share(),
+    ]);
   });
 
   it("withholds both ways in while a Profile write would race the load", () => {

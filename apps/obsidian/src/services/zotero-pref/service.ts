@@ -191,7 +191,7 @@ export class ZoteroPrefService extends Service<void> {
   /**
    * Stable id for the active Zotero install, hashed from its profile and data
    * directory — the same hash the Zotero companion stamps on every notify
-   * event. `LiveUpdateService` discards events whose `sourceId` doesn't match this.
+   * event. `LocalServerService` discards events whose `sourceId` doesn't match this.
    *
    * `null` while the profile dir is unknown (loading / detection failed), where
    * no incoming event can be meaningfully matched.

@@ -8,6 +8,11 @@ import yargs from "yargs";
 import type { Argv } from "yargs";
 import { hideBin } from "yargs/helpers";
 
+import {
+  DOCS_DEV_SERVER_ORIGIN,
+  localBridgeOrigin,
+} from "@zotlit/workbench/bridge";
+
 import { DEV_VAULT_CASE_ENV } from "#dev-vault";
 import {
   buildFixture,
@@ -295,7 +300,7 @@ const cli = yargs(hideBin(process.argv))
         .option("origin", {
           describe: "approved Workbench Origin",
           type: "string",
-          default: "http://localhost:4321",
+          default: DOCS_DEV_SERVER_ORIGIN,
         })
         .option("conflict-next-save", {
           describe: "make the next Profile save observe an external revision",
@@ -312,7 +317,7 @@ const cli = yargs(hideBin(process.argv))
         conflictNextSave: argv["conflict-next-save"],
       });
       console.log(
-        `Mock Local Bridge listening at http://127.0.0.1:${argv.port} for ${argv.origin}`,
+        `Mock Local Bridge listening at ${localBridgeOrigin(argv.port)} for ${argv.origin}`,
       );
       console.log(`One-time code: ${bridge.initialOneTimeCode}`);
     },

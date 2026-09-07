@@ -155,12 +155,22 @@ export function fetchAnnotationsTemplateData(
     resolvers: AnnotationResolvers;
     tagMemo?: TagMemo;
     groupIdMemo?: GroupIDMemo;
+    /**
+     * The signed-in account username, for the parent item's
+     * {@link TemplateParentItemData.weblink}. Omitted, the signed-in account is
+     * read from the database; pass `null` to build the parent item as a
+     * never-synced account does, with no personal-library web link.
+     */
+    username?: string | null;
   },
 ): Map<string, TemplateAnnotation> {
   const result = new Map<string, TemplateAnnotation>();
   if (annotations.length === 0) return result;
 
-  const username = getZoteroIdentity(client).username;
+  const username =
+    options.username === undefined
+      ? getZoteroIdentity(client).username
+      : options.username;
   const { resolvers, groupIdMemo } = options;
   const tagMemo: TagMemo = options.tagMemo ?? new Map();
   const memo = { memo: groupIdMemo };

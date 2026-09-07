@@ -8,7 +8,7 @@ import { useParts } from "./theme";
 const KEY = "start-here-dismissed";
 
 /** One introduction shared by the native and web authoring surfaces. */
-export function StartHere() {
+export function StartHere({ connected = false }: { connected?: boolean }) {
   const host = useWorkbenchHost();
   const dismissed = useWorkbenchStore((state) => state.startHereDismissed);
   const dismiss = useWorkbenchStore((state) => state.dismissStartHere);
@@ -33,9 +33,13 @@ export function StartHere() {
           {m.workbench_start_here_dismiss()}
         </button>
       </div>
-      <p {...part("line")}>{m.workbench_start_here_editor()}</p>
-      <p {...part("line")}>{m.workbench_start_here_explorer()}</p>
-      <p {...part("line")}>{m.workbench_start_here_preview()}</p>
+      <p {...part("line")}>{m.workbench_start_here_field()}</p>
+      <p {...part("line")}>{m.workbench_start_here_note()}</p>
+      <p {...part("line")}>
+        {connected
+          ? m.workbench_start_here_save()
+          : m.workbench_start_here_preview()}
+      </p>
     </aside>
   );
 }
