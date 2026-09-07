@@ -10,24 +10,32 @@ import noteSchema from "@zotlit/db/contract/note.schema.json";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import zoteroSchema from "@zotlit/zotero-types/schema.json" with { type: "json" };
 
+import { MARKER_KEYS } from "./allowlist";
 import { exportItemSnapshot } from "./index";
 
 /**
- * Every field name Zotero's own schema declares, under both its own name and
- * the base field it maps to, plus the three CSL-named aliases the Template
- * contract adds. An exported key outside this set and its root's declared
- * contract properties is a field nobody declared.
+ * The three CSL-named aliases the Template contract adds beside the field names
+ * Zotero's own schema declares.
  */
-const ZOTERO_FIELD_NAMES = new Set([
-  ...zoteroSchema.itemTypes.flatMap(({ fields }) =>
-    fields.flatMap((field) =>
-      "baseField" in field ? [field.field, field.baseField] : [field.field],
-    ),
-  ),
-  "abstract",
-  "containerTitle",
-  "citekey",
-]);
+const CONTRACT_FIELD_ALIASES = ["abstract", "containerTitle", "citekey"];
+
+/**
+ * Per Zotero item type, the field names its own schema declares, under both the
+ * field's own name and the base field it maps to. A key an Item-shaped record
+ * carries outside its item type's set and its root's declared contract
+ * properties is a field nobody declared.
+ */
+const ZOTERO_FIELD_NAMES = new Map(
+  zoteroSchema.itemTypes.map(({ itemType, fields }) => [
+    itemType,
+    new Set([
+      ...fields.flatMap((field) =>
+        "baseField" in field ? [field.field, field.baseField] : [field.field],
+      ),
+      ...CONTRACT_FIELD_ALIASES,
+    ]),
+  ]),
+);
 
 /**
  * A field the user declared in their own Zotero database, which reaches the
@@ -181,7 +189,7 @@ describe("exportItemSnapshot", () => {
     );
 
     expect(personal.roots.note.weblink).toBeNull();
-    expect(JSON.stringify(personal)).not.toContain("ada_researcher");
+    expect(JSON.stringify(personal)).not.toContain("Ada Researcher");
     expect(personal.unavailable).toEqual(
       expect.arrayContaining([
         {
@@ -351,16 +359,21 @@ function undeclaredKeys(
     if (typeof entry !== "object" || entry === null) return [];
 
     const record = entry as Record<string, unknown>;
-    if (Object.keys(record).some((key) => key.startsWith("$"))) return [];
+    if (MARKER_KEYS.some((key) => key in record)) return [];
     const properties = node.properties as
       | Record<string, Record<string, unknown>>
       | undefined;
     if (!properties) return [];
 
+    const itemType = record.itemType;
+    const fields =
+      typeof itemType === "string"
+        ? ZOTERO_FIELD_NAMES.get(itemType)
+        : undefined;
     return Object.entries(record).flatMap(([key, member]) => {
       if (Object.hasOwn(properties, key))
         return walk(member, properties[key] ?? {}, `${path}.${key}`);
-      return ZOTERO_FIELD_NAMES.has(key) || SEEDED_CUSTOM_FIELDS.includes(key)
+      return fields?.has(key) || SEEDED_CUSTOM_FIELDS.includes(key)
         ? []
         : [`${path}.${key}`];
     });
