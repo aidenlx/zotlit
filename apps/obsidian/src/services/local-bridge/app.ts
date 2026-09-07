@@ -1,7 +1,7 @@
 // The Local Bridge's routes on the Local Server: the gates every `/v1/*` path
-// passes, and the session lifecycle behind them. No server lifecycle here, and
-// no reads yet — the data operations answer a not-implemented refusal until
-// they land.
+// passes, the session lifecycle behind them, and the read operations a
+// connected page runs. No server lifecycle here, and no vault write — the Save
+// answers a not-implemented refusal until it lands.
 
 import type { Context } from "hono";
 import { Hono } from "hono/tiny";
@@ -11,11 +11,19 @@ import {
   codeBootstrapRequestSchema,
   disconnectRequestSchema,
   LOCAL_BRIDGE_PATHS,
+  selectedCitationStyleRequestSchema,
+  selectedItemRequestSchema,
+  templateDependenciesRequestSchema,
 } from "@zotlit/workbench/bridge";
 import type { ConnectionGrant } from "@zotlit/workbench/bridge";
 
 import { getLogger } from "@/lib/log";
 
+import {
+  ProfileDocumentMissingError,
+  SelectedItemUnavailableError,
+} from "./reads";
+import type { LocalBridgeReads } from "./reads";
 import type { BridgeConnection, BridgeSessions } from "./sessions";
 
 const logger = getLogger("local-bridge");
@@ -34,6 +42,8 @@ export interface LocalBridgeAppDeps {
   /** The websites allowed to hold a connection; fixed in code, never a setting. */
   allowedOrigins: readonly string[];
   sessions: BridgeSessions;
+  /** The vault data every read operation answers from. */
+  reads: LocalBridgeReads;
   /** Reads the versions and bindings in effect now, which every grant carries. */
   describeGrant(
     connection: BridgeConnection,
@@ -159,25 +169,98 @@ export function createLocalBridgeApp(
     return context.json({});
   });
 
-  // The reads and the Save land on their own tickets. Until then an authorized
-  // page gets a refusal it can name rather than a route that does not exist.
-  for (const path of [
-    LOCAL_BRIDGE_PATHS.templateSchema,
-    LOCAL_BRIDGE_PATHS.selectedItem,
-    LOCAL_BRIDGE_PATHS.selectedProfile,
-    LOCAL_BRIDGE_PATHS.saveSelectedProfile,
-    LOCAL_BRIDGE_PATHS.templateDependencies,
-    LOCAL_BRIDGE_PATHS.citationStyles,
-    LOCAL_BRIDGE_PATHS.selectedCitationStyle,
-  ]) {
-    app.all(path, (context) =>
-      refuse(context, {
-        status: 501,
-        code: "not-implemented",
-        message: "This plugin build does not answer that operation yet.",
-      }),
+  app.get(LOCAL_BRIDGE_PATHS.templateSchema, (context) => {
+    logger.debug("Answered a Local Bridge read", { operation: "schema" });
+    return context.json(deps.reads.templateSchema());
+  });
+
+  app.post(LOCAL_BRIDGE_PATHS.selectedItem, async (context) => {
+    const request = await parseBody(context.req.raw, selectedItemRequestSchema);
+    if (!request.success) return invalidRequest(context, request.issues);
+    const item = context.get("connection").item;
+    if (item === null) {
+      // The launch chose no Item, and the grant already said so: the page
+      // renders its own Sample Item rather than one this vault picked.
+      return refuse(context, {
+        status: 409,
+        code: "no-selected-item",
+        message: "This Workbench Connection has no selected Item.",
+      });
+    }
+    logger.debug("Answered a Local Bridge read", {
+      operation: "selected-item",
+      itemKey: item.key,
+    });
+    try {
+      return context.json(await deps.reads.selectedItem(item));
+    } catch (error) {
+      if (!(error instanceof SelectedItemUnavailableError)) throw error;
+      return refuse(context, {
+        status: 409,
+        code: "item-unavailable",
+        message: "The selected Item is no longer in this library.",
+      });
+    }
+  });
+
+  app.get(LOCAL_BRIDGE_PATHS.selectedProfile, async (context) => {
+    const profileId = context.get("connection").profileId;
+    logger.debug("Answered a Local Bridge read", {
+      operation: "selected-profile",
+      profileId,
+    });
+    try {
+      return context.json(await deps.reads.selectedProfile(profileId));
+    } catch (error) {
+      if (!(error instanceof ProfileDocumentMissingError)) throw error;
+      return refuse(context, {
+        status: 409,
+        code: "document-missing",
+        message: "The selected Profile document no longer exists.",
+      });
+    }
+  });
+
+  app.post(LOCAL_BRIDGE_PATHS.templateDependencies, async (context) => {
+    const request = await parseBody(
+      context.req.raw,
+      templateDependenciesRequestSchema,
     );
-  }
+    if (!request.success) return invalidRequest(context, request.issues);
+    logger.debug("Answered a Local Bridge read", { operation: "dependencies" });
+    return context.json(
+      await deps.reads.templateDependencies(request.output.source),
+    );
+  });
+
+  app.get(LOCAL_BRIDGE_PATHS.citationStyles, async (context) => {
+    logger.debug("Answered a Local Bridge read", {
+      operation: "citation-styles",
+    });
+    return context.json(await deps.reads.citationStyles());
+  });
+
+  app.post(LOCAL_BRIDGE_PATHS.selectedCitationStyle, async (context) => {
+    const request = await parseBody(
+      context.req.raw,
+      selectedCitationStyleRequestSchema,
+    );
+    if (!request.success) return invalidRequest(context, request.issues);
+    logger.debug("Answered a Local Bridge read", {
+      operation: "selected-citation-style",
+    });
+    return context.json(await deps.reads.selectedCitationStyle(request.output));
+  });
+
+  // The Save lands on its own ticket. Until then an authorized page gets a
+  // refusal it can name rather than a route that does not exist.
+  app.all(LOCAL_BRIDGE_PATHS.saveSelectedProfile, (context) =>
+    refuse(context, {
+      status: 501,
+      code: "not-implemented",
+      message: "This plugin build does not answer that operation yet.",
+    }),
+  );
 
   return app;
 }
@@ -224,7 +307,7 @@ function invalidRequest(
 function refuse(
   context: Context,
   error: {
-    readonly status: 400 | 401 | 403 | 501;
+    readonly status: 400 | 401 | 403 | 409 | 501;
     readonly code: string;
     readonly message: string;
   },

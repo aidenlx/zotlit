@@ -5,6 +5,7 @@ import { LOCAL_BRIDGE_PATHS } from "@zotlit/workbench/bridge";
 import { createLocalBridgeApp } from "./app";
 import type { ConnectionGrantDescription } from "./app";
 import { PRERELEASE_DOCS_ORIGIN, STABLE_DOCS_ORIGIN } from "./origins";
+import type { LocalBridgeReads } from "./reads";
 import { BridgeSessions } from "./sessions";
 import type { BridgeConnection } from "./sessions";
 
@@ -44,6 +45,14 @@ function grantOf(connection: BridgeConnection): ConnectionGrantDescription {
   };
 }
 
+/**
+ * The reads stand in here: this suite is about the gates and the lifecycle, and
+ * `reads.test.ts` covers what each operation answers from the vault.
+ */
+const READS = {
+  templateSchema: () => ({ note: {}, annotation: {}, filename: {} }),
+} as unknown as LocalBridgeReads;
+
 /** The shape a bridge call takes here: plain headers, so nothing spreads wrong. */
 interface CallInit {
   method?: string;
@@ -71,6 +80,7 @@ function setup(): Harness {
     peerAddress: () => peer,
     allowedOrigins: [STABLE_DOCS_ORIGIN, PRERELEASE_DOCS_ORIGIN],
     sessions,
+    reads: READS,
     describeGrant: (connection) => Promise.resolve(grantOf(connection)),
   });
   const request = async (
@@ -379,11 +389,11 @@ describe("a live Workbench Connection", () => {
     expect(live.status).toBe(200);
   });
 
-  it("refuses the data operations that have not landed yet", async () => {
+  it("refuses the Save, which has not landed yet", async () => {
     const bridge = setup();
     const credential = await bridge.connect();
 
-    const res = await bridge.request(LOCAL_BRIDGE_PATHS.selectedItem, {
+    const res = await bridge.request(LOCAL_BRIDGE_PATHS.saveSelectedProfile, {
       method: "POST",
       headers: authorized(credential),
       body: JSON.stringify({}),

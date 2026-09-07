@@ -58,6 +58,7 @@ export { USER_LIBRARY_ID } from "./lib/constants";
 export {
   getAnnotationsByKey,
   getAnnotationsByItemId,
+  getAnnotationsByParent,
 } from "./queries/annotations";
 export {
   getAttachmentByKey,
