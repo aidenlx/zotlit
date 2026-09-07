@@ -11,6 +11,7 @@ import { Command } from "@/components/command";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
+import { m as workbenchMessages } from "@zotlit/workbench/ui";
 
 Use the web Template Workbench to change a literature note's filename, properties, or body and preview the result.
 
@@ -36,13 +37,13 @@ Use the web Template Workbench to change a literature note's filename, propertie
   <Step>
     ### Edit and preview
 
-    Select a field to add Zotero data, or change the note in the editor. Check the rendered result as you edit. The <UiLabel name={m.workbench_start_here_heading()} /> strip shows these first steps and can be dismissed.
+    Select a field to add Zotero data, or change the note in the editor. Check the rendered result as you edit. The <UiLabel name={workbenchMessages.workbench_start_here_heading()} /> strip shows these first steps and can be dismissed.
 
   </Step>
   <Step>
     ### Save to your vault
 
-    Select <UiLabel name={m.workbench_save()} />. The first save of the built-in template creates its template document in your vault. Later saves update that file.
+    Select <UiLabel name={workbenchMessages.workbench_save()} />. The first save of the built-in template creates its template document in your vault. Later saves update that file.
 
     Existing notes keep their content until you update them. In Obsidian, select <UiLabel name={m.notice_workbench_profile_saved_action()} /> in the save notice, or run <Command name={m.command_update_note_name()} /> for the current note.
 
