@@ -51,7 +51,7 @@ export {
 } from "./delete-profile-modal";
 import { highlightMappingItems } from "./note-import";
 import { defaultProfileBindingPlaceholder } from "./placeholder";
-import { editProfileMatch } from "./profile-match-modal";
+import { editProfileMatch } from "./profile-match";
 import { shareProfile } from "./share-profile-modal";
 export { shareProfile, ShareProfileModal } from "./share-profile-modal";
 

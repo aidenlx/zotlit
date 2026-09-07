@@ -14,6 +14,28 @@ import type { SliceLanguage } from "./slice-editor";
  * the tree adds its entry here, so a host's class map is checked against it.
  */
 export interface WorkbenchParts {
+  match:
+    | "button"
+    | "icon-button"
+    | "input"
+    | "chip-input"
+    | "chip-value"
+    | "hint"
+    | "pane"
+    | "fieldset"
+    | "group"
+    | "rows"
+    | "row"
+    | "condition"
+    | "statement"
+    | "actions"
+    | "control"
+    | "chips"
+    | "chip"
+    | "expression"
+    | "conjunction"
+    | "result"
+    | "error";
   nameFolder:
     | "source-button"
     | "confirm-button"

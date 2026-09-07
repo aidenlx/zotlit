@@ -178,7 +178,9 @@ describe("the web host", () => {
       slice: "note",
       range: { from: 3, to: 3 },
     });
-    await expect(host.matchData.collections()).resolves.toEqual(["Shared key"]);
+    await expect(host.matchData.collections()).resolves.toEqual([
+      ["Shared key"],
+    ]);
     await expect(host.matchData.libraries()).resolves.toEqual([
       { id: "personal" },
     ]);

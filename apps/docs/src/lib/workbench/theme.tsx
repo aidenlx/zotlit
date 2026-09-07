@@ -56,6 +56,35 @@ export const WEB_THEME: WorkbenchTheme = {
       : []),
   ],
   classes: {
+    match: {
+      button: buttonVariants({ variant: "outline", size: "xs" }),
+      "icon-button": buttonVariants({ variant: "ghost", size: "icon-xs" }),
+      input: cn(nameInput, "min-w-0 flex-1"),
+      "chip-input": cn(nameInput, "w-12 min-w-12 flex-1"),
+      "chip-value": "min-w-0 [overflow-wrap:anywhere]",
+      hint: "text-xs text-fd-muted-foreground",
+
+      pane: "flex min-w-0 flex-col gap-3",
+      fieldset: "min-w-0 border-0 p-0",
+      group:
+        "flex min-w-0 flex-1 flex-col gap-2 rounded-md border border-fd-border p-2 data-[state=root]:border-0 data-[state=root]:p-0",
+      rows: "flex flex-col gap-2 list-none m-0 p-0",
+      row: "flex min-w-0 items-start gap-2",
+      condition: "min-w-0 flex-1",
+      statement:
+        "flex flex-wrap min-w-0 items-start gap-1 [&>[data-part=wrapper]]:w-auto",
+      actions: "flex flex-wrap items-center gap-1",
+      control: "min-w-0 max-w-full",
+      chips: "flex flex-1 min-w-0 flex-wrap items-center gap-1",
+      chip: "inline-flex min-w-0 items-center gap-1 rounded-sm border border-fd-border px-1",
+      expression: cn(
+        nameInput,
+        "[field-sizing:content] min-w-0 flex-1 resize-y font-mono",
+      ),
+      conjunction: "text-xs",
+      result: "text-sm",
+      error: "text-xs",
+    },
     nameFolder: {
       "source-button": cn(
         buttonVariants({ variant: "outline", size: "xs" }),
