@@ -64,11 +64,14 @@ describe("ProfileEditorView", () => {
     expect(requestSave).toHaveBeenCalledOnce();
   });
 
-  it("reports unavailable citation styles without rejecting or clearing the document", async () => {
+  it("clears the unavailable citation styles status after recovery", async () => {
+    let failed = true;
     const { view } = setup({
       zoteroPref: {
         get ready() {
-          return Promise.reject(new Error("Unavailable"));
+          return failed
+            ? Promise.reject(new Error("Unavailable"))
+            : Promise.resolve();
         },
       } as unknown as ProfileEditorDeps["zoteroPref"],
     });
@@ -76,6 +79,9 @@ describe("ProfileEditorView", () => {
     expect(view.unavailableDependencies).toHaveLength(1);
     expect(view.getViewData()).toBe(SOURCE);
     expect(view.citationStyles).toEqual([]);
+    failed = false;
+    await view.refreshStyles();
+    expect(view.unavailableDependencies).toEqual([]);
   });
 
   it("routes the view shortcut to shared history while leaving text inputs their own shortcut", () => {
