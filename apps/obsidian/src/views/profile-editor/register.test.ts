@@ -4,11 +4,10 @@ import { TFile } from "obsidian";
 import type { App, Command, Plugin, WorkspaceLeaf } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import * as m from "@/lib/i18n/generated/messages";
-
 import { profileCustomization, saveProfileCustomization } from "./preferences";
 import {
   customizeProfile,
+  requiresNative,
   openProfileEditor,
   registerProfileEditor,
 } from "./register";
@@ -16,19 +15,7 @@ import type { ProfileEditorDeps } from "./view";
 import { PROFILE_EDITOR_VIEW_TYPE } from "./view";
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-const notices = vi.hoisted(() => [] as string[]);
-vi.mock("obsidian", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("obsidian")>()),
-  Notice: class {
-    constructor(message: string) {
-      notices.push(message);
-    }
-  },
-}));
-afterEach(() => {
-  resetMockPlatform();
-  notices.length = 0;
-});
+afterEach(resetMockPlatform);
 
 function setup() {
   const file = new TFile();
@@ -89,6 +76,23 @@ function setup() {
 }
 
 describe("Profile Editor entry points", () => {
+  it.each([
+    "customize-profile",
+    "open-profile-editor",
+    "open-profile-web-workbench",
+  ])("handles a source read failure from %s", async (id) => {
+    setMockPlatform({ isDesktopApp: true });
+    const { app, deps, plugin, commands, setViewState } = setup();
+    const read = vi
+      .spyOn(app.vault, "cachedRead")
+      .mockRejectedValue(new Error("File unavailable"));
+    registerProfileEditor(plugin, deps);
+    expect(
+      commands.find((command) => command.id === id)!.checkCallback?.(false),
+    ).toBe(true);
+    await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
+    expect(setViewState).not.toHaveBeenCalled();
+  });
   it("opens the current Literature Note's resolved Default with that paper selected", async () => {
     setMockPlatform({ isDesktopApp: true });
     const { app, file, deps, plugin, commands, setViewState } = setup();
@@ -126,7 +130,7 @@ describe("Profile Editor entry points", () => {
         `---\nid: paper\nname: Paper\nversion: 1.0.0\ncontract: 2\n${manifest}\nfilename: paper\n---\nBody\n--- zotlit:annotation ---\nAnnotation\n`,
       );
       await customizeProfile(app, file);
-      expect(notices).toEqual([m.profile_editor_native_required()]);
+      expect(requiresNative(await app.vault.cachedRead(file))).toBe(true);
       expect(setViewState).toHaveBeenCalledOnce();
     },
   );
