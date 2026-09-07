@@ -106,6 +106,7 @@ it("renders effective folders, style titles, templates, paths and the selected s
   ]);
   const text: string[] = [];
   const el = {
+    classList: { add: () => {} },
     createDiv: ({ text: value }: { text: string }) => {
       text.push(value);
       return {
@@ -149,6 +150,7 @@ it("shows the rule behind a preselected choice and the problem that stopped auto
   });
   const text: string[] = [];
   const el = {
+    classList: { add: () => {} },
     createDiv: ({ text: value }: { text: string }) => {
       text.push(value);
       return {

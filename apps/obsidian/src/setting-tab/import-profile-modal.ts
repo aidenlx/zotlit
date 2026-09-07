@@ -115,7 +115,6 @@ export function createProfileImporter(
 
 function chooseImportSource(app: App): Promise<ImportSource | undefined> {
   const picker = new ImportSourceModal(app);
-  picker.contentEl.addClass("zt-root");
   picker.setPlaceholder(m.command_import_profile_name());
   picker.open();
   return picker.result;
@@ -124,6 +123,14 @@ function chooseImportSource(app: App): Promise<ImportSource | undefined> {
 class ImportSourceModal extends SuggestModal<ImportSource> {
   readonly #decision = Promise.withResolvers<ImportSource | undefined>();
   readonly result = this.#decision.promise;
+  constructor(app: App) {
+    super(app);
+    this.setInstructions([
+      { command: "↑↓", purpose: m.instruction_navigate() },
+      { command: "↵", purpose: m.instruction_select() },
+      { command: "esc", purpose: m.instruction_dismiss() },
+    ]);
+  }
   getSuggestions(query: string): ImportSource[] {
     const sources: ImportSource[] = ["clipboard", "file"];
     return sources.filter((source) =>
