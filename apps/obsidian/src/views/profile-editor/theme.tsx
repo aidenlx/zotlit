@@ -44,6 +44,33 @@ export const profileEditorTheme: WorkbenchTheme = {
     }),
   ],
   classes: {
+    match: {
+      button: "zt:inline-flex zt:items-center zt:gap-1.5",
+      "icon-button": "clickable-icon zt:shrink-0",
+      input: "zt:min-w-0 zt:flex-1",
+      "chip-input": "zt:min-w-12 zt:flex-1 zt:w-12",
+      "chip-value": "zt:min-w-0 zt:[overflow-wrap:anywhere]",
+      hint: "zt:text-xs zt:text-muted-foreground",
+
+      pane: "zt:flex zt:min-w-0 zt:flex-col zt:gap-3",
+      fieldset: "zt:min-w-0 zt:border-0 zt:p-0",
+      group:
+        "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-2 zt:rounded-md zt:border zt:border-border zt:p-2 zt:data-[state=root]:border-0 zt:data-[state=root]:p-0",
+      rows: "zt:flex zt:flex-col zt:gap-2 zt:list-none zt:m-0 zt:p-0",
+      row: "zt:flex zt:min-w-0 zt:items-start zt:gap-2",
+      condition: "zt:min-w-0 zt:flex-1",
+      statement: "zt:flex zt:flex-wrap zt:min-w-0 zt:items-start zt:gap-1",
+      actions: "zt:flex zt:flex-wrap zt:items-center zt:gap-1",
+      control: "zt:min-w-0 zt:max-w-full",
+      chips:
+        "zt:flex zt:flex-1 zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-1",
+      chip: "zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-sm zt:border zt:border-border zt:px-1",
+      expression:
+        "zt:min-w-0 zt:flex-1 zt:font-mono zt:[field-sizing:content] zt:resize-y",
+      conjunction: "zt:text-xs",
+      result: "zt:text-sm",
+      error: "zt:text-xs",
+    },
     editToolbar: {
       "edit-toolbar": cn(row, "zt:p-2"),
       "mode-group": row,

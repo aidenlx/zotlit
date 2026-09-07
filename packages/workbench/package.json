@@ -32,6 +32,10 @@
       "development": "./src/language/index.ts",
       "default": "./dist/language.mjs"
     },
+    "./match": {
+      "development": "./src/match/index.ts",
+      "default": "./dist/match.mjs"
+    },
     "./render": {
       "development": "./src/render/index.ts",
       "default": "./dist/render.mjs"
@@ -68,7 +72,9 @@
     "@lezer/javascript": "1.5.4",
     "@lezer/lr": "catalog:",
     "@zotlit/db": "workspace:*",
+    "@zotlit/filter-expression": "workspace:*",
     "@zotlit/templates": "workspace:*",
+    "@zotlit/zotero-types": "workspace:*",
     "arkregex": "catalog:",
     "diff": "8.0.4",
     "jsonc-parser": "^3.3.1",
@@ -90,7 +96,6 @@
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@zotlit/config": "workspace:*",
-    "@zotlit/zotero-types": "workspace:*",
     "ajv": "catalog:",
     "happy-dom": "catalog:",
     "oxlint": "catalog:",

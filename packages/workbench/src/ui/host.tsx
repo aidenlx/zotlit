@@ -92,8 +92,8 @@ export interface WorkbenchLibrary {
 /** The names a Match condition can be written against. */
 export interface WorkbenchMatchData {
   tags(): Promise<readonly string[]>;
-  /** Collection paths, `/`-joined from the root ancestor (ADR 0040). */
-  collections(): Promise<readonly string[]>;
+  /** Root-first Collection path segments; display formatting stays in the UI. */
+  collections(): Promise<readonly (readonly string[])[]>;
   libraries(): Promise<readonly WorkbenchLibrary[]>;
 }
 

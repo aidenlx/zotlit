@@ -29,7 +29,7 @@ function selectedTab(): string | undefined {
 }
 
 describe("the tab bar", () => {
-  it("offers the four panes in order and opens the one pressed", () => {
+  it("offers the five panes in order and opens the one pressed", () => {
     const { store, ui } = mount(
       <>
         <TabBar />
@@ -45,6 +45,7 @@ describe("the tab bar", () => {
       m.workbench_tab_note(),
       m.workbench_tab_properties(),
       m.workbench_tab_annotation(),
+      m.workbench_tab_match(),
       m.workbench_tab_name_and_folder(),
     ]);
     expect(selectedTab()).toBe(m.workbench_tab_note());
@@ -78,6 +79,9 @@ describe("the tab bar", () => {
 
     const list = screen.getByRole("tablist");
     fireEvent.keyDown(list, { key: "ArrowRight" });
+    expect(store.getState().tab).toBe("match");
+    expect(document.activeElement?.textContent).toBe(m.workbench_tab_match());
+    fireEvent.keyDown(list, { key: "ArrowRight" });
     expect(store.getState().tab).toBe("name");
     expect(document.activeElement?.textContent).toBe(
       m.workbench_tab_name_and_folder(),
@@ -91,7 +95,7 @@ describe("the tab bar", () => {
     fireEvent.keyDown(list, { key: "End" });
     expect(store.getState().tab).toBe("name");
     // Only the chosen tab is in the tab order.
-    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, -1, -1, 0]);
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, -1, -1, -1, 0]);
   });
 
   it("marks its parts and wears the host's classes, nothing more", () => {
@@ -106,6 +110,7 @@ describe("the tab bar", () => {
     }
     expect(tabs().map((tab) => tab.dataset.state)).toEqual([
       "active",
+      "inactive",
       "inactive",
       "inactive",
       "inactive",

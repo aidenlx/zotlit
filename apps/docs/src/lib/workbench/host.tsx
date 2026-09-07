@@ -76,7 +76,7 @@ function matchData(
         "path" in collection &&
         Array.isArray(collection.path) &&
         collection.path.every((part: unknown) => typeof part === "string")
-          ? [collection.path.join("/")]
+          ? [collection.path]
           : [],
       )
     : [];

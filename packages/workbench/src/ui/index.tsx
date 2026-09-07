@@ -1,3 +1,4 @@
+export { MatchPane } from "./match";
 // The Workbench UI: the headless component tree both the web Template
 // Workbench and the Obsidian Profile Editor mount over one Profile document
 // (ADR 0044). It renders structure and behaviour; the host supplies the look
