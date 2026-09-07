@@ -293,6 +293,7 @@ export class ProfileEditorView extends TextFileView {
       const styles = dataDir ? await listInstalledStyles(dataDir) : [];
       if (this.#closed) return;
       this.#citationStyles = styles;
+      this.#stylesUnavailable = false;
       this.#mount();
     } catch (error) {
       logger.warn("Failed to read Profile Editor citation styles", { error });
