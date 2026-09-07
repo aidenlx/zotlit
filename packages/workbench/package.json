@@ -47,12 +47,12 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "pnpm generate:i18n && tsdown",
+    "build": "tsdown",
     "dev": "pnpm generate:i18n && tsdown --watch",
-    "typecheck": "pnpm generate:i18n && tsc --noEmit -p tsconfig.lib.json",
-    "typecheck:test": "pnpm generate:i18n && tsc --noEmit -p tsconfig.test.json",
+    "typecheck": "tsc --noEmit -p tsconfig.lib.json",
+    "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
-    "test": "pnpm generate:i18n && vitest run",
+    "test": "vitest run",
     "generate:i18n": "node scripts/generate-i18n.ts",
     "postinstall": "pnpm generate:i18n",
     "generate:eta": "lezer-generator src/language/eta.grammar -o src/language/eta-parser.ts --typeScript"
