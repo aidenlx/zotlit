@@ -1,9 +1,3 @@
-// The standalone Template Workbench: one master Profile document behind a
-// header, three columns, and the result the reader would get. It folds twice:
-// under 1180 px the field column becomes the dialog the toolbar "Add a field"
-// button opens, and under 780 px the pane fills the screen with the result
-// behind a view switch.
-
 import {
   ArrowLeft,
   Download,
@@ -13,6 +7,11 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+// The standalone Template Workbench: one master Profile document behind a
+// header, three columns, and the result the reader would get. It folds twice:
+// under 1180 px the field column becomes the dialog the toolbar "Add a field"
+// button opens, and under 780 px the pane fills the screen with the result
+// behind a view switch.
 import { useStore } from "zustand";
 
 import {
@@ -25,6 +24,7 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
+import { snapshotMatchFacts } from "@zotlit/workbench/match";
 import {
   DEFAULT_PROFILE_SOURCE,
   SAMPLE_ITEMS,
@@ -32,6 +32,7 @@ import {
   profileSourceRevision,
 } from "@zotlit/workbench/render";
 import type { ProfileRenderResult } from "@zotlit/workbench/render";
+import { MatchPane } from "@zotlit/workbench/ui";
 import {
   EditToolbar,
   ProblemsFooter,
@@ -976,6 +977,12 @@ export function Workbench() {
                       onSelection={trackSelection}
                     />
                   </>
+                ) : tab === "match" ? (
+                  <MatchPane
+                    controller={controller}
+                    facts={snapshotMatchFacts(sample)}
+                    vocabularyRevision={sample.revision}
+                  />
                 ) : tab === "annotation" ? (
                   <AnnotationPane
                     controller={controller}

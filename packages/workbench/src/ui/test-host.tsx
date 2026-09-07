@@ -60,7 +60,7 @@ export function fakeHost(): FakeHost {
     markdown: ({ markdown }) => <div role="document">{markdown}</div>,
     matchData: {
       tags: () => Promise.resolve(["reading", "methods"]),
-      collections: () => Promise.resolve(["Thesis/Chapter 1"]),
+      collections: () => Promise.resolve([["Thesis", "Chapter 1"]]),
       libraries: () =>
         Promise.resolve([{ id: "personal", name: "My Library" }]),
     },

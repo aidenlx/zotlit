@@ -1,18 +1,16 @@
-import type { MatchTree } from "@zotlit/templates/facade";
-
-// Match editor drafts preserve groups and leaves outside the labelled controls.
-import * as m from "@/lib/i18n/generated/messages";
-import type { AvailableLibrary } from "@/services/library-scope/scope";
-import {
-  compileCondition,
-  describeProblem,
-  formatCondition,
-} from "@/services/profile-selection";
+// Preserve nested Match trees and expression rows through labelled edits.
 import type {
-  CollectionChoice,
+  AvailableLibrary,
   FlatCondition,
   MatchCondition,
-} from "@/services/profile-selection";
+} from "#/match/condition";
+
+import type { MatchTree } from "@zotlit/templates/facade";
+
+import { describeProblem } from "./match.diagnostic";
+import { m } from "./paraglide/messages.js";
+
+import { compileCondition, formatCondition } from "#/match/condition";
 
 /** What a fresh condition tests: the type the ticketed example starts from. */
 export const DEFAULT_ITEM_TYPE = "book";
@@ -38,29 +36,12 @@ export type EditorCondition = ConditionGroup | RowCondition;
 /** A child's position in the tree: the index at each nesting level. */
 export type ConditionPath = readonly number[];
 
-export interface MatchDraft {
-  root: ConditionGroup;
-}
-
-/** What the editor reads from the plugin while it is open. */
+/** Vocabulary supplied by the current host. */
 export interface MatchEditorDeps {
-  libraries: readonly AvailableLibrary[];
-  /** The Collections the database offers, read once when the dialog opens. */
-  collections: readonly CollectionChoice[];
-}
-
-/** An absent match starts with one item-type condition. */
-export function initialDraft(match?: MatchTree): MatchDraft {
-  return {
-    root:
-      match === undefined
-        ? {
-            kind: "group",
-            match: "all",
-            conditions: [freshCondition("item-type", false)],
-          }
-        : fromFilter(match),
-  };
+  libraries: readonly (AvailableLibrary & { name?: string })[];
+  tags: readonly string[];
+  /** Root-first Collection paths available in this host. */
+  collections: readonly { path: readonly string[] }[];
 }
 
 /**
@@ -250,13 +231,13 @@ export function conditionIssue(
             (path) =>
               path.length === 0 || path.some((segment) => segment === ""),
           ))
-        ? m.settings_profile_match_collection_empty()
+        ? m.workbench_match_collection_empty()
         : null;
     case "tags":
       return condition.operator !== "isEmpty" &&
         (condition.values.length === 0 ||
           condition.values.some((value) => value === ""))
-        ? m.settings_profile_match_tag_empty()
+        ? m.workbench_match_tag_empty()
         : null;
     case "expression": {
       const { condition: compiled, problem } = compileCondition(
@@ -282,12 +263,4 @@ export function treeIssue(
     if (issue) return issue;
   }
   return null;
-}
-
-/** Whether anything keeps the match from being saved. */
-export function draftInvalid(
-  draft: MatchDraft,
-  deps: MatchEditorDeps,
-): boolean {
-  return treeIssue(draft.root, deps) !== null;
 }

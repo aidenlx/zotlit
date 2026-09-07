@@ -78,6 +78,16 @@ describe("Profile Editor entry points", () => {
     });
   });
 
+  it("opens the requested Match tab in Basic mode", async () => {
+    const { app, file, setViewState } = setup();
+    await openProfileEditor(app, file, { tab: "match" });
+    expect(setViewState).toHaveBeenCalledWith({
+      type: PROFILE_EDITOR_VIEW_TYPE,
+      state: { file: file.path, tab: "match", advanced: false },
+      active: true,
+    });
+  });
+
   it("keeps registration desktop-only", () => {
     setMockPlatform({ isDesktopApp: false });
     const { plugin, deps, registerView } = setup();
