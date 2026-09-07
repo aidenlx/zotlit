@@ -38,7 +38,7 @@
     },
     "./snapshot": {
       "types": "./dist/snapshot.d.mts",
-      "node": "./dist/snapshot.mjs"
+      "default": "./dist/snapshot.mjs"
     },
     "./package.json": "./package.json"
   },

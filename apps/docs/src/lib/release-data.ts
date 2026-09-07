@@ -9,6 +9,8 @@
 import { env } from "cloudflare:workers";
 import { gt, rcompare, valid } from "semver";
 
+import * as m from "@/paraglide/messages.js";
+
 import { assetUrl, tagUrl } from "./github-releases";
 import type { ReleaseChannel } from "./github-releases";
 import { gitConfig, repoSlug } from "./shared";
@@ -152,7 +154,8 @@ async function getCompanion(channel: ReleaseChannel) {
  * @see https://extensionworkshop.com/documentation/develop/browser-compatibility/
  */
 function formatZoteroRange(min: string, max?: string): string {
-  if (!max || max === "*") return `Zotero ${min} or newer`;
+  if (!max || max === "*")
+    return m.docs_zotero_minimum_version({ version: min });
   if (max.endsWith(".*")) {
     const line = max.slice(0, -2); // "9.*" -> "9", "7.0.*" -> "7.0"
     return min === `${line}.0`
@@ -218,7 +221,9 @@ export async function getReleaseSnapshot(): Promise<ReleaseSnapshot> {
     notesUrl: tagUrl(stableManifest.version),
     publishedAt: publishedAt(stableManifest.version),
     requires: `Obsidian ≥ ${stableManifest.minAppVersion}`,
-    note: stableManifest.isDesktopOnly ? "desktop only" : undefined,
+    note: stableManifest.isDesktopOnly
+      ? m.docs_release_desktop_only()
+      : undefined,
   };
 
   const companionLedger = (channel: ReleaseChannel): Ledger => {
@@ -278,7 +283,7 @@ async function getObsidianPreRelease(
     notesUrl: tagUrl(release.tag_name),
     publishedAt: release.published_at,
     requires: `Obsidian ≥ ${manifest.minAppVersion}`,
-    note: manifest.isDesktopOnly ? "desktop only" : undefined,
+    note: manifest.isDesktopOnly ? m.docs_release_desktop_only() : undefined,
   };
 }
 

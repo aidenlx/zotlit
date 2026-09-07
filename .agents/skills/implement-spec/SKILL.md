@@ -28,8 +28,10 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 6. If this changes the **frontier** of available tickets, kick off more **implementer subagents** to work on the new tickets. This allows for maximum concurrency.
 
-7. Once all tickets are complete, run /code-review on the PR branch. Fix all issues raised by the code review in a single **implementer subagent**.
+7. Review each ticket as it lands, not only once at the end. When a ticket's merged work is on the PR branch, run /code-review with the pre-merge state as the fixed point. Fix every issue it raises back in that ticket's worktree, then update the ticket with a summary of what landed and close it (`gh issue close <number> --reason completed`).
 
-8. Mark the PR as ready for review.
+8. Once all tickets are complete, run a final /code-review over the whole PR branch. Fix all issues raised by the code review in a single **implementer subagent**.
 
-9. Clean up all **implementer subagent** worktrees.
+9. Mark the PR as ready for review.
+
+10. Clean up all **implementer subagent** worktrees.

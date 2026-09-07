@@ -22,6 +22,7 @@ import {
   breadcrumbListSchema,
   changelogArticleSchema,
 } from "@/lib/structured-data";
+import { m } from "@/paraglide/messages.js";
 
 const getRelease = createServerFn({ method: "GET" })
   .validator((version: string) => version)
@@ -66,12 +67,15 @@ export const Route = createFileRoute("/_home/changelog/$version")({
           title: `v${release.version}`,
           description:
             release.description ??
-            `Changelog for ZotLit v${release.version} released on ${formatReleaseDate(release.date)}.`,
+            m.docs_changelog_release_description({
+              version: release.version,
+              date: formatReleaseDate(release.date),
+            }),
           path: release.url,
           card: {
             type: "changelog",
             slugs: release.slugs,
-            alt: `ZotLit v${release.version} release notes`,
+            alt: m.docs_changelog_release_og_alt({ version: release.version }),
           },
           article: { publishedTime: release.date },
           feeds: { "application/rss+xml": changelogFeedRoute },
@@ -84,7 +88,7 @@ export const Route = createFileRoute("/_home/changelog/$version")({
             }),
             breadcrumbListSchema([
               { name: appName, url: "/" },
-              { name: "Changelog", url: changelogRoute },
+              { name: m.docs_nav_changelog(), url: changelogRoute },
               { name: `v${release.version}`, url: release.url },
             ]),
           ],
@@ -98,13 +102,13 @@ function ChangelogVersion() {
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 font-serif">
       <article className="pb-14">
-        <BackCrumb to="/changelog" label="Changelog" />
+        <BackCrumb to="/changelog" label={m.docs_nav_changelog()} />
         <header className="pt-4.5 pb-2">
           <h1 className="mb-2.5 flex flex-wrap items-baseline gap-4 text-4xl font-medium">
             v{release.version}
             {release.latest && (
               <span className="border border-fd-primary px-2.5 py-0.5 font-mono text-xs tracking-[0.04em] text-fd-primary">
-                latest
+                {m.docs_changelog_latest()}
               </span>
             )}
           </h1>
@@ -132,7 +136,7 @@ function ChangelogVersion() {
           rel="noreferrer noopener"
           className="mt-6.5 inline-flex items-center gap-2 border border-fd-border bg-fd-card px-4.5 py-2.25 text-[15px] hover:border-fd-primary hover:text-fd-primary"
         >
-          Open release on GitHub
+          {m.docs_changelog_open_github()}
           <ArrowUpRight aria-hidden className="size-[1.05em] shrink-0" />
         </a>
       </article>

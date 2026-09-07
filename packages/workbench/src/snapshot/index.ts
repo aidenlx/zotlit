@@ -11,13 +11,15 @@ import {
   getAnnotationsByKey,
   getLibraryByGroupID,
   getItemsByKey,
-  getZoteroIdentity,
+  getRelatedKeysByItemID,
   resolveItemTags,
   USER_LIBRARY_ID,
   withAnnotationCitation,
 } from "@zotlit/db";
+import type { Item } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
 
+import { applyFieldAllowList } from "./allowlist";
 import { collectRootDescriptors } from "./descriptors";
 import {
   authorsShort,
@@ -61,10 +63,14 @@ export function exportItemSnapshot(
   const targets = normalizeTargets(options.vaultTargets);
   const resolvers = snapshotResolvers(targets);
   const collectionCache = new CollectionCache();
+  // A personal-library web link spells out the Zotero account name, so the
+  // export runs with no account: `weblink` reads null and is reported as
+  // unavailable, while a group Library's public form is built from its group ID
+  // alone and survives.
   const note = fetchNoteContext(client, item, {
     resolvers,
     collectionCache,
-    username: getZoteroIdentity(client).username,
+    username: null,
   });
   const filename = buildFilenameContext({
     item,
@@ -83,14 +89,28 @@ export function exportItemSnapshot(
   const annotations = [
     ...fetchAnnotationsTemplateData(client, rawAnnotations, {
       resolvers: resolvers.annotation,
+      username: null,
     }).values(),
   ].map((annotation) => withAnnotationCitation(annotation, () => null));
 
+  const customFields = collectCustomFieldNames(client, item, libraryID);
   const roots = {
-    note: asRecord(serializeTemplateData(note, "note")),
-    filename: asRecord(serializeTemplateData(filename, "filename")),
+    note: applyFieldAllowList(
+      asRecord(serializeTemplateData(note, "note")),
+      "note",
+      customFields,
+    ),
+    filename: applyFieldAllowList(
+      asRecord(serializeTemplateData(filename, "filename")),
+      "filename",
+      customFields,
+    ),
     annotations: annotations.map((annotation) =>
-      asRecord(serializeTemplateData(annotation, "annotation")),
+      applyFieldAllowList(
+        asRecord(serializeTemplateData(annotation, "annotation")),
+        "annotation",
+        customFields,
+      ),
     ),
   };
   const body = {
@@ -109,7 +129,13 @@ export function exportItemSnapshot(
       filename: collectRootDescriptors(filename),
       annotations: annotations.map(collectRootDescriptors),
     },
-    unavailable: collectUnavailable(roots.note),
+    unavailable: [
+      ...collectUnavailable(roots.note, "zt"),
+      ...collectUnavailable(roots.filename, "filename.zt"),
+      ...roots.annotations.flatMap((annotation, index) =>
+        collectUnavailable(annotation, `annotations[${index}].zt`),
+      ),
+    ],
   };
 
   return {
@@ -130,6 +156,26 @@ function resolveLibraryID(
     );
   }
   return library.libraryID;
+}
+
+/**
+ * Custom field names the Items reaching the snapshot declare. Related Items
+ * spread their own fields into the note root, so their declarations count too;
+ * an annotation's parent Item is the selected Item itself.
+ */
+function collectCustomFieldNames(
+  client: NodeDatabaseClient,
+  item: Item,
+  libraryID: number,
+): ReadonlySet<string> {
+  const related = getItemsByKey(
+    client,
+    libraryID,
+    getRelatedKeysByItemID(client, item.itemID),
+  );
+  return new Set(
+    [item, ...related].flatMap((entry) => [...entry.customFields.keys()]),
+  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

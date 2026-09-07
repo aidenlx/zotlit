@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
+import { Message } from "@/components/message";
 import { cn } from "@/lib/cn";
+import * as m from "@/paraglide/messages.js";
 
 /**
  * The `Last updated on <day>` line under a docs page body, from the file's
@@ -27,10 +29,16 @@ export function DocsLastUpdated({
   if (!day) return null;
   return (
     <p className={cn("text-sm text-fd-muted-foreground", className)}>
-      Last updated on{" "}
-      <time dateTime={day} className="whitespace-nowrap">
-        {label}
-      </time>
+      <Message
+        text={m.docs_last_updated({ date: "{date}" })}
+        slots={{
+          date: (
+            <time dateTime={day} className="whitespace-nowrap">
+              {label}
+            </time>
+          ),
+        }}
+      />
     </p>
   );
 }

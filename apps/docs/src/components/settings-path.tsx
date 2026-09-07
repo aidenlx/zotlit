@@ -1,9 +1,10 @@
+import { asMarkdown, md } from "fumadocs-core/server";
+
 // The Settings Path — the navigation route from Obsidian Settings through the
 // ZotLit tab, optionally to a settings page and one setting on it, rendered
 // as one bold unit. The `Settings` and `ZotLit` segments are fixed literal
 // prose owned by Obsidian and the plugin tab.
-import { asMarkdown, md } from "fumadocs-core/server";
-
+import * as m from "@/paraglide/messages.js";
 import type { LocalizedString } from "@/paraglide/runtime.js";
 
 export type SettingsPathProps =
@@ -16,7 +17,7 @@ export type SettingsPathProps =
     };
 
 export function SettingsPath({ page, setting }: SettingsPathProps) {
-  const segments = ["Settings", "ZotLit", page, setting].filter(
+  const segments = [m.docs_settings(), "ZotLit", page, setting].filter(
     (segment) => segment !== undefined,
   );
   const path = segments.join(" > ");

@@ -7,11 +7,11 @@
     "#zotlit-release.json": "./zotlit-release.json"
   },
   "scripts": {
-    "dev": "vite dev --port 3000",
-    "build": "vite build",
-    "preview": "vite preview",
-    "deploy": "vite build && wrangler deploy",
-    "deploy:beta": "cross-env CLOUDFLARE_ENV=beta vite build && wrangler deploy --env beta",
+    "dev": "pnpm generate:i18n --output-structure locale-modules --is-server \"import.meta.env?.SSR ?? typeof window === 'undefined'\" && vite dev --port 3000",
+    "build": "pnpm generate:i18n && vite build",
+    "preview": "pnpm generate:i18n && vite preview",
+    "deploy": "pnpm generate:i18n && vite build && wrangler deploy",
+    "deploy:beta": "pnpm generate:i18n && cross-env CLOUDFLARE_ENV=beta vite build && wrangler deploy --env beta",
     "cf-typegen": "wrangler types",
     "cf-typegen:check": "wrangler types --check",
     "codegen": "fumadocs-mdx",

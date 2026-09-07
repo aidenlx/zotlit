@@ -8,7 +8,8 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"],
-      "outputLogs": "errors-only"
+      "outputLogs": "errors-only",
+      "env": ["DOCS_SITE_URL"]
     },
     "build:dev": {
       "dependsOn": ["^build"],

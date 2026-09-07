@@ -6,10 +6,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   BRIDGE_VERSION,
-  LOCAL_BRIDGE_ORIGIN,
+  DOCS_DEV_SERVER_ORIGIN,
   LOCAL_BRIDGE_PATHS,
   LocalBridgeClient,
+  LocalBridgeProtocolError,
   LocalBridgeUnavailableError,
+  connectFragment,
+  localBridgeOrigin,
 } from "@zotlit/workbench/bridge";
 
 import { buildFixture } from "./build.ts";
@@ -20,6 +23,8 @@ import { createMockLocalBridge } from "./local-bridge.ts";
 import { getWorkspaceRoot } from "#package-roots";
 
 const ORIGIN = "https://zotlit.aidenlx.site";
+/** The port a launch URL names, which the in-process app answers on. */
+const PORT = 23_120;
 const PARENT_STYLE_ID = "http://www.zotero.org/styles/fixture-parent";
 const DEPENDENT_STYLE_ID = "http://www.zotero.org/styles/fixture-dependent";
 const PARENT_STYLE = `<?xml version="1.0" encoding="utf-8"?>
@@ -34,9 +39,15 @@ const DEPENDENT_STYLE = `<?xml version="1.0" encoding="utf-8"?>
     <link href="${PARENT_STYLE_ID}" rel="independent-parent"/>
   </info>
 </style>`;
+const UNTITLED_STYLE_ID = "http://www.zotero.org/styles/fixture-untitled";
+const UNTITLED_STYLE = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
+  <info><id>${UNTITLED_STYLE_ID}</id></info>
+  <citation><layout><text variable="citation-number"/></layout></citation>
+</style>`;
 
 describe("LocalBridgeClient against the mock Local Bridge", () => {
-  it("connects through the loopback server after a browser CORS preflight", async () => {
+  it("connects on the port the launch URL named, after a browser CORS preflight", async () => {
     await using fixture = await createBridgeFixture();
     const port = await getPort();
     const bridge = startMockLocalBridge({
@@ -46,10 +57,9 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     });
     await using stack = new AsyncDisposableStack();
     stack.adopt(bridge.server, closeServer);
-    const baseUrl = `http://127.0.0.1:${port}`;
 
     const preflight = await fetch(
-      `${baseUrl}${LOCAL_BRIDGE_PATHS.loopbackBootstrap}`,
+      `${localBridgeOrigin(port)}${LOCAL_BRIDGE_PATHS.codeBootstrap}`,
       {
         method: "OPTIONS",
         headers: {
@@ -63,7 +73,6 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     expect(preflight.headers.get("access-control-allow-origin")).toBe(ORIGIN);
 
     const client = new LocalBridgeClient({
-      baseUrl,
       fetch: async (input, init) => {
         const headers = new Headers(init?.headers);
         headers.set("Origin", ORIGIN);
@@ -75,7 +84,13 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
         templateDataContractVersion: 2,
       },
     });
-    await expect(client.connectFromLoopback()).resolves.toMatchObject({
+    // Nothing but the fragment says where the bridge is: the page reaches the
+    // listener on the port Obsidian bound for this launch.
+    await expect(
+      client.connectFromFragment(
+        connectFragment(bridge.initialOneTimeCode, port),
+      ),
+    ).resolves.toMatchObject({
       state: "connected",
       installation: { vault: "ZotLit Fixture" },
     });
@@ -83,6 +98,61 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
       profile: { name: "Books" },
       document: { state: "present" },
     });
+  });
+
+  it("exchanges a Connection code once, and refuses a reused or unknown one", async () => {
+    await using fixture = await createBridgeFixture();
+    const bridge = createMockLocalBridge({
+      layout: fixture.layout,
+      allowedOrigin: ORIGIN,
+    });
+    const code = bridge.control.issueOneTimeCode();
+
+    await expect(
+      clientFor(bridge).connectFromFragment(connectFragment(code, PORT)),
+    ).resolves.toMatchObject({ state: "connected" });
+
+    for (const refused of [code, "never-issued"]) {
+      await expect(
+        clientFor(bridge).connectFromFragment(connectFragment(refused, PORT)),
+      ).rejects.toMatchObject({
+        name: "LocalBridgeProtocolError",
+        status: 401,
+        code: "invalid-one-time-code",
+      });
+    }
+  });
+
+  it("refuses a launch URL that names no port", async () => {
+    await using fixture = await createBridgeFixture();
+    const bridge = createMockLocalBridge({
+      layout: fixture.layout,
+      allowedOrigin: ORIGIN,
+    });
+
+    await expect(
+      clientFor(bridge).connectFromFragment(
+        `#zotlit-connect=${bridge.initialOneTimeCode}`,
+      ),
+    ).rejects.toBeInstanceOf(LocalBridgeProtocolError);
+  });
+
+  it("allows the docs dev server by default, so a local page connects unflagged", async () => {
+    await using fixture = await createBridgeFixture();
+    const bridge = createMockLocalBridge({ layout: fixture.layout });
+
+    const allowed = await bridge.app.request(
+      `${localBridgeOrigin(PORT)}${LOCAL_BRIDGE_PATHS.codeBootstrap}`,
+      {
+        method: "POST",
+        headers: {
+          Origin: DOCS_DEV_SERVER_ORIGIN,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ code: bridge.initialOneTimeCode }),
+      },
+    );
+    expect(allowed.status).toBe(200);
   });
 
   it("runs every approved operation over a code-bootstrap session", async () => {
@@ -94,7 +164,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
 
     await expect(
       client.connectFromFragment(
-        `#zotlit-connect=${bridge.initialOneTimeCode}`,
+        connectFragment(bridge.initialOneTimeCode, PORT),
       ),
     ).resolves.toMatchObject({
       state: "connected",
@@ -188,16 +258,18 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     expect(client.connection).toEqual({ state: "disconnected" });
   });
 
-  it("auto-approves browser-first bootstrap and enforces absent creation", async () => {
+  it("enforces absent creation of the built-in Default", async () => {
     await using fixture = await createBridgeFixture();
     const { layout } = fixture;
     const bridge = createMockLocalBridge({ layout, allowedOrigin: ORIGIN });
     bridge.control.selectBuiltInDefaultForNewSessions();
     const client = clientFor(bridge);
 
-    await expect(client.connectFromLoopback()).resolves.toMatchObject({
-      state: "connected",
-    });
+    await expect(
+      client.connectFromFragment(
+        connectFragment(bridge.initialOneTimeCode, PORT),
+      ),
+    ).resolves.toMatchObject({ state: "connected" });
     const profile = await client.readSelectedProfile();
     expect(profile.document).toMatchObject({
       reference: "profile:default",
@@ -228,7 +300,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     const bridge = createMockLocalBridge({ layout, allowedOrigin: ORIGIN });
     const client = clientFor(bridge);
     await client.connectFromFragment(
-      `#zotlit-connect=${bridge.initialOneTimeCode}`,
+      connectFragment(bridge.initialOneTimeCode, PORT),
     );
     const profile = await client.readSelectedProfile();
     if (profile.document.state !== "present") {
@@ -276,7 +348,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     bridge.control.allowNewSessions();
     const code = bridge.control.issueOneTimeCode();
     await expect(
-      incompatible.connectFromFragment(`#zotlit-connect=${code}`),
+      incompatible.connectFromFragment(connectFragment(code, PORT)),
     ).resolves.toEqual({
       state: "unavailable",
       reason: "version-mismatch",
@@ -300,7 +372,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     const storage = memoryStorage();
     const client = clientFor(bridge, { storage });
     await client.connectFromFragment(
-      `#zotlit-connect=${bridge.initialOneTimeCode}`,
+      connectFragment(bridge.initialOneTimeCode, PORT),
     );
 
     // The tab a reload or a lost connection left behind, holding the grant.
@@ -349,7 +421,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     });
     const client = clientFor(bridge);
     await client.connectFromFragment(
-      `#zotlit-connect=${bridge.initialOneTimeCode}`,
+      connectFragment(bridge.initialOneTimeCode, PORT),
     );
     const profile = await client.readSelectedProfile();
     if (profile.document.state !== "present") {
@@ -420,7 +492,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     });
     const client = clientFor(bridge);
     await client.connectFromFragment(
-      `#zotlit-connect=${bridge.initialOneTimeCode}`,
+      connectFragment(bridge.initialOneTimeCode, PORT),
     );
     const profile = await client.readSelectedProfile();
     if (profile.document.state !== "present") {
@@ -510,7 +582,7 @@ frontmatter:\n`,
     });
     const client = clientFor(bridge);
     await client.connectFromFragment(
-      `#zotlit-connect=${bridge.initialOneTimeCode}`,
+      connectFragment(bridge.initialOneTimeCode, PORT),
     );
     const profile = await client.readSelectedProfile();
     if (profile.document.state !== "present") {
@@ -555,7 +627,7 @@ frontmatter:\n`,
     });
     const client = clientFor(bridge);
     await client.connectFromFragment(
-      `#zotlit-connect=${bridge.initialOneTimeCode}`,
+      connectFragment(bridge.initialOneTimeCode, PORT),
     );
     const profile = await client.readSelectedProfile();
     if (profile.document.state !== "present") {
@@ -590,18 +662,29 @@ frontmatter:\n`,
     await mkdir(join(styles, "hidden"), { recursive: true });
     await writeFile(join(styles, "dependent.csl"), DEPENDENT_STYLE, "utf8");
     await writeFile(join(styles, "hidden", "parent.csl"), PARENT_STYLE, "utf8");
+    await writeFile(
+      join(styles, "my-private-draft.csl"),
+      UNTITLED_STYLE,
+      "utf8",
+    );
     const bridge = createMockLocalBridge({
       layout: fixture.layout,
       allowedOrigin: ORIGIN,
     });
     const client = clientFor(bridge);
     await client.connectFromFragment(
-      `#zotlit-connect=${bridge.initialOneTimeCode}`,
+      connectFragment(bridge.initialOneTimeCode, PORT),
     );
 
-    await expect(client.listCitationStyles()).resolves.toContainEqual({
+    const listed = await client.listCitationStyles();
+    expect(listed).toContainEqual({
       id: DEPENDENT_STYLE_ID,
       title: "Fixture dependent",
+    });
+    // A style with no title lists under its ID; its file name stays on the host.
+    expect(listed).toContainEqual({
+      id: UNTITLED_STYLE_ID,
+      title: UNTITLED_STYLE_ID,
     });
     await expect(
       client.readSelectedCitationStyle({ styleId: DEPENDENT_STYLE_ID }),
@@ -620,7 +703,7 @@ frontmatter:\n`,
     const bridge = createMockLocalBridge({ layout, allowedOrigin: ORIGIN });
 
     const wrongOrigin = await bridge.app.request(
-      `${LOCAL_BRIDGE_ORIGIN}/v1/bootstrap/probe`,
+      `${localBridgeOrigin(PORT)}${LOCAL_BRIDGE_PATHS.codeBootstrap}`,
       {
         method: "POST",
         headers: { Origin: "https://example.invalid" },
@@ -629,7 +712,7 @@ frontmatter:\n`,
     expect(wrongOrigin.status).toBe(403);
 
     const nonLoopback = await bridge.app.request(
-      "http://192.0.2.1:23120/v1/bootstrap/probe",
+      `http://192.0.2.1:${PORT}${LOCAL_BRIDGE_PATHS.codeBootstrap}`,
       { method: "POST", headers: { Origin: ORIGIN } },
     );
     expect(nonLoopback.status).toBe(403);
@@ -644,7 +727,6 @@ function clientFor(
   } = {},
 ): LocalBridgeClient {
   return new LocalBridgeClient({
-    baseUrl: LOCAL_BRIDGE_ORIGIN,
     fetch: async (input, init) => {
       const headers = new Headers(init?.headers);
       headers.set("Origin", ORIGIN);

@@ -1,10 +1,11 @@
+import { asMarkdown, md } from "fumadocs-core/server";
+import { Terminal } from "lucide-react";
+
+import { toast } from "@/components/ui/toast";
 // "Run this Obsidian command" mark for docs prose: a terminal rubric with the
 // command-palette name in the serif display voice. The block form adds a
 // copy-to-clipboard link; the inline form stays minimal — glyph + name only.
-import { asMarkdown, md } from "fumadocs-core/server";
-import { Terminal } from "lucide-react";
-import { useState } from "react";
-
+import * as m from "@/paraglide/messages.js";
 import type { LocalizedString } from "@/paraglide/runtime.js";
 
 interface CommandOptions {
@@ -38,7 +39,7 @@ export function Command(props: CommandProps) {
   if (asMarkdown()) {
     return inline
       ? md`\`${commandName}\``
-      : md.linePrefix("> ")`Command: \`${commandName}\``;
+      : md.linePrefix("> ")`${m.docs_command_label()}: \`${commandName}\``;
   }
 
   if (inline) {
@@ -58,13 +59,10 @@ export function Command(props: CommandProps) {
 }
 
 function BlockCommand({ commandName }: { commandName: string }) {
-  const [copied, setCopied] = useState(false);
-
   function copy() {
     navigator.clipboard.writeText(commandName).then(
       () => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
+        toast.add({ title: m.docs_command_copied_label(), type: "success" });
       },
       () => {},
     );
@@ -82,14 +80,14 @@ function BlockCommand({ commandName }: { commandName: string }) {
       <button
         type="button"
         onClick={copy}
-        aria-label={copied ? "Command name copied" : "Copy command name"}
+        aria-label={m.docs_command_copy_label()}
         className={
           "ml-auto shrink-0 cursor-pointer self-center font-mono text-[0.68rem] font-semibold tracking-widest text-fd-primary uppercase transition-opacity" +
           " hover:opacity-80" +
           " focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-primary"
         }
       >
-        {copied ? "Copied ✓" : "Copy →"}
+        {m.docs_command_copy()}
       </button>
     </span>
   );

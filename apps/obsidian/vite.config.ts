@@ -66,6 +66,9 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       __DEV__: JSON.stringify(isDev),
+      __DOCS_SITE_URL__: JSON.stringify(
+        parseDocsSiteUrl(process.env.DOCS_SITE_URL),
+      ),
       __MIN_ELECTRON_VERSION__: JSON.stringify(
         parseMinElectronVersion(packageJson),
       ),
@@ -138,6 +141,23 @@ export default defineConfig(({ mode }) => {
 });
 
 /** Opt-in via I18N_DEV_SERVER=true (or a port number); defaults to 9092. */
+/**
+ * The docs origin baked into the build: Stable Docs unless CI names
+ * Pre-release Docs for a pre-release line. An origin only, no trailing slash,
+ * so link constants append their paths to it.
+ */
+function parseDocsSiteUrl(value: string | undefined): string {
+  const fallback = "https://zotlit.aidenlx.site";
+  if (!value) return fallback;
+  const url = new URL(value);
+  if (url.pathname !== "/" || url.search || url.hash) {
+    throw new Error(
+      `DOCS_SITE_URL must be an origin with no path, got ${JSON.stringify(value)}`,
+    );
+  }
+  return url.origin;
+}
+
 function parseI18nDevServerPort(value: string | undefined): number | undefined {
   if (!value || value === "false") return undefined;
   const port = Number(value);

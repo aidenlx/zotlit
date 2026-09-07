@@ -5,7 +5,6 @@
 // arrives. The route's chunk imports this module, so it imports React, the
 // messages, the UI kit, icons, and the connection bar only.
 
-import { Popover } from "@base-ui/react/popover";
 import {
   ChevronDown,
   CircleHelp,
@@ -16,7 +15,6 @@ import {
   Plus,
   Redo2,
   Undo2,
-  X,
 } from "lucide-react";
 import type { ReactNode, Ref } from "react";
 
@@ -25,6 +23,14 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverDescription,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { m } from "@/paraglide/messages.js";
 
@@ -45,6 +51,7 @@ export function WorkbenchFrame({
   name,
   actions,
   connection,
+  notifications,
   strips,
   status,
   view,
@@ -60,8 +67,10 @@ export function WorkbenchFrame({
   name: ReactNode;
   /** The header's buttons. */
   actions: ReactNode;
-  /** The connection control beside the file actions. */
+  /** The connection control in the bottom status area. */
   connection: ReactNode;
+  /** Persistent action failures above the status row. */
+  notifications?: ReactNode;
   /** Notices that need attention before editing. */
   strips?: ReactNode;
   status: ReactNode;
@@ -102,8 +111,7 @@ export function WorkbenchFrame({
           <h1 className="text-base font-semibold break-words">{name}</h1>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {connection}
-          <div className="flex flex-wrap items-center gap-2">{actions}</div>
+          {actions}
         </div>
       </header>
 
@@ -158,13 +166,24 @@ export function WorkbenchFrame({
           {result}
         </section>
       </main>
-      {footer}
-      <p
-        role="status"
-        className="shrink-0 border-t border-fd-border px-3 py-1.5 text-xs leading-normal text-fd-muted-foreground"
+      <footer
+        aria-label={m.docs_workbench_status()}
+        className="sticky bottom-0 z-20 shrink-0 border-t border-fd-border bg-fd-background"
       >
-        {status}
-      </p>
+        <div className="max-h-[min(12rem,30dvh)] overflow-y-auto overscroll-contain">
+          {footer}
+          {notifications}
+        </div>
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-3 py-1">
+          {connection}
+          <p
+            role="status"
+            className="min-w-0 text-xs leading-normal text-pretty text-fd-muted-foreground"
+          >
+            {status}
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }
@@ -373,37 +392,18 @@ export function WorkbenchHelp({
   children: ReactNode;
 }) {
   return (
-    <Popover.Root>
-      <Popover.Trigger render={<Button variant="ghost" size="xs" />}>
+    <Popover>
+      <PopoverTrigger render={<Button variant="ghost" size="xs" />}>
         <CircleHelp aria-hidden />
         {m.workbench_help()}
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Positioner
-          side="bottom"
-          align="end"
-          sideOffset={6}
-          className="z-50"
-        >
-          <Popover.Popup className="max-h-(--available-height) w-80 max-w-[calc(100vw-2rem)] overflow-auto rounded-md border border-fd-border bg-fd-popover p-3 text-fd-popover-foreground shadow-lg">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <Popover.Title className="text-sm font-semibold">
-                {title}
-              </Popover.Title>
-              <Popover.Close
-                render={<Button variant="ghost" size="icon-sm" />}
-                aria-label={m.workbench_fields_close()}
-              >
-                <X aria-hidden />
-              </Popover.Close>
-            </div>
-            <Popover.Description className="text-sm leading-relaxed text-pretty">
-              {children}
-            </Popover.Description>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
+      </PopoverTrigger>
+      <PopoverContent align="end">
+        <PopoverHeader>
+          <PopoverTitle>{title}</PopoverTitle>
+          <PopoverDescription>{children}</PopoverDescription>
+        </PopoverHeader>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -439,12 +439,10 @@ export function WorkbenchSkeleton() {
           connection={{ state: "disconnected" }}
           website=""
           busy={false}
-          cancellable={false}
-          message={null}
+          resumable={false}
           saveBusy
           editingConnectedProfile={false}
-          onConnect={() => {}}
-          onCancel={() => {}}
+          onReconnect={() => {}}
           onDisconnect={() => {}}
         />
       }

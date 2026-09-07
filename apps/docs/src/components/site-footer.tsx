@@ -1,6 +1,7 @@
 // Shared copyright footer for the (home) index surfaces (landing, blog, changelog).
 
 import { currentYear, gitConfig } from "@/lib/shared";
+import * as m from "@/paraglide/messages.js";
 
 export function SiteFooter() {
   return (
@@ -13,7 +14,7 @@ export function SiteFooter() {
           rel="noreferrer noopener"
           className="underline decoration-fd-border underline-offset-4 transition-colors hover:text-fd-primary hover:decoration-fd-primary"
         >
-          AGPL-3.0 Licensed
+          {m.docs_license()}
         </a>
       </span>
     </footer>

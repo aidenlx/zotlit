@@ -26,6 +26,10 @@ import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { registerLibraryScopeCli } from "./services/library-scope/cli";
 import { registerLibraryScopeNotices } from "./services/library-scope/notices";
+import { addCustomizeActions } from "./services/local-bridge/actions";
+import { createCustomize } from "./services/local-bridge/customize";
+import { createLaunchSheet } from "./services/local-bridge/launch-sheet";
+import { registerWorkbenchSavedNotice } from "./services/local-bridge/notices";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { registerCitationStyleNotice } from "./services/pandoc/notices";
@@ -207,6 +211,19 @@ export default class ZotLitPlugin extends Plugin {
 
     const { services } = buildServices(this, stack);
 
+    // One Customize flow shared by every entry action.
+    const customize = createCustomize({
+      app: this.app,
+      settings: services.settings,
+      profile: services.profile,
+      template: services.template,
+      localServer: services.localServer,
+      bridge: services.localBridge,
+      pluginVersion: this.manifest.version,
+      confirmLaunch: createLaunchSheet(this.app),
+      openExternal: (url) => window.open(url),
+    });
+
     this.addSettingTab(
       new ZotLitSettingTab({
         importProfile: services.importProfile,
@@ -216,6 +233,9 @@ export default class ZotLitPlugin extends Plugin {
         db: services.db,
         libraryScope: services.libraryScope,
         zoteroPref: services.zoteroPref,
+        localServer: services.localServer,
+        localBridge: services.localBridge,
+        customize,
         attachmentImport: services.attachmentImport,
         citationIndex: services.citationIndex,
         template: services.template,
@@ -225,12 +245,30 @@ export default class ZotLitPlugin extends Plugin {
       }),
     );
 
+    addCustomizeActions(this, {
+      settings: services.settings,
+      profile: services.profile,
+      customize,
+    });
     addProfileActions(this, { importProfile: services.importProfile });
     addDatabaseActions(this, { db: services.db });
     addReleaseActions(this, { release: services.release });
     addIndexedKeyActions(this);
     addCitekeyEditorActions(this, { citekeyEditor: services.citekeyEditor });
     registerIndexedKeyFileMenu(this);
+    const updateAll = () =>
+      runBatchUpdateAll({
+        createProfile: services.createProfile,
+        importProfile: services.importProfile,
+        zoteroPref: services.zoteroPref,
+        profile: services.profile,
+        app: this.app,
+        db: services.db,
+        settings: services.settings,
+        libraryScope: services.libraryScope,
+        noteFeature: services.noteFeature,
+        noteIndex: services.noteIndex,
+      });
     addNoteFeatureActions(this, {
       createProfile: services.createProfile,
       importProfile: services.importProfile,
@@ -238,20 +276,14 @@ export default class ZotLitPlugin extends Plugin {
       noteFeature: services.noteFeature,
       zoteroPref: services.zoteroPref,
       batchImport: services.batchImport,
-      updateAll: () =>
-        runBatchUpdateAll({
-          createProfile: services.createProfile,
-          importProfile: services.importProfile,
-          zoteroPref: services.zoteroPref,
-          profile: services.profile,
-          app: this.app,
-          db: services.db,
-          settings: services.settings,
-          libraryScope: services.libraryScope,
-          noteFeature: services.noteFeature,
-          noteIndex: services.noteIndex,
-        }),
+      updateAll,
     });
+    stack.defer(
+      registerWorkbenchSavedNotice({
+        localBridge: services.localBridge,
+        updateAll,
+      }),
+    );
     registerCitationSuggest(this, {
       app: this.app,
       lookup: services.itemLookup,
@@ -283,14 +315,14 @@ export default class ZotLitPlugin extends Plugin {
         noteFeature: services.noteFeature,
         noteIndex: services.noteIndex,
         batchImport: services.batchImport,
-        liveUpdate: services.liveUpdate,
+        liveUpdate: services.localServer,
       }),
     );
 
     registerAnnotView(this, {
       app: this.app,
       db: services.db,
-      liveUpdate: services.liveUpdate,
+      liveUpdate: services.localServer,
       zoteroPref: services.zoteroPref,
       noteFeature: services.noteFeature,
       noteIndex: services.noteIndex,
@@ -423,7 +455,7 @@ export default class ZotLitPlugin extends Plugin {
     // Checkpoint attempt has settled; feed it into the same coalesced refresh
     // lane as the filesystem watchers.
     stack.defer(
-      services.liveUpdate.on("db/updated", () => {
+      services.localServer.on("db/updated", () => {
         services.db.notifyExternalChange();
       }),
     );

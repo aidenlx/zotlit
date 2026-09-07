@@ -1,4 +1,6 @@
-// Hono app for the companion-facing HTTP listener: gates + routes, no server lifecycle.
+// The Live Update service's routes on the Local Server: gates + routes, no
+// server lifecycle. The gates are scoped to the three Companion paths so a
+// service mounted beside these routes keeps its own gates.
 import { vValidator } from "@hono/valibot-validator";
 import type { Context, Next } from "hono";
 import { Hono } from "hono/tiny";
@@ -38,6 +40,8 @@ export interface NoteStatusSource {
 }
 
 export interface LiveUpdateAppDeps {
+  /** `false` while the Live updates toggle is off — every route answers 404. */
+  enabled(): boolean;
   sourceId(): string | null;
   noteIndex: NoteStatusSource;
   onNotify(event: NotifyEvent): void;
@@ -49,35 +53,63 @@ export interface LiveUpdateAppDeps {
   onImportNotes(event: { items: number[]; mode: ImportMode }): void;
 }
 
+/** The paths the Companion talks to — the gates below cover exactly these. */
+const LIVE_UPDATE_PATHS = [
+  "/notify",
+  "/literature-notes",
+  "/zotero-notes",
+] as const;
+
 export function createLiveUpdateApp(deps: LiveUpdateAppDeps): Hono {
   const app = new Hono();
+
+  /** Answer 404 while the Live updates toggle is off, whatever else the server hosts. */
+  const gateEnabled = async (
+    c: Context,
+    next: Next,
+  ): Promise<Response | void> => {
+    if (!deps.enabled()) return c.body(null, 404);
+    await next();
+  };
+  /** Reject a request whose `X-Zotlit-Protocol-Version` header is incompatible. */
+  const gateProtocol = async (
+    c: Context,
+    next: Next,
+  ): Promise<Response | void> => {
+    if (
+      rejectIncompatibleProtocol(
+        c.req.header(PROTOCOL_VERSION_HEADER),
+        logger,
+        {
+          transport: "http",
+        },
+      )
+    ) {
+      return c.body(null, 426);
+    }
+    await next();
+  };
+  /** Discard a request whose `X-Zotlit-Source-Id` isn't the configured install. */
+  const gateSourceId = async (
+    c: Context,
+    next: Next,
+  ): Promise<Response | void> => {
+    const expected = deps.sourceId();
+    const received = c.req.header(SOURCE_ID_HEADER);
+    if (expected === null || received !== expected) {
+      logger.warn("Discarded request: source id mismatch", {
+        expected,
+        received,
+      });
+      return c.body(null, 204);
+    }
+    await next();
+  };
+  for (const path of LIVE_UPDATE_PATHS) {
+    app.use(path, gateEnabled, gateProtocol, gateSourceId);
+  }
+
   app
-    /** Reject a request whose `X-Zotlit-Protocol-Version` header is incompatible. */
-    .use(async (c: Context, next: Next): Promise<Response | void> => {
-      if (
-        rejectIncompatibleProtocol(
-          c.req.header(PROTOCOL_VERSION_HEADER),
-          logger,
-          { transport: "http" },
-        )
-      ) {
-        return c.body(null, 426);
-      }
-      await next();
-    })
-    /** Discard a request whose `X-Zotlit-Source-Id` isn't the configured install. */
-    .use(async (c: Context, next: Next): Promise<Response | void> => {
-      const expected = deps.sourceId();
-      const received = c.req.header(SOURCE_ID_HEADER);
-      if (expected === null || received !== expected) {
-        logger.warn("Discarded request: source id mismatch", {
-          expected,
-          received,
-        });
-        return c.body(null, 204);
-      }
-      await next();
-    })
     .post(
       "/notify",
       vValidator("json", notifyEventSchema, (result, c) => {

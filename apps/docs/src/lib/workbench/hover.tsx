@@ -139,17 +139,20 @@ export function webHover(read: SuggestionSource) {
                   side="top"
                   align="start"
                   sideOffset={6}
+                  collisionPadding={16}
                   className="z-50"
                   onMouseEnter={() => this.keep()}
                   onMouseLeave={() => this.leave()}
                 >
                   <PreviewCard.Popup
                     data-slot="hover-card-content"
-                    className="w-80 max-w-[calc(100vw-2rem)] space-y-2 rounded-md border border-fd-border bg-fd-popover p-3 text-xs text-fd-popover-foreground shadow-lg"
+                    className="max-h-(--available-height) w-80 max-w-[calc(100vw-2rem)] space-y-2 overflow-y-auto overscroll-contain rounded-lg bg-fd-popover p-3 text-xs leading-normal break-words text-fd-popover-foreground shadow-lg ring-1 ring-fd-border"
                   >
-                    <div className="flex items-baseline gap-2">
-                      <strong>{option.displayLabel ?? option.label}</strong>
-                      <span className="ms-auto font-mono text-fd-muted-foreground">
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <strong className="max-w-full min-w-0">
+                        {option.displayLabel ?? option.label}
+                      </strong>
+                      <span className="ms-auto max-w-full min-w-0 font-mono text-fd-muted-foreground">
                         {option.type}
                       </span>
                     </div>

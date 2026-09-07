@@ -5,7 +5,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { AttachmentImportService } from "@/services/attachment-import/service";
 import type { DatabaseService } from "@/services/database/service";
 import type { ItemLookup } from "@/services/item-lookup/service";
-import type { LiveUpdateService } from "@/services/live-update/service";
+import type { LocalServerService } from "@/services/local-server/service";
 import type { NoteFeature } from "@/services/note-feature";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
@@ -22,7 +22,7 @@ type AnnotViewPlugin = Pick<
 export interface AnnotViewRegistrationDeps {
   app: App;
   db: DatabaseService;
-  liveUpdate: LiveUpdateService;
+  liveUpdate: LocalServerService;
   zoteroPref: ZoteroPrefService;
   noteFeature: Pick<
     NoteFeature,

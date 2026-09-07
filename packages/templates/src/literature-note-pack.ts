@@ -170,6 +170,13 @@ export function exportLiteratureNotePack(
   options: {
     readonly includeFolders?: boolean;
     readonly includeMatch?: boolean;
+    /** Extra partial names to bundle, reachable or not. */
+    readonly include?: readonly string[];
+    /**
+     * Reports a name no partial answers and keeps going, so a caller that
+     * previews a draft bundles what it has. Absent, a missing name throws.
+     */
+    readonly onMissingPartial?: (name: string) => void;
   } = {},
 ): string {
   const document = parseLiteratureNoteTemplate(source);
@@ -179,18 +186,29 @@ export function exportLiteratureNotePack(
     ),
   );
   const bundled = new Map<string, LiteratureNoteTemplatePartial>();
+  const reported = new Set<string>();
   const pending = [
-    document.body,
-    document.annotationSection.source,
-    document.manifest.filename,
-  ].flatMap((template) =>
-    referencedPartialNames(template, document.manifest.language),
-  );
+    ...(options.include ?? []),
+    ...[
+      document.body,
+      document.annotationSection.source,
+      document.manifest.filename,
+    ].flatMap((template) =>
+      referencedPartialNames(template, document.manifest.language),
+    ),
+  ];
   while (pending.length > 0) {
     const name = pending.pop()!;
     if (name === "annotation" || bundled.has(name)) continue;
     const partial = available.get(name);
     if (!partial) {
+      if (options.onMissingPartial) {
+        if (!reported.has(name)) {
+          reported.add(name);
+          options.onMissingPartial(name);
+        }
+        continue;
+      }
       throw new LiteratureNotePackError(
         "missing-partial",
         `Literature Note Template references missing partial '${name}'`,
