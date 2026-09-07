@@ -1048,6 +1048,242 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obEval(vaultId, "app.setting.close();true");
   });
 
+  describe("Local Bridge", () => {
+    let port = 0;
+    let origin = "";
+    let credential = "";
+    let source = "";
+    let revision = "";
+    let defaultPath = "";
+
+    async function request(path: string, body?: unknown) {
+      return fetch(`http://127.0.0.1:${port}/v1/${path}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: {
+          Origin: origin,
+          "Content-Type": "application/json",
+          ...(credential ? { Authorization: `Bearer ${credential}` } : {}),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(10000),
+      });
+    }
+
+    async function mainSettings() {
+      await obEval(
+        vaultId,
+        "app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();app.setting.openTabById('zotlit');true",
+      );
+    }
+
+    function clickTemplateCustomize() {
+      return obEvalUntil(
+        vaultId,
+        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_document_name())});var button=row&&Array.from(row.querySelectorAll('button')).find(el=>el.textContent===${JSON.stringify(m.settings_template_customize())});if(!button||button.disabled)return false;button.click();return true;})()`,
+        { expected: "true" },
+      );
+    }
+
+    afterAll(async () => {
+      if (!vaultId) return;
+      await obEval(
+        vaultId,
+        "if(window.zotlitE2EOpen){window.open=window.zotlitE2EOpen;delete window.zotlitE2EOpen;}delete window.zotlitE2ELaunch;true",
+      ).catch(() => {});
+    });
+
+    it("launches from the Template document row and exchanges its Connection code", async () => {
+      defaultPath = await obEval(
+        vaultId,
+        "app.plugins.plugins.zotlit.services.profile.defaultDocumentPath",
+      );
+      await obEval(
+        vaultId,
+        `(async function(){var file=app.vault.getFileByPath(${JSON.stringify(defaultPath)});if(file)await app.vault.delete(file);app.saveLocalStorage('zotlit-workbench-launch-approved',null);app.plugins.plugins.zotlit.services.settings.update({'server.workbench':true});window.zotlitE2EOpen=window.open;window.open=url=>{window.zotlitE2ELaunch=url;return null;};return true;})()`,
+      );
+      await mainSettings();
+      expect(await clickTemplateCustomize()).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(Array.from(document.querySelectorAll('.modal-title')).some(el=>el.textContent===${JSON.stringify(m.modal_workbench_launch_title())}))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      expect(
+        await clickModalButton(vaultId, m.modal_workbench_launch_open()),
+      ).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId,
+          "String(typeof window.zotlitE2ELaunch==='string')",
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      // Capture the browser handoff at its outer boundary. The entry action,
+      // sheet, minted code, and HTTP exchange all run in the real plugin.
+      let launch: URL;
+      try {
+        launch = new URL(await obEval(vaultId, "window.zotlitE2ELaunch"));
+      } catch {
+        throw new Error("The Workbench launch URL was unavailable");
+      }
+      origin = launch.origin;
+      port = Number(
+        await obEval(
+          vaultId,
+          "app.plugins.plugins.zotlit.services.localServer.effectivePort",
+        ),
+      );
+      const fragment = new URLSearchParams(launch.hash.slice(1));
+      expect(Number(fragment.get("port"))).toBe(port);
+      expect(launch.pathname).toBe("/workbench");
+      const response = await request("bootstrap/code", {
+        code: fragment.get("zotlit-connect"),
+      });
+      expect(response.status).toBe(200);
+      const grant = (await response.json()) as {
+        credential: string;
+        bridgeVersion: number;
+        selectedProfile: { id: string };
+      };
+      // Assert individual non-secret fields; a failed assertion must not dump
+      // a grant, Connection code, or Item Snapshot into the test report.
+      expect(grant.bridgeVersion).toBe(2);
+      expect(grant.selectedProfile.id).toBe("default");
+      expect(
+        typeof grant.credential === "string" && grant.credential.length > 0,
+      ).toBe(true);
+      credential = grant.credential;
+      const selected = await request("profile/selected");
+      expect(selected.status).toBe(200);
+      const profile = (await selected.json()) as {
+        source: string;
+        document: { state: string };
+      };
+      expect(profile.document.state).toBe("built-in-absent");
+      source = profile.source;
+    });
+
+    it("saves Default's document and shows the ejected settings state and Notice", async () => {
+      await using notices = await observeNotices(vaultId);
+      const response = await request("profile/selected/save", {
+        reference: "default",
+        expected: { state: "absent" },
+        source,
+      });
+      expect(response.status).toBe(200);
+      const saved = (await response.json()) as {
+        state: string;
+        revision: string;
+      };
+      expect(saved.state).toBe("saved");
+      revision = saved.revision;
+      expect(
+        (await readFile(join(e2eVaultPath, defaultPath), "utf-8")) === source,
+      ).toBe(true);
+      expect(
+        await waitFor(async () =>
+          (await notices.read()).some(
+            (text) =>
+              text.includes(m.notice_workbench_profile_saved()) &&
+              text.includes(m.notice_workbench_profile_saved_action()),
+          ),
+        ),
+      ).toBe(true);
+      await mainSettings();
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_document_name())});return String(!!row&&row.textContent.includes('zotlit-profile.default.md')&&Array.from(row.querySelectorAll('button')).some(el=>el.getAttribute('aria-label')===${JSON.stringify(m.settings_profile_document_restore())}));})()`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+    });
+
+    it("refuses a Save after the vault document changes", async () => {
+      const changed = `${source}\n<!-- external edit -->\n`;
+      await obEval(
+        vaultId,
+        `(async function(){await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(defaultPath)}),${JSON.stringify(changed)});return true;})()`,
+      );
+      const response = await request("profile/selected/save", {
+        reference: "default",
+        expected: { state: "revision", revision },
+        source,
+      });
+      expect(response.status).toBe(200);
+      const refused = (await response.json()) as {
+        state: string;
+        reason: string;
+      };
+      expect(refused.state).toBe("refused");
+      expect(refused.reason).toBe("revision-conflict");
+      expect(
+        (await readFile(join(e2eVaultPath, defaultPath), "utf-8")) === changed,
+      ).toBe(true);
+    });
+
+    it("disconnects from the settings row and refuses the next request with 401", async () => {
+      await openProfilesSettings(vaultId, m.settings_page_advanced());
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_local_server_workbench_connection_name())});if(!row||!row.textContent.includes(${JSON.stringify(new URL(origin).host)}))return false;var button=Array.from(row.querySelectorAll('button')).find(el=>el.textContent===${JSON.stringify(m.settings_local_server_workbench_disconnect())});if(!button)return false;button.click();return true;})()`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      const response = await request("profile/selected");
+      expect(response.status).toBe(401);
+      const refused = (await response.json()) as { error: { code: string } };
+      expect(refused.error.code).toBe("session-revoked");
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(!Array.from(document.querySelectorAll('.setting-item-name')).some(el=>el.textContent===${JSON.stringify(m.settings_local_server_workbench_connection_name())}))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+    });
+
+    it("keeps an unsupported Profile in Obsidian with a Notice at the entry action", async () => {
+      const unsupported = source.replace("language: liquid", "language: eta");
+      expect(unsupported !== source).toBe(true);
+      await obEval(
+        vaultId,
+        `(async function(){await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(defaultPath)}),${JSON.stringify(unsupported)});delete window.zotlitE2ELaunch;return true;})()`,
+      );
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `(async function(){return String((await app.plugins.plugins.zotlit.services.profile.getSource('default')).includes('language: eta'));})()`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      await using notices = await observeNotices(vaultId);
+      await mainSettings();
+      expect(await clickTemplateCustomize()).toBe(true);
+      expect(
+        await waitFor(async () =>
+          (await notices.read()).some((text) =>
+            text.includes(m.notice_workbench_unsupported_profile()),
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(app.workspace.getActiveFile()?.path===${JSON.stringify(defaultPath)})`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      expect(
+        await obEval(vaultId, "String(window.zotlitE2ELaunch===undefined)"),
+      ).toBe("true");
+      await obEval(vaultId, "app.setting.close();true");
+    });
+  });
+
   it("reflects a Scope Case switch through zotlit:library-scope", async () => {
     const availableCase = findScopeCase("available");
     const dataPath = join(
