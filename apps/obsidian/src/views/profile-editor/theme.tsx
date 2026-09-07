@@ -51,6 +51,31 @@ export const profileEditorTheme: WorkbenchTheme = {
       undo: "clickable-icon",
       redo: "clickable-icon",
     },
+    previewControls: {
+      controls: `${row} zt:flex-wrap`,
+      label: row,
+      paused: "zt:text-muted",
+    },
+    resultHeader: {
+      header: stack,
+      heading: "zt:text-base zt:font-semibold",
+      controls: `${row} zt:flex-wrap`,
+      label: row,
+    },
+    resultRegion: { region: stack },
+    resultColumn: {
+      filename: "zt:font-semibold",
+      problem: "zt:text-error",
+      stale: "zt:text-muted",
+      pending: "zt:text-muted",
+    },
+    propertyList: {
+      note: "zt:grid zt:grid-cols-[auto_1fr] zt:gap-x-3 zt:gap-y-1",
+      list: "zt:grid zt:grid-cols-[auto_1fr] zt:gap-x-3 zt:gap-y-1",
+      fold: "zt:grid zt:grid-cols-[auto_1fr] zt:gap-x-3 zt:gap-y-1",
+      key: "zt:text-muted",
+      value: "zt:min-w-0 zt:break-words",
+    },
     tabBar: {
       "tab-bar": cn(row, "zt:px-2 zt:pb-2"),
       tab: "zt:shrink-0",

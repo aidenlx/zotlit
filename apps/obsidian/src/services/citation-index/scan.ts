@@ -154,7 +154,7 @@ const CODE_INDENT = 4;
  * Blank every region the Citation Index must not read, keeping each character's
  * offset and every line break so the grammar still sees the document's shape.
  */
-function maskExclusions(text: string): string {
+export function maskExclusions(text: string): string {
   const body = text.split("");
   maskBlocks(text, body);
   maskInline(body);

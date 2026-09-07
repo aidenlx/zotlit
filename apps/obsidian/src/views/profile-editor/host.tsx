@@ -106,7 +106,8 @@ class EditorSuggester extends SuggestModal<
 
 export function createProfileEditorHost(
   app: App,
-  ports: Pick<WorkbenchHost, "render" | "matchData" | "insertTarget">,
+  ports: Pick<WorkbenchHost, "render" | "matchData" | "insertTarget"> &
+    Partial<Pick<WorkbenchHost, "markdown">>,
   wrap: (content: ReactNode) => ReactNode = (content) => content,
 ): WorkbenchHost & Disposable {
   const open = new Set<() => void>();
@@ -201,25 +202,27 @@ export function createProfileEditorHost(
         app.saveLocalStorage(`zotlit.workbench.${scope}.${key}`, value);
       },
     },
-    markdown: function EditorMarkdown({ markdown, showMarkdown }) {
-      const container = useRef<HTMLDivElement>(null);
-      useEffect(() => {
-        const element = container.current;
-        if (!element || showMarkdown) return;
-        const target = element.createDiv();
-        const lifecycle = new Component();
-        lifecycle.load();
-        void MarkdownRenderer.render(app, markdown, target, "", lifecycle);
-        return () => {
-          lifecycle.unload();
-          target.remove();
-        };
-      }, [markdown, showMarkdown]);
-      return showMarkdown ? (
-        <pre>{markdown}</pre>
-      ) : (
-        <div ref={container} className="markdown-rendered" />
-      );
-    },
+    markdown:
+      ports.markdown ??
+      function EditorMarkdown({ markdown, showMarkdown }) {
+        const container = useRef<HTMLDivElement>(null);
+        useEffect(() => {
+          const element = container.current;
+          if (!element || showMarkdown) return;
+          const target = element.createDiv();
+          const lifecycle = new Component();
+          lifecycle.load();
+          void MarkdownRenderer.render(app, markdown, target, "", lifecycle);
+          return () => {
+            lifecycle.unload();
+            target.remove();
+          };
+        }, [markdown, showMarkdown]);
+        return showMarkdown ? (
+          <pre>{markdown}</pre>
+        ) : (
+          <div ref={container} className="markdown-rendered" />
+        );
+      },
   };
 }

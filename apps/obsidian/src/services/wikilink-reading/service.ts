@@ -12,6 +12,7 @@ import { getLogger } from "@/lib/log";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
 import {
   LiveSections,
+  isDraftMarkdown,
   rerenderReadingViews,
   sectionRange,
 } from "@/lib/reading-view";
@@ -168,6 +169,7 @@ export class WikilinkReading extends Service<void> {
    * place for as long as Obsidian shows the section.
    */
   #process(el: HTMLElement, ctx: MarkdownPostProcessorContext): void {
+    if (isDraftMarkdown(el)) return;
     if (this.#retired) return;
     // Any internal link, Citation or not: a link whose Item gains a native
     // citation key at the next snapshot rebuild becomes a Citation in place.
