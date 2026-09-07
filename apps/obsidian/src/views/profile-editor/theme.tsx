@@ -5,6 +5,7 @@ import { templateHighlighting } from "@zotlit/workbench/language";
 import type { WorkbenchTheme, WorkbenchIcon } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import { cn } from "@/lib/utils";
 
 export const profileEditorIcons: Record<WorkbenchIcon, string> = {
   add: "plus",
@@ -44,14 +45,14 @@ export const profileEditorTheme: WorkbenchTheme = {
   ],
   classes: {
     editToolbar: {
-      "edit-toolbar": `${row} zt:p-2`,
+      "edit-toolbar": cn(row, "zt:p-2"),
       "mode-group": row,
       "toolbar-actions": row,
       undo: "clickable-icon",
       redo: "clickable-icon",
     },
     tabBar: {
-      "tab-bar": `${row} zt:px-2 zt:pb-2`,
+      "tab-bar": cn(row, "zt:px-2 zt:pb-2"),
       tab: "zt:shrink-0",
     },
     tabPanel: { "tab-panel": "zt:p-3" },
