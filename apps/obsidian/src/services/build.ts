@@ -16,6 +16,7 @@ import { DatabaseService } from "./database/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
 import { LibraryScopeService } from "./library-scope/service";
+import { LocalBridgeService } from "./local-bridge/service";
 import { LocalServerService } from "./local-server/service";
 import { LoggingService } from "./log/service";
 import { createNoteFeature } from "./note-feature";
@@ -134,6 +135,16 @@ export function buildServices(
           template,
           noteIndex,
           libraryScope,
+        }),
+    })
+    .use({
+      localBridge: ({ settings, profile, localServer }) =>
+        new LocalBridgeService({
+          app: plugin.app,
+          settings,
+          profile,
+          localServer,
+          pluginVersion: plugin.manifest.version,
         }),
     })
     .useValue({

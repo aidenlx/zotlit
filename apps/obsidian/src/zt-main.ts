@@ -217,6 +217,7 @@ export default class ZotLitPlugin extends Plugin {
         libraryScope: services.libraryScope,
         zoteroPref: services.zoteroPref,
         localServer: services.localServer,
+        localBridge: services.localBridge,
         attachmentImport: services.attachmentImport,
         citationIndex: services.citationIndex,
         template: services.template,

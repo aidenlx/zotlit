@@ -5,6 +5,7 @@ import type { AttachmentImportService } from "@/services/attachment-import/servi
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { LocalBridgeService } from "@/services/local-bridge/service";
 import type { LocalServerService } from "@/services/local-server/service";
 import type { PandocEngineService } from "@/services/pandoc/service";
 import type { ProfileService } from "@/services/profile/service";
@@ -40,6 +41,12 @@ export type LocalServerActions = Pick<
   "effectivePort" | "on"
 >;
 
+/** The Local Bridge surface the setting tab needs: the live connection and its end. */
+export type LocalBridgeActions = Pick<
+  LocalBridgeService,
+  "connection" | "disconnect" | "on"
+>;
+
 /** The Citation Index surface the setting tab needs: the recovery hatch. */
 export type CitationIndexActions = Pick<CitationIndex, "reset">;
 
@@ -73,6 +80,8 @@ export interface SettingTabContext {
   zoteroPref: ZoteroPrefService;
   /** The one loopback listener, read by the Local server rows. */
   localServer: LocalServerActions;
+  /** The Workbench Connection the Local server rows name and end. */
+  localBridge: LocalBridgeActions;
   /** The approved-folder store the Attachments page lists and mutates. */
   attachmentImport: AttachmentImportActions;
   /** The vault-wide Citation Index, reset from the Maintenance page. */

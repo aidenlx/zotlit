@@ -25,6 +25,7 @@ import { citationsPageItems } from "./citations";
 import type {
   AttachmentImportActions,
   CitationIndexActions,
+  LocalBridgeActions,
   LocalServerActions,
   PandocEngineActions,
   ReleaseTabActions,
@@ -52,6 +53,7 @@ export interface ZotLitSettingTabOptions {
   libraryScope: LibraryScopeService;
   zoteroPref: ZoteroPrefService;
   localServer: LocalServerActions;
+  localBridge: LocalBridgeActions;
   attachmentImport: AttachmentImportActions;
   citationIndex: CitationIndexActions;
   template: TemplateService;
@@ -68,6 +70,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #libraryScope: LibraryScopeService;
   readonly #zoteroPref: ZoteroPrefService;
   readonly #localServer: LocalServerActions;
+  readonly #localBridge: LocalBridgeActions;
   readonly #attachmentImport: AttachmentImportActions;
   readonly #citationIndex: CitationIndexActions;
   readonly #profile: ProfileService;
@@ -84,6 +87,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     libraryScope,
     zoteroPref,
     localServer,
+    localBridge,
     attachmentImport,
     citationIndex,
     template,
@@ -103,6 +107,10 @@ export class ZotLitSettingTab extends PluginSettingTab {
     // The Local server rows name the port the listener actually bound, so a
     // bind, a rebind, and a close each rebuild them.
     plugin.register(localServer.on("listening", () => this.#requestUpdate()));
+    this.#localBridge = localBridge;
+    // The Workbench Connection row is included structurally, so a connection
+    // opening, ending, or being taken over rebuilds the definitions.
+    plugin.register(localBridge.on("connection", () => this.#requestUpdate()));
     this.#attachmentImport = attachmentImport;
     this.#citationIndex = citationIndex;
     this.#template = template;
@@ -207,6 +215,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
       libraryScope: this.#libraryScope,
       zoteroPref: this.#zoteroPref,
       localServer: this.#localServer,
+      localBridge: this.#localBridge,
       attachmentImport: this.#attachmentImport,
       citationIndex: this.#citationIndex,
       template: this.#template,
