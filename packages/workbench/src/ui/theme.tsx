@@ -14,6 +14,7 @@ import type { SliceLanguage } from "./slice-editor";
  * the tree adds its entry here, so a host's class map is checked against it.
  */
 export interface WorkbenchParts {
+  select: "wrapper" | "select" | "icon" | "option";
   sliceEditor: "slice-editor" | "slice-scroll";
   notePane:
     | "note-pane"
@@ -32,9 +33,9 @@ export interface WorkbenchParts {
     | "controls"
     | "label"
     | "label-text"
-    | "select"
     | "run"
-    | "stop";
+    | "stop"
+    | "paused";
   resultHeader:
     | "header"
     | "heading"
@@ -44,7 +45,6 @@ export interface WorkbenchParts {
     | "select";
   resultRegion: "region";
   resultColumn:
-    | "select"
     | "stale"
     | "filename"
     | "filename-text"
@@ -55,7 +55,7 @@ export interface WorkbenchParts {
     | "pending"
     | "label"
     | "label-text";
-  propertyList: "key" | "value" | "empty" | "list";
+  propertyList: "key" | "value" | "empty" | "list" | "note" | "spread" | "fold";
 
   tabBar: "tab-bar" | "tab";
   tabPanel: "tab-panel";
@@ -90,7 +90,8 @@ export type WorkbenchIcon =
   | "undo"
   | "redo"
   | "preview"
-  | "edit";
+  | "edit"
+  | "chevron-down";
 
 export interface WorkbenchTheme {
   readonly classes?: WorkbenchClassMap;

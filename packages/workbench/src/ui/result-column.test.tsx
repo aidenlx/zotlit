@@ -59,7 +59,17 @@ function column(overrides: Partial<ResultColumnProps> = {}) {
 
 it("passes the complete note and folded properties to the host renderer", () => {
   const props = column({ stale: true });
-  expect(screen.getByText("Papers/Reading.md")).toBeDefined();
+  expect(
+    screen
+      .getByText("Papers/Reading.md")
+      .closest("header")
+      ?.getAttribute("aria-description"),
+  ).toBe("Papers/Reading.md");
+  expect(
+    screen
+      .getByLabelText(m.workbench_preview_show())
+      .getAttribute("aria-description"),
+  ).toBe(m.workbench_preview_whole());
   expect(screen.getByTestId("markdown").textContent).toBe(
     "Created notetagsreading, science",
   );

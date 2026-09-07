@@ -2,14 +2,17 @@
 
 import { useOptionalEditor, useWorkbenchStore } from "./editor";
 import { m } from "./paraglide/messages.js";
+import { WorkbenchSelect, WorkbenchOption } from "./select";
 import { useParts } from "./theme";
 
 export function PreviewControls({
   busy,
+  disabled = false,
   onRun,
   onStop,
 }: {
   busy: boolean;
+  disabled?: boolean;
   onRun: () => void;
   onStop: () => void;
 }) {
@@ -20,8 +23,7 @@ export function PreviewControls({
     <div {...part("controls")}>
       <label {...part("label")}>
         <span {...part("label-text")}>{m.workbench_preview_mode()}</span>
-        <select
-          {...part("select")}
+        <WorkbenchSelect
           value={preview.mode}
           disabled={!editor}
           onInput={(event) =>
@@ -31,14 +33,17 @@ export function PreviewControls({
             })
           }
         >
-          <option value="create">{m.workbench_preview_create()}</option>
-          <option value="update">{m.workbench_preview_update()}</option>
-        </select>
+          <WorkbenchOption value="create">
+            {m.workbench_preview_create()}
+          </WorkbenchOption>
+          <WorkbenchOption value="update">
+            {m.workbench_preview_update()}
+          </WorkbenchOption>
+        </WorkbenchSelect>
       </label>
       <label {...part("label")}>
         <span {...part("label-text")}>{m.workbench_preview_refresh()}</span>
-        <select
-          {...part("select")}
+        <WorkbenchSelect
           value={preview.live ? "live" : "demand"}
           disabled={!editor}
           onInput={(event) => {
@@ -47,14 +52,23 @@ export function PreviewControls({
             if (!live) onStop();
           }}
         >
-          <option value="live">{m.workbench_preview_live()}</option>
-          <option value="demand">{m.workbench_preview_on_demand()}</option>
-        </select>
+          <WorkbenchOption value="live">
+            {m.workbench_preview_live()}
+          </WorkbenchOption>
+          <WorkbenchOption value="demand">
+            {m.workbench_preview_on_demand()}
+          </WorkbenchOption>
+        </WorkbenchSelect>
       </label>
+      {!preview.live && (
+        <span role="status" {...part("paused")}>
+          {m.workbench_preview_paused()}
+        </span>
+      )}
       <button
         {...part("run")}
         type="button"
-        disabled={!editor || busy}
+        disabled={!editor || busy || disabled}
         onClick={onRun}
       >
         {m.workbench_preview_run()}

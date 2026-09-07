@@ -6,6 +6,7 @@
   "workbench_preview_live": "实时",
   "workbench_preview_on_demand": "按需",
   "workbench_preview_run": "运行",
+  "workbench_preview_paused": "实时预览已暂停",
   "workbench_preview_stop": "停止",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "profile_match_unmatched": "没有匹配的配置方案。",

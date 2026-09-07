@@ -16,19 +16,15 @@ import { useParts } from "./theme";
 export function PropertyList({
   properties,
   label,
-  className = "",
+  variant = "list",
 }: {
   properties: readonly RenderedProperty[];
   label?: string;
-  className?: string;
+  variant?: "list" | "note" | "spread" | "fold";
 }) {
   const part = useParts("propertyList");
   return (
-    <dl
-      aria-label={label}
-      {...part("list")}
-      className={[part("list").className, className].filter(Boolean).join(" ")}
-    >
+    <dl aria-label={label} {...part(variant)}>
       {properties.map((property) => (
         <Fragment key={`${property.position}:${property.key}`}>
           <dt {...part("key")}>{property.key}</dt>

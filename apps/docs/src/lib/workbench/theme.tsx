@@ -1,5 +1,13 @@
 import { EditorView } from "@codemirror/view";
-import { Code2, Eye, Pencil, List, Redo2, Undo2 } from "lucide-react";
+import {
+  Code2,
+  Eye,
+  Pencil,
+  List,
+  Redo2,
+  Undo2,
+  ChevronDown,
+} from "lucide-react";
 // The web's look for the Workbench UI: the site's Tailwind classes for each
 // part of the shared tree, and Lucide for its icons. The tree carries no class
 // of its own (ADR 0044); the control sizes are the kit's Workbench variants.
@@ -12,6 +20,7 @@ import { cn } from "@/lib/cn";
 import { editorTheme } from "./editor-theme";
 
 const ICON: Record<WorkbenchIcon, typeof List> = {
+  "chevron-down": ChevronDown,
   preview: Eye,
   edit: Pencil,
   basic: List,
@@ -32,6 +41,13 @@ export const WEB_THEME: WorkbenchTheme = {
       : []),
   ],
   classes: {
+    select: {
+      wrapper: "relative w-full min-w-0 has-[select:disabled]:opacity-50",
+      select:
+        "min-h-8 w-full min-w-0 appearance-none rounded-md border border-fd-border bg-fd-card py-1 ps-2 pe-7 text-base hover:bg-fd-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring disabled:cursor-default aria-invalid:border-fd-foreground sm:text-xs",
+      icon: "pointer-events-none absolute end-2 top-1/2 size-3.5 -translate-y-1/2 text-fd-muted-foreground [&_svg]:size-full",
+      option: "bg-[Canvas] [color:CanvasText]",
+    },
     sliceEditor: {
       "slice-editor":
         "flex min-h-0 flex-1 flex-col rounded-md has-[.cm-content:focus-visible]:outline-2 has-[.cm-content:focus-visible]:outline-offset-2 has-[.cm-content:focus-visible]:outline-fd-ring",
@@ -62,11 +78,10 @@ export const WEB_THEME: WorkbenchTheme = {
       "managed-line": "zt-managed",
     },
     previewControls: {
+      paused: "text-xs text-fd-muted-foreground",
       controls: "mb-2 flex flex-wrap items-center gap-2",
       label: "flex min-w-0 items-center text-xs",
       "label-text": "sr-only",
-      select:
-        "min-h-8 rounded-md border border-fd-border bg-fd-card px-2 py-1 text-xs",
       run: buttonVariants({ variant: "outline", size: "xs" }),
       stop: buttonVariants({ variant: "ghost", size: "xs" }),
     },
@@ -78,16 +93,12 @@ export const WEB_THEME: WorkbenchTheme = {
         "flex min-w-0 flex-wrap items-center gap-1.5 min-[1180px]:flex-1 min-[1180px]:flex-nowrap",
       label: "flex min-w-0 items-center text-xs min-[1180px]:flex-1",
       "label-text": "sr-only",
-      select:
-        "min-h-8 w-full min-w-0 rounded-md border border-fd-border bg-fd-card py-1 ps-2 pe-7 text-xs hover:bg-fd-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring disabled:cursor-default",
     },
     resultRegion: {
       region:
         "group flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-fd-border bg-fd-card p-4",
     },
     resultColumn: {
-      select:
-        "min-h-8 w-full min-w-0 rounded-md border border-fd-border bg-fd-card py-1 ps-2 pe-7 text-xs hover:bg-fd-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring disabled:cursor-default",
       stale: "mb-2 text-xs font-medium",
       filename:
         "-mx-4 -mt-4 mb-4 rounded-t-md border-b border-fd-border bg-fd-muted/40 px-3 py-1.5 text-xs font-medium",
@@ -102,6 +113,10 @@ export const WEB_THEME: WorkbenchTheme = {
       "label-text": "sr-only",
     },
     propertyList: {
+      note: "grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-1 mb-4 border-b border-fd-border pb-3 text-xs",
+      spread:
+        "grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs",
+      fold: "grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-1 mt-2 text-xs",
       key: "truncate font-mono text-fd-muted-foreground",
       value: "break-words",
       empty: "text-fd-muted-foreground italic",

@@ -29,11 +29,13 @@ import {
   DEFAULT_PROFILE_SOURCE,
   SAMPLE_ITEMS,
   createRenderScheduler,
+  profileSourceRevision,
 } from "@zotlit/workbench/render";
 import type { ProfileRenderResult } from "@zotlit/workbench/render";
 import {
   EditToolbar,
   ProblemsFooter,
+  PreviewControls,
   ResultColumn,
   TAB_LABEL,
   TAB_LEDE,
@@ -119,10 +121,12 @@ export function Workbench() {
   // Where the sheet was opened from, so closing it hands the keyboard back.
   const addField = useRef<HTMLButtonElement>(null);
   const [result, setResult] = useState<ProfileRenderResult | null>(null);
+  const [renderBusy, setRenderBusy] = useState(false);
   const [scheduler] = useState(() =>
     createRenderScheduler({
       startWorker: startRenderWorker,
       onResult: setResult,
+      onBusy: setRenderBusy,
     }),
   );
   const [revision, setRevision] = useState(0);
@@ -146,6 +150,7 @@ export function Workbench() {
   const [store] = useState(createWorkbenchStore);
   const tab = useStore(store, (state) => state.tab);
   const advanced = useStore(store, (state) => state.advanced);
+  const preview = useStore(store, (state) => state.preview);
   const { setTab, setAdvanced } = store.getState();
   // Which of the two the narrow screen is showing, and whether the field list
   // is open over it. Both are the narrow layout's alone: a wide screen shows
@@ -282,8 +287,16 @@ export function Workbench() {
     // A Profile the web host refuses is never compiled, so nothing renders it,
     // and a bundle read for another draft would render this one against the
     // wrong partials — the last good result stands until its own bundle lands.
-    if (!renderable || resourcesStale) return;
+    if (!renderable || resourcesStale) {
+      scheduler[Symbol.dispose]();
+      return;
+    }
+    if (!preview.live) {
+      scheduler.pause();
+      return;
+    }
     scheduler.request({
+      mode: preview.mode,
       source: controller.source,
       snapshot: sample,
       annotation: selectedAnnotation,
@@ -298,7 +311,20 @@ export function Workbench() {
     renderable,
     resources,
     resourcesStale,
+    preview.live,
+    preview.mode,
   ]);
+
+  function runPreview() {
+    if (!renderable || resourcesStale) return;
+    scheduler.run({
+      mode: preview.mode,
+      source: controller.source,
+      snapshot: sample,
+      annotation: selectedAnnotation,
+      ...(resources ? { resources } : {}),
+    });
+  }
 
   // The last manifest the document parsed with. The header and the Name and
   // folder form read it, so repairing an invalid draft blanks neither.
@@ -1063,6 +1089,12 @@ export function Workbench() {
               onSelect={setAnnotationChoice}
             />
           )}
+          <PreviewControls
+            busy={renderBusy}
+            disabled={!renderable || resourcesStale}
+            onRun={runPreview}
+            onStop={() => scheduler.pause()}
+          />
           <ResultColumn
             result={result}
             annotationResult={annotationResult}
@@ -1073,7 +1105,15 @@ export function Workbench() {
                   ? "properties"
                   : "note"
             }
-            stale={!renderable}
+            stale={
+              !renderable ||
+              resourcesStale ||
+              (result !== null &&
+                (result.sourceRevision !==
+                  profileSourceRevision(controller.source) ||
+                  result.snapshotRevision !== sample.revision ||
+                  result.previewMode !== preview.mode))
+            }
             showMarkdown={showMarkdown}
             onShowMarkdown={setShowMarkdown}
             showManaged={showManaged}
