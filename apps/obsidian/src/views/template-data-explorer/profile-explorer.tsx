@@ -1,10 +1,13 @@
 // The sidebar follows one editor's Item and root, and sends insertion back to
 // the slice that last held focus. Standalone exploration keeps its own Item.
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useStore } from "zustand";
 
 import type { DisplayNode } from "@zotlit/workbench/explorer";
-import { restoreTemplateData } from "@zotlit/workbench/render";
+import {
+  restoreTemplateData,
+  SAMPLE_ANNOTATIONS,
+} from "@zotlit/workbench/render";
 import {
   DataExplorer,
   useDocumentRevision,
@@ -12,14 +15,21 @@ import {
 } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import { tooltipAttrs } from "@/lib/utils";
+import { loadTemplateData } from "@/services/template-workbench/data";
+import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import type { ProfileEditorView } from "@/views/profile-editor/view";
+
+const logger = getLogger(["views", "template-data-explorer"]);
 
 export function ProfileExplorer({
   editor,
+  deps,
   isEtaEnabled,
 }: {
   editor: ProfileEditorView;
+  deps: TemplateDataDeps;
   isEtaEnabled: () => boolean;
 }) {
   const preview = editor.preview!;
@@ -46,20 +56,60 @@ export function ProfileExplorer({
       : "template";
   const language =
     controller.document?.manifest.language === "eta" ? "eta" : "liquid";
-  const data = useMemo(
-    () =>
-      snapshot
-        ? root === "annotation"
-          ? example
-            ? restoreTemplateData(example.root, example.descriptors)
-            : null
-          : restoreTemplateData(
-              snapshot.roots[root],
-              snapshot.descriptors[root],
-            )
-        : null,
-    [snapshot, root, example],
+  const selection = useMemo(
+    () => ({ snapshot, example, root, indexedKey: item?.id ?? null }),
+    [snapshot, example, root, item?.id],
   );
+  const [loaded, setLoaded] = useState<{
+    selection: typeof selection;
+    data: Record<string, unknown> | null;
+  } | null>(null);
+  useEffect(() => {
+    let active = true;
+    const { indexedKey, root, example, snapshot } = selection;
+    if (!indexedKey || !snapshot || (root === "annotation" && !example)) return;
+    void (async () => {
+      const sample =
+        root === "annotation" &&
+        example &&
+        SAMPLE_ANNOTATIONS.some(({ id }) => id === example.id);
+      const key =
+        root === "annotation" && !sample
+          ? example?.root.indexedKey
+          : indexedKey;
+      if (typeof key !== "string") return;
+      const result = await loadTemplateData(deps, key, sample ? "note" : root);
+      const data =
+        result.kind === "data"
+          ? sample && example
+            ? {
+                ...restoreTemplateData(example.root, example.descriptors),
+                parentItem: result.data,
+              }
+            : result.data
+          : null;
+      logger.trace("Loaded native Explorer context", {
+        indexedKey: key,
+        root,
+        sample: Boolean(sample),
+        applied: active,
+        available: data !== null,
+      });
+      if (active)
+        setLoaded({ selection, data: data as Record<string, unknown> | null });
+    })().catch((error: unknown) => {
+      logger.warn("Failed to load native Explorer context", {
+        indexedKey,
+        root,
+        error,
+      });
+      if (active) setLoaded({ selection, data: null });
+    });
+    return () => {
+      active = false;
+    };
+  }, [deps, selection]);
+  const data = loaded?.selection === selection ? loaded.data : null;
   const annotationKey = (node: DisplayNode): string | null => {
     if (
       root !== "note" ||
