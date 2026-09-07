@@ -1,5 +1,5 @@
 // One file-backed authoring session; TextFileView owns vault updates and saves.
-import { Menu, Scope, TextFileView } from "obsidian";
+import { Menu, Notice, Scope, TextFileView } from "obsidian";
 import type { ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -37,6 +37,7 @@ import {
   ProblemsFooter,
   problemText,
   SliceEditor,
+  StartHere,
   TabBar,
   TabPanel,
   TABS,
@@ -54,12 +55,14 @@ import type {
 } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { tooltipAttrs } from "@/lib/utils";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { listInstalledStyles } from "@/services/pandoc/styles";
+import type { ProfileService } from "@/services/profile/service";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
 import { NativeMarkdown } from "@/views/note-preview/markdown";
 import type { NativeRenderDeps } from "@/views/note-preview/render";
@@ -88,6 +91,13 @@ export type ProfileEditorDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   render?: WorkbenchHost["render"];
   nativePreview?: NativeRenderDeps;
   pluginVersion?: string;
+  profile?: Pick<
+    ProfileService,
+    | "getSource"
+    | "materializeDefault"
+    | "restoreDefault"
+    | "defaultDocumentPath"
+  >;
 };
 
 export class ProfileEditorView extends TextFileView {
@@ -115,6 +125,9 @@ export class ProfileEditorView extends TextFileView {
   #databaseUnavailable = false;
   #stylesUnavailable = false;
   #citationStyles: NameFolderPaneProps["citationStyles"] = [];
+  #defaultDraft = false;
+  #materializing: Promise<void> | null = null;
+  #bindingDraft = false;
 
   constructor(leaf: WorkspaceLeaf, deps: ProfileEditorDeps) {
     super(leaf);
@@ -345,6 +358,7 @@ export class ProfileEditorView extends TextFileView {
     return this.#controller.source;
   }
   override setViewData(source: string, clear: boolean): void {
+    if (this.#bindingDraft) return;
     if (clear) {
       this.#host[Symbol.dispose]();
       this.#unsubscribe?.();
@@ -362,6 +376,7 @@ export class ProfileEditorView extends TextFileView {
     this.data = this.#controller.source;
   }
   override clear(): void {
+    if (this.#defaultDraft || this.#bindingDraft) return;
     this.setViewData("", true);
   }
 
@@ -370,6 +385,7 @@ export class ProfileEditorView extends TextFileView {
       this.store.getState();
     return {
       ...super.getState(),
+      ...(this.#defaultDraft ? { defaultDraft: true } : {}),
       tab,
       itemIndexedKey: item?.id ?? null,
       root,
@@ -382,6 +398,30 @@ export class ProfileEditorView extends TextFileView {
     state: unknown,
     result: ViewStateResult,
   ): Promise<void> {
+    if (
+      !this.#bindingDraft &&
+      state &&
+      typeof state === "object" &&
+      "file" in state &&
+      typeof state.file === "string"
+    ) {
+      this.#defaultDraft = false;
+      this.allowNoFile = false;
+    }
+    if (
+      state &&
+      typeof state === "object" &&
+      "defaultDraft" in state &&
+      state.defaultDraft === true &&
+      !this.#defaultDraft
+    ) {
+      const profile = this.#deps.profile;
+      if (profile) {
+        this.allowNoFile = true;
+        this.#defaultDraft = true;
+        this.setViewData(await profile.getSource("default"), true);
+      }
+    }
     await super.setState(state, result);
     if (!state || typeof state !== "object") return;
     const value = state as Record<string, unknown>;
@@ -478,6 +518,86 @@ export class ProfileEditorView extends TextFileView {
         .setIcon("file-text")
         .onClick(() => void this.openMarkdown()),
     );
+    if (this.file?.path === this.#deps.profile?.defaultDocumentPath)
+      menu.addItem((item) =>
+        item
+          .setTitle(m.settings_profile_document_restore())
+          .setIcon("rotate-ccw")
+          .onClick(() => void this.restoreDefault()),
+      );
+  }
+  get isDefaultDraft(): boolean {
+    return this.#defaultDraft;
+  }
+  async restoreDefault(): Promise<void> {
+    const profile = this.#deps.profile;
+    if (
+      !profile ||
+      !(await confirm(
+        {
+          title: m.settings_profile_document_restore_title(),
+          content: m.settings_profile_document_restore_desc({
+            path: profile.defaultDocumentPath,
+          }),
+          action: m.settings_profile_document_restore_action(),
+          destructive: true,
+        },
+        this.app,
+      ))
+    )
+      return;
+    await this.save();
+    this.allowNoFile = true;
+    this.#defaultDraft = true;
+    await this.leaf.setViewState({
+      type: PROFILE_EDITOR_VIEW_TYPE,
+      state: { file: null, defaultDraft: true },
+      active: true,
+    });
+    await profile.restoreDefault();
+    this.setViewData(await profile.getSource("default"), true);
+  }
+  /** One file creation covers every local edit made while the write is pending. */
+  materializeDefault(): Promise<void> {
+    if (this.#materializing) return this.#materializing;
+    const profile = this.#deps.profile;
+    if (!profile || !this.#defaultDraft) return Promise.resolve();
+    this.#materializing = (async () => {
+      const { file, created } = await profile.materializeDefault(
+        this.#controller.source,
+      );
+      if (!created) {
+        new Notice(m.profile_editor_default_conflict());
+        return;
+      }
+      if (this.#closed) {
+        await this.app.vault.modify(file, this.#controller.source);
+        return;
+      }
+      this.#bindingDraft = true;
+      try {
+        await this.leaf.setViewState({
+          type: PROFILE_EDITOR_VIEW_TYPE,
+          state: { ...this.getState(), defaultDraft: false, file: file.path },
+          active: true,
+        });
+        this.#defaultDraft = false;
+        this.allowNoFile = false;
+        this.data = this.#controller.source;
+        this.requestSave();
+        this.#mount();
+      } finally {
+        this.#bindingDraft = false;
+      }
+    })()
+      .catch((error: unknown) => {
+        logger.error("Failed to create the edited Default Profile", { error });
+        new Notice(m.notice_profile_action_failed());
+      })
+      .finally(() => {
+        this.#materializing = null;
+      });
+    return this.#materializing;
   }
   openMenu(anchor: HTMLElement): void {
     const menu = new Menu();
@@ -577,7 +697,10 @@ export class ProfileEditorView extends TextFileView {
           for (const listener of this.#insertListeners) listener();
         }
         this.data = this.#controller.source;
-        if (transaction.annotation(externalEdit) !== true) this.requestSave();
+        if (transaction.annotation(externalEdit) !== true) {
+          if (this.#defaultDraft) void this.materializeDefault();
+          else this.requestSave();
+        }
       },
     );
   }
@@ -706,6 +829,12 @@ function EditorContent({
   return (
     <div className="zt:flex zt:h-full zt:flex-col">
       <EditorHeader view={view} />
+      <StartHere />
+      {view.isDefaultDraft && (
+        <p role="status" className="zt:px-3 zt:text-muted">
+          {m.profile_editor_default_first_edit()}
+        </p>
+      )}
       {view.unavailableDependencies.map((message) => (
         <p key={message} role="status" className="zt:px-3 zt:text-muted">
           {message}

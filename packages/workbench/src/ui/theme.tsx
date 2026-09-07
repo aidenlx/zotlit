@@ -75,6 +75,7 @@ export interface WorkbenchParts {
     | "null"
     | "undefined"
     | "long-text";
+  startHere: "strip" | "heading" | "line" | "dismiss";
   nameFolder:
     | "source-button"
     | "confirm-button"

@@ -9,6 +9,7 @@ export { MatchPane } from "./match";
 export { m } from "./paraglide/messages.js";
 
 export { EditToolbar } from "./edit-toolbar";
+export { StartHere } from "./start-here";
 export {
   WorkbenchEditorProvider,
   useDocumentRevision,

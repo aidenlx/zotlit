@@ -36,6 +36,7 @@ import type { ProfileRenderResult } from "@zotlit/workbench/render";
 import { MatchPane } from "@zotlit/workbench/ui";
 import {
   EditToolbar,
+  StartHere,
   ProblemsFooter,
   PreviewControls,
   ResultColumn,
@@ -901,6 +902,7 @@ export function Workbench() {
               onClick={() => setSheet(true)}
             />
           </EditToolbar>
+          <StartHere />
           {advanced && (
             <>
               <div className="mb-2 flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-2">

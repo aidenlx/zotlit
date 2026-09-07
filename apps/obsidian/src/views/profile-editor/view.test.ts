@@ -65,6 +65,57 @@ function setup(deps: Partial<ProfileEditorDeps> = {}) {
 }
 
 describe("ProfileEditorView", () => {
+  it("creates Default once on first edit and preserves later edits and Undo while binding", async () => {
+    const file = new TFile();
+    file.path = "templates/zotlit-profile.default.md";
+    const pending = Promise.withResolvers<{ file: TFile; created: boolean }>();
+    const materializeDefault = vi.fn(() => pending.promise);
+    const { view, leaf, requestSave } = setup({
+      profile: {
+        getSource: async () => SOURCE,
+        materializeDefault,
+      } as unknown as ProfileEditorDeps["profile"],
+    });
+    await view.setState(
+      { defaultDraft: true, file: null },
+      {} as ViewStateResult,
+    );
+    expect(materializeDefault).not.toHaveBeenCalled();
+    expect(view.file).toBeNull();
+    const controller = view.controller;
+    view.controller.setManifestKey("name", "First edit");
+    view.controller.setManifestKey("name", "Latest edit");
+    expect(materializeDefault).toHaveBeenCalledOnce();
+    expect(requestSave).not.toHaveBeenCalled();
+    vi.spyOn(leaf, "setViewState").mockImplementation(async () => {
+      view.setViewData(SOURCE, true);
+    });
+    pending.resolve({ file, created: true });
+    await view.materializeDefault();
+    expect(view.controller).toBe(controller);
+    expect(view.getViewData()).toContain("Latest edit");
+    expect(view.isDefaultDraft).toBe(false);
+    expect(requestSave).toHaveBeenCalledOnce();
+    view.controller.undo();
+    expect(view.getViewData()).toContain("First edit");
+  });
+
+  it("keeps a competing Default untouched and retains the draft for recovery", async () => {
+    const file = new TFile();
+    const { view, leaf, requestSave } = setup({
+      profile: {
+        getSource: async () => SOURCE,
+        materializeDefault: async () => ({ file, created: false }),
+      } as unknown as ProfileEditorDeps["profile"],
+    });
+    await view.setState({ defaultDraft: true }, {} as ViewStateResult);
+    view.controller.setManifestKey("name", "Kept draft");
+    await view.materializeDefault();
+    expect(view.isDefaultDraft).toBe(true);
+    expect(view.getViewData()).toContain("Kept draft");
+    expect(vi.spyOn(leaf, "setViewState")).not.toHaveBeenCalled();
+    expect(requestSave).not.toHaveBeenCalled();
+  });
   it("keeps authoring and restored state available when the database fails", async () => {
     const { view, requestSave } = setup({
       db: {

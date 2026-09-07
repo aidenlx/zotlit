@@ -14,7 +14,7 @@ import { BaseNotice } from "@/lib/notice";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { SettingsService } from "@/services/settings/service";
-import { openProfileEditor } from "@/views/profile-editor/register";
+import { customizeProfile } from "@/views/profile-editor/register";
 
 import { referencesStyleDefinition } from "./citations";
 import type {
@@ -227,11 +227,11 @@ function profilesList(
       render: (setting) => {
         setting.addButton((button) =>
           button
-            .setButtonText(m.profile_editor_edit())
+            .setButtonText(m.profile_editor_customize())
             .setDisabled(locked)
             .onClick(() => {
               const file = ctx.app.vault.getFileByPath(profile.path);
-              if (file) void openProfileEditor(ctx.app, file);
+              if (file) void customizeProfile(ctx.app, file);
             }),
         );
         setting.addButton((button) =>
@@ -436,8 +436,14 @@ function defaultDocumentItem(
         setting.addButton((button) =>
           button
             .setIcon("pencil")
-            .setTooltip(m.settings_template_open())
-            .onClick(() => void openDocument(ctx, path)),
+            .setTooltip(m.profile_editor_customize())
+            .onClick(
+              () =>
+                void runAction(
+                  () => customizeProfile(ctx.app, ctx.profile),
+                  ctx,
+                ),
+            ),
         );
       setting.addButton((button) =>
         button
@@ -447,7 +453,7 @@ function defaultDocumentItem(
           .setTooltip(
             ejected
               ? m.settings_profile_document_restore()
-              : m.settings_template_eject(),
+              : m.profile_editor_customize(),
           )
           .setDisabled(profileActionsLocked(ctx))
           .then((button) => {
@@ -471,10 +477,7 @@ function defaultDocumentItem(
                     )
                   )
                     await ctx.profile.restoreDefault();
-                } else
-                  await ctx.app.workspace
-                    .getLeaf(true)
-                    .openFile(await ctx.profile.ejectDefault());
+                } else await customizeProfile(ctx.app, ctx.profile);
               }, ctx),
           ),
       );
@@ -484,7 +487,7 @@ function defaultDocumentItem(
 
 /**
  * The Default row of the Profiles page: named there, above the other Profiles.
- * Sharing is its one action. Duplicating Default carries no bindings and copies
+ * Customize opens its effective source. Duplicating Default carries no bindings and copies
  * its document verbatim, so the copy differs from Default in nothing — the very
  * profile `prepareCreate` refuses to mint. Add profile is that path.
  */
@@ -495,6 +498,15 @@ function defaultProfileItem(
     name: m.settings_profile_default_name(),
     desc: m.settings_profile_default_desc(),
     render: (setting) => {
+      setting.addButton((button) =>
+        button
+          .setButtonText(m.profile_editor_customize())
+          .setDisabled(profileActionsLocked(ctx))
+          .onClick(
+            () =>
+              void runAction(() => customizeProfile(ctx.app, ctx.profile), ctx),
+          ),
+      );
       setting.addExtraButton((button) =>
         button
           .setIcon("share")
@@ -510,8 +522,8 @@ function defaultProfileItem(
 
 /**
  * Managed Frontmatter has one editor, the template document. While the default
- * look is built in, the row offers the eject (which carries the current fields
- * along); once ejected, it opens the document.
+ * look is built in, Customize opens an in-memory draft with the current fields;
+ * the first edit writes its document.
  */
 function propertiesItem(
   ctx: SettingTabContext,
@@ -528,17 +540,13 @@ function propertiesItem(
         button
           .setIcon(ejected ? "pencil" : "file-pen")
           .setTooltip(
-            ejected ? m.settings_template_open() : m.settings_template_eject(),
+            ejected ? m.settings_template_open() : m.profile_editor_customize(),
           )
           .setDisabled(profileActionsLocked(ctx))
           .onClick(
             () =>
               void runAction(async () => {
-                if (ejected) await openDocument(ctx, path);
-                else
-                  await ctx.app.workspace
-                    .getLeaf(true)
-                    .openFile(await ctx.profile.ejectDefault());
+                await customizeProfile(ctx.app, ctx.profile);
               }, ctx),
           ),
       );

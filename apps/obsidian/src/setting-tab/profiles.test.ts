@@ -84,8 +84,8 @@ describe("Profile settings", () => {
     expect(builtIn).toMatchObject({
       desc: m.settings_profile_properties_builtin_desc(),
     });
-    // No document yet, so the action creates one — the template eject pair.
-    expect(buttonLabels(builtIn)).toEqual([m.settings_template_eject()]);
+    // Customize opens an in-memory draft before the first edit.
+    expect(buttonLabels(builtIn)).toEqual([m.profile_editor_customize()]);
     expect(buttonIcons(builtIn)).toEqual(["file-pen"]);
 
     ctx.app = {

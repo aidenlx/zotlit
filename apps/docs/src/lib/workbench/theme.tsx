@@ -358,6 +358,13 @@ export const WEB_THEME: WorkbenchTheme = {
     tabPanel: {
       "tab-panel": "flex min-h-0 min-w-0 flex-1 flex-col [&[hidden]]:hidden",
     },
+    startHere: {
+      strip: "mb-2 rounded-md border border-fd-border p-3 text-xs",
+      heading: "flex items-center justify-between gap-2",
+      line: "my-1 text-fd-muted-foreground",
+      dismiss:
+        "cursor-pointer text-fd-muted-foreground hover:text-fd-foreground",
+    },
     editToolbar: {
       "edit-toolbar":
         "mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2",
