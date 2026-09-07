@@ -11,12 +11,13 @@ import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
-import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
+import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { LocalServerService } from "@/services/local-server/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
+import type { TemplateService } from "@/services/template/service";
 
 import type { DeviceStorage } from "./installation";
 import type { LocalBridgeService } from "./service";
@@ -51,7 +52,7 @@ export function setLaunchSheetSkipped(
 
 /** What an entry action asks Customize to open. */
 export interface CustomizeRequest {
-  readonly profileId: string;
+  readonly profileId: ProfileSelector;
   /**
    * The paper to show. Leave it out and the flow takes the active Literature
    * Note's paper, or a Sample Item when no Literature Note is active.
@@ -88,6 +89,7 @@ export interface CustomizeDeps {
     ProfileService,
     "ready" | "profiles" | "defaultDocumentPath" | "getSource"
   >;
+  template: Pick<TemplateService, "ready" | "exportLiteratureNotePackSource">;
   localServer: Pick<LocalServerService, "effectivePort" | "on">;
   bridge: Pick<LocalBridgeService, "launchUrl">;
   confirmLaunch: ConfirmLaunch;
@@ -100,13 +102,16 @@ export type CustomizeAction = (request: CustomizeRequest) => Promise<void>;
 export function createCustomize(deps: CustomizeDeps): CustomizeAction {
   return async (request) => {
     await deps.profile.ready;
-    const documentPath = profileDocumentPath(deps, request.profileId);
+    const source = await deps.profile.getSource(request.profileId);
     const reason = unsupportedProfileReason(
-      await deps.profile.getSource(profileSelector(request.profileId)),
+      await withDependencies(deps, source),
     );
     if (reason !== null) {
       logger.debug("Customize kept the Profile in Obsidian", { reason });
-      await openInObsidian(deps.app, documentPath);
+      await openInObsidian(
+        deps.app,
+        profileDocumentPath(deps, request.profileId),
+      );
       new BaseNotice(m.notice_workbench_unsupported_profile());
       return;
     }
@@ -125,7 +130,11 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
       if (consent === null) return;
       if (turnServerOn) {
         deps.settings.update({ "server.enabled": true });
-        await whenListening(deps.localServer);
+        if (!(await whenListening(deps.localServer))) {
+          logger.warn("Customize gave up waiting for the local server");
+          new BaseNotice(m.notice_workbench_server_failed());
+          return;
+        }
       }
       if (consent.doNotAskAgain) setLaunchSheetSkipped(deps.app, true);
     }
@@ -139,22 +148,40 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
   };
 }
 
-/** The listener's port once it binds, or `null` once the wait runs out. */
+/**
+ * The Profile document with the partials it calls bundled in, so the check
+ * sees a folder partial written in Eta the way the page would. A document that
+ * cannot be bundled is checked as written.
+ */
+async function withDependencies(
+  deps: Pick<CustomizeDeps, "template">,
+  source: string,
+): Promise<string> {
+  await deps.template.ready;
+  try {
+    return await deps.template.exportLiteratureNotePackSource(source, {
+      onMissingPartial: () => {},
+    });
+  } catch {
+    return source;
+  }
+}
+
+/** `true` once the listener binds, `false` once the wait runs out. */
 function whenListening(
   localServer: Pick<LocalServerService, "effectivePort" | "on">,
-): Promise<number | null> {
-  if (localServer.effectivePort !== null)
-    return Promise.resolve(localServer.effectivePort);
-  const { promise, resolve } = Promise.withResolvers<number | null>();
+): Promise<boolean> {
+  if (localServer.effectivePort !== null) return Promise.resolve(true);
+  const { promise, resolve } = Promise.withResolvers<boolean>();
   const timer = window.setTimeout(() => {
     unsubscribe();
-    resolve(null);
+    resolve(false);
   }, SERVER_START_TIMEOUT_MS);
   const unsubscribe = localServer.on("listening", (port) => {
     if (port === null) return;
     window.clearTimeout(timer);
     unsubscribe();
-    resolve(port);
+    resolve(true);
   });
   return promise;
 }
@@ -167,23 +194,21 @@ function activeNoteItem(app: App): SelectedItemIdentity | null {
   return key === null ? null : { key, title: file.basename };
 }
 
-function profileSelector(profileId: string): ProfileSelector {
-  return isProfileId(profileId) ? profileId : DEFAULT_PROFILE;
-}
-
-function templateName(deps: CustomizeDeps, profileId: string): string {
+function templateName(deps: CustomizeDeps, profileId: ProfileSelector): string {
   if (profileId === DEFAULT_PROFILE) return m.settings_profile_default_name();
-  return (
-    deps.profile.profiles.find(({ id }) => id === profileId)?.label ?? profileId
-  );
+  return profileEntry(deps, profileId)?.label ?? profileId;
 }
 
 function profileDocumentPath(
   deps: CustomizeDeps,
-  profileId: string,
+  profileId: ProfileSelector,
 ): string | null {
   if (profileId === DEFAULT_PROFILE) return deps.profile.defaultDocumentPath;
-  return deps.profile.profiles.find(({ id }) => id === profileId)?.path ?? null;
+  return profileEntry(deps, profileId)?.path ?? null;
+}
+
+function profileEntry(deps: CustomizeDeps, profileId: ProfileSelector) {
+  return deps.profile.profiles.find(({ id }) => id === profileId);
 }
 
 async function openInObsidian(app: App, path: string | null): Promise<void> {

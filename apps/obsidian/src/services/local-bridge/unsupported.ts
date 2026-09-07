@@ -1,6 +1,5 @@
 // What the web Template Workbench cannot edit: the Profile documents that need
-// Eta or JavaScript. Every entry action asks before it opens a browser, and the
-// Save boundary asks again before it writes.
+// Eta or JavaScript. Every entry action asks before it opens a browser.
 
 import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
 
@@ -10,7 +9,7 @@ export type UnsupportedProfileReason =
   | "eta-document"
   /** A Managed Frontmatter entry computes its value in JavaScript. */
   | "javascript-property"
-  /** A partial the document calls is written in Eta. */
+  /** A partial the document carries or calls is written in Eta. */
   | "eta-dependency";
 
 /**

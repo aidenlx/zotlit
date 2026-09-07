@@ -210,12 +210,12 @@ export default class ZotLitPlugin extends Plugin {
 
     const { services } = buildServices(this, stack);
 
-    // One Customize flow behind every entry action: the settings row here, and
-    // the note command and Profile rows that land on it next.
+    // One Customize flow shared by every entry action.
     const customize = createCustomize({
       app: this.app,
       settings: services.settings,
       profile: services.profile,
+      template: services.template,
       localServer: services.localServer,
       bridge: services.localBridge,
       confirmLaunch: createLaunchSheet(this.app),

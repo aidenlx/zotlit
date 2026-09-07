@@ -63,6 +63,11 @@ export type AttachmentImportActions = Pick<
  * itself stays cheap — it runs on every `update()` and once at registration for
  * search indexing.
  */
+/** Whether the web Template Workbench is offered: the toggle under the Local server. */
+export function workbenchEnabled(ctx: SettingTabContext): boolean {
+  return ctx.settings.current?.["server.workbench"] ?? false;
+}
+
 export interface SettingTabContext {
   app: App;
   importProfile: ImportProfile;

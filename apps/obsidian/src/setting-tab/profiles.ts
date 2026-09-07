@@ -16,6 +16,7 @@ import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { SettingsService } from "@/services/settings/service";
 
 import { referencesStyleDefinition } from "./citations";
+import { workbenchEnabled } from "./context";
 import type {
   ProfileControlKey,
   SettingsControlKey,
@@ -404,16 +405,17 @@ async function deleteProfile(
 }
 
 /**
- * The Template document row. Customize leads while the web Template Workbench
- * is on, with the eject behind it as the in-vault way in; with the Workbench
- * off the eject leads again, so off means no door rather than a door that fails.
+ * The Template document row. Customize is the primary action while the web
+ * Template Workbench is on, with the eject beside it as the in-vault way in;
+ * with the Workbench off the eject is the primary action again, so off means
+ * no door rather than a door that fails.
  */
 function defaultDocumentItem(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsControlKey> {
   const path = ctx.profile.defaultDocumentPath;
   const ejected = ctx.app.vault.getFileByPath(path) !== null;
-  const workbench = ctx.settings.current?.["server.workbench"] ?? false;
+  const workbench = workbenchEnabled(ctx);
   return {
     name: m.settings_profile_document_name(),
     desc: ejected ? basename(path) : m.settings_profile_document_builtin(),

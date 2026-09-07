@@ -1,7 +1,7 @@
 // The launch sheet: the one screen that names the website a Customize opens,
 // what it may do while connected, and what leaves Obsidian to reach it.
 
-import { ConfirmationModal } from "obsidian";
+import { ConfirmationModal, Setting } from "obsidian";
 import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -25,14 +25,13 @@ export function createLaunchSheet(app: App): ConfirmLaunch {
     ]);
     modal.setTitle(m.modal_workbench_launch_title());
     modal.setContent(sheetBody(details));
-    const remember = modal.contentEl.createEl("label", {
-      cls: "zt:flex zt:items-center zt:gap-2",
-    });
-    const checkbox = remember.createEl("input", { type: "checkbox" });
-    remember.createSpan({ text: m.modal_workbench_launch_remember() });
-    checkbox.addEventListener("change", () => {
-      doNotAskAgain = checkbox.checked;
-    });
+    new Setting(modal.contentEl)
+      .setName(m.modal_workbench_launch_remember())
+      .addToggle((toggle) =>
+        toggle.setValue(false).onChange((value) => {
+          doNotAskAgain = value;
+        }),
+      );
     modal.addButton((button) =>
       button
         .setButtonText(m.modal_workbench_launch_open())
