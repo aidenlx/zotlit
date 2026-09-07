@@ -189,3 +189,58 @@ it("delegates insertion to the host and uses distinct problem descriptions per p
     ),
   ).toEqual(problems.map((p) => p.id));
 });
+
+it("repairs a missing section without inserting a note call", () => {
+  const source = DEFAULT_PROFILE_SOURCE.replace(
+    "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n",
+    "",
+  );
+  const silent = source.slice(0, source.indexOf("--- zotlit:annotation ---"));
+  const controller = new WorkbenchDocumentController(silent);
+  render(
+    <WorkbenchHostProvider host={fakeHost()}>
+      <AnnotationPane controller={controller} problem={null} />
+    </WorkbenchHostProvider>,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_section_repair() }),
+  );
+  expect(controller.source).toBe(`${silent}--- zotlit:annotation ---\n`);
+  expect(controller.source).not.toContain("render_annotation");
+  expect(
+    screen.getByRole("textbox", { name: m.workbench_annotation_label() }),
+  ).toBeDefined();
+});
+
+it("edits the annotation format without a note call and leaves the rest of the Profile unchanged", () => {
+  const source = DEFAULT_PROFILE_SOURCE.replace(
+    "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n",
+    "",
+  );
+  const controller = new WorkbenchDocumentController(source);
+  const { container } = render(
+    <WorkbenchHostProvider host={fakeHost()}>
+      <AnnotationPane controller={controller} problem={null} />
+    </WorkbenchHostProvider>,
+  );
+  const format = EditorView.findFromDOM(
+    container.querySelector(".cm-editor")!,
+  )!;
+  act(() =>
+    format.dispatch({
+      changes: {
+        from: 0,
+        to: format.state.doc.length,
+        insert: "Example: {{ zt.text }}",
+      },
+      userEvent: "input.type",
+    }),
+  );
+  expect(controller.source).toBe(
+    `${source.slice(0, source.indexOf("--- zotlit:annotation ---"))}--- zotlit:annotation ---\nExample: {{ zt.text }}`,
+  );
+  act(() => {
+    controller.undo();
+  });
+  expect(controller.source).toBe(source);
+});

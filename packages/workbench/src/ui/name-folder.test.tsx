@@ -137,7 +137,10 @@ it("overrides an inherited false and keeps its undo separate from toggling", () 
 
 it("keeps null citation style distinct from unset and selects installed styles", () => {
   const { controller } = open({
-    citationStyles: [{ id: "ieee", title: "IEEE" }],
+    citationStyles: [
+      { id: "apa", title: "American Psychological Association" },
+      { id: "ieee", title: "IEEE" },
+    ],
   });
   const label = m.workbench_name_binding_citation_style();
   fireEvent.click(
@@ -146,6 +149,13 @@ it("keeps null citation style distinct from unset and selects installed styles",
     }),
   );
   expect(controller.document!.manifest.citationStyle).toBeNull();
+  expect(screen.getByRole("option", { name: "IEEE" })).toBeDefined();
+  expect(
+    screen.getByRole("option", { name: "American Psychological Association" }),
+  ).toBeDefined();
+  expect(
+    screen.getByRole("option", { name: m.workbench_name_value_no_style() }),
+  ).toBeDefined();
   const select = screen.getByLabelText<HTMLSelectElement>(label);
   fireEvent.input(select, { target: { value: "ieee" } });
   expect(controller.document!.manifest.citationStyle).toBe("ieee");
@@ -183,6 +193,9 @@ it("changes only the language key after the inline confirmation", () => {
   );
   fireEvent.input(select, { target: { value: "eta" } });
   expect(controller.source).toBe(SOURCE);
+  expect(screen.getByRole("alert").textContent).toContain(
+    m.workbench_name_language_confirm_heading(),
+  );
   fireEvent.click(
     screen.getByRole("button", { name: m.workbench_name_language_cancel() }),
   );
@@ -252,7 +265,9 @@ it("scopes problem navigation to the selected editor instance", () => {
 });
 
 it("shows Default bindings as read-only inherited values", () => {
-  open({ source: DEFAULT_PROFILE_SOURCE });
+  const { container } = open({ source: DEFAULT_PROFILE_SOURCE });
+  expect(container.textContent).not.toContain(m.workbench_name_override());
+  expect(container.textContent).not.toContain(m.workbench_name_use_default());
   expect(screen.queryByRole("switch")).toBeNull();
   expect(
     screen.queryByRole("button", {
@@ -262,4 +277,88 @@ it("shows Default bindings as read-only inherited values", () => {
     }),
   ).toBeNull();
   expect(screen.getByText("literatures")).toBeDefined();
+  expect(screen.getByText(m.workbench_name_default_lede())).toBeDefined();
+  expect(screen.getByText(m.workbench_name_value_no_style())).toBeDefined();
+  expect(
+    screen.queryByRole("button", { name: m.workbench_name_use_default() }),
+  ).toBeNull();
+});
+
+it("shows identity, the live note name, and each binding's source", () => {
+  open();
+  expect(
+    screen.getByLabelText<HTMLInputElement>(m.workbench_name_field_name())
+      .value,
+  ).toBe("Reading notes");
+  expect(
+    screen.getByLabelText<HTMLInputElement>(m.workbench_name_field_version())
+      .value,
+  ).toBe("1.0.0");
+  expect(
+    screen.getByLabelText<HTMLInputElement>(m.workbench_name_field_author())
+      .value,
+  ).toBe("ZotLit");
+  expect(screen.getByText("Reading.md")).toBeDefined();
+  const folder = screen.getByLabelText<HTMLInputElement>(
+    m.workbench_name_binding_folder(),
+  );
+  expect(folder.value).toBe("papers");
+  expect(folder.closest('[data-part="binding-row"]')?.textContent).toContain(
+    m.workbench_name_origin_profile(),
+  );
+  expect(
+    screen.getByRole("button", {
+      name: m.workbench_name_use_default_for({
+        name: m.workbench_name_binding_folder(),
+      }),
+    }),
+  ).toBeDefined();
+  const inherited = screen.getByLabelText<HTMLInputElement>(
+    m.workbench_name_binding_import_folder(),
+  );
+  expect(inherited.value).toBe("zotero_notes");
+  expect(inherited.disabled).toBe(true);
+  expect(inherited.closest('[data-part="binding-row"]')?.textContent).toContain(
+    m.workbench_name_origin_default(),
+  );
+  expect(
+    screen.getByRole("button", {
+      name: m.workbench_name_override_for({
+        name: m.workbench_name_binding_import_folder(),
+      }),
+    }),
+  ).toBeDefined();
+  const style = screen.getByLabelText<HTMLInputElement>(
+    m.workbench_name_binding_citation_style(),
+  );
+  expect(style.tagName).toBe("INPUT");
+  expect(style.placeholder).toBe(m.workbench_name_citation_style_placeholder());
+});
+
+it("shows the same Off value for explicit and inherited switches while naming their different origins", () => {
+  const { controller } = open();
+  const colored = screen.getByRole<HTMLButtonElement>("switch", {
+    name: m.workbench_name_binding_colored_highlights(),
+  });
+  const inherited = screen.getByRole<HTMLButtonElement>("switch", {
+    name: m.workbench_name_binding_annotation_template(),
+  });
+  expect(colored.closest('[data-part="binding-row"]')?.textContent).toContain(
+    m.workbench_name_origin_profile(),
+  );
+  expect(inherited.closest('[data-part="binding-row"]')?.textContent).toContain(
+    m.workbench_name_origin_default(),
+  );
+  for (const toggle of [colored, inherited]) {
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(toggle.closest('[data-part="binding-row"]')?.textContent).toContain(
+      m.workbench_name_value_off(),
+    );
+  }
+  fireEvent.click(colored);
+  expect(controller.document!.manifest.importColoredHighlights).toBe(true);
+  expect(inherited.disabled).toBe(true);
+  expect(
+    controller.document!.manifest.importAnnotationsAsTemplate,
+  ).toBeUndefined();
 });

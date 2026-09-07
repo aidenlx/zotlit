@@ -48,8 +48,18 @@ import {
   diagnosticText,
   m,
   problemText,
+  AnnotationPane,
+  AnnotationPointer,
+  AnnotationSampleBar,
+  AnnotationSectionBar,
+  annotationSamples,
+  NameFolderPane,
+  NotePane,
+  PropertiesPane,
+  PropertiesResult,
+  SliceEditor,
 } from "@zotlit/workbench/ui";
-import type { WorkbenchTab } from "@zotlit/workbench/ui";
+import type { WorkbenchTab, EntryDiagnostic } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -66,14 +76,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-import {
-  AnnotationPane,
-  AnnotationPointer,
-  AnnotationSampleBar,
-  AnnotationSectionBar,
-} from "./annotation";
 import { annotationHeaderMark } from "./annotation-mark";
-import { annotationSamples } from "./annotation-samples";
 import { ConnectionBar } from "./connection-bar";
 import { FieldList } from "./field-list";
 import { insertSnippet, rootData, templateRootAt } from "./fields";
@@ -86,13 +89,8 @@ import {
 } from "./frame";
 import { ProfileHandoff } from "./handoff";
 import { useWebHost } from "./host";
-import { NameFolderPane } from "./name-folder";
-import { NotePane } from "./note-pane";
-import { PropertiesPane, PropertiesResult } from "./properties-tab";
-import type { EntryDiagnostic } from "./properties-tab";
 import { startRenderWorker } from "./render-client";
 import { SampleBar } from "./sample-bar";
-import { SliceEditor } from "./slice-editor";
 import { ensureTemporal } from "./temporal";
 import { WEB_THEME } from "./theme";
 import { downloadProfile, profileFileName } from "./transfer";
