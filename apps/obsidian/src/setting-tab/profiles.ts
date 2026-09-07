@@ -231,7 +231,8 @@ function profilesList(
             .setDisabled(locked)
             .onClick(() => {
               const file = ctx.app.vault.getFileByPath(profile.path);
-              if (file) void customizeProfile(ctx.app, file);
+              if (file)
+                void runAction(() => customizeProfile(ctx.app, file), ctx);
             }),
         );
         setting.addButton((button) =>
