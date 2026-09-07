@@ -589,7 +589,7 @@ describe("a Workbench Connection", () => {
     expect(page.host.textContent).toContain(m.workbench_download());
     expect(startRenderWorker.mock.calls.at(-1)?.[0].resources).toBeUndefined();
 
-    page.show(SAMPLE_ITEMS[1]!.item.key);
+    await page.show(SAMPLE_ITEMS[1]!.item.key);
     expect(page.host.textContent).toContain(m.workbench_sample_badge());
     expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[1]!.item.title);
     act(() =>
@@ -600,7 +600,7 @@ describe("a Workbench Connection", () => {
     ].find((option) =>
       option.textContent.includes(m.workbench_retained_badge()),
     )!;
-    act(() => {
+    await act(async () => {
       retained.dispatchEvent(
         new PointerEvent("pointerdown", {
           bubbles: true,
@@ -809,7 +809,7 @@ describe("the kept draft on the next visit", () => {
     keep(KEPT, SAMPLE_ITEMS[1]!);
     using page = open();
 
-    page.show(SAMPLE_ITEMS[2]!.item.key);
+    await page.show(SAMPLE_ITEMS[2]!.item.key);
 
     // The change answers the prompt the way Start clean does, so the next
     // visit is offered the paper this one chose rather than the older draft.
@@ -936,7 +936,7 @@ describe("the paper a profile is written for", () => {
     ).toContain("Why Most Published Research Findings Are False");
   });
 
-  it("shows paper details and switches samples through the picker", () => {
+  it("shows paper details and switches samples through the picker", async () => {
     using page = open();
     act(() =>
       page.host.querySelector<HTMLElement>("#workbench-sample")!.click(),
@@ -955,7 +955,7 @@ describe("the paper a profile is written for", () => {
     });
 
     for (const key of ["CNPF226A", "NW2CPDTC", "I49R3FTL", "IANNP5A2"]) {
-      page.show(key);
+      await page.show(key);
       expect(shownItem(page.host)).toBe(
         SAMPLE_ITEMS.find((sample) => sample.item.key === key)!.item.title,
       );
@@ -1220,7 +1220,7 @@ describe("the simplified editing flow", () => {
     await page.settle();
     page.press(m.workbench_tab_properties());
     page.press(m.workbench_properties_add());
-    const row = page.host.querySelector<HTMLElement>("#property-5")!;
+    const row = page.host.querySelector<HTMLElement>('[id$="-property-5"]')!;
     expect(row).not.toBeNull();
     expect(document.activeElement).toBe(row.querySelector("input"));
     const value = EditorView.findFromDOM(
@@ -1263,7 +1263,7 @@ describe("the simplified editing flow", () => {
     page.press(m.workbench_tab_properties());
     page.press(m.workbench_properties_add());
     const value = EditorView.findFromDOM(
-      page.host.querySelector<HTMLElement>("#property-5 .cm-editor")!,
+      page.host.querySelector<HTMLElement>('[id$="-property-5"] .cm-editor')!,
     )!;
     act(() => {
       value.focus();
@@ -1305,11 +1305,11 @@ describe("the simplified editing flow", () => {
     page.press(m.workbench_tab_properties());
     page.press(m.workbench_properties_add());
     const format = page.host
-      .querySelector("#property-5")!
+      .querySelector('[id$="-property-5"]')!
       .querySelector("select")!;
     act(() => {
       format.value = "text";
-      format.dispatchEvent(new Event("change", { bubbles: true }));
+      format.dispatchEvent(new Event("input", { bubbles: true }));
     });
     page.press(m.workbench_properties_format_reset());
     const value = page.host.querySelector<HTMLInputElement>(
@@ -1340,7 +1340,7 @@ describe("the simplified editing flow", () => {
     page.press(m.workbench_tab_properties());
     page.press(m.workbench_properties_add());
     const value = EditorView.findFromDOM(
-      page.host.querySelector<HTMLElement>("#property-5 .cm-editor")!,
+      page.host.querySelector<HTMLElement>('[id$="-property-5"] .cm-editor')!,
     )!;
     act(() =>
       value.dispatch({
@@ -1349,11 +1349,11 @@ describe("the simplified editing flow", () => {
       }),
     );
     const format = page.host
-      .querySelector("#property-5")!
+      .querySelector('[id$="-property-5"]')!
       .querySelector("select")!;
     act(() => {
       format.value = "value";
-      format.dispatchEvent(new Event("change", { bubbles: true }));
+      format.dispatchEvent(new Event("input", { bubbles: true }));
     });
     expect(value.state.doc.toString()).toBe("'To read'");
     page.press(m.workbench_properties_format_reset());
@@ -1377,14 +1377,15 @@ describe("the annotation box", () => {
     using page = open();
     page.press(m.workbench_restore_accept());
     page.press(m.workbench_tab_annotation());
-    chooseAnnotation(page, "Compare these findings");
+    await chooseAnnotation(page, "Compare these findings");
     await page.waitFor(() =>
       expect(resultText(page.host)).toContain(
         "Compare these findings with the replication study.",
       ),
     );
     expect(
-      page.host.querySelector("#annotation-problem")?.textContent,
+      page.host.querySelector('[data-part="problem"][role="status"]')
+        ?.textContent,
     ).toContain("missing-for-highlight");
     page.press(m.workbench_tab_note());
     expect(resultText(page.host)).toContain("missing-for-highlight");
@@ -1521,7 +1522,7 @@ describe("the annotation box", () => {
       expect(page.host.textContent).toContain(m.workbench_connected_badge()),
     );
     page.press(m.workbench_tab_annotation());
-    chooseAnnotation(page, "Second annotation on this paper.");
+    await chooseAnnotation(page, "Second annotation on this paper.");
     await page.settle();
     await page.waitFor(() =>
       expect(resultText(page.host)).toContain(
@@ -1568,9 +1569,12 @@ describe("the annotation box", () => {
     {
       using page = open();
       page.press(m.workbench_tab_annotation());
-      chooseAnnotation(page, "Report the assumptions behind each result.");
+      await chooseAnnotation(
+        page,
+        "Report the assumptions behind each result.",
+      );
       page.press(m.workbench_tab_note());
-      page.show(SAMPLE_ITEMS[2]!.item.key);
+      await page.show(SAMPLE_ITEMS[2]!.item.key);
       page.press(m.workbench_tab_annotation());
       await page.settle();
       await page.waitFor(() =>
@@ -2041,7 +2045,7 @@ interface OpenPage extends Disposable {
   /** Presses the button carrying `label`. */
   press: (label: string) => void;
   /** Picks the Sample Item the page is shown against. */
-  show: (key: string) => void;
+  show: (key: string) => Promise<void>;
   /** Waits out the autosave's quiet time and the render's own. */
   settle: () => Promise<void>;
   /** Waits until immediate Local Bridge responses produce `assertion`. */
@@ -2057,14 +2061,14 @@ function open(): OpenPage {
   return {
     host,
     press: (label) => press(host, label),
-    show(key) {
+    async show(key) {
       act(() => host.querySelector<HTMLElement>("#workbench-sample")!.click());
       const label = SAMPLE_ITEMS.find((item) => item.item.key === key)!.item
         .title;
       const option = [
         ...document.querySelectorAll<HTMLElement>('[role="option"]'),
       ].find((item) => item.textContent.startsWith(label!))!;
-      act(() => {
+      await act(async () => {
         option.dispatchEvent(
           new PointerEvent("pointerdown", {
             bubbles: true,
@@ -2075,6 +2079,7 @@ function open(): OpenPage {
       });
     },
     async settle() {
+      await act(async () => {});
       await act(() => new Promise((resolve) => setTimeout(resolve, SETTLE_MS)));
     },
     async waitFor(assertion) {
@@ -2112,7 +2117,7 @@ function fieldRow(scope: HTMLElement, label: string): HTMLLIElement {
   return target;
 }
 
-function chooseAnnotation(page: OpenPage, text: string): void {
+async function chooseAnnotation(page: OpenPage, text: string): Promise<void> {
   page.press(m.workbench_choose_annotation());
   const option = [
     ...document.querySelectorAll<HTMLElement>(
@@ -2120,7 +2125,7 @@ function chooseAnnotation(page: OpenPage, text: string): void {
     ),
   ].find((row) => row.textContent.includes(text));
   if (!option) throw new Error(`No annotation reads '${text}'.`);
-  act(() => option.click());
+  await act(async () => option.click());
 }
 
 function resultText(host: HTMLElement): string {
