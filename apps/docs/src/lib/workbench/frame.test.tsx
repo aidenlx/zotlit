@@ -45,6 +45,11 @@ describe("WorkbenchSkeleton", () => {
         `section[aria-label="${m.workbench_connection_heading()}"]`,
       ),
     ).not.toBeNull();
+    expect(host.querySelector("header section")).toBeNull();
+    expect(host.querySelector("footer")?.getAttribute("aria-label")).toBe(
+      m.docs_workbench_status(),
+    );
+    expect(host.querySelector("footer section")).not.toBeNull();
     expect(host.querySelector("#workbench-edit-pane")).not.toBeNull();
     expect(host.querySelector("#workbench-result-pane")).not.toBeNull();
     expect(host.querySelector(".cm-editor")).toBeNull();

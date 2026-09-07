@@ -68,7 +68,7 @@ import {
 } from "./annotation";
 import { annotationHeaderMark } from "./annotation-mark";
 import { annotationSamples } from "./annotation-samples";
-import { ConnectionBar } from "./connection-bar";
+import { ConnectionBar, ConnectionNotice } from "./connection-bar";
 import { FieldList } from "./field-list";
 import { insertSnippet, rootData, templateRootAt } from "./fields";
 import type { SampleItem } from "./fields";
@@ -758,7 +758,7 @@ export function Workbench() {
             >
               <ProfileMenuLabel />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" size="xs">
               <DropdownMenuItem onClick={openFile}>
                 <FolderOpen aria-hidden />
                 {m.workbench_import()}
@@ -816,7 +816,6 @@ export function Workbench() {
           website={window.location.origin}
           busy={connectionBusy}
           resumable={resumable}
-          message={connectionMessage}
           saveBusy={saveBusy}
           editingConnectedProfile={canSaveToVault}
           onReconnect={() => {
@@ -826,6 +825,12 @@ export function Workbench() {
             else replaceProfile(m.workbench_connection_reconnect(), reconnect);
           }}
           onDisconnect={() => void disconnect()}
+        />
+      }
+      notifications={
+        <ConnectionNotice
+          connection={connection}
+          message={fileMessage ?? connectionMessage}
         />
       }
       strips={
@@ -873,14 +878,13 @@ export function Workbench() {
         </>
       }
       status={
-        fileMessage ??
-        (canSaveToVault
+        canSaveToVault
           ? draft
             ? m.workbench_save_fix()
             : drafts.dirty
               ? m.workbench_unsaved()
               : m.workbench_saved_profile()
-          : m.workbench_browser_draft())
+          : m.workbench_browser_draft()
       }
       view={view}
       onView={(next) => {
