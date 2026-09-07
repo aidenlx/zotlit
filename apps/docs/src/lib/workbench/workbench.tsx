@@ -83,6 +83,7 @@ import { startRenderWorker } from "./render-client";
 import { ResultSheet } from "./result-sheet";
 import { SampleBar } from "./sample-bar";
 import { SliceEditor } from "./slice-editor";
+import { StartHereStrip } from "./start-here";
 import { TAB_LABEL, TAB_LEDE } from "./tabs";
 import type { WorkbenchTab } from "./tabs";
 import { ensureTemporal } from "./temporal";
@@ -216,12 +217,14 @@ export function Workbench() {
   /** Opens the Profile a connection hydrated, with what it kept beside it. */
   function openSelectedProfile({
     selected,
+    installationId,
     kept,
     retainedExpected,
   }: ProfileHydration) {
     const opened = {
       reference: selected.document.reference,
       source: selected.source,
+      installationId,
     };
     // A connection that comes back to the document already open leaves the text
     // and its undo history where they are: the connection was lost, the work
@@ -805,6 +808,10 @@ export function Workbench() {
       }
       strips={
         <>
+          {/* The getting-started lede stands over a page Obsidian opened, and
+              over that page alone: a standalone reader has no vault to send a
+              template to. */}
+          {connected && <StartHereStrip />}
           {drafts.restorable && (
             <section
               aria-label={m.workbench_restore_heading()}
@@ -822,7 +829,9 @@ export function Workbench() {
                     const kept = drafts.restore();
                     if (!kept) return;
                     loadDocument(kept.source);
-                    setSample(kept.snapshot);
+                    // A tab that closed on a vault paper comes back to the
+                    // text alone, so the paper on screen stands.
+                    if (kept.snapshot) setSample(kept.snapshot);
                     setAnnotationChoice(kept.annotationSelection ?? null);
                     if (kept.expected) saveAgainst(kept.expected);
                   }}
