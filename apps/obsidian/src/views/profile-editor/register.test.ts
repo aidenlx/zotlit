@@ -4,12 +4,31 @@ import { TFile } from "obsidian";
 import type { App, Command, Plugin, WorkspaceLeaf } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { openProfileEditor, registerProfileEditor } from "./register";
+import * as m from "@/lib/i18n/generated/messages";
+
+import { profileCustomization, saveProfileCustomization } from "./preferences";
+import {
+  customizeProfile,
+  openProfileEditor,
+  registerProfileEditor,
+} from "./register";
 import type { ProfileEditorDeps } from "./view";
 import { PROFILE_EDITOR_VIEW_TYPE } from "./view";
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-afterEach(resetMockPlatform);
+const notices = vi.hoisted(() => [] as string[]);
+vi.mock("obsidian", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("obsidian")>()),
+  Notice: class {
+    constructor(message: string) {
+      notices.push(message);
+    }
+  },
+}));
+afterEach(() => {
+  resetMockPlatform();
+  notices.length = 0;
+});
 
 function setup() {
   const file = new TFile();
@@ -26,8 +45,16 @@ function setup() {
     on: vi.fn(),
     onLayoutReady: vi.fn(),
   };
+  const loadLocalStorage = vi.fn<() => unknown>(() => null);
+  const saveLocalStorage = vi.fn();
   const app = {
     workspace,
+    loadLocalStorage,
+    saveLocalStorage,
+    vault: {
+      cachedRead: vi.fn(async () => "A document"),
+      getFileByPath: vi.fn(() => null),
+    },
     metadataCache: { getFileCache: () => null },
   } as unknown as App;
   const commands: Command[] = [];
@@ -49,6 +76,8 @@ function setup() {
     Parameters<typeof registerProfileEditor>[1];
   return {
     app,
+    loadLocalStorage,
+    saveLocalStorage,
     file,
     leaf,
     plugin,
@@ -60,6 +89,58 @@ function setup() {
 }
 
 describe("Profile Editor entry points", () => {
+  it.each([
+    "language: eta",
+    "language: liquid\nfrontmatter:\n  - key: title\n    js: zt.title\n    merge: replace",
+  ])(
+    "opens an advanced Profile natively with a Notice: %s",
+    async (manifest) => {
+      const { app, file, setViewState } = setup();
+      vi.spyOn(app.vault, "cachedRead").mockResolvedValue(
+        `---\nid: paper\nname: Paper\nversion: 1.0.0\ncontract: 2\n${manifest}\nfilename: paper\n---\nBody\n--- zotlit:annotation ---\nAnnotation\n`,
+      );
+      await customizeProfile(app, file);
+      expect(notices).toEqual([m.profile_editor_native_required()]);
+      expect(setViewState).toHaveBeenCalledOnce();
+    },
+  );
+  it.each(["ask", "web", "native"])(
+    "routes saved %s to native until the web launch sheet lands",
+    async (preference) => {
+      const { app, loadLocalStorage, file, setViewState } = setup();
+      loadLocalStorage.mockReturnValue(preference);
+      await customizeProfile(app, file, { itemIndexedKey: "0:ABCDEFGH" });
+      expect(setViewState).toHaveBeenCalledWith({
+        type: PROFILE_EDITOR_VIEW_TYPE,
+        state: { file: file.path, itemIndexedKey: "0:ABCDEFGH" },
+        active: true,
+      });
+    },
+  );
+  it("opens built-in Default from the effective source without ejecting it", async () => {
+    const { app, setViewState } = setup();
+    const getSource = vi.fn(async () => "Configured built-in document");
+    await customizeProfile(app, {
+      defaultDocumentPath: "templates/zotlit-profile.default.md",
+      getSource,
+    });
+    expect(getSource).toHaveBeenCalledWith("default");
+    expect(setViewState).toHaveBeenCalledWith({
+      type: PROFILE_EDITOR_VIEW_TYPE,
+      state: { defaultDraft: true, file: null },
+      active: true,
+    });
+  });
+  it("stores the preference on this device and treats unknown values as Ask", () => {
+    const { app, loadLocalStorage, saveLocalStorage } = setup();
+    loadLocalStorage.mockReturnValue("obsolete");
+    expect(profileCustomization(app)).toBe("ask");
+    saveProfileCustomization(app, "web");
+    expect(saveLocalStorage).toHaveBeenCalledWith(
+      "zotlit-profile-customization",
+      "web",
+    );
+  });
   it("registers its own view and command without changing Markdown file associations", async () => {
     setMockPlatform({ isDesktopApp: true });
     const { app, file, plugin, deps, commands, registerView, setViewState } =

@@ -583,6 +583,26 @@ describe("ProfileService", () => {
     expect(profile.resolveProfile("default")?.document).toBeUndefined();
   });
 
+  it("writes the first edited Default source atomically and preserves a competing file", async () => {
+    await using fixture = await harness();
+    const { profile, vault } = fixture;
+    const source = await profile.getSource("default");
+    expect(vault.files.has("templates/zotlit-profile.default.md")).toBe(false);
+    const edited = `${source}\nA custom annotation suffix.\n`;
+    const first = profile.materializeDefault(edited);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await first).toMatchObject({ created: true });
+    expect(vault.contents.get("templates/zotlit-profile.default.md")).toBe(
+      edited,
+    );
+    const second = profile.materializeDefault("Competing stale source");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await second).toMatchObject({ created: false });
+    expect(vault.contents.get("templates/zotlit-profile.default.md")).toBe(
+      edited,
+    );
+  });
+
   it("carries the configured frontmatter fields into the ejected Default document", async () => {
     await using fixture = await harness();
     const { profile, vault, settings } = fixture;

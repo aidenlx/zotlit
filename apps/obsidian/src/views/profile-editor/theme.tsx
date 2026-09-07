@@ -124,6 +124,13 @@ export const profileEditorTheme: WorkbenchTheme = {
       "long-text":
         "zt:data-[state=expanded]:break-words zt:data-[state=expanded]:whitespace-pre-wrap",
     },
+    startHere: {
+      strip:
+        "zt:mx-2 zt:mb-2 zt:rounded zt:border zt:border-border zt:p-2 zt:text-sm",
+      heading: "zt:flex zt:items-center zt:justify-between zt:gap-2",
+      line: "zt:my-1 zt:text-muted",
+      dismiss: "",
+    },
     editToolbar: {
       "edit-toolbar": cn(row, "zt:p-2"),
       "mode-group": row,
