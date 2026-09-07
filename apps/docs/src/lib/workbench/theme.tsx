@@ -61,6 +61,52 @@ export const WEB_THEME: WorkbenchTheme = {
         "rounded-sm border border-fd-border bg-fd-card px-2 py-1 text-xs font-medium text-fd-muted-foreground",
       "managed-line": "zt-managed",
     },
+    previewControls: {
+      controls: "mb-2 flex flex-wrap items-center gap-2",
+      label: "flex min-w-0 items-center text-xs",
+      "label-text": "sr-only",
+      select:
+        "min-h-8 rounded-md border border-fd-border bg-fd-card px-2 py-1 text-xs",
+      run: buttonVariants({ variant: "outline", size: "xs" }),
+      stop: buttonVariants({ variant: "ghost", size: "xs" }),
+    },
+    resultHeader: {
+      header:
+        "mb-2 flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-2 min-[1180px]:flex-nowrap",
+      heading: "shrink-0 text-xs font-semibold",
+      controls:
+        "flex min-w-0 flex-wrap items-center gap-1.5 min-[1180px]:flex-1 min-[1180px]:flex-nowrap",
+      label: "flex min-w-0 items-center text-xs min-[1180px]:flex-1",
+      "label-text": "sr-only",
+      select:
+        "min-h-8 w-full min-w-0 rounded-md border border-fd-border bg-fd-card py-1 ps-2 pe-7 text-xs hover:bg-fd-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring disabled:cursor-default",
+    },
+    resultRegion: {
+      region:
+        "group flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-fd-border bg-fd-card p-4",
+    },
+    resultColumn: {
+      select:
+        "min-h-8 w-full min-w-0 rounded-md border border-fd-border bg-fd-card py-1 ps-2 pe-7 text-xs hover:bg-fd-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring disabled:cursor-default",
+      stale: "mb-2 text-xs font-medium",
+      filename:
+        "-mx-4 -mt-4 mb-4 rounded-t-md border-b border-fd-border bg-fd-muted/40 px-3 py-1.5 text-xs font-medium",
+      "filename-text": "truncate",
+      problem:
+        "mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty",
+      "problem-heading": "font-semibold",
+      "problem-open": "cursor-pointer underline underline-offset-2",
+      empty: "text-sm text-fd-muted-foreground",
+      pending: "text-sm text-fd-muted-foreground",
+      label: "flex min-w-0 items-center text-xs min-[1180px]:flex-1",
+      "label-text": "sr-only",
+    },
+    propertyList: {
+      key: "truncate font-mono text-fd-muted-foreground",
+      value: "break-words",
+      empty: "text-fd-muted-foreground italic",
+      list: "grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-1",
+    },
     tabBar: {
       "tab-bar": "flex min-w-0 flex-wrap gap-0.5 rounded-md bg-fd-muted p-0.5",
       tab: "flex min-h-7 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-sm px-2 py-0.5 text-xs font-medium text-fd-muted-foreground data-[state=active]:bg-fd-card data-[state=active]:text-fd-foreground data-[state=active]:shadow-sm [&_svg]:size-4",

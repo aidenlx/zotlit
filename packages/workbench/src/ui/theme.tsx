@@ -28,6 +28,35 @@ export interface WorkbenchParts {
     | "managed-line"
     | "annotation-toggle"
     | "annotation-edit";
+  previewControls:
+    | "controls"
+    | "label"
+    | "label-text"
+    | "select"
+    | "run"
+    | "stop";
+  resultHeader:
+    | "header"
+    | "heading"
+    | "controls"
+    | "label"
+    | "label-text"
+    | "select";
+  resultRegion: "region";
+  resultColumn:
+    | "select"
+    | "stale"
+    | "filename"
+    | "filename-text"
+    | "problem"
+    | "problem-heading"
+    | "problem-open"
+    | "empty"
+    | "pending"
+    | "label"
+    | "label-text";
+  propertyList: "key" | "value" | "empty" | "list";
+
   tabBar: "tab-bar" | "tab";
   tabPanel: "tab-panel";
   editToolbar:

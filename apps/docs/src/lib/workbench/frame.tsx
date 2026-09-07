@@ -19,16 +19,14 @@ import type { ReactNode, Ref } from "react";
 
 import {
   EditToolbar,
+  ResultHeader,
+  ResultRegion,
   TabBar,
   WorkbenchThemeProvider,
   m,
 } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
 
 import { ConnectionBar } from "./connection-bar";
 import { WEB_THEME } from "./theme";
@@ -179,74 +177,6 @@ export function ProfileMenuLabel() {
       {m.workbench_profile_menu()}
       <ChevronDown aria-hidden />
     </>
-  );
-}
-
-/** The result pane's heading beside the reading-or-Markdown choice. */
-export function ResultHeader({
-  heading,
-  showMarkdown,
-  onShowMarkdown,
-  controls,
-  help,
-}: {
-  heading: string;
-  showMarkdown: boolean;
-  onShowMarkdown?: (showMarkdown: boolean) => void;
-  controls?: ReactNode;
-  help?: ReactNode;
-}) {
-  return (
-    <div className="mb-2 flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-2 min-[1180px]:flex-nowrap">
-      <h2 className="shrink-0 text-xs font-semibold">{heading}</h2>
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5 min-[1180px]:flex-1 min-[1180px]:flex-nowrap">
-        {controls}
-        <label className="flex min-w-0 items-center text-xs min-[1180px]:flex-1">
-          <span className="sr-only">{m.workbench_preview_format()}</span>
-          <NativeSelect
-            value={showMarkdown ? "markdown" : "reading"}
-            disabled={onShowMarkdown === undefined}
-            onChange={(event) =>
-              onShowMarkdown?.(event.target.value === "markdown")
-            }
-            size="xs"
-            className="w-full"
-          >
-            <NativeSelectOption value="reading">
-              {m.workbench_preview_reading()}
-            </NativeSelectOption>
-            <NativeSelectOption value="markdown">
-              {m.workbench_result_markdown_toggle()}
-            </NativeSelectOption>
-          </NativeSelect>
-        </label>
-        {help}
-      </div>
-    </div>
-  );
-}
-
-/** The box the rendered note is read in. */
-export function ResultRegion({
-  ref,
-  emphasis,
-  children,
-}: {
-  ref?: Ref<HTMLDivElement>;
-  emphasis?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div
-      role="region"
-      tabIndex={0}
-      aria-label={m.workbench_view_result()}
-      ref={ref}
-      data-emphasis={emphasis || undefined}
-      className="group flex min-h-0 flex-1 flex-col overflow-auto rounded-md border border-fd-border bg-fd-card p-4"
-    >
-      {children}
-    </div>
   );
 }
 
@@ -402,3 +332,5 @@ export function WorkbenchSkeleton() {
     </WorkbenchThemeProvider>
   );
 }
+
+export { ResultHeader, ResultRegion } from "@zotlit/workbench/ui";
