@@ -3,7 +3,7 @@
   "extends": ["//"],
   "tasks": {
     // The `ui` subpath's Paraglide facade over the root catalog's
-    // `workbench_*` namespace; build, typecheck, and test regenerate it too.
+    // `workbench_*` namespace. Each consumer waits for this single writer.
     "generate:i18n": {
       "inputs": [
         "scripts/generate-i18n.ts",
@@ -15,13 +15,21 @@
       "outputLogs": "errors-only"
     },
     "build": {
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:i18n"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/project.inlang/settings.json",
         "$TURBO_ROOT$/messages/**"
       ]
     },
+    "typecheck": {
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:i18n"]
+    },
+    "typecheck:test": {
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:i18n"]
+    },
     "test": {
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:i18n"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/project.inlang/settings.json",

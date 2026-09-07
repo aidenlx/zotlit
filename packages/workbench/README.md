@@ -128,8 +128,10 @@ controls as children), and `ProblemsFooter` with `problemText` and
 `diagnosticText`, the words for every core code.
 
 The subpath compiles its own Paraglide facade from the root catalog's
-`workbench_*` namespace into `src/ui/paraglide/` (`pnpm generate:i18n`, run by
-`postinstall`, `build`, `typecheck`, and `test`) and exports it as `m`; the
+`workbench_*` namespace into `src/ui/paraglide/` (`pnpm generate:i18n`, also run
+by `postinstall` and `dev`) and exports it as `m`. Turbo runs the generator once
+before `build`, `test`, `typecheck`, and `typecheck:test`; direct package-tool
+runs need an existing facade or an explicit `pnpm generate:i18n` first. The
 catalog filter is `@zotlit/config/paraglide`. The tree stays inside the
 `preact/compat` surface, and its suite under `src/ui/` runs twice in `pnpm test`:
 the `ui-react` and `ui-preact` Vitest projects, the second with React aliased to
