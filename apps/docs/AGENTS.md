@@ -52,6 +52,8 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 
 ## Styling
 
+- **Toasts:** Use `toast.add()` from [`src/components/ui/toast.tsx`](src/components/ui/toast.tsx) for transient action feedback (save, download, copy, disconnect, and completed edits). The root shell mounts `Toaster` once. Keep persistent state, errors with recovery controls, and required confirmations inline. See [shadcn Base UI Toast](https://ui.shadcn.com/docs/components/base/toast) for the API.
+
 The site wears the "Manuscript & Machine" design. Its spec — theme, the four-face type system, label voice, per-surface notes, and the CSS architecture rule — is [`DESIGN.md`](DESIGN.md). Read it before touching typography, fonts, theming, color tokens, chrome, or layout. The Template Workbench has its own spec in [`WORKBENCH-DESIGN.md`](WORKBENCH-DESIGN.md), carrying the control vocabulary that [`src/lib/workbench/design.test.ts`](src/lib/workbench/design.test.ts) enforces under `pnpm test`; run `/design-review` before landing a UI change.
 
 - **Tokens:** [`src/styles.css`](src/styles.css) holds the whole CSS layer — the `--color-fd-*` palette for both schemes, the `@theme inline` font wiring, the `#toc-title` anchor, and the scrollbar rules. Prose styling stays out of it: [`src/lib/prose.ts`](src/lib/prose.ts) expresses the docs/blog body (`ztProse`) and the changelog type roles (`changelogProseRoles`) as typography element modifiers, which each surface applies inline.

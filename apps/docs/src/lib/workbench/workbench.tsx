@@ -57,6 +57,7 @@ import {
   NativeSelectOption,
 } from "@/components/ui/native-select";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { toast } from "@/components/ui/toast";
 import { m } from "@/paraglide/messages.js";
 
 import {
@@ -163,13 +164,6 @@ export function Workbench() {
   const [openRow, setOpenRow] = useState<number | null>(null);
   const [advanced, setAdvanced] = useState(false);
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
-  // A sentence about the edit just made, which the next edit retires. It is
-  // stamped with the revision it belongs to, because the edit that earns it
-  // and the sentence itself land in one render.
-  const [notice, setNotice] = useState<{
-    text: string;
-    revision: number;
-  } | null>(null);
   const latestRevision = useRef(0);
   const [pendingAction, setPendingAction] = useState<{
     label: string;
@@ -491,12 +485,10 @@ export function Workbench() {
       target: caret,
       snippet: language === "eta" ? ETA_ANNOTATIONS_LOOP : ANNOTATIONS_LOOP,
     });
-    // Both edits have told the subscriber by now, so the sentence is stamped
-    // with the revision the reader is looking at.
     if (repaired) {
-      setNotice({
-        text: m.workbench_annotation_section_added(),
-        revision: latestRevision.current,
+      toast.add({
+        title: m.workbench_annotation_section_added(),
+        type: "info",
       });
     }
     setView("edit");
@@ -634,7 +626,7 @@ export function Workbench() {
     );
     if (!canSaveToVault)
       drafts.rebase({ ...drafts.location, source: controller.source });
-    setFileMessage(m.workbench_download_complete());
+    toast.add({ title: m.workbench_download_complete(), type: "success" });
   }
 
   function replaceProfile(label: string, run: () => void) {
@@ -881,7 +873,6 @@ export function Workbench() {
         </>
       }
       status={
-        (notice?.revision === revision ? notice.text : null) ??
         fileMessage ??
         (canSaveToVault
           ? draft
