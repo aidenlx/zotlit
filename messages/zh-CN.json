@@ -1042,5 +1042,16 @@
   ],
   "docs_redirect_translation_pending": "ZotLit v2 中文内容尚未提供，当前显示英文页面。",
   "docs_redirect_original_page": "参阅 v1 中文文档",
-  "docs_dismiss_notice": "关闭提示"
+  "docs_dismiss_notice": "关闭提示",
+  "workbench_explorer_row_actions": "模板操作",
+  "workbench_explorer_show_less": "更少",
+  "workbench_explorer_toggle_node": "切换节点",
+  "workbench_explorer_show_more": "更多",
+  "workbench_explorer_menu_copy_value": "复制值",
+  "workbench_explorer_menu_explore_annotation": "作为标注模板数据进行探索",
+  "workbench_explorer_menu_copy_output": "复制输出",
+  "workbench_explorer_menu_copy_if_present": "复制（如果存在）",
+  "workbench_explorer_menu_copy_joined": "复制连接结果",
+  "workbench_explorer_menu_copy_loop": "复制循环",
+  "workbench_explorer_menu_copy_path": "复制路径"
 }

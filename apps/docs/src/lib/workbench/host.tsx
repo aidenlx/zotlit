@@ -1,3 +1,4 @@
+import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { PreviewCard } from "@base-ui/react/preview-card";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -204,6 +205,24 @@ export function useWebHost({
               >
                 {item.label}
               </DropdownMenuItem>
+            ))}
+            {menu.submenus?.map((group) => (
+              <MenuPrimitive.SubmenuRoot key={group.label}>
+                <MenuPrimitive.SubmenuTrigger className="flex min-h-10 w-full items-center rounded-sm px-3 py-2 text-sm data-highlighted:bg-fd-muted">
+                  {group.label}
+                </MenuPrimitive.SubmenuTrigger>
+                <DropdownMenuContent>
+                  {group.items.map((item) => (
+                    <DropdownMenuItem
+                      key={item.label}
+                      disabled={item.disabled}
+                      onClick={item.onSelect}
+                    >
+                      {item.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </MenuPrimitive.SubmenuRoot>
             ))}
           </DropdownMenuContent>
         )}

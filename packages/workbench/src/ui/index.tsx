@@ -99,3 +99,14 @@ export {
 export { annotationSamples } from "./annotation-samples";
 export { SampleSuggester } from "./sample-suggester";
 export type { SampleOption } from "./sample-suggester";
+
+export { DisplayTree } from "./explorer-tree";
+export type { DisplayTreeProps } from "./explorer-tree";
+export {
+  commonRows,
+  fieldValueText,
+  rowMatches,
+  fieldSnippet,
+} from "./explorer-fields";
+export { DataExplorer } from "./data-explorer";
+export type { DataExplorerProps } from "./data-explorer";

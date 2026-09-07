@@ -28,6 +28,10 @@ export interface WorkbenchMenuRequest {
   /** The element the menu opens from. */
   readonly anchor: HTMLElement;
   readonly items: readonly WorkbenchMenuItem[];
+  readonly submenus?: readonly {
+    label: string;
+    items: readonly WorkbenchMenuItem[];
+  }[];
 }
 
 export interface WorkbenchDialogRequest {

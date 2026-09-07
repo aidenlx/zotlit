@@ -1,5 +1,7 @@
 import { EditorView } from "@codemirror/view";
 import {
+  Copy,
+  Check,
   Code2,
   Plus,
   Trash2,
@@ -28,6 +30,8 @@ import { editorTheme } from "./editor-theme";
 
 const ICON: Record<WorkbenchIcon, typeof List> = {
   "chevron-right": ChevronRight,
+  copy: Copy,
+  confirm: Check,
   add: Plus,
   remove: Trash2,
   "move-up": ArrowUp,
@@ -56,6 +60,54 @@ export const WEB_THEME: WorkbenchTheme = {
       : []),
   ],
   classes: {
+    dataExplorer: {
+      hint: "text-xs text-fd-muted-foreground",
+      "root-label": "text-xs text-fd-muted-foreground me-auto",
+      explorer: "flex min-h-0 flex-1 flex-col gap-2 p-2",
+      header: "flex flex-wrap items-center justify-between gap-2",
+      heading: "text-xs font-semibold",
+      variants: "flex gap-1",
+      variant:
+        "rounded px-2 py-1 text-xs data-[state=active]:bg-fd-primary data-[state=active]:text-fd-primary-foreground",
+      search: "w-full",
+      body: "min-h-0 flex-1 overflow-auto",
+      empty: "text-fd-muted-foreground text-xs",
+    },
+    explorerTree: {
+      "simple-row": "py-1",
+      "simple-heading": "flex min-w-0 flex-wrap items-baseline gap-x-2",
+      path: "text-xs font-mono text-fd-muted-foreground",
+      "simple-value": "text-xs",
+      tree: "font-mono text-xs leading-relaxed data-[state=simple]:font-sans",
+      spacer: "mt-[3px] size-3 shrink-0",
+      contents: "min-w-0 flex-1 select-text",
+      group: "ml-3 border-l border-fd-border pl-2",
+      chevron:
+        "mt-[3px] flex size-3 shrink-0 cursor-pointer items-center justify-center text-fd-muted-foreground transition-transform duration-100 ease-out hover:text-fd-foreground data-[expanded]:rotate-90",
+      "chevron-icon": "size-3 [&_svg]:size-3",
+      actions:
+        "absolute top-0.5 right-0 flex items-center gap-0.5 bg-linear-to-l from-fd-background from-60% to-transparent pl-6 opacity-0 group-hover:opacity-100 focus-within:opacity-100",
+      action:
+        "rounded-xs flex size-4 cursor-pointer items-center justify-center text-fd-muted-foreground hover:bg-fd-muted hover:text-fd-foreground",
+      key: "text-fd-foreground",
+      hint: "text-fd-muted-foreground",
+      placeholder: "text-fd-muted-foreground italic",
+      "color-swatch": "rounded-xs size-3 shrink-0 border border-fd-border",
+      link: "break-all text-fd-primary underline decoration-dotted hover:decoration-solid",
+      "long-toggle":
+        "rounded-xs ml-0.5 cursor-pointer px-1 text-fd-muted-foreground underline decoration-dotted underline-offset-2 select-none hover:bg-fd-muted hover:text-fd-foreground",
+      row: "group rounded relative flex min-w-0 items-start gap-x-1 px-0.5 hover:bg-fd-muted data-[state=matched]:bg-fd-accent",
+      opaque: "break-words text-cyan-700 dark:text-cyan-400",
+      color:
+        "inline-flex min-w-0 items-center gap-1 text-emerald-700 dark:text-emerald-400",
+      string: "text-emerald-700 dark:text-emerald-400",
+      number: "text-blue-700 dark:text-blue-400",
+      boolean: "text-purple-700 dark:text-purple-400",
+      null: "text-fd-muted-foreground italic",
+      undefined: "text-fd-muted-foreground italic",
+      "long-text":
+        "data-[state=expanded]:break-words data-[state=expanded]:whitespace-pre-wrap",
+    },
     nameFolder: {
       "source-button": cn(
         buttonVariants({ variant: "outline", size: "xs" }),

@@ -8,6 +8,8 @@ import { Icon } from "@/components/obsidian/icon";
 import { cn } from "@/lib/utils";
 
 export const profileEditorIcons: Record<WorkbenchIcon, string> = {
+  copy: "copy",
+  confirm: "check",
   add: "plus",
   remove: "trash-2",
   "move-up": "arrow-up",
@@ -44,6 +46,57 @@ export const profileEditorTheme: WorkbenchTheme = {
     }),
   ],
   classes: {
+    dataExplorer: {
+      hint: "setting-item-description",
+      "root-label": "zt:text-xs zt:text-faint zt:mr-auto",
+      explorer: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:gap-2 zt:p-2",
+      header:
+        "zt:flex zt:flex-wrap zt:items-center zt:justify-between zt:gap-2",
+      heading: "zt:text-xs zt:font-semibold",
+      variants: "zt:flex zt:gap-1",
+      variant:
+        "zt:text-xs zt:data-[state=active]:bg-(--interactive-accent) zt:data-[state=active]:text-(--text-on-accent)",
+      search: "zt:w-full",
+      body: "zt:min-h-0 zt:flex-1 zt:overflow-auto",
+      empty: "zt:text-muted-foreground zt:text-xs",
+    },
+    explorerTree: {
+      "simple-row": "zt:py-1",
+      "simple-heading":
+        "zt:flex zt:min-w-0 zt:flex-wrap zt:items-baseline zt:gap-x-2",
+      path: "zt:text-xs zt:font-mono zt:text-faint",
+      "simple-value": "zt:text-xs",
+      tree: "zt:font-mono zt:text-xs zt:leading-relaxed zt:data-[state=simple]:[font-family:var(--font-interface)]",
+      spacer: "zt:mt-[3px] zt:size-3 zt:shrink-0",
+      contents: "zt:min-w-0 zt:flex-1 zt:select-text",
+      group:
+        "zt:ml-3 zt:border-l zt:border-(--nav-indentation-guide-color) zt:pl-2",
+      chevron:
+        "zt:mt-[3px] zt:flex zt:size-3 zt:shrink-0 zt:cursor-pointer zt:items-center zt:justify-center zt:text-(--nav-collapse-icon-color) zt:transition-transform zt:duration-100 zt:ease-out zt:hover:text-foreground zt:data-[expanded]:rotate-90",
+      "chevron-icon": "zt:size-3 zt:[&_svg]:size-3",
+      actions:
+        "zt:absolute zt:top-0.5 zt:right-0 zt:flex zt:items-center zt:gap-0.5 zt:bg-linear-to-l zt:from-background zt:from-60% zt:to-transparent zt:pl-6 zt:opacity-0 zt:group-hover:opacity-100 zt:focus-within:opacity-100",
+      action:
+        "zt:rounded-xs zt:flex zt:size-4 zt:cursor-pointer zt:items-center zt:justify-center zt:text-muted-foreground zt:hover:bg-muted zt:hover:text-foreground",
+      key: "zt:text-foreground",
+      hint: "zt:text-faint",
+      placeholder: "zt:text-faint zt:italic",
+      "color-swatch":
+        "zt:rounded-xs zt:size-3 zt:shrink-0 zt:border zt:border-border",
+      link: "zt:break-all zt:text-link zt:underline zt:decoration-dotted zt:hover:decoration-solid",
+      "long-toggle":
+        "zt:rounded-xs zt:ml-0.5 zt:cursor-pointer zt:px-1 zt:text-muted-foreground zt:underline zt:decoration-dotted zt:underline-offset-2 zt:select-none zt:hover:bg-muted zt:hover:text-foreground",
+      row: "zt:group zt:rounded zt:relative zt:flex zt:min-w-0 zt:items-start zt:gap-x-1 zt:px-0.5 zt:hover:bg-muted zt:data-[state=matched]:bg-(--text-highlight-bg)",
+      opaque: "zt:break-words zt:text-cyan",
+      color: "zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-green",
+      string: "zt:text-green",
+      number: "zt:text-blue",
+      boolean: "zt:text-purple",
+      null: "zt:text-faint zt:italic",
+      undefined: "zt:text-faint zt:italic",
+      "long-text":
+        "zt:data-[state=expanded]:break-words zt:data-[state=expanded]:whitespace-pre-wrap",
+    },
     editToolbar: {
       "edit-toolbar": cn(row, "zt:p-2"),
       "mode-group": row,
