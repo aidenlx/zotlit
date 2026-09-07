@@ -61,3 +61,9 @@ export type {
   WorkbenchParts,
   WorkbenchTheme,
 } from "./theme";
+
+export { ResultColumn, ResultHeader, ResultRegion } from "./result-column";
+export type { ResultColumnProps } from "./result-column";
+export { PropertyList, PropertyValue, propertyText } from "./property-list";
+
+export { PreviewControls } from "./preview-controls";

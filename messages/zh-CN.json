@@ -1,4 +1,12 @@
 {
+  "workbench_preview_mode": "预览模式",
+  "workbench_preview_create": "创建",
+  "workbench_preview_update": "更新",
+  "workbench_preview_refresh": "刷新预览",
+  "workbench_preview_live": "实时",
+  "workbench_preview_on_demand": "按需",
+  "workbench_preview_run": "运行",
+  "workbench_preview_stop": "停止",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "profile_match_unmatched": "没有匹配的配置方案。",
   "batch_profile_recovery_help": "所选配置方案不可用。请选择一个配置方案来创建这些笔记。",
