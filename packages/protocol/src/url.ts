@@ -548,3 +548,16 @@ export function parseProtocolQuery(
 ): ProtocolQuery {
   return v.parse(protocolQuerySchema, data);
 }
+
+/** Clipboard-only Profile handoff; document source stays outside the URI. */
+export const importProfileProtocolActionId =
+  `${PROTOCOL_NAMESPACE}/import-profile` as const;
+export const importProfileProtocolQuerySchema = v.object({
+  clipboard: v.literal("true"),
+});
+export function buildImportProfileProtocolUrl(): string {
+  return `obsidian://${importProfileProtocolActionId}?clipboard=true`;
+}
+export function parseImportProfileProtocolQuery(data: Record<string, unknown>) {
+  return v.parse(importProfileProtocolQuerySchema, data);
+}

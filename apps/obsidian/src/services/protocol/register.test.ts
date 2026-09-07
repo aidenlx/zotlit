@@ -7,6 +7,7 @@ import { openCompanionNote } from "@/services/note-feature";
 import { runBatchUpdateAll } from "@/services/note-feature/update-batch";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
+import { openProfileEditor } from "@/views/profile-editor/register";
 
 import { registerProtocolHandlers } from "./register";
 import type { ProtocolDeps } from "./register";
@@ -24,6 +25,10 @@ vi.mock("@zotlit/db", async (importOriginal) => ({
 vi.mock("@/services/note-feature", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/services/note-feature")>()),
   openCompanionNote: vi.fn(),
+}));
+
+vi.mock("@/views/profile-editor/register", () => ({
+  openProfileEditor: vi.fn(),
 }));
 
 const SOURCE_ID = "abc12345";
@@ -157,4 +162,55 @@ describe("library-wide protocol links", () => {
       collectionKey: undefined,
     });
   });
+});
+
+describe("clipboard Profile protocol handoff", () => {
+  it("waits for import consent and then opens the returned document", async () => {
+    vi.mocked(openProfileEditor).mockClear();
+    const consent =
+      Promise.withResolvers<
+        Awaited<ReturnType<ProtocolDeps["importProfile"]>>
+      >();
+    const importProfile = vi.fn(() => consent.promise);
+    const file = { path: "templates/shared.md" };
+    const app = {
+      vault: { getFileByPath: vi.fn(() => file) },
+    } as unknown as ProtocolDeps["app"];
+    using _handlers = register({ app, importProfile });
+    handlers.get("zotlit/import-profile")!({
+      action: "zotlit/import-profile",
+      clipboard: "true",
+    });
+    expect(importProfile).toHaveBeenCalledWith({ source: "clipboard" });
+    expect(openProfileEditor).not.toHaveBeenCalled();
+    consent.resolve({ path: file.path } as Awaited<
+      ReturnType<ProtocolDeps["importProfile"]>
+    >);
+    await vi.waitFor(() =>
+      expect(openProfileEditor).toHaveBeenCalledWith(app, file),
+    );
+  });
+  it("leaves the editor closed after import cancellation", async () => {
+    vi.mocked(openProfileEditor).mockClear();
+    const importProfile = vi.fn(async () => undefined);
+    using _handlers = register({ importProfile });
+    handlers.get("zotlit/import-profile")!({
+      action: "zotlit/import-profile",
+      clipboard: "true",
+    });
+    await Promise.resolve();
+    expect(openProfileEditor).not.toHaveBeenCalled();
+  });
+  it.each([undefined, "false", ""])(
+    "does not read clipboard without the explicit flag: %s",
+    (clipboard) => {
+      const importProfile = vi.fn(async () => undefined);
+      using _handlers = register({ importProfile });
+      handlers.get("zotlit/import-profile")!({
+        action: "zotlit/import-profile",
+        ...(clipboard === undefined ? {} : { clipboard }),
+      });
+      expect(importProfile).not.toHaveBeenCalled();
+    },
+  );
 });
