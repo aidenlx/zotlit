@@ -12,19 +12,27 @@ import {
   writeDraft,
 } from "./transfer";
 
-const REFERENCE = "standalone";
-const KEY = `zotlit.workbench.draft.${REFERENCE}`;
+const STANDALONE = { reference: "standalone" };
+const KEY = `zotlit.workbench.draft.${STANDALONE.reference}`;
 const SNAPSHOT = SAMPLE_ITEMS[0]!;
+/** The document a vault opened, and the paper the vault handed over with it. */
+const VAULT = { reference: "profile:default", installationId: "vault-1" };
+const VAULT_KEY = `zotlit.workbench.draft.${VAULT.installationId}.${VAULT.reference}`;
+const VAULT_SNAPSHOT_KEY = `zotlit.workbench.snapshot.${VAULT.installationId}.${VAULT.reference}`;
+const VAULT_PAPER = {
+  ...SNAPSHOT,
+  provenance: {
+    kind: "connected",
+    installationId: VAULT.installationId,
+    vault: "Fixture vault",
+  },
+} as const satisfies typeof SNAPSHOT;
 
 // This environment carries no Storage of its own, so each test starts on one
 // that behaves as a browser's does.
 beforeEach(() => {
-  const entries = new Map<string, string>();
-  install({
-    getItem: (key: string) => entries.get(key) ?? null,
-    setItem: (key: string, value: string) => void entries.set(key, value),
-    removeItem: (key: string) => void entries.delete(key),
-  });
+  install("localStorage");
+  install("sessionStorage");
 });
 
 describe("the downloaded file", () => {
@@ -54,52 +62,100 @@ describe("the downloaded file", () => {
 
 describe("the kept draft", () => {
   it("comes back as it was written, and is gone once cleared", () => {
-    writeDraft(REFERENCE, { source: "# draft", snapshot: SNAPSHOT });
-    expect(readDraft(REFERENCE)).toEqual({
+    writeDraft(STANDALONE, { source: "# draft", snapshot: SNAPSHOT });
+    expect(readDraft(STANDALONE)).toEqual({
       source: "# draft",
       snapshot: SNAPSHOT,
     });
-    clearDraft(REFERENCE);
-    expect(readDraft(REFERENCE)).toBeNull();
+    clearDraft(STANDALONE);
+    expect(readDraft(STANDALONE)).toBeNull();
   });
 
   it("is one record per document reference", () => {
-    writeDraft(REFERENCE, { source: "# draft", snapshot: SNAPSHOT });
-    expect(readDraft("vault:profiles/scholar.md")).toBeNull();
+    writeDraft(STANDALONE, { source: "# draft", snapshot: SNAPSHOT });
+    expect(readDraft({ reference: "vault:profiles/scholar.md" })).toBeNull();
+  });
+
+  it("keeps one vault's draft apart from another vault's", () => {
+    writeDraft(VAULT, { source: "# one vault" });
+    expect(
+      readDraft({ reference: VAULT.reference, installationId: "vault-2" }),
+    ).toBeNull();
+    expect(readDraft(VAULT)?.source).toBe("# one vault");
+  });
+
+  it("keeps a vault paper for the tab and the draft for the browser", () => {
+    writeDraft(VAULT, { source: "# draft", snapshot: VAULT_PAPER });
+
+    // The text persists; the paper the vault handed over does not.
+    expect(JSON.parse(localStorage.getItem(VAULT_KEY)!)).toEqual({
+      source: "# draft",
+    });
+    expect(JSON.parse(sessionStorage.getItem(VAULT_SNAPSHOT_KEY)!)).toEqual(
+      VAULT_PAPER,
+    );
+
+    // A reload keeps the tab, so the paper is still there to come back to.
+    expect(readDraft(VAULT)).toEqual({
+      source: "# draft",
+      snapshot: VAULT_PAPER,
+    });
+
+    // Closing the tab empties session storage; the draft stands without it.
+    install("sessionStorage");
+    expect(readDraft(VAULT)).toEqual({ source: "# draft" });
+  });
+
+  it("keeps a Sample Item in the record the browser holds", () => {
+    writeDraft(STANDALONE, { source: "# draft", snapshot: SNAPSHOT });
+
+    expect(JSON.parse(localStorage.getItem(KEY)!).snapshot).toEqual(SNAPSHOT);
+    install("sessionStorage");
+    expect(readDraft(STANDALONE)).toEqual({
+      source: "# draft",
+      snapshot: SNAPSHOT,
+    });
   });
 
   it("reads an empty, unreadable, or outdated record as none", () => {
-    expect(readDraft(REFERENCE)).toBeNull();
+    expect(readDraft(STANDALONE)).toBeNull();
     localStorage.setItem(KEY, "not json");
-    expect(readDraft(REFERENCE)).toBeNull();
+    expect(readDraft(STANDALONE)).toBeNull();
     localStorage.setItem(
       KEY,
       JSON.stringify({ source: "# draft", snapshot: { contractVersion: 1 } }),
     );
-    expect(readDraft(REFERENCE)).toBeNull();
+    expect(readDraft(STANDALONE)).toBeNull();
   });
 
   it("keeps a blocked storage from reaching the reader", () => {
     // A browser with site data denied throws on the property itself.
-    Object.defineProperty(globalThis, "localStorage", {
-      configurable: true,
-      get() {
-        throw new Error("The user denied permission to access site data.");
-      },
-    });
+    for (const name of ["localStorage", "sessionStorage"]) {
+      Object.defineProperty(globalThis, name, {
+        configurable: true,
+        get() {
+          throw new Error("The user denied permission to access site data.");
+        },
+      });
+    }
     expect(() =>
-      writeDraft(REFERENCE, { source: "# draft", snapshot: SNAPSHOT }),
+      writeDraft(STANDALONE, { source: "# draft", snapshot: SNAPSHOT }),
     ).not.toThrow();
-    expect(readDraft(REFERENCE)).toBeNull();
-    expect(() => clearDraft(REFERENCE)).not.toThrow();
+    expect(readDraft(STANDALONE)).toBeNull();
+    expect(() => clearDraft(STANDALONE)).not.toThrow();
   });
 });
 
-/** Puts `storage` where the page reads its own. */
-function install(storage: object): void {
-  Object.defineProperty(globalThis, "localStorage", {
+/** Puts a storage that behaves as a browser's does where the page reads one. */
+function install(name: "localStorage" | "sessionStorage"): void {
+  const entries = new Map<string, string>();
+  Object.defineProperty(globalThis, name, {
     configurable: true,
-    value: storage,
+    value: {
+      getItem: (key: string) => entries.get(key) ?? null,
+      setItem: (key: string, value: string) => void entries.set(key, value),
+      removeItem: (key: string) => void entries.delete(key),
+    },
   });
 }
 

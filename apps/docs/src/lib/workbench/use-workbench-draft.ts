@@ -13,7 +13,7 @@ import {
 
 import type { SampleItem } from "./fields";
 import { clearDraft, readDraft, writeDraft } from "./transfer";
-import type { WorkbenchDraft } from "./transfer";
+import type { DraftLocation, WorkbenchDraft } from "./transfer";
 import type { SaveTarget } from "./use-workbench-connection";
 
 /** The paper a fresh visit opens on. */
@@ -25,6 +25,9 @@ export const DEFAULT_SAMPLE = SAMPLE_ITEMS[0]!;
  * Workbench keys each vault document by the reference the bridge gave it.
  */
 const STANDALONE_DOCUMENT = "standalone";
+
+/** Where a page that has opened no vault document keeps its work. */
+const STANDALONE_LOCATION: DraftLocation = { reference: STANDALONE_DOCUMENT };
 
 /** Quiet time after the last change before the draft is written. */
 const AUTOSAVE_MS = 500;
@@ -54,6 +57,8 @@ export interface RestoreOffer {
 interface SavedDocument {
   readonly reference: string;
   readonly source: string;
+  /** The vault it was read from, which keeps two vaults' drafts apart. */
+  readonly installationId?: string;
 }
 
 export interface WorkbenchDraftKeeper {
@@ -86,11 +91,12 @@ export function useWorkbenchDraft({
   readonly saveTarget: SaveTarget | null;
 }): WorkbenchDraftKeeper {
   const [baseline, setBaseline] = useState(STANDALONE_BASELINE);
-  const [reference, setReference] = useState(STANDALONE_DOCUMENT);
+  const [location, setLocation] = useState<DraftLocation>(STANDALONE_LOCATION);
+  const reference = location.reference;
   // Read once, before the first autosave, so the record the last visit left is
   // the one the reader is offered.
   const [restorable, setRestorable] = useState<RestoreOffer | null>(() => {
-    const draft = readDraft(STANDALONE_DOCUMENT);
+    const draft = readDraft(STANDALONE_LOCATION);
     return draft ? { draft, baseline: STANDALONE_BASELINE } : null;
   });
 
@@ -114,7 +120,7 @@ export function useWorkbenchDraft({
     // is kept, and Restore never lands on top of it.
     if (restorable) {
       const stillWaiting =
-        reference === restorable.baseline.reference &&
+        location.reference === restorable.baseline.reference &&
         controller.source === restorable.baseline.source &&
         snapshotIdentity(sample) === restorable.baseline.snapshot &&
         annotationSelection === restorable.baseline.annotationSelection;
@@ -124,9 +130,9 @@ export function useWorkbenchDraft({
     }
     const source = controller.source;
     const timer = setTimeout(() => {
-      if (atBaseline) clearDraft(reference);
+      if (atBaseline) clearDraft(location);
       else
-        writeDraft(reference, {
+        writeDraft(location, {
           source,
           snapshot: sample,
           annotationSelection,
@@ -137,7 +143,7 @@ export function useWorkbenchDraft({
   }, [
     restorable,
     atBaseline,
-    reference,
+    location,
     expected,
     controller,
     sample,
@@ -149,14 +155,18 @@ export function useWorkbenchDraft({
     reference,
     dirty: controller.source !== baseline.source,
     restorable,
-    adopt({ reference: opened, source }, kept) {
+    adopt({ reference: opened, source, installationId }, kept) {
       const next = {
         reference: opened,
         source,
         snapshot: snapshotIdentity(sample),
         annotationSelection,
       };
-      setReference(opened);
+      setLocation(
+        installationId === undefined
+          ? { reference: opened }
+          : { reference: opened, installationId },
+      );
       setBaseline(next);
       setRestorable(kept ? { draft: kept, baseline: next } : null);
     },
@@ -174,7 +184,7 @@ export function useWorkbenchDraft({
       return restorable.draft;
     },
     startClean() {
-      if (restorable) clearDraft(restorable.baseline.reference);
+      if (restorable) clearDraft(location);
       setRestorable(null);
     },
   };

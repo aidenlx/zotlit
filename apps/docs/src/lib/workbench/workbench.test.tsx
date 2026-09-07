@@ -152,11 +152,11 @@ describe("a Workbench Connection", () => {
     page.press(m.workbench_save());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
-        m.workbench_save_complete({ revision: "revision-2" }),
+        m.workbench_save_complete({ vault: "Fixture vault" }),
       ),
     );
     expect(page.host.textContent).toContain(
-      m.workbench_save_complete({ revision: "revision-2" }),
+      m.workbench_save_complete({ vault: "Fixture vault" }),
     );
     expect(requests.find(({ path }) => path.endsWith("/save"))?.body).toEqual({
       reference: "profile:default",
@@ -253,10 +253,14 @@ describe("a Workbench Connection", () => {
     await page.settle();
     expect(
       JSON.parse(
-        localStorage.getItem("zotlit.workbench.draft.profile:default")!,
+        localStorage.getItem(
+          "zotlit.workbench.draft.fixture-installation.profile:default",
+        )!,
       ).expected,
     ).toEqual({ state: "revision", revision: "revision-1" });
-    localStorage.removeItem("zotlit.workbench.draft.profile:default");
+    localStorage.removeItem(
+      "zotlit.workbench.draft.fixture-installation.profile:default",
+    );
     vi.spyOn(localStorage, "getItem").mockImplementation(() => {
       throw new Error("Site data is blocked.");
     });
@@ -394,6 +398,106 @@ describe("a Workbench Connection", () => {
     expect(page.host.textContent).not.toContain(m.workbench_load_item());
   });
 
+  it("meets a first connected reader with the Start here strip", async () => {
+    vi.stubGlobal("fetch", bridgeFetch([]));
+    {
+      using page = launch();
+      await page.waitFor(() =>
+        expect(title(page.host)).toBe("Connected profile"),
+      );
+
+      // Three lines and no tour: where the fields are, where the note is
+      // written, and where Save sends it.
+      expect(page.host.textContent).toContain(m.workbench_start_here_field());
+      expect(page.host.textContent).toContain(m.workbench_start_here_note());
+      expect(page.host.textContent).toContain(m.workbench_start_here_save());
+
+      page.press(m.workbench_start_here_dismiss());
+      expect(page.host.textContent).not.toContain(
+        m.workbench_start_here_field(),
+      );
+    }
+
+    // Dismissed once, dismissed in this browser: the next launch never nags.
+    using again = launch();
+    await again.waitFor(() =>
+      expect(title(again.host)).toBe("Connected profile"),
+    );
+    expect(again.host.textContent).not.toContain(
+      m.workbench_start_here_field(),
+    );
+  });
+
+  it("leaves a standalone page without the Start here strip", async () => {
+    using page = open();
+    await page.settle();
+
+    // A page nothing opened from Obsidian has no vault to send a note to.
+    expect(page.host.textContent).not.toContain(m.workbench_start_here_field());
+  });
+
+  it("keeps a vault paper for the tab and the draft for the browser", async () => {
+    vi.stubGlobal("fetch", bridgeFetch([]));
+    using page = launch();
+
+    await page.waitFor(() =>
+      expect(title(page.host)).toBe("Connected profile"),
+    );
+    page.press(m.workbench_load_item());
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(m.workbench_connected_badge()),
+    );
+    await page.settle();
+
+    const scope = "fixture-installation.profile:default";
+    const record = JSON.parse(
+      localStorage.getItem(`zotlit.workbench.draft.${scope}`)!,
+    );
+    // The reader's own text persists; the paper the vault handed over is the
+    // vault's, so on this public origin it lives no longer than the tab.
+    expect(record.source).toContain("name: Connected profile");
+    expect(record.snapshot).toBeUndefined();
+    expect(
+      JSON.parse(sessionStorage.getItem(`zotlit.workbench.snapshot.${scope}`)!)
+        .provenance,
+    ).toEqual({
+      kind: "connected",
+      installationId: "fixture-installation",
+      vault: "Fixture vault",
+    });
+  });
+
+  it("sends no request to a host other than this page and the bridge", async () => {
+    const requests: BridgeRequest[] = [];
+    vi.stubGlobal("fetch", bridgeFetch(requests));
+    using page = launch();
+
+    await page.waitFor(() =>
+      expect(title(page.host)).toBe("Connected profile"),
+    );
+    page.press(m.workbench_load_item());
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(m.workbench_connected_badge()),
+    );
+    await page.settle();
+    page.press(m.workbench_save());
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(
+        m.workbench_save_complete({ vault: "Fixture vault" }),
+      ),
+    );
+
+    // Connect, render, and Save have all run, and every request any module on
+    // the page made rode this one stub.
+    expect(requests.length).toBeGreaterThan(0);
+    const allowed = new Set([window.location.origin, BRIDGE_ORIGIN]);
+    expect(
+      [...new Set(requests.map(({ origin }) => origin))].filter(
+        (origin) => !allowed.has(origin),
+      ),
+    ).toEqual([]);
+  });
+
   it("keeps editing when the bridge reports another contract version", async () => {
     vi.stubGlobal(
       "fetch",
@@ -482,7 +586,7 @@ describe("a Workbench Connection", () => {
     page.press(m.workbench_save());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
-        m.workbench_save_complete({ revision: "revision-2" }),
+        m.workbench_save_complete({ vault: "Fixture vault" }),
       ),
     );
   });
@@ -581,7 +685,7 @@ describe("a Workbench Connection", () => {
     page.press(m.workbench_save());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
-        m.workbench_save_complete({ revision: "revision-2" }),
+        m.workbench_save_complete({ vault: "Fixture vault" }),
       ),
     );
 
@@ -591,7 +695,7 @@ describe("a Workbench Connection", () => {
       source: CONNECTED,
     });
     expect(page.host.textContent).toContain(
-      m.workbench_save_complete({ revision: "revision-2" }),
+      m.workbench_save_complete({ vault: "Fixture vault" }),
     );
   });
 
@@ -614,6 +718,14 @@ describe("a Workbench Connection", () => {
 
     expect(page.host.textContent).toContain(m.workbench_retained_badge());
     expect(page.host.textContent).toContain(m.workbench_download());
+    // A Connection the reader ended is restarted in Obsidian, not here, so the
+    // page says that rather than offering the Reconnect a lost one offers.
+    expect(page.host.textContent).toContain(
+      m.workbench_connection_disconnect_complete(),
+    );
+    expect(page.host.textContent).not.toContain(
+      m.workbench_connection_reconnect(),
+    );
     expect(startRenderWorker.mock.calls.at(-1)?.[0].resources).toBeUndefined();
 
     page.show(SAMPLE_ITEMS[1]!.item.key);
@@ -664,7 +776,9 @@ describe("a Workbench Connection", () => {
     });
     expect(
       JSON.parse(
-        localStorage.getItem("zotlit.workbench.draft.profile:default")!,
+        localStorage.getItem(
+          "zotlit.workbench.draft.fixture-installation.profile:default",
+        )!,
       ),
     ).toMatchObject({ source: expect.stringContaining(snippet) });
   });

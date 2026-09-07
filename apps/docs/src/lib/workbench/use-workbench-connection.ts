@@ -27,6 +27,8 @@ import type { WorkbenchDraft } from "./transfer";
 
 export interface ProfileHydration {
   readonly selected: SelectedProfileResponse;
+  /** The vault the document was read from, which keys the draft it belongs to. */
+  readonly installationId: string;
   readonly kept: WorkbenchDraft | null;
   /** The revision the retained in-memory draft still descends from. */
   readonly retainedExpected?: SaveSelectedProfileRequest["expected"];
@@ -70,6 +72,10 @@ export function useWorkbenchConnection({
   const [connection, setConnection] = useState<LocalBridgeConnection>(
     bridge.connection,
   );
+  // Whether a kept credential and its port are still here to present. It is
+  // mirrored rather than read through the client on every render, so the
+  // header follows it the way it follows the connection itself.
+  const [resumable, setResumable] = useState(() => bridge.resumable);
   const [saveTarget, setSaveTarget] = useState<SaveTarget | null>(null);
   const [resources, setResources] = useState<RenderResources | undefined>();
   const [citationStyles, setCitationStyles] = useState<
@@ -103,25 +109,34 @@ export function useWorkbenchConnection({
     [],
   );
 
+  /** Takes what the client holds now as what the page shows. */
+  const settleConnection = useCallback(
+    (next: LocalBridgeConnection) => {
+      setConnection(next);
+      setResumable(bridge.resumable);
+    },
+    [bridge],
+  );
+
   const connectionFailed = useCallback(
     (error: unknown) => {
       const next = bridge.connection;
       if (next.state !== "connected") resetConnectedState();
-      setConnection(next);
+      settleConnection(next);
       setMessage(connectionFailureMessage(error, next));
     },
-    [bridge, resetConnectedState],
+    [bridge, resetConnectedState, settleConnection],
   );
 
   async function hydrateConnection(): Promise<void> {
+    const grant = bridge.connection;
+    if (grant.state !== "connected") return;
     const selected = await bridge.readSelectedProfile();
     // The style this vault has in effect, which a Profile that binds none
     // inherits and the Name and folder pane shows as its value. The settle
     // effect below reads the Profile's own binding from the page's controller,
     // so hydration parses nothing of its own.
-    const grant = bridge.connection;
-    const styleId =
-      grant.state === "connected" ? grant.profileDefaults.citationStyle : null;
+    const styleId = grant.profileDefaults.citationStyle;
     const [dependencies, citationStyle, styles] = await Promise.all([
       bridge.readTemplateDependencies({ source: selected.source }),
       bridge.readSelectedCitationStyle({ styleId }),
@@ -133,8 +148,9 @@ export function useWorkbenchConnection({
     bundleDependencies.current = null;
     setBundleStale(false);
     const reference = selected.document.reference;
+    const installationId = grant.installation.id;
     const currentExpected = expectedRevision(selected.document);
-    const kept = readDraft(reference);
+    const kept = readDraft({ reference, installationId });
     const retainedExpected =
       saveTarget?.reference === reference
         ? saveTarget.expected
@@ -145,7 +161,7 @@ export function useWorkbenchConnection({
     setLoadedStyleId(styleId);
     setSaveTarget({ reference, expected: currentExpected });
 
-    onHydrate({ selected, kept, retainedExpected });
+    onHydrate({ selected, installationId, kept, retainedExpected });
     if (
       kept?.expected &&
       !sameExpectedRevision(kept.expected, currentExpected)
@@ -183,7 +199,7 @@ export function useWorkbenchConnection({
     setMessage(null);
     try {
       const next = await run();
-      setConnection(next);
+      settleConnection(next);
       if (next.state === "connected") await hydrateConnection();
     } catch (error) {
       connectionFailed(error);
@@ -208,8 +224,8 @@ export function useWorkbenchConnection({
     try {
       await bridge.disconnect();
       resetConnectedState();
-      setConnection(bridge.connection);
-      setMessage(m.workbench_connection_disconnected_notice());
+      settleConnection(bridge.connection);
+      setMessage(m.workbench_connection_disconnect_complete());
     } catch (error) {
       connectionFailed(error);
     } finally {
@@ -230,7 +246,8 @@ export function useWorkbenchConnection({
   }
 
   async function save(source: string) {
-    if (!saveTarget) return;
+    const grant = bridge.connection;
+    if (!saveTarget || grant.state !== "connected") return;
     setSaveBusy(true);
     setMessage(null);
     try {
@@ -249,7 +266,9 @@ export function useWorkbenchConnection({
         revision: saved.revision,
         source,
       });
-      setMessage(m.workbench_save_complete({ revision: saved.revision }));
+      setMessage(
+        m.workbench_save_complete({ vault: grant.installation.vault }),
+      );
     } catch (error) {
       connectionFailed(error);
     } finally {
@@ -365,7 +384,7 @@ export function useWorkbenchConnection({
     citationStyles,
     saveAgainst,
     connectionBusy,
-    resumable: bridge.resumable,
+    resumable,
     itemBusy,
     saveBusy,
     message,
