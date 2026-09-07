@@ -8,7 +8,8 @@ insertion and Imported Notes, so access to it is independent of calls in the
 note. This gives formatting one stable home, at the cost of a tab change from
 its use in the note.
 
-Basic orders its tabs as Note, Properties, Annotation, and Name and folder.
+Basic orders its tabs as Note, Properties, Annotation, Match, and Name and folder
+(Match added 2026-09-07 by the amendment to [ADR 0039](0039-a-profile-match-lives-in-the-profile-document.md)).
 It presents an annotation render call as a compact inline Annotation placeholder,
 collapsed by default. Its arrow opens one read-only example in a full-width block
 below the line containing the call. Opening another example moves this shared
