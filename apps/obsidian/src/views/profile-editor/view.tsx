@@ -1,7 +1,7 @@
 // One file-backed authoring session; TextFileView owns vault updates and saves.
 import { Menu, Scope, TextFileView } from "obsidian";
 import type { ViewStateResult, WorkspaceLeaf } from "obsidian";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -25,6 +25,7 @@ import type {
 import { failedRender, renderIdentity } from "@zotlit/workbench/render";
 import {
   AnnotationPane,
+  diagnosticText,
   AnnotationPointer,
   useWorkbenchHost,
   createWorkbenchStore,
@@ -59,6 +60,14 @@ import { getLogger } from "@/lib/log";
 import { tooltipAttrs } from "@/lib/utils";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { listInstalledStyles } from "@/services/pandoc/styles";
+import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
+import { NativeMarkdown } from "@/views/note-preview/markdown";
+import type { NativeRenderDeps } from "@/views/note-preview/render";
+import { renderNativeProfile } from "@/views/note-preview/render";
+import {
+  NativePreviewSession,
+  useNativePreview,
+} from "@/views/note-preview/session";
 import {
   lastTemplateItem,
   rememberTemplateItem,
@@ -73,10 +82,15 @@ export const PROFILE_EDITOR_VIEW_TYPE = "zotlit-profile-editor";
 const logger = getLogger(["views", "profile-editor"]);
 export type ProfileEditorDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   render?: WorkbenchHost["render"];
+  nativePreview?: NativeRenderDeps;
 };
 
 export class ProfileEditorView extends TextFileView {
   readonly store = createWorkbenchStore();
+  readonly preview: NativePreviewSession | null;
+  readonly #revealListeners = new Set<
+    (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
+  >();
   readonly #deps: ProfileEditorDeps;
   readonly #host: ReturnType<typeof createProfileEditorHost>;
   #controller = new WorkbenchDocumentController("", { runtime: "native" });
@@ -96,17 +110,45 @@ export class ProfileEditorView extends TextFileView {
     super(leaf);
     this.#deps = deps;
     this.contentEl.addClass("zt-root", "zt-profile-editor");
+    this.preview = deps.nativePreview
+      ? new NativePreviewSession(
+          deps.nativePreview,
+          this.#controller,
+          this.store,
+        )
+      : null;
     this.#host = createProfileEditorHost(
       this.app,
       {
         render:
-          deps.render ??
+          (deps.nativePreview
+            ? (request, deliver) => {
+                let current = true;
+                void renderNativeProfile(deps.nativePreview!, request).then(
+                  (result) => {
+                    if (current) deliver(result);
+                  },
+                );
+                return {
+                  terminate() {
+                    current = false;
+                  },
+                };
+              }
+            : deps.render) ??
           ((request, deliver) => {
             deliver(
               failedRender(renderIdentity(request), { code: "render-error" }),
             );
             return { terminate() {} };
           }),
+        markdown: (props) => (
+          <NativeMarkdown
+            {...props}
+            app={this.app}
+            result={this.preview?.state.getState().result ?? null}
+          />
+        ),
         matchData: {
           tags: async () => [],
           collections: async () => [],
@@ -114,7 +156,7 @@ export class ProfileEditorView extends TextFileView {
         },
         insertTarget: () => this.#insertTarget,
       },
-      (content) => this.#provide(content),
+      (content) => this.provide(content),
     );
     this.scope = new Scope(this.app.scope);
     this.scope.register(["Mod"], "z", (event) => this.#history(event, false));
@@ -135,6 +177,7 @@ export class ProfileEditorView extends TextFileView {
           importAnnotationsAsTemplate:
             bindings["note.import-annotations-as-template"],
         };
+        this.preview?.changed();
         this.#mount();
       }),
     );
@@ -164,6 +207,22 @@ export class ProfileEditorView extends TextFileView {
     }
   }
 
+  subscribeReveals(
+    listener: (
+      target: Pick<WorkbenchProblem, "slice" | "range" | "params">,
+    ) => void,
+  ): () => void {
+    this.#revealListeners.add(listener);
+    return () => {
+      this.#revealListeners.delete(listener);
+    };
+  }
+  revealSlice(slice: "advanced" | "annotation" | `entry:${number}`): void {
+    const range = this.#controller.sliceRange(slice);
+    for (const listener of this.#revealListeners)
+      listener({ slice, ...(range ? { range } : {}) });
+    void this.app.workspace.revealLeaf(this.leaf);
+  }
   get bindingDefaults(): typeof BUILT_IN_BINDING_DEFAULTS {
     return this.#bindingDefaults;
   }
@@ -193,6 +252,7 @@ export class ProfileEditorView extends TextFileView {
       this.#controller = new WorkbenchDocumentController(source, {
         runtime: "native",
       });
+      this.preview?.attach(this.#controller);
       this.#insertTarget = null;
       this.#subscribe();
       this.#mount();
@@ -264,6 +324,7 @@ export class ProfileEditorView extends TextFileView {
   }
   protected override async onClose(): Promise<void> {
     this.#closed = true;
+    this.preview?.[Symbol.dispose]();
     this.#host[Symbol.dispose]();
     this.#root?.unmount();
     this.#root = null;
@@ -379,7 +440,7 @@ export class ProfileEditorView extends TextFileView {
       return;
     if (redo ? this.#controller.redo() : this.#controller.undo()) return false;
   }
-  #provide(content: ReactNode): ReactNode {
+  provide(content: ReactNode): ReactNode {
     return (
       <WorkbenchThemeProvider theme={profileEditorTheme}>
         <WorkbenchHostProvider host={this.#host}>
@@ -396,7 +457,7 @@ export class ProfileEditorView extends TextFileView {
   }
   #mount(): void {
     this.#root?.render(
-      this.#provide(
+      this.provide(
         <EditorContent
           view={this}
           onSelection={(target) => {
@@ -427,6 +488,11 @@ function EditorContent({
   const host = useWorkbenchHost();
   const noteCaret = useRef<WorkbenchSliceRange | null>(null);
   useDocumentRevision(controller);
+  const preview = useNativePreview(view.preview);
+  const result = preview?.result;
+  const formatProblem = result?.diagnostics.find(
+    ({ part }) => part === "annotation",
+  );
   const advanced = useWorkbenchStore((state) => state.advanced);
   const [selected, setSelected] = useState<number | null>(null);
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
@@ -439,7 +505,9 @@ function EditorContent({
       ? { ...firstProblem, slice: "advanced" as const }
       : firstProblem;
   const state = view.store.getState();
-  function openProblem(problem: WorkbenchProblem) {
+  function openProblem(
+    problem: Pick<WorkbenchProblem, "slice" | "range" | "params">,
+  ) {
     const entry = entryPosition(problem.slice);
     state.setAdvanced(problem.slice === "advanced");
     state.setTab(
@@ -466,6 +534,12 @@ function EditorContent({
         : null,
     );
   }
+  const revealHandler = useRef(openProblem);
+  revealHandler.current = openProblem;
+  useEffect(
+    () => view.subscribeReveals((target) => revealHandler.current(target)),
+    [view],
+  );
   const selection =
     (slice: WorkbenchInsertTarget["slice"]) => (range: WorkbenchSliceRange) =>
       onSelection({ slice, range });
@@ -506,8 +580,15 @@ function EditorContent({
             <TabPanel tab="note">
               <NotePane
                 controller={controller}
-                preview={null}
-                formatProblem={null}
+                preview={result?.annotation ?? null}
+                formatProblem={
+                  formatProblem ? diagnosticText(formatProblem) : null
+                }
+                annotationSelector={
+                  view.preview ? (
+                    <PreviewAnnotationSelection session={view.preview} />
+                  ) : null
+                }
                 onOpenAnnotation={() => {
                   state.setTab("annotation");
                   state.setRoot("annotation");
@@ -543,14 +624,26 @@ function EditorContent({
                 <PropertiesPane
                   controller={controller}
                   entries={controller.managedEntries}
-                  properties={[]}
-                  fold={[]}
-                  diagnostics={controller.problems.flatMap((problem) => {
-                    const position = entryPosition(problem.slice);
-                    return position === null
-                      ? []
-                      : [{ position, message: problemText(problem).message }];
-                  })}
+                  properties={result?.properties ?? []}
+                  fold={result?.fold ?? []}
+                  diagnostics={[
+                    ...(result?.diagnostics ?? []).flatMap((diagnostic) =>
+                      diagnostic.position === undefined
+                        ? []
+                        : [
+                            {
+                              position: diagnostic.position,
+                              message: diagnosticText(diagnostic),
+                            },
+                          ],
+                    ),
+                    ...controller.problems.flatMap((problem) => {
+                      const position = entryPosition(problem.slice);
+                      return position === null
+                        ? []
+                        : [{ position, message: problemText(problem).message }];
+                    }),
+                  ]}
                   selected={selected}
                   onSelect={setSelected}
                   onOpenSource={(range) => {
@@ -567,7 +660,7 @@ function EditorContent({
             <TabPanel tab="annotation">
               <AnnotationPane
                 controller={controller}
-                problem={null}
+                problem={formatProblem ? diagnosticText(formatProblem) : null}
                 reveal={reveal}
                 onSelection={selection("annotation")}
               />
@@ -579,7 +672,7 @@ function EditorContent({
                 defaults={view.bindingDefaults}
                 citationStyles={view.citationStyles}
                 focus={fieldFocus}
-                filename={null}
+                filename={result?.filename ?? null}
                 onOpenSource={() => state.setAdvanced(true)}
                 reveal={reveal}
                 onSelection={selection("filename")}

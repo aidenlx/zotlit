@@ -119,9 +119,13 @@ export function ResultColumn({
   const filenameTooltip = useTooltip(result?.filename ?? "");
   const showAnnotation = mode === "annotation";
   const showNote = mode === "note";
-  const previewProblem = result?.diagnostics.find(
-    ({ part }) => part !== "annotation" || result.creationBody === null,
-  );
+  const previewProblem = showAnnotation
+    ? (annotationResult?.diagnostics.find(
+        ({ part }) => part === "annotation",
+      ) ?? annotationResult?.diagnostics[0])
+    : result?.diagnostics.find(
+        ({ part }) => part !== "annotation" || result.creationBody === null,
+      );
   const pending = <p {...part("pending")}>{m.workbench_result_pending()}</p>;
   return (
     <>
@@ -176,7 +180,7 @@ export function ResultColumn({
                 </p>
               </header>
             )}
-            {!showAnnotation && previewProblem && (
+            {previewProblem && (
               <p {...part("problem")}>
                 <strong {...part("problem-heading")}>
                   {m.workbench_preview_problem()}
