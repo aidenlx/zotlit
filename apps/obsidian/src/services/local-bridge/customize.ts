@@ -22,7 +22,7 @@ import type { TemplateService } from "@/services/template/service";
 import type { DeviceStorage } from "./installation";
 import type { LocalBridgeService } from "./service";
 import type { SelectedItemIdentity } from "./sessions";
-import { unsupportedProfileReason } from "./unsupported";
+import { unsupportedProfileSourceReason } from "./unsupported";
 
 const logger = getLogger("local-bridge");
 
@@ -92,6 +92,8 @@ export interface CustomizeDeps {
   template: Pick<TemplateService, "ready" | "exportLiteratureNotePackSource">;
   localServer: Pick<LocalServerService, "effectivePort" | "on">;
   bridge: Pick<LocalBridgeService, "launchUrl">;
+  /** This build's version, which a Profile's `minAppVersion` is read against. */
+  pluginVersion: string;
   confirmLaunch: ConfirmLaunch;
   openExternal: (url: string) => void;
 }
@@ -103,8 +105,9 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
   return async (request) => {
     await deps.profile.ready;
     const source = await deps.profile.getSource(request.profileId);
-    const reason = unsupportedProfileReason(
+    const reason = unsupportedProfileSourceReason(
       await withDependencies(deps, source),
+      deps.pluginVersion,
     );
     if (reason !== null) {
       logger.debug("Customize kept the Profile in Obsidian", { reason });
