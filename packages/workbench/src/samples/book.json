@@ -234,6 +234,11 @@
     },
     "annotations": []
   },
-  "unavailable": [],
-  "revision": "0853287643c15493b83912fe5152859d92fb08208630d2e45902a3c193e92fe9"
+  "unavailable": [
+    {
+      "path": "zt.weblink",
+      "reason": "A personal-library web link carries the Zotero account name, so it is not included in Item Snapshots."
+    }
+  ],
+  "revision": "c4d3265e82a82b58047ac0cf0d1da7e688b5dfe644a28ebc8f8289bd19df2264"
 }

@@ -39,6 +39,12 @@ const DEPENDENT_STYLE = `<?xml version="1.0" encoding="utf-8"?>
     <link href="${PARENT_STYLE_ID}" rel="independent-parent"/>
   </info>
 </style>`;
+const UNTITLED_STYLE_ID = "http://www.zotero.org/styles/fixture-untitled";
+const UNTITLED_STYLE = `<?xml version="1.0" encoding="utf-8"?>
+<style xmlns="http://purl.org/net/xbiblio/csl" class="in-text" version="1.0">
+  <info><id>${UNTITLED_STYLE_ID}</id></info>
+  <citation><layout><text variable="citation-number"/></layout></citation>
+</style>`;
 
 describe("LocalBridgeClient against the mock Local Bridge", () => {
   it("connects on the port the launch URL named, after a browser CORS preflight", async () => {
@@ -656,6 +662,11 @@ frontmatter:\n`,
     await mkdir(join(styles, "hidden"), { recursive: true });
     await writeFile(join(styles, "dependent.csl"), DEPENDENT_STYLE, "utf8");
     await writeFile(join(styles, "hidden", "parent.csl"), PARENT_STYLE, "utf8");
+    await writeFile(
+      join(styles, "my-private-draft.csl"),
+      UNTITLED_STYLE,
+      "utf8",
+    );
     const bridge = createMockLocalBridge({
       layout: fixture.layout,
       allowedOrigin: ORIGIN,
@@ -665,9 +676,15 @@ frontmatter:\n`,
       connectFragment(bridge.initialOneTimeCode, PORT),
     );
 
-    await expect(client.listCitationStyles()).resolves.toContainEqual({
+    const listed = await client.listCitationStyles();
+    expect(listed).toContainEqual({
       id: DEPENDENT_STYLE_ID,
       title: "Fixture dependent",
+    });
+    // A style with no title lists under its ID; its file name stays on the host.
+    expect(listed).toContainEqual({
+      id: UNTITLED_STYLE_ID,
+      title: UNTITLED_STYLE_ID,
     });
     await expect(
       client.readSelectedCitationStyle({ styleId: DEPENDENT_STYLE_ID }),
