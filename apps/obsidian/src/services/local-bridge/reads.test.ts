@@ -22,7 +22,7 @@ import type { SettingsService } from "@/services/settings/service";
 
 import { createLocalBridgeApp } from "./app";
 import { STABLE_DOCS_ORIGIN } from "./origins";
-import { createLocalBridgeReads, profileRevision } from "./reads";
+import { createLocalBridgeReads } from "./reads";
 import type { BridgeProfileReader } from "./reads";
 import { BridgeSessions } from "./sessions";
 
@@ -173,8 +173,13 @@ async function harness(
     profile: profileReader(),
     template: {
       ready: Promise.resolve(),
-      exportLiteratureNotePackSource: (source: string) =>
-        Promise.resolve(exportLiteratureNotePack(source, partials)),
+      exportLiteratureNotePackSource: (
+        source: string,
+        exportOptions: Parameters<typeof exportLiteratureNotePack>[2],
+      ) =>
+        Promise.resolve(
+          exportLiteratureNotePack(source, partials, exportOptions),
+        ),
     } as never,
     zoteroPref: { ready: Promise.resolve(), dataDir },
     installationId: () => INSTALLATION_ID,
@@ -326,7 +331,10 @@ it("answers the exact source of a Profile the vault holds", async () => {
     document: {
       state: "present",
       reference: BOOKS_PROFILE,
-      revision: profileRevision(BOOKS_SOURCE),
+      // `shasum -a 256` over the same bytes, as an oracle independent of the
+      // hash the read computes.
+      revision:
+        "0b198711d2e2994319d4d1f242dbe613e29783fc75907084628f7373d5033803",
     },
   });
 });
@@ -374,6 +382,44 @@ it("reports a partial no vault holds as a diagnostic", async () => {
   expect(bundle.diagnostics).toEqual([
     { code: "missing-dependency", message: expect.stringContaining("cite") },
   ]);
+});
+
+it("bundles the cite partial a draft never calls", async () => {
+  await using bridge = await harness();
+  const source = BOOKS_SOURCE.replace("{% render 'cite' %}", "");
+
+  const res = await bridge.request(LOCAL_BRIDGE_PATHS.templateDependencies, {
+    method: "POST",
+    body: JSON.stringify({ source }),
+  });
+
+  await expect(res.json()).resolves.toEqual({
+    templates: [CITE_PARTIAL],
+    diagnostics: [],
+  });
+});
+
+it("keeps the partials that resolved when one call goes unanswered", async () => {
+  await using bridge = await harness();
+  const source = BOOKS_SOURCE.replace(
+    "{% render 'cite' %}",
+    "{% render 'cite' %}\n{% render 'header' %}",
+  );
+
+  const res = await bridge.request(LOCAL_BRIDGE_PATHS.templateDependencies, {
+    method: "POST",
+    body: JSON.stringify({ source }),
+  });
+
+  await expect(res.json()).resolves.toEqual({
+    templates: [CITE_PARTIAL],
+    diagnostics: [
+      {
+        code: "missing-dependency",
+        message: "Template dependency 'header' is missing from this vault.",
+      },
+    ],
+  });
 });
 
 it("reports a dependency the web Workbench cannot run as a diagnostic", async () => {

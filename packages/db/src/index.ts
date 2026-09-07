@@ -112,6 +112,7 @@ export {
 export { formatItemDate, parseItemDate, type ItemDate } from "./lib/zt-date";
 export { parseItemExtra, type ExtraLine, type ItemExtra } from "./lib/zt-extra";
 export {
+  annotationHasCacheImage,
   annotationTypeToName,
   type Annotation,
   type AnnotationType,

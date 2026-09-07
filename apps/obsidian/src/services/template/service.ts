@@ -494,7 +494,13 @@ export class TemplateService extends Service<void> {
   /** Export a Profile snapshot, including a built-in Default that has no file. */
   async exportLiteratureNotePackSource(
     source: string,
-    options: { includeFolders?: boolean } = {},
+    options: {
+      includeFolders?: boolean;
+      /** Extra partial names to bundle, reachable from the draft or not. */
+      include?: readonly string[];
+      /** Reports a name no partial answers instead of failing the export. */
+      onMissingPartial?: (name: string) => void;
+    } = {},
   ): Promise<string> {
     this.#requireLoaded("exportLiteratureNotePackSource");
     const partials = (
