@@ -196,6 +196,7 @@ describe("wire format", () => {
         "literatureNotes": {
           "body": [
             "items",
+            "profile",
             "scope",
           ],
           "method": "PUT",
@@ -252,6 +253,7 @@ describe("wire format", () => {
           "example": "obsidian://zotlit/update-many?items=1%2C2%2C3&source-id=a1b2c3d4",
           "params": [
             "items",
+            "profile",
             "scope",
             "source-id",
           ],
@@ -267,11 +269,12 @@ describe("wire format", () => {
           ],
           "params": [
             "item",
+            "profile",
             "scope",
             "source-id",
           ],
         },
-        "version": 6,
+        "version": 8,
         "zoteroNotes": {
           "body": [
             "items",

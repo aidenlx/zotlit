@@ -7,6 +7,7 @@ import { createLiquidEngine } from "@zotlit/templates/liquid";
 
 import {
   FIELD_CITEKEY,
+  FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_KEY,
   RESERVED_KEYS,
 } from "@/lib/constants";
@@ -84,6 +85,12 @@ describe("applyManagedFrontmatter", () => {
         {
           key: FIELD_ZOTERO_KEY,
           expr: "'x'",
+          merge: "replace",
+          language: "javascript",
+        },
+        {
+          key: FIELD_LITERATURE_NOTE_PROFILE,
+          expr: "'user-profile'",
           merge: "replace",
           language: "javascript",
         },

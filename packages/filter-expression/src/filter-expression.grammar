@@ -1,0 +1,101 @@
+// Lezer grammar for the ZotLit Filter Expression language.
+
+@top program { expression }
+
+@precedence {
+  member,
+  call,
+  unary,
+  times @left,
+  plus @left,
+  rel @left,
+  eq @left,
+  and @left,
+  or @left
+}
+
+expression {
+  LogicalExpression |
+  EqualityExpression |
+  RelationalExpression |
+  AdditiveExpression |
+  MultiplicativeExpression |
+  UnaryExpression |
+  Call |
+  ArrayAccess |
+  ObjectAccess |
+  Identifier |
+  NullLiteral |
+  BooleanLiteral |
+  RealNumber |
+  String |
+  RegExp |
+  Array |
+  GroupedExpression
+}
+
+LogicalExpression {
+  expression !or "||" expression |
+  expression !and "&&" expression
+}
+
+EqualityExpression { expression !eq Equality expression }
+
+RelationalExpression { expression !rel Relation expression }
+
+AdditiveExpression { expression !plus ("+" | "-") expression }
+
+MultiplicativeExpression { expression !times ("*" | "/" | "%") expression }
+
+UnaryExpression { !unary ("!" | "-") expression }
+
+Call { expression !call "(" commaSep<expression> ")" }
+
+ArrayAccess { expression !member "[" expression "]" }
+
+ObjectAccess { expression !member "." Identifier }
+
+Array { "[" commaSep<expression> "]" }
+
+GroupedExpression { "(" expression ")" }
+
+commaSep<content> { "" | content ("," content)* }
+
+NullLiteral { @specialize<identifier, "null"> }
+BooleanLiteral { @specialize<identifier, "true"> | @specialize<identifier, "false"> }
+
+Identifier { identifier }
+
+@skip {} {
+  String[isolate] {
+    '"' (stringContentDouble | Escape)* '"' |
+    "'" (stringContentSingle | Escape)* "'"
+  }
+}
+
+@skip { space }
+
+@tokens {
+  space { $[ \t\n\r]+ }
+
+  identifierChar { @asciiLetter | $[_$] | $[\u{a1}-\u{10ffff}] }
+  identifier { identifierChar (identifierChar | @digit)* }
+
+  RealNumber { @digit+ ("." @digit*)? | "." @digit+ }
+
+  Equality { "==" | "!=" }
+
+  Relation { "<=" | ">=" | "<" | ">" }
+
+  stringContentDouble { !["\\]+ }
+  stringContentSingle { !['\\]+ }
+  Escape { "\\" _ }
+
+  RegExp[isolate] { "/" (![/\\\n] | "\\" _)+ ("/" $[dgimsuvy]*)? }
+
+  "("[closedBy=")"] ")"[openedBy="("]
+  "[" "]" "," "."
+  "||" "&&" "+" "-" "*" "/" "%" "!"
+
+  @precedence { RegExp, "/" }
+}

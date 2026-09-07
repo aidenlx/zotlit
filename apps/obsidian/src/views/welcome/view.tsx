@@ -5,8 +5,12 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { BaseNotice } from "@/lib/notice";
 import type { DatabaseService } from "@/services/database/service";
+import type { ReleaseService } from "@/services/release/service";
 import type { SettingsService } from "@/services/settings/service";
+import type { LiteratureNoteTemplateMigrationService } from "@/services/template/migration";
+import type { LiteratureNoteTemplateMigrationResult } from "@/services/template/migration";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { WelcomeActionsContext } from "./actions";
@@ -29,6 +33,8 @@ export interface WelcomeViewDeps {
   zoteroPref: Pick<ZoteroPrefService, "dataDir">;
   settings: Pick<SettingsService, "subscribe">;
   setupActions: SetupActions;
+  templateMigration: Pick<LiteratureNoteTemplateMigrationService, "convert">;
+  release: Pick<ReleaseService, "hasV1Templates">;
 }
 
 export class WelcomeView extends ItemView {
@@ -75,19 +81,43 @@ export class WelcomeView extends ItemView {
   }
 
   protected override async onOpen(): Promise<void> {
-    const stack = new DisposableStack();
-    this.#stack = stack;
+    using stack = new DisposableStack();
 
     stack.defer(
       this.#deps.settings.subscribe((s) => {
         if (s)
           this.#store.setState({
-            literatureFolder: s["note.literature-folder"],
+            literatureFolder:
+              s["note.default-profile"].bindings["note.literature-folder"],
+            templateConversionPending: s["note.template-conversion-pending"],
+            templateFolder: s["template.folder"],
+            templateConversionResult: s["note.template-conversion-result"],
+            v1TemplatesPresent: this.#deps.release.hasV1Templates(
+              s["template.folder"],
+            ),
           });
       }),
     );
 
+    const refreshV1Evidence = () => {
+      this.#store.setState({
+        v1TemplatesPresent: this.#deps.release.hasV1Templates(
+          this.#store.getState().templateFolder,
+        ),
+      });
+    };
+    const created = this.app.vault.on("create", refreshV1Evidence);
+    stack.defer(() => this.app.vault.offref(created));
+    const deleted = this.app.vault.on("delete", refreshV1Evidence);
+    stack.defer(() => this.app.vault.offref(deleted));
+    const renamed = this.app.vault.on("rename", refreshV1Evidence);
+    stack.defer(() => this.app.vault.offref(renamed));
+
     const actions: WelcomeActions = {
+      convertLiteratureNoteTemplates: async () => {
+        const result = await this.#deps.templateMigration.convert();
+        new BaseNotice(templateMigrationNotice(result));
+      },
       openExternal: (url) => window.open(url),
       ...this.#deps.setupActions,
     };
@@ -122,6 +152,7 @@ export class WelcomeView extends ItemView {
       }),
     );
     void this.#loadConnection();
+    this.#stack = stack.move();
   }
 
   protected override async onClose(): Promise<void> {
@@ -158,5 +189,37 @@ export class WelcomeView extends ItemView {
       window.clearTimeout(this.#checkingTimer);
       this.#checkingTimer = null;
     }
+  }
+}
+
+function templateMigrationNotice(
+  result: LiteratureNoteTemplateMigrationResult,
+): string {
+  if (result.outcome === "converted") {
+    return m.notice_literature_note_template_conversion_success();
+  }
+  switch (result.diagnostic.code) {
+    case "legacy-render-mismatch":
+      return m.notice_literature_note_template_conversion_mismatch({
+        difference: result.diagnostic.difference,
+      });
+    case "unsupported-legacy-template":
+      return m.notice_literature_note_template_conversion_unsupported();
+    case "legacy-frontmatter-inert":
+      return m.notice_literature_note_template_conversion_frontmatter_inert({
+        fields: result.diagnostic.fields.join(", "),
+      });
+    case "legacy-frontmatter-evaluation":
+      return m.notice_literature_note_template_conversion_frontmatter_evaluation(
+        { fields: result.diagnostic.fields.join(", ") },
+      );
+    case "no-verification-item":
+      return m.notice_literature_note_template_conversion_no_item();
+    case "no-verification-annotation":
+      return m.notice_literature_note_template_conversion_no_annotation();
+    case "converted-document-exists":
+      return m.notice_literature_note_template_conversion_exists();
+    case "no-legacy-templates":
+      return m.notice_literature_note_template_conversion_none();
   }
 }

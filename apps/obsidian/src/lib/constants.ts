@@ -20,6 +20,8 @@ export const resourceReleaseUrl = (pluginVersion: string): string =>
   `https://${RELEASE_ORIGIN}/releases/download/res-${pluginVersion}`;
 
 export const FIELD_ZOTERO_KEY = "zotero-key";
+/** Stable Literature Note Profile id. Absence selects the built-in default. */
+export const FIELD_LITERATURE_NOTE_PROFILE = "zotlit-profile";
 export const FIELD_CITEKEY = "citekey";
 /**
  * CSL ID of the Zotero-installed style one document renders its Citations and
@@ -67,6 +69,7 @@ export function stringifyInstant(
  */
 export const RESERVED_KEYS: ReadonlySet<string> = new Set([
   FIELD_ZOTERO_KEY,
+  FIELD_LITERATURE_NOTE_PROFILE,
   FIELD_ZOTERO_NOTE_KEY,
   FIELD_ZOTERO_LASTMOD,
 ]);

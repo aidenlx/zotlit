@@ -135,7 +135,23 @@ if (typeof Element !== "undefined") {
   proto.addClasses ??= function (classes) {
     this.classList.add(...classes);
   };
+  proto.removeClass ??= function (...classes) {
+    this.classList.remove(...classes);
+  };
+  proto.toggleClass ??= function (classes, value) {
+    for (const cls of Array.isArray(classes) ? classes : [classes])
+      this.classList.toggle(cls, value);
+  };
+  proto.hasClass ??= function (cls) {
+    return this.classList.contains(cls);
+  };
   proto.empty ??= function () {
     while (this.firstChild) this.removeChild(this.firstChild);
+  };
+}
+
+if (typeof HTMLElement !== "undefined") {
+  HTMLElement.prototype.toggle ??= function (visible) {
+    this.style.display = visible ? "" : "none";
   };
 }

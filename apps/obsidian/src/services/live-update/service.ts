@@ -48,7 +48,11 @@ export interface LiveUpdateEvents {
    * the companion's fallback when the id list is too long for an `obsidian://`
    * URL. Carries the raw item ids; the subscriber owns resolution and the modal.
    */
-  "update-many": (event: { items: number[]; scope: UpdateScope }) => void;
+  "update-many": (event: {
+    items: number[];
+    scope: UpdateScope;
+    profileId?: string;
+  }) => void;
   /**
    * A batch note-import requested over `PUT /zotero-notes` — the companion's
    * fallback when the id list is too long for an `obsidian://` URL.

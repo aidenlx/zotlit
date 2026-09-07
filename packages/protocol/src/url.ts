@@ -53,17 +53,23 @@ const updateScopeValue = v.optional(
   "full",
 );
 
+const literatureNoteProfileValue = v.optional(
+  v.pipe(v.string(), v.regex(/^[A-Za-z0-9]{12}$/u)),
+);
+
 /** Query payload for `zotlit/{open,update}` protocol handlers. */
 export const protocolQuerySchema = v.pipe(
   v.object({
     item: itemID,
     "source-id": sourceIdValue,
     scope: updateScopeValue,
+    profile: literatureNoteProfileValue,
   }),
-  v.transform(({ item, "source-id": sourceId, scope }) => ({
+  v.transform(({ item, "source-id": sourceId, scope, profile }) => ({
     item,
     sourceId,
     scope,
+    ...(profile === undefined ? {} : { profileId: profile }),
   })),
 );
 
@@ -84,14 +90,20 @@ export function protocolSourceMatches(
 /**
  * Build an `obsidian://zotlit/<action>?item=<id>&source-id=<hash>` link for
  * `Zotero.launchURL`. A non-default {@link UpdateScope} adds `&scope=<scope>`.
+ * A selected literature-note Profile adds `&profile=<profileId>`.
  */
 export function buildProtocolUrl(
   action: ProtocolAction,
   item: number,
-  options: { sourceId: string; scope?: UpdateScope },
+  options: {
+    sourceId: string;
+    scope?: UpdateScope;
+    profileId?: string;
+  },
 ): string {
   const params = protocolUrlParams({ item: String(item) }, options.sourceId);
   appendScope(params, options.scope);
+  appendProfile(params, options.profileId);
   return `obsidian://${protocolActionId(action)}?${params}`;
 }
 
@@ -116,6 +128,13 @@ function appendScope(
   if (scope && scope !== "full") params.set("scope", scope);
 }
 
+function appendProfile(
+  params: URLSearchParams,
+  profileId: string | undefined,
+): void {
+  if (profileId) params.set("profile", profileId);
+}
+
 /**
  * Comma-separated decimal item ids carried by `update-many`. A trailing comma
  * is tolerated, ids are deduped, and an empty list is rejected.
@@ -134,11 +153,13 @@ export const protocolBatchQuerySchema = v.pipe(
     items: batchItems,
     "source-id": sourceIdValue,
     scope: updateScopeValue,
+    profile: literatureNoteProfileValue,
   }),
-  v.transform(({ items, "source-id": sourceId, scope }) => ({
+  v.transform(({ items, "source-id": sourceId, scope, profile }) => ({
     items,
     sourceId,
     scope,
+    ...(profile === undefined ? {} : { profileId: profile }),
   })),
 );
 
@@ -175,10 +196,18 @@ const dedupedItemIDs = v.pipe(
  * transports validate identically. The batch is gated by the
  * {@link SOURCE_ID_HEADER} header, as the URL is gated by its `source-id` query.
  */
-export const batchUpdateRequestSchema = v.object({
-  items: dedupedItemIDs,
-  scope: updateScopeValue,
-});
+export const batchUpdateRequestSchema = v.pipe(
+  v.object({
+    items: dedupedItemIDs,
+    scope: updateScopeValue,
+    profile: literatureNoteProfileValue,
+  }),
+  v.transform(({ items, scope, profile }) => ({
+    items,
+    scope,
+    ...(profile === undefined ? {} : { profileId: profile }),
+  })),
+);
 
 /** Producer-facing request body. Defaulted fields (`scope`) are optional to
  *  send; the server fills them on parse. */
@@ -320,13 +349,18 @@ export function buildImportManyProtocolUrl(
  */
 export function buildBatchProtocolUrl(
   items: readonly number[],
-  options: { sourceId: string; scope?: UpdateScope },
+  options: {
+    sourceId: string;
+    scope?: UpdateScope;
+    profileId?: string;
+  },
 ): string {
   const params = protocolUrlParams(
     { items: items.join(",") },
     options.sourceId,
   );
   appendScope(params, options.scope);
+  appendProfile(params, options.profileId);
   return `obsidian://${batchProtocolActionId}?${params}`;
 }
 

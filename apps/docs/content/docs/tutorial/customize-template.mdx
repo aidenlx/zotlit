@@ -27,11 +27,22 @@ This tutorial picks up where [Create your first literature note](/docs/tutorial/
 
 Each annotation in your note renders as a callout block. The built-in template uses `[!note]` as the callout type. In this section you will switch it to `[!quote]` by editing the annotation template file.
 
+<Callout
+  type="warn"
+  title="Templates are moving into the note template document"
+>
+  ZotLit 2.1 moved annotation rendering into the Profile's template document,
+  and the separate annotation row left the settings tab. This walkthrough still
+  describes the earlier template rows and is being updated. See
+  [Settings](/docs/reference/settings#template-document) for where a Profile's
+  template document lives today.
+</Callout>
+
 <Steps>
   <Step>
     ### Create the editable template file
 
-    Open ZotLit's settings in Obsidian (<SettingsPath />) and go to the <UiLabel name={m.settings_page_templates()} /> sub-page. Under the <UiLabel name={m.settings_template_files_heading()} /> group, find the row labeled <UiLabel name={m.settings_template_name_annotation()} />.
+    Open ZotLit's settings in Obsidian (<SettingsPath />) and find the row labeled <UiLabel name={m.settings_template_name_annotation()} /> in the template file list.
 
     Click the pen icon button to the right of the row. Its tooltip reads "<UiLabel name={m.settings_template_eject()} />."
 

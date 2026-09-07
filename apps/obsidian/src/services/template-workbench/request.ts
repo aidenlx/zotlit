@@ -63,6 +63,13 @@ export const RENDER_PARAMS = [
   "format",
   "expect-source",
 ] as const;
+export const DOCUMENT_RENDER_PARAMS = [
+  "key",
+  "profile",
+  "document",
+  "source",
+  "expect-source",
+] as const;
 export const GUIDE_PARAMS = ["topic"] as const;
 export const SOURCE_PARAMS = ["template"] as const;
 
@@ -77,6 +84,11 @@ export interface RenderRequest {
   template: TemplateSlot;
   format: "markdown" | "json";
 }
+
+export type DocumentRenderRequest =
+  | { key: string; profile: string }
+  | { key: string; document: string }
+  | { key: string; source: string };
 
 export function parseDataRequest(params: CliData): ParsedRequest<DataRequest> {
   const rejected = rejectAccepted(params, {
@@ -125,6 +137,37 @@ export function parseRenderRequest(
     return invalid("format", "format must be 'markdown' or 'json'.");
   }
   return withExpectations(params, { key, template, format });
+}
+
+/** Select one Profile, installed document, or in-memory source override. */
+export function parseDocumentRenderRequest(
+  params: CliData,
+): ParsedRequest<DocumentRenderRequest> {
+  const rejected = rejectAccepted(params, {
+    command: "template-document-render",
+    accepted: DOCUMENT_RENDER_PARAMS,
+  });
+  if (rejected) return invalid(rejected.parameter, rejected.message);
+
+  const key = selectorKey(params);
+  if (key === null) return invalid("key", "key must be an Indexed Key.");
+
+  const selectors = ["profile", "document", "source"].filter(
+    (parameter) =>
+      params[parameter] !== undefined && !bareFlag(params, parameter),
+  );
+  if (selectors.length !== 1) {
+    return invalid(
+      "profile",
+      "Provide exactly one of profile, document, or source.",
+    );
+  }
+
+  const selector = selectors[0]!;
+  return withExpectations(params, {
+    key,
+    [selector]: params[selector]!,
+  } as DocumentRenderRequest);
 }
 
 /** `template-schema` lists every published schema and reads no selector at all. */

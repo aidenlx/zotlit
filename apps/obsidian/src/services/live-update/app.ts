@@ -41,7 +41,11 @@ export interface LiveUpdateAppDeps {
   sourceId(): string | null;
   noteIndex: NoteStatusSource;
   onNotify(event: NotifyEvent): void;
-  onUpdateMany(event: { items: number[]; scope: UpdateScope }): void;
+  onUpdateMany(event: {
+    items: number[];
+    scope: UpdateScope;
+    profileId?: string;
+  }): void;
   onImportNotes(event: { items: number[]; mode: ImportMode }): void;
 }
 
@@ -113,7 +117,13 @@ export function createLiveUpdateApp(deps: LiveUpdateAppDeps): Hono {
         // Decouple from the event loop to avoid the handler from blocking
         // the main thread and let the response finish first.
         void yieldToMain().then(() => {
-          deps.onUpdateMany({ items: body.items, scope: body.scope });
+          deps.onUpdateMany({
+            items: body.items,
+            scope: body.scope,
+            ...(body.profileId === undefined
+              ? {}
+              : { profileId: body.profileId }),
+          });
         });
         return c.body(null, 204);
       },

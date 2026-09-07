@@ -769,7 +769,7 @@ describe("annotation template mode", () => {
       ...deps,
       renderAnnotationParagraph,
     });
-    expect(md).toContain("[@Hensher2011, p. 62]");
+    expect(md).toContain("[@Hensher2011, {p. 62}]");
   });
 });
 
@@ -989,7 +989,7 @@ describe("citation resolution", () => {
           facade.render("cite", citekeysToCiteTemplateData(items)),
       },
     );
-    expect(md).toContain("[-@Hensher2011, p. 62]");
+    expect(md).toContain("[-@Hensher2011, {p. 62}]");
   });
 
   it("renders suppress-author as a Pandoc -@key prefix", () => {

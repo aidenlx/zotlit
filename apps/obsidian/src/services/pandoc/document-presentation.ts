@@ -1,13 +1,23 @@
-// The Citation Presentation one Markdown document renders under, read from its own note properties and the vault selections.
+// The Citation Presentation one Markdown document renders under, read from its note kind, Profile, and properties.
 
 import type { MetadataCache, TFile } from "obsidian";
 
 import type { CslItemData } from "@zotlit/db";
 
-import { FIELD_CITATION_STYLE, FIELD_DOCUMENT_LANGUAGE } from "@/lib/constants";
+import {
+  FIELD_CITATION_STYLE,
+  FIELD_DOCUMENT_LANGUAGE,
+  FIELD_ZOTERO_NOTE_KEY,
+} from "@/lib/constants";
 import { isLanguageTag } from "@/lib/language-tag";
 import { getLogger } from "@/lib/log";
+import { unknownProfileDiagnostic } from "@/lib/profile-stamp";
+import type {
+  ProfileSelector,
+  UnknownProfileDiagnostic,
+} from "@/lib/profile-stamp";
 import type { Citation } from "@/services/citation-index/query";
+import type { ProfileService } from "@/services/profile/service";
 import type { Settings } from "@/services/settings/schema";
 
 import type { RenderPresentation } from "./render-cache";
@@ -20,38 +30,96 @@ const logger = getLogger(["pandoc", "document-presentation"]);
  */
 export type UnusableProperty = "style" | "language";
 
+/** The note-local cause that stops one document's Citation Presentation. */
+export interface ProfilePresentationFailure {
+  kind: "unusable";
+  property: "profile";
+  diagnostic: UnknownProfileDiagnostic;
+  target: string;
+}
+
+/** The Imported Note Profile that selected one document's CSL style. */
+export interface ProfileStyleSource {
+  profile: ProfileSelector;
+  target: string;
+}
+
+/** A valid Profile whose selected CSL style Zotero cannot supply. */
+export interface ProfileStylePresentationFailure extends ProfileStyleSource {
+  kind: "unusable";
+  property: "profile-style";
+  styleId: string;
+}
+
+export type DocumentPresentationFailure =
+  | { kind: "unusable"; property: UnusableProperty }
+  | ProfilePresentationFailure
+  | ProfileStylePresentationFailure;
+
 /**
  * What one document renders its Citations and references under, or the property
  * that stops it from rendering at all.
  */
 export type DocumentPresentation =
-  | { kind: "read"; presentation: RenderPresentation }
-  | { kind: "unusable"; property: UnusableProperty };
+  | {
+      kind: "read";
+      presentation: RenderPresentation;
+      profileStyle?: ProfileStyleSource;
+    }
+  | DocumentPresentationFailure;
 
 /**
- * The Citation Presentation one document declares.
+ * The Citation Presentation one document selects.
  *
- * A document that carries neither property inherits the vault Citation and
- * References Style and the vault Citation Locale, which is what an omitted
- * member of the presentation asks for. A document that carries one speaks for
- * itself: the CSL ID travels to the resolver as written, and the Document
- * Language becomes the locale citeproc renders in, so a style Zotero cannot
- * supply fails the document rather than falling back to a vault selection.
+ * An Imported Note selects its style through its effective Profile. Other
+ * documents select an explicit style property or inherit the vault style. The
+ * Document Language remains document-wide for every note kind.
  *
  * @param file the Markdown note the presentation answers for.
+ * @param settings the Profiles available to Imported Notes.
  */
 export function documentPresentation(
   metadataCache: Pick<MetadataCache, "getFileCache">,
   file: TFile,
+  profiles?: Pick<ProfileService, "loaded" | "profileOf">,
 ): DocumentPresentation {
   const frontmatter = metadataCache.getFileCache(file)?.frontmatter;
   const presentation: RenderPresentation = {};
+  let profileStyle: ProfileStyleSource | undefined;
 
-  // Only an absent property leaves a vault selection in charge. A property the
-  // author can see — emptied, blank, or holding anything but the value it takes
-  // — names nothing to render with, and stops that document where it stands.
+  // For other documents, only an absent property leaves a vault selection in
+  // charge. A visible property that names no style stops that document.
   const declaredStyle = frontmatter?.[FIELD_CITATION_STYLE] as unknown;
-  if (declaredStyle !== undefined) {
+  if (profiles && frontmatter?.[FIELD_ZOTERO_NOTE_KEY] !== undefined) {
+    if (!profiles.loaded)
+      return {
+        kind: "unusable",
+        property: "profile",
+        diagnostic: unknownProfileDiagnostic(
+          String(frontmatter["zotlit-profile"] ?? "default"),
+        ),
+        target: file.path,
+      };
+    const resolved = profiles.profileOf(file);
+    if (!resolved.ok) {
+      logger.debug("The Imported Note Profile is unavailable", {
+        path: file.path,
+        stamp: resolved.stamped.stamp,
+      });
+      return {
+        kind: "unusable",
+        property: "profile",
+        diagnostic: unknownProfileDiagnostic(resolved.stamped.stamp),
+        target: file.path,
+      };
+    }
+    presentation.styleId =
+      resolved.profile.bindings["citation.references-style"];
+    profileStyle = {
+      profile: resolved.profile.selector,
+      target: file.path,
+    };
+  } else if (declaredStyle !== undefined) {
     const styleId =
       typeof declaredStyle === "string" ? declaredStyle.trim() : "";
     if (!styleId) {
@@ -78,7 +146,11 @@ export function documentPresentation(
     presentation.locale = locale;
   }
 
-  return { kind: "read", presentation };
+  return {
+    kind: "read",
+    presentation,
+    ...(profileStyle ? { profileStyle } : {}),
+  };
 }
 
 /**
@@ -96,7 +168,10 @@ export function vaultPresentation(
   settings: Readonly<Settings> | null | undefined,
 ): EffectivePresentation {
   return {
-    styleId: settings?.["citation.references-style"] ?? null,
+    styleId:
+      settings?.["note.default-profile"].bindings[
+        "citation.references-style"
+      ] ?? null,
     // An empty Citation Locale asks for Style default, as an unset one does.
     locale: settings?.["citation.locale"] || null,
   };
@@ -133,7 +208,7 @@ interface CitedWork {
  * order it cites them.
  */
 export type DocumentCitationPresentation =
-  | { kind: "unusable"; property: UnusableProperty }
+  | DocumentPresentationFailure
   | {
       kind: "read";
       /** The style and Citation Locale, with nothing left for a reader to fill in. */
@@ -178,20 +253,28 @@ export function documentCitationPresentation(
   };
 }
 
-/** Two unusable presentations are alike only where the same property is at fault. */
+/** Two unusable presentations are alike only where the same repair is needed. */
 export function samePresentation(
   left: DocumentPresentation,
   right: DocumentPresentation,
 ): boolean {
   if (left.kind === "unusable" || right.kind === "unusable") {
-    return (
-      left.kind === "unusable" &&
-      right.kind === "unusable" &&
-      left.property === right.property
-    );
+    if (
+      left.kind !== "unusable" ||
+      right.kind !== "unusable" ||
+      left.property !== right.property
+    ) {
+      return false;
+    }
+    return left.property === "profile" && right.property === "profile"
+      ? left.diagnostic.stamp === right.diagnostic.stamp &&
+          left.target === right.target
+      : true;
   }
   return (
     left.presentation.styleId === right.presentation.styleId &&
-    left.presentation.locale === right.presentation.locale
+    left.presentation.locale === right.presentation.locale &&
+    left.profileStyle?.profile === right.profileStyle?.profile &&
+    left.profileStyle?.target === right.profileStyle?.target
   );
 }

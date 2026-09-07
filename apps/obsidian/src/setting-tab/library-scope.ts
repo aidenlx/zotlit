@@ -1,8 +1,8 @@
 import { Menu } from "obsidian";
 import type {
   Setting,
-  SettingDefinitionItem,
-  SettingDefinitionPage,
+  SettingDefinition,
+  SettingDefinitionList,
 } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -29,21 +29,11 @@ interface SelectedEntry {
   unavailable: boolean;
 }
 
-/** The Library sub-page: the library-scope rows, on their own navigable page. */
-export function libraryPage(
-  ctx: SettingTabContext,
-): SettingDefinitionPage<SettingsKey> {
-  return {
-    type: "page",
-    name: m.settings_page_library(),
-    desc: m.settings_page_library_desc(),
-    items: libraryScopeItems(ctx),
-  };
-}
-
 /**
- * Library scope rows: the All / Selected choice and, under Selected, the
- * editable list of stable selectors.
+ * Library scope: the All / Selected choice ({@link libraryScopeRow}) and,
+ * under Selected, the editable list of stable selectors
+ * ({@link selectedLibrariesList}). The list is a sibling of the row's group
+ * on the Zotero page, since a group cannot hold a list.
  *
  * Every control here reads the *effective* scope — the runtime My Library
  * fallback while the saved value is broken — so what the user edits is what
@@ -54,44 +44,47 @@ export function libraryPage(
  * controls disable and the saved value is left alone. That is distinct from a
  * resolvable scope with no available Library, which stays editable.
  */
-function libraryScopeItems(
+export function libraryScopeRow(
   ctx: SettingTabContext,
-): SettingDefinitionItem<SettingsKey>[] {
+): SettingDefinition<SettingsKey> {
+  const scope = ctx.libraryScope.effective;
+  return {
+    name: m.settings_library_scope_name(),
+    desc: describeScope(ctx),
+    render: (setting) => renderModeRow(setting, ctx, scope),
+  };
+}
+
+export function selectedLibrariesList(
+  ctx: SettingTabContext,
+): SettingDefinitionList<SettingsKey> {
   const scope = ctx.libraryScope.effective;
   const editable = isEditable(ctx);
   const entries = selectedEntries(ctx, scope);
-
-  return [
-    {
-      name: m.settings_library_scope_name(),
-      desc: describeScope(ctx),
-      render: (setting) => renderModeRow(setting, ctx, scope),
-    },
-    {
-      type: "list",
-      heading: m.settings_library_scope_selected(),
-      visible: () => scope.mode === "selected",
-      // The final selected Library has no delete affordance at all: Selected
-      // Libraries is never allowed to become empty.
-      onDelete:
-        editable && entries.length > 1
-          ? (index) => removeSelector(ctx, scope, index)
-          : undefined,
-      addItem: editable
-        ? {
-            name: m.settings_library_scope_add(),
-            action: (el) => openAddMenu(el, ctx, scope),
-          }
+  return {
+    type: "list",
+    heading: m.settings_library_scope_selected(),
+    visible: () => scope.mode === "selected",
+    // The final selected Library has no delete affordance at all: Selected
+    // Libraries is never allowed to become empty.
+    onDelete:
+      editable && entries.length > 1
+        ? (index) => removeSelector(ctx, scope, index)
         : undefined,
-      items: entries.map((entry) => ({
-        name: entry.label,
-        desc: entry.unavailable
-          ? m.settings_library_scope_unavailable()
-          : undefined,
-        searchable: false,
-      })),
-    },
-  ];
+    addItem: editable
+      ? {
+          name: m.settings_library_scope_add(),
+          action: (el) => openAddMenu(el, ctx, scope),
+        }
+      : undefined,
+    items: entries.map((entry) => ({
+      name: entry.label,
+      desc: entry.unavailable
+        ? m.settings_library_scope_unavailable()
+        : undefined,
+      searchable: false,
+    })),
+  };
 }
 
 /**

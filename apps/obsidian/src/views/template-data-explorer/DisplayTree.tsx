@@ -4,18 +4,18 @@ import { regex } from "arkregex";
 import type { IconName } from "obsidian";
 import { useEffect, useRef, useState } from "react";
 
-import { Icon } from "@/components/obsidian/icon";
-import * as m from "@/lib/i18n/generated/messages";
-import { tooltipAttrs } from "@/lib/utils";
-
-import { copyValue } from "./display-tree";
+import { copyValue } from "@zotlit/workbench/explorer";
 import type {
   DisplayNode,
   DisplayValueType,
   HelperNode,
   PlaceholderNode,
   ValueNode,
-} from "./display-tree";
+} from "@zotlit/workbench/explorer";
+
+import { Icon } from "@/components/obsidian/icon";
+import * as m from "@/lib/i18n/generated/messages";
+import { tooltipAttrs } from "@/lib/utils";
 
 /** Per-primitive value tone; keys stay `text-foreground`, so a key never shares a value's styling. */
 const VALUE_TONE: Record<DisplayValueType, string> = {

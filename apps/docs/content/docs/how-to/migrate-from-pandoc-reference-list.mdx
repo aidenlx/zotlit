@@ -61,9 +61,9 @@ ZotLit reads Zotero Items for its in-app citation features. A bibliography file 
   <Step>
     ### Connect the Zotero database
 
-    Open <SettingsPath page={m.settings_page_database()} />. Confirm that <UiLabel name={m.settings_db_file_name()} /> points to the profile that contains your cited items.
+    Open <SettingsPath page={m.settings_page_zotero()} />. Confirm that <UiLabel name={m.settings_db_file_name()} /> points to the profile that contains your cited items.
 
-    Return to the ZotLit settings hub. Set <UiLabel name={m.settings_library_scope_name()} /> to <UiLabel name={m.settings_library_scope_all()} />, or choose <UiLabel name={m.settings_library_scope_selected()} /> and add the same personal and group libraries you used before.
+    On the same page, under <UiLabel name={m.settings_zotero_libraries_heading()} />, set <UiLabel name={m.settings_library_scope_name()} /> to <UiLabel name={m.settings_library_scope_all()} />, or choose <UiLabel name={m.settings_library_scope_selected()} /> and add the same personal and group libraries you used before.
 
     ZotLit searches the complete scope at once. When one citation key matches several items, ZotLit reports an Ambiguous Citation Key. It does not choose an item by library order.
 

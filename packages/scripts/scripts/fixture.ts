@@ -8,10 +8,12 @@ import yargs from "yargs";
 import type { Argv } from "yargs";
 import { hideBin } from "yargs/helpers";
 
+import { DEV_VAULT_CASE_ENV } from "#dev-vault";
 import {
   buildFixture,
   DEFAULT_SCOPE_CASE,
   DEFAULT_STRESS_ITEM_COUNT,
+  DEFAULT_VAULT_CASE,
   discardFixture,
   getFixtureLayout,
   getFixtureRoot,
@@ -21,8 +23,10 @@ import {
   selectScopeCase,
   STRESS_ITEM_COUNT_CONSTRAINT,
   UNAVAILABLE_GROUP_IDS,
+  VAULT_CASES,
 } from "#fixture";
 import { renderGuide } from "#fixture/guide";
+import { startMockLocalBridge } from "#fixture/local-bridge-server";
 import { runPairedRun } from "#fixture/paired-run";
 import { createNodePairedRunPorts } from "#fixture/paired-run-node";
 import {
@@ -30,6 +34,7 @@ import {
   PRISTINE_STYLES_PATH,
   PRISTINE_TEMPLATE_PATH,
 } from "#fixture/pristine";
+import { regenerateFixtureSampleItems } from "#fixture/sample-items";
 import { getWorkspaceRoot } from "#package-roots";
 import {
   installBetterBibtex,
@@ -39,6 +44,7 @@ import {
 } from "#paired-zotero";
 
 const scopeCaseIds = SCOPE_CASES.map((c) => c.id).join(", ");
+const vaultCaseIds = VAULT_CASES.map((c) => c.id).join(", ");
 
 const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
 const layout = getFixtureLayout(getFixtureRoot(workspaceRoot));
@@ -51,6 +57,12 @@ function pairedRunBuilder(y: Argv) {
       describe: `Scope Case to build (${scopeCaseIds})`,
       type: "string",
       default: DEFAULT_SCOPE_CASE,
+    })
+    .option("vault-case", {
+      describe: `Vault Case to build (${vaultCaseIds}); each case other than the default opens its own Development Vault (default: $${DEV_VAULT_CASE_ENV})`,
+      type: "string",
+      choices: VAULT_CASES.map(({ id }) => id),
+      default: process.env[DEV_VAULT_CASE_ENV],
     })
     .option("purge", {
       describe: "restore the exact generated Development Vault seed",
@@ -94,13 +106,20 @@ function printLibraries(): void {
 
 async function build({
   scopeCase,
+  vaultCase = DEFAULT_VAULT_CASE,
   stressItemCount,
 }: {
   scopeCase: string;
+  vaultCase?: string;
   stressItemCount?: number;
 }): Promise<void> {
   const pluginBundleDir = await findPluginBundle();
-  await buildFixture(layout, { scopeCase, stressItemCount, pluginBundleDir });
+  await buildFixture(layout, {
+    scopeCase,
+    vaultCase,
+    stressItemCount,
+    pluginBundleDir,
+  });
   await installBetterBibtex(layout.profileDir);
   console.log(
     stressItemCount === undefined
@@ -111,6 +130,7 @@ async function build({
   console.log("Libraries:");
   printLibraries();
   console.log(`Saved Library Scope: ${scopeCase}`);
+  console.log(`Vault Case: ${vaultCase}`);
   console.log("Installed pinned Better BibTeX in the Zotero profile.");
   console.log(
     pluginBundleDir
@@ -125,13 +145,23 @@ const cli = yargs(hideBin(process.argv))
     ["build [scope-case]", "$0"],
     "rebuild the Fixture from the Fixture Spec",
     (y) =>
-      y.positional("scope-case", {
-        describe: `Scope Case to build (${scopeCaseIds})`,
-        type: "string",
-        default: DEFAULT_SCOPE_CASE,
-      }),
+      y
+        .positional("scope-case", {
+          describe: `Scope Case to build (${scopeCaseIds})`,
+          type: "string",
+          default: DEFAULT_SCOPE_CASE,
+        })
+        .option("vault-case", {
+          describe: `Vault Case to build (${vaultCaseIds})`,
+          type: "string",
+          choices: VAULT_CASES.map(({ id }) => id),
+          default: DEFAULT_VAULT_CASE,
+        }),
     async (argv) => {
-      await build({ scopeCase: argv["scope-case"] });
+      await build({
+        scopeCase: argv["scope-case"],
+        vaultCase: argv["vault-case"],
+      });
     },
   )
   .command(
@@ -143,6 +173,7 @@ const cli = yargs(hideBin(process.argv))
         {
           mode: "open",
           scopeCase: argv["scope-case"],
+          vaultCase: argv["vault-case"],
           purge: argv.purge,
         },
         pairedRunPorts,
@@ -158,6 +189,7 @@ const cli = yargs(hideBin(process.argv))
         {
           mode: "dev",
           scopeCase: argv["scope-case"],
+          vaultCase: argv["vault-case"],
           purge: argv.purge,
         },
         pairedRunPorts,
@@ -237,6 +269,52 @@ const cli = yargs(hideBin(process.argv))
       );
       console.log(`Wrote ${PRISTINE_TEMPLATE_PATH}`);
       console.log(`Wrote ${PRISTINE_STYLES_PATH}`);
+    },
+  )
+  .command(
+    "samples",
+    "regenerate the web Workbench Sample Items",
+    () => {},
+    async () => {
+      const generated = await regenerateFixtureSampleItems(workspaceRoot);
+      console.log(
+        `Regenerated ${generated.length} Sample Items in packages/workbench/src/samples.`,
+      );
+    },
+  )
+  .command(
+    "bridge",
+    "build and serve the mock Local Bridge on loopback",
+    (y) =>
+      y
+        .option("port", {
+          describe: "loopback port",
+          type: "number",
+          default: 23_120,
+        })
+        .option("origin", {
+          describe: "approved Workbench Origin",
+          type: "string",
+          default: "http://localhost:4321",
+        })
+        .option("conflict-next-save", {
+          describe: "make the next Profile save observe an external revision",
+          type: "boolean",
+          default: false,
+        }),
+    async (argv) => {
+      const pluginBundleDir = await findPluginBundle();
+      await buildFixture(layout, { pluginBundleDir });
+      const bridge = startMockLocalBridge({
+        layout,
+        allowedOrigin: argv.origin,
+        port: argv.port,
+        conflictNextSave: argv["conflict-next-save"],
+      });
+      console.log(
+        `Mock Local Bridge listening at http://127.0.0.1:${argv.port} for ${argv.origin}`,
+      );
+      console.log(`One-time code: ${bridge.initialOneTimeCode}`);
     },
   )
   .command(

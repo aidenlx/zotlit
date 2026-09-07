@@ -1,21 +1,36 @@
 // @vitest-environment happy-dom
-import { DropdownComponent, Modal, settingsOf, TFile } from "@mock/obsidian";
+import {
+  ButtonComponent,
+  DropdownComponent,
+  Modal,
+  settingsOf,
+  TFile,
+} from "@mock/obsidian";
 import type { App, Command, Plugin } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import type { ProfileId } from "@/lib/profile-stamp";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
-import type { Settings } from "@/services/settings/schema";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fixtures__/reader";
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
+import { defaults } from "@/services/settings/schema";
 
 import { registerPandocExport } from "./register";
 import type { PandocExportDeps } from "./register";
 
 /** The styles Zotero has installed while the export dialog is open. */
 const zotero = vi.hoisted(() => ({ styles: [] as InstalledCslStyle[] }));
+const notices = vi.hoisted(() => ({ showExportFailure: vi.fn() }));
 
 vi.mock("@/services/pandoc/styles", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/services/pandoc/styles")>()),
   listInstalledStyles: () => Promise.resolve(zotero.styles),
+}));
+vi.mock("./notices", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./notices")>()),
+  showExportFailure: notices.showExportFailure,
 }));
 
 const DATA_DIR = "/zotero";
@@ -28,11 +43,17 @@ const VAULT_STYLE = {
   id: "http://www.zotero.org/styles/vault-prose",
   title: "Vault prose",
 };
+const MISSING_STYLE_ID = "http://www.zotero.org/styles/missing-profile-style";
+const PROFILE_ID = "Aa1Bb2Cc3Dd4" as ProfileId;
 
 interface VaultOptions {
   /** The properties the active note carries; `undefined` leaves no note active. */
   note?: Record<string, unknown>;
-  settings?: Partial<Settings>;
+  settings?: Partial<Settings> &
+    Pick<
+      Partial<ResolvedLiteratureNoteProfileBindings>,
+      "citation.references-style"
+    >;
   engineInstalled?: boolean;
 }
 
@@ -46,6 +67,25 @@ function openVault({
   const frontmatter = note ?? {};
   const getEngine = vi.fn();
   let command: Command | undefined;
+  const {
+    ["citation.references-style"]: referencesStyle,
+    ...persistedSettings
+  } = settings;
+  const resolvedSettings: Settings = {
+    ...defaults,
+    ...persistedSettings,
+    "note.default-profile": {
+      ...defaults["note.default-profile"],
+      ...persistedSettings["note.default-profile"],
+      bindings: {
+        ...defaults["note.default-profile"].bindings,
+        ...persistedSettings["note.default-profile"]?.bindings,
+        ...(referencesStyle === undefined
+          ? {}
+          : { "citation.references-style": referencesStyle }),
+      },
+    },
+  };
 
   const app = {
     workspace: { getActiveFile: () => (note ? file : null) },
@@ -68,7 +108,10 @@ function openVault({
         getEngine,
       },
       zoteroPref: { ready: Promise.resolve(), dataDir: DATA_DIR },
-      settings: { current: settings as Settings },
+      settings: { current: resolvedSettings },
+      profile: profileReader(resolvedSettings, {
+        getFileCache: () => ({ frontmatter }),
+      }),
       openSettings: () => undefined,
     } as unknown as PandocExportDeps,
   );
@@ -103,6 +146,15 @@ function openVault({
             ?.desc,
         /** Dismiss the dialog without answering, as closing its window does. */
         dismiss: () => modal.close(),
+        confirm: () =>
+          rows
+            .flatMap((row) => row.components)
+            .find(
+              (component): component is ButtonComponent =>
+                component instanceof ButtonComponent &&
+                component.text === m.pandoc_export_confirm(),
+            )
+            ?.click(),
         title: modal.title,
       };
     },
@@ -119,6 +171,7 @@ function markdownFile(path: string): TFile {
 beforeEach(() => {
   Modal.instances.length = 0;
   zotero.styles = [NOTE_STYLE, VAULT_STYLE];
+  notices.showExportFailure.mockClear();
 });
 
 describe("the Export note with citations command", () => {
@@ -194,5 +247,35 @@ describe("the Export note with citations command", () => {
     await vi.waitFor(() => expect(vault.converted()).toBe(false));
 
     expect(Modal.instances).toHaveLength(0);
+  });
+
+  it("names the Profile when its selected style is unavailable", async () => {
+    const vault = openVault({
+      note: {
+        "zotero-note-key": "1/NOTE1234",
+        "zotlit-profile": PROFILE_ID,
+      },
+      settings: {
+        profiles: [
+          {
+            id: PROFILE_ID,
+            label: "Research",
+            bindings: { "citation.references-style": MISSING_STYLE_ID },
+          },
+        ],
+      },
+    });
+
+    const dialog = await vault.openDialog();
+    expect(dialog.style.getValue()).toBe(MISSING_STYLE_ID);
+    dialog.confirm();
+
+    await vi.waitFor(() =>
+      expect(notices.showExportFailure).toHaveBeenCalledWith({
+        kind: "profile-style-invalid",
+        styleId: MISSING_STYLE_ID,
+      }),
+    );
+    expect(vault.converted()).toBe(false);
   });
 });

@@ -166,7 +166,7 @@ ZotLit Companion, the Zotero add-on, starts batch re-import from Zotero.
 
 ## Import folder
 
-Imported notes are saved to the folder configured in <SettingsPath page={m.settings_page_note_import()} setting={m.settings_note_import_folder_name()} /> (default: `zotero_notes`). The folder is created automatically if it does not exist. Each filename includes a short random suffix to guarantee uniqueness.
+Imported notes use their Profile's <SettingsPath page={m.settings_page_profiles()} setting={m.settings_note_import_folder_name()} /> (default: `zotero_notes`). The folder is created automatically if it does not exist. Each filename includes a short random suffix to guarantee uniqueness.
 
 ## Citations in imported notes
 
@@ -182,8 +182,8 @@ If every cited reference within a single citation is unresolvable (no citation k
 
 ## Use colored highlight syntax
 
-1. Turn on <SettingsPath page={m.settings_page_note_import()} setting={m.settings_note_import_colored_highlights_name()} />.
-2. Open <UiLabel name={m.settings_note_import_highlight_mappings_name()} /> to set the output for each Zotero color.
+1. Turn on <UiLabel name={m.settings_note_import_colored_highlights_name()} /> in the <UiLabel name={m.settings_imported_notes_heading()} /> group at <SettingsPath />. A Profile other than the default sets it in its own template document.
+2. Open <UiLabel name={m.settings_note_import_highlight_mappings_name()} /> to set the output for each Zotero color. These mappings apply to all Profiles.
 3. Choose <UiLabel name={m.settings_note_import_highlight_mark()} />, a circle emoji (🔴 🟠 🟡 🟢 🔵 🟣), or <UiLabel name={m.settings_note_import_highlight_custom()} />.
 4. For <UiLabel name={m.settings_note_import_highlight_custom()} />, enter one emoji in the field below. Combined emoji such as 👩‍🔬 are supported.
 5. Import or re-import the note to apply your mappings.
@@ -214,7 +214,7 @@ Changes affect later imports and re-imports; existing files stay unchanged until
 
 By default, annotation paragraphs in imported notes keep the HTML that Zotero inserted: highlighted or underlined excerpts with a citation link.
 
-Turn on <SettingsPath page={m.settings_page_note_import()} setting={m.settings_note_import_annotations_template_name()} /> to render those paragraphs through your `annotation` template instead, producing the same rich callouts used in literature notes.
+Turn on <SettingsPath page={m.settings_page_profiles()} setting={m.settings_note_import_annotations_template_name()} /> for your Profile. ZotLit renders those paragraphs through your `annotation` template, producing the same rich callouts used in literature notes.
 
 <Callout type="warn" title="Replace on refresh">
   With this setting on, each annotation's text, comment, color, page, and image

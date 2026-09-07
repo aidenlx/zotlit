@@ -1,0 +1,304 @@
+{
+  "contractVersion": 2,
+  "item": {
+    "key": "IANNP5A2",
+    "indexedKey": "IANNP5A2",
+    "itemType": "journalArticle",
+    "title": "Why Most Published Research Findings Are False",
+    "library": {
+      "type": "personal"
+    }
+  },
+  "provenance": {
+    "kind": "sample",
+    "id": "journal-article",
+    "source": "fixture-vault"
+  },
+  "roots": {
+    "note": {
+      "title": "Why Most Published Research Findings Are False",
+      "date": {
+        "kind": "text",
+        "value": null,
+        "text": "2005",
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "raw": "2005"
+      },
+      "citationKey": "ioannidisWhyMost2005",
+      "publicationTitle": "PLoS Medicine",
+      "key": "IANNP5A2",
+      "groupID": null,
+      "libraryID": 1,
+      "indexedKey": "IANNP5A2",
+      "itemType": "journalArticle",
+      "dateAdded": "2025-02-13T12:00:00Z",
+      "dateModified": "2025-02-13T12:00:00Z",
+      "creators": [
+        {
+          "family": "Ioannidis",
+          "given": "John P. A.",
+          "literal": null,
+          "role": "author",
+          "fullName": "John P. A. Ioannidis"
+        }
+      ],
+      "primaryCreatorType": "author",
+      "tags": [],
+      "abstract": null,
+      "containerTitle": "PLoS Medicine",
+      "citekey": "ioannidisWhyMost2005",
+      "shortTitle": null,
+      "DOI": null,
+      "url": null,
+      "ISBN": null,
+      "ISSN": null,
+      "volume": null,
+      "issue": null,
+      "pages": null,
+      "publisher": null,
+      "place": null,
+      "edition": null,
+      "language": null,
+      "extra": null,
+      "noteLink": {
+        "$helper": "noteLink",
+        "signature": "(alias?: string, subpath?: string) => string | null",
+        "value": null
+      },
+      "annotations": [],
+      "attachments": [
+        {
+          "key": "IANPDF25",
+          "indexedKey": "IANPDF25",
+          "filename": "ioannidis-2005.pdf",
+          "contentType": "application/pdf",
+          "linkMode": "imported_file",
+          "backlink": "zotero://open/library/items/IANPDF25",
+          "filePath": null,
+          "fileLink": {
+            "$helper": "fileLink",
+            "signature": "(alias?: string, subpath?: string) => string | null",
+            "value": null
+          }
+        }
+      ],
+      "collections": [
+        {
+          "key": "SHAREDCL",
+          "name": "Shared key",
+          "path": [
+            "Shared key"
+          ]
+        }
+      ],
+      "notePath": null,
+      "backlink": "zotero://select/library/items/IANNP5A2",
+      "weblink": null,
+      "authors": [
+        {
+          "family": "Ioannidis",
+          "given": "John P. A.",
+          "literal": null,
+          "role": "author",
+          "fullName": "John P. A. Ioannidis"
+        }
+      ],
+      "authorsShort": "Ioannidis",
+      "relatedItems": [],
+      "notes": []
+    },
+    "filename": {
+      "title": "Why Most Published Research Findings Are False",
+      "date": {
+        "kind": "text",
+        "value": null,
+        "text": "2005",
+        "year": 2005,
+        "month": null,
+        "day": null,
+        "raw": "2005"
+      },
+      "citationKey": "ioannidisWhyMost2005",
+      "publicationTitle": "PLoS Medicine",
+      "key": "IANNP5A2",
+      "groupID": null,
+      "libraryID": 1,
+      "indexedKey": "IANNP5A2",
+      "itemType": "journalArticle",
+      "dateAdded": "2025-02-13T12:00:00Z",
+      "dateModified": "2025-02-13T12:00:00Z",
+      "creators": [
+        {
+          "family": "Ioannidis",
+          "given": "John P. A.",
+          "literal": null,
+          "role": "author",
+          "fullName": "John P. A. Ioannidis"
+        }
+      ],
+      "primaryCreatorType": "author",
+      "tags": [],
+      "abstract": null,
+      "containerTitle": "PLoS Medicine",
+      "citekey": "ioannidisWhyMost2005",
+      "shortTitle": null,
+      "DOI": null,
+      "url": null,
+      "ISBN": null,
+      "ISSN": null,
+      "volume": null,
+      "issue": null,
+      "pages": null,
+      "publisher": null,
+      "place": null,
+      "edition": null,
+      "language": null,
+      "extra": null,
+      "authors": [
+        {
+          "family": "Ioannidis",
+          "given": "John P. A.",
+          "literal": null,
+          "role": "author",
+          "fullName": "John P. A. Ioannidis"
+        }
+      ],
+      "authorsShort": "Ioannidis",
+      "notePath": "",
+      "noteLink": {
+        "$helper": "noteLink",
+        "signature": "(alias?: string, subpath?: string) => string | null",
+        "value": ""
+      },
+      "collections": [
+        {
+          "key": "SHAREDCL",
+          "name": "Shared key",
+          "path": [
+            "Shared key"
+          ]
+        }
+      ]
+    },
+    "annotations": []
+  },
+  "descriptors": {
+    "note": {
+      "stringCoercions": [
+        {
+          "path": [],
+          "value": "Why Most Published Research Findings Are False"
+        },
+        {
+          "path": [
+            "date"
+          ],
+          "value": "2005"
+        },
+        {
+          "path": [
+            "creators",
+            0
+          ],
+          "value": "John P. A. Ioannidis"
+        },
+        {
+          "path": [
+            "attachments",
+            0
+          ],
+          "value": "ioannidis-2005.pdf"
+        },
+        {
+          "path": [
+            "collections",
+            0
+          ],
+          "value": "Shared key"
+        },
+        {
+          "path": [
+            "authors",
+            0
+          ],
+          "value": "John P. A. Ioannidis"
+        }
+      ],
+      "temporalValues": [
+        {
+          "path": [
+            "dateAdded"
+          ],
+          "type": "Temporal.Instant"
+        },
+        {
+          "path": [
+            "dateModified"
+          ],
+          "type": "Temporal.Instant"
+        }
+      ],
+      "graphReferences": []
+    },
+    "filename": {
+      "stringCoercions": [
+        {
+          "path": [
+            "date"
+          ],
+          "value": "2005"
+        },
+        {
+          "path": [
+            "creators",
+            0
+          ],
+          "value": "John P. A. Ioannidis"
+        },
+        {
+          "path": [
+            "authors",
+            0
+          ],
+          "value": "John P. A. Ioannidis"
+        },
+        {
+          "path": [
+            "collections",
+            0
+          ],
+          "value": "Shared key"
+        }
+      ],
+      "temporalValues": [
+        {
+          "path": [
+            "dateAdded"
+          ],
+          "type": "Temporal.Instant"
+        },
+        {
+          "path": [
+            "dateModified"
+          ],
+          "type": "Temporal.Instant"
+        }
+      ],
+      "graphReferences": []
+    },
+    "annotations": []
+  },
+  "unavailable": [
+    {
+      "path": "zt.attachments[0].filePath",
+      "reason": "Attachment paths are not included in Item Snapshots."
+    },
+    {
+      "path": "zt.attachments[0].fileLink",
+      "reason": "The Attachment has no permitted vault-relative target."
+    }
+  ],
+  "revision": "371d2ce142cdce636acdf22b63964f388c92cbf7fc0bd3ad697ffdcfccf9ea1d"
+}

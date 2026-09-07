@@ -10,6 +10,7 @@ import { openAttachments } from "@/lib/attachment-open";
 import type { ClipboardRepresentation } from "@/lib/clipboard";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { requestProfileSwitch } from "@/lib/profile-recovery";
 import type { ReferenceSource } from "@/services/citation-index/service";
 import { revealMarkdownOccurrence } from "@/views/reveal-occurrence";
 
@@ -42,6 +43,7 @@ export interface ReferenceActions {
   onOpenEngineSettings: () => void;
   /** Reveal the Citation and References Style row in settings. */
   onChangeStyle: () => void;
+  onSwitchProfile: (path: string) => void;
   /** Dismiss the install hint for good. */
   onDismissEngineHint: () => void;
   /**
@@ -125,6 +127,7 @@ export function createReferenceActions(
     },
     onOpenEngineSettings: deps.onOpenEngineSettings,
     onChangeStyle: deps.onChangeStyle,
+    onSwitchProfile: (path) => requestProfileSwitch(deps.app, path),
     onDismissEngineHint: deps.onDismissEngineHint,
     async onCopyBibliography(target) {
       // The click answers for the render the toolbar painted, which the pane

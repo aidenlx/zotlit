@@ -1,5 +1,16 @@
 import * as v from "valibot";
 
+export type TemplateLanguage = "liquid" | "eta";
+
+/** The standalone line that opens a Profile document's final Annotation Section. */
+export const ANNOTATION_HEADER = "--- zotlit:annotation ---";
+
+/** Managed Block boundary tag names; the Literature Note Template owns their meaning. */
+export const MANAGED_BLOCK_TAG_NAMES: readonly [string, string] = [
+  "managed",
+  "endmanaged",
+];
+
 /**
  * Eta `autoTrim` mode for one side of a template tag. `"nl"` strips a single
  * newline, `"slurp"` strips all whitespace, `false` keeps it. Single source of
@@ -28,6 +39,15 @@ export const frontmatterMergeStrategySchema = v.picklist([
 export type FrontmatterMergeStrategy = v.InferOutput<
   typeof frontmatterMergeStrategySchema
 >;
+
+/** System-owned note keys reserved for ZotLit and Zotero metadata. */
+export const RESERVED_FRONTMATTER_KEYS: ReadonlySet<string> = new Set([
+  "zotero-key",
+  "zotlit-profile",
+  "zotero-note-key",
+  "zotero-lastmod",
+  "zotlit-csl",
+]);
 
 /**
  * An expression always evaluates in its declared language — the JavaScript

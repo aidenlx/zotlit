@@ -13,7 +13,7 @@ import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
 import type { SettingTabContext } from "./context";
-import { noteImportPageItems } from "./note-import";
+import { highlightMappingItems } from "./note-import";
 
 function setup() {
   let current: Settings = { ...defaults };
@@ -34,18 +34,13 @@ function setup() {
     },
     requestUpdate: vi.fn(),
   } as unknown as SettingTabContext;
-  const page = noteImportPageItems(ctx).find(
-    (item) => "type" in item && item.type === "page",
-  );
-  if (!page || !("items" in page) || !page.items)
-    throw new Error("Mapping page missing");
-  const rows = page.items;
+  const rows = highlightMappingItems(ctx);
   const row = (name: string) => {
     const item = rows.find((entry) => "name" in entry && entry.name === name);
     if (!item) throw new Error(`Mapping row missing: ${name}`);
     return item;
   };
-  return { ctx, page, row, update };
+  return { ctx, row, update };
 }
 
 function render(item: SettingDefinitionItem) {
@@ -63,11 +58,18 @@ function visible(item: SettingDefinitionItem) {
 }
 
 describe("highlight mapping page", () => {
-  it("follows the toggle and retains the selected output", () => {
-    const { ctx, page, row, update } = setup();
-    expect(visible(page)).toBe(false);
-    update({ "note.import-colored-highlights": true });
-    expect(visible(page)).toBe(true);
+  it("retains the selected output when the default Profile toggle changes", () => {
+    const { ctx, row, update } = setup();
+    const setEnabled = (enabled: boolean) =>
+      update({
+        "note.default-profile": {
+          bindings: {
+            ...defaults["note.default-profile"].bindings,
+            "note.import-colored-highlights": enabled,
+          },
+        },
+      });
+    setEnabled(true);
 
     const dropdown = render(row("Blue")).components[0] as DropdownComponent;
     expect(dropdown.getValue()).toBe("🔵");
@@ -82,9 +84,8 @@ describe("highlight mapping page", () => {
       "custom",
     ]);
     dropdown.choose("mark");
-    update({ "note.import-colored-highlights": false });
-    expect(visible(page)).toBe(false);
-    update({ "note.import-colored-highlights": true });
+    setEnabled(false);
+    setEnabled(true);
     expect(
       (render(row("Blue")).components[0] as DropdownComponent).getValue(),
     ).toBe("mark");

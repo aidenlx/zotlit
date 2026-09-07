@@ -1,7 +1,12 @@
 import type { ObsidianProtocolData } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { getItemRefByID } from "@zotlit/db";
+
+import { openCompanionNote } from "@/services/note-feature";
 import { runBatchUpdateAll } from "@/services/note-feature/update-batch";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
+import { defaults } from "@/services/settings/schema";
 
 import { registerProtocolHandlers } from "./register";
 import type { ProtocolDeps } from "./register";
@@ -11,6 +16,16 @@ vi.mock("@/services/note-feature/update-batch", () => ({
   runBatchUpdateAll: vi.fn(async () => ({ outcome: "batch-modal" })),
 }));
 
+vi.mock("@zotlit/db", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@zotlit/db")>()),
+  getItemRefByID: vi.fn(),
+}));
+
+vi.mock("@/services/note-feature", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/services/note-feature")>()),
+  openCompanionNote: vi.fn(),
+}));
+
 const SOURCE_ID = "abc12345";
 
 const runBatchImportAll = vi.fn(async () => ({ outcome: "batch-modal" }));
@@ -18,7 +33,7 @@ const runBatchImportAll = vi.fn(async () => ({ outcome: "batch-modal" }));
 /** Protocol handlers registered by the plugin, keyed by their action id. */
 const handlers = new Map<string, (data: ObsidianProtocolData) => void>();
 
-function register(): Disposable {
+function register(overrides: Partial<ProtocolDeps> = {}): Disposable {
   const plugin = {
     registerObsidianProtocolHandler: (
       action: string,
@@ -31,7 +46,12 @@ function register(): Disposable {
     zoteroPref: { sourceId: SOURCE_ID },
     batchImport: { runBatchImport: vi.fn(), runBatchImportAll },
     liveUpdate: { on: () => () => {} },
+    ...overrides,
   } as unknown as ProtocolDeps;
+  deps.profile = profileReader(
+    () => ({ ...defaults, ...deps.settings?.current }),
+    deps.app?.metadataCache,
+  );
   return registerProtocolHandlers(plugin, deps);
 }
 
@@ -55,6 +75,36 @@ beforeEach(() => {
   handlers.clear();
   vi.mocked(runBatchUpdateAll).mockClear();
   runBatchImportAll.mockClear();
+  vi.mocked(getItemRefByID).mockReset();
+  vi.mocked(openCompanionNote).mockReset();
+});
+
+describe("single-note protocol links", () => {
+  it.each(["open", "update"] as const)(
+    "routes %s through the shared Companion flow with its URL Profile",
+    async (action) => {
+      const ref = { indexedKey: "ABCD2345", itemID: 1 } as NonNullable<
+        ReturnType<typeof getItemRefByID>
+      >;
+      vi.mocked(getItemRefByID).mockReturnValue(ref);
+      using _handlers = register({
+        db: { state: "ready", client: {} },
+      } as unknown as Partial<ProtocolDeps>);
+      handlers.get(`zotlit/${action}`)?.({
+        action: `zotlit/${action}`,
+        item: "1",
+        profile: "Bk3Qn7XvT2Lp",
+        "source-id": SOURCE_ID,
+      } as ObsidianProtocolData);
+      await vi.waitFor(() =>
+        expect(openCompanionNote).toHaveBeenCalledExactlyOnceWith(
+          expect.anything(),
+          ref,
+          { action, profile: "Bk3Qn7XvT2Lp", scope: "full" },
+        ),
+      );
+    },
+  );
 });
 
 describe("library-wide protocol links", () => {

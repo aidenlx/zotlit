@@ -1,3 +1,4 @@
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -9,4 +10,11 @@ type SettingsScalarKey = {
 /** Schema default for a declarative control's `placeholder`. */
 export function defaultPlaceholder(key: SettingsScalarKey): string {
   return String(defaults[key]);
+}
+
+/** Default Profile binding value for a nested declarative control. */
+export function defaultProfileBindingPlaceholder(
+  key: keyof ResolvedLiteratureNoteProfileBindings,
+): string {
+  return String(defaults["note.default-profile"].bindings[key]);
 }

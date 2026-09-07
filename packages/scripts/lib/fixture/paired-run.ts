@@ -5,6 +5,8 @@ export type PairedRunMode = "open" | "dev";
 export interface PairedRunOptions {
   mode: PairedRunMode;
   scopeCase: string;
+  /** Vault Case to seed; absent keeps the Development Vault's current case. */
+  vaultCase?: string;
   purge: boolean;
 }
 
@@ -37,12 +39,15 @@ export interface PairedRunPorts {
   allocateZoteroHttpPort(): Promise<number>;
   prepareDevelopmentVault(options: {
     scopeCase: string;
+    vaultCase?: string;
     purge: boolean;
     liveUpdatePort: number;
     zoteroHttpPort: number;
   }): Promise<DevelopmentVault>;
   openPairedZotero(): Promise<PairedZotero>;
-  startDevelopmentSession(): Promise<DevelopmentSession>;
+  startDevelopmentSession(options: {
+    vaultCase?: string;
+  }): Promise<DevelopmentSession>;
   reportReady(result: PairedRunReady): void;
 }
 
@@ -57,6 +62,7 @@ export async function runPairedRun(
     await ports.assertObsidianHost();
     const vault = await ports.prepareDevelopmentVault({
       scopeCase: options.scopeCase,
+      vaultCase: options.vaultCase,
       purge: options.purge,
       liveUpdatePort,
       zoteroHttpPort,
@@ -82,12 +88,15 @@ export async function runPairedRun(
   const zoteroHttpPort = await ports.allocateZoteroHttpPort();
   const vault = await ports.prepareDevelopmentVault({
     scopeCase: options.scopeCase,
+    vaultCase: options.vaultCase,
     purge: options.purge,
     liveUpdatePort,
     zoteroHttpPort,
   });
 
-  const session = await ports.startDevelopmentSession();
+  const session = await ports.startDevelopmentSession({
+    vaultCase: options.vaultCase,
+  });
   const zotero = await session.ready;
   ports.reportReady({
     mode: options.mode,

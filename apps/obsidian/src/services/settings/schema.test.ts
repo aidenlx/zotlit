@@ -64,4 +64,37 @@ describe("schema/defaults invariants", () => {
       ]).success,
     ).toBe(false);
   });
+
+  it("keeps Profile documents and Pack records out of settings", () => {
+    expect(schema.entries).not.toHaveProperty("note.profiles");
+    expect(schema.entries).not.toHaveProperty("note.template-pack-installs");
+    expect(
+      v.parse(schema.entries["note.default-profile"], {
+        ...defaults["note.default-profile"],
+        document: "old.md",
+      }),
+    ).not.toHaveProperty("document");
+  });
+
+  it("keeps every built-in default Profile binding total", () => {
+    const entry = schema.entries["note.default-profile"];
+
+    expect(defaults["note.default-profile"]).toEqual({
+      bindings: {
+        "note.literature-folder": "literatures",
+        "citation.references-style": null,
+        "note.import-folder": "zotero_notes",
+        "note.import-colored-highlights": false,
+        "note.import-annotations-as-template": false,
+      },
+    });
+    expect(v.safeParse(entry, {}).success).toBe(false);
+    expect(
+      v.safeParse(entry, {
+        document: "literature-note.md",
+        bindings: defaults["note.default-profile"].bindings,
+      }).success,
+    ).toBe(true);
+    expect(v.safeParse(entry, { document: "   " }).success).toBe(false);
+  });
 });
