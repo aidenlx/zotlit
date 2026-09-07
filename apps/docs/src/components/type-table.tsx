@@ -13,6 +13,7 @@ import { Fragment, useEffect, useState } from "react";
 import type { ComponentProps, ReactNode } from "react";
 
 import { cn } from "@/lib/cn";
+import * as m from "@/paraglide/messages.js";
 
 /** One labelled line in an expanded row, e.g. `Liquid` → `{{ zt.noteLink }}`. */
 export interface DetailNode {
@@ -57,8 +58,8 @@ export function TypeTable({
       {...props}
     >
       <div className="not-prose flex items-center px-3 py-1 font-medium text-fd-muted-foreground">
-        <p className="w-1/4">Prop</p>
-        <p className="@max-xl:hidden">Type</p>
+        <p className="w-1/4">{m.docs_table_prop()}</p>
+        <p className="@max-xl:hidden">{m.docs_table_type()}</p>
       </div>
       {Object.entries(type).map(([key, value]) => (
         <Item
@@ -139,7 +140,7 @@ function Item({
           </div>
           {typeDescription && (
             <>
-              <p className={fieldClassName}>Type</p>
+              <p className={fieldClassName}>{m.docs_table_type()}</p>
               <p className="not-prose my-auto">{typeDescription}</p>
             </>
           )}

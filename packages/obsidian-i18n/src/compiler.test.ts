@@ -1457,6 +1457,20 @@ describe("message data", () => {
     for (const bundleId of OBSIDIAN_INCLUDED_MESSAGES) {
       expect(facade).toContain(`as ${JSON.stringify(bundleId)}`);
     }
+    const catalog = JSON.parse(
+      await readFile(join(workspaceRoot, "messages/en.json"), "utf8"),
+    ) as Record<string, unknown>;
+    const docsIds = Object.keys(catalog).filter((id) => id.startsWith("docs_"));
+    expect(docsIds.length).toBeGreaterThan(0);
+    for (const fileName of await readdir(outputDirectory)) {
+      const artifact = await readFile(join(outputDirectory, fileName), "utf8");
+      for (const id of docsIds) {
+        expect(
+          artifact,
+          `${fileName} includes docs message ${id}`,
+        ).not.toContain(id);
+      }
+    }
   });
 });
 

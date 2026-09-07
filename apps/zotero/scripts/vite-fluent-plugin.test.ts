@@ -96,6 +96,8 @@ describe("fluentPlugin", () => {
     const root = await createFixture({
       en: {
         plugin_only: "Obsidian copy",
+        docs_page_title: "Docs-only web copy",
+        docs_rich_text: "Read {#link}the documentation{/link}",
         zotero: {
           prefs_pane_label: "ZotLit",
           menu_item_open: { label: "Open Literature Note in Obsidian" },
@@ -137,6 +139,7 @@ describe("fluentPlugin", () => {
       },
       "zh-CN": {
         plugin_only: "Obsidian 文案",
+        docs_page_title: "文档网站文案",
         zotero: {
           prefs_pane_label: "ZotLit",
           menu_item_open: { label: "在 Obsidian 中打开文献笔记" },

@@ -18,6 +18,7 @@ import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
+import * as m from "@/paraglide/messages.js";
 
 import {
   getDocsAvailability,
@@ -130,7 +131,7 @@ export async function getMarkdownEdition({
     case "changelog": {
       if (slugs.length === 0) {
         return renderIndex(
-          "Changelog",
+          m.docs_nav_changelog(),
           getChangelogPages(),
           (page) => `v${page.data.version}`,
         );
@@ -144,7 +145,11 @@ export async function getMarkdownEdition({
     }
     case "blog": {
       if (slugs.length === 0) {
-        return renderIndex("Blog", getBlogPages(), (page) => page.data.title);
+        return renderIndex(
+          m.docs_nav_blog(),
+          getBlogPages(),
+          (page) => page.data.title,
+        );
       }
       const page = blog.getPage(slugs);
       return page && renderPage(page.data.title, page);

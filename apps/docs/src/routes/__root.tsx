@@ -8,10 +8,12 @@ import { RootProvider } from "fumadocs-ui/provider/tanstack";
 
 import { DocsImage } from "@/components/docs-image";
 import { LegacyBanner } from "@/components/legacy-banner";
+import { Message } from "@/components/message";
 import { Header } from "@/layouts/home/slots/header";
 import { baseOptions } from "@/lib/layout.shared";
-import { HOME_OG_ALT, ogImageMeta } from "@/lib/seo";
-import { appDescription, appName, baseURL } from "@/lib/shared";
+import { appDescription, HOME_OG_ALT, ogImageMeta } from "@/lib/seo";
+import { appName, baseURL } from "@/lib/shared";
+import { m } from "@/paraglide/messages.js";
 import appCss from "@/styles.css?url";
 
 /**
@@ -31,17 +33,17 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: appName },
       { name: "application-name", content: appName },
-      { name: "description", content: appDescription },
+      { name: "description", content: appDescription() },
       { property: "og:site_name", content: appName },
       { property: "og:locale", content: "en_US" },
       { property: "og:type", content: "website" },
       { property: "og:url", content: baseURL },
       { property: "og:title", content: appName },
-      { property: "og:description", content: appDescription },
+      { property: "og:description", content: appDescription() },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: appName },
-      { name: "twitter:description", content: appDescription },
-      ...ogImageMeta("home", HOME_OG_ALT),
+      { name: "twitter:description", content: appDescription() },
+      ...ogImageMeta("home", HOME_OG_ALT()),
     ],
     links: [
       { rel: "stylesheet", href: appCss },
@@ -111,13 +113,20 @@ function NotFound() {
     // other surface — this page renders outside the `_home` shell.
     <HomeLayout {...baseOptions()} slots={{ header: Header }}>
       <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 py-16">
-        <h1 className="mb-2 text-3xl font-medium">Page not found</h1>
+        <h1 className="mb-2 text-3xl font-medium">
+          {m.docs_not_found_title()}
+        </h1>
         <p className="text-fd-muted-foreground">
-          That page has moved or never existed. Start from the{" "}
-          <a href="/docs" className="text-fd-primary underline">
-            documentation
-          </a>
-          .
+          <Message
+            text={m.docs_not_found_description({ link: "{link}" })}
+            slots={{
+              link: (
+                <a href="/docs" className="text-fd-primary underline">
+                  {m.docs_not_found_docs()}
+                </a>
+              ),
+            }}
+          />
         </p>
       </main>
     </HomeLayout>

@@ -11,6 +11,7 @@ import { getRepoStats } from "@/lib/release-data";
 import type { RepoStats } from "@/lib/release-data";
 import { gitConfig, repoUrl } from "@/lib/shared";
 import { useBakedThenFresh } from "@/lib/use-baked-then-fresh";
+import * as m from "@/paraglide/messages.js";
 
 /** The counters the build bakes into the prerendered page; `<RepoDatum>` refreshes them. */
 export const loadRepoStats = createServerFn({ method: "GET" }).handler(() =>
@@ -39,10 +40,18 @@ export function RepoDatum({
   const stats = useBakedThenFresh("/api/repo-stats", baked);
   const counters = [
     stats.stars !== null
-      ? { Icon: Star, label: "stars", value: humanize(stats.stars) }
+      ? {
+          Icon: Star,
+          label: m.docs_repo_stars({ count: humanize(stats.stars) }),
+          value: humanize(stats.stars),
+        }
       : null,
     stats.downloads !== null
-      ? { Icon: Download, label: "downloads", value: humanize(stats.downloads) }
+      ? {
+          Icon: Download,
+          label: m.docs_repo_downloads({ count: humanize(stats.downloads) }),
+          value: humanize(stats.downloads),
+        }
       : null,
   ].filter((counter) => counter !== null);
 
@@ -66,10 +75,7 @@ export function RepoDatum({
             <span aria-hidden className="mx-2 text-fd-muted-foreground/50">
               ·
             </span>
-            <span
-              aria-label={`${value} ${label}`}
-              className="whitespace-nowrap"
-            >
+            <span aria-label={label} className="whitespace-nowrap">
               <Icon
                 aria-hidden
                 className="mr-1 inline-block size-3 -translate-y-px align-middle text-fd-primary"
