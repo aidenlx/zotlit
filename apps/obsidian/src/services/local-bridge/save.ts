@@ -7,11 +7,7 @@
 // Profile this build can run, it parses and compiles, its dependencies resolve
 // in this vault, and the vault still holds the revision the page loaded.
 
-import { gte } from "semver";
-
-import { CONTRACT_VERSION } from "@zotlit/db";
 import { TemplateFacade } from "@zotlit/templates/facade";
-import type { LiteratureNoteTemplateManifest } from "@zotlit/templates/facade";
 import { LiteratureNotePackError } from "@zotlit/templates/literature-note-pack";
 import type {
   SaveSelectedProfileRequest,
@@ -24,6 +20,7 @@ import type { TemplateService } from "@/services/template/service";
 
 import { ProfileDocumentMissingError, profileSelector } from "./reads";
 import type { BridgeProfileReader } from "./reads";
+import { unsupportedProfileReason } from "./unsupported";
 
 const logger = getLogger("local-bridge");
 
@@ -86,29 +83,6 @@ export function createLocalBridgeSave(
 }
 
 /**
- * Whether the web Workbench cannot edit this Profile: it is not Liquid, it
- * computes a property in JavaScript, it calls an Eta partial, or it asks for a
- * data contract or a plugin newer than this build.
- *
- * Ticket #1004 builds the same detection for the entry actions, which refuse
- * before a browser opens. Both readings are this one function, so the two
- * merge into a single helper rather than drifting apart.
- */
-export function isUnsupportedProfile(
-  manifest: LiteratureNoteTemplateManifest,
-  pluginVersion: string,
-): boolean {
-  return (
-    manifest.contract !== CONTRACT_VERSION ||
-    manifest.language !== "liquid" ||
-    (manifest.frontmatter?.some((entry) => "js" in entry) ?? false) ||
-    (manifest.partials?.some(({ language }) => language === "eta") ?? false) ||
-    (manifest.minAppVersion !== undefined &&
-      !gte(pluginVersion, manifest.minAppVersion))
-  );
-}
-
-/**
  * The refusal this draft earns, or `undefined` for one the vault accepts. A
  * draft that parses can still fail to compile or call a partial no vault holds,
  * so every source the Profile renders is compiled and its dependencies resolved
@@ -125,7 +99,9 @@ async function sourceRefusal(
     if (document.manifest.id !== profileId) {
       return { state: "refused", reason: "invalid-source" };
     }
-    if (isUnsupportedProfile(document.manifest, deps.pluginVersion)) {
+    if (
+      unsupportedProfileReason(document.manifest, deps.pluginVersion) !== null
+    ) {
       return { state: "refused", reason: "unsupported-profile" };
     }
     for (const partial of document.manifest.partials ?? []) {

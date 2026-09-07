@@ -42,6 +42,9 @@ const CALLING_PROFILE = LIQUID_PROFILE.replace(
   "# {{ zt.title }}\n{% render 'byline' %}",
 );
 
+/** The build the unsupported check reads a Profile against. */
+const PLUGIN_VERSION = "2.3.0";
+
 const LAUNCH_URL =
   "https://zotlit.aidenlx.site/workbench#zotlit-connect=abc&port=9091";
 
@@ -146,6 +149,7 @@ function harness({
         return () => {};
       },
     } as unknown as CustomizeDeps["localServer"],
+    pluginVersion: PLUGIN_VERSION,
     bridge: {
       launchUrl: (launch: unknown) => {
         launches.push(launch);
@@ -335,6 +339,21 @@ describe("the Customize flow", () => {
     });
     await liquid.customize({ profileId: "default" });
     expect(liquid.opened).toEqual([LAUNCH_URL]);
+  });
+
+  it("keeps a Profile that asks for a newer plugin in Obsidian", async () => {
+    const newer = harness({
+      settings: { "server.enabled": true },
+      source: LIQUID_PROFILE.replace(
+        "language: liquid",
+        "language: liquid\nminAppVersion: 9.9.9",
+      ),
+    });
+
+    await newer.customize({ profileId: "default" });
+
+    expect(newer.opened).toEqual([]);
+    expect(newer.openedFiles).toEqual(["templates/zotlit-profile.default.md"]);
   });
 });
 

@@ -218,6 +218,7 @@ export default class ZotLitPlugin extends Plugin {
       template: services.template,
       localServer: services.localServer,
       bridge: services.localBridge,
+      pluginVersion: this.manifest.version,
       confirmLaunch: createLaunchSheet(this.app),
       openExternal: (url) => window.open(url),
     });
