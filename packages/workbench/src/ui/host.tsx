@@ -56,11 +56,15 @@ export interface WorkbenchSuggesterOption {
 }
 
 export interface WorkbenchSuggesterGroup {
+  /** Text shown when this group has no options. */
+  readonly empty?: string;
   readonly label: string;
   readonly options: readonly WorkbenchSuggesterOption[];
 }
 
 export interface WorkbenchSuggesterRequest {
+  /** The control that receives focus after the chooser closes. */
+  readonly anchor?: HTMLElement;
   readonly title: string;
   readonly placeholder?: string;
   readonly groups: readonly WorkbenchSuggesterGroup[];

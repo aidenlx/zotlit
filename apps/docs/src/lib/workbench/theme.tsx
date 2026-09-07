@@ -1,6 +1,11 @@
 import { EditorView } from "@codemirror/view";
 import {
   Code2,
+  Plus,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
+  ArrowLeftRight,
   Eye,
   Pencil,
   List,
@@ -22,6 +27,11 @@ import { editorTheme } from "./editor-theme";
 
 const ICON: Record<WorkbenchIcon, typeof List> = {
   "chevron-right": ChevronRight,
+  add: Plus,
+  remove: Trash2,
+  "move-up": ArrowUp,
+  "move-down": ArrowDown,
+  "choose-sample": ArrowLeftRight,
   "chevron-down": ChevronDown,
   preview: Eye,
   edit: Pencil,
@@ -101,6 +111,86 @@ export const WEB_THEME: WorkbenchTheme = {
       "switch-thumb":
         "pointer-events-none block size-5 rounded-full bg-fd-background shadow-sm data-[state=checked]:translate-x-5 rtl:data-[state=checked]:-translate-x-5 data-[state=unchecked]:translate-x-0.5 rtl:data-[state=unchecked]:-translate-x-0.5",
     },
+    properties: {
+      pane: "flex min-h-0 flex-1 flex-col gap-3 overflow-auto pb-3",
+      empty:
+        "rounded-md border border-dashed border-fd-border p-3 text-xs leading-normal text-pretty text-fd-muted-foreground",
+      rows: "flex flex-col gap-2",
+      row: "rounded-md border border-fd-border bg-fd-card",
+      "row-header": "grid grid-cols-[minmax(0,1fr)_auto] px-2.5 py-1.5",
+      "row-toggle":
+        "col-span-2 col-start-1 row-start-1 grid min-w-0 cursor-pointer grid-cols-subgrid rounded-md text-start",
+      "row-name":
+        "col-start-1 row-start-1 flex min-h-7 min-w-0 items-center gap-2 pe-2",
+      key: "min-w-0 flex-1 font-mono text-sm font-medium break-words",
+      label: "text-xs font-medium",
+      "row-actions":
+        "z-10 col-start-2 row-start-1 flex items-center gap-0.5 self-start",
+      edit: cn(
+        buttonVariants({ variant: "ghost", size: "icon-xs" }),
+        "aria-pressed:bg-fd-muted",
+      ),
+      actions: "flex flex-wrap items-center gap-2",
+      form: "flex flex-col gap-3 border-t border-fd-border p-2.5",
+      field: "flex flex-col gap-1 text-xs font-medium",
+      "name-input":
+        "min-h-8 w-full min-w-0 rounded-md border border-fd-border bg-fd-background px-2 py-1 text-base placeholder:text-fd-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring disabled:cursor-default disabled:opacity-50 aria-invalid:border-fd-foreground sm:text-xs font-mono",
+      hint: "text-xs leading-normal text-pretty text-fd-muted-foreground",
+      "field-group": "flex flex-col gap-1.5",
+      "expression-header":
+        "flex min-h-8 flex-wrap items-center justify-between gap-2",
+      "format-label": "flex min-w-0 items-center gap-2 text-xs",
+      "hidden-label": "sr-only",
+      confirm:
+        "flex flex-col gap-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal",
+      text: "text-pretty",
+      "confirm-actions": "flex flex-wrap gap-2",
+      "text-input":
+        "min-h-8 w-full min-w-0 rounded-md border border-fd-border bg-fd-background px-2 py-1 text-base placeholder:text-fd-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring disabled:cursor-default disabled:opacity-50 aria-invalid:border-fd-foreground sm:text-xs",
+      expression:
+        "flex min-h-28 flex-col rounded-md border border-fd-border bg-fd-background",
+      diagnostics:
+        "flex flex-col gap-1 border-s-2 border-fd-foreground ps-3 text-xs leading-normal",
+      markdown: "font-mono text-xs leading-relaxed whitespace-pre-wrap",
+      result: "flex flex-col gap-4",
+      heading: "text-xs font-semibold",
+      "result-summary": "cursor-pointer py-1 text-xs text-fd-muted-foreground",
+      "result-rows": "mt-2 flex flex-col gap-2",
+      "result-row": "text-xs",
+      "result-key": "font-mono font-medium",
+      "result-empty": "text-fd-muted-foreground italic",
+      summary:
+        "col-span-2 col-start-1 row-start-2 block min-w-0 text-xs leading-normal break-words text-fd-muted-foreground data-[state=closed]:line-clamp-2",
+      "row-action": buttonVariants({ variant: "ghost", size: "icon-xs" }),
+      "primary-action": buttonVariants({ variant: "outline", size: "xs" }),
+      "secondary-action": buttonVariants({ variant: "ghost", size: "xs" }),
+    },
+    annotation: {
+      "sample-bar": "mb-2 flex shrink-0 items-center gap-2",
+      problem:
+        "mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty",
+      pane: "flex min-h-0 flex-1 flex-col rounded-md border border-fd-border bg-fd-card",
+      pointer:
+        "mt-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-fd-border bg-fd-card px-2.5 py-1.5 text-xs leading-normal",
+      heading: "font-semibold",
+      hint: "text-pretty text-fd-muted-foreground",
+      "section-bar":
+        "mb-2 flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-fd-border bg-fd-card px-2.5 py-1.5 text-xs leading-normal",
+      "primary-action": cn(
+        buttonVariants({ variant: "outline", size: "xs" }),
+        "ms-auto",
+      ),
+      "section-go": cn(
+        buttonVariants({ variant: "ghost", size: "xs" }),
+        "ms-auto",
+      ),
+    },
+    sampleSuggester: {
+      suggester: "flex min-w-0 flex-1 items-center gap-2",
+      label: "min-w-0 flex-1 truncate text-xs",
+      trigger: buttonVariants({ variant: "ghost", size: "icon-2xs" }),
+    },
+
     select: {
       wrapper: "relative w-full min-w-0 has-[select:disabled]:opacity-50",
       select:
