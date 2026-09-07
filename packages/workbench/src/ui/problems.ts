@@ -1,12 +1,12 @@
-// The reader's wording for what the core reports. `@zotlit/workbench` renders
-// inside a Worker and inside Obsidian, so it names a problem by code and hands
-// over the values that fill it; every code is written here, in this app's own
-// catalog, so a reader outside English reads their own language.
+// The reader's wording for what the core reports. The core renders inside a
+// Worker and inside Obsidian, so it names a problem by code and hands over the
+// values that fill it; every code is written here, once for both hosts, so a
+// reader outside English reads their own language.
 
-import type { WorkbenchProblem } from "@zotlit/workbench/document";
-import type { RenderDiagnostic } from "@zotlit/workbench/render";
+import type { WorkbenchProblem } from "#/document/controller";
+import type { RenderDiagnostic } from "#/render/result";
 
-import { m } from "@/paraglide/messages.js";
+import { m } from "./paraglide/messages.js";
 
 /** What the Problems strip and the handoff screen read for one problem. */
 export interface ProblemText {

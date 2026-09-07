@@ -37,6 +37,7 @@
     "@eslint/json": "^2.0.1",
     "@types/node": "catalog:",
     "@zotlit/config": "workspace:*",
+    "@zotlit/scripts": "workspace:*",
     "eslint": "^10.8.0",
     "eslint-plugin-obsidianmd": "^0.4.1",
     "lefthook": "^2.1.1",

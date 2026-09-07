@@ -4,8 +4,7 @@
 
 import type { TemplateDependenciesResponse } from "@zotlit/workbench/bridge";
 import type { WorkbenchProblem } from "@zotlit/workbench/document";
-
-import { problemText } from "./problems";
+import { problemText } from "@zotlit/workbench/ui";
 
 /** One line of the refusal, in the words the reader gets. */
 export interface UnsupportedReason {

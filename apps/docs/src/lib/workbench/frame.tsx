@@ -3,33 +3,35 @@
 // toolbar, tab strip, and result header the panes open with — shared by the
 // live Workbench and the skeleton the route paints before the editor bundle
 // arrives. The route's chunk imports this module, so it imports React, the
-// messages, the UI kit, icons, and the connection bar only.
+// shared Workbench UI and its messages, the UI kit, icons, the web theme, and
+// the connection bar only.
 
 import { Popover } from "@base-ui/react/popover";
 import {
   ChevronDown,
   CircleHelp,
-  Code2,
   Download,
   FolderOpen,
-  List,
   Plus,
-  Redo2,
-  Undo2,
   X,
 } from "lucide-react";
 import type { ReactNode, Ref } from "react";
+
+import {
+  EditToolbar,
+  TabBar,
+  WorkbenchThemeProvider,
+  m,
+} from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
 import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { m } from "@/paraglide/messages.js";
 
 import { ConnectionBar } from "./connection-bar";
-import { TABS, TAB_LABEL } from "./tabs";
+import { WEB_THEME } from "./theme";
 
 /** The two the narrow screen shows one of. */
 export type WorkbenchView = "edit" | "result";
@@ -180,122 +182,6 @@ export function ProfileMenuLabel() {
   );
 }
 
-/**
- * The row above the editor: Basic against Advanced, undo and redo, and the
- * "Add a field" button the narrow layout opens the field sheet with. Every
- * control without a handler is disabled.
- */
-export function EditToolbar({
-  advanced,
-  onMode,
-  canUndo = false,
-  canRedo = false,
-  onUndo,
-  onRedo,
-  addFieldRef,
-  sheetOpen = false,
-  onAddField,
-}: {
-  advanced: boolean;
-  onMode?: (advanced: boolean) => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
-  onUndo?: () => void;
-  onRedo?: () => void;
-  addFieldRef?: Ref<HTMLButtonElement>;
-  sheetOpen?: boolean;
-  onAddField?: () => void;
-}) {
-  return (
-    <div className="mb-2 flex shrink-0 flex-wrap items-center justify-between gap-2">
-      <div
-        className="flex items-center gap-0.5 rounded-md bg-fd-muted p-0.5"
-        role="group"
-        aria-label={m.workbench_editing_mode()}
-      >
-        <Button
-          variant="ghost"
-          size="2xs"
-          className="rounded-sm text-fd-muted-foreground aria-pressed:bg-fd-card aria-pressed:text-fd-foreground aria-pressed:shadow-sm"
-          aria-pressed={!advanced}
-          disabled={onMode === undefined}
-          onClick={() => onMode?.(false)}
-        >
-          <List aria-hidden />
-          {m.workbench_basic()}
-        </Button>
-        <Button
-          variant="ghost"
-          size="2xs"
-          className="rounded-sm text-fd-muted-foreground aria-pressed:bg-fd-card aria-pressed:text-fd-foreground aria-pressed:shadow-sm"
-          aria-pressed={advanced}
-          disabled={onMode === undefined}
-          onClick={() => onMode?.(true)}
-        >
-          <Code2 aria-hidden />
-          {m.workbench_advanced()}
-        </Button>
-      </div>
-      <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={m.workbench_undo()}
-          title={m.workbench_undo()}
-          disabled={!canUndo}
-          onClick={onUndo}
-        >
-          <Undo2 aria-hidden />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={m.workbench_redo()}
-          title={m.workbench_redo()}
-          disabled={!canRedo}
-          onClick={onRedo}
-        >
-          <Redo2 aria-hidden />
-        </Button>
-        <Button
-          ref={addFieldRef}
-          variant="outline"
-          size="xs"
-          disabled={onAddField === undefined}
-          onClick={onAddField}
-          aria-haspopup="dialog"
-          aria-expanded={sheetOpen}
-          className="min-[1180px]:hidden"
-        >
-          <Plus aria-hidden />
-          {m.workbench_add_field()}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/** The three tabs' strip, inside the `Tabs` root that owns the chosen one. */
-export function PaneTabList({ disabled = false }: { disabled?: boolean }) {
-  return (
-    <TabsList
-      aria-label={m.workbench_title()}
-      className="min-w-0 gap-0.5 p-0.5"
-    >
-      {TABS.map((id) => (
-        <TabsTrigger
-          key={id}
-          value={id}
-          disabled={disabled}
-          className="min-h-7 min-w-0 px-2 py-0.5 text-xs"
-        >
-          {TAB_LABEL[id]()}
-        </TabsTrigger>
-      ))}
-    </TabsList>
-  );
-}
-
 /** The result pane's heading beside the reading-or-Markdown choice. */
 export function ResultHeader({
   heading,
@@ -407,6 +293,36 @@ export function WorkbenchHelp({
   );
 }
 
+/**
+ * The "Add a field" button the narrow layout opens the field sheet with, on
+ * the toolbar's trailing edge; without a handler it is inert.
+ */
+export function AddFieldButton({
+  ref,
+  open = false,
+  onClick,
+}: {
+  ref?: Ref<HTMLButtonElement>;
+  open?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <Button
+      ref={ref}
+      variant="outline"
+      size="xs"
+      disabled={onClick === undefined}
+      onClick={onClick}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      className="min-[1180px]:hidden"
+    >
+      <Plus aria-hidden />
+      {m.workbench_add_field()}
+    </Button>
+  );
+}
+
 /** A quiet block where content is still to come. */
 function Placeholder({ className = "" }: { className?: string }) {
   return (
@@ -420,65 +336,69 @@ function Placeholder({ className = "" }: { className?: string }) {
  */
 export function WorkbenchSkeleton() {
   return (
-    <WorkbenchFrame
-      busy
-      name={m.workbench_loading()}
-      actions={
-        <>
-          <Button variant="outline" size="xs" disabled>
-            <ProfileMenuLabel />
-          </Button>
-          <Button size="xs" disabled>
-            <Download aria-hidden />
-            {m.workbench_download()}
-          </Button>
-        </>
-      }
-      connection={
-        <ConnectionBar
-          connection={{ state: "disconnected" }}
-          website=""
-          busy={false}
-          cancellable={false}
-          message={null}
-          saveBusy
-          editingConnectedProfile={false}
-          onConnect={() => {}}
-          onCancel={() => {}}
-          onDisconnect={() => {}}
-        />
-      }
-      status={m.workbench_loading()}
-      view="edit"
-      fields={<Placeholder className="min-h-40" />}
-      editor={
-        <>
-          <EditToolbar advanced={false} />
-          <Tabs className="flex min-h-0 flex-1 flex-col" value="note">
-            <div className="mb-2 flex shrink-0 gap-2">
-              <PaneTabList disabled />
-            </div>
-            <Placeholder className="min-h-40 flex-1" />
-          </Tabs>
-        </>
-      }
-      result={
-        <>
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-fd-muted-foreground">
-              {m.workbench_showing_label()}
-            </span>
-            <Placeholder className="h-8 min-w-0 flex-1" />
-          </div>
-          <ResultHeader
-            heading={m.workbench_result_heading()}
-            showMarkdown={false}
+    <WorkbenchThemeProvider theme={WEB_THEME}>
+      <WorkbenchFrame
+        busy
+        name={m.workbench_loading()}
+        actions={
+          <>
+            <Button variant="outline" size="xs" disabled>
+              <ProfileMenuLabel />
+            </Button>
+            <Button size="xs" disabled>
+              <Download aria-hidden />
+              {m.workbench_download()}
+            </Button>
+          </>
+        }
+        connection={
+          <ConnectionBar
+            connection={{ state: "disconnected" }}
+            website=""
+            busy={false}
+            cancellable={false}
+            message={null}
+            saveBusy
+            editingConnectedProfile={false}
+            onConnect={() => {}}
+            onCancel={() => {}}
+            onDisconnect={() => {}}
           />
-          <ResultRegion>
-            <Placeholder className="h-full min-h-40" />
-          </ResultRegion>
-        </>
-      }
-    />
+        }
+        status={m.workbench_loading()}
+        view="edit"
+        fields={<Placeholder className="min-h-40" />}
+        editor={
+          <>
+            <EditToolbar>
+              <AddFieldButton />
+            </EditToolbar>
+            <div className="flex min-h-0 flex-1 flex-col">
+              <div className="mb-2 flex shrink-0 gap-2">
+                <TabBar />
+              </div>
+              <Placeholder className="min-h-40 flex-1" />
+            </div>
+          </>
+        }
+        result={
+          <>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-fd-muted-foreground">
+                {m.workbench_showing_label()}
+              </span>
+              <Placeholder className="h-8 min-w-0 flex-1" />
+            </div>
+            <ResultHeader
+              heading={m.workbench_result_heading()}
+              showMarkdown={false}
+            />
+            <ResultRegion>
+              <Placeholder className="h-full min-h-40" />
+            </ResultRegion>
+          </>
+        }
+      />
+    </WorkbenchThemeProvider>
   );
 }

@@ -6,9 +6,9 @@ import type {
 } from "@zotlit/workbench/document";
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import type { AnnotationExample } from "@zotlit/workbench/render";
+import { m } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
-import { m } from "@/paraglide/messages.js";
 
 import { SampleSuggester } from "./sample-suggester";
 import type { SampleOption } from "./sample-suggester";

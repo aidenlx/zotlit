@@ -10,6 +10,11 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 
+import {
+  filteredMessageFs,
+  isWorkbenchMessage,
+} from "@zotlit/config/paraglide";
+
 import { agentSkillAssets } from "./src/lib/agent-skills.js";
 import { renderHeadersFile } from "./src/lib/headers.js";
 import { createOgCardRenderer } from "./src/lib/og-card.js";
@@ -231,6 +236,8 @@ export default defineConfig(({ command }) => ({
         command === "serve" ? "locale-modules" : "message-modules",
       strategy: ["baseLocale"],
       emitTsDeclarations: true,
+      // The `workbench_*` namespace is `@zotlit/workbench/ui`'s own compile.
+      fs: filteredMessageFs((key) => !isWorkbenchMessage(key)),
     }),
     devtools(),
     tailwindcss(),

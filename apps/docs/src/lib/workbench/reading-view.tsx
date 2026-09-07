@@ -26,8 +26,7 @@ import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 
 import type { RenderedProperty, RenderedRange } from "@zotlit/workbench/render";
-
-import { m } from "@/paraglide/messages.js";
+import { m } from "@zotlit/workbench/ui";
 
 import imagePlaceholder from "./image-placeholder.svg";
 import { PropertyList } from "./property-list";

@@ -3,6 +3,8 @@
 import { ArrowLeftRight } from "lucide-react";
 import { useRef, useState } from "react";
 
+import { m } from "@zotlit/workbench/ui";
+
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -18,7 +20,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { m } from "@/paraglide/messages.js";
 
 export interface SampleOption {
   readonly value: string;

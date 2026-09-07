@@ -7,8 +7,7 @@ import {
   SAMPLE_ITEMS,
   renderProfile,
 } from "@zotlit/workbench/render";
-
-import { m } from "@/paraglide/messages.js";
+import { m } from "@zotlit/workbench/ui";
 
 import { ResultSheet, parseNote } from "./reading-view";
 

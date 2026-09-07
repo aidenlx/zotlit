@@ -1,9 +1,10 @@
 # @zotlit/workbench
 
 The Workbench core shared by the web Template Workbench and the Obsidian plugin.
-Subpath exports: `bridge`, `document`, `explorer`, `language`, `render`, and the
-Node-only `snapshot`. The package has no React dependency and targets
-CodeMirror at the versions Obsidian pins.
+Subpath exports: `bridge`, `document`, `explorer`, `language`, `render`, the
+headless `ui`, and the Node-only `snapshot`. React is a peer dependency of `ui`
+alone; every other subpath is free of it. The package targets CodeMirror at the
+versions Obsidian pins.
 
 It carries no logger: it runs in a browser page, in a render Worker, and inside
 Obsidian, and it names every decision a host acts on in the value it returns —
@@ -103,6 +104,36 @@ An entry whose `value` spans several lines is edited as the source holds it:
 the slice carries the continuation lines' own indentation, and a line the
 reader adds needs its own indent. A single-line rule — the shape every action
 writes — has no such catch.
+
+## UI
+
+`@zotlit/workbench/ui` is the headless component tree both hosts mount over one
+Profile document (ADR 0044). It renders structure and behaviour and no look:
+every component marks its parts with `data-part` and their state with
+`data-state`, and `WorkbenchThemeProvider` takes one optional class map, keyed
+by component and part (`WorkbenchParts` lists them), plus an icon renderer.
+Call sites pass no classes. `WorkbenchHostProvider` takes the host adapter —
+`menu`, `dialog`, `confirm`, `suggester`, `tooltip`, `hoverCard`, `notice`, the
+`render` Worker factory, `matchData`, `insertTarget`, and `persistence` — so
+Obsidian shows its own `Menu`, `Modal`, `SuggestModal`, and `Notice` and the web
+shows Base UI. `WorkbenchEditorProvider` carries one editor instance: the
+zustand vanilla store from `createWorkbenchStore` (tab, selected Item, focused
+root, preview mode and live state, Explorer variant, Advanced, Start here
+dismissal) beside the `WorkbenchDocumentController`, which stays the document
+authority; `useWorkbenchStore`, `useWorkbenchController`, and
+`useDocumentRevision` read them. Outside the editor provider the tree paints
+inert, which the web's skeleton relies on. The components so far: `TabBar` and
+`TabPanel`, `EditToolbar` (Basic against Advanced, undo, redo, a host's own
+controls as children), and `ProblemsFooter` with `problemText` and
+`diagnosticText`, the words for every core code.
+
+The subpath compiles its own Paraglide facade from the root catalog's
+`workbench_*` namespace into `src/ui/paraglide/` (`pnpm generate:i18n`, run by
+`postinstall`, `build`, `typecheck`, and `test`) and exports it as `m`; the
+catalog filter is `@zotlit/config/paraglide`. The tree stays inside the
+`preact/compat` surface, and its suite under `src/ui/` runs twice in `pnpm test`:
+the `ui-react` and `ui-preact` Vitest projects, the second with React aliased to
+`preact/compat` and Testing Library to its Preact build.
 
 ## Render
 

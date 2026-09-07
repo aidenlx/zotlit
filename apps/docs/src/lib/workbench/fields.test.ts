@@ -4,8 +4,7 @@ import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { buildDisplayTree, renderSnippet } from "@zotlit/workbench/explorer";
 import type { DisplayNode } from "@zotlit/workbench/explorer";
 import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
-
-import { m } from "@/paraglide/messages.js";
+import { m } from "@zotlit/workbench/ui";
 
 import {
   commonRows,

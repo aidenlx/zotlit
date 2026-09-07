@@ -1,7 +1,7 @@
-// The authoring tabs, in the order the pane offers them, with the label
-// and the lede each opens with.
+// The authoring tabs, in the order the pane offers them, with the label and
+// the lede each opens with.
 
-import { m } from "@/paraglide/messages.js";
+import { m } from "./paraglide/messages.js";
 
 export type WorkbenchTab = "note" | "annotation" | "properties" | "name";
 
