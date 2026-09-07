@@ -3,6 +3,8 @@ import type { App } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CONTRACT_VERSION } from "@zotlit/db";
+import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
+import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature-note-pack";
 
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -34,6 +36,12 @@ language: liquid
 
 const ETA_PROFILE = LIQUID_PROFILE.replace("language: liquid", "language: eta");
 
+/** A Liquid document that calls a partial the template folder must answer. */
+const CALLING_PROFILE = LIQUID_PROFILE.replace(
+  "# {{ zt.title }}",
+  "# {{ zt.title }}\n{% render 'byline' %}",
+);
+
 const LAUNCH_URL =
   "https://zotlit.aidenlx.site/workbench#zotlit-connect=abc&port=9091";
 
@@ -54,6 +62,10 @@ interface Options {
   /** What the sheet answers; `null` is Cancel. */
   consent?: LaunchConsent | null;
   effectivePort?: number | null;
+  /** The listener binds on the next tick once asked; `false` keeps it silent. */
+  serverStarts?: boolean;
+  /** What the template folder holds. */
+  partials?: readonly LiteratureNoteTemplatePartial[];
   activeNote?: { basename: string; itemKey: string | null } | null;
 }
 
@@ -62,6 +74,8 @@ function harness({
   source = LIQUID_PROFILE,
   consent = { doNotAskAgain: false },
   effectivePort = 9091,
+  serverStarts = true,
+  partials = [],
   activeNote = null,
 }: Options = {}): Harness {
   const settings: Settings = { ...defaults, ...overrides };
@@ -116,13 +130,19 @@ function harness({
       defaultDocumentPath: "templates/zotlit-profile.default.md",
       getSource: () => Promise.resolve(source),
     } as unknown as CustomizeDeps["profile"],
+    template: {
+      ready: Promise.resolve(),
+      exportLiteratureNotePackSource: (
+        draft: string,
+        options: Parameters<typeof exportLiteratureNotePack>[2],
+      ) => Promise.resolve(exportLiteratureNotePack(draft, partials, options)),
+    } as unknown as CustomizeDeps["template"],
     localServer: {
       get effectivePort() {
         return effectivePort;
       },
-      // The listener the flow just asked for binds on the next tick.
       on: (_event: "listening", cb: (port: number | null) => void) => {
-        queueMicrotask(() => cb(9095));
+        if (serverStarts) queueMicrotask(() => cb(9095));
         return () => {};
       },
     } as unknown as CustomizeDeps["localServer"],
@@ -215,6 +235,29 @@ describe("the Customize flow", () => {
     expect(off.opened).toEqual([LAUNCH_URL]);
   });
 
+  it("says the server did not start instead of opening a tab", async () => {
+    vi.useFakeTimers();
+    try {
+      const stuck = harness({
+        settings: { "server.enabled": false },
+        consent: { doNotAskAgain: true },
+        effectivePort: null,
+        serverStarts: false,
+      });
+
+      const launch = stuck.customize({ profileId: "default" });
+      await vi.advanceTimersByTimeAsync(10_000);
+      await launch;
+
+      expect(stuck.update).toHaveBeenCalledWith({ "server.enabled": true });
+      expect(stuck.opened).toEqual([]);
+      // The tick is not honoured for a launch that never happened.
+      expect(launchSheetSkipped(deviceOf(stuck))).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("opens nothing and writes nothing on Cancel", async () => {
     const cancelled = harness({
       settings: { "server.enabled": false },
@@ -265,6 +308,33 @@ describe("the Customize flow", () => {
     expect(eta.opened).toEqual([]);
     expect(eta.sheets).toEqual([]);
     expect(eta.openedFiles).toEqual(["templates/zotlit-profile.default.md"]);
+  });
+
+  it("keeps a Profile that calls an Eta partial from the template folder in Obsidian", async () => {
+    const byline = {
+      name: "byline",
+      language: "eta",
+      source: "<%= it.zt.title %>",
+    } as const;
+    const calling = harness({
+      settings: { "server.enabled": true },
+      source: CALLING_PROFILE,
+      partials: [byline],
+    });
+    await calling.customize({ profileId: "default" });
+    expect(calling.opened).toEqual([]);
+    expect(calling.openedFiles).toEqual([
+      "templates/zotlit-profile.default.md",
+    ]);
+
+    // The same call answered by a Liquid partial opens the browser.
+    const liquid = harness({
+      settings: { "server.enabled": true },
+      source: CALLING_PROFILE,
+      partials: [{ ...byline, language: "liquid", source: "{{ zt.title }}" }],
+    });
+    await liquid.customize({ profileId: "default" });
+    expect(liquid.opened).toEqual([LAUNCH_URL]);
   });
 });
 

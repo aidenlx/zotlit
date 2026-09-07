@@ -9,15 +9,12 @@ import {
   setLaunchSheetSkipped,
 } from "@/services/local-bridge/customize";
 
+import { workbenchEnabled } from "./context";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { defaultPlaceholder } from "./placeholder";
 
 function serverEnabled(ctx: SettingTabContext): () => boolean {
   return () => ctx.settings.current?.["server.enabled"] ?? false;
-}
-
-function workbenchEnabled(ctx: SettingTabContext): boolean {
-  return ctx.settings.current?.["server.workbench"] ?? false;
 }
 
 /**

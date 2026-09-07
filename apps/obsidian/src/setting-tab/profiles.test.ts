@@ -122,7 +122,7 @@ describe("Profile settings", () => {
     expect(buttonIcons(ejected)).toEqual(["pencil"]);
   });
 
-  it("leads the Template document row with Customize", async () => {
+  it("makes Customize the Template document row's primary action", async () => {
     const ctx = context();
     // Nothing ejected yet: the eject stays as the way into the vault, with
     // Customize the primary action beside it.
