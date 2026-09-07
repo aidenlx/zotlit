@@ -1,5 +1,11 @@
-/** @see https://zotlit.aidenlx.site — the v2 documentation site. */
-export const DOCS_SITE_URL = "https://zotlit.aidenlx.site";
+/**
+ * The documentation site this build belongs to, fixed at build time: Stable
+ * Docs (https://zotlit.aidenlx.site) for a stable release, Pre-release Docs
+ * (https://zotlit-beta.aidenlx.site) for a pre-release. CI sets it per
+ * release line through the `DOCS_SITE_URL` build variable; a local build
+ * defaults to Stable Docs.
+ */
+export const DOCS_SITE_URL = __DOCS_SITE_URL__;
 export const DOCS_COMPANION = `${DOCS_SITE_URL}/docs/install-companion`;
 
 /**
