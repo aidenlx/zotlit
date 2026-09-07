@@ -89,6 +89,32 @@ function setup() {
 }
 
 describe("Profile Editor entry points", () => {
+  it("opens the current Literature Note's resolved Default with that paper selected", async () => {
+    setMockPlatform({ isDesktopApp: true });
+    const { app, file, deps, plugin, commands, setViewState } = setup();
+    file.path = "Literature/Figures.md";
+    file.basename = "Figures";
+    vi.spyOn(app.metadataCache, "getFileCache").mockReturnValue({
+      frontmatter: { "zotero-key": "PAPER234" },
+    });
+    deps.profile.profileOf = vi.fn(
+      () =>
+        ({ ok: true, profile: { selector: "default" } }) as ReturnType<
+          typeof deps.profile.profileOf
+        >,
+    );
+    deps.profile.getSource = vi.fn(async () => "Configured Default");
+    registerProfileEditor(plugin, deps);
+    const command = commands.find((entry) => entry.id === "customize-profile")!;
+    expect(command.checkCallback?.(false)).toBe(true);
+    await vi.waitFor(() =>
+      expect(setViewState).toHaveBeenCalledWith({
+        type: PROFILE_EDITOR_VIEW_TYPE,
+        state: { defaultDraft: true, file: null, itemIndexedKey: "PAPER234" },
+        active: true,
+      }),
+    );
+  });
   it.each([
     "language: eta",
     "language: liquid\nfrontmatter:\n  - key: title\n    js: zt.title\n    merge: replace",
