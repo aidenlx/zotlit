@@ -32,7 +32,8 @@ import type { ConnectionGrantDescription } from "./app";
 import { loadInstallationId } from "./installation";
 import { ALLOWED_DOCS_ORIGINS } from "./origins";
 import { createLocalBridgeReads } from "./reads";
-import type { BridgeProfileReader } from "./reads";
+import { createLocalBridgeSave } from "./save";
+import type { BridgeProfileWriter } from "./save";
 import { BridgeSessions } from "./sessions";
 import type { BridgeConnection, SelectedItemIdentity } from "./sessions";
 
@@ -62,12 +63,14 @@ export interface WorkbenchConnection {
 export interface LocalBridgeEvents {
   /** The live connection started, ended, or was replaced by a newer one. */
   connection: (connection: WorkbenchConnection | null) => void;
+  /** A connected Save wrote the Profile's document in this vault. */
+  "profile-saved": (profileId: string) => void;
 }
 
 export interface LocalBridgeServiceDeps {
   app: App;
   settings: SettingsService;
-  profile: BridgeProfileReader;
+  profile: BridgeProfileWriter;
   /** The one loopback listener the bridge mounts its routes on. */
   localServer: Pick<LocalServerService, "mount" | "effectivePort">;
   db: Pick<DatabaseService, "acquireRead">;
@@ -97,6 +100,7 @@ export class LocalBridgeService extends Service<void> {
   readonly #localServer;
   readonly #pluginVersion;
   readonly #reads;
+  readonly #save;
   readonly #emitter = createNanoEvents<LocalBridgeEvents>();
   readonly #sessions = new BridgeSessions((connection) => {
     this.#emitter.emit("connection", this.#describeConnection(connection));
@@ -124,6 +128,14 @@ export class LocalBridgeService extends Service<void> {
       zoteroPref: deps.zoteroPref,
       installationId: () => this.#installationId,
       vaultName: () => this.#app.vault.getName(),
+    });
+    this.#save = createLocalBridgeSave({
+      profile: deps.profile,
+      template: deps.template,
+      pluginVersion: deps.pluginVersion,
+      onSaved: (profileId) => {
+        this.#emitter.emit("profile-saved", profileId);
+      },
     });
     this.ready = this.#load();
   }
@@ -190,6 +202,7 @@ export class LocalBridgeService extends Service<void> {
         allowedOrigins: ALLOWED_DOCS_ORIGINS,
         sessions: this.#sessions,
         reads: this.#reads,
+        save: this.#save,
         describeGrant: (connection) => this.#describeGrant(connection),
       }),
     );

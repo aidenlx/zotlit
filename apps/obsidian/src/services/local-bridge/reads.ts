@@ -6,7 +6,6 @@
 // bodies, attachment contents, and image bytes are kept out by the shared
 // exporter and by the vault-target module, and none is assembled here.
 
-import { createHash } from "node:crypto";
 import type { App } from "obsidian";
 
 import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
@@ -31,6 +30,7 @@ import type {
 } from "@zotlit/workbench/snapshot";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { profileRevision } from "@/lib/profile-revision";
 import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import type { DatabaseService } from "@/services/database/service";
@@ -50,15 +50,6 @@ import { collectVaultTargets } from "./vault-targets";
 /** The Profile service as the bridge reads it: the registry plus exact source. */
 export type BridgeProfileReader = ProfileReader &
   Pick<ProfileService, "getSource">;
-
-/**
- * The revision both sides compare a document by: the SHA-256 of its exact
- * source. A Save carries the revision the page loaded, and the write boundary
- * hashes the file it is about to replace the same way.
- */
-export function profileRevision(source: string): string {
-  return createHash("sha256").update(source).digest("hex");
-}
 
 /** The selected Profile no longer has a document in this vault. */
 export class ProfileDocumentMissingError extends Error {
@@ -245,7 +236,10 @@ function resolveSelection(
   };
 }
 
-function profileSelector(profileId: string): ProfileSelector | undefined {
+/** The selector the registry knows a Profile id by, or `undefined` for none. */
+export function profileSelector(
+  profileId: string,
+): ProfileSelector | undefined {
   if (profileId === DEFAULT_PROFILE) return DEFAULT_PROFILE;
   return isProfileId(profileId) ? profileId : undefined;
 }
