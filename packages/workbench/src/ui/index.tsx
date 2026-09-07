@@ -84,3 +84,18 @@ export { PreviewControls } from "./preview-controls";
 
 export { NameFolderPane, BUILT_IN_BINDING_DEFAULTS } from "./name-folder";
 export type { NameFolderPaneProps } from "./name-folder";
+export { PropertiesPane, PropertiesResult } from "./properties-tab";
+export type {
+  EntryDiagnostic,
+  PropertiesPaneProps,
+  PropertiesResultProps,
+} from "./properties-tab";
+export {
+  AnnotationPane,
+  AnnotationPointer,
+  AnnotationSampleBar,
+  AnnotationSectionBar,
+} from "./annotation";
+export { annotationSamples } from "./annotation-samples";
+export { SampleSuggester } from "./sample-suggester";
+export type { SampleOption } from "./sample-suggester";

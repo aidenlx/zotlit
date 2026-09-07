@@ -52,6 +52,57 @@ export interface WorkbenchParts {
     | "binding-input"
     | "switch"
     | "switch-thumb";
+  properties:
+    | "pane"
+    | "empty"
+    | "rows"
+    | "row"
+    | "row-header"
+    | "row-toggle"
+    | "row-name"
+    | "key"
+    | "label"
+    | "row-actions"
+    | "edit"
+    | "actions"
+    | "form"
+    | "field"
+    | "name-input"
+    | "hint"
+    | "field-group"
+    | "expression-header"
+    | "format-label"
+    | "hidden-label"
+    | "confirm"
+    | "text"
+    | "confirm-actions"
+    | "text-input"
+    | "expression"
+    | "diagnostics"
+    | "markdown"
+    | "result"
+    | "heading"
+    | "result-summary"
+    | "result-rows"
+    | "result-row"
+    | "result-key"
+    | "result-empty"
+    | "summary"
+    | "row-action"
+    | "primary-action"
+    | "secondary-action";
+  annotation:
+    | "sample-bar"
+    | "problem"
+    | "pane"
+    | "pointer"
+    | "heading"
+    | "hint"
+    | "section-bar"
+    | "primary-action"
+    | "section-go";
+  sampleSuggester: "suggester" | "label" | "trigger";
+
   select: "wrapper" | "select" | "icon" | "option";
   sliceEditor: "slice-editor" | "slice-scroll";
   notePane:
@@ -123,6 +174,11 @@ export type WorkbenchClassMap = {
 
 /** The icons the tree asks for, named by role so each host picks the glyph. */
 export type WorkbenchIcon =
+  | "add"
+  | "remove"
+  | "move-up"
+  | "move-down"
+  | "choose-sample"
   | "basic"
   | "advanced"
   | "undo"

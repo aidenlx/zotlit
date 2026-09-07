@@ -257,6 +257,11 @@ export function useWebHost({
         {suggester && (
           <DialogContent
             initialFocus={search}
+            finalFocus={
+              suggester.request.anchor
+                ? () => suggester.request.anchor
+                : undefined
+            }
             className="max-w-xl gap-0 overflow-hidden p-0"
           >
             <DialogTitle className="sr-only">
@@ -279,12 +284,28 @@ export function useWebHost({
                   {m.workbench_sample_empty()}
                 </CommandEmpty>
                 {suggester.request.groups.map((group) => (
-                  <CommandGroup key={group.label} heading={group.label}>
+                  <CommandGroup
+                    key={group.label}
+                    heading={group.label}
+                    forceMount={group.options.length === 0}
+                  >
+                    {group.options.length === 0 && (
+                      <p className="px-2 py-2 text-sm text-fd-muted-foreground">
+                        {group.empty}
+                      </p>
+                    )}
                     {group.options.map((option) => (
                       <CommandItem
                         key={option.id}
                         value={option.id}
                         keywords={[option.label, option.hint ?? ""]}
+                        aria-label={
+                          option.id === suggester.request.selected
+                            ? m.workbench_sample_selected({
+                                name: option.label,
+                              })
+                            : option.label
+                        }
                         onSelect={() => answerSuggester(option.id)}
                         data-checked={option.id === suggester.request.selected}
                         className="min-h-11"
