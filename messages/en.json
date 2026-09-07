@@ -880,6 +880,8 @@
   "settings_template_js_confirm_action": "Enable",
   "settings_template_eject": "Create editable template file",
   "profile_editor_properties_advanced": "This list needs to be edited in Advanced.",
+  "profile_editor_database_unavailable": "Open the Zotero database to choose a paper. You can continue editing this profile.",
+  "profile_editor_styles_unavailable": "Zotero citation styles are unavailable. You can continue editing this profile.",
   "profile_editor_name": "Profile editor",
   "profile_editor_open": "Open in profile editor",
   "profile_editor_edit": "Edit",
