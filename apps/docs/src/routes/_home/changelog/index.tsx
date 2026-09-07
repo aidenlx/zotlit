@@ -16,6 +16,7 @@ import {
 } from "@/lib/shared";
 import { getChangelogPages } from "@/lib/source";
 import { breadcrumbListSchema } from "@/lib/structured-data";
+import { m } from "@/paraglide/messages.js";
 
 const listReleases = createServerFn({ method: "GET" }).handler(() =>
   getChangelogPages().map((page) => ({
@@ -32,21 +33,21 @@ const releaseBody = collections.changelogs.createClientLoader<object>({
   component: ({ default: MDX }) => <MDX components={getMDXComponents()} />,
 });
 
-const crumbs = [
+const crumbs = () => [
   { name: appName, url: "/" },
-  { name: "Changelog", url: changelogRoute },
+  { name: m.docs_nav_changelog(), url: changelogRoute },
 ];
 
 export const Route = createFileRoute("/_home/changelog/")({
   component: ChangelogIndex,
   head: () =>
     pageHead({
-      title: "Changelog",
-      description: "Every ZotLit release, newest first.",
+      title: m.docs_nav_changelog(),
+      description: m.docs_changelog_description(),
       path: changelogRoute,
-      card: { type: "changelog", alt: "ZotLit Changelog" },
+      card: { type: "changelog", alt: m.docs_changelog_og_alt() },
       feeds: { "application/rss+xml": changelogFeedRoute },
-      schemas: [breadcrumbListSchema(crumbs)],
+      schemas: [breadcrumbListSchema(crumbs())],
     }),
   loader: async () => {
     const releases = await listReleases();
@@ -63,10 +64,11 @@ function ChangelogIndex() {
   return (
     <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-6 font-serif">
       <header className="pt-14 pb-2">
-        <h1 className="mb-2.5 text-4xl font-medium">Changelog</h1>
+        <h1 className="mb-2.5 text-4xl font-medium">
+          {m.docs_nav_changelog()}
+        </h1>
         <p className="mb-6 max-w-[60ch] text-[16.5px] text-fd-muted-foreground italic">
-          Every ZotLit release, newest first. Companion releases are noted with
-          the plugin version they shipped beside.
+          {m.docs_changelog_intro()}
         </p>
       </header>
 

@@ -1,6 +1,8 @@
 // What this browser keeps between visits: the document being edited, the paper
-// it is shown against, and the prompt the next visit answers. The draft and the
-// snapshot are kept together, so a reload offers both or neither.
+// it is shown against, and the prompt the next visit answers. One record covers
+// both halves, and `transfer.ts` decides which storage each half is kept in, so
+// a visit that outlived its tab is offered the text with the paper it still
+// has.
 
 import { useEffect, useState } from "react";
 
@@ -13,7 +15,7 @@ import {
 
 import type { SampleItem } from "./fields";
 import { clearDraft, readDraft, writeDraft } from "./transfer";
-import type { WorkbenchDraft } from "./transfer";
+import type { DraftLocation, WorkbenchDraft } from "./transfer";
 import type { SaveTarget } from "./use-workbench-connection";
 
 /** The paper a fresh visit opens on. */
@@ -25,6 +27,9 @@ export const DEFAULT_SAMPLE = SAMPLE_ITEMS[0]!;
  * Workbench keys each vault document by the reference the bridge gave it.
  */
 const STANDALONE_DOCUMENT = "standalone";
+
+/** Where a page that has opened no vault document keeps its work. */
+const STANDALONE_LOCATION: DraftLocation = { reference: STANDALONE_DOCUMENT };
 
 /** Quiet time after the last change before the draft is written. */
 const AUTOSAVE_MS = 500;
@@ -54,10 +59,15 @@ export interface RestoreOffer {
 interface SavedDocument {
   readonly reference: string;
   readonly source: string;
+  /** The vault it was read from, which keeps two vaults' drafts apart. */
+  readonly installationId?: string;
+  readonly snapshot?: SampleItem;
+  readonly annotationSelection?: string;
 }
 
 export interface WorkbenchDraftKeeper {
-  readonly reference: string;
+  /** The document being edited, named as its record is keyed. */
+  readonly location: DraftLocation;
   /** Changes since the file was opened, downloaded, or saved to Obsidian. */
   readonly dirty: boolean;
   /** The last visit's work, standing until the reader answers the prompt. */
@@ -86,11 +96,12 @@ export function useWorkbenchDraft({
   readonly saveTarget: SaveTarget | null;
 }): WorkbenchDraftKeeper {
   const [baseline, setBaseline] = useState(STANDALONE_BASELINE);
-  const [reference, setReference] = useState(STANDALONE_DOCUMENT);
+  const [location, setLocation] = useState<DraftLocation>(STANDALONE_LOCATION);
+  const reference = location.reference;
   // Read once, before the first autosave, so the record the last visit left is
   // the one the reader is offered.
   const [restorable, setRestorable] = useState<RestoreOffer | null>(() => {
-    const draft = readDraft(STANDALONE_DOCUMENT);
+    const draft = readDraft(STANDALONE_LOCATION);
     return draft ? { draft, baseline: STANDALONE_BASELINE } : null;
   });
 
@@ -114,7 +125,7 @@ export function useWorkbenchDraft({
     // is kept, and Restore never lands on top of it.
     if (restorable) {
       const stillWaiting =
-        reference === restorable.baseline.reference &&
+        location.reference === restorable.baseline.reference &&
         controller.source === restorable.baseline.source &&
         snapshotIdentity(sample) === restorable.baseline.snapshot &&
         annotationSelection === restorable.baseline.annotationSelection;
@@ -124,9 +135,9 @@ export function useWorkbenchDraft({
     }
     const source = controller.source;
     const timer = setTimeout(() => {
-      if (atBaseline) clearDraft(reference);
+      if (atBaseline) clearDraft(location);
       else
-        writeDraft(reference, {
+        writeDraft(location, {
           source,
           snapshot: sample,
           annotationSelection,
@@ -137,7 +148,7 @@ export function useWorkbenchDraft({
   }, [
     restorable,
     atBaseline,
-    reference,
+    location,
     expected,
     controller,
     sample,
@@ -146,27 +157,61 @@ export function useWorkbenchDraft({
   ]);
 
   return {
-    reference,
+    location,
     dirty: controller.source !== baseline.source,
     restorable,
-    adopt({ reference: opened, source }, kept) {
+    adopt(
+      {
+        reference: opened,
+        source,
+        installationId,
+        snapshot,
+        annotationSelection: selectedAnnotation,
+      },
+      kept,
+    ) {
       const next = {
         reference: opened,
         source,
-        snapshot: snapshotIdentity(sample),
-        annotationSelection,
+        snapshot: snapshotIdentity(snapshot ?? sample),
+        annotationSelection: selectedAnnotation ?? annotationSelection,
       };
-      setReference(opened);
+      setLocation(
+        installationId === undefined
+          ? { reference: opened }
+          : { reference: opened, installationId },
+      );
       setBaseline(next);
       setRestorable(kept ? { draft: kept, baseline: next } : null);
     },
-    rebase({ reference: saved, source }) {
-      setBaseline({
+    rebase({
+      reference: saved,
+      source,
+      snapshot,
+      annotationSelection: selectedAnnotation,
+    }) {
+      const next = {
         reference: saved,
         source,
-        snapshot: snapshotIdentity(sample),
-        annotationSelection,
-      });
+        snapshot: snapshotIdentity(snapshot ?? sample),
+        annotationSelection: selectedAnnotation ?? annotationSelection,
+      };
+      setBaseline(next);
+      // Recovering the launch paper is part of hydration. The pending offer
+      // follows that paper while keeping the draft and text it was offered on.
+      if (snapshot)
+        setRestorable((held) =>
+          held
+            ? {
+                ...held,
+                baseline: {
+                  ...held.baseline,
+                  snapshot: next.snapshot,
+                  annotationSelection: next.annotationSelection,
+                },
+              }
+            : null,
+        );
     },
     restore() {
       if (!restorable) return null;
@@ -174,7 +219,7 @@ export function useWorkbenchDraft({
       return restorable.draft;
     },
     startClean() {
-      if (restorable) clearDraft(restorable.baseline.reference);
+      if (restorable) clearDraft(location);
       setRestorable(null);
     },
   };

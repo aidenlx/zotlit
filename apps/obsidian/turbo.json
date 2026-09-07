@@ -15,6 +15,8 @@
       "outputLogs": "errors-only"
     },
     "build": {
+      "env": ["$TURBO_EXTENDS$", "ANALYZE"],
+      "outputs": ["$TURBO_EXTENDS$", "bundle-stats.html"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/project.inlang/settings.json",
@@ -22,11 +24,16 @@
       ]
     },
     "build:dev": {
+      "env": ["ANALYZE", "DOCS_SITE_URL", "I18N_DEV_SERVER"],
+      "outputs": ["$TURBO_EXTENDS$", "bundle-stats.html"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/project.inlang/settings.json",
         "$TURBO_ROOT$/messages/**"
       ]
+    },
+    "dev": {
+      "env": ["ANALYZE", "DOCS_SITE_URL", "I18N_DEV_SERVER"]
     },
     "typecheck": {
       "dependsOn": ["$TURBO_EXTENDS$", "generate:language-packs"]

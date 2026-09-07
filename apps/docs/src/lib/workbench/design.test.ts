@@ -80,6 +80,20 @@ function lineOf(text: string, pattern: RegExp): number[] {
 }
 
 describe("Workbench design system", () => {
+  it("composes popovers from the shared kit with implicit dismissal", () => {
+    const findings: string[] = [];
+    for (const { name, text } of sources) {
+      if (text.includes('"@base-ui/react/popover"'))
+        findings.push(`${name}: use the shared Popover kit`);
+      for (const tag of ["Popover.Close", "PopoverClose"])
+        for (const { line } of elements(text, tag))
+          findings.push(
+            `${name}:${line} keep the title row free of close controls`,
+          );
+    }
+    expect(findings).toEqual([]);
+  });
+
   it("sizes every Button from the kit's Workbench variants", () => {
     const findings: string[] = [];
     for (const { name, text } of sources) {
@@ -101,10 +115,15 @@ describe("Workbench design system", () => {
     expect(findings).toEqual([]);
   });
 
-  it("sizes every text control at xs", () => {
+  it("sizes every text control and action menu at xs", () => {
     const findings: string[] = [];
     for (const { name, text } of sources) {
-      for (const tag of ["Input", "NativeSelect", "Textarea"]) {
+      for (const tag of [
+        "Input",
+        "NativeSelect",
+        "Textarea",
+        "DropdownMenuContent",
+      ]) {
         for (const { line, attrs } of elements(text, tag)) {
           if (attribute(attrs, "size") !== "xs") {
             findings.push(`${name}:${line} ${tag} without size="xs"`);

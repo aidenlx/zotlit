@@ -43,7 +43,7 @@ export function SampleBar({
     fromVault &&
     connected &&
     sample.provenance.installationId === connection.installation.id &&
-    sample.item.key === connection.selectedItem.key;
+    sample.item.indexedKey === connection.selectedItem?.key;
   const name = sample.item.title ?? sample.item.key;
   const papers = loadedItem ? [...SAMPLE_ITEMS, loadedItem] : SAMPLE_ITEMS;
   const options = papers.map((item) => ({
@@ -57,7 +57,7 @@ export function SampleBar({
       item.provenance.kind === "connected"
         ? connected &&
           item.provenance.installationId === connection.installation.id &&
-          item.item.key === connection.selectedItem.key
+          item.item.indexedKey === connection.selectedItem?.key
           ? m.workbench_connected_badge()
           : m.workbench_retained_badge()
         : undefined,
@@ -108,11 +108,13 @@ export function SampleBar({
           {m.workbench_sample_type_missing({ itemType: unmatchedItemType })}
         </span>
       )}
-      {connected && (
+      {/* A launch that chose no Item grants nothing to load, so the page stays
+          on its Sample Item and offers no request. */}
+      {connected && connection.selectedItem !== null && (
         <Button variant="outline" size="xs" disabled={busy} onClick={onLoad}>
           {busy
             ? m.workbench_loading_item()
-            : fromVault && sample.item.key === connection.selectedItem.key
+            : current
               ? m.workbench_refresh_item()
               : m.workbench_load_item()}
         </Button>

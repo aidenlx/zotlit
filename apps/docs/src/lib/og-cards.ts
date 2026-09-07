@@ -8,6 +8,9 @@
 
 import * as v from "valibot";
 
+// Vite loads this Node entry before app aliases are available.
+// oxlint-disable-next-line no-restricted-imports
+import * as m from "../paraglide/messages.js";
 import { scanContent } from "./content-scan.js";
 import type { ContentEntry } from "./content-scan.js";
 import type { CardProps } from "./og-card.js";
@@ -39,56 +42,57 @@ const changelogCard = v.object({
 });
 
 /** The landing cards, which carry hand-written copy instead of frontmatter. */
-const landingCards: [OgType, CardProps][] = [
-  [
-    "home",
-    {
-      hero: true,
-      kind: "Zotero × Obsidian",
-      title: "ZotLit",
-      description:
-        "Literature notes, citations, and annotations: bridged between Zotero and Obsidian.",
-      meta: baseURL,
-    },
-  ],
-  [
-    "community",
-    {
-      kind: "Community",
-      title: "Join the conversation.",
-      description: "Get help, share ideas, and shape where ZotLit goes next.",
-      meta: `${baseURL}/community`,
-    },
-  ],
-  [
-    "workbench",
-    {
-      kind: "Workbench",
-      title: "Template workbench",
-      description:
-        "Edit a literature note profile in the browser and see the note it produces.",
-      meta: `${baseURL}/workbench`,
-    },
-  ],
-  [
-    "blog",
-    {
-      kind: "Blog",
-      title: "The ZotLit blog",
-      description: "Release notes, deep dives, and notes from building ZotLit.",
-      meta: `${baseURL}/blog`,
-    },
-  ],
-  [
-    "changelog",
-    {
-      kind: "Changelog",
-      title: "Changelog",
-      description: "Every ZotLit release, newest first.",
-      meta: `${baseURL}/changelog`,
-    },
-  ],
-];
+function landingCards(): [OgType, CardProps][] {
+  return [
+    [
+      "home",
+      {
+        hero: true,
+        kind: m.docs_og_home_kind(),
+        title: "ZotLit",
+        description: m.docs_og_home_description(),
+        meta: baseURL,
+      },
+    ],
+    [
+      "community",
+      {
+        kind: m.docs_nav_community(),
+        title: m.docs_og_community_title(),
+        description: m.docs_og_community_description(),
+        meta: `${baseURL}/community`,
+      },
+    ],
+    [
+      "workbench",
+      {
+        kind: "Workbench",
+        title: "Template workbench",
+        description:
+          "Edit a literature note profile in the browser and see the note it produces.",
+        meta: `${baseURL}/workbench`,
+      },
+    ],
+    [
+      "blog",
+      {
+        kind: m.docs_nav_blog(),
+        title: m.docs_og_blog_title(),
+        description: m.docs_og_blog_description(),
+        meta: `${baseURL}/blog`,
+      },
+    ],
+    [
+      "changelog",
+      {
+        kind: m.docs_nav_changelog(),
+        title: m.docs_nav_changelog(),
+        description: m.docs_og_changelog_description(),
+        meta: `${baseURL}/changelog`,
+      },
+    ],
+  ];
+}
 
 /** One card per content file of a section, read through that section's schema. */
 function cardsOf<Schema extends v.GenericSchema>(
@@ -113,14 +117,14 @@ export function ogCards(packageRoot: string): Map<string, CardProps> {
   const content = scanContent(packageRoot);
 
   return new Map<string, CardProps>([
-    ...landingCards.map(([type, card]): [string, CardProps] => [
+    ...landingCards().map(([type, card]): [string, CardProps] => [
       ogImageUrl(type),
       card,
     ]),
     ...cardsOf("docs", content.docs, {
       schema: docsCard,
       toCard: (page) => ({
-        kind: "Documentation",
+        kind: m.docs_og_documentation_kind(),
         title: page.title,
         description: page.description,
         meta: baseURL,
@@ -129,7 +133,7 @@ export function ogCards(packageRoot: string): Map<string, CardProps> {
     ...cardsOf("blog", content.blog, {
       schema: blogCard,
       toCard: (post) => ({
-        kind: "Blog",
+        kind: m.docs_nav_blog(),
         title: post.title,
         description: post.description,
         meta: `${post.author} · ${formatReleaseDate(post.date)}`,
@@ -138,7 +142,7 @@ export function ogCards(packageRoot: string): Map<string, CardProps> {
     ...cardsOf("changelog", content.changelog, {
       schema: changelogCard,
       toCard: (release) => ({
-        kind: "Changelog",
+        kind: m.docs_nav_changelog(),
         title: release.title ?? `v${release.version}`,
         description: release.description,
         meta: `v${release.version} · ${formatReleaseDate(release.date)}`,

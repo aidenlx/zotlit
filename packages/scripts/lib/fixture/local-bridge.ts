@@ -14,10 +14,10 @@ import noteSchema from "@zotlit/db/contract/note.schema.json" with { type: "json
 import {
   BRIDGE_CAPABILITIES,
   BRIDGE_VERSION,
+  DOCS_DEV_SERVER_ORIGIN,
   codeBootstrapRequestSchema,
   disconnectRequestSchema,
   LOCAL_BRIDGE_PATHS,
-  loopbackBootstrapRequestSchema,
   saveSelectedProfileRequestSchema,
   selectedCitationStyleRequestSchema,
   selectedItemRequestSchema,
@@ -45,7 +45,6 @@ if (globalThis.Temporal === undefined) {
 
 const FIXTURE_INSTALLATION_ID = "fixture-installation";
 const FIXTURE_VAULT_NAME = "ZotLit Fixture";
-const FIXTURE_SOURCE_ID = "fixture-zotero-source";
 const FIXTURE_PLUGIN_VERSION = "2.1.1";
 const FIXTURE_ITEM_KEY = "IANNP5A2";
 const FIXTURE_ITEM_TITLE = "Why Most Published Research Findings Are False";
@@ -53,7 +52,8 @@ const FIXTURE_INITIAL_CODE = "fixture-code";
 
 export interface MockLocalBridgeOptions {
   readonly layout: FixtureLayout;
-  readonly allowedOrigin: string;
+  /** Defaults to the docs dev server, where a local run of the page is served. */
+  readonly allowedOrigin?: string;
 }
 
 export interface MockLocalBridgeControl {
@@ -75,6 +75,7 @@ export interface MockLocalBridge {
 export function createMockLocalBridge(
   options: MockLocalBridgeOptions,
 ): MockLocalBridge {
+  const allowedOrigin = options.allowedOrigin ?? DOCS_DEV_SERVER_ORIGIN;
   const app = new Hono();
   const credentials = new Map<string, SelectedFixtureProfile>();
   const oneTimeCodes = new Set([FIXTURE_INITIAL_CODE]);
@@ -92,14 +93,14 @@ export function createMockLocalBridge(
         message: "Use a loopback host.",
       });
     }
-    if (context.req.header("Origin") !== options.allowedOrigin) {
+    if (context.req.header("Origin") !== allowedOrigin) {
       return bridgeError(context, {
         status: 403,
         code: "origin-refused",
         message: "This website Origin is not approved.",
       });
     }
-    context.header("Access-Control-Allow-Origin", options.allowedOrigin);
+    context.header("Access-Control-Allow-Origin", allowedOrigin);
     context.header("Vary", "Origin");
     context.header(
       "Access-Control-Allow-Headers",
@@ -158,22 +159,6 @@ export function createMockLocalBridge(
         bridgeVersion,
       }),
     );
-  });
-
-  app.post(LOCAL_BRIDGE_PATHS.loopbackBootstrap, async (context) => {
-    const request = await parseBody(
-      context.req.raw,
-      loopbackBootstrapRequestSchema,
-    );
-    if (!request.success) return invalidRequest(context, request.issues);
-    return context.json({
-      state: "approved" as const,
-      connection: await issueConnection(options.layout, {
-        credentials,
-        selectedProfile,
-        bridgeVersion,
-      }),
-    });
   });
 
   app.post(LOCAL_BRIDGE_PATHS.disconnect, async (context) => {
@@ -328,21 +313,17 @@ async function describeConnection(
   selectedProfile: SelectedFixtureProfile,
   bridgeVersion: number,
 ): Promise<{
-  installation: { id: string; vault: string; zoteroSourceId: string };
+  installation: { id: string; vault: string };
   pluginVersion: string;
   bridgeVersion: number;
   templateDataContractVersion: number;
   capabilities: string[];
-  selectedItem: { key: string; title: string };
+  selectedItem: { key: string; title: string } | null;
   selectedProfile: { id: string; name: string };
   profileDefaults: ProfileBindingDefaults;
 }> {
   return {
-    installation: {
-      id: FIXTURE_INSTALLATION_ID,
-      vault: FIXTURE_VAULT_NAME,
-      zoteroSourceId: FIXTURE_SOURCE_ID,
-    },
+    installation: { id: FIXTURE_INSTALLATION_ID, vault: FIXTURE_VAULT_NAME },
     pluginVersion: FIXTURE_PLUGIN_VERSION,
     bridgeVersion,
     templateDataContractVersion: CONTRACT_VERSION,

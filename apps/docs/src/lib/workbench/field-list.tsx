@@ -10,7 +10,7 @@ import {
   List,
   Repeat,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 
 import {
   copyValue,
@@ -80,7 +80,7 @@ interface RowActions {
   readonly onInsert: (snippet: string) => void;
 }
 
-export function FieldList({
+export const FieldList = memo(function FieldList({
   root,
   data,
   onInsert,
@@ -178,7 +178,7 @@ export function FieldList({
       </p>
     </section>
   );
-}
+});
 
 interface ExplorerRowsProps {
   readonly nodes: readonly DisplayNode[];
@@ -297,7 +297,7 @@ function FieldRowView({ node, label, value, actions }: FieldRowViewProps) {
             >
               <Code aria-hidden className="size-3.5" />
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-44">
+            <DropdownMenuContent align="end" size="xs">
               <DropdownMenuItem
                 className="min-h-7 gap-2 px-2 py-1 text-xs"
                 onClick={() => copy(formatPath(node.path, "zt"))}

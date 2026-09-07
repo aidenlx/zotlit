@@ -5,6 +5,7 @@ import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { ProfileService } from "@/services/profile/service";
 import type {
   SettingsPatch,
@@ -25,6 +26,8 @@ import { citationsPageItems } from "./citations";
 import type {
   AttachmentImportActions,
   CitationIndexActions,
+  LocalBridgeActions,
+  LocalServerActions,
   PandocEngineActions,
   ReleaseTabActions,
   SettingsControlKey,
@@ -50,6 +53,9 @@ export interface ZotLitSettingTabOptions {
   db: DatabaseService;
   libraryScope: LibraryScopeService;
   zoteroPref: ZoteroPrefService;
+  localServer: LocalServerActions;
+  localBridge: LocalBridgeActions;
+  customize: CustomizeAction;
   attachmentImport: AttachmentImportActions;
   citationIndex: CitationIndexActions;
   template: TemplateService;
@@ -65,6 +71,9 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #db: DatabaseService;
   readonly #libraryScope: LibraryScopeService;
   readonly #zoteroPref: ZoteroPrefService;
+  readonly #localServer: LocalServerActions;
+  readonly #localBridge: LocalBridgeActions;
+  readonly #customize: CustomizeAction;
   readonly #attachmentImport: AttachmentImportActions;
   readonly #citationIndex: CitationIndexActions;
   readonly #profile: ProfileService;
@@ -80,6 +89,9 @@ export class ZotLitSettingTab extends PluginSettingTab {
     db,
     libraryScope,
     zoteroPref,
+    localServer,
+    localBridge,
+    customize,
     attachmentImport,
     citationIndex,
     template,
@@ -95,6 +107,15 @@ export class ZotLitSettingTab extends PluginSettingTab {
     this.#db = db;
     this.#libraryScope = libraryScope;
     this.#zoteroPref = zoteroPref;
+    this.#localServer = localServer;
+    // The Local server rows name the port the listener actually bound, so a
+    // bind, a rebind, and a close each rebuild them.
+    plugin.register(localServer.on("listening", () => this.#requestUpdate()));
+    this.#localBridge = localBridge;
+    // The Workbench Connection row is included structurally, so a connection
+    // opening, ending, or being taken over rebuilds the definitions.
+    plugin.register(localBridge.on("connection", () => this.#requestUpdate()));
+    this.#customize = customize;
     this.#attachmentImport = attachmentImport;
     this.#citationIndex = citationIndex;
     this.#template = template;
@@ -198,6 +219,9 @@ export class ZotLitSettingTab extends PluginSettingTab {
       db: this.#db,
       libraryScope: this.#libraryScope,
       zoteroPref: this.#zoteroPref,
+      localServer: this.#localServer,
+      localBridge: this.#localBridge,
+      customize: this.#customize,
       attachmentImport: this.#attachmentImport,
       citationIndex: this.#citationIndex,
       template: this.#template,

@@ -2,13 +2,14 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 
 import { RepoDatum, loadRepoStats } from "@/components/repo-datum";
 import { SiteFooter } from "@/components/site-footer";
-import { HOME_OG_ALT, pageHead } from "@/lib/seo";
-import { appDescription, appName } from "@/lib/shared";
+import { appDescription, HOME_OG_ALT, pageHead } from "@/lib/seo";
+import { appName } from "@/lib/shared";
 import {
   organizationSchema,
   softwareApplicationSchema,
   websiteSchema,
 } from "@/lib/structured-data";
+import { m } from "@/paraglide/messages.js";
 
 export const Route = createFileRoute("/_home/")({
   component: Home,
@@ -16,48 +17,43 @@ export const Route = createFileRoute("/_home/")({
   head: () =>
     pageHead({
       ogTitle: appName,
-      description: appDescription,
+      description: appDescription(),
       path: "/",
-      card: { type: "home", alt: HOME_OG_ALT },
+      card: { type: "home", alt: HOME_OG_ALT() },
       schemas: [websiteSchema, organizationSchema, softwareApplicationSchema],
     }),
 });
 
-const features = [
+const features = () => [
   {
-    term: "Literature notes",
+    term: m.docs_home_feature_notes(),
     href: "/docs/tutorial/first-note",
-    ref: "Tutorial →",
-    description:
-      "One command turns a Zotero item into a Markdown note, shaped by your template.",
+    ref: m.docs_home_tutorial_link(),
+    description: m.docs_home_feature_notes_description(),
   },
   {
-    term: "Citations",
+    term: m.docs_home_feature_citations(),
     href: "/docs/how-to/insert-citations",
-    ref: "How-to →",
-    description:
-      "Type to search your library and insert citations without leaving the editor.",
+    ref: m.docs_home_how_to_link(),
+    description: m.docs_home_feature_citations_description(),
   },
   {
-    term: "Annotation view",
+    term: m.docs_home_feature_annotations(),
     href: "/docs/how-to/use-annotation-view",
-    ref: "How-to →",
-    description:
-      "A sidebar of highlights and notes that follows your active Zotero reader.",
+    ref: m.docs_home_how_to_link(),
+    description: m.docs_home_feature_annotations_description(),
   },
   {
-    term: "Note import",
+    term: m.docs_home_feature_import(),
     href: "/docs/how-to/import-zotero-notes",
-    ref: "How-to →",
-    description:
-      "Bring Zotero child notes and standalone notes into your vault as Markdown.",
+    ref: m.docs_home_how_to_link(),
+    description: m.docs_home_feature_import_description(),
   },
   {
-    term: "Agent-assisted templates",
+    term: m.docs_home_feature_templates(),
     href: "/docs/install-skill",
-    ref: "How-to →",
-    description:
-      "Describe the note you want. Your agent edits and tests its templates against your Zotero library.",
+    ref: m.docs_home_how_to_link(),
+    description: m.docs_home_feature_templates_description(),
   },
 ];
 
@@ -68,14 +64,13 @@ function Home() {
       <section className="grid items-center gap-13 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:py-20">
         <div>
           <p className="mb-4 font-mono text-xs font-semibold tracking-[0.2em] text-fd-primary uppercase">
-            Zotero × Obsidian
+            {m.docs_home_eyebrow()}
           </p>
           <h1 className="mb-5 text-4xl leading-[1.16] font-medium text-balance lg:text-[44px]">
-            Your Zotero library, written into your vault.
+            {m.docs_home_title()}
           </h1>
           <p className="mb-4 max-w-[44ch] text-lg text-fd-muted-foreground italic">
-            Literature notes, citations, and annotations from Zotero in
-            Obsidian.
+            {m.docs_home_description()}
           </p>
           <RepoDatum stats={stats} className="mb-5" />
           <div className="flex flex-wrap items-center gap-4">
@@ -84,13 +79,13 @@ function Home() {
               params={{ _splat: "tutorial/first-note" }}
               className="bg-fd-foreground px-6 py-2.5 text-base text-fd-background transition-colors hover:bg-fd-primary hover:text-fd-primary-foreground"
             >
-              Get started
+              {m.docs_home_get_started()}
             </Link>
             <Link
               to="/docs"
               className="text-fd-muted-foreground underline decoration-fd-border underline-offset-4 transition-colors hover:text-fd-primary hover:decoration-fd-primary"
             >
-              Read the docs
+              {m.docs_home_read_docs()}
             </Link>
           </div>
         </div>
@@ -115,21 +110,19 @@ function Home() {
               ---
             </div>
             <h4 className="my-3 font-mono text-sm font-normal">
-              # Attention Is All You Need
+              {m.docs_home_example_title()}
             </h4>
             <div className="my-2.5 border-l-2 border-fd-primary bg-fd-accent py-0.5 pl-2.5">
-              &quot;The Transformer allows for significantly more
-              parallelization…&quot; <span className="opacity-60">— p. 2</span>
+              {m.docs_home_example_quote()}{" "}
+              <span className="opacity-60">{m.docs_home_example_page()}</span>
             </div>
-            <div>
-              Own note: relate to [[sequence models]] and the citation graph.
-            </div>
+            <div>{m.docs_home_example_note()}</div>
           </div>
         </div>
       </section>
 
       <dl className="max-w-170 border-t border-fd-border py-8">
-        {features.map((feature) => (
+        {features().map((feature) => (
           <div key={feature.term} className="py-3">
             <div className="flex items-baseline gap-2.5">
               <dt className="font-mono text-sm font-semibold tracking-[0.08em] whitespace-nowrap uppercase">

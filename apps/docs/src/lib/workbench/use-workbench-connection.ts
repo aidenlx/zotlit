@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   BRIDGE_VERSION,
-  LOCAL_BRIDGE_ORIGIN,
+  CONNECT_FRAGMENT_CODE,
   LocalBridgeClient,
   LocalBridgeProtocolError,
   LocalBridgeUnavailableError,
@@ -19,6 +19,7 @@ import type {
 import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import type { RenderResources } from "@zotlit/workbench/render";
 
+import { toast } from "@/components/ui/toast";
 import { m } from "@/paraglide/messages.js";
 
 import type { SampleItem } from "./fields";
@@ -27,7 +28,10 @@ import type { WorkbenchDraft } from "./transfer";
 
 export interface ProfileHydration {
   readonly selected: SelectedProfileResponse;
+  /** The vault the document was read from, which keys the draft it belongs to. */
+  readonly installationId: string;
   readonly kept: WorkbenchDraft | null;
+  readonly snapshot: SampleItem | null;
   /** The revision the retained in-memory draft still descends from. */
   readonly retainedExpected?: SaveSelectedProfileRequest["expected"];
 }
@@ -61,7 +65,6 @@ export function useWorkbenchConnection({
   const [bridge] = useState(
     () =>
       new LocalBridgeClient({
-        baseUrl: LOCAL_BRIDGE_ORIGIN,
         compatibility: {
           bridgeVersion: BRIDGE_VERSION,
           templateDataContractVersion: sample.contractVersion,
@@ -71,6 +74,11 @@ export function useWorkbenchConnection({
   const [connection, setConnection] = useState<LocalBridgeConnection>(
     bridge.connection,
   );
+  // Whether a kept credential and its port are still here to present. It is
+  // mirrored rather than read through the client on every render, so the
+  // header follows it the way it follows the connection itself.
+  const [resumable, setResumable] = useState(() => bridge.resumable);
+  const loadedLaunchItem = useRef(false);
   const [saveTarget, setSaveTarget] = useState<SaveTarget | null>(null);
   const [resources, setResources] = useState<RenderResources | undefined>();
   const [citationStyles, setCitationStyles] = useState<
@@ -84,11 +92,9 @@ export function useWorkbenchConnection({
   const bundleDependencies = useRef<string | null>(null);
   const [bundleStale, setBundleStale] = useState(false);
   const [connectionBusy, setConnectionBusy] = useState(false);
-  const [connectionCancellable, setConnectionCancellable] = useState(false);
   const [itemBusy, setItemBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const connectionAbort = useRef<AbortController | null>(null);
 
   const resetConnectedState = useCallback(() => {
     setResources(undefined);
@@ -106,25 +112,34 @@ export function useWorkbenchConnection({
     [],
   );
 
+  /** Takes what the client holds now as what the page shows. */
+  const settleConnection = useCallback(
+    (next: LocalBridgeConnection) => {
+      setConnection(next);
+      setResumable(bridge.resumable);
+    },
+    [bridge],
+  );
+
   const connectionFailed = useCallback(
     (error: unknown) => {
       const next = bridge.connection;
       if (next.state !== "connected") resetConnectedState();
-      setConnection(next);
+      settleConnection(next);
       setMessage(connectionFailureMessage(error, next));
     },
-    [bridge, resetConnectedState],
+    [bridge, resetConnectedState, settleConnection],
   );
 
   async function hydrateConnection(): Promise<void> {
+    const grant = bridge.connection;
+    if (grant.state !== "connected") return;
     const selected = await bridge.readSelectedProfile();
     // The style this vault has in effect, which a Profile that binds none
     // inherits and the Name and folder pane shows as its value. The settle
     // effect below reads the Profile's own binding from the page's controller,
     // so hydration parses nothing of its own.
-    const grant = bridge.connection;
-    const styleId =
-      grant.state === "connected" ? grant.profileDefaults.citationStyle : null;
+    const styleId = grant.profileDefaults.citationStyle;
     const [dependencies, citationStyle, styles] = await Promise.all([
       bridge.readTemplateDependencies({ source: selected.source }),
       bridge.readSelectedCitationStyle({ styleId }),
@@ -136,19 +151,33 @@ export function useWorkbenchConnection({
     bundleDependencies.current = null;
     setBundleStale(false);
     const reference = selected.document.reference;
+    const installationId = grant.installation.id;
     const currentExpected = expectedRevision(selected.document);
-    const kept = readDraft(reference);
+    const kept = readDraft({ reference, installationId });
     const retainedExpected =
       saveTarget?.reference === reference
         ? saveTarget.expected
         : kept?.expected;
 
+    // The first hydration loads the launch paper before exposing Restore, so a
+    // late response cannot replace the snapshot the reader just restored.
+    let snapshot: SampleItem | null = null;
+    let itemFailure: unknown;
+    if (!loadedLaunchItem.current && grant.selectedItem) {
+      try {
+        snapshot = await bridge.loadSelectedItem();
+        loadedLaunchItem.current = true;
+      } catch (error) {
+        itemFailure = error;
+      }
+    }
     setResources({ dependencies, citationStyle });
     setCitationStyles(styles);
     setLoadedStyleId(styleId);
     setSaveTarget({ reference, expected: currentExpected });
 
-    onHydrate({ selected, kept, retainedExpected });
+    onHydrate({ selected, installationId, kept, retainedExpected, snapshot });
+    if (itemFailure) throw itemFailure;
     if (
       kept?.expected &&
       !sameExpectedRevision(kept.expected, currentExpected)
@@ -181,41 +210,29 @@ export function useWorkbenchConnection({
     }
   }
 
-  async function connect(
-    run: () => Promise<LocalBridgeConnection>,
-    abort?: AbortController,
-  ) {
+  async function connect(run: () => Promise<LocalBridgeConnection>) {
     setConnectionBusy(true);
-    setConnectionCancellable(abort !== undefined);
     setMessage(null);
     try {
       const next = await run();
-      setConnection(next);
+      settleConnection(next);
       if (next.state === "connected") await hydrateConnection();
     } catch (error) {
-      if (!abort?.signal.aborted) connectionFailed(error);
+      connectionFailed(error);
     } finally {
-      if (connectionAbort.current === abort) {
-        connectionAbort.current = null;
-        setConnectionCancellable(false);
-      }
       setConnectionBusy(false);
     }
   }
 
-  function connectFromPage() {
-    const abort = new AbortController();
-    connectionAbort.current = abort;
-    void connect(
-      async () =>
-        // A transport failure kept the grant, so Reconnect presents it to the
-        // bridge running now — which re-checks compatibility against this page
-        // — instead of asking for a fresh approval. A tab that kept no grant
-        // falls through to the loopback approval.
-        (await bridge.resume({ signal: abort.signal })) ??
-        (await bridge.connectFromLoopback({ signal: abort.signal })),
-      abort,
-    );
+  /**
+   * A transport failure kept the grant and the port it was made on, so
+   * Reconnect presents them to the bridge running now — which re-checks
+   * compatibility against this page — instead of asking for a fresh approval.
+   * A tab that kept neither has nothing to present: a Connection starts in
+   * Obsidian, so the page shows that guidance rather than a Connect button.
+   */
+  function reconnect() {
+    void connect(async () => (await bridge.resume()) ?? bridge.connection);
   }
 
   async function disconnect() {
@@ -223,8 +240,12 @@ export function useWorkbenchConnection({
     try {
       await bridge.disconnect();
       resetConnectedState();
-      setConnection(bridge.connection);
-      setMessage(m.workbench_connection_disconnected_notice());
+      settleConnection(bridge.connection);
+      setMessage(null);
+      toast.add({
+        title: m.workbench_connection_disconnect_complete(),
+        type: "info",
+      });
     } catch (error) {
       connectionFailed(error);
     } finally {
@@ -245,7 +266,8 @@ export function useWorkbenchConnection({
   }
 
   async function save(source: string) {
-    if (!saveTarget) return;
+    const grant = bridge.connection;
+    if (!saveTarget || grant.state !== "connected") return;
     setSaveBusy(true);
     setMessage(null);
     try {
@@ -264,7 +286,10 @@ export function useWorkbenchConnection({
         revision: saved.revision,
         source,
       });
-      setMessage(m.workbench_save_complete({ revision: saved.revision }));
+      toast.add({
+        title: m.workbench_save_complete({ vault: grant.installation.vault }),
+        type: "success",
+      });
     } catch (error) {
       connectionFailed(error);
     } finally {
@@ -274,7 +299,7 @@ export function useWorkbenchConnection({
 
   useEffect(() => {
     const fragment = window.location.hash;
-    if (new URLSearchParams(fragment.slice(1)).has("zotlit-connect")) {
+    if (new URLSearchParams(fragment.slice(1)).has(CONNECT_FRAGMENT_CODE)) {
       window.history.replaceState(
         null,
         "",
@@ -291,11 +316,6 @@ export function useWorkbenchConnection({
     }
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- bootstraps once against `bridge`, not on every `connect` identity change
   }, [bridge]);
-
-  // A page the reader leaves mid-approval stops polling with them: the loopback
-  // bootstrap runs until it is approved or aborted, and nothing outlives the
-  // hook that started it.
-  useEffect(() => () => connectionAbort.current?.abort(), []);
 
   // The partials the draft calls right now. A bundle is read again only when
   // this list changes, so typing never queries the vault.
@@ -385,12 +405,11 @@ export function useWorkbenchConnection({
     citationStyles,
     saveAgainst,
     connectionBusy,
-    connectionCancellable,
+    resumable,
     itemBusy,
     saveBusy,
     message,
-    connectFromPage,
-    cancelConnection: () => connectionAbort.current?.abort(),
+    reconnect,
     disconnect,
     reloadProfile: () => void connect(async () => bridge.connection),
     loadSelectedItem,
@@ -402,6 +421,13 @@ function connectionFailureMessage(
   error: unknown,
   connection: LocalBridgeConnection,
 ): string {
+  if (
+    error instanceof LocalBridgeProtocolError &&
+    error.code === "invalid-one-time-code" &&
+    connection.state === "disconnected"
+  ) {
+    return m.docs_workbench_connection_link_expired();
+  }
   if (
     error instanceof LocalBridgeUnavailableError &&
     connection.state === "unavailable"

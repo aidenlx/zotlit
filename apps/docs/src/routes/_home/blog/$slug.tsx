@@ -13,6 +13,7 @@ import { pageHead } from "@/lib/seo";
 import { appName, blogRoute, formatReleaseDate } from "@/lib/shared";
 import { blog, getBlogPages } from "@/lib/source";
 import { blogPostingSchema, breadcrumbListSchema } from "@/lib/structured-data";
+import { m } from "@/paraglide/messages.js";
 
 const getPost = createServerFn({ method: "GET" })
   .validator((slug: string) => slug)
@@ -77,7 +78,7 @@ export const Route = createFileRoute("/_home/blog/$slug")({
           card: {
             type: "blog",
             slugs: post.slugs,
-            alt: `${post.title} — ZotLit blog`,
+            alt: m.docs_blog_post_og_alt({ title: post.title }),
           },
           article: {
             publishedTime: post.date,
@@ -95,7 +96,7 @@ export const Route = createFileRoute("/_home/blog/$slug")({
             }),
             breadcrumbListSchema([
               { name: appName, url: "/" },
-              { name: "Blog", url: blogRoute },
+              { name: m.docs_nav_blog(), url: blogRoute },
               { name: post.title, url: post.url },
             ]),
           ],
@@ -109,7 +110,7 @@ function BlogPost() {
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 font-serif">
       <article className="pb-14">
-        <BackCrumb to="/blog" label="Blog" />
+        <BackCrumb to="/blog" label={m.docs_nav_blog()} />
         <header className="pt-4.5 pb-2">
           <h1 className="mb-2.5 text-4xl leading-[1.16] font-medium text-balance">
             {post.title}
@@ -120,7 +121,10 @@ function BlogPost() {
             </p>
           )}
           <p className="mb-1.5 font-mono text-xs font-medium tracking-widest text-fd-muted-foreground uppercase">
-            {formatReleaseDate(post.date)} · by {post.author}
+            {m.docs_blog_post_byline({
+              date: formatReleaseDate(post.date),
+              author: post.author,
+            })}
           </p>
         </header>
         <div className="border-t border-fd-border pt-6">

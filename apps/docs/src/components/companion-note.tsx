@@ -1,6 +1,8 @@
+import { Puzzle } from "lucide-react";
+
 // The changelog's companion-release aside: a leading accent add-on mark on a
 // muted italic line, shared by the release list and the release detail page.
-import { Puzzle } from "lucide-react";
+import * as m from "@/paraglide/messages.js";
 
 export interface CompanionNoteProps {
   /** Companion version released alongside this plugin version. */
@@ -19,7 +21,7 @@ export function CompanionNote({ version }: CompanionNoteProps) {
         aria-hidden
         className="mr-[0.2em] inline size-[1em] shrink-0 align-[-0.14em] text-fd-primary select-none"
       />
-      Companion {version} released alongside.
+      {m.docs_companion_release({ version })}
     </p>
   );
 }

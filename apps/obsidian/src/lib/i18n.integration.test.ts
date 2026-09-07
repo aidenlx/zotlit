@@ -1,118 +1,46 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createServer } from "vite";
-import { expect, test } from "vitest";
+import { afterEach, expect, test } from "vitest";
 
 import { LANGUAGE_PACK_LIMITS } from "@zotlit/obsidian-i18n";
-import type { LanguagePackRuntime } from "@zotlit/obsidian-i18n";
-import { compile } from "@zotlit/obsidian-i18n/compiler";
-import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
-import {
-  EXCLUDE_MESSAGE_PREFIXES,
-  INCLUDE_MESSAGES,
-  TARGET_LOCALE_MESSAGE_PREFIXES,
-} from "#language-pack-options";
+import { catalog } from "./i18n/generated/catalog.js";
+import basePack from "./i18n/generated/en.json";
+import * as m from "./i18n/generated/messages.js";
+import { runtime } from "./i18n/generated/runtime.js";
 
-const workspaceRoot = await getWorkspaceRoot(import.meta.dirname);
+// Turbo generates these artifacts before testing; compiler mechanics are
+// covered in @zotlit/obsidian-i18n. Check the plugin's actual build output here.
+afterEach(() => runtime.reset());
 
-test("the ZotLit project compiles through the reusable package contract", async () => {
-  await using generated = await compileRealProject();
-
-  expect(generated.result.messageCount).toBeGreaterThan(400);
-  expect(generated.basePack.messages).not.toHaveProperty("docs_index_title");
+test("the plugin pack contains its shared labels and fits the runtime cap", () => {
+  expect(basePack.messages).not.toHaveProperty("docs_index_title");
   // The web Workbench's strings belong to the docs catalog, so the plugin pack
   // leaves them out.
-  expect(generated.basePack.messages).not.toHaveProperty("workbench_title");
-  expect(generated.basePack.messages).not.toHaveProperty([
-    "zotero.menu_file.label",
-  ]);
-  expect(generated.basePack.messages).toHaveProperty([
-    "zotero.prefs_notify_section",
-  ]);
+  expect(basePack.messages).not.toHaveProperty("workbench_title");
+  expect(basePack.messages).not.toHaveProperty(["zotero.menu_file.label"]);
+  expect(basePack.messages).toHaveProperty(["zotero.prefs_notify_section"]);
   // A pack over the cap is refused at runtime, and copy another host owns is
   // what fills it. Add the new prefix to EXCLUDE_MESSAGE_PREFIXES when this
   // fails for messages the plugin never reads.
-  expect(Object.keys(generated.basePack.messages).length).toBeLessThanOrEqual(
+  expect(Object.keys(basePack.messages).length).toBeLessThanOrEqual(
     LANGUAGE_PACK_LIMITS.messages,
   );
-  expect(generated.messages.hello()).toBe("world");
-  // Lifecycle copy renders in the target language from the bundled subset,
-  // with no Language Pack installed and no network access.
-  expect(generated.messages.settings_language_pack_name()).toBe(
-    "Language pack",
-  );
-  generated.runtime.setTargetLocale("zh-CN");
-  expect(generated.messages.settings_language_pack_name()).toBe("语言包");
-  expect(
-    generated.messages.settings_language_pack_desc({ language: "简体中文" }),
-  ).toBe("以 简体中文 显示 ZotLit 界面。安装时将下载语言包。");
-  // Everything outside the configured prefixes keeps the existing ladder.
-  expect(generated.messages.hello()).toBe("world");
-  expect(generated.messages.creator_summary({ count: 3, first: "Ada" })).toBe(
-    "Ada et al.",
-  );
-  expect(await readdir(generated.result.outputDirectory)).toContain(
-    "catalog.ts",
-  );
+  expect(catalog).toEqual({
+    baseLocale: "en",
+    packs: { "zh-CN": { fileName: "zh-CN.json" } },
+  });
 });
 
-type RealProjectMessages = {
-  hello(): string;
-  creator_summary(inputs: { count: number; first: string }): string;
-  settings_language_pack_name(): string;
-  settings_language_pack_desc(inputs: { language: string }): string;
-};
-
-async function compileRealProject(): Promise<{
-  result: Awaited<ReturnType<typeof compile>>;
-  basePack: { messages: Record<string, unknown> };
-  runtime: LanguagePackRuntime;
-  messages: RealProjectMessages;
-  [Symbol.asyncDispose](): Promise<void>;
-}> {
-  await using resources = new AsyncDisposableStack();
-  const output = await mkdtemp(join(tmpdir(), "zotlit-i18n-contract-"));
-  resources.defer(() => rm(output, { recursive: true, force: true }));
-
-  const result = await compile({
-    root: workspaceRoot,
-    project: "project.inlang",
-    output,
-    excludeMessagePrefixes: EXCLUDE_MESSAGE_PREFIXES,
-    includeMessages: INCLUDE_MESSAGES,
-    targetLocaleMessagePrefixes: TARGET_LOCALE_MESSAGE_PREFIXES,
-  });
-  const basePack = JSON.parse(await readFile(join(output, "en.json"), "utf8"));
-  const server = await createServer({
-    root: output,
-    logLevel: "silent",
-    appType: "custom",
-    resolve: {
-      alias: {
-        "@zotlit/obsidian-i18n": fileURLToPath(
-          import.meta.resolve("@zotlit/obsidian-i18n"),
-        ),
-      },
-    },
-    server: { middlewareMode: true },
-  });
-  resources.defer(() => server.close());
-  const { runtime } = (await server.ssrLoadModule("/runtime.ts")) as {
-    runtime: LanguagePackRuntime;
-  };
-  const messages = (await server.ssrLoadModule(
-    "/messages.ts",
-  )) as RealProjectMessages;
-  const disposal = resources.move();
-
-  return {
-    result,
-    basePack,
-    runtime,
-    messages,
-    [Symbol.asyncDispose]: () => disposal.disposeAsync(),
-  };
-}
+test("the generated facade renders bundled lifecycle copy and base-locale fallback", () => {
+  expect(m.hello()).toBe("world");
+  // Lifecycle copy renders in the target language from the bundled subset,
+  // with no Language Pack installed and no network access.
+  expect(m.settings_language_pack_name()).toBe("Language pack");
+  runtime.setTargetLocale("zh-CN");
+  expect(m.settings_language_pack_name()).toBe("语言包");
+  expect(m.settings_language_pack_desc({ language: "简体中文" })).toBe(
+    "以 简体中文 显示 ZotLit 界面。安装时将下载语言包。",
+  );
+  // Everything outside the configured prefixes keeps the existing ladder.
+  expect(m.hello()).toBe("world");
+  expect(m.creator_summary({ count: 3, first: "Ada" })).toBe("Ada et al.");
+});

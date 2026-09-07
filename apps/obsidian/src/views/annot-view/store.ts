@@ -5,7 +5,7 @@ import { createStore } from "zustand/vanilla";
 
 import type { AnnotViewAttachment, AnnotViewItem, ItemRef } from "@zotlit/db";
 
-import type { ReaderTarget } from "@/services/live-update/service";
+import type { ReaderTarget } from "@/services/local-server/service";
 
 import type { AnnotFilter } from "./filter";
 
@@ -26,7 +26,7 @@ export interface AnnotState {
   attachments: AnnotViewAttachment[] | null;
   selectedAttachmentID: number | null;
   annotations: AnnotViewItem[] | null;
-  /** Synced mirror of {@link LiveUpdateService.readerTarget} for reactive rendering. */
+  /** Synced mirror of {@link LocalServerService.readerTarget} for reactive rendering. */
   readerTarget: ReaderTarget | null;
   /** Indexed key of the item currently displayed; `null` when none resolves. */
   itemKey: string | null;

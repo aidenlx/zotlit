@@ -2,7 +2,7 @@
 
 import { regex } from "arkregex";
 import { readdir, readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 
 import type {
   InstalledCitationStyle,
@@ -178,10 +178,13 @@ function styleFileOf(path: string, xml: string): FixtureStyleFile | undefined {
   const info = INFO_BLOCK.exec(xml)?.groups.info;
   const id = info && ID.exec(info)?.groups.id.trim();
   if (!info || !id || !isCslStyle(xml)) return undefined;
+  const styleId = decodeXmlText(id);
   const title = TITLE.exec(info)?.groups.title.trim();
+  // A style with no title lists under its own ID; a file name would put a path
+  // fragment of the user's machine in front of them.
   return {
-    id: decodeXmlText(id),
-    title: title ? decodeXmlText(title) : basename(path, CSL_EXT),
+    id: styleId,
+    title: title ? decodeXmlText(title) : styleId,
     path,
     parentId: parentIdOf(info),
     defaultLocale: defaultLocaleOf(xml),

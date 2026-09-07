@@ -242,7 +242,7 @@ describe("Language Pack install lifecycle", () => {
         schemaVersion: 1,
         locale: "zh-CN",
         messages: Object.fromEntries(
-          Array.from({ length: 1_001 }, (_, index) => [`m${index}`, "x"]),
+          Array.from({ length: 1_501 }, (_, index) => [`m${index}`, "x"]),
         ),
       }),
     ],
