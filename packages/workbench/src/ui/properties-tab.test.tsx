@@ -206,3 +206,40 @@ it("shows row diagnostics and the produced properties beside the final fold", ()
   );
   expect(output.container.querySelector("dl")).toBeNull();
 });
+
+it("offers a native JavaScript recovery action without the web-only instruction", () => {
+  const source = `---
+id: native
+name: Native
+version: 1.0.0
+contract: 2
+filename: paper
+frontmatter:
+  - key: title
+    js: zt.title
+---
+Note
+--- zotlit:annotation ---
+Annotation`;
+  const controller = new WorkbenchDocumentController(source, {
+    runtime: "native",
+  });
+  let opened: string | null = null;
+  render(
+    <PropertiesPane
+      controller={controller}
+      entries={controller.managedEntries!}
+      properties={[]}
+      fold={[]}
+      diagnostics={[]}
+      selected={1}
+      onSelect={() => {}}
+      onOpenSource={(range) => {
+        opened = source.slice(range.from, range.to);
+      }}
+    />,
+  );
+  expect(screen.queryByText(m.workbench_properties_javascript())).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: m.workbench_advanced() }));
+  expect(opened).toBe("zt.title");
+});

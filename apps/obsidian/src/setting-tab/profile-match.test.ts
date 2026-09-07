@@ -106,6 +106,7 @@ describe("Profile row Match action", () => {
     } as unknown as SettingTabContext;
     const initialRow = profileRows(ctx).items![0]!;
     expect(rowButtons(initialRow).map((button) => button.text)).toEqual([
+      m.profile_editor_edit(),
       m.settings_profile_match_action(),
     ]);
     expect(
@@ -119,7 +120,9 @@ describe("Profile row Match action", () => {
       .replace("Body", "Current body");
     f.vault.modifyFile(path, current);
     await act(async () => {
-      rowButtons(initialRow)[0]!.click();
+      rowButtons(initialRow)
+        .find((button) => button.text === m.settings_profile_match_action())!
+        .click();
       await vi.advanceTimersByTimeAsync(500);
     });
     const modal = openedModal(open.mock.contexts);
@@ -154,7 +157,9 @@ describe("Profile row Match action", () => {
       m.settings_profile_match_status({ state: "unevaluable" }),
     );
     await act(async () => {
-      rowButtons(profileRows(ctx).items![0]!)[0]!.click();
+      rowButtons(profileRows(ctx).items![0]!)
+        .find((button) => button.text === m.settings_profile_match_action())!
+        .click();
       await vi.advanceTimersByTimeAsync(500);
     });
     expect(
@@ -191,7 +196,11 @@ describe("Profile row Match action", () => {
       requestUpdate: vi.fn(),
     } as unknown as SettingTabContext;
     using open = mockModalOpen();
-    await act(async () => rowButtons(profileRows(ctx).items![0]!)[0]!.click());
+    await act(async () =>
+      rowButtons(profileRows(ctx).items![0]!)
+        .find((button) => button.text === m.settings_profile_match_action())!
+        .click(),
+    );
     await vi.waitFor(() => expect(open).toHaveBeenCalledOnce());
     const modal = openedModal(open.mock.contexts);
     await act(() => modalButton(modal, m.modal_cancel()).click());

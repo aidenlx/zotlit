@@ -70,6 +70,7 @@
     "@zotlit/db": "workspace:*",
     "@zotlit/templates": "workspace:*",
     "arkregex": "catalog:",
+    "diff": "8.0.4",
     "jsonc-parser": "^3.3.1",
     "valibot": "catalog:",
     "yaml": "catalog:",

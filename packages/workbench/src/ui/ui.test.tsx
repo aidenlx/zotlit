@@ -156,6 +156,42 @@ describe("the tab bar", () => {
 });
 
 describe("the edit toolbar", () => {
+  it("puts shared history and an Advanced toggle between the host's header slots", () => {
+    const onModeChange = vi.fn<(advanced: boolean) => void>();
+    const { store, ui } = mount(
+      <EditToolbar
+        layout="linear"
+        leading={<button>Paper</button>}
+        onModeChange={onModeChange}
+      >
+        <button>Markdown</button>
+        <button>Menu</button>
+      </EditToolbar>,
+    );
+    render(ui);
+    expect(
+      screen
+        .getAllByRole("button")
+        .map(
+          (button) => button.getAttribute("aria-label") ?? button.textContent,
+        ),
+    ).toEqual([
+      "Paper",
+      m.workbench_undo(),
+      m.workbench_redo(),
+      m.workbench_advanced(),
+      "Markdown",
+      "Menu",
+    ]);
+    const advanced = screen.getByRole("button", {
+      name: m.workbench_advanced(),
+    });
+    fireEvent.click(advanced);
+    expect(store.getState().advanced).toBe(true);
+    fireEvent.click(advanced);
+    expect(store.getState().advanced).toBe(false);
+    expect(onModeChange.mock.calls).toEqual([[true], [false]]);
+  });
   it("switches Basic and Advanced through the store", () => {
     const { store, ui } = mount(<EditToolbar />);
     render(ui);

@@ -1,5 +1,6 @@
 // The default Profile's main-page rows and the Literature note profiles page.
 import { basename } from "node:path/posix";
+import { Menu } from "obsidian";
 import type {
   SettingDefinitionItem,
   SettingDefinitionList,
@@ -13,6 +14,7 @@ import { BaseNotice } from "@/lib/notice";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { SettingsService } from "@/services/settings/service";
+import { openProfileEditor } from "@/views/profile-editor/register";
 
 import { referencesStyleDefinition } from "./citations";
 import type {
@@ -225,6 +227,15 @@ function profilesList(
       render: (setting) => {
         setting.addButton((button) =>
           button
+            .setButtonText(m.profile_editor_edit())
+            .setDisabled(locked)
+            .onClick(() => {
+              const file = ctx.app.vault.getFileByPath(profile.path);
+              if (file) void openProfileEditor(ctx.app, file);
+            }),
+        );
+        setting.addButton((button) =>
+          button
             .setButtonText(m.settings_profile_match_action())
             .setDisabled(locked)
             .onClick(
@@ -234,9 +245,19 @@ function profilesList(
         );
         setting.addExtraButton((button) =>
           button
-            .setIcon("pencil")
-            .setTooltip(m.settings_template_open())
-            .onClick(() => void openDocument(ctx, profile.path)),
+            .setIcon("more-horizontal")
+            .setTooltip(m.profile_editor_open_markdown())
+            .onClick(() => {
+              const menu = new Menu();
+              menu.addItem((item) =>
+                item
+                  .setTitle(m.profile_editor_open_markdown())
+                  .setIcon("file-text")
+                  .onClick(() => void openDocument(ctx, profile.path)),
+              );
+              const bounds = button.extraSettingsEl.getBoundingClientRect();
+              menu.showAtPosition({ x: bounds.left, y: bounds.bottom });
+            }),
         );
         setting.addExtraButton((button) =>
           button
