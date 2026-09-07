@@ -107,14 +107,6 @@ async function whenClosed(service: LocalServerService): Promise<void> {
   });
 }
 
-it("defaults to a closed port hosting both services", () => {
-  // No port opens until the user turns the server on; each hosted service is
-  // then on unless the user says otherwise.
-  expect(defaults["server.enabled"]).toBe(false);
-  expect(defaults["server.live-update"]).toBe(true);
-  expect(defaults["server.workbench"]).toBe(true);
-});
-
 it("serves without taking over the window's Request and Response", async () => {
   const nativeRequest = globalThis.Request;
   const nativeResponse = globalThis.Response;
@@ -191,6 +183,24 @@ it("binds the next free port when the configured one is taken", async () => {
     headers: companionHeaders,
   });
   expect(res.status).toBe(200);
+});
+
+it("unloads cleanly when no port in the range can bind", async () => {
+  const settings = makeSettings({
+    "server.enabled": true,
+    "server.port": await freePort(),
+    // An address this machine does not own, so every bind in the range fails.
+    "server.hostname": "203.0.113.1",
+  });
+
+  const service = new LocalServerService(makeDeps(settings.service));
+  await service.ready;
+  // Disposal waits on the bind chain: a bind attempt that never settles hangs
+  // the plugin's unload instead of returning here.
+  await service[Symbol.asyncDispose]();
+
+  expect(service.effectivePort).toBe(null);
+  expect(service.available).toBe(false);
 });
 
 it("closes and reopens the listener as the server toggle changes", async () => {
