@@ -516,6 +516,7 @@ export class ProfileEditorView extends TextFileView {
       item
         .setTitle(m.profile_editor_open_markdown())
         .setIcon("file-text")
+        .setDisabled(!this.file)
         .onClick(() => void this.openMarkdown()),
     );
     if (this.file?.path === this.#deps.profile?.defaultDocumentPath)
@@ -1001,6 +1002,7 @@ function EditorHeader({ view }: { view: ProfileEditorView }) {
       <button
         className="clickable-icon"
         {...tooltipAttrs(m.profile_editor_open_markdown())}
+        disabled={!view.file}
         onClick={() => void view.openMarkdown()}
       >
         <Icon name="file-code" />
