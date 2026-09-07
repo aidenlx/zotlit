@@ -6,10 +6,13 @@ import { createLocalBridgeApp } from "./app";
 import type { ConnectionGrantDescription } from "./app";
 import { PRERELEASE_DOCS_ORIGIN, STABLE_DOCS_ORIGIN } from "./origins";
 import type { LocalBridgeReads } from "./reads";
+import type { LocalBridgeSave } from "./save";
 import { BridgeSessions } from "./sessions";
 import type { BridgeConnection } from "./sessions";
 
 const OTHER_ORIGIN = "https://zotlit.example.com";
+/** The Profile the harness' own connection is bound to. */
+const PROFILE_ID = "books";
 
 /** A fixed clock the test moves by hand, so a code's expiry is not a wait. */
 class TestClock {
@@ -53,6 +56,15 @@ const READS = {
   templateSchema: () => ({ note: {}, annotation: {}, filename: {} }),
 } as unknown as LocalBridgeReads;
 
+/** The write boundary as the gates see it: it records what reached it. */
+const SAVED: { profileId: string; source: string }[] = [];
+const SAVE: LocalBridgeSave = {
+  saveSelectedProfile: (profileId, request) => {
+    SAVED.push({ profileId, source: request.source });
+    return Promise.resolve({ state: "saved", revision: "written" });
+  },
+};
+
 /** The shape a bridge call takes here: plain headers, so nothing spreads wrong. */
 interface CallInit {
   method?: string;
@@ -81,6 +93,7 @@ function setup(): Harness {
     allowedOrigins: [STABLE_DOCS_ORIGIN, PRERELEASE_DOCS_ORIGIN],
     sessions,
     reads: READS,
+    save: SAVE,
     describeGrant: (connection) => Promise.resolve(grantOf(connection)),
   });
   const request = async (
@@ -100,7 +113,7 @@ function setup(): Harness {
     async connect() {
       const code = sessions.mintCode({
         origin: STABLE_DOCS_ORIGIN,
-        profileId: "books",
+        profileId: PROFILE_ID,
         item: { key: "IANNP5A2", title: "Why research findings are false" },
       });
       const res = await request(LOCAL_BRIDGE_PATHS.codeBootstrap, {
@@ -389,19 +402,32 @@ describe("a live Workbench Connection", () => {
     expect(live.status).toBe(200);
   });
 
-  it("refuses the Save, which has not landed yet", async () => {
+  it("hands an authorized Save to the write boundary under the session's Profile", async () => {
     const bridge = setup();
     const credential = await bridge.connect();
+    SAVED.length = 0;
 
+    const invalid = await bridge.request(
+      LOCAL_BRIDGE_PATHS.saveSelectedProfile,
+      { method: "POST", headers: authorized(credential), body: "{}" },
+    );
     const res = await bridge.request(LOCAL_BRIDGE_PATHS.saveSelectedProfile, {
       method: "POST",
       headers: authorized(credential),
-      body: JSON.stringify({}),
+      body: JSON.stringify({
+        reference: PROFILE_ID,
+        expected: { state: "absent" },
+        source: "# Draft",
+      }),
     });
 
-    expect(res.status).toBe(501);
+    expect(invalid.status).toBe(400);
+    expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({
-      error: { code: "not-implemented", message: expect.any(String) },
+      state: "saved",
+      revision: "written",
     });
+    // The Profile a Save writes is the session's, never one the body names.
+    expect(SAVED).toEqual([{ profileId: PROFILE_ID, source: "# Draft" }]);
   });
 });

@@ -29,6 +29,7 @@ import {
 } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { profileRevision } from "@/lib/profile-revision";
 import {
   DEFAULT_PROFILE,
   isProfileId,
@@ -149,6 +150,32 @@ export interface ProfileDiagnostic {
   readonly message: string;
   readonly paths?: readonly string[];
   readonly reason?: "invalid-profile-id";
+}
+
+/** The document a write expects to find: none at all, or one exact revision. */
+export type ProfileDocumentExpectation =
+  | { readonly state: "absent" }
+  | { readonly state: "revision"; readonly revision: string };
+
+/** What a write did: the new revision, or the reason the file was left alone. */
+export type ProfileDocumentWrite =
+  | { readonly state: "saved"; readonly revision: string }
+  | {
+      readonly state: "refused";
+      readonly reason: "revision-conflict" | "document-exists";
+      /** The revision the vault holds now; absent when it holds no document. */
+      readonly currentRevision?: string;
+    };
+
+/** Carries the source a write found where it expected the one it loaded. */
+class ProfileDocumentConflict extends Error {
+  readonly current: string;
+
+  constructor(current: string) {
+    super("The Profile document changed since it was read.");
+    this.name = "ProfileDocumentConflict";
+    this.current = current;
+  }
 }
 
 export interface ProfileDeletionTarget {
@@ -376,6 +403,103 @@ export class ProfileService extends Service {
       return this.#deps.app.vault.cachedRead(file);
     }
     return this.#builtInDocument();
+  }
+
+  /**
+   * Write `source` as this Profile's document, byte for byte, when the vault
+   * still holds the revision the caller read. A built-in Default whose document
+   * is still absent is created here — the eject — and the scan that follows the
+   * write is awaited, so a caller that gets `saved` sees the registry that
+   * carries it.
+   *
+   * @param expected The document the caller edited: `absent` for a Default that
+   *   had none, otherwise the revision it loaded.
+   */
+  async saveSource(
+    selector: ProfileSelector,
+    source: string,
+    expected: ProfileDocumentExpectation,
+  ): Promise<ProfileDocumentWrite> {
+    await this.ready;
+    return this.#mutate(async () => {
+      await this.#settle();
+      const profile = this.resolveProfile(selector);
+      if (!profile)
+        throw new Error(
+          m.settings_profile_source_unavailable({ profile: selector }),
+        );
+      const path = profile.document
+        ? join(
+            this.#deps.settings.current!["template.folder"],
+            profile.document,
+          )
+        : this.defaultDocumentPath;
+      const write = await this.#writeDocument(path, source, expected);
+      if (write.state === "saved") {
+        await this.#settle();
+        logger.debug("Saved a Profile document", { selector });
+      }
+      return write;
+    });
+  }
+
+  /**
+   * The compare-and-write itself. The comparison runs inside the vault's own
+   * read-modify-write, so a document that changed between the two is refused
+   * rather than replaced, and every refusal leaves the file untouched.
+   */
+  async #writeDocument(
+    path: string,
+    source: string,
+    expected: ProfileDocumentExpectation,
+  ): Promise<ProfileDocumentWrite> {
+    const file = this.#deps.app.vault.getFileByPath(path);
+    if (!file) {
+      // The document the caller edited is gone; only a Default that never had
+      // one is created here.
+      if (expected.state === "revision")
+        return { state: "refused", reason: "revision-conflict" };
+      await ensureParentFolder(this.#deps.app, path);
+      try {
+        await this.#deps.app.vault.create(path, source);
+      } catch (error) {
+        if (!isFileExistsError(error)) throw error;
+        return await this.#documentExists(path);
+      }
+      return { state: "saved", revision: profileRevision(source) };
+    }
+    if (expected.state === "absent") return await this.#documentExists(path);
+    try {
+      await this.#deps.app.vault.process(file, (current) => {
+        if (profileRevision(current) !== expected.revision)
+          throw new ProfileDocumentConflict(current);
+        return source;
+      });
+    } catch (error) {
+      if (!(error instanceof ProfileDocumentConflict)) throw error;
+      return {
+        state: "refused",
+        reason: "revision-conflict",
+        currentRevision: profileRevision(error.current),
+      };
+    }
+    return { state: "saved", revision: profileRevision(source) };
+  }
+
+  /** The refusal a document standing where the caller expected none earns. */
+  async #documentExists(path: string): Promise<ProfileDocumentWrite> {
+    const file = this.#deps.app.vault.getFileByPath(path);
+    return {
+      state: "refused",
+      reason: "document-exists",
+      ...(file
+        ? {
+            currentRevision: profileRevision(
+              await this.#deps.app.vault.cachedRead(file),
+            ),
+          }
+        : {}),
+    };
   }
 
   async setMatch(id: ProfileId, match: MatchTree | undefined): Promise<void> {

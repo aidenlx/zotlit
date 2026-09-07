@@ -193,6 +193,10 @@ async function harness(
     allowedOrigins: [STABLE_DOCS_ORIGIN],
     sessions,
     reads,
+    // The Save has its own suite; a read never reaches the write boundary.
+    save: {
+      saveSelectedProfile: () => Promise.reject(new Error("not used here")),
+    },
     describeGrant: () => Promise.reject(new Error("not used here")),
   });
   const code = sessions.mintCode({

@@ -1,7 +1,7 @@
 // The Local Bridge's routes on the Local Server: the gates every `/v1/*` path
-// passes, the session lifecycle behind them, and the read operations a
-// connected page runs. No server lifecycle here, and no vault write — the Save
-// answers a not-implemented refusal until it lands.
+// passes, the session lifecycle behind them, and the operations a connected
+// page runs. No server lifecycle here, and no vault write of its own — the Save
+// route hands the checked request to the write boundary in `save.ts`.
 
 import type { Context } from "hono";
 import { Hono } from "hono/tiny";
@@ -11,6 +11,7 @@ import {
   codeBootstrapRequestSchema,
   disconnectRequestSchema,
   LOCAL_BRIDGE_PATHS,
+  saveSelectedProfileRequestSchema,
   selectedCitationStyleRequestSchema,
   selectedItemRequestSchema,
   templateDependenciesRequestSchema,
@@ -24,6 +25,7 @@ import {
   SelectedItemUnavailableError,
 } from "./reads";
 import type { LocalBridgeReads } from "./reads";
+import type { LocalBridgeSave, LocalBridgeSaveOutcome } from "./save";
 import type { BridgeConnection, BridgeSessions } from "./sessions";
 
 const logger = getLogger("local-bridge");
@@ -44,6 +46,8 @@ export interface LocalBridgeAppDeps {
   sessions: BridgeSessions;
   /** The vault data every read operation answers from. */
   reads: LocalBridgeReads;
+  /** The write boundary one Save passes before the vault changes. */
+  save: LocalBridgeSave;
   /** Reads the versions and bindings in effect now, which every grant carries. */
   describeGrant(
     connection: BridgeConnection,
@@ -258,15 +262,47 @@ export function createLocalBridgeApp(
     return context.json(style);
   });
 
-  // The Save lands on its own ticket. Until then an authorized page gets a
-  // refusal it can name rather than a route that does not exist.
-  app.all(LOCAL_BRIDGE_PATHS.saveSelectedProfile, (context) =>
-    refuse(context, {
-      status: 501,
-      code: "not-implemented",
-      message: "This plugin build does not answer that operation yet.",
-    }),
-  );
+  app.post(LOCAL_BRIDGE_PATHS.saveSelectedProfile, async (context) => {
+    const request = await parseBody(
+      context.req.raw,
+      saveSelectedProfileRequestSchema,
+    );
+    if (!request.success) return invalidRequest(context, request.issues);
+    const profileId = context.get("connection").profileId;
+    let outcome: LocalBridgeSaveOutcome;
+    try {
+      outcome = await deps.save.saveSelectedProfile(profileId, request.output);
+    } catch (error) {
+      if (!(error instanceof ProfileDocumentMissingError)) throw error;
+      return refuse(context, {
+        status: 409,
+        code: "document-missing",
+        message: "The selected Profile document no longer exists.",
+      });
+    }
+    if (outcome.state === "reference-refused") {
+      return refuse(context, {
+        status: 403,
+        code: "document-reference-refused",
+        message: "The document reference is outside this Workbench Connection.",
+      });
+    }
+    if (outcome.state === "refused") {
+      // A refusal the contract names is the answer itself, so the page can tell
+      // the user which check stopped the Save and keep the draft.
+      logger.debug("Refused a Local Bridge Save", {
+        operation: "selected-profile:save",
+        profileId,
+        reason: outcome.reason,
+      });
+      return context.json(outcome);
+    }
+    logger.info("Saved a Profile document from the web Workbench", {
+      operation: "selected-profile:save",
+      profileId,
+    });
+    return context.json(outcome);
+  });
 
   // A fault the routes do not name still answers the one error shape the page
   // parses, and the record stays a category and a message.
@@ -324,7 +360,7 @@ function invalidRequest(
 function refuse(
   context: Context,
   error: {
-    readonly status: 400 | 401 | 403 | 409 | 500 | 501;
+    readonly status: 400 | 401 | 403 | 409 | 500;
     readonly code: string;
     readonly message: string;
   },

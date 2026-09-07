@@ -203,6 +203,8 @@
     }
   ],
   "notice_attachment_sources_skipped_action": "Open ZotLit settings",
+  "notice_workbench_profile_saved": "Template document saved from the web Workbench.",
+  "notice_workbench_profile_saved_action": "Update all notes",
   "notice_imported_note": "Imported {title}.",
   "notice_updated_imported_note": "Updated imported note {title}.",
   "modal_import_overwrite_title": "Overwrite imported note",

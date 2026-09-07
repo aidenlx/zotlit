@@ -18,7 +18,7 @@ import { defaults } from "@/services/settings/schema";
 import type { Settings, SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
-import type { BridgeProfileReader } from "./reads";
+import type { BridgeProfileWriter } from "./save";
 import { LocalBridgeService } from "./service";
 import type { LocalBridgeServiceDeps } from "./service";
 
@@ -92,7 +92,7 @@ const PROFILES = {
       ? ({ label: "Books" } as ReturnType<ProfileReader["resolveProfile"]>)
       : undefined,
   getSource: () => Promise.resolve(""),
-} as unknown as BridgeProfileReader;
+} as unknown as BridgeProfileWriter;
 
 /**
  * The vault data the reads answer from. This suite is about the lifecycle and

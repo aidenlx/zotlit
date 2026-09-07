@@ -161,6 +161,8 @@
   "notice_attachment_sources_skipped_folders": "未批准的源文件夹：",
   "notice_attachment_sources_skipped_next": "打开“附件 → 已批准文件夹”，批准你信任的文件夹，然后重新导入受影响的笔记。",
   "notice_attachment_sources_skipped_action": "打开 ZotLit 设置",
+  "notice_workbench_profile_saved": "已从网页模板工作台保存模板文档。",
+  "notice_workbench_profile_saved_action": "更新全部笔记",
   "notice_imported_note": "已导入 {title}。",
   "notice_updated_imported_note": "更新了导入的笔记 {title}。",
   "modal_import_overwrite_title": "覆盖导入的笔记",

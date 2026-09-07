@@ -26,6 +26,7 @@ import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { registerLibraryScopeCli } from "./services/library-scope/cli";
 import { registerLibraryScopeNotices } from "./services/library-scope/notices";
+import { registerWorkbenchSavedNotice } from "./services/local-bridge/notices";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { runBatchUpdateAll } from "./services/note-feature/update-batch";
 import { registerCitationStyleNotice } from "./services/pandoc/notices";
@@ -233,6 +234,19 @@ export default class ZotLitPlugin extends Plugin {
     addIndexedKeyActions(this);
     addCitekeyEditorActions(this, { citekeyEditor: services.citekeyEditor });
     registerIndexedKeyFileMenu(this);
+    const updateAll = () =>
+      runBatchUpdateAll({
+        createProfile: services.createProfile,
+        importProfile: services.importProfile,
+        zoteroPref: services.zoteroPref,
+        profile: services.profile,
+        app: this.app,
+        db: services.db,
+        settings: services.settings,
+        libraryScope: services.libraryScope,
+        noteFeature: services.noteFeature,
+        noteIndex: services.noteIndex,
+      });
     addNoteFeatureActions(this, {
       createProfile: services.createProfile,
       importProfile: services.importProfile,
@@ -240,20 +254,14 @@ export default class ZotLitPlugin extends Plugin {
       noteFeature: services.noteFeature,
       zoteroPref: services.zoteroPref,
       batchImport: services.batchImport,
-      updateAll: () =>
-        runBatchUpdateAll({
-          createProfile: services.createProfile,
-          importProfile: services.importProfile,
-          zoteroPref: services.zoteroPref,
-          profile: services.profile,
-          app: this.app,
-          db: services.db,
-          settings: services.settings,
-          libraryScope: services.libraryScope,
-          noteFeature: services.noteFeature,
-          noteIndex: services.noteIndex,
-        }),
+      updateAll,
     });
+    stack.defer(
+      registerWorkbenchSavedNotice({
+        localBridge: services.localBridge,
+        updateAll,
+      }),
+    );
     registerCitationSuggest(this, {
       app: this.app,
       lookup: services.itemLookup,
