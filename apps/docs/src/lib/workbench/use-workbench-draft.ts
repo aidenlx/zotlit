@@ -1,6 +1,8 @@
 // What this browser keeps between visits: the document being edited, the paper
-// it is shown against, and the prompt the next visit answers. The draft and the
-// snapshot are kept together, so a reload offers both or neither.
+// it is shown against, and the prompt the next visit answers. One record covers
+// both halves, and `transfer.ts` decides which storage each half is kept in, so
+// a visit that outlived its tab is offered the text with the paper it still
+// has.
 
 import { useEffect, useState } from "react";
 
@@ -62,7 +64,8 @@ interface SavedDocument {
 }
 
 export interface WorkbenchDraftKeeper {
-  readonly reference: string;
+  /** The document being edited, named as its record is keyed. */
+  readonly location: DraftLocation;
   /** Changes since the file was opened, downloaded, or saved to Obsidian. */
   readonly dirty: boolean;
   /** The last visit's work, standing until the reader answers the prompt. */
@@ -152,7 +155,7 @@ export function useWorkbenchDraft({
   ]);
 
   return {
-    reference,
+    location,
     dirty: controller.source !== baseline.source,
     restorable,
     adopt({ reference: opened, source, installationId }, kept) {

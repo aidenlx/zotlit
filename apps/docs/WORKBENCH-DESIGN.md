@@ -25,6 +25,13 @@ the result it changes. Put optional guidance behind a visible Help control
 beside its task, and routine draft status below the panes. Keep errors and
 required confirmations in the flow with their recovery actions visible.
 
+One piece of guidance stands in the flow: the getting-started strip a page
+opened from Obsidian carries under the header, naming the three tasks of the
+main loop in three lines. It is dismissible, it stays dismissed in that
+browser, and it is the whole of the first-run guidance — there is no tour.
+Word its lines so they hold at every fold, since the field list and the result
+change place below 1180 px and 780 px.
+
 Use 12 px outer insets and column gaps. In the three-column Note view, align
 the top edges of the field list, editor, and preview content. Size the rows
 above them together: search, template tabs, and preview controls follow the

@@ -228,9 +228,15 @@ export function Workbench() {
     };
     // A connection that comes back to the document already open leaves the text
     // and its undo history where they are: the connection was lost, the work
-    // was not. The vault's own bytes become the saved state the draft is
-    // measured against, so an unsaved edit stays an unsaved edit.
-    if (drafts.reference === opened.reference && !replaceConnected.current) {
+    // was not. The vault counts as part of that identity, so the same reference
+    // read out of another vault is another document and opens as one. The
+    // vault's own bytes become the saved state the draft is measured against,
+    // so an unsaved edit stays an unsaved edit.
+    if (
+      drafts.location.reference === opened.reference &&
+      drafts.location.installationId === opened.installationId &&
+      !replaceConnected.current
+    ) {
       drafts.rebase(opened);
       // The text on screen still descends from the revision it was read at, so
       // Save answers for that one: the vault moved, this draft did not.
@@ -604,7 +610,7 @@ export function Workbench() {
       profileFileName(manifest?.id, { draft: controller.document === null }),
     );
     if (!canSaveToVault)
-      drafts.rebase({ reference: drafts.reference, source: controller.source });
+      drafts.rebase({ ...drafts.location, source: controller.source });
     setFileMessage(m.workbench_download_complete());
   }
 
@@ -638,7 +644,7 @@ export function Workbench() {
   const connected = connection.state === "connected";
   const canSaveToVault =
     connected &&
-    saveTarget?.reference === drafts.reference &&
+    saveTarget?.reference === drafts.location.reference &&
     connection.capabilities.includes("selected-profile:save");
   // One input serves both screens, because the handoff is where a reader who
   // cannot edit this Profile reaches for another one.
@@ -800,7 +806,8 @@ export function Workbench() {
           editingConnectedProfile={canSaveToVault}
           onReconnect={() => {
             // Reconnecting the current vault document preserves its draft and history.
-            if (saveTarget?.reference === drafts.reference) reconnect();
+            if (saveTarget?.reference === drafts.location.reference)
+              reconnect();
             else replaceProfile(m.workbench_connection_reconnect(), reconnect);
           }}
           onDisconnect={() => void disconnect()}
