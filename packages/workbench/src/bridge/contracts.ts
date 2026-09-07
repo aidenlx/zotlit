@@ -22,6 +22,15 @@ export const DOCS_DEV_SERVER_ORIGIN = "http://localhost:3000";
 export const CONNECT_FRAGMENT_CODE = "zotlit-connect";
 export const CONNECT_FRAGMENT_PORT = "port";
 
+/** The launch fragment itself, which the side that opens the page writes. */
+export function connectFragment(code: string, port: number): string {
+  const parameters = new URLSearchParams([
+    [CONNECT_FRAGMENT_CODE, code],
+    [CONNECT_FRAGMENT_PORT, String(port)],
+  ]);
+  return `#${parameters.toString()}`;
+}
+
 /** Where a Local Bridge answers, given the port the launch URL carried. */
 export function localBridgeOrigin(port: number): string {
   return `http://${LOCAL_BRIDGE_HOST}:${port}`;

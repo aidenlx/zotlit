@@ -11,6 +11,7 @@ import {
   LocalBridgeClient,
   LocalBridgeProtocolError,
   LocalBridgeUnavailableError,
+  connectFragment,
   localBridgeOrigin,
 } from "@zotlit/workbench/bridge";
 
@@ -102,12 +103,12 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     const code = bridge.control.issueOneTimeCode();
 
     await expect(
-      clientFor(bridge).connectFromFragment(connectFragment(code)),
+      clientFor(bridge).connectFromFragment(connectFragment(code, PORT)),
     ).resolves.toMatchObject({ state: "connected" });
 
     for (const refused of [code, "never-issued"]) {
       await expect(
-        clientFor(bridge).connectFromFragment(connectFragment(refused)),
+        clientFor(bridge).connectFromFragment(connectFragment(refused, PORT)),
       ).rejects.toMatchObject({
         name: "LocalBridgeProtocolError",
         status: 401,
@@ -156,7 +157,9 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     const client = clientFor(bridge, { storage });
 
     await expect(
-      client.connectFromFragment(connectFragment(bridge.initialOneTimeCode)),
+      client.connectFromFragment(
+        connectFragment(bridge.initialOneTimeCode, PORT),
+      ),
     ).resolves.toMatchObject({
       state: "connected",
       installation: { id: "fixture-installation", vault: "ZotLit Fixture" },
@@ -257,7 +260,9 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     const client = clientFor(bridge);
 
     await expect(
-      client.connectFromFragment(connectFragment(bridge.initialOneTimeCode)),
+      client.connectFromFragment(
+        connectFragment(bridge.initialOneTimeCode, PORT),
+      ),
     ).resolves.toMatchObject({ state: "connected" });
     const profile = await client.readSelectedProfile();
     expect(profile.document).toMatchObject({
@@ -289,7 +294,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     const bridge = createMockLocalBridge({ layout, allowedOrigin: ORIGIN });
     const client = clientFor(bridge);
     await client.connectFromFragment(
-      connectFragment(bridge.initialOneTimeCode),
+      connectFragment(bridge.initialOneTimeCode, PORT),
     );
     const profile = await client.readSelectedProfile();
     if (profile.document.state !== "present") {
@@ -337,7 +342,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     bridge.control.allowNewSessions();
     const code = bridge.control.issueOneTimeCode();
     await expect(
-      incompatible.connectFromFragment(connectFragment(code)),
+      incompatible.connectFromFragment(connectFragment(code, PORT)),
     ).resolves.toEqual({
       state: "unavailable",
       reason: "version-mismatch",
@@ -361,7 +366,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     const storage = memoryStorage();
     const client = clientFor(bridge, { storage });
     await client.connectFromFragment(
-      connectFragment(bridge.initialOneTimeCode),
+      connectFragment(bridge.initialOneTimeCode, PORT),
     );
 
     // The tab a reload or a lost connection left behind, holding the grant.
@@ -410,7 +415,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     });
     const client = clientFor(bridge);
     await client.connectFromFragment(
-      connectFragment(bridge.initialOneTimeCode),
+      connectFragment(bridge.initialOneTimeCode, PORT),
     );
     const profile = await client.readSelectedProfile();
     if (profile.document.state !== "present") {
@@ -481,7 +486,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     });
     const client = clientFor(bridge);
     await client.connectFromFragment(
-      connectFragment(bridge.initialOneTimeCode),
+      connectFragment(bridge.initialOneTimeCode, PORT),
     );
     const profile = await client.readSelectedProfile();
     if (profile.document.state !== "present") {
@@ -571,7 +576,7 @@ frontmatter:\n`,
     });
     const client = clientFor(bridge);
     await client.connectFromFragment(
-      connectFragment(bridge.initialOneTimeCode),
+      connectFragment(bridge.initialOneTimeCode, PORT),
     );
     const profile = await client.readSelectedProfile();
     if (profile.document.state !== "present") {
@@ -616,7 +621,7 @@ frontmatter:\n`,
     });
     const client = clientFor(bridge);
     await client.connectFromFragment(
-      connectFragment(bridge.initialOneTimeCode),
+      connectFragment(bridge.initialOneTimeCode, PORT),
     );
     const profile = await client.readSelectedProfile();
     if (profile.document.state !== "present") {
@@ -657,7 +662,7 @@ frontmatter:\n`,
     });
     const client = clientFor(bridge);
     await client.connectFromFragment(
-      connectFragment(bridge.initialOneTimeCode),
+      connectFragment(bridge.initialOneTimeCode, PORT),
     );
 
     await expect(client.listCitationStyles()).resolves.toContainEqual({
@@ -696,11 +701,6 @@ frontmatter:\n`,
     expect(nonLoopback.status).toBe(403);
   });
 });
-
-/** The launch fragment Obsidian opens the Workbench with. */
-function connectFragment(code: string, port = PORT): string {
-  return `#zotlit-connect=${code}&port=${port}`;
-}
 
 function clientFor(
   bridge: ReturnType<typeof createMockLocalBridge>,

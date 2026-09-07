@@ -6,7 +6,7 @@ import { createMockLocalBridge } from "./local-bridge.ts";
 
 export interface StartMockLocalBridgeOptions {
   readonly layout: FixtureLayout;
-  readonly allowedOrigin?: string;
+  readonly allowedOrigin: string;
   readonly port: number;
   readonly conflictNextSave?: boolean;
 }
@@ -21,9 +21,7 @@ export function startMockLocalBridge(
 ): StartedMockLocalBridge {
   const bridge = createMockLocalBridge({
     layout: options.layout,
-    ...(options.allowedOrigin === undefined
-      ? {}
-      : { allowedOrigin: options.allowedOrigin }),
+    allowedOrigin: options.allowedOrigin,
   });
   if (options.conflictNextSave) bridge.control.conflictNextSave();
   return {
