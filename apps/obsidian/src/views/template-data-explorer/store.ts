@@ -1,21 +1,14 @@
-// Per-instance store for one Template Data Explorer view: db-readiness, chosen-item identity, and the built display-tree nodes.
+// Per-instance store for one Template Data Explorer view: db-readiness, chosen-item identity, and the current Template data root.
 import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-import type { DisplayNode } from "@zotlit/workbench/explorer";
-
 export interface ExplorerState {
   dbReady: boolean;
+  data: Record<string, unknown> | null;
   itemLabel: string | null;
-  /** Built display-tree nodes for the current context; null before the first build or when no item. */
-  nodes: readonly DisplayNode[] | null;
   /** Current anchor when the tree is rooted at an annotation instead of the Note Root; null at the Note Root. */
   anchor: { key: string; label: string } | null;
-  /** Current filter query; empty string means no filter active. */
-  filterQuery: string;
-  /** Keys of nodes whose label/value directly matched the filter; null when filter is inactive. */
-  matchedKeys: ReadonlySet<string> | null;
   itemVanished: boolean;
 }
 
@@ -24,11 +17,9 @@ export type ExplorerStore = ReturnType<typeof createExplorerStore>;
 export function createExplorerStore() {
   return createStore<ExplorerState>()(() => ({
     dbReady: false,
+    data: null,
     itemLabel: null,
-    nodes: null,
     anchor: null,
-    filterQuery: "",
-    matchedKeys: null,
     itemVanished: false,
   }));
 }

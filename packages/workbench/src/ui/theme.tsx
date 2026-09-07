@@ -36,6 +36,45 @@ export interface WorkbenchParts {
     | "conjunction"
     | "result"
     | "error";
+  dataExplorer:
+    | "hint"
+    | "root-label"
+    | "explorer"
+    | "header"
+    | "heading"
+    | "variants"
+    | "variant"
+    | "search"
+    | "body"
+    | "empty";
+  explorerTree:
+    | "simple-row"
+    | "simple-heading"
+    | "path"
+    | "simple-value"
+    | "tree"
+    | "spacer"
+    | "contents"
+    | "group"
+    | "chevron"
+    | "chevron-icon"
+    | "actions"
+    | "action"
+    | "key"
+    | "hint"
+    | "placeholder"
+    | "color-swatch"
+    | "link"
+    | "long-toggle"
+    | "row"
+    | "opaque"
+    | "color"
+    | "string"
+    | "number"
+    | "boolean"
+    | "null"
+    | "undefined"
+    | "long-text";
   nameFolder:
     | "source-button"
     | "confirm-button"
@@ -196,6 +235,8 @@ export type WorkbenchClassMap = {
 
 /** The icons the tree asks for, named by role so each host picks the glyph. */
 export type WorkbenchIcon =
+  | "copy"
+  | "confirm"
   | "add"
   | "remove"
   | "move-up"

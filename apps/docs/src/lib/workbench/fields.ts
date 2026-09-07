@@ -9,7 +9,6 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
-import { formatAccessorPath, renderSnippet } from "@zotlit/workbench/explorer";
 import type {
   DisplayNode,
   SnippetKind,
@@ -17,7 +16,7 @@ import type {
 } from "@zotlit/workbench/explorer";
 import { restoreTemplateData } from "@zotlit/workbench/render";
 import type { AnnotationExample, SAMPLE_ITEMS } from "@zotlit/workbench/render";
-import { m, COMMON_FIELDS } from "@zotlit/workbench/ui";
+import { m, fieldSnippet as sharedFieldSnippet } from "@zotlit/workbench/ui";
 import type { TemplateRoot } from "@zotlit/workbench/ui";
 
 export type SampleItem = (typeof SAMPLE_ITEMS)[number];
@@ -77,57 +76,6 @@ export function rootData(
     : null;
 }
 
-export interface FieldRow {
-  readonly node: DisplayNode;
-  readonly label: string;
-  readonly value: string;
-}
-
-/**
- * The common rows for `root` in their fixed order, over display nodes built
- * from that root. A row the paper has no key for is dropped rather than shown
- * empty.
- */
-export function commonRows(
-  root: TemplateRoot,
-  nodes: readonly DisplayNode[],
-): FieldRow[] {
-  const byKey = new Map(nodes.map((node) => [node.key, node]));
-  return COMMON_FIELDS[root].flatMap((field) => {
-    const node = byKey.get(field.key);
-    return node
-      ? [{ node, label: field.label(), value: fieldValueText(node) }]
-      : [];
-  });
-}
-
-/** Matches a row on the name the reader sees and on this paper's value. */
-export function rowMatches(row: FieldRow, query: string): boolean {
-  const needle = query.toLowerCase();
-  return (
-    row.label.toLowerCase().includes(needle) ||
-    row.value.toLowerCase().includes(needle)
-  );
-}
-
-/** This paper's value for one row, as the single line a row shows. */
-export function fieldValueText(node: DisplayNode): string {
-  if (node.kind === "placeholder") return node.reason;
-  if (node.kind === "helper") return node.evaluated ?? "";
-  switch (node.valueType) {
-    case "array":
-      return (node.value as unknown[]).map(String).join(", ");
-    case "object":
-      return node.preview ?? "";
-    case "getter":
-    case "null":
-    case "undefined":
-      return "";
-    default:
-      return String(node.value);
-  }
-}
-
 /**
  * The engine every snippet is written in, which the `{{` accelerator belongs
  * to as well. The web host edits and renders Liquid alone and sends an Eta
@@ -144,9 +92,7 @@ export function fieldSnippet(
   mode: FieldInsertionMode,
   kind: SnippetKind,
 ): string {
-  if (mode === "template") return renderSnippet(node, SNIPPET_ENGINE, kind);
-  const path = formatAccessorPath(node.path, "zt");
-  return mode === "expression" ? path : JSON.stringify({ $eval: path });
+  return sharedFieldSnippet(node, mode, { kind, engine: SNIPPET_ENGINE });
 }
 
 /** The opening delimiter that starts Template Completion. */
@@ -182,3 +128,5 @@ export function insertSnippet(
   });
   return from + snippet.length;
 }
+
+export { commonRows, fieldValueText, rowMatches } from "@zotlit/workbench/ui";

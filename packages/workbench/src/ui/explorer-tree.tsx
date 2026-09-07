@@ -1,34 +1,21 @@
 // Presentational tree renderer for display-tree nodes; raises intent via callbacks only.
 
-import { regex } from "arkregex";
-import type { IconName } from "obsidian";
-import { useEffect, useRef, useState } from "react";
-
-import { copyValue } from "@zotlit/workbench/explorer";
 import type {
   DisplayNode,
-  DisplayValueType,
   HelperNode,
   PlaceholderNode,
   ValueNode,
-} from "@zotlit/workbench/explorer";
+} from "#/explorer/index";
+import { regex } from "arkregex";
+import { useEffect, useRef, useState } from "react";
 
-import { Icon } from "@/components/obsidian/icon";
-import * as m from "@/lib/i18n/generated/messages";
-import { tooltipAttrs } from "@/lib/utils";
+import { useTooltip } from "./host";
+import { m } from "./paraglide/messages.js";
+import type { ExplorerVariant } from "./store";
+import { useIcon, useParts } from "./theme";
+import type { WorkbenchIcon } from "./theme";
 
-/** Per-primitive value tone; keys stay `text-foreground`, so a key never shares a value's styling. */
-const VALUE_TONE: Record<DisplayValueType, string> = {
-  string: "zt:text-green",
-  number: "zt:text-blue",
-  boolean: "zt:text-purple",
-  null: "zt:text-faint zt:italic",
-  undefined: "zt:text-faint zt:italic",
-  opaque: "zt:text-cyan",
-  getter: "zt:text-faint",
-  array: "zt:text-faint",
-  object: "zt:text-faint",
-};
+import { copyValue, formatPath } from "#/explorer/index";
 
 /** Shared Enter/Space activation for `role="button"` spans, so keyboard users get the same click behavior as a mouse. */
 function activateOnEnterOrSpace<E extends React.KeyboardEvent>(
@@ -43,31 +30,38 @@ function activateOnEnterOrSpace<E extends React.KeyboardEvent>(
 }
 
 export interface DisplayTreeProps {
+  variant?: ExplorerVariant;
   nodes: readonly DisplayNode[];
   /** Keys of nodes directly matched by the filter; null when no filter is active. */
   matchedKeys: ReadonlySet<string> | null;
   onToggle: (key: string) => void;
   /** Copies the node's value; resolves on success so the row can flash a confirmation. */
   onCopyValue: (node: DisplayNode) => Promise<void>;
+  onInsert?: (node: DisplayNode) => void;
   onTemplateMenu: (node: DisplayNode, event: React.MouseEvent) => void;
 }
 
 export function DisplayTree({
+  variant = "all",
   nodes,
   matchedKeys,
   onToggle,
   onCopyValue,
+  onInsert,
   onTemplateMenu,
 }: DisplayTreeProps): React.ReactElement {
+  const part = useParts("explorerTree");
   return (
-    <ul role="tree" className="zt:font-mono zt:text-xs zt:leading-relaxed">
+    <ul role="tree" {...part("tree", variant)}>
       {nodes.map((node) => (
         <TreeNode
           key={node.key}
+          variant={variant}
           node={node}
           matchedKeys={matchedKeys}
           onToggle={onToggle}
           onCopyValue={onCopyValue}
+          onInsert={onInsert}
           onTemplateMenu={onTemplateMenu}
         />
       ))}
@@ -76,56 +70,63 @@ export function DisplayTree({
 }
 
 interface TreeNodeProps {
+  variant: ExplorerVariant;
   node: DisplayNode;
   matchedKeys: ReadonlySet<string> | null;
   onToggle: (key: string) => void;
   onCopyValue: (node: DisplayNode) => Promise<void>;
+  onInsert?: (node: DisplayNode) => void;
   onTemplateMenu: (node: DisplayNode, event: React.MouseEvent) => void;
 }
 
 function TreeNode({
+  variant,
   node,
   matchedKeys,
   onToggle,
   onCopyValue,
+  onInsert,
   onTemplateMenu,
 }: TreeNodeProps) {
+  const part = useParts("explorerTree");
   const isExpanded = node.kind === "value" && node.children !== undefined;
   const isExpandable = node.kind === "value" && node.expandable;
   const isMatched = matchedKeys?.has(node.key) ?? false;
 
   return (
     <li role="treeitem" aria-expanded={isExpandable ? isExpanded : undefined}>
-      <div
-        className={`zt:group zt:rounded zt:relative zt:flex zt:min-w-0 zt:items-start zt:gap-x-1 zt:px-0.5 zt:hover:bg-muted${isMatched ? " zt:bg-(--text-highlight-bg)" : ""}`}
-      >
+      <div {...part("row", isMatched ? "matched" : undefined)}>
         {isExpandable ? (
           <Chevron expanded={isExpanded} onClick={() => onToggle(node.key)} />
         ) : (
-          <span className="zt:mt-[3px] zt:size-3 zt:shrink-0" />
+          <span {...part("spacer")} />
         )}
         {/* Key + hint + value flow as inline text, so a long value starts after its key and wraps beneath — never orphaning the key on its own line. */}
-        <div className="zt:min-w-0 zt:flex-1 zt:select-text">
-          <NodeRow node={node} />
+        <div {...part("contents")}>
+          {variant === "simple" ? (
+            <SimpleNodeRow node={node} />
+          ) : (
+            <NodeRow node={node} />
+          )}
         </div>
         <ActionCluster
           node={node}
           onCopyValue={onCopyValue}
+          onInsert={onInsert}
           onTemplateMenu={onTemplateMenu}
         />
       </div>
       {node.kind === "value" && node.children && (
-        <ul
-          role="group"
-          className="zt:ml-3 zt:border-l zt:border-(--nav-indentation-guide-color) zt:pl-2"
-        >
+        <ul role="group" {...part("group")}>
           {node.children.map((child) => (
             <TreeNode
               key={child.key}
+              variant={variant}
               node={child}
               matchedKeys={matchedKeys}
               onToggle={onToggle}
               onCopyValue={onCopyValue}
+              onInsert={onInsert}
               onTemplateMenu={onTemplateMenu}
             />
           ))}
@@ -142,26 +143,19 @@ function Chevron({
   expanded: boolean;
   onClick: () => void;
 }) {
+  const part = useParts("explorerTree");
+  const icon = useIcon();
   return (
     <span
       role="button"
       tabIndex={0}
-      aria-label={m.template_data_explorer_toggle_node()}
+      aria-label={m.workbench_explorer_toggle_node()}
       onClick={onClick}
       onKeyDown={activateOnEnterOrSpace(() => onClick())}
       data-expanded={expanded ? "" : undefined}
-      className="zt:mt-[3px] zt:flex zt:size-3 zt:shrink-0 zt:cursor-pointer zt:items-center zt:justify-center zt:text-(--nav-collapse-icon-color) zt:transition-transform zt:duration-100 zt:ease-out zt:hover:text-foreground zt:data-[expanded]:rotate-90"
+      {...part("chevron")}
     >
-      <svg viewBox="0 0 24 24" className="zt:size-3">
-        <polyline
-          points="9 6 15 12 9 18"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      <span {...part("chevron-icon")}>{icon("chevron-right")}</span>
     </span>
   );
 }
@@ -170,12 +164,15 @@ function Chevron({
 function ActionCluster({
   node,
   onCopyValue,
+  onInsert,
   onTemplateMenu,
 }: {
   node: DisplayNode;
   onCopyValue: (node: DisplayNode) => Promise<void>;
+  onInsert?: (node: DisplayNode) => void;
   onTemplateMenu: (node: DisplayNode, event: React.MouseEvent) => void;
 }) {
+  const part = useParts("explorerTree");
   const hasValue = copyValue(node) !== null;
   const [copied, setCopied] = useState(false);
   const revertTimer = useRef<number | null>(null);
@@ -188,26 +185,36 @@ function ActionCluster({
   );
 
   const flashCopied = () => {
-    void onCopyValue(node).then(() => {
-      setCopied(true);
-      if (revertTimer.current !== null)
-        window.clearTimeout(revertTimer.current);
-      revertTimer.current = window.setTimeout(() => setCopied(false), 1000);
-    });
+    void onCopyValue(node).then(
+      () => {
+        setCopied(true);
+        if (revertTimer.current !== null)
+          window.clearTimeout(revertTimer.current);
+        revertTimer.current = window.setTimeout(() => setCopied(false), 1000);
+      },
+      () => {},
+    );
   };
 
   return (
-    <div className="zt:absolute zt:top-0.5 zt:right-0 zt:flex zt:items-center zt:gap-0.5 zt:bg-linear-to-l zt:from-background zt:from-60% zt:to-transparent zt:pl-6 zt:opacity-0 zt:group-hover:opacity-100 zt:focus-within:opacity-100">
+    <div {...part("actions")}>
+      {onInsert && (
+        <ClusterButton
+          icon="add"
+          label={m.workbench_fields_put_in_note()}
+          onClick={() => onInsert(node)}
+        />
+      )}
       {hasValue && (
         <ClusterButton
-          icon={copied ? "check" : "clipboard-type"}
-          label={m.template_data_explorer_menu_copy_value()}
+          icon={copied ? "confirm" : "copy"}
+          label={m.workbench_explorer_menu_copy_value()}
           onClick={flashCopied}
         />
       )}
       <ClusterButton
-        icon="code"
-        label={m.template_data_explorer_row_actions()}
+        icon="advanced"
+        label={m.workbench_explorer_row_actions()}
         onClick={(e) => onTemplateMenu(node, e)}
       />
     </div>
@@ -219,20 +226,23 @@ function ClusterButton({
   label,
   onClick,
 }: {
-  icon: IconName;
+  icon: WorkbenchIcon;
   label: string;
   onClick: (event: React.MouseEvent) => void;
 }) {
+  const part = useParts("explorerTree");
+  const drawIcon = useIcon();
   return (
     <span
       role="button"
       tabIndex={0}
-      {...tooltipAttrs(label)}
+      aria-label={label}
+      {...useTooltip(label)}
       onClick={onClick}
       onKeyDown={activateOnEnterOrSpace((e) => e.currentTarget.click())}
-      className="zt:rounded-xs zt:flex zt:size-4 zt:cursor-pointer zt:items-center zt:justify-center zt:text-muted-foreground zt:hover:bg-muted zt:hover:text-foreground"
+      {...part("action")}
     >
-      <Icon name={icon} size={13} />
+      {drawIcon(icon)}
     </span>
   );
 }
@@ -250,60 +260,83 @@ function NodeRow({ node }: { node: DisplayNode }) {
 
 /** The property name (or array index). Always `text-foreground`, distinct from every value tone. */
 function KeyLabel({ children }: { children: React.ReactNode }) {
-  return <span className="zt:text-foreground">{children}</span>;
+  const part = useParts("explorerTree");
+  return <span {...part("key")}>{children}</span>;
 }
 
 function ValueRow({ node }: { node: ValueNode }) {
+  return (
+    <>
+      <KeyLabel>{node.label}</KeyLabel> <ValueContent node={node} />
+    </>
+  );
+}
+
+function ValueContent({ node }: { node: ValueNode }) {
+  const part = useParts("explorerTree");
   if (node.valueType === "array" || node.valueType === "object") {
     const hint =
       node.valueType === "array" ? `[${node.size}]` : `{${node.size}}`;
-    const showPreview =
-      node.children === undefined && node.preview !== undefined;
     return (
       <>
-        <KeyLabel>{node.label}</KeyLabel>{" "}
-        <span className="zt:text-faint">{hint}</span>
-        {showPreview && (
+        <span {...part("hint")}>{hint}</span>
+        {node.children === undefined && node.preview !== undefined && (
           <>
             {" "}
-            <span className="zt:text-faint zt:italic">{node.preview}</span>
+            <span {...part("placeholder")}>{node.preview}</span>
           </>
         )}
       </>
     );
   }
+  if (node.valueType === "getter") return <span {...part("hint")}>…</span>;
+  return <ScalarValue node={node} />;
+}
 
-  if (node.valueType === "getter") {
-    return (
-      <>
-        <KeyLabel>{node.label}</KeyLabel>{" "}
-        <span className="zt:text-faint">…</span>
-      </>
-    );
-  }
-
+function SimpleNodeRow({ node }: { node: DisplayNode }) {
+  const part = useParts("explorerTree");
+  const path = formatPath(node.path, "zt");
   return (
-    <>
-      <KeyLabel>{node.label}</KeyLabel> <ScalarValue node={node} />
-    </>
+    <div {...part("simple-row")}>
+      <div {...part("simple-heading")}>
+        <KeyLabel>{node.label}</KeyLabel>
+        <code {...part("path")} {...useTooltip(path)}>
+          {path}
+        </code>
+      </div>
+      <div {...part("simple-value")}>
+        {node.kind === "value" ? (
+          <ValueContent node={node} />
+        ) : node.kind === "helper" ? (
+          node.evaluated === null ? (
+            <span {...part("null")}>null</span>
+          ) : (
+            <StringValue value={node.evaluated} />
+          )
+        ) : (
+          <span {...part("placeholder")}>{node.reason}</span>
+        )}
+      </div>
+    </div>
   );
 }
 
 function ScalarValue({ node }: { node: ValueNode }) {
+  const part = useParts("explorerTree");
   switch (node.valueType) {
     case "string":
       return <StringValue value={node.value as string} />;
     case "number":
-      return <span className={VALUE_TONE.number}>{String(node.value)}</span>;
+      return <span {...part("number")}>{String(node.value)}</span>;
     case "boolean":
-      return <span className={VALUE_TONE.boolean}>{String(node.value)}</span>;
+      return <span {...part("boolean")}>{String(node.value)}</span>;
     case "null":
-      return <span className={VALUE_TONE.null}>null</span>;
+      return <span {...part("null")}>null</span>;
     case "undefined":
-      return <span className={VALUE_TONE.undefined}>undefined</span>;
+      return <span {...part("undefined")}>undefined</span>;
     case "opaque":
       return (
-        <span className={`zt:break-words ${VALUE_TONE.opaque}`}>
+        <span {...part("opaque")}>
           {
             // oxlint-disable-next-line no-base-to-string -- opaque carries its own toString (Temporal/Date).
             String(node.value)
@@ -316,12 +349,13 @@ function ScalarValue({ node }: { node: ValueNode }) {
 }
 
 function HelperRow({ node }: { node: HelperNode }) {
+  const part = useParts("explorerTree");
   return (
     <>
       <KeyLabel>{node.label}</KeyLabel>{" "}
-      <span className="zt:text-faint">{node.signatureHint}</span>{" "}
+      <span {...part("hint")}>{node.signatureHint}</span>{" "}
       {node.evaluated === null ? (
-        <span className={VALUE_TONE.null}>null</span>
+        <span {...part("null")}>null</span>
       ) : (
         <StringValue value={node.evaluated} />
       )}
@@ -330,10 +364,11 @@ function HelperRow({ node }: { node: HelperNode }) {
 }
 
 function PlaceholderRow({ node }: { node: PlaceholderNode }) {
+  const part = useParts("explorerTree");
   return (
     <>
       <KeyLabel>{node.label}</KeyLabel>{" "}
-      <span className="zt:text-faint zt:italic">{node.reason}</span>
+      <span {...part("placeholder")}>{node.reason}</span>
     </>
   );
 }
@@ -350,10 +385,11 @@ const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const STRING_PREVIEW_LIMIT = 140;
 
 function StringValue({ value }: { value: string }) {
+  const part = useParts("explorerTree");
   const trimmed = value.trim();
 
   const markdown = MARKDOWN_LINK_RE.exec(value);
-  if (markdown) {
+  if (markdown && LINKABLE_URL_RE.test(markdown.groups.url)) {
     return (
       <LinkValue
         href={markdown.groups.url}
@@ -368,13 +404,8 @@ function StringValue({ value }: { value: string }) {
 
   if (HEX_COLOR_RE.test(trimmed)) {
     return (
-      <span
-        className={`zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 ${VALUE_TONE.string}`}
-      >
-        <span
-          className="zt:rounded-xs zt:size-3 zt:shrink-0 zt:border zt:border-border"
-          style={{ backgroundColor: trimmed }}
-        />
+      <span {...part("color")}>
+        <span {...part("color-swatch")} style={{ backgroundColor: trimmed }} />
         {value}
       </span>
     );
@@ -384,13 +415,14 @@ function StringValue({ value }: { value: string }) {
 }
 
 function LinkValue({ href, label }: { href: string; label: string }) {
+  const part = useParts("explorerTree");
   return (
     <a
       href={href}
-      {...tooltipAttrs(href)}
+      {...useTooltip(href)}
       rel="noopener noreferrer"
       onClick={(e) => e.stopPropagation()}
-      className="zt:break-all zt:text-link zt:underline zt:decoration-dotted zt:hover:decoration-solid"
+      {...part("link")}
     >
       {label}
     </a>
@@ -398,11 +430,12 @@ function LinkValue({ href, label }: { href: string; label: string }) {
 }
 
 function LongText({ value }: { value: string }) {
+  const part = useParts("explorerTree");
   const [expanded, setExpanded] = useState(false);
   const isLong = value.length > STRING_PREVIEW_LIMIT || value.includes("\n");
 
   if (!isLong) {
-    return <span className={VALUE_TONE.string}>{value}</span>;
+    return <span {...part("string")}>{value}</span>;
   }
 
   const firstLine = value.split("\n", 1)[0]!;
@@ -414,8 +447,8 @@ function LongText({ value }: { value: string }) {
 
   const toggle = () => setExpanded((prev) => !prev);
   return (
-    <span className={`zt:min-w-0 ${VALUE_TONE.string}`}>
-      <span className={expanded ? "zt:break-words zt:whitespace-pre-wrap" : ""}>
+    <span {...part("string")}>
+      <span {...part("long-text", expanded ? "expanded" : undefined)}>
         {expanded ? value : preview}
       </span>{" "}
       <span
@@ -424,11 +457,11 @@ function LongText({ value }: { value: string }) {
         aria-expanded={expanded}
         onClick={toggle}
         onKeyDown={activateOnEnterOrSpace(() => toggle())}
-        className="zt:rounded-xs zt:ml-0.5 zt:cursor-pointer zt:px-1 zt:text-muted-foreground zt:underline zt:decoration-dotted zt:underline-offset-2 zt:select-none zt:hover:bg-muted zt:hover:text-foreground"
+        {...part("long-toggle")}
       >
         {expanded
-          ? m.template_data_explorer_show_less()
-          : m.template_data_explorer_show_more()}
+          ? m.workbench_explorer_show_less()
+          : m.workbench_explorer_show_more()}
       </span>
     </span>
   );
