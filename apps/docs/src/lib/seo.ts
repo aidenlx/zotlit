@@ -8,13 +8,17 @@
 
 import type { Thing, WithContext } from "schema-dts";
 
+import * as m from "@/paraglide/messages.js";
+
 import { appName, baseURL, ogImageUrl } from "./shared";
 import type { OgType } from "./shared";
 import { absoluteUrl, serializeJsonLd } from "./structured-data";
 
 const OG_IMAGE_DIMENSIONS = { width: "1200", height: "630" } as const;
 
-export const HOME_OG_ALT = "ZotLit — Zotero × Obsidian";
+export const appDescription = m.docs_site_description;
+
+export const HOME_OG_ALT = m.docs_og_home_alt;
 
 export interface PageSeo {
   /** Document `<title>`, rendered as "<title> | ZotLit". Omit for the bare site name. */

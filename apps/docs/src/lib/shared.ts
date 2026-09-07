@@ -4,8 +4,6 @@
 import * as v from "valibot";
 
 export const appName = "ZotLit";
-export const appDescription =
-  "ZotLit brings your Zotero library into Obsidian. Create literature notes, insert citations, and annotate PDFs without leaving your vault.";
 /** Origin every canonical URL, OG card, sitemap entry, and feed link resolves against. */
 export const baseURL = "https://zotlit.aidenlx.site";
 export const docsRoute = "/docs";

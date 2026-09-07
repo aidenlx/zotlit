@@ -1,14 +1,14 @@
-// `/changelog/rss.xml`: the changelog feed, at the current URL.
-
 import { createFileRoute } from "@tanstack/react-router";
+// `/changelog/rss.xml`: the changelog feed, at the current URL.
 import { Feed } from "feed";
 
 import { baseURL, changelogRoute } from "@/lib/shared";
 import { getChangelogPages } from "@/lib/source";
+import { m } from "@/paraglide/messages.js";
 
 function renderFeed(): string {
   const feed = new Feed({
-    title: "ZotLit Changelog",
+    title: m.docs_changelog_og_alt(),
     id: `${baseURL}${changelogRoute}`,
     link: `${baseURL}${changelogRoute}`,
     language: "en",

@@ -9,6 +9,7 @@ import type {
   RowModel,
   TableModel,
 } from "@/lib/template-contract/page-model";
+import * as m from "@/paraglide/messages.js";
 
 import { TypeTable } from "./type-table";
 import type { DetailNode, TypeNode } from "./type-table";
@@ -63,20 +64,26 @@ function details(row: RowModel): DetailNode[] {
   const nodes: DetailNode[] = [];
   if (row.helper) {
     nodes.push(
-      { label: "Signature", content: <code>{row.helper.signature}</code> },
+      {
+        label: m.docs_contract_signature(),
+        content: <code>{row.helper.signature}</code>,
+      },
       { label: "Liquid", content: <code>{row.helper.liquid}</code> },
       { label: "Eta", content: <code>{row.helper.eta}</code> },
     );
     if (row.helper.filter) {
       nodes.push({
-        label: "Liquid filter",
+        label: m.docs_contract_liquid_filter(),
         content: <code>{row.helper.filter}</code>,
       });
     }
   }
   if (row.examples.length > 0) {
     nodes.push({
-      label: row.examples.length > 1 ? "Examples" : "Example",
+      label:
+        row.examples.length > 1
+          ? m.docs_contract_examples()
+          : m.docs_contract_example(),
       content: (
         <div className="flex flex-col gap-2">
           {row.examples.map((example) => (
@@ -99,7 +106,7 @@ function itemTypeNodes(rows: readonly ItemTypeRow[]): Record<string, TypeNode> {
     rows.map(({ itemType, fields }) => [
       itemType,
       {
-        type: `${fields.length} fields`,
+        type: m.docs_contract_fields({ count: fields.length }),
         required: true,
         description: (
           <p className="flex flex-wrap gap-x-2 gap-y-1">

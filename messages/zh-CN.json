@@ -1030,5 +1030,8 @@
         "state=*": "需要检查"
       }
     }
-  ]
+  ],
+  "docs_redirect_translation_pending": "ZotLit v2 中文内容尚未提供，当前显示英文页面。",
+  "docs_redirect_original_page": "参阅 v1 中文文档",
+  "docs_dismiss_notice": "关闭提示"
 }

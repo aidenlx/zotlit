@@ -38,6 +38,7 @@ import { appName, docsRoute, docsSourceBranch, gitConfig } from "@/lib/shared";
 import { changelog, source } from "@/lib/source";
 import type { Crumb } from "@/lib/structured-data";
 import { breadcrumbListSchema } from "@/lib/structured-data";
+import * as m from "@/paraglide/messages.js";
 
 /** Resolves a docs URL to the collection file the client loader compiles, plus what the head needs. */
 export const resolveDocsPage = createServerFn({ method: "GET" })
@@ -136,7 +137,7 @@ export function docsPageHead(page: DocsPageData | undefined) {
   const seen = new Set<string>();
   const crumbs = [
     { name: appName, url: "/" },
-    { name: "Documentation", url: docsRoute },
+    { name: m.docs_documentation(), url: docsRoute },
     ...page.trail,
   ].filter((crumb) => !seen.has(crumb.url) && seen.add(crumb.url));
 
@@ -147,7 +148,7 @@ export function docsPageHead(page: DocsPageData | undefined) {
     card: {
       type: "docs",
       slugs: page.slugs,
-      alt: `${page.title} — ZotLit documentation`,
+      alt: m.docs_documentation_card_alt({ title: page.title }),
     },
     schemas: page.trail.length > 0 ? [breadcrumbListSchema(crumbs)] : [],
   });

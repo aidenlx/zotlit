@@ -30,6 +30,7 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 
 ## Content pipeline
 
+- **i18n copy:** Read [the i18n policy](policies/i18n.md) when adding web copy, rendering translated text, or changing message generation. It defines the Paraglide/Fumadocs boundary and plugin bundle isolation.
 - **Collections:** Read [`source.config.ts`](source.config.ts) before changing frontmatter, partial discovery, Markdown editions, or syntax highlighting. It owns those rules and the three collection schemas.
 - **Dates:** `publishedOn` in [`src/lib/shared.ts`](src/lib/shared.ts) normalizes every publication date to an ISO day, for both the collections and the build-time content scan; workerd lacks Temporal, so this schema, the reader-facing date helpers beside it — the two release-date formatters and the footer's copyright year — and the `Date` the `feed` library takes in [`src/routes/changelog/rss[.]xml.ts`](<src/routes/changelog/rss[.]xml.ts>) are a package-scoped exception to [the Temporal policy](../../policies/temporal-dates.md).
 
