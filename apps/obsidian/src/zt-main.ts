@@ -26,6 +26,8 @@ import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { registerLibraryScopeCli } from "./services/library-scope/cli";
 import { registerLibraryScopeNotices } from "./services/library-scope/notices";
+import { createCustomize } from "./services/local-bridge/customize";
+import { createLaunchSheet } from "./services/local-bridge/launch-sheet";
 import { registerWorkbenchSavedNotice } from "./services/local-bridge/notices";
 import { addNoteFeatureActions } from "./services/note-feature/actions";
 import { runBatchUpdateAll } from "./services/note-feature/update-batch";
@@ -208,6 +210,18 @@ export default class ZotLitPlugin extends Plugin {
 
     const { services } = buildServices(this, stack);
 
+    // One Customize flow behind every entry action: the settings row here, and
+    // the note command and Profile rows that land on it next.
+    const customize = createCustomize({
+      app: this.app,
+      settings: services.settings,
+      profile: services.profile,
+      localServer: services.localServer,
+      bridge: services.localBridge,
+      confirmLaunch: createLaunchSheet(this.app),
+      openExternal: (url) => window.open(url),
+    });
+
     this.addSettingTab(
       new ZotLitSettingTab({
         importProfile: services.importProfile,
@@ -219,6 +233,7 @@ export default class ZotLitPlugin extends Plugin {
         zoteroPref: services.zoteroPref,
         localServer: services.localServer,
         localBridge: services.localBridge,
+        customize,
         attachmentImport: services.attachmentImport,
         citationIndex: services.citationIndex,
         template: services.template,

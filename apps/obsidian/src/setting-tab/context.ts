@@ -5,6 +5,7 @@ import type { AttachmentImportService } from "@/services/attachment-import/servi
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { LocalBridgeService } from "@/services/local-bridge/service";
 import type { LocalServerService } from "@/services/local-server/service";
 import type { PandocEngineService } from "@/services/pandoc/service";
@@ -82,6 +83,8 @@ export interface SettingTabContext {
   localServer: LocalServerActions;
   /** The Workbench Connection the Local server rows name and end. */
   localBridge: LocalBridgeActions;
+  /** The shared Customize flow the Template document row opens. */
+  customize: CustomizeAction;
   /** The approved-folder store the Attachments page lists and mutates. */
   attachmentImport: AttachmentImportActions;
   /** The vault-wide Citation Index, reset from the Maintenance page. */

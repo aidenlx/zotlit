@@ -4,12 +4,20 @@ import type { SettingGroupItem } from "obsidian";
 
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
+import {
+  launchSheetSkipped,
+  setLaunchSheetSkipped,
+} from "@/services/local-bridge/customize";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { defaultPlaceholder } from "./placeholder";
 
 function serverEnabled(ctx: SettingTabContext): () => boolean {
   return () => ctx.settings.current?.["server.enabled"] ?? false;
+}
+
+function workbenchEnabled(ctx: SettingTabContext): boolean {
+  return ctx.settings.current?.["server.workbench"] ?? false;
 }
 
 /**
@@ -39,6 +47,7 @@ export function localServerItems(
       visible: enabled,
       control: { type: "toggle", key: "server.workbench" },
     },
+    confirmBeforeOpeningItem(ctx, enabled),
     ...workbenchConnectionRows(ctx, enabled),
     {
       name: m.settings_live_updates_port_name(),
@@ -73,6 +82,29 @@ export function localServerItems(
       },
     },
   ];
+}
+
+/**
+ * The launch sheet's own switch. It is device state rather than a setting, so
+ * the row drives `loadLocalStorage`/`saveLocalStorage` itself: turning it on
+ * clears the "Do not ask again" a researcher ticked on this computer.
+ */
+function confirmBeforeOpeningItem(
+  ctx: SettingTabContext,
+  enabled: () => boolean,
+): SettingGroupItem<SettingsKey> {
+  return {
+    name: m.settings_local_server_workbench_confirm_name(),
+    desc: m.settings_local_server_workbench_confirm_desc(),
+    visible: () => enabled() && workbenchEnabled(ctx),
+    render: (setting) => {
+      setting.addToggle((toggle) =>
+        toggle
+          .setValue(!launchSheetSkipped(ctx.app))
+          .onChange((value) => setLaunchSheetSkipped(ctx.app, !value)),
+      );
+    },
+  };
 }
 
 /**
