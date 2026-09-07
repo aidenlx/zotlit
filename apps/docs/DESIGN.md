@@ -2,7 +2,12 @@
 
 Theme: **"Manuscript & Machine"** — cream ground, navy ink, deep-orange accent.
 One token system (`--color-fd-*` overrides in `src/styles.css`) drives all
-surfaces: landing, changelog, blog, docs.
+surfaces: landing, changelog, blog, docs, and the Template Workbench.
+
+Compose each surface around the reader's task. Editorial pages lead with
+content; the Workbench gives space to editing and inspecting the result.
+Apply the shared brand rules together with the relevant per-surface section.
+Use [the brand specification](../../docs/brand.md) for logo and wordmark assets.
 
 ## Mechanism
 
@@ -68,7 +73,7 @@ tracking, weight 500–600. Real uppercase over the bundled mono replaces the ol
 stays razor-legible at any size, including shrunk-down OG cards, where
 synthesized small-caps crowd and blur.
 
-Every apparatus label site-wide is mono uppercase:
+On editorial and docs-chrome surfaces, apparatus labels are mono uppercase:
 
 - Home nav links
 - Landing eyebrow, feature terms, and feature links
@@ -84,6 +89,9 @@ the same mono-uppercase register.
 text, not labels — so the v2 banner notice, tooltips, and any
 sentence-shaped copy keep their upright case and sans body voice. The Archivo
 wordmark likewise stays outside label treatment.
+
+The [Template Workbench](#template-workbench-workbench) uses Inter sentence case
+for its utility chrome, including labels and pane headings.
 
 ## Font loading
 
@@ -117,95 +125,133 @@ The Archivo wordmark subset needs no preload — it sits under Vite's
 
 ### Template Workbench (`/workbench`)
 
-The Workbench is a compact editing utility. Inter carries the title, pane
-headings, tabs, and controls in sentence case: 16 px for the Profile name,
-14 px for controls and pane headings, and 12 px for supporting status.
-Template tabs fit their labels and use 12 px text in a 32 px strip.
-The field search uses a 32 px control with 12 px text on desktop.
-The toolbar row follows the same 32 px height and 12 px text, with 14 px
-icons. Basic and Source share a segmented control with 28 px buttons.
-Undo, redo, field Help, Add a field, and the sample controls align to this row.
-In the three-column layout, the field list, note editor, and note preview
-content share a top edge. Search, template tabs, and preview controls each
-occupy a 32 px row above that edge. The preview heading and controls stay
-on one line, with compact selectors that share the remaining width.
-Template source uses IBM Plex Mono at 14 px with a unitless 1.5 line height.
-Below 640 px, editor text uses 16 px to keep mobile input readable.
-The rendered note keeps the reading view's content typography.
+The Workbench is a compact editing utility for a literature note Profile.
+Its main loop is to choose a field, edit the template, and inspect the note.
+Give those three tasks the available space. Apply the same density to Note,
+Properties, Name and folder, handoff, and the loading frame.
 
-File and connection actions share one header. The field list, template, and
-result use the remaining height, with 12 px outer insets and column gaps.
-The sample picker belongs with the result. Guidance opens from a visible Help
-control beside each task, and draft status sits below the panes. The existing
-780 px and 1180 px layout folds keep the editor usable on narrow screens.
+#### Protect the editing space
 
-Every form inside the Workbench follows the same density, so the Properties
-rows, the Name and folder cards, and the handoff screen read as one utility:
+Keep file and connection actions in one header. Place the sample picker with
+the result it changes. Put optional guidance behind a visible Help control
+beside its task, and routine draft status below the panes. Keep errors and
+required confirmations in the flow with their recovery actions visible.
 
-- **One control row.** Inputs, selects, and buttons in a pane are the 32 px
-  `xs` size with 12 px text (`Button size="xs"`, `Input size="xs"`,
-  `NativeSelect size="xs"`). Icon buttons inside a row are 28 px.
-- **Labels and headings at 12 px.** Section headings and card summaries are
-  12 px semibold; form labels are 12 px medium, set directly above their
-  control with a 4 px gap; supporting hints are 12 px muted with
-  `text-pretty`. Body sentences in a pane stay at 14 px only where they are
-  the pane's sole content.
-- **Space carries the grouping.** 4 px label-to-control, 8 px between rows
-  inside a card, 12 px between fields in a form, 16 px between groups. Cards
-  inset 10 px horizontally and 8 px vertically; a disclosure card carries a
-  chevron in its summary and no duplicate heading inside.
-- **One notice shape.** Every inline notice — the restore prompt, the Problems
-  strip, a preview problem, the format and language confirmations, the
-  annotation section bar — is 12 px text on `bg-fd-accent/40` with a 2 px
-  `border-s` accent bar, 12 px horizontal and 8 px vertical padding, its
-  actions in `xs` buttons at the trailing edge. Notice headings are Inter
-  semibold in sentence case, the same voice as pane headings.
-- **Logical properties.** Direction-dependent spacing uses `ms-`, `ps-`,
-  and `border-s`, so the RTL mirror needs no second set of classes.
+Use 12 px outer insets and column gaps. In the three-column Note view, align
+the top edges of the field list, editor, and preview content. Size the rows
+above them together: search, template tabs, and preview controls follow the
+same control row. Let the preview selectors share the width beside the heading.
+Template tabs fit their labels; the editor receives the remaining space.
 
-The header follows the same row: Connect, the Profile menu, and Download or
-Save are `xs` outline and primary buttons beside the 16 px Profile name, so
-the primary action reads as a control of the utility, level with the field
-search and the toolbar.
+The [shared frame](src/lib/workbench/frame.tsx) keeps the loading and interactive
+shells consistent. Coordinate pane headers with its control row when a control
+needs more space.
 
 #### Control vocabulary
 
-Every control in the Workbench names one kit variant and nothing else. Layout
-classes (`flex-1`, `ms-auto`, `mt-2`) and state classes
-(`aria-pressed:*`, `data-pressed:*`) may sit beside it; sizes, paddings,
-and font sizes may not.
+Use the kit's size variants for button, input, and select height, internal
+padding, text, and icons. Call sites compose layout (`flex-1`, `ms-auto`, `mt-2`)
+and states (`aria-pressed:*`, `data-pressed:*`). A repeated control size belongs
+in the kit so the header, toolbar, forms, and notices change together.
 
-| Role | Variant | Size |
+| Role | Component / variant | Size |
 | --- | --- | --- |
 | Header action, pane action, form button, notice action | `Button size="xs"` | 32 px, 12 px text, 14 px icon |
 | Segment inside a segmented control | `Button size="2xs"` | 28 px in a 32 px pill |
+| Template tabs | `PaneTabList` in the shared frame | 28 px tabs in a 32 px strip, 12 px text |
 | Icon button on the control row (undo, redo, close) | `Button size="icon-sm"` | 32 px |
 | Icon button inside a list row or card | `Button size="icon-xs"` | 28 px |
 | Icon button inline in a chip or compact list row | `Button size="icon-2xs"` | 24 px |
 | Text input, native select | `size="xs"` | 32 px, 12 px text on desktop |
 
-The Workbench is the only surface that composes from these variants; the
-docs-site `sm` and `default` sizes stay on the marketing and docs chrome.
+Treat text-bearing control heights as minimums. Let them grow for wrapped
+labels and mobile text. The kit owns the values in
+[Button](src/components/ui/button.tsx), [Input](src/components/ui/input.tsx),
+and [NativeSelect](src/components/ui/native-select.tsx). Marketing and docs
+chrome keep their `sm` and `default` sizes.
+
+#### Type and wording by role
+
+Inter carries the utility chrome in sentence case. Use 16 px semibold for
+the Profile name; 12 px semibold for pane headings, card summaries, and notice
+headings; 12 px medium for form labels; and 12 px muted for hints and status.
+Body sentences use 14 px where they are the pane's sole content. Set wrapping
+hints with `text-pretty` and keep chrome text at 12 px or larger.
+
+Template source uses IBM Plex Mono at 14 px with a unitless 1.5 line height.
+Below 640 px, the editor, text inputs, and native selects use 16 px text to
+keep mobile input readable. The [editor theme](src/lib/workbench/editor-theme.ts)
+and control variants own that transition. The rendered note keeps
+[reading-view typography](src/lib/workbench/reading-view.tsx), so the preview
+shows the content hierarchy the template produces.
+
+Name objects directly. The field panel is **Template fields**; its current
+context is **Note**, **Annotation**, or **Note name**. Use short nouns for
+labels and verbs for actions, with instructions in complete sentences.
+Read the current labels from [the message catalog](../../messages/en.json)
+and keep terminology consistent with [the vocabulary](../../policies/vocabulary.md).
+
+#### Grouping and feedback
+
+Use space to show relationships: 4 px from a form label to its control, 8 px
+between rows in a card, 12 px between fields, and 16 px between groups.
+Cards inset 10 px horizontally and 8 px vertically. A disclosure card uses
+its summary as the heading and a chevron as the visible expansion cue.
+
+Use the site's semantic color tokens. Save or Download is the filled primary
+header action; Connect and the Profile menu use outline buttons. Basic and
+Source share a muted segmented track, with a card surface and pressed state
+on the active segment. Lucide icons inherit the control's color. Keep frequent
+editing feedback immediate so the interface stays steady while typing.
+
+Inline notices share one shape: `bg-fd-accent/40`, a 2 px `border-s` accent bar,
+12 px horizontal and 8 px vertical padding, and `xs` actions at the trailing
+edge. Apply it to restore prompts, Problems, preview problems, format and
+language confirmations, and annotation bars. The text states the condition
+and the next action; color supports that meaning.
+
+#### Adapt the composition
+
+At 1180 px and wider, keep fields, editor, and result in three columns. Below
+that, **Add a field** opens the field sheet. Below 780 px, switch between editor
+and result views. These folds protect usable editing width. Let a short,
+narrow viewport scroll the page while the editor retains room for several
+lines. Preserve full labels through wrapping or an accessible expanded view.
+
+Use logical properties (`ms-`, `ps-`, `border-s`, `start-`, `end-`) for directional
+layout. Keep Help and sheet triggers named and reachable by keyboard, preserve
+visible focus, and return focus when their overlays close. Compact controls
+retain at least a 24 px target with distinct, non-overlapping hit areas.
 
 #### Enforcement
 
-Three tiers hold the system, each catching what the one above cannot, and a
-correction lands in the narrowest tier that holds it for good:
+Place each accepted correction with its owner, following the
+[Vercel design.md approach](https://vercel.com/blog/how-our-agents-build-on-brand-pages-with-design-md):
 
-1. **Kit variants** carry every size (`src/components/ui/button.tsx`,
-   `input.tsx`, `native-select.tsx`).
-2. **`src/lib/workbench/design.test.ts`** runs with `pnpm test` and rejects
-   the mechanical drift: a size or spacing utility on a `Button`, a text
-   control without `size="xs"`, a physical direction class, an arbitrary
-   font size, an uppercase label in the chrome. The rendered note
-   (`reading-view.tsx`) is content typography and exempt from the type rules.
-3. **This section** carries the judgement calls. The `/design-review` skill
-   reads it, runs the check, renders the touched surfaces at 1440 px and
-   640 px, and hands the rest to the `better-*` skills with these values as
-   the density system.
+| Owner | What belongs there |
+| --- | --- |
+| This spec | Judgment: task order, density, alignment, disclosure, and type roles |
+| Shared components and tokens | Reusable mechanics: control variants, the common frame, and theme values |
+| [Design check](src/lib/workbench/design.test.ts) | Mechanical rules: supported control sizes, Button size overrides, logical direction classes, and chrome type utilities |
 
-A rule earns a line here, a variant in the kit, and a case in the check at the
-same time; a class at a call site is the outcome the system exists to prevent.
+The check scans source; rendered-note typography is exempt from its chrome
+type rules. Use runtime inspection for wrapping, alignment, focus, contrast,
+and whether the page supports the editing task.
+
+For UI changes, use [design-review](../../.claude/skills/design-review/SKILL.md)
+and the six domain skills routed by `better-interface`. Keep the same Profile,
+Sample Item, editing mode, theme, and viewport when comparing a correction.
+Cover the affected normal, loading, empty, error, and recovery states. Compare
+all affected forms when a shared variant changes.
+
+For layout changes, extend the review's desktop and narrow scenarios to both
+folds, 320 px, and 200% zoom. For text or theme changes, include long translated
+labels, the RTL layout, and both color schemes. Record measured control and
+content edges with screenshots; identify any check that remains unverified.
+
+A repeated correction becomes a concise decision here. Add a kit variant when
+the mechanics are shared, and a regression check when the failure is measurable.
+Rerun the affected scenario to confirm the correction.
 
 ### Landing (`src/routes/_home/index.tsx`)
 
