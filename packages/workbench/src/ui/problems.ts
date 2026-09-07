@@ -99,7 +99,7 @@ export function diagnosticText(diagnostic: RenderDiagnostic): string {
         deadlineMs: String(params.deadlineMs),
       });
     case "citation-style-error":
-      return citationStyleText(params);
+      return diagnostic.message ?? citationStyleText(params);
     case "property-error":
       return m.workbench_diagnostic_property_error({
         key: String(params.key),

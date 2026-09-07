@@ -40,6 +40,7 @@ import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationPresentation } from "./views/citation-presentation/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
+import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
 import { registerProfileEditor } from "./views/profile-editor/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
@@ -309,6 +310,16 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
       templates: services.template,
       profile: services.profile,
+      nativePreview: {
+        app: this.app,
+        db: services.db,
+        noteIndex: services.noteIndex,
+        zoteroPref: services.zoteroPref,
+        settings: services.settings,
+        templates: services.template,
+        bibliographyRender: services.bibliographyRender,
+        citationIndex: services.citationIndex,
+      },
     });
 
     registerTemplateDataExplorer(this, {
@@ -320,6 +331,8 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
       templates: services.template,
     });
+
+    registerNotePreview(this);
 
     stack.defer(
       registerCitationStyleNotice(services.bibliographyRender, () => {
