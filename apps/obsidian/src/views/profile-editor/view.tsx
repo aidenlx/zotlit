@@ -56,6 +56,7 @@ import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import { tooltipAttrs } from "@/lib/utils";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import {
@@ -87,12 +88,14 @@ export class ProfileEditorView extends TextFileView {
   #closed = false;
   #generation = 0;
   #bindingDefaults = BUILT_IN_BINDING_DEFAULTS;
+  #databaseUnavailable = false;
+  #stylesUnavailable = false;
   #citationStyles: NameFolderPaneProps["citationStyles"] = [];
 
   constructor(leaf: WorkspaceLeaf, deps: ProfileEditorDeps) {
     super(leaf);
     this.#deps = deps;
-    this.contentEl.addClass("zt-root");
+    this.contentEl.addClass("zt-root", "zt-profile-editor");
     this.#host = createProfileEditorHost(
       this.app,
       {
@@ -138,6 +141,27 @@ export class ProfileEditorView extends TextFileView {
     this.register(
       this.store.subscribe(() => this.app.workspace.requestSaveLayout()),
     );
+  }
+
+  get unavailableDependencies(): string[] {
+    return [
+      ...(this.#databaseUnavailable
+        ? [m.profile_editor_database_unavailable()]
+        : []),
+      ...(this.#stylesUnavailable
+        ? [m.profile_editor_styles_unavailable()]
+        : []),
+    ];
+  }
+  async #databaseReady(): Promise<boolean> {
+    try {
+      await this.#deps.db.ready;
+      return true;
+    } catch {
+      this.#databaseUnavailable = true;
+      this.#mount();
+      return false;
+    }
   }
 
   get bindingDefaults(): typeof BUILT_IN_BINDING_DEFAULTS {
@@ -219,7 +243,7 @@ export class ProfileEditorView extends TextFileView {
         store.setPreview({ live: preview.live });
     }
     if (typeof value.itemIndexedKey === "string") {
-      await this.#deps.db.ready;
+      if (!(await this.#databaseReady())) return;
       if (!this.#closed) this.#selectKey(value.itemIndexedKey);
     }
   }
@@ -229,7 +253,7 @@ export class ProfileEditorView extends TextFileView {
     this.#root = createRoot(this.contentEl);
     this.#mount();
     void this.refreshStyles();
-    await this.#deps.db.ready;
+    if (!(await this.#databaseReady())) return;
     if (this.#closed || this.store.getState().item) return;
     const active = this.app.workspace.getActiveFile();
     const key =
@@ -262,16 +286,18 @@ export class ProfileEditorView extends TextFileView {
     menu.showAtPosition({ x: bounds.left, y: bounds.bottom });
   }
   async refreshStyles(): Promise<void> {
-    await this.#deps.zoteroPref.ready;
-    if (this.#closed) return;
-    const dataDir = this.#deps.zoteroPref.dataDir;
     try {
+      await this.#deps.zoteroPref.ready;
+      if (this.#closed) return;
+      const dataDir = this.#deps.zoteroPref.dataDir;
       const styles = dataDir ? await listInstalledStyles(dataDir) : [];
       if (this.#closed) return;
       this.#citationStyles = styles;
       this.#mount();
     } catch (error) {
       logger.warn("Failed to read Profile Editor citation styles", { error });
+      this.#stylesUnavailable = true;
+      this.#mount();
     }
   }
   async openMarkdown(): Promise<void> {
@@ -445,6 +471,11 @@ function EditorContent({
   return (
     <div className="zt:flex zt:h-full zt:flex-col">
       <EditorHeader view={view} />
+      {view.unavailableDependencies.map((message) => (
+        <p key={message} role="status" className="zt:px-3 zt:text-muted">
+          {message}
+        </p>
+      ))}
       {!advanced && (
         <TabBar
           onTabChange={(tab) => {
@@ -580,7 +611,7 @@ function EditorHeader({ view }: { view: ProfileEditorView }) {
       </button>
       <button
         className="clickable-icon"
-        aria-label={shared.workbench_more_actions()}
+        {...tooltipAttrs(shared.workbench_more_actions())}
         onClick={(event) => view.openMenu(event.currentTarget)}
       >
         <Icon name="more-horizontal" />
