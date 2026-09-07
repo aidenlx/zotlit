@@ -190,12 +190,28 @@ export function useWorkbenchDraft({
       snapshot,
       annotationSelection: selectedAnnotation,
     }) {
-      setBaseline({
+      const next = {
         reference: saved,
         source,
         snapshot: snapshotIdentity(snapshot ?? sample),
         annotationSelection: selectedAnnotation ?? annotationSelection,
-      });
+      };
+      setBaseline(next);
+      // Recovering the launch paper is part of hydration. The pending offer
+      // follows that paper while keeping the draft and text it was offered on.
+      if (snapshot)
+        setRestorable((held) =>
+          held
+            ? {
+                ...held,
+                baseline: {
+                  ...held.baseline,
+                  snapshot: next.snapshot,
+                  annotationSelection: next.annotationSelection,
+                },
+              }
+            : null,
+        );
     },
     restore() {
       if (!restorable) return null;
