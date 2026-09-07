@@ -1,4 +1,4 @@
-import { ToggleComponent, settingsOf } from "@mock/obsidian";
+import { ToggleComponent, controlsOf } from "@mock/obsidian";
 // @vitest-environment happy-dom
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -120,8 +120,8 @@ it("opens fresh consent with metadata, recipient preview, editable bindings and 
   f.modal.onOpen();
   expect(f.modal.contentEl.querySelector("textarea")).toBeNull();
   expect(buttons.labels()).toEqual([
-    m.profile_import_cancel(),
     m.profile_import_confirm(),
+    m.profile_import_cancel(),
   ]);
   await vi.waitFor(() =>
     expect(f.modal.contentEl.textContent).toContain("Recipient item"),
@@ -349,9 +349,8 @@ function matchToggle(modal: ImportProfileModal) {
     modal.contentEl,
     ...modal.contentEl.querySelectorAll<HTMLElement>("*"),
   ]
-    .flatMap(settingsOf)
-    .findLast(({ name }) => name === m.profile_import_include_match())
-    ?.components.find((component) => component instanceof ToggleComponent);
+    .flatMap(controlsOf)
+    .findLast((component) => component instanceof ToggleComponent);
 }
 
 async function realImportFixture(held: boolean, source = incoming) {

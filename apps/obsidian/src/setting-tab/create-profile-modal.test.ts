@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { ButtonComponent, TextComponent, settingsOf } from "@mock/obsidian";
+import { ButtonComponent, TextComponent, controlsOf } from "@mock/obsidian";
 import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
 
@@ -94,23 +94,19 @@ it("shows the preview while refusing a no-op and a colliding label, then enables
     ...f.draft,
     reason: m.settings_profile_name_invalid(),
   });
-  const rows = Array.from(
-    modal.contentEl.querySelectorAll<HTMLElement>("*"),
-  ).flatMap(settingsOf);
-  rows
-    .find(({ name }) => name === m.settings_profile_name_name())!
-    .components.find((control) => control instanceof TextComponent)!
-    .type("Books");
+  const text = (name: string) =>
+    [...modal.contentEl.querySelectorAll<HTMLElement>("label")]
+      .filter((label) => label.firstChild?.textContent === name)
+      .flatMap((label) => controlsOf(label.lastElementChild as HTMLElement))
+      .find((control) => control instanceof TextComponent)!;
+  text(m.settings_profile_name_name()).type("Books");
   await vi.waitFor(() =>
     expect(modal.contentEl.textContent).toContain(
       m.settings_profile_name_invalid(),
     ),
   );
   expect(saveDisabled()).toBe(true);
-  rows
-    .find(({ name }) => name === m.settings_profile_folder_name())!
-    .components.find((control) => control instanceof TextComponent)!
-    .type("Reading");
+  text(m.settings_profile_folder_name()).type("Reading");
   await vi.waitFor(() => expect(saveDisabled()).toBe(false));
   expect(f.prepareCreate).toHaveBeenLastCalledWith({
     label: "Books",
@@ -163,13 +159,15 @@ it.each([false, true])(
     });
     expect(f.create).toHaveBeenCalledOnce();
     expect(f.preview.create).not.toHaveBeenCalled();
-    // The created Profile is handed to the caller's operation alone; the
-    // dialog offers no action that keeps it for a later note.
+    // The created Profile is handed to the caller's operation alone; besides
+    // Cancel, the dialog offers no action that keeps it for a later note.
     expect(
-      label.mock.instances.filter(
-        (button) =>
-          button instanceof ButtonComponent && button.text !== saveLabel,
-      ),
-    ).toHaveLength(0);
+      label.mock.instances
+        .filter(
+          (button): button is ButtonComponent =>
+            button instanceof ButtonComponent && button.text !== saveLabel,
+        )
+        .map((button) => button.text),
+    ).toEqual([m.modal_cancel()]);
   },
 );

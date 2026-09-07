@@ -68,13 +68,15 @@ function plan(used = false): ProfileDeletionPlan {
 
 it("confirms an unused Profile with configured trash and no target control", async () => {
   using opened = vi.spyOn(ConfirmationModal.prototype, "open");
-  using content = vi.spyOn(ConfirmationModal.prototype, "setContent");
   using action = vi.spyOn(ButtonComponent.prototype, "setButtonText");
   const decision = confirmProfileDeletion({} as App, { plan: plan() });
   const modal = opened.mock.instances[0] as ConfirmationModal;
-  expect(content).toHaveBeenCalledWith(
-    `${m.settings_profile_delete_unused()}\n\n${m.settings_profile_delete_confirm_body()}`,
-  );
+  expect(
+    [...modal.contentEl.querySelectorAll("p")].map((p) => p.textContent),
+  ).toEqual([
+    m.settings_profile_delete_unused(),
+    m.settings_profile_delete_confirm_body(),
+  ]);
   expect(modal.contentEl.querySelector("input")).toBeNull();
   expect(action).toHaveBeenCalledWith(m.settings_profile_delete());
   modal.close();
@@ -83,20 +85,20 @@ it("confirms an unused Profile with configured trash and no target control", asy
 
 it("shows both counts and informed Default target, changing the move option with the target folders", async () => {
   using opened = vi.spyOn(ConfirmationModal.prototype, "open");
-  using content = vi.spyOn(ConfirmationModal.prototype, "setContent");
   using action = vi.spyOn(ButtonComponent.prototype, "setButtonText");
   using clicked = vi.spyOn(ButtonComponent.prototype, "onClick");
   const decision = confirmProfileDeletion({} as App, { plan: plan(true) });
   const modal = opened.mock.instances[0] as ConfirmationModal;
-  expect(content.mock.calls[0]![0]).toContain(
+  const paragraphs = [...modal.contentEl.querySelectorAll("p")].map(
+    (p) => p.textContent,
+  );
+  expect(paragraphs).toContain(
     m.settings_profile_delete_literature_count({ count: 1 }),
   );
-  expect(content.mock.calls[0]![0]).toContain(
+  expect(paragraphs).toContain(
     m.settings_profile_delete_imported_count({ count: 1 }),
   );
-  expect(content.mock.calls[0]![0]).toContain(
-    m.settings_profile_delete_move_desc(),
-  );
+  expect(paragraphs).toContain(m.settings_profile_delete_move_desc());
   expect(modal.contentEl.textContent).toContain(
     m.modal_profile_switch_effects(),
   );

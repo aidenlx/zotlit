@@ -1,6 +1,6 @@
 // One Profile creation dialog shared by settings and contextual Profile pickers.
-import { Modal, Setting, stringifyYaml } from "obsidian";
-import type { App, ButtonComponent } from "obsidian";
+import { DropdownComponent, Modal, TextComponent } from "obsidian";
+import type { App } from "obsidian";
 
 import type { NoteTemplateContext } from "@zotlit/db";
 
@@ -22,6 +22,17 @@ import { loadLiteratureNoteTemplateMigrationData } from "@/services/template/mig
 import type { LiteratureNoteTemplateMigrationDataDeps } from "@/services/template/migration";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+
+import {
+  dialogFooter,
+  field,
+  footerButton,
+  frameDialog,
+  heading,
+  note,
+  previewPanel,
+  twoColumns,
+} from "./profile-dialog";
 
 const logger = getLogger(["setting-tab", "profiles"]);
 
@@ -146,122 +157,124 @@ export class CreateProfileModal extends Modal {
   }
 
   override onOpen(): void {
-    this.containerEl.addClasses(["zt-root"]);
-    this.modalEl.addClasses([
-      "zt:[--dialog-width:var(--modal-width)]",
-      "zt:[--dialog-max-width:var(--modal-max-width)]",
-    ]);
+    frameDialog(this, { wide: true });
     this.setTitle(m.settings_profile_add());
     const base = this.#deps.profile.resolveProfile("default")!;
-    const layout = this.contentEl.createDiv({
-      cls: "zt:grid zt:grid-cols-1 zt:gap-6 zt:md:grid-cols-2",
-    });
-    const controls = layout.createDiv({ cls: "zt:min-w-0" });
-    const field = (name: string) => {
-      const setting = new Setting(controls).setName(name);
-      setting.settingEl.addClasses([
-        "zt:flex-col",
-        "zt:items-stretch",
-        "zt:gap-2",
-      ]);
-      setting.controlEl.addClasses([
-        "zt:min-w-0",
-        "zt:w-full",
-        "zt:justify-start",
-        "zt:[&>*]:min-w-0",
-        "zt:[&>*]:w-full",
-      ]);
-      return setting;
-    };
-    const previewEl = layout.createDiv({ cls: "zt:min-w-0" });
+    const { controls, preview: previewEl } = twoColumns(this.contentEl);
     let label = "";
     let look: ProfileSelector = "default";
     const bindings: ProfileBindings = {};
     let draft: PreparedProfileCreation | undefined;
     let preview: ProfileNotePreview | undefined;
-    let button: ButtonComponent;
-    field(m.settings_profile_name_name()).addText((text) =>
-      text.onChange((value) => {
+    new TextComponent(field(controls, m.settings_profile_name_name())).onChange(
+      (value) => {
         label = value;
         void update();
-      }),
+      },
     );
-    controls.createEl("h3", { text: m.settings_profile_create_differences() });
-    field(m.settings_profile_folder_name()).addText((text) =>
-      text
-        .setPlaceholder(
-          m.settings_profile_same_as_default({
-            value: base.bindings["note.literature-folder"] || "/",
-          }),
-        )
-        .onChange((value) => {
-          if (value) bindings.folder = value;
-          else delete bindings.folder;
-          void update();
+    const differences = controls.createDiv({
+      cls: "zt:flex zt:flex-col zt:gap-4 zt:pt-2",
+    });
+    heading(differences, m.settings_profile_create_differences());
+    new TextComponent(field(differences, m.settings_profile_folder_name()))
+      .setPlaceholder(
+        m.settings_profile_same_as_default({
+          value: base.bindings["note.literature-folder"] || "/",
         }),
-    );
+      )
+      .onChange((value) => {
+        if (value) bindings.folder = value;
+        else delete bindings.folder;
+        void update();
+      });
     const styleLabel = (id: string | null) =>
       this.#options.styles.find((style) => style.id === id)?.title ??
       id ??
       m.settings_citation_references_style_default();
-    field(m.settings_profile_citation_style_name()).addDropdown((dropdown) => {
-      dropdown.addOption(
-        "inherit",
-        m.settings_profile_same_as_default({
-          value: styleLabel(base.bindings["citation.references-style"]),
-        }),
+    const style = new DropdownComponent(
+      field(differences, m.settings_profile_citation_style_name()),
+    );
+    style.addOption(
+      "inherit",
+      m.settings_profile_same_as_default({
+        value: styleLabel(base.bindings["citation.references-style"]),
+      }),
+    );
+    style.addOption("none", m.settings_profile_citation_style_none());
+    for (const item of this.#options.styles)
+      style.addOption(item.id, item.title);
+    style.setValue("inherit").onChange((value) => {
+      if (value === "inherit") delete bindings.citationStyle;
+      else bindings.citationStyle = value === "none" ? null : value;
+      void update();
+    });
+    const lookControl = new DropdownComponent(
+      field(differences, m.settings_profile_look_name()),
+    );
+    lookControl.addOption(
+      "default",
+      m.settings_profile_same_as_default({
+        value: base.document ?? m.settings_profile_document_builtin(),
+      }),
+    );
+    for (const profile of this.#deps.profile.profiles)
+      lookControl.addOption(
+        profile.id,
+        m.settings_profile_copy_look({ document: profile.document }),
       );
-      dropdown.addOption("none", m.settings_profile_citation_style_none());
-      for (const style of this.#options.styles)
-        dropdown.addOption(style.id, style.title);
-      dropdown.setValue("inherit").onChange((value) => {
-        if (value === "inherit") delete bindings.citationStyle;
-        else bindings.citationStyle = value === "none" ? null : value;
-        void update();
-      });
+    lookControl.onChange((value) => {
+      look = value as ProfileSelector;
+      void update();
     });
-    field(m.settings_profile_look_name()).addDropdown((dropdown) => {
-      dropdown.addOption(
-        "default",
-        m.settings_profile_same_as_default({
-          value: base.document ?? m.settings_profile_document_builtin(),
-        }),
-      );
-      for (const profile of this.#deps.profile.profiles)
-        dropdown.addOption(
-          profile.id,
-          m.settings_profile_copy_look({ document: profile.document }),
-        );
-      dropdown.onChange((value) => {
-        look = value as ProfileSelector;
-        void update();
-      });
+    const inheritance = note(controls);
+    const reason = note(controls, { status: true });
+    const panel = previewPanel(previewEl, {
+      path: m.settings_profile_preview_path(),
+      properties: m.settings_profile_preview_properties(),
+      body: m.settings_profile_preview_body(),
     });
-    const inheritance = controls.createEl("p", {
-      cls: "zt:text-sm zt:text-muted-foreground",
-    });
-    const reason = controls.createEl("p", {
-      cls: "zt:text-sm zt:text-muted-foreground",
-      attr: { role: "status" },
-    });
-    previewEl.createEl("h3", { text: m.settings_profile_preview_path() });
-    const path = previewEl.createEl("code", { cls: "zt:break-all" });
-    previewEl.createEl("h3", { text: m.settings_profile_preview_properties() });
-    const properties = previewEl.createEl("pre", {
-      cls: "zt:overflow-auto zt:whitespace-pre-wrap zt:text-xs",
-    });
-    previewEl.createEl("h3", { text: m.settings_profile_preview_body() });
-    const body = previewEl.createEl("pre", {
-      cls: "zt:max-h-72 zt:overflow-auto zt:whitespace-pre-wrap zt:text-xs",
-    });
+    const footer = dialogFooter(this);
+    const button = footerButton(
+      footer,
+      this.#options.useForNote
+        ? m.settings_profile_create_use()
+        : m.settings_profile_add(),
+      async () => {
+        if (!draft || !preview || draft.reason || this.#saving) return;
+        this.#saving = true;
+        button.setDisabled(true);
+        const selectedDraft = draft;
+        const selectedPreview = preview;
+        try {
+          const profile = await selectedDraft.create();
+          logger.debug("Created Profile from dialog", {
+            id: profile.id,
+            useForNote: this.#options.useForNote ?? false,
+          });
+          this.#decision.resolve({ profile, preview: selectedPreview });
+          this.close();
+        } catch (error) {
+          logger.error("Failed to create Profile from dialog", { error });
+          reason.set(
+            Error.isError(error)
+              ? error.message
+              : m.notice_profile_action_failed(),
+            "error",
+          );
+          this.#saving = false;
+          button.setDisabled(false);
+        }
+      },
+    )
+      .setCta()
+      .setDisabled(true);
+    footerButton(footer, m.modal_cancel(), () => this.close());
     const update = async () => {
       const revision = ++this.#revision;
-      button?.setDisabled(true);
+      button.setDisabled(true);
       draft = undefined;
       preview = undefined;
-      path.setText("");
-      properties.setText("");
-      body.setText("");
+      panel.set(undefined);
       try {
         const prepared = await this.#deps.profile.prepareCreate({
           label,
@@ -275,7 +288,7 @@ export class CreateProfileModal extends Modal {
           citationStyle: m.settings_profile_citation_style_name(),
           look: m.settings_profile_look_name(),
         };
-        inheritance.setText(
+        inheritance.set(
           prepared.inherited.length
             ? m.settings_profile_inheritance({
                 values: prepared.inherited.map((key) => fields[key]).join(", "),
@@ -290,62 +303,25 @@ export class CreateProfileModal extends Modal {
             ),
             ...this.#options.data,
           });
-          path.setText(preview.path);
-          properties.setText(stringifyYaml(preview.properties));
-          body.setText(preview.body);
+          panel.set(preview);
         }
         const problem =
           prepared.reason ??
           (!preview ? m.settings_profile_preview_unavailable() : undefined);
-        reason.setText(problem ?? "");
+        reason.set(problem ?? "");
         button.setDisabled(!!problem || this.#saving);
       } catch (error) {
         if (revision !== this.#revision || this.#closed) return;
         logger.debug("Profile creation preview was refused", { label, error });
-        reason.setText(
+        reason.set(
           Error.isError(error)
             ? error.message
             : m.notice_profile_action_failed(),
+          "error",
         );
         button.setDisabled(true);
       }
     };
-    new Setting(controls).addButton((value) => {
-      button = value;
-      button
-        .setButtonText(
-          this.#options.useForNote
-            ? m.settings_profile_create_use()
-            : m.settings_profile_add(),
-        )
-        .setCta()
-        .setDisabled(true)
-        .onClick(async () => {
-          if (!draft || !preview || draft.reason || this.#saving) return;
-          this.#saving = true;
-          button.setDisabled(true);
-          const selectedDraft = draft;
-          const selectedPreview = preview;
-          try {
-            const profile = await selectedDraft.create();
-            logger.debug("Created Profile from dialog", {
-              id: profile.id,
-              useForNote: this.#options.useForNote ?? false,
-            });
-            this.#decision.resolve({ profile, preview: selectedPreview });
-            this.close();
-          } catch (error) {
-            logger.error("Failed to create Profile from dialog", { error });
-            reason.setText(
-              Error.isError(error)
-                ? error.message
-                : m.notice_profile_action_failed(),
-            );
-            this.#saving = false;
-            button.setDisabled(false);
-          }
-        });
-    });
     void update();
   }
 
