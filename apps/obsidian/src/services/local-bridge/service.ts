@@ -161,22 +161,13 @@ export class LocalBridgeService extends Service<void> {
   launchUrl(launch: WorkbenchLaunch): string | null {
     const port = this.#localServer.effectivePort;
     if (!this.#enabled || port === null) return null;
-    const code = this.mintCode(launch);
-    logger.debug("Minted a Connection code", { port });
-    return `${DOCS_SITE_URL}${WORKBENCH_PATH}${connectFragment(code, port)}`;
-  }
-
-  /**
-   * A single-use Connection code bound to this build's docs site, the Profile,
-   * and the Item. Exposed apart from {@link launchUrl} so a caller that builds
-   * its own URL — the end-to-end run, say — spends the same lifecycle.
-   */
-  mintCode(launch: WorkbenchLaunch): string {
-    return this.#sessions.mintCode({
+    const code = this.#sessions.mintCode({
       origin: DOCS_SITE_URL,
       profileId: launch.profileId,
       item: launch.item,
     });
+    logger.debug("Minted a Connection code", { port });
+    return `${DOCS_SITE_URL}${WORKBENCH_PATH}${connectFragment(code, port)}`;
   }
 
   /** End the connection from Obsidian; the page's next request answers 401. */

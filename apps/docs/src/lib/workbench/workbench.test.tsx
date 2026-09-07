@@ -113,19 +113,6 @@ describe("a Workbench Connection", () => {
     expect(page.host.textContent).toContain("Fixture vault");
     expect(page.host.textContent).toContain(m.workbench_save());
 
-    page.press(m.workbench_choose_paper());
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-      m.workbench_sample_not_loaded(),
-    );
-    act(() => {
-      document
-        .querySelector('[role="dialog"] [role="combobox"]')!
-        .dispatchEvent(
-          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-        );
-    });
-
-    page.press(m.workbench_load_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_connected_badge()),
     );
@@ -164,6 +151,128 @@ describe("a Workbench Connection", () => {
       source: CONNECTED,
     });
   });
+
+  it("opens the bound group paper even when the Profile names a Sample Item type", async () => {
+    const base = SAMPLE_ITEMS[0]!;
+    const group = {
+      ...base,
+      item: {
+        ...base.item,
+        key: "ITEM2345",
+        indexedKey: "ITEM2345g99",
+        title: "Group research paper",
+      },
+    };
+    const requests: BridgeRequest[] = [];
+    vi.stubGlobal(
+      "fetch",
+      bridgeFetch(requests, {
+        item: () => group,
+        source: CONNECTED.replace(
+          "language: liquid",
+          "language: liquid\nsampleItemType: book",
+        ),
+      }),
+    );
+    using page = launch();
+    await page.waitFor(() =>
+      expect(title(page.host)).toBe("Connected profile"),
+    );
+    await page.settle();
+    expect(page.host.textContent).toContain(m.workbench_connected_badge());
+    expect(page.host.textContent).not.toContain(m.workbench_retained_badge());
+    expect(startRenderWorker.mock.calls.at(-1)?.[0].snapshot.item.title).toBe(
+      "Group research paper",
+    );
+    page.press(m.workbench_refresh_item());
+    await page.waitFor(() =>
+      expect(
+        requests.filter(({ path }) => path === LOCAL_BRIDGE_PATHS.selectedItem),
+      ).toHaveLength(2),
+    );
+  });
+
+  it("loads the launch paper after the initial Item request failed and reconnect succeeds", async () => {
+    const requests: BridgeRequest[] = [];
+    vi.stubGlobal("fetch", bridgeFetch(requests, { initialItemFailure: true }));
+    using page = launch();
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(
+        m.workbench_connection_reconnect(),
+      ),
+    );
+    page.press(m.workbench_connection_reconnect());
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(m.workbench_connected_badge()),
+    );
+    expect(
+      requests.filter(({ path }) => path === LOCAL_BRIDGE_PATHS.selectedItem),
+    ).toHaveLength(2);
+  });
+
+  it("keeps a deliberate Sample Item choice through reconnect", async () => {
+    const requests: BridgeRequest[] = [];
+    vi.stubGlobal(
+      "fetch",
+      bridgeFetch(requests, { itemNetworkFailureOnce: true }),
+    );
+    using page = launch();
+    await page.waitFor(() =>
+      expect(title(page.host)).toBe("Connected profile"),
+    );
+    page.show(SAMPLE_ITEMS[2]!.item.key);
+    page.press(m.workbench_load_item());
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(
+        m.workbench_connection_reconnect(),
+      ),
+    );
+    page.press(m.workbench_connection_reconnect());
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(
+        m.workbench_connection_to_vault({ vault: "Fixture vault" }),
+      ),
+    );
+    await page.settle();
+    expect(startRenderWorker.mock.calls.at(-1)?.[0].snapshot.item.key).toBe(
+      SAMPLE_ITEMS[2]!.item.key,
+    );
+    expect(
+      requests.filter(({ path }) => path === LOCAL_BRIDGE_PATHS.selectedItem),
+    ).toHaveLength(2);
+  });
+
+  it.each([true, false])(
+    "keeps Restore available after hydration with a retained snapshot: %s",
+    async (retained) => {
+      const scope = "fixture-installation.profile:default";
+      localStorage.setItem(
+        `zotlit.workbench.draft.${scope}`,
+        JSON.stringify({
+          source: KEPT,
+          ...(retained ? { snapshot: SAMPLE_ITEMS[2] } : {}),
+          expected: { state: "revision", revision: "revision-1" },
+        }),
+      );
+      vi.stubGlobal("fetch", bridgeFetch([]));
+      using page = launch();
+      await page.waitFor(() =>
+        expect(title(page.host)).toBe("Connected profile"),
+      );
+      await page.settle();
+      expect(page.host.textContent).toContain(m.workbench_restore_heading());
+      page.press(m.workbench_restore_accept());
+      await page.settle();
+      expect(title(page.host)).toBe("Kept work");
+      expect(
+        startRenderWorker.mock.calls.at(-1)?.[0].snapshot.provenance.kind,
+      ).toBe(retained ? "sample" : "connected");
+      if (retained)
+        expect(startRenderWorker.mock.calls.at(-1)?.[0].snapshot.item.key).toBe(
+          SAMPLE_ITEMS[2]!.item.key,
+        );
+    },
+  );
 
   it("keeps the loaded draft when Save reports a revision conflict", async () => {
     const requests: BridgeRequest[] = [];
@@ -244,7 +353,7 @@ describe("a Workbench Connection", () => {
       expect(page.host.textContent).toContain(m.workbench_save_conflict()),
     );
 
-    page.press(m.workbench_load_item());
+    page.press(m.workbench_refresh_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
         m.workbench_connection_disconnected_notice(),
@@ -372,7 +481,7 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    page.press(m.workbench_load_item());
+    page.press(m.workbench_refresh_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_connection_revoked()),
     );
@@ -443,9 +552,16 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    page.press(m.workbench_load_item());
+    page.press(m.workbench_refresh_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_connected_badge()),
+    );
+    page.press(m.workbench_advanced());
+    const editor = sourceView(page.host);
+    act(() =>
+      editor.dispatch({
+        changes: { from: editor.state.doc.length, insert: "\nDraft edit" },
+      }),
     );
     await page.settle();
 
@@ -475,7 +591,7 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    page.press(m.workbench_load_item());
+    page.press(m.workbench_refresh_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_connected_badge()),
     );
@@ -573,7 +689,7 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    page.press(m.workbench_load_item());
+    page.press(m.workbench_refresh_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
         m.workbench_connection_failed({ message: "Fixture item failure." }),
@@ -602,7 +718,7 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    page.press(m.workbench_load_item());
+    page.press(m.workbench_refresh_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
         m.workbench_connection_disconnected_notice(),
@@ -630,7 +746,7 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    page.press(m.workbench_load_item());
+    page.press(m.workbench_refresh_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
         m.workbench_connection_reconnect(),
@@ -658,7 +774,7 @@ describe("a Workbench Connection", () => {
       await page.waitFor(() =>
         expect(title(page.host)).toBe("Connected profile"),
       );
-      page.press(m.workbench_load_item());
+      page.press(m.workbench_refresh_item());
       await page.waitFor(() =>
         expect(page.host.textContent).toContain(
           m.workbench_connection_reconnect(),
@@ -706,7 +822,7 @@ describe("a Workbench Connection", () => {
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    page.press(m.workbench_load_item());
+    page.press(m.workbench_refresh_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_connected_badge()),
     );
@@ -1640,7 +1756,7 @@ describe("the annotation box", () => {
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    page.press(m.workbench_load_item());
+    page.press(m.workbench_refresh_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_connected_badge()),
     );
@@ -2352,6 +2468,7 @@ interface BridgeRequest {
 }
 
 interface BridgeFixtureOptions {
+  readonly source?: string;
   readonly item?: () => (typeof SAMPLE_ITEMS)[number];
   readonly builtInAbsent?: boolean;
   readonly conflictOnce?: {
@@ -2359,6 +2476,7 @@ interface BridgeFixtureOptions {
     readonly source: string;
   };
   readonly itemNetworkFailureOnce?: boolean;
+  readonly initialItemFailure?: boolean;
   readonly etaDependency?: boolean;
   /** The sentence a bridge sends instead of handing a partial over. */
   readonly dependencyRefusal?: string;
@@ -2383,10 +2501,13 @@ function bridgeFetch(
   requests: BridgeRequest[],
   options: BridgeFixtureOptions = {},
 ): typeof fetch {
-  let selectedSource = CONNECTED;
+  let selectedSource = options.source ?? CONNECTED;
   let selectedRevision = "revision-1";
   let conflictPending = options.conflictOnce !== undefined;
-  let itemNetworkFailurePending = options.itemNetworkFailureOnce === true;
+  let itemReads = 0;
+  let itemNetworkFailurePending =
+    options.itemNetworkFailureOnce === true ||
+    options.initialItemFailure === true;
   let itemProtocolFailurePending = options.itemProtocolFailureOnce === true;
   return async function (
     this: typeof globalThis,
@@ -2405,10 +2526,13 @@ function bridgeFetch(
       receiver: this,
     });
 
+    if (url.pathname === LOCAL_BRIDGE_PATHS.selectedItem) itemReads += 1;
+
     if (
       (options.codeRefused &&
         url.pathname === LOCAL_BRIDGE_PATHS.codeBootstrap) ||
       (options.revokeAfterConnect &&
+        itemReads > 1 &&
         url.pathname === LOCAL_BRIDGE_PATHS.selectedItem)
     ) {
       return new Response(
@@ -2424,14 +2548,16 @@ function bridgeFetch(
 
     if (
       url.pathname === LOCAL_BRIDGE_PATHS.selectedItem &&
-      itemNetworkFailurePending
+      itemNetworkFailurePending &&
+      (options.initialItemFailure || itemReads > 1)
     ) {
       itemNetworkFailurePending = false;
       throw new TypeError("The Local Bridge disappeared.");
     }
     if (
       url.pathname === LOCAL_BRIDGE_PATHS.selectedItem &&
-      itemProtocolFailurePending
+      itemProtocolFailurePending &&
+      itemReads > 1
     ) {
       itemProtocolFailurePending = false;
       return new Response(
@@ -2455,7 +2581,7 @@ function bridgeFetch(
       capabilities: [...BRIDGE_CAPABILITIES],
       selectedItem: options.noSelectedItem
         ? null
-        : { key: item.item.key, title: item.item.title },
+        : { key: item.item.indexedKey, title: item.item.title },
       selectedProfile: { id: "default", name: "Connected profile" },
       profileDefaults: {
         folder: "fixture-literature",

@@ -305,9 +305,12 @@ export function createLocalBridgeApp(
   });
 
   // A fault the routes do not name still answers the one error shape the page
-  // parses, and the record stays a category and a message.
-  app.onError((error, context) => {
-    logger.error("A Local Bridge operation failed", { error });
+  // parses, and the record carries only the operation and fixed failure reason.
+  app.onError((_error, context) => {
+    logger.error("A Local Bridge operation failed", {
+      operation: context.req.routePath,
+      reason: "operation-failed",
+    });
     return refuse(context, {
       status: 500,
       code: "operation-failed",
