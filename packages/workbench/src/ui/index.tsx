@@ -81,3 +81,6 @@ export type { ResultColumnProps } from "./result-column";
 export { PropertyList, PropertyValue, propertyText } from "./property-list";
 
 export { PreviewControls } from "./preview-controls";
+
+export { NameFolderPane, BUILT_IN_BINDING_DEFAULTS } from "./name-folder";
+export type { NameFolderPaneProps } from "./name-folder";

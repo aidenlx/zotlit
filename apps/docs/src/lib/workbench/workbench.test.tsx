@@ -896,7 +896,7 @@ describe("a draft the parser refuses", () => {
     expect(chosenTab(page.host)).toBe(m.workbench_tab_name_and_folder());
     // The form writes its fields through controls, so the reader lands in the
     // one holding the field the parser named.
-    expect(document.activeElement?.id).toBe("workbench-field-name");
+    expect(document.activeElement?.id.endsWith("-field-name")).toBe(true);
   });
 });
 

@@ -7,6 +7,7 @@ import {
   Redo2,
   Undo2,
   ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 // The web's look for the Workbench UI: the site's Tailwind classes for each
 // part of the shared tree, and Lucide for its icons. The tree carries no class
@@ -20,6 +21,7 @@ import { cn } from "@/lib/cn";
 import { editorTheme } from "./editor-theme";
 
 const ICON: Record<WorkbenchIcon, typeof List> = {
+  "chevron-right": ChevronRight,
   "chevron-down": ChevronDown,
   preview: Eye,
   edit: Pencil,
@@ -31,6 +33,9 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
 
 const historyButton = buttonVariants({ variant: "ghost", size: "icon-sm" });
 
+const nameInput =
+  "min-h-8 w-full min-w-0 rounded-md border border-fd-border bg-fd-card px-2 py-1 text-base placeholder:text-fd-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring disabled:cursor-default disabled:opacity-50 aria-invalid:border-fd-foreground sm:text-xs";
+
 export const WEB_THEME: WorkbenchTheme = {
   editorExtension: (slice, language) => [
     editorTheme,
@@ -41,6 +46,61 @@ export const WEB_THEME: WorkbenchTheme = {
       : []),
   ],
   classes: {
+    nameFolder: {
+      "source-button": cn(
+        buttonVariants({ variant: "outline", size: "xs" }),
+        "mt-2",
+      ),
+      "confirm-button": buttonVariants({ variant: "outline", size: "xs" }),
+      "cancel-button": buttonVariants({ variant: "ghost", size: "xs" }),
+      unreadable: "text-sm text-fd-muted-foreground",
+      pane: "-m-1 flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-1 pb-3",
+      "filename-editor": "rounded-md border border-fd-border bg-fd-card",
+      help: "text-xs leading-normal text-pretty text-fd-muted-foreground",
+      "filename-result": "flex items-baseline gap-2 text-xs",
+      muted: "text-fd-muted-foreground",
+      "filename-output": "min-w-0 flex-1 font-mono break-words",
+      defaults: "flex flex-col gap-1.5 text-xs",
+      actions: "flex flex-wrap items-center gap-2",
+      "default-label": "min-w-0 flex-1",
+      "default-value": "font-mono",
+      secondary: "text-xs text-fd-muted-foreground",
+      details:
+        "group rounded-md border border-fd-border bg-fd-card px-2.5 py-2",
+      summary:
+        "flex min-h-7 cursor-pointer list-none items-center gap-1.5 text-xs font-semibold [&::-webkit-details-marker]:hidden",
+      "details-icon":
+        "size-3.5 shrink-0 text-fd-muted-foreground transition-transform group-open:rotate-90 [&_svg]:size-full",
+      "identity-fields": "mt-2 flex flex-col gap-3 pb-1",
+      "advanced-fields": "mt-2 flex flex-col gap-4 pb-1",
+      fields: "flex flex-col gap-3",
+      "readonly-input": cn(
+        nameInput,
+        "flex-1 bg-fd-background font-mono text-fd-muted-foreground",
+      ),
+      group: "flex flex-col gap-2",
+      heading: "text-xs font-semibold",
+      field: "flex flex-col gap-1 text-xs font-medium",
+      "binding-row":
+        "flex flex-col gap-2 rounded-md border border-fd-border bg-fd-card px-2.5 py-2",
+      "binding-heading": "flex min-h-8 flex-wrap items-center gap-2",
+      "binding-label": "min-w-0 flex-1 text-xs font-medium",
+      "toggle-row": "flex min-h-8 items-center gap-2 text-xs",
+      confirmation:
+        "flex flex-col gap-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal",
+      strong: "font-semibold",
+      prose: "text-pretty",
+      "confirmation-actions": "flex flex-wrap gap-2",
+      input: nameInput,
+      "binding-input": cn(
+        nameInput,
+        "bg-fd-background disabled:text-fd-muted-foreground",
+      ),
+      switch:
+        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border border-fd-muted-foreground/60 after:absolute after:inset-x-0 after:-inset-y-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring data-[state=checked]:border-fd-primary data-[state=checked]:bg-fd-primary data-[state=unchecked]:bg-fd-muted disabled:cursor-default disabled:opacity-50",
+      "switch-thumb":
+        "pointer-events-none block size-5 rounded-full bg-fd-background shadow-sm data-[state=checked]:translate-x-5 rtl:data-[state=checked]:-translate-x-5 data-[state=unchecked]:translate-x-0.5 rtl:data-[state=unchecked]:-translate-x-0.5",
+    },
     select: {
       wrapper: "relative w-full min-w-0 has-[select:disabled]:opacity-50",
       select:
