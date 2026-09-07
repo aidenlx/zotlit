@@ -332,5 +332,3 @@ export function WorkbenchSkeleton() {
     </WorkbenchThemeProvider>
   );
 }
-
-export { ResultHeader, ResultRegion } from "@zotlit/workbench/ui";

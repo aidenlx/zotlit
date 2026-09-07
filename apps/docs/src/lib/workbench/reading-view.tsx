@@ -26,10 +26,9 @@ import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 
 import type { RenderedProperty, RenderedRange } from "@zotlit/workbench/render";
-import { m } from "@zotlit/workbench/ui";
+import { m, PropertyList } from "@zotlit/workbench/ui";
 
 import imagePlaceholder from "./image-placeholder.svg";
-import { PropertyList } from "./property-list";
 
 /** What an `![[…]]` or `![](…)` embed points at, by the target's file type. */
 type EmbedKind = "audio" | "image" | "note" | "pdf" | "video";

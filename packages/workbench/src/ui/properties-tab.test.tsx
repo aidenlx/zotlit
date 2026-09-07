@@ -1,3 +1,4 @@
+import { EditorView } from "@codemirror/view";
 import {
   act,
   cleanup,
@@ -121,6 +122,11 @@ it("adds properties and spreads, and confirms a format reset before changing sou
     { target: { value: "To read" } },
   );
   expect(controller.source).toContain('value: "To read"');
+  expect(
+    screen.getByRole<HTMLInputElement>("textbox", {
+      name: m.workbench_properties_expression(),
+    }).value,
+  ).toBe("To read");
   act(() => {
     controller.undo();
     controller.undo();
@@ -205,4 +211,31 @@ it("shows row diagnostics and the produced properties beside the final fold", ()
     "title: Why Most Published Research Findings Are False",
   );
   expect(output.container.querySelector("dl")).toBeNull();
+});
+
+it("keeps an authored expression until format confirmation and restores it with one undo", () => {
+  const { container, controller, press } = setup();
+  press(m.workbench_properties_add());
+  const value = EditorView.findFromDOM(container.querySelector(".cm-editor")!)!;
+  act(() =>
+    value.dispatch({
+      changes: { from: 0, to: value.state.doc.length, insert: "'To read'" },
+      userEvent: "input.type",
+    }),
+  );
+  fireEvent.input(
+    screen.getByRole("combobox", { name: m.workbench_properties_format() }),
+    { target: { value: "value" } },
+  );
+  expect(value.state.doc.toString()).toBe("'To read'");
+  press(m.workbench_properties_format_reset());
+  act(() => {
+    controller.undo();
+  });
+  expect(controller.source).toContain("expr: 'To read'");
+  expect(
+    EditorView.findFromDOM(
+      container.querySelector(".cm-editor")!,
+    )!.state.doc.toString(),
+  ).toBe("'To read'");
 });

@@ -44,6 +44,7 @@ it("names the Managed Block and reveals its boundary source when selected", () =
   const { container, controller, view } = note();
   expect(container.textContent).toContain(m.workbench_managed_start());
   expect(container.textContent).toContain(m.workbench_managed_end());
+  expect(view.contentDOM.textContent).not.toContain("{% managed %}");
   const tag = controller.noteRegions.managedBlock!.open;
   act(() =>
     view.dispatch({
@@ -148,4 +149,117 @@ it("renders newly inserted annotation placeholders from controller updates", () 
       name: m.workbench_annotation_edit_format(),
     }),
   ).toHaveLength(before + 1);
+});
+
+it("reveals annotation and managed tags while the selection touches their source", () => {
+  const { view } = note();
+  const content = view.contentDOM;
+  const text = view.state.doc.toString();
+  const call = text.indexOf("{% render_annotation annotation %}");
+  const managed = text.indexOf("{% managed %}");
+  const endmanaged = text.indexOf("{% endmanaged %}");
+  expect(content.textContent).not.toContain("{% render_annotation");
+  expect(content.textContent).not.toContain("{% managed %}");
+  expect(content.textContent).not.toContain("{% endmanaged %}");
+  for (const position of [
+    call,
+    call + 10,
+    call + "{% render_annotation annotation %}".length,
+  ]) {
+    act(() => view.dispatch({ selection: { anchor: position } }));
+    expect(content.textContent).toContain("{% render_annotation annotation %}");
+    expect(content.textContent).not.toContain("{% managed %}");
+  }
+  act(() =>
+    view.dispatch({ selection: { anchor: managed + 3, head: endmanaged + 4 } }),
+  );
+  expect(content.textContent).toContain("{% managed %}");
+  expect(content.textContent).toContain("{% render_annotation annotation %}");
+  expect(content.textContent).toContain("{% endmanaged %}");
+  act(() => view.dispatch({ selection: { anchor: 0 } }));
+  expect(content.textContent).not.toContain("{% render_annotation");
+  expect(content.textContent).not.toContain("{% managed %}");
+  expect(content.textContent).not.toContain("{% endmanaged %}");
+  expect(view.state.doc.toString()).toBe(text);
+});
+
+it("shares preview toggles on one line and turns other lines off", () => {
+  const source = DEFAULT_PROFILE_SOURCE.replace(
+    "# {{ zt.title }}",
+    "# {{ zt.title }}\n\n{% render_annotation zt.annotations[0] %} {% render_annotation zt.annotations[0] %}",
+  );
+  const { container } = note(new WorkbenchDocumentController(source));
+  const toggles = [
+    ...container.querySelectorAll<HTMLButtonElement>(
+      "[data-annotation-box] [aria-pressed]",
+    ),
+  ];
+  expect(toggles).toHaveLength(3);
+  const states = () =>
+    toggles.map((toggle) => toggle.getAttribute("aria-pressed"));
+  fireEvent.click(toggles[0]!);
+  expect(states()).toEqual(["true", "true", "false"]);
+  expect(screen.getAllByRole("document")).toHaveLength(1);
+  fireEvent.click(toggles[2]!);
+  expect(states()).toEqual(["false", "false", "true"]);
+  fireEvent.click(toggles[1]!);
+  expect(states()).toEqual(["true", "true", "false"]);
+  fireEvent.click(toggles[0]!);
+  expect(states()).toEqual(["false", "false", "false"]);
+  expect(screen.queryByRole("document")).toBeNull();
+});
+
+it("keeps the preview on its line through Note and Source edits", () => {
+  const call = "{% render_annotation zt.annotations[0] %}";
+  const { container, view, controller } = note(
+    new WorkbenchDocumentController(
+      DEFAULT_PROFILE_SOURCE.replace(
+        "# {{ zt.title }}",
+        `# {{ zt.title }}\n\n${call}`,
+      ),
+    ),
+  );
+  const toggles = () => [
+    ...container.querySelectorAll<HTMLButtonElement>(
+      "[data-annotation-box] [aria-pressed]",
+    ),
+  ];
+  const states = () =>
+    toggles().map((toggle) => toggle.getAttribute("aria-pressed"));
+  fireEvent.click(toggles()[0]!);
+  act(() =>
+    view.dispatch({
+      changes: { from: 0, insert: "Earlier note text\n\n" },
+      selection: { anchor: 0 },
+    }),
+  );
+  expect(states()).toEqual(["true", "false"]);
+  expect(screen.getAllByRole("document")).toHaveLength(1);
+  const advanced = render(
+    <SliceEditor controller={controller} slice="advanced" label="Source" />,
+  );
+  const source = EditorView.findFromDOM(
+    advanced.container.querySelector(".cm-editor")!,
+  )!;
+  act(() =>
+    source.dispatch({
+      changes: {
+        from: source.state.doc.toString().indexOf("# {{ zt.title }}"),
+        insert: `Another paragraph\n${call}\n\n`,
+      },
+      selection: { anchor: 0 },
+    }),
+  );
+  advanced.unmount();
+  expect(states()).toEqual(["false", "true", "false"]);
+  expect(screen.getAllByRole("document")).toHaveLength(1);
+  const from = view.state.doc.toString().lastIndexOf(call);
+  act(() =>
+    view.dispatch({
+      changes: { from, to: from + call.length },
+      selection: { anchor: 0 },
+    }),
+  );
+  expect(states()).toEqual(["false", "false"]);
+  expect(screen.queryByRole("document")).toBeNull();
 });
