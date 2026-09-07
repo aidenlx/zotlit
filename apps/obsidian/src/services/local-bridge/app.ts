@@ -26,9 +26,6 @@ export type ConnectionGrantDescription = Omit<ConnectionGrant, "credential">;
 /** Every `/v1/*` path lives under this prefix, gates included. */
 const BRIDGE_PATH_PREFIX = "/v1";
 
-/** The one path that answers without a bearer credential: it issues one. */
-const BOOTSTRAP_PATH_PREFIX = "/v1/bootstrap/";
-
 export interface LocalBridgeAppDeps {
   /** `false` while the web Template Workbench toggle is off — every path refuses. */
   enabled(): boolean;
@@ -44,11 +41,14 @@ export interface LocalBridgeAppDeps {
 }
 
 /**
- * The connection a gated route is scoped to, resolved by the bearer gate. A
- * handler added here reads it with `context.get("connection")` rather than
- * looking the credential up again.
+ * What the gates resolved for a route behind them: the allow-listed website the
+ * request came from, and — on every path but the code exchange — the connection
+ * the bearer credential proves. A handler reads these with `context.get(...)`
+ * rather than re-checking the header itself.
  */
-export type BridgeEnv = { Variables: { connection: BridgeConnection } };
+export type BridgeEnv = {
+  Variables: { origin: string; connection: BridgeConnection };
+};
 
 export function createLocalBridgeApp(
   deps: LocalBridgeAppDeps,
@@ -74,6 +74,7 @@ export function createLocalBridgeApp(
         message: "This website Origin is not approved.",
       });
     }
+    context.set("origin", origin);
     // Emitted for the allow-listed origin alone: a browser check is not an
     // authorization, and an origin that got this far still faces every gate.
     context.header("Access-Control-Allow-Origin", origin);
@@ -85,27 +86,36 @@ export function createLocalBridgeApp(
     context.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     if (context.req.method === "OPTIONS") return context.body(null, 204);
 
-    if (!deps.enabled()) {
-      return refuse(context, {
-        status: 403,
-        code: "bridge-disabled",
-        message: "The web Template Workbench is turned off in this vault.",
-      });
-    }
-
-    if (!new URL(context.req.url).pathname.startsWith(BOOTSTRAP_PATH_PREFIX)) {
-      const connection = deps.sessions.authorize(
-        bearerCredential(context.req.header("Authorization")),
-      );
-      if (connection === undefined) {
+    if (
+      new URL(context.req.url).pathname === LOCAL_BRIDGE_PATHS.codeBootstrap
+    ) {
+      // The one path that answers without a bearer credential: it issues one,
+      // so the toggle is what it has to be measured against.
+      if (!deps.enabled()) {
         return refuse(context, {
-          status: 401,
-          code: "session-revoked",
-          message: "The Workbench Connection is no longer available.",
+          status: 403,
+          code: "bridge-disabled",
+          message: "The web Template Workbench is turned off in this vault.",
         });
       }
-      context.set("connection", connection);
+      await next();
+      return;
     }
+
+    // Turning the Workbench off revokes the live connection, so a credential
+    // and a toggle are one question: whether a session still stands. Answering
+    // it as 401 is what tells the page to offer Open from Obsidian again.
+    const connection = deps.sessions.authorize(
+      bearerCredential(context.req.header("Authorization")),
+    );
+    if (connection === undefined || !deps.enabled()) {
+      return refuse(context, {
+        status: 401,
+        code: "session-revoked",
+        message: "The Workbench Connection is no longer available.",
+      });
+    }
+    context.set("connection", connection);
     await next();
   });
 
@@ -117,7 +127,7 @@ export function createLocalBridgeApp(
     if (!request.success) return invalidRequest(context, request.issues);
     const connection = deps.sessions.exchange(
       request.output.code,
-      context.req.header("Origin") ?? "",
+      context.get("origin"),
     );
     if (connection === undefined) {
       return refuse(context, {
@@ -126,10 +136,7 @@ export function createLocalBridgeApp(
         message: "The connection code is invalid, used, or expired.",
       });
     }
-    logger.info("Workbench Connection opened", {
-      profileId: connection.profileId,
-      itemKey: connection.item?.key ?? null,
-    });
+    logger.info("Workbench Connection opened");
     return context.json({
       credential: connection.credential,
       ...(await deps.describeGrant(connection)),
@@ -140,11 +147,8 @@ export function createLocalBridgeApp(
     // The bearer gate already refused a credential the plugin no longer holds,
     // so reaching here means the grant stands: answer with the versions and
     // bindings in effect now, which is what the page re-checks.
-    const connection = context.get("connection");
-    logger.debug("Workbench Connection resumed", {
-      profileId: connection.profileId,
-    });
-    return context.json(await deps.describeGrant(connection));
+    logger.debug("Workbench Connection resumed");
+    return context.json(await deps.describeGrant(context.get("connection")));
   });
 
   app.post(LOCAL_BRIDGE_PATHS.disconnect, async (context) => {
@@ -182,7 +186,9 @@ export function createLocalBridgeApp(
 function isLoopbackAddress(address: string | undefined): boolean {
   if (address === undefined) return false;
   const plain = address.startsWith("::ffff:") ? address.slice(7) : address;
-  return plain === "::1" || plain === "localhost" || plain.startsWith("127.");
+  return (
+    plain === "::1" || plain === "0:0:0:0:0:0:0:1" || plain.startsWith("127.")
+  );
 }
 
 function bearerCredential(header: string | undefined): string | undefined {

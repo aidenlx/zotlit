@@ -4,7 +4,7 @@ import { LOCAL_BRIDGE_PATHS } from "@zotlit/workbench/bridge";
 
 import { createLocalBridgeApp } from "./app";
 import type { ConnectionGrantDescription } from "./app";
-import { STABLE_DOCS_ORIGIN } from "./origins";
+import { PRERELEASE_DOCS_ORIGIN, STABLE_DOCS_ORIGIN } from "./origins";
 import { BridgeSessions } from "./sessions";
 import type { BridgeConnection } from "./sessions";
 
@@ -69,7 +69,7 @@ function setup(): Harness {
   const app = createLocalBridgeApp({
     enabled: () => enabled,
     peerAddress: () => peer,
-    allowedOrigins: [STABLE_DOCS_ORIGIN],
+    allowedOrigins: [STABLE_DOCS_ORIGIN, PRERELEASE_DOCS_ORIGIN],
     sessions,
     describeGrant: (connection) => Promise.resolve(grantOf(connection)),
   });
@@ -176,17 +176,37 @@ describe("the bridge gates", () => {
     );
   });
 
+  it("reads the peer from the socket, not from a header", async () => {
+    const bridge = setup();
+    bridge.setPeer("192.168.1.24");
+
+    const res = await bridge.request(LOCAL_BRIDGE_PATHS.resumeSession, {
+      headers: {
+        "X-Forwarded-For": "127.0.0.1",
+        "X-Real-IP": "127.0.0.1",
+        Host: "127.0.0.1",
+      },
+    });
+
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toEqual({
+      error: { code: "loopback-required", message: expect.any(String) },
+    });
+  });
+
   it("refuses every path while the web Template Workbench is off", async () => {
     const bridge = setup();
     const credential = await bridge.connect();
     bridge.setEnabled(false);
 
+    // The toggle revoked the connection, so the page reads the one answer it
+    // acts on: the session is gone, open a fresh one from Obsidian.
     const resumed = await bridge.request(LOCAL_BRIDGE_PATHS.resumeSession, {
       headers: authorized(credential),
     });
-    expect(resumed.status).toBe(403);
+    expect(resumed.status).toBe(401);
     await expect(resumed.json()).resolves.toEqual({
-      error: { code: "bridge-disabled", message: expect.any(String) },
+      error: { code: "session-revoked", message: expect.any(String) },
     });
 
     const exchanged = await bridge.request(LOCAL_BRIDGE_PATHS.codeBootstrap, {
@@ -194,6 +214,9 @@ describe("the bridge gates", () => {
       body: JSON.stringify({ code: "anything" }),
     });
     expect(exchanged.status).toBe(403);
+    await expect(exchanged.json()).resolves.toEqual({
+      error: { code: "bridge-disabled", message: expect.any(String) },
+    });
   });
 });
 
@@ -223,6 +246,26 @@ describe("a Connection code", () => {
     const second = await spend();
     expect(second.status).toBe(401);
     await expect(second.json()).resolves.toEqual({
+      error: { code: "invalid-one-time-code", message: expect.any(String) },
+    });
+  });
+
+  it("is refused from a website other than the one it was minted for", async () => {
+    const bridge = setup();
+    const code = bridge.sessions.mintCode({
+      origin: STABLE_DOCS_ORIGIN,
+      profileId: "default",
+      item: null,
+    });
+
+    const res = await bridge.request(LOCAL_BRIDGE_PATHS.codeBootstrap, {
+      method: "POST",
+      headers: { Origin: PRERELEASE_DOCS_ORIGIN },
+      body: JSON.stringify({ code }),
+    });
+
+    expect(res.status).toBe(401);
+    await expect(res.json()).resolves.toEqual({
       error: { code: "invalid-one-time-code", message: expect.any(String) },
     });
   });

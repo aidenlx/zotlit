@@ -4,17 +4,16 @@
 
 import type { App } from "obsidian";
 
+import { randomHex } from "./random";
+
 /** localStorage surface these helpers need — the vault-scoped store. */
 export type DeviceStorage = Pick<App, "loadLocalStorage" | "saveLocalStorage">;
 
 const STORAGE_KEY = "zotlit-local-bridge-installation";
 
-/** 128 bits of randomness, hex encoded — long enough that two devices sharing
- *  a synced vault never mint the same id. */
-function mintInstallationId(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
+/** 128 bits of randomness — long enough that two devices sharing a synced vault
+ *  never mint the same id. */
+const INSTALLATION_ID_BYTES = 16;
 
 /**
  * The id this device uses for this vault, minted and stored on first read. A
@@ -24,7 +23,7 @@ function mintInstallationId(): string {
 export function loadInstallationId(store: DeviceStorage): string {
   const held: unknown = store.loadLocalStorage(STORAGE_KEY);
   if (typeof held === "string" && held.length > 0) return held;
-  const minted = mintInstallationId();
+  const minted = randomHex(INSTALLATION_ID_BYTES);
   store.saveLocalStorage(STORAGE_KEY, minted);
   return minted;
 }

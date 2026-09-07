@@ -3,6 +3,8 @@
 // Both the code and the credential are random and live in memory only: nothing
 // here is written to plugin settings, to device storage, or to a log.
 
+import { randomHex } from "./random";
+
 /** The Item a launch put in front of the page, as the grant names it. */
 export interface SelectedItemIdentity {
   readonly key: string;
@@ -25,11 +27,8 @@ export interface BridgeConnection extends ConnectionBinding {
 /** How long a Connection code stands before it is worthless. */
 const CODE_LIFETIME = Temporal.Duration.from({ minutes: 2 });
 
-/** 256 bits of randomness, hex encoded — for a code and for a credential alike. */
-function mintToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
+/** 256 bits of randomness — for a code and for a credential alike. */
+const TOKEN_BYTES = 32;
 
 interface PendingCode {
   readonly binding: ConnectionBinding;
@@ -73,7 +72,7 @@ export class BridgeSessions {
    */
   mintCode(binding: ConnectionBinding): string {
     this.#pruneCodes();
-    const code = mintToken();
+    const code = randomHex(TOKEN_BYTES);
     this.#codes.set(code, {
       binding,
       expiresAt: this.#now().add(CODE_LIFETIME),
@@ -96,7 +95,7 @@ export class BridgeSessions {
     if (pending.binding.origin !== origin) return undefined;
     const connection: BridgeConnection = {
       ...pending.binding,
-      credential: mintToken(),
+      credential: randomHex(TOKEN_BYTES),
     };
     this.#connection = connection;
     this.#onChange(connection);
