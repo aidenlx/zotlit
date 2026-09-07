@@ -12,7 +12,7 @@ import {
   Save,
   X,
 } from "lucide-react";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 
 import {
@@ -34,6 +34,7 @@ import type { ProfileRenderResult } from "@zotlit/workbench/render";
 import {
   EditToolbar,
   ProblemsFooter,
+  ResultColumn,
   TAB_LABEL,
   TAB_LEDE,
   TabBar,
@@ -62,10 +63,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
 
 import {
   AnnotationPane,
@@ -82,8 +79,6 @@ import type { SampleItem } from "./fields";
 import {
   AddFieldButton,
   ProfileMenuLabel,
-  ResultHeader,
-  ResultRegion,
   WorkbenchFrame,
   WorkbenchHelp,
 } from "./frame";
@@ -94,7 +89,6 @@ import { NotePane } from "./note-pane";
 import { PropertiesPane, PropertiesResult } from "./properties-tab";
 import type { EntryDiagnostic } from "./properties-tab";
 import { startRenderWorker } from "./render-client";
-import { ResultSheet } from "./result-sheet";
 import { SampleBar } from "./sample-bar";
 import { SliceEditor } from "./slice-editor";
 import { ensureTemporal } from "./temporal";
@@ -341,10 +335,6 @@ export function Workbench() {
   );
 
   const problem = controller.problems[0];
-  // A failed note call also needs a route to the format from its empty result.
-  const previewProblem = result?.diagnostics.find(
-    ({ part }) => part !== "annotation" || result.creationBody === null,
-  );
   // Null while the manifest's list is one the rows cannot edit, which is what
   // sends the reader to Advanced with the source intact.
   const entries = controller.managedEntries;
@@ -388,7 +378,6 @@ export function Workbench() {
   // The note itself, which is the one result an update rewrites part of, so the
   // update-only Managed Region is offered beside it and nowhere else.
   const showAnnotation = !advanced && tab === "annotation";
-  const showNote = advanced || (tab !== "properties" && tab !== "annotation");
   const { host, overlays } = useWebHost({
     snapshot: sample,
     notice: (text) => setNotice({ text, revision: latestRevision.current }),
@@ -723,12 +712,6 @@ export function Workbench() {
       </>
     );
   }
-
-  const pending = (
-    <p className="text-sm text-fd-muted-foreground">
-      {m.workbench_result_pending()}
-    </p>
-  );
 
   const page = (
     <WorkbenchFrame
@@ -1080,41 +1063,33 @@ export function Workbench() {
               onSelect={setAnnotationChoice}
             />
           )}
-          <ResultHeader
-            heading={
+          <ResultColumn
+            result={result}
+            annotationResult={annotationResult}
+            mode={
               showAnnotation
-                ? m.workbench_annotation_example()
+                ? "annotation"
                 : !advanced && tab === "properties"
-                  ? m.workbench_result_fold()
-                  : m.workbench_result_heading()
+                  ? "properties"
+                  : "note"
             }
+            stale={!renderable}
             showMarkdown={showMarkdown}
             onShowMarkdown={setShowMarkdown}
-            controls={
-              showNote && (
-                <label className="flex min-w-0 items-center text-xs min-[1180px]:flex-1">
-                  <span className="sr-only">{m.workbench_preview_show()}</span>
-                  <NativeSelect
-                    value={showManaged ? "managed" : "whole"}
-                    onChange={(event) =>
-                      setShowManaged(event.target.value === "managed")
-                    }
-                    size="xs"
-                    className="w-full"
-                    title={
-                      showManaged
-                        ? m.workbench_result_managed_toggle()
-                        : m.workbench_preview_whole()
-                    }
-                  >
-                    <NativeSelectOption value="whole">
-                      {m.workbench_preview_whole()}
-                    </NativeSelectOption>
-                    <NativeSelectOption value="managed">
-                      {m.workbench_result_managed_toggle()}
-                    </NativeSelectOption>
-                  </NativeSelect>
-                </label>
+            showManaged={showManaged}
+            onShowManaged={setShowManaged}
+            openAnnotation={openAnnotation}
+            goToEntry={goToEntry}
+            openSource={() => setAdvanced(true)}
+            propertiesResult={
+              result && (
+                <PropertiesResult
+                  entries={entries ?? []}
+                  properties={result.properties}
+                  fold={result.fold}
+                  frontmatterBlock={result.frontmatterBlock}
+                  showMarkdown={showMarkdown}
+                />
               )
             }
             help={
@@ -1127,98 +1102,6 @@ export function Workbench() {
               </WorkbenchHelp>
             }
           />
-          {result && !renderable && (
-            <p role="status" className="mb-2 text-xs font-medium">
-              {m.workbench_preview_stale()}
-            </p>
-          )}
-          <ResultRegion emphasis={false}>
-            {result ? (
-              <Suspense fallback={pending}>
-                {!showAnnotation && (
-                  <header
-                    className="-mx-4 -mt-4 mb-4 rounded-t-md border-b border-fd-border bg-fd-muted/40 px-3 py-1.5 text-xs font-medium"
-                    title={result.filename ?? undefined}
-                  >
-                    <p className="truncate">
-                      <span className="sr-only">
-                        {m.workbench_result_filename()}:{" "}
-                      </span>
-                      {result.filename}
-                    </p>
-                  </header>
-                )}
-                {!showAnnotation && previewProblem && (
-                  <p className="mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty">
-                    <strong className="font-semibold">
-                      {m.workbench_preview_problem()}
-                    </strong>{" "}
-                    {diagnosticText(previewProblem)}{" "}
-                    {previewProblem.part === "annotation" && (
-                      <button
-                        type="button"
-                        onClick={openAnnotation}
-                        className="cursor-pointer underline underline-offset-2"
-                      >
-                        {m.workbench_annotation_edit_format()}
-                      </button>
-                    )}
-                    {previewProblem.position !== undefined && (
-                      <button
-                        type="button"
-                        onClick={() => goToEntry(previewProblem.position!)}
-                        className="cursor-pointer underline underline-offset-2"
-                      >
-                        {m.workbench_problems_where_entry()}
-                      </button>
-                    )}
-                  </p>
-                )}
-                {showAnnotation ? (
-                  annotationResult ? (
-                    <ResultSheet
-                      markdown={annotationResult.annotation ?? ""}
-                      properties={[]}
-                      showMarkdown={showMarkdown}
-                    />
-                  ) : (
-                    pending
-                  )
-                ) : showNote && showManaged ? (
-                  result.managedRegion === null ? (
-                    <p className="text-sm text-fd-muted-foreground">
-                      {m.workbench_result_managed_none()}
-                    </p>
-                  ) : (
-                    <ResultSheet
-                      markdown={result.managedRegion}
-                      properties={[]}
-                      showMarkdown={showMarkdown}
-                    />
-                  )
-                ) : !advanced && tab === "properties" ? (
-                  <PropertiesResult
-                    entries={entries ?? []}
-                    properties={result.properties}
-                    fold={result.fold}
-                    frontmatterBlock={result.frontmatterBlock}
-                    showMarkdown={showMarkdown}
-                  />
-                ) : (
-                  <ResultSheet
-                    markdown={result.creationBody ?? ""}
-                    // The sheet is the note, so its list is the fold every
-                    // entry merged into, not each entry's own contribution.
-                    properties={result.fold}
-                    showMarkdown={showMarkdown}
-                    marks={result.annotationRanges}
-                  />
-                )}
-              </Suspense>
-            ) : (
-              pending
-            )}
-          </ResultRegion>
         </>
       }
       footer={<ProblemsFooter problem={problem ?? null} onOpen={goToProblem} />}
