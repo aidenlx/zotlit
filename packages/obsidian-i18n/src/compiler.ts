@@ -2,7 +2,11 @@
 
 import mFunctionMatcherPlugin from "@inlang/plugin-m-function-matcher";
 import messageFormatPlugin from "@inlang/plugin-message-format";
-import { loadProjectFromDirectory, selectBundleNested } from "@inlang/sdk";
+import {
+  loadProjectInMemory,
+  newProject,
+  selectBundleNested,
+} from "@inlang/sdk";
 import type {
   BundleNested,
   Declaration,
@@ -12,7 +16,6 @@ import type {
   Match,
   Pattern,
 } from "@inlang/sdk";
-import fs from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
@@ -270,12 +273,8 @@ const RESERVED_IDENTIFIERS = new Set([
 ]);
 
 /**
- * The two Inlang plugins a project's `settings.json` normally declares as
- * `modules` and the SDK fetches from jsdelivr at load time. Supplying them
- * here keeps every compile hermetic — no network round trip, no dependency on
- * the CDN being reachable. A project whose `settings.json` still lists them
- * (e.g. for the Sherlock IDE extension) is unaffected: the SDK loads its own
- * fetched copies alongside these.
+ * Installed plugins used for every compile. Project settings may still list
+ * CDN modules for Inlang editors; the compiler clears those in memory.
  */
 export const INLANG_PLUGINS: InlangPlugin[] = [
   messageFormatPlugin,
@@ -332,25 +331,38 @@ async function withProject<T>(
   projectPath: string,
   run: (input: CompileProjectInput) => Promise<T>,
 ): Promise<T> {
-  const project = await loadProjectFromDirectory({
-    path: projectPath,
-    fs,
-    providePlugins: INLANG_PLUGINS,
-  }).catch(async (error: unknown) => {
+  let project: InlangProject;
+  try {
+    const settings = JSON.parse(
+      await readFile(join(projectPath, "settings.json"), "utf8"),
+    );
+    project = await loadProjectInMemory({
+      blob: await newProject({ settings: { ...settings, modules: [] } }),
+      providePlugins: INLANG_PLUGINS,
+    });
+  } catch (error) {
     const sourceCatalogs =
       await readConfiguredSourceCatalogsForDiagnostics(projectPath);
-    throw await positionedError(projectPath, error, {
-      sourceCatalogs,
-    });
-  });
+    throw await positionedError(projectPath, error, { sourceCatalogs });
+  }
 
   try {
-    const settings = await project.settings.get();
     const sourceCatalogs = await discoverSourceCatalogs(
       project,
       projectPath,
-      settings,
+      await project.settings.get(),
     );
+    await project
+      .importFiles({
+        pluginKey: messageFormatPlugin.key,
+        files: sourceCatalogs.map(({ locale, contents }) => ({
+          locale,
+          content: Buffer.from(contents),
+        })),
+      })
+      .catch(async (error: unknown) => {
+        throw await positionedError(projectPath, error, { sourceCatalogs });
+      });
     const projectErrors = await project.errors.get();
     if (projectErrors.length > 0) {
       throw await positionedError(projectPath, projectErrors[0]!, {

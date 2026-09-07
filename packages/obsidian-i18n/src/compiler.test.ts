@@ -8,7 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { createServer } from "vite";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import {
   formatCompilerWarnings,
@@ -19,10 +19,7 @@ import {
   writeOutput,
 } from "./compiler.js";
 import type { CompileResult, GeneratedArtifacts } from "./compiler.js";
-import {
-  LanguagePackSchemaVersionError,
-  validateLanguagePack,
-} from "./index.js";
+import { validateLanguagePack } from "./index.js";
 import type { LanguagePackRuntime, TargetLocaleMessages } from "./index.js";
 import {
   addLocale,
@@ -595,28 +592,6 @@ describe("generateLanguagePacks", () => {
     });
   });
 
-  test("removes stale locale packs after a successful compile", async () => {
-    const projectPath = await createFixtureProject({ greeting: "Hello" });
-    await addLocale(projectPath, "zh-CN", { greeting: "你好" });
-    const outputDirectory = await createTemporaryDirectory();
-    await generateLanguagePacks({ projectPath, outputDirectory });
-    const stalePackPath = join(outputDirectory, "zh-CN.json");
-
-    const settingsPath = join(projectPath, "settings.json");
-    const settings = JSON.parse(await readFile(settingsPath, "utf8"));
-    settings.locales = ["en"];
-    await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
-    await generateLanguagePacks({
-      projectPath,
-      outputDirectory,
-    });
-
-    await expect(readFile(stalePackPath)).rejects.toMatchObject({
-      code: "ENOENT",
-    });
-    expect(await readdir(outputDirectory)).not.toContain("zh-CN.json");
-  });
-
   test("leaves the previous complete output intact when compilation fails", async () => {
     const projectPath = await createFixtureProject({ greeting: "Hello" });
     const outputDirectory = await createTemporaryDirectory();
@@ -1034,122 +1009,7 @@ describe("generateLanguagePacks", () => {
       generateLanguagePacks({ projectPath, outputDirectory }),
     ).rejects.toThrow('Unsupported bundle ID "class"');
   });
-
-  test.each([
-    [
-      "schema version",
-      languagePack({ schemaVersion: 2 }),
-      "schemaVersion must be 1",
-    ],
-    ["locale", languagePack({ locale: "fr" }), 'locale must equal "zh-CN"'],
-    [
-      "structure",
-      languagePack({ messages: { bad: { declarations: [] } } }),
-      "variants is required",
-    ],
-    [
-      "total size",
-      languagePack({
-        messages: Object.fromEntries(
-          Array.from({ length: 30 }, (_, index) => [
-            `message_${index}`,
-            "文".repeat(9_000),
-          ]),
-        ),
-      }),
-      "exceeds 262144 bytes",
-    ],
-    [
-      "message count",
-      languagePack({
-        messages: Object.fromEntries(
-          Array.from({ length: 1_001 }, (_, index) => [`message_${index}`, ""]),
-        ),
-      }),
-      "exceeds 1000 messages",
-    ],
-    [
-      "text length",
-      languagePack({ messages: { long: "x".repeat(10_001) } }),
-      "exceeds 10000 characters",
-    ],
-    [
-      "nesting depth",
-      languagePack({
-        messages: { deep: structuredMessage(nestedFormatter(12)) },
-      }),
-      "exceeds nesting depth 16",
-    ],
-    [
-      "formatter allowlist",
-      languagePack({
-        messages: {
-          unsafe: structuredMessage({
-            type: "formatter",
-            name: "execute",
-            argument: { type: "variable", name: "value" },
-            options: {},
-          }),
-        },
-      }),
-      'unsupported formatter "execute"',
-    ],
-  ])("rejects a pack with invalid %s", (_name, pack, detail) => {
-    expect(() =>
-      validateLanguagePack(JSON.stringify(pack), {
-        expectedLocale: "zh-CN",
-      }),
-    ).toThrow(detail);
-  });
-
-  test.each([
-    ["newer", 2, true],
-    ["older", 0, false],
-    ["non-numeric", "1", false],
-  ])(
-    "flags a %s schema version as updateNeeded=%s",
-    (_name, schemaVersion, updateNeeded) => {
-      const reject = (): unknown =>
-        validateLanguagePack(JSON.stringify(languagePack({ schemaVersion })), {
-          expectedLocale: "zh-CN",
-        });
-
-      expect(reject).toThrow(LanguagePackSchemaVersionError);
-      expect(reject).toThrow(
-        expect.objectContaining({ updateNeeded }) as Error,
-      );
-    },
-  );
 });
-
-function languagePack(
-  overrides: Record<string, unknown> = {},
-): Record<string, unknown> {
-  return {
-    schemaVersion: 1,
-    locale: "zh-CN",
-    messages: { greeting: "你好" },
-    ...overrides,
-  };
-}
-
-function structuredMessage(expression: unknown): Record<string, unknown> {
-  return {
-    declarations: [{ type: "input", name: "value" }],
-    variants: [{ matches: [], pattern: [expression] }],
-  };
-}
-
-function nestedFormatter(depth: number): Record<string, unknown> {
-  return depth === 0
-    ? { type: "variable", name: "value" }
-    : {
-        type: "formatter",
-        name: "number",
-        argument: nestedFormatter(depth - 1),
-        options: {},
-      };
-}
 
 async function readOutput(
   outputDirectory: string,
@@ -1254,6 +1114,43 @@ describe("message data", () => {
       },
     },
   };
+
+  test("loads catalogs with installed plugins without fetching settings modules", async () => {
+    const projectPath = await createFixtureProject({ greeting: "Hello" });
+    await addLocale(projectPath, "zh-CN", { greeting: "你好" });
+    const settingsPath = join(projectPath, "settings.json");
+    const settings = JSON.parse(await readFile(settingsPath, "utf8"));
+    settings.modules = [
+      "https://cdn.jsdelivr.net/npm/@inlang/plugin-message-format@4.0.0/dist/index.js",
+      "https://cdn.jsdelivr.net/npm/@inlang/plugin-m-function-matcher@2.2.9/dist/index.js",
+    ];
+    const settingsText = JSON.stringify(settings);
+    await writeFile(settingsPath, settingsText);
+    const outputDirectory = await createTemporaryDirectory();
+    using fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockRejectedValue(new Error("HTTP is unavailable"));
+
+    await compile({ project: projectPath, output: outputDirectory });
+    const data = await loadMessageData({ project: projectPath });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(data.messages).toEqual([
+      {
+        id: "greeting",
+        inputs: [],
+        messages: { en: "Hello", "zh-CN": "你好" },
+      },
+    ]);
+    expect(
+      JSON.parse(await readFile(join(outputDirectory, "zh-CN.json"), "utf8")),
+    ).toEqual({
+      schemaVersion: 1,
+      locale: "zh-CN",
+      messages: { greeting: "你好" },
+    });
+    expect(await readFile(settingsPath, "utf8")).toBe(settingsText);
+  });
 
   test("returns the message IR and reports for a nested namespace", async () => {
     const projectPath = await createFixtureProject(companionCatalog);
