@@ -1,3 +1,7 @@
+// The Local Bridge service: what the plugin holds of a Workbench Connection —
+// the launch a Customize action opens, the grant the bridge describes, and the
+// revoke every exit path runs through. The gates themselves live in `app.ts`.
+
 import { getConnInfo } from "@hono/node-server/conninfo";
 import type { Context } from "hono";
 import type { App } from "obsidian";
@@ -122,11 +126,7 @@ export class LocalBridgeService extends Service<void> {
     const port = this.#localServer.effectivePort;
     if (!this.#enabled || port === null) return null;
     const code = this.mintCode(launch);
-    logger.info("Minted a Connection code", {
-      profileId: launch.profileId,
-      itemKey: launch.item?.key ?? null,
-      port,
-    });
+    logger.debug("Minted a Connection code", { port });
     return `${DOCS_SITE_URL}${WORKBENCH_PATH}${connectFragment(code, port)}`;
   }
 
@@ -147,9 +147,7 @@ export class LocalBridgeService extends Service<void> {
   disconnect(): void {
     const connection = this.#sessions.connection;
     if (connection === null) return;
-    logger.info("Workbench Connection ended from Obsidian", {
-      profileId: connection.profileId,
-    });
+    logger.info("Workbench Connection ended from Obsidian");
     this.#sessions.disconnect(connection.credential);
   }
 
