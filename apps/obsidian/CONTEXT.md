@@ -174,6 +174,18 @@ The Template Data Explorer re-anchored at a single Annotation, exactly what the 
 The Template Data Explorer's current root, saved as a JSON file for a bug report. Always the whole root the pane is anchored at — the Note Root or the Annotation Root — never the rows an active filter leaves visible. Carries the same data the Agent CLI answers with, under a header naming the plugin version, the contract version, and the Indexed Key and root that reproduce it. Being Explorer data, it records inert placeholders where a real render would write files.
 _Avoid_: template export (suggests rendered note output), data dump (the file follows the published contract, it is not raw state)
 
+**Profile Editor** _(Obsidian)_:
+The main-area view that edits one Profile document with the Workbench UI: the same tabs, panes, and one undo history as the web Workbench, over the vault file, saved the way Obsidian saves any note. The native Markdown view keeps working on the same file; the two are one click apart.
+_Avoid_: native Workbench, template editor, profile view, Obsidian Workbench
+
+**Note Preview** _(Obsidian)_:
+The sidebar view that shows what the active Profile Editor's document produces for the selected Item — filename, Properties, note body with the Managed Region marked, and one annotation — rendered through the plugin's real template pipeline and displayed as Obsidian renders a note. It follows the active Profile Editor the way Outline follows the active note.
+_Avoid_: template preview (retired for the Explorer, which shows data, not output), render pane, result view (the web column's name)
+
+**Workbench UI**:
+The shared, headless component layer that both the web Workbench and the Profile Editor mount over the Workbench core: it renders structure and behavior and carries no styling, and each host supplies styling and the platform's own popups, menus, and dialogs.
+_Avoid_: shared components (too vague), design system (the hosts own their look), Workbench shell (the host's layout)
+
 **Item Snapshot** _(web Workbench)_:
 The fixed template data for one selected Item and its annotations, retained until an explicit refresh. It includes permitted local link targets and explicit unavailable values where private local data is omitted.
 _Avoid_: Template Data Export (the separate inspection artifact), live Item data (a snapshot remains fixed)
