@@ -147,7 +147,6 @@ export const schema = v.object({
   "server.hostname": v.string(),
 
   "template.folder": v.string(),
-  "template.auto-pair-eta": v.boolean(),
   "template.auto-trim-leading": autoTrimSchema,
   "template.auto-trim-trailing": autoTrimSchema,
 
@@ -201,7 +200,6 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "server.port": 9091,
   "server.hostname": "127.0.0.1",
   "template.folder": "templates",
-  "template.auto-pair-eta": false,
   "template.auto-trim-leading": DEFAULT_AUTO_TRIM.leading,
   "template.auto-trim-trailing": DEFAULT_AUTO_TRIM.trailing,
   "zotero.auto-refresh": true,

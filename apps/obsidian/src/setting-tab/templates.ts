@@ -77,12 +77,6 @@ export function templateEngineItems(
       render: (setting) => renderJsTemplatesButton(setting, ctx),
     },
     {
-      name: m.settings_template_auto_pair_name(),
-      desc: m.settings_template_auto_pair_desc(),
-      visible: () => ctx.template.javascriptTemplatesEnabled,
-      control: { type: "toggle", key: "template.auto-pair-eta" },
-    },
-    {
       name: m.settings_template_trim_leading_name(),
       desc: m.settings_template_trim_desc(),
       visible: () => ctx.template.javascriptTemplatesEnabled,

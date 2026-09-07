@@ -102,7 +102,7 @@ export function buildServices(
     })
     .use({
       template: ({ settings }) =>
-        new TemplateService({ plugin, app: plugin.app, settings }),
+        new TemplateService({ app: plugin.app, settings }),
     })
     .use({
       noteIndex: () => new NoteIndex({ plugin, app: plugin.app }),
