@@ -5,13 +5,14 @@ import {
   bridgeErrorResponseSchema,
   citationStylesResponseSchema,
   codeBootstrapRequestSchema,
+  CONNECT_FRAGMENT_CODE,
+  CONNECT_FRAGMENT_PORT,
   connectionGrantSchema,
   disconnectRequestSchema,
   disconnectResponseSchema,
   itemSnapshotSchema,
   LOCAL_BRIDGE_PATHS,
-  loopbackBootstrapRequestSchema,
-  loopbackBootstrapResponseSchema,
+  localBridgeOrigin,
   saveSelectedProfileRequestSchema,
   saveSelectedProfileResponseSchema,
   selectedCitationStyleRequestSchema,
@@ -39,6 +40,17 @@ import type {
 
 const CREDENTIAL_STORAGE_KEY = "zotlit.local-bridge.credential";
 
+/**
+ * What the tab keeps: the grant, and the port the launch URL named. The port is
+ * kept beside the credential because a Local Server binds the first free port
+ * of its range, so a reload resumes where this connection was made rather than
+ * on a port another vault may now hold.
+ */
+const keptConnectionSchema = v.object({
+  grant: connectionGrantSchema,
+  port: v.number(),
+});
+
 interface CredentialStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -46,7 +58,6 @@ interface CredentialStorage {
 }
 
 export interface LocalBridgeClientOptions {
-  readonly baseUrl: string;
   readonly fetch?: typeof globalThis.fetch;
   readonly storage?: CredentialStorage;
   readonly compatibility: BridgeCompatibility;
@@ -65,11 +76,6 @@ export type LocalBridgeConnection =
       readonly expected: BridgeCompatibility;
       readonly received: BridgeCompatibility;
     };
-
-export interface LoopbackConnectionOptions {
-  readonly signal?: AbortSignal;
-  readonly pollIntervalMs?: number;
-}
 
 export class LocalBridgeUnavailableError extends Error {
   constructor(message = "Local Bridge operations are unavailable.") {
@@ -91,17 +97,14 @@ export class LocalBridgeProtocolError extends Error {
 }
 
 export class LocalBridgeClient {
-  readonly #baseUrl: string;
   readonly #fetch: typeof globalThis.fetch;
   readonly #storage: CredentialStorage | undefined;
   readonly #compatibility: BridgeCompatibility;
   #connection: LocalBridgeConnection = { state: "disconnected" };
   #credential: string | undefined;
+  #port: number | undefined;
 
   constructor(options: LocalBridgeClientOptions) {
-    this.#baseUrl = options.baseUrl.endsWith("/")
-      ? options.baseUrl.slice(0, -1)
-      : options.baseUrl;
     this.#fetch = (options.fetch ?? globalThis.fetch).bind(globalThis);
     this.#storage = options.storage ?? browserSessionStorage();
     this.#compatibility = options.compatibility;
@@ -112,18 +115,40 @@ export class LocalBridgeClient {
     return this.#connection;
   }
 
+  /**
+   * Whether a kept credential and its port are still here to present. A page
+   * with none has nothing to reconnect to and shows the Open-from-Obsidian
+   * guidance instead, because a Connection starts in Obsidian only.
+   */
+  get resumable(): boolean {
+    return this.#credential !== undefined && this.#port !== undefined;
+  }
+
+  /**
+   * Exchanges the launch fragment Obsidian opened this tab with: the Connection
+   * code, against the Local Server port that same fragment carried.
+   */
   async connectFromFragment(fragment: string): Promise<LocalBridgeConnection> {
     const parameters = new URLSearchParams(
       fragment.startsWith("#") ? fragment.slice(1) : fragment,
     );
-    const code = parameters.get("zotlit-connect");
+    const code = parameters.get(CONNECT_FRAGMENT_CODE);
     if (!code) {
       throw new LocalBridgeProtocolError(
         400,
-        "missing-one-time-code",
-        "The URL fragment has no Local Bridge one-time code.",
+        "missing-connection-code",
+        "The URL fragment has no Connection code.",
       );
     }
+    const port = Number(parameters.get(CONNECT_FRAGMENT_PORT));
+    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+      throw new LocalBridgeProtocolError(
+        400,
+        "missing-bridge-port",
+        "The URL fragment has no Local Bridge port.",
+      );
+    }
+    this.#port = port;
     const request = v.parse(codeBootstrapRequestSchema, { code });
     const response = await this.#request(
       LOCAL_BRIDGE_PATHS.codeBootstrap,
@@ -131,27 +156,6 @@ export class LocalBridgeClient {
       { body: request, authenticated: false },
     );
     return this.#acceptConnection(response);
-  }
-
-  async connectFromLoopback(
-    options: LoopbackConnectionOptions = {},
-  ): Promise<LocalBridgeConnection> {
-    const pollIntervalMs = options.pollIntervalMs ?? 250;
-    while (true) {
-      const response = await this.#request(
-        LOCAL_BRIDGE_PATHS.loopbackBootstrap,
-        loopbackBootstrapResponseSchema,
-        {
-          body: v.parse(loopbackBootstrapRequestSchema, {}),
-          authenticated: false,
-          signal: options.signal,
-        },
-      );
-      if (response.state === "approved") {
-        return this.#acceptConnection(response.connection);
-      }
-      await wait(pollIntervalMs, options.signal);
-    }
   }
 
   /**
@@ -268,7 +272,12 @@ export class LocalBridgeClient {
     }
 
     this.#credential = grant.credential;
-    this.#storage?.setItem(CREDENTIAL_STORAGE_KEY, JSON.stringify(grant));
+    if (this.#port !== undefined) {
+      this.#storage?.setItem(
+        CREDENTIAL_STORAGE_KEY,
+        JSON.stringify({ grant, port: this.#port }),
+      );
+    }
     const { credential: _credential, ...connection } = grant;
     this.#connection = { state: "connected", ...connection };
     return this.#connection;
@@ -289,6 +298,12 @@ export class LocalBridgeClient {
     if (authenticated && this.#connection.state !== "connected") {
       throw new LocalBridgeUnavailableError();
     }
+    const port = this.#port;
+    if (port === undefined) {
+      throw new LocalBridgeUnavailableError(
+        "No Local Bridge port was recorded for this page.",
+      );
+    }
     const headers = new Headers({ Accept: "application/json" });
     if (options.body !== undefined)
       headers.set("Content-Type", "application/json");
@@ -296,7 +311,7 @@ export class LocalBridgeClient {
       headers.set("Authorization", `Bearer ${this.#credential}`);
     let response: Response;
     try {
-      response = await this.#fetch(`${this.#baseUrl}${path}`, {
+      response = await this.#fetch(`${localBridgeOrigin(port)}${path}`, {
         method: options.body === undefined ? "GET" : "POST",
         headers,
         body:
@@ -337,6 +352,7 @@ export class LocalBridgeClient {
 
   #clearCredential(): void {
     this.#credential = undefined;
+    this.#port = undefined;
     this.#storage?.removeItem(CREDENTIAL_STORAGE_KEY);
   }
 
@@ -344,33 +360,15 @@ export class LocalBridgeClient {
     const stored = this.#storage?.getItem(CREDENTIAL_STORAGE_KEY);
     if (stored === null || stored === undefined) return null;
     try {
-      const parsed = v.safeParse(connectionGrantSchema, JSON.parse(stored));
-      if (parsed.success) return this.#acceptConnection(parsed.output);
+      const parsed = v.safeParse(keptConnectionSchema, JSON.parse(stored));
+      if (parsed.success) {
+        this.#port = parsed.output.port;
+        return this.#acceptConnection(parsed.output.grant);
+      }
     } catch {}
     this.#clearCredential();
     return null;
   }
-}
-
-function wait(
-  milliseconds: number,
-  signal: AbortSignal | undefined,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason);
-      return;
-    }
-    const onAbort = () => {
-      clearTimeout(timeout);
-      reject(signal?.reason);
-    };
-    const timeout = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, milliseconds);
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
 }
 
 function browserSessionStorage(): CredentialStorage | undefined {

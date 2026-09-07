@@ -3,8 +3,29 @@
 import type { ItemSnapshot } from "#/snapshot/types";
 import * as v from "valibot";
 
-export const BRIDGE_VERSION = 1;
-export const LOCAL_BRIDGE_ORIGIN = "http://127.0.0.1:23120";
+export const BRIDGE_VERSION = 2;
+
+/** The loopback host a Local Bridge binds; the launch URL carries its port. */
+export const LOCAL_BRIDGE_HOST = "127.0.0.1";
+
+/**
+ * The origin the docs dev server runs on, which a development Local Bridge and
+ * the Fixture mock allow. `apps/docs` serves the page there (`vite dev --port
+ * 3000`), so both sides read the port from here.
+ */
+export const DOCS_DEV_SERVER_ORIGIN = "http://localhost:3000";
+
+/**
+ * The launch fragment Obsidian opens the Workbench with:
+ * `#zotlit-connect=<code>&port=<effective port>`.
+ */
+export const CONNECT_FRAGMENT_CODE = "zotlit-connect";
+export const CONNECT_FRAGMENT_PORT = "port";
+
+/** Where a Local Bridge answers, given the port the launch URL carried. */
+export function localBridgeOrigin(port: number): string {
+  return `http://${LOCAL_BRIDGE_HOST}:${port}`;
+}
 
 export const BRIDGE_CAPABILITIES = [
   "template-schema:read",
@@ -26,7 +47,6 @@ export interface BridgeCompatibility {
 export const bridgeInstallationSchema = v.object({
   id: v.string(),
   vault: v.string(),
-  zoteroSourceId: v.string(),
 });
 export type BridgeInstallation = v.InferOutput<typeof bridgeInstallationSchema>;
 
@@ -64,7 +84,8 @@ export const connectionGrantSchema = v.object({
   bridgeVersion: v.number(),
   templateDataContractVersion: v.number(),
   capabilities: v.array(bridgeCapabilitySchema),
-  selectedItem: selectedItemIdentitySchema,
+  /** Null when the launch chose no Item, which leaves the page on a Sample Item. */
+  selectedItem: v.nullable(selectedItemIdentitySchema),
   selectedProfile: profileIdentitySchema,
   profileDefaults: profileBindingDefaultsSchema,
 });
@@ -81,16 +102,6 @@ export const sessionResumeResponseSchema = v.omit(connectionGrantSchema, [
 export const codeBootstrapRequestSchema = v.object({
   code: v.string(),
 });
-
-export const loopbackBootstrapRequestSchema = v.object({});
-
-export const loopbackBootstrapResponseSchema = v.variant("state", [
-  v.object({ state: v.literal("pending") }),
-  v.object({
-    state: v.literal("approved"),
-    connection: connectionGrantSchema,
-  }),
-]);
 
 export const disconnectRequestSchema = v.object({});
 export const disconnectResponseSchema = v.object({});
@@ -307,7 +318,6 @@ export const bridgeErrorResponseSchema = v.object({
 
 export const LOCAL_BRIDGE_PATHS = {
   codeBootstrap: "/v1/bootstrap/code",
-  loopbackBootstrap: "/v1/bootstrap/probe",
   disconnect: "/v1/session/disconnect",
   resumeSession: "/v1/session/resume",
   templateSchema: "/v1/template/schema",

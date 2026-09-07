@@ -38,6 +38,9 @@ const { startRenderWorker } = vi.hoisted(() => ({
 vi.mock("./render-client", () => ({ startRenderWorker }));
 
 const KEY = "zotlit.workbench.draft.standalone";
+/** The Local Server port the launch fragment names, which every request rides. */
+const PORT = 23_120;
+const BRIDGE_ORIGIN = `http://127.0.0.1:${PORT}`;
 /** Quiet time after the last change, plus room for the write to land. */
 const SETTLE_MS = 700;
 /** The width this environment opens on, which every test starts from. */
@@ -90,8 +93,7 @@ describe("a Workbench Connection", () => {
   it("connects from a fragment, loads the selected Item, and saves a new revision", async () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal("fetch", bridgeFetch(requests));
-    window.location.hash = "#zotlit-connect=fixture-code";
-    using page = open();
+    using page = launch();
 
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
@@ -102,6 +104,11 @@ describe("a Workbench Connection", () => {
         ({ receiver }) => receiverName(receiver) !== "LocalBridgeClient",
       ),
     ).toBe(true);
+    // Nothing but the launch fragment says where the bridge is, so every
+    // request rides the port Obsidian bound for this launch.
+    expect(new Set(requests.map(({ origin }) => origin))).toEqual(
+      new Set([BRIDGE_ORIGIN]),
+    );
     expect(page.host.textContent).toContain("Fixture vault");
     expect(page.host.textContent).toContain(m.workbench_save());
 
@@ -169,9 +176,8 @@ describe("a Workbench Connection", () => {
         },
       }),
     );
-    using page = open();
+    using page = launch();
 
-    page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -205,7 +211,7 @@ describe("a Workbench Connection", () => {
     expect(saves()[1]?.body).toMatchObject({ source: CONNECTED });
   });
 
-  it("keeps the draft through a disconnect and reconnect", async () => {
+  it("keeps the draft through a lost connection and reconnect", async () => {
     const requests: BridgeRequest[] = [];
     const externalSource = `${CONNECTED}\nExternal Fixture edit`;
     vi.stubGlobal(
@@ -215,11 +221,11 @@ describe("a Workbench Connection", () => {
           revision: "external-revision",
           source: externalSource,
         },
+        itemNetworkFailureOnce: true,
       }),
     );
-    using page = open();
+    using page = launch();
 
-    page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -237,8 +243,7 @@ describe("a Workbench Connection", () => {
       expect(page.host.textContent).toContain(m.workbench_save_conflict()),
     );
 
-    page.press(m.workbench_connection_to_vault({ vault: "Fixture vault" }));
-    press(document.body, m.workbench_connection_disconnect());
+    page.press(m.workbench_load_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
         m.workbench_connection_disconnected_notice(),
@@ -254,7 +259,7 @@ describe("a Workbench Connection", () => {
     vi.spyOn(localStorage, "getItem").mockImplementation(() => {
       throw new Error("Site data is blocked.");
     });
-    page.press(m.workbench_connection_connect());
+    page.press(m.workbench_connection_reconnect());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
         m.workbench_connection_to_vault({ vault: "Fixture vault" }),
@@ -295,8 +300,7 @@ describe("a Workbench Connection", () => {
     );
     let snippet = "";
     {
-      using page = open();
-      page.press(m.workbench_connection_connect());
+      using page = launch();
       await page.waitFor(() =>
         expect(title(page.host)).toBe("Connected profile"),
       );
@@ -337,53 +341,67 @@ describe("a Workbench Connection", () => {
     });
   });
 
-  it("cancels a page-initiated connection while approval is pending", async () => {
+  it("shows the Open-from-Obsidian guidance when the code is refused", async () => {
     const requests: BridgeRequest[] = [];
-    vi.stubGlobal("fetch", bridgeFetch(requests, { loopbackPending: true }));
-    using page = open();
+    vi.stubGlobal("fetch", bridgeFetch(requests, { codeRefused: true }));
+    using page = launch();
 
-    page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
-      expect(page.host.textContent).toContain(m.workbench_connection_cancel()),
-    );
-    page.press(m.workbench_connection_cancel());
-    await page.waitFor(() =>
-      expect(page.host.textContent).toContain(m.workbench_connection_connect()),
-    );
-
-    expect(
-      requests.filter(
-        ({ path }) => path === LOCAL_BRIDGE_PATHS.loopbackBootstrap,
+      expect(page.host.textContent).toContain(
+        m.workbench_connection_open_from_obsidian(),
       ),
-    ).toHaveLength(1);
-    expect(page.host.textContent).not.toContain("No Local Bridge is running");
+    );
+
+    // A Connection starts in Obsidian, so a refused code leaves the page with
+    // guidance rather than a Connect button.
+    expect(page.host.textContent).not.toContain(
+      m.workbench_connection_reconnect(),
+    );
+    expect(page.host.textContent).toContain(m.workbench_download());
   });
 
-  it("stops polling for approval when the reader leaves the page", async () => {
-    const requests: BridgeRequest[] = [];
-    vi.stubGlobal("fetch", bridgeFetch(requests, { loopbackPending: true }));
-    {
-      using page = open();
-      page.press(m.workbench_connection_connect());
-      await page.waitFor(() =>
-        expect(page.host.textContent).toContain(
-          m.workbench_connection_cancel(),
-        ),
-      );
-    }
+  it("reports a revoked credential and points back to Obsidian", async () => {
+    vi.stubGlobal("fetch", bridgeFetch([], { revokeAfterConnect: true }));
+    using page = launch();
 
-    const probe = requests.find(
-      ({ path }) => path === LOCAL_BRIDGE_PATHS.loopbackBootstrap,
+    await page.waitFor(() =>
+      expect(title(page.host)).toBe("Connected profile"),
     );
-    expect(probe?.signal?.aborted).toBe(true);
+    page.press(m.workbench_load_item());
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(m.workbench_connection_revoked()),
+    );
+
+    expect(page.host.textContent).toContain(
+      m.workbench_connection_open_from_obsidian(),
+    );
+    expect(page.host.textContent).toContain(m.workbench_download());
+  });
+
+  it("keeps editing when the bridge reports another contract version", async () => {
+    vi.stubGlobal(
+      "fetch",
+      bridgeFetch([], { bridgeVersion: BRIDGE_VERSION + 1 }),
+    );
+    using page = launch();
+
+    await page.waitFor(() =>
+      expect(page.host.textContent).toContain(
+        m.workbench_connection_version_mismatch(),
+      ),
+    );
+
+    expect(page.host.textContent).toContain(
+      m.workbench_connection_open_from_obsidian(),
+    );
+    expect(page.host.textContent).toContain(m.workbench_download());
   });
 
   it("refetches the citation style when its manifest binding changes", async () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal("fetch", bridgeFetch(requests));
-    using page = open();
+    using page = launch();
 
-    page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -430,9 +448,8 @@ describe("a Workbench Connection", () => {
       "fetch",
       bridgeFetch(requests, { itemProtocolFailureOnce: true }),
     );
-    using page = open();
+    using page = launch();
 
-    page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -460,9 +477,8 @@ describe("a Workbench Connection", () => {
       "fetch",
       bridgeFetch(requests, { itemNetworkFailureOnce: true }),
     );
-    using page = open();
+    using page = launch();
 
-    page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -489,9 +505,8 @@ describe("a Workbench Connection", () => {
       "fetch",
       bridgeFetch(requests, { itemNetworkFailureOnce: true }),
     );
-    using page = open();
+    using page = launch();
 
-    page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -512,17 +527,14 @@ describe("a Workbench Connection", () => {
     // The blip left the grant intact, so Reconnect re-checked it instead of
     // asking Obsidian to approve the page a second time.
     expect(
-      requests.filter(
-        ({ path }) => path === LOCAL_BRIDGE_PATHS.loopbackBootstrap,
-      ),
+      requests.filter(({ path }) => path === LOCAL_BRIDGE_PATHS.codeBootstrap),
     ).toHaveLength(1);
   });
 
   it("keeps the session credential through a lost connection", async () => {
     vi.stubGlobal("fetch", bridgeFetch([], { itemNetworkFailureOnce: true }));
     {
-      using page = open();
-      page.press(m.workbench_connection_connect());
+      using page = launch();
       await page.waitFor(() =>
         expect(title(page.host)).toBe("Connected profile"),
       );
@@ -545,9 +557,8 @@ describe("a Workbench Connection", () => {
   it("creates the built-in Default against an expected absence", async () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal("fetch", bridgeFetch(requests, { builtInAbsent: true }));
-    using page = open();
+    using page = launch();
 
-    page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -570,9 +581,8 @@ describe("a Workbench Connection", () => {
 
   it("marks a loaded Item Snapshot as retained after disconnect", async () => {
     vi.stubGlobal("fetch", bridgeFetch([]));
-    using page = open();
+    using page = launch();
 
-    page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -614,15 +624,11 @@ describe("a Workbench Connection", () => {
     expect(page.host.textContent).toContain(m.workbench_retained_badge());
   });
 
-  it("keeps standalone work separate from a disconnected profile draft", async () => {
+  it("keeps standalone work separate from a connected profile draft", async () => {
     vi.stubGlobal("fetch", bridgeFetch([]));
     keep(KEPT, SAMPLE_ITEMS[1]!);
-    using page = open();
+    using page = launch();
 
-    page.press(m.workbench_restore_accept());
-    await page.settle();
-    page.press(m.workbench_connection_connect());
-    press(openSheet(page.host), m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -635,15 +641,8 @@ describe("a Workbench Connection", () => {
     );
     await page.settle();
 
-    page.press(m.workbench_connection_to_vault({ vault: "Fixture vault" }));
-    press(document.body, m.workbench_connection_disconnect());
-    await page.waitFor(() =>
-      expect(page.host.textContent).toContain(
-        m.workbench_connection_disconnected_notice(),
-      ),
-    );
-    await page.settle();
-
+    // The launch opened the vault's document, so the standalone record the
+    // last visit left stands under its own key rather than being written over.
     expect(JSON.parse(localStorage.getItem(KEY)!)).toMatchObject({
       source: KEPT,
     });
@@ -656,9 +655,8 @@ describe("a Workbench Connection", () => {
 
   it("refuses a profile whose vault partial the web workbench cannot run", async () => {
     vi.stubGlobal("fetch", bridgeFetch([], { etaDependency: true }));
-    using page = open();
+    using page = launch();
 
-    page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
         m.workbench_unsupported_heading(),
@@ -679,9 +677,8 @@ describe("a Workbench Connection", () => {
   it("reads the bundle again when the draft calls another partial", async () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal("fetch", bridgeFetch(requests));
-    using page = open();
+    using page = launch();
 
-    page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -713,9 +710,8 @@ describe("a Workbench Connection", () => {
 
   it("shows the vault's own binding defaults on an unset binding", async () => {
     vi.stubGlobal("fetch", bridgeFetch([]));
-    using page = open();
+    using page = launch();
 
-    page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -731,8 +727,7 @@ describe("a Workbench Connection", () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal("fetch", bridgeFetch(requests));
     {
-      using page = open();
-      page.press(m.workbench_connection_connect());
+      using page = launch();
       await page.waitFor(() =>
         expect(title(page.host)).toBe("Connected profile"),
       );
@@ -746,24 +741,24 @@ describe("a Workbench Connection", () => {
     expect(restored.host.textContent).toContain("Fixture vault");
     expect(restored.host.textContent).toContain(m.workbench_save());
     expect(
-      requests.filter(
-        ({ path }) => path === LOCAL_BRIDGE_PATHS.loopbackBootstrap,
-      ),
+      requests.filter(({ path }) => path === LOCAL_BRIDGE_PATHS.codeBootstrap),
     ).toHaveLength(1);
     // The grant records the versions it was issued under, so the reload asks
-    // the bridge running now rather than trusting the tab's own copy.
-    expect(
-      requests.filter(({ path }) => path === LOCAL_BRIDGE_PATHS.resumeSession),
-    ).toHaveLength(1);
+    // the bridge running now rather than trusting the tab's own copy — on the
+    // port the tab kept beside the credential.
+    const resumes = requests.filter(
+      ({ path }) => path === LOCAL_BRIDGE_PATHS.resumeSession,
+    );
+    expect(resumes).toHaveLength(1);
+    expect(resumes[0]?.origin).toBe(BRIDGE_ORIGIN);
   });
 
   it("refuses a profile whose partial the vault would not hand over", async () => {
     const refusal =
       "Template dependency 'summary' uses an unsupported language.";
     vi.stubGlobal("fetch", bridgeFetch([], { dependencyRefusal: refusal }));
-    using page = open();
+    using page = launch();
 
-    page.press(m.workbench_connection_connect());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
         m.workbench_unsupported_heading(),
@@ -1178,8 +1173,7 @@ describe("the simplified editing flow", () => {
   it("downloads an imported file without saving over the connected profile", async () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal("fetch", bridgeFetch(requests));
-    using page = open();
-    page.press(m.workbench_connection_connect());
+    using page = launch();
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -1512,8 +1506,7 @@ describe("the annotation box", () => {
     });
     let loaded = snapshot([first, second], "initial");
     vi.stubGlobal("fetch", bridgeFetch([], { item: () => loaded }));
-    using page = open();
-    page.press(m.workbench_connection_connect());
+    using page = launch();
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -2049,6 +2042,12 @@ interface OpenPage extends Disposable {
   waitFor: (assertion: () => void) => Promise<void>;
 }
 
+/** The page as Obsidian opens it: the launch fragment already in the URL. */
+function launch(code = "fixture-code", port = PORT): OpenPage {
+  window.location.hash = `#zotlit-connect=${code}&port=${port}`;
+  return open();
+}
+
 /** The page mounted for real, so its own effects run. */
 function open(): OpenPage {
   const host = document.createElement("div");
@@ -2216,10 +2215,10 @@ function shownItem(host: HTMLElement): string {
 }
 
 interface BridgeRequest {
+  readonly origin: string;
   readonly path: string;
   readonly body: unknown;
   readonly receiver: unknown;
-  readonly signal?: AbortSignal | null;
 }
 
 interface BridgeFixtureOptions {
@@ -2234,7 +2233,12 @@ interface BridgeFixtureOptions {
   /** The sentence a bridge sends instead of handing a partial over. */
   readonly dependencyRefusal?: string;
   readonly itemProtocolFailureOnce?: boolean;
-  readonly loopbackPending?: boolean;
+  /** The version the bridge reports, which the page measures against its own. */
+  readonly bridgeVersion?: number;
+  /** Refuses the code exchange, the way a used or expired code is refused. */
+  readonly codeRefused?: boolean;
+  /** Answers the selected Item 401, the way a revoked credential does. */
+  readonly revokeAfterConnect?: boolean;
   readonly save?: SaveSelectedProfileResponse;
 }
 
@@ -2263,23 +2267,27 @@ function bridgeFetch(
     const body =
       typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
     requests.push({
+      origin: url.origin,
       path: url.pathname,
       body,
       receiver: this,
-      signal: init?.signal,
     });
 
     if (
-      url.pathname === LOCAL_BRIDGE_PATHS.loopbackBootstrap &&
-      options.loopbackPending
+      (options.codeRefused &&
+        url.pathname === LOCAL_BRIDGE_PATHS.codeBootstrap) ||
+      (options.revokeAfterConnect &&
+        url.pathname === LOCAL_BRIDGE_PATHS.selectedItem)
     ) {
-      return new Promise<Response>((_resolve, reject) => {
-        const signal = init?.signal;
-        if (!signal) throw new Error("The loopback probe has no abort signal.");
-        signal.addEventListener("abort", () => reject(signal.reason), {
-          once: true,
-        });
-      });
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: "invalid-one-time-code",
+            message: "The Workbench Connection is no longer available.",
+          },
+        }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      );
     }
 
     if (
@@ -2308,13 +2316,9 @@ function bridgeFetch(
     const item = options.item?.() ?? SAMPLE_ITEMS[0]!;
     const grant = {
       credential: "fixture-credential",
-      installation: {
-        id: "fixture-installation",
-        vault: "Fixture vault",
-        zoteroSourceId: "fixture-source",
-      },
+      installation: { id: "fixture-installation", vault: "Fixture vault" },
       pluginVersion: "2.1.1",
-      bridgeVersion: BRIDGE_VERSION,
+      bridgeVersion: options.bridgeVersion ?? BRIDGE_VERSION,
       templateDataContractVersion: SAMPLE_ITEMS[0]!.contractVersion,
       capabilities: [...BRIDGE_CAPABILITIES],
       selectedItem: {
@@ -2378,8 +2382,6 @@ function bridgeResponse({
   switch (path) {
     case LOCAL_BRIDGE_PATHS.codeBootstrap:
       return grant;
-    case LOCAL_BRIDGE_PATHS.loopbackBootstrap:
-      return { state: "approved", connection: grant };
     case LOCAL_BRIDGE_PATHS.resumeSession:
       return grant;
     case LOCAL_BRIDGE_PATHS.templateDependencies:
