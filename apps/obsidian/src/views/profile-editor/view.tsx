@@ -604,7 +604,9 @@ function EditorHeader({ view }: { view: ProfileEditorView }) {
           {...tooltipAttrs(item?.title ?? m.profile_editor_choose_paper())}
           onClick={() => void view.chooseItem()}
         >
-          {item?.title ?? m.profile_editor_choose_paper()}
+          <span className="zt:min-w-0 zt:truncate">
+            {item?.title ?? m.profile_editor_choose_paper()}
+          </span>
         </button>
       }
     >
