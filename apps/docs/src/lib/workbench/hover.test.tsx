@@ -4,11 +4,10 @@ import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 
-import { m } from "@zotlit/workbench/ui";
+import { m, tagDescription } from "@zotlit/workbench/ui";
 
 import { webCompletion } from "./completion";
 import { webHover } from "./hover";
-import { tagDescription } from "./tag-help";
 
 it("shows tag-specific descriptions, syntax, and examples in hover and completion", async () => {
   await using h = await hoverEditor(

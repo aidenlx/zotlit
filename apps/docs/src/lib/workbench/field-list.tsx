@@ -28,6 +28,7 @@ import type {
   TreeState,
 } from "@zotlit/workbench/explorer";
 import { m } from "@zotlit/workbench/ui";
+import type { TemplateRoot } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -47,7 +48,7 @@ import {
   fieldValueText,
   rowMatches,
 } from "./fields";
-import type { FieldInsertionMode, TemplateRoot } from "./fields";
+import type { FieldInsertionMode } from "./fields";
 import { WorkbenchHelp } from "./frame";
 
 const SNIPPET_LABEL: Record<SnippetKind, () => string> = {
