@@ -164,8 +164,8 @@ function AnnotationPlaceholder({
           render={
             <Button
               variant="ghost"
-              size="icon"
-              className="size-6 rounded-sm data-pressed:bg-fd-muted [&_svg]:size-3.5"
+              size="icon-2xs"
+              className="data-pressed:bg-fd-muted"
             />
           }
           aria-label={m.workbench_annotation_preview()}
@@ -178,8 +178,7 @@ function AnnotationPlaceholder({
         </Toggle>
         <Button
           variant="ghost"
-          size="icon"
-          className="size-6 rounded-sm [&_svg]:size-3.5"
+          size="icon-2xs"
           aria-label={m.workbench_annotation_edit_format()}
           title={m.workbench_annotation_edit_format()}
           onClick={onOpenAnnotation}

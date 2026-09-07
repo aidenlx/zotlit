@@ -135,7 +135,7 @@ export function FieldList({
         <span className="me-auto text-xs text-fd-muted-foreground">
           {ROOT_LABEL[root]()}
         </span>
-        <WorkbenchHelp title={m.workbench_fields_heading()} compact>
+        <WorkbenchHelp title={m.workbench_fields_heading()}>
           {disabled
             ? m.workbench_properties_insert_hint()
             : m.workbench_fields_lede()}
@@ -149,7 +149,8 @@ export function FieldList({
         onChange={(event) =>
           setTree((current) => setFilter(current, event.target.value))
         }
-        className="mb-2 min-h-8 shrink-0 px-2 py-1 sm:text-xs"
+        size="xs"
+        className="mb-2 shrink-0"
       />
       <div className="min-h-0 flex-1 scrollbar-gutter-stable overflow-auto rounded-md border border-fd-border bg-fd-card">
         {data === null ? (
@@ -280,8 +281,7 @@ function FieldRowView({ node, label, value, actions }: FieldRowViewProps) {
         <div className="flex shrink-0 items-center">
           <Button
             variant="ghost"
-            size="icon"
-            className="size-6"
+            size="icon-2xs"
             disabled={disabled}
             aria-label={m.workbench_fields_put_in_note()}
             title={m.workbench_fields_put_in_note()}
@@ -291,7 +291,7 @@ function FieldRowView({ node, label, value, actions }: FieldRowViewProps) {
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger
-              render={<Button variant="ghost" size="icon" className="size-6" />}
+              render={<Button variant="ghost" size="icon-2xs" />}
               aria-label={m.template_data_explorer_row_actions()}
               title={m.template_data_explorer_row_actions()}
             >

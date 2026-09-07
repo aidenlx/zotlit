@@ -2,6 +2,7 @@
 // over the manifest's `filename` value, the five sparse bindings with their
 // effective value and origin, the language key, and the locked details.
 
+import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -178,7 +179,7 @@ export function NameFolderPane({
     controller.setManifestKey(key, value);
 
   return (
-    <div className="-m-1 flex min-h-0 flex-1 flex-col gap-5 overflow-auto p-1 pb-4">
+    <div className="-m-1 flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-1 pb-3">
       <Group
         heading={m.workbench_name_filename_heading()}
         lede={m.workbench_name_filename_lede()}
@@ -196,10 +197,15 @@ export function NameFolderPane({
             />
           </div>
         ) : (
-          <p className="text-xs text-fd-muted-foreground">
+          <p className="text-xs leading-normal text-pretty text-fd-muted-foreground">
             {m.workbench_name_filename_source_only()}
             {onOpenSource && (
-              <Button variant="outline" className="mt-2" onClick={onOpenSource}>
+              <Button
+                variant="outline"
+                size="xs"
+                className="mt-2"
+                onClick={onOpenSource}
+              >
                 {m.workbench_open_source()}
               </Button>
             )}
@@ -256,91 +262,104 @@ export function NameFolderPane({
         )}
       </Group>
 
-      <details className="rounded-md border border-fd-border bg-fd-card p-4">
-        <summary className="cursor-pointer text-sm font-medium">
+      <details className="group rounded-md border border-fd-border bg-fd-card px-2.5 py-2">
+        <summary className="flex min-h-7 cursor-pointer list-none items-center gap-1.5 text-xs font-semibold [&::-webkit-details-marker]:hidden">
+          <ChevronRight
+            aria-hidden
+            className="size-3.5 shrink-0 text-fd-muted-foreground transition-transform group-open:rotate-90"
+          />
           {m.workbench_name_profile_heading()}
         </summary>
-        <div className="mt-4">
-          <Group heading={m.workbench_name_profile_heading()}>
-            <Field label={m.workbench_name_field_name()}>
-              <TextValue
-                field="name"
-                value={manifest.name}
-                onCommit={(value) => write("name", value)}
-              />
-            </Field>
-            <Field label={m.workbench_name_field_description()}>
-              <TextValue
-                field="description"
-                value={manifest.description ?? ""}
-                optional
-                onCommit={(value) => write("description", value)}
-              />
-            </Field>
-            <Field label={m.workbench_name_field_version()}>
-              <TextValue
-                field="version"
-                value={manifest.version}
-                onCommit={(value) => write("version", value)}
-              />
-            </Field>
-            <Field label={m.workbench_name_field_author()}>
-              <TextValue
-                field="author"
-                value={manifest.author ?? ""}
-                optional
-                onCommit={(value) => write("author", value)}
-              />
-            </Field>
-          </Group>
+        <div className="mt-2 flex flex-col gap-3 pb-1">
+          <Field label={m.workbench_name_field_name()}>
+            <TextValue
+              field="name"
+              value={manifest.name}
+              onCommit={(value) => write("name", value)}
+            />
+          </Field>
+          <Field label={m.workbench_name_field_description()}>
+            <TextValue
+              field="description"
+              value={manifest.description ?? ""}
+              optional
+              onCommit={(value) => write("description", value)}
+            />
+          </Field>
+          <Field label={m.workbench_name_field_version()}>
+            <TextValue
+              field="version"
+              value={manifest.version}
+              onCommit={(value) => write("version", value)}
+            />
+          </Field>
+          <Field label={m.workbench_name_field_author()}>
+            <TextValue
+              field="author"
+              value={manifest.author ?? ""}
+              optional
+              onCommit={(value) => write("author", value)}
+            />
+          </Field>
         </div>
       </details>
 
-      <details className="rounded-md border border-fd-border bg-fd-card p-4">
-        <summary className="cursor-pointer text-sm font-medium text-fd-muted-foreground">
+      <details className="group rounded-md border border-fd-border bg-fd-card px-2.5 py-2">
+        <summary className="flex min-h-7 cursor-pointer list-none items-center gap-1.5 text-xs font-semibold [&::-webkit-details-marker]:hidden">
+          <ChevronRight
+            aria-hidden
+            className="size-3.5 shrink-0 text-fd-muted-foreground transition-transform group-open:rotate-90"
+          />
           {m.workbench_name_advanced_summary()}
         </summary>
-        <div className="mt-4 flex flex-col gap-4">
+        <div className="mt-2 flex flex-col gap-4 pb-1">
           <LanguageGroup language={manifest.language} onWrite={write} />
 
-          <Field label={m.workbench_name_field_id()}>
-            <Input
-              readOnly
-              value={manifest.id}
-              className="flex-1 bg-fd-background font-mono text-fd-muted-foreground"
-            />
-          </Field>
-          <p className="text-xs text-fd-muted-foreground">
-            {m.workbench_name_id_note()}
-          </p>
-          <Field label={m.workbench_name_field_contract()}>
-            <Input
-              readOnly
-              value={String(manifest.contract)}
-              className="flex-1 bg-fd-background font-mono text-fd-muted-foreground"
-            />
-          </Field>
-          <Field label={m.workbench_name_field_min_app_version()}>
-            <Input
-              readOnly
-              value={manifest.minAppVersion ?? m.workbench_name_unset()}
-              className="flex-1 bg-fd-background font-mono text-fd-muted-foreground"
-            />
-          </Field>
-          <p className="text-xs text-fd-muted-foreground">
-            {m.workbench_name_locked_note()}
-          </p>
-          <Field label={m.workbench_name_field_sample_item_type()}>
-            <TextValue
-              field="sampleItemType"
-              value={manifest.sampleItemType ?? ""}
-              optional
-              onCommit={(value) => write("sampleItemType", value)}
-            />
-          </Field>
-          <p className="text-xs text-fd-muted-foreground">
-            {m.workbench_name_sample_item_type_note()}
-          </p>
+          <div className="flex flex-col gap-3">
+            <Field label={m.workbench_name_field_id()}>
+              <Input
+                size="xs"
+                readOnly
+                value={manifest.id}
+                className="flex-1 bg-fd-background font-mono text-fd-muted-foreground"
+              />
+            </Field>
+            <p className="text-xs leading-normal text-pretty text-fd-muted-foreground">
+              {m.workbench_name_id_note()}
+            </p>
+            <Field label={m.workbench_name_field_contract()}>
+              <Input
+                size="xs"
+                readOnly
+                value={String(manifest.contract)}
+                className="flex-1 bg-fd-background font-mono text-fd-muted-foreground"
+              />
+            </Field>
+            <Field label={m.workbench_name_field_min_app_version()}>
+              <Input
+                size="xs"
+                readOnly
+                value={manifest.minAppVersion ?? m.workbench_name_unset()}
+                className="flex-1 bg-fd-background font-mono text-fd-muted-foreground"
+              />
+            </Field>
+            <p className="text-xs leading-normal text-pretty text-fd-muted-foreground">
+              {m.workbench_name_locked_note()}
+            </p>
+          </div>
+          <div className="flex flex-col gap-3">
+            <Field label={m.workbench_name_field_sample_item_type()}>
+              <TextValue
+                field="sampleItemType"
+                value={manifest.sampleItemType ?? ""}
+                optional
+                onCommit={(value) => write("sampleItemType", value)}
+              />
+            </Field>
+            <p className="text-xs leading-normal text-pretty text-fd-muted-foreground">
+              {m.workbench_name_sample_item_type_note()}
+            </p>
+          </div>
         </div>
       </details>
     </div>
@@ -358,8 +377,12 @@ function Group({
 }) {
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-sm font-semibold">{heading}</h3>
-      {lede && <p className="text-xs text-fd-muted-foreground">{lede}</p>}
+      <h3 className="text-xs font-semibold">{heading}</h3>
+      {lede && (
+        <p className="text-xs leading-normal text-pretty text-fd-muted-foreground">
+          {lede}
+        </p>
+      )}
       {children}
     </section>
   );
@@ -367,8 +390,8 @@ function Group({
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="flex flex-col gap-1.5 text-sm">
-      <span className="text-fd-muted-foreground">{label}</span>
+    <label className="flex flex-col gap-1 text-xs font-medium">
+      {label}
       {children}
     </label>
   );
@@ -401,6 +424,7 @@ function DraftText({
   return (
     <Input
       id={id}
+      size="xs"
       value={draft}
       disabled={disabled}
       placeholder={placeholder}
@@ -465,9 +489,9 @@ function BindingRow({
   const effective = inherits ? fallback : value;
   const id = fieldId(binding.key);
   return (
-    <div className="flex flex-col gap-3 rounded-md border border-fd-border bg-fd-card p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor={id} className="min-w-0 flex-1 text-sm font-medium">
+    <div className="flex flex-col gap-2 rounded-md border border-fd-border bg-fd-card px-2.5 py-2">
+      <div className="flex min-h-8 flex-wrap items-center gap-2">
+        <label htmlFor={id} className="min-w-0 flex-1 text-xs font-medium">
           {label}
         </label>
         <span className="text-xs text-fd-muted-foreground">
@@ -477,7 +501,7 @@ function BindingRow({
         </span>
         <Button
           variant="outline"
-          size="sm"
+          size="xs"
           aria-label={
             inherits
               ? m.workbench_name_override_for({ name: label })
@@ -499,7 +523,7 @@ function BindingRow({
           onWrite={onWrite}
         />
       ) : binding.kind === "toggle" ? (
-        <span className="flex items-center gap-3 py-2 text-sm">
+        <span className="flex min-h-8 items-center gap-2 text-xs">
           <Switch
             id={id}
             disabled={inherits}
@@ -564,6 +588,7 @@ function StylePicker({
       onChange={(event) =>
         onWrite(event.target.value === "" ? null : event.target.value)
       }
+      size="xs"
       className="w-full"
     >
       <NativeSelectOption value="">
@@ -601,6 +626,7 @@ function LanguageGroup({
           id={fieldId("language")}
           value={pending ?? language}
           onChange={(event) => setPending(event.target.value)}
+          size="xs"
           className="w-full"
         >
           <NativeSelectOption value="liquid">
@@ -614,16 +640,18 @@ function LanguageGroup({
       {pending !== null && pending !== language && (
         <div
           role="alert"
-          className="flex flex-col gap-2 border-l-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs"
+          className="flex flex-col gap-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal"
         >
-          <strong className="font-medium">
+          <strong className="font-semibold">
             {m.workbench_name_language_confirm_heading()}
           </strong>
-          <p>{m.workbench_name_language_confirm_body()}</p>
-          <div className="flex gap-2">
+          <p className="text-pretty">
+            {m.workbench_name_language_confirm_body()}
+          </p>
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
-              size="sm"
+              size="xs"
               onClick={() => {
                 onWrite("language", pending);
                 setPending(null);
@@ -631,7 +659,7 @@ function LanguageGroup({
             >
               {m.workbench_name_language_confirm()}
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setPending(null)}>
+            <Button variant="ghost" size="xs" onClick={() => setPending(null)}>
               {m.workbench_name_language_cancel()}
             </Button>
           </div>

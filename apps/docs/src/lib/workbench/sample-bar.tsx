@@ -109,13 +109,7 @@ export function SampleBar({
         </span>
       )}
       {connected && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="min-h-8 px-2 py-1 text-xs"
-          disabled={busy}
-          onClick={onLoad}
-        >
+        <Button variant="outline" size="xs" disabled={busy} onClick={onLoad}>
           {busy
             ? m.workbench_loading_item()
             : fromVault && sample.item.key === connection.selectedItem.key

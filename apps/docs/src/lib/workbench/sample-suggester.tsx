@@ -59,13 +59,7 @@ export function SampleSuggester({
           id={id}
           aria-label={title}
           title={title}
-          render={
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-6 rounded-sm [&_svg]:size-3.5"
-            />
-          }
+          render={<Button variant="ghost" size="icon-2xs" />}
         >
           <ArrowLeftRight aria-hidden />
         </DialogTrigger>

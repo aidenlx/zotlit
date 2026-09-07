@@ -291,7 +291,7 @@ const SHEET_STYLE = [
   "prose-code:rounded-none prose-pre:rounded-none",
   "[&_.zt-link]:underline [&_.zt-link]:decoration-dotted [&_.zt-link]:underline-offset-2",
   "[&_.zt-tag]:text-fd-primary [&_.zt-wikilink]:text-fd-primary [&_.zt-wikilink]:underline [&_.zt-wikilink]:decoration-dotted [&_.zt-wikilink]:underline-offset-2",
-  "[&_.callout]:my-3 [&_.callout]:border-0 [&_.callout]:border-l-2 [&_.callout]:border-fd-primary [&_.callout]:bg-fd-accent/40 [&_.callout]:px-3 [&_.callout]:py-2 [&_.callout]:not-italic",
+  "[&_.callout]:my-3 [&_.callout]:border-0 [&_.callout]:border-s-2 [&_.callout]:border-fd-primary [&_.callout]:bg-fd-accent/40 [&_.callout]:px-3 [&_.callout]:py-2 [&_.callout]:not-italic",
   "[&_.callout-title]:font-mono [&_.callout-title]:text-[0.68rem] [&_.callout-title]:font-semibold [&_.callout-title]:tracking-widest [&_.callout-title]:text-fd-primary [&_.callout-title]:uppercase",
   "[&_summary.callout-title]:cursor-pointer",
   "[&_.callout-content]:mt-1 [&_.callout-content>*]:my-1",

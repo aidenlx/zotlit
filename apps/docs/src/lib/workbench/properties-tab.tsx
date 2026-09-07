@@ -129,13 +129,13 @@ export function PropertiesPane({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto pb-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto pb-3">
       {entries.length === 0 && (
-        <p className="rounded-md border border-dashed border-fd-border p-4 text-sm text-fd-muted-foreground">
+        <p className="rounded-md border border-dashed border-fd-border p-3 text-xs leading-normal text-pretty text-fd-muted-foreground">
           {m.workbench_properties_empty()}
         </p>
       )}
-      <ul className="flex flex-col gap-3">
+      <ul className="flex flex-col gap-2">
         {entries.map((entry) => {
           const fields = produced.get(entry.position) ?? [];
           const raised = problems.get(entry.position) ?? [];
@@ -145,7 +145,7 @@ export function PropertiesPane({
               key={entry.position}
               className="rounded-md border border-fd-border bg-fd-card"
             >
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] px-3 py-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] px-2.5 py-1.5">
                 <button
                   type="button"
                   aria-expanded={open}
@@ -165,7 +165,7 @@ export function PropertiesPane({
                   </span>
                   {summarize(entry, fields, fold) && (
                     <span
-                      className={`col-span-2 col-start-1 row-start-2 block min-w-0 text-sm break-words text-fd-muted-foreground ${open ? "" : "line-clamp-2"}`}
+                      className={`col-span-2 col-start-1 row-start-2 block min-w-0 text-xs leading-normal break-words text-fd-muted-foreground ${open ? "" : "line-clamp-2"}`}
                       title={summarize(entry, fields, fold)}
                     >
                       {summarize(entry, fields, fold)}
@@ -175,8 +175,8 @@ export function PropertiesPane({
                 <div className="z-10 col-start-2 row-start-1 flex items-center gap-0.5 self-start">
                   <Button
                     variant="ghost"
-                    size="icon"
-                    className="size-7 aria-pressed:bg-fd-muted"
+                    size="icon-xs"
+                    className="aria-pressed:bg-fd-muted"
                     aria-label={m.workbench_properties_edit()}
                     title={m.workbench_properties_edit()}
                     aria-pressed={open}
@@ -188,8 +188,7 @@ export function PropertiesPane({
                   </Button>
                   <Button
                     variant="ghost"
-                    size="icon"
-                    className="size-7"
+                    size="icon-xs"
                     aria-label={m.workbench_properties_add_override()}
                     title={m.workbench_properties_add_override()}
                     onClick={() => add("property", entry.position)}
@@ -205,8 +204,7 @@ export function PropertiesPane({
                       <Button
                         key={by}
                         variant="ghost"
-                        size="icon"
-                        className="size-7"
+                        size="icon-xs"
                         aria-label={label}
                         title={label}
                         disabled={
@@ -238,8 +236,7 @@ export function PropertiesPane({
                   })}
                   <Button
                     variant="ghost"
-                    size="icon"
-                    className="size-7"
+                    size="icon-xs"
                     aria-label={m.workbench_properties_remove()}
                     title={m.workbench_properties_remove()}
                     onClick={() => {
@@ -274,11 +271,11 @@ export function PropertiesPane({
         })}
       </ul>
       <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" onClick={() => add("property")}>
+        <Button variant="outline" size="xs" onClick={() => add("property")}>
           <Plus aria-hidden />
           {m.workbench_properties_add()}
         </Button>
-        <Button variant="ghost" onClick={() => add("spread")}>
+        <Button variant="ghost" size="xs" onClick={() => add("spread")}>
           <Plus aria-hidden />
           {m.workbench_properties_add_spread()}
         </Button>
@@ -327,12 +324,13 @@ function EntryForm({
   return (
     <div
       id={`property-${entry.position}`}
-      className="flex flex-col gap-4 border-t border-fd-border p-4"
+      className="flex flex-col gap-3 border-t border-fd-border p-2.5"
     >
       {entry.key !== undefined && (
-        <label className="flex flex-col gap-1.5 text-sm font-medium">
+        <label className="flex flex-col gap-1 text-xs font-medium">
           {m.workbench_properties_name()}
           <Input
+            size="xs"
             autoFocus={focusName}
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -354,17 +352,17 @@ function EntryForm({
         </label>
       )}
       {entry.language === "js" ? (
-        <p className="text-sm text-fd-muted-foreground">
+        <p className="text-xs leading-normal text-pretty text-fd-muted-foreground">
           {m.workbench_properties_javascript()}
         </p>
       ) : (
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-sm font-medium">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-medium">
               {m.workbench_properties_expression()}
             </span>
             {!spread && (
-              <label className="flex min-w-0 items-center gap-2 text-sm">
+              <label className="flex min-w-0 items-center gap-2 text-xs">
                 <span className="sr-only">
                   {m.workbench_properties_format()}
                 </span>
@@ -375,7 +373,7 @@ function EntryForm({
                       event.target.value as "text" | "expr" | "value",
                     )
                   }
-                  size="sm"
+                  size="xs"
                 >
                   <NativeSelectOption value="text">
                     {m.workbench_properties_format_text()}
@@ -390,7 +388,7 @@ function EntryForm({
               </label>
             )}
           </div>
-          <p className="text-sm leading-relaxed text-fd-muted-foreground">
+          <p className="text-xs leading-normal text-pretty text-fd-muted-foreground">
             {format === "text"
               ? m.workbench_properties_text_hint()
               : entry.language === "expr"
@@ -398,12 +396,14 @@ function EntryForm({
                 : m.workbench_properties_rule_hint()}
           </p>
           {pendingLanguage && pendingLanguage !== format && (
-            <div className="space-y-2 rounded-md border border-fd-border bg-fd-muted p-3 text-sm">
-              <p>{m.workbench_properties_format_confirm()}</p>
+            <div className="flex flex-col gap-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal">
+              <p className="text-pretty">
+                {m.workbench_properties_format_confirm()}
+              </p>
               <div className="flex flex-wrap gap-2">
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="xs"
                   onClick={() => {
                     controller.editManagedEntry({
                       action: "language",
@@ -419,7 +419,7 @@ function EntryForm({
                 </Button>
                 <Button
                   variant="ghost"
-                  size="sm"
+                  size="xs"
                   onClick={() => setPendingLanguage(null)}
                 >
                   {m.workbench_cancel()}
@@ -429,6 +429,7 @@ function EntryForm({
           )}
           {format === "text" ? (
             <Input
+              size="xs"
               aria-label={m.workbench_properties_expression()}
               value={fixedText ?? ""}
               onChange={(event) =>
@@ -460,19 +461,21 @@ function EntryForm({
           )}
         </div>
       )}
-      {spread && <PropertyList properties={produced} className="text-sm" />}
+      {spread && <PropertyList properties={produced} className="text-xs" />}
       {diagnostics.length > 0 && (
         <div
           id={errorId}
-          className="space-y-2 border-s-2 border-fd-foreground ps-3 text-sm"
+          className="flex flex-col gap-1 border-s-2 border-fd-foreground ps-3 text-xs leading-normal"
         >
           {diagnostics.map((diagnostic, index) => (
-            <p key={index}>{diagnostic.message}</p>
+            <p key={index} className="text-pretty">
+              {diagnostic.message}
+            </p>
           ))}
         </div>
       )}
-      <div className="flex flex-col gap-3">
-        <label className="flex flex-col gap-1.5 text-sm">
+      <div className="flex flex-col gap-1.5">
+        <label className="flex flex-col gap-1 text-xs font-medium">
           {m.workbench_properties_merge()}
           <NativeSelect
             value={entry.merge}
@@ -484,6 +487,7 @@ function EntryForm({
                 value: event.target.value,
               })
             }
+            size="xs"
             className="w-full"
           >
             {Object.entries(MERGE_LABEL).map(([value, label]) => (
@@ -493,7 +497,7 @@ function EntryForm({
             ))}
           </NativeSelect>
         </label>
-        <p className="text-sm text-fd-muted-foreground">
+        <p className="text-xs leading-normal text-pretty text-fd-muted-foreground">
           {m.workbench_properties_override_hint()}
         </p>
       </div>
@@ -527,7 +531,7 @@ export function PropertiesResult({
     return (
       <pre
         aria-label={m.workbench_result_markdown_body()}
-        className="font-mono text-[0.8rem] leading-relaxed whitespace-pre-wrap"
+        className="font-mono text-xs leading-relaxed whitespace-pre-wrap"
       >
         {frontmatterBlock ?? m.workbench_properties_produced_none()}
       </pre>
@@ -537,11 +541,11 @@ export function PropertiesResult({
   return (
     <div className="flex flex-col gap-4">
       <section>
-        <h3 className="text-sm font-semibold">{m.workbench_result_fold()}</h3>
-        <PropertyList properties={fold} className="mt-3 text-sm" />
+        <h3 className="text-xs font-semibold">{m.workbench_result_fold()}</h3>
+        <PropertyList properties={fold} className="mt-2 text-xs" />
       </section>
       <details>
-        <summary className="cursor-pointer py-2 text-sm text-fd-muted-foreground">
+        <summary className="cursor-pointer py-1 text-xs text-fd-muted-foreground">
           {m.workbench_result_by_entry()}
         </summary>
         <ul className="mt-2 flex flex-col gap-2">
