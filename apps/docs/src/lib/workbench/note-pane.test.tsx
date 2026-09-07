@@ -32,5 +32,7 @@ it("names the Managed Block instead of its raw tags", () => {
   expect(note.textContent).toContain(m.workbench_managed_start());
   expect(note.textContent).toContain(m.workbench_managed_end());
   expect(note.textContent).not.toContain("{% managed %}");
-  expect(note.querySelectorAll(".zt-managed").length).toBeGreaterThan(0);
+  expect(
+    note.querySelectorAll('[data-part="managed-line"]').length,
+  ).toBeGreaterThan(0);
 });

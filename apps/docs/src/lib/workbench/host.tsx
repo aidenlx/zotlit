@@ -1,12 +1,11 @@
+import { PreviewCard } from "@base-ui/react/preview-card";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 // The web's binding of the Workbench UI host adapter: Base UI for the menu,
 // the dialog, the confirmation, and the hover card; the searchable picker the
 // paper choice already uses for the suggester; the browser's own tooltip; the
 // status line for a notice; the render Worker; the Item Snapshot's names for a
 // match; and browser storage for a preference.
-
-import { PreviewCard } from "@base-ui/react/preview-card";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
 
 import type { RenderRequest } from "@zotlit/workbench/render";
 import { m } from "@zotlit/workbench/ui";
@@ -42,7 +41,10 @@ import {
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
 
+import { webCompletion } from "./completion";
+import { webHover } from "./hover";
 import { startRenderWorker } from "./render-client";
+import { ResultSheet } from "./result-sheet";
 
 const STORAGE_PREFIX = "zotlit.workbench.preference";
 
@@ -144,6 +146,8 @@ export function useWebHost({
       },
       notice: (text) => latest.current.notice(text),
       render: startRenderWorker,
+      markdown: ResultSheet,
+      editorPopups: (read) => [webCompletion(read), webHover(read)],
       matchData: {
         tags: () => latest.current.data.tags(),
         collections: () => latest.current.data.collections(),
