@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   BRIDGE_VERSION,
-  LOCAL_BRIDGE_ORIGIN,
+  CONNECT_FRAGMENT_CODE,
   LocalBridgeClient,
   LocalBridgeProtocolError,
   LocalBridgeUnavailableError,
@@ -61,7 +61,6 @@ export function useWorkbenchConnection({
   const [bridge] = useState(
     () =>
       new LocalBridgeClient({
-        baseUrl: LOCAL_BRIDGE_ORIGIN,
         compatibility: {
           bridgeVersion: BRIDGE_VERSION,
           templateDataContractVersion: sample.contractVersion,
@@ -84,11 +83,9 @@ export function useWorkbenchConnection({
   const bundleDependencies = useRef<string | null>(null);
   const [bundleStale, setBundleStale] = useState(false);
   const [connectionBusy, setConnectionBusy] = useState(false);
-  const [connectionCancellable, setConnectionCancellable] = useState(false);
   const [itemBusy, setItemBusy] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const connectionAbort = useRef<AbortController | null>(null);
 
   const resetConnectedState = useCallback(() => {
     setResources(undefined);
@@ -181,41 +178,29 @@ export function useWorkbenchConnection({
     }
   }
 
-  async function connect(
-    run: () => Promise<LocalBridgeConnection>,
-    abort?: AbortController,
-  ) {
+  async function connect(run: () => Promise<LocalBridgeConnection>) {
     setConnectionBusy(true);
-    setConnectionCancellable(abort !== undefined);
     setMessage(null);
     try {
       const next = await run();
       setConnection(next);
       if (next.state === "connected") await hydrateConnection();
     } catch (error) {
-      if (!abort?.signal.aborted) connectionFailed(error);
+      connectionFailed(error);
     } finally {
-      if (connectionAbort.current === abort) {
-        connectionAbort.current = null;
-        setConnectionCancellable(false);
-      }
       setConnectionBusy(false);
     }
   }
 
-  function connectFromPage() {
-    const abort = new AbortController();
-    connectionAbort.current = abort;
-    void connect(
-      async () =>
-        // A transport failure kept the grant, so Reconnect presents it to the
-        // bridge running now — which re-checks compatibility against this page
-        // — instead of asking for a fresh approval. A tab that kept no grant
-        // falls through to the loopback approval.
-        (await bridge.resume({ signal: abort.signal })) ??
-        (await bridge.connectFromLoopback({ signal: abort.signal })),
-      abort,
-    );
+  /**
+   * A transport failure kept the grant and the port it was made on, so
+   * Reconnect presents them to the bridge running now — which re-checks
+   * compatibility against this page — instead of asking for a fresh approval.
+   * A tab that kept neither has nothing to present: a Connection starts in
+   * Obsidian, so the page shows that guidance rather than a Connect button.
+   */
+  function reconnect() {
+    void connect(async () => (await bridge.resume()) ?? bridge.connection);
   }
 
   async function disconnect() {
@@ -274,7 +259,7 @@ export function useWorkbenchConnection({
 
   useEffect(() => {
     const fragment = window.location.hash;
-    if (new URLSearchParams(fragment.slice(1)).has("zotlit-connect")) {
+    if (new URLSearchParams(fragment.slice(1)).has(CONNECT_FRAGMENT_CODE)) {
       window.history.replaceState(
         null,
         "",
@@ -291,11 +276,6 @@ export function useWorkbenchConnection({
     }
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- bootstraps once against `bridge`, not on every `connect` identity change
   }, [bridge]);
-
-  // A page the reader leaves mid-approval stops polling with them: the loopback
-  // bootstrap runs until it is approved or aborted, and nothing outlives the
-  // hook that started it.
-  useEffect(() => () => connectionAbort.current?.abort(), []);
 
   // The partials the draft calls right now. A bundle is read again only when
   // this list changes, so typing never queries the vault.
@@ -385,12 +365,12 @@ export function useWorkbenchConnection({
     citationStyles,
     saveAgainst,
     connectionBusy,
-    connectionCancellable,
+    /** Whether a kept credential and port are still here to present. */
+    resumable: bridge.resumable,
     itemBusy,
     saveBusy,
     message,
-    connectFromPage,
-    cancelConnection: () => connectionAbort.current?.abort(),
+    reconnect,
     disconnect,
     reloadProfile: () => void connect(async () => bridge.connection),
     loadSelectedItem,

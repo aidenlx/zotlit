@@ -189,12 +189,11 @@ export function Workbench() {
     citationStyles,
     saveAgainst,
     connectionBusy,
-    connectionCancellable,
+    resumable,
     itemBusy,
     saveBusy,
     message: connectionMessage,
-    connectFromPage,
-    cancelConnection,
+    reconnect,
     disconnect,
     reloadProfile,
     loadSelectedItem,
@@ -792,17 +791,15 @@ export function Workbench() {
           connection={connection}
           website={window.location.origin}
           busy={connectionBusy}
-          cancellable={connectionCancellable}
+          resumable={resumable}
           message={connectionMessage}
           saveBusy={saveBusy}
           editingConnectedProfile={canSaveToVault}
-          onConnect={() => {
+          onReconnect={() => {
             // Reconnecting the current vault document preserves its draft and history.
-            if (saveTarget?.reference === drafts.reference) connectFromPage();
-            else
-              replaceProfile(m.workbench_connection_connect(), connectFromPage);
+            if (saveTarget?.reference === drafts.reference) reconnect();
+            else replaceProfile(m.workbench_connection_reconnect(), reconnect);
           }}
-          onCancel={cancelConnection}
           onDisconnect={() => void disconnect()}
         />
       }

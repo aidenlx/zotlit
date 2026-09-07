@@ -439,12 +439,11 @@ export function WorkbenchSkeleton() {
           connection={{ state: "disconnected" }}
           website=""
           busy={false}
-          cancellable={false}
+          resumable={false}
           message={null}
           saveBusy
           editingConnectedProfile={false}
-          onConnect={() => {}}
-          onCancel={() => {}}
+          onReconnect={() => {}}
           onDisconnect={() => {}}
         />
       }

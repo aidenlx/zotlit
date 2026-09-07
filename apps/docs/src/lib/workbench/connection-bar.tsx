@@ -17,10 +17,10 @@ interface ConnectionBarProps {
   readonly saveBusy: boolean;
   readonly editingConnectedProfile: boolean;
   readonly busy: boolean;
-  readonly cancellable: boolean;
+  /** True while a kept credential and port are still here to present. */
+  readonly resumable: boolean;
   readonly message: string | null;
-  readonly onConnect: () => void;
-  readonly onCancel: () => void;
+  readonly onReconnect: () => void;
   readonly onDisconnect: () => void;
 }
 
@@ -42,16 +42,12 @@ export function ConnectionBar({
   saveBusy,
   editingConnectedProfile,
   busy,
-  cancellable,
+  resumable,
   message,
-  onConnect,
-  onCancel,
+  onReconnect,
   onDisconnect,
 }: ConnectionBarProps) {
   const connected = connection.state === "connected";
-  let onAction = onConnect;
-  if (connected) onAction = onDisconnect;
-  if (busy) onAction = onCancel;
   return (
     <section
       aria-label={m.workbench_connection_heading()}
@@ -106,8 +102,10 @@ export function ConnectionBar({
                   <ConnectionDatum
                     label={m.workbench_connection_item()}
                     value={
-                      connection.selectedItem.title ??
-                      connection.selectedItem.key
+                      connection.selectedItem === null
+                        ? m.workbench_sample_badge()
+                        : (connection.selectedItem.title ??
+                          connection.selectedItem.key)
                     }
                   />
                   <ConnectionDatum
@@ -139,16 +137,25 @@ export function ConnectionBar({
             </Popover.Positioner>
           </Popover.Portal>
         </Popover.Root>
-      ) : (
+      ) : resumable ? (
         <Button
           variant="outline"
           size="xs"
           title={connectionStatus(connection)}
-          disabled={saveBusy || (busy && !cancellable)}
-          onClick={onAction}
+          disabled={saveBusy || busy}
+          onClick={onReconnect}
         >
-          {connectionButtonLabel(connection, busy, cancellable)}
+          {busy
+            ? m.workbench_connection_connecting()
+            : m.workbench_connection_reconnect()}
         </Button>
+      ) : (
+        // A Workbench Connection starts in Obsidian, so a page holding nothing
+        // to present says where to start it rather than offering a Connect
+        // button no plugin can honour.
+        <p className="max-w-prose text-sm leading-normal text-pretty text-fd-muted-foreground">
+          {m.workbench_connection_open_from_obsidian()}
+        </p>
       )}
       <p
         role="status"
@@ -175,25 +182,6 @@ function connectionStatus(connection: LocalBridgeConnection): string {
     case "version-mismatch":
       return m.workbench_connection_version_mismatch();
   }
-}
-
-function connectionButtonLabel(
-  connection: LocalBridgeConnection,
-  busy: boolean,
-  cancellable: boolean,
-): string {
-  if (busy) {
-    return cancellable
-      ? m.workbench_connection_cancel()
-      : m.workbench_connection_connecting();
-  }
-  if (connection.state === "connected") {
-    return m.workbench_connection_disconnect();
-  }
-  if (connection.state === "unavailable") {
-    return m.workbench_connection_reconnect();
-  }
-  return m.workbench_connection_connect();
 }
 
 function ConnectionDatum({

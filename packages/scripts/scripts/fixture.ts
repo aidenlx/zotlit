@@ -8,6 +8,8 @@ import yargs from "yargs";
 import type { Argv } from "yargs";
 import { hideBin } from "yargs/helpers";
 
+import { DOCS_DEV_SERVER_ORIGIN } from "@zotlit/workbench/bridge";
+
 import { DEV_VAULT_CASE_ENV } from "#dev-vault";
 import {
   buildFixture,
@@ -295,7 +297,7 @@ const cli = yargs(hideBin(process.argv))
         .option("origin", {
           describe: "approved Workbench Origin",
           type: "string",
-          default: "http://localhost:4321",
+          default: DOCS_DEV_SERVER_ORIGIN,
         })
         .option("conflict-next-save", {
           describe: "make the next Profile save observe an external revision",
