@@ -1,36 +1,71 @@
 ---
-title: "Customize a template"
-description: "Create an editable template file from a built-in default, edit it, and see changes take effect live."
+title: "How to customize a template"
+description: "Edit a literature note template in the web Template Workbench, save it to Obsidian, and update your notes."
 introduced: "2.0.0"
 updated: "2.0.0"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
 import { Card, Cards } from "fumadocs-ui/components/card";
-import { Callout } from "@/components/callout";
 import { Command } from "@/components/command";
 import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-ZotLit ships built-in templates that control how citations are inserted. You can override one by creating an editable file in your vault.
+Use the web Template Workbench to change a literature note's filename, properties, or body and preview the result.
 
-<Callout type="info" title="Literature notes come from a template document">
-  The filename, the properties, and the body of a literature note come from its
-  Profile's template document, not from a template row in settings. Open it from
-  the <UiLabel name={m.settings_profile_document_name()} /> row at{" "}
-  <SettingsPath />, or from a Profile's row at{" "}
-  <SettingsPath page={m.settings_page_profiles()} />. See
-  [Settings](/docs/reference/settings#template-document).
-</Callout>
+## Open the web Template Workbench
 
-<Callout type="info" title="Looking for a guided walkthrough?">
-  The [Customize your annotations](/docs/tutorial/customize-template) tutorial
-  walks through a full worked example with before/after results. This page
-  covers the general procedure.
-</Callout>
+<Steps>
+  <Step>
+    ### Select the template
 
-## Create an editable template file
+    In Obsidian, open <SettingsPath />. On the <UiLabel name={m.settings_profile_document_name()} /> row, select <UiLabel name={m.settings_template_customize()} />.
+
+    To edit the template used by an existing literature note, open that note and run <Command name={m.command_customize_note_template_name()} />. The same action is in the note's file menu. You can also select <UiLabel name={m.settings_template_customize()} /> on a row at <SettingsPath page={m.settings_page_profiles()} />.
+
+  </Step>
+  <Step>
+    ### Confirm the connection
+
+    Review the website, vault, paper, template, and access listed in the confirmation. Select <UiLabel name={m.modal_workbench_launch_open()} /> to open your browser.
+
+    ZotLit turns on its Local Server if needed. The Workbench uses the active literature note's paper, or a sample item when no literature note is active. See [Local Server and browser access](/docs/concepts/template-workbench#local-server).
+
+  </Step>
+  <Step>
+    ### Edit and preview
+
+    Select a field to add Zotero data, or change the note in the editor. Check the rendered result as you edit. The <UiLabel name={m.workbench_start_here_heading()} /> strip shows these first steps and can be dismissed.
+
+  </Step>
+  <Step>
+    ### Save to your vault
+
+    Select <UiLabel name={m.workbench_save()} />. The first save of the built-in template creates its template document in your vault. Later saves update that file.
+
+    Existing notes keep their content until you update them. In Obsidian, select <UiLabel name={m.notice_workbench_profile_saved_action()} /> in the save notice, or run <Command name={m.command_update_note_name()} /> for the current note.
+
+  </Step>
+</Steps>
+
+The web editor supports Liquid templates. A template that requires Eta or JavaScript opens in Obsidian with a notice.
+
+If <UiLabel name={m.settings_template_customize()} /> is absent, enable <UiLabel name={m.settings_local_server_workbench_name()} /> under <SettingsPath page={m.settings_page_advanced()} />. Its toggle appears while <UiLabel name={m.settings_local_server_enabled_name()} /> is on.
+
+## Edit the document in Obsidian
+
+On the <UiLabel name={m.settings_profile_document_name()} /> row, select <UiLabel name={m.settings_template_eject()} /> to create an editable copy of the built-in template. For an existing document, select <UiLabel name={m.settings_template_open()} />.
+
+Edit the file in Obsidian and save it. ZotLit loads your changes automatically. Run <Command name={m.command_update_note_name()} /> to apply them to the current literature note.
+
+To return this template to its built-in form, select <UiLabel name={m.settings_profile_document_restore()} /> on the same row. ZotLit moves the file to Obsidian's configured trash. You can recover it from there; existing notes keep their content until updated.
+
+## Customize a citation template
+
+Citation templates have separate files. They control citations inserted into notes.
+
+### Create an editable citation template file
 
 <Steps>
   <Step>
@@ -53,13 +88,13 @@ ZotLit ships built-in templates that control how citations are inserted. You can
 
 Each row is independent: create an editable file for one citation template and the other keeps its built-in default.
 
-## Edit the template
+### Edit the citation template
 
 Open the template file and change its content. Templates use Liquid syntax by default. The file is standard Markdown with embedded `{{ zt.field }}` expressions that pull data from the Zotero item.
 
 To discover which fields are available and copy their paths, use the [Template Data Explorer](/docs/how-to/explore-template-data).
 
-## See changes take effect
+### See changes take effect
 
 ZotLit watches the template folder and recompiles changed files immediately. No plugin reload is needed.
 
@@ -71,7 +106,7 @@ This re-renders the managed region using the current template. To update only fr
 
 <Command name={m.command_update_note_metadata_name()} />
 
-## Restore the built-in default
+### Restore a citation template
 
 Two options return a template to its built-in default:
 
@@ -84,7 +119,7 @@ Two options return a template to its built-in default:
   back to the built-in default automatically. The watcher picks up the deletion
   immediately.
 
-## Switch to Eta (JavaScript)
+### Switch a citation template to Eta (JavaScript)
 
 After enabling the <UiLabel name={m.settings_template_js_enable_name()} /> gate, each template row shows a <UiLabel name={m.settings_template_language_tooltip()} /> dropdown with <UiLabel name={m.settings_template_language_liquid()} /> and <UiLabel name={m.settings_template_language_eta()} /> options. See [Enable JavaScript templates](/docs/how-to/enable-javascript-templates) for the opt-in procedure.
 
