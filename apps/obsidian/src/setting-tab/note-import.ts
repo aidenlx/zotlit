@@ -1,4 +1,4 @@
-// Declarative settings for the "Note import" sub-page.
+// Shared highlight output mappings, used by every Profile.
 import type { SettingDefinitionItem } from "obsidian";
 
 import type { AnnotationColorName } from "@zotlit/db";
@@ -13,48 +13,6 @@ import type { HighlightMapping } from "@/lib/highlight-mapping";
 import * as m from "@/lib/i18n/generated/messages";
 
 import type { SettingsKey, SettingTabContext } from "./context";
-import { defaultPlaceholder } from "./placeholder";
-
-/** Items for the "Note import" sub-page. */
-export function noteImportPageItems(
-  ctx: SettingTabContext,
-): SettingDefinitionItem<SettingsKey>[] {
-  return [
-    {
-      name: m.settings_note_import_folder_name(),
-      desc: m.settings_note_import_folder_desc(),
-      control: {
-        type: "folder",
-        key: "note.import-folder",
-        placeholder: defaultPlaceholder("note.import-folder"),
-      },
-    },
-    {
-      name: m.settings_note_import_colored_highlights_name(),
-      desc: m.settings_note_import_colored_highlights_desc(),
-      control: {
-        type: "toggle",
-        key: "note.import-colored-highlights",
-      },
-    },
-    {
-      type: "page",
-      name: m.settings_note_import_highlight_mappings_name(),
-      desc: m.settings_note_import_highlight_mappings_desc(),
-      visible: () =>
-        ctx.settings.current?.["note.import-colored-highlights"] ?? false,
-      items: highlightMappingItems(ctx),
-    },
-    {
-      name: m.settings_note_import_annotations_template_name(),
-      desc: m.settings_note_import_annotations_template_desc(),
-      control: {
-        type: "toggle",
-        key: "note.import-annotations-as-template",
-      },
-    },
-  ];
-}
 
 const colorLabels = {
   red: m.annot_view_color_red,
@@ -68,7 +26,7 @@ const colorLabels = {
   plum: m.annot_view_color_plum,
 } satisfies Record<AnnotationColorName, () => string>;
 
-function highlightMappingItems(
+export function highlightMappingItems(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsKey>[] {
   return HIGHLIGHT_COLORS.flatMap<SettingDefinitionItem<SettingsKey>>(

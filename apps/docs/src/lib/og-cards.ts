@@ -61,6 +61,16 @@ const landingCards: [OgType, CardProps][] = [
     },
   ],
   [
+    "workbench",
+    {
+      kind: "Workbench",
+      title: "Template workbench",
+      description:
+        "Edit a literature note profile in the browser and see the note it produces.",
+      meta: `${baseURL}/workbench`,
+    },
+  ],
+  [
     "blog",
     {
       kind: "Blog",

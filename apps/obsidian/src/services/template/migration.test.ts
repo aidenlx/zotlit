@@ -1,0 +1,318 @@
+import { describe, expect, it, vi } from "vitest";
+
+import { LegacyTemplateConversionError } from "@zotlit/templates/facade";
+
+import { defaults } from "@/services/settings/schema";
+
+import { LiteratureNoteTemplateMigrationService } from "./migration";
+import type { LiteratureNoteTemplateMigrationOptions } from "./migration";
+
+function makeHarness(options?: {
+  pending?: boolean;
+  defaultDocument?: string;
+  ejectedAnnotation?: boolean;
+  verificationAnnotation?: object | null;
+}) {
+  const state = {
+    "note.default-profile": {
+      ...defaults["note.default-profile"],
+    },
+    "note.template-conversion-pending": options?.pending ?? false,
+    "note.template-conversion-result": null as {
+      document: string;
+      trashed: number;
+    } | null,
+    "template.folder": "templates",
+  };
+  const legacyPaths = [
+    "templates/zotlit-note.liquid.md",
+    "templates/zotlit-content.liquid.md",
+    "templates/zotlit-filename.liquid.md",
+  ];
+  if (options?.ejectedAnnotation) {
+    legacyPaths.push("templates/zotlit-annotation.liquid.md");
+  }
+  const files = new Map(legacyPaths.map((path) => [path, { path }]));
+  if (options?.defaultDocument)
+    files.set("templates/zotlit-profile.default.md", {
+      path: "templates/zotlit-profile.default.md",
+    });
+  let layoutReady: (() => void) | undefined;
+  const create = vi.fn(async (path: string, source: string) => {
+    const file = { path, source };
+    files.set(path, file);
+    return file;
+  });
+  const trashFile = vi.fn(async (file: { path: string }) => {
+    files.delete(file.path);
+  });
+  const settings = {
+    loaded: Promise.resolve(state),
+    current: state,
+    update: vi.fn((patch: Partial<typeof state>) =>
+      Object.assign(state, patch),
+    ),
+    flush: vi.fn(async () => {}),
+  };
+  const template = {
+    ready: Promise.resolve(),
+    getLegacyLiteratureNoteTemplateFiles: vi.fn(() => [
+      "templates/zotlit-filename.liquid.md",
+      "templates/zotlit-note.liquid.md",
+      ...(options?.ejectedAnnotation
+        ? ["templates/zotlit-annotation.liquid.md"]
+        : []),
+      "templates/zotlit-content.liquid.md",
+    ]),
+    convertLegacyLiteratureNoteTemplates: vi.fn(async () => ({
+      source: "converted source",
+      legacyFiles: [
+        "templates/zotlit-filename.liquid.md",
+        "templates/zotlit-note.liquid.md",
+        ...(options?.ejectedAnnotation
+          ? ["templates/zotlit-annotation.liquid.md"]
+          : []),
+        "templates/zotlit-content.liquid.md",
+      ],
+    })),
+  };
+  const openPrompt = vi.fn();
+  const service = new LiteratureNoteTemplateMigrationService({
+    app: {
+      vault: {
+        getFileByPath: (path: string) => files.get(path) ?? null,
+        create,
+      },
+      fileManager: { trashFile },
+      workspace: {
+        onLayoutReady: (callback: () => void) => {
+          layoutReady = callback;
+        },
+      },
+    } as unknown as LiteratureNoteTemplateMigrationOptions["app"],
+    settings,
+    template,
+    loadVerificationData: async () => ({
+      note: { title: "Paper" },
+      filename: { citationKey: "doePaper" },
+      annotation:
+        options && "verificationAnnotation" in options
+          ? (options.verificationAnnotation ?? null)
+          : options?.ejectedAnnotation
+            ? { text: "Excerpt" }
+            : null,
+    }),
+    openPrompt,
+  });
+  return {
+    create,
+    files,
+    layoutReady: () => layoutReady?.(),
+    openPrompt,
+    service,
+    settings,
+    template,
+    trashFile,
+  };
+}
+
+describe("LiteratureNoteTemplateMigrationService", () => {
+  it("durably arms the prompt without changing legacy files", async () => {
+    const harness = makeHarness();
+    const paths = [...harness.files.keys()];
+
+    await harness.service.ready;
+    harness.layoutReady();
+
+    expect(harness.settings.update).toHaveBeenCalledWith({
+      "note.template-conversion-pending": true,
+    });
+    expect(harness.openPrompt).toHaveBeenCalledOnce();
+    expect([...harness.files.keys()]).toEqual(paths);
+    expect(harness.create).not.toHaveBeenCalled();
+    expect(harness.trashFile).not.toHaveBeenCalled();
+  });
+
+  it("writes the verified document before persisting and trashing legacy files", async () => {
+    const harness = makeHarness({ pending: true });
+    await harness.service.ready;
+
+    const result = await harness.service.convert();
+
+    expect(result).toEqual({
+      outcome: "converted",
+      document: "zotlit-profile.default.md",
+      trashed: [
+        "templates/zotlit-filename.liquid.md",
+        "templates/zotlit-note.liquid.md",
+        "templates/zotlit-content.liquid.md",
+      ],
+    });
+    expect(harness.create).toHaveBeenCalledWith(
+      "templates/zotlit-profile.default.md",
+      "converted source",
+    );
+    expect(harness.settings.current["note.default-profile"]).not.toHaveProperty(
+      "document",
+    );
+    expect(harness.settings.update).toHaveBeenCalledWith({
+      "note.template-conversion-pending": false,
+    });
+    expect(harness.settings.flush).toHaveBeenCalledBefore(harness.trashFile);
+    expect(harness.trashFile).toHaveBeenCalledTimes(3);
+    expect(harness.files.has("templates/zotlit-profile.default.md")).toBe(true);
+    expect(harness.settings.current["note.template-conversion-result"]).toEqual(
+      {
+        document: "templates/zotlit-profile.default.md",
+        trashed: 3,
+      },
+    );
+    expect(
+      harness.settings.flush.mock.invocationCallOrder.at(-1),
+    ).toBeGreaterThan(harness.trashFile.mock.invocationCallOrder.at(-1)!);
+  });
+
+  it("records only files actually trashed", async () => {
+    const harness = makeHarness({ pending: true, ejectedAnnotation: true });
+    await using service = harness.service;
+    await service.ready;
+    harness.files.delete("templates/zotlit-content.liquid.md");
+    await service.convert();
+    expect(harness.settings.current["note.template-conversion-result"]).toEqual(
+      {
+        document: "templates/zotlit-profile.default.md",
+        trashed: 3,
+      },
+    );
+  });
+
+  it("leaves no receipt when trash fails", async () => {
+    const failed = makeHarness({ pending: true });
+    await using service = failed.service;
+    await service.ready;
+    failed.trashFile.mockRejectedValueOnce(new Error("Trash unavailable"));
+    await expect(service.convert()).rejects.toThrow("Trash unavailable");
+    expect(
+      failed.settings.current["note.template-conversion-result"],
+    ).toBeNull();
+  });
+
+  it("does not infer a completed conversion from an existing Default document", async () => {
+    const harness = makeHarness({ pending: true, defaultDocument: "existing" });
+    await using service = harness.service;
+    await service.ready;
+    expect(
+      harness.settings.current["note.template-conversion-result"],
+    ).toBeNull();
+    expect(harness.settings.current["note.template-conversion-pending"]).toBe(
+      false,
+    );
+  });
+
+  it("leaves the vault and settings untouched when parity verification fails", async () => {
+    const harness = makeHarness({ pending: true });
+    await harness.service.ready;
+    harness.template.convertLegacyLiteratureNoteTemplates.mockRejectedValueOnce(
+      new LegacyTemplateConversionError(
+        "legacy-render-mismatch",
+        "Converted create output differs at byte 10",
+        {
+          difference: "create output",
+          recovery: "Keep the legacy files unchanged.",
+        },
+      ),
+    );
+    harness.settings.update.mockClear();
+
+    const result = await harness.service.convert();
+
+    expect(result).toEqual({
+      outcome: "refused",
+      diagnostic: {
+        code: "legacy-render-mismatch",
+        difference: "create output",
+        message: "Converted create output differs at byte 10",
+        hint: "Keep the legacy files unchanged.",
+      },
+    });
+    expect(harness.create).not.toHaveBeenCalled();
+    expect(harness.trashFile).not.toHaveBeenCalled();
+    expect(harness.settings.update).not.toHaveBeenCalled();
+  });
+
+  it("returns affected fields and leaves the vault untouched when the dry run fails", async () => {
+    const harness = makeHarness({ pending: true });
+    await harness.service.ready;
+    harness.template.convertLegacyLiteratureNoteTemplates.mockRejectedValueOnce(
+      new LegacyTemplateConversionError(
+        "legacy-frontmatter-evaluation",
+        "Converted Managed Frontmatter failed for: tags, creators",
+        {
+          difference: "Managed Frontmatter evaluation",
+          recovery: "Correct these fields, then retry conversion.",
+          fields: ["tags", "creators"],
+        },
+      ),
+    );
+
+    const result = await harness.service.convert();
+
+    expect(result).toEqual({
+      outcome: "refused",
+      diagnostic: {
+        code: "legacy-frontmatter-evaluation",
+        difference: "Managed Frontmatter evaluation",
+        message: "Converted Managed Frontmatter failed for: tags, creators",
+        hint: "Correct these fields, then retry conversion.",
+        fields: ["tags", "creators"],
+      },
+    });
+    expect(harness.create).not.toHaveBeenCalled();
+    expect(harness.trashFile).not.toHaveBeenCalled();
+  });
+
+  it("trashes an ejected annotation template after the verified document write", async () => {
+    const harness = makeHarness({ pending: true, ejectedAnnotation: true });
+    await harness.service.ready;
+
+    const result = await harness.service.convert();
+
+    expect(result).toMatchObject({
+      outcome: "converted",
+      trashed: expect.arrayContaining([
+        "templates/zotlit-annotation.liquid.md",
+      ]),
+    });
+    expect(
+      harness.template.convertLegacyLiteratureNoteTemplates,
+    ).toHaveBeenCalledWith({
+      note: { title: "Paper" },
+      filename: { citationKey: "doePaper" },
+      annotation: { text: "Excerpt" },
+    });
+    expect(harness.settings.flush).toHaveBeenCalledBefore(harness.trashFile);
+  });
+
+  it("names the missing verification annotation and its recovery", async () => {
+    const harness = makeHarness({
+      pending: true,
+      ejectedAnnotation: true,
+      verificationAnnotation: null,
+    });
+    await harness.service.ready;
+
+    const result = await harness.service.convert();
+
+    expect(result).toEqual({
+      outcome: "refused",
+      diagnostic: {
+        code: "no-verification-annotation",
+        message:
+          "No Zotero annotation is available for conversion verification",
+        hint: "Add an annotation to a Zotero item, then retry conversion.",
+      },
+    });
+    expect(harness.create).not.toHaveBeenCalled();
+    expect(harness.trashFile).not.toHaveBeenCalled();
+  });
+});

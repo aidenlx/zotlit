@@ -36,7 +36,7 @@ const packageRoot = resolve(import.meta.dirname, "..");
 const workspaceRoot = resolve(packageRoot, "../..");
 const execFileAsync = promisify(execFile);
 const TARGET_LOCALE_PREFIXES = ["notice_pack_"];
-/** The Companion labels the Obsidian build quotes; mirrors `apps/obsidian/vite.config.ts`. */
+/** The Companion labels the Obsidian build quotes; mirrors its Language Pack options. */
 const OBSIDIAN_INCLUDED_MESSAGES = [
   "zotero.prefs_notify_section",
   "zotero.prefs_notify_enable.label",
@@ -1443,7 +1443,7 @@ describe("message data", () => {
       root: workspaceRoot,
       project: "project.inlang",
       output: outputDirectory,
-      excludeMessagePrefixes: ["docs_", "zotero."],
+      excludeMessagePrefixes: ["docs_", "workbench_", "zotero."],
       includeMessages: OBSIDIAN_INCLUDED_MESSAGES,
       targetLocaleMessagePrefixes: [
         "notice_language_pack_",

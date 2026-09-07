@@ -12,6 +12,17 @@ describe("getDevVaultDir", () => {
     );
   });
 
+  it("suffixes a Vault Case other than the default", () => {
+    const workspaceRoot = join("workspace", "feature-branch");
+
+    expect(getDevVaultDir(workspaceRoot, "configured")).toBe(
+      getDevVaultDir(workspaceRoot),
+    );
+    expect(getDevVaultDir(workspaceRoot, "upgrader")).toBe(
+      join(workspaceRoot, "tests", "fixture-vault-feature-branch-upgrader"),
+    );
+  });
+
   it("includes the Codex worktree id when repository folders repeat", () => {
     const workspaceRoot = join(
       "workspace",

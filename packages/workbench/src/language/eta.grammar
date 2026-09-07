@@ -1,0 +1,34 @@
+// Lezer grammar for Eta v4 default tags: <% %> with optional whitespace
+// markers (-/_) and interpolate/raw prefixes (=/~). Host text between tags
+// is plain (no Markdown). The JS inside a tag is spliced in via parseMixed
+// wrapping the TagContent node — see eta-language.ts.
+
+@top Template { (Text | Tag)* }
+
+Tag { (TagOpen | TagOpenInterp | TagOpenRaw) TagContent? TagClose }
+
+@tokens {
+  // Open delimiter, optional whitespace marker, then the prefix folds into the
+  // token so longest-match picks the prefixed variant over the bare open.
+  TagOpenInterp { "<%" $[-_]? "=" }
+  TagOpenRaw { "<%" $[-_]? "~" }
+  TagOpen { "<%" $[-_]? }
+
+  // Optional trailing whitespace marker tight against the close delimiter.
+  TagClose { $[-_]? "%>" }
+
+  // Host text: any run that does not begin the open delimiter `<%`. A `<` is
+  // text only when not followed by `%`.
+  Text { ![<] Text? | "<" (@eof | ![%] Text?) }
+
+  // Tag interior: runs until `%>` or `[-_]%>`. A `%`, `-`, or `_` is content
+  // only when it does not begin the close delimiter, mirroring Eta's scanner.
+  TagContent {
+    ![%\-_] TagContent? |
+    "%" (@eof | ![>] TagContent?) |
+    $[-_] (@eof | ![%] TagContent? | "%" (@eof | ![>] TagContent?))
+  }
+
+  @precedence { TagOpenInterp, TagOpenRaw, TagOpen, Text }
+  @precedence { TagClose, TagContent }
+}

@@ -1,0 +1,665 @@
+{
+  "contractVersion": 2,
+  "item": {
+    "key": "CNPF226A",
+    "indexedKey": "CNPF226A",
+    "itemType": "conferencePaper",
+    "title": "Designing reproducible research interfaces",
+    "library": {
+      "type": "personal"
+    }
+  },
+  "provenance": {
+    "kind": "sample",
+    "id": "conference-paper",
+    "source": "fixture-vault"
+  },
+  "roots": {
+    "note": {
+      "title": "Designing reproducible research interfaces",
+      "date": {
+        "kind": "text",
+        "value": null,
+        "text": "2026",
+        "year": 2026,
+        "month": null,
+        "day": null,
+        "raw": "2026"
+      },
+      "citationKey": "riveraResearchInterfaces2026",
+      "publicationTitle": "Proceedings of the Open Research Conference",
+      "key": "CNPF226A",
+      "groupID": null,
+      "libraryID": 1,
+      "indexedKey": "CNPF226A",
+      "itemType": "conferencePaper",
+      "dateAdded": "2025-01-03T12:00:00Z",
+      "dateModified": "2025-01-03T12:00:00Z",
+      "creators": [
+        {
+          "family": "Rivera",
+          "given": "Mara",
+          "literal": null,
+          "role": "author",
+          "fullName": "Mara Rivera"
+        },
+        {
+          "family": "Chen",
+          "given": "Tao",
+          "literal": null,
+          "role": "author",
+          "fullName": "Tao Chen"
+        }
+      ],
+      "primaryCreatorType": "author",
+      "tags": [],
+      "abstract": null,
+      "containerTitle": "Proceedings of the Open Research Conference",
+      "citekey": "riveraResearchInterfaces2026",
+      "shortTitle": null,
+      "DOI": null,
+      "url": null,
+      "ISBN": null,
+      "ISSN": null,
+      "volume": null,
+      "issue": null,
+      "pages": null,
+      "publisher": null,
+      "place": null,
+      "edition": null,
+      "language": null,
+      "extra": null,
+      "noteLink": {
+        "$helper": "noteLink",
+        "signature": "(alias?: string, subpath?: string) => string | null",
+        "value": null
+      },
+      "annotations": [
+        {
+          "key": "CNPAN26A",
+          "indexedKey": "CNPAN26A",
+          "libraryID": 1,
+          "type": "highlight",
+          "text": "A reproducible interface makes its inputs and outputs inspectable.",
+          "commentHtml": "Reviewed Fixture text; it contains no personal library data.",
+          "colorHex": "#ffd400",
+          "colorName": "yellow",
+          "pageLabel": "1",
+          "page": 1,
+          "authorName": null,
+          "isExternal": false,
+          "dateAdded": "2025-01-03T11:30:00Z",
+          "dateModified": "2025-01-03T11:30:00Z",
+          "tags": [],
+          "imgLink": null,
+          "fileLink": {
+            "$helper": "fileLink",
+            "signature": "(alias?: string, subpath?: string) => string | null",
+            "value": null
+          },
+          "backlink": "zotero://open/library/items/CNPDF26A?annotation=CNPAN26A&page=1",
+          "comment": "Reviewed Fixture text; it contains no personal library data.",
+          "parentItem": {
+            "$ref": "zt"
+          },
+          "parentAttachment": {
+            "key": "CNPDF26A",
+            "indexedKey": "CNPDF26A",
+            "filename": "research-interfaces.pdf",
+            "contentType": "application/pdf",
+            "linkMode": "imported_file",
+            "backlink": "zotero://open/library/items/CNPDF26A",
+            "filePath": null,
+            "fileLink": {
+              "$helper": "fileLink",
+              "signature": "(alias?: string, subpath?: string) => string | null",
+              "value": null
+            }
+          }
+        }
+      ],
+      "attachments": [
+        {
+          "key": "CNPDF26A",
+          "indexedKey": "CNPDF26A",
+          "filename": "research-interfaces.pdf",
+          "contentType": "application/pdf",
+          "linkMode": "imported_file",
+          "backlink": "zotero://open/library/items/CNPDF26A",
+          "filePath": null,
+          "fileLink": {
+            "$helper": "fileLink",
+            "signature": "(alias?: string, subpath?: string) => string | null",
+            "value": null
+          }
+        }
+      ],
+      "collections": [
+        {
+          "key": "SHAREDCL",
+          "name": "Shared key",
+          "path": [
+            "Shared key"
+          ]
+        }
+      ],
+      "notePath": null,
+      "backlink": "zotero://select/library/items/CNPF226A",
+      "weblink": null,
+      "authors": [
+        {
+          "family": "Rivera",
+          "given": "Mara",
+          "literal": null,
+          "role": "author",
+          "fullName": "Mara Rivera"
+        },
+        {
+          "family": "Chen",
+          "given": "Tao",
+          "literal": null,
+          "role": "author",
+          "fullName": "Tao Chen"
+        }
+      ],
+      "authorsShort": "Rivera & Chen",
+      "relatedItems": [],
+      "notes": []
+    },
+    "filename": {
+      "title": "Designing reproducible research interfaces",
+      "date": {
+        "kind": "text",
+        "value": null,
+        "text": "2026",
+        "year": 2026,
+        "month": null,
+        "day": null,
+        "raw": "2026"
+      },
+      "citationKey": "riveraResearchInterfaces2026",
+      "publicationTitle": "Proceedings of the Open Research Conference",
+      "key": "CNPF226A",
+      "groupID": null,
+      "libraryID": 1,
+      "indexedKey": "CNPF226A",
+      "itemType": "conferencePaper",
+      "dateAdded": "2025-01-03T12:00:00Z",
+      "dateModified": "2025-01-03T12:00:00Z",
+      "creators": [
+        {
+          "family": "Rivera",
+          "given": "Mara",
+          "literal": null,
+          "role": "author",
+          "fullName": "Mara Rivera"
+        },
+        {
+          "family": "Chen",
+          "given": "Tao",
+          "literal": null,
+          "role": "author",
+          "fullName": "Tao Chen"
+        }
+      ],
+      "primaryCreatorType": "author",
+      "tags": [],
+      "abstract": null,
+      "containerTitle": "Proceedings of the Open Research Conference",
+      "citekey": "riveraResearchInterfaces2026",
+      "shortTitle": null,
+      "DOI": null,
+      "url": null,
+      "ISBN": null,
+      "ISSN": null,
+      "volume": null,
+      "issue": null,
+      "pages": null,
+      "publisher": null,
+      "place": null,
+      "edition": null,
+      "language": null,
+      "extra": null,
+      "authors": [
+        {
+          "family": "Rivera",
+          "given": "Mara",
+          "literal": null,
+          "role": "author",
+          "fullName": "Mara Rivera"
+        },
+        {
+          "family": "Chen",
+          "given": "Tao",
+          "literal": null,
+          "role": "author",
+          "fullName": "Tao Chen"
+        }
+      ],
+      "authorsShort": "Rivera & Chen",
+      "notePath": "",
+      "noteLink": {
+        "$helper": "noteLink",
+        "signature": "(alias?: string, subpath?: string) => string | null",
+        "value": ""
+      },
+      "collections": [
+        {
+          "key": "SHAREDCL",
+          "name": "Shared key",
+          "path": [
+            "Shared key"
+          ]
+        }
+      ]
+    },
+    "annotations": [
+      {
+        "key": "CNPAN26A",
+        "indexedKey": "CNPAN26A",
+        "libraryID": 1,
+        "type": "highlight",
+        "text": "A reproducible interface makes its inputs and outputs inspectable.",
+        "commentHtml": "Reviewed Fixture text; it contains no personal library data.",
+        "colorHex": "#ffd400",
+        "colorName": "yellow",
+        "pageLabel": "1",
+        "page": 1,
+        "authorName": null,
+        "isExternal": false,
+        "dateAdded": "2025-01-03T11:30:00Z",
+        "dateModified": "2025-01-03T11:30:00Z",
+        "tags": [],
+        "imgLink": null,
+        "fileLink": {
+          "$helper": "fileLink",
+          "signature": "(alias?: string, subpath?: string) => string | null",
+          "value": null
+        },
+        "backlink": "zotero://open/library/items/CNPDF26A?annotation=CNPAN26A&page=1",
+        "comment": "Reviewed Fixture text; it contains no personal library data.",
+        "parentItem": {
+          "title": "Designing reproducible research interfaces",
+          "date": {
+            "kind": "text",
+            "value": null,
+            "text": "2026",
+            "year": 2026,
+            "month": null,
+            "day": null,
+            "raw": "2026"
+          },
+          "citationKey": "riveraResearchInterfaces2026",
+          "publicationTitle": "Proceedings of the Open Research Conference",
+          "key": "CNPF226A",
+          "groupID": null,
+          "libraryID": 1,
+          "indexedKey": "CNPF226A",
+          "itemType": "conferencePaper",
+          "dateAdded": "2025-01-03T12:00:00Z",
+          "dateModified": "2025-01-03T12:00:00Z",
+          "creators": [
+            {
+              "family": "Rivera",
+              "given": "Mara",
+              "literal": null,
+              "role": "author",
+              "fullName": "Mara Rivera"
+            },
+            {
+              "family": "Chen",
+              "given": "Tao",
+              "literal": null,
+              "role": "author",
+              "fullName": "Tao Chen"
+            }
+          ],
+          "primaryCreatorType": "author",
+          "tags": [],
+          "abstract": null,
+          "containerTitle": "Proceedings of the Open Research Conference",
+          "citekey": "riveraResearchInterfaces2026",
+          "shortTitle": null,
+          "DOI": null,
+          "url": null,
+          "ISBN": null,
+          "ISSN": null,
+          "volume": null,
+          "issue": null,
+          "pages": null,
+          "publisher": null,
+          "place": null,
+          "edition": null,
+          "language": null,
+          "extra": null,
+          "notePath": null,
+          "noteLink": {
+            "$helper": "noteLink",
+            "signature": "(alias?: string, subpath?: string) => string | null",
+            "value": null
+          },
+          "backlink": "zotero://select/library/items/CNPF226A",
+          "weblink": null,
+          "authors": [
+            {
+              "family": "Rivera",
+              "given": "Mara",
+              "literal": null,
+              "role": "author",
+              "fullName": "Mara Rivera"
+            },
+            {
+              "family": "Chen",
+              "given": "Tao",
+              "literal": null,
+              "role": "author",
+              "fullName": "Tao Chen"
+            }
+          ],
+          "authorsShort": "Rivera & Chen"
+        },
+        "parentAttachment": {
+          "key": "CNPDF26A",
+          "indexedKey": "CNPDF26A",
+          "filename": "research-interfaces.pdf",
+          "contentType": "application/pdf",
+          "linkMode": "imported_file",
+          "backlink": "zotero://open/library/items/CNPDF26A",
+          "filePath": null,
+          "fileLink": {
+            "$helper": "fileLink",
+            "signature": "(alias?: string, subpath?: string) => string | null",
+            "value": null
+          }
+        },
+        "citation": null
+      }
+    ]
+  },
+  "descriptors": {
+    "note": {
+      "stringCoercions": [
+        {
+          "path": [],
+          "value": "Designing reproducible research interfaces"
+        },
+        {
+          "path": [
+            "date"
+          ],
+          "value": "2026"
+        },
+        {
+          "path": [
+            "creators",
+            0
+          ],
+          "value": "Mara Rivera"
+        },
+        {
+          "path": [
+            "creators",
+            1
+          ],
+          "value": "Tao Chen"
+        },
+        {
+          "path": [
+            "annotations",
+            0
+          ],
+          "value": "A reproducible interface makes its inputs and outputs inspectable."
+        },
+        {
+          "path": [
+            "annotations",
+            0,
+            "parentAttachment"
+          ],
+          "value": "research-interfaces.pdf"
+        },
+        {
+          "path": [
+            "attachments",
+            0
+          ],
+          "value": "research-interfaces.pdf"
+        },
+        {
+          "path": [
+            "collections",
+            0
+          ],
+          "value": "Shared key"
+        },
+        {
+          "path": [
+            "authors",
+            0
+          ],
+          "value": "Mara Rivera"
+        },
+        {
+          "path": [
+            "authors",
+            1
+          ],
+          "value": "Tao Chen"
+        }
+      ],
+      "temporalValues": [
+        {
+          "path": [
+            "dateAdded"
+          ],
+          "type": "Temporal.Instant"
+        },
+        {
+          "path": [
+            "dateModified"
+          ],
+          "type": "Temporal.Instant"
+        },
+        {
+          "path": [
+            "annotations",
+            0,
+            "dateAdded"
+          ],
+          "type": "Temporal.Instant"
+        },
+        {
+          "path": [
+            "annotations",
+            0,
+            "dateModified"
+          ],
+          "type": "Temporal.Instant"
+        }
+      ],
+      "graphReferences": [
+        {
+          "path": [
+            "annotations",
+            0,
+            "parentItem"
+          ],
+          "target": []
+        }
+      ]
+    },
+    "filename": {
+      "stringCoercions": [
+        {
+          "path": [
+            "date"
+          ],
+          "value": "2026"
+        },
+        {
+          "path": [
+            "creators",
+            0
+          ],
+          "value": "Mara Rivera"
+        },
+        {
+          "path": [
+            "creators",
+            1
+          ],
+          "value": "Tao Chen"
+        },
+        {
+          "path": [
+            "authors",
+            0
+          ],
+          "value": "Mara Rivera"
+        },
+        {
+          "path": [
+            "authors",
+            1
+          ],
+          "value": "Tao Chen"
+        },
+        {
+          "path": [
+            "collections",
+            0
+          ],
+          "value": "Shared key"
+        }
+      ],
+      "temporalValues": [
+        {
+          "path": [
+            "dateAdded"
+          ],
+          "type": "Temporal.Instant"
+        },
+        {
+          "path": [
+            "dateModified"
+          ],
+          "type": "Temporal.Instant"
+        }
+      ],
+      "graphReferences": []
+    },
+    "annotations": [
+      {
+        "stringCoercions": [
+          {
+            "path": [],
+            "value": "A reproducible interface makes its inputs and outputs inspectable."
+          },
+          {
+            "path": [
+              "parentItem"
+            ],
+            "value": "Designing reproducible research interfaces"
+          },
+          {
+            "path": [
+              "parentItem",
+              "date"
+            ],
+            "value": "2026"
+          },
+          {
+            "path": [
+              "parentItem",
+              "creators",
+              0
+            ],
+            "value": "Mara Rivera"
+          },
+          {
+            "path": [
+              "parentItem",
+              "creators",
+              1
+            ],
+            "value": "Tao Chen"
+          },
+          {
+            "path": [
+              "parentItem",
+              "authors",
+              0
+            ],
+            "value": "Mara Rivera"
+          },
+          {
+            "path": [
+              "parentItem",
+              "authors",
+              1
+            ],
+            "value": "Tao Chen"
+          },
+          {
+            "path": [
+              "parentAttachment"
+            ],
+            "value": "research-interfaces.pdf"
+          }
+        ],
+        "temporalValues": [
+          {
+            "path": [
+              "dateAdded"
+            ],
+            "type": "Temporal.Instant"
+          },
+          {
+            "path": [
+              "dateModified"
+            ],
+            "type": "Temporal.Instant"
+          },
+          {
+            "path": [
+              "parentItem",
+              "dateAdded"
+            ],
+            "type": "Temporal.Instant"
+          },
+          {
+            "path": [
+              "parentItem",
+              "dateModified"
+            ],
+            "type": "Temporal.Instant"
+          }
+        ],
+        "graphReferences": []
+      }
+    ]
+  },
+  "unavailable": [
+    {
+      "path": "zt.annotations[0].fileLink",
+      "reason": "The Attachment has no permitted vault-relative target."
+    },
+    {
+      "path": "zt.annotations[0].parentAttachment.filePath",
+      "reason": "Attachment paths are not included in Item Snapshots."
+    },
+    {
+      "path": "zt.annotations[0].parentAttachment.fileLink",
+      "reason": "The Attachment has no permitted vault-relative target."
+    },
+    {
+      "path": "zt.attachments[0].filePath",
+      "reason": "Attachment paths are not included in Item Snapshots."
+    },
+    {
+      "path": "zt.attachments[0].fileLink",
+      "reason": "The Attachment has no permitted vault-relative target."
+    }
+  ],
+  "revision": "739d7d98b72f404808b4aad5ff44d9005eff7da1fd4e3d0f00f48ca54eaf54ce"
+}

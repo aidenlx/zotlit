@@ -1,4 +1,7 @@
+import type { NodeDatabaseClient } from "@/client/node";
+
 import { defineQuery } from "./_shared";
+import type { QueryRow } from "./_shared";
 
 /**
  * Collection memberships for one item, trashed collections excluded. A trashed
@@ -40,3 +43,29 @@ export const collectionNodesByLibraryQuery = defineQuery<{
     },
   }),
 );
+
+/** One live collection node of a library, with the columns a tree walk needs. */
+export type CollectionNode = QueryRow<typeof collectionNodesByLibraryQuery>;
+
+/** Every non-trashed collection of one library, unordered. */
+export function getCollectionNodesByLibrary(
+  db: NodeDatabaseClient,
+  libraryID: number,
+): CollectionNode[] {
+  return collectionNodesByLibraryQuery.prepared(db).all({ libraryID });
+}
+
+/**
+ * Ids of the collections one live item is filed in directly — its actual
+ * memberships, whatever collection a UI currently shows it under. Trashed
+ * collections are excluded; a trashed item has none.
+ */
+export function getCollectionIDsByItem(
+  db: NodeDatabaseClient,
+  itemID: number,
+): number[] {
+  return collectionIDsByItemQuery
+    .prepared(db)
+    .all({ itemID })
+    .map((row) => row.collectionID);
+}

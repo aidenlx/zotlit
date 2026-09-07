@@ -1,7 +1,5 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
-  "globalDependencies": ["mise.toml"],
-  "globalEnv": ["ZOTLIT_TOOLCHAIN"],
   "globalPassThroughEnv": ["AI_AGENT"],
   "tasks": {
     "transit": {
@@ -15,11 +13,13 @@
     "build:dev": {
       "dependsOn": ["^build"],
       "outputs": ["dist-dev/**"],
-      "outputLogs": "errors-only"
+      "outputLogs": "errors-only",
+      "passThroughEnv": ["ZT_VAULT_CASE"]
     },
     "dev": {
       "cache": false,
-      "persistent": true
+      "persistent": true,
+      "passThroughEnv": ["ZT_VAULT_CASE"]
     },
     "typecheck": {
       "dependsOn": ["^build", "transit"]
@@ -50,11 +50,13 @@
     "//#lint:repo:deps": {
       "dependsOn": [
         "@zotlit/db#build",
+        "@zotlit/filter-expression#build",
         "@zotlit/item-lookup#build",
         "@zotlit/obsidian#generate:language-packs",
         "@zotlit/protocol#build",
         "@zotlit/shared#build",
         "@zotlit/templates#build",
+        "@zotlit/workbench#build",
         "@zotlit/zotero-types#build",
         "@zotlit/docs#codegen",
         "@zotlit/docs#generate:i18n",
@@ -67,11 +69,13 @@
     "//#review:plugin:deps": {
       "dependsOn": [
         "@zotlit/db#build",
+        "@zotlit/filter-expression#build",
         "@zotlit/item-lookup#build",
         "@zotlit/obsidian#generate:language-packs",
         "@zotlit/protocol#build",
         "@zotlit/shared#build",
         "@zotlit/templates#build",
+        "@zotlit/workbench#build",
         "@zotlit/zotero-types#build"
       ]
     },

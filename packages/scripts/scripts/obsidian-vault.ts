@@ -29,13 +29,19 @@ import { promisify } from "node:util";
 import yargs from "yargs";
 import { hideBin } from "yargs/helpers";
 
-import { getDevVaultDir, getFixtureVaultDir } from "#dev-vault";
+import {
+  DEV_VAULT_CASE_ENV,
+  getDevVaultDir,
+  getFixtureVaultDir,
+} from "#dev-vault";
 import {
   buildFixture,
   DEFAULT_SCOPE_CASE,
+  DEFAULT_VAULT_CASE,
   getFixtureLayout,
   getFixtureRoot,
   SCOPE_CASES,
+  VAULT_CASES,
 } from "#fixture";
 import {
   createObsidianHostReadiness,
@@ -201,6 +207,8 @@ async function resolveRemovalHost(exclude?: string): Promise<string> {
 interface SeedOptions {
   purge?: boolean;
   scopeCase?: string;
+  /** Vault Case to seed; each case has its own Development Vault folder. */
+  vaultCase?: string;
   /**
    * Live Updates port the generated seed binds, in the vault settings and in
    * the Companion's notify URL alike. Absent, both keep their shipped defaults.
@@ -215,6 +223,7 @@ async function create(
   {
     purge = false,
     scopeCase = DEFAULT_SCOPE_CASE,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
   }: SeedOptions = {},
@@ -240,6 +249,7 @@ async function create(
 
   await rebuildFixtureVault(abs, {
     scopeCase,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
   });
@@ -379,6 +389,7 @@ async function sync(
   {
     purge = false,
     scopeCase = DEFAULT_SCOPE_CASE,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
   }: SeedOptions = {},
@@ -395,6 +406,7 @@ async function sync(
     // Build before a purge so the generated seed captures the current dev bundle.
     await rebuildFixtureVault(abs, {
       scopeCase,
+      vaultCase,
       liveUpdatePort,
       zoteroHttpPort,
     });
@@ -418,6 +430,7 @@ async function rebuildFixtureVault(
   target: string,
   {
     scopeCase = DEFAULT_SCOPE_CASE,
+    vaultCase = DEFAULT_VAULT_CASE,
     liveUpdatePort,
     zoteroHttpPort,
   }: SeedOptions = {},
@@ -434,12 +447,24 @@ async function rebuildFixtureVault(
     () => true,
     () => false,
   );
+  // A Development Vault that has not been seeded yet (a Vault Case opened for
+  // the first time) holds no bundle, so the dev build's output stands in.
+  const distDev = join(workspaceRoot, "apps", "obsidian", "dist-dev");
+  const hasDistDev = await access(join(distDev, "main.js")).then(
+    () => true,
+    () => false,
+  );
   await buildFixture(fixtureLayout, {
     scopeCase,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
     linkedAttachmentVaultDir: resolve(target),
-    pluginBundleDir: hasBundle ? pluginBundleDir : undefined,
+    pluginBundleDir: hasBundle
+      ? pluginBundleDir
+      : hasDistDev
+        ? distDev
+        : undefined,
   });
 }
 
@@ -449,6 +474,7 @@ async function open(
   {
     purge = false,
     scopeCase = DEFAULT_SCOPE_CASE,
+    vaultCase,
     liveUpdatePort,
     zoteroHttpPort,
   }: SeedOptions = {},
@@ -457,12 +483,13 @@ async function open(
   const host = await resolveHost();
   const registered = findVaultId(await vaultList(host), abs);
 
+  const seed = { purge, scopeCase, vaultCase, liveUpdatePort, zoteroHttpPort };
   if (!registered) {
-    await create(abs, { purge, scopeCase, liveUpdatePort, zoteroHttpPort });
+    await create(abs, seed);
     return;
   }
 
-  await sync(abs, { purge, scopeCase, liveUpdatePort, zoteroHttpPort });
+  await sync(abs, seed);
   if ((await vaultList(host))[registered]?.open !== true) {
     const opened = await obEval(
       `require('electron').ipcRenderer.sendSync('vault-open',${JSON.stringify(abs)},false)`,
@@ -481,11 +508,20 @@ async function open(
     }
   }
 
-  const reloaded = await cli([
-    `vault=${registered}`,
-    "plugin:reload",
-    `id=${pluginId}`,
-  ]);
+  // Right after a vault window opens (or resumes), the CLI's own command
+  // registry can lag a beat behind `vault-list`'s `open` flag, so the first
+  // `plugin:reload` sometimes answers "not found" even though the plugin is
+  // enabled. Retry a few times before treating it as a real failure.
+  let reloaded = "";
+  for (let attempt = 0; attempt < 4; attempt++) {
+    reloaded = await cli([
+      `vault=${registered}`,
+      "plugin:reload",
+      `id=${pluginId}`,
+    ]);
+    if (reloaded.toLowerCase().startsWith("reloaded:")) break;
+    await delay(250);
+  }
   if (!reloaded.toLowerCase().startsWith("reloaded:")) {
     throw new Error(`could not reload ZotLit in ${registered}: ${reloaded}`);
   }
@@ -743,6 +779,13 @@ const scopeCaseOption = {
   default: DEFAULT_SCOPE_CASE,
 } as const;
 
+const vaultCaseOption = {
+  describe: `Vault Case to build; each case other than the default uses its own Development Vault folder (default: $${DEV_VAULT_CASE_ENV})`,
+  type: "string",
+  choices: VAULT_CASES.map(({ id }) => id),
+  default: process.env[DEV_VAULT_CASE_ENV],
+} as const;
+
 const hostReadinessReference = `Host readiness:
   Host-dependent commands require a vault window that answers within
   ${OBSIDIAN_HOST_TIMEOUT_MS / 1_000} seconds. Run 'obsidian-vault.ts check' before changing the Fixture.
@@ -756,6 +799,7 @@ generated seed. Open and sync keep extra Development Vault files unless
 
 Environment:
   ${OBSIDIAN_HOST_VAULT_ENV}  verified open vault name or id whose window hosts eval calls
+  ${DEV_VAULT_CASE_ENV}  Vault Case that --vault-case defaults to; the dev build copies into its vault
 
 ${hostReadinessReference}`;
 
@@ -779,15 +823,20 @@ const vaultCli = yargs(hideBin(process.argv))
         .positional("vault-path", vaultPathPosition)
         .option("purge", syncPurgeOption)
         .option("scope-case", scopeCaseOption)
+        .option("vault-case", vaultCaseOption)
         .option("live-update-port", liveUpdatePortOption)
         .option("zotero-http-port", zoteroHttpPortOption),
     async (argv) => {
-      await open(argv["vault-path"] ?? defaultVault, {
-        purge: argv.purge,
-        scopeCase: argv["scope-case"],
-        liveUpdatePort: argv["live-update-port"],
-        zoteroHttpPort: argv["zotero-http-port"],
-      });
+      await open(
+        argv["vault-path"] ?? getDevVaultDir(workspaceRoot, argv["vault-case"]),
+        {
+          purge: argv.purge,
+          scopeCase: argv["scope-case"],
+          vaultCase: argv["vault-case"],
+          liveUpdatePort: argv["live-update-port"],
+          zoteroHttpPort: argv["zotero-http-port"],
+        },
+      );
     },
   )
   .command(
@@ -805,14 +854,19 @@ const vaultCli = yargs(hideBin(process.argv))
       y
         .positional("vault-path", vaultPathPosition)
         .option("purge", syncPurgeOption)
+        .option("vault-case", vaultCaseOption)
         .option("live-update-port", liveUpdatePortOption)
         .option("zotero-http-port", zoteroHttpPortOption),
     async (argv) => {
-      await sync(argv["vault-path"] ?? defaultVault, {
-        purge: argv.purge,
-        liveUpdatePort: argv["live-update-port"],
-        zoteroHttpPort: argv["zotero-http-port"],
-      });
+      await sync(
+        argv["vault-path"] ?? getDevVaultDir(workspaceRoot, argv["vault-case"]),
+        {
+          purge: argv.purge,
+          vaultCase: argv["vault-case"],
+          liveUpdatePort: argv["live-update-port"],
+          zoteroHttpPort: argv["zotero-http-port"],
+        },
+      );
     },
   )
   .command(

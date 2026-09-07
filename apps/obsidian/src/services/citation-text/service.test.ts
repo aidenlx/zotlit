@@ -4,12 +4,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 
+import {
+  FIELD_LITERATURE_NOTE_PROFILE,
+  FIELD_ZOTERO_NOTE_KEY,
+} from "@/lib/constants";
 import type {
   Citation,
   CitationOccurrence,
   DocumentCitationSet,
 } from "@/services/citation-index/service";
 import type { RenderedCitation } from "@/services/pandoc/engine";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -78,6 +83,7 @@ async function makeHarness({
   bibliography,
   links = [],
   notes = {},
+  frontmatter = {},
   settings = {},
   documentCitationSet,
 }: {
@@ -101,6 +107,8 @@ async function makeHarness({
   links?: LinkCache[];
   /** The Literature Note each linkpath names, by linkpath. */
   notes?: Record<string, { citekey: string | undefined }>;
+  /** The document properties read by its Citation Presentation. */
+  frontmatter?: Record<string, unknown>;
   settings?: Partial<Settings>;
   documentCitationSet?: DocumentCitationSet;
 }): Promise<Harness> {
@@ -131,6 +139,12 @@ async function makeHarness({
     citations: cited,
     errors: [],
   };
+  const metadataCache = {
+    getFileCache: (file: { path: string }) =>
+      file.path === NOTE.path
+        ? { links, frontmatter }
+        : { frontmatter: { "zotero-key": LIT_KEY } },
+  };
 
   const service = new CitationText({
     app: {
@@ -143,12 +157,9 @@ async function makeHarness({
           listeners.set(`metadata:${name}`, cb);
           return { e: { offref: () => undefined } };
         },
-        // The document reports its own links; a Literature Note reports the
-        // frontmatter that makes it one.
-        getFileCache: (file: { path: string }) =>
-          file.path === NOTE.path
-            ? { links }
-            : { frontmatter: { "zotero-key": LIT_KEY } },
+        // The document reports its own links and properties; a Literature Note
+        // reports the frontmatter that makes it one.
+        getFileCache: metadataCache.getFileCache,
         getFirstLinkpathDest: (linkpath: string) =>
           Object.hasOwn(notes, linkpath) ? { path: linkpath } : null,
       },
@@ -218,13 +229,10 @@ async function makeHarness({
       },
       on: listen("render"),
     },
-    settings: {
-      ready: Promise.resolve(),
-      subscribe: (cb: (next: Readonly<Settings>) => void) => {
-        cb({ ...defaults, ...settings });
-        return () => undefined;
-      },
-    },
+    profile: profileReader(
+      { ...defaults, ...settings },
+      metadataCache as never,
+    ),
   } as never);
   await service.ready;
 
@@ -435,14 +443,16 @@ describe("CitationText over wikilink Citations", () => {
 
     const { formatted } = await readText(service);
 
-    expect(citationRequests).toEqual([{ citations: [`[@${LIT_KEY}, p. 4]`] }]);
+    expect(citationRequests).toEqual([
+      { citations: [`[@${LIT_KEY}, {p. 4}]`] },
+    ]);
     expect(
       firstText(
         formatted.get(
-          citationKey({ source: "[@alpha, p. 4]", works: [LIT_KEY] }),
+          citationKey({ source: "[@alpha, {p. 4}]", works: [LIT_KEY] }),
         ),
       ),
-    ).toBe(`«[@${LIT_KEY}, p. 4]»`);
+    ).toBe(`«[@${LIT_KEY}, {p. 4}]»`);
     await dispose();
   });
 
@@ -463,7 +473,7 @@ describe("CitationText over wikilink Citations", () => {
     await readText(service);
 
     expect(citationRequests).toEqual([
-      { citations: [`[@${LIT_KEY}, p. 4; @${LIT_KEY}]`] },
+      { citations: [`[@${LIT_KEY}, {p. 4}; @${LIT_KEY}]`] },
     ]);
     await dispose();
   });
@@ -530,7 +540,7 @@ describe("CitationText over wikilink Citations", () => {
     await readText(service);
 
     expect(citationRequests).toEqual([
-      { citations: [`[@${LIT_KEY}, p. 5]`, `[@${ALPHA_KEY}, p. 6]`] },
+      { citations: [`[@${LIT_KEY}, {p. 5}]`, `[@${ALPHA_KEY}, p. 6]`] },
     ]);
     await dispose();
   });
@@ -706,6 +716,34 @@ describe("CitationText staleness", () => {
     expect(
       firstText(service.peek(NOTE.path)?.value.formatted.get("[@alpha]")),
     ).toBe("fresh");
+    await dispose();
+  });
+
+  it("replaces a held Profile failure when the document names another unavailable Profile", async () => {
+    const frontmatter: Record<string, unknown> = {
+      [FIELD_ZOTERO_NOTE_KEY]: "NOTE1234",
+      [FIELD_LITERATURE_NOTE_PROFILE]: "Missing one",
+    };
+    const { service, metadataChanged, dispose } = await makeHarness({
+      body: "Blah [@alpha].",
+      frontmatter,
+    });
+    expect(
+      (await readText(service)).presentationFailure?.diagnostic.stamp,
+    ).toBe("Missing one");
+    const changed: string[] = [];
+    service.on("changed", (path) => changed.push(path));
+
+    frontmatter[FIELD_LITERATURE_NOTE_PROFILE] = "Missing two";
+    metadataChanged(NOTE.path);
+    expect(
+      service.peek(NOTE.path)?.value.presentationFailure?.diagnostic.stamp,
+    ).toBe("Missing one");
+
+    await vi.waitFor(() => expect(changed).toEqual([NOTE.path, NOTE.path]));
+    expect(
+      service.peek(NOTE.path)?.value.presentationFailure?.diagnostic.stamp,
+    ).toBe("Missing two");
     await dispose();
   });
 

@@ -25,17 +25,21 @@ import type { ProtocolAction } from "@zotlit/protocol";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import {
+  parseProfileSelector,
+  unknownProfileDiagnostic,
+} from "@/lib/profile-stamp";
+import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
 import type { LiveUpdateService } from "@/services/live-update/service";
+import { openCompanionNote } from "@/services/note-feature";
+import type { CompanionNoteDeps } from "@/services/note-feature";
 import {
   runBatchUpdate,
   runBatchUpdateAll,
 } from "@/services/note-feature/update-batch";
 import type { BatchUpdateResult } from "@/services/note-feature/update-batch";
-import {
-  createAndOpen,
-  updateNote,
-} from "@/services/note-feature/update-single";
+import { noteOperationDiagnosticNotice } from "@/services/note-feature/update-single";
 import type { SingleUpdateDeps } from "@/services/note-feature/update-single";
 import type { BatchImport } from "@/services/note-import/batch-import";
 import {
@@ -48,6 +52,8 @@ import { openTemplateDataExplorer } from "@/views/template-data-explorer/registe
 const logger = getLogger("protocol");
 
 export interface ProtocolDeps extends SingleUpdateDeps {
+  createProfile: CompanionNoteDeps["createProfile"];
+  importProfile: CompanionNoteDeps["importProfile"];
   batchImport: Pick<BatchImport, "runBatchImport" | "runBatchImportAll">;
   zoteroPref: ZoteroPrefService;
   liveUpdate: LiveUpdateService;
@@ -100,8 +106,13 @@ export function registerProtocolHandlers(
   // runs the same interactive flow as the `update-many` protocol link.
   stack.defer(
     deps.liveUpdate.on("update-many", (event) => {
+      const requested = resolveRequestedProfile(event.profileId);
+      if (!requested.ok) return;
       void toast.promise(
-        runBatchUpdate(deps, event.items, { scope: event.scope }),
+        runBatchUpdate(deps, event.items, {
+          scope: event.scope,
+          profile: requested.selector,
+        }),
         { success: batchUpdateNotice },
       );
     }),
@@ -112,7 +123,7 @@ export function registerProtocolHandlers(
     deps.liveUpdate.on("import-notes", (event) => {
       void toast.promise(
         deps.batchImport.runBatchImport(event.mode, event.items),
-        batchImportToast(),
+        batchImportToast({ app: deps.app }),
       );
     }),
   );
@@ -134,16 +145,35 @@ async function handleProtocol(
   const ref = resolveProtocolItem(query, deps, action);
   if (!ref) return;
 
-  await deps.noteIndex.whenIndexed();
+  const requested = resolveRequestedProfile(query.profileId);
+  if (!requested.ok) return;
 
-  switch (action) {
-    case "open":
-      await openNote(deps, ref);
-      break;
-    case "update":
-      await updateNote(deps, ref, query.scope);
-      break;
+  await openCompanionNote(deps, ref, {
+    action,
+    scope: query.scope,
+    profile: requested.selector,
+  });
+}
+
+/**
+ * A `profileId` param resolved into a selector. `ok: false` means the text
+ * named neither `default` nor a Profile ID — the caller already surfaced the
+ * unknown-Profile notice and must stop rather than fall back to the default.
+ */
+type RequestedProfile =
+  | { readonly ok: true; readonly selector: ProfileSelector | undefined }
+  | { readonly ok: false };
+
+function resolveRequestedProfile(text: string | undefined): RequestedProfile {
+  if (text === undefined) return { ok: true, selector: undefined };
+  const selector = parseProfileSelector(text);
+  if (selector === undefined) {
+    new BaseNotice(
+      noteOperationDiagnosticNotice(unknownProfileDiagnostic(text)),
+    );
+    return { ok: false };
   }
+  return { ok: true, selector };
 }
 
 /**
@@ -163,26 +193,18 @@ async function handleBatchProtocol(
   });
   if (!query) return;
 
+  const requested = resolveRequestedProfile(query.profileId);
+  if (!requested.ok) return;
+
   await toast.promise(
-    runBatchUpdate(deps, query.items, { scope: query.scope }),
+    runBatchUpdate(deps, query.items, {
+      scope: query.scope,
+      profile: requested.selector,
+    }),
     {
       success: batchUpdateNotice,
     },
   );
-}
-
-/** Open existing literature note, or create one if none exists. */
-async function openNote(deps: ProtocolDeps, ref: ItemRef): Promise<void> {
-  const existing = deps.noteIndex.getNotesByItemKey(ref.indexedKey)[0];
-
-  if (existing) {
-    await deps.app.workspace.openLinkText(existing.path, "", false, {
-      active: true,
-    });
-    return;
-  }
-
-  await createAndOpen(deps, ref);
 }
 
 function batchUpdateNotice(result: BatchUpdateResult): string | undefined {
@@ -211,7 +233,7 @@ async function handleImportProtocol(
 
   await toast.promise(
     deps.batchImport.runBatchImport(query.mode, [query.item]),
-    batchImportToast(),
+    batchImportToast({ app: deps.app }),
   );
 }
 
@@ -229,7 +251,7 @@ async function handleImportManyProtocol(
 
   await toast.promise(
     deps.batchImport.runBatchImport(query.mode, query.items),
-    batchImportToast(),
+    batchImportToast({ app: deps.app }),
   );
 }
 
@@ -288,7 +310,7 @@ async function handleImportAllNotesProtocol(
       groupID: query.groupID,
       collectionKey: query.collectionKey,
     }),
-    batchImportAllToast(),
+    batchImportAllToast({ app: deps.app }),
   );
 }
 

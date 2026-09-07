@@ -1,7 +1,6 @@
 // Resolves an Indexed Key and builds side-effect-free Template data.
 
 import type { App } from "obsidian";
-import TurndownService from "turndown";
 
 import {
   buildFilenameContext,
@@ -31,10 +30,10 @@ import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 import { InertTemplateError } from "@/services/template/errors";
 import {
-  buildInertNoteResolvers,
+  buildObsidianInertNoteResolvers,
   findExistingLitNote,
-  resolveExcerptImageContext,
-} from "@/services/template/inert-resolvers";
+  resolveObsidianExcerptImageContext,
+} from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
@@ -163,17 +162,16 @@ async function createInertResolvers(
         indexedKey: item.indexedKey,
       })
     : null;
-  const excerptImages = await resolveExcerptImageContext({
+  const excerptImages = await resolveObsidianExcerptImageContext({
     app: deps.app,
     settings,
     litNotePath: litNote?.path ?? null,
   });
-  return buildInertNoteResolvers({
+  return buildObsidianInertNoteResolvers({
     noteIndex: deps.noteIndex,
     fileManager: deps.app.fileManager,
     vault: deps.app.vault,
     zoteroPref: deps.zoteroPref,
-    Turndown: TurndownService,
     sourcePath: litNote?.path ?? "",
     excerptImages,
   });

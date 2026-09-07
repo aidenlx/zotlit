@@ -14,7 +14,20 @@ Follow these steps in order before editing any template or frontmatter configura
 3. `obsidian zotlit:template-guide`
 4. `obsidian zotlit:template-guide topic=liquid`
 
-This skill is written against Template Workbench CLI Contract version 2 — the `contractVersion` every workbench answer carries. When an answer reports another number, run `zotlit:template-guide` again and follow the live guide over this skill.
+This skill is written against Template Workbench CLI Contract version 5 — the `contractVersion` every workbench answer carries. When an answer reports another number, run `zotlit:template-guide` again and follow the live guide over this skill.
+
+## Literature Note document loop
+
+For a Literature Note layout or Profile request, read the live Guide's Profiles topic, then use this loop:
+
+1. Inspect the effective Profile, its document reference, and that document's validation state. Resolve every missing or invalid state by following `diagnostic.hint` before editing.
+2. Read the installed document when one exists. When testing a new document, keep the draft in memory first.
+3. Render the draft against a real item through the source-override path. Review both create output and update output; `null` update is an intentional static body only when the user asked for one.
+4. Compare the rendered bytes with the user's requested layout. Revise and render again until both outputs match the request.
+5. Write the verified source to the document the Profile references, or to the new document the user chose. Keep Profile identity and bindings unchanged unless the request includes them.
+6. Inspect and render the installed document again. Completion requires a valid document, the intended Profile reference, matching create and update output, and no unresolved diagnostic.
+
+Workbench inspection and rendering are the preview loop. Edit the vault document through the user's file-editing seam after the preview passes. Follow every failed Workbench response through its `diagnostic.hint` before the next attempt.
 
 ## Inspect only what the edit needs
 

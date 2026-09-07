@@ -1,4 +1,4 @@
-import type { SettingDefinitionItem } from "obsidian";
+import type { SettingDefinition, SettingGroupItem } from "obsidian";
 
 import { DOCS_COMPANION, DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
@@ -6,12 +6,15 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { defaultPlaceholder } from "./placeholder";
 
-/** Items for the "Live updates" sub-page. */
-export function liveUpdatesPageItems(
+function serverEnabled(ctx: SettingTabContext): () => boolean {
+  return () => ctx.settings.current?.["server.enabled"] ?? false;
+}
+
+/** The Zotero page's Live updates rows: the receive toggle and its port. */
+export function liveUpdatesItems(
   ctx: SettingTabContext,
-): SettingDefinitionItem<SettingsKey>[] {
-  const enabled = (): boolean =>
-    ctx.settings.current?.["server.enabled"] ?? false;
+): SettingGroupItem<SettingsKey>[] {
+  const enabled = serverEnabled(ctx);
   return [
     {
       name: m.settings_live_updates_enabled_name(),
@@ -32,23 +35,23 @@ export function liveUpdatesPageItems(
         max: 65535,
       },
     },
-    {
-      type: "group",
-      heading: m.settings_live_updates_advanced(),
-      visible: enabled,
-      items: [
-        {
-          name: m.settings_live_updates_hostname_name(),
-          desc: m.settings_live_updates_hostname_desc(),
-          control: {
-            type: "text",
-            key: "server.hostname",
-            placeholder: defaultPlaceholder("server.hostname"),
-          },
-        },
-      ],
-    },
   ];
+}
+
+/** The hostname row, shown under the Zotero page's Advanced group while receiving. */
+export function liveUpdatesHostnameItem(
+  ctx: SettingTabContext,
+): SettingDefinition<SettingsKey> {
+  return {
+    name: m.settings_live_updates_hostname_name(),
+    desc: m.settings_live_updates_hostname_desc(),
+    visible: serverEnabled(ctx),
+    control: {
+      type: "text",
+      key: "server.hostname",
+      placeholder: defaultPlaceholder("server.hostname"),
+    },
+  };
 }
 
 function enabledDescription(): DocumentFragment {

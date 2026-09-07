@@ -21,8 +21,8 @@
  *
  * ## Disk format
  *
- * - `data.json` is sparse: `{ __VERSION__: 9, ...overrides }`. Never persist
- *   `{ __VERSION__: 9, ...current }` — defaults-filled output defeats the
+ * - `data.json` is sparse: `{ __VERSION__: 10, ...overrides }`. Never persist
+ *   `{ __VERSION__: 10, ...current }` — defaults-filled output defeats the
  *   format and bloats user files.
  * - Default-equal override values are still explicit overrides and must
  *   persist; do not auto-delete a key because its value equals the default.
@@ -32,7 +32,7 @@
  * - V1 data migrates to v2 (`migrateV1`): every `note.frontmatter-fields` item
  *   gains a required `language`, stamped `"javascript"` except for the three
  *   byte-exact v1 default exprs, which become their Liquid equivalents.
- * - Legacy through v8→v9 migration writes are best-effort
+ * - Legacy through v9→v10 migration writes are best-effort
  *   cleanup; failures are logged but never tracked in `pendingWrite` and never
  *   block load.
  *
@@ -51,7 +51,7 @@
  *
  * ## Broken overrides
  *
- * A v9 override on a known key whose value fails per-key validation is a
+ * A v10 override on a known key whose value fails per-key validation is a
  * *broken override*. Its effective value is that key's default in every
  * snapshot (`current`, `loaded`, subscribers), while the raw value stays in
  * `#broken` and is written back on every save, so an unrelated mutation cannot
@@ -77,6 +77,7 @@ import { debounce } from "obsidian";
 import type { Plugin } from "obsidian";
 import * as v from "valibot";
 
+import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import { Service } from "@/services/service-base";
 
 import {
@@ -90,7 +91,7 @@ import { defaults, schema } from "./schema";
 import type { Settings } from "./schema";
 
 const SAVE_DEBOUNCE_MS = 200;
-const CURRENT_VERSION = 9;
+const CURRENT_VERSION = 10;
 
 type SettingsKey = keyof typeof schema.entries;
 
@@ -163,6 +164,10 @@ export interface SettingsServiceOptions {
    * Throwing or returning a non-plain value triggers the defaults fallback.
    */
   migrateV8: (raw: unknown) => unknown;
+  /**
+   * Throwing or returning a non-plain value triggers the defaults fallback.
+   */
+  migrateV9: (raw: unknown) => unknown;
 }
 
 export class SettingsService extends Service<void> {
@@ -176,6 +181,7 @@ export class SettingsService extends Service<void> {
   readonly #migrateV6;
   readonly #migrateV7;
   readonly #migrateV8;
+  readonly #migrateV9;
   readonly #scheduleSave;
   readonly #subscribers = new Set<(value: Readonly<Settings> | null) => void>();
 
@@ -199,6 +205,7 @@ export class SettingsService extends Service<void> {
     this.#migrateV6 = options.migrateV6;
     this.#migrateV7 = options.migrateV7;
     this.#migrateV8 = options.migrateV8;
+    this.#migrateV9 = options.migrateV9;
     this.#scheduleSave = debounce(
       () => this.#performSave(),
       SAVE_DEBOUNCE_MS,
@@ -264,6 +271,22 @@ export class SettingsService extends Service<void> {
     return () => {
       this.#subscribers.delete(fn);
     };
+  }
+
+  /** Update the default Profile bindings. */
+  updateDefaultLiteratureNoteProfileBindings(
+    patch: Partial<ResolvedLiteratureNoteProfileBindings>,
+  ): void {
+    this.#requireLoaded("updateDefaultLiteratureNoteProfileBindings");
+    this.update((current) => ({
+      "note.default-profile": {
+        ...current["note.default-profile"],
+        bindings: {
+          ...current["note.default-profile"].bindings,
+          ...patch,
+        },
+      },
+    }));
   }
 
   /**
@@ -416,8 +439,12 @@ export class SettingsService extends Service<void> {
         this.#overrides = {};
         return;
       }
+      case "v10": {
+        this.#loadV10(classification.raw);
+        return;
+      }
       case "v9": {
-        this.#loadV9(classification.raw);
+        await this.#loadV9Migration(classification.raw);
         return;
       }
       case "v8": {
@@ -474,24 +501,41 @@ export class SettingsService extends Service<void> {
   }
 
   /**
-   * Permissive v9 load: drop non-schema keys, hold bad per-key values as
+   * Permissive v10 load: drop non-schema keys, hold bad per-key values as
    * broken overrides, then full-schema check for cross-field constraints.
    * Whole-object failure → defaults fallback with no rewrite.
    */
-  #loadV9(raw: Record<string, unknown>): void {
-    const validated = this.#validateOverrides(raw, "v9 data");
+  #loadV10(raw: Record<string, unknown>): void {
+    const validated = this.#validateOverrides(raw, "v10 data");
     this.#overrides = validated?.cleaned ?? {};
     this.#broken = validated?.broken ?? new Map();
     if (this.#broken.size > 0) {
       // `console` rather than LogTape: load runs before `LoggingService`
       // configures the sinks, so a logger call here reaches nobody.
       console.warn(
-        `invalid values in v9 data (${[...this.#broken.keys()].join(", ")}); using their defaults until each key is updated or reset`,
+        `invalid values in v10 data (${[...this.#broken.keys()].join(", ")}); using their defaults until each key is updated or reset`,
       );
     }
   }
 
-  /** Run the v8→v9 compatibility migration and persist the cleaned result. */
+  /** Run the v9→v10 compatibility migration and persist the cleaned result. */
+  async #loadV9Migration(raw: Record<string, unknown>): Promise<void> {
+    const migrated = runMigrationHook(this.#migrateV9, raw, "v9 migration");
+    if (migrated === null) {
+      this.#overrides = {};
+      await this.#writeBestEffort({ [VERSION_KEY]: CURRENT_VERSION });
+      return;
+    }
+
+    const validated = this.#validateOverrides(migrated, "v9 migration result");
+    this.#overrides = validated?.cleaned ?? {};
+    await this.#writeBestEffort({
+      [VERSION_KEY]: CURRENT_VERSION,
+      ...validated?.cleaned,
+    });
+  }
+
+  /** Run the v8→v9 compatibility migration and delegate to v9→v10. */
   async #loadV8Migration(raw: Record<string, unknown>): Promise<void> {
     const migrated = runMigrationHook(this.#migrateV8, raw, "v8 migration");
     if (migrated === null) {
@@ -500,12 +544,7 @@ export class SettingsService extends Service<void> {
       return;
     }
 
-    const validated = this.#validateOverrides(migrated, "v8 migration result");
-    this.#overrides = validated?.cleaned ?? {};
-    await this.#writeBestEffort({
-      [VERSION_KEY]: CURRENT_VERSION,
-      ...validated?.cleaned,
-    });
+    await this.#loadV9Migration(migrated);
   }
 
   /** Run the v7→v8 compatibility migration and delegate to v8→v9. */
@@ -569,7 +608,7 @@ export class SettingsService extends Service<void> {
   }
 
   /**
-   * v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 migration. Runs the v2 hook, then delegates to the v3
+   * v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 → v10 migration. Runs the v2 hook, then delegates to the v3
    * migration. A thrown error or non-plain result falls back to defaults.
    * Persistence is best-effort cleanup: write errors never block load.
    */
@@ -585,7 +624,7 @@ export class SettingsService extends Service<void> {
   }
 
   /**
-   * v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 migration. Runs the v1 hook, then delegates to the
+   * v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 → v10 migration. Runs the v1 hook, then delegates to the
    * v2 migration. A thrown error or non-plain result falls back to defaults.
    * Persistence is best-effort cleanup: write errors never block load.
    */
@@ -601,12 +640,12 @@ export class SettingsService extends Service<void> {
   }
 
   /**
-   * v0 → v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 migration chain. Runs the legacy hook first
+   * v0 → v1 → v2 → v3 → v4 → v5 → v6 → v7 → v8 → v9 → v10 migration chain. Runs the legacy hook first
    * (v0 had no frontmatter fields, so the v1→v2 stamp is a no-op there), then
    * delegates to {@link #loadV1Migration} so the rest of the chain — running
    * `migrateV1` and the permissive cleanup that follows — lives in one place.
    * The legacy hook's own failure branch (defaults + best-effort
-   * `{ [VERSION_KEY]: 9 }` write) stays here; persistence beyond that point is
+   * `{ [VERSION_KEY]: 10 }` write) stays here; persistence beyond that point is
    * `#loadV1Migration`'s.
    */
   async #loadLegacy(raw: Record<string, unknown>): Promise<void> {

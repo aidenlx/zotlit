@@ -12,6 +12,7 @@ export {
   type RemotePackInfo,
 } from "./lifecycle.js";
 export {
+  LANGUAGE_PACK_LIMITS,
   LanguagePackSchemaVersionError,
   validateLanguagePack,
 } from "./validation.js";

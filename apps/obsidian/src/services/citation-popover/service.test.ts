@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Held } from "@/lib/held-reads";
 import type { DocumentCitations } from "@/services/citation-text/service";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
 
 import type { CitationPopoverContentProps } from "./content";
 import { createCitationPopover } from "./service";
@@ -78,6 +79,7 @@ function harness(initial: Held<DocumentCitations> | null) {
     },
     libraryScope: { current: [] },
     citationText,
+    profile: profileReader(),
     bibliographyRender: {
       vaultPresentation: { styleId: null, locale: null },
       on: () => () => undefined,

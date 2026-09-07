@@ -3,7 +3,7 @@ import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-import type { DisplayNode } from "./display-tree";
+import type { DisplayNode } from "@zotlit/workbench/explorer";
 
 export interface ExplorerState {
   dbReady: boolean;

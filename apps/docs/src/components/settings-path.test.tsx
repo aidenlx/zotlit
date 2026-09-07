@@ -21,41 +21,41 @@ describe("SettingsPath", () => {
 
   it("renders the page-only route as bold text", () => {
     const markup = renderToStaticMarkup(
-      <SettingsPath page={m.settings_page_templates()} />,
+      <SettingsPath page={m.settings_page_citations()} />,
     );
 
-    expect(markup).toBe("<strong>Settings &gt; ZotLit &gt; Templates</strong>");
+    expect(markup).toBe("<strong>Settings &gt; ZotLit &gt; Citations</strong>");
   });
 
   it("renders the page-and-setting route as bold text", () => {
     const markup = renderToStaticMarkup(
       <SettingsPath
-        page={m.settings_page_templates()}
-        setting={m.settings_page_templates()}
+        page={m.settings_page_citations()}
+        setting={m.settings_page_citations()}
       />,
     );
 
     expect(markup).toBe(
-      "<strong>Settings &gt; ZotLit &gt; Templates &gt; Templates</strong>",
+      "<strong>Settings &gt; ZotLit &gt; Citations &gt; Citations</strong>",
     );
   });
 
   it("renders the page-only route as bold Markdown", async () => {
     const markdown = await renderToMarkdown(
-      <SettingsPath page={m.settings_page_templates()} />,
+      <SettingsPath page={m.settings_page_citations()} />,
     );
 
-    expect(markdown).toBe("**Settings > ZotLit > Templates**");
+    expect(markdown).toBe("**Settings > ZotLit > Citations**");
   });
 
   it("renders the page-and-setting route as bold Markdown", async () => {
     const markdown = await renderToMarkdown(
       <SettingsPath
-        page={m.settings_page_templates()}
-        setting={m.settings_page_templates()}
+        page={m.settings_page_citations()}
+        setting={m.settings_page_citations()}
       />,
     );
 
-    expect(markdown).toBe("**Settings > ZotLit > Templates > Templates**");
+    expect(markdown).toBe("**Settings > ZotLit > Citations > Citations**");
   });
 });

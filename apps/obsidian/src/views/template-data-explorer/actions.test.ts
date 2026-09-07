@@ -1,9 +1,10 @@
 import { Menu } from "@mock/obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { formatPath } from "@zotlit/workbench/explorer";
+import type { DisplayNode } from "@zotlit/workbench/explorer";
+
 import { createExplorerActions } from "./actions";
-import { formatPath } from "./display-tree";
-import type { DisplayNode } from "./display-tree";
 
 const node: DisplayNode = {
   kind: "value",

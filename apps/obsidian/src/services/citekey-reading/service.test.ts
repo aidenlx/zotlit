@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getItemsByKey, resolveIndexedKeyLibrary } from "@zotlit/db";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { themeHook } from "@/lib/theme-hooks";
 import type { Citation } from "@/services/citation-index/service";
 import {
@@ -22,6 +23,7 @@ import {
 import { CitationText } from "@/services/citation-text/service";
 import type { CitationHoverRequest } from "@/services/citekey-navigation";
 import type { RenderedCitation } from "@/services/pandoc/engine";
+import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -101,6 +103,7 @@ interface Harness extends AsyncDisposable {
   rebuildResolution: (ambiguous: readonly string[]) => void;
   /** Tears every rendered section down, the way Obsidian does on a re-render. */
   unloadSections: () => void;
+  switchRequests: string[];
 }
 
 async function makeHarness({
@@ -110,6 +113,7 @@ async function makeHarness({
   formatCitations,
   renderText = (source) => `«${source}»`,
   overrides = {},
+  frontmatter = {},
   ambiguousKeys = [],
   resolutionPending = false,
 }: {
@@ -128,12 +132,14 @@ async function makeHarness({
   /** The text the render answers for each source, by its place in the request. */
   renderText?: (source: string, index: number) => string;
   overrides?: Partial<Settings>;
+  frontmatter?: Record<string, unknown>;
 }): Promise<Harness> {
   await using stack = new AsyncDisposableStack();
   const citationRequests: { citations: readonly string[] }[] = [];
   const views: MarkdownView[] = [];
   const popoverRequests: CitationHoverRequest[] = [];
   const opened: [citekey: string, pane: unknown][] = [];
+  const switchRequests: string[] = [];
   const occurrences = literalOccurrences(body);
   let process: MarkdownPostProcessor | undefined;
   let rerenders = 0;
@@ -145,6 +151,9 @@ async function makeHarness({
 
   const citationText = stack.use(
     new CitationText({
+      profile: profileReader(defaults, {
+        getFileCache: () => ({ frontmatter }),
+      }),
       app: {
         vault: {
           cachedRead: () => Promise.resolve(body),
@@ -155,7 +164,7 @@ async function makeHarness({
             metadataListeners.set(event, cb);
             return { e: { offref: () => undefined } };
           },
-          getFileCache: () => ({}),
+          getFileCache: () => ({ frontmatter }),
         },
       },
       db: { state: "ready", client: {} },
@@ -199,13 +208,6 @@ async function makeHarness({
         },
         on: () => () => undefined,
       },
-      settings: {
-        ready: Promise.resolve(),
-        subscribe: (cb: (next: Readonly<Settings>) => void) => {
-          cb(defaults);
-          return () => undefined;
-        },
-      },
     } as never),
   );
   await citationText.ready;
@@ -220,6 +222,8 @@ async function makeHarness({
         vault: { getFileByPath: (path: string) => ({ path }) as TFile },
         workspace: {
           getLeavesOfType: () => views.map((view) => ({ view })),
+          trigger: (_name: string, request: { path: string }) =>
+            switchRequests.push(request.path),
         },
       },
       plugin: {
@@ -291,6 +295,7 @@ async function makeHarness({
     unloadSections: () => {
       for (const child of children.splice(0)) child.unload();
     },
+    switchRequests,
     [Symbol.asyncDispose]: () => resources.disposeAsync(),
   };
 }
@@ -348,6 +353,38 @@ describe("CitekeyReading", () => {
 
     expect(el.textContent).toBe(`Blah «[see @${ALPHA_KEY}, p. 3]» blah.`);
     expect(el.querySelector("span.zt-citation")).not.toBeNull();
+  });
+
+  it("names an unavailable Imported Note Profile on its raw citation", async () => {
+    await using harnessed = await makeHarness({
+      body: "Cited @alpha.",
+      frontmatter: {
+        "zotero-note-key": "1/NOTE1234",
+        "zotlit-profile": "deleted-profile",
+      },
+    });
+    const el = section("<p>Cited @alpha.</p>");
+
+    await harnessed.process(el, harnessed.ctx);
+
+    const citation = el.querySelector<HTMLElement>(
+      '[data-citation-presentation-error="profile"]',
+    );
+    expect(citation?.textContent).toBe("@alpha");
+    expect(citation?.getAttribute("aria-label")).toContain("deleted-profile");
+    expect(citation?.getAttribute("aria-label")).toBe(
+      m.notice_imported_note_profile_unknown({
+        stamp: "deleted-profile",
+        target: "note.md",
+      }),
+    );
+    const recovery = el.querySelector<HTMLButtonElement>(
+      "[data-profile-recovery]",
+    );
+    expect(recovery?.textContent).toBe(m.profile_switch_recovery());
+    recovery?.click();
+    expect(harnessed.switchRequests).toEqual(["note.md"]);
+    expect(citation?.title).toBe("");
   });
 
   // Stands in for a position-dependent style, whose second occurrence of one

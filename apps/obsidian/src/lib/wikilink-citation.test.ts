@@ -50,7 +50,7 @@ describe("wikilinkCitation", () => {
 
   it("shows a Citation Fragment as its Pandoc citation text", () => {
     expect(citationSource(`${WANG_LINK}#cite:locator=7`, context())).toBe(
-      "[@wang2020, p. 7]",
+      "[@wang2020, {p. 7}]",
     );
   });
 
@@ -67,6 +67,21 @@ describe("wikilinkCitation", () => {
         }),
       ),
     ).toBe("[@xuNoCitekey2019]");
+  });
+
+  it("leaves an unrepresentable filename fallback native", () => {
+    expect(
+      citationSource(
+        "literatures/xu2019",
+        context({
+          literatureNote: () => ({
+            path: "literatures/Xu 2019.md",
+            indexedKey: "1/XU2019",
+            citationKey: null,
+          }),
+        }),
+      ),
+    ).toBeNull();
   });
 
   it("leaves a fragment-carrying link native while Wikilink Citations is off", () => {
@@ -170,7 +185,16 @@ describe("citationOfRun", () => {
       member(WANG_LINK),
     ]);
 
-    expect(citation.source).toBe("[@wang2020, p. 7; @wang2020]");
+    expect(citation.source).toBe("[@wang2020, {p. 7}; @wang2020]");
+  });
+
+  it("keeps Author-in-text mode and later items in one Citation", () => {
+    const citation = citationOfRun([
+      member(`${WANG_LINK}#cite:mode=author-in-text&locator=7`),
+      member(WANG_LINK),
+    ]);
+
+    expect(citation.source).toBe("@wang2020 [{p. 7}; @wang2020]");
   });
 });
 

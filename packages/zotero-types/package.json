@@ -11,6 +11,7 @@
   "exports": {
     ".": "./dist/index.mjs",
     "./csl": "./dist/csl.mjs",
+    "./item-types": "./dist/item-types.mjs",
     "./package.json": "./package.json",
     "./schema.json": "./zotero-schema/schema.json",
     "./fixtures/item-to-csl.json": "./fixtures/item-to-csl.json"
@@ -19,6 +20,7 @@
     "build": "tsdown",
     "dev": "tsdown --watch",
     "generate:fields": "node scripts/generate-fields.ts && oxlint --fix src/fields.ts && oxfmt src/fields.ts",
+    "generate:item-types": "node scripts/generate-item-types.ts && oxlint --fix src/item-types.ts && oxfmt src/item-types.ts",
     "generate:csl": "node scripts/generate-csl.ts && oxlint --fix src/csl.ts && oxfmt src/csl.ts",
     "generate:fixture": "node scripts/generate-fixture.ts && oxfmt fixtures/item-to-csl.json",
     "typecheck": "tsc --noEmit -p tsconfig.lib.json && tsc --noEmit -p tsconfig.node.json",

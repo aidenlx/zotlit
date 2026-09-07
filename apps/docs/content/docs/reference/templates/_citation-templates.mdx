@@ -7,6 +7,17 @@ Both citation templates (`zotlit-cite.liquid.md` and `zotlit-cite2.liquid.md`) r
 | `zt.citations` | `array` | Citation items: each pairs the cited item with citation-scoped properties |
 | `zt.items`     | `array` | The same cited items bare. `zt.items[i]` is `zt.citations[i].item`        |
 
+Pass `zt.citations` to the Pandoc Citation formatter:
+
+| Language | Form                    | Expression                                                   |
+| -------- | ----------------------- | ------------------------------------------------------------ |
+| Liquid   | `normal`                | `{{ zt.citations \| pandoc_cite }}`                          |
+| Eta      | `normal`                | `<%= pandocCite(zt.citations) %>`                            |
+| Liquid   | `prefer-author-in-text` | `{{ zt.citations \| pandoc_cite: "prefer-author-in-text" }}` |
+| Eta      | `prefer-author-in-text` | `<%= pandocCite(zt.citations, "prefer-author-in-text") %>`   |
+
+The formatter uses `prefix`, `suffix`, `suppressAuthor`, `locator`, and `labelShort`. It omits entries whose `item.citationKey` is null.
+
 ### Citation item [#citation-item]
 
 Each entry in `zt.citations`:

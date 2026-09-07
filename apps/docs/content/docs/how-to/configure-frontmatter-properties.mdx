@@ -15,19 +15,29 @@ import { m } from "@/paraglide/messages.js";
 
 You can map Zotero data into YAML frontmatter properties that appear at the top of every literature note. ZotLit ships four default fields: `title`, `related`, `collections`, and `citekey`.
 
+<Callout type="info" title="The template document is the editor">
+  ZotLit 2.1 removed the field list from the settings tab. A Profile's
+  properties are defined in its template document, and the{" "}
+  <UiLabel name={m.settings_profile_properties_name()} />
+  row in settings points at it. The parts of a field described below are
+  unchanged.
+</Callout>
+
 ## Add a frontmatter field
 
 <Steps>
   <Step>
-    ### Open the Frontmatter sub-page
+    ### Open the template document
 
-    In Obsidian, open <SettingsPath page={m.settings_page_templates()} setting={m.settings_page_frontmatter()} />. This sub-page lists all configured user fields.
+    In Obsidian, open <SettingsPath />. On the <UiLabel name={m.settings_profile_properties_name()} /> row, select <UiLabel name={m.settings_template_eject()} />. ZotLit writes the Profile's template document into your template folder, with the fields it already writes, and opens it.
+
+    On a Profile that already has a template document, the same row offers <UiLabel name={m.settings_template_open()} /> instead.
 
   </Step>
   <Step>
     ### Add a new field
 
-    Click the add button. A modal opens with four inputs:
+    Each field has four parts:
 
     - <UiLabel name={m.settings_frontmatter_key_name()} />: the YAML property name written to frontmatter.
     - <UiLabel name={m.settings_frontmatter_language_name()} />: <UiLabel name={m.settings_frontmatter_language_liquid()} /> or <UiLabel name={m.settings_frontmatter_language_javascript()} />. The JavaScript option appears only when the [JavaScript Templates gate](/docs/how-to/enable-javascript-templates) is enabled on that device.
@@ -50,7 +60,7 @@ You can map Zotero data into YAML frontmatter properties that appear at the top 
   <Step>
     ### Save
 
-    Click <UiLabel name={m.settings_frontmatter_save()} />. If validation passes, the field is added to the list.
+    Save the template document. If validation passes, the field is written to every literature note the Profile creates or updates.
 
   </Step>
 </Steps>
@@ -64,7 +74,7 @@ Zotero tag objects from `zt.tags` and returns an array of Obsidian tag values.
   <Step>
     ### Add the `tags` field
 
-    In <SettingsPath page={m.settings_page_templates()} setting={m.settings_page_frontmatter()} />, add a field with these values:
+    In the template document, add a field with these values:
 
     | Input | Value |
     | ----- | ----- |
@@ -107,23 +117,23 @@ lets the agent configure the field and test the rendered result.
 
 ## Edit or remove a field
 
-Click a field's row to reopen the edit modal and change its settings. To remove a field, use the delete control on its row in the Frontmatter list.
+Edit a field in the template document to change its settings. To remove a field, delete it from the document.
 
 ## Reorder fields
 
-The order of fields in the Frontmatter list determines the order of frontmatter keys when ZotLit creates a new literature note. On a new note, the system identity field `zotero-key` follows the user-configured fields.
+The order of the fields in the template document determines the order of frontmatter keys when ZotLit creates a new literature note. On a new note, the system identity field `zotero-key` follows the user-configured fields.
 
-To change the order, drag a field by the handle on its row in <SettingsPath page={m.settings_page_templates()} setting={m.settings_page_frontmatter()} />.
+To change the order, move the field in the template document.
 
 ### Existing notes
 
-Reordering the list does not change property order in notes that already exist. When ZotLit updates an existing note, a key already present in that note's YAML keeps its current position.
+Reordering the fields does not change property order in notes that already exist. When ZotLit updates an existing note, a key already present in that note's YAML keeps its current position.
 
 To reorder properties within a single note, use Obsidian's properties panel: drag the property type icon to the left of a property name to move that row. Obsidian writes the new key order back into the note's YAML. The note must have two or more properties for this to work.
 
 ## Validation rules
 
-The modal rejects invalid configurations:
+ZotLit rejects invalid configurations:
 
 - Empty key: "Enter a key."
 - Reserved key: "'`{key}`' is managed by ZotLit and can't be used." Reserved keys are `zotero-key`, `zotero-note-key`, and `zotero-lastmod`.

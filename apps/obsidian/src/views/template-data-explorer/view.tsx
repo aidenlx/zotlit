@@ -15,6 +15,17 @@ import {
   USER_LIBRARY_ID,
 } from "@zotlit/db";
 import type { Item, Library, NoteTemplateContext } from "@zotlit/db";
+import {
+  annotationKeyAtPath,
+  buildDisplayTree,
+  buildFilteredDisplayTree,
+  findAnnotationRoot,
+  initialTreeState,
+  setAnchor,
+  setFilter,
+  toggleNode,
+} from "@zotlit/workbench/explorer";
+import type { TreeState } from "@zotlit/workbench/explorer";
 
 import { exportTimestamp, saveFile } from "@/lib/file-save";
 import * as m from "@/lib/i18n/generated/messages";
@@ -30,32 +41,19 @@ import type { SettingsService } from "@/services/settings/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import {
-  buildInertNoteResolvers,
+  buildObsidianInertNoteResolvers,
   findExistingLitNote,
-  resolveExcerptImageContext,
-} from "@/services/template/inert-resolvers";
+  resolveObsidianExcerptImageContext,
+} from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
 
 import { createExplorerActions, ExplorerActionsContext } from "./actions";
 import type { ExplorerActions } from "./actions";
-import {
-  annotationKeyAtPath,
-  buildDisplayTree,
-  buildFilteredDisplayTree,
-  findAnnotationRoot,
-} from "./display-tree";
 import { Explorer } from "./Explorer";
 import { buildTemplateDataExport } from "./export";
 import { pickItem } from "./item-picker";
 import { createExplorerStore, ExplorerStoreProvider } from "./store";
 import type { ExplorerState } from "./store";
-import {
-  initialTreeState,
-  setAnchor,
-  setFilter,
-  toggleNode,
-} from "./tree-state";
-import type { TreeState } from "./tree-state";
 
 export const EXPLORER_VIEW_TYPE = "zotlit-template-data-explorer";
 
@@ -353,7 +351,7 @@ export class TemplateDataExplorerView extends ItemView {
     const litNote = findExistingLitNote(this.#deps.noteIndex, {
       indexedKey: item.indexedKey,
     });
-    const excerptImages = await resolveExcerptImageContext({
+    const excerptImages = await resolveObsidianExcerptImageContext({
       app: this.#deps.app,
       settings,
       litNotePath: litNote?.path ?? null,
@@ -362,12 +360,11 @@ export class TemplateDataExplorerView extends ItemView {
     // Stale guard: another #buildTree may have run (and won) while we awaited.
     if (this.#item !== item) return;
 
-    const resolvers = buildInertNoteResolvers({
+    const resolvers = buildObsidianInertNoteResolvers({
       noteIndex: this.#deps.noteIndex,
       fileManager: this.#deps.app.fileManager,
       vault: this.#deps.app.vault,
       zoteroPref: this.#deps.zoteroPref,
-      Turndown: TurndownService,
       sourcePath: litNote?.path ?? "",
       excerptImages,
     });

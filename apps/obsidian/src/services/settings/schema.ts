@@ -39,6 +39,37 @@ const frontmatterFieldsSchema = v.pipe(
   v.readonly(),
 );
 
+const defaultLiteratureNoteProfileSchema = v.pipe(
+  v.object({
+    bindings: v.pipe(
+      v.object({
+        "note.literature-folder": v.string(),
+        "citation.references-style": v.nullable(v.string()),
+        "note.import-folder": v.string(),
+        "note.import-colored-highlights": v.boolean(),
+        "note.import-annotations-as-template": v.boolean(),
+      }),
+      v.readonly(),
+    ),
+  }),
+  v.readonly(),
+);
+
+export type DefaultLiteratureNoteProfile = v.InferOutput<
+  typeof defaultLiteratureNoteProfileSchema
+>;
+
+/** The built-in Profile is the total inheritance root for vault-local bindings. */
+export const DEFAULT_LITERATURE_NOTE_PROFILE = Object.freeze({
+  bindings: Object.freeze({
+    "note.literature-folder": "literatures",
+    "citation.references-style": null,
+    "note.import-folder": "zotero_notes",
+    "note.import-colored-highlights": false,
+    "note.import-annotations-as-template": false,
+  }),
+}) satisfies DefaultLiteratureNoteProfile;
+
 /** JSON-safe finite number that settings values may take. */
 export const settingsNumber = v.pipe(v.number(), v.finite());
 
@@ -88,8 +119,6 @@ export const schema = v.object({
    * Citations and Literature Note wikilinks rendered as Citations.
    */
   "citation.open-as-links": v.boolean(),
-  /** CSL style ID; `null` renders with the citation engine's embedded style. */
-  "citation.references-style": v.nullable(v.string()),
   /**
    * Citation Locale as a BCP 47 tag; `null` or empty leaves the selected CSL
    * style's own default locale in charge.
@@ -102,19 +131,22 @@ export const schema = v.object({
   "citation.hover-require-mod-live-preview": v.boolean(),
   "citation.hover-require-mod-reading": v.boolean(),
 
-  "note.literature-folder": v.string(),
+  "note.default-profile": defaultLiteratureNoteProfileSchema,
+  "note.template-conversion-pending": v.boolean(),
+  "note.template-conversion-result": v.nullable(
+    v.object({
+      document: v.pipe(v.string(), v.nonEmpty()),
+      trashed: v.pipe(v.number(), v.safeInteger(), v.minValue(0)),
+    }),
+  ),
   "note.frontmatter-fields": frontmatterFieldsSchema,
-  "note.import-folder": v.string(),
-  "note.import-colored-highlights": v.boolean(),
   "note.import-highlight-mappings": highlightMappingsSchema,
-  "note.import-annotations-as-template": v.boolean(),
 
   "server.enabled": v.boolean(),
   "server.port": serverPort,
   "server.hostname": v.string(),
 
   "template.folder": v.string(),
-  "template.auto-pair-eta": v.boolean(),
   "template.auto-trim-leading": autoTrimSchema,
   "template.auto-trim-trailing": autoTrimSchema,
 
@@ -152,7 +184,6 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.wikilink-citations": false,
   "citation.show-formatted": true,
   "citation.open-as-links": false,
-  "citation.references-style": null,
   "citation.locale": null,
   "citation.hover-action": "popover",
   // Source mode keeps the modifier so plain-text editing is never interrupted,
@@ -160,17 +191,15 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.hover-require-mod-source": true,
   "citation.hover-require-mod-live-preview": false,
   "citation.hover-require-mod-reading": false,
-  "note.literature-folder": "literatures",
+  "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
+  "note.template-conversion-pending": false,
+  "note.template-conversion-result": null,
   "note.frontmatter-fields": DEFAULT_FRONTMATTER_FIELDS,
-  "note.import-folder": "zotero_notes",
-  "note.import-colored-highlights": false,
   "note.import-highlight-mappings": {},
-  "note.import-annotations-as-template": false,
   "server.enabled": false,
   "server.port": 9091,
   "server.hostname": "127.0.0.1",
   "template.folder": "templates",
-  "template.auto-pair-eta": false,
   "template.auto-trim-leading": DEFAULT_AUTO_TRIM.leading,
   "template.auto-trim-trailing": DEFAULT_AUTO_TRIM.trailing,
   "zotero.auto-refresh": true,
