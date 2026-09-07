@@ -246,7 +246,6 @@ export default class ZotLitPlugin extends Plugin {
     );
 
     addCustomizeActions(this, {
-      app: this.app,
       settings: services.settings,
       profile: services.profile,
       customize,

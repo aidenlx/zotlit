@@ -4,10 +4,9 @@ import type { Command, Plugin, TFile as ObsidianFile } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
-import * as recovery from "@/lib/profile-recovery";
 import { defaults } from "@/services/settings/schema";
 
-import { addCustomizeActions } from "./actions";
+import { addCustomizeActions, noteCustomizeRequest } from "./actions";
 import type { CustomizeActionDeps } from "./actions";
 
 /** The one Profile this vault holds beside the built-in Default. */
@@ -29,6 +28,8 @@ interface Harness {
   /** The ZotLit menu items a right-click on the note offers. */
   menu: () => Menu;
   customize: ReturnType<typeof vi.fn>;
+  /** The pure resolution behind both entries, for the note under test. */
+  request: () => ReturnType<typeof noteCustomizeRequest>;
 }
 
 function harness(
@@ -59,9 +60,8 @@ function harness(
       },
     },
     metadataCache: { getFileCache: () => ({ frontmatter }) },
-  };
+  } as unknown as Plugin["app"];
   const deps: CustomizeActionDeps = {
-    app: app as unknown as CustomizeActionDeps["app"],
     settings: {
       current: { ...defaults, "server.workbench": workbench },
     } as unknown as CustomizeActionDeps["settings"],
@@ -74,7 +74,7 @@ function harness(
 
   addCustomizeActions(
     {
-      app: app as unknown as Plugin["app"],
+      app,
       addCommand: (command) => {
         commands.push(command);
         return command;
@@ -93,6 +93,8 @@ function harness(
       return menu;
     },
     customize,
+    request: () =>
+      noteCustomizeRequest(file! as unknown as ObsidianFile, app, deps),
   };
 }
 
@@ -128,11 +130,18 @@ describe("Customize on a Literature Note", () => {
   });
 
   it("offers the same launch from the note's menu, in the ZotLit section", () => {
-    const items = harness(STAMPED).menu().items;
+    const h = harness(STAMPED);
+    const items = h.menu().items;
 
     expect(items).toHaveLength(1);
     expect(items[0]!.title).toBe(m.command_customize_note_template_name());
     expect(items[0]!.section).toBe("zotlit");
+
+    items[0]!.click();
+    expect(h.customize).toHaveBeenCalledExactlyOnceWith({
+      profileId: BOOKS.id,
+      item: { key: "IANNP5A2", title: "@ioannidis2005" },
+    });
   });
 
   it("opens Default for a note that carries no stamp", () => {
@@ -146,21 +155,18 @@ describe("Customize on a Literature Note", () => {
   });
 
   it("answers a stamp the vault no longer holds with the diagnostic", () => {
-    using notice = vi
-      .spyOn(recovery, "profileRecoveryNotice")
-      .mockReturnValue("");
     const h = harness({ ...STAMPED, stamp: "Papers (Zz9Wm4YfH6Kd)" });
 
-    h.command.checkCallback?.(false);
+    expect(h.request()).toMatchObject({
+      code: "unknown-literature-note-profile",
+      stamp: "Papers (Zz9Wm4YfH6Kd)",
+      path: "literatures/@ioannidis2005.md",
+      recovery: { action: "switch-profile" },
+    });
 
-    expect(notice).toHaveBeenCalledExactlyOnceWith(
-      expect.anything(),
-      expect.objectContaining({
-        code: "unknown-literature-note-profile",
-        stamp: "Papers (Zz9Wm4YfH6Kd)",
-        path: "literatures/@ioannidis2005.md",
-      }),
-    );
+    // The command still counts as available: the diagnostic is its answer.
+    expect(h.command.checkCallback?.(true)).toBe(true);
+    h.command.checkCallback?.(false);
     expect(h.customize).not.toHaveBeenCalled();
   });
 
