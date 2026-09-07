@@ -10,6 +10,35 @@ import type { ReactNode } from "react";
  * the tree adds its entry here, so a host's class map is checked against it.
  */
 export interface WorkbenchParts {
+  previewControls:
+    | "controls"
+    | "label"
+    | "label-text"
+    | "select"
+    | "run"
+    | "stop";
+  resultHeader:
+    | "header"
+    | "heading"
+    | "controls"
+    | "label"
+    | "label-text"
+    | "select";
+  resultRegion: "region";
+  resultColumn:
+    | "select"
+    | "stale"
+    | "filename"
+    | "filename-text"
+    | "problem"
+    | "problem-heading"
+    | "problem-open"
+    | "empty"
+    | "pending"
+    | "label"
+    | "label-text";
+  propertyList: "key" | "value" | "empty" | "list";
+
   tabBar: "tab-bar" | "tab";
   tabPanel: "tab-panel";
   editToolbar:
