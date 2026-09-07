@@ -298,7 +298,11 @@
     {
       "path": "zt.attachments[0].fileLink",
       "reason": "The Attachment has no permitted vault-relative target."
+    },
+    {
+      "path": "zt.weblink",
+      "reason": "A personal-library web link carries the Zotero account name, so it is not included in Item Snapshots."
     }
   ],
-  "revision": "371d2ce142cdce636acdf22b63964f388c92cbf7fc0bd3ad697ffdcfccf9ea1d"
+  "revision": "1af58b7cb6c9405e07b05d658ee8c93d7ed749f8a57d13cbd9770c18506cfc91"
 }
