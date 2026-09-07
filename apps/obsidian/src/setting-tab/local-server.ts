@@ -39,6 +39,7 @@ export function localServerItems(
       visible: enabled,
       control: { type: "toggle", key: "server.workbench" },
     },
+    ...workbenchConnectionRows(ctx, enabled),
     {
       name: m.settings_live_updates_port_name(),
       desc: m.settings_live_updates_port_desc({
@@ -69,6 +70,36 @@ export function localServerItems(
         type: "text",
         key: "server.hostname",
         placeholder: defaultPlaceholder("server.hostname"),
+      },
+    },
+  ];
+}
+
+/**
+ * The live Workbench Connection, named under the toggle that allows it: which
+ * website holds it, which template it may save, and the one way to end it from
+ * Obsidian. Included structurally — there is no row at all while none stands.
+ */
+function workbenchConnectionRows(
+  ctx: SettingTabContext,
+  enabled: () => boolean,
+): SettingGroupItem<SettingsKey>[] {
+  const connection = ctx.localBridge.connection;
+  if (connection === null) return [];
+  return [
+    {
+      name: m.settings_local_server_workbench_connection_name(),
+      desc: m.settings_local_server_workbench_connection_desc({
+        website: new URL(connection.origin).host,
+        profile: connection.profileName,
+      }),
+      visible: enabled,
+      render: (setting) => {
+        setting.addButton((button) =>
+          button
+            .setButtonText(m.settings_local_server_workbench_disconnect())
+            .onClick(() => ctx.localBridge.disconnect()),
+        );
       },
     },
   ];

@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
+import type { Env } from "hono";
 import { Hono } from "hono/tiny";
 
 import type {
@@ -167,7 +168,7 @@ export class LocalServerService extends Service<void> {
    * service gates its own routes on its own toggle. Safe to call while the
    * listener runs — mounted routes answer the next request.
    */
-  mount(basePath: string, routes: Hono): void {
+  mount<E extends Env>(basePath: string, routes: Hono<E>): void {
     this.#app.route(basePath, routes);
   }
 
