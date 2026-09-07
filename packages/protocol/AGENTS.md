@@ -4,7 +4,7 @@ Wire contracts for ZotLit ↔ Zotero HTTP requests and Obsidian Public URI Links
 
 ## Wire format
 
-- **HTTP-notify events** (`src/notify.ts`) — what Zotero actively pushes to `POST {host}/notify`. Implemented as valibot schemas (`notifyEventSchema` + inferred `NotifyEvent`); the obsidian `LiveUpdateService` validates request bodies against the schema directly via `@hono/valibot-validator`. 
+- **HTTP-notify events** (`src/notify.ts`) — what Zotero actively pushes to `POST {host}/notify`. Implemented as valibot schemas (`notifyEventSchema` + inferred `NotifyEvent`); the obsidian `LocalServerService` validates request bodies against the schema directly via `@hono/valibot-validator`. 
 - **Public URI Links** (`src/url.ts`) — permanent `obsidian://zotlit/*` links opened through `Zotero.launchURL`. Read the action ids, builders, parsers, and schemas in `src/url.ts`; `src/wire-format.test.ts` is the canonical inventory of their emitted wire surface.
 
 Consumed by both `apps/zotero` (encoder) and `apps/obsidian` (decoder). See `CONTEXT.md` for the compatibility vocabulary and transport boundaries.

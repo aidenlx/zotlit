@@ -33,7 +33,7 @@ import {
 } from "@/lib/profile-stamp";
 import type { ProfileSelector } from "@/lib/profile-stamp";
 import * as toast from "@/lib/toast";
-import type { LiveUpdateService } from "@/services/live-update/service";
+import type { LocalServerService } from "@/services/local-server/service";
 import { openCompanionNote } from "@/services/note-feature";
 import type { CompanionNoteDeps } from "@/services/note-feature";
 import {
@@ -59,7 +59,7 @@ export interface ProtocolDeps extends SingleUpdateDeps {
   importProfile: CompanionNoteDeps["importProfile"];
   batchImport: Pick<BatchImport, "runBatchImport" | "runBatchImportAll">;
   zoteroPref: ZoteroPrefService;
-  liveUpdate: LiveUpdateService;
+  liveUpdate: LocalServerService;
 }
 
 /**

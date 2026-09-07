@@ -13,7 +13,9 @@ import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
+import { workbenchEnabled } from "@/services/local-bridge/customize";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { SettingsService } from "@/services/settings/service";
 import {
@@ -61,6 +63,9 @@ import { shareProfile } from "./share-profile-modal";
 export { shareProfile, ShareProfileModal } from "./share-profile-modal";
 
 const logger = getLogger(["setting-tab", "profiles"]);
+
+/** One glyph for Customize wherever a Profile row offers it. */
+const CUSTOMIZE_ICON = "paintbrush";
 
 /**
  * Profile file actions wait for the registry to load and stay locked while the
@@ -170,13 +175,15 @@ export function profilesPage(
 /**
  * The Profiles themselves, one row per document. Add and Import are the list
  * header's own affordances, so each row carries only what acts on that Profile:
- * open, duplicate, and share as icons, with delete as the list's own control.
+ * customize, open, duplicate, and share as icons, with delete as the list's own
+ * control.
  */
 function profilesList(
   ctx: SettingTabContext,
 ): SettingDefinitionList<SettingsControlKey> {
   const profiles = ctx.profile.profiles;
   const locked = profileActionsLocked(ctx);
+  const workbench = workbenchEnabled(ctx.settings);
   return {
     type: "list",
     heading: m.settings_profile_other_heading(),
@@ -249,6 +256,20 @@ function profilesList(
                 void runAction(() => editProfileMatch(ctx, profile.id), ctx),
             ),
         );
+        if (workbench)
+          setting.addExtraButton((button) =>
+            button
+              .setIcon(CUSTOMIZE_ICON)
+              .setTooltip(m.settings_template_customize())
+              .setDisabled(locked)
+              .onClick(
+                () =>
+                  void runAction(
+                    () => ctx.customize({ profileId: profile.id }),
+                    ctx,
+                  ),
+              ),
+          );
         setting.addExtraButton((button) =>
           button
             .setIcon("more-horizontal")
@@ -448,11 +469,18 @@ async function deleteProfile(
   }, ctx);
 }
 
+/**
+ * The Template document row. Customize is the primary action while the web
+ * Template Workbench is on, with the eject beside it as the in-vault way in;
+ * with the Workbench off the eject is the primary action again, so off means
+ * no door rather than a door that fails.
+ */
 function defaultDocumentItem(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsControlKey> {
   const path = ctx.profile.defaultDocumentPath;
   const ejected = ctx.app.vault.getFileByPath(path) !== null;
+  const workbench = workbenchEnabled(ctx.settings);
   return {
     name: m.settings_profile_document_name(),
     desc: ejected ? basename(path) : m.settings_profile_document_builtin(),
@@ -506,6 +534,20 @@ function defaultDocumentItem(
               }, ctx),
           ),
       );
+      if (workbench)
+        setting.addButton((button) =>
+          button
+            .setButtonText(m.settings_template_customize())
+            .setCta()
+            .setDisabled(profileActionsLocked(ctx))
+            .onClick(
+              () =>
+                void runAction(
+                  () => ctx.customize({ profileId: DEFAULT_PROFILE }),
+                  ctx,
+                ),
+            ),
+        );
     },
   };
 }

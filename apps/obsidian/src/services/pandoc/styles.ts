@@ -2,7 +2,7 @@
 
 import { regex } from "arkregex";
 import { readdir, readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 
 import { isErrno } from "@/lib/errno";
 import { getLogger } from "@/lib/log";
@@ -438,10 +438,13 @@ function styleFileOf(path: string, xml: string): StyleFile | undefined {
     logger.warn("Skipped a CSL file that declares no style ID", { path });
     return undefined;
   }
+  const styleId = decodeXmlText(id);
   const title = TITLE.exec(info)?.groups.title.trim();
+  // A style with no title lists under its own ID; a file name would put a path
+  // fragment of the user's machine in front of them.
   return {
-    id: decodeXmlText(id),
-    title: title ? decodeXmlText(title) : basename(path, CSL_EXT),
+    id: styleId,
+    title: title ? decodeXmlText(title) : styleId,
     path,
     parentId: parentIdOf(info),
     defaultLocale: defaultLocaleOf(xml),

@@ -15,6 +15,7 @@ import {
   withSampleItemType,
   emptied,
   open,
+  launch,
   press,
   fieldRow,
   chooseAnnotation,
@@ -294,8 +295,7 @@ describe("the simplified editing flow", () => {
   it("downloads an imported file without saving over the connected profile", async () => {
     const requests: BridgeRequest[] = [];
     vi.stubGlobal("fetch", bridgeFetch(requests));
-    using page = open();
-    page.press(m.workbench_connection_connect());
+    using page = launch();
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
@@ -503,12 +503,11 @@ describe("the annotation box", () => {
     });
     let loaded = snapshot([first, second], "initial");
     vi.stubGlobal("fetch", bridgeFetch([], { item: () => loaded }));
-    using page = open();
-    page.press(m.workbench_connection_connect());
+    using page = launch();
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    page.press(m.workbench_load_item());
+    page.press(m.workbench_refresh_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_connected_badge()),
     );
@@ -696,9 +695,9 @@ describe("the annotation box", () => {
 
     page.press(m.workbench_annotation_insert());
 
-    expect(page.host.textContent).toContain(
-      m.workbench_annotation_section_added(),
-    );
+    expect(
+      document.querySelector('[data-slot="toast-viewport"]')?.textContent,
+    ).toContain(m.workbench_annotation_section_added());
     expect(page.host.textContent).toContain(m.workbench_tab_annotation());
     expect(page.host.textContent).not.toContain(
       m.workbench_annotation_insert(),
