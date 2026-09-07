@@ -183,11 +183,11 @@ describe("Customize on a Literature Note", () => {
     expect(harness(null).command.checkCallback?.(true)).toBe(false);
   });
 
-  it("offers neither entry while the web Template Workbench is off", () => {
+  it("keeps both Customize entries available while web access is off", () => {
     const off = harness(STAMPED, { workbench: false });
 
-    expect(off.command.checkCallback?.(true)).toBe(false);
-    expect(off.menu().items).toEqual([]);
+    expect(off.command.checkCallback?.(true)).toBe(true);
+    expect(off.menu().items).toHaveLength(1);
   });
 
   it("waits for the Profile registry before it names a note's Profile", () => {

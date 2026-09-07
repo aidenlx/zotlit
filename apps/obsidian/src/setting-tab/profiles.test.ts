@@ -99,15 +99,6 @@ function extraButtonTooltips(row: SettingDefinitionItem): string[] {
     .map((button) => button.tooltip);
 }
 
-/** The Customize icon on a Profile row, absent while the Workbench is off. */
-function customizeIcon(
-  row: SettingDefinitionItem,
-): ExtraButtonComponent | undefined {
-  return render(row)
-    .components.filter((control) => control instanceof ExtraButtonComponent)
-    .find(({ tooltip }) => tooltip === m.settings_template_customize());
-}
-
 /** The Profiles page with one Profile beside Default. */
 function pageWithOneProfile(ctx: SettingTabContext): {
   defaultRow: SettingDefinitionItem;
@@ -200,15 +191,13 @@ describe("Profile settings", () => {
       desc: m.settings_profile_properties_desc(),
     });
     // The document exists, so the same action edits it instead.
-    expect(buttonLabels(ejected)).toEqual([m.settings_template_open()]);
+    expect(buttonLabels(ejected)).toEqual([m.profile_editor_customize()]);
     expect(buttonIcons(ejected)).toEqual(["pencil"]);
   });
 
-  it("offers the connected Customize action beside native customization", async () => {
+  it("offers one Customize action for the built-in and saved template", async () => {
     const ctx = context();
-    // The native action remains available beside the connected launch.
     expect(buttonLabels(documentRow(ctx))).toEqual([
-      m.profile_editor_customize(),
       m.settings_template_customize(),
     ]);
 
@@ -216,7 +205,6 @@ describe("Profile settings", () => {
       vault: { getFileByPath: (path: string) => ({ path }) as TFile },
     } as unknown as SettingTabContext["app"];
     expect(buttonLabels(documentRow(ctx))).toEqual([
-      m.profile_editor_customize(),
       m.settings_profile_document_restore(),
       m.settings_template_customize(),
     ]);
@@ -241,8 +229,8 @@ describe("Profile settings", () => {
       vault: { getFileByPath: (path: string) => ({ path }) as TFile },
     } as unknown as SettingTabContext["app"];
     expect(buttonLabels(documentRow(ctx))).toEqual([
-      m.profile_editor_customize(),
       m.settings_profile_document_restore(),
+      m.settings_template_customize(),
     ]);
   });
 
@@ -254,7 +242,6 @@ describe("Profile settings", () => {
       m.settings_profile_share(),
     ]);
     expect(extraButtonTooltips(profileRow)).toEqual([
-      m.settings_template_customize(),
       shared.workbench_more_actions(),
       m.settings_profile_duplicate(),
       m.settings_profile_share(),
@@ -263,7 +250,15 @@ describe("Profile settings", () => {
     expect(buttonLabels(defaultRow)).toContain(m.profile_editor_customize());
 
     // The row's own Profile is what its Customize opens, not the default.
-    customizeIcon(profileRow)!.click();
+    const more = render(profileRow)
+      .components.filter((control) => control instanceof ExtraButtonComponent)
+      .find(({ tooltip }) => tooltip === shared.workbench_more_actions())!;
+    Object.assign(more, { extraSettingsEl: document.createElement("button") });
+    more.click();
+    Menu.instances
+      .at(-1)!
+      .items.find(({ title }) => title === m.profile_editor_customize())!
+      .click();
     await vi.waitFor(() =>
       expect(ctx.customize).toHaveBeenCalledWith({
         profileId: "Bk3Qn7XvT2Lp",
@@ -271,7 +266,7 @@ describe("Profile settings", () => {
     );
   });
 
-  it("drops Customize from every Profile row while the Workbench is off", () => {
+  it("keeps More actions available while web access is off", () => {
     const ctx = context();
     ctx.settings = {
       current: { ...defaults, "server.workbench": false },

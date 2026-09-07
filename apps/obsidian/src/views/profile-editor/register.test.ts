@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { profileCustomization, saveProfileCustomization } from "./preferences";
 import {
-  customizeProfile,
+  openNativeProfile,
   requiresNative,
   openProfileEditor,
   registerProfileEditor,
@@ -93,6 +93,29 @@ describe("Profile Editor entry points", () => {
     await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
     expect(setViewState).not.toHaveBeenCalled();
   });
+  it.each(["customize-profile", "open-profile-web-workbench"])(
+    "routes a registered Profile through the shared flow from %s",
+    async (id) => {
+      setMockPlatform({ isDesktopApp: true });
+      const { app, file, deps, plugin, commands } = setup();
+      const read = vi.spyOn(app.vault, "cachedRead");
+      deps.profile = { ...deps.profile, defaultDocumentPath: file.path };
+      deps.customize = vi.fn(async () => {});
+      registerProfileEditor(plugin, deps);
+      expect(
+        commands.find((entry) => entry.id === id)!.checkCallback?.(false),
+      ).toBe(true);
+      await vi.waitFor(() =>
+        expect(deps.customize).toHaveBeenCalledWith({
+          profileId: "default",
+          ...(id === "open-profile-web-workbench"
+            ? { destination: "web" }
+            : {}),
+        }),
+      );
+      expect(read).not.toHaveBeenCalled();
+    },
+  );
   it("opens the current Literature Note's resolved Default with that paper selected", async () => {
     setMockPlatform({ isDesktopApp: true });
     const { app, file, deps, plugin, commands, setViewState } = setup();
@@ -109,7 +132,9 @@ describe("Profile Editor entry points", () => {
     );
     deps.profile.getSource = vi.fn(async () => "Configured Default");
     registerProfileEditor(plugin, deps);
-    const command = commands.find((entry) => entry.id === "customize-profile")!;
+    const command = commands.find(
+      (entry) => entry.id === "open-profile-editor",
+    )!;
     expect(command.checkCallback?.(false)).toBe(true);
     await vi.waitFor(() =>
       expect(setViewState).toHaveBeenCalledWith({
@@ -129,17 +154,17 @@ describe("Profile Editor entry points", () => {
       vi.spyOn(app.vault, "cachedRead").mockResolvedValue(
         `---\nid: paper\nname: Paper\nversion: 1.0.0\ncontract: 2\n${manifest}\nfilename: paper\n---\nBody\n--- zotlit:annotation ---\nAnnotation\n`,
       );
-      await customizeProfile(app, file);
+      await openNativeProfile(app, file);
       expect(requiresNative(await app.vault.cachedRead(file))).toBe(true);
       expect(setViewState).toHaveBeenCalledOnce();
     },
   );
   it.each(["ask", "web", "native"])(
-    "routes saved %s to native until the web launch sheet lands",
+    "opens the explicit native action with the saved %s preference",
     async (preference) => {
       const { app, loadLocalStorage, file, setViewState } = setup();
       loadLocalStorage.mockReturnValue(preference);
-      await customizeProfile(app, file, { itemIndexedKey: "0:ABCDEFGH" });
+      await openNativeProfile(app, file, { itemIndexedKey: "0:ABCDEFGH" });
       expect(setViewState).toHaveBeenCalledWith({
         type: PROFILE_EDITOR_VIEW_TYPE,
         state: { file: file.path, itemIndexedKey: "0:ABCDEFGH" },
@@ -150,7 +175,7 @@ describe("Profile Editor entry points", () => {
   it("opens built-in Default from the effective source without ejecting it", async () => {
     const { app, setViewState } = setup();
     const getSource = vi.fn(async () => "Configured built-in document");
-    await customizeProfile(app, {
+    await openNativeProfile(app, {
       defaultDocumentPath: "templates/zotlit-profile.default.md",
       getSource,
     });

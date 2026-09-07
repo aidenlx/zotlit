@@ -5,19 +5,17 @@ import type { App, Plugin, WorkspaceLeaf } from "obsidian";
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import type { CustomizeAction } from "@/services/local-bridge/customize";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { ProfileService } from "@/services/profile/service";
 
 import { runProfileEditorAction } from "./actions";
-import { profileCustomization } from "./preferences";
 import { PROFILE_EDITOR_VIEW_TYPE, ProfileEditorView } from "./view";
 import type { ProfileEditorDeps } from "./view";
 
-const logger = getLogger(["views", "profile-editor"]);
-
 type RegistrationDeps = ProfileEditorDeps & {
+  customize: CustomizeAction;
   profile: Pick<
     ProfileService,
     | "profiles"
@@ -62,16 +60,35 @@ export function registerProfileEditor(
     );
     return profile ? plugin.app.vault.getFileByPath(profile.path) : null;
   };
+  const customizeTarget = (
+    target: TFile | RegistrationDeps["profile"],
+    options: { itemIndexedKey?: string; destination?: "web" | "native" } = {},
+  ) => {
+    const profileId =
+      target instanceof TFile
+        ? target.path === deps.profile.defaultDocumentPath
+          ? "default"
+          : deps.profile.profiles.find(
+              (profile) => profile.path === target.path,
+            )?.id
+        : "default";
+    if (!profileId) return openNativeProfile(plugin.app, target, options);
+    return deps.customize({
+      profileId,
+      ...(options.destination ? { destination: options.destination } : {}),
+      ...(options.itemIndexedKey
+        ? { item: { key: options.itemIndexedKey, title: null } }
+        : {}),
+    });
+  };
   plugin.addCommand({
     id: "customize-profile",
     name: m.profile_editor_customize(),
     checkCallback(checking) {
-      const target = targetOf(plugin.app.workspace.getActiveFile());
-      if (!target) return false;
+      const target = plugin.app.workspace.getActiveFile();
+      if (!isProfile(target)) return false;
       if (!checking)
-        void runProfileEditorAction("customize", () =>
-          customizeProfile(plugin.app, target),
-        );
+        void runProfileEditorAction("customize", () => customizeTarget(target));
       return true;
     },
   });
@@ -83,7 +100,7 @@ export function registerProfileEditor(
       if (!target) return false;
       if (!checking)
         void runProfileEditorAction("open-web", () =>
-          openWebProfile(plugin.app, target),
+          customizeTarget(target, { destination: "web" }),
         );
       return true;
     },
@@ -96,7 +113,7 @@ export function registerProfileEditor(
       if (!target) return false;
       if (!checking)
         void runProfileEditorAction("customize", () =>
-          customizeProfile(plugin.app, target),
+          openNativeProfile(plugin.app, target),
         );
       return true;
     },
@@ -110,18 +127,19 @@ export function registerProfileEditor(
         plugin.app.metadataCache.getFileCache(file),
       );
       const options = itemIndexedKey ? { itemIndexedKey } : {};
-      menu.addItem((item) =>
-        item
-          .setSection("zotlit")
-          .setTitle(m.profile_editor_customize())
-          .setIcon("pencil")
-          .onClick(
-            () =>
-              void runProfileEditorAction("customize", () =>
-                customizeProfile(plugin.app, target, options),
-              ),
-          ),
-      );
+      if (isProfile(file))
+        menu.addItem((item) =>
+          item
+            .setSection("zotlit")
+            .setTitle(m.profile_editor_customize())
+            .setIcon("pencil")
+            .onClick(
+              () =>
+                void runProfileEditorAction("customize", () =>
+                  customizeTarget(target, options),
+                ),
+            ),
+        );
       menu.addItem((item) =>
         item
           .setSection("zotlit")
@@ -130,7 +148,7 @@ export function registerProfileEditor(
           .onClick(
             () =>
               void runProfileEditorAction("open-web", () =>
-                openWebProfile(plugin.app, target, options),
+                customizeTarget(target, { ...options, destination: "web" }),
               ),
           ),
       );
@@ -142,7 +160,7 @@ export function registerProfileEditor(
           .onClick(
             () =>
               void runProfileEditorAction("customize", () =>
-                customizeProfile(plugin.app, target, options),
+                openNativeProfile(plugin.app, target, options),
               ),
           ),
       );
@@ -189,16 +207,12 @@ export function registerProfileEditor(
   plugin.app.workspace.onLayoutReady(refreshActions);
 }
 
-/** The saved preference becomes the launch-sheet input when #998 connects web editing. */
-export async function customizeProfile(
+/** Open a Profile file or the built-in Default draft in the native editor. */
+export async function openNativeProfile(
   app: App,
   target: TFile | Pick<ProfileService, "defaultDocumentPath" | "getSource">,
-  options: { itemIndexedKey?: string } = {},
+  options: { itemIndexedKey?: string; explainUnsupported?: boolean } = {},
 ): Promise<void> {
-  logger.debug(
-    "Opening Customize in Profile Editor with saved preference {preference}",
-    { preference: profileCustomization(app) },
-  );
   const file =
     target instanceof TFile
       ? target
@@ -207,7 +221,7 @@ export async function customizeProfile(
     ? await app.vault.cachedRead(file)
     : await (target as Pick<ProfileService, "getSource">).getSource("default");
   if (file) return openProfileEditor(app, file, options);
-  if (requiresNative(source))
+  if (options.explainUnsupported !== false && requiresNative(source))
     new BaseNotice(m.profile_editor_native_required());
   const active = app.workspace.getActiveFile();
   const itemIndexedKey =
@@ -245,19 +259,6 @@ export function requiresNative(source: string): boolean {
   );
 }
 
-async function openWebProfile(
-  app: App,
-  target: TFile | Pick<ProfileService, "defaultDocumentPath" | "getSource">,
-  options: { itemIndexedKey?: string } = {},
-): Promise<void> {
-  const source =
-    target instanceof TFile
-      ? await app.vault.cachedRead(target)
-      : await target.getSource("default");
-  if (requiresNative(source)) await customizeProfile(app, target, options);
-  else new BaseNotice(m.profile_editor_web_unavailable());
-}
-
 /** Every Profile document entry point preserves the selected Literature Note's Item. */
 export async function openProfileEditor(
   app: App,
@@ -266,9 +267,13 @@ export async function openProfileEditor(
     leaf?: WorkspaceLeaf;
     itemIndexedKey?: string;
     tab?: "match";
+    explainUnsupported?: boolean;
   } = {},
 ): Promise<void> {
-  if (requiresNative(await app.vault.cachedRead(file)))
+  if (
+    options.explainUnsupported !== false &&
+    requiresNative(await app.vault.cachedRead(file))
+  )
     new BaseNotice(m.profile_editor_native_required());
   const active = app.workspace.getActiveFile();
   const itemIndexedKey =

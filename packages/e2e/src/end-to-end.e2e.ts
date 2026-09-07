@@ -1108,7 +1108,51 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       );
       await obEval(
         vaultId,
-        `(async function(){var file=app.vault.getFileByPath(${JSON.stringify(defaultPath)});if(file)await app.vault.delete(file);app.saveLocalStorage('zotlit-workbench-launch-approved',null);app.plugins.plugins.zotlit.services.settings.update({'server.workbench':true});window.zotlitE2EOpen=window.open;window.open=url=>{window.zotlitE2ELaunch=url;return null;};return true;})()`,
+        `(async function(){var file=app.vault.getFileByPath(${JSON.stringify(defaultPath)});if(file)await app.vault.delete(file);app.saveLocalStorage('zotlit-workbench-launch-approved',null);app.saveLocalStorage('zotlit-profile-customization','ask');app.plugins.plugins.zotlit.services.settings.update({'server.enabled':false,'server.workbench':false});window.zotlitE2EOpen=window.open;window.open=url=>{window.zotlitE2ELaunch=url;return null;};return true;})()`,
+      );
+      await mainSettings();
+      expect(await clickTemplateCustomize()).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `(function(){var radio=document.querySelector('input[name="zotlit-customize-destination"][value="native"]');if(!radio)return false;radio.click();var row=Array.from(document.querySelectorAll('.modal .setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.modal_workbench_launch_remember())});var toggle=row?.querySelector('.checkbox-container');if(!toggle)return false;toggle.click();return true;})()`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      expect(
+        await clickModalButton(vaultId, m.modal_workbench_launch_open()),
+      ).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId,
+          "String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-profile-editor'&&app.loadLocalStorage('zotlit-profile-customization')==='native')",
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      expect(
+        await obEval(
+          vaultId,
+          `String(!app.vault.getFileByPath(${JSON.stringify(defaultPath)})&&window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.settings.current['server.enabled']&&!app.plugins.plugins.zotlit.services.settings.current['server.workbench'])`,
+        ),
+      ).toBe("true");
+      await mainSettings();
+      expect(await clickTemplateCustomize()).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-profile-editor'&&!document.querySelector('input[name="zotlit-customize-destination"]'))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      expect(
+        await obEval(
+          vaultId,
+          "String(window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.settings.current['server.enabled'])",
+        ),
+      ).toBe("true");
+      await obEval(
+        vaultId,
+        "app.saveLocalStorage('zotlit-profile-customization','ask');true",
       );
       await mainSettings();
       expect(await clickTemplateCustomize()).toBe(true);
@@ -1256,40 +1300,52 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     });
 
     it("keeps an unsupported Profile in Obsidian with a Notice at the entry action", async () => {
-      const unsupported = source.replace("language: liquid", "language: eta");
-      expect(unsupported !== source).toBe(true);
-      await obEval(
-        vaultId,
-        `(async function(){await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(defaultPath)}),${JSON.stringify(unsupported)});delete window.zotlitE2ELaunch;return true;})()`,
-      );
-      expect(
-        await obEvalUntil(
+      const javascriptProperty =
+        "frontmatter:\n  - key: generated\n    js: zt.title\n    merge: replace\n";
+      const javascriptSource = source.includes("frontmatter:\n")
+        ? source.replace("frontmatter:\n", javascriptProperty)
+        : source.replace(
+            "language: liquid\n",
+            `language: liquid\n${javascriptProperty}`,
+          );
+      for (const unsupported of [
+        source.replace("language: liquid", "language: eta"),
+        javascriptSource,
+      ]) {
+        expect(unsupported !== source).toBe(true);
+        await obEval(
           vaultId,
-          `(async function(){return String((await app.plugins.plugins.zotlit.services.profile.getSource('default')).includes('language: eta'));})()`,
-          { expected: "true" },
-        ),
-      ).toBe(true);
-      await using notices = await observeNotices(vaultId);
-      await mainSettings();
-      expect(await clickTemplateCustomize()).toBe(true);
-      expect(
-        await waitFor(async () =>
-          (await notices.read()).some((text) =>
-            text.includes(m.notice_workbench_unsupported_profile()),
+          `(async function(){await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(defaultPath)}),${JSON.stringify(unsupported)});delete window.zotlitE2ELaunch;return true;})()`,
+        );
+        expect(
+          await obEvalUntil(
+            vaultId,
+            `(async function(){return String((await app.plugins.plugins.zotlit.services.profile.getSource('default'))===${JSON.stringify(unsupported)});})()`,
+            { expected: "true" },
           ),
-        ),
-      ).toBe(true);
-      expect(
-        await obEvalUntil(
-          vaultId,
-          `String(app.workspace.getActiveFile()?.path===${JSON.stringify(defaultPath)})`,
-          { expected: "true" },
-        ),
-      ).toBe(true);
-      expect(
-        await obEval(vaultId, "String(window.zotlitE2ELaunch===undefined)"),
-      ).toBe("true");
-      await obEval(vaultId, "app.setting.close();true");
+        ).toBe(true);
+        await using notices = await observeNotices(vaultId);
+        await mainSettings();
+        expect(await clickTemplateCustomize()).toBe(true);
+        expect(
+          await waitFor(async () =>
+            (await notices.read()).some((text) =>
+              text.includes(m.notice_workbench_unsupported_profile()),
+            ),
+          ),
+        ).toBe(true);
+        expect(
+          await obEvalUntil(
+            vaultId,
+            `String(app.workspace.getActiveFile()?.path===${JSON.stringify(defaultPath)}&&app.workspace.activeLeaf?.view.getViewType()==='zotlit-profile-editor')`,
+            { expected: "true" },
+          ),
+        ).toBe(true);
+        expect(
+          await obEval(vaultId, "String(window.zotlitE2ELaunch===undefined)"),
+        ).toBe("true");
+        await obEval(vaultId, "app.setting.close();true");
+      }
     });
   });
 
