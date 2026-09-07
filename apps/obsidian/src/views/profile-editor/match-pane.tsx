@@ -5,9 +5,12 @@ import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import type { MatchItemFacts } from "@zotlit/workbench/match";
 import { MatchPane, useWorkbenchStore } from "@zotlit/workbench/ui";
 
+import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
 
 import { loadMatchFacts } from "./match-data";
+
+const logger = getLogger(["views", "profile-editor", "match"]);
 
 export function NativeMatchPane({
   controller,
@@ -28,14 +31,30 @@ export function NativeMatchPane({
     function refresh() {
       const current = ++generation;
       if (!item) return;
+      logger.trace("Refreshing Match facts", {
+        indexedKey: item.id,
+        generation: current,
+      });
       void loadMatchFacts(db, item.id).then(
         (facts) => {
-          if (active && generation === current)
-            setSelected({ id: item.id, facts });
+          const applied = active && generation === current;
+          logger.trace("Match facts completed", {
+            indexedKey: item.id,
+            generation: current,
+            applied,
+            available: facts !== null,
+          });
+          if (applied) setSelected({ id: item.id, facts });
         },
-        () => {
-          if (active && generation === current)
-            setSelected({ id: item.id, facts: null });
+        (error: unknown) => {
+          const applied = active && generation === current;
+          logger.warn("Failed to load Match facts for {indexedKey}", {
+            indexedKey: item.id,
+            error,
+            generation: current,
+            applied,
+          });
+          if (applied) setSelected({ id: item.id, facts: null });
         },
       );
     }
