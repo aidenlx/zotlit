@@ -110,12 +110,12 @@ export const WEB_THEME: WorkbenchTheme = {
       tree: "font-mono text-xs leading-relaxed data-[state=simple]:font-sans",
       spacer: "mt-[3px] size-3 shrink-0",
       contents: "min-w-0 flex-1 select-text",
-      group: "ml-3 border-l border-fd-border pl-2",
+      group: "ms-3 border-s border-fd-border ps-2",
       chevron:
         "mt-[3px] flex size-3 shrink-0 cursor-pointer items-center justify-center text-fd-muted-foreground transition-transform duration-100 ease-out hover:text-fd-foreground data-[expanded]:rotate-90",
       "chevron-icon": "size-3 [&_svg]:size-3",
       actions:
-        "absolute top-0.5 right-0 flex items-center gap-0.5 bg-linear-to-l from-fd-background from-60% to-transparent pl-6 opacity-0 group-hover:opacity-100 focus-within:opacity-100",
+        "absolute top-0.5 end-0 flex items-center gap-0.5 bg-linear-to-l from-fd-background from-60% to-transparent ps-6 opacity-0 group-hover:opacity-100 focus-within:opacity-100",
       action:
         "rounded-xs flex size-4 cursor-pointer items-center justify-center text-fd-muted-foreground hover:bg-fd-muted hover:text-fd-foreground",
       key: "text-fd-foreground",
@@ -124,7 +124,7 @@ export const WEB_THEME: WorkbenchTheme = {
       "color-swatch": "rounded-xs size-3 shrink-0 border border-fd-border",
       link: "break-all text-fd-primary underline decoration-dotted hover:decoration-solid",
       "long-toggle":
-        "rounded-xs ml-0.5 cursor-pointer px-1 text-fd-muted-foreground underline decoration-dotted underline-offset-2 select-none hover:bg-fd-muted hover:text-fd-foreground",
+        "rounded-xs ms-0.5 cursor-pointer px-1 text-fd-muted-foreground underline decoration-dotted underline-offset-2 select-none hover:bg-fd-muted hover:text-fd-foreground",
       row: "group rounded relative flex min-w-0 items-start gap-x-1 px-0.5 hover:bg-fd-muted data-[state=matched]:bg-fd-accent",
       opaque: "break-words text-cyan-700 dark:text-cyan-400",
       color:

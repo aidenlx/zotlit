@@ -291,6 +291,10 @@ export class WorkbenchDocumentController {
     return redoDepth(this.#state) > 0;
   }
 
+  hasSlice(id: WorkbenchSliceId): boolean {
+    return this.#ranges.has(id);
+  }
+
   /**
    * The region `id` covers. An entry removed while its editor is still mounted
    * takes its range with it, so that editor reads an empty region for the one

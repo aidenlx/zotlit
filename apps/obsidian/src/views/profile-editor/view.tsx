@@ -160,7 +160,7 @@ export class ProfileEditorView extends TextFileView {
           />
         ),
         matchData: createMatchData(deps.db),
-        insertTarget: () => this.#insertTarget,
+        insertTarget: () => this.insertTarget,
       },
       (content) => this.provide(content),
     );
@@ -240,7 +240,10 @@ export class ProfileEditorView extends TextFileView {
   }
   /** The last focused slice remains the insertion target while a sidebar has focus. */
   get insertTarget(): WorkbenchInsertTarget | null {
-    return this.#insertTarget;
+    return this.#insertTarget &&
+      this.#controller.hasSlice(this.#insertTarget.slice)
+      ? this.#insertTarget
+      : null;
   }
   subscribeInsertion = (listener: () => void): (() => void) => {
     this.#insertListeners.add(listener);
@@ -250,8 +253,14 @@ export class ProfileEditorView extends TextFileView {
   };
 
   insertField(snippet: string): boolean {
-    const target = this.#insertTarget;
-    if (!target) return false;
+    const target = this.insertTarget;
+    if (!target) {
+      logger.trace("Rejected Explorer insertion", {
+        slice: this.#insertTarget?.slice ?? null,
+        reason: this.#insertTarget ? "removed-slice" : "no-selection",
+      });
+      return false;
+    }
     const range = this.#controller.sliceRange(target.slice);
     const from = Math.min(Math.max(target.range.from, range.from), range.to);
     const to = Math.min(Math.max(target.range.to, from), range.to);
@@ -259,6 +268,7 @@ export class ProfileEditorView extends TextFileView {
       changes: { from, to, insert: snippet },
       userEvent: "input.complete",
     });
+    logger.debug("Applied Explorer insertion", { slice: target.slice });
     const cursor = from + snippet.length;
     this.#focusTarget({
       slice: target.slice,
@@ -273,7 +283,22 @@ export class ProfileEditorView extends TextFileView {
     const example = preview?.state
       .getState()
       .current.find((example) => example.root.key === key);
-    if (!preview || !section || !example) return false;
+    if (!preview || !section || !example) {
+      logger.trace("Rejected Explorer annotation navigation", {
+        key,
+        slice: "annotation",
+        reason: !preview
+          ? "no-preview"
+          : !section
+            ? "no-section"
+            : "no-example",
+      });
+      return false;
+    }
+    logger.debug("Applied Explorer annotation navigation", {
+      key,
+      slice: "annotation",
+    });
     preview.select(example.id);
     this.#focusTarget({
       slice: "annotation",

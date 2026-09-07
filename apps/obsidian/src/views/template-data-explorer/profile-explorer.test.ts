@@ -16,11 +16,19 @@ import {
 } from "@zotlit/workbench/ui";
 import type { WorkbenchInsertTarget } from "@zotlit/workbench/ui";
 
+import { loadTemplateData } from "@/services/template-workbench/data";
+import type {
+  TemplateDataDeps,
+  TemplateDataLoadResult,
+} from "@/services/template-workbench/data";
 import { createProfileEditorHost } from "@/views/profile-editor/host";
 import type { ProfileEditorView } from "@/views/profile-editor/view";
 
 import { ProfileExplorer } from "./profile-explorer";
 
+vi.mock("@/services/template-workbench/data", () => ({
+  loadTemplateData: vi.fn(),
+}));
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 let root: Root | null = null;
 afterEach(() => {
@@ -42,7 +50,22 @@ A stable note.
 An annotation.
 `;
 
-function setup() {
+async function setup() {
+  vi.mocked(loadTemplateData).mockImplementation(
+    async (_deps, indexedKey, root) => ({
+      kind: "data",
+      data:
+        root === "annotation"
+          ? { text: "Live annotation", filePath: "/Users/research/Paper.pdf" }
+          : {
+              title:
+                indexedKey === "IANNP5A2"
+                  ? "Why Most Published Research Findings Are False"
+                  : "Designing reproducible research interfaces",
+              noteLink: () => "[[Library/Paper|Paper]]",
+            },
+    }),
+  );
   const store = createWorkbenchStore({
     item: { id: "IANNP5A2", title: "Paper" },
     preview: { mode: "create", live: false },
@@ -90,7 +113,7 @@ function setup() {
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  void act(() => {
+  await act(async () => {
     root!.render(
       createElement(
         WorkbenchHostProvider,
@@ -98,7 +121,11 @@ function setup() {
         createElement(
           WorkbenchEditorProvider,
           { store, controller },
-          createElement(ProfileExplorer, { editor, isEtaEnabled: () => true }),
+          createElement(ProfileExplorer, {
+            editor,
+            deps: {} as TemplateDataDeps,
+            isEtaEnabled: () => true,
+          }),
         ),
       ),
     );
@@ -107,33 +134,35 @@ function setup() {
 }
 
 describe("Profile Explorer binding", () => {
-  it("shows new snapshot data while preview remains On demand", () => {
-    const { store, state, container } = setup();
+  it("shows new snapshot data while preview remains On demand", async () => {
+    const { store, state, container } = await setup();
     expect(container.textContent).toContain(
       "Why Most Published Research Findings Are False",
     );
-    void act(() => {
+    await act(async () => {
       store.getState().setItem({ id: "CNPF226A", title: "Second paper" });
       state.setState({ snapshot: SAMPLE_ITEMS[1]! });
     });
     expect(store.getState().preview.live).toBe(false);
-    expect(container.textContent).toContain(
-      "Designing reproducible research interfaces",
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain(
+        "Designing reproducible research interfaces",
+      ),
     );
     expect(container.textContent).not.toContain(
       "Why Most Published Research Findings Are False",
     );
   });
 
-  it("follows the Annotation root and sends Eta insertion to the remembered slice", () => {
-    const { store, state, container, insertField } = setup();
-    void act(() => {
+  it("follows the Annotation root and sends Eta insertion to the remembered slice", async () => {
+    const { store, state, container, insertField } = await setup();
+    await act(async () => {
       container
         .querySelector<HTMLElement>('[aria-label="Insert field"]')!
         .click();
     });
     expect(insertField).toHaveBeenCalledWith("<%= zt.title %>");
-    void act(() => {
+    await act(async () => {
       state.setState({
         example: {
           ...SAMPLE_ANNOTATIONS[0]!,
@@ -145,6 +174,57 @@ describe("Profile Explorer binding", () => {
       });
       store.getState().setRoot("annotation");
     });
-    expect(container.textContent).toContain("Chosen annotation text");
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain("Chosen annotation text"),
+    );
+  });
+  it("keeps vault links and attachment paths from the native inert loader", async () => {
+    const { store, state, container } = await setup();
+    expect(container.textContent).toContain("[[Library/Paper|Paper]]");
+    await act(async () => {
+      state.setState({
+        example: {
+          ...SAMPLE_ANNOTATIONS[0]!,
+          id: "live-annotation",
+          root: { ...SAMPLE_ANNOTATIONS[0]!.root, indexedKey: "ANNO0001" },
+        },
+      });
+      store.getState().setRoot("annotation");
+    });
+    expect(loadTemplateData).toHaveBeenLastCalledWith(
+      expect.anything(),
+      "ANNO0001",
+      "annotation",
+    );
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain("/Users/research/Paper.pdf"),
+    );
+    expect(container.textContent).toContain("Live annotation");
+  });
+  it("discards native context returned after the paper changes", async () => {
+    const { store, state, container } = await setup();
+    const old = Promise.withResolvers<TemplateDataLoadResult>();
+    vi.mocked(loadTemplateData)
+      .mockReturnValueOnce(old.promise)
+      .mockResolvedValueOnce({
+        kind: "data",
+        data: { title: "Newest local context" },
+      });
+    await act(async () => {
+      store.getState().setItem({ id: "CNPF226A", title: "Second paper" });
+      state.setState({ snapshot: SAMPLE_ITEMS[1]! });
+    });
+    await act(async () => {
+      store.getState().setItem({ id: "IANNP5A2", title: "First paper" });
+      state.setState({ snapshot: SAMPLE_ITEMS[0]! });
+    });
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain("Newest local context"),
+    );
+    await act(async () => {
+      old.resolve({ kind: "data", data: { title: "Outdated local context" } });
+    });
+    expect(container.textContent).toContain("Newest local context");
+    expect(container.textContent).not.toContain("Outdated local context");
   });
 });
