@@ -62,6 +62,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     resolve: {
+      conditions: ["module", "node", "development|production"],
       tsconfigPaths: true,
     },
     define: {

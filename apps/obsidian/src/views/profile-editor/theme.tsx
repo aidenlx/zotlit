@@ -1,10 +1,11 @@
-// Shared authoring controls inherit Obsidian's surfaces and editor typography.
 import { EditorView } from "@codemirror/view";
 
 import { templateHighlighting } from "@zotlit/workbench/language";
 import type { WorkbenchTheme, WorkbenchIcon } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+// Shared authoring controls inherit Obsidian's surfaces and editor typography.
+import { cn } from "@/lib/utils";
 
 export const profileEditorIcons: Record<WorkbenchIcon, string> = {
   add: "plus",
@@ -51,14 +52,14 @@ export const profileEditorTheme: WorkbenchTheme = {
       redo: "clickable-icon",
     },
     previewControls: {
-      controls: `${row} zt:flex-wrap`,
+      controls: cn(row, "zt:flex-wrap"),
       label: row,
       paused: "zt:text-muted",
     },
     resultHeader: {
       header: stack,
       heading: "zt:text-base zt:font-semibold",
-      controls: `${row} zt:flex-wrap`,
+      controls: cn(row, "zt:flex-wrap"),
       label: row,
     },
     resultRegion: { region: stack },
