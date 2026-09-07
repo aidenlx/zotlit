@@ -15,13 +15,9 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
-import { workbenchEnabled } from "@/services/local-bridge/customize";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { SettingsService } from "@/services/settings/service";
-import {
-  customizeProfile,
-  openProfileEditor,
-} from "@/views/profile-editor/register";
+import { openProfileEditor } from "@/views/profile-editor/register";
 
 import { referencesStyleDefinition } from "./citations";
 import type {
@@ -65,7 +61,6 @@ export { shareProfile, ShareProfileModal } from "./share-profile-modal";
 const logger = getLogger(["setting-tab", "profiles"]);
 
 /** One glyph for Customize wherever a Profile row offers it. */
-const CUSTOMIZE_ICON = "paintbrush";
 
 /**
  * Profile file actions wait for the registry to load and stay locked while the
@@ -183,7 +178,6 @@ function profilesList(
 ): SettingDefinitionList<SettingsControlKey> {
   const profiles = ctx.profile.profiles;
   const locked = profileActionsLocked(ctx);
-  const workbench = workbenchEnabled(ctx.settings);
   return {
     type: "list",
     heading: m.settings_profile_other_heading(),
@@ -256,20 +250,6 @@ function profilesList(
                 void runAction(() => editProfileMatch(ctx, profile.id), ctx),
             ),
         );
-        if (workbench)
-          setting.addExtraButton((button) =>
-            button
-              .setIcon(CUSTOMIZE_ICON)
-              .setTooltip(m.settings_template_customize())
-              .setDisabled(locked)
-              .onClick(
-                () =>
-                  void runAction(
-                    () => ctx.customize({ profileId: profile.id }),
-                    ctx,
-                  ),
-              ),
-          );
         setting.addExtraButton((button) =>
           button
             .setIcon("more-horizontal")
@@ -283,10 +263,10 @@ function profilesList(
                   .setDisabled(locked)
                   .onClick(
                     () =>
-                      void runAction(async () => {
-                        const file = ctx.app.vault.getFileByPath(profile.path);
-                        if (file) await customizeProfile(ctx.app, file);
-                      }, ctx),
+                      void runAction(
+                        () => ctx.customize({ profileId: profile.id }),
+                        ctx,
+                      ),
                   ),
               );
               menu.addItem((item) =>
@@ -470,17 +450,14 @@ async function deleteProfile(
 }
 
 /**
- * The Template document row. Customize is the primary action while the web
- * Template Workbench is on, with the eject beside it as the in-vault way in;
- * with the Workbench off the eject is the primary action again, so off means
- * no door rather than a door that fails.
+ * The Template document row. Customize opens the editor chooser; a saved
+ * document also offers Restore built-in.
  */
 function defaultDocumentItem(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsControlKey> {
   const path = ctx.profile.defaultDocumentPath;
   const ejected = ctx.app.vault.getFileByPath(path) !== null;
-  const workbench = workbenchEnabled(ctx.settings);
   return {
     name: m.settings_profile_document_name(),
     desc: ejected ? basename(path) : m.settings_profile_document_builtin(),
@@ -488,34 +465,13 @@ function defaultDocumentItem(
       if (ejected)
         setting.addButton((button) =>
           button
-            .setIcon("pencil")
-            .setTooltip(m.profile_editor_customize())
+            .setIcon("rotate-ccw")
+            .setTooltip(m.settings_profile_document_restore())
+            .setDisabled(profileActionsLocked(ctx))
+            .setDestructive()
             .onClick(
               () =>
-                void runAction(
-                  () => customizeProfile(ctx.app, ctx.profile),
-                  ctx,
-                ),
-            ),
-        );
-      setting.addButton((button) =>
-        button
-          // Restoring trashes the ejected file so the built-in takes over
-          // again — a revert, which is why it is not the delete glyph.
-          .setIcon(ejected ? "rotate-ccw" : "file-pen")
-          .setTooltip(
-            ejected
-              ? m.settings_profile_document_restore()
-              : m.profile_editor_customize(),
-          )
-          .setDisabled(profileActionsLocked(ctx))
-          .then((button) => {
-            if (ejected) button.setDestructive();
-          })
-          .onClick(
-            () =>
-              void runAction(async () => {
-                if (ejected) {
+                void runAction(async () => {
                   if (
                     await confirm(
                       {
@@ -530,24 +486,22 @@ function defaultDocumentItem(
                     )
                   )
                     await ctx.profile.restoreDefault();
-                } else await customizeProfile(ctx.app, ctx.profile);
-              }, ctx),
-          ),
-      );
-      if (workbench)
-        setting.addButton((button) =>
-          button
-            .setButtonText(m.settings_template_customize())
-            .setCta()
-            .setDisabled(profileActionsLocked(ctx))
-            .onClick(
-              () =>
-                void runAction(
-                  () => ctx.customize({ profileId: DEFAULT_PROFILE }),
-                  ctx,
-                ),
+                }, ctx),
             ),
         );
+      setting.addButton((button) =>
+        button
+          .setButtonText(m.settings_template_customize())
+          .setCta()
+          .setDisabled(profileActionsLocked(ctx))
+          .onClick(
+            () =>
+              void runAction(
+                () => ctx.customize({ profileId: DEFAULT_PROFILE }),
+                ctx,
+              ),
+          ),
+      );
     },
   };
 }
@@ -571,7 +525,10 @@ function defaultProfileItem(
           .setDisabled(profileActionsLocked(ctx))
           .onClick(
             () =>
-              void runAction(() => customizeProfile(ctx.app, ctx.profile), ctx),
+              void runAction(
+                () => ctx.customize({ profileId: DEFAULT_PROFILE }),
+                ctx,
+              ),
           ),
       );
       setting.addExtraButton((button) =>
@@ -606,14 +563,12 @@ function propertiesItem(
       setting.addButton((button) =>
         button
           .setIcon(ejected ? "pencil" : "file-pen")
-          .setTooltip(
-            ejected ? m.settings_template_open() : m.profile_editor_customize(),
-          )
+          .setTooltip(m.profile_editor_customize())
           .setDisabled(profileActionsLocked(ctx))
           .onClick(
             () =>
               void runAction(async () => {
-                await customizeProfile(ctx.app, ctx.profile);
+                await ctx.customize({ profileId: DEFAULT_PROFILE });
               }, ctx),
           ),
       );

@@ -46,7 +46,10 @@ import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
 import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
-import { registerProfileEditor } from "./views/profile-editor/register";
+import {
+  openNativeProfile,
+  registerProfileEditor,
+} from "./views/profile-editor/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
 import { registerTemplateDataExplorer } from "./views/template-data-explorer/register";
@@ -224,6 +227,20 @@ export default class ZotLitPlugin extends Plugin {
       pluginVersion: this.manifest.version,
       confirmLaunch: createLaunchSheet(this.app),
       openExternal: (url) => window.open(url),
+      openNative: async ({ profileId, item }) => {
+        const entry = services.profile.profiles.find(
+          (profile) => profile.id === profileId,
+        );
+        const target =
+          profileId === "default"
+            ? services.profile
+            : entry && this.app.vault.getFileByPath(entry.path);
+        if (target)
+          await openNativeProfile(this.app, target, {
+            ...(item ? { itemIndexedKey: item.key } : {}),
+            explainUnsupported: false,
+          });
+      },
     });
 
     this.addSettingTab(
@@ -334,6 +351,7 @@ export default class ZotLitPlugin extends Plugin {
     });
 
     registerProfileEditor(this, {
+      customize,
       app: this.app,
       db: services.db,
       noteIndex: services.noteIndex,

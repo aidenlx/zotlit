@@ -18,42 +18,24 @@ import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
+import {
+  profileCustomization,
+  saveProfileCustomization,
+} from "@/views/profile-editor/preferences";
+import type { ProfileCustomization } from "@/views/profile-editor/preferences";
 
-import type { DeviceStorage } from "./installation";
 import type { LocalBridgeService } from "./service";
 import type { SelectedItemIdentity } from "./sessions";
 import { unsupportedProfileSourceReason } from "./unsupported";
 
 const logger = getLogger("local-bridge");
 
-/**
- * Per-device, never synced: the researcher who ticked "Do not ask again" on
- * one computer still meets the sheet on the next one.
- *
- * @see `apps/obsidian/policies/local-storage.md`
- */
-const LAUNCH_SHEET_KEY = "zotlit-workbench-launch-approved";
-
 /** How long a launch waits for the listener it just turned on. */
 const SERVER_START_TIMEOUT_MS = 10_000;
 
-/** `true` once "Do not ask again" was ticked on this device. */
-export function launchSheetSkipped(store: DeviceStorage): boolean {
-  return store.loadLocalStorage(LAUNCH_SHEET_KEY) === "1";
-}
-
-/** Tick or clear the per-device skip; clearing brings the sheet back. */
-export function setLaunchSheetSkipped(
-  store: DeviceStorage,
-  skipped: boolean,
-): void {
-  store.saveLocalStorage(LAUNCH_SHEET_KEY, skipped ? "1" : null);
-}
-
 /**
- * Whether the web Template Workbench is offered at all: the toggle under the
- * Local server. Every entry that leads to {@link CustomizeAction} reads it, so
- * off means no door rather than a door that fails.
+ * Whether web access is enabled. The chooser asks for approval before
+ * enabling it for a web launch.
  */
 export function workbenchEnabled(
   settings: Pick<SettingsService, "current">,
@@ -64,6 +46,7 @@ export function workbenchEnabled(
 /** What an entry action asks Customize to open. */
 export interface CustomizeRequest {
   readonly profileId: ProfileSelector;
+  readonly destination?: Exclude<ProfileCustomization, "ask">;
   /**
    * The paper to show. Leave it out and the flow takes the active Literature
    * Note's paper, or a Sample Item when no Literature Note is active.
@@ -81,11 +64,13 @@ export interface LaunchSheetDetails {
   readonly template: string;
   /** The sheet leads with turning the Local Server on. */
   readonly turnServerOn: boolean;
+  readonly turnWorkbenchOn: boolean;
 }
 
 /** What the researcher answered on the launch sheet. */
 export interface LaunchConsent {
-  readonly doNotAskAgain: boolean;
+  readonly destination: "web" | "native";
+  readonly remember: boolean;
 }
 
 /** The sheet as the flow uses it: `null` means Cancel, and nothing happens. */
@@ -107,14 +92,26 @@ export interface CustomizeDeps {
   pluginVersion: string;
   confirmLaunch: ConfirmLaunch;
   openExternal: (url: string) => void;
+  openNative: (request: CustomizeRequest) => Promise<void>;
 }
 
-/** Open the web Template Workbench on one template, or say why it stays shut. */
+/** Open a template in the chosen editor, with approval for web access. */
 export type CustomizeAction = (request: CustomizeRequest) => Promise<void>;
 
 export function createCustomize(deps: CustomizeDeps): CustomizeAction {
   return async (request) => {
     await deps.profile.ready;
+    const item =
+      request.item === undefined ? activeNoteItem(deps.app) : request.item;
+    const nativeRequest = { ...request, item };
+    const preference = profileCustomization(deps.app);
+    if (
+      request.destination === "native" ||
+      (!request.destination && preference === "native")
+    ) {
+      await deps.openNative(nativeRequest);
+      return;
+    }
     const source = await deps.profile.getSource(request.profileId);
     const reason = unsupportedProfileSourceReason(
       await withDependencies(deps, source),
@@ -122,35 +119,39 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
     );
     if (reason !== null) {
       logger.debug("Customize kept the Profile in Obsidian", { reason });
-      await openInObsidian(
-        deps.app,
-        profileDocumentPath(deps, request.profileId),
-      );
+      await deps.openNative(nativeRequest);
       new BaseNotice(m.notice_workbench_unsupported_profile());
       return;
     }
 
-    const item =
-      request.item === undefined ? activeNoteItem(deps.app) : request.item;
     const turnServerOn = deps.settings.current?.["server.enabled"] !== true;
-    if (turnServerOn || !launchSheetSkipped(deps.app)) {
+    const turnWorkbenchOn = !workbenchEnabled(deps.settings);
+    if (turnServerOn || turnWorkbenchOn || preference !== "web") {
       const consent = await deps.confirmLaunch({
         website: new URL(DOCS_SITE_URL).host,
         vault: deps.app.vault.getName(),
         item: item?.title ?? item?.key ?? null,
         template: templateName(deps, request.profileId),
         turnServerOn,
+        turnWorkbenchOn,
       });
       if (consent === null) return;
-      if (turnServerOn) {
-        deps.settings.update({ "server.enabled": true });
-        if (!(await whenListening(deps.localServer))) {
-          logger.warn("Customize gave up waiting for the local server");
-          new BaseNotice(m.notice_workbench_server_failed());
-          return;
-        }
+      if (consent.destination === "native") {
+        await deps.openNative(nativeRequest);
+        if (consent.remember) saveProfileCustomization(deps.app, "native");
+        return;
       }
-      if (consent.doNotAskAgain) setLaunchSheetSkipped(deps.app, true);
+      if (turnServerOn || turnWorkbenchOn)
+        deps.settings.update({
+          ...(turnServerOn ? { "server.enabled": true } : {}),
+          ...(turnWorkbenchOn ? { "server.workbench": true } : {}),
+        });
+      if (turnServerOn && !(await whenListening(deps.localServer))) {
+        logger.warn("Customize gave up waiting for the local server");
+        new BaseNotice(m.notice_workbench_server_failed());
+        return;
+      }
+      if (consent.remember) saveProfileCustomization(deps.app, "web");
     }
 
     const url = deps.bridge.launchUrl({ profileId: request.profileId, item });
@@ -217,19 +218,6 @@ function templateName(deps: CustomizeDeps, profileId: ProfileSelector): string {
   return profileEntry(deps, profileId)?.label ?? profileId;
 }
 
-function profileDocumentPath(
-  deps: CustomizeDeps,
-  profileId: ProfileSelector,
-): string | null {
-  if (profileId === DEFAULT_PROFILE) return deps.profile.defaultDocumentPath;
-  return profileEntry(deps, profileId)?.path ?? null;
-}
-
 function profileEntry(deps: CustomizeDeps, profileId: ProfileSelector) {
   return deps.profile.profiles.find(({ id }) => id === profileId);
-}
-
-async function openInObsidian(app: App, path: string | null): Promise<void> {
-  const file = path === null ? null : app.vault.getFileByPath(path);
-  if (file) await app.workspace.getLeaf(true).openFile(file);
 }

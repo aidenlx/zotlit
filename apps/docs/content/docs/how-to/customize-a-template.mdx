@@ -23,13 +23,13 @@ Use the web Template Workbench to change a literature note's filename, propertie
 
     In Obsidian, open <SettingsPath />. On the <UiLabel name={m.settings_profile_document_name()} /> row, select <UiLabel name={m.settings_template_customize()} />.
 
-    To edit the template used by an existing literature note, open that note and run <Command name={m.command_customize_note_template_name()} />. The same action is in the note's file menu. You can also select <UiLabel name={m.settings_template_customize()} /> on a row at <SettingsPath page={m.settings_page_profiles()} />.
+    To edit the template used by an existing literature note, open that note and run <Command name={m.command_customize_note_template_name()} />. The same action is in the note's file menu. For another profile, open <UiLabel name={workbenchMessages.workbench_more_actions()} /> on its row at <SettingsPath page={m.settings_page_profiles()} /> and select <UiLabel name={m.profile_editor_customize()} />.
 
   </Step>
   <Step>
     ### Confirm the connection
 
-    Review the website, vault, paper, template, and access listed in the confirmation. Select <UiLabel name={m.modal_workbench_launch_open()} /> to open your browser.
+    Select <UiLabel name={m.profile_editor_web_open()} /> for guided editing with sample data. Review the website, vault, paper, template, and access listed in the confirmation. Select <UiLabel name={m.modal_workbench_launch_open()} /> to open your browser.
 
     ZotLit turns on its Local Server if needed. The Workbench uses the active literature note's paper, or a sample item when no literature note is active. See [Local Server and browser access](/docs/concepts/template-workbench#local-server).
 
@@ -52,13 +52,13 @@ Use the web Template Workbench to change a literature note's filename, propertie
 
 The web editor supports Liquid templates. A template that requires Eta or JavaScript opens in Obsidian with a notice.
 
-If <UiLabel name={m.settings_template_customize()} /> is absent, enable <UiLabel name={m.settings_local_server_workbench_name()} /> under <SettingsPath page={m.settings_page_advanced()} />. Its toggle appears while <UiLabel name={m.settings_local_server_enabled_name()} /> is on.
+<UiLabel name={m.settings_template_customize()} /> remains available while web access is off. The web choice asks for approval before enabling access. Select <UiLabel name={m.modal_workbench_launch_remember()} /> to save your choice for this vault on this device. Change it at <SettingsPath page={m.settings_page_advanced()} setting={m.profile_editor_preference_name()} />.
 
 ## Edit the document in Obsidian
 
-On the <UiLabel name={m.settings_profile_document_name()} /> row, select <UiLabel name={m.settings_template_eject()} /> to create an editable copy of the built-in template. For an existing document, select <UiLabel name={m.settings_template_open()} />.
+On the <UiLabel name={m.settings_profile_document_name()} /> row, select <UiLabel name={m.settings_template_customize()} />, choose <UiLabel name={m.modal_workbench_launch_native()} />, and select <UiLabel name={m.modal_workbench_launch_open()} />. The Profile Editor opens in Obsidian. Opening the built-in template keeps it in memory; the first edit creates its document in your vault.
 
-Edit the file in Obsidian and save it. ZotLit loads your changes automatically. Run <Command name={m.command_update_note_name()} /> to apply them to the current literature note.
+Edit the template in the Profile Editor. ZotLit saves your changes automatically. Run <Command name={m.command_update_note_name()} /> to apply them to the current literature note.
 
 To return this template to its built-in form, select <UiLabel name={m.settings_profile_document_restore()} /> on the same row. ZotLit moves the file to Obsidian's configured trash. You can recover it from there; existing notes keep their content until updated.
 
