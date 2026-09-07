@@ -76,6 +76,8 @@ import { pickItem } from "@/views/template-data-explorer/item-picker";
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
 
 import { createProfileEditorHost } from "./host";
+import { createMatchData } from "./match-data";
+import { NativeMatchPane } from "./match-pane";
 import { profileEditorTheme } from "./theme";
 
 export const PROFILE_EDITOR_VIEW_TYPE = "zotlit-profile-editor";
@@ -91,6 +93,9 @@ export class ProfileEditorView extends TextFileView {
   readonly #revealListeners = new Set<
     (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
   >();
+  get matchDatabase() {
+    return this.#deps.db;
+  }
   readonly #deps: ProfileEditorDeps;
   readonly #host: ReturnType<typeof createProfileEditorHost>;
   #controller = new WorkbenchDocumentController("", { runtime: "native" });
@@ -149,11 +154,7 @@ export class ProfileEditorView extends TextFileView {
             result={this.preview?.state.getState().result ?? null}
           />
         ),
-        matchData: {
-          tags: async () => [],
-          collections: async () => [],
-          libraries: async () => [],
-        },
+        matchData: createMatchData(deps.db),
         insertTarget: () => this.#insertTarget,
       },
       (content) => this.provide(content),
@@ -656,6 +657,12 @@ function EditorContent({
                   )}
                 />
               )}
+            </TabPanel>
+            <TabPanel tab="match">
+              <NativeMatchPane
+                controller={controller}
+                db={view.matchDatabase}
+              />
             </TabPanel>
             <TabPanel tab="annotation">
               <AnnotationPane

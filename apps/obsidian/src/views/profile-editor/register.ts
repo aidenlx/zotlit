@@ -92,7 +92,11 @@ export function registerProfileEditor(
 export async function openProfileEditor(
   app: App,
   file: TFile,
-  options: { leaf?: WorkspaceLeaf; itemIndexedKey?: string } = {},
+  options: {
+    leaf?: WorkspaceLeaf;
+    itemIndexedKey?: string;
+    tab?: "match";
+  } = {},
 ): Promise<void> {
   const active = app.workspace.getActiveFile();
   const itemIndexedKey =
@@ -112,7 +116,11 @@ export async function openProfileEditor(
     app.workspace.getLeaf("tab");
   await leaf.setViewState({
     type: PROFILE_EDITOR_VIEW_TYPE,
-    state: { file: file.path, ...(itemIndexedKey ? { itemIndexedKey } : {}) },
+    state: {
+      file: file.path,
+      ...(itemIndexedKey ? { itemIndexedKey } : {}),
+      ...(options.tab ? { tab: options.tab, advanced: false } : {}),
+    },
     active: true,
   });
   await app.workspace.revealLeaf(leaf);

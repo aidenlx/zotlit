@@ -1183,9 +1183,15 @@ importers:
       '@zotlit/db':
         specifier: workspace:*
         version: link:../db
+      '@zotlit/filter-expression':
+        specifier: workspace:*
+        version: link:../filter-expression
       '@zotlit/templates':
         specifier: workspace:*
         version: link:../templates
+      '@zotlit/zotero-types':
+        specifier: workspace:*
+        version: link:../zotero-types
       arkregex:
         specifier: 'catalog:'
         version: 0.0.5
@@ -1244,9 +1250,6 @@ importers:
       '@zotlit/config':
         specifier: workspace:*
         version: link:../config
-      '@zotlit/zotero-types':
-        specifier: workspace:*
-        version: link:../zotero-types
       ajv:
         specifier: 'catalog:'
         version: 8.20.0

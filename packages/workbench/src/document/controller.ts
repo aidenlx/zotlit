@@ -1,6 +1,3 @@
-// Headless master state for one Profile document: the only undo history, the
-// slice ranges every pane edits through, and the validation Problems reads.
-
 import {
   history,
   isolateHistory,
@@ -10,6 +7,8 @@ import {
   undoDepth,
 } from "@codemirror/commands";
 import { Annotation, ChangeSet, EditorState, Text } from "@codemirror/state";
+// Headless master state for one Profile document: the only undo history, the
+// slice ranges every pane edits through, and the validation Problems reads.
 import type {
   ChangeSpec,
   Transaction,
@@ -18,6 +17,8 @@ import type {
 import { diffChars } from "diff";
 
 import { ANNOTATION_HEADER } from "@zotlit/templates/constants";
+import { updateLiteratureNoteTemplateMatch } from "@zotlit/templates/facade";
+import type { MatchTree } from "@zotlit/templates/facade";
 import {
   LiteratureNoteTemplateError,
   parseLiteratureNoteTemplate,
@@ -419,6 +420,36 @@ export class WorkbenchDocumentController {
     const edit = manifestValueEdit(this.#text, path, value);
     if (!edit) return false;
     this.dispatch({ changes: edit, userEvent: "input.form" });
+    return true;
+  }
+
+  /** Write only the Match region, with each form edit in the master undo history. */
+  setMatch(match: MatchTree | undefined): boolean {
+    let next: string;
+    try {
+      next = updateLiteratureNoteTemplateMatch(this.#text, match);
+    } catch {
+      return false;
+    }
+    if (next === this.#text) return true;
+    let from = 0;
+    while (
+      from < this.#text.length &&
+      from < next.length &&
+      this.#text[from] === next[from]
+    )
+      from++;
+    let to = this.#text.length;
+    let end = next.length;
+    while (to > from && end > from && this.#text[to - 1] === next[end - 1]) {
+      to--;
+      end--;
+    }
+    this.dispatch({
+      changes: { from, to, insert: next.slice(from, end) },
+      userEvent: "input.form",
+      annotations: isolateHistory.of("full"),
+    });
     return true;
   }
 

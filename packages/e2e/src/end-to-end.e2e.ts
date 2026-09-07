@@ -121,10 +121,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   }): Promise<boolean> {
     // A kind change replaces the value control and its options on the next render.
     const valueControl =
-      kind === "collections" ? 'input[type="text"]' : "select";
+      kind === "library"
+        ? '[data-part="chip-value"]'
+        : `${kind === "collections" ? 'input[type="text"]' : "select"}[aria-label=${JSON.stringify(m.settings_profile_match_value())}]`;
+    const valueProperty = kind === "library" ? "textContent" : "value";
     return obEvalUntil(
       vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);var row=modal?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}[aria-label=${JSON.stringify(m.settings_profile_match_value())}]')?.value===${JSON.stringify(value)});})()`,
+      `(function(){var editor=document.querySelector('.zt-profile-editor');var row=editor?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}')?.${valueProperty}===${JSON.stringify(value)});})()`,
       { expected: "true" },
     );
   }
@@ -132,7 +135,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   async function addLibraryCondition(selector: string): Promise<void> {
     await obEval(
       vaultId,
-      `(function(){var modal=Array.from(document.querySelectorAll('.modal')).at(-1);Array.from(modal.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
+      `(function(){var editor=document.querySelector('.zt-profile-editor');Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
     );
     expect(
       await conditionReady({
@@ -144,7 +147,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var row=Array.from(Array.from(document.querySelectorAll('.modal')).at(-1).querySelectorAll('[data-condition-row]')).at(-1);var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]');kind.value='library';kind.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+      `(function(){var row=Array.from(document.querySelector('.zt-profile-editor').querySelectorAll('[data-condition-row]')).at(-1);var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]');kind.value='library';kind.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     expect(
       await conditionReady({
@@ -156,7 +159,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var row=Array.from(Array.from(document.querySelectorAll('.modal')).at(-1).querySelectorAll('[data-condition-row]')).at(-1);var value=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_value())}]');value.value=${JSON.stringify(selector)};value.dispatchEvent(new Event('change',{bubbles:true}));return value.value;})()`,
+      `(function(){var row=Array.from(document.querySelector('.zt-profile-editor').querySelectorAll('[data-condition-row]')).at(-1);var value=row.querySelector('input[aria-label=${JSON.stringify(m.settings_profile_match_value())}]');value.value=${JSON.stringify(selector)};value.dispatchEvent(new Event('input',{bubbles:true}));return value.value;})()`,
+    );
+    await obEval(
+      vaultId,
+      `(function(){var row=Array.from(document.querySelector('.zt-profile-editor').querySelectorAll('[data-condition-row]')).at(-1);row.querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`,
     );
   }
 
@@ -172,16 +179,17 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var modal=document.querySelector('.zt-profile-match-modal');return String(modal?.querySelector('.modal-title')?.textContent===${JSON.stringify(m.settings_profile_match_title({ profile: booksProfile.label }))}&&!!modal.querySelector('[data-condition-row] select')&&!!modal.querySelector('.zt-profile-match-footer'));})()`,
+        `(function(){var editor=document.querySelector('.zt-profile-editor');return String(!!editor?.querySelector('[data-part=fieldset]')&&!document.querySelector('.modal.mod-settings'));})()`,
         { expected: "true" },
       ),
     ).toBe(true);
+    await obEval(
+      vaultId,
+      `(function(){var editor=document.querySelector('.zt-profile-editor');if(!editor.querySelector('[data-condition-row]'))Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
+    );
   }
 
   async function saveMatch(match: unknown): Promise<void> {
-    expect(
-      await clickModalButton(vaultId, m.settings_profile_match_save()),
-    ).toBe(true);
     expect(
       await obEvalUntil(
         vaultId,
@@ -189,6 +197,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         { expected: "true" },
       ),
     ).toBe(true);
+    await openProfilesSettings(vaultId, m.settings_page_profiles());
   }
 
   /** Hand-written Match trees exercise the same document boundary as external editors. */
@@ -875,7 +884,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var operator=document.querySelector('.zt-profile-match-modal [data-condition-row] select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,
+      `(function(){var operator=document.querySelector('.zt-profile-editor [data-condition-row] select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     expect(
       await conditionReady({
