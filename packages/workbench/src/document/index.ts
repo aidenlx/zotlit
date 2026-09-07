@@ -3,6 +3,7 @@ export { ANNOTATION_HEADER } from "@zotlit/templates/constants";
 export {
   entryPosition,
   entrySlice,
+  externalEdit,
   sliceEdit,
   WorkbenchDocumentController,
 } from "./controller";

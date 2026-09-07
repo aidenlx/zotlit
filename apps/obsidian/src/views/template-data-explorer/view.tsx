@@ -51,6 +51,7 @@ import { createExplorerActions, ExplorerActionsContext } from "./actions";
 import type { ExplorerActions } from "./actions";
 import { Explorer } from "./Explorer";
 import { buildTemplateDataExport } from "./export";
+import { rememberTemplateItem } from "./item-memory";
 import { pickItem } from "./item-picker";
 import { createExplorerStore, ExplorerStoreProvider } from "./store";
 import type { ExplorerState } from "./store";
@@ -507,6 +508,7 @@ export class TemplateDataExplorerView extends ItemView {
       if (!hit) return;
       this.#item = hit.item;
       this.#itemIndexedKey = hit.item.indexedKey;
+      rememberTemplateItem(this.#deps.app, hit.item.indexedKey);
       this.#resetNavigationState();
       this.#store.setState({ itemVanished: false });
       this.#reload();
@@ -524,12 +526,14 @@ export class TemplateDataExplorerView extends ItemView {
     if (item) {
       this.#item = item;
       this.#itemIndexedKey = indexedKey;
+      rememberTemplateItem(this.#deps.app, indexedKey);
     }
   }
 
   #restoreItem(indexedKey: string): void {
     this.#itemIndexedKey = indexedKey;
     this.#item = this.#resolveItem(indexedKey);
+    if (this.#item) rememberTemplateItem(this.#deps.app, indexedKey);
   }
 
   #resolveItem(indexedKey: string): Item | null {
