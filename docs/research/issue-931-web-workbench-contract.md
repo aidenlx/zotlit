@@ -285,3 +285,21 @@ expressions can fail when evaluated against particular data.
 The existing CLI envelope version, Template data contract version, and Companion
 protocol version describe different interfaces. A browser connection needs its
 own compatibility negotiation and a redacted installation identity.
+
+## Amendments from the Local Bridge spec (2026-09-07)
+
+The plugin-side Local Bridge grilling on map #835 amended this record in two
+places. The full rulings are in the Local Bridge spec issue; the decisions are
+[ADR 0042](../adr/0042-a-workbench-connection-starts-in-obsidian.md) and
+[ADR 0043](../adr/0043-an-item-snapshot-carries-only-allow-listed-fields.md).
+
+- **Session bootstrap.** A Workbench Connection starts in Obsidian only. The
+  browser-first loopback probe and its `pending` state leave the contract at
+  version 2; the URL fragment carries a Connection code and the Local Server's
+  port; the selected Item is nullable and the page falls back to a Sample Item.
+  The Local Bridge is hosted on the plugin's Local Server beside Live Update,
+  and the session credential lives in plugin memory only.
+- **Redaction.** The exporter emits allow-listed fields only, the
+  personal-library `weblink` is unavailable, and a connected snapshot is kept
+  in `sessionStorage` rather than `localStorage`. The rest of the "Item
+  snapshots and dependencies" section stands.
