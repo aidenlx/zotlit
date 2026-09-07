@@ -298,12 +298,6 @@ function SimpleNodeRow({ node }: { node: DisplayNode }) {
   const path = formatPath(node.path, "zt");
   return (
     <div {...part("simple-row")}>
-      <div {...part("simple-heading")}>
-        <KeyLabel>{node.label}</KeyLabel>
-        <code {...part("path")} {...useTooltip(path)}>
-          {path}
-        </code>
-      </div>
       <div {...part("simple-value")}>
         {node.kind === "value" ? (
           <ValueContent node={node} />
@@ -316,6 +310,12 @@ function SimpleNodeRow({ node }: { node: DisplayNode }) {
         ) : (
           <span {...part("placeholder")}>{node.reason}</span>
         )}
+      </div>
+      <div {...part("simple-heading")}>
+        <KeyLabel>{node.label}</KeyLabel>
+        <code {...part("path")} {...useTooltip(path)}>
+          {path}
+        </code>
       </div>
     </div>
   );

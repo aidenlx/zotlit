@@ -299,4 +299,35 @@ describe("ProfileEditorView", () => {
       view.contentEl.remove();
     }
   });
+  it("rejects insertion after the remembered filename slice is removed", async () => {
+    const { view } = setup();
+    view.store.getState().setTab("name");
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => {
+        await view.open();
+      });
+      const editor = EditorView.findFromDOM(
+        view.contentEl.querySelector(".cm-editor")!,
+      )!;
+      await act(() => {
+        editor.focus();
+        editor.dispatch({ selection: { anchor: 2 } });
+      });
+      expect(view.insertTarget?.slice).toBe("filename");
+      const external = SOURCE.replace("filename: paper\n", "");
+      await act(() => {
+        view.setViewData(external, false);
+      });
+      await act(() => {
+        expect(view.insertField("{{ zt.title }}")).toBe(false);
+      });
+      expect(view.getViewData()).toBe(external);
+    } finally {
+      await act(async () => {
+        await view.close();
+      });
+      view.contentEl.remove();
+    }
+  });
 });

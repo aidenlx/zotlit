@@ -174,7 +174,9 @@ export function open(): OpenPage {
 /** Presses the button reading exactly `label` inside `scope`. */
 export function press(scope: HTMLElement, label: string): void {
   const target = [
-    ...scope.querySelectorAll<HTMLElement>("button, [role=menuitem]"),
+    ...scope.querySelectorAll<HTMLElement>(
+      "button, [role=button], [role=menuitem]",
+    ),
   ].find(
     (button) =>
       button.textContent === label ||
@@ -186,8 +188,10 @@ export function press(scope: HTMLElement, label: string): void {
 
 /** Finds the field row named `label`, including its insertion controls. */
 export function fieldRow(scope: HTMLElement, label: string): HTMLLIElement {
-  const target = [...scope.querySelectorAll("span[title]")]
-    .find((span) => span.getAttribute("title") === label)
+  const target = [
+    ...scope.querySelectorAll('[role="treeitem"] [data-part="key"]'),
+  ]
+    .find((span) => span.textContent === label)
     ?.closest("li");
   if (!target) throw new Error(`No field row reads '${label}'.`);
   return target;
