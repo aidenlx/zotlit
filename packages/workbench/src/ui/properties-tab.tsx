@@ -46,6 +46,8 @@ export interface PropertiesPaneProps {
   /** The open row's position, or null while every row is folded. */
   selected: number | null;
   onSelect: (position: number | null) => void;
+  /** A native host can edit JavaScript in its whole-document editor. */
+  onOpenSource?: (range: WorkbenchSliceRange) => void;
   reveal?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
   suggest?: SuggestionSource;
@@ -105,6 +107,7 @@ export function PropertiesPane({
   diagnostics,
   selected,
   onSelect,
+  onOpenSource,
   reveal,
   onSelection,
   suggest,
@@ -252,6 +255,7 @@ export function PropertiesPane({
                   produced={fields}
                   diagnostics={raised}
                   focusName={newRow === entry.position}
+                  onOpenSource={onOpenSource}
                   reveal={reveal}
                   onSelection={onSelection}
                   suggest={suggest}
@@ -290,6 +294,7 @@ interface EntryFormProps {
   produced: readonly RenderedProperty[];
   diagnostics: readonly EntryDiagnostic[];
   focusName: boolean;
+  onOpenSource?: (range: WorkbenchSliceRange) => void;
   reveal?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
   suggest?: SuggestionSource;
@@ -303,6 +308,7 @@ function EntryForm({
   produced,
   diagnostics,
   focusName,
+  onOpenSource,
   reveal,
   onSelection,
   suggest,
@@ -354,7 +360,22 @@ function EntryForm({
         </label>
       )}
       {entry.language === "js" ? (
-        <p {...part("hint")}>{m.workbench_properties_javascript()}</p>
+        <p {...part("hint")}>
+          {onOpenSource ? (
+            <>
+              {m.workbench_properties_javascript_source()}{" "}
+              <button
+                type="button"
+                {...part("secondary-action")}
+                onClick={() => onOpenSource(entry.expression)}
+              >
+                {m.workbench_advanced()}
+              </button>
+            </>
+          ) : (
+            m.workbench_properties_javascript()
+          )}
+        </p>
       ) : (
         <div {...part("field-group")}>
           <div {...part("expression-header")}>

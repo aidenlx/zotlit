@@ -41,6 +41,7 @@ import { registerCitationPresentation } from "./views/citation-presentation/regi
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
+import { registerProfileEditor } from "./views/profile-editor/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
 import { registerTemplateDataExplorer } from "./views/template-data-explorer/register";
@@ -297,6 +298,17 @@ export default class ZotLitPlugin extends Plugin {
       attachmentImport: services.attachmentImport,
       itemLookup: services.itemLookup,
       settings: services.settings,
+    });
+
+    registerProfileEditor(this, {
+      app: this.app,
+      db: services.db,
+      noteIndex: services.noteIndex,
+      zoteroPref: services.zoteroPref,
+      itemLookup: services.itemLookup,
+      settings: services.settings,
+      templates: services.template,
+      profile: services.profile,
     });
 
     registerTemplateDataExplorer(this, {

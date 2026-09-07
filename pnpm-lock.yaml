@@ -1189,6 +1189,9 @@ importers:
       arkregex:
         specifier: 'catalog:'
         version: 0.0.5
+      diff:
+        specifier: 8.0.4
+        version: 8.0.4
       jsonc-parser:
         specifier: ^3.3.1
         version: 3.3.1

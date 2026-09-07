@@ -15,9 +15,15 @@ import { useIcon, useParts } from "./theme";
 
 export function EditToolbar({
   children,
+  leading,
+  layout = "grouped",
   onModeChange,
 }: {
   children?: ReactNode;
+  /** The host's Item chooser, before the shared controls. */
+  leading?: ReactNode;
+  /** Linear headers put history before a single Advanced toggle. */
+  layout?: "grouped" | "linear";
   onModeChange?: (advanced: boolean) => void;
 }) {
   const editor = useOptionalEditor();
@@ -41,8 +47,9 @@ export function EditToolbar({
       aria-pressed={advanced === source}
       disabled={inert}
       onClick={() => {
-        setAdvanced(source);
-        onModeChange?.(source);
+        const next = layout === "linear" ? !advanced : source;
+        setAdvanced(next);
+        onModeChange?.(next);
       }}
       {...part("mode", advanced === source ? "on" : "off")}
     >
@@ -51,39 +58,55 @@ export function EditToolbar({
     </button>
   );
 
+  const history = (
+    <>
+      <button
+        type="button"
+        aria-label={m.workbench_undo()}
+        disabled={!controller?.canUndo}
+        onClick={() => controller?.undo()}
+        {...undoTooltip}
+        {...part("undo")}
+      >
+        {icon("undo")}
+      </button>
+      <button
+        type="button"
+        aria-label={m.workbench_redo()}
+        disabled={!controller?.canRedo}
+        onClick={() => controller?.redo()}
+        {...redoTooltip}
+        {...part("redo")}
+      >
+        {icon("redo")}
+      </button>
+    </>
+  );
   return (
     <div {...part("edit-toolbar")}>
-      <div
-        role="group"
-        aria-label={m.workbench_editing_mode()}
-        {...part("mode-group")}
-      >
-        {mode(false, m.workbench_basic(), "basic")}
-        {mode(true, m.workbench_advanced(), "advanced")}
-      </div>
-      <div {...part("toolbar-actions")}>
-        <button
-          type="button"
-          aria-label={m.workbench_undo()}
-          disabled={!controller?.canUndo}
-          onClick={() => controller?.undo()}
-          {...undoTooltip}
-          {...part("undo")}
-        >
-          {icon("undo")}
-        </button>
-        <button
-          type="button"
-          aria-label={m.workbench_redo()}
-          disabled={!controller?.canRedo}
-          onClick={() => controller?.redo()}
-          {...redoTooltip}
-          {...part("redo")}
-        >
-          {icon("redo")}
-        </button>
-        {children}
-      </div>
+      {leading}
+      {layout === "linear" ? (
+        <>
+          {history}
+          {mode(true, m.workbench_advanced(), "advanced")}
+          {children}
+        </>
+      ) : (
+        <>
+          <div
+            role="group"
+            aria-label={m.workbench_editing_mode()}
+            {...part("mode-group")}
+          >
+            {mode(false, m.workbench_basic(), "basic")}
+            {mode(true, m.workbench_advanced(), "advanced")}
+          </div>
+          <div {...part("toolbar-actions")}>
+            {history}
+            {children}
+          </div>
+        </>
+      )}
     </div>
   );
 }
