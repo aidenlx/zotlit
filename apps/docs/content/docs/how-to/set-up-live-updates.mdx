@@ -27,15 +27,15 @@ ZotLit Companion, the Zotero add-on, can push changes to Obsidian as you read an
   <Step>
     ### Open the live updates settings
 
-    In Obsidian, open <SettingsPath page={m.settings_page_zotero()} /> and find the <UiLabel name={m.settings_page_live_updates()} /> group.
+    In Obsidian, open <SettingsPath page={m.settings_page_advanced()} /> and find the <UiLabel name={m.settings_advanced_local_server_heading()} /> group.
 
   </Step>
   <Step>
     ### Turn on the listener
 
-    Enable <UiLabel name={m.settings_live_updates_enabled_name()} />. This starts the ZotLit server (a local HTTP listener) that the Companion connects to.
+    Enable <UiLabel name={m.settings_local_server_enabled_name()} />, then keep <UiLabel name={m.settings_live_updates_enabled_name()} /> on. Keep the default hostname, `127.0.0.1`, to accept connections from this computer only.
 
-    The default port is **9091** and the default hostname is **127.0.0.1**. You can change the port in the same group. The hostname setting is under the <UiLabel name={m.settings_db_advanced()} /> group on the same page: keep it on 127.0.0.1 unless you need network access from another machine.
+    The configured port defaults to **9091**. Check <UiLabel name={m.settings_local_server_active_port_name()} /> for the port actually used: ZotLit tries a higher port if the configured one is busy.
 
   </Step>
 </Steps>
@@ -60,7 +60,7 @@ ZotLit Companion, the Zotero add-on, can push changes to Obsidian as you read an
 
     Set the <UiLabel name={m["zotero.prefs_notify_url"]()} /> to point at the ZotLit server. The default value is `http://localhost:9091`, which matches the default port.
 
-    If you changed the port in Obsidian, update the URL here to match (e.g. `http://localhost:12345`).
+    Use the port shown by <UiLabel name={m.settings_local_server_active_port_name()} /> in Obsidian (for example, `http://localhost:9092`). Each vault can use a different port.
 
   </Step>
 </Steps>
