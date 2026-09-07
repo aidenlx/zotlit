@@ -63,4 +63,5 @@
   flex: 1 1 100%;
   max-width: 100%;
   text-align: start;
+  justify-content: flex-start;
 }
