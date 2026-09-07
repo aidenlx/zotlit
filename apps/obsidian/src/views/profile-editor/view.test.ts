@@ -22,7 +22,7 @@ A stable note.
 An annotation.
 `;
 
-function setup() {
+function setup(deps: Partial<ProfileEditorDeps> = {}) {
   const app = {
     scope: null,
     workspace: { requestSaveLayout: vi.fn() },
@@ -34,6 +34,7 @@ function setup() {
   const view = new ProfileEditorView(leaf, {
     app,
     settings: { subscribe: () => () => {} },
+    ...deps,
   } as unknown as ProfileEditorDeps);
   const requestSave = vi.fn();
   view.requestSave = requestSave;
@@ -42,6 +43,41 @@ function setup() {
 }
 
 describe("ProfileEditorView", () => {
+  it("keeps authoring and restored state available when the database fails", async () => {
+    const { view, requestSave } = setup({
+      db: {
+        get ready() {
+          return Promise.reject(new Error("Unavailable"));
+        },
+      } as unknown as ProfileEditorDeps["db"],
+    });
+    await expect(
+      view.setState(
+        { itemIndexedKey: "0:ABCDEFGH", advanced: true },
+        {} as ViewStateResult,
+      ),
+    ).resolves.toBeUndefined();
+    expect(view.store.getState().advanced).toBe(true);
+    expect(view.unavailableDependencies).toHaveLength(1);
+    view.controller.setManifestKey("name", "Offline edit");
+    expect(view.getViewData()).toContain("Offline edit");
+    expect(requestSave).toHaveBeenCalledOnce();
+  });
+
+  it("reports unavailable citation styles without rejecting or clearing the document", async () => {
+    const { view } = setup({
+      zoteroPref: {
+        get ready() {
+          return Promise.reject(new Error("Unavailable"));
+        },
+      } as unknown as ProfileEditorDeps["zoteroPref"],
+    });
+    await expect(view.refreshStyles()).resolves.toBeUndefined();
+    expect(view.unavailableDependencies).toHaveLength(1);
+    expect(view.getViewData()).toBe(SOURCE);
+    expect(view.citationStyles).toEqual([]);
+  });
+
   it("routes the view shortcut to shared history while leaving text inputs their own shortcut", () => {
     const { view } = setup();
     view.controller.setManifestKey("name", "Local");
