@@ -1,0 +1,55 @@
+.workspace-leaf-content[data-type="zotlit-profile-editor"] .view-content {
+  padding: 0;
+  overflow: hidden;
+}
+.workspace-leaf-content[data-type="zotlit-profile-editor"]
+  [data-part="tab"][aria-selected="true"] {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+/* The shared parser emits semantic tokens; use the active theme's code colors. */
+.workspace-leaf-content[data-type="zotlit-profile-editor"] {
+  .tok-keyword {
+    color: var(--code-keyword);
+  }
+  .tok-string {
+    color: var(--code-string);
+  }
+  .tok-comment {
+    color: var(--code-comment);
+  }
+  .tok-number,
+  .tok-bool {
+    color: var(--code-value);
+  }
+  .tok-variableName {
+    color: var(--code-normal);
+  }
+  .tok-operator,
+  .tok-punctuation {
+    color: var(--code-operator);
+  }
+  .tok-heading {
+    color: var(--h1-color);
+    font-weight: var(--h1-weight);
+  }
+  .tok-strong {
+    font-weight: var(--bold-weight);
+  }
+  .tok-emphasis {
+    font-style: italic;
+  }
+}
+.workspace-leaf-content[data-type="zotlit-profile-editor"]
+  .checkbox-container[aria-checked="true"] {
+  background-color: var(--interactive-accent);
+}
+.workspace-leaf-content[data-type="zotlit-profile-editor"]
+  .checkbox-container[aria-checked="true"]::after {
+  transform: translateX(
+    calc(
+      var(--toggle-width) - var(--toggle-thumb-width) - 2 *
+        var(--toggle-border-width)
+    )
+  );
+}

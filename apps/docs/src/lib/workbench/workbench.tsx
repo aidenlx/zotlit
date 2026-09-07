@@ -102,15 +102,6 @@ import { DEFAULT_SAMPLE, useWorkbenchDraft } from "./use-workbench-draft";
 /** The result becomes a column once both reading and editing have room. */
 const WIDE_LAYOUT = "(min-width: 780px)";
 
-/**
- * The call a note without one is given: the format once per annotation, in
- * each language the Profile can be written in.
- */
-const ANNOTATIONS_LOOP =
-  "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n";
-const ETA_ANNOTATIONS_LOOP =
-  "<% for (const annotation of zt.annotations) { %>\n<%~ renderAnnotation(annotation) %>\n<% } %>\n";
-
 export function Workbench() {
   const [controller, setController] = useState(
     () => new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE),
@@ -473,12 +464,7 @@ export function Workbench() {
    * note. A document that also lacks the section is given one first, and told.
    */
   function insertAnnotations() {
-    const repaired = controller.repairAnnotationSection();
-    const language = controller.document?.manifest.language;
-    insertSnippet(controller, "note", {
-      target: caret,
-      snippet: language === "eta" ? ETA_ANNOTATIONS_LOOP : ANNOTATIONS_LOOP,
-    });
+    const { repaired } = controller.insertAnnotationLoop(caret);
     // Both edits have told the subscriber by now, so the sentence is stamped
     // with the revision the reader is looking at.
     if (repaired) {
