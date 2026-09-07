@@ -123,7 +123,7 @@ export function createProfileEditorHost(
       for (const close of open) close();
     },
     ...ports,
-    menu({ anchor, items }) {
+    menu({ anchor, items, submenus }) {
       const menu = new Menu();
       for (const item of items)
         menu.addItem((entry) =>
@@ -133,6 +133,18 @@ export function createProfileEditorHost(
             .setDisabled(item.disabled ?? false)
             .onClick(item.onSelect),
         );
+      for (const group of submenus ?? [])
+        menu.addItem((entry) => {
+          entry.setTitle(group.label);
+          const submenu = entry.setSubmenu();
+          for (const item of group.items)
+            submenu.addItem((child) =>
+              child
+                .setTitle(item.label)
+                .setDisabled(item.disabled ?? false)
+                .onClick(item.onSelect),
+            );
+        });
       const bounds = anchor.getBoundingClientRect();
       menu.showAtPosition({ x: bounds.left, y: bounds.bottom });
     },

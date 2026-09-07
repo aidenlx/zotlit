@@ -1,8 +1,12 @@
+import { EditorView } from "@codemirror/view";
+import { Menu } from "@mock/obsidian";
 import type { Scope as MockScope } from "@mock/obsidian";
 import { TFile } from "obsidian";
 import type { App, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { act } from "preact/test-utils";
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
+import { createStore } from "zustand/vanilla";
 
 import { ProfileEditorView } from "./view";
 import type { ProfileEditorDeps } from "./view";
@@ -22,24 +26,42 @@ A stable note.
 An annotation.
 `;
 
+class TestProfileEditorView extends ProfileEditorView {
+  open() {
+    return this.onOpen();
+  }
+  close() {
+    return this.onClose();
+  }
+}
+
 function setup(deps: Partial<ProfileEditorDeps> = {}) {
+  const setActiveLeaf = vi.fn();
   const app = {
     scope: null,
-    workspace: { requestSaveLayout: vi.fn() },
+    workspace: {
+      requestSaveLayout: vi.fn(),
+      setActiveLeaf,
+      getActiveFile: () => null,
+    },
+    loadLocalStorage: () => null,
   } as unknown as App;
   const leaf = {
     app,
     setViewState: vi.fn(async () => {}),
   } as unknown as WorkspaceLeaf;
-  const view = new ProfileEditorView(leaf, {
+  const view = new TestProfileEditorView(leaf, {
     app,
     settings: { subscribe: () => () => {} },
+    pluginVersion: "2.1.3",
+    db: { ready: Promise.resolve(), state: "ready" },
+    zoteroPref: { ready: Promise.resolve(), dataDir: null },
     ...deps,
   } as unknown as ProfileEditorDeps);
   const requestSave = vi.fn();
   view.requestSave = requestSave;
   view.setViewData(SOURCE, true);
-  return { view, requestSave, leaf };
+  return { view, requestSave, leaf, setActiveLeaf };
 }
 
 describe("ProfileEditorView", () => {
@@ -157,5 +179,124 @@ describe("ProfileEditorView", () => {
     };
     await view.setState(state, {} as ViewStateResult);
     expect(view.getState()).toEqual({ ...state, itemIndexedKey: null });
+  });
+  it("labels a built-in annotation sample export as selected paper data", () => {
+    const { view } = setup();
+    view.store.getState().setItem({ id: "PAPER001g42", title: "Paper" });
+    view.store.getState().setRoot("annotation");
+    Object.defineProperty(view, "preview", {
+      value: {
+        state: createStore(() => ({
+          current: [],
+          example: { id: "builtin", root: { indexedKey: "EXAMP001" } },
+        })),
+      },
+    });
+    const menu = new Menu();
+    view.onPaneMenu(menu as never, "more-options");
+    expect(view.templateDataTarget()).toEqual({
+      indexedKey: "PAPER001g42",
+      root: "note",
+    });
+    expect(menu.items[0]?.title).toBe("Export selected paper data");
+  });
+
+  it("keeps a real selected annotation export on its exact Indexed Key", () => {
+    const { view } = setup();
+    view.store.getState().setItem({ id: "PAPER001g42", title: "Paper" });
+    view.store.getState().setRoot("annotation");
+    const annotation = { id: "real", root: { indexedKey: "ANNO0001g42" } };
+    Object.defineProperty(view, "preview", {
+      value: {
+        state: createStore(() => ({
+          current: [annotation],
+          example: annotation,
+        })),
+      },
+    });
+    const menu = new Menu();
+    view.onPaneMenu(menu as never, "more-options");
+    expect(view.templateDataTarget()).toEqual({
+      indexedKey: "ANNO0001g42",
+      root: "annotation",
+    });
+    expect(menu.items[0]?.title).toBe("Save template data as JSON");
+  });
+  it("inserts at the remembered slice selection and returns focus after sidebar use", async () => {
+    const { view, leaf, requestSave, setActiveLeaf } = setup();
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => {
+        await view.open();
+      });
+      const editor = EditorView.findFromDOM(
+        view.contentEl.querySelector(".cm-editor")!,
+      )!;
+      await act(() => {
+        editor.focus();
+        editor.dispatch({ selection: { anchor: 3 } });
+      });
+      const sidebar = document.createElement("button");
+      document.body.append(sidebar);
+      await act(() => sidebar.focus());
+      expect(editor.hasFocus).toBe(false);
+      await act(() => {
+        expect(view.insertField("{{ zt.title }}")).toBe(true);
+      });
+      expect(view.getViewData()).toBe(
+        SOURCE.replace("A stable note.", "A s{{ zt.title }}table note."),
+      );
+      expect(editor.hasFocus).toBe(true);
+      expect(setActiveLeaf).toHaveBeenCalledWith(leaf, {
+        focus: false,
+      });
+      expect(requestSave).toHaveBeenCalledOnce();
+      await act(() => {
+        view.controller.undo();
+      });
+      expect(view.getViewData()).toBe(SOURCE);
+      sidebar.remove();
+    } finally {
+      await act(async () => {
+        await view.close();
+      });
+      view.contentEl.remove();
+    }
+  });
+
+  it("keeps the caret target mapped when external text moves an unchanged focused slice", async () => {
+    const { view } = setup();
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => {
+        await view.open();
+      });
+      const editor = EditorView.findFromDOM(
+        view.contentEl.querySelector(".cm-editor")!,
+      )!;
+      await act(() => {
+        editor.focus();
+        editor.dispatch({ selection: { anchor: 3 } });
+      });
+      const external = SOURCE.replace(
+        "name: Paper",
+        "name: A considerably longer title",
+      );
+      await act(() => {
+        view.setViewData(external, false);
+      });
+      expect(editor.hasFocus).toBe(true);
+      await act(() => {
+        view.insertField("{{ zt.title }}");
+      });
+      expect(view.getViewData()).toBe(
+        external.replace("A stable note.", "A s{{ zt.title }}table note."),
+      );
+    } finally {
+      await act(async () => {
+        await view.close();
+      });
+      view.contentEl.remove();
+    }
   });
 });

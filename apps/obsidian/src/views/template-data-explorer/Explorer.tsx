@@ -1,23 +1,26 @@
 // Presentational root for the Template Data Explorer: db-not-ready, no-item, and tree states.
 import { useContext } from "react";
 
+import { DataExplorer } from "@zotlit/workbench/ui";
+import type { DataExplorerProps } from "@zotlit/workbench/ui";
+
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
-import { SearchInput } from "@/components/obsidian/search-input";
 import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
 
 import { ExplorerActionsContext } from "./actions";
-import { DisplayTree } from "./DisplayTree";
 import { useExplorerStore } from "./store";
 
-export function Explorer(): React.ReactElement {
+export function Explorer({
+  explorer,
+}: {
+  explorer: Omit<DataExplorerProps, "data" | "root">;
+}): React.ReactElement {
   const dbReady = useExplorerStore((s) => s.dbReady);
   const itemLabel = useExplorerStore((s) => s.itemLabel);
-  const nodes = useExplorerStore((s) => s.nodes);
   const anchor = useExplorerStore((s) => s.anchor);
-  const filterQuery = useExplorerStore((s) => s.filterQuery);
-  const matchedKeys = useExplorerStore((s) => s.matchedKeys);
+  const data = useExplorerStore((s) => s.data);
   const itemVanished = useExplorerStore((s) => s.itemVanished);
   const actions = useContext(ExplorerActionsContext);
 
@@ -36,7 +39,7 @@ export function Explorer(): React.ReactElement {
             {m.template_data_explorer_choose_item()}
           </button>
         </div>
-      ) : nodes === null ? (
+      ) : data === null ? (
         <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-3 zt:p-4 zt:text-center">
           <p className="zt:text-muted-foreground">
             {m.template_data_explorer_empty_hint()}
@@ -97,25 +100,12 @@ export function Explorer(): React.ReactElement {
                 </div>
               </nav>
             )}
-            <SearchInput
-              className="zt:w-full"
-              value={filterQuery}
-              onChange={(next) => actions.onFilter(next)}
-              placeholder={m.template_data_explorer_filter_placeholder()}
-              clearLabel={m.template_data_explorer_clear_search()}
-            />
           </div>
-          <div className="zt:min-h-0 zt:flex-1 zt:overflow-auto zt:py-1 zt:pr-2 zt:pl-1">
-            <DisplayTree
-              nodes={nodes}
-              matchedKeys={matchedKeys}
-              onToggle={(key) => actions.onToggle(key)}
-              onCopyValue={(node) => actions.onCopyValue(node)}
-              onTemplateMenu={(node, event) =>
-                actions.onTemplateMenu(node, event)
-              }
-            />
-          </div>
+          <DataExplorer
+            {...explorer}
+            data={data}
+            root={anchor ? "annotation" : "note"}
+          />
         </>
       )}
     </div>

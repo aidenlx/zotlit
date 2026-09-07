@@ -1873,5 +1873,20 @@
   "workbench_match_result_unavailable": "Matches the selected paper: unevaluable. {reason}",
   "workbench_match_missing_facts": "Item membership data is unavailable.",
   "workbench_match_default": "The default profile is the fallback.",
-  "workbench_match_source_only": "Open Source to correct the Match rules in this document."
+  "workbench_match_source_only": "Open Source to correct the Match rules in this document.",
+  "workbench_explorer_row_actions": "Template actions",
+  "workbench_explorer_show_less": "less",
+  "workbench_explorer_toggle_node": "Toggle node",
+  "workbench_explorer_show_more": "more",
+  "workbench_explorer_menu_copy_value": "Copy value",
+  "workbench_explorer_menu_explore_annotation": "Explore as annotation template data",
+  "workbench_explorer_menu_copy_output": "Copy output",
+  "workbench_explorer_menu_copy_if_present": "Copy if present",
+  "workbench_explorer_menu_copy_joined": "Copy joined",
+  "workbench_explorer_menu_copy_loop": "Copy loop",
+  "workbench_explorer_menu_copy_path": "Copy path",
+  "workbench_explorer_variant": "Fields view",
+  "workbench_explorer_simple": "Simple",
+  "workbench_explorer_all": "All fields",
+  "template_data_explorer_export_selected_paper": "Export selected paper data"
 }
