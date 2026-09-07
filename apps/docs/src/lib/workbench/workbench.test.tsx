@@ -21,6 +21,7 @@ import type {
   RenderRequest,
 } from "@zotlit/workbench/render";
 
+import { Toaster } from "@/components/ui/toast";
 import { m } from "@/paraglide/messages.js";
 
 import { Workbench } from "./workbench";
@@ -145,9 +146,9 @@ describe("a Workbench Connection", () => {
 
     page.press(m.workbench_save());
     await page.waitFor(() =>
-      expect(page.host.textContent).toContain(
-        m.workbench_save_complete({ vault: "Fixture vault" }),
-      ),
+      expect(
+        document.querySelector('[data-slot="toast-viewport"]')?.textContent,
+      ).toContain(m.workbench_save_complete({ vault: "Fixture vault" })),
     );
     expect(requests.find(({ path }) => path.endsWith("/save"))?.body).toEqual({
       reference: "profile:default",
@@ -711,9 +712,9 @@ describe("a Workbench Connection", () => {
     );
     page.press(m.workbench_save());
     await page.waitFor(() =>
-      expect(page.host.textContent).toContain(
-        m.workbench_save_complete({ vault: "Fixture vault" }),
-      ),
+      expect(
+        document.querySelector('[data-slot="toast-viewport"]')?.textContent,
+      ).toContain(m.workbench_save_complete({ vault: "Fixture vault" })),
     );
   });
 
@@ -781,9 +782,9 @@ describe("a Workbench Connection", () => {
     );
     page.press(m.workbench_save());
     await page.waitFor(() =>
-      expect(page.host.textContent).toContain(
-        m.workbench_save_complete({ vault: "Fixture vault" }),
-      ),
+      expect(
+        document.querySelector('[data-slot="toast-viewport"]')?.textContent,
+      ).toContain(m.workbench_save_complete({ vault: "Fixture vault" })),
     );
 
     expect(requests.find(({ path }) => path.endsWith("/save"))?.body).toEqual({
@@ -791,9 +792,9 @@ describe("a Workbench Connection", () => {
       expected: { state: "absent" },
       source: CONNECTED,
     });
-    expect(page.host.textContent).toContain(
-      m.workbench_save_complete({ vault: "Fixture vault" }),
-    );
+    expect(
+      document.querySelector('[data-slot="toast-viewport"]')?.textContent,
+    ).toContain(m.workbench_save_complete({ vault: "Fixture vault" }));
   });
 
   it("marks a loaded Item Snapshot as retained after disconnect", async () => {
@@ -817,9 +818,9 @@ describe("a Workbench Connection", () => {
     expect(page.host.textContent).toContain(m.workbench_download());
     // A Connection the reader ended is restarted in Obsidian, not here, so the
     // page says that rather than offering the Reconnect a lost one offers.
-    expect(page.host.textContent).toContain(
-      m.workbench_connection_disconnect_complete(),
-    );
+    expect(
+      document.querySelector('[data-slot="toast-viewport"]')?.textContent,
+    ).toContain(m.workbench_connection_disconnect_complete());
     expect(page.host.textContent).not.toContain(
       m.workbench_connection_reconnect(),
     );
@@ -1297,6 +1298,21 @@ describe("the document's way in and out", () => {
     await page.waitFor(() => expect(title(page.host)).toBe("Kept work"));
 
     page.press(m.workbench_download());
+
+    expect(page.host.textContent).not.toContain(
+      m.workbench_download_complete(),
+    );
+    expect(
+      document.querySelector('[data-slot="toast-viewport"]')?.textContent,
+    ).toContain(m.workbench_download_complete());
+    act(() =>
+      document
+        .querySelector<HTMLButtonElement>('[data-slot="toast-close"]')!
+        .click(),
+    );
+    await page.waitFor(() =>
+      expect(document.querySelector('[data-slot="toast"]')).toBeNull(),
+    );
 
     expect(names).toEqual(["zotlit-profile.default.md"]);
     await expect(blobs[0]!.text()).resolves.toBe(KEPT);
@@ -2140,9 +2156,9 @@ describe("the annotation box", () => {
 
     page.press(m.workbench_annotation_insert());
 
-    expect(page.host.textContent).toContain(
-      m.workbench_annotation_section_added(),
-    );
+    expect(
+      document.querySelector('[data-slot="toast-viewport"]')?.textContent,
+    ).toContain(m.workbench_annotation_section_added());
     expect(page.host.textContent).toContain(m.workbench_tab_annotation());
     expect(page.host.textContent).not.toContain(
       m.workbench_annotation_insert(),
@@ -2280,7 +2296,14 @@ function open(): OpenPage {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
-  act(() => root.render(<Workbench />));
+  act(() =>
+    root.render(
+      <>
+        <Workbench />
+        <Toaster />
+      </>,
+    ),
+  );
   return {
     host,
     press: (label) => press(host, label),

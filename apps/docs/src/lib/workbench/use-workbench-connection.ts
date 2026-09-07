@@ -19,6 +19,7 @@ import type {
 import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import type { RenderResources } from "@zotlit/workbench/render";
 
+import { toast } from "@/components/ui/toast";
 import { m } from "@/paraglide/messages.js";
 
 import type { SampleItem } from "./fields";
@@ -240,7 +241,11 @@ export function useWorkbenchConnection({
       await bridge.disconnect();
       resetConnectedState();
       settleConnection(bridge.connection);
-      setMessage(m.workbench_connection_disconnect_complete());
+      setMessage(null);
+      toast.add({
+        title: m.workbench_connection_disconnect_complete(),
+        type: "info",
+      });
     } catch (error) {
       connectionFailed(error);
     } finally {
@@ -281,9 +286,10 @@ export function useWorkbenchConnection({
         revision: saved.revision,
         source,
       });
-      setMessage(
-        m.workbench_save_complete({ vault: grant.installation.vault }),
-      );
+      toast.add({
+        title: m.workbench_save_complete({ vault: grant.installation.vault }),
+        type: "success",
+      });
     } catch (error) {
       connectionFailed(error);
     } finally {

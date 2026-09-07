@@ -9,6 +9,7 @@ import { RootProvider } from "fumadocs-ui/provider/tanstack";
 import { DocsImage } from "@/components/docs-image";
 import { LegacyBanner } from "@/components/legacy-banner";
 import { Message } from "@/components/message";
+import { Toaster } from "@/components/ui/toast";
 import { Header } from "@/layouts/home/slots/header";
 import { baseOptions } from "@/lib/layout.shared";
 import { appDescription, HOME_OG_ALT, ogImageMeta } from "@/lib/seo";
@@ -84,6 +85,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <RootProvider components={{ Image: DocsImage }}>
           <LegacyBanner />
           {children}
+          <Toaster />
         </RootProvider>
         {analyticsToken && (
           <script
@@ -93,7 +95,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           />
         )}
         <TanStackDevtools
-          config={{ position: "bottom-right" }}
+          config={{ position: "bottom-left" }}
           plugins={[
             {
               name: "TanStack Router",
