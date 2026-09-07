@@ -37,6 +37,9 @@ class TestProfileEditorView extends ProfileEditorView {
 
 function setup(deps: Partial<ProfileEditorDeps> = {}) {
   const setActiveLeaf = vi.fn();
+  const modify = vi.fn<(file: TFile, source: string) => Promise<void>>(
+    async () => {},
+  );
   const app = {
     scope: null,
     workspace: {
@@ -45,6 +48,7 @@ function setup(deps: Partial<ProfileEditorDeps> = {}) {
       getActiveFile: () => null,
     },
     loadLocalStorage: () => null,
+    vault: { modify },
   } as unknown as App;
   const leaf = {
     app,
@@ -61,10 +65,46 @@ function setup(deps: Partial<ProfileEditorDeps> = {}) {
   const requestSave = vi.fn();
   view.requestSave = requestSave;
   view.setViewData(SOURCE, true);
-  return { view, requestSave, leaf, setActiveLeaf };
+  return { view, requestSave, leaf, setActiveLeaf, modify };
 }
 
 describe("ProfileEditorView", () => {
+  it("keeps a newly opened Profile when creation of the previous Default draft finishes", async () => {
+    const file = new TFile();
+    file.path = "templates/zotlit-profile.default.md";
+    const pending = Promise.withResolvers<{ file: TFile; created: boolean }>();
+    const { view, leaf, modify } = setup({
+      profile: {
+        getSource: async () => SOURCE,
+        materializeDefault: () => pending.promise,
+      } as unknown as ProfileEditorDeps["profile"],
+    });
+    await view.setState(
+      { defaultDraft: true, file: null },
+      {} as ViewStateResult,
+    );
+    view.controller.setManifestKey("name", "First draft edit");
+    view.controller.setManifestKey("name", "Last draft edit");
+    await view.setState(
+      { file: "templates/zotlit-profile.other.md" },
+      {} as ViewStateResult,
+    );
+    view.setViewData(
+      SOURCE.replace("name: Paper", "name: Other Profile"),
+      true,
+    );
+    const current = view.controller;
+    pending.resolve({ file, created: true });
+    await view.materializeDefault();
+    expect(view.controller).toBe(current);
+    expect(view.getViewData()).toContain("name: Other Profile");
+    expect(modify).toHaveBeenCalledWith(
+      file,
+      expect.stringContaining("name: Last draft edit"),
+    );
+    expect(modify.mock.calls[0]?.[1]).not.toContain("Other Profile");
+    expect(vi.spyOn(leaf, "setViewState")).not.toHaveBeenCalled();
+  });
   it("creates Default once on first edit and preserves later edits and Undo while binding", async () => {
     const file = new TFile();
     file.path = "templates/zotlit-profile.default.md";

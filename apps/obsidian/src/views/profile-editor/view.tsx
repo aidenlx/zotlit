@@ -1,5 +1,5 @@
 // One file-backed authoring session; TextFileView owns vault updates and saves.
-import { Menu, Notice, Scope, TextFileView } from "obsidian";
+import { Menu, Scope, TextFileView } from "obsidian";
 import type { ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
@@ -59,6 +59,7 @@ import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
 import { tooltipAttrs } from "@/lib/utils";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { listInstalledStyles } from "@/services/pandoc/styles";
@@ -80,6 +81,7 @@ import {
 import { pickItem } from "@/views/template-data-explorer/item-picker";
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
 
+import { runProfileEditorAction } from "./actions";
 import { createProfileEditorHost } from "./host";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
@@ -531,48 +533,72 @@ export class ProfileEditorView extends TextFileView {
     return this.#defaultDraft;
   }
   async restoreDefault(): Promise<void> {
-    const profile = this.#deps.profile;
-    if (
-      !profile ||
-      !(await confirm(
-        {
-          title: m.settings_profile_document_restore_title(),
-          content: m.settings_profile_document_restore_desc({
-            path: profile.defaultDocumentPath,
-          }),
-          action: m.settings_profile_document_restore_action(),
-          destructive: true,
-        },
-        this.app,
-      ))
-    )
-      return;
-    await this.save();
-    this.allowNoFile = true;
-    this.#defaultDraft = true;
-    await this.leaf.setViewState({
-      type: PROFILE_EDITOR_VIEW_TYPE,
-      state: { file: null, defaultDraft: true },
-      active: true,
+    await runProfileEditorAction("restore-default", async () => {
+      const profile = this.#deps.profile;
+      if (
+        !profile ||
+        !(await confirm(
+          {
+            title: m.settings_profile_document_restore_title(),
+            content: m.settings_profile_document_restore_desc({
+              path: profile.defaultDocumentPath,
+            }),
+            action: m.settings_profile_document_restore_action(),
+            destructive: true,
+          },
+          this.app,
+        ))
+      )
+        return;
+      await this.save();
+      this.allowNoFile = true;
+      this.#defaultDraft = true;
+      await this.leaf.setViewState({
+        type: PROFILE_EDITOR_VIEW_TYPE,
+        state: { file: null, defaultDraft: true },
+        active: true,
+      });
+      await profile.restoreDefault();
+      this.setViewData(await profile.getSource("default"), true);
     });
-    await profile.restoreDefault();
-    this.setViewData(await profile.getSource("default"), true);
   }
+
   /** One file creation covers every local edit made while the write is pending. */
   materializeDefault(): Promise<void> {
-    if (this.#materializing) return this.#materializing;
+    if (this.#materializing) {
+      logger.trace("Reusing pending Default materialization at {path}", {
+        path: this.#deps.profile?.defaultDocumentPath,
+      });
+      return this.#materializing;
+    }
     const profile = this.#deps.profile;
     if (!profile || !this.#defaultDraft) return Promise.resolve();
+    const controller = this.#controller;
+    logger.debug("Materializing Default Profile at {path}", {
+      path: profile.defaultDocumentPath,
+    });
     this.#materializing = (async () => {
       const { file, created } = await profile.materializeDefault(
-        this.#controller.source,
+        controller.source,
       );
       if (!created) {
-        new Notice(m.profile_editor_default_conflict());
+        logger.debug(
+          "Retaining draft because Default already exists at {path}",
+          { path: file.path },
+        );
+        new BaseNotice(m.profile_editor_default_conflict());
         return;
       }
-      if (this.#closed) {
-        await this.app.vault.modify(file, this.#controller.source);
+      if (
+        this.#closed ||
+        !this.#defaultDraft ||
+        this.#controller !== controller
+      ) {
+        logger.debug("Saving detached Default draft at {path}", {
+          path: file.path,
+          closed: this.#closed,
+        });
+        await this.app.vault.modify(file, controller.source);
         return;
       }
       this.#bindingDraft = true;
@@ -584,7 +610,8 @@ export class ProfileEditorView extends TextFileView {
         });
         this.#defaultDraft = false;
         this.allowNoFile = false;
-        this.data = this.#controller.source;
+        this.data = controller.source;
+        logger.debug("Bound Default draft to {path}", { path: file.path });
         this.requestSave();
         this.#mount();
       } finally {
@@ -592,8 +619,11 @@ export class ProfileEditorView extends TextFileView {
       }
     })()
       .catch((error: unknown) => {
-        logger.error("Failed to create the edited Default Profile", { error });
-        new Notice(m.notice_profile_action_failed());
+        logger.error("Failed to create the edited Default Profile at {path}", {
+          path: profile.defaultDocumentPath,
+          error,
+        });
+        new BaseNotice(m.notice_profile_action_failed());
       })
       .finally(() => {
         this.#materializing = null;

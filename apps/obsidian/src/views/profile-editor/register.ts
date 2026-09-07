@@ -1,14 +1,16 @@
 import "./style.css";
-import { MarkdownView, Notice, Platform, TFile } from "obsidian";
+import { MarkdownView, Platform, TFile } from "obsidian";
 import type { App, Plugin, WorkspaceLeaf } from "obsidian";
 
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { ProfileService } from "@/services/profile/service";
 
+import { runProfileEditorAction } from "./actions";
 import { profileCustomization } from "./preferences";
 import { PROFILE_EDITOR_VIEW_TYPE, ProfileEditorView } from "./view";
 import type { ProfileEditorDeps } from "./view";
@@ -66,7 +68,10 @@ export function registerProfileEditor(
     checkCallback(checking) {
       const target = targetOf(plugin.app.workspace.getActiveFile());
       if (!target) return false;
-      if (!checking) void customizeProfile(plugin.app, target);
+      if (!checking)
+        void runProfileEditorAction("customize", () =>
+          customizeProfile(plugin.app, target),
+        );
       return true;
     },
   });
@@ -76,7 +81,10 @@ export function registerProfileEditor(
     checkCallback(checking) {
       const target = targetOf(plugin.app.workspace.getActiveFile());
       if (!target) return false;
-      if (!checking) void openWebProfile(plugin.app, target);
+      if (!checking)
+        void runProfileEditorAction("open-web", () =>
+          openWebProfile(plugin.app, target),
+        );
       return true;
     },
   });
@@ -86,7 +94,10 @@ export function registerProfileEditor(
     checkCallback(checking) {
       const target = targetOf(plugin.app.workspace.getActiveFile());
       if (!target) return false;
-      if (!checking) void customizeProfile(plugin.app, target);
+      if (!checking)
+        void runProfileEditorAction("customize", () =>
+          customizeProfile(plugin.app, target),
+        );
       return true;
     },
   });
@@ -104,21 +115,36 @@ export function registerProfileEditor(
           .setSection("zotlit")
           .setTitle(m.profile_editor_customize())
           .setIcon("pencil")
-          .onClick(() => void customizeProfile(plugin.app, target, options)),
+          .onClick(
+            () =>
+              void runProfileEditorAction("customize", () =>
+                customizeProfile(plugin.app, target, options),
+              ),
+          ),
       );
       menu.addItem((item) =>
         item
           .setSection("zotlit")
           .setTitle(m.profile_editor_web_open())
           .setIcon("external-link")
-          .onClick(() => void openWebProfile(plugin.app, target, options)),
+          .onClick(
+            () =>
+              void runProfileEditorAction("open-web", () =>
+                openWebProfile(plugin.app, target, options),
+              ),
+          ),
       );
       menu.addItem((item) =>
         item
           .setSection("zotlit")
           .setTitle(m.profile_editor_open())
           .setIcon("file-pen-line")
-          .onClick(() => void customizeProfile(plugin.app, target, options)),
+          .onClick(
+            () =>
+              void runProfileEditorAction("customize", () =>
+                customizeProfile(plugin.app, target, options),
+              ),
+          ),
       );
     }),
   );
@@ -144,9 +170,11 @@ export function registerProfileEditor(
           view,
           view.addAction("file-pen-line", m.profile_editor_open(), () => {
             if (view.file)
-              void openProfileEditor(plugin.app, view.file, {
-                leaf: view.leaf,
-              });
+              void runProfileEditorAction("open-editor", () =>
+                openProfileEditor(plugin.app, view.file!, {
+                  leaf: view.leaf,
+                }),
+              );
           }),
         );
   }
@@ -179,7 +207,8 @@ export async function customizeProfile(
     ? await app.vault.cachedRead(file)
     : await (target as Pick<ProfileService, "getSource">).getSource("default");
   if (file) return openProfileEditor(app, file, options);
-  if (requiresNative(source)) new Notice(m.profile_editor_native_required());
+  if (requiresNative(source))
+    new BaseNotice(m.profile_editor_native_required());
   const active = app.workspace.getActiveFile();
   const itemIndexedKey =
     options.itemIndexedKey ??
@@ -205,7 +234,7 @@ export async function customizeProfile(
   await app.workspace.revealLeaf(leaf);
 }
 
-function requiresNative(source: string): boolean {
+export function requiresNative(source: string): boolean {
   const manifest = new WorkbenchDocumentController(source, {
     runtime: "native",
   }).document?.manifest;
@@ -226,7 +255,7 @@ async function openWebProfile(
       ? await app.vault.cachedRead(target)
       : await target.getSource("default");
   if (requiresNative(source)) await customizeProfile(app, target, options);
-  else new Notice(m.profile_editor_web_unavailable());
+  else new BaseNotice(m.profile_editor_web_unavailable());
 }
 
 /** Every Profile document entry point preserves the selected Literature Note's Item. */
@@ -240,7 +269,7 @@ export async function openProfileEditor(
   } = {},
 ): Promise<void> {
   if (requiresNative(await app.vault.cachedRead(file)))
-    new Notice(m.profile_editor_native_required());
+    new BaseNotice(m.profile_editor_native_required());
   const active = app.workspace.getActiveFile();
   const itemIndexedKey =
     options.itemIndexedKey ??
