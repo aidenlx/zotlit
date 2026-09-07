@@ -8,6 +8,8 @@ import {
   importAllNotesProtocolActionId,
   importManyProtocolActionId,
   importProtocolActionId,
+  importProfileProtocolActionId,
+  parseImportProfileProtocolQuery,
   parseExploreProtocolQuery,
   parseImportAllNotesProtocolQuery,
   parseImportManyProtocolQuery,
@@ -47,6 +49,7 @@ import {
   batchImportToast,
 } from "@/services/note-import/batch-import-notices";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import { openProfileEditor } from "@/views/profile-editor/register";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
 
 const logger = getLogger("protocol");
@@ -99,6 +102,13 @@ export function registerProtocolHandlers(
     importAllNotesProtocolActionId,
     (data) => {
       void handleImportAllNotesProtocol(data, deps);
+    },
+  );
+
+  plugin.registerObsidianProtocolHandler(
+    importProfileProtocolActionId,
+    (data) => {
+      void handleProfileImportProtocol(data, deps);
     },
   );
 
@@ -384,4 +394,36 @@ function resolveProtocolItem(
   }
 
   return ref;
+}
+
+/** Reuses the importer's clipboard reader and consent before opening the written file. */
+async function handleProfileImportProtocol(
+  data: ObsidianProtocolData,
+  deps: ProtocolDeps,
+): Promise<void> {
+  try {
+    parseImportProfileProtocolQuery(data);
+  } catch (error) {
+    logger.debug("Refused clipboard Profile handoff", { error });
+    new BaseNotice(m.notice_protocol_invalid());
+    return;
+  }
+  try {
+    logger.debug("Opening clipboard Profile import");
+    const profile = await deps.importProfile({ source: "clipboard" });
+    if (!profile) {
+      logger.debug("Clipboard Profile import ended without a document");
+      return;
+    }
+    const file = deps.app.vault.getFileByPath(profile.path);
+    if (!file)
+      throw new Error(
+        `Imported Profile document is unavailable: ${profile.path}`,
+      );
+    await openProfileEditor(deps.app, file);
+    logger.debug("Opened imported Profile in editor", { path: profile.path });
+  } catch (error) {
+    logger.error("Failed to open clipboard Profile handoff", { error });
+    new BaseNotice(m.notice_profile_action_failed());
+  }
 }

@@ -11,6 +11,8 @@ import {
   buildImportAllNotesProtocolUrl,
   buildImportManyProtocolUrl,
   buildImportProtocolUrl,
+  buildImportProfileProtocolUrl,
+  importProfileProtocolQuerySchema,
   buildProtocolUrl,
   buildUpdateAllProtocolUrl,
   exploreProtocolQuerySchema,
@@ -110,6 +112,13 @@ function updateAllUrlWireSurface(): unknown {
   };
 }
 
+function importProfileUrlWireSurface(): unknown {
+  return {
+    example: buildImportProfileProtocolUrl(),
+    params: Object.keys(importProfileProtocolQuerySchema.entries),
+  };
+}
+
 function importAllNotesUrlWireSurface(): unknown {
   return {
     example: buildImportAllNotesProtocolUrl(SOURCE, 7, COLLECTION),
@@ -155,6 +164,7 @@ describe("wire format", () => {
       importAllNotesUrl: importAllNotesUrlWireSurface(),
       importNoteUrl: importNoteUrlWireSurface(),
       importNotesUrl: importNotesUrlWireSurface(),
+      importProfileUrl: importProfileUrlWireSurface(),
       literatureNotes: literatureNotesWireSurface(),
       noteStatus: noteStatusWireSurface(),
       zoteroNotes: zoteroNotesWireSurface(),
@@ -191,6 +201,12 @@ describe("wire format", () => {
             "items",
             "mode",
             "source-id",
+          ],
+        },
+        "importProfileUrl": {
+          "example": "obsidian://zotlit/import-profile?clipboard=true",
+          "params": [
+            "clipboard",
           ],
         },
         "literatureNotes": {

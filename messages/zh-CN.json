@@ -1,4 +1,7 @@
 {
+  "workbench_open_obsidian": "在 Obsidian 中打开",
+  "workbench_open_obsidian_copied": "已复制配置。请在 Obsidian 中继续导入。",
+  "workbench_open_obsidian_failed": "无法复制配置。请下载后在 Obsidian 中导入文件。",
   "workbench_preview_mode": "预览模式",
   "workbench_preview_create": "创建",
   "workbench_preview_update": "更新",

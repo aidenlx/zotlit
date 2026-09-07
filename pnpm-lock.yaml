@@ -185,6 +185,9 @@ catalogs:
     monkey-around:
       specifier: 3.0.0
       version: 3.0.0
+    nanoid:
+      specifier: ^5.1.16
+      version: 5.1.16
     oxfmt:
       specifier: ^0.55.0
       version: 0.55.0
@@ -358,6 +361,9 @@ importers:
       '@unpic/react':
         specifier: ^1.0.2
         version: 1.0.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@zotlit/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
       '@zotlit/workbench':
         specifier: workspace:*
         version: link:../../packages/workbench
@@ -388,6 +394,9 @@ importers:
       lucide-react:
         specifier: ^1.24.0
         version: 1.33.0(react@19.2.7)
+      nanoid:
+        specifier: 'catalog:'
+        version: 5.1.16
       react:
         specifier: 'catalog:'
         version: 19.2.7
@@ -573,7 +582,7 @@ importers:
         specifier: ^8.0.3
         version: 8.0.3
       nanoid:
-        specifier: ^5.1.16
+        specifier: 'catalog:'
         version: 5.1.16
       p-limit:
         specifier: ^7.3.0
