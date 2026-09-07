@@ -17,18 +17,13 @@ import type {
 } from "@zotlit/workbench/explorer";
 import { restoreTemplateData } from "@zotlit/workbench/render";
 import type { AnnotationExample, SAMPLE_ITEMS } from "@zotlit/workbench/render";
-import { m } from "@zotlit/workbench/ui";
+import { m, COMMON_FIELDS } from "@zotlit/workbench/ui";
 import type { TemplateRoot } from "@zotlit/workbench/ui";
-export type { TemplateRoot } from "@zotlit/workbench/ui";
 
 export type SampleItem = (typeof SAMPLE_ITEMS)[number];
 
 /** The parsed Profile document, named without depending on the templates package. */
 type ProfileDocument = NonNullable<WorkbenchDocumentController["document"]>;
-
-import { COMMON_FIELDS } from "@zotlit/workbench/ui";
-export { completionFields } from "@zotlit/workbench/ui";
-export type { CommonField } from "@zotlit/workbench/ui";
 
 /** The name shown in the panel's corner, so the reader knows what the list is for. */
 export const ROOT_LABEL: Record<TemplateRoot, () => string> = {
