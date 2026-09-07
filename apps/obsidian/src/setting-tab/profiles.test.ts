@@ -25,6 +25,7 @@ import {
 function context(): SettingTabContext {
   return {
     app: { vault: { getFileByPath: () => null } },
+    customize: vi.fn(() => Promise.resolve()),
     settings: {
       current: defaults,
       updateDefaultLiteratureNoteProfileBindings: vi.fn(),
@@ -74,6 +75,24 @@ function list(
   return found;
 }
 
+/** The Template document row of the main page. */
+function documentRow(ctx: SettingTabContext): SettingDefinitionItem {
+  const row = literatureNoteItems(ctx).find(
+    (item) =>
+      "name" in item && item.name === m.settings_profile_document_name(),
+  );
+  if (!row) throw new Error("No Template document row");
+  return row;
+}
+
+function customizeButton(row: SettingDefinitionItem): ButtonComponent {
+  const button = render(row)
+    .components.filter((control) => control instanceof ButtonComponent)
+    .find(({ text }) => text === m.settings_template_customize());
+  if (!button) throw new Error("No Customize button");
+  return button;
+}
+
 describe("Profile settings", () => {
   it("points Properties at the template document instead of a field list", () => {
     const ctx = context();
@@ -101,6 +120,49 @@ describe("Profile settings", () => {
     // The document exists, so the same action edits it instead.
     expect(buttonLabels(ejected)).toEqual([m.settings_template_open()]);
     expect(buttonIcons(ejected)).toEqual(["pencil"]);
+  });
+
+  it("leads the Template document row with Customize", async () => {
+    const ctx = context();
+    // Nothing ejected yet: the eject stays as the way into the vault, with
+    // Customize the primary action beside it.
+    expect(buttonLabels(documentRow(ctx))).toEqual([
+      m.settings_template_eject(),
+      m.settings_template_customize(),
+    ]);
+
+    ctx.app = {
+      vault: { getFileByPath: (path: string) => ({ path }) as TFile },
+    } as unknown as SettingTabContext["app"];
+    expect(buttonLabels(documentRow(ctx))).toEqual([
+      m.settings_template_open(),
+      m.settings_profile_document_restore(),
+      m.settings_template_customize(),
+    ]);
+
+    customizeButton(documentRow(ctx)).click();
+    await Promise.resolve();
+    expect(ctx.customize).toHaveBeenCalledWith({ profileId: "default" });
+  });
+
+  it("reverts to the eject while the web Template Workbench is off", () => {
+    const ctx = context();
+    ctx.settings = {
+      current: { ...defaults, "server.workbench": false },
+      updateDefaultLiteratureNoteProfileBindings: vi.fn(),
+    } as unknown as SettingTabContext["settings"];
+
+    expect(buttonLabels(documentRow(ctx))).toEqual([
+      m.settings_template_eject(),
+    ]);
+
+    ctx.app = {
+      vault: { getFileByPath: (path: string) => ({ path }) as TFile },
+    } as unknown as SettingTabContext["app"];
+    expect(buttonLabels(documentRow(ctx))).toEqual([
+      m.settings_template_open(),
+      m.settings_profile_document_restore(),
+    ]);
   });
 
   it("withholds both ways in while a Profile write would race the load", () => {

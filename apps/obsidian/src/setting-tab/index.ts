@@ -5,6 +5,7 @@ import type { LanguagePackLifecycle } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
 import type { DatabaseService } from "@/services/database/service";
 import type { LibraryScopeService } from "@/services/library-scope/service";
+import type { CustomizeAction } from "@/services/local-bridge/customize";
 import type { ProfileService } from "@/services/profile/service";
 import type {
   SettingsPatch,
@@ -54,6 +55,7 @@ export interface ZotLitSettingTabOptions {
   zoteroPref: ZoteroPrefService;
   localServer: LocalServerActions;
   localBridge: LocalBridgeActions;
+  customize: CustomizeAction;
   attachmentImport: AttachmentImportActions;
   citationIndex: CitationIndexActions;
   template: TemplateService;
@@ -71,6 +73,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #zoteroPref: ZoteroPrefService;
   readonly #localServer: LocalServerActions;
   readonly #localBridge: LocalBridgeActions;
+  readonly #customize: CustomizeAction;
   readonly #attachmentImport: AttachmentImportActions;
   readonly #citationIndex: CitationIndexActions;
   readonly #profile: ProfileService;
@@ -88,6 +91,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     zoteroPref,
     localServer,
     localBridge,
+    customize,
     attachmentImport,
     citationIndex,
     template,
@@ -111,6 +115,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     // The Workbench Connection row is included structurally, so a connection
     // opening, ending, or being taken over rebuilds the definitions.
     plugin.register(localBridge.on("connection", () => this.#requestUpdate()));
+    this.#customize = customize;
     this.#attachmentImport = attachmentImport;
     this.#citationIndex = citationIndex;
     this.#template = template;
@@ -216,6 +221,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
       zoteroPref: this.#zoteroPref,
       localServer: this.#localServer,
       localBridge: this.#localBridge,
+      customize: this.#customize,
       attachmentImport: this.#attachmentImport,
       citationIndex: this.#citationIndex,
       template: this.#template,

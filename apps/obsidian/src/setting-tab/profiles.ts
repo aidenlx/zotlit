@@ -10,6 +10,7 @@ import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { SettingsService } from "@/services/settings/service";
@@ -402,11 +403,17 @@ async function deleteProfile(
   }, ctx);
 }
 
+/**
+ * The Template document row. Customize leads while the web Template Workbench
+ * is on, with the eject behind it as the in-vault way in; with the Workbench
+ * off the eject leads again, so off means no door rather than a door that fails.
+ */
 function defaultDocumentItem(
   ctx: SettingTabContext,
 ): SettingDefinitionItem<SettingsControlKey> {
   const path = ctx.profile.defaultDocumentPath;
   const ejected = ctx.app.vault.getFileByPath(path) !== null;
+  const workbench = ctx.settings.current?.["server.workbench"] ?? false;
   return {
     name: m.settings_profile_document_name(),
     desc: ejected ? basename(path) : m.settings_profile_document_builtin(),
@@ -457,6 +464,20 @@ function defaultDocumentItem(
               }, ctx),
           ),
       );
+      if (workbench)
+        setting.addButton((button) =>
+          button
+            .setButtonText(m.settings_template_customize())
+            .setCta()
+            .setDisabled(profileActionsLocked(ctx))
+            .onClick(
+              () =>
+                void runAction(
+                  () => ctx.customize({ profileId: DEFAULT_PROFILE }),
+                  ctx,
+                ),
+            ),
+        );
     },
   };
 }
