@@ -30,6 +30,9 @@ const PORT_RANGE = 10;
 
 const MAX_PORT = 65535;
 
+/** Outcome of one bind attempt: the listener, a busy port, or a dead end. */
+type BindResult = ServerType | "in-use" | "failed";
+
 /**
  * Live state of the Zotero reader, derived from the companion's reader pushes.
  * The service is the authoritative holder; views sync from {@link
@@ -225,15 +228,18 @@ export class LocalServerService extends Service<void> {
     this.#port = settings["server.port"];
     this.#hostname = settings["server.hostname"];
 
+    // The stack unwinds last-registered-first, so the subscription goes last:
+    // a settings emit arriving after the listener closed would otherwise
+    // rebind a port on a disposed service.
+    stack.defer(async () => {
+      await this.#chain;
+      await this.#stopServer();
+    });
     stack.defer(
       this.#settings.subscribe((value) => {
         if (value) this.#onSettingsChanged(value);
       }),
     );
-    stack.defer(async () => {
-      await this.#chain;
-      await this.#stopServer();
-    });
 
     this.#reconcile();
     this.commit(stack.move());
@@ -279,9 +285,12 @@ export class LocalServerService extends Service<void> {
     for (let offset = 0; offset < PORT_RANGE; offset++) {
       const port = this.#port + offset;
       if (port > MAX_PORT) break;
-      const server = await this.#listen(port);
-      if (!server) continue;
-      this.#server = server;
+      const result = await this.#listen(port);
+      // A port held by someone else is the case the range exists for; any
+      // other bind failure repeats on every port, so stop after the first.
+      if (result === "in-use") continue;
+      if (result === "failed") return;
+      this.#server = result;
       this.#boundPort = port;
       this.#refreshAvailability();
       this.#emitter.emit("listening", port);
@@ -294,51 +303,60 @@ export class LocalServerService extends Service<void> {
   }
 
   /**
-   * One bind attempt. Resolves the listening server, or `null` when the port
-   * is taken or the bind fails — the caller moves on to the next port.
+   * One bind attempt. Resolves the listening server, `"in-use"` when the port
+   * is taken so the caller tries the next one, or `"failed"` when the bind is
+   * hopeless — a bad hostname, say, which every port in the range repeats.
    */
-  #listen(port: number): Promise<ServerType | null> {
-    return new Promise<ServerType | null>((resolve) => {
+  #listen(port: number): Promise<BindResult> {
+    return new Promise<BindResult>((resolve) => {
       let bound = false;
-      const server = serve(
-        {
-          fetch: this.#app.fetch,
-          port,
-          hostname: this.#hostname,
-          // The listener swaps its own `Request`/`Response` classes into the
-          // globals unless told otherwise, and those globals belong to the whole
-          // Obsidian window. WebAssembly streaming brand-checks the native
-          // `Response`, so a swapped-in class stops the Pandoc engine from
-          // instantiating. The listener keeps the native classes instead.
-          overrideGlobalObjects: false,
-        },
-        (info) => {
-          bound = true;
-          logger.info("Server listening", {
-            address: info.address,
-            port: info.port,
-          });
-          resolve(server);
-        },
-      );
-      server.on("error", (error: NodeJS.ErrnoException) => {
-        if (!bound) {
-          bound = true;
-          if (error.code === "EADDRINUSE") {
-            logger.debug("Port taken, trying the next one", { port });
-          } else {
-            logger.error("Failed to bind server", { port, error });
+      try {
+        const server = serve(
+          {
+            fetch: this.#app.fetch,
+            port,
+            hostname: this.#hostname,
+            // The listener swaps its own `Request`/`Response` classes into the
+            // globals unless told otherwise, and those globals belong to the
+            // whole Obsidian window. WebAssembly streaming brand-checks the
+            // native `Response`, so a swapped-in class stops the Pandoc engine
+            // from instantiating. The listener keeps the native classes instead.
+            overrideGlobalObjects: false,
+          },
+          (info) => {
+            bound = true;
+            logger.info("Server listening", {
+              address: info.address,
+              port: info.port,
+            });
+            resolve(server);
+          },
+        );
+        server.on("error", (error: NodeJS.ErrnoException) => {
+          if (!bound) {
+            bound = true;
+            if (error.code === "EADDRINUSE") {
+              logger.debug("Port taken, trying the next one", { port });
+              resolve("in-use");
+            } else {
+              logger.error("Failed to bind server", { port, error });
+              resolve("failed");
+            }
+            return;
           }
-          resolve(null);
-          return;
-        }
-        // A failure past the bind: the listener is gone, so report it down.
-        if (this.#server !== server) return;
-        this.#boundPort = null;
-        this.#refreshAvailability();
-        this.#emitter.emit("listening", null);
-        logger.error("Server error", { error });
-      });
+          // A failure past the bind: the listener is gone, so report it down.
+          if (this.#server !== server) return;
+          this.#boundPort = null;
+          this.#refreshAvailability();
+          this.#emitter.emit("listening", null);
+          logger.error("Server error", { error });
+        });
+      } catch (error) {
+        // `serve` throws synchronously on an unusable listen option; without
+        // this the promise never settles and disposal waits on it forever.
+        logger.error("Failed to start server", { port, error });
+        resolve("failed");
+      }
     });
   }
 
