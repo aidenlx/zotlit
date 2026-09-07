@@ -18,7 +18,9 @@ import { defaults } from "@/services/settings/schema";
 import type { Settings, SettingsService } from "@/services/settings/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
+import type { BridgeProfileReader } from "./reads";
 import { LocalBridgeService } from "./service";
+import type { LocalBridgeServiceDeps } from "./service";
 
 const VAULT_NAME = "Research";
 /** A Profile id of the shape the registry mints: twelve alphanumerics. */
@@ -82,13 +84,36 @@ function makeDevice(held: Map<string, unknown> = new Map()) {
   };
 }
 
-const PROFILES: ProfileReader = {
+const PROFILES = {
+  ready: Promise.resolve(),
   loaded: true,
   resolveProfile: (selector: string) =>
     selector === BOOKS_PROFILE
       ? ({ label: "Books" } as ReturnType<ProfileReader["resolveProfile"]>)
       : undefined,
-} as unknown as ProfileReader;
+  getSource: () => Promise.resolve(""),
+} as unknown as BridgeProfileReader;
+
+/**
+ * The vault data the reads answer from. This suite is about the lifecycle and
+ * the grant, so nothing here is asked for a value; `reads.test.ts` drives them.
+ */
+const READ_DEPS = {
+  db: { acquireRead: () => Promise.reject(new Error("not used here")) },
+  noteIndex: {
+    whenIndexed: () => Promise.resolve(),
+    getNotesByItemKey: () => [],
+    getImportedNoteByNoteKey: () => [],
+  },
+  template: {
+    ready: Promise.resolve(),
+    exportLiteratureNotePackSource: (source: string) => Promise.resolve(source),
+  },
+  zoteroPref: { ready: Promise.resolve(), dataDir: "" },
+} as unknown as Pick<
+  LocalBridgeServiceDeps,
+  "db" | "noteIndex" | "template" | "zoteroPref"
+>;
 
 /** Resolve the port once the listener binds one. */
 async function whenListening(service: LocalServerService): Promise<number> {
@@ -147,6 +172,7 @@ async function harness(
     settings: settings.service,
     profile: PROFILES,
     localServer,
+    ...READ_DEPS,
     pluginVersion: "2.1.1",
   });
   await bridge.ready;

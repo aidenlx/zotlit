@@ -19,15 +19,20 @@ import { DOCS_SITE_URL } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { DEFAULT_PROFILE, isProfileId } from "@/lib/profile-stamp";
+import type { DatabaseService } from "@/services/database/service";
 import type { LocalServerService } from "@/services/local-server/service";
-import type { ProfileReader } from "@/services/profile/service";
+import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { Settings, SettingsService } from "@/services/settings/service";
+import type { TemplateService } from "@/services/template/service";
+import type { ZoteroPrefService } from "@/services/zotero-pref/service";
 
 import { createLocalBridgeApp } from "./app";
 import type { ConnectionGrantDescription } from "./app";
 import { loadInstallationId } from "./installation";
 import { ALLOWED_DOCS_ORIGINS } from "./origins";
+import { createLocalBridgeReads } from "./reads";
+import type { BridgeProfileReader } from "./reads";
 import { BridgeSessions } from "./sessions";
 import type { BridgeConnection, SelectedItemIdentity } from "./sessions";
 
@@ -62,9 +67,16 @@ export interface LocalBridgeEvents {
 export interface LocalBridgeServiceDeps {
   app: App;
   settings: SettingsService;
-  profile: ProfileReader;
+  profile: BridgeProfileReader;
   /** The one loopback listener the bridge mounts its routes on. */
   localServer: Pick<LocalServerService, "mount" | "effectivePort">;
+  db: Pick<DatabaseService, "acquireRead">;
+  noteIndex: Pick<
+    NoteIndex,
+    "whenIndexed" | "getNotesByItemKey" | "getImportedNoteByNoteKey"
+  >;
+  template: Pick<TemplateService, "ready" | "exportLiteratureNotePackSource">;
+  zoteroPref: Pick<ZoteroPrefService, "ready" | "dataDir">;
   /** This build's version, which the grant carries so the page can name it. */
   pluginVersion: string;
 }
@@ -84,6 +96,7 @@ export class LocalBridgeService extends Service<void> {
   readonly #profile;
   readonly #localServer;
   readonly #pluginVersion;
+  readonly #reads;
   readonly #emitter = createNanoEvents<LocalBridgeEvents>();
   readonly #sessions = new BridgeSessions((connection) => {
     this.#emitter.emit("connection", this.#describeConnection(connection));
@@ -101,6 +114,17 @@ export class LocalBridgeService extends Service<void> {
     this.#profile = deps.profile;
     this.#localServer = deps.localServer;
     this.#pluginVersion = deps.pluginVersion;
+    this.#reads = createLocalBridgeReads({
+      app: deps.app,
+      settings: deps.settings,
+      db: deps.db,
+      noteIndex: deps.noteIndex,
+      profile: deps.profile,
+      template: deps.template,
+      zoteroPref: deps.zoteroPref,
+      installationId: () => this.#installationId,
+      vaultName: () => this.#app.vault.getName(),
+    });
     this.ready = this.#load();
   }
 
@@ -165,6 +189,7 @@ export class LocalBridgeService extends Service<void> {
         peerAddress: nodePeerAddress,
         allowedOrigins: ALLOWED_DOCS_ORIGINS,
         sessions: this.#sessions,
+        reads: this.#reads,
         describeGrant: (connection) => this.#describeGrant(connection),
       }),
     );

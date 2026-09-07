@@ -138,12 +138,24 @@ export function buildServices(
         }),
     })
     .use({
-      localBridge: ({ settings, profile, localServer }) =>
+      localBridge: ({
+        settings,
+        profile,
+        localServer,
+        db,
+        noteIndex,
+        template,
+        zoteroPref,
+      }) =>
         new LocalBridgeService({
           app: plugin.app,
           settings,
           profile,
           localServer,
+          db,
+          noteIndex,
+          template,
+          zoteroPref,
           pluginVersion: plugin.manifest.version,
         }),
     })
