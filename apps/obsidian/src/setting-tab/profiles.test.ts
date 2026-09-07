@@ -85,6 +85,49 @@ function documentRow(ctx: SettingTabContext): SettingDefinitionItem {
   return row;
 }
 
+/** The tooltips a `render` row's icon buttons carry, in order. */
+function extraButtonTooltips(row: SettingDefinitionItem): string[] {
+  return render(row)
+    .components.filter((control) => control instanceof ExtraButtonComponent)
+    .map((button) => button.tooltip);
+}
+
+/** The Customize icon on a Profile row, absent while the Workbench is off. */
+function customizeIcon(
+  row: SettingDefinitionItem,
+): ExtraButtonComponent | undefined {
+  return render(row)
+    .components.filter((control) => control instanceof ExtraButtonComponent)
+    .find(({ tooltip }) => tooltip === m.settings_template_customize());
+}
+
+/** The Profiles page with one Profile beside Default. */
+function pageWithOneProfile(ctx: SettingTabContext): {
+  defaultRow: SettingDefinitionItem;
+  profileRow: SettingDefinitionItem;
+} {
+  ctx.profile = {
+    profiles: [
+      {
+        id: "Bk3Qn7XvT2Lp",
+        label: "Books",
+        document: "zotlit-profile.books.md",
+        path: "templates/zotlit-profile.books.md",
+        bindings: {},
+        match: { state: "absent", summary: m.profile_match_absent() },
+      },
+    ],
+    diagnostics: [],
+    loaded: true,
+    defaultDocumentPath: "templates/zotlit-profile.default.md",
+  } as unknown as SettingTabContext["profile"];
+  const page = profilesPage(ctx);
+  return {
+    defaultRow: page.items![0]!,
+    profileRow: list(page, m.settings_profile_other_heading()).items![0]!,
+  };
+}
+
 function customizeButton(row: SettingDefinitionItem): ButtonComponent {
   const button = render(row)
     .components.filter((control) => control instanceof ButtonComponent)
@@ -162,6 +205,53 @@ describe("Profile settings", () => {
     expect(buttonLabels(documentRow(ctx))).toEqual([
       m.settings_template_open(),
       m.settings_profile_document_restore(),
+    ]);
+  });
+
+  it("offers Customize on Default and on every other Profile row", async () => {
+    const ctx = context();
+    const { defaultRow, profileRow } = pageWithOneProfile(ctx);
+
+    expect(extraButtonTooltips(defaultRow)).toEqual([
+      m.settings_template_customize(),
+      m.settings_profile_share(),
+    ]);
+    expect(extraButtonTooltips(profileRow)).toEqual([
+      m.settings_template_customize(),
+      m.settings_template_open(),
+      m.settings_profile_duplicate(),
+      m.settings_profile_share(),
+    ]);
+
+    customizeIcon(defaultRow)!.click();
+    await vi.waitFor(() =>
+      expect(ctx.customize).toHaveBeenCalledWith({ profileId: "default" }),
+    );
+
+    // The row's own Profile is what its Customize opens, not the default.
+    customizeIcon(profileRow)!.click();
+    await vi.waitFor(() =>
+      expect(ctx.customize).toHaveBeenCalledWith({
+        profileId: "Bk3Qn7XvT2Lp",
+      }),
+    );
+  });
+
+  it("drops Customize from every Profile row while the Workbench is off", () => {
+    const ctx = context();
+    ctx.settings = {
+      current: { ...defaults, "server.workbench": false },
+      updateDefaultLiteratureNoteProfileBindings: vi.fn(),
+    } as unknown as SettingTabContext["settings"];
+    const { defaultRow, profileRow } = pageWithOneProfile(ctx);
+
+    expect(extraButtonTooltips(defaultRow)).toEqual([
+      m.settings_profile_share(),
+    ]);
+    expect(extraButtonTooltips(profileRow)).toEqual([
+      m.settings_template_open(),
+      m.settings_profile_duplicate(),
+      m.settings_profile_share(),
     ]);
   });
 

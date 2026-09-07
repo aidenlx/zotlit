@@ -49,6 +49,7 @@
   "command_open_citekey_right_name": "在右侧打开光标处的文献引用标识（citation key）",
   "command_open_citekey_window_name": "在新窗口中打开光标处的文献引用标识（citation key）",
   "command_insert_citation_name": "插入 Markdown 引用",
+  "command_customize_note_template_name": "自定义此笔记的模板",
   "command_update_note_name": "更新文献笔记",
   "command_update_note_metadata_name": "更新文献笔记元数据",
   "command_overwrite_note_name": "覆盖文献笔记",
