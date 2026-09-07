@@ -220,11 +220,19 @@ export function Workbench() {
     installationId,
     kept,
     retainedExpected,
+    snapshot,
   }: ProfileHydration) {
     const opened = {
       reference: selected.document.reference,
       source: selected.source,
       installationId,
+      ...(snapshot
+        ? {
+            snapshot,
+            annotationSelection: annotationSamples(snapshot, annotationChoice)
+              .example.id,
+          }
+        : {}),
     };
     // A connection that comes back to the document already open leaves the text
     // and its undo history where they are: the connection was lost, the work
@@ -238,6 +246,7 @@ export function Workbench() {
       !replaceConnected.current
     ) {
       drafts.rebase(opened);
+      if (snapshot) setSample(snapshot);
       // The text on screen still descends from the revision it was read at, so
       // Save answers for that one: the vault moved, this draft did not.
       if (retainedExpected) saveAgainst(retainedExpected);
@@ -246,6 +255,7 @@ export function Workbench() {
     drafts.adopt(opened, replaceConnected.current ? null : kept);
     replaceConnected.current = false;
     loadDocument(selected.source);
+    if (snapshot) setSample(snapshot);
   }
 
   useEffect(
@@ -329,7 +339,10 @@ export function Workbench() {
     (item) => item.item.itemType === sampleItemType,
   );
   useEffect(() => {
-    if (bundledForType) setSample(bundledForType);
+    if (bundledForType)
+      setSample((held) =>
+        held.provenance.kind === "connected" ? held : bundledForType,
+      );
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- one selection per named type, not per parse of the same manifest
   }, [sampleItemType]);
 
