@@ -1,7 +1,11 @@
 // Keeps an Item Snapshot to the fields the generated contract declares.
 
 import type { ContractRoot } from "@zotlit/db";
-import type { ContractIR, ContractType } from "@zotlit/db/contract/ir";
+import type {
+  ContractIR,
+  ContractObject,
+  ContractType,
+} from "@zotlit/db/contract/ir";
 import contractIRJson from "@zotlit/db/contract/ir.json" with { type: "json" };
 
 const contractIR = contractIRJson as ContractIR;
@@ -12,7 +16,7 @@ const UNKNOWN_CONTRACT_TYPE: ContractType = { kind: "unknown" };
  * inert placeholder, and a resolved helper. Each is a contract shape of its
  * own, never an Item record with fields to weigh.
  */
-const MARKER_KEYS = ["$ref", "$inert", "$helper"] as const;
+export const MARKER_KEYS = ["$ref", "$inert", "$helper"] as const;
 
 /**
  * Drops every key an Item-shaped record carries that neither the contract type
@@ -34,7 +38,13 @@ export function applyFieldAllowList(
   customFields: ReadonlySet<string>,
 ): Record<string, unknown> {
   const rootType = contractIR.roots[contractRoot]?.type;
-  if (!rootType) return root;
+  if (!rootType) {
+    // The allow-list is a redaction gate: an unknown root fails the export
+    // rather than passing the snapshot through unpruned.
+    throw new Error(
+      `The Template contract declares no root '${contractRoot}'.`,
+    );
+  }
   return prune(root, { kind: "ref", name: rootType }, customFields) as Record<
     string,
     unknown
@@ -46,33 +56,32 @@ function prune(
   type: ContractType,
   customFields: ReadonlySet<string>,
 ): unknown {
-  const resolved = resolveType(type);
   if (Array.isArray(value)) {
-    const items =
-      resolved.kind === "array" ? resolved.items : UNKNOWN_CONTRACT_TYPE;
-    return value.map((entry) => prune(entry, items, customFields));
+    return value.map((entry) => prune(entry, arrayItems(type), customFields));
   }
   if (!isRecord(value)) return value;
   if (MARKER_KEYS.some((key) => key in value)) return value;
-  if (resolved.kind !== "object") return value;
 
-  const declared = new Set(resolved.members.map((member) => member.name));
-  const fields =
-    resolved.additional?.schema === "item-fields"
-      ? allowedItemFields(value, customFields)
-      : undefined;
+  const shapes = objectShapes(type);
+  if (shapes.length === 0) return value;
+
+  const declared = new Map<string, ContractType>();
+  for (const shape of shapes) {
+    for (const member of shape.members) {
+      if (!declared.has(member.name)) declared.set(member.name, member.type);
+    }
+  }
+  const fields = shapes.some(
+    (shape) => shape.additional?.schema === "item-fields",
+  )
+    ? allowedItemFields(value, customFields)
+    : undefined;
 
   const pruned: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
-    if (declared.has(key)) {
-      const memberType = resolved.members.find(
-        (member) => member.name === key,
-      )?.type;
-      pruned[key] = prune(
-        entry,
-        memberType ?? UNKNOWN_CONTRACT_TYPE,
-        customFields,
-      );
+    const memberType = declared.get(key);
+    if (memberType) {
+      pruned[key] = prune(entry, memberType, customFields);
     } else if (fields?.has(key)) {
       pruned[key] = entry;
     }
@@ -95,30 +104,51 @@ function allowedItemFields(
 }
 
 /**
- * The named shape behind a member type. A nullable member reads as a union of
- * one shape and `null`, so a single non-primitive option resolves through;
- * a union of several shapes stays as it is and the walk stops there.
+ * Every object shape a value of this type may take. A nullable member reads as
+ * a union of one shape and `null`; a union of several shapes contributes all of
+ * them, so a key is kept when any of the shapes declares it and the record is
+ * pruned rather than passed through.
  */
-function resolveType(type: ContractType): ContractType {
+function objectShapes(
+  type: ContractType,
+  seen: ReadonlySet<string> = new Set(),
+): ContractObject[] {
+  if (type.kind === "ref") {
+    if (seen.has(type.name)) return [];
+    return objectShapes(
+      contractIR.types[type.name] ?? UNKNOWN_CONTRACT_TYPE,
+      new Set([...seen, type.name]),
+    );
+  }
+  if (type.kind === "object") return [type];
+  if (type.kind === "union") {
+    return type.options.flatMap((option) => objectShapes(option, seen));
+  }
+  return [];
+}
+
+/** The element type behind an array member, through refs and nullable unions. */
+function arrayItems(type: ContractType): ContractType {
+  const resolved = resolveRef(type);
+  if (resolved.kind === "array") return resolved.items;
+  if (resolved.kind === "union") {
+    for (const option of resolved.options) {
+      const items = arrayItems(option);
+      if (items.kind !== "unknown") return items;
+    }
+  }
+  return UNKNOWN_CONTRACT_TYPE;
+}
+
+function resolveRef(type: ContractType): ContractType {
   let resolved = type;
   const seen = new Set<string>();
-  for (;;) {
-    if (resolved.kind === "ref") {
-      if (seen.has(resolved.name)) return UNKNOWN_CONTRACT_TYPE;
-      seen.add(resolved.name);
-      resolved = contractIR.types[resolved.name] ?? UNKNOWN_CONTRACT_TYPE;
-      continue;
-    }
-    if (resolved.kind === "union") {
-      const shapes = resolved.options.filter(
-        (option) => option.kind === "ref" || option.kind === "object",
-      );
-      if (shapes.length !== 1 || shapes[0] === undefined) return resolved;
-      resolved = shapes[0];
-      continue;
-    }
-    return resolved;
+  while (resolved.kind === "ref") {
+    if (seen.has(resolved.name)) return UNKNOWN_CONTRACT_TYPE;
+    seen.add(resolved.name);
+    resolved = contractIR.types[resolved.name] ?? UNKNOWN_CONTRACT_TYPE;
   }
+  return resolved;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
