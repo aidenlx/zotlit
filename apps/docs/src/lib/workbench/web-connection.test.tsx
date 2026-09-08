@@ -12,7 +12,7 @@ import { m } from "@/paraglide/messages.js";
 import {
   launch,
   BRIDGE_ORIGIN,
-  startRenderWorker,
+  renderInThread,
   KEY,
   KEPT,
   CONNECTED,
@@ -82,7 +82,7 @@ describe("a Workbench Connection", () => {
       ).toHaveLength(2),
     );
     await page.settle();
-    expect(startRenderWorker.mock.calls.at(-1)?.[0].resources).toEqual({
+    expect(renderInThread.mock.calls.at(-1)?.[0].resources).toEqual({
       dependencies: {
         templates: [
           {
@@ -148,7 +148,7 @@ describe("a Workbench Connection", () => {
     await page.settle();
     expect(page.host.textContent).toContain(m.workbench_connected_badge());
     expect(page.host.textContent).not.toContain(m.workbench_retained_badge());
-    expect(startRenderWorker.mock.calls.at(-1)?.[0].snapshot.item.title).toBe(
+    expect(renderInThread.mock.calls.at(-1)?.[0].snapshot.item.title).toBe(
       "Group research paper",
     );
     page.press(m.workbench_refresh_item());
@@ -201,7 +201,7 @@ describe("a Workbench Connection", () => {
       ),
     );
     await page.settle();
-    expect(startRenderWorker.mock.calls.at(-1)?.[0].snapshot.item.key).toBe(
+    expect(renderInThread.mock.calls.at(-1)?.[0].snapshot.item.key).toBe(
       SAMPLE_ITEMS[2]!.item.key,
     );
     expect(
@@ -232,10 +232,10 @@ describe("a Workbench Connection", () => {
       await page.settle();
       expect(title(page.host)).toBe("Kept work");
       expect(
-        startRenderWorker.mock.calls.at(-1)?.[0].snapshot.provenance.kind,
+        renderInThread.mock.calls.at(-1)?.[0].snapshot.provenance.kind,
       ).toBe(retained ? "sample" : "connected");
       if (retained)
-        expect(startRenderWorker.mock.calls.at(-1)?.[0].snapshot.item.key).toBe(
+        expect(renderInThread.mock.calls.at(-1)?.[0].snapshot.item.key).toBe(
           SAMPLE_ITEMS[2]!.item.key,
         );
     },
@@ -267,7 +267,7 @@ describe("a Workbench Connection", () => {
     page.press(m.workbench_restore_accept());
     await page.settle();
     expect(title(page.host)).toBe("Kept work");
-    expect(startRenderWorker.mock.calls.at(-1)?.[0].snapshot.item.key).toBe(
+    expect(renderInThread.mock.calls.at(-1)?.[0].snapshot.item.key).toBe(
       SAMPLE_ITEMS[2]!.item.key,
     );
   });
@@ -635,7 +635,7 @@ describe("a Workbench Connection", () => {
     });
 
     await page.waitFor(() =>
-      expect(startRenderWorker.mock.calls.at(-1)?.[0].resources).toMatchObject({
+      expect(renderInThread.mock.calls.at(-1)?.[0].resources).toMatchObject({
         citationStyle: {
           kind: "installed",
           styleId: "fixture-style",
@@ -784,7 +784,7 @@ describe("a Workbench Connection", () => {
     expect(page.host.textContent).not.toContain(
       m.workbench_connection_reconnect(),
     );
-    expect(startRenderWorker.mock.calls.at(-1)?.[0].resources).toBeUndefined();
+    expect(renderInThread.mock.calls.at(-1)?.[0].resources).toBeUndefined();
 
     await page.show(SAMPLE_ITEMS[1]!.item.key);
     expect(page.host.textContent).toContain(m.workbench_sample_badge());

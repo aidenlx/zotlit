@@ -51,7 +51,9 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
     },
   } as unknown as Pick<DatabaseService, "on" | "acquireRead">;
   const tags = vi.fn(async () => []);
-  const render = vi.fn(() => ({ terminate() {} }));
+  const render = vi.fn(() =>
+    Promise.reject(new Error("This test renders nothing.")),
+  );
   using host = createProfileEditorHost(
     {} as Parameters<typeof createProfileEditorHost>[0],
     {
@@ -162,7 +164,7 @@ it("applies the installed pack to shared Match and Explorer controls after resta
   using host = createProfileEditorHost(
     ports as unknown as Parameters<typeof createProfileEditorHost>[0],
     {
-      render: () => ({ terminate() {} }),
+      render: () => Promise.reject(new Error("This test renders nothing.")),
       matchData: {
         tags: async () => [],
         collections: async () => [],

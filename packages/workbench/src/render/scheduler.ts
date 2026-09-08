@@ -1,5 +1,5 @@
-// Per-render Worker orchestration: one debounce, one deadline, and a revision
-// stamp that keeps a late result from replacing a newer one.
+// Per-render orchestration: one debounce and a revision stamp that keeps a
+// late result from replacing a newer one.
 
 import type {
   SelectedCitationStyleResponse,
@@ -28,23 +28,13 @@ export interface RenderResources {
   readonly citationStyle: SelectedCitationStyleResponse;
 }
 
-/** One render's Worker, which the scheduler owns and terminates. */
-export interface RenderWorkerHandle {
-  terminate(): void;
-}
-
 export interface RenderSchedulerOptions {
-  /** Starts a fresh Worker for one request; `deliver` is called at most once. */
-  readonly startWorker: (
-    request: RenderRequest,
-    deliver: (result: ProfileRenderResult) => void,
-  ) => RenderWorkerHandle;
+  /** Renders one request on the calling thread. */
+  readonly render: (request: RenderRequest) => Promise<ProfileRenderResult>;
   readonly onResult: (result: ProfileRenderResult) => void;
   readonly onBusy?: (busy: boolean) => void;
   /** Quiet time after the last edit before a render starts. @default 300 */
   readonly debounceMs?: number;
-  /** Time a render may take before its Worker is terminated. @default 2000 */
-  readonly deadlineMs?: number;
 }
 
 export interface RenderScheduler extends Disposable {
@@ -57,24 +47,17 @@ export interface RenderScheduler extends Disposable {
 }
 
 export function createRenderScheduler({
-  startWorker,
+  render,
   onResult,
   onBusy,
   debounceMs = 300,
-  deadlineMs = 2000,
 }: RenderSchedulerOptions): RenderScheduler {
   let pending: ReturnType<typeof setTimeout> | undefined;
-  let deadline: ReturnType<typeof setTimeout> | undefined;
-  let worker: RenderWorkerHandle | undefined;
   let current: RenderIdentity | undefined;
 
   function stop(): void {
     clearTimeout(pending);
-    clearTimeout(deadline);
     pending = undefined;
-    deadline = undefined;
-    worker?.terminate();
-    worker = undefined;
     current = undefined;
     onBusy?.(false);
   }
@@ -96,28 +79,28 @@ export function createRenderScheduler({
   }
 
   function start(request: RenderRequest): void {
+    // The stamp doubles as this start's token: `stop()` clears it, so a render
+    // the reader has replaced answers into a scheduler that no longer knows it.
     const identity = renderIdentity(request);
     current = identity;
     pending = undefined;
     onBusy?.(true);
-    const started = startWorker(request, (result) => {
-      if (current === identity) settle(result);
-    });
-    // A host may answer synchronously, before it returns the worker handle.
-    if (current !== identity) {
-      started.terminate();
-      return;
-    }
-    worker = started;
-    deadline = setTimeout(() => {
-      settle(
-        failedRender(identity, {
-          code: "render-timeout",
-          params: { deadlineMs },
-          part: "render",
-        }),
-      );
-    }, deadlineMs);
+    void render(request).then(
+      (result) => {
+        if (current === identity) settle(result);
+      },
+      // A template that throws stops this render, not the host around it.
+      (error: unknown) => {
+        if (current === identity)
+          settle(
+            failedRender(identity, {
+              code: "render-error",
+              message: error instanceof Error ? error.message : String(error),
+              part: "render",
+            }),
+          );
+      },
+    );
   }
 
   return {

@@ -86,16 +86,6 @@ describe("diagnosticText", () => {
     );
   });
 
-  it("keeps the deadline the scheduler stopped a render at", () => {
-    expect(
-      diagnosticText(m, {
-        code: "render-timeout",
-        params: { deadlineMs: 2000 },
-        part: "render",
-      }),
-    ).toBe(m.workbench_diagnostic_render_timeout({ deadlineMs: "2000" }));
-  });
-
   it("names an Eta dependency the renderer refused, and keeps a bridge's own wording", () => {
     expect(
       diagnosticText(m, {

@@ -144,7 +144,7 @@ export interface WorkbenchHost {
   hoverCard(request: WorkbenchHoverCardRequest): WorkbenchHoverCardHandle;
   notice(text: string): void;
   /** Renders one request; the tree schedules through `createRenderScheduler`. */
-  render: RenderSchedulerOptions["startWorker"];
+  render: RenderSchedulerOptions["render"];
   /** The host reading view for a rendered note or annotation. */
   markdown: ComponentType<WorkbenchMarkdownProps>;
   /** Completion and hover presentation over the shared editor. */

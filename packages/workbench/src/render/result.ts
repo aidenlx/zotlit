@@ -17,7 +17,6 @@ export type RenderDiagnosticCode =
   | "property-error"
   | "property-javascript"
   | "render-error"
-  | "render-timeout"
   | "unsupported-dependency";
 
 export interface RenderDiagnostic {
