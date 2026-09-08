@@ -1,8 +1,8 @@
 // The Workbench route: a prerendered static shell whose editor bundle — the
-// document core, CodeMirror, and the render Worker — loads in the browser only,
-// so the page costs no Worker invocation. The shell paints the page's own
-// frame as a skeleton, and the bundle's fetch starts as soon as this module
-// evaluates rather than after hydration.
+// document core, CodeMirror, and the renderer — loads in the browser only, so
+// the page costs no Worker invocation. The shell paints the page's own frame
+// as a skeleton, and the bundle's fetch starts as soon as this module evaluates
+// rather than after hydration.
 // @see docs/adr/0025-the-docs-site-prerenders-asset-first-and-falls-through-to-an-ssr-worker.md
 
 import { createFileRoute } from "@tanstack/react-router";

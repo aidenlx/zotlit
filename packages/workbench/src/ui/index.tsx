@@ -4,7 +4,8 @@ export { MatchPane } from "./match";
 // (ADR 0044). It renders structure and behaviour; the host supplies the look
 // through `WorkbenchThemeProvider` and its popups through
 // `WorkbenchHostProvider`, and each editor instance keeps its view state in
-// the store `WorkbenchEditorProvider` carries beside the document controller.
+// the store `WorkbenchEditorProvider` carries beside the document controller
+// and the one Render Scheduler its result surfaces share.
 
 export { WorkbenchMessagesProvider, useWorkbenchMessages } from "./messages";
 export type { WorkbenchMessages } from "./generated/messages";
@@ -12,14 +13,17 @@ export type { WorkbenchMessages } from "./generated/messages";
 export { EditToolbar } from "./edit-toolbar";
 export { StartHere } from "./start-here";
 export {
+  createWorkbenchEditor,
   WorkbenchEditorProvider,
   useDocumentRevision,
   useOptionalEditor,
+  useRenderScheduler,
+  useRenderState,
   useWorkbenchController,
   useWorkbenchEditor,
   useWorkbenchStore,
 } from "./editor";
-export type { WorkbenchEditor } from "./editor";
+export type { WorkbenchEditor, WorkbenchEditorInstance } from "./editor";
 export { WorkbenchHostProvider, useTooltip, useWorkbenchHost } from "./host";
 export type {
   WorkbenchConfirmRequest,
@@ -42,6 +46,13 @@ export type {
 export { diagnosticText, problemText } from "./problems";
 export type { ProblemText } from "./problems";
 export { ProblemsFooter, problemWhere } from "./problems-footer";
+export { createRenderScheduler } from "./scheduler";
+export type {
+  RenderScheduler,
+  RenderSchedulerInput,
+  RenderSchedulerOptions,
+  RenderSchedulerState,
+} from "./scheduler";
 export { createWorkbenchStore } from "./store";
 export type {
   ExplorerVariant,

@@ -21,25 +21,20 @@ import type {
 } from "@zotlit/workbench/render";
 
 import { Toaster } from "@/components/ui/toast";
-// Browser storage, Worker transport, and Local Bridge fixtures for web host tests.
+// Browser storage, render, and Local Bridge fixtures for web host tests.
 import { m } from "@/paraglide/messages.js";
 
 import { Workbench } from "./workbench";
 
-// The browser Worker boundary delivers real renderer output in this DOM host.
-const { startRenderWorker } = vi.hoisted(() => ({
-  startRenderWorker: vi.fn(
-    (
-      _request: RenderRequest,
-      _deliver: (result: ProfileRenderResult) => void,
-    ) => ({
-      terminate: () => {},
-    }),
-  ),
+// The page's own renderer, behind a spy so a test can read every request it was
+// given and hold one render open.
+const { renderInThread } = vi.hoisted(() => ({
+  renderInThread:
+    vi.fn<(request: RenderRequest) => Promise<ProfileRenderResult>>(),
 }));
 
-vi.mock("./render-client", () => ({ startRenderWorker }));
-export { startRenderWorker };
+vi.mock("./render", () => ({ renderInThread }));
+export { renderInThread };
 
 export const KEY = "zotlit.workbench.draft.standalone";
 export const PORT = 23_120;
@@ -86,19 +81,10 @@ beforeEach(() => {
     "fetch",
     vi.fn(() => Promise.reject(new Error("No Local Bridge is running."))),
   );
-  startRenderWorker.mockClear();
-  startRenderWorker.mockImplementation((request, deliver) => {
-    let cancelled = false;
-    void Promise.resolve().then(() => {
-      if (!cancelled)
-        deliver(renderProfile(request.source, request.snapshot, request));
-    });
-    return {
-      terminate: () => {
-        cancelled = true;
-      },
-    };
-  });
+  renderInThread.mockClear();
+  renderInThread.mockImplementation((request) =>
+    Promise.resolve(renderProfile(request.source, request.snapshot, request)),
+  );
 });
 
 // The viewport is one window the whole file shares, so a test that draws the
@@ -295,7 +281,7 @@ export function chosenView(host: HTMLElement): string {
 
 /** Every source a render was started over. */
 export function rendered(): string[] {
-  return startRenderWorker.mock.calls.map(([request]) => request.source);
+  return renderInThread.mock.calls.map(([request]) => request.source);
 }
 
 /** Puts a record where the page reads the last visit's own. */

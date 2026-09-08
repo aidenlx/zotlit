@@ -6,6 +6,8 @@ import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 
 import { profileServiceFixture as harness } from "./__fixtures__/service";
+import { seedProfileEntry } from "./service";
+import type { LiteratureNoteProfile } from "./service";
 
 const BOOKS = "Bk3Qn7XvT2Lp" as ProfileId;
 const parseLiteratureNoteTemplate = (source: string) =>
@@ -944,5 +946,53 @@ describe("Profile Match document writes", () => {
     await vi.advanceTimersByTimeAsync(500);
     await rejected;
     expect(f.vault.contents.get(path)).toBe(replacement);
+  });
+});
+
+describe("seedProfileEntry", () => {
+  const BINDINGS = [
+    "folder: Books",
+    "citationStyle: null",
+    "importFolder: Imported",
+    "importColoredHighlights: true",
+    "importAnnotationsAsTemplate: false",
+  ].join("\n");
+  const PATH = "templates/zotlit-profile.books.md";
+  const ENTRY = {
+    id: BOOKS,
+    label: "Books",
+    document: "zotlit-profile.books.md",
+    path: PATH,
+    match: "absent",
+    bindings: {
+      "note.literature-folder": "Books",
+      "citation.references-style": null,
+      "note.import-folder": "Imported",
+      "note.import-colored-highlights": true,
+      "note.import-annotations-as-template": false,
+    },
+  };
+  /** The match is a lazily summarized object; its state is what identifies it. */
+  const flatten = (entry: LiteratureNoteProfile) => ({
+    ...entry,
+    match: entry.match.state,
+  });
+
+  it("derives the entry from the manifest and its document location", () => {
+    const { manifest } = parseLiteratureNoteTemplate(document(BOOKS, BINDINGS));
+    expect(
+      flatten(
+        seedProfileEntry(manifest, {
+          document: "zotlit-profile.books.md",
+          path: PATH,
+          libraries: [],
+        }),
+      ),
+    ).toEqual(ENTRY);
+  });
+
+  it("seeds the entry the registry holds for the same document", async () => {
+    await using f = await harness({ [PATH]: document(BOOKS, BINDINGS) });
+    expect(f.profile.profiles.map(flatten)).toEqual([ENTRY]);
   });
 });
