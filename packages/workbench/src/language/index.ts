@@ -4,8 +4,15 @@ export { etaAutoPair } from "./eta-auto-pair";
 export { liquidTemplate, liquidRanges, STRUCTURAL_TAGS } from "./liquid";
 export type { LiquidRange } from "./liquid";
 export { jsonRule, embeddedJsonE } from "./json-e-language";
-export { applyTemplateCompletion, templateCompletion } from "./completion";
-export type { SuggestionSource } from "./completion";
+export {
+  applyTemplateCompletion,
+  completionSuggestion,
+  templateCompletion,
+} from "./completion";
+export type {
+  SuggestionSource,
+  TemplateCompletionPresentation,
+} from "./completion";
 export { completionEdit, hoverHint, rootAt, suggestions } from "./suggestions";
 export type {
   Suggestion,
