@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import {
+  DEFAULT_PROFILE_SOURCE,
+  SAMPLE_ANNOTATIONS,
+  SAMPLE_ITEMS,
+} from "@zotlit/workbench/render";
 import type {
   ProfileRenderResult,
   RenderRequest,
@@ -19,9 +23,15 @@ vi.mock("@zotlit/workbench/render", async (importActual) => ({
   renderProfile,
 }));
 
+const PAPER = SAMPLE_ITEMS[0]!;
+const EXAMPLE = SAMPLE_ANNOTATIONS[0]!;
+
+// Every part of one render, so an argument the transport drops is visible.
 const REQUEST: RenderRequest = {
   source: DEFAULT_PROFILE_SOURCE,
-  snapshot: SAMPLE_ITEMS[0]!,
+  snapshot: PAPER,
+  mode: "update",
+  annotation: EXAMPLE,
 };
 
 const RESULT = { filename: "Kept work.md" } as ProfileRenderResult;
@@ -54,10 +64,20 @@ describe("renderInThread", () => {
     expect(seen?.PlainDate.from("2026-09-08").year).toBe(2026);
   });
 
-  it("answers one request with a promise of the render", async () => {
+  it("hands the renderer the draft, the paper, and the whole request", async () => {
     const rendering = renderInThread(REQUEST);
 
     expect(rendering).toBeInstanceOf(Promise);
     await expect(rendering).resolves.toBe(RESULT);
+    expect(renderProfile).toHaveBeenCalledExactlyOnceWith(
+      DEFAULT_PROFILE_SOURCE,
+      PAPER,
+      {
+        source: DEFAULT_PROFILE_SOURCE,
+        snapshot: PAPER,
+        mode: "update",
+        annotation: EXAMPLE,
+      },
+    );
   });
 });

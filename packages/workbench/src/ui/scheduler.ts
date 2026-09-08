@@ -99,6 +99,9 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
   };
   let pending: ReturnType<typeof setTimeout> | undefined;
   let current: RenderIdentity | undefined;
+  // A host may reach a disposed scheduler from a continuation it started while
+  // the view was still open, and a disposed one answers for nothing.
+  let closed = false;
   const listeners = new Set<() => void>();
 
   function follow(next: WorkbenchDocumentController): () => void {
@@ -116,6 +119,7 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
   });
 
   function publish(next: { result?: R | null; busy?: boolean }): void {
+    if (closed) return;
     const result = next.result === undefined ? state.result : next.result;
     const busy = next.busy ?? state.busy;
     const stale =
@@ -124,6 +128,11 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
         (result.sourceRevision !== profileSourceRevision(controller.source) ||
           (input.snapshot !== null &&
             result.snapshotRevision !== input.snapshot.revision) ||
+          // A result already on screen describes the example it was rendered
+          // for, so a reader who chooses another one has moved past it.
+          (input.annotation != null &&
+            (result.annotationId !== input.annotation.id ||
+              result.annotationRevision !== input.annotation.revision)) ||
           result.previewMode !== store.getState().preview.mode));
     if (
       result === state.result &&
@@ -139,7 +148,7 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
   /** What a render would be asked for now, or `null` while nothing may run. */
   function nextRequest(): RenderRequest | null {
     const { snapshot, annotation, resources, hold } = input;
-    if (hold === true || snapshot === null) return null;
+    if (closed || hold === true || snapshot === null) return null;
     return {
       mode: store.getState().preview.mode,
       source: controller.source,
@@ -237,6 +246,12 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
               previewMode: store.getState().preview.mode,
               sourceRevision: profileSourceRevision(controller.source),
               snapshotRevision: input.snapshot?.revision ?? "",
+              ...(input.annotation
+                ? {
+                    annotationId: input.annotation.id,
+                    annotationRevision: input.annotation.revision,
+                  }
+                : {}),
             },
             diagnostic,
           ),
@@ -245,12 +260,14 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
       });
     },
     attach(next) {
+      if (closed) return;
       unfollow();
       controller = next;
       unfollow = follow(next);
       changed();
     },
     [Symbol.dispose]() {
+      closed = true;
       abandon();
       unfollow();
       unsubscribe();
