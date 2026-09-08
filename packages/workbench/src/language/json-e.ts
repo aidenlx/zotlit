@@ -5,7 +5,7 @@ import type { Node } from "jsonc-parser";
 
 import type { ContractType } from "@zotlit/db/contract/ir";
 
-import { contract, describe, members, resolve, sampleValue } from "./contract";
+import { contract, describe, members, resolve, sampleJson } from "./contract";
 import { jsonOperators, jsonFunctions } from "./json-e-catalog";
 import { rankSuggestions } from "./matching";
 import type {
@@ -412,7 +412,7 @@ export function jsonSuggestions(
         : !(field.name.includes("'") && field.name.includes('"')),
     )
     .map((field) => {
-      const sample = path && sampleValue(config.sample, [...path, field.name]);
+      const hint = path && sampleJson(config.sample, [...path, field.name]);
       const needsBracket =
         !bracket && !regex("^[A-Za-z_]\\w*$").test(field.name);
       const quote = field.name.includes("'") ? '"' : "'";
@@ -435,10 +435,7 @@ export function jsonSuggestions(
         path: path && ["zt", ...path, field.name].join("."),
         type: jsonType(field.type),
         detail: field.description ?? "",
-        example:
-          sample === undefined
-            ? undefined
-            : `Sample: ${JSON.stringify(sample)}`,
+        example: hint === undefined ? undefined : `Sample: ${hint}`,
       };
     });
   if (!pathMatch) {

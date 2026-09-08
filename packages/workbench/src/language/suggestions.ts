@@ -20,7 +20,7 @@ import {
   members,
   describe,
   child,
-  sampleValue,
+  sampleJson,
 } from "./contract";
 import { etaRange } from "./eta-syntax";
 import type { EtaRange } from "./eta-syntax";
@@ -45,7 +45,11 @@ export interface SuggestionConfig {
   language?: TemplateLanguage | "json-e";
   /** Partial names the host has registered, offered after `render` / `include(`. */
   partials: readonly string[];
-  /** Serialized Template data for the root; supplies `Sample:` hints. */
+  /**
+   * The Template data the root binds to `zt`, as a template reads it: link
+   * helpers are functions and an annotation links back to its parent Item.
+   * Supplies `Sample:` hints.
+   */
   sample?: unknown;
   /** Human labels in common-field order, supplied by the host. */
   fields?: readonly { path: string; label: string }[];
@@ -302,7 +306,7 @@ function fieldOptions({
   isEta: boolean;
 }): Suggestion[] {
   return fields.map((field): Suggestion => {
-    const value = sampleValue(sample, [...path, field.name]);
+    const hint = sampleJson(sample, [...path, field.name]);
     const helper = resolve(field.type);
     return {
       path: ["zt", ...path, field.name].join("."),
@@ -322,9 +326,7 @@ function fieldOptions({
         .filter(Boolean)
         .join(" "),
       example:
-        value !== undefined
-          ? `Sample: ${JSON.stringify(value)}`
-          : field.examples?.[0]?.code,
+        hint !== undefined ? `Sample: ${hint}` : field.examples?.[0]?.code,
     };
   });
 }
