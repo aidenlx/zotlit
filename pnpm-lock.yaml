@@ -155,6 +155,9 @@ catalogs:
     '@types/semver':
       specifier: ^7.7.1
       version: 7.7.1
+    '@types/yargs':
+      specifier: ^17.0.35
+      version: 17.0.35
     ajv:
       specifier: ^8.20.0
       version: 8.20.0
@@ -227,6 +230,9 @@ catalogs:
     yaml:
       specifier: ^2.9.0
       version: 2.9.0
+    yargs:
+      specifier: ^18.1.0
+      version: 18.1.0
     zustand:
       specifier: ^5.0.14
       version: 5.0.14
@@ -464,6 +470,9 @@ importers:
       '@types/semver':
         specifier: 'catalog:'
         version: 7.7.1
+      '@types/yargs':
+        specifier: 'catalog:'
+        version: 17.0.35
       '@vitejs/plugin-react':
         specifier: ^6.0.1
         version: 6.1.0(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
@@ -512,6 +521,9 @@ importers:
       wrangler:
         specifier: ^4.125.0
         version: 4.125.0
+      yargs:
+        specifier: 'catalog:'
+        version: 18.1.0
 
   apps/obsidian:
     dependencies:
@@ -1050,7 +1062,7 @@ importers:
         specifier: ^7.7.1
         version: 7.7.1
       '@types/yargs':
-        specifier: ^17.0.35
+        specifier: 'catalog:'
         version: 17.0.35
       '@zotlit/config':
         specifier: workspace:*
@@ -1086,7 +1098,7 @@ importers:
         specifier: 'catalog:'
         version: 4.1.6(@types/node@26.1.2)(happy-dom@20.9.0)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
       yargs:
-        specifier: ^18.1.0
+        specifier: 'catalog:'
         version: 18.1.0
       zx:
         specifier: 'catalog:'
