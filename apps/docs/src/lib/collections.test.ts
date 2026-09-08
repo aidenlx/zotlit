@@ -32,6 +32,13 @@ test("native collections load and watch content without generated entry files", 
     join(root, "node_modules"),
     "dir",
   );
+  await writeFile(
+    join(root, "package.json"),
+    JSON.stringify({
+      type: "module",
+      imports: { "#content-config": "./options.ts" },
+    }),
+  );
   for (const directory of ["docs", "blog", "changelog"]) {
     await mkdir(join(root, "content", directory), { recursive: true });
   }
@@ -45,9 +52,7 @@ export const fixtureSchema = v.object({ ...docsSchema.entries, description: v.op
   const modulePath = join(root, "collections.ts");
   const declarations = (
     await readFile(join(import.meta.dirname, "collections.ts"), "utf8")
-  )
-    .replaceAll("../../content.config", optionsPath)
-    .replace(".docsSchema", ".fixtureSchema");
+  ).replace(".docsSchema", ".fixtureSchema");
   await writeFile(modulePath, declarations);
   await writeFile(join(root, "source.config.ts"), "export default {};\n");
   const pagePath = join(root, "content/docs/index.mdx");
@@ -76,7 +81,7 @@ export const fixtureSchema = v.object({ ...docsSchema.entries, description: v.op
       root,
       configFile: false,
       plugins: [fumadocsMdx({ index: false })],
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, ws: false },
       optimizeDeps: { noDiscovery: true },
     }),
     (value) => value.close(),
@@ -101,10 +106,12 @@ export const fixtureSchema = v.object({ ...docsSchema.entries, description: v.op
   const content = await page.load();
   expect(content.toc[0]).toMatchObject({ url: "#overview", depth: 1 });
   expect(content._exports._markdown).toBeTypeOf("function");
-  expect(page.body).toBeTypeOf("function");
+  expect(renderToStaticMarkup(createElement(page.body))).toContain(
+    "First body",
+  );
   expect(
     (await server.transformRequest("/collections.ts"))?.code,
-  ).not.toContain("content.config");
+  ).not.toContain("#content-config");
   await expect(readFile(join(root, ".source/server.ts"))).rejects.toMatchObject(
     { code: "ENOENT" },
   );
