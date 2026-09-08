@@ -65,7 +65,7 @@ describe("Profile Editor host", () => {
   });
 
   it("supplies pack messages to shared controls in a separately mounted dialog", async () => {
-    const { host } = setup();
+    using host = setup().host;
     const handle = host.dialog({
       title: "Profile panes",
       content: createElement(AnnotationPointer, { onInsert() {} }),
@@ -81,7 +81,6 @@ describe("Profile Editor host", () => {
     } finally {
       handle.close();
       await act(async () => modal.onClose());
-      host[Symbol.dispose]();
     }
   });
 
