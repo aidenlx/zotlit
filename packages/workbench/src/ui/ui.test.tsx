@@ -1,18 +1,12 @@
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EditToolbar } from "./edit-toolbar";
-import { m } from "./paraglide/messages.js";
 import { ProblemsFooter } from "./problems-footer";
 import { createWorkbenchStore } from "./store";
 import { TabBar, TabPanel } from "./tab-bar";
-import { mount } from "./test-host";
+import { mount, renderWithMessages as render } from "./test-host";
+import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";

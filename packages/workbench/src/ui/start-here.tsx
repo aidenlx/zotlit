@@ -2,13 +2,14 @@ import { useEffect } from "react";
 
 import { useWorkbenchStore } from "./editor";
 import { useWorkbenchHost } from "./host";
-import { m } from "./paraglide/messages.js";
+import { useWorkbenchMessages } from "./messages";
 import { useParts } from "./theme";
 
 const KEY = "start-here-dismissed";
 
 /** One introduction shared by the native and web authoring surfaces. */
 export function StartHere({ connected = false }: { connected?: boolean }) {
+  const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
   const dismissed = useWorkbenchStore((state) => state.startHereDismissed);
   const dismiss = useWorkbenchStore((state) => state.dismissStartHere);

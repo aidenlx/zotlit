@@ -1,7 +1,13 @@
 // @vitest-environment happy-dom
 import { Menu, Modal, SuggestModal } from "@mock/obsidian";
 import type { App } from "obsidian";
+import { act } from "preact/test-utils";
+import { createElement } from "react";
 import { describe, expect, it, vi } from "vitest";
+
+import { AnnotationPointer } from "@zotlit/workbench/ui";
+
+import * as m from "@/lib/i18n/generated/messages";
 
 import { createProfileEditorHost } from "./host";
 
@@ -56,6 +62,27 @@ describe("Profile Editor host", () => {
     handle.close();
     modal.onClose();
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("supplies pack messages to shared controls in a separately mounted dialog", async () => {
+    const { host } = setup();
+    const handle = host.dialog({
+      title: "Profile panes",
+      content: createElement(AnnotationPointer, { onInsert() {} }),
+    });
+    const modal = Modal.instances.at(-1)!;
+    try {
+      await act(async () => modal.onOpen());
+      expect(
+        [...modal.contentEl.querySelectorAll("button")].map(
+          (tab) => tab.textContent,
+        ),
+      ).toContain(m.workbench_annotation_insert());
+    } finally {
+      handle.close();
+      await act(async () => modal.onClose());
+      host[Symbol.dispose]();
+    }
   });
 
   it("settles SuggestModal cancellation and restores control focus", async () => {

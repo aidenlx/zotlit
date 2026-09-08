@@ -1,15 +1,9 @@
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DataExplorer } from "./data-explorer";
-import { m } from "./paraglide/messages.js";
-import { mount } from "./test-host";
+import { mount, renderWithMessages as render } from "./test-host";
+import { m } from "./test-messages";
 
 afterEach(cleanup);
 

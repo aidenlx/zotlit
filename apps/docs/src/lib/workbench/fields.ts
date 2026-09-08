@@ -16,8 +16,10 @@ import type {
 } from "@zotlit/workbench/explorer";
 import { restoreTemplateData } from "@zotlit/workbench/render";
 import type { AnnotationExample, SAMPLE_ITEMS } from "@zotlit/workbench/render";
-import { m, fieldSnippet as sharedFieldSnippet } from "@zotlit/workbench/ui";
+import { fieldSnippet as sharedFieldSnippet } from "@zotlit/workbench/ui";
 import type { TemplateRoot } from "@zotlit/workbench/ui";
+
+import { m } from "@/paraglide/messages.js";
 
 export type SampleItem = (typeof SAMPLE_ITEMS)[number];
 

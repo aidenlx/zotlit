@@ -1,6 +1,5 @@
 import type { WorkbenchDocumentController } from "#/document/controller";
 import type { MatchItemFacts } from "#/match/condition";
-// One Match tree over the document controller; rows write through the master history.
 import { useEffect, useState, useRef } from "react";
 
 import type { MatchTree } from "@zotlit/templates/facade";
@@ -28,7 +27,8 @@ import type {
   RowCondition,
 } from "./match.draft";
 import { ConditionOperator, ConditionValue, MatchSelect } from "./match.rows";
-import { m } from "./paraglide/messages.js";
+// One Match tree over the document controller; rows write through the master history.
+import { useWorkbenchMessages } from "./messages";
 import { useParts, useIcon } from "./theme";
 
 import { compileFilter, matchCondition } from "#/match/condition";
@@ -43,6 +43,7 @@ export function MatchPane({
   /** Changes when the host has a new snapshot or database vocabulary. */
   vocabularyRevision?: string | number;
 }) {
+  const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
   const part = useParts("match");
   const [match, setMatch] = useState<MatchTree | undefined>(
@@ -109,7 +110,7 @@ export function MatchPane({
     return () => {
       active = false;
     };
-  }, [host.matchData, vocabularyRevision]);
+  }, [host.matchData, vocabularyRevision, m]);
   function write(next: MatchTree | undefined) {
     ownEdit.current = true;
     const saved = controller.setMatch(next);
@@ -135,7 +136,7 @@ export function MatchPane({
       : !readable
         ? m.workbench_match_source_only()
         : compiled?.problem
-          ? describeProblem(compiled.problem)
+          ? describeProblem(m, compiled.problem)
           : facts === null
             ? m.workbench_match_missing_facts()
             : null;
@@ -212,6 +213,7 @@ function Group({
   deps: MatchEditorDeps;
   onChange: (root: ConditionGroup) => void;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("match");
   const icon = useIcon();
   const host = useWorkbenchHost();
@@ -313,10 +315,11 @@ function Row({
   onChange: (condition: RowCondition) => void;
   onRemove: () => void;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("match");
   const icon = useIcon();
   const host = useWorkbenchHost();
-  const issue = conditionIssue(condition, deps);
+  const issue = conditionIssue(m, condition, deps);
   const labelled =
     condition.kind === "expression" ? asLabelled(condition) : null;
   return (

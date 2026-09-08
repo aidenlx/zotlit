@@ -1,4 +1,3 @@
-// Common field labels and values shared by both Explorer variants.
 import type {
   DisplayNode,
   SnippetKind,
@@ -6,6 +5,8 @@ import type {
 } from "#/explorer/index";
 
 import { COMMON_FIELDS } from "./completion-fields";
+// Common field labels and values shared by both Explorer variants.
+import type { WorkbenchMessages } from "./generated/messages";
 import type { TemplateRoot } from "./store";
 
 import { formatAccessorPath, renderSnippet } from "#/explorer/index";
@@ -22,6 +23,7 @@ export interface FieldRow {
  * empty.
  */
 export function commonRows(
+  m: WorkbenchMessages,
   root: TemplateRoot,
   nodes: readonly DisplayNode[],
 ): FieldRow[] {
@@ -29,7 +31,7 @@ export function commonRows(
   return COMMON_FIELDS[root].flatMap((field) => {
     const node = byKey.get(field.key);
     return node
-      ? [{ node, label: field.label(), value: fieldValueText(node) }]
+      ? [{ node, label: m[field.label](), value: fieldValueText(node) }]
       : [];
   });
 }

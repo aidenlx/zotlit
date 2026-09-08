@@ -1,8 +1,8 @@
-// @vitest-environment happy-dom
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 
-import { m } from "@zotlit/workbench/ui";
+// @vitest-environment happy-dom
+import { m } from "@/paraglide/messages.js";
 
 import { open, openMenu } from "./page-test-host";
 import { WEB_THEME } from "./theme";

@@ -40,7 +40,6 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@zotlit/config": "workspace:*",
-    "@zotlit/scripts": "workspace:*",
     "oxlint": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",

@@ -3,9 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it } from "vitest";
 
-import { m } from "@zotlit/workbench/ui";
-
-import { m as docsMessages } from "@/paraglide/messages.js";
+import { m } from "@/paraglide/messages.js";
 
 import { WorkbenchSkeleton } from "./frame";
 
@@ -50,7 +48,7 @@ describe("WorkbenchSkeleton", () => {
     ).not.toBeNull();
     expect(host.querySelector("header section")).toBeNull();
     expect(host.querySelector("footer")?.getAttribute("aria-label")).toBe(
-      docsMessages.docs_workbench_status(),
+      m.docs_workbench_status(),
     );
     expect(host.querySelector("footer section")).not.toBeNull();
     expect(host.querySelector("#workbench-edit-pane")).not.toBeNull();

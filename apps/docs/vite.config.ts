@@ -10,11 +10,6 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 
-import {
-  filteredMessageFs,
-  isWorkbenchMessage,
-} from "@zotlit/config/paraglide";
-
 import { agentSkillAssets } from "./src/lib/agent-skills.js";
 import { renderHeadersFile } from "./src/lib/headers.js";
 import { createOgCardRenderer } from "./src/lib/og-card.js";
@@ -117,7 +112,7 @@ function machineAssets(): Plugin {
       if (this.environment.name !== "client") return;
 
       const assets = new Map(await agentSkills());
-      for (const [path, card] of ogCards(packageRoot)) {
+      for (const [path, card] of await ogCards(packageRoot)) {
         assets.set(path, await renderCard(card));
       }
       for (const [path, source] of assets) {
@@ -135,7 +130,7 @@ function machineAssets(): Plugin {
           return { type, body: skill };
         }
 
-        const card = ogCards(packageRoot).get(path);
+        const card = (await ogCards(packageRoot)).get(path);
         if (!card) return undefined;
         return { type: "image/webp", body: await renderCard(card) };
       }
@@ -197,12 +192,29 @@ function workerHotUpdate(): Plugin {
   };
 }
 
+// Vite scans before the message and content plugins generate these entries on a cold tree.
+const GENERATED_ENTRIES = [
+  "@/paraglide/messages.js",
+  "@/paraglide/runtime.js",
+  "collections/server",
+  "collections/browser",
+];
+
 export default defineConfig(({ command }) => ({
+  environments: {
+    ssr: {
+      optimizeDeps: {
+        exclude: GENERATED_ENTRIES,
+        include: ["fumadocs-mdx/runtime/browser"],
+      },
+    },
+  },
   // `@base-ui/react` imports the named `useSyncExternalStoreWithSelector` from
   // a CommonJS shim. The dev server serves that file raw unless the pre-bundler
   // is told to convert it, and the missing named export stops hydration before
   // the page becomes interactive. The production build converts it either way.
   optimizeDeps: {
+    exclude: GENERATED_ENTRIES,
     include: ["@base-ui/react > use-sync-external-store/shim/with-selector"],
     // The Workbench sits behind a dynamic import the router's own entry scan
     // stops short of, so its dependencies — CodeMirror, the Lezer parsers, the
@@ -236,8 +248,6 @@ export default defineConfig(({ command }) => ({
         command === "serve" ? "locale-modules" : "message-modules",
       strategy: ["baseLocale"],
       emitTsDeclarations: true,
-      // The `workbench_*` namespace is `@zotlit/workbench/ui`'s own compile.
-      fs: filteredMessageFs((key) => !isWorkbenchMessage(key)),
     }),
     devtools(),
     tailwindcss(),

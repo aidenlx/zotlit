@@ -2,7 +2,6 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
 } from "@testing-library/react";
@@ -10,9 +9,9 @@ import { afterEach, expect, it } from "vitest";
 
 import { WorkbenchHostProvider } from "./host";
 import { MatchPane } from "./match";
-import { m } from "./paraglide/messages.js";
 import { TABS } from "./tabs";
-import { fakeHost } from "./test-host";
+import { fakeHost, renderWithMessages as render } from "./test-host";
+import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";

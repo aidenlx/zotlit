@@ -10,8 +10,10 @@ import type {
 import type { RenderedProperty } from "#/render/result";
 import { useEffect, useState, useId, useRef } from "react";
 
+import type { WorkbenchMessages } from "./generated/messages";
 import { useOptionalHost } from "./host";
-import { m } from "./paraglide/messages.js";
+import type { WorkbenchMessageLabel } from "./messages";
+import { useWorkbenchMessages } from "./messages";
 import { PropertyList, propertyText } from "./property-list";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
 import { SliceEditor } from "./slice-editor";
@@ -20,10 +22,10 @@ import { useIcon, useParts } from "./theme";
 
 import { entrySlice } from "#/document/index";
 
-const MERGE_LABEL: Record<string, () => string> = {
-  replace: m.workbench_properties_merge_replace,
-  append: m.workbench_properties_merge_append,
-  keep: m.workbench_properties_merge_keep,
+const MERGE_LABEL: Record<string, WorkbenchMessageLabel> = {
+  replace: "workbench_properties_merge_replace",
+  append: "workbench_properties_merge_append",
+  keep: "workbench_properties_merge_keep",
 };
 
 /** A problem one row carries: the text to show, and the entry it names. */
@@ -62,9 +64,16 @@ function byEntry(
 
 /** A static entry shows its own value; a spread shows what it produced. */
 function summarize(
-  entry: ManagedEntrySource,
-  produced: readonly RenderedProperty[],
-  fold: readonly RenderedProperty[],
+  m: WorkbenchMessages,
+  {
+    entry,
+    produced,
+    fold,
+  }: {
+    entry: ManagedEntrySource;
+    produced: readonly RenderedProperty[];
+    fold: readonly RenderedProperty[];
+  },
 ): string {
   if (entry.key !== undefined) {
     const property = produced[0];
@@ -112,6 +121,7 @@ export function PropertiesPane({
   onSelection,
   suggest,
 }: PropertiesPaneProps) {
+  const m = useWorkbenchMessages();
   const part = useParts("properties");
   const produced = byEntry(properties);
   const icon = useIcon();
@@ -161,12 +171,14 @@ export function PropertiesPane({
                       </span>
                     )}
                   </span>
-                  {summarize(entry, fields, fold) && (
+                  {summarize(m, { entry, produced: fields, fold }) && (
                     <span
                       {...part("summary", open ? "open" : "closed")}
-                      {...tooltip(summarize(entry, fields, fold))}
+                      {...tooltip(
+                        summarize(m, { entry, produced: fields, fold }),
+                      )}
                     >
-                      {summarize(entry, fields, fold)}
+                      {summarize(m, { entry, produced: fields, fold })}
                     </span>
                   )}
                 </button>
@@ -313,6 +325,7 @@ function EntryForm({
   onSelection,
   suggest,
 }: EntryFormProps) {
+  const m = useWorkbenchMessages();
   const part = useParts("properties");
   const [pendingLanguage, setPendingLanguage] = useState<
     "text" | "expr" | "value" | null
@@ -504,7 +517,7 @@ function EntryForm({
           >
             {Object.entries(MERGE_LABEL).map(([value, label]) => (
               <WorkbenchOption key={value} value={value}>
-                {label()}
+                {m[label]()}
               </WorkbenchOption>
             ))}
           </WorkbenchSelect>
@@ -537,6 +550,7 @@ export function PropertiesResult({
   frontmatterBlock,
   showMarkdown,
 }: PropertiesResultProps) {
+  const m = useWorkbenchMessages();
   const part = useParts("properties");
   if (showMarkdown) {
     return (

@@ -1,4 +1,3 @@
-// Web presentation for the shared Template Completion results. CodeMirror keeps focus.
 import { Prec } from "@codemirror/state";
 import { ViewPlugin } from "@codemirror/view";
 import type { EditorView, ViewUpdate } from "@codemirror/view";
@@ -12,9 +11,10 @@ import type {
   SuggestionResult,
   SuggestionSource,
 } from "@zotlit/workbench/language";
-import { m } from "@zotlit/workbench/ui";
 
 import { Popover, PopoverContent } from "@/components/ui/popover";
+// Web presentation for the shared Template Completion results. CodeMirror keeps focus.
+import { m } from "@/paraglide/messages.js";
 
 /** The editor owns the query and keys; React owns the Command list and Base UI popup. */
 export function webCompletion(read: SuggestionSource) {

@@ -1,8 +1,8 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 
 import { StartHere } from "./start-here";
-import { mount } from "./test-host";
+import { mount, renderWithMessages as render } from "./test-host";
 
 afterEach(cleanup);
 

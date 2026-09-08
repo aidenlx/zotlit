@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { m } from "./paraglide/messages.js";
 import { diagnosticText, problemText } from "./problems";
+import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
 import {
@@ -16,7 +16,7 @@ describe("problemText", () => {
       DEFAULT_PROFILE_SOURCE.replace("language: liquid", "language: eta"),
     );
 
-    expect(problemText(controller.problems[0]!)).toEqual({
+    expect(problemText(m, controller.problems[0]!)).toEqual({
       message: m.workbench_problem_unsupported_language(),
       recovery: m.workbench_problem_unsupported_recovery(),
     });
@@ -24,28 +24,28 @@ describe("problemText", () => {
 
   it("names the partial and the property a refused code came from", () => {
     expect(
-      problemText({
+      problemText(m, {
         code: "unsupported-partial-language",
         params: { name: "summary" },
         slice: "advanced",
       }).message,
     ).toContain("summary");
     expect(
-      problemText({
+      problemText(m, {
         code: "unsupported-js",
         params: { key: "computed" },
         slice: "advanced",
       }).message,
     ).toContain("computed");
     expect(
-      problemText({ code: "unsupported-js", slice: "advanced" }).message,
+      problemText(m, { code: "unsupported-js", slice: "advanced" }).message,
     ).toBe(m.workbench_problem_unsupported_js_unnamed());
   });
 
   it("writes a parser code in the catalog rather than the parser's English", () => {
     const controller = new WorkbenchDocumentController("not a profile");
 
-    expect(problemText(controller.problems[0]!)).toEqual({
+    expect(problemText(m, controller.problems[0]!)).toEqual({
       message: m.workbench_problem_invalid_document(),
       recovery: m.workbench_problem_invalid_document_recovery(),
     });
@@ -56,7 +56,7 @@ describe("problemText", () => {
       DEFAULT_PROFILE_SOURCE.replace(/^name: .*$/m, "name: 12"),
     );
 
-    expect(problemText(controller.problems[0]!).message).toContain("name");
+    expect(problemText(m, controller.problems[0]!).message).toContain("name");
   });
 });
 
@@ -78,7 +78,7 @@ describe("diagnosticText", () => {
       },
     ).diagnostics;
 
-    expect(diagnosticText(diagnostic!)).toBe(
+    expect(diagnosticText(m, diagnostic!)).toBe(
       m.workbench_diagnostic_citation_style_parent_missing({
         styleId: "apa",
         parentId: "apa-base",
@@ -88,7 +88,7 @@ describe("diagnosticText", () => {
 
   it("keeps the deadline the scheduler stopped a render at", () => {
     expect(
-      diagnosticText({
+      diagnosticText(m, {
         code: "render-timeout",
         params: { deadlineMs: 2000 },
         part: "render",
@@ -98,14 +98,14 @@ describe("diagnosticText", () => {
 
   it("names an Eta dependency the renderer refused, and keeps a bridge's own wording", () => {
     expect(
-      diagnosticText({
+      diagnosticText(m, {
         code: "unsupported-dependency",
         params: { name: "summary" },
         part: "profile",
       }),
     ).toBe(m.workbench_diagnostic_unsupported_dependency({ name: "summary" }));
     expect(
-      diagnosticText({
+      diagnosticText(m, {
         code: "unsupported-dependency",
         message: "Template dependency 'summary' uses an unsupported language.",
         part: "profile",
@@ -115,7 +115,7 @@ describe("diagnosticText", () => {
 
   it("shows the engine's own failure text for a render error", () => {
     expect(
-      diagnosticText({
+      diagnosticText(m, {
         code: "render-error",
         message: "Unexpected tag",
         part: "render",

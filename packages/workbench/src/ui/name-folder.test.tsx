@@ -1,10 +1,8 @@
-// The form writes only the chosen manifest value, alongside filename edits in one history.
 import { EditorView } from "@codemirror/view";
 import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   within,
 } from "@testing-library/react";
@@ -14,8 +12,9 @@ import { useDocumentRevision } from "./editor";
 import { WorkbenchHostProvider } from "./host";
 import { NameFolderPane } from "./name-folder";
 import type { NameFolderPaneProps } from "./name-folder";
-import { m } from "./paraglide/messages.js";
-import { fakeHost } from "./test-host";
+// The form writes only the chosen manifest value, alongside filename edits in one history.
+import { fakeHost, renderWithMessages as render } from "./test-host";
+import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/index";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";

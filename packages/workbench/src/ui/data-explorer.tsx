@@ -1,6 +1,4 @@
 import type { DisplayNode, TemplateEngine } from "#/explorer/index";
-// Both hosts use this field discovery tree. The host owns clipboard, insertion,
-// export, and popup presentation; this component owns filtering and expansion.
 import { useEffect, useMemo, useState } from "react";
 import { useStore } from "zustand";
 
@@ -10,7 +8,9 @@ import type { FieldInsertionMode } from "./explorer-fields";
 import { DisplayTree } from "./explorer-tree";
 import { useWorkbenchHost } from "./host";
 import type { WorkbenchMenuItem, WorkbenchMenuRequest } from "./host";
-import { m } from "./paraglide/messages.js";
+// Both hosts use this field discovery tree. The host owns clipboard, insertion,
+// export, and popup presentation; this component owns filtering and expansion.
+import { useWorkbenchMessages } from "./messages";
 import { createWorkbenchStore } from "./store";
 import type { TemplateRoot, ExplorerVariant } from "./store";
 import { useParts } from "./theme";
@@ -55,6 +55,7 @@ export function DataExplorer({
   onExploreAnnotation,
   canExploreAnnotation,
 }: DataExplorerProps) {
+  const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
   const part = useParts("dataExplorer");
   const editor = useOptionalEditor();
@@ -80,13 +81,14 @@ export function DataExplorer({
       matchedKeys: null,
     };
   }, [data, tree]);
-  const nodes = useMemo(() => {
+  // Resolve the labels on each render; the display tree above remains cached.
+  const nodes = (() => {
     if (variant === "all") return visible.nodes;
     const full =
       data && tree.filterQuery
         ? buildDisplayTree(data, { expanded: tree.expanded })
         : visible.nodes;
-    const common = commonRows(root, full);
+    const common = commonRows(m, root, full);
     const labels = new Map(common.map((row) => [row.node.key, row.label]));
     const order = new Map(common.map((row, index) => [row.node.key, index]));
     const displayed = new Map(visible.nodes.map((node) => [node.key, node]));
@@ -101,7 +103,7 @@ export function DataExplorer({
         (a, b) =>
           (order.get(a.key) ?? order.size) - (order.get(b.key) ?? order.size),
       );
-  }, [visible.nodes, variant, root, tree, data]);
+  })();
   const copyNode = async (node: DisplayNode) => {
     const value = copyValue(node);
     if (value !== null) {

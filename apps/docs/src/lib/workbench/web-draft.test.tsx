@@ -1,9 +1,10 @@
-// @vitest-environment happy-dom
-// Browser draft storage, refused web inputs, and file download behavior.
 import { describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
-import { m } from "@zotlit/workbench/ui";
+
+// @vitest-environment happy-dom
+// Browser draft storage, refused web inputs, and file download behavior.
+import { m } from "@/paraglide/messages.js";
 
 import {
   KEY,

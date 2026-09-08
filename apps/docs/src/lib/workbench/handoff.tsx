@@ -3,9 +3,8 @@
 // here: it is explained, offered back unchanged, and pointed at Obsidian.
 // @see docs/adr/0033-web-workbench-is-public-and-standalone.md
 
-import { m } from "@zotlit/workbench/ui";
-
 import { Button } from "@/components/ui/button";
+import { m } from "@/paraglide/messages.js";
 
 import type { UnsupportedReason } from "./unsupported";
 

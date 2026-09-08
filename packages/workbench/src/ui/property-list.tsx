@@ -5,7 +5,7 @@
 import type { RenderedProperty } from "#/render/result";
 import { Fragment } from "react";
 
-import { m } from "./paraglide/messages.js";
+import { useWorkbenchMessages } from "./messages";
 import { useParts } from "./theme";
 
 /**
@@ -39,6 +39,7 @@ export function PropertyList({
 
 /** A produced value, or the reason it has none. */
 export function PropertyValue({ property }: { property: RenderedProperty }) {
+  const m = useWorkbenchMessages();
   const part = useParts("propertyList");
   if (property.missing || property.value == null) {
     return (

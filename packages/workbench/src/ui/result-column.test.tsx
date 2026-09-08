@@ -1,13 +1,13 @@
 import type { ProfileRenderResult } from "#/render/result";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { m } from "./paraglide/messages.js";
 import { PreviewControls } from "./preview-controls";
 import { PropertyList } from "./property-list";
 import { ResultColumn } from "./result-column";
 import type { ResultColumnProps } from "./result-column";
-import { mount } from "./test-host";
+import { mount, renderWithMessages as render } from "./test-host";
+import { m } from "./test-messages";
 
 import { failedRender } from "#/render/result";
 

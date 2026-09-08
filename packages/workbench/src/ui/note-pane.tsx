@@ -15,7 +15,7 @@ import { createPortal } from "react-dom";
 
 import { useDocumentRevision } from "./editor";
 import { useOptionalHost, useTooltip } from "./host";
-import { m } from "./paraglide/messages.js";
+import { useWorkbenchMessages } from "./messages";
 import { SliceEditor } from "./slice-editor";
 import type { SuggestionSource } from "./slice-editor";
 import { useParts, useIcon } from "./theme";
@@ -41,6 +41,7 @@ export function NotePane({
   suggest,
   ...example
 }: NotePaneProps) {
+  const m = useWorkbenchMessages();
   useDocumentRevision(controller);
   const part = useParts("notePane");
   const managedClass = part("managed-line").className;
@@ -67,13 +68,18 @@ export function NotePane({
     [controller],
   );
   const previewHost = useMemo(() => document.createElement("div"), []);
+  const managedStart = m.workbench_managed_start();
+  const managedEnd = m.workbench_managed_end();
   const extensions = useMemo(
     () =>
       noteBoxes(boxes, previewHost, {
-        managed: { "data-part": "managed-line", className: managedClass },
-        label: { "data-part": "managed-label", className: labelClass },
+        labels: { start: managedStart, end: managedEnd },
+        parts: {
+          managed: { "data-part": "managed-line", className: managedClass },
+          label: { "data-part": "managed-label", className: labelClass },
+        },
       }),
-    [boxes, previewHost, managedClass, labelClass],
+    [boxes, previewHost, managedClass, labelClass, managedStart, managedEnd],
   );
   // The active line lives in master offsets so both Note and Source edits move
   // it with the text. Every call on that line reads this one selection.
@@ -155,6 +161,7 @@ function AnnotationPlaceholder({
   onToggle: (pressed: boolean) => void;
   onOpenAnnotation: () => void;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("notePane");
   const icon = useIcon();
   const previewTooltip = useTooltip(m.workbench_annotation_preview());
@@ -196,6 +203,7 @@ function AnnotationPreview({
 }: Pick<NotePaneProps, "preview" | "formatProblem" | "annotationSelector"> & {
   id: string;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("notePane");
   const Markdown = useOptionalHost()?.markdown;
   return (
@@ -236,7 +244,13 @@ const expandPreview = StateEffect.define<number | null>();
 function noteBoxes(
   boxes: Map<number, HTMLElement>,
   previewHost: HTMLElement,
-  parts: { managed: PartAttributes; label: PartAttributes },
+  {
+    parts,
+    labels,
+  }: {
+    parts: { managed: PartAttributes; label: PartAttributes };
+    labels: { start: string; end: string };
+  },
 ): Extension {
   function build(
     { doc, selection }: EditorState,
@@ -267,8 +281,8 @@ function noteBoxes(
         );
       }
       for (const [tag, label] of [
-        [managedBlock.open, m.workbench_managed_start()],
-        [managedBlock.close, m.workbench_managed_end()],
+        [managedBlock.open, labels.start],
+        [managedBlock.close, labels.end],
       ] as const) {
         if (selected(tag)) continue;
         ranges.push(

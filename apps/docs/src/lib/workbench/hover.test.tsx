@@ -1,10 +1,12 @@
-// @vitest-environment happy-dom
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 
-import { m, tagDescription } from "@zotlit/workbench/ui";
+import { tagDescription } from "@zotlit/workbench/ui";
+
+// @vitest-environment happy-dom
+import { m } from "@/paraglide/messages.js";
 
 import { webCompletion } from "./completion";
 import { webHover } from "./hover";
@@ -153,7 +155,12 @@ async function hoverEditor(
   cleanup.defer(() => {
     vi.unstubAllGlobals();
   });
-  const read = () => ({ root: "note" as const, partials: [], tagDescription });
+  const read = () => ({
+    root: "note" as const,
+    partials: [],
+    tagDescription: (name: Parameters<typeof tagDescription>[1]) =>
+      tagDescription(m, name),
+  });
   const view = new EditorView({
     state: EditorState.create({
       doc: source,

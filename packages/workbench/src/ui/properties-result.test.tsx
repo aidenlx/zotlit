@@ -1,10 +1,10 @@
-// Row summaries and generated frontmatter, migrated from the web Properties suite.
-import { cleanup, render } from "@testing-library/react";
+import { cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { m } from "./paraglide/messages.js";
 import { PropertiesPane, PropertiesResult } from "./properties-tab";
-import { mount } from "./test-host";
+// Row summaries and generated frontmatter, migrated from the web Properties suite.
+import { mount, renderWithMessages as render } from "./test-host";
+import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
 import {

@@ -7,18 +7,17 @@
     "#zotlit-release.json": "./zotlit-release.json"
   },
   "scripts": {
-    "dev": "pnpm generate:i18n --output-structure locale-modules --is-server \"import.meta.env?.SSR ?? typeof window === 'undefined'\" && vite dev --port 3000",
-    "build": "pnpm generate:i18n && vite build",
-    "preview": "pnpm generate:i18n && vite preview",
-    "deploy": "pnpm generate:i18n && vite build && wrangler deploy",
-    "deploy:beta": "pnpm generate:i18n && cross-env CLOUDFLARE_ENV=beta vite build && wrangler deploy --env beta",
+    "dev": "vite dev --port 3000",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "vite build && wrangler deploy",
+    "deploy:beta": "cross-env CLOUDFLARE_ENV=beta vite build && wrangler deploy --env beta",
     "cf-typegen": "wrangler types",
     "cf-typegen:check": "wrangler types --check",
     "codegen": "fumadocs-mdx",
-    "generate:i18n": "node scripts/generate-i18n.ts",
     "generate:template-data": "node scripts/generate-template-data.ts",
-    "postinstall": "fumadocs-mdx && pnpm generate:i18n",
-    "typecheck": "pnpm cf-typegen:check && pnpm generate:i18n && tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
+    "postinstall": "fumadocs-mdx",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "oxlint",
     "test": "vitest run"
   },
@@ -78,7 +77,6 @@
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@types/semver": "catalog:",
-    "@types/yargs": "catalog:",
     "@vitejs/plugin-react": "^6.0.1",
     "@zotlit/config": "workspace:*",
     "@zotlit/db": "workspace:*",
@@ -94,7 +92,6 @@
     "typescript": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:",
-    "wrangler": "^4.125.0",
-    "yargs": "catalog:"
+    "wrangler": "^4.125.0"
   }
 }

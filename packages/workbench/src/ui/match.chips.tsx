@@ -1,8 +1,8 @@
-// Wrapping list values retain free text and optional host suggestions.
 import { useId, useRef, useState } from "react";
 
 import { useWorkbenchHost } from "./host";
-import { m } from "./paraglide/messages.js";
+// Wrapping list values retain free text and optional host suggestions.
+import { useWorkbenchMessages } from "./messages";
 import { useIcon, useParts } from "./theme";
 export interface ChipInputProps {
   values: readonly string[];
@@ -19,6 +19,7 @@ export function ChipInput({
   suggestions,
   hint,
 }: ChipInputProps) {
+  const m = useWorkbenchMessages();
   const part = useParts("match");
   const host = useWorkbenchHost();
   const icon = useIcon();

@@ -5,8 +5,8 @@
 import type { KeyboardEvent, ReactNode } from "react";
 
 import { useOptionalEditor, useWorkbenchStore } from "./editor";
-import { m } from "./paraglide/messages.js";
-import { TABS, TAB_LABEL } from "./tabs";
+import { useWorkbenchMessages } from "./messages";
+import { TABS, tabLabel } from "./tabs";
 import type { WorkbenchTab } from "./tabs";
 import { useParts } from "./theme";
 
@@ -39,6 +39,7 @@ function keyTarget(key: string, index: number): number | null {
 export function TabBar({
   onTabChange,
 }: { onTabChange?: (tab: WorkbenchTab) => void } = {}) {
+  const m = useWorkbenchMessages();
   const editor = useOptionalEditor();
   const tab = useWorkbenchStore((state) => state.tab);
   const setTab = useWorkbenchStore((state) => state.setTab);
@@ -85,7 +86,7 @@ export function TabBar({
             }}
             {...part("tab", active ? "active" : "inactive")}
           >
-            {TAB_LABEL[id]()}
+            {tabLabel(m, id)}
           </button>
         );
       })}

@@ -1,4 +1,3 @@
-// Browser storage, Worker transport, and Local Bridge fixtures for web host tests.
 import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -20,9 +19,10 @@ import type {
   ProfileRenderResult,
   RenderRequest,
 } from "@zotlit/workbench/render";
-import { m } from "@zotlit/workbench/ui";
 
 import { Toaster } from "@/components/ui/toast";
+// Browser storage, Worker transport, and Local Bridge fixtures for web host tests.
+import { m } from "@/paraglide/messages.js";
 
 import { Workbench } from "./workbench";
 

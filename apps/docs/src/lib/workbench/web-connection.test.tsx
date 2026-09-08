@@ -6,9 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { BRIDGE_VERSION, LOCAL_BRIDGE_PATHS } from "@zotlit/workbench/bridge";
 import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
-import { m } from "@zotlit/workbench/ui";
 
-import { m as docsMessages } from "@/paraglide/messages.js";
+import { m } from "@/paraglide/messages.js";
 
 import {
   launch,
@@ -36,19 +35,19 @@ describe("a Workbench Connection", () => {
   it("keeps connection setup in the bottom status control", () => {
     using page = open();
     expect(page.host.querySelector("header")?.textContent).not.toContain(
-      docsMessages.docs_workbench_not_connected(),
+      m.docs_workbench_not_connected(),
     );
     expect(page.host.querySelector("footer")?.textContent).toContain(
-      docsMessages.docs_workbench_not_connected(),
+      m.docs_workbench_not_connected(),
     );
     expect(page.host.textContent).not.toContain(
       m.workbench_connection_open_from_obsidian(),
     );
-    page.press(docsMessages.docs_workbench_not_connected());
+    page.press(m.docs_workbench_not_connected());
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
       m.workbench_connection_open_from_obsidian(),
     );
-    page.press(docsMessages.docs_workbench_not_connected());
+    page.press(m.docs_workbench_not_connected());
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
@@ -461,18 +460,18 @@ describe("a Workbench Connection", () => {
 
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
-        docsMessages.docs_workbench_connection_link_expired(),
+        m.docs_workbench_connection_link_expired(),
       ),
     );
 
     expect(page.host.querySelector("header")?.textContent).not.toContain(
-      docsMessages.docs_workbench_connection_link_expired(),
+      m.docs_workbench_connection_link_expired(),
     );
     expect(page.host.querySelector("footer")?.textContent).toContain(
-      docsMessages.docs_workbench_connection_link_expired(),
+      m.docs_workbench_connection_link_expired(),
     );
     expect(page.host.querySelector("header")?.textContent).not.toContain(
-      docsMessages.docs_workbench_not_connected(),
+      m.docs_workbench_not_connected(),
     );
     expect(page.host.textContent).not.toContain(
       m.workbench_connection_reconnect(),
@@ -492,9 +491,7 @@ describe("a Workbench Connection", () => {
       expect(page.host.textContent).toContain(m.workbench_connection_revoked()),
     );
 
-    expect(page.host.textContent).toContain(
-      docsMessages.docs_workbench_not_connected(),
-    );
+    expect(page.host.textContent).toContain(m.docs_workbench_not_connected());
     expect(page.host.textContent).toContain(m.workbench_download());
   });
 
@@ -603,9 +600,7 @@ describe("a Workbench Connection", () => {
       ),
     );
 
-    expect(page.host.textContent).toContain(
-      docsMessages.docs_workbench_not_connected(),
-    );
+    expect(page.host.textContent).toContain(m.docs_workbench_not_connected());
     expect(page.host.textContent).toContain(m.workbench_download());
   });
 

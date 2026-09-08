@@ -1,13 +1,14 @@
-// @vitest-environment happy-dom
-// Web orchestration: route shared callbacks to the page, its field column,
-// imported files, connected Item snapshots, and independent preview results.
 import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { LOCAL_BRIDGE_PATHS } from "@zotlit/workbench/bridge";
 import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
-import { m } from "@zotlit/workbench/ui";
+
+// @vitest-environment happy-dom
+// Web orchestration: route shared callbacks to the page, its field column,
+// imported files, connected Item snapshots, and independent preview results.
+import { m } from "@/paraglide/messages.js";
 
 import {
   KEY,

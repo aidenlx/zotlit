@@ -1,11 +1,13 @@
-// @vitest-environment happy-dom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
-import { m } from "@zotlit/workbench/ui";
+import { TabBar } from "@zotlit/workbench/ui";
 import type { WorkbenchHost } from "@zotlit/workbench/ui";
+
+// @vitest-environment happy-dom
+import { m } from "@/paraglide/messages.js";
 
 import { useWebHost } from "./host";
 
@@ -84,6 +86,15 @@ describe("the web host", () => {
     const item = document.querySelector<HTMLElement>('[role="menuitem"]')!;
     act(() => item.click());
     expect(chosen).toEqual(["duplicate"]);
+  });
+
+  it("supplies site messages to shared controls inside a standalone dialog", async () => {
+    await act(async () => {
+      host.dialog({ title: "Profile panes", content: <TabBar /> });
+    });
+    expect(texts('[role="dialog"] [role="tab"]')).toContain(
+      m.workbench_tab_match(),
+    );
   });
 
   it("asks a confirmation in a dialog and answers with the reader's choice", async () => {

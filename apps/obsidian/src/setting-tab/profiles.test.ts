@@ -15,8 +15,6 @@ import type {
 } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import { m as shared } from "@zotlit/workbench/ui";
-
 import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
@@ -242,7 +240,7 @@ describe("Profile settings", () => {
       m.settings_profile_share(),
     ]);
     expect(extraButtonTooltips(profileRow)).toEqual([
-      shared.workbench_more_actions(),
+      m.workbench_more_actions(),
       m.settings_profile_duplicate(),
       m.settings_profile_share(),
     ]);
@@ -252,7 +250,7 @@ describe("Profile settings", () => {
     // The row's own Profile is what its Customize opens, not the default.
     const more = render(profileRow)
       .components.filter((control) => control instanceof ExtraButtonComponent)
-      .find(({ tooltip }) => tooltip === shared.workbench_more_actions())!;
+      .find(({ tooltip }) => tooltip === m.workbench_more_actions())!;
     Object.assign(more, { extraSettingsEl: document.createElement("button") });
     more.click();
     Menu.instances
@@ -278,7 +276,7 @@ describe("Profile settings", () => {
       m.settings_profile_share(),
     ]);
     expect(extraButtonTooltips(profileRow)).toEqual([
-      shared.workbench_more_actions(),
+      m.workbench_more_actions(),
       m.settings_profile_duplicate(),
       m.settings_profile_share(),
     ]);

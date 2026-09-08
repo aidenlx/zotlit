@@ -10,7 +10,7 @@ import { regex } from "arkregex";
 import { useEffect, useRef, useState } from "react";
 
 import { useTooltip } from "./host";
-import { m } from "./paraglide/messages.js";
+import { useWorkbenchMessages } from "./messages";
 import type { ExplorerVariant } from "./store";
 import { useIcon, useParts } from "./theme";
 import type { WorkbenchIcon } from "./theme";
@@ -143,6 +143,7 @@ function Chevron({
   expanded: boolean;
   onClick: () => void;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("explorerTree");
   const icon = useIcon();
   return (
@@ -172,6 +173,7 @@ function ActionCluster({
   onInsert?: (node: DisplayNode) => void;
   onTemplateMenu: (node: DisplayNode, event: React.MouseEvent) => void;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("explorerTree");
   const hasValue = copyValue(node) !== null;
   const [copied, setCopied] = useState(false);
@@ -430,6 +432,7 @@ function LinkValue({ href, label }: { href: string; label: string }) {
 }
 
 function LongText({ value }: { value: string }) {
+  const m = useWorkbenchMessages();
   const part = useParts("explorerTree");
   const [expanded, setExpanded] = useState(false);
   const isLong = value.length > STRING_PREVIEW_LIMIT || value.includes("\n");

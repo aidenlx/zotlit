@@ -6,7 +6,7 @@
 import type { WorkbenchProblem } from "#/document/controller";
 import type { RenderDiagnostic } from "#/render/result";
 
-import { m } from "./paraglide/messages.js";
+import type { WorkbenchMessages } from "./generated/messages";
 
 /** What the Problems strip and the handoff screen read for one problem. */
 export interface ProblemText {
@@ -15,7 +15,10 @@ export interface ProblemText {
   readonly recovery?: string;
 }
 
-export function problemText(problem: WorkbenchProblem): ProblemText {
+export function problemText(
+  m: WorkbenchMessages,
+  problem: WorkbenchProblem,
+): ProblemText {
   const handoff = (message: string): ProblemText => ({
     message,
     recovery: m.workbench_problem_unsupported_recovery(),
@@ -86,7 +89,10 @@ export function problemText(problem: WorkbenchProblem): ProblemText {
 }
 
 /** The one line a render diagnostic reads as. */
-export function diagnosticText(diagnostic: RenderDiagnostic): string {
+export function diagnosticText(
+  m: WorkbenchMessages,
+  diagnostic: RenderDiagnostic,
+): string {
   const params = diagnostic.params ?? {};
   switch (diagnostic.code) {
     case "contract-version-mismatch":
@@ -99,7 +105,7 @@ export function diagnosticText(diagnostic: RenderDiagnostic): string {
         deadlineMs: String(params.deadlineMs),
       });
     case "citation-style-error":
-      return diagnostic.message ?? citationStyleText(params);
+      return diagnostic.message ?? citationStyleText(m, params);
     case "property-error":
       return m.workbench_diagnostic_property_error({
         key: String(params.key),
@@ -139,6 +145,7 @@ export function diagnosticText(diagnostic: RenderDiagnostic): string {
 }
 
 function citationStyleText(
+  m: WorkbenchMessages,
   params: NonNullable<RenderDiagnostic["params"]>,
 ): string {
   const styleId = String(params.styleId);

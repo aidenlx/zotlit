@@ -13,6 +13,7 @@ import { useEffect, useRef } from "react";
 
 import { completionFields } from "./completion-fields";
 import { useOptionalHost } from "./host";
+import { useWorkbenchMessages } from "./messages";
 import { tagDescription } from "./tag-help";
 import { useParts, useEditorExtension } from "./theme";
 
@@ -81,6 +82,7 @@ export function SliceEditor({
   onSelection,
   onFocus,
 }: SliceEditorProps) {
+  const m = useWorkbenchMessages();
   const part = useParts("sliceEditor");
   const adapter = useOptionalHost();
   const editorExtension = useEditorExtension();
@@ -94,8 +96,16 @@ export function SliceEditor({
     suggest,
     adapter,
     editorExtension,
+    m,
   });
-  report.current = { onSelection, onFocus, suggest, adapter, editorExtension };
+  report.current = {
+    onSelection,
+    onFocus,
+    suggest,
+    adapter,
+    editorExtension,
+    m,
+  };
 
   useEffect(() => {
     const read: SuggestionSource = (position) => {
@@ -130,8 +140,8 @@ export function SliceEditor({
                 from: region!.from - sliceRange.from,
                 to: region!.to - sliceRange.from,
               },
-        fields: completionFields(root),
-        tagDescription,
+        fields: completionFields(report.current.m, root),
+        tagDescription: (name) => tagDescription(report.current.m, name),
       };
     };
     const view = new EditorView({

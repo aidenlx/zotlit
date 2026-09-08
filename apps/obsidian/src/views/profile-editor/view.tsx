@@ -46,7 +46,6 @@ import {
   WorkbenchThemeProvider,
   useDocumentRevision,
   useWorkbenchStore,
-  m as shared,
 } from "@zotlit/workbench/ui";
 import type {
   WorkbenchHost,
@@ -891,7 +890,7 @@ function EditorContent({
           <SliceEditor
             controller={controller}
             slice="advanced"
-            label={shared.workbench_advanced()}
+            label={m.workbench_advanced()}
             reveal={reveal}
             onSelection={selection("advanced")}
           />
@@ -902,7 +901,7 @@ function EditorContent({
                 controller={controller}
                 preview={result?.annotation ?? null}
                 formatProblem={
-                  formatProblem ? diagnosticText(formatProblem) : null
+                  formatProblem ? diagnosticText(m, formatProblem) : null
                 }
                 annotationSelector={
                   view.preview ? (
@@ -927,7 +926,7 @@ function EditorContent({
                     );
                     setReveal({ from: caret, to: caret });
                     if (repaired)
-                      host.notice(shared.workbench_annotation_section_added());
+                      host.notice(m.workbench_annotation_section_added());
                   }}
                 />
               )}
@@ -937,7 +936,7 @@ function EditorContent({
                 <p>
                   {m.profile_editor_properties_advanced()}{" "}
                   <button onClick={() => state.setAdvanced(true)}>
-                    {shared.workbench_advanced()}
+                    {m.workbench_advanced()}
                   </button>
                 </p>
               ) : (
@@ -953,7 +952,7 @@ function EditorContent({
                         : [
                             {
                               position: diagnostic.position,
-                              message: diagnosticText(diagnostic),
+                              message: diagnosticText(m, diagnostic),
                             },
                           ],
                     ),
@@ -961,7 +960,12 @@ function EditorContent({
                       const position = entryPosition(problem.slice);
                       return position === null
                         ? []
-                        : [{ position, message: problemText(problem).message }];
+                        : [
+                            {
+                              position,
+                              message: problemText(m, problem).message,
+                            },
+                          ];
                     }),
                   ]}
                   selected={selected}
@@ -986,7 +990,9 @@ function EditorContent({
             <TabPanel tab="annotation">
               <AnnotationPane
                 controller={controller}
-                problem={formatProblem ? diagnosticText(formatProblem) : null}
+                problem={
+                  formatProblem ? diagnosticText(m, formatProblem) : null
+                }
                 reveal={reveal}
                 onSelection={selection("annotation")}
               />
@@ -1039,7 +1045,7 @@ function EditorHeader({ view }: { view: ProfileEditorView }) {
       </button>
       <button
         className="clickable-icon"
-        {...tooltipAttrs(shared.workbench_more_actions())}
+        {...tooltipAttrs(m.workbench_more_actions())}
         onClick={(event) => view.openMenu(event.currentTarget)}
       >
         <Icon name="more-horizontal" />

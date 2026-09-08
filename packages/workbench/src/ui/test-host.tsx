@@ -1,6 +1,7 @@
 // A host for the shared suite: every adapter call is recorded, preferences
 // live in memory, and the theme names each part's class after the part.
 
+import { render as renderUI } from "@testing-library/react";
 import type { ReactNode } from "react";
 
 import { WorkbenchEditorProvider } from "./editor";
@@ -11,8 +12,10 @@ import type {
   WorkbenchPreferenceScope,
   WorkbenchSuggesterRequest,
 } from "./host";
+import { WorkbenchMessagesProvider } from "./messages";
 import { createWorkbenchStore } from "./store";
 import type { WorkbenchStore, WorkbenchViewState } from "./store";
+import { m } from "./test-messages";
 import { WorkbenchThemeProvider } from "./theme";
 import type { WorkbenchClassMap, WorkbenchTheme } from "./theme";
 
@@ -37,6 +40,8 @@ export function fakeHost(): FakeHost {
   const key = (scope: WorkbenchPreferenceScope, name: string) =>
     `${scope}:${name}`;
   const host: FakeHost = {
+    messages: m,
+    getLocale: () => "en",
     calls: { menus: [], suggesters: [], notices: [], confirms: [] },
     preferences,
     confirmAnswer: true,
@@ -121,4 +126,19 @@ export function mount(
       </WorkbenchThemeProvider>
     ),
   };
+}
+
+/** Supply messages for component tests that exercise the optional-host surface. */
+export function renderWithMessages(
+  ui: ReactNode,
+  options?: Parameters<typeof renderUI>[1],
+) {
+  return renderUI(ui, {
+    wrapper: ({ children }) => (
+      <WorkbenchMessagesProvider messages={m}>
+        {children}
+      </WorkbenchMessagesProvider>
+    ),
+    ...options,
+  });
 }
