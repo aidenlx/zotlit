@@ -1560,9 +1560,10 @@
     }
   ],
   "workbench_annotation_edit_format": "Edit format",
-  "workbench_annotation_insert": "Insert annotations here",
+  "workbench_annotation_insert": "Add to template",
   "workbench_annotation_section_added": "Added the annotation section to this profile.",
-  "workbench_annotation_pointer": "Every annotation in the note uses one format.",
+  "workbench_annotation_pointer_heading": "Include annotations in the note",
+  "workbench_annotation_pointer": "The item’s annotations will appear at the end of notes created with this profile.",
   "workbench_managed_start": "Kept up to date",
   "workbench_managed_end": "End of the part kept up to date",
   "workbench_section_heading": "Annotation section",

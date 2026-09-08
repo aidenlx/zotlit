@@ -824,7 +824,6 @@ function EditorContent({
 }) {
   const controller = view.controller;
   const host = useWorkbenchHost();
-  const noteCaret = useRef<WorkbenchSliceRange | null>(null);
   useDocumentRevision(controller);
   const preview = useNativePreview(view.preview);
   const result = preview?.result;
@@ -952,16 +951,14 @@ function EditorContent({
                 }}
                 reveal={reveal}
                 onSelection={(range) => {
-                  noteCaret.current = range;
                   selection("note")(range);
                 }}
               />
               {controller.noteRegions.annotationCalls.length === 0 && (
                 <AnnotationPointer
                   onInsert={() => {
-                    const { repaired, caret } = controller.insertAnnotationLoop(
-                      noteCaret.current ?? undefined,
-                    );
+                    const { repaired, caret } =
+                      controller.insertAnnotationLoop();
                     setReveal({ from: caret, to: caret });
                     if (repaired)
                       host.notice(m.workbench_annotation_section_added());
