@@ -1299,7 +1299,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       ).toBe(true);
     });
 
-    it("keeps an unsupported Profile in Obsidian with a Notice at the entry action", async () => {
+    it("keeps an unsupported Profile in Obsidian with one Notice when native is remembered", async () => {
       const javascriptProperty =
         "frontmatter:\n  - key: generated\n    js: zt.title\n    merge: replace\n";
       const javascriptSource = source.includes("frontmatter:\n")
@@ -1315,7 +1315,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         expect(unsupported !== source).toBe(true);
         await obEval(
           vaultId,
-          `(async function(){await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(defaultPath)}),${JSON.stringify(unsupported)});delete window.zotlitE2ELaunch;return true;})()`,
+          `(async function(){app.saveLocalStorage('zotlit-profile-customization','native');await app.vault.modify(app.vault.getFileByPath(${JSON.stringify(defaultPath)}),${JSON.stringify(unsupported)});delete window.zotlitE2ELaunch;return true;})()`,
         );
         expect(
           await obEvalUntil(
@@ -1334,6 +1334,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
             ),
           ),
         ).toBe(true);
+        expect(
+          (await notices.read()).filter(
+            (text) =>
+              text.includes(m.notice_workbench_unsupported_profile()) ||
+              text.includes(m.profile_editor_native_required()),
+          ),
+        ).toHaveLength(1);
         expect(
           await obEvalUntil(
             vaultId,
