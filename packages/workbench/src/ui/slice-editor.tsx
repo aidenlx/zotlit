@@ -19,7 +19,7 @@ import { useParts, useEditorExtension } from "./theme";
 
 import { workbenchSlice, jsonLayout, jsonPosition } from "#/document/index";
 import {
-  liquidMarkdown,
+  liquidTemplate,
   templatePairing,
   profileLanguage,
   embeddedLiquid,
@@ -158,7 +158,7 @@ export function SliceEditor({
               ? profileLanguage
               : language === "expression"
                 ? []
-                : liquidMarkdown,
+                : liquidTemplate,
           ...(language === "expression"
             ? [
                 embeddedLiquid((source) => [

@@ -4,11 +4,12 @@ import { yamlFrontmatter } from "@codemirror/lang-yaml";
 import type { Range } from "@codemirror/state";
 import { Decoration, ViewPlugin } from "@codemirror/view";
 import type { EditorView, ViewUpdate } from "@codemirror/view";
-import { classHighlighter, highlightTree } from "@lezer/highlight";
+import { highlightTree } from "@lezer/highlight";
 
-import { liquidMarkdown } from "./liquid";
+import { templateHighlighter } from "./highlight";
+import { liquidTemplate } from "./liquid";
 
-export const profileLanguage = yamlFrontmatter({ content: liquidMarkdown });
+export const profileLanguage = yamlFrontmatter({ content: liquidTemplate });
 
 /** A Liquid scalar or bare Property expression inside an editor's source. */
 export interface LiquidSourceRegion {
@@ -32,7 +33,7 @@ export function embeddedLiquid(
         (region.expression ? " }}" : "");
       highlightTree(
         liquidLanguage.parser.parse(text),
-        classHighlighter,
+        templateHighlighter,
         (from, to, classes) => {
           const start = Math.max(
             region.from,

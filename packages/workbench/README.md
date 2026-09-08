@@ -194,8 +194,9 @@ the page, so Reconnect after a blip costs no fresh approval. A refusal (HTTP
 `@zotlit/workbench/language` holds the editor support for Liquid, Eta, and JSON-e
 authoring:
 
-- `liquidMarkdown` — the upstream Liquid language over a Markdown base, plus a
-  delimiter accent decoration (`zt-liquid-delimiter`).
+- `liquidTemplate` — the upstream Liquid language over plain text.
+- `templateHighlighting` and `templateToken` — the `zt-template-*` classes every
+  editor emits per token kind; a host colors them.
 - `jsonRule` and `embeddedJsonE` — JSON parsing and JSON-e expression token colors
   in Property rules and Advanced, using the same source regions as completion.
 - `liquidRanges(source)` — a quote-aware delimiter scanner that bounds

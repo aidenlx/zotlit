@@ -6,6 +6,7 @@ import type { Node } from "jsonc-parser";
 import type { ContractType } from "@zotlit/db/contract/ir";
 
 import { contract, describe, members, resolve, sampleJson } from "./contract";
+import type { TemplateToken } from "./highlight";
 import { jsonOperators, jsonFunctions } from "./json-e-catalog";
 import { rankSuggestions } from "./matching";
 import type {
@@ -288,7 +289,7 @@ export function jsonExpressions(
 
 /** Semantic token ranges in source coordinates, reusable by each editor host. */
 export function jsonSyntaxTokens(source: string) {
-  const result: { from: number; to: number; kind: string }[] = [];
+  const result: { from: number; to: number; kind: TemplateToken }[] = [];
   for (const expression of jsonExpressions(source, {
     root: "note",
     partials: [],
@@ -303,11 +304,11 @@ export function jsonSyntaxTokens(source: string) {
           : ["true", "false", "null", "in"].includes(token.text)
             ? "keyword"
             : regex("^[0-9]").test(token.text)
-              ? "number"
+              ? "value"
               : regex("^[A-Za-z_]").test(token.text)
                 ? tokens[index + 1]?.text === "("
-                  ? "functionName"
-                  : "variableName"
+                  ? "filter"
+                  : "variable"
                 : "operator";
       result.push({
         from: expression.offsets[token.from]!,
