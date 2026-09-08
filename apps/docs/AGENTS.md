@@ -19,7 +19,7 @@ ZotLit documentation site — TanStack Start (SSR React) + Tailwind CSS v4, depl
 
 Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Package-specific:
 
-- `pnpm --filter @zotlit/docs dev` — Vite dev server.
+- `pnpm exec turbo run dev --filter=@zotlit/docs` — build workspace dependencies and generate the collection index before starting Vite.
 - `pnpm --filter @zotlit/docs preview` — serve the built Worker locally through workerd.
 - `pnpm --filter @zotlit/docs deploy` — build, then `wrangler deploy` to Cloudflare Workers.
 - `pnpm --filter @zotlit/docs deploy:beta` — the same for Pre-release Docs. `CLOUDFLARE_ENV` picks the Cloudflare environment at build time, so the beta build has to be its own; a build made without it carries the production line's variables whatever `wrangler deploy --env` says.

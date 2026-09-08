@@ -2,7 +2,11 @@
   "$schema": "https://turborepo.dev/schema.json",
   "extends": ["//"],
   "tasks": {
+    "dev": {
+      "dependsOn": ["^build", "codegen"]
+    },
     "build": {
+      "dependsOn": ["$TURBO_EXTENDS$", "codegen"],
       // The agent-skill archives are read from the repo-root `skills/` tree at
       // build time (src/lib/agent-skills.ts), so those files are build inputs.
       "inputs": [
@@ -17,9 +21,9 @@
       // separates beta and production outputs.
       "env": ["VITE_CF_BEACON_TOKEN", "CLOUDFLARE_ENV", "GITHUB_SHA"]
     },
-    // The `.source/` collection index, which the typecheck reads. `vite build`
-    // regenerates it too, so a lint or typecheck run needs only this task.
+    // Emit collection imports before framework plugins resolve them in Vite.
     "codegen": {
+      "dependsOn": ["^build"],
       "outputs": [".source/**"],
       "outputLogs": "errors-only"
     },

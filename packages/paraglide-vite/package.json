@@ -1,43 +1,26 @@
 {
-  "name": "@zotlit/obsidian-i18n",
+  "name": "@zotlit/paraglide-vite",
   "version": "0.0.0",
   "private": true,
-  "bin": {
-    "obsidian-i18n": "./bin.mjs"
-  },
-  "files": [
-    "bin.mjs",
-    "dist"
-  ],
   "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
       "default": "./dist/index.mjs"
-    },
-    "./compiler": {
-      "types": "./dist/compiler.d.mts",
-      "default": "./dist/compiler.mjs"
-    },
-    "./vite": {
-      "types": "./dist/vite.d.mts",
-      "default": "./dist/vite.mjs"
     }
   },
   "scripts": {
     "build": "tsdown",
-    "dev": "tsdown --watch",
     "typecheck": "tsc --noEmit -p tsconfig.lib.json",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
     "test": "vitest run"
   },
   "dependencies": {
-    "@inlang/plugin-m-function-matcher": "2.2.9",
-    "@inlang/plugin-message-format": "catalog:",
-    "@inlang/sdk": "2.9.3"
+    "@inlang/paraglide-js": "^2.24.1"
   },
   "devDependencies": {
+    "@inlang/plugin-message-format": "catalog:",
     "@types/node": "catalog:",
     "@zotlit/config": "workspace:*",
     "oxlint": "catalog:",
@@ -48,10 +31,5 @@
   },
   "peerDependencies": {
     "vite": ">=8.0.0"
-  },
-  "peerDependenciesMeta": {
-    "vite": {
-      "optional": true
-    }
   }
 }
