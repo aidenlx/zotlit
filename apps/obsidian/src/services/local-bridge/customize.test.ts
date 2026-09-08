@@ -6,8 +6,6 @@ import { CONTRACT_VERSION } from "@zotlit/db";
 import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
 import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature-note-pack";
 
-import * as m from "@/lib/i18n/generated/messages";
-import { BaseNotice } from "@/lib/notice";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 import {
@@ -21,8 +19,6 @@ import type {
   LaunchConsent,
   LaunchSheetDetails,
 } from "./customize";
-
-vi.mock("@/lib/notice", () => ({ BaseNotice: vi.fn(class {}) }));
 
 const LIQUID_PROFILE = `---
 id: default
@@ -190,7 +186,6 @@ describe("the Customize flow", () => {
   let h: Harness;
 
   beforeEach(() => {
-    vi.mocked(BaseNotice).mockClear();
     h = harness({ settings: { "server.enabled": true } });
   });
 
@@ -396,16 +391,14 @@ describe("the Customize flow", () => {
       "language: liquid\nfrontmatter:\n  - key: title\n    js: zt.title",
     ),
   ])(
-    "explains an unsupported Profile once with a remembered native preference",
+    "keeps an unsupported Profile native with a remembered preference",
     async (source) => {
       const native = harness({ source });
       saveProfileCustomization(deviceOf(native), "native");
       await native.customize({ profileId: "default" });
       expect(native.openedFiles).toHaveLength(1);
       expect(native.sheets).toEqual([]);
-      expect(BaseNotice).toHaveBeenCalledExactlyOnceWith(
-        m.notice_workbench_unsupported_profile(),
-      );
+      expect(native.launches).toEqual([]);
     },
   );
 
