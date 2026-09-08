@@ -513,7 +513,6 @@ describe("the annotation box", () => {
     );
     page.press(m.workbench_tab_annotation());
     await chooseAnnotation(page, "Second annotation on this paper.");
-    await page.settle();
     await page.waitFor(() =>
       expect(resultText(page.host)).toContain(
         "Second annotation on this paper.",
@@ -526,7 +525,6 @@ describe("the annotation box", () => {
     );
     page.press(m.workbench_tab_note());
     page.press(m.workbench_refresh_item());
-    await page.settle();
     page.press(m.workbench_tab_annotation());
     await page.waitFor(() =>
       expect(resultText(page.host)).toContain("Updated second annotation."),
@@ -535,7 +533,6 @@ describe("the annotation box", () => {
     loaded = snapshot([first], "removed");
     page.press(m.workbench_tab_note());
     page.press(m.workbench_refresh_item());
-    await page.settle();
     page.press(m.workbench_tab_annotation());
     await page.waitFor(() =>
       expect(resultText(page.host)).toContain(
@@ -546,7 +543,6 @@ describe("the annotation box", () => {
     loaded = snapshot([], "empty");
     page.press(m.workbench_tab_note());
     page.press(m.workbench_refresh_item());
-    await page.settle();
     page.press(m.workbench_tab_annotation());
     await page.waitFor(() =>
       expect(resultText(page.host)).toContain(
