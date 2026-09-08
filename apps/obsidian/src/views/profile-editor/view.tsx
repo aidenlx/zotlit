@@ -44,10 +44,13 @@ import {
   WorkbenchEditorProvider,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
+  createRenderScheduler,
   useDocumentRevision,
+  useRenderState,
   useWorkbenchStore,
 } from "@zotlit/workbench/ui";
 import type {
+  RenderScheduler,
   WorkbenchHost,
   WorkbenchInsertTarget,
   NameFolderPaneProps,
@@ -65,12 +68,12 @@ import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ProfileService } from "@/services/profile/service";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
 import { NativeMarkdown } from "@/views/note-preview/markdown";
-import type { NativeRenderDeps } from "@/views/note-preview/render";
-import { renderNativeProfile } from "@/views/note-preview/render";
-import {
-  NativePreviewSession,
-  useNativePreview,
-} from "@/views/note-preview/session";
+import type {
+  NativeRenderDeps,
+  NativeRenderResult,
+} from "@/views/note-preview/render";
+import { nativeResult, renderNativeProfile } from "@/views/note-preview/render";
+import { NativePreviewSession } from "@/views/note-preview/session";
 import { exportTemplateDataFile } from "@/views/template-data-explorer/export-file";
 import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
 import {
@@ -103,6 +106,8 @@ export type ProfileEditorDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
 
 export class ProfileEditorView extends TextFileView {
   readonly store = createWorkbenchStore();
+  /** The one scheduler the editor and the Note Preview sidebar render through. */
+  readonly scheduler: RenderScheduler<NativeRenderResult>;
   readonly preview: NativePreviewSession | null;
   readonly #revealListeners = new Set<
     (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
@@ -134,29 +139,32 @@ export class ProfileEditorView extends TextFileView {
     super(leaf);
     this.#deps = deps;
     this.contentEl.addClass("zt-root", "zt-profile-editor");
+    const render: WorkbenchHost["render"] =
+      (deps.nativePreview
+        ? (request) => renderNativeProfile(deps.nativePreview!, request)
+        : deps.render) ??
+      ((request) =>
+        Promise.resolve(
+          failedRender(renderIdentity(request), { code: "render-error" }),
+        ));
+    this.scheduler = createRenderScheduler({
+      render: (request) => render(request).then(nativeResult),
+      failed: nativeResult,
+      controller: this.#controller,
+      store: this.store,
+    });
     this.preview = deps.nativePreview
-      ? new NativePreviewSession(
-          deps.nativePreview,
-          this.#controller,
-          this.store,
-        )
+      ? new NativePreviewSession(deps.nativePreview, this.scheduler, this.store)
       : null;
     this.#host = createProfileEditorHost(
       this.app,
       {
-        render:
-          (deps.nativePreview
-            ? (request) => renderNativeProfile(deps.nativePreview!, request)
-            : deps.render) ??
-          ((request) =>
-            Promise.resolve(
-              failedRender(renderIdentity(request), { code: "render-error" }),
-            )),
+        render,
         markdown: (props) => (
           <NativeMarkdown
             {...props}
             app={this.app}
-            result={this.preview?.state.getState().result ?? null}
+            result={this.scheduler.getState().result}
           />
         ),
         matchData: createMatchData(deps.db),
@@ -183,7 +191,7 @@ export class ProfileEditorView extends TextFileView {
           importAnnotationsAsTemplate:
             bindings["note.import-annotations-as-template"],
         };
-        this.preview?.changed();
+        this.scheduler.invalidate();
         this.#mount();
       }),
     );
@@ -353,7 +361,7 @@ export class ProfileEditorView extends TextFileView {
       this.#controller = new WorkbenchDocumentController(source, {
         runtime: "native",
       });
-      this.preview?.attach(this.#controller);
+      this.scheduler.attach(this.#controller);
       this.#insertTarget = null;
       this.#insertRequest = null;
       for (const listener of this.#insertListeners) listener();
@@ -454,6 +462,7 @@ export class ProfileEditorView extends TextFileView {
   protected override async onClose(): Promise<void> {
     this.#closed = true;
     this.preview?.[Symbol.dispose]();
+    this.scheduler[Symbol.dispose]();
     this.#host[Symbol.dispose]();
     this.#root?.unmount();
     this.#root = null;
@@ -701,6 +710,11 @@ export class ProfileEditorView extends TextFileView {
     this.#unsubscribe = this.#controller.subscribe(
       ({ docChanged, transaction }) => {
         if (!docChanged) return;
+        // What the scheduler follows on its own, named here so a diagnosis can
+        // read the edit that queued or dropped a render.
+        logger.trace("Preview source changed", {
+          live: this.store.getState().preview.live,
+        });
         if (this.#insertTarget) {
           const { slice, range } = this.#insertTarget;
           this.#insertTarget = {
@@ -737,6 +751,7 @@ export class ProfileEditorView extends TextFileView {
             key={this.#generation}
             controller={this.#controller}
             store={this.store}
+            scheduler={this.scheduler}
           >
             {content}
           </WorkbenchEditorProvider>
@@ -781,8 +796,7 @@ function EditorContent({
   const host = useWorkbenchHost();
   const noteCaret = useRef<WorkbenchSliceRange | null>(null);
   useDocumentRevision(controller);
-  const preview = useNativePreview(view.preview);
-  const result = preview?.result;
+  const { result } = useRenderState();
   const formatProblem = result?.diagnostics.find(
     ({ part }) => part === "annotation",
   );

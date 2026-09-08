@@ -1,13 +1,21 @@
-// One editor instance in context: its view store and the document controller
-// that is the authority on the document. Outside the provider the tree paints
-// inert, which is how the web's skeleton shows the chrome before the editor
-// bundle arrives.
+// One editor instance in context: its view store, the document controller that
+// is the authority on the document, and the one Render Scheduler every result
+// surface reads. Outside the provider the tree paints inert, which is how the
+// web's skeleton shows the chrome before the editor bundle arrives.
 
 import type { WorkbenchDocumentController } from "#/document/controller";
-import { createContext, useContext, useEffect, useId, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { ReactNode } from "react";
 import { useStore } from "zustand";
 
+import type { RenderScheduler, RenderSchedulerState } from "./scheduler";
 import { createWorkbenchStore } from "./store";
 import type {
   WorkbenchStore,
@@ -18,6 +26,8 @@ import type {
 export interface WorkbenchEditor {
   readonly store: WorkbenchStore;
   readonly controller: WorkbenchDocumentController;
+  /** The one scheduler this instance's result surfaces share. */
+  readonly scheduler: RenderScheduler;
   /** The prefix of this instance's element ids. */
   readonly id: string;
 }
@@ -27,18 +37,39 @@ const EditorContext = createContext<WorkbenchEditor | null>(null);
 /** Never written: what the tree reads where no editor is in context. */
 const INERT_STORE = createWorkbenchStore();
 
+const INERT_STATE: RenderSchedulerState = {
+  result: null,
+  busy: false,
+  stale: false,
+};
+
+/** Never renders: what the tree reads where no editor is in context. */
+const INERT_SCHEDULER: RenderScheduler = {
+  getState: () => INERT_STATE,
+  subscribe: () => () => {},
+  setInput() {},
+  invalidate() {},
+  run() {},
+  pause() {},
+  fail() {},
+  attach() {},
+  [Symbol.dispose]() {},
+};
+
 export function WorkbenchEditorProvider({
   store,
   controller,
+  scheduler,
   children,
 }: {
   store: WorkbenchStore;
   controller: WorkbenchDocumentController;
+  scheduler: RenderScheduler;
   children?: ReactNode;
 }) {
   const id = useId();
   return (
-    <EditorContext.Provider value={{ store, controller, id }}>
+    <EditorContext.Provider value={{ store, controller, scheduler, id }}>
       {children}
     </EditorContext.Provider>
   );
@@ -67,6 +98,23 @@ export function useWorkbenchStore<T>(
 
 export function useWorkbenchController(): WorkbenchDocumentController {
   return useWorkbenchEditor().controller;
+}
+
+/** The scheduler in context, or an inert one where the tree paints inert. */
+export function useRenderScheduler(): RenderScheduler {
+  return useContext(EditorContext)?.scheduler ?? INERT_SCHEDULER;
+}
+
+/**
+ * What the result surfaces paint. A host that holds its scheduler above the
+ * editor provider, as the web page does, passes it rather than the context one.
+ */
+export function useRenderState(
+  scheduler?: RenderScheduler,
+): RenderSchedulerState {
+  const inContext = useRenderScheduler();
+  const read = scheduler ?? inContext;
+  return useSyncExternalStore(read.subscribe, read.getState);
 }
 
 /**

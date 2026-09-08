@@ -121,9 +121,24 @@ shows Base UI. `WorkbenchEditorProvider` carries one editor instance: the
 zustand vanilla store from `createWorkbenchStore` (tab, selected Item, focused
 root, preview mode and live state, Explorer variant, Advanced, Start here
 dismissal) beside the `WorkbenchDocumentController`, which stays the document
-authority; `useWorkbenchStore`, `useWorkbenchController`, and
-`useDocumentRevision` read them. Outside the editor provider the tree paints
-inert, which the web's skeleton relies on. The components so far: `TabBar` and
+authority, and the one Render Scheduler its result surfaces share;
+`useWorkbenchStore`, `useWorkbenchController`, `useDocumentRevision`,
+`useRenderScheduler`, and `useRenderState` read them.
+
+`createRenderScheduler(options)` builds that scheduler, one per editor instance
+beside the store: a 300 ms quiet time after the last edit, `run()` for Run,
+`pause()` for Stop, which lets a render already in flight finish, On demand read
+from the store, and a per-start stamp that drops a result naming a source,
+paper, annotation example, or preview mode the reader has moved past. It reads
+the document controller and the store itself; the host passes `render`, which
+answers one request with a promise on the calling thread and whose rejection
+reads as a `render-error` diagnostic, and `failed`, which casts a result the
+scheduler composed itself into the host's own result shape so a failure reads
+like every other result that host publishes. The host calls `setInput` with the
+paper, the annotation example, its own bundle, and `hold` where nothing may
+render yet. Its state — `result`, `busy`, `stale` — is what every result surface
+paints. Outside the editor provider the tree paints inert, which the web's
+skeleton relies on. The components so far: `TabBar` and
 `TabPanel`, `EditToolbar` (Basic against Advanced, undo, redo, a host's own
 controls as children), and `ProblemsFooter` with `problemText` and
 `diagnosticText`, the words for every core code.
@@ -145,8 +160,8 @@ the `ui-react` and `ui-preact` Vitest projects, the second with React aliased to
 
 ## Render
 
-`@zotlit/workbench/render` renders a Profile against an Item Snapshot and
-schedules those renders:
+`@zotlit/workbench/render` renders a Profile against an Item Snapshot; the
+Render Scheduler that decides when lives in `@zotlit/workbench/ui`:
 
 - `renderProfile(source, snapshot, options)` — the result set with diagnostics,
   stamped with the source, snapshot, and selected annotation revisions. Options
@@ -166,10 +181,6 @@ schedules those renders:
   could not resolve, and one whose content is no standalone CSL style, are both
   `citation-style-error` diagnostics. CSL formatting itself stays in Obsidian,
   which is where a Literature Note's citations are rendered.
-- `createRenderScheduler(options)` — one debounce (300 ms) and a revision check
-  that drops a result the reader has already typed or selected past. The host
-  supplies `render`, which answers one request with a promise and runs on the
-  calling thread; a render that rejects reads as a `render-error` diagnostic.
 - `SAMPLE_ANNOTATIONS` — six built-in annotation examples covering highlight,
   underline, note, text, image, and ink, with comments, tags, and empty optional
   fields. Each example carries the matching descriptors needed to restore it.

@@ -1,7 +1,7 @@
 // The render result shape and its identity stamp, shared by the renderer and
 // the scheduler that decides which result is still current.
 
-import type { RenderRequest } from "./scheduler";
+import type { RenderRequest } from "./request";
 
 /**
  * What went wrong, in the vocabulary a host writes its own wording against. One
