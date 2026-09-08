@@ -105,13 +105,6 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
       request.item === undefined ? activeNoteItem(deps.app) : request.item;
     const nativeRequest = { ...request, item };
     const preference = profileCustomization(deps.app);
-    if (
-      request.destination === "native" ||
-      (!request.destination && preference === "native")
-    ) {
-      await deps.openNative(nativeRequest);
-      return;
-    }
     const source = await deps.profile.getSource(request.profileId);
     const reason = unsupportedProfileSourceReason(
       await withDependencies(deps, source),
@@ -121,6 +114,14 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
       logger.debug("Customize kept the Profile in Obsidian", { reason });
       await deps.openNative(nativeRequest);
       new BaseNotice(m.notice_workbench_unsupported_profile());
+      return;
+    }
+
+    if (
+      request.destination === "native" ||
+      (!request.destination && preference === "native")
+    ) {
+      await deps.openNative(nativeRequest);
       return;
     }
 

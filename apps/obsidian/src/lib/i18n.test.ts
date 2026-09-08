@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import type { LanguagePackLifecyclePorts } from "@zotlit/obsidian-i18n";
+import { m as workbenchMessages } from "@zotlit/workbench/ui";
 
 import { initI18n } from "./i18n.js";
 import * as m from "./i18n/generated/messages.js";
@@ -25,6 +26,31 @@ describe("ZotLit Language Pack setting integration", () => {
       pluginVersion: "2.0.0",
       ports: makePorts({ language: "en" }).ports,
     });
+  });
+
+  test.each(["zh", "zh-CN"])(
+    "binds shared editor labels to the native %s locale",
+    (language) => {
+      const lifecycle = initI18n({
+        pluginVersion: "2.0.0",
+        ports: makePorts({ language }).ports,
+      });
+      expect(lifecycle.locale).toBe("zh-CN");
+      expect(workbenchMessages.workbench_tab_match()).toBe("匹配");
+      expect(workbenchMessages.workbench_explorer_simple()).toBe("简洁");
+      expect(workbenchMessages.workbench_explorer_menu_copy_value()).toBe(
+        "复制值",
+      );
+    },
+  );
+
+  test("uses English shared labels when the native locale has no translation", () => {
+    initI18n({
+      pluginVersion: "2.0.0",
+      ports: makePorts({ language: "fr" }).ports,
+    });
+    expect(workbenchMessages.workbench_tab_match()).toBe("Match");
+    expect(workbenchMessages.workbench_explorer_simple()).toBe("Simple");
   });
 
   test("stays hidden when ZotLit has no pack for the resolved locale", () => {

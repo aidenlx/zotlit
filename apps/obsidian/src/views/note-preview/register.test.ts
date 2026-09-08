@@ -15,15 +15,19 @@ import {
 } from "./register";
 import { NOTE_PREVIEW_VIEW_TYPE } from "./view";
 
-vi.mock("@/views/profile-editor/view", () => ({
-  PROFILE_EDITOR_VIEW_TYPE: "zotlit-profile-editor",
-  ProfileEditorView: class {
-    ensureItem = vi.fn(async () => true);
-    getViewType() {
-      return "zotlit-profile-editor";
-    }
-  },
-}));
+vi.mock("@/views/profile-editor/view", async () => {
+  const { createStore } = await import("zustand/vanilla");
+  return {
+    PROFILE_EDITOR_VIEW_TYPE: "zotlit-profile-editor",
+    ProfileEditorView: class {
+      store = createStore(() => ({ explorer: "simple" }));
+      ensureItem = vi.fn(async () => true);
+      getViewType() {
+        return "zotlit-profile-editor";
+      }
+    },
+  };
+});
 vi.mock("@/views/template-data-explorer/view", () => ({
   EXPLORER_VIEW_TYPE: "zotlit-template-data-explorer",
 }));
@@ -124,6 +128,29 @@ describe("active Profile Editor sidebars", () => {
     await Promise.resolve();
     expect(test.workspace.getRightLeaf).toHaveBeenCalledTimes(2);
     expect(test.leaves).toHaveLength(1);
+    for (const dispose of test.cleanup) dispose();
+  });
+  it("waits until Preview or Simple Explorer needs an Item", async () => {
+    const test = setup();
+    const ensureItem = vi.spyOn(test.editor, "ensureItem");
+    test.memory.set("zotlit.profile-sidebars-opened", true);
+    test.leaves.push({ view: test.editor });
+    test.activate(test.editor);
+    await Promise.resolve();
+    expect(ensureItem).not.toHaveBeenCalled();
+    test.editor.store.setState({ explorer: "all" });
+    test.leaves.push({ view: { getViewType: () => EXPLORER_VIEW_TYPE } });
+    test.callbacks.get("layout-change")?.();
+    await Promise.resolve();
+    expect(ensureItem).not.toHaveBeenCalled();
+    test.editor.store.setState({ explorer: "simple" });
+    expect(ensureItem).toHaveBeenCalledOnce();
+    ensureItem.mockClear();
+    test.editor.store.setState({ explorer: "all" });
+    test.leaves.push({ view: { getViewType: () => NOTE_PREVIEW_VIEW_TYPE } });
+    test.callbacks.get("layout-change")?.();
+    await Promise.resolve();
+    expect(ensureItem).toHaveBeenCalledOnce();
     for (const dispose of test.cleanup) dispose();
   });
 });
