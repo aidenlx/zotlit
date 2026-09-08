@@ -1,4 +1,3 @@
-import { stringifyYaml } from "obsidian";
 import type { TFile } from "obsidian";
 
 import {
@@ -25,7 +24,6 @@ import type { UpdateScope } from "@zotlit/protocol";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import type { Emitter } from "@zotlit/shared/nanoevents";
 import { inlineCitation } from "@zotlit/templates";
-import { stringifyFrontmatterInOrder } from "@zotlit/templates/frontmatter";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
 import {
@@ -33,10 +31,7 @@ import {
   buildAnnotationResolvers,
   renderAnnotations,
 } from "@/lib/annotation-render";
-import {
-  FIELD_CITATION_STYLE,
-  FIELD_LITERATURE_NOTE_PROFILE,
-} from "@/lib/constants";
+import { FIELD_LITERATURE_NOTE_PROFILE } from "@/lib/constants";
 import {
   ensureParentFolder,
   joinFolderPath,
@@ -73,6 +68,7 @@ import type { Settings } from "@/services/settings/schema";
 import { ProfileAnnotationError } from "@/services/template/service";
 import type { ResolvedLiteratureNoteTemplate } from "@/services/template/service";
 
+import { applyComposedFrontmatter, composeLiteratureNote } from "./compose";
 import {
   buildNoteResolvers,
   fetchItemCollections,
@@ -80,12 +76,11 @@ import {
   resolveRenderedNotePath,
 } from "./context";
 import type { NoteFeatureDeps, SyncRenderDeps } from "./context";
-import {
-  applyDocumentManagedFrontmatter,
-  applyManagedFrontmatter,
-  prepareManagedFrontmatter,
+import { prepareManagedFrontmatter } from "./frontmatter";
+import type {
+  ManagedFrontmatterPreparationFailure,
+  PreparedManagedFrontmatter,
 } from "./frontmatter";
-import type { PreparedManagedFrontmatter } from "./frontmatter";
 
 const logger = getLogger("note-feature");
 
@@ -937,32 +932,23 @@ async function writeNewNote(
     groupIdMemo: options.groupIdMemo,
     username: options.username,
   });
-  const prepared = prepareFrontmatter({
-    context,
-    itemKey: item.indexedKey,
-    document: options.document,
-    diagnosticContext: { indexedKey: item.indexedKey },
-  });
-  if ("diagnostic" in prepared) {
-    return { outcome: "refused", diagnostic: prepared.diagnostic };
-  }
-  const body = options.document
-    ? options.document.renderForCreate(context)
-    : ctx.template.render("note", context);
-  const fm: Record<string, unknown> = {};
-  applyFrontmatter(ctx, fm, {
+  const composed = composeLiteratureNote(ctx, {
     context,
     itemKey: item.indexedKey,
     profile: options.profile,
-    prepared,
+    document: options.document,
   });
-  const content = `---\n${
-    prepared.kind === "document"
-      ? stringifyFrontmatterInOrder(fm, prepared.keys)
-      : stringifyYaml(fm)
-  }---\n${body}`;
+  if (composed.outcome === "refused") {
+    return {
+      outcome: "refused",
+      diagnostic: frontmatterRefusal(composed.failures, {
+        itemKey: item.indexedKey,
+        diagnosticContext: { indexedKey: item.indexedKey },
+      }),
+    };
+  }
 
-  const file = await ctx.app.vault.create(path, content);
+  const file = await ctx.app.vault.create(path, composed.content);
   options.onFileCreated?.(file);
   await attachmentImport.flush();
   await noteImport.flush();
@@ -1056,7 +1042,7 @@ function prepareProfileNote(
   if ("failures" in prepared)
     throw new Error(m.managed_frontmatter_refused_recovery());
   const properties: Record<string, unknown> = {};
-  applyFrontmatter(ctx, properties, {
+  applyComposedFrontmatter(ctx, properties, {
     context: note,
     itemKey: note.indexedKey,
     profile,
@@ -1685,7 +1671,7 @@ async function refreshFrontmatter(
   });
   if ("diagnostic" in prepared) return prepared.diagnostic;
   await ctx.app.fileManager.processFrontMatter(file, (fm) => {
-    applyFrontmatter(ctx, fm, { ...input, prepared });
+    applyComposedFrontmatter(ctx, fm, { ...input, prepared });
   });
 }
 
@@ -1704,8 +1690,18 @@ function prepareFrontmatter(input: {
     Temporal.Now.instant(),
   );
   if ("prepared" in result) return result.prepared;
+  return { diagnostic: frontmatterRefusal(result.failures, input) };
+}
 
-  const failures = result.failures.map(({ key: field, reason, error }) => {
+/** Map one Managed Frontmatter refusal to the diagnostic a caller reports. */
+function frontmatterRefusal(
+  failures: readonly ManagedFrontmatterPreparationFailure[],
+  input: {
+    itemKey: string;
+    diagnosticContext: { path?: string; indexedKey?: string };
+  },
+): ManagedFrontmatterRefusalDiagnostic {
+  const mapped = failures.map(({ key: field, reason, error }) => {
     if (reason === "evaluation") {
       logger.warn("Managed Frontmatter field failed", {
         key: field,
@@ -1728,50 +1724,11 @@ function prepareFrontmatter(input: {
     ...ManagedFrontmatterFailureDiagnostic[],
   ];
   return {
-    diagnostic: {
-      code: "managed-frontmatter-refused",
-      hint: m.managed_frontmatter_refused_recovery(),
-      failures,
-      ...input.diagnosticContext,
-    },
+    code: "managed-frontmatter-refused",
+    hint: m.managed_frontmatter_refused_recovery(),
+    failures: mapped,
+    ...input.diagnosticContext,
   };
-}
-
-/** Apply one prepared document patch or the legacy settings-held field set. */
-function applyFrontmatter(
-  ctx: OpsContext,
-  fm: Record<string, unknown>,
-  input: {
-    context: NoteTemplateContext;
-    itemKey: string;
-    profile: ResolvedProfile;
-    prepared: PreparedManagedFrontmatter;
-  },
-): void {
-  const { context, itemKey, profile, prepared } = input;
-  const failed: string[] = [];
-  const onConflict = (key: string, detail: { reason: "shape-mismatch" }) => {
-    logger.warn("Skipped frontmatter append", { key, itemKey, ...detail });
-  };
-  if (prepared.kind === "document") {
-    applyDocumentManagedFrontmatter(fm, context, { prepared, onConflict });
-  } else {
-    applyManagedFrontmatter(fm, context, {
-      compiled: ctx.template.frontmatterFields,
-      onError: (key, error) => {
-        failed.push(key);
-        logger.warn("Frontmatter expression failed", { key, itemKey, error });
-      },
-      onConflict,
-    });
-  }
-  if (failed.length > 0) {
-    ctx.events.emit("frontmatter-eval-failed", { itemKey, fields: failed });
-  }
-  if (profile.stamp === undefined) delete fm[FIELD_LITERATURE_NOTE_PROFILE];
-  else fm[FIELD_LITERATURE_NOTE_PROFILE] = profile.stamp;
-  if (profile.citationStyle == null) delete fm[FIELD_CITATION_STYLE];
-  else fm[FIELD_CITATION_STYLE] = profile.citationStyle;
 }
 
 /** A type guard: when conversion is pending, a non-default selector is a real Profile ID. */
