@@ -1,7 +1,7 @@
-// The reader's wording for what the core reports. The core renders inside a
-// Worker and inside Obsidian, so it names a problem by code and hands over the
-// values that fill it; every code is written here, once for both hosts, so a
-// reader outside English reads their own language.
+// The reader's wording for what the core reports. The core renders in a
+// browser page and inside Obsidian, so it names a problem by code and hands
+// over the values that fill it; every code is written here, once for both
+// hosts, so a reader outside English reads their own language.
 
 import type { WorkbenchProblem } from "#/document/controller";
 import type { RenderDiagnostic } from "#/render/result";
@@ -99,10 +99,6 @@ export function diagnosticText(
       return m.workbench_diagnostic_contract_mismatch({
         found: String(params.found),
         expected: String(params.expected),
-      });
-    case "render-timeout":
-      return m.workbench_diagnostic_render_timeout({
-        deadlineMs: String(params.deadlineMs),
       });
     case "citation-style-error":
       return diagnostic.message ?? citationStyleText(m, params);

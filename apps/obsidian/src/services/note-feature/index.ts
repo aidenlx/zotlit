@@ -1,5 +1,17 @@
 export { type NoteFeatureDeps } from "./context";
 export {
+  applyComposedFrontmatter,
+  composeLiteratureNote,
+  prepareLiteratureNote,
+  type ComposedNote,
+  type ComposeFrontmatterInput,
+  type ComposeNoteDeps,
+  type ComposeNoteInput,
+  type ComposeProfile,
+  type ComposeRefusal,
+  type PreparedComposition,
+} from "./compose";
+export {
   openCompanionNote,
   companionNoteNotice,
   type CompanionNoteDeps,

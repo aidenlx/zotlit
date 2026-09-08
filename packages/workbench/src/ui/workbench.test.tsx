@@ -52,7 +52,8 @@ function sourceView() {
 }
 
 it("keeps one undo history when switching between Basic and Source", () => {
-  render(mount(<Panes />).ui);
+  using mounted = mount(<Panes />);
+  render(mounted.ui);
   fireEvent.click(screen.getByRole("button", { name: m.workbench_advanced() }));
   const source = sourceView();
   act(() =>
@@ -79,7 +80,8 @@ it("opens the format from a collapsed placeholder and preserves the note across 
     "# {{ zt.title }}",
     '# {{ zt.title }}\n\nBefore {% render "annotation" with annotation as zt %} after',
   );
-  const { container } = render(mount(<Panes />, { source }).ui);
+  using mounted = mount(<Panes />, { source });
+  const { container } = render(mounted.ui);
   const placeholders = [
     ...container.querySelectorAll<HTMLElement>("[data-annotation-box]"),
   ];

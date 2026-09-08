@@ -5,15 +5,14 @@ import type { WorkspaceLeaf } from "obsidian";
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
-import { useStore } from "zustand";
 
-import { profileSourceRevision } from "@zotlit/workbench/render";
 import {
   PreviewControls,
   ResultColumn,
   PropertiesResult,
   useWorkbenchStore,
   useDocumentRevision,
+  useRenderState,
 } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -73,10 +72,9 @@ export class NotePreviewView extends ItemView {
 }
 function PreviewContent({ editor }: { editor: ProfileEditorView }) {
   const preview = editor.preview!;
-  const { result, busy } = useStore(preview.state, (state) => state);
+  const { result, busy, stale } = useRenderState();
   const root = useWorkbenchStore((state) => state.root);
   const tab = useWorkbenchStore((state) => state.tab);
-  const mode = useWorkbenchStore((state) => state.preview.mode);
   const advanced = useWorkbenchStore((state) => state.advanced);
   useDocumentRevision(editor.controller);
   const [showMarkdown, setShowMarkdown] = useState(false);
@@ -86,11 +84,13 @@ function PreviewContent({ editor }: { editor: ProfileEditorView }) {
       <PreviewControls
         busy={busy}
         onRun={() =>
-          void editor.ensureItem().then((ready) => {
-            if (ready) void preview.run();
-          })
+          void (async () => {
+            if (!(await editor.ensureItem())) return;
+            // The paper the render reads may still be loading for a new Item.
+            await preview.ready;
+            editor.scheduler.run();
+          })()
         }
-        onStop={() => preview.pause()}
       />
       <PreviewAnnotationSelection session={preview} />
       <ResultColumn
@@ -103,12 +103,7 @@ function PreviewContent({ editor }: { editor: ProfileEditorView }) {
               ? "properties"
               : "note"
         }
-        stale={
-          result !== null &&
-          (result.sourceRevision !==
-            profileSourceRevision(editor.controller.source) ||
-            result.previewMode !== mode)
-        }
+        stale={stale}
         showMarkdown={showMarkdown}
         onShowMarkdown={setShowMarkdown}
         showManaged={showManaged}

@@ -9,8 +9,12 @@ import type {
   WorkbenchSliceRange,
 } from "#/document/controller";
 import type { SuggestionSource } from "#/language/completion";
-import type { RenderedProperty, RenderedRange } from "#/render/result";
-import type { RenderSchedulerOptions } from "#/render/scheduler";
+import type { RenderRequest } from "#/render/request";
+import type {
+  ProfileRenderResult,
+  RenderedProperty,
+  RenderedRange,
+} from "#/render/result";
 import type { Extension } from "@codemirror/state";
 import { createContext, useContext } from "react";
 import type { ComponentType, HTMLAttributes, ReactNode } from "react";
@@ -153,8 +157,8 @@ export interface WorkbenchHost {
   tooltip(text: string): HTMLAttributes<HTMLElement>;
   hoverCard(request: WorkbenchHoverCardRequest): WorkbenchHoverCardHandle;
   notice(text: string): void;
-  /** Renders one request; the tree schedules through `createRenderScheduler`. */
-  render: RenderSchedulerOptions["startWorker"];
+  /** Renders one request; the tree schedules it through the Render Scheduler. */
+  render: (request: RenderRequest) => Promise<ProfileRenderResult>;
   /** The host reading view for a rendered note or annotation. */
   markdown: ComponentType<WorkbenchMarkdownProps>;
   /** Completion and hover presentation, with the editor's mount for window-local overlays. */

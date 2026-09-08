@@ -13,6 +13,7 @@ import type {
   Command,
   Debouncer,
   EditorSuggestContext,
+  FrontMatterInfo,
   EventRef,
   Events,
   HoverParent,
@@ -26,6 +27,10 @@ import type {
   SearchResult,
   UserEvent,
 } from "obsidian";
+import {
+  parse as parseYamlSource,
+  stringify as stringifyYamlSource,
+} from "yaml";
 
 /**
  * Stand-in for Obsidian's simple search: every whitespace-separated term of the
@@ -416,10 +421,26 @@ export function parseLinktext(linktext: string): {
   return { path: linktext.slice(0, hash), subpath: linktext.slice(hash) };
 }
 
-export function stringifyYaml(data: Record<string, unknown>): string {
-  return Object.entries(data)
-    .map(([key, value]) => `${key}: ${String(value)}\n`)
-    .join("");
+export function stringifyYaml(data: unknown): string {
+  return stringifyYamlSource(data);
+}
+
+export function parseYaml(source: string): unknown {
+  return parseYamlSource(source);
+}
+
+/** Stand-in for Obsidian's Properties block scan: a leading `---` fence. */
+export function getFrontMatterInfo(source: string): FrontMatterInfo {
+  const end = source.startsWith("---\n") ? source.indexOf("\n---\n", 4) : -1;
+  return end < 0
+    ? { exists: false, frontmatter: "", from: 0, to: 0, contentStart: 0 }
+    : {
+        exists: true,
+        frontmatter: source.slice(4, end),
+        from: 4,
+        to: end,
+        contentStart: end + 5,
+      };
 }
 
 export abstract class EditorSuggest<T> {

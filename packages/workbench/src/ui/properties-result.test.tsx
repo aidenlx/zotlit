@@ -25,52 +25,49 @@ const result = renderProfile(ROWS_PROFILE, SAMPLE_ITEMS[0]!);
 afterEach(cleanup);
 
 function pane(diagnostics: { position: number; message: string }[] = []) {
-  return render(
-    mount(
-      <PropertiesPane
-        controller={controller}
-        entries={controller.managedEntries!}
-        properties={result.properties}
-        fold={result.fold}
-        diagnostics={diagnostics}
-        selected={null}
-        onSelect={() => {}}
-      />,
-    ).ui,
-  ).container;
+  const mounted = mount(
+    <PropertiesPane
+      controller={controller}
+      entries={controller.managedEntries!}
+      properties={result.properties}
+      fold={result.fold}
+      diagnostics={diagnostics}
+      selected={null}
+      onSelect={() => {}}
+    />,
+  );
+  return Object.assign(mounted, { container: render(mounted.ui).container });
 }
 
 function output(showMarkdown = false) {
-  return render(
-    mount(
-      <PropertiesResult
-        entries={controller.managedEntries!}
-        properties={result.properties}
-        fold={result.fold}
-        frontmatterBlock={result.frontmatterBlock}
-        showMarkdown={showMarkdown}
-      />,
-    ).ui,
-  ).container;
+  const mounted = mount(
+    <PropertiesResult
+      entries={controller.managedEntries!}
+      properties={result.properties}
+      fold={result.fold}
+      frontmatterBlock={result.frontmatterBlock}
+      showMarkdown={showMarkdown}
+    />,
+  );
+  return Object.assign(mounted, { container: render(mounted.ui).container });
 }
 
 describe("the Properties rows", () => {
   it("shows a static entry's own value beside its name", () => {
-    expect(pane().textContent).toContain(
+    using mounted = pane();
+    expect(mounted.container.textContent).toContain(
       "titleWhy Most Published Research Findings Are False",
     );
   });
   it("counts a spread's produced fields and names them in fold order", () => {
-    expect(pane().textContent).toContain(
+    using mounted = pane();
+    expect(mounted.container.textContent).toContain(
       m.workbench_properties_produced({ count: 2, names: "title, kind" }),
     );
   });
   it("marks only the row a diagnostic names", () => {
-    const rows = [
-      ...pane([{ position: 5, message: "The rule stopped." }]).querySelectorAll(
-        '[data-part="row"]',
-      ),
-    ];
+    using mounted = pane([{ position: 5, message: "The rule stopped." }]);
+    const rows = [...mounted.container.querySelectorAll('[data-part="row"]')];
     expect(
       rows.filter((row) =>
         row.textContent.includes(m.workbench_properties_row_problem()),
@@ -79,7 +76,8 @@ describe("the Properties rows", () => {
     expect(rows[4]?.textContent).toContain(m.workbench_properties_spread());
   });
   it("leaves every row unmarked while nothing names one", () => {
-    expect(pane().textContent).not.toContain(
+    using mounted = pane();
+    expect(mounted.container.textContent).not.toContain(
       m.workbench_properties_row_problem(),
     );
   });
@@ -87,21 +85,24 @@ describe("the Properties rows", () => {
 
 describe("the Properties result column", () => {
   it("groups every produced field under the entry that produced it", () => {
+    using mounted = output();
     expect(
-      [...output().querySelectorAll("details dt")].map(
+      [...mounted.container.querySelectorAll("details dt")].map(
         (term) => term.textContent,
       ),
     ).toEqual(["title", "related", "collections", "citekey", "kind", "title"]);
   });
   it("lists the frontmatter the note gets in fold order", () => {
+    using mounted = output();
     expect(
-      [...output().querySelectorAll("section dt")].map(
+      [...mounted.container.querySelectorAll("section dt")].map(
         (term) => term.textContent,
       ),
     ).toEqual(["title", "related", "collections", "citekey", "kind"]);
   });
   it("hands over the generated YAML when Markdown is asked for", () => {
-    const raw = output(true).textContent;
+    using mounted = output(true);
+    const raw = mounted.container.textContent;
     expect(raw).toBe(result.frontmatterBlock);
     expect(raw).toContain("title:");
     expect(raw).not.toContain(m.workbench_result_fold());

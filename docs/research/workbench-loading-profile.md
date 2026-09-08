@@ -1,5 +1,9 @@
 # Template Workbench loading profile
 
+> Record of the state before 2026-09-08: the render Worker and its
+> `workerHotUpdate` Vite plugin are since removed, and a render runs on the
+> calling thread. The measurements and findings below stand as they were taken.
+
 How long the web Template Workbench at `/workbench` takes to become usable,
 what the time is spent on, and what changed it. The numbers are from one
 machine, localhost, so they compare against each other rather than against a
