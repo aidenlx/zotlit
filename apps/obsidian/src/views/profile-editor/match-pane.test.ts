@@ -8,10 +8,13 @@ import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import type { MatchItemFacts } from "@zotlit/workbench/match";
 import {
   createWorkbenchStore,
+  DataExplorer,
+  MatchPane,
   WorkbenchEditorProvider,
   WorkbenchHostProvider,
 } from "@zotlit/workbench/ui";
 
+import { initI18n } from "@/lib/i18n";
 import type { DatabaseService } from "@/services/database/service";
 
 import { createProfileEditorHost } from "./host";
@@ -120,4 +123,64 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
   await vi.waitFor(() => expect(tags).toHaveBeenCalledTimes(2));
   expect(loadMatchFacts).toHaveBeenCalledTimes(2);
   expect(render).not.toHaveBeenCalled();
+});
+
+it("renders shared Match and Explorer controls in Chinese through the native host", async () => {
+  const ports = {
+    getLanguage: () => "zh",
+    loadLocalStorage: () => null,
+    saveLocalStorage: () => {},
+    requestUrl: async () => ({ status: 404, text: "" }),
+  };
+  initI18n({ pluginVersion: "2.0.0", ports });
+  using stack = new DisposableStack();
+  stack.defer(() =>
+    initI18n({
+      pluginVersion: "2.0.0",
+      ports: { ...ports, getLanguage: () => "en" },
+    }),
+  );
+  const controller = new WorkbenchDocumentController(
+    `---\nid: Bk3Qn7XvT2Lp\nname: Books\nversion: 1.0.0\ncontract: 2\nfilename: '{{ zt.title }}'\n---\nBody\n--- zotlit:annotation ---\nAnnotation`,
+  );
+  const store = createWorkbenchStore();
+  using host = createProfileEditorHost(
+    ports as unknown as Parameters<typeof createProfileEditorHost>[0],
+    {
+      render: () => ({ terminate() {} }),
+      matchData: {
+        tags: async () => [],
+        collections: async () => [],
+        libraries: async () => [],
+      },
+      insertTarget: () => null,
+    },
+  );
+  const el = document.body.createDiv();
+  const root = createRoot(el);
+  stack.defer(() => {
+    void act(() => root.unmount());
+  });
+  await act(async () => {
+    root.render(
+      createElement(
+        WorkbenchHostProvider,
+        { host },
+        createElement(
+          WorkbenchEditorProvider,
+          { store, controller },
+          createElement(MatchPane, { controller, facts: null }),
+          createElement(DataExplorer, {
+            root: "note",
+            data: { title: "A paper" },
+            copy: async () => {},
+          }),
+        ),
+      ),
+    );
+  });
+  expect(el.textContent).toContain("满足以下全部条件");
+  expect(el.querySelector('[aria-label="字段视图"]')?.textContent).toBe(
+    "简洁所有字段",
+  );
 });

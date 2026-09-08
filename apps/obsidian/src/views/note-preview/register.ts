@@ -46,6 +46,7 @@ export function registerNotePreview(plugin: Plugin): void {
     (leaf) => new NotePreviewView(leaf, plugin.manifest.id),
   );
   let opening = false;
+  let unsubscribeEditor: (() => void) | undefined;
   async function firstOpen() {
     if (
       opening ||
@@ -65,6 +66,16 @@ export function registerNotePreview(plugin: Plugin): void {
       opening = false;
     }
   }
+  function ensureSidebarItem(editor: ProfileEditorView) {
+    const needsItem =
+      app.workspace.getLeavesOfType(NOTE_PREVIEW_VIEW_TYPE).length > 0 ||
+      (app.workspace.getLeavesOfType(EXPLORER_VIEW_TYPE).length > 0 &&
+        editor.store.getState().explorer === "simple");
+    if (needsItem)
+      void editor.ensureItem().catch((error: unknown) => {
+        logger.warn("Profile preview item could not load", { error });
+      });
+  }
   function refresh() {
     const leaf = app.workspace.activeLeaf;
     const open = app.workspace.getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE);
@@ -79,22 +90,28 @@ export function registerNotePreview(plugin: Plugin): void {
           ? value.editor
           : null;
     if (editor !== value.editor) {
+      unsubscribeEditor?.();
       value.editor = editor;
+      unsubscribeEditor = editor?.store.subscribe((state, previous) => {
+        if (state.explorer !== previous.explorer) ensureSidebarItem(editor);
+      });
       for (const listener of value.listeners) listener(editor);
     }
     if (editor) {
-      void firstOpen().catch((error: unknown) => {
-        logger.warn("Profile sidebars could not open", { error });
-      });
-      void editor.ensureItem().catch((error: unknown) => {
-        logger.warn("Profile preview item could not load", { error });
-      });
+      void firstOpen()
+        .then(() => {
+          if (value.editor === editor) ensureSidebarItem(editor);
+        })
+        .catch((error: unknown) => {
+          logger.warn("Profile sidebars could not open", { error });
+        });
     }
   }
   plugin.registerEvent(app.workspace.on("active-leaf-change", refresh));
   plugin.registerEvent(app.workspace.on("layout-change", refresh));
   app.workspace.onLayoutReady(refresh);
   plugin.register(() => {
+    unsubscribeEditor?.();
     value.editor = null;
     for (const listener of value.listeners) listener(null);
     sessions.delete(app);

@@ -7,6 +7,7 @@ export { MatchPane } from "./match";
 // the store `WorkbenchEditorProvider` carries beside the document controller.
 
 export { m } from "./paraglide/messages.js";
+export { setWorkbenchLocale } from "./locale";
 
 export { EditToolbar } from "./edit-toolbar";
 export { StartHere } from "./start-here";

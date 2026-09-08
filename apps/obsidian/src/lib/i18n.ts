@@ -5,6 +5,7 @@ import type {
   LanguagePackLifecyclePorts,
   PackSource,
 } from "@zotlit/obsidian-i18n";
+import { setWorkbenchLocale } from "@zotlit/workbench/ui";
 
 import { RELEASE_ORIGIN, resourceReleaseUrl } from "./constants.js";
 import { catalog } from "./i18n/generated/catalog.js";
@@ -39,7 +40,7 @@ type InitI18nOptions = {
 };
 
 export function initI18n({ pluginVersion, ports }: InitI18nOptions) {
-  return createLanguagePackLifecycle({
+  const lifecycle = createLanguagePackLifecycle({
     runtime,
     pluginVersion,
     namespace: "zotlit",
@@ -49,4 +50,6 @@ export function initI18n({ pluginVersion, ports }: InitI18nOptions) {
     ports,
     logger,
   });
+  setWorkbenchLocale(lifecycle.locale);
+  return lifecycle;
 }

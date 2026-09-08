@@ -52,7 +52,15 @@ Use the web Template Workbench to change a literature note's filename, propertie
 
 The web editor supports Liquid templates. A template that requires Eta or JavaScript opens in Obsidian with a notice.
 
-<UiLabel name={m.settings_template_customize()} /> remains available while web access is off. The web choice asks for approval before enabling access. Select <UiLabel name={m.modal_workbench_launch_remember()} /> to save your choice for this vault on this device. Change it at <SettingsPath page={m.settings_page_advanced()} setting={m.profile_editor_preference_name()} />.
+<UiLabel name={m.settings_template_customize()} /> remains available while web
+access is off. The web choice asks for approval before enabling access. Select
+<UiLabel name={m.modal_workbench_launch_remember()} /> to save your choice for
+this vault on this device. Change it at
+<SettingsPath
+  page={m.settings_page_advanced()}
+  setting={m.profile_editor_preference_name()}
+/>
+.
 
 ## Edit the document in Obsidian
 
