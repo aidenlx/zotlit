@@ -2,10 +2,13 @@
 import { parseYaml, stringifyYaml, getFrontMatterInfo } from "obsidian";
 
 import { withAnnotationCitation } from "@zotlit/db";
-import type { AnnotationTemplateContext } from "@zotlit/db";
+import type {
+  AnnotationTemplateContext,
+  NoteTemplateContext,
+} from "@zotlit/db";
 import { replaceSuffixMarkers } from "@zotlit/templates";
-import { evalManagedFrontmatterEntries } from "@zotlit/templates/frontmatter";
 import { FRONTMATTER_ABSENT } from "@zotlit/templates/frontmatter-merge";
+import type { FrontmatterMergeConflictHandler } from "@zotlit/templates/frontmatter-merge";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 import { restoreTemplateData } from "@zotlit/workbench/render";
 import {
@@ -20,20 +23,19 @@ import type {
 } from "@zotlit/workbench/render";
 
 import { annotationCitation as renderAnnotationCitation } from "@/lib/annotation-render";
-import {
-  FIELD_CITATION_STYLE,
-  FIELD_DOCUMENT_LANGUAGE,
-  FIELD_LITERATURE_NOTE_PROFILE,
-  FIELD_ZOTERO_KEY,
-} from "@/lib/constants";
+import { FIELD_DOCUMENT_LANGUAGE } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
-import { formatProfileStamp } from "@/lib/profile-stamp";
+import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
+import type { ProfileId } from "@/lib/profile-stamp";
 import type { DatabaseService } from "@/services/database/service";
 import {
-  applyDocumentManagedFrontmatter,
-  applyManagedFrontmatter,
-} from "@/services/note-feature/frontmatter";
+  applyComposedFrontmatter,
+  composeLiteratureNote,
+  prepareLiteratureNote,
+} from "@/services/note-feature";
+import { bindProfile } from "@/services/profile/bindings";
+import { seedProfileEntry } from "@/services/profile/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import { findExistingLitNote } from "@/services/template/inert-resolver-host";
@@ -94,27 +96,25 @@ export async function renderNativeProfile(
       request.source,
     );
     const settings = await deps.settings.loaded;
-    const defaults = settings["note.default-profile"].bindings;
-    const manifestBindings = document.manifest;
-    const bindings = {
-      "note.literature-folder":
-        manifestBindings.folder ?? defaults["note.literature-folder"],
-      "citation.references-style":
-        manifestBindings.citationStyle === undefined
-          ? defaults["citation.references-style"]
-          : manifestBindings.citationStyle,
-      "note.import-folder":
-        manifestBindings.importFolder ?? defaults["note.import-folder"],
-      "note.import-colored-highlights":
-        manifestBindings.importColoredHighlights ??
-        defaults["note.import-colored-highlights"],
-      "note.import-annotations-as-template":
-        manifestBindings.importAnnotationsAsTemplate ??
-        defaults["note.import-annotations-as-template"],
-    };
+    const manifest = document.manifest;
+    // The draft resolves exactly as the registry resolves a saved Profile:
+    // one entry seeded from the manifest, bound by the shared resolver. The
+    // preview reads neither the entry's match nor its document reference, so
+    // the draft supplies no Library scope and no path.
+    const profile =
+      manifest.id === DEFAULT_PROFILE
+        ? bindProfile(settings, { selector: DEFAULT_PROFILE })
+        : bindProfile(settings, {
+            selector: manifest.id as ProfileId,
+            entry: seedProfileEntry(manifest, {
+              document: "",
+              path: "",
+              libraries: [],
+            }),
+          });
     const dataDeps = {
       ...deps,
-      settings: { loaded: Promise.resolve({ ...settings, ...bindings }) },
+      settings: { loaded: Promise.resolve(profile.settings) },
     };
     const indexedKey = request.snapshot.item.indexedKey;
     const [note, filename] = await Promise.all([
@@ -123,32 +123,34 @@ export async function renderNativeProfile(
     ]);
     if (note.kind !== "data" || filename.kind !== "data")
       throw new Error("The selected Zotero item is unavailable.");
-    const context = note.data as Parameters<
-      typeof applyDocumentManagedFrontmatter
-    >[1];
+    const context = note.data as NoteTemplateContext;
+    const composeDeps = { template: deps.templates };
     const diagnostics: RenderDiagnostic[] = [];
-    const created = document.renderForCreate(context);
-    const managed = document.renderForUpdate(context);
-    const existing = findExistingLitNote(deps.noteIndex, { indexedKey });
-    sourcePath = existing?.path ?? "";
-    const file = sourcePath ? deps.app.vault.getFileByPath(sourcePath) : null;
-    const original =
-      request.mode === "update" && file
-        ? await deps.app.vault.read(file)
-        : null;
-    const { body, frontmatter } = previewBaseline(
-      original,
-      created,
-      request.mode === "update" ? managed : null,
-    );
+    const onConflict: FrontmatterMergeConflictHandler = (key, detail) =>
+      diagnostics.push({
+        code: "property-append-conflict",
+        part: "properties",
+        position: detail.position,
+        params: { key },
+      });
+    // Update mode keeps the real note's own Properties, so it stops at the
+    // preparation and the body; only create mode composes a Properties block.
+    const composed =
+      request.mode === "update"
+        ? prepareLiteratureNote(composeDeps, { context, document })
+        : composeLiteratureNote(composeDeps, {
+            context,
+            itemKey: indexedKey,
+            profile,
+            document,
+            onConflict,
+          });
+    // A write refuses on a failing field; the preview keeps going and shows
+    // the field with its position, reading the view the refusal carries.
+    const { prepared } = composed;
     const properties: ProfileRenderResult["properties"][number][] = [];
-    if (document.frontmatter) {
-      const evaluation = evalManagedFrontmatterEntries(
-        document.frontmatter.compiled,
-        context,
-        Temporal.Now.instant(),
-      );
-      for (const field of evaluation.values) {
+    if (prepared.kind === "document")
+      for (const field of prepared.fields) {
         const missing =
           field.value === undefined || field.value === FRONTMATTER_ABSENT;
         properties.push({
@@ -158,7 +160,8 @@ export async function renderNativeProfile(
           ...(missing ? {} : { value: field.value }),
         });
       }
-      for (const error of evaluation.errors)
+    if (composed.outcome === "refused")
+      for (const error of composed.evaluation.errors)
         diagnostics.push({
           code: "property-error",
           part: "properties",
@@ -166,45 +169,49 @@ export async function renderNativeProfile(
           params: { key: error.key },
           message: errorText(error.error),
         });
-      document.manifest.frontmatter?.forEach((entry, index) => {
-        if ("js" in entry && !deps.templates.javascriptTemplatesEnabled)
-          diagnostics.push({
-            code: "render-error",
-            message: m.profile_preview_javascript_disabled(),
-            part: "properties",
-            position: index + 1,
-          });
+    manifest.frontmatter?.forEach((entry, index) => {
+      if ("js" in entry && !deps.templates.javascriptTemplatesEnabled)
+        diagnostics.push({
+          code: "render-error",
+          message: m.profile_preview_javascript_disabled(),
+          part: "properties",
+          position: index + 1,
+        });
+    });
+    const created =
+      composed.outcome === "composed"
+        ? composed.body
+        : document.renderForCreate(context);
+    const managed = document.renderForUpdate(context);
+    const existing = findExistingLitNote(deps.noteIndex, { indexedKey });
+    sourcePath = existing?.path ?? "";
+    const file = sourcePath ? deps.app.vault.getFileByPath(sourcePath) : null;
+    const original =
+      request.mode === "update" && file
+        ? await deps.app.vault.read(file)
+        : null;
+    let frontmatter: Record<string, unknown>;
+    let body: string;
+    let frontmatterBlock: string;
+    if (composed.outcome === "composed") {
+      ({ frontmatter, body, frontmatterBlock } = composed);
+    } else {
+      // Update refreshes the real note's own Properties through the stamping
+      // step and refills its Managed Region, entirely in memory.
+      ({ frontmatter, body } = previewBaseline(
+        original,
+        created,
+        request.mode === "update" ? managed : null,
+      ));
+      applyComposedFrontmatter(composeDeps, frontmatter, {
+        context,
+        itemKey: indexedKey,
+        profile,
+        prepared,
+        onConflict,
       });
-      applyDocumentManagedFrontmatter(frontmatter, context, {
-        prepared: {
-          kind: "document",
-          fields: evaluation.values,
-          keys: evaluation.keys,
-        },
-        onConflict: (key, detail) =>
-          diagnostics.push({
-            code: "property-append-conflict",
-            part: "properties",
-            position: detail.position,
-            params: { key },
-          }),
-      });
-    } else
-      applyManagedFrontmatter(frontmatter, context, {
-        compiled: deps.templates.frontmatterFields,
-      });
-    frontmatter[FIELD_ZOTERO_KEY] = indexedKey;
-    const manifest = document.manifest;
-    if (manifest.id === "default")
-      delete frontmatter[FIELD_LITERATURE_NOTE_PROFILE];
-    else
-      frontmatter[FIELD_LITERATURE_NOTE_PROFILE] = formatProfileStamp({
-        id: manifest.id,
-        label: manifest.name ?? "",
-      });
-    const style = manifest.citationStyle;
-    if (style == null) delete frontmatter[FIELD_CITATION_STYLE];
-    else frontmatter[FIELD_CITATION_STYLE] = style;
+      frontmatterBlock = stringifyYaml(frontmatter);
+    }
     let annotation: string | null = null;
     let annotationCitation: string | null = null;
     if (request.annotation) {
@@ -275,7 +282,7 @@ export async function renderNativeProfile(
         declaredLanguage === undefined
           ? deps.bibliographyRender.vaultPresentation.locale
           : locale,
-      styleId: bindings["citation.references-style"],
+      styleId: profile.bindings["citation.references-style"],
       wikilinks: settings["citation.wikilink-citations"],
     };
     const noteCitations = invalidLanguage
@@ -307,7 +314,7 @@ export async function renderNativeProfile(
         missing: false,
         position: properties.find((entry) => entry.key === key)?.position ?? 0,
       })),
-      frontmatterBlock: stringifyYaml(frontmatter),
+      frontmatterBlock,
       creationBody: body,
       managedRegion: managed,
       annotation,

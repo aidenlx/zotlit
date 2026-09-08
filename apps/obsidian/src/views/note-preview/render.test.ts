@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
-import type { FrontMatterInfo } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
-import { parse, stringify } from "yaml";
+import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import { annotationSamples } from "@zotlit/workbench/ui";
@@ -13,24 +12,6 @@ import {
 } from "./__fixtures__/render";
 import { presentCitations } from "./markdown";
 import { renderNativeProfile, previewBaseline } from "./render";
-
-vi.mock("obsidian", async (original) => ({
-  ...(await original<typeof import("obsidian")>()),
-  parseYaml: parse,
-  stringifyYaml: stringify,
-  getFrontMatterInfo: (source: string): FrontMatterInfo => {
-    const end = source.startsWith("---\n") ? source.indexOf("\n---\n", 4) : -1;
-    return end < 0
-      ? { exists: false, frontmatter: "", from: 0, to: 0, contentStart: 0 }
-      : {
-          exists: true,
-          frontmatter: source.slice(4, end),
-          from: 4,
-          to: end,
-          contentStart: end + 5,
-        };
-  },
-}));
 
 describe("native Profile rendering", () => {
   it("renders real TemplateService data with inert links and preserves the source files", async () => {
