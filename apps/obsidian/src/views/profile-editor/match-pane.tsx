@@ -3,12 +3,33 @@ import { useEffect, useState } from "react";
 
 import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import type { MatchItemFacts } from "@zotlit/workbench/match";
-import { MatchPane, useWorkbenchStore } from "@zotlit/workbench/ui";
+import {
+  MatchPane,
+  WorkbenchThemeProvider,
+  useWorkbenchStore,
+} from "@zotlit/workbench/ui";
+import type { WorkbenchIcon } from "@zotlit/workbench/ui";
 
+import { Icon } from "@/components/obsidian/icon";
 import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
 
 import { loadMatchFacts } from "./match-data";
+import { profileEditorTheme } from "./theme";
+
+const matchTheme = {
+  ...profileEditorTheme,
+  icon: (name: WorkbenchIcon) =>
+    name === "remove" ? <Icon name="x" /> : profileEditorTheme.icon?.(name),
+  classes: {
+    ...profileEditorTheme.classes,
+    select: {
+      wrapper: "zt:min-w-0 zt:max-w-full",
+      select: "dropdown zt:max-w-full",
+      icon: "zt:hidden",
+    },
+  },
+};
 
 const logger = getLogger(["views", "profile-editor", "match"]);
 
@@ -69,10 +90,12 @@ export function NativeMatchPane({
     };
   }, [db, item]);
   return (
-    <MatchPane
-      controller={controller}
-      vocabularyRevision={vocabularyRevision}
-      facts={selected?.id === item?.id ? (selected?.facts ?? null) : null}
-    />
+    <WorkbenchThemeProvider theme={matchTheme}>
+      <MatchPane
+        controller={controller}
+        vocabularyRevision={vocabularyRevision}
+        facts={selected?.id === item?.id ? (selected?.facts ?? null) : null}
+      />
+    </WorkbenchThemeProvider>
   );
 }

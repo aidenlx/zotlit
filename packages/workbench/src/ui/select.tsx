@@ -3,14 +3,22 @@ import type { ComponentProps } from "react";
 
 import { useIcon, useParts } from "./theme";
 
-export function WorkbenchSelect(
-  props: Omit<ComponentProps<"select">, "className" | "style" | "size">,
-) {
+export function WorkbenchSelect({
+  className,
+  ...props
+}: Omit<ComponentProps<"select">, "style" | "size">) {
   const part = useParts("select");
   const icon = useIcon();
   return (
     <div {...part("wrapper")}>
-      <select {...part("select")} {...props} />
+      <select
+        {...part("select")}
+        {...props}
+        className={
+          [part("select").className, className].filter(Boolean).join(" ") ||
+          undefined
+        }
+      />
       <span aria-hidden {...part("icon")}>
         {icon("chevron-down")}
       </span>

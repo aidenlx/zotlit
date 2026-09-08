@@ -46,31 +46,50 @@ export const profileEditorTheme: WorkbenchTheme = {
   ],
   classes: {
     match: {
-      button: "zt:inline-flex zt:items-center zt:gap-1.5",
+      button: cn(
+        "zt:inline-flex zt:items-center zt:gap-1.5 zt:text-muted-foreground",
+        "zt:[--input-shadow:none] zt:[--interactive-hover:var(--background-modifier-hover)] zt:[--interactive-normal:transparent]",
+      ),
       "icon-button": "clickable-icon zt:shrink-0",
-      input: "zt:min-w-0 zt:flex-1",
-      "chip-input": "zt:min-w-12 zt:flex-1 zt:w-12",
+      input: "zt:min-w-0 zt:w-full zt:flex-1",
+      "chip-input":
+        "zt:[field-sizing:content] zt:w-auto zt:max-w-full zt:min-w-[2ch] zt:flex-none zt:self-center zt:[--background-modifier-form-field:transparent] zt:[--input-height:auto] zt:[--input-padding:0px]",
       "chip-value": "zt:min-w-0 zt:[overflow-wrap:anywhere]",
-      hint: "zt:text-xs zt:text-muted-foreground",
-
-      pane: "zt:flex zt:min-w-0 zt:flex-col zt:gap-3",
-      fieldset: "zt:min-w-0 zt:border-0 zt:p-0",
+      hint: "zt:text-xs zt:leading-normal zt:text-pretty zt:text-muted-foreground",
+      pane: cn(
+        "zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:text-sm",
+        "zt:[--icon-size:var(--icon-s)] zt:[--icon-stroke:var(--icon-s-stroke-width)]",
+        "zt:[&>p]:text-xs zt:[&>p]:leading-normal zt:[&>p]:text-pretty zt:[&>p]:text-muted-foreground",
+      ),
+      fieldset:
+        "zt:flex zt:min-w-0 zt:flex-col zt:items-start zt:gap-4 zt:border-0 zt:p-0",
       group:
-        "zt:flex zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-2 zt:rounded-md zt:border zt:border-border zt:p-2 zt:data-[state=root]:border-0 zt:data-[state=root]:p-0",
-      rows: "zt:flex zt:flex-col zt:gap-2 zt:list-none zt:m-0 zt:p-0",
-      row: "zt:flex zt:min-w-0 zt:items-start zt:gap-2",
-      condition: "zt:min-w-0 zt:flex-1",
-      statement: "zt:flex zt:flex-wrap zt:min-w-0 zt:items-start zt:gap-1",
-      actions: "zt:flex zt:flex-wrap zt:items-center zt:gap-1",
-      control: "zt:min-w-0 zt:max-w-full",
+        "zt:flex zt:min-w-0 zt:w-full zt:flex-1 zt:flex-col zt:gap-1.5 zt:data-[state=nested]:rounded-md zt:data-[state=nested]:border zt:data-[state=nested]:border-border zt:data-[state=nested]:bg-card zt:data-[state=nested]:p-1.5 zt:[&>[data-part=actions]:first-child]:justify-between zt:[&>[data-part=actions]:first-child]:[--input-shadow:none] zt:[&>[data-part=actions]:first-child]:[--dropdown-background:transparent] zt:[&>[data-part=actions]:first-child]:[--dropdown-background-hover:var(--background-modifier-hover)] zt:[&>[data-part=actions]:last-child]:pt-1",
+      rows: "zt:flex zt:flex-col zt:gap-1.5 zt:list-none zt:m-0 zt:p-0",
+      row: "zt:grid zt:min-w-0 zt:grid-cols-[2.25rem_minmax(0,1fr)] zt:items-center zt:gap-x-2 zt:[&>[data-part=group]]:col-start-2",
+      condition: "zt:col-start-2 zt:min-w-0",
+      statement: cn(
+        "zt:grid zt:min-w-0 zt:grid-cols-[auto_auto_minmax(0,1fr)_auto] zt:items-start zt:overflow-hidden zt:rounded-md zt:bg-input zt:ring-1 zt:ring-border-hover zt:focus-within:ring-2 zt:focus-within:ring-border-focus",
+        "zt:[--dropdown-background-hover:var(--background-modifier-form-field-hover)] zt:[--dropdown-background:var(--background-modifier-form-field)] zt:[--input-border-width-focus:0px] zt:[--input-border-width:0px] zt:[--input-radius:0px] zt:[--input-shadow:none]",
+        "zt:[&_[data-part=wrapper]>select]:w-full zt:[&>[data-part=wrapper]]:border-border zt:[&>[data-part=wrapper]:nth-child(2)]:border-s",
+        "zt:[&>[data-part=actions]]:col-start-4 zt:[&>[data-part=actions]]:row-start-1 zt:[&>[data-part=actions]]:h-(--input-height) zt:[&>[data-part=actions]]:flex-nowrap zt:[&>[data-part=actions]]:gap-0 zt:[&>[data-part=actions]]:border-s zt:[&>[data-part=actions]]:border-border zt:[&>[data-part=actions]]:px-0.5",
+        "zt:@container zt:[&:has([aria-invalid=true])]:ring-(--background-modifier-error)",
+        "zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:col-span-4 zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:row-start-2 zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-s-0 zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-t zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-border",
+        "zt:@xl:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:col-span-1 zt:@xl:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:col-start-3 zt:@xl:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:row-start-1 zt:@xl:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-s zt:@xl:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-t-0",
+      ),
+      actions: "zt:flex zt:flex-wrap zt:items-center zt:gap-1.5",
+      control:
+        "zt:min-w-0 zt:max-w-full zt:[div&]:flex zt:[div&]:flex-col zt:[span&]:px-2 zt:[span&]:pb-1 zt:[span&]:text-xs zt:[span&]:leading-normal zt:[span&]:text-muted-foreground",
       chips:
-        "zt:flex zt:flex-1 zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-1",
-      chip: "zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:rounded-sm zt:border zt:border-border zt:px-1",
+        "zt:col-span-4 zt:row-start-2 zt:flex zt:min-h-(--input-height) zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-1 zt:border-t zt:border-border zt:px-1.5 zt:py-1 zt:@xl:col-span-1 zt:@xl:col-start-3 zt:@xl:row-start-1 zt:@xl:border-s zt:@xl:border-t-0 zt:[&>div:last-of-type]:max-w-[calc(100%_-_2ch_-_0.25rem)]",
+      chip: "zt:inline-flex zt:max-w-full zt:items-center zt:gap-0.5 zt:self-start zt:rounded-sm zt:bg-muted zt:py-0.5 zt:ps-1.5 zt:text-sm zt:leading-tight zt:[&>[data-part=icon-button]]:size-7 zt:[&_[data-part=icon-button]>svg]:shrink-0",
       expression:
-        "zt:min-w-0 zt:flex-1 zt:font-mono zt:[field-sizing:content] zt:resize-y",
-      conjunction: "zt:text-xs",
-      result: "zt:text-sm",
-      error: "zt:text-xs",
+        "zt:col-span-3 zt:min-w-0 zt:w-full zt:font-mono zt:text-sm zt:leading-normal zt:[field-sizing:content] zt:resize-y",
+      conjunction:
+        "zt:col-start-1 zt:row-start-1 zt:text-end zt:text-sm zt:text-muted-foreground",
+      result: "zt:text-xs zt:leading-normal zt:text-muted-foreground",
+      error:
+        "zt:pt-1 zt:text-xs zt:leading-normal zt:text-pretty zt:text-(--text-error)",
     },
     dataExplorer: {
       hint: "setting-item-description",
