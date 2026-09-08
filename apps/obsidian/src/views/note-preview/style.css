@@ -1,0 +1,10 @@
+/* Obsidian's unlayered heading rules outrank utility layers. Keep preview
+   chrome in the interface type scale while Markdown uses the note theme. */
+.zt-note-preview-heading {
+  margin: 0;
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-small);
+  font-weight: var(--font-semibold);
+  line-height: var(--line-height-normal);
+  color: var(--text-normal);
+}
