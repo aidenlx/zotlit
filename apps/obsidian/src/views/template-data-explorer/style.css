@@ -1,3 +1,5 @@
+@reference "../../zt-main.css";
+
 /* Let the React tree own the full pane: strip Obsidian's default content
    padding and make the leaf a flex column so the toolbar spans edge-to-edge
    and the tree scrolls beneath it. Scoped to this view's own leaf type. */
@@ -8,4 +10,23 @@
   height: 100%;
   overflow: hidden;
   padding: 0;
+}
+
+/* Obsidian's unlayered heading and clickable-icon rules outrank utilities.
+   Keep these native overrides unlayered and local to the explorer. */
+.zt-template-data-explorer [data-part="heading"] {
+  @apply zt:m-0 zt:font-sans zt:text-sm zt:leading-tight zt:font-semibold;
+}
+
+.zt-template-data-explorer [data-part="variant"][aria-pressed="true"] {
+  @apply zt:bg-background zt:text-foreground zt:shadow-sm;
+}
+
+.zt-template-data-explorer [data-part="group"] {
+  @apply zt:list-none;
+}
+
+/* Center the glyph on the first text line while preserving native inline padding. */
+.zt-template-data-explorer [data-part="chevron"] {
+  @apply zt:h-[1lh] zt:py-0;
 }

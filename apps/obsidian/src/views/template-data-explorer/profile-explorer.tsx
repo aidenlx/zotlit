@@ -14,6 +14,8 @@ import {
   useWorkbenchStore,
 } from "@zotlit/workbench/ui";
 
+import { Icon } from "@/components/obsidian/icon";
+import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { tooltipAttrs } from "@/lib/utils";
@@ -126,15 +128,23 @@ export function ProfileExplorer({
   };
   return (
     <div className="zt:flex zt:h-full zt:min-h-0 zt:flex-col">
-      <button
-        className="zt:m-2 zt:min-w-0"
-        {...tooltipAttrs(item?.title ?? m.profile_editor_choose_paper())}
-        onClick={() => void editor.chooseItem()}
-      >
-        <span className="zt:min-w-0 zt:truncate">
+      <div className="zt:flex zt:shrink-0 zt:items-center zt:gap-2 zt:border-b zt:border-border zt:px-3 zt:py-2">
+        <Icon
+          name="file-text"
+          className="zt:shrink-0 zt:text-muted-foreground"
+        />
+        <span
+          className="zt:line-clamp-2 zt:min-w-0 zt:flex-1 zt:text-sm zt:leading-normal"
+          {...tooltipAttrs(item?.title ?? m.profile_editor_choose_paper())}
+        >
           {item?.title ?? m.profile_editor_choose_paper()}
         </span>
-      </button>
+        <IconButton
+          icon="arrow-left-right"
+          {...tooltipAttrs(m.profile_editor_choose_paper())}
+          onClick={() => void editor.chooseItem()}
+        />
+      </div>
       <DataExplorer
         root={root}
         data={data}

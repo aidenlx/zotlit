@@ -92,55 +92,62 @@ export const profileEditorTheme: WorkbenchTheme = {
         "zt:pt-1 zt:text-xs zt:leading-normal zt:text-pretty zt:text-(--text-error)",
     },
     dataExplorer: {
-      hint: "setting-item-description",
-      "root-label": "zt:text-xs zt:text-faint zt:mr-auto",
-      explorer: "zt:flex zt:min-h-0 zt:flex-1 zt:flex-col zt:gap-2 zt:p-2",
+      hint: "setting-item-description zt:px-3 zt:pb-2",
+      "root-label": "zt:text-xs zt:text-muted-foreground",
+      explorer:
+        "zt-template-data-explorer zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-3 zt:pt-3",
       header:
-        "zt:flex zt:flex-wrap zt:items-center zt:justify-between zt:gap-2",
-      heading: "zt:text-xs zt:font-semibold",
-      variants: "zt:flex zt:gap-1",
+        "zt:grid zt:grid-cols-[1fr_auto] zt:items-center zt:gap-x-2 zt:gap-y-3 zt:px-3",
+      heading: "",
+      variants:
+        "zt:col-span-2 zt:flex zt:flex-wrap zt:gap-1 zt:rounded-md zt:bg-card zt:p-1",
       variant:
-        "zt:text-xs zt:data-[state=active]:bg-(--interactive-accent) zt:data-[state=active]:text-(--text-on-accent)",
-      search: "zt:w-full",
-      body: "zt:min-h-0 zt:flex-1 zt:overflow-auto",
-      empty: "zt:text-muted-foreground zt:text-xs",
+        "clickable-icon zt:flex-1 zt:text-sm zt:whitespace-normal zt:focus-visible:shadow-(--input-box-shadow-focus)",
+      search: "zt:mx-3 zt:w-auto zt:min-w-0 zt:shrink-0",
+      body: "zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-2 zt:pb-3",
+      empty:
+        "zt:px-1 zt:py-3 zt:text-muted-foreground zt:text-sm zt:leading-normal",
     },
     explorerTree: {
-      "simple-row": "zt:py-1",
-      "simple-heading":
-        "zt:flex zt:min-w-0 zt:flex-wrap zt:items-baseline zt:gap-x-2",
-      path: "zt:text-xs zt:font-mono zt:text-faint",
-      "simple-value": "zt:text-xs",
-      tree: "zt:font-mono zt:text-xs zt:leading-relaxed zt:data-[state=simple]:[font-family:var(--font-interface)]",
-      spacer: "zt:mt-[3px] zt:size-3 zt:shrink-0",
-      contents: "zt:min-w-0 zt:flex-1 zt:select-text",
+      "simple-row": "zt:flex zt:min-w-0 zt:flex-col zt:gap-1",
+      "simple-heading": "zt:text-sm zt:font-medium zt:leading-normal",
+      path: "zt:hidden",
+      "simple-value": "zt:text-sm zt:leading-normal",
+      tree: "zt:group/tree zt:font-mono zt:text-xs zt:leading-normal zt:data-[state=simple]:font-sans",
+      spacer: "zt:w-6 zt:shrink-0",
+      contents:
+        "zt:min-w-0 zt:flex-1 zt:select-text zt:[overflow-wrap:anywhere]",
       group:
-        "zt:ml-3 zt:border-l zt:border-(--nav-indentation-guide-color) zt:pl-2",
+        "zt:ms-2.5 zt:border-s zt:border-(--nav-indentation-guide-color) zt:ps-2",
       chevron:
-        "zt:mt-[3px] zt:flex zt:size-3 zt:shrink-0 zt:cursor-pointer zt:items-center zt:justify-center zt:text-(--nav-collapse-icon-color) zt:transition-transform zt:duration-100 zt:ease-out zt:hover:text-foreground zt:data-[expanded]:rotate-90",
-      "chevron-icon": "zt:size-3 zt:[&_svg]:size-3",
-      actions:
-        "zt:absolute zt:top-0.5 zt:right-0 zt:flex zt:items-center zt:gap-0.5 zt:bg-linear-to-l zt:from-background zt:from-60% zt:to-transparent zt:pl-6 zt:opacity-0 zt:group-hover:opacity-100 zt:focus-within:opacity-100",
+        "clickable-icon zt:w-6 zt:shrink-0 zt:[--icon-size:var(--icon-xs)] zt:group-data-[state=simple]/tree:text-sm zt:focus-visible:shadow-(--input-box-shadow-focus)",
+      "chevron-icon":
+        "zt:flex zt:size-(--icon-size) zt:items-center zt:justify-center zt:in-data-[expanded]:rotate-90",
+      actions: "zt:flex zt:shrink-0 zt:items-center zt:gap-0.5",
       action:
-        "zt:rounded-xs zt:flex zt:size-4 zt:cursor-pointer zt:items-center zt:justify-center zt:text-muted-foreground zt:hover:bg-muted zt:hover:text-foreground",
+        "clickable-icon zt:[--icon-size:var(--icon-xs)] zt:focus-visible:shadow-(--input-box-shadow-focus)",
       key: "zt:text-foreground",
-      hint: "zt:text-faint",
-      placeholder: "zt:text-faint zt:italic",
+      hint: "zt:text-muted-foreground zt:tabular-nums",
+      placeholder: "zt:text-muted-foreground zt:italic",
       "color-swatch":
         "zt:rounded-xs zt:size-3 zt:shrink-0 zt:border zt:border-border",
-      link: "zt:break-all zt:text-link zt:underline zt:decoration-dotted zt:hover:decoration-solid",
+      link: "zt:[overflow-wrap:anywhere] zt:text-link zt:underline zt:decoration-dotted zt:hover:decoration-solid",
       "long-toggle":
-        "zt:rounded-xs zt:ml-0.5 zt:cursor-pointer zt:px-1 zt:text-muted-foreground zt:underline zt:decoration-dotted zt:underline-offset-2 zt:select-none zt:hover:bg-muted zt:hover:text-foreground",
-      row: "zt:group zt:rounded zt:relative zt:flex zt:min-w-0 zt:items-start zt:gap-x-1 zt:px-0.5 zt:hover:bg-muted zt:data-[state=matched]:bg-(--text-highlight-bg)",
-      opaque: "zt:break-words zt:text-cyan",
-      color: "zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-green",
-      string: "zt:text-green",
-      number: "zt:text-blue",
-      boolean: "zt:text-purple",
-      null: "zt:text-faint zt:italic",
-      undefined: "zt:text-faint zt:italic",
+        "zt:rounded-xs zt:ms-0.5 zt:cursor-pointer zt:px-1 zt:text-muted-foreground zt:underline zt:decoration-dotted zt:underline-offset-2 zt:select-none zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:shadow-(--input-box-shadow-focus)",
+      row: "zt:rounded-sm zt:flex zt:min-w-0 zt:items-start zt:gap-x-1 zt:px-1 zt:py-1 zt:group-data-[state=simple]/tree:py-2 zt:hover:bg-muted zt:focus-within:bg-muted zt:data-[state=matched]:bg-(--text-highlight-bg)",
+      opaque:
+        "zt:break-words zt:text-cyan zt:group-data-[state=simple]/tree:text-foreground",
+      color:
+        "zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-green zt:group-data-[state=simple]/tree:text-foreground",
+      string: "zt:text-green zt:group-data-[state=simple]/tree:text-foreground",
+      number:
+        "zt:tabular-nums zt:text-blue zt:group-data-[state=simple]/tree:text-foreground",
+      boolean:
+        "zt:text-purple zt:group-data-[state=simple]/tree:text-foreground",
+      null: "zt:text-muted-foreground zt:italic",
+      undefined: "zt:text-muted-foreground zt:italic",
       "long-text":
-        "zt:data-[state=expanded]:break-words zt:data-[state=expanded]:whitespace-pre-wrap",
+        "zt:line-clamp-3 zt:data-[state=expanded]:line-clamp-none zt:data-[state=expanded]:break-words zt:data-[state=expanded]:whitespace-pre-wrap",
     },
     startHere: {
       strip:

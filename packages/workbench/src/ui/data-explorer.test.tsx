@@ -18,11 +18,13 @@ describe("shared Data Explorer", () => {
     );
     render(ui);
     expect(
-      screen.getAllByRole("treeitem")[0]?.textContent?.startsWith("A paper"),
+      screen
+        .getAllByRole("treeitem")[0]
+        ?.textContent?.startsWith(m.workbench_field_title()),
     ).toBe(true);
-    expect(screen.getAllByRole("treeitem")[0]?.textContent).toContain(
-      m.workbench_field_title(),
-    );
+    expect(
+      screen.getAllByRole("treeitem")[0]?.textContent?.endsWith("A paper"),
+    ).toBe(true);
     fireEvent.click(
       screen.getByRole("button", { name: m.workbench_explorer_all() }),
     );
@@ -30,6 +32,40 @@ describe("shared Data Explorer", () => {
     expect(host.preferences.get("vault:explorer-variant")).toBe("all");
     expect(screen.getByText("title")).toBeTruthy();
   });
+  it("labels Simple containers without a separate structural count row", () => {
+    const { ui } = mount(
+      <DataExplorer
+        root="note"
+        data={{
+          authors: ["Ada", "Grace"],
+          collections: [],
+          date: { year: 2011, toString: () => "2011-01" },
+        }}
+        copy={async () => {}}
+      />,
+    );
+    render(ui);
+    const rows = screen.getAllByRole("treeitem");
+    expect(rows[0]?.textContent).toBe("Authors (2)");
+    expect(
+      screen.getByText("Collections").closest('[role="treeitem"]')?.textContent,
+    ).toBe("Collections (0)");
+    expect(screen.getByText("2011-01")).toBeTruthy();
+    expect(screen.queryByText("[2]")).toBeNull();
+    expect(screen.queryByText("{1}")).toBeNull();
+    fireEvent.click(
+      screen.getAllByRole("button", {
+        name: m.workbench_explorer_toggle_node(),
+      })[0]!,
+    );
+    expect(screen.getByText("Ada")).toBeTruthy();
+    expect(screen.getByText("Grace")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_explorer_all() }),
+    );
+    expect(screen.getByText("[2]")).toBeTruthy();
+  });
+
   it("copies values without an editor insertion target", () => {
     const copy = vi.fn<(text: string) => Promise<void>>().mockResolvedValue();
     const { ui } = mount(
