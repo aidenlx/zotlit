@@ -1,8 +1,8 @@
 // The web's binding of the Workbench UI host adapter: Base UI for the menu,
 // the dialog, the confirmation, and the hover card; the searchable picker the
 // paper choice already uses for the suggester; the browser's own tooltip; the
-// status line for a notice; the render Worker; the Item Snapshot's names for a
-// match; and browser storage for a preference.
+// status line for a notice; the page's own renderer; the Item Snapshot's names
+// for a match; and browser storage for a preference.
 
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 import { PreviewCard } from "@base-ui/react/preview-card";
@@ -47,7 +47,7 @@ import { getLocale } from "@/paraglide/runtime.js";
 
 import { webCompletion } from "./completion";
 import { webHover } from "./hover";
-import { startRenderWorker } from "./render-client";
+import { renderInThread } from "./render";
 import { ResultSheet } from "./result-sheet";
 
 const STORAGE_PREFIX = "zotlit.workbench.preference";
@@ -151,7 +151,7 @@ export function useWebHost({
         return { close: () => setHoverCard(null) };
       },
       notice: (text) => latest.current.notice(text),
-      render: startRenderWorker,
+      render: renderInThread,
       markdown: ResultSheet,
       editorPopups: (read) => [webCompletion(read), webHover(read)],
       matchData: {

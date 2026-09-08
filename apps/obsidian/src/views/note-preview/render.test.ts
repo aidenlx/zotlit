@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
-import type { FrontMatterInfo } from "obsidian";
-import { describe, expect, it, vi } from "vitest";
-import { parse, stringify } from "yaml";
+import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import { annotationSamples } from "@zotlit/workbench/ui";
@@ -14,23 +13,8 @@ import {
 import { presentCitations } from "./markdown";
 import { renderNativeProfile, previewBaseline } from "./render";
 
-vi.mock("obsidian", async (original) => ({
-  ...(await original<typeof import("obsidian")>()),
-  parseYaml: parse,
-  stringifyYaml: stringify,
-  getFrontMatterInfo: (source: string): FrontMatterInfo => {
-    const end = source.startsWith("---\n") ? source.indexOf("\n---\n", 4) : -1;
-    return end < 0
-      ? { exists: false, frontmatter: "", from: 0, to: 0, contentStart: 0 }
-      : {
-          exists: true,
-          frontmatter: source.slice(4, end),
-          from: 4,
-          to: end,
-          contentStart: end + 5,
-        };
-  },
-}));
+/** Where the counting template records how often its body has rendered. */
+const BODY_RENDERS = "__zotlitPreviewBodyRenders";
 
 describe("native Profile rendering", () => {
   it("renders real TemplateService data with inert links and preserves the source files", async () => {
@@ -295,6 +279,35 @@ frontmatter: []
     expect(element.querySelector("a")?.getAttribute("href")).toBe(
       "notes/paper.md",
     );
+  });
+
+  it("shows update mode the body the preparation rendered, without a second render", async () => {
+    // A JavaScript template may carry state between renders, so a body rendered
+    // a second time can differ from the one the preparation already produced.
+    await using fixture = await createRenderFixture({ javascript: true });
+    const counting = `---
+id: counting-paper
+name: Counting paper
+version: 1.0.0
+contract: 5
+language: eta
+filename: '<%= zt.title %>'
+frontmatter: []
+---
+Body render <%= (globalThis.${BODY_RENDERS} = (globalThis.${BODY_RENDERS} ?? 0) + 1) %>
+--- zotlit:annotation ---
+<%= zt.text %>`;
+    try {
+      const result = await renderNativeProfile(fixture.deps, {
+        source: counting,
+        snapshot: fixture.snapshot,
+        mode: "update",
+      });
+      expect(result.diagnostics).toEqual([]);
+      expect(result.creationBody?.trim()).toBe("Body render 1");
+    } finally {
+      delete (globalThis as Record<string, unknown>)[BODY_RENDERS];
+    }
   });
 
   it("ignores citations in code and comments, and reports an unavailable citation processor", async () => {

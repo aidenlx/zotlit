@@ -54,11 +54,12 @@ function column(overrides: Partial<ResultColumnProps> = {}) {
     </div>
   );
   render(mounted.ui);
-  return props;
+  return Object.assign(mounted, { props });
 }
 
 it("passes the complete note and folded properties to the host renderer", () => {
-  const props = column({ stale: true });
+  using mounted = column({ stale: true });
+  const { props } = mounted;
   expect(
     screen
       .getByText("Papers/Reading.md")
@@ -88,7 +89,7 @@ it("passes the complete note and folded properties to the host renderer", () => 
 });
 
 it("renders the managed region without folding properties into it", () => {
-  column({ showManaged: true, showMarkdown: true });
+  using _mounted = column({ showManaged: true, showMarkdown: true });
   expect(screen.getByTestId("markdown").textContent).toBe("Updated paragraph");
   expect(screen.getByTestId("markdown").getAttribute("data-source")).toBe(
     "true",
@@ -96,19 +97,19 @@ it("renders the managed region without folding properties into it", () => {
 });
 
 it("shows a pending annotation until the selected example has a result", () => {
-  column({ mode: "annotation", annotationResult: null });
+  using _mounted = column({ mode: "annotation", annotationResult: null });
   expect(screen.getByText(m.workbench_result_pending())).toBeDefined();
   expect(screen.queryByText("Papers/Reading.md")).toBeNull();
   expect(screen.queryByTestId("markdown")).toBeNull();
 });
 
 it("shows a single annotation with no complete-note properties", () => {
-  column({ mode: "annotation", annotationResult: result });
+  using _mounted = column({ mode: "annotation", annotationResult: result });
   expect(screen.getByTestId("markdown").textContent).toBe("One highlight");
 });
 
 it("links the first property error to its one-based entry", () => {
-  const props = column({
+  using mounted = column({
     result: {
       ...result,
       diagnostics: [
@@ -116,6 +117,7 @@ it("links the first property error to its one-based entry", () => {
       ],
     },
   });
+  const { props } = mounted;
   fireEvent.click(
     screen.getByRole("button", { name: m.workbench_problems_where_entry() }),
   );
@@ -123,9 +125,10 @@ it("links the first property error to its one-based entry", () => {
 });
 
 it("links a profile error to source", () => {
-  const props = column({
+  using mounted = column({
     result: { ...result, diagnostics: [{ code: "render-error" }] },
   });
+  const { props } = mounted;
   fireEvent.click(
     screen.getByRole("button", { name: m.workbench_problems_where_advanced() }),
   );
@@ -135,9 +138,10 @@ it("links a profile error to source", () => {
 it("changes preview mode, runs on demand, and pauses future work", () => {
   const onRun = vi.fn<() => void>();
   const onStop = vi.fn<() => void>();
-  const { store, ui } = mount(
+  using mounted = mount(
     <PreviewControls busy={false} onRun={onRun} onStop={onStop} />,
   );
+  const { store, ui } = mounted;
   render(ui);
   fireEvent.input(screen.getByLabelText(m.workbench_preview_mode()), {
     target: { value: "update" },

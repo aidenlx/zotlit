@@ -3,12 +3,13 @@ import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderProfile } from "@zotlit/workbench/render";
+import type { ProfileRenderResult } from "@zotlit/workbench/render";
 
 // @vitest-environment happy-dom
-// The web subscribes shared controls and document changes to its Worker scheduler.
+// The web subscribes shared controls and document changes to its scheduler.
 import { m } from "@/paraglide/messages.js";
 
-import { startRenderWorker, open } from "./page-test-host";
+import { renderInThread, open } from "./page-test-host";
 
 describe("preview scheduling", () => {
   beforeEach(() => vi.useFakeTimers());
@@ -40,55 +41,59 @@ describe("preview scheduling", () => {
   it("waits 300 ms after the latest edit and runs on demand immediately", async () => {
     using page = open();
     await act(async () => vi.advanceTimersByTimeAsync(299));
-    expect(startRenderWorker).not.toHaveBeenCalled();
+    expect(renderInThread).not.toHaveBeenCalled();
     editNote(page.host, "An introduction\n");
     await act(async () => vi.advanceTimersByTimeAsync(299));
-    expect(startRenderWorker).not.toHaveBeenCalled();
+    expect(renderInThread).not.toHaveBeenCalled();
     await act(async () => vi.advanceTimersByTimeAsync(1));
-    expect(startRenderWorker).toHaveBeenCalledTimes(1);
+    expect(renderInThread).toHaveBeenCalledTimes(1);
     choose(page.host, m.workbench_preview_refresh(), "demand");
     editNote(page.host, "Another introduction\n");
     await act(async () => vi.advanceTimersByTimeAsync(1000));
-    expect(startRenderWorker).toHaveBeenCalledTimes(1);
+    expect(renderInThread).toHaveBeenCalledTimes(1);
     expect(page.host.textContent).toContain(m.workbench_preview_stale());
     page.press(m.workbench_preview_run());
-    expect(startRenderWorker).toHaveBeenCalledTimes(2);
-    expect(startRenderWorker.mock.calls[1]![0].source).toContain(
+    expect(renderInThread).toHaveBeenCalledTimes(2);
+    expect(renderInThread.mock.calls[1]![0].source).toContain(
       "Another introduction",
     );
   });
 
   it("pauses queued and future work while an in-flight render completes", async () => {
-    const terminate = vi.fn<() => void>();
-    startRenderWorker.mockImplementation(() => ({ terminate }));
+    let deliver!: (result: ProfileRenderResult) => void;
+    renderInThread.mockImplementation(
+      () =>
+        new Promise<ProfileRenderResult>((resolve) => {
+          deliver = resolve;
+        }),
+    );
     using page = open();
     await act(async () => vi.advanceTimersByTimeAsync(300));
-    const [request, deliver] = startRenderWorker.mock.calls[0]!;
+    const request = renderInThread.mock.calls[0]![0];
     page.press(m.workbench_preview_stop());
     expect(page.host.textContent).toContain(m.workbench_preview_paused());
-    expect(terminate).not.toHaveBeenCalled();
     editNote(page.host, "Later edit\n");
     await act(async () => vi.advanceTimersByTimeAsync(1000));
-    expect(startRenderWorker).toHaveBeenCalledTimes(1);
-    act(() =>
-      deliver(renderProfile(request.source, request.snapshot, request)),
-    );
-    expect(terminate).toHaveBeenCalledOnce();
+    expect(renderInThread).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      deliver(renderProfile(request.source, request.snapshot, request));
+      await vi.advanceTimersByTimeAsync(0);
+    });
     expect(page.host.textContent).toContain("ioannidisWhyMost2005");
     choose(page.host, m.workbench_preview_refresh(), "live");
     page.press(m.workbench_preview_stop());
     await act(async () => vi.advanceTimersByTimeAsync(300));
-    expect(startRenderWorker).toHaveBeenCalledTimes(1);
+    expect(renderInThread).toHaveBeenCalledTimes(1);
   });
 
   it("passes create and update inputs while preserving the synthesized note's outside text", async () => {
     using page = open();
     editNote(page.host, "My own introduction\n");
     await act(async () => vi.advanceTimersByTimeAsync(300));
-    expect(startRenderWorker.mock.lastCall![0].mode).toBe("create");
+    expect(renderInThread.mock.lastCall![0].mode).toBe("create");
     choose(page.host, m.workbench_preview_mode(), "update");
     await act(async () => vi.advanceTimersByTimeAsync(300));
-    const request = startRenderWorker.mock.lastCall![0];
+    const request = renderInThread.mock.lastCall![0];
     expect(request.mode).toBe("update");
     const result = renderProfile(request.source, request.snapshot, request);
     expect(result.creationBody).toContain("My own introduction");

@@ -476,7 +476,7 @@ describe("Sample Items", () => {
       part: "profile",
     });
     // Nothing defined it, so the render fails where the call stands rather
-    // than running Eta in the Worker.
+    // than running Eta.
     expect(result.creationBody).toBeNull();
   });
 

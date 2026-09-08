@@ -10,11 +10,15 @@ import { createStore } from "zustand/vanilla";
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { SAMPLE_ITEMS, SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import {
+  createRenderScheduler,
   createWorkbenchStore,
   WorkbenchEditorProvider,
   WorkbenchHostProvider,
 } from "@zotlit/workbench/ui";
-import type { WorkbenchInsertTarget } from "@zotlit/workbench/ui";
+import type {
+  RenderScheduler,
+  WorkbenchInsertTarget,
+} from "@zotlit/workbench/ui";
 
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type {
@@ -31,9 +35,12 @@ vi.mock("@/services/template-workbench/data", () => ({
 }));
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 let root: Root | null = null;
+let scheduler: RenderScheduler | null = null;
 afterEach(() => {
   void act(() => root?.unmount());
   root = null;
+  scheduler?.[Symbol.dispose]();
+  scheduler = null;
   document.body.replaceChildren();
 });
 
@@ -101,7 +108,7 @@ async function setup() {
       saveLocalStorage: () => {},
     } as unknown as App,
     {
-      render: () => ({ terminate() {} }),
+      render: () => Promise.reject(new Error("This test renders nothing.")),
       matchData: {
         tags: async () => [],
         collections: async () => [],
@@ -110,6 +117,13 @@ async function setup() {
       insertTarget: () => target,
     },
   );
+  const editorScheduler = createRenderScheduler({
+    render: (request) => host.render(request),
+    failed: (result) => result,
+    controller,
+    store,
+  });
+  scheduler = editorScheduler;
   const container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -120,7 +134,7 @@ async function setup() {
         { host },
         createElement(
           WorkbenchEditorProvider,
-          { store, controller },
+          { store, controller, scheduler: editorScheduler },
           createElement(ProfileExplorer, {
             editor,
             deps: {} as TemplateDataDeps,
