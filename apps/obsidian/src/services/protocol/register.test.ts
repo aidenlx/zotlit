@@ -48,6 +48,7 @@ function register(overrides: Partial<ProtocolDeps> = {}): Disposable {
     },
   };
   const deps = {
+    webWorkbenchEnabled: true,
     zoteroPref: { sourceId: SOURCE_ID },
     batchImport: { runBatchImport: vi.fn(), runBatchImportAll },
     liveUpdate: { on: () => () => {} },
@@ -165,6 +166,12 @@ describe("library-wide protocol links", () => {
 });
 
 describe("clipboard Profile protocol handoff", () => {
+  it("omits the web clipboard handoff when the build gate is off", () => {
+    using _handlers = register({ webWorkbenchEnabled: false });
+
+    expect(handlers.has("zotlit/import-profile")).toBe(false);
+  });
+
   it("waits for import consent and then opens the returned document", async () => {
     vi.mocked(openProfileEditor).mockClear();
     const consent =

@@ -65,25 +65,33 @@ export function advancedPageItems(
 ): SettingDefinitionItem<SettingsKey>[] {
   const fileDisabled = (): boolean => !ctx.settings.current?.["log.to-file"];
   return [
-    {
-      name: m.profile_editor_preference_name(),
-      desc: m.profile_editor_preference_desc(),
-      render: (setting) => {
-        setting.addDropdown((dropdown) =>
-          dropdown
-            .addOptions({
-              ask: m.profile_editor_preference_ask(),
-              web: m.profile_editor_preference_web(),
-              native: m.profile_editor_name(),
-            })
-            .setValue(profileCustomization(ctx.app))
-            .onChange((value) => {
-              if (value === "ask" || value === "web" || value === "native")
-                saveProfileCustomization(ctx.app, value);
-            }),
-        );
-      },
-    },
+    ...(ctx.webWorkbenchEnabled
+      ? [
+          {
+            name: m.profile_editor_preference_name(),
+            desc: m.profile_editor_preference_desc(),
+            render: (setting) => {
+              setting.addDropdown((dropdown) =>
+                dropdown
+                  .addOptions({
+                    ask: m.profile_editor_preference_ask(),
+                    web: m.profile_editor_preference_web(),
+                    native: m.profile_editor_name(),
+                  })
+                  .setValue(profileCustomization(ctx.app))
+                  .onChange((value) => {
+                    if (
+                      value === "ask" ||
+                      value === "web" ||
+                      value === "native"
+                    )
+                      saveProfileCustomization(ctx.app, value);
+                  }),
+              );
+            },
+          } satisfies SettingDefinitionItem<SettingsKey>,
+        ]
+      : []),
     {
       name: m.settings_update_notices_name(),
       desc: m.settings_update_notices_desc(),

@@ -1,8 +1,10 @@
 // @vitest-environment happy-dom
-import { setMockPlatform, resetMockPlatform } from "@mock/obsidian";
+import { Menu, resetMockPlatform, setMockPlatform } from "@mock/obsidian";
 import { TFile } from "obsidian";
 import type { App, Command, Plugin, WorkspaceLeaf } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+import * as m from "@/lib/i18n/generated/messages";
 
 import { profileCustomization, saveProfileCustomization } from "./preferences";
 import {
@@ -24,12 +26,15 @@ function setup() {
   file.extension = "md";
   const setViewState = vi.fn(async () => {});
   const leaf = { setViewState } as unknown as WorkspaceLeaf;
+  const fileMenuHandlers: ((menu: Menu, file: TFile) => void)[] = [];
   const workspace = {
     getActiveFile: () => file,
     getLeavesOfType: () => [],
     getLeaf: () => leaf,
     revealLeaf: vi.fn(),
-    on: vi.fn(),
+    on: vi.fn((event: string, handler: (menu: Menu, file: TFile) => void) => {
+      if (event === "file-menu") fileMenuHandlers.push(handler);
+    }),
     onLayoutReady: vi.fn(),
   };
   const loadLocalStorage = vi.fn<() => unknown>(() => null);
@@ -54,6 +59,7 @@ function setup() {
     register: vi.fn(),
   } as unknown as Plugin;
   const deps = {
+    webWorkbenchEnabled: true,
     app,
     profile: {
       profiles: [],
@@ -70,12 +76,34 @@ function setup() {
     plugin,
     deps,
     commands,
+    fileMenu: () => {
+      const menu = new Menu();
+      for (const handler of fileMenuHandlers) handler(menu, file);
+      return menu;
+    },
     registerView,
     setViewState,
   };
 }
 
 describe("Profile Editor entry points", () => {
+  it("omits the web command when the build gate is off", () => {
+    setMockPlatform({ isDesktopApp: true });
+    const { deps, plugin, commands, fileMenu } = setup();
+    deps.webWorkbenchEnabled = false;
+
+    registerProfileEditor(plugin, deps);
+
+    expect(commands.map(({ id }) => id)).toEqual([
+      "customize-profile",
+      "open-profile-editor",
+    ]);
+    expect(fileMenu().items.map(({ title }) => title)).toEqual([
+      m.profile_editor_customize(),
+      m.profile_editor_open(),
+    ]);
+  });
+
   it.each([
     "customize-profile",
     "open-profile-editor",

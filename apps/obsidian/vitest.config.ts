@@ -30,6 +30,7 @@ export default defineConfig({
   },
   define: {
     __DEV__: JSON.stringify(true),
+    __WEB_WORKBENCH_ENABLED__: JSON.stringify(true),
     __DOCS_SITE_URL__: JSON.stringify("https://zotlit.aidenlx.site"),
     // Resolving the real pin needs the network; a test that cares about engine
     // metadata takes it as an argument rather than reading this placeholder.

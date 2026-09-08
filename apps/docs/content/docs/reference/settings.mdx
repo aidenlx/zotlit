@@ -65,9 +65,9 @@ An empty `zotlit-csl` property stops the note the same way, and its built-in exp
 
 The document that renders a literature note: its filename, its properties, and its body.
 
-Until you customize it, the Profile uses ZotLit's built-in Literature Note Template and the row reads <UiLabel name={m.settings_profile_document_builtin_desc()} />. <UiLabel name={m.settings_template_customize()} /> opens a chooser for the web Workbench or the native Profile Editor. The first web save or native edit creates the template document. The row then names that file and offers <UiLabel name={m.settings_profile_document_restore()} />.
+Until you customize it, the Profile uses ZotLit's built-in Literature Note Template and the row reads <UiLabel name={m.settings_profile_document_builtin_desc()} />. <UiLabel name={m.settings_template_customize()} /> opens the Profile Editor. The first edit creates the template document. The row then names that file and offers <UiLabel name={m.settings_profile_document_restore()} />.
 
-Select <UiLabel name={m.settings_template_customize()} /> to open the customized document in your chosen editor. Select <UiLabel name={m.settings_profile_document_restore()} /> to move it to Obsidian's configured trash and return the Profile to the built-in template.
+Select <UiLabel name={m.settings_template_customize()} /> to open the document in the Profile Editor. Select <UiLabel name={m.settings_profile_document_restore()} /> to move it to Obsidian's configured trash and return the Profile to the built-in template.
 
 ### Properties [#properties]
 
@@ -545,31 +545,17 @@ the release notes after ZotLit updates.
 
 ### Local Server [#local-server]
 
-| Label                                                                  | Key                  | Control                                                                                         | Default     | Visibility                  | Storage |
-| ---------------------------------------------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------- | ----------- | --------------------------- | ------- |
-| <UiLabel name={m.settings_local_server_enabled_name()} />              | `server.enabled`     | Toggle                                                                                          | Off         | Always                      | Synced  |
-| <UiLabel name={m.settings_live_updates_enabled_name()} />              | `server.live-update` | Toggle                                                                                          | On          | Server on                   | Synced  |
-| <UiLabel name={m.settings_local_server_workbench_name()} />            | `server.workbench`   | Toggle                                                                                          | On          | Server on                   | Synced  |
-| <UiLabel name={m.settings_local_server_workbench_connection_name()} /> | (read-only)          | Website, template, and <UiLabel name={m.settings_local_server_workbench_disconnect()} /> action | Absent      | Server on with a connection | None    |
-| <UiLabel name={m.settings_live_updates_port_name()} />                 | `server.port`        | Number from 1024 to 65535                                                                       | `9091`      | Server on                   | Synced  |
-| <UiLabel name={m.settings_local_server_active_port_name()} />          | (read-only)          | Active port or listener status                                                                  | No listener | Server on                   | None    |
-| <UiLabel name={m.settings_live_updates_hostname_name()} />             | `server.hostname`    | Text                                                                                            | `127.0.0.1` | Server on                   | Synced  |
+| Label                                                         | Key                  | Control                   | Default     | Visibility | Storage |
+| ------------------------------------------------------------- | -------------------- | ------------------------- | ----------- | ---------- | ------- |
+| <UiLabel name={m.settings_local_server_enabled_name()} />     | `server.enabled`     | Toggle                    | Off         | Always     | Synced  |
+| <UiLabel name={m.settings_live_updates_enabled_name()} />     | `server.live-update` | Toggle                    | On          | Server on  | Synced  |
+| <UiLabel name={m.settings_live_updates_port_name()} />        | `server.port`        | Number from 1024 to 65535 | `9091`      | Server on  | Synced  |
+| <UiLabel name={m.settings_local_server_active_port_name()} /> | (read-only)          | Active port or status     | No listener | Server on  | None    |
+| <UiLabel name={m.settings_live_updates_hostname_name()} />    | `server.hostname`    | Text                      | `127.0.0.1` | Server on  | Synced  |
 
-The server binds to the configured hostname, which defaults to this computer's loopback address. The Local Bridge accepts loopback connections only, even if the hostname permits wider Live Update access. It tries the configured port, then up to 9 higher ports, stopping at 65535. <UiLabel name={m.settings_local_server_active_port_name()} /> reports the port actually used. ZotLit Companion's notification URL must use that port.
+The server binds to the configured hostname, which defaults to this computer's loopback address. It tries the configured port, then up to 9 higher ports, stopping at 65535. <UiLabel name={m.settings_local_server_active_port_name()} /> reports the port actually used. ZotLit Companion's notification URL must use that port.
 
-Turning off <UiLabel name={m.settings_local_server_enabled_name()} /> stops both services. Turning off <UiLabel name={m.settings_local_server_workbench_name()} /> ends the web connection. The customization actions remain available; choosing the web Workbench asks for approval to enable access again.
-
-<UiLabel name={m.profile_editor_preference_name()} /> selects
-<UiLabel name={m.profile_editor_preference_ask()} />,
-<UiLabel name={m.profile_editor_preference_web()} />, or
-<UiLabel name={m.profile_editor_name()} /> for this vault on this device.
-Selecting <UiLabel name={m.modal_workbench_launch_remember()} /> in the chooser
-saves that destination. Select
-<UiLabel name={m.profile_editor_preference_ask()} /> to show the chooser again.
-Opening the web Workbench always asks for approval while the server or web
-access is off.
-
-See [Local Server and browser access](/docs/concepts/template-workbench#local-server) for shared data and connection lifetime.
+Turning off <UiLabel name={m.settings_local_server_enabled_name()} /> stops Live Update connections.
 
 ### Template engine [#template-engine]
 

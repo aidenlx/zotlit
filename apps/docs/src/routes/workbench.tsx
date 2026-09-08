@@ -22,13 +22,18 @@ const editor =
 
 export const Route = createFileRoute("/workbench")({
   component: WorkbenchPage,
-  head: () =>
-    pageHead({
+  head: () => {
+    const head = pageHead({
       title: m.workbench_title(),
       description: m.workbench_description(),
       path: "/workbench",
       card: { type: "workbench", alt: m.workbench_title() },
-    }),
+    });
+    return {
+      ...head,
+      meta: [...head.meta, { name: "robots", content: "noindex" }],
+    };
+  },
 });
 
 function WorkbenchPage() {

@@ -82,6 +82,7 @@ async function harness(
   const saved: string[] = [];
   const sessions = new BridgeSessions(() => {});
   const app = createLocalBridgeApp({
+    available: () => true,
     enabled: () => true,
     peerAddress: () => "127.0.0.1",
     allowedOrigins: [STABLE_DOCS_ORIGIN],

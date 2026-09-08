@@ -972,7 +972,7 @@
   "settings_attachment_approved_dialog_title": "Select a folder to approve",
   "settings_page_live_updates": "Live updates",
   "settings_local_server_enabled_name": "Run a local server",
-  "settings_local_server_enabled_desc": "Open an HTTP listener on this computer so ZotLit Companion and the web Template Workbench can reach this vault. Nothing outside this computer can connect.",
+  "settings_local_server_enabled_desc": "Receive requests from other apps at the configured address and port.",
   "settings_local_server_active_port_name": "Port in use",
   "settings_local_server_active_port_desc": "The server is listening on port {port}. ZotLit takes the next free port when the one above is busy, so a second vault still gets a listener.",
   "settings_local_server_active_port_none": "The server is not listening.",

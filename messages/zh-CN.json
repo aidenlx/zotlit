@@ -745,7 +745,7 @@
   "settings_attachment_approved_dialog_title": "选择要批准的文件夹",
   "settings_page_live_updates": "实时更新",
   "settings_local_server_enabled_name": "运行本地服务器",
-  "settings_local_server_enabled_desc": "在本机开启 HTTP 侦听器，使 ZotLit Companion 和网页版模板工作台可以访问此仓库。本机以外无法连接。",
+  "settings_local_server_enabled_desc": "通过配置的地址和端口接收其他应用的请求。",
   "settings_local_server_active_port_name": "正在使用的端口",
   "settings_local_server_active_port_desc": "服务器正在侦听端口 {port}。若上方端口被占用，ZotLit 会改用下一个空闲端口，第二个仓库同样可以启动侦听器。",
   "settings_local_server_active_port_none": "服务器未在侦听。",

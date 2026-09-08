@@ -1,3 +1,4 @@
+import { WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import {
   createProfileCreator,
   createProfileImporter,
@@ -148,6 +149,7 @@ export function buildServices(
         zoteroPref,
       }) =>
         new LocalBridgeService({
+          webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
           app: plugin.app,
           settings,
           profile,

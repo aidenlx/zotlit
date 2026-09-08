@@ -147,6 +147,7 @@ interface Harness extends AsyncDisposable {
 
 async function harness(
   options: {
+    webWorkbenchEnabled?: boolean;
     settings?: Partial<Settings>;
     device?: Map<string, unknown>;
   } = {},
@@ -171,6 +172,7 @@ async function harness(
   );
   const bridge = stack.use(
     new LocalBridgeService({
+      webWorkbenchEnabled: options.webWorkbenchEnabled ?? true,
       app: device.app,
       settings: settings.service,
       profile: PROFILES,
@@ -338,6 +340,24 @@ it("offers no launch and refuses the port while the Workbench toggle is off", as
   });
   expect(res.status).toBe(403);
   await expect(res.json()).resolves.toEqual({
+    error: { code: "bridge-disabled", message: expect.any(String) },
+  });
+});
+
+it("refuses persisted bridge access when the build gate is off", async () => {
+  await using bridge = await harness({
+    webWorkbenchEnabled: false,
+    settings: { "server.workbench": true },
+  });
+
+  expect(
+    bridge.bridge.launchUrl({ profileId: BOOKS_PROFILE, item: null }),
+  ).toBe(null);
+  const response = await bridge.call(LOCAL_BRIDGE_PATHS.codeBootstrap, {
+    method: "OPTIONS",
+  });
+  expect(response.status).toBe(403);
+  await expect(response.json()).resolves.toEqual({
     error: { code: "bridge-disabled", message: expect.any(String) },
   });
 });
