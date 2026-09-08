@@ -17,6 +17,7 @@ import * as v from "valibot";
 import { getWorkspaceRoot } from "@zotlit/scripts/package-roots";
 
 import { baseURL, zotlitBetaUrl } from "./shared.js";
+import type { DocsLine } from "./shared.js";
 
 const AGENT_SKILLS_SCHEMA =
   "https://schemas.agentskills.io/discovery/0.2.0/schema.json";
@@ -85,7 +86,7 @@ function archiveUrl(name: AgentSkillName, commitSha: string): string {
  */
 export async function agentSkillAssets(
   packageRoot: string,
-  docsLine: Cloudflare.Env["DOCS_LINE"],
+  docsLine: DocsLine,
 ): Promise<Map<string, Uint8Array>> {
   const workspaceRoot = await getWorkspaceRoot(packageRoot);
   const commitSha = resolvePinnedCommitSha(workspaceRoot);

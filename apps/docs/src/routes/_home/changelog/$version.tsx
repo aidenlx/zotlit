@@ -1,6 +1,5 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import collections from "collections/browser";
 import { ArrowUpRight } from "lucide-react";
 
 import { BackCrumb } from "@/components/back-crumb";
@@ -8,6 +7,7 @@ import { CompanionNote } from "@/components/companion-note";
 import { getMDXComponents } from "@/components/mdx";
 import { betaFallbackUrl } from "@/lib/beta-fallback";
 import { cn } from "@/lib/cn";
+import { changelogs } from "@/lib/collections";
 import { changelogProseRoles } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
 import {
@@ -48,16 +48,11 @@ const getRelease = createServerFn({ method: "GET" })
     };
   });
 
-const releaseBody = collections.changelogs.createClientLoader<object>({
-  id: "changelogs",
-  component: ({ default: MDX }) => <MDX components={getMDXComponents()} />,
-});
-
 export const Route = createFileRoute("/_home/changelog/$version")({
   component: ChangelogVersion,
   loader: async ({ params }) => {
     const release = await getRelease({ data: params.version });
-    await releaseBody.preload(release.path);
+    await changelogs.get(release.path)?.preload();
     return release;
   },
   head: ({ loaderData: release }) =>
@@ -97,7 +92,9 @@ export const Route = createFileRoute("/_home/changelog/$version")({
 
 function ChangelogVersion() {
   const release = Route.useLoaderData();
-  const Body = releaseBody.getComponent(release.path);
+  const page = changelogs.get(release.path);
+  if (!page) throw notFound();
+  const Body = page.body;
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 font-serif">
@@ -128,7 +125,7 @@ function ChangelogVersion() {
             "mt-6 prose-h2:mt-10 prose-h2:mb-3 prose-h2:text-sm prose-h2:tracking-[0.18em] prose-h2:before:mr-2.5 prose-h2:before:h-3.5 prose-h3:mt-6 prose-h3:mb-1.5 prose-h3:text-lg prose-p:my-2 prose-ol:my-2 prose-ul:my-2 prose-li:my-1 prose-li:leading-[1.6]",
           )}
         >
-          <Body />
+          <Body components={getMDXComponents()} />
         </div>
         <a
           href={`${repoUrl}/releases/tag/${release.version}`}

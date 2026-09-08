@@ -1,11 +1,11 @@
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import collections from "collections/browser";
 
 import { CompanionNote } from "@/components/companion-note";
 import { getMDXComponents } from "@/components/mdx";
 import { SiteFooter } from "@/components/site-footer";
 import { cn } from "@/lib/cn";
+import { changelogs } from "@/lib/collections";
 import { changelogProseRoles } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
 import {
@@ -28,11 +28,6 @@ const listReleases = createServerFn({ method: "GET" }).handler(() =>
   })),
 );
 
-const releaseBody = collections.changelogs.createClientLoader<object>({
-  id: "changelogs",
-  component: ({ default: MDX }) => <MDX components={getMDXComponents()} />,
-});
-
 const crumbs = () => [
   { name: appName, url: "/" },
   { name: m.docs_nav_changelog(), url: changelogRoute },
@@ -52,7 +47,11 @@ export const Route = createFileRoute("/_home/changelog/")({
   loader: async () => {
     const releases = await listReleases();
     await Promise.all(
-      releases.map((release) => releaseBody.preload(release.path)),
+      releases.map((release) => {
+        const page = changelogs.get(release.path);
+        if (!page) throw notFound();
+        return page.preload();
+      }),
     );
     return releases;
   },
@@ -74,7 +73,9 @@ function ChangelogIndex() {
 
       <div className="pb-14">
         {releases.map((release, i) => {
-          const Body = releaseBody.getComponent(release.path);
+          const page = changelogs.get(release.path);
+          if (!page) throw notFound();
+          const Body = page.body;
           return (
             <section
               key={release.version}
@@ -112,7 +113,7 @@ function ChangelogIndex() {
                     "mt-2.5 prose-h2:mt-6 prose-h2:mb-2.5 prose-h2:text-xs prose-h2:tracking-[0.16em] prose-h2:before:mr-2 prose-h2:before:h-3 prose-h3:mt-4 prose-h3:mb-1 prose-h3:text-base prose-p:my-1 prose-ol:my-1 prose-ul:my-1 prose-li:my-0.5 prose-li:leading-[1.55]",
                   )}
                 >
-                  <Body />
+                  <Body components={getMDXComponents()} />
                 </div>
               </div>
             </section>

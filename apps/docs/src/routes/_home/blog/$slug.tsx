@@ -1,6 +1,6 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import collections from "collections/browser";
+import { use } from "react";
 
 import { BackCrumb } from "@/components/back-crumb";
 import { Comments } from "@/components/comments";
@@ -8,6 +8,7 @@ import { DocsLastUpdated } from "@/components/docs-last-updated";
 import { getMDXComponents } from "@/components/mdx";
 import { FooterCards } from "@/layouts/docs/page/slots/footer";
 import { cn } from "@/lib/cn";
+import { blogs } from "@/lib/collections";
 import { ztProse } from "@/lib/prose";
 import { pageHead } from "@/lib/seo";
 import { appName, blogRoute, formatReleaseDate } from "@/lib/shared";
@@ -49,23 +50,26 @@ const getPost = createServerFn({ method: "GET" })
     };
   });
 
-const postBody = collections.blogs.createClientLoader<{ modified?: string }>({
-  id: "blogs",
-  component: ({ default: MDX, lastModified }, { modified }) => (
+function PostBody({ path, modified }: { path: string; modified?: string }) {
+  const page = blogs.get(path);
+  if (!page) throw notFound();
+  const { lastModified } = use(page.load());
+  const MDX = page.body;
+  return (
     <>
       <MDX components={getMDXComponents()} />
       {modified !== undefined && (
         <DocsLastUpdated date={lastModified} className="mt-8 font-sans" />
       )}
     </>
-  ),
-});
+  );
+}
 
 export const Route = createFileRoute("/_home/blog/$slug")({
   component: BlogPost,
   loader: async ({ params }) => {
     const post = await getPost({ data: params.slug });
-    await postBody.preload(post.path);
+    await blogs.get(post.path)?.preload();
     return post;
   },
   head: ({ loaderData: post }) =>
@@ -105,7 +109,6 @@ export const Route = createFileRoute("/_home/blog/$slug")({
 
 function BlogPost() {
   const post = Route.useLoaderData();
-  const Body = postBody.getComponent(post.path);
 
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 font-serif">
@@ -129,7 +132,7 @@ function BlogPost() {
         </header>
         <div className="border-t border-fd-border pt-6">
           <div className={cn("prose max-w-none", ztProse)}>
-            <Body modified={post.modified} />
+            <PostBody path={post.path} modified={post.modified} />
           </div>
         </div>
 

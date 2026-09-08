@@ -80,9 +80,6 @@ if (primary) {
 
 await $`turbo run build --filter=./packages/*`;
 
-// App-level codegen. Both outputs are gitignored, so a fresh worktree type-checks
-// only once these run: the Obsidian i18n message facade (`generate:language-packs`)
-// and the Fumadocs source map plus Next.js route types such as `PageProps`
-// (`codegen`). Left unfiltered so any package that later adds either script is
-// picked up.
-await $`turbo run generate:language-packs codegen`;
+// Obsidian checks need the generated message facade. The docs Vite lifecycle
+// generates its collections and messages during dev/build.
+await $`turbo run generate:language-packs`;

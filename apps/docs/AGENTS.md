@@ -19,25 +19,25 @@ ZotLit documentation site — TanStack Start (SSR React) + Tailwind CSS v4, depl
 
 Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Package-specific:
 
-- `pnpm exec turbo run dev --filter=@zotlit/docs` — build workspace dependencies and generate the collection index before starting Vite.
+- `pnpm exec turbo run dev --filter=@zotlit/docs` — build workspace dependencies and start Vite, which compiles native collection macros and generates messages.
 - `pnpm --filter @zotlit/docs preview` — serve the built Worker locally through workerd.
 - `pnpm --filter @zotlit/docs deploy` — build, then `wrangler deploy` to Cloudflare Workers.
 - `pnpm --filter @zotlit/docs deploy:beta` — the same for Pre-release Docs. `CLOUDFLARE_ENV` picks the Cloudflare environment at build time, so the beta build has to be its own; a build made without it carries the production line's variables whatever `wrangler deploy --env` says.
 - `pnpm --filter @zotlit/docs cf-typegen` — regenerate the committed `worker-configuration.d.ts` from `wrangler.jsonc`. Both TypeScript configurations consume it; run this command after a Worker binding, variable, secret, compatibility date, or compatibility flag changes. The typecheck verifies that the generated file is current.
-- `pnpm --filter @zotlit/docs codegen` — regenerate the `.source/` collection index (`fumadocs-mdx`); `postinstall` and `vite build` already run it.
-- The Paraglide Vite plugin generates the site's typed message facade, including `workbench_*`, during dev and build. Turbo typecheck, lint, and test tasks depend on the real site build; its cached output restores `src/paraglide/` and `.source/` for checks.
+- The stock Fumadocs Vite plugin compiles the macros in `src/lib/collections.ts`; collection entry files are disabled with `index: false`. Keep compile-time imports inside macro arguments so the transform removes them from app modules.
+- The Paraglide Vite plugin generates the site's typed message facade, including `workbench_*`, during dev and build. Turbo typecheck, lint, and test tasks depend on the real site build; its cached output restores `src/paraglide/` for checks.
 - `pnpm exec turbo run generate:template-data --filter=@zotlit/docs` — regenerate the template-data reference page.
 
 ## Content pipeline
 
 - **i18n copy:** Read [the i18n policy](policies/i18n.md) when adding web copy, rendering translated text, or changing message generation. It defines the Paraglide/Fumadocs boundary and plugin bundle isolation.
-- **Collections:** Read [`source.config.ts`](source.config.ts) before changing frontmatter, partial discovery, Markdown editions, or syntax highlighting. It owns those rules and the three collection schemas.
+- **Collections:** [`src/lib/collections.ts`](src/lib/collections.ts) owns discovery, lazy loading, and git dates. Read [`content.config.ts`](content.config.ts) for schemas and Markdown editions, and [`source.config.ts`](source.config.ts) for global MDX and syntax-highlighting options.
 - **Dates:** `publishedOn` in [`src/lib/shared.ts`](src/lib/shared.ts) normalizes every publication date to an ISO day, for both the collections and the build-time content scan; workerd lacks Temporal, so this schema, the reader-facing date helpers beside it — the two release-date formatters and the footer's copyright year — and the `Date` the `feed` library takes in [`src/routes/changelog/rss[.]xml.ts`](<src/routes/changelog/rss[.]xml.ts>) are a package-scoped exception to [the Temporal policy](../../policies/temporal-dates.md).
 
 ## Routing
 
-- **Server side:** [`src/lib/source.ts`](src/lib/source.ts) reads `collections/server` and stays server-only. Routes reach it through `createServerFn` handlers, which return JSON — a page's file path, its frontmatter, the sidebar tree.
-- **MDX bodies:** compile through `collections/browser`. Each route builds a client loader with `createClientLoader`, calls `preload(path)` in its loader, and renders `getComponent(path)`. The table of contents rides with the compiled module, so it never crosses the server boundary.
+- **Server side:** [`src/lib/source.ts`](src/lib/source.ts) wraps the native macro collections with server-side Fumadocs loaders. Routes reach it through `createServerFn` handlers, which return JSON — a page's file path, its frontmatter, the sidebar tree.
+- **MDX bodies:** use the shared macro collections. Route loaders call an entry’s `preload()`; components render its `body` and read compiled metadata through `use(entry.load())`. The table of contents stays with the compiled module.
 - **Redirects and headers:** [`src/lib/v1-redirects.ts`](src/lib/v1-redirects.ts) owns the v1 permalink table and [`src/lib/headers.ts`](src/lib/headers.ts) owns the header table; a Vite plugin in [`vite.config.ts`](vite.config.ts) renders them into `dist/client/_redirects` and `_headers`, which the Cloudflare asset layer answers without a Worker invocation. The asset layer serves every file `public, max-age=0, must-revalidate` by default, so the header table gives the content-hashed URLs — `/assets/*` and the commit-pinned agent-skill archives — `public, max-age=31536000, immutable` instead. A path under `run_worker_first` takes its headers from the Worker; `_headers` reaches the asset layer alone.
 - **Search:** [`src/routes/api/search.ts`](src/routes/api/search.ts) serves `/api/search` from `createFromSource` over the docs loader alone, so the changelog and the blog stay unindexed. Its only `createFileRoute` property is `server`, which keeps it out of the client route tree and out of any prerender pass. The dialog is the fumadocs default and needs no client wiring.
 - **Markdown editions:** every page publishes its authored Markdown at two URLs — `<page>.md` and `/llms.mdx/<section>/…/content.md`. [`src/lib/markdown-routes.ts`](src/lib/markdown-routes.ts) owns that scheme; the `rewrite` in [`src/router.tsx`](src/router.tsx) folds the `.md` suffix onto the content route, so [`src/routes/llms[.]mdx/$.ts`](<src/routes/llms[.]mdx/$.ts>) answers both. Bodies and the two `llms*.txt` indexes come from [`src/lib/markdown-editions.ts`](src/lib/markdown-editions.ts).
@@ -84,11 +84,11 @@ The site wears the "Manuscript & Machine" design. Its spec — theme, the four-f
 
 [`src/lib/template-contract/sections.ts`](src/lib/template-contract/sections.ts) owns the section structure. The `_*.mdx` partials beside the generated page own supplementary prose.
 
-The page's Markdown edition renders each `<ContractTable>` as a GFM table through the `stringify` callback on the docs collection's `includeProcessedMarkdown` in [`source.config.ts`](source.config.ts).
+The page's Markdown edition renders each `<ContractTable>` as a GFM table through the `stringify` callback on the docs collection's `includeProcessedMarkdown` in [`content.config.ts`](content.config.ts).
 
 ## Content and writing docs
 
-Content lives in `content/`; collections and schemas are defined in [`source.config.ts`](source.config.ts). `content/docs/` follows Diataxis.
+Content lives in `content/`; collections are defined in [`src/lib/collections.ts`](src/lib/collections.ts), with schemas in [`content.config.ts`](content.config.ts). `content/docs/` follows Diataxis.
 
 Read `/docs-writing` to scope content decisions, then delegate prose to the `docs-writer` agent.
 

@@ -16,6 +16,7 @@ import { renderHeadersFile } from "./src/lib/headers.js";
 import { createOgCardRenderer } from "./src/lib/og-card.js";
 import { ogCards } from "./src/lib/og-cards.js";
 import { prerenderPages } from "./src/lib/prerender-pages.js";
+import type { DocsLine } from "./src/lib/shared.js";
 import { renderRedirectsFile } from "./src/lib/v1-redirects.js";
 
 const packageRoot = import.meta.dirname;
@@ -56,9 +57,9 @@ function fumadocsServerOnWorker(): Plugin {
   };
 }
 
-let docsLine: Cloudflare.Env["DOCS_LINE"] | undefined;
+let docsLine: DocsLine | undefined;
 
-function resolvedDocsLine(): Cloudflare.Env["DOCS_LINE"] {
+function resolvedDocsLine(): DocsLine {
   if (docsLine === undefined) {
     throw new Error("Cloudflare configuration did not provide DOCS_LINE.");
   }
@@ -207,19 +208,29 @@ export default defineConfig(({ command }) => ({
     // Named here, the scan finds them all before the first request.
     entries: ["src/lib/workbench/workbench.tsx"],
   },
+  environments: {
+    ssr: {
+      optimizeDeps: {
+        // Macro-generated and MDX-only imports arrive after the initial scan.
+        // Pre-bundle them so the first render keeps its SSR dependency graph.
+        include: [
+          "fumadocs-mdx/runtime/macro",
+          "fumadocs-ui/components/card",
+          "fumadocs-ui/components/steps",
+        ],
+      },
+    },
+  },
   // The Workbench's render Worker is a module Worker: it awaits the Temporal
   // polyfill before it takes its first message, and top-level await needs an
   // ES bundle rather than Vite's default IIFE.
   // @see src/lib/workbench/render-worker.ts
   worker: { format: "es" },
-  // Both aliases are declared here rather than through
-  // `resolve.tsconfigPaths`, which under Vite 8 leaves the `paths` in
-  // `tsconfig.app.json` unresolved.
+  // Resolve the app alias explicitly: Vite 8 leaves the app tsconfig paths
+  // unresolved through `resolve.tsconfigPaths`.
   resolve: {
     alias: {
       "@": resolve(packageRoot, "src"),
-      // fumadocs-mdx writes its collection index files under `.source`
-      collections: resolve(packageRoot, ".source"),
     },
   },
   plugins: [
@@ -235,7 +246,7 @@ export default defineConfig(({ command }) => ({
     }),
     devtools(),
     tailwindcss(),
-    fumadocsMdx(),
+    fumadocsMdx({ index: false }),
     cloudflareAssetRules(),
     machineAssets(),
     workerHotUpdate(),
