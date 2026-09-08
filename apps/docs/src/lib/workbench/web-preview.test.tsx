@@ -1,11 +1,12 @@
-// @vitest-environment happy-dom
-// The web subscribes shared controls and document changes to its Worker scheduler.
 import { EditorView } from "@codemirror/view";
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderProfile } from "@zotlit/workbench/render";
-import { m } from "@zotlit/workbench/ui";
+
+// @vitest-environment happy-dom
+// The web subscribes shared controls and document changes to its Worker scheduler.
+import { m } from "@/paraglide/messages.js";
 
 import { startRenderWorker, open } from "./page-test-host";
 

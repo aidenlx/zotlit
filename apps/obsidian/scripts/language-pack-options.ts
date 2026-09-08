@@ -2,19 +2,8 @@
 // the root inlang project holds for other hosts. Every caller that compiles the
 // pack reads them from here, so one prefix is added in one place.
 
-import { WORKBENCH_MESSAGE_PREFIX } from "@zotlit/config/paraglide";
-
-/**
- * Prefixes other compiles own: `docs_` for the site, `workbench_` for the
- * Workbench UI's own Paraglide facade in `@zotlit/workbench/ui`. A Language
- * Pack is capped at 1000 messages, so copy that never reaches the plugin
- * stays out of the pack it would otherwise fill.
- */
-export const EXCLUDE_MESSAGE_PREFIXES = [
-  "docs_",
-  WORKBENCH_MESSAGE_PREFIX,
-  "zotero.",
-] as const;
+/** The site and Companion own these namespaces; the plugin also renders Workbench copy. */
+export const EXCLUDE_MESSAGE_PREFIXES = ["docs_", "zotero."] as const;
 
 /** Companion labels quoted by the live-updates settings descriptions. */
 export const INCLUDE_MESSAGES = [

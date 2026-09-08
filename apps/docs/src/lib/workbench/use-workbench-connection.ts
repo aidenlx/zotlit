@@ -18,10 +18,9 @@ import type {
 } from "@zotlit/workbench/bridge";
 import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import type { RenderResources } from "@zotlit/workbench/render";
-import { m } from "@zotlit/workbench/ui";
 
 import { toast } from "@/components/ui/toast";
-import { m as docsMessages } from "@/paraglide/messages.js";
+import { m } from "@/paraglide/messages.js";
 
 import type { SampleItem } from "./fields";
 import { readDraft } from "./transfer";
@@ -427,7 +426,7 @@ function connectionFailureMessage(
     error.code === "invalid-one-time-code" &&
     connection.state === "disconnected"
   ) {
-    return docsMessages.docs_workbench_connection_link_expired();
+    return m.docs_workbench_connection_link_expired();
   }
   if (
     error instanceof LocalBridgeUnavailableError &&

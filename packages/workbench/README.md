@@ -114,7 +114,8 @@ every component marks its parts with `data-part` and their state with
 by component and part (`WorkbenchParts` lists them), plus an icon renderer.
 Call sites pass no classes. `WorkbenchHostProvider` takes the host adapter —
 `menu`, `dialog`, `confirm`, `suggester`, `tooltip`, `hoverCard`, `notice`, the
-`render` Worker factory, `matchData`, `insertTarget`, and `persistence` — so
+`render` Worker factory, `matchData`, `insertTarget`, `persistence`,
+`messages`, and `getLocale` — so
 Obsidian shows its own `Menu`, `Modal`, `SuggestModal`, and `Notice` and the web
 shows Base UI. `WorkbenchEditorProvider` carries one editor instance: the
 zustand vanilla store from `createWorkbenchStore` (tab, selected Item, focused
@@ -127,12 +128,17 @@ inert, which the web's skeleton relies on. The components so far: `TabBar` and
 controls as children), and `ProblemsFooter` with `problemText` and
 `diagnosticText`, the words for every core code.
 
-The subpath compiles its own Paraglide facade from the root catalog's
-`workbench_*` namespace into `src/ui/paraglide/` (`pnpm generate:i18n`, also run
-by `postinstall` and `dev`) and exports it as `m`. Turbo runs the generator once
+The host supplies `messages` and `getLocale` through `WorkbenchHostProvider`.
+The web passes its Paraglide facade; Obsidian passes its Language Pack facade.
+Components read `useWorkbenchMessages()`, and pure text helpers take the
+message functions as an argument. A host without overlays, such as the web
+skeleton, can use `WorkbenchMessagesProvider` directly.
+
+`pnpm generate:message-types` reads the root `workbench_*` catalog through the
+existing message compiler and emits the `WorkbenchMessages` type contract.
+The English pack it emits is used only by shared tests. Turbo runs generation
 before `build`, `test`, `typecheck`, and `typecheck:test`; direct package-tool
-runs need an existing facade or an explicit `pnpm generate:i18n` first. The
-catalog filter is `@zotlit/config/paraglide`. The tree stays inside the
+runs need those generated files first. The tree stays inside the
 `preact/compat` surface, and its suite under `src/ui/` runs twice in `pnpm test`:
 the `ui-react` and `ui-preact` Vitest projects, the second with React aliased to
 `preact/compat` and Testing Library to its Preact build.

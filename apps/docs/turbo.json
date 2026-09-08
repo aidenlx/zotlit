@@ -11,7 +11,7 @@
         "$TURBO_ROOT$/project.inlang/settings.json",
         "$TURBO_ROOT$/messages/**"
       ],
-      "outputs": ["dist/**", ".tanstack/**", ".source/**"],
+      "outputs": ["dist/**", ".tanstack/**", ".source/**", "src/paraglide/**"],
       // The Cloudflare Web Analytics token is read at build time, so builds
       // with different values are distinct; `CLOUDFLARE_ENV` likewise
       // separates beta and production outputs.
@@ -23,13 +23,12 @@
       "outputs": [".source/**"],
       "outputLogs": "errors-only"
     },
-    "generate:i18n": {
-      "inputs": [
-        "$TURBO_ROOT$/project.inlang/settings.json",
-        "$TURBO_ROOT$/messages/**"
-      ],
-      "outputs": ["src/paraglide/**"],
-      "outputLogs": "errors-only"
+    // Vite's real build owns message generation; checks reuse its cached output.
+    "typecheck": {
+      "dependsOn": ["$TURBO_EXTENDS$", "build", "cf-typegen:check"]
+    },
+    "lint": {
+      "dependsOn": ["build"]
     },
     "cf-typegen:check": {
       "inputs": ["wrangler.jsonc", "worker-configuration.d.ts"],

@@ -52,14 +52,13 @@
   },
   "scripts": {
     "build": "tsdown",
-    "dev": "pnpm generate:i18n && tsdown --watch",
+    "dev": "pnpm generate:message-types && tsdown --watch",
     "typecheck": "tsc --noEmit -p tsconfig.lib.json",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
     "test": "vitest run",
-    "generate:i18n": "node scripts/generate-i18n.ts",
-    "postinstall": "pnpm generate:i18n",
-    "generate:eta": "lezer-generator src/language/eta.grammar -o src/language/eta-parser.ts --typeScript"
+    "generate:eta": "lezer-generator src/language/eta.grammar -o src/language/eta-parser.ts --typeScript",
+    "generate:message-types": "node scripts/generate-message-types.ts"
   },
   "dependencies": {
     "@codemirror/commands": "6.11.0",
@@ -87,7 +86,6 @@
     "@codemirror/language": "catalog:",
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:",
-    "@inlang/paraglide-js": "^2.24.1",
     "@lezer/generator": "1.8.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/preact": "^3.2.4",
@@ -96,6 +94,7 @@
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@zotlit/config": "workspace:*",
+    "@zotlit/obsidian-i18n": "workspace:*",
     "ajv": "catalog:",
     "happy-dom": "catalog:",
     "oxlint": "catalog:",

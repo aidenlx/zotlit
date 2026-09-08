@@ -1,5 +1,5 @@
-import { act } from "preact/test-utils";
 // @vitest-environment happy-dom
+import { act } from "preact/test-utils";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -15,6 +15,7 @@ import {
 } from "@zotlit/workbench/ui";
 
 import { initI18n } from "@/lib/i18n";
+import * as m from "@/lib/i18n/generated/messages";
 import type { DatabaseService } from "@/services/database/service";
 
 import { createProfileEditorHost } from "./host";
@@ -125,14 +126,28 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
   expect(render).not.toHaveBeenCalled();
 });
 
-it("renders shared Match and Explorer controls in Chinese through the native host", async () => {
+it("applies the installed pack to shared Match and Explorer controls after restart", async () => {
+  const storage = new Map<string, unknown>();
   const ports = {
     getLanguage: () => "zh",
-    loadLocalStorage: () => null,
-    saveLocalStorage: () => {},
-    requestUrl: async () => ({ status: 404, text: "" }),
+    loadLocalStorage: (key: string) => storage.get(key) ?? null,
+    saveLocalStorage: (key: string, value: unknown) => {
+      storage.set(key, value);
+    },
+    requestUrl: async () => ({
+      status: 200,
+      text: JSON.stringify({
+        schemaVersion: 1,
+        locale: "zh-CN",
+        messages: {
+          workbench_match_conditions_desc: "测试包：匹配条件",
+          workbench_explorer_simple: "测试包：简洁",
+          workbench_field_title: "测试包：标题",
+        },
+      }),
+    }),
   };
-  initI18n({ pluginVersion: "2.0.0", ports });
+  const lifecycle = initI18n({ pluginVersion: "2.0.0", ports });
   using stack = new DisposableStack();
   stack.defer(() =>
     initI18n({
@@ -161,26 +176,47 @@ it("renders shared Match and Explorer controls in Chinese through the native hos
   stack.defer(() => {
     void act(() => root.unmount());
   });
-  await act(async () => {
-    root.render(
-      createElement(
-        WorkbenchHostProvider,
-        { host },
+  const show = () =>
+    act(async () => {
+      root.render(
         createElement(
-          WorkbenchEditorProvider,
-          { store, controller },
-          createElement(MatchPane, { controller, facts: null }),
-          createElement(DataExplorer, {
-            root: "note",
-            data: { title: "A paper" },
-            copy: async () => {},
-          }),
+          WorkbenchHostProvider,
+          { host },
+          createElement(
+            WorkbenchEditorProvider,
+            { store, controller },
+            createElement(MatchPane, { controller, facts: null }),
+            createElement(DataExplorer, {
+              root: "note",
+              data: { title: "A paper" },
+              copy: async () => {},
+            }),
+          ),
         ),
-      ),
-    );
-  });
-  expect(el.textContent).toContain("满足以下全部条件");
-  expect(el.querySelector('[aria-label="字段视图"]')?.textContent).toBe(
-    "简洁所有字段",
+      );
+    });
+  await show();
+  const englishMatch = m.workbench_match_conditions_desc();
+  const englishViews =
+    m.workbench_explorer_simple() + m.workbench_explorer_all();
+  const variant = () =>
+    el.querySelector(`[aria-label="${m.workbench_explorer_variant()}"]`);
+  expect(el.textContent).toContain(englishMatch);
+  expect(variant()?.textContent).toBe(englishViews);
+  expect(host.getLocale()).toBe("en");
+
+  await lifecycle.install();
+  await show();
+  expect(el.textContent).toContain(englishMatch);
+  expect(variant()?.textContent).toBe(englishViews);
+
+  initI18n({ pluginVersion: "2.0.0", ports });
+  await show();
+  expect(host.getLocale()).toBe("zh-CN");
+  expect(el.textContent).toContain("测试包：匹配条件");
+  expect(el.textContent).toContain("测试包：标题");
+  // The pack overrides Simple; All fields falls back to bundled English.
+  expect(variant()?.textContent).toBe(
+    `测试包：简洁${m.workbench_explorer_all()}`,
   );
 });

@@ -2,20 +2,19 @@
   "$schema": "https://turborepo.dev/schema.json",
   "extends": ["//"],
   "tasks": {
-    // The `ui` subpath's Paraglide facade over the root catalog's
-    // `workbench_*` namespace. Each consumer waits for this single writer.
-    "generate:i18n": {
+    // The shared type contract and English fixtures for the UI tests.
+    "generate:message-types": {
       "inputs": [
-        "scripts/generate-i18n.ts",
-        "$TURBO_ROOT$/packages/config/paraglide.ts",
+        "scripts/generate-message-types.ts",
         "$TURBO_ROOT$/project.inlang/settings.json",
         "$TURBO_ROOT$/messages/**"
       ],
-      "outputs": ["src/ui/paraglide/**"],
+      "dependsOn": ["@zotlit/obsidian-i18n#build"],
+      "outputs": ["src/ui/generated/**"],
       "outputLogs": "errors-only"
     },
     "build": {
-      "dependsOn": ["$TURBO_EXTENDS$", "generate:i18n"],
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:message-types"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/project.inlang/settings.json",
@@ -23,13 +22,13 @@
       ]
     },
     "typecheck": {
-      "dependsOn": ["$TURBO_EXTENDS$", "generate:i18n"]
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:message-types"]
     },
     "typecheck:test": {
-      "dependsOn": ["$TURBO_EXTENDS$", "generate:i18n"]
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:message-types"]
     },
     "test": {
-      "dependsOn": ["$TURBO_EXTENDS$", "generate:i18n"],
+      "dependsOn": ["$TURBO_EXTENDS$", "generate:message-types"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/project.inlang/settings.json",

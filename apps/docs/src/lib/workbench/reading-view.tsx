@@ -26,7 +26,9 @@ import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 
 import type { RenderedProperty, RenderedRange } from "@zotlit/workbench/render";
-import { m, PropertyList } from "@zotlit/workbench/ui";
+import { PropertyList, WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
+
+import { m } from "@/paraglide/messages.js";
 
 import imagePlaceholder from "./image-placeholder.svg";
 
@@ -353,11 +355,13 @@ export function ResultSheet({
   return (
     <div className="flex flex-1 flex-col">
       {properties.length > 0 && (
-        <PropertyList
-          properties={properties}
-          label={m.workbench_result_properties()}
-          variant="note"
-        />
+        <WorkbenchMessagesProvider messages={m}>
+          <PropertyList
+            properties={properties}
+            label={m.workbench_result_properties()}
+            variant="note"
+          />
+        </WorkbenchMessagesProvider>
       )}
       <div
         role="document"

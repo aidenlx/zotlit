@@ -35,7 +35,7 @@
     "@pnpm/find-workspace-dir": "catalog:",
     "@types/node": "catalog:",
     "@types/semver": "^7.7.1",
-    "@types/yargs": "catalog:",
+    "@types/yargs": "^17.0.35",
     "@zotlit/config": "workspace:*",
     "@zotlit/db": "workspace:*",
     "@zotlit/templates": "workspace:*",
@@ -47,7 +47,7 @@
     "typescript": "catalog:",
     "valibot": "catalog:",
     "vitest": "catalog:",
-    "yargs": "catalog:",
+    "yargs": "^18.1.0",
     "zx": "catalog:"
   }
 }

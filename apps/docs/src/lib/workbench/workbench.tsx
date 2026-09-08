@@ -40,8 +40,8 @@ import {
   ProblemsFooter,
   PreviewControls,
   ResultColumn,
-  TAB_LABEL,
-  TAB_LEDE,
+  tabLabel,
+  tabLede,
   TabBar,
   TabPanel,
   WorkbenchEditorProvider,
@@ -49,7 +49,6 @@ import {
   WorkbenchThemeProvider,
   createWorkbenchStore,
   diagnosticText,
-  m,
   problemText,
   AnnotationPane,
   AnnotationPointer,
@@ -79,6 +78,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/toast";
+import { m } from "@/paraglide/messages.js";
 
 import { annotationHeaderMark } from "./annotation-mark";
 import { ConnectionBar, ConnectionNotice } from "./connection-bar";
@@ -391,7 +391,7 @@ export function Workbench() {
         : [
             {
               position: diagnostic.position,
-              message: diagnosticText(diagnostic),
+              message: diagnosticText(m, diagnostic),
             },
           ],
     ),
@@ -399,7 +399,7 @@ export function Workbench() {
       const position = entryPosition(entry.slice);
       return position === null
         ? []
-        : [{ position, message: problemText(entry).message }];
+        : [{ position, message: problemText(m, entry).message }];
     }),
   ];
   // The Name and folder tab writes the note name; a manifest that holds that
@@ -973,8 +973,8 @@ export function Workbench() {
           >
             <div className="mb-2 flex shrink-0 items-center gap-1">
               <TabBar onTabChange={openTab} />
-              <WorkbenchHelp title={TAB_LABEL[tab]()}>
-                {TAB_LEDE[tab]()}
+              <WorkbenchHelp title={tabLabel(m, tab)}>
+                {tabLede(m, tab)}
               </WorkbenchHelp>
             </div>
             <TabPanel tab="note" keepMounted>
@@ -993,7 +993,7 @@ export function Workbench() {
                   />
                 }
                 formatProblem={
-                  formatProblem ? diagnosticText(formatProblem) : null
+                  formatProblem ? diagnosticText(m, formatProblem) : null
                 }
                 onSelection={(selection) => {
                   noteCaret.current = selection;
@@ -1007,7 +1007,7 @@ export function Workbench() {
             </TabPanel>
             {!advanced && tab !== "note" && (
               <TabPanel tab={tab}>
-                <h2 className="sr-only">{TAB_LABEL[tab]()}</h2>
+                <h2 className="sr-only">{tabLabel(m, tab)}</h2>
                 {tab === "name" ? (
                   <>
                     <NameFolderPane
@@ -1037,7 +1037,7 @@ export function Workbench() {
                     reveal={reveal}
                     suggest={suggest}
                     problem={
-                      formatProblem ? diagnosticText(formatProblem) : null
+                      formatProblem ? diagnosticText(m, formatProblem) : null
                     }
                     onSelection={trackSelection}
                   />

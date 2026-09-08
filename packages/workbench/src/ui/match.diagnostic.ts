@@ -1,9 +1,12 @@
-// Localized explanations for the shared Match evaluator diagnostics.
 import type { ConditionProblem } from "#/match/condition";
 
-import { m } from "./paraglide/messages.js";
+// Localized explanations for the shared Match evaluator diagnostics.
+import type { WorkbenchMessages } from "./generated/messages";
 
-export function describeProblem(problem: ConditionProblem): string {
+export function describeProblem(
+  m: WorkbenchMessages,
+  problem: ConditionProblem,
+): string {
   switch (problem.code) {
     case "empty":
       return m.workbench_match_problem_empty();

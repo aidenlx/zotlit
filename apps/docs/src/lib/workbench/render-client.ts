@@ -6,7 +6,8 @@ import type {
   ProfileRenderResult,
   RenderRequest,
 } from "@zotlit/workbench/render";
-import { m } from "@zotlit/workbench/ui";
+
+import { m } from "@/paraglide/messages.js";
 
 export function startRenderWorker(
   request: RenderRequest,

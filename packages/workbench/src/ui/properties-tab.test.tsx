@@ -1,19 +1,13 @@
 import { EditorView } from "@codemirror/view";
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, expect, it } from "vitest";
 
 import { useDocumentRevision } from "./editor";
 import { WorkbenchHostProvider } from "./host";
-import { m } from "./paraglide/messages.js";
 import { PropertiesPane, PropertiesResult } from "./properties-tab";
-import { fakeHost } from "./test-host";
+import { fakeHost, renderWithMessages as render } from "./test-host";
+import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";

@@ -15,6 +15,8 @@ import type { Extension } from "@codemirror/state";
 import { createContext, useContext } from "react";
 import type { ComponentType, HTMLAttributes, ReactNode } from "react";
 
+import type { WorkbenchMessages } from "./generated/messages";
+import { WorkbenchMessagesProvider } from "./messages";
 import type { WorkbenchIcon } from "./theme";
 
 export interface WorkbenchMenuItem {
@@ -128,6 +130,9 @@ export interface WorkbenchMarkdownProps {
 }
 
 export interface WorkbenchHost {
+  readonly messages: WorkbenchMessages;
+  /** The locale currently used by the host's displayed messages. */
+  getLocale(): string;
   menu(request: WorkbenchMenuRequest): void;
   dialog(request: WorkbenchDialogRequest): WorkbenchDialogHandle;
   /** Resolves `true` when the reader confirms. */
@@ -159,7 +164,13 @@ export function WorkbenchHostProvider({
   host: WorkbenchHost;
   children?: ReactNode;
 }) {
-  return <HostContext.Provider value={host}>{children}</HostContext.Provider>;
+  return (
+    <HostContext.Provider value={host}>
+      <WorkbenchMessagesProvider messages={host.messages}>
+        {children}
+      </WorkbenchMessagesProvider>
+    </HostContext.Provider>
+  );
 }
 
 export function useWorkbenchHost(): WorkbenchHost {

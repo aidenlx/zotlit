@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
 
 import type { LanguagePackLifecyclePorts } from "@zotlit/obsidian-i18n";
-import { m as workbenchMessages } from "@zotlit/workbench/ui";
 
 import { initI18n } from "./i18n.js";
 import * as m from "./i18n/generated/messages.js";
@@ -13,7 +12,7 @@ const PACK_MESSAGE = "世界（测试）";
 const CHINESE_PACK = JSON.stringify({
   schemaVersion: 1,
   locale: "zh-CN",
-  messages: { hello: PACK_MESSAGE },
+  messages: { hello: PACK_MESSAGE, workbench_tab_match: "匹配（测试包）" },
 });
 /** Bundled with the plugin, so lifecycle copy reads in Chinese with no pack installed. */
 const BUNDLED_SETTING_NAME = "语言包";
@@ -29,18 +28,16 @@ describe("ZotLit Language Pack setting integration", () => {
   });
 
   test.each(["zh", "zh-CN"])(
-    "binds shared editor labels to the native %s locale",
+    "keeps shared editor labels in English before installing the native %s pack",
     (language) => {
       const lifecycle = initI18n({
         pluginVersion: "2.0.0",
         ports: makePorts({ language }).ports,
       });
       expect(lifecycle.locale).toBe("zh-CN");
-      expect(workbenchMessages.workbench_tab_match()).toBe("匹配");
-      expect(workbenchMessages.workbench_explorer_simple()).toBe("简洁");
-      expect(workbenchMessages.workbench_explorer_menu_copy_value()).toBe(
-        "复制值",
-      );
+      expect(m.workbench_tab_match()).toBe("Match");
+      expect(m.workbench_explorer_simple()).toBe("Simple");
+      expect(m.workbench_explorer_menu_copy_value()).toBe("Copy value");
     },
   );
 
@@ -49,8 +46,8 @@ describe("ZotLit Language Pack setting integration", () => {
       pluginVersion: "2.0.0",
       ports: makePorts({ language: "fr" }).ports,
     });
-    expect(workbenchMessages.workbench_tab_match()).toBe("Match");
-    expect(workbenchMessages.workbench_explorer_simple()).toBe("Simple");
+    expect(m.workbench_tab_match()).toBe("Match");
+    expect(m.workbench_explorer_simple()).toBe("Simple");
   });
 
   test("stays hidden when ZotLit has no pack for the resolved locale", () => {
@@ -89,7 +86,7 @@ describe("ZotLit Language Pack setting integration", () => {
     );
   });
 
-  test("offers ZotLit's disclosed install, then the restart, then disappears", async () => {
+  test("applies and resets the pack through the disclosed install and restart flow", async () => {
     const harness = makePorts({ language: "zh", response: CHINESE_PACK });
     const lifecycle = initI18n({
       pluginVersion: "2.0.0",
@@ -105,6 +102,7 @@ describe("ZotLit Language Pack setting integration", () => {
     expect(offered?.install?.disabled).toBe(false);
     // Every other Message still reads the bundled base pack until a pack applies.
     expect(m.hello()).toBe("world");
+    expect(m.workbench_tab_match()).toBe("Match");
 
     await lifecycle.install();
 
@@ -113,6 +111,7 @@ describe("ZotLit Language Pack setting integration", () => {
     expect(downloaded?.install).toBeUndefined();
     // Cached, not applied: the facade still reads the bundled base pack.
     expect(m.hello()).toBe("world");
+    expect(m.workbench_tab_match()).toBe("Match");
 
     const restarted = initI18n({
       pluginVersion: "2.0.0",
@@ -122,6 +121,14 @@ describe("ZotLit Language Pack setting integration", () => {
     expect(languagePackSettingCopy(restarted)).toBeUndefined();
     // The lifecycle installed the pack into the very runtime the facade reads.
     expect(m.hello()).toBe(PACK_MESSAGE);
+    expect(m.workbench_tab_match()).toBe("匹配（测试包）");
+    expect(m.workbench_explorer_simple()).toBe("Simple");
+
+    restarted.reset();
+    expect(m.workbench_tab_match()).toBe("匹配（测试包）");
+    initI18n({ pluginVersion: "2.0.0", ports: harness.ports });
+    expect(m.workbench_tab_match()).toBe("Match");
+    expect(m.workbench_explorer_simple()).toBe("Simple");
   });
 
   test("downloads the pack from the Resource Release of the running plugin version", async () => {

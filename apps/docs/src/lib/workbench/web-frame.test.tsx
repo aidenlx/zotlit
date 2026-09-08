@@ -1,9 +1,9 @@
-// @vitest-environment happy-dom
-// Browser viewport folds and the web field sheet, including focus return.
 import { act } from "react";
 import { describe, expect, it } from "vitest";
 
-import { m } from "@zotlit/workbench/ui";
+// @vitest-environment happy-dom
+// Browser viewport folds and the web field sheet, including focus return.
+import { m } from "@/paraglide/messages.js";
 
 import {
   KEY,

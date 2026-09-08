@@ -21,7 +21,9 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 
-import { m } from "./paraglide/messages.js";
+import type { WorkbenchMessages } from "./generated/messages";
+import type { WorkbenchMessageLabel } from "./messages";
+import { useWorkbenchMessages } from "./messages";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
 import { SliceEditor } from "./slice-editor";
 import type { SuggestionSource } from "./slice-editor";
@@ -42,7 +44,7 @@ type BindingKey =
 
 interface Binding {
   readonly key: BindingKey;
-  readonly label: () => string;
+  readonly label: WorkbenchMessageLabel;
   /**
    * The control the value is edited through. A style is picked from the vault's
    * installed styles while a Workbench Connection lists them, and typed as its
@@ -52,25 +54,25 @@ interface Binding {
 }
 
 const BINDINGS: readonly Binding[] = [
-  { key: "folder", label: m.workbench_name_binding_folder, kind: "path" },
+  { key: "folder", label: "workbench_name_binding_folder", kind: "path" },
   {
     key: "citationStyle",
-    label: m.workbench_name_binding_citation_style,
+    label: "workbench_name_binding_citation_style",
     kind: "style",
   },
   {
     key: "importFolder",
-    label: m.workbench_name_binding_import_folder,
+    label: "workbench_name_binding_import_folder",
     kind: "path",
   },
   {
     key: "importColoredHighlights",
-    label: m.workbench_name_binding_colored_highlights,
+    label: "workbench_name_binding_colored_highlights",
     kind: "toggle",
   },
   {
     key: "importAnnotationsAsTemplate",
-    label: m.workbench_name_binding_annotation_template,
+    label: "workbench_name_binding_annotation_template",
     kind: "toggle",
   },
 ];
@@ -103,7 +105,10 @@ function fieldId(prefix: string, key: string): string {
 }
 
 /** One binding value in the words the tab reads it in. */
-function valueText(value: string | boolean | null | undefined): string {
+function valueText(
+  m: WorkbenchMessages,
+  value: string | boolean | null | undefined,
+): string {
   if (value === undefined) return m.workbench_name_unset();
   if (value === null) return m.workbench_name_value_no_style();
   if (typeof value === "boolean") {
@@ -156,6 +161,7 @@ export function NameFolderPane({
   reveal,
   onSelection,
 }: NameFolderPaneProps) {
+  const m = useWorkbenchMessages();
   const prefix = useId();
   const container = useRef<HTMLDivElement>(null);
   const icon = useIcon();
@@ -233,9 +239,9 @@ export function NameFolderPane({
               <dl {...part("defaults")}>
                 {BINDINGS.map((binding) => (
                   <div key={binding.key} {...part("actions")}>
-                    <dt {...part("default-label")}>{binding.label()}</dt>
+                    <dt {...part("default-label")}>{m[binding.label]()}</dt>
                     <dd {...part("default-value")}>
-                      {valueText(defaults[binding.key])}
+                      {valueText(m, defaults[binding.key])}
                     </dd>
                   </div>
                 ))}
@@ -438,6 +444,7 @@ function TextValue({
   optional?: boolean;
   onCommit: (value: string | undefined) => void;
 }) {
+  const m = useWorkbenchMessages();
   const prefix = useContext(FieldIdContext);
   return (
     <DraftText
@@ -469,9 +476,10 @@ function BindingRow({
   citationStyles: readonly InstalledCitationStyle[] | null;
   onWrite: (value: ManifestScalar | undefined) => void;
 }) {
+  const m = useWorkbenchMessages();
   const prefix = useContext(FieldIdContext);
   const part = useParts("nameFolder");
-  const label = binding.label();
+  const label = m[binding.label]();
   const inherits = value === undefined;
   const effective = inherits ? fallback : value;
   const id = fieldId(prefix, binding.key);
@@ -527,7 +535,7 @@ function BindingRow({
               )}
             />
           </button>
-          <span {...part("muted")}>{valueText(effective)}</span>
+          <span {...part("muted")}>{valueText(m, effective)}</span>
         </span>
       ) : (
         <DraftText
@@ -569,6 +577,7 @@ function StylePicker({
   styles: readonly InstalledCitationStyle[];
   onWrite: (value: ManifestScalar) => void;
 }) {
+  const m = useWorkbenchMessages();
   const options =
     value !== null &&
     value !== "" &&
@@ -610,6 +619,7 @@ function LanguageGroup({
   language: string;
   onWrite: (key: string, value: ManifestScalar) => void;
 }) {
+  const m = useWorkbenchMessages();
   const prefix = useContext(FieldIdContext);
   const part = useParts("nameFolder");
   const [pending, setPending] = useState<string | null>(null);

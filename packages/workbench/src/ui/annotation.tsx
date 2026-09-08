@@ -8,7 +8,8 @@ import type { AnnotationExample } from "#/render/index";
 import { useId } from "react";
 
 import { useDocumentRevision } from "./editor";
-import { m } from "./paraglide/messages.js";
+import type { WorkbenchMessages } from "./generated/messages";
+import { useWorkbenchMessages } from "./messages";
 import { SampleSuggester } from "./sample-suggester";
 import type { SampleOption } from "./sample-suggester";
 import { SliceEditor } from "./slice-editor";
@@ -28,23 +29,26 @@ export function AnnotationSampleBar({
   example: AnnotationExample;
   onSelect: (id: string) => void;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("annotation");
   return (
     <div {...part("sample-bar")}>
       <SampleSuggester
         id={id}
         title={m.workbench_choose_annotation()}
-        label={annotationOption(example).label}
+        label={annotationOption(m, example).label}
         selected={example.id}
         groups={[
           {
             heading: m.workbench_annotation_from_item(),
-            options: current.map(annotationOption),
+            options: current.map((example) => annotationOption(m, example)),
             empty: m.workbench_annotation_empty(),
           },
           {
             heading: m.workbench_sample_examples(),
-            options: SAMPLE_ANNOTATIONS.map(annotationOption),
+            options: SAMPLE_ANNOTATIONS.map((example) =>
+              annotationOption(m, example),
+            ),
           },
         ]}
         onSelect={onSelect}
@@ -53,7 +57,10 @@ export function AnnotationSampleBar({
   );
 }
 
-function annotationOption({ id, root }: AnnotationExample): SampleOption {
+function annotationOption(
+  m: WorkbenchMessages,
+  { id, root }: AnnotationExample,
+): SampleOption {
   const type = m.workbench_annotation_type({
     type: typeof root.type === "string" ? root.type : "unknown",
   });
@@ -89,6 +96,7 @@ export function AnnotationPane({
 > & {
   problem: string | null;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("annotation");
   const problemId = useId();
   useDocumentRevision(controller);
@@ -126,6 +134,7 @@ export function AnnotationPane({
  * call and its loop where the reader left the caret.
  */
 export function AnnotationPointer({ onInsert }: { onInsert: () => void }) {
+  const m = useWorkbenchMessages();
   const part = useParts("annotation");
   return (
     <div {...part("pointer")}>
@@ -149,6 +158,7 @@ export function AnnotationSectionBar({
   controller: WorkbenchDocumentController;
   onGo: (header: WorkbenchSliceRange) => void;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("annotation");
   useDocumentRevision(controller);
   const section = controller.annotationSection;

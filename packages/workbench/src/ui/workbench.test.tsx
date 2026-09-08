@@ -1,22 +1,16 @@
-// The shared panes together, under a fake adapter and theme in both runtimes.
 import { EditorView } from "@codemirror/view";
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 
 import { AnnotationPane } from "./annotation";
 import { EditToolbar } from "./edit-toolbar";
 import { useWorkbenchController, useWorkbenchStore } from "./editor";
 import { NotePane } from "./note-pane";
-import { m } from "./paraglide/messages.js";
 import { SliceEditor } from "./slice-editor";
 import { TabBar, TabPanel } from "./tab-bar";
-import { mount } from "./test-host";
+// The shared panes together, under a fake adapter and theme in both runtimes.
+import { mount, renderWithMessages as render } from "./test-host";
+import { m } from "./test-messages";
 
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";
 

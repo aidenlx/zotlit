@@ -6,11 +6,11 @@
 // bodies below mirror what each page's own head advertises, so a page and its
 // card always describe the same thing.
 
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import * as v from "valibot";
 
-// Vite loads this Node entry before app aliases are available.
-// oxlint-disable-next-line no-restricted-imports
-import * as m from "../paraglide/messages.js";
+type Messages = typeof import("@/paraglide/messages.js");
 import { scanContent } from "./content-scan.js";
 import type { ContentEntry } from "./content-scan.js";
 import type { CardProps } from "./og-card.js";
@@ -42,7 +42,7 @@ const changelogCard = v.object({
 });
 
 /** The landing cards, which carry hand-written copy instead of frontmatter. */
-function landingCards(): [OgType, CardProps][] {
+function landingCards(m: Messages): [OgType, CardProps][] {
   return [
     [
       "home",
@@ -113,11 +113,18 @@ function cardsOf<Schema extends v.GenericSchema>(
  * @param packageRoot the app's own root, which `vite.config.ts` owns.
  * @returns every card URL and the card it renders.
  */
-export function ogCards(packageRoot: string): Map<string, CardProps> {
+export async function ogCards(
+  packageRoot: string,
+): Promise<Map<string, CardProps>> {
+  // Asset hooks run after Paraglide generates the facade; config loading runs before it.
+  const messagesUrl = pathToFileURL(
+    join(packageRoot, "src/paraglide/messages.js"),
+  );
+  const m: Messages = await import(messagesUrl.href);
   const content = scanContent(packageRoot);
 
   return new Map<string, CardProps>([
-    ...landingCards().map(([type, card]): [string, CardProps] => [
+    ...landingCards(m).map(([type, card]): [string, CardProps] => [
       ogImageUrl(type),
       card,
     ]),

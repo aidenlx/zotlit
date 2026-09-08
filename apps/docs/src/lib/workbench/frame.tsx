@@ -3,7 +3,7 @@
 // toolbar, tab strip, and result header the panes open with — shared by the
 // live Workbench and the skeleton the route paints before the editor bundle
 // arrives. The route's chunk imports this module, so it imports React, the
-// shared Workbench UI and its messages, the UI kit, icons, the web theme, and
+// shared Workbench UI, the site's messages, the UI kit, icons, the web theme, and
 // the connection bar only.
 
 import {
@@ -21,7 +21,7 @@ import {
   ResultRegion,
   TabBar,
   WorkbenchThemeProvider,
-  m,
+  WorkbenchMessagesProvider,
 } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
@@ -33,7 +33,7 @@ import {
   PopoverDescription,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { m as docsMessages } from "@/paraglide/messages.js";
+import { m } from "@/paraglide/messages.js";
 
 import { ConnectionBar } from "./connection-bar";
 import { WEB_THEME } from "./theme";
@@ -168,7 +168,7 @@ export function WorkbenchFrame({
         </section>
       </main>
       <footer
-        aria-label={docsMessages.docs_workbench_status()}
+        aria-label={m.docs_workbench_status()}
         className="sticky bottom-0 z-20 shrink-0 border-t border-fd-border bg-fd-background"
       >
         <div className="max-h-[min(12rem,30dvh)] overflow-y-auto overscroll-contain">
@@ -267,67 +267,69 @@ function Placeholder({ className = "" }: { className?: string }) {
  */
 export function WorkbenchSkeleton() {
   return (
-    <WorkbenchThemeProvider theme={WEB_THEME}>
-      <WorkbenchFrame
-        busy
-        name={m.workbench_loading()}
-        actions={
-          <>
-            <Button variant="outline" size="xs" disabled>
-              <ProfileMenuLabel />
-            </Button>
-            <Button size="xs" disabled>
-              <Download aria-hidden />
-              {m.workbench_download()}
-            </Button>
-          </>
-        }
-        connection={
-          <ConnectionBar
-            connection={{ state: "disconnected" }}
-            website=""
-            busy={false}
-            resumable={false}
-            saveBusy
-            editingConnectedProfile={false}
-            onReconnect={() => {}}
-            onDisconnect={() => {}}
-          />
-        }
-        status={m.workbench_loading()}
-        view="edit"
-        fields={<Placeholder className="min-h-40" />}
-        editor={
-          <>
-            <EditToolbar>
-              <AddFieldButton />
-            </EditToolbar>
-            <div className="flex min-h-0 flex-1 flex-col">
-              <div className="mb-2 flex shrink-0 gap-2">
-                <TabBar />
-              </div>
-              <Placeholder className="min-h-40 flex-1" />
-            </div>
-          </>
-        }
-        result={
-          <>
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className="text-xs text-fd-muted-foreground">
-                {m.workbench_showing_label()}
-              </span>
-              <Placeholder className="h-8 min-w-0 flex-1" />
-            </div>
-            <ResultHeader
-              heading={m.workbench_result_heading()}
-              showMarkdown={false}
+    <WorkbenchMessagesProvider messages={m}>
+      <WorkbenchThemeProvider theme={WEB_THEME}>
+        <WorkbenchFrame
+          busy
+          name={m.workbench_loading()}
+          actions={
+            <>
+              <Button variant="outline" size="xs" disabled>
+                <ProfileMenuLabel />
+              </Button>
+              <Button size="xs" disabled>
+                <Download aria-hidden />
+                {m.workbench_download()}
+              </Button>
+            </>
+          }
+          connection={
+            <ConnectionBar
+              connection={{ state: "disconnected" }}
+              website=""
+              busy={false}
+              resumable={false}
+              saveBusy
+              editingConnectedProfile={false}
+              onReconnect={() => {}}
+              onDisconnect={() => {}}
             />
-            <ResultRegion>
-              <Placeholder className="h-full min-h-40" />
-            </ResultRegion>
-          </>
-        }
-      />
-    </WorkbenchThemeProvider>
+          }
+          status={m.workbench_loading()}
+          view="edit"
+          fields={<Placeholder className="min-h-40" />}
+          editor={
+            <>
+              <EditToolbar>
+                <AddFieldButton />
+              </EditToolbar>
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="mb-2 flex shrink-0 gap-2">
+                  <TabBar />
+                </div>
+                <Placeholder className="min-h-40 flex-1" />
+              </div>
+            </>
+          }
+          result={
+            <>
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-fd-muted-foreground">
+                  {m.workbench_showing_label()}
+                </span>
+                <Placeholder className="h-8 min-w-0 flex-1" />
+              </div>
+              <ResultHeader
+                heading={m.workbench_result_heading()}
+                showMarkdown={false}
+              />
+              <ResultRegion>
+                <Placeholder className="h-full min-h-40" />
+              </ResultRegion>
+            </>
+          }
+        />
+      </WorkbenchThemeProvider>
+    </WorkbenchMessagesProvider>
   );
 }

@@ -7,8 +7,6 @@ import type {
   SettingDefinitionPage,
 } from "obsidian";
 
-import { m as shared } from "@zotlit/workbench/ui";
-
 import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -253,7 +251,7 @@ function profilesList(
         setting.addExtraButton((button) =>
           button
             .setIcon("more-horizontal")
-            .setTooltip(shared.workbench_more_actions())
+            .setTooltip(m.workbench_more_actions())
             .onClick(() => {
               const menu = new Menu();
               menu.addItem((item) =>

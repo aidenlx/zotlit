@@ -10,7 +10,7 @@ import {
   useWorkbenchStore,
 } from "./editor";
 import { useTooltip } from "./host";
-import { m } from "./paraglide/messages.js";
+import { useWorkbenchMessages } from "./messages";
 import { useIcon, useParts } from "./theme";
 
 export function EditToolbar({
@@ -26,6 +26,7 @@ export function EditToolbar({
   layout?: "grouped" | "linear";
   onModeChange?: (advanced: boolean) => void;
 }) {
+  const m = useWorkbenchMessages();
   const editor = useOptionalEditor();
   const controller = editor?.controller ?? null;
   useDocumentRevision(controller);

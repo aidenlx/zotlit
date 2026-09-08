@@ -1,11 +1,5 @@
 import { EditorView } from "@codemirror/view";
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import {
@@ -15,9 +9,9 @@ import {
 } from "./annotation";
 import { annotationSamples } from "./annotation-samples";
 import { WorkbenchHostProvider } from "./host";
-import { m } from "./paraglide/messages.js";
 import { SampleSuggester } from "./sample-suggester";
-import { fakeHost } from "./test-host";
+import { fakeHost, renderWithMessages as render } from "./test-host";
+import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
 import { DEFAULT_PROFILE_SOURCE } from "#/render/default-profile";

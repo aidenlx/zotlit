@@ -1340,7 +1340,7 @@ describe("message data", () => {
       root: workspaceRoot,
       project: "project.inlang",
       output: outputDirectory,
-      excludeMessagePrefixes: ["docs_", "workbench_", "zotero."],
+      excludeMessagePrefixes: ["docs_", "zotero."],
       includeMessages: OBSIDIAN_INCLUDED_MESSAGES,
       targetLocaleMessagePrefixes: [
         "notice_language_pack_",
@@ -1354,6 +1354,10 @@ describe("message data", () => {
     for (const bundleId of OBSIDIAN_INCLUDED_MESSAGES) {
       expect(facade).toContain(`as ${JSON.stringify(bundleId)}`);
     }
+    const english = JSON.parse(
+      await readFile(join(outputDirectory, "en.json"), "utf8"),
+    ) as { messages: Record<string, unknown> };
+    expect(english.messages.workbench_tab_match).toBe("Match");
     const catalog = JSON.parse(
       await readFile(join(workspaceRoot, "messages/en.json"), "utf8"),
     ) as Record<string, unknown>;

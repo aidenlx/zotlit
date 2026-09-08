@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
+import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
 import type {
   WorkbenchHost,
   WorkbenchDialogRequest,
@@ -21,6 +22,7 @@ import type {
 } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { runtime } from "@/lib/i18n/generated/runtime";
 import { BaseNotice } from "@/lib/notice";
 import { tooltipAttrs } from "@/lib/utils";
 
@@ -123,6 +125,8 @@ export function createProfileEditorHost(
       for (const close of open) close();
     },
     ...ports,
+    messages: m,
+    getLocale: () => runtime.getLocale(),
     menu({ anchor, items, submenus }) {
       const menu = new Menu();
       for (const item of items)
@@ -151,7 +155,11 @@ export function createProfileEditorHost(
     dialog(request) {
       const modal = new EditorDialog(app, {
         ...request,
-        content: wrap(request.content),
+        content: wrap(
+          <WorkbenchMessagesProvider messages={m}>
+            {request.content}
+          </WorkbenchMessagesProvider>,
+        ),
         onClose() {
           open.delete(close);
           request.onClose?.();
@@ -192,7 +200,13 @@ export function createProfileEditorHost(
       element.style.position = "fixed";
       element.style.left = `${bounds.left}px`;
       element.style.top = `${bounds.bottom}px`;
-      root.render(wrap(content));
+      root.render(
+        wrap(
+          <WorkbenchMessagesProvider messages={m}>
+            {content}
+          </WorkbenchMessagesProvider>,
+        ),
+      );
       return {
         close: track(() => {
           root.unmount();

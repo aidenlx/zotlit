@@ -1,13 +1,13 @@
-// Kind, operator, and value controls preserve the established Match vocabulary.
 import { useId } from "react";
 import type { ComponentProps } from "react";
 
 import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 
+import { useWorkbenchHost } from "./host";
 import { ChipInput } from "./match.chips";
 import type { RowCondition, MatchEditorDeps } from "./match.draft";
-import { m } from "./paraglide/messages.js";
-import { getLocale } from "./paraglide/runtime.js";
+// Kind, operator, and value controls preserve the established Match vocabulary.
+import { useWorkbenchMessages } from "./messages";
 import { WorkbenchSelect } from "./select";
 import { useParts } from "./theme";
 
@@ -32,6 +32,7 @@ export function ConditionOperator({
   condition: Exclude<RowCondition, { kind: "expression" }>;
   onChange: (next: RowCondition) => void;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("match");
   if (condition.kind === "item-type" || condition.kind === "library")
     return (
@@ -155,7 +156,9 @@ export function ConditionValue({
   onChange: (next: RowCondition) => void;
   deps: MatchEditorDeps;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("match");
+  const host = useWorkbenchHost();
   const collections = deps.collections;
   const suggestionsId = useId();
   switch (condition.kind) {
@@ -189,7 +192,11 @@ export function ConditionValue({
         >
           {ITEM_TYPES.map((itemType) => (
             <option key={itemType.name} value={itemType.name}>
-              {itemType.labels[getLocale() === "zh-CN" ? "zh-CN" : "en-US"]}
+              {
+                itemType.labels[
+                  host.getLocale() === "zh-CN" ? "zh-CN" : "en-US"
+                ]
+              }
             </option>
           ))}
         </MatchSelect>

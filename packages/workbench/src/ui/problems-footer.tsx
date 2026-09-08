@@ -4,7 +4,9 @@
 
 import type { WorkbenchProblem, WorkbenchSliceId } from "#/document/controller";
 
-import { m } from "./paraglide/messages.js";
+import type { WorkbenchMessages } from "./generated/messages";
+import type { WorkbenchMessageLabel } from "./messages";
+import { useWorkbenchMessages } from "./messages";
 import { problemText } from "./problems";
 import { useParts } from "./theme";
 
@@ -14,25 +16,29 @@ import { entryPosition } from "#/document/controller";
  * Where a problem is repaired, named for the reader. Every other slice is one
  * Managed Frontmatter row, which reads as the entry it is.
  */
-const PROBLEM_WHERE: Partial<Record<WorkbenchSliceId, () => string>> = {
-  advanced: m.workbench_problems_where_advanced,
-  note: m.workbench_problems_where_note,
-  filename: m.workbench_problems_where_filename,
-  details: m.workbench_problems_where_details,
-  annotation: m.workbench_annotation_label,
-};
+const PROBLEM_WHERE: Partial<Record<WorkbenchSliceId, WorkbenchMessageLabel>> =
+  {
+    advanced: "workbench_problems_where_advanced",
+    note: "workbench_problems_where_note",
+    filename: "workbench_problems_where_filename",
+    details: "workbench_problems_where_details",
+    annotation: "workbench_annotation_label",
+  };
 
 /** What the footer's button reads: the pane `problem` is repaired in. */
-export function problemWhere(problem: WorkbenchProblem): string {
+export function problemWhere(
+  m: WorkbenchMessages,
+  problem: WorkbenchProblem,
+): string {
   if (problem.code === "missing-annotation-section") {
     return m.workbench_annotation_label();
   }
   if (entryPosition(problem.slice) !== null) {
     return m.workbench_problems_where_entry();
   }
-  return (
-    PROBLEM_WHERE[problem.slice] ?? m.workbench_problems_where_advanced
-  )();
+  return m[
+    PROBLEM_WHERE[problem.slice] ?? "workbench_problems_where_advanced"
+  ]();
 }
 
 export function ProblemsFooter({
@@ -44,9 +50,10 @@ export function ProblemsFooter({
   /** Opens the pane the problem is repaired in. */
   onOpen: (problem: WorkbenchProblem) => void;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("problemsFooter");
   if (problem === null) return null;
-  const text = problemText(problem);
+  const text = problemText(m, problem);
   return (
     <section aria-label={m.workbench_problems_heading()} {...part("problems")}>
       <p {...part("problems-heading")}>{m.workbench_problems_heading()}</p>
@@ -58,7 +65,7 @@ export function ProblemsFooter({
           onClick={() => onOpen(problem)}
           {...part("problems-open")}
         >
-          {problemWhere(problem)}
+          {problemWhere(m, problem)}
         </button>
       </p>
     </section>

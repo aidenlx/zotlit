@@ -1,4 +1,3 @@
-// Preserve nested Match trees and expression rows through labelled edits.
 import type {
   AvailableLibrary,
   FlatCondition,
@@ -7,8 +6,9 @@ import type {
 
 import type { MatchTree } from "@zotlit/templates/facade";
 
+// Preserve nested Match trees and expression rows through labelled edits.
+import type { WorkbenchMessages } from "./generated/messages";
 import { describeProblem } from "./match.diagnostic";
-import { m } from "./paraglide/messages.js";
 
 import { compileCondition, formatCondition } from "#/match/condition";
 
@@ -211,6 +211,7 @@ export function freshGroup(parent: GroupMatch): ConditionGroup {
  * row answers through the same tree checks as the visual rows.
  */
 export function conditionIssue(
+  m: WorkbenchMessages,
   condition: RowCondition,
   deps: MatchEditorDeps,
 ): string | null {
@@ -220,7 +221,7 @@ export function conditionIssue(
         formatCondition(condition),
         deps.libraries,
       );
-      return problem ? describeProblem(problem) : null;
+      return problem ? describeProblem(m, problem) : null;
     }
     case "item-type":
       return null;
@@ -244,22 +245,23 @@ export function conditionIssue(
         condition.text,
         deps.libraries,
       );
-      if (problem) return describeProblem(problem);
-      return treeIssue(asGroup(compiled), deps);
+      if (problem) return describeProblem(m, problem);
+      return treeIssue(m, asGroup(compiled), deps);
     }
   }
 }
 
 /** The first incomplete condition, as the user reads it. */
 export function treeIssue(
+  m: WorkbenchMessages,
   group: ConditionGroup,
   deps: MatchEditorDeps,
 ): string | null {
   for (const condition of group.conditions) {
     const issue =
       condition.kind === "group"
-        ? treeIssue(condition, deps)
-        : conditionIssue(condition, deps);
+        ? treeIssue(m, condition, deps)
+        : conditionIssue(m, condition, deps);
     if (issue) return issue;
   }
   return null;

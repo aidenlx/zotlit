@@ -11,8 +11,7 @@
     "./tsconfig.obsidian": "./tsconfig.obsidian.json",
     "./tsconfig.zotero": "./tsconfig.zotero.json",
     "./oxlint": "./oxlint.base.ts",
-    "./oxfmt": "./oxfmt.base.ts",
-    "./paraglide": "./paraglide.ts"
+    "./oxfmt": "./oxfmt.base.ts"
   },
   "devDependencies": {
     "@types/node": "catalog:",

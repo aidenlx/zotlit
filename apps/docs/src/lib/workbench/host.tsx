@@ -1,15 +1,16 @@
-import { Menu as MenuPrimitive } from "@base-ui/react/menu";
-import { PreviewCard } from "@base-ui/react/preview-card";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
 // The web's binding of the Workbench UI host adapter: Base UI for the menu,
 // the dialog, the confirmation, and the hover card; the searchable picker the
 // paper choice already uses for the suggester; the browser's own tooltip; the
 // status line for a notice; the render Worker; the Item Snapshot's names for a
 // match; and browser storage for a preference.
 
+import { Menu as MenuPrimitive } from "@base-ui/react/menu";
+import { PreviewCard } from "@base-ui/react/preview-card";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
+
 import type { RenderRequest } from "@zotlit/workbench/render";
-import { m } from "@zotlit/workbench/ui";
+import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
 import type {
   WorkbenchConfirmRequest,
   WorkbenchDialogRequest,
@@ -41,6 +42,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+import { m } from "@/paraglide/messages.js";
+import { getLocale } from "@/paraglide/runtime.js";
 
 import { webCompletion } from "./completion";
 import { webHover } from "./hover";
@@ -131,6 +134,8 @@ export function useWebHost({
 
   const host = useMemo<WorkbenchHost>(
     () => ({
+      messages: m,
+      getLocale,
       menu: setMenu,
       dialog(request) {
         setDialog(request);
@@ -247,7 +252,9 @@ export function useWebHost({
             <DialogTitle className="font-sans text-base font-semibold">
               {dialog.title}
             </DialogTitle>
-            {dialog.content}
+            <WorkbenchMessagesProvider messages={m}>
+              {dialog.content}
+            </WorkbenchMessagesProvider>
           </DialogContent>
         )}
       </Dialog>
@@ -379,7 +386,9 @@ export function useWebHost({
                 data-slot="hover-card-content"
                 className="max-h-(--available-height) w-80 max-w-[calc(100vw-2rem)] space-y-2 overflow-y-auto overscroll-contain rounded-lg bg-fd-popover p-3 text-xs leading-normal break-words text-fd-popover-foreground shadow-lg ring-1 ring-fd-border"
               >
-                {hoverCard.content}
+                <WorkbenchMessagesProvider messages={m}>
+                  {hoverCard.content}
+                </WorkbenchMessagesProvider>
               </PreviewCard.Popup>
             </PreviewCard.Positioner>
           </PreviewCard.Portal>

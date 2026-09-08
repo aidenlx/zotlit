@@ -1,7 +1,7 @@
 // Preview scheduling controls use the editor store; the host starts or pauses work.
 
 import { useOptionalEditor, useWorkbenchStore } from "./editor";
-import { m } from "./paraglide/messages.js";
+import { useWorkbenchMessages } from "./messages";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
 import { useParts } from "./theme";
 
@@ -16,6 +16,7 @@ export function PreviewControls({
   onRun: () => void;
   onStop: () => void;
 }) {
+  const m = useWorkbenchMessages();
   const editor = useOptionalEditor();
   const preview = useWorkbenchStore((state) => state.preview);
   const part = useParts("previewControls");

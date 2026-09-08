@@ -9,10 +9,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import type { ComponentType } from "react";
 
-import { m } from "@zotlit/workbench/ui";
-
 import { pageHead } from "@/lib/seo";
 import { WorkbenchSkeleton } from "@/lib/workbench/frame";
+import { m } from "@/paraglide/messages.js";
 
 // Requested at module evaluation in the browser alone: the prerender pass
 // evaluates this module too, and a static shell has no editor to fetch.

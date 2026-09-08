@@ -1,4 +1,3 @@
-// @vitest-environment happy-dom
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -7,7 +6,9 @@ import {
   SAMPLE_ITEMS,
   renderProfile,
 } from "@zotlit/workbench/render";
-import { m } from "@zotlit/workbench/ui";
+
+// @vitest-environment happy-dom
+import { m } from "@/paraglide/messages.js";
 
 import { ResultSheet, parseNote } from "./reading-view";
 

@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import type { ReactNode, Ref } from "react";
 
 import { useWorkbenchHost, useTooltip } from "./host";
-import { m } from "./paraglide/messages.js";
+import { useWorkbenchMessages } from "./messages";
 import { diagnosticText } from "./problems";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
 import { useParts } from "./theme";
@@ -24,6 +24,7 @@ export function ResultHeader({
   controls?: ReactNode;
   help?: ReactNode;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("resultHeader");
   return (
     <div {...part("header")}>
@@ -63,6 +64,7 @@ export function ResultRegion({
   emphasis?: boolean;
   children: ReactNode;
 }) {
+  const m = useWorkbenchMessages();
   const part = useParts("resultRegion");
   return (
     <div
@@ -109,6 +111,7 @@ export function ResultColumn({
   propertiesResult,
   help,
 }: ResultColumnProps) {
+  const m = useWorkbenchMessages();
   const part = useParts("resultColumn");
   const Markdown = useWorkbenchHost().markdown;
   const selectorTooltip = useTooltip(
@@ -185,7 +188,7 @@ export function ResultColumn({
                 <strong {...part("problem-heading")}>
                   {m.workbench_preview_problem()}
                 </strong>{" "}
-                {diagnosticText(previewProblem)}{" "}
+                {diagnosticText(m, previewProblem)}{" "}
                 {previewProblem.part === "annotation" && (
                   <button
                     type="button"

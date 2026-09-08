@@ -12,7 +12,6 @@ import type {
   BridgeCapability,
   LocalBridgeConnection,
 } from "@zotlit/workbench/bridge";
-import { m } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -22,7 +21,7 @@ import {
   PopoverDescription,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { m as docsMessages } from "@/paraglide/messages.js";
+import { m } from "@/paraglide/messages.js";
 
 interface ConnectionBarProps {
   readonly connection: LocalBridgeConnection;
@@ -102,7 +101,7 @@ export function ConnectionBar({
                   ? m.workbench_connection_to_vault({
                       vault: connection.installation.vault,
                     })
-                  : docsMessages.docs_workbench_not_connected()}
+                  : m.docs_workbench_not_connected()}
             </span>
             <ChevronDown aria-hidden />
           </PopoverTrigger>
@@ -143,7 +142,7 @@ export function ConnectionBar({
                       aria-hidden
                       className="size-3.5 shrink-0 -rotate-90 group-open/details:rotate-0 rtl:rotate-90 rtl:group-open/details:rotate-0"
                     />
-                    {docsMessages.docs_workbench_connection_details()}
+                    {m.docs_workbench_connection_details()}
                   </summary>
                   <dl className="mt-2 grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-x-3 gap-y-2">
                     <ConnectionDatum

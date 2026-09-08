@@ -27,6 +27,8 @@
     "./dist/**/*",
     "./src/**/*.test.ts",
     "./src/**/*.test.tsx",
-    "./src/ui/test-host.tsx"
+    "./src/ui/test-host.tsx",
+    "./src/ui/test-messages.ts",
+    "./src/ui/generated/test-en.json"
   ]
 }

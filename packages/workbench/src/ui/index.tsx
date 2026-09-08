@@ -6,8 +6,8 @@ export { MatchPane } from "./match";
 // `WorkbenchHostProvider`, and each editor instance keeps its view state in
 // the store `WorkbenchEditorProvider` carries beside the document controller.
 
-export { m } from "./paraglide/messages.js";
-export { setWorkbenchLocale } from "./locale";
+export { WorkbenchMessagesProvider, useWorkbenchMessages } from "./messages";
+export type { WorkbenchMessages } from "./generated/messages";
 
 export { EditToolbar } from "./edit-toolbar";
 export { StartHere } from "./start-here";
@@ -53,7 +53,7 @@ export type {
   WorkbenchViewState,
 } from "./store";
 export { TabBar, TabPanel } from "./tab-bar";
-export { TABS, TAB_LABEL, TAB_LEDE } from "./tabs";
+export { TABS, tabLabel, tabLede } from "./tabs";
 export type { WorkbenchTab } from "./tabs";
 export { WorkbenchThemeProvider, useIcon, useParts } from "./theme";
 export type {
