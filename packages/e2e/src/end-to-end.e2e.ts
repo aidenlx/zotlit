@@ -772,7 +772,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `String((Array.from(document.querySelectorAll('.modal')).at(-1)?.textContent??'').includes(${JSON.stringify(m.batch_profile_unresolved_destination({ count: 2, label: booksProfile.label }))}))`,
+        `String(Array.from(document.querySelectorAll('.modal')).at(-1)?.querySelector('[data-profile-choice-scope=unresolved] [data-profile-choice]')?.getAttribute('aria-label')===${JSON.stringify(m.batch_profile_unresolved_destination({ count: 2, label: booksProfile.label }))})`,
         { expected: "true" },
       ),
     ).toBe(true);
