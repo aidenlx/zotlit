@@ -3,8 +3,8 @@
   overflow: hidden;
 }
 .zt-profile-editor [data-part="tab"][aria-selected="true"] {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
+  background: var(--background-modifier-active-hover);
+  color: var(--text-accent);
 }
 /* The pane host carries Obsidian's own editor classes, so the app stylesheet
    supplies the text font, line height, caret, selection, and heading sizes.
@@ -101,29 +101,19 @@
   > :last-child {
   margin-bottom: 0;
 }
-.zt-profile-editor .checkbox-container[aria-checked="true"] {
-  background-color: var(--interactive-accent);
-}
-.zt-profile-editor .checkbox-container[aria-checked="true"]::after {
-  transform: translateX(
-    calc(
-      var(--toggle-width) - var(--toggle-thumb-width) - 2 *
-        var(--toggle-border-width)
-    )
-  );
+
+/* Obsidian's unlayered heading defaults take precedence over Tailwind layers. */
+.zt-profile-editor-heading {
+  margin: 0;
+  font-family: var(--font-interface);
+  font-size: var(--font-ui-medium);
+  font-weight: var(--font-semibold);
+  line-height: 1.4;
 }
 
-.zt-profile-editor [data-part="edit-toolbar"],
-.zt-profile-editor [data-part="tab-bar"] {
-  flex-wrap: wrap;
-  min-width: 0;
-}
-.zt-profile-editor [data-part="edit-toolbar"] > * {
-  flex-shrink: 0;
-}
-.zt-profile-editor .zt-profile-editor-item {
-  flex: 1 1 100%;
-  max-width: 100%;
-  text-align: start;
-  justify-content: flex-start;
+/* The row title and value align as text within Obsidian's centered icon control. */
+.zt-profile-editor [data-part="row-toggle"] {
+  flex-direction: column;
+  align-items: flex-start;
+  height: auto;
 }

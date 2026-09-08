@@ -19,6 +19,7 @@ export const profileEditorIcons: Record<WorkbenchIcon, string> = {
   basic: "sliders-horizontal",
   advanced: "code",
   undo: "undo-2",
+  reset: "rotate-ccw",
   redo: "redo-2",
   preview: "eye",
   edit: "pencil",
@@ -26,7 +27,11 @@ export const profileEditorIcons: Record<WorkbenchIcon, string> = {
   "chevron-right": "chevron-right",
 };
 const row = "zt:flex zt:items-center zt:gap-2";
-const stack = "zt:flex zt:flex-col zt:gap-3";
+const stack = "zt:flex zt:min-w-0 zt:flex-col zt:gap-3";
+const field = "zt:flex zt:min-w-0 zt:flex-col zt:gap-1.5";
+const actions = "zt:flex zt:flex-wrap zt:items-center zt:gap-2";
+const hint =
+  "zt:text-xs zt:leading-normal zt:text-muted-foreground zt:text-pretty";
 /** A boxed pane wears Obsidian's text-input surface, focus ring included. */
 const editorBox =
   "zt:rounded-(--input-radius) zt:border zt:border-border zt:bg-input zt:px-2 zt:py-1 zt:focus-within:border-border-focus zt:focus-within:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]";
@@ -123,11 +128,15 @@ export const profileEditorTheme: WorkbenchTheme = {
       "long-text":
         "zt:data-[state=expanded]:break-words zt:data-[state=expanded]:whitespace-pre-wrap",
     },
+    select: {
+      wrapper: "zt:min-w-0 zt:max-w-full",
+      select: "dropdown zt:max-w-full",
+      icon: "zt:hidden",
+    },
     startHere: {
-      strip:
-        "zt:mx-2 zt:mb-2 zt:rounded zt:border zt:border-border zt:p-2 zt:text-sm",
+      strip: "zt:mx-3 zt:my-2 zt:rounded-md zt:bg-card zt:p-3 zt:text-xs",
       heading: "zt:flex zt:items-center zt:justify-between zt:gap-2",
-      line: "zt:my-1 zt:text-muted",
+      line: cn(hint, "zt:mt-1"),
       dismiss: "",
     },
     editToolbar: {
@@ -140,7 +149,7 @@ export const profileEditorTheme: WorkbenchTheme = {
     previewControls: {
       controls: cn(row, "zt:flex-wrap"),
       label: row,
-      paused: "zt:text-muted",
+      paused: "zt:text-muted-foreground",
     },
     resultHeader: {
       header: stack,
@@ -152,21 +161,22 @@ export const profileEditorTheme: WorkbenchTheme = {
     resultColumn: {
       filename: "zt:font-semibold",
       problem: "zt:text-error",
-      stale: "zt:text-muted",
-      pending: "zt:text-muted",
+      stale: "zt:text-muted-foreground",
+      pending: "zt:text-muted-foreground",
     },
     propertyList: {
       note: "zt:grid zt:grid-cols-[auto_1fr] zt:gap-x-3 zt:gap-y-1",
       list: "zt:grid zt:grid-cols-[auto_1fr] zt:gap-x-3 zt:gap-y-1",
       fold: "zt:grid zt:grid-cols-[auto_1fr] zt:gap-x-3 zt:gap-y-1",
-      key: "zt:text-muted",
+      key: "zt:text-muted-foreground",
       value: "zt:min-w-0 zt:break-words",
     },
     tabBar: {
-      "tab-bar": cn(row, "zt:px-2 zt:pb-2"),
-      tab: "zt:shrink-0",
+      "tab-bar":
+        "zt:flex zt:shrink-0 zt:flex-wrap zt:gap-1 zt:border-b zt:border-border zt:px-3 zt:pb-2",
+      tab: "clickable-icon zt:shrink-0 zt:text-sm",
     },
-    tabPanel: { "tab-panel": "zt:p-3" },
+    tabPanel: { "tab-panel": "zt:min-w-0 zt:p-3" },
     sliceEditor: {
       "slice-editor": cn(
         "markdown-source-view mod-cm6 cm-s-obsidian zt:min-h-0",
@@ -197,43 +207,81 @@ export const profileEditorTheme: WorkbenchTheme = {
     },
     properties: {
       pane: stack,
-      rows: stack,
-      row: "zt:border zt:border-border zt:rounded-md zt:p-2",
-      "row-header": row,
-      "row-actions": row,
-      actions: row,
-      form: stack,
-      field: stack,
-      "field-group": "zt:flex zt:flex-col zt:gap-1.5",
-      "confirm-actions": row,
-      "expression-header": row,
-      "hidden-label": "zt:sr-only",
+      empty: hint,
+      rows: "zt:flex zt:min-w-0 zt:flex-col zt:gap-2",
+      row: "zt:min-w-0 zt:rounded-md zt:border zt:border-border zt:p-2",
+      "row-header": "zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-1",
+      "row-toggle":
+        "clickable-icon zt:min-w-0 zt:flex-1 zt:flex-wrap zt:justify-start zt:gap-x-3 zt:gap-y-1 zt:text-start",
+      "row-name": "zt:flex zt:min-w-0 zt:items-center zt:gap-2",
+      key: "zt:font-medium zt:text-foreground zt:[overflow-wrap:anywhere]",
+      label: "zt:text-sm",
+      summary:
+        "zt:min-w-0 zt:max-w-full zt:truncate zt:text-xs zt:text-muted-foreground",
+      "row-actions":
+        "zt:ms-auto zt:flex zt:shrink-0 zt:items-center zt:gap-0.5",
+      edit: "clickable-icon",
       "row-action": "clickable-icon",
-      hint: "setting-item-description",
+      actions,
+      form: cn(stack, "zt:mt-3 zt:gap-4"),
+      field,
+      "name-input": "zt:w-full zt:min-w-0",
+      "text-input": "zt:w-full zt:min-w-0",
+      "field-group": field,
+      "confirm-actions": actions,
+      "expression-header": cn(actions, "zt:justify-between"),
+      "format-label": "zt:min-w-0",
+      "hidden-label": "zt:sr-only",
+      "primary-action":
+        "zt:inline-flex zt:items-center zt:gap-1.5 zt:whitespace-normal zt:text-start",
+      "secondary-action":
+        "zt:inline-flex zt:items-center zt:gap-1.5 zt:whitespace-normal zt:text-start",
+      confirm: cn(stack, "zt:rounded-md zt:bg-card zt:p-3"),
+      diagnostics: "zt:text-xs zt:text-error",
+      hint,
       expression: cn(
         editorBox,
         "zt:flex zt:min-h-28 zt:min-w-0 zt:flex-1 zt:flex-col",
       ),
     },
     nameFolder: {
-      pane: stack,
+      "reset-button": "clickable-icon zt:ms-auto",
+      "reset-label": "zt:sr-only",
+      pane: cn(stack, "zt:gap-6"),
       group: stack,
+      heading: "zt-profile-editor-heading",
       fields: stack,
-      field: stack,
-      "binding-row": "setting-item",
-      "binding-heading": "setting-item-info",
-      "binding-label": "setting-item-name",
+      field,
+      "binding-row":
+        "zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-2 zt:py-2",
+      "binding-heading":
+        "zt:flex zt:min-w-0 zt:basis-full zt:flex-wrap zt:items-center zt:gap-2",
+      "binding-label": "zt:font-medium",
+      "binding-input": "zt:w-full zt:min-w-0",
+      input: "zt:w-full zt:min-w-0",
+      "readonly-input": "zt:w-full zt:min-w-0",
+      "confirm-button": "zt:ms-auto",
       "toggle-row": row,
-      switch: "checkbox-container",
       "filename-editor": editorBox,
-      "identity-fields": stack,
-      "advanced-fields": stack,
-      actions: row,
-      "confirmation-actions": row,
-      help: "setting-item-description",
-      muted: "setting-item-description",
-      secondary: "setting-item-description",
-      summary: row,
+      "filename-result":
+        "zt:flex zt:flex-wrap zt:gap-x-2 zt:gap-y-1 zt:text-xs",
+      "filename-output": "zt:font-mono zt:[overflow-wrap:anywhere]",
+      defaults: "zt:flex zt:flex-col zt:gap-2",
+      "default-label": "zt:min-w-0 zt:flex-1",
+      "default-value":
+        "zt:min-w-0 zt:text-muted-foreground zt:[overflow-wrap:anywhere]",
+      details: "zt:group/details",
+      "details-icon": "zt:inline-flex zt:group-open/details:rotate-90",
+      "identity-fields": cn(stack, "zt:pt-3"),
+      "advanced-fields": cn(stack, "zt:gap-6 zt:pt-3"),
+      actions,
+      "confirmation-actions": actions,
+      confirmation: cn(stack, "zt:rounded-md zt:bg-card zt:p-3"),
+      help: hint,
+      muted: hint,
+      secondary: hint,
+      summary:
+        "zt:flex zt:cursor-(--cursor-clickable) zt:items-center zt:gap-2 zt:font-medium",
     },
     annotation: {
       "sample-bar": row,
@@ -253,10 +301,10 @@ export const profileEditorTheme: WorkbenchTheme = {
       trigger: "clickable-icon zt:shrink-0",
     },
     problemsFooter: {
-      problems: "zt:p-3 zt:border-t zt:border-border",
+      problems: "zt:shrink-0 zt:p-3 zt:border-t zt:border-border zt:text-xs",
       "problems-heading": "zt:font-semibold",
-      "problems-text": "zt:text-muted",
-      "problems-recovery": "zt:text-muted",
+      "problems-text": "zt:text-muted-foreground",
+      "problems-recovery": "zt:text-muted-foreground",
     },
   },
 };

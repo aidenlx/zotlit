@@ -27,6 +27,8 @@ import type {
   WorkbenchSuggesterOption,
 } from "@zotlit/workbench/ui";
 
+import { Toggle } from "@/components/obsidian/toggle";
+import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import { BaseNotice } from "@/lib/notice";
@@ -184,7 +186,10 @@ export function createProfileEditorHost(
       for (const close of open) close();
     },
     ...rest,
-    messages: m,
+    messages: {
+      ...m,
+      workbench_name_value_no_style: citationStyleLabel,
+    },
     getLocale: () => runtime.getLocale(),
     editorPopups: (read) => [
       templateCompletion(read, nativeCompletion),
@@ -291,6 +296,7 @@ export function createProfileEditorHost(
         app.saveLocalStorage(`zotlit.workbench.${scope}.${key}`, value);
       },
     },
+    toggle: Toggle,
     markdown:
       ports.markdown ??
       function EditorMarkdown({ markdown, showMarkdown }) {

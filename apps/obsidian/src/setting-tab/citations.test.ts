@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
@@ -9,8 +10,6 @@ import {
   citationLocaleError,
   citationsPageItems,
   referencesStyleDescription,
-  referencesStyleOptions,
-  STYLE_DEFAULT,
 } from "./citations";
 import type { SettingTabContext } from "./context";
 

@@ -1,6 +1,7 @@
 // One file-backed authoring session; TextFileView owns vault updates and saves.
-import { Menu, Scope, TextFileView } from "obsidian";
+import { Scope, TextFileView } from "obsidian";
 import type {
+  Menu,
   HoverParent,
   HoverPopover,
   ViewStateResult,
@@ -34,7 +35,6 @@ import {
   AnnotationPointer,
   useWorkbenchHost,
   createWorkbenchStore,
-  EditToolbar,
   BUILT_IN_BINDING_DEFAULTS,
   NameFolderPane,
   NotePane,
@@ -58,7 +58,6 @@ import type {
   NameFolderPaneProps,
 } from "@zotlit/workbench/ui";
 
-import { Icon } from "@/components/obsidian/icon";
 import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
@@ -121,6 +120,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   readonly #host: ReturnType<typeof createProfileEditorHost>;
   #controller = new WorkbenchDocumentController("", { runtime: "native" });
   #root: Root | null = null;
+  #updateActions = () => {};
   #unsubscribe: (() => void) | null = null;
   #insertTarget: WorkbenchInsertTarget | null = null;
   #insertRequest: WorkbenchInsertTarget | null = null;
@@ -461,6 +461,30 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
 
   protected override async onOpen(): Promise<void> {
     this.#closed = false;
+    const source = this.addAction("code", m.workbench_advanced(), () => {
+      const state = this.store.getState();
+      state.setAdvanced(!state.advanced);
+    });
+    const redo = this.addAction("redo-2", m.workbench_redo(), () => {
+      this.#controller.redo();
+    });
+    const undo = this.addAction("undo-2", m.workbench_undo(), () => {
+      this.#controller.undo();
+    });
+    this.#updateActions = () => {
+      for (const [action, enabled] of [
+        [undo, this.#controller.canUndo],
+        [redo, this.#controller.canRedo],
+      ] as const) {
+        action.setAttribute("aria-disabled", String(!enabled));
+        action.classList.toggle("is-disabled", !enabled);
+      }
+      const advanced = this.store.getState().advanced;
+      source.setAttribute("aria-pressed", String(advanced));
+      source.classList.toggle("is-active", advanced);
+    };
+    this.register(this.store.subscribe(() => this.#updateActions()));
+    this.#updateActions();
     this.#root = createRoot(this.contentEl);
     this.#mount();
     void this.refreshStyles();
@@ -637,12 +661,6 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       });
     return this.#materializing;
   }
-  openMenu(anchor: HTMLElement): void {
-    const menu = new Menu();
-    this.onPaneMenu(menu, "more-options");
-    const bounds = anchor.getBoundingClientRect();
-    menu.showAtPosition({ x: bounds.left, y: bounds.bottom });
-  }
   async refreshStyles(): Promise<void> {
     try {
       await this.#deps.zoteroPref.ready;
@@ -725,6 +743,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   #subscribe(): void {
     this.#unsubscribe = this.#controller.subscribe(
       ({ docChanged, transaction }) => {
+        this.#updateActions();
         if (!docChanged) return;
         if (this.#insertTarget) {
           const { slice, range } = this.#insertTarget;
@@ -770,6 +789,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     );
   }
   #mount(): void {
+    this.#updateActions();
     this.#root?.render(
       this.provide(
         <EditorContent
@@ -868,16 +888,22 @@ function EditorContent({
     (slice: WorkbenchInsertTarget["slice"]) => (range: WorkbenchSliceRange) =>
       onSelection({ slice, range });
   return (
-    <div className="zt:flex zt:h-full zt:flex-col">
+    <div className="zt:flex zt:h-full zt:min-w-0 zt:flex-col zt:text-sm">
       <EditorHeader view={view} />
-      <StartHere />
       {view.isDefaultDraft && (
-        <p role="status" className="zt:px-3 zt:text-muted">
+        <p
+          role="status"
+          className="zt:px-3 zt:pb-2 zt:text-xs zt:leading-normal zt:text-muted-foreground"
+        >
           {m.profile_editor_default_first_edit()}
         </p>
       )}
       {view.unavailableDependencies.map((message) => (
-        <p key={message} role="status" className="zt:px-3 zt:text-muted">
+        <p
+          key={message}
+          role="status"
+          className="zt:px-3 zt:pb-2 zt:text-xs zt:leading-normal zt:text-muted-foreground"
+        >
           {message}
         </p>
       ))}
@@ -897,6 +923,7 @@ function EditorContent({
         />
       )}
       <div className="zt:min-h-0 zt:flex-1 zt:overflow-auto">
+        <StartHere />
         {advanced ? (
           <SliceEditor
             controller={controller}
@@ -1032,35 +1059,16 @@ function EditorContent({
 function EditorHeader({ view }: { view: ProfileEditorView }) {
   const item = useWorkbenchStore((state) => state.item);
   return (
-    <EditToolbar
-      layout="linear"
-      leading={
-        <button
-          className="zt-profile-editor-item zt:min-w-0 zt:truncate"
-          {...tooltipAttrs(item?.title ?? m.profile_editor_choose_paper())}
-          onClick={() => void view.chooseItem()}
-        >
-          <span className="zt:min-w-0 zt:truncate">
-            {item?.title ?? m.profile_editor_choose_paper()}
-          </span>
-        </button>
-      }
-    >
+    <div className="zt:flex zt:min-w-0 zt:shrink-0 zt:px-3 zt:py-2">
       <button
-        className="clickable-icon"
-        {...tooltipAttrs(m.profile_editor_open_markdown())}
-        disabled={!view.file}
-        onClick={() => void view.openMarkdown()}
+        className="zt-profile-editor-item zt:max-w-full zt:min-w-0 zt:truncate"
+        {...tooltipAttrs(item?.title ?? m.profile_editor_choose_paper())}
+        onClick={() => void view.chooseItem()}
       >
-        <Icon name="file-code" />
+        <span className="zt:min-w-0 zt:truncate">
+          {item?.title ?? m.profile_editor_choose_paper()}
+        </span>
       </button>
-      <button
-        className="clickable-icon"
-        {...tooltipAttrs(m.workbench_more_actions())}
-        onClick={(event) => view.openMenu(event.currentTarget)}
-      >
-        <Icon name="more-horizontal" />
-      </button>
-    </EditToolbar>
+    </div>
   );
 }

@@ -4,11 +4,11 @@ import { extname } from "node:path";
 import { Modal, Setting } from "obsidian";
 import type { App } from "obsidian";
 
+import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { requireDialog } from "@/lib/require";
 import type { DocumentFormat } from "@/services/pandoc/engine";
-import { referencesStyleOptions, STYLE_DEFAULT } from "@/setting-tab/citations";
 import { addStyleDropdown } from "@/views/style-dropdown";
 
 const logger = getLogger(["views", "pandoc-export"]);

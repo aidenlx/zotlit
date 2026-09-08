@@ -77,6 +77,8 @@ export interface WorkbenchParts {
     | "long-text";
   startHere: "strip" | "heading" | "line" | "dismiss";
   nameFolder:
+    | "reset-button"
+    | "reset-label"
     | "source-button"
     | "confirm-button"
     | "cancel-button"
@@ -246,6 +248,7 @@ export type WorkbenchIcon =
   | "basic"
   | "advanced"
   | "undo"
+  | "reset"
   | "redo"
   | "preview"
   | "edit"

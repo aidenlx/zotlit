@@ -22,6 +22,7 @@ import {
 import type { ReactNode } from "react";
 
 import type { WorkbenchMessages } from "./generated/messages";
+import { useOptionalHost } from "./host";
 import type { WorkbenchMessageLabel } from "./messages";
 import { useWorkbenchMessages } from "./messages";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
@@ -316,6 +317,7 @@ export function NameFolderPane({
             <div {...part("fields")}>
               <Field label={m.workbench_name_field_id()}>
                 <input
+                  type="text"
                   readOnly
                   value={manifest.id}
                   {...part("readonly-input")}
@@ -324,6 +326,7 @@ export function NameFolderPane({
               <p {...part("help")}>{m.workbench_name_id_note()}</p>
               <Field label={m.workbench_name_field_contract()}>
                 <input
+                  type="text"
                   readOnly
                   value={String(manifest.contract)}
                   {...part("readonly-input")}
@@ -331,6 +334,7 @@ export function NameFolderPane({
               </Field>
               <Field label={m.workbench_name_field_min_app_version()}>
                 <input
+                  type="text"
                   readOnly
                   value={manifest.minAppVersion ?? m.workbench_name_unset()}
                   {...part("readonly-input")}
@@ -414,6 +418,7 @@ function DraftText({
   useEffect(() => setDraft(value), [value]);
   return (
     <input
+      type="text"
       id={id}
       value={draft}
       disabled={disabled}
@@ -456,12 +461,7 @@ function TextValue({
   );
 }
 
-/**
- * One sparse binding: the effective value with the origin it comes from, and
- * the two actions that move it between them. Override writes the current
- * default as an explicit value; Use default removes the key, so an empty path,
- * a null style, and a false toggle each stay distinct from unset.
- */
+/** Editing an inherited binding stores an override; resetting removes its key. */
 function BindingRow({
   binding,
   value,
@@ -479,6 +479,9 @@ function BindingRow({
   const m = useWorkbenchMessages();
   const prefix = useContext(FieldIdContext);
   const part = useParts("nameFolder");
+  const host = useOptionalHost();
+  const Toggle = host?.toggle;
+  const icon = useIcon();
   const label = m[binding.label]();
   const inherits = value === undefined;
   const effective = inherits ? fallback : value;
@@ -494,54 +497,61 @@ function BindingRow({
             ? m.workbench_name_origin_default()
             : m.workbench_name_origin_profile()}
         </span>
-        <button
-          type="button"
-          {...part("confirm-button")}
-          aria-label={
-            inherits
-              ? m.workbench_name_override_for({ name: label })
-              : m.workbench_name_use_default_for({ name: label })
-          }
-          onClick={() => onWrite(inherits ? fallback : undefined)}
-        >
-          {inherits
-            ? m.workbench_name_override()
-            : m.workbench_name_use_default()}
-        </button>
+        {!inherits && (
+          <button
+            type="button"
+            {...part("reset-button")}
+            aria-label={m.workbench_name_use_default_for({ name: label })}
+            {...host?.tooltip(m.workbench_name_use_default())}
+            onClick={() => onWrite(undefined)}
+          >
+            {icon("reset")}
+            <span {...part("reset-label")}>
+              {m.workbench_name_use_default()}
+            </span>
+          </button>
+        )}
       </div>
       {binding.kind === "style" && citationStyles ? (
         <StylePicker
           id={id}
           value={typeof effective === "string" ? effective : null}
-          disabled={inherits}
           styles={citationStyles}
           onWrite={onWrite}
         />
       ) : binding.kind === "toggle" ? (
         <span {...part("toggle-row")}>
-          <button
-            type="button"
-            role="switch"
-            id={id}
-            disabled={inherits}
-            aria-checked={effective === true}
-            {...part("switch", effective === true ? "checked" : "unchecked")}
-            onClick={() => onWrite(effective !== true)}
-          >
-            <span
-              {...part(
-                "switch-thumb",
-                effective === true ? "checked" : "unchecked",
-              )}
+          {Toggle ? (
+            <Toggle
+              id={id}
+              aria-label={label}
+              value={effective === true}
+              disabled={false}
+              onChange={onWrite}
             />
-          </button>
+          ) : (
+            <button
+              type="button"
+              role="switch"
+              id={id}
+              aria-checked={effective === true}
+              {...part("switch", effective === true ? "checked" : "unchecked")}
+              onClick={() => onWrite(effective !== true)}
+            >
+              <span
+                {...part(
+                  "switch-thumb",
+                  effective === true ? "checked" : "unchecked",
+                )}
+              />
+            </button>
+          )}
           <span {...part("muted")}>{valueText(m, effective)}</span>
         </span>
       ) : (
         <DraftText
           id={id}
           value={effective === null ? "" : String(effective)}
-          disabled={inherits}
           placeholder={
             binding.kind === "style"
               ? m.workbench_name_citation_style_placeholder()
@@ -567,13 +577,11 @@ function BindingRow({
 function StylePicker({
   id,
   value,
-  disabled,
   styles,
   onWrite,
 }: {
   id: string;
   value: string | null;
-  disabled: boolean;
   styles: readonly InstalledCitationStyle[];
   onWrite: (value: ManifestScalar) => void;
 }) {
@@ -588,7 +596,6 @@ function StylePicker({
     <WorkbenchSelect
       id={id}
       value={value ?? ""}
-      disabled={disabled}
       onInput={(event) =>
         onWrite(
           event.currentTarget.value === "" ? null : event.currentTarget.value,

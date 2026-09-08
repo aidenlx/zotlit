@@ -108,33 +108,36 @@ it("keeps empty paths distinct from inheritance and restores each edit", () => {
   expect(controller.source).toBe(SOURCE);
 });
 
-it("overrides an inherited false and keeps its undo separate from toggling", () => {
+it("edits inherited toggles directly, resets to inheritance, and undoes both", () => {
   const { controller } = open();
   const label = m.workbench_name_binding_annotation_template();
   const toggle = screen.getByRole<HTMLButtonElement>("switch", { name: label });
-  expect(toggle.disabled).toBe(true);
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: m.workbench_name_override_for({ name: label }),
-    }),
-  );
-  expect(controller.document!.manifest.importAnnotationsAsTemplate).toBe(false);
+  const resetName = m.workbench_name_use_default_for({ name: label });
   expect(toggle.disabled).toBe(false);
+  expect(screen.queryByRole("button", { name: resetName })).toBeNull();
   fireEvent.click(toggle);
   expect(controller.document!.manifest.importAnnotationsAsTemplate).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: resetName }));
+  expect(
+    controller.document!.manifest.importAnnotationsAsTemplate,
+  ).toBeUndefined();
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  expect(screen.queryByRole("button", { name: resetName })).toBeNull();
   act(() => {
     controller.undo();
   });
-  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  expect(controller.document!.manifest.importAnnotationsAsTemplate).toBe(true);
+  fireEvent.click(toggle);
   expect(controller.document!.manifest.importAnnotationsAsTemplate).toBe(false);
+  expect(screen.getByRole("button", { name: resetName })).toBeDefined();
   act(() => {
+    controller.undo();
     controller.undo();
   });
   expect(controller.source).toBe(SOURCE);
-  expect(toggle.disabled).toBe(true);
 });
 
-it("keeps null citation style distinct from unset and selects installed styles", () => {
+it("edits inherited citation styles and keeps an explicit null distinct from unset", () => {
   const { controller } = open({
     citationStyles: [
       { id: "apa", title: "American Psychological Association" },
@@ -142,32 +145,76 @@ it("keeps null citation style distinct from unset and selects installed styles",
     ],
   });
   const label = m.workbench_name_binding_citation_style();
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: m.workbench_name_override_for({ name: label }),
-    }),
-  );
-  expect(controller.document!.manifest.citationStyle).toBeNull();
-  expect(screen.getByRole("option", { name: "IEEE" })).toBeDefined();
-  expect(
-    screen.getByRole("option", { name: "American Psychological Association" }),
-  ).toBeDefined();
-  expect(
-    screen.getByRole("option", { name: m.workbench_name_value_no_style() }),
-  ).toBeDefined();
   const select = screen.getByLabelText<HTMLSelectElement>(label);
+  expect(select.disabled).toBe(false);
   fireEvent.input(select, { target: { value: "ieee" } });
   expect(controller.document!.manifest.citationStyle).toBe("ieee");
+  fireEvent.input(select, { target: { value: "" } });
+  expect(controller.document!.manifest.citationStyle).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: m.workbench_name_use_default_for({ name: label }),
+    }),
+  );
+  expect(controller.document!.manifest.citationStyle).toBeUndefined();
   act(() => {
     controller.undo();
   });
-  expect(select.value).toBe("");
   expect(controller.document!.manifest.citationStyle).toBeNull();
+  act(() => {
+    controller.undo();
+  });
+  expect(select.value).toBe("ieee");
   act(() => {
     controller.undo();
   });
   expect(controller.source).toBe(SOURCE);
-  expect(select.disabled).toBe(true);
+});
+
+it("creates a folder override on edit and keeps reset available when it equals the default", () => {
+  const { controller } = open();
+  const label = m.workbench_name_binding_import_folder();
+  const resetName = m.workbench_name_use_default_for({ name: label });
+  const input = screen.getByLabelText<HTMLInputElement>(label);
+  expect(input.disabled).toBe(false);
+  expect(screen.queryByRole("button", { name: resetName })).toBeNull();
+  write(label, "Imported notes");
+  expect(controller.document!.manifest.importFolder).toBe("Imported notes");
+  write(label, "zotero_notes");
+  expect(controller.document!.manifest.importFolder).toBe("zotero_notes");
+  fireEvent.click(screen.getByRole("button", { name: resetName }));
+  expect(controller.document!.manifest.importFolder).toBeUndefined();
+  expect(input.value).toBe("zotero_notes");
+  expect(screen.queryByRole("button", { name: resetName })).toBeNull();
+});
+
+it("selects the inherited citation style on open and after reset", () => {
+  const { controller } = open({
+    defaults: {
+      folder: "literatures",
+      citationStyle: "apa",
+      importFolder: "zotero_notes",
+      importColoredHighlights: false,
+      importAnnotationsAsTemplate: false,
+    },
+    citationStyles: [
+      { id: "apa", title: "APA" },
+      { id: "ieee", title: "IEEE" },
+    ],
+  });
+  const label = m.workbench_name_binding_citation_style();
+  const select = screen.getByLabelText<HTMLSelectElement>(label);
+  expect(select.value).toBe("apa");
+  expect(controller.document!.manifest.citationStyle).toBeUndefined();
+  fireEvent.input(select, { target: { value: "ieee" } });
+  expect(select.value).toBe("ieee");
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: m.workbench_name_use_default_for({ name: label }),
+    }),
+  );
+  expect(select.value).toBe("apa");
+  expect(controller.document!.manifest.citationStyle).toBeUndefined();
 });
 
 it("retains a citation style absent from the installed list", () => {
@@ -316,17 +363,17 @@ it("shows identity, the live note name, and each binding's source", () => {
     m.workbench_name_binding_import_folder(),
   );
   expect(inherited.value).toBe("zotero_notes");
-  expect(inherited.disabled).toBe(true);
+  expect(inherited.disabled).toBe(false);
   expect(inherited.closest('[data-part="binding-row"]')?.textContent).toContain(
     m.workbench_name_origin_default(),
   );
   expect(
-    screen.getByRole("button", {
-      name: m.workbench_name_override_for({
+    screen.queryByRole("button", {
+      name: m.workbench_name_use_default_for({
         name: m.workbench_name_binding_import_folder(),
       }),
     }),
-  ).toBeDefined();
+  ).toBeNull();
   const style = screen.getByLabelText<HTMLInputElement>(
     m.workbench_name_binding_citation_style(),
   );
@@ -356,7 +403,7 @@ it("shows the same Off value for explicit and inherited switches while naming th
   }
   fireEvent.click(colored);
   expect(controller.document!.manifest.importColoredHighlights).toBe(true);
-  expect(inherited.disabled).toBe(true);
+  expect(inherited.disabled).toBe(false);
   expect(
     controller.document!.manifest.importAnnotationsAsTemplate,
   ).toBeUndefined();
