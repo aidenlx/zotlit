@@ -22,7 +22,7 @@ function setup() {
       memory.set(key, value),
   } as unknown as App;
   const host = createProfileEditorHost(app, {
-    render: () => ({ terminate() {} }),
+    render: () => Promise.reject(new Error("This test renders nothing.")),
     matchData: {
       tags: async () => [],
       collections: async () => [],

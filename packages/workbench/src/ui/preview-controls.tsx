@@ -1,4 +1,4 @@
-// Preview scheduling controls use the editor store; the host starts or pauses work.
+// The Refresh setting drives scheduling; the host starts an on-demand render.
 
 import { useOptionalEditor, useWorkbenchStore } from "./editor";
 import { useWorkbenchMessages } from "./messages";
@@ -9,12 +9,10 @@ export function PreviewControls({
   busy,
   disabled = false,
   onRun,
-  onStop,
 }: {
   busy: boolean;
   disabled?: boolean;
   onRun: () => void;
-  onStop: () => void;
 }) {
   const m = useWorkbenchMessages();
   const editor = useOptionalEditor();
@@ -50,7 +48,6 @@ export function PreviewControls({
           onInput={(event) => {
             const live = event.currentTarget.value === "live";
             editor?.store.getState().setPreview({ live });
-            if (!live) onStop();
           }}
         >
           <WorkbenchOption value="live">
@@ -66,25 +63,16 @@ export function PreviewControls({
           {m.workbench_preview_paused()}
         </span>
       )}
-      <button
-        {...part("run")}
-        type="button"
-        disabled={!editor || busy || disabled}
-        onClick={onRun}
-      >
-        {m.workbench_preview_run()}
-      </button>
-      <button
-        {...part("stop")}
-        type="button"
-        disabled={!editor || (!busy && !preview.live)}
-        onClick={() => {
-          editor?.store.getState().setPreview({ live: false });
-          onStop();
-        }}
-      >
-        {m.workbench_preview_stop()}
-      </button>
+      {!preview.live && (
+        <button
+          {...part("run")}
+          type="button"
+          disabled={!editor || busy || disabled}
+          onClick={onRun}
+        >
+          {m.workbench_preview_run()}
+        </button>
+      )}
     </div>
   );
 }

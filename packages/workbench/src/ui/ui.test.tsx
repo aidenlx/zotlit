@@ -24,7 +24,7 @@ function selectedTab(): string | undefined {
 
 describe("the tab bar", () => {
   it("offers the five panes in order and opens the one pressed", () => {
-    const { store, ui } = mount(
+    using mounted = mount(
       <>
         <TabBar />
         <TabPanel tab="note" keepMounted>
@@ -33,6 +33,7 @@ describe("the tab bar", () => {
         <TabPanel tab="properties">properties rows</TabPanel>
       </>,
     );
+    const { store, ui } = mounted;
     render(ui);
 
     expect(tabs().map((tab) => tab.textContent)).toEqual([
@@ -66,7 +67,8 @@ describe("the tab bar", () => {
   });
 
   it("follows the store and moves through the tabs from the keyboard", () => {
-    const { store, ui } = mount(<TabBar />);
+    using mounted = mount(<TabBar />);
+    const { store, ui } = mounted;
     render(ui);
     act(() => store.getState().setTab("annotation"));
     expect(selectedTab()).toBe(m.workbench_tab_annotation());
@@ -93,7 +95,8 @@ describe("the tab bar", () => {
   });
 
   it("marks its parts and wears the host's classes, nothing more", () => {
-    const { ui } = mount(<TabBar />);
+    using mounted = mount(<TabBar />);
+    const { ui } = mounted;
     render(ui);
     const list = screen.getByRole("tablist");
     expect(list.dataset.part).toBe("tab-bar");
@@ -114,12 +117,13 @@ describe("the tab bar", () => {
   it("runs host navigation effects only for user tab and mode actions", () => {
     const onTabChange = vi.fn<(tab: string) => void>();
     const onModeChange = vi.fn<(advanced: boolean) => void>();
-    const { store, ui } = mount(
+    using mounted = mount(
       <>
         <TabBar onTabChange={onTabChange} />
         <EditToolbar onModeChange={onModeChange} />
       </>,
     );
+    const { store, ui } = mounted;
     render(ui);
     act(() => {
       store.getState().setTab("properties");
@@ -157,7 +161,7 @@ describe("the tab bar", () => {
 describe("the edit toolbar", () => {
   it("puts shared history and an Advanced toggle between the host's header slots", () => {
     const onModeChange = vi.fn<(advanced: boolean) => void>();
-    const { store, ui } = mount(
+    using mounted = mount(
       <EditToolbar
         layout="linear"
         leading={<button>Paper</button>}
@@ -167,6 +171,7 @@ describe("the edit toolbar", () => {
         <button>Menu</button>
       </EditToolbar>,
     );
+    const { store, ui } = mounted;
     render(ui);
     expect(
       screen
@@ -192,7 +197,8 @@ describe("the edit toolbar", () => {
     expect(onModeChange.mock.calls).toEqual([[true], [false]]);
   });
   it("switches Basic and Advanced through the store", () => {
-    const { store, ui } = mount(<EditToolbar />);
+    using mounted = mount(<EditToolbar />);
+    const { store, ui } = mounted;
     render(ui);
     const basic = screen.getByRole("button", { name: m.workbench_basic() });
     const advanced = screen.getByRole("button", {
@@ -215,7 +221,8 @@ describe("the edit toolbar", () => {
   });
 
   it("undoes and redoes the document's one history", () => {
-    const { controller, ui } = mount(<EditToolbar />);
+    using mounted = mount(<EditToolbar />);
+    const { controller, ui } = mounted;
     render(ui);
     const undo = screen.getByRole("button", { name: m.workbench_undo() });
     const redo = screen.getByRole("button", { name: m.workbench_redo() });
@@ -265,12 +272,13 @@ describe("the Problems footer", () => {
       DEFAULT_PROFILE_SOURCE.replace("language: liquid", "language: eta"),
     );
     const opened: string[] = [];
-    const { ui } = mount(
+    using mounted = mount(
       <ProblemsFooter
         problem={controller.problems[0]!}
         onOpen={(problem) => opened.push(problem.code)}
       />,
     );
+    const { ui } = mounted;
     render(ui);
 
     const footer = screen.getByRole("region", {
@@ -291,7 +299,7 @@ describe("the Problems footer", () => {
   });
 
   it("points a row problem at its entry and a section problem at the Annotation tab", () => {
-    const { ui } = mount(
+    using mounted = mount(
       <>
         <ProblemsFooter
           problem={{ code: "invalid-document", slice: "entry:2" }}
@@ -304,6 +312,7 @@ describe("the Problems footer", () => {
         <ProblemsFooter problem={null} onOpen={() => {}} />
       </>,
     );
+    const { ui } = mounted;
     render(ui);
     expect(
       screen.getAllByRole("button").map((button) => button.textContent),

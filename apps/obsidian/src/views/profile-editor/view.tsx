@@ -34,7 +34,7 @@ import {
   diagnosticText,
   AnnotationPointer,
   useWorkbenchHost,
-  createWorkbenchStore,
+  createWorkbenchEditor,
   BUILT_IN_BINDING_DEFAULTS,
   NameFolderPane,
   NotePane,
@@ -50,11 +50,15 @@ import {
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
   useDocumentRevision,
+  useRenderState,
   useWorkbenchStore,
 } from "@zotlit/workbench/ui";
 import type {
+  RenderScheduler,
+  WorkbenchEditorInstance,
   WorkbenchHost,
   WorkbenchInsertTarget,
+  WorkbenchStore,
   NameFolderPaneProps,
 } from "@zotlit/workbench/ui";
 
@@ -70,12 +74,12 @@ import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ProfileService } from "@/services/profile/service";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
 import { NativeMarkdown } from "@/views/note-preview/markdown";
-import type { NativeRenderDeps } from "@/views/note-preview/render";
-import { renderNativeProfile } from "@/views/note-preview/render";
-import {
-  NativePreviewSession,
-  useNativePreview,
-} from "@/views/note-preview/session";
+import type {
+  NativeRenderDeps,
+  NativeRenderResult,
+} from "@/views/note-preview/render";
+import { nativeResult, renderNativeProfile } from "@/views/note-preview/render";
+import { NativePreviewSession } from "@/views/note-preview/session";
 import { exportTemplateDataFile } from "@/views/template-data-explorer/export-file";
 import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
 import {
@@ -108,7 +112,10 @@ export type ProfileEditorDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
 export class ProfileEditorView extends TextFileView implements HoverParent {
   /** The editor hover popover now open, which the next one replaces. */
   hoverPopover: HoverPopover | null = null;
-  readonly store = createWorkbenchStore();
+  readonly store: WorkbenchStore;
+  readonly #editor: WorkbenchEditorInstance<NativeRenderResult>;
+  /** The one scheduler the editor and the Note Preview sidebar render through. */
+  readonly scheduler: RenderScheduler<NativeRenderResult>;
   readonly preview: NativePreviewSession | null;
   readonly #revealListeners = new Set<
     (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
@@ -141,43 +148,23 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     super(leaf);
     this.#deps = deps;
     this.contentEl.addClass("zt-root", "zt-profile-editor");
-    this.preview = deps.nativePreview
-      ? new NativePreviewSession(
-          deps.nativePreview,
-          this.#controller,
-          this.store,
-        )
-      : null;
+    const render: WorkbenchHost["render"] =
+      (deps.nativePreview
+        ? (request) => renderNativeProfile(deps.nativePreview!, request)
+        : deps.render) ??
+      ((request) =>
+        Promise.resolve(
+          failedRender(renderIdentity(request), { code: "render-error" }),
+        ));
     this.#host = createProfileEditorHost(
       this.app,
       {
-        render:
-          (deps.nativePreview
-            ? (request, deliver) => {
-                let current = true;
-                void renderNativeProfile(deps.nativePreview!, request).then(
-                  (result) => {
-                    if (current) deliver(result);
-                  },
-                );
-                return {
-                  terminate() {
-                    current = false;
-                  },
-                };
-              }
-            : deps.render) ??
-          ((request, deliver) => {
-            deliver(
-              failedRender(renderIdentity(request), { code: "render-error" }),
-            );
-            return { terminate() {} };
-          }),
+        render,
         markdown: (props) => (
           <NativeMarkdown
             {...props}
             app={this.app}
-            result={this.preview?.state.getState().result ?? null}
+            result={this.scheduler.getState().result}
           />
         ),
         matchData: createMatchData(deps.db),
@@ -186,6 +173,16 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       },
       (content) => this.provide(content),
     );
+    this.#editor = createWorkbenchEditor({
+      host: this.#host,
+      controller: this.#controller,
+      mapResult: nativeResult,
+    });
+    this.store = this.#editor.store;
+    this.scheduler = this.#editor.scheduler;
+    this.preview = deps.nativePreview
+      ? new NativePreviewSession(deps.nativePreview, this.scheduler, this.store)
+      : null;
     this.scope = new Scope(this.app.scope);
     this.scope.register(["Mod"], "z", (event) => this.#history(event, false));
     this.scope.register(["Mod", "Shift"], "z", (event) =>
@@ -205,7 +202,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
           importAnnotationsAsTemplate:
             bindings["note.import-annotations-as-template"],
         };
-        this.preview?.changed();
+        this.scheduler.invalidate();
         this.#mount();
       }),
     );
@@ -375,7 +372,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       this.#controller = new WorkbenchDocumentController(source, {
         runtime: "native",
       });
-      this.preview?.attach(this.#controller);
+      this.scheduler.attach(this.#controller);
       this.#insertTarget = null;
       this.#insertRequest = null;
       for (const listener of this.#insertListeners) listener();
@@ -500,6 +497,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   protected override async onClose(): Promise<void> {
     this.#closed = true;
     this.preview?.[Symbol.dispose]();
+    this.#editor[Symbol.dispose]();
     this.#host[Symbol.dispose]();
     this.#root?.unmount();
     this.#root = null;
@@ -745,6 +743,11 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       ({ docChanged, transaction }) => {
         this.#updateActions();
         if (!docChanged) return;
+        // What the scheduler follows on its own, named here so a diagnosis can
+        // read the edit that queued or dropped a render.
+        logger.trace("Preview source changed", {
+          live: this.store.getState().preview.live,
+        });
         if (this.#insertTarget) {
           const { slice, range } = this.#insertTarget;
           this.#insertTarget = {
@@ -781,6 +784,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
             key={this.#generation}
             controller={this.#controller}
             store={this.store}
+            scheduler={this.scheduler}
           >
             {content}
           </WorkbenchEditorProvider>
@@ -825,8 +829,7 @@ function EditorContent({
   const controller = view.controller;
   const host = useWorkbenchHost();
   useDocumentRevision(controller);
-  const preview = useNativePreview(view.preview);
-  const result = preview?.result;
+  const { result } = useRenderState();
   const formatProblem = result?.diagnostics.find(
     ({ part }) => part === "annotation",
   );

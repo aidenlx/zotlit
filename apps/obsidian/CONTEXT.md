@@ -190,6 +190,10 @@ _Avoid_: template preview (retired for the Explorer, which shows data, not outpu
 The shared, headless component layer that both the web Workbench and the Profile Editor mount over the Workbench core: it renders structure and behavior and carries no styling, and each host supplies styling and the platform's own popups, menus, and dialogs.
 _Avoid_: shared components (too vague), design system (the hosts own their look), Workbench shell (the host's layout)
 
+**Render Scheduler**:
+The one rule, shared by the web Workbench and the Note Preview, for when a Profile draft is rendered: live rendering starts after a short quiet time once typing stops, Run renders now, Stop pauses live rendering while a render already running finishes, and a result the author has already typed or selected past is dropped.
+_Avoid_: render pipeline (bundles the scheduler with the composer and the transport), render worker (no Worker exists), preview debounce (names the mechanism, not the rule)
+
 **Item Snapshot** _(web Workbench)_:
 The fixed template data for one selected Item and its annotations, retained until an explicit refresh. It includes permitted local link targets and explicit unavailable values where private local data is omitted.
 _Avoid_: Template Data Export (the separate inspection artifact), live Item data (a snapshot remains fixed)

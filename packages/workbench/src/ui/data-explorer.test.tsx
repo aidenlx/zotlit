@@ -9,13 +9,14 @@ afterEach(cleanup);
 
 describe("shared Data Explorer", () => {
   it("shows common labels first, switches to raw keys, and persists the choice", () => {
-    const { ui, host, store } = mount(
+    using mounted = mount(
       <DataExplorer
         root="note"
         data={{ extra: "Other", title: "A paper" }}
         copy={async () => {}}
       />,
     );
+    const { ui, host, store } = mounted;
     render(ui);
     expect(
       screen
@@ -68,9 +69,10 @@ describe("shared Data Explorer", () => {
 
   it("copies values without an editor insertion target", () => {
     const copy = vi.fn<(text: string) => Promise<void>>().mockResolvedValue();
-    const { ui } = mount(
+    using mounted = mount(
       <DataExplorer root="note" data={{ title: "A paper" }} copy={copy} />,
     );
+    const { ui } = mounted;
     render(ui);
     expect(
       screen.queryByRole("button", { name: m.workbench_fields_put_in_note() }),
@@ -84,7 +86,7 @@ describe("shared Data Explorer", () => {
   });
   it("inserts the field in the selected template engine", () => {
     const insert = vi.fn<(snippet: string) => void>();
-    const { ui } = mount(
+    using mounted = mount(
       <DataExplorer
         root="note"
         data={{ title: "A paper" }}
@@ -93,6 +95,7 @@ describe("shared Data Explorer", () => {
         onInsert={insert}
       />,
     );
+    const { ui } = mounted;
     render(ui);
     fireEvent.click(
       screen.getByRole("button", { name: m.workbench_fields_put_in_note() }),
@@ -101,7 +104,7 @@ describe("shared Data Explorer", () => {
   });
   it("expands nested values and opens the live engine menu", () => {
     let eta = false;
-    const { ui, host } = mount(
+    using mounted = mount(
       <DataExplorer
         root="note"
         data={{ metadata: { title: "Nested paper" } }}
@@ -109,6 +112,7 @@ describe("shared Data Explorer", () => {
         engines={() => (eta ? ["liquid", "eta"] : ["liquid"])}
       />,
     );
+    const { ui, host } = mounted;
     render(ui);
     fireEvent.click(
       screen.getByRole("button", { name: m.workbench_explorer_toggle_node() }),
@@ -125,13 +129,14 @@ describe("shared Data Explorer", () => {
     ).toBe(true);
   });
   it("finds a field by its Simple label", () => {
-    const { ui } = mount(
+    using mounted = mount(
       <DataExplorer
         root="note"
         data={{ citationKey: "smith2026", title: "A paper" }}
         copy={async () => {}}
       />,
     );
+    const { ui } = mounted;
     render(ui);
     const input = screen.getByRole("searchbox");
     fireEvent.input(input, { target: { value: "Citation key" } });
@@ -143,7 +148,7 @@ describe("shared Data Explorer", () => {
   it("offers the exact copy path and annotation navigation through the host", () => {
     const copy = vi.fn<(text: string) => Promise<void>>().mockResolvedValue();
     const anchor = vi.fn<(node: unknown) => void>();
-    const { ui, host } = mount(
+    using mounted = mount(
       <DataExplorer
         root="note"
         data={{ annotations: [{ text: "Read this" }] }}
@@ -152,6 +157,7 @@ describe("shared Data Explorer", () => {
         onExploreAnnotation={anchor}
       />,
     );
+    const { ui, host } = mounted;
     render(ui);
     fireEvent.click(
       screen.getByRole("button", { name: m.workbench_explorer_toggle_node() }),
@@ -181,7 +187,7 @@ describe("shared Data Explorer", () => {
     ["json-e", '{"$eval":"zt.title"}'],
   ] as const)("inserts %s property syntax", (mode, expected) => {
     const insert = vi.fn<(snippet: string) => void>();
-    const { ui } = mount(
+    using mounted = mount(
       <DataExplorer
         root="note"
         data={{ title: "A paper" }}
@@ -190,6 +196,7 @@ describe("shared Data Explorer", () => {
         onInsert={insert}
       />,
     );
+    const { ui } = mounted;
     render(ui);
     fireEvent.click(
       screen.getByRole("button", { name: m.workbench_fields_put_in_note() }),
@@ -198,13 +205,14 @@ describe("shared Data Explorer", () => {
   });
 
   it("shows a copy error without leaving an unhandled rejection", async () => {
-    const { ui, host } = mount(
+    using mounted = mount(
       <DataExplorer
         root="note"
         data={{ title: "A paper" }}
         copy={() => Promise.reject(new Error("Clipboard denied"))}
       />,
     );
+    const { ui, host } = mounted;
     render(ui);
     await act(async () => {
       fireEvent.click(

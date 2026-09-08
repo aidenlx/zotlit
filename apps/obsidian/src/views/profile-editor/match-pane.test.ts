@@ -7,6 +7,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import type { MatchItemFacts } from "@zotlit/workbench/match";
 import {
+  createRenderScheduler,
   createWorkbenchStore,
   DataExplorer,
   MatchPane,
@@ -51,7 +52,9 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
     },
   } as unknown as Pick<DatabaseService, "on" | "acquireRead">;
   const tags = vi.fn(async () => []);
-  const render = vi.fn(() => ({ terminate() {} }));
+  const render = vi.fn(() =>
+    Promise.reject(new Error("This test renders nothing.")),
+  );
   using host = createProfileEditorHost(
     {} as Parameters<typeof createProfileEditorHost>[0],
     {
@@ -64,6 +67,12 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
       insertTarget: () => null,
     },
   );
+  using scheduler = createRenderScheduler({
+    render: (request) => host.render(request),
+    failed: (result) => result,
+    controller,
+    store,
+  });
   const el = document.body.createDiv();
   const root = createRoot(el);
   stack.defer(() => {
@@ -76,7 +85,7 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
         { host },
         createElement(
           WorkbenchEditorProvider,
-          { store, controller },
+          { store, controller, scheduler },
           createElement(NativeMatchPane, { controller, db }),
         ),
       ),
@@ -162,7 +171,7 @@ it("applies the installed pack to shared Match and Explorer controls after resta
   using host = createProfileEditorHost(
     ports as unknown as Parameters<typeof createProfileEditorHost>[0],
     {
-      render: () => ({ terminate() {} }),
+      render: () => Promise.reject(new Error("This test renders nothing.")),
       matchData: {
         tags: async () => [],
         collections: async () => [],
@@ -171,6 +180,12 @@ it("applies the installed pack to shared Match and Explorer controls after resta
       insertTarget: () => null,
     },
   );
+  using scheduler = createRenderScheduler({
+    render: (request) => host.render(request),
+    failed: (result) => result,
+    controller,
+    store,
+  });
   const el = document.body.createDiv();
   const root = createRoot(el);
   stack.defer(() => {
@@ -184,7 +199,7 @@ it("applies the installed pack to shared Match and Explorer controls after resta
           { host },
           createElement(
             WorkbenchEditorProvider,
-            { store, controller },
+            { store, controller, scheduler },
             createElement(MatchPane, { controller, facts: null }),
             createElement(DataExplorer, {
               root: "note",

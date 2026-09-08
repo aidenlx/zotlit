@@ -199,12 +199,10 @@ export class TemplateDataExplorerView extends ItemView {
     });
 
     this.#host = createProfileEditorHost(this.app, {
-      render: (request, deliver) => {
-        deliver(
+      render: (request) =>
+        Promise.resolve(
           failedRender(renderIdentity(request), { code: "render-error" }),
-        );
-        return { terminate() {} };
-      },
+        ),
       matchData: {
         tags: async () => [],
         collections: async () => [],

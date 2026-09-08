@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { NoteTemplateContext } from "@zotlit/db";
-import { compileFrontmatterFields } from "@zotlit/templates/frontmatter";
+import type { ManagedFrontmatterEntry } from "@zotlit/templates/facade";
+import {
+  compileFrontmatterFields,
+  compileManagedFrontmatterEntries,
+} from "@zotlit/templates/frontmatter";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 import { createLiquidEngine } from "@zotlit/templates/liquid";
 
@@ -13,7 +17,10 @@ import {
 } from "@/lib/constants";
 import { DEFAULT_FRONTMATTER_FIELDS } from "@/services/template/defaults";
 
-import { applyManagedFrontmatter } from "./frontmatter";
+import {
+  applyManagedFrontmatter,
+  prepareManagedFrontmatter,
+} from "./frontmatter";
 
 /** Mirror the production compile (TemplateService): drop reserved keys, then
  *  compile against the shared Liquid vocabulary — applyManagedFrontmatter only
@@ -380,5 +387,95 @@ describe("applyManagedFrontmatter", () => {
 
     expect(fm.tags).toBe("manual");
     expect(conflicts).toEqual(["tags:shape-mismatch"]);
+  });
+});
+
+describe("prepareManagedFrontmatter", () => {
+  const operationTimestamp = Temporal.Instant.from("2026-08-28T01:02:03Z");
+
+  function compileManaged(
+    entries: readonly ManagedFrontmatterEntry[],
+    options: { javascript?: boolean } = {},
+  ) {
+    return compileManagedFrontmatterEntries(entries, {
+      liquid: createLiquidEngine(),
+      javascript: options.javascript ?? true,
+    });
+  }
+
+  it("carries the evaluated values and the per-field errors when a field fails", () => {
+    // The tail of the message is V8 wording ("Cannot read properties of
+    // undefined"), so pin only the ZotLit-authored prefix.
+    const evaluationError = expect.objectContaining({
+      message: expect.stringContaining(
+        "Managed Frontmatter field 'broken' (entry #2) failed evaluation:",
+      ),
+    });
+    const result = prepareManagedFrontmatter(
+      compileManaged([
+        { key: "title", merge: "replace", expr: "zt.title" },
+        { key: "broken", merge: "replace", js: "zt.absent.deep" },
+        { key: "type", merge: "keep", value: "paper" },
+      ]),
+      makeContext(),
+      operationTimestamp,
+    );
+
+    expect(result).toStrictEqual({
+      failures: [
+        { key: "broken", reason: "evaluation", error: evaluationError },
+      ],
+      evaluation: {
+        values: [
+          { key: "title", merge: "replace", value: "A Study", position: 1 },
+          { key: "type", merge: "keep", value: "paper", position: 3 },
+        ],
+        keys: ["title", "type"],
+        errors: [{ key: "broken", position: 2, error: evaluationError }],
+      },
+    });
+  });
+
+  it("carries the evaluated values when the JavaScript gate makes a field inert", () => {
+    const result = prepareManagedFrontmatter(
+      compileManaged(
+        [
+          { key: "title", merge: "replace", value: "A Study" },
+          { key: "notes", merge: "replace", js: "zt.title" },
+        ],
+        { javascript: false },
+      ),
+      makeContext(),
+      operationTimestamp,
+    );
+
+    expect(result).toStrictEqual({
+      failures: [{ key: "notes", reason: "inert" }],
+      evaluation: {
+        values: [
+          { key: "title", merge: "replace", value: "A Study", position: 1 },
+        ],
+        keys: ["title"],
+        errors: [],
+      },
+    });
+  });
+
+  it("prepares the document fields when every entry evaluates", () => {
+    const result = prepareManagedFrontmatter(
+      compileManaged([{ key: "title", merge: "replace", expr: "zt.title" }]),
+      makeContext(),
+      operationTimestamp,
+    );
+
+    expect(result).toStrictEqual({
+      prepared: {
+        kind: "document",
+        fields: [
+          { key: "title", merge: "replace", value: "A Study", position: 1 },
+        ],
+        keys: ["title"],
+      },
+    });
   });
 });
