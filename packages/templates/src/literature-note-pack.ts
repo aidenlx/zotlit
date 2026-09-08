@@ -1,7 +1,3 @@
-import { Eta } from "eta/core";
-import { TagToken, Tokenizer } from "liquidjs";
-
-import type { TemplateLanguage } from "./constants";
 import { parseLiteratureNoteTemplate } from "./literature-note-template";
 import type {
   LiteratureNoteTemplateDocument,
@@ -107,9 +103,7 @@ export function literatureNoteTemplateDependencies(
     document.body,
     document.annotationSection.source,
     document.manifest.filename,
-  ].flatMap((template) =>
-    referencedPartialNames(template, document.manifest.language),
-  );
+  ].flatMap(referencedPartialNames);
   return [...new Set(names)].filter((name) => name !== "annotation").sort();
 }
 
@@ -193,9 +187,7 @@ export function exportLiteratureNotePack(
       document.body,
       document.annotationSection.source,
       document.manifest.filename,
-    ].flatMap((template) =>
-      referencedPartialNames(template, document.manifest.language),
-    ),
+    ].flatMap(referencedPartialNames),
   ];
   while (pending.length > 0) {
     const name = pending.pop()!;
@@ -218,7 +210,7 @@ export function exportLiteratureNotePack(
       );
     }
     bundled.set(name, partial);
-    pending.push(...referencedPartialNames(partial.source, partial.language));
+    pending.push(...referencedPartialNames(partial.source));
   }
   const stripFolders =
     !options.includeFolders &&
@@ -352,45 +344,11 @@ export function planLiteratureNotePackRevert(
   });
 }
 
-function referencedPartialNames(
-  source: string,
-  language: TemplateLanguage,
-): string[] {
+function referencedPartialNames(source: string): string[] {
   return [
     ...quotedNamesAfter(source, "render"),
     ...quotedNamesAfter(source, "include"),
-    ...(referencesAnnotationShortcut(source, language) ? ["annotation"] : []),
   ];
-}
-
-function referencesAnnotationShortcut(
-  source: string,
-  language: TemplateLanguage,
-): boolean {
-  if (language === "eta") {
-    return new Eta()
-      .parse(source)
-      .some(
-        (part) =>
-          typeof part !== "string" && /\brenderAnnotation\s*\(/.test(part.val),
-      );
-  }
-  let inComment = false;
-  for (const token of new Tokenizer(source).readTopLevelTokens()) {
-    if (!(token instanceof TagToken)) continue;
-    if (token.name === "comment") inComment = true;
-    if (token.name === "endcomment") inComment = false;
-    if (inComment) continue;
-    if (token.name === "render_annotation") return true;
-    if (
-      token.name === "liquid" &&
-      new Tokenizer(token.args)
-        .readLiquidTagTokens()
-        .some((statement) => statement.name === "render_annotation")
-    )
-      return true;
-  }
-  return false;
 }
 
 function quotedNamesAfter(source: string, keyword: string): string[] {
