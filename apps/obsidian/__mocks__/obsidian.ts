@@ -300,6 +300,35 @@ export class ItemView {
   }
 }
 
+/** File serialization seam; tests drive the editor's load and save callbacks. */
+export class TextFileView extends ItemView {
+  readonly app: App;
+  file: TFile | null = null;
+  data = "";
+  scope: Scope | null = null;
+  requestSave = (): void => {};
+  constructor(leaf: WorkspaceLeaf) {
+    super(leaf);
+    this.app = (leaf as unknown as { app: App }).app;
+  }
+  getViewData(): string {
+    return this.data;
+  }
+  setViewData(data: string, _clear: boolean): void {
+    this.data = data;
+  }
+  clear(): void {
+    this.data = "";
+  }
+  async save(): Promise<void> {
+    this.data = this.getViewData();
+  }
+  onPaneMenu(_menu: Menu, _source: string): void {}
+  override getState(): Record<string, unknown> {
+    return this.file ? { file: this.file.path } : {};
+  }
+}
+
 export class Vault {
   static recurseChildren(
     root: TFolder,
@@ -439,6 +468,9 @@ export abstract class SuggestModal<T> {
   }
 
   setPlaceholder(_placeholder: string): void {}
+  setTitle(_title: string): this {
+    return this;
+  }
   setInstructions(_instructions: Instruction[]): void {}
   open(): void {}
   close(): void {
@@ -446,6 +478,10 @@ export abstract class SuggestModal<T> {
   }
   onClose(): void {}
   selectActiveSuggestion(_evt: MouseEvent | KeyboardEvent): void {}
+  selectSuggestion(value: T, event: MouseEvent | KeyboardEvent): void {
+    this.close();
+    this.onChooseSuggestion(value, event);
+  }
 
   abstract getSuggestions(query: string): T[] | Promise<T[]>;
   abstract renderSuggestion(value: T, el: HTMLElement): void;
@@ -482,8 +518,16 @@ export function createMockPlugin(): {
 
 let platformIsWin: boolean | undefined;
 let platformIsMacOS: boolean | undefined;
+let platformIsDesktopApp: boolean | undefined;
 
 export const Platform = {
+  get isDesktopApp(): boolean {
+    if (platformIsDesktopApp === undefined)
+      throw new Error(
+        "Platform.isDesktopApp not configured — call setMockPlatform({ isDesktopApp }) in test setup",
+      );
+    return platformIsDesktopApp;
+  },
   get isWin(): boolean {
     if (platformIsWin === undefined) {
       throw new Error(
@@ -510,14 +554,18 @@ export const Platform = {
 export function setMockPlatform(overrides: {
   isWin?: boolean;
   isMacOS?: boolean;
+  isDesktopApp?: boolean;
 }): void {
   if (overrides.isWin !== undefined) platformIsWin = overrides.isWin;
   if (overrides.isMacOS !== undefined) platformIsMacOS = overrides.isMacOS;
+  if (overrides.isDesktopApp !== undefined)
+    platformIsDesktopApp = overrides.isDesktopApp;
 }
 
 export function resetMockPlatform(): void {
   platformIsWin = undefined;
   platformIsMacOS = undefined;
+  platformIsDesktopApp = undefined;
 }
 
 export function getLanguage(): string {
@@ -565,6 +613,10 @@ export class MenuItem {
   }
 
   setIcon(_icon: string | null): this {
+    return this;
+  }
+
+  setDisabled(_disabled: boolean): this {
     return this;
   }
 

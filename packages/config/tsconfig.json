@@ -1,0 +1,10 @@
+{
+  "$schema": "https://www.schemastore.org/tsconfig",
+  "extends": ["./tsconfig.base.json", "./tsconfig.node26.json"],
+  "compilerOptions": {
+    "noEmit": true,
+    "isolatedDeclarations": false,
+    "types": ["node"]
+  },
+  "include": ["./*.ts"]
+}

@@ -1,8 +1,8 @@
 ---
 title: "Customize your annotations"
-description: "Edit how annotation callouts render by ejecting a template, changing its markup, and updating the note in place."
+description: "Change the annotation format in a literature note profile and apply it to an existing note."
 introduced: "2.0.0"
-updated: "2.0.0"
+updated: "2.1.0"
 ---
 
 import { Steps, Step } from "fumadocs-ui/components/steps";
@@ -13,149 +13,110 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This tutorial picks up where [Create your first literature note](/docs/tutorial/first-note) left off. You will change how annotation callouts look in that note by editing a template file, then use the <UiLabel name={m.template_data_explorer_view_name()} /> to find new data you can add.
+This tutorial continues from [Create your first literature note](/docs/tutorial/first-note). You will change the annotation callouts in that note with the Profile Editor.
 
 <Callout type="info" title="Before you start">
-  You need the literature note you created in [the first
-  tutorial](/docs/tutorial/first-note). It should contain at least one
-  annotation callout (a highlight or note from the Zotero PDF reader). If your
-  note has no annotations, open a PDF in Zotero, highlight a passage, then come
-  back here.
+  Use the literature note from [the first tutorial](/docs/tutorial/first-note).
+  It needs at least one annotation from a Zotero PDF. If it has none, add a
+  highlight in Zotero and update the literature note before you continue.
 </Callout>
 
 ## Change the callout type
 
-Each annotation in your note renders as a callout block. The built-in template uses `[!note]` as the callout type. In this section you will switch it to `[!quote]` by editing the annotation template file.
-
-<Callout
-  type="warn"
-  title="Templates are moving into the note template document"
->
-  ZotLit 2.1 moved annotation rendering into the Profile's template document,
-  and the separate annotation row left the settings tab. This walkthrough still
-  describes the earlier template rows and is being updated. See
-  [Settings](/docs/reference/settings#template-document) for where a Profile's
-  template document lives today.
-</Callout>
+The built-in annotation format uses `[!note]` as the Obsidian callout type. You will change it to `[!quote]`.
 
 <Steps>
   <Step>
-    ### Create the editable template file
+    ### Open the Profile Editor
 
-    Open ZotLit's settings in Obsidian (<SettingsPath />) and find the row labeled <UiLabel name={m.settings_template_name_annotation()} /> in the template file list.
+    Open the literature note in Obsidian. Run <Command name={m.command_customize_note_template_name()} />.
 
-    Click the pen icon button to the right of the row. Its tooltip reads "<UiLabel name={m.settings_template_eject()} />."
-
-    A notice confirms the file was saved: **Template saved to templates/zotlit-annotation.liquid.md** (the exact path depends on your template folder setting).
+    ZotLit opens the profile used by this note. The note's paper is selected for the preview.
 
   </Step>
   <Step>
-    ### Edit the template
+    ### Open the annotation format
 
-    Open the file `templates/zotlit-annotation.liquid.md` in your vault. It contains the default annotation template:
-
-    ```liquid
-    {% bq %}
-    [!note] Page {{ zt.pageLabel }}
-
-    {{ zt.imgLink | embed }}{{ zt.text }}
-    {% if zt.comment %}
-
-    {{ zt.comment }}
-    {% endif %}
-    {% endbq %}
-    ```
-
-    Change `[!note]` to `[!quote]` on the second line:
-
-    ```liquid
-    [!quote] Page {{ zt.pageLabel }}
-    ```
-
-    Save the file. ZotLit picks up template changes as soon as you save. No restart is required.
+    Select the <UiLabel name={m.workbench_tab_annotation()} /> tab. The editor shows the format used for one annotation and a preview from the selected paper.
 
   </Step>
   <Step>
-    ### Update the note
+    ### Change the callout type
 
-    Open the command palette and run:
+    Find `[!note]` in the annotation format and change it to `[!quote]`.
 
-    <Command name={m.command_update_note_name()} />
+    ZotLit saves the profile automatically. The annotation preview now uses a quote callout.
 
-    The managed region re-renders with your new template. Every annotation callout in the note now shows `[!quote]` instead of `[!note]`. You will see a notice: "Literature note updated." Your own writing above or below the managed region stays untouched.
+  </Step>
+  <Step>
+    ### Update the literature note
 
-    <Callout type="warn" title="Use the right command">
-      A similarly named <Command inline name={m.command_update_note_metadata_name()} /> refreshes frontmatter only. It does not re-render annotation callouts. If your callouts did not change, check that you ran <Command inline name={m.command_update_note_name()} /> (without "metadata").
-    </Callout>
+    Return to the literature note and run <Command name={m.command_update_note_name()} />.
+
+    ZotLit renders the managed region with the updated profile. Your writing outside the managed region stays unchanged.
 
   </Step>
 </Steps>
 
-## Add annotation color to the title
+## Add the highlight color
 
-The annotation template has access to data from each annotation in your Zotero library. One useful property is `colorName`, which holds the highlight color as a word (such as "yellow", "red", or "green"). You can discover properties like this in the <UiLabel name={m.template_data_explorer_view_name()} />.
+Template fields insert data from Zotero. You will add the annotation's `colorName` field to the callout title.
 
 <Steps>
   <Step>
-    ### Open the explorer
+    ### Return to the annotation format
 
-    With your literature note open, run the command palette and choose:
-
-    <Command name={m.command_open_template_data_explorer_name()} />
-
-    A panel opens showing the data tree for the current note.
+    Run <Command name={m.command_customize_note_template_name()} /> from the literature note. Select the <UiLabel name={m.workbench_tab_annotation()} /> tab.
 
   </Step>
   <Step>
-    ### Find the color property
+    ### Insert the color field
 
-    In the explorer, expand the **annotations** list and find an annotation entry. Right-click that annotation row and choose <UiLabel name={m.template_data_explorer_menu_explore_annotation()} />. This re-roots the tree so that each property's path matches what you write in the annotation template.
+    Place the cursor after `{{ zt.pageLabel }}` in the callout title. Add a comma and a space, then type `{{` to open the template field list.
 
-    Look for the `colorName` row. Right-click it and choose <UiLabel name={m.template_data_explorer_menu_copy_output()} />. The clipboard now contains `{{ zt.colorName }}`, ready to paste into your template.
-
-  </Step>
-  <Step>
-    ### Add color to the callout title
-
-    Go back to `templates/zotlit-annotation.liquid.md`. On the callout title line, add a comma after `{{ zt.pageLabel }}` and paste what you copied:
+    Select <UiLabel name={m.workbench_field_color_name()} />. The line now contains:
 
     ```liquid
     [!quote] Page {{ zt.pageLabel }}, {{ zt.colorName }}
     ```
 
-    Save the file.
+  </Step>
+  <Step>
+    ### Check the preview
+
+    The annotation preview shows the selected annotation's highlight color. Select a different example in the <UiLabel name={m.workbench_tab_annotation()} /> tab to check another annotation.
 
   </Step>
   <Step>
-    ### Update again
+    ### Update the note again
 
-    Run <Command inline name={m.command_update_note_name()} /> once more. Each callout title now includes the annotation's highlight color, such as "Page 12, yellow."
+    Return to the literature note and run <Command name={m.command_update_note_name()} />. Each annotation callout title now includes its highlight color, such as `Page 12, yellow`.
 
   </Step>
 </Steps>
 
-## Restoring the default template
+## Restore the built-in profile
 
-If you want to undo your changes, delete the `templates/zotlit-annotation.liquid.md` file from your vault. The next time you run <UiLabel name={m.command_update_note_name()} />, ZotLit renders annotations with the original built-in template.
+To remove these changes from the Default profile, open <SettingsPath />. Select <UiLabel name={m.settings_profile_document_restore()} /> on the <UiLabel name={m.settings_profile_document_name()} /> row.
+
+ZotLit moves the custom profile document to Obsidian's configured trash. Update the literature note again to render it with the built-in profile.
 
 ## What's next
 
-From here you can adjust any template file in the same way.
-
 <Cards>
   <Card
+    title="Profile Editor"
+    description="Learn what each editor tab controls and how previews work."
+    href="/docs/concepts/profile-editor"
+  />
+  <Card
     title="Explore template data"
-    description={`Use the ${m.template_data_explorer_view_name()} to find any property available in your templates.`}
+    description={`Use the ${m.template_data_explorer_view_name()} to inspect every available template field.`}
     href="/docs/how-to/explore-template-data"
   />
   <Card
     title="Customize a template"
-    description="The complete recipe for ejecting, editing, and managing any template type."
+    description="Edit each part of a profile and apply it to existing notes."
     href="/docs/how-to/customize-a-template"
-  />
-  <Card
-    title="How templates work"
-    description="Understand the six template types, the managed region, and how changes take effect."
-    href="/docs/concepts/how-templates-work"
   />
 </Cards>

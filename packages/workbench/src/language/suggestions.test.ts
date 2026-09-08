@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { completionEdit, hoverHint, rootAt, suggestions } from "./suggestions";
 import type { SuggestionConfig } from "./suggestions";
 
+import { restoreTemplateData } from "#/render/restore-template-data";
+
 const note: SuggestionConfig = { root: "note", partials: ["cite", "content"] };
 const eta: SuggestionConfig = { ...note, language: "eta" };
 
@@ -227,6 +229,52 @@ describe("suggestions: contract roots", () => {
     const family = suggestions("{{ zt.creators.first.fam", 24, config)!
       .options[0];
     expect(family!.example).toBe('Sample: "Newport"');
+  });
+
+  it("prints a Sample hint whose value refers back to an ancestor", () => {
+    const sample: Record<string, unknown> = { title: "Deep Work" };
+    sample.annotations = [{ text: "Hi", parentItem: sample }];
+    const config = { ...note, sample };
+    const options = suggestions("{{ zt.an", 8, config)!.options;
+    expect(
+      options.find((option) => option.label === "annotations")!.example,
+    ).toBe('Sample: [{"text":"Hi","parentItem":{"$ref":"zt"}}]');
+    expect(
+      hoverHint("{{ zt.annotations }}", 8, config)!.options[0],
+    ).toMatchObject({
+      label: "annotations",
+      example: expect.stringContaining('"$ref":"zt"'),
+    });
+  });
+
+  it("prints an ancestor inside an array as a bracketed accessor", () => {
+    const first: Record<string, unknown> = { text: "Hi" };
+    first.self = first;
+    const sample = { annotations: [first] };
+    const options = suggestions("{{ zt.an", 8, { ...note, sample })!.options;
+    expect(
+      options.find((option) => option.label === "annotations")!.example,
+    ).toBe('Sample: [{"text":"Hi","self":{"$ref":"zt.annotations[0]"}}]');
+  });
+
+  it("prints a Sample hint for a restored link helper as the text it outputs", () => {
+    const sample = restoreTemplateData(
+      {
+        noteLink: {
+          $helper: "noteLink",
+          signature: "(alias?: string) => string | null",
+          value: "[[Deep Work|Newport]]",
+        },
+      },
+      { stringCoercions: [], temporalValues: [], graphReferences: [] },
+    );
+    const options = suggestions("{{ zt.noteLi", 12, {
+      ...note,
+      sample,
+    })!.options;
+    expect(options.find((option) => option.label === "noteLink")!.example).toBe(
+      'Sample: "[[Deep Work|Newport]]"',
+    );
   });
 
   it("offers the root after whitespace", () => {

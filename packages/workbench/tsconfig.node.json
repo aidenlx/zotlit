@@ -4,6 +4,6 @@
     "isolatedDeclarations": false,
     "types": ["node"]
   },
-  "include": ["./tsdown.config.ts", "./vitest.config.ts"],
+  "include": ["./tsdown.config.ts", "./vitest.config.ts", "./scripts/**/*.ts"],
   "exclude": ["./node_modules", "./src/**/*", "./dist/**/*"]
 }

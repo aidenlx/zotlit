@@ -57,6 +57,22 @@ function open(
 }
 
 describe("workbenchSlice", () => {
+  it("keeps a focused caret between separated external edits", () => {
+    const controller = new WorkbenchDocumentController(PROFILE);
+    using note = open(controller, "note");
+    note.view.focus();
+    note.view.dispatch({ selection: { anchor: 7 } });
+    controller.applyExternalSource(
+      PROFILE.replace("name: Reading notes", "name: Updated notes").replace(
+        "> {{ zt.text }}",
+        "Annotation: {{ zt.text }}",
+      ),
+    );
+    expect(note.view.hasFocus).toBe(true);
+    expect(note.view.state.selection.main.head).toBe(7);
+    expect(note.text()).toBe("# {{ zt.title }}\n");
+  });
+
   it.each(["\n", "\r\n"])(
     "restores generated pairs through master history and pane switches with %j",
     (lineBreak) => {

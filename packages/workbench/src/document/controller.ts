@@ -1,6 +1,3 @@
-// Headless master state for one Profile document: the only undo history, the
-// slice ranges every pane edits through, and the validation Problems reads.
-
 import {
   history,
   isolateHistory,
@@ -10,13 +7,18 @@ import {
   undoDepth,
 } from "@codemirror/commands";
 import { Annotation, ChangeSet, EditorState, Text } from "@codemirror/state";
+// Headless master state for one Profile document: the only undo history, the
+// slice ranges every pane edits through, and the validation Problems reads.
 import type {
   ChangeSpec,
   Transaction,
   TransactionSpec,
 } from "@codemirror/state";
+import { diffChars } from "diff";
 
 import { ANNOTATION_HEADER } from "@zotlit/templates/constants";
+import { updateLiteratureNoteTemplateMatch } from "@zotlit/templates/facade";
+import type { MatchTree } from "@zotlit/templates/facade";
 import {
   LiteratureNoteTemplateError,
   parseLiteratureNoteTemplate,
@@ -126,8 +128,12 @@ export interface WorkbenchUpdate {
  */
 export const sliceEdit = Annotation.define<WorkbenchSliceId>();
 
+/** A disk update: one undo step that the host does not write back to disk. */
+export const externalEdit = Annotation.define<boolean>();
+
 export class WorkbenchDocumentController {
   #state: EditorState;
+  readonly #runtime: "web" | "native";
   #document: LiteratureNoteTemplateDocument | null = null;
   #problems: readonly WorkbenchProblem[] = [];
   #focused: WorkbenchSliceId | null = null;
@@ -141,7 +147,8 @@ export class WorkbenchDocumentController {
   readonly #slices = new Map<WorkbenchSliceId, WorkbenchSliceEditor>();
   readonly #listeners = new Set<(update: WorkbenchUpdate) => void>();
 
-  constructor(source: string) {
+  constructor(source: string, options: { runtime?: "web" | "native" } = {}) {
+    this.#runtime = options.runtime ?? "web";
     this.#state = EditorState.create({
       doc: source,
       extensions: [
@@ -284,6 +291,10 @@ export class WorkbenchDocumentController {
     return redoDepth(this.#state) > 0;
   }
 
+  hasSlice(id: WorkbenchSliceId): boolean {
+    return this.#ranges.has(id);
+  }
+
   /**
    * The region `id` covers. An entry removed while its editor is still mounted
    * takes its range with it, so that editor reads an empty region for the one
@@ -324,6 +335,26 @@ export class WorkbenchDocumentController {
     return () => {
       this.#listeners.delete(listener);
     };
+  }
+
+  /** Reconciles disk text while retaining history and unchanged slice positions. */
+  applyExternalSource(source: string): void {
+    const next = EditorState.create({ doc: source }).doc.toString();
+    if (next === this.#text) return;
+    const changes: ChangeSpec[] = [];
+    let offset = 0;
+    for (const part of diffChars(this.#text, next)) {
+      if (part.added) changes.push({ from: offset, insert: part.value });
+      else {
+        if (part.removed)
+          changes.push({ from: offset, to: offset + part.value.length });
+        offset += part.value.length;
+      }
+    }
+    this.dispatch({
+      changes,
+      annotations: [externalEdit.of(true), isolateHistory.of("full")],
+    });
   }
 
   dispatch(spec: TransactionSpec): void {
@@ -396,6 +427,36 @@ export class WorkbenchDocumentController {
     return true;
   }
 
+  /** Write only the Match region, with each form edit in the master undo history. */
+  setMatch(match: MatchTree | undefined): boolean {
+    let next: string;
+    try {
+      next = updateLiteratureNoteTemplateMatch(this.#text, match);
+    } catch {
+      return false;
+    }
+    if (next === this.#text) return true;
+    let from = 0;
+    while (
+      from < this.#text.length &&
+      from < next.length &&
+      this.#text[from] === next[from]
+    )
+      from++;
+    let to = this.#text.length;
+    let end = next.length;
+    while (to > from && end > from && this.#text[to - 1] === next[end - 1]) {
+      to--;
+      end--;
+    }
+    this.dispatch({
+      changes: { from, to, insert: next.slice(from, end) },
+      userEvent: "input.form",
+      annotations: isolateHistory.of("full"),
+    });
+    return true;
+  }
+
   /**
    * Writes one top-level manifest key, or removes it when `value` is undefined.
    * Override and Use default are the two calls, and each lands as its own undo
@@ -439,6 +500,29 @@ export class WorkbenchDocumentController {
     return true;
   }
 
+  /** Inserts the language's annotation loop at the note selection, repairing its section first. */
+  insertAnnotationLoop(target?: WorkbenchSliceRange): {
+    repaired: boolean;
+    caret: number;
+  } {
+    const repaired = this.repairAnnotationSection();
+    const note = this.sliceRange("note");
+    const from = Math.min(
+      Math.max(target?.from ?? note.to, note.from),
+      note.to,
+    );
+    const to = Math.min(Math.max(target?.to ?? from, from), note.to);
+    const snippet =
+      this.document?.manifest.language === "eta"
+        ? "<% for (const annotation of zt.annotations) { %>\n<%~ renderAnnotation(annotation) %>\n<% } %>\n"
+        : "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n";
+    this.dispatch({
+      changes: { from, to, insert: snippet },
+      userEvent: "input.complete",
+    });
+    return { repaired, caret: from + snippet.length };
+  }
+
   /**
    * Applies one Properties action — add, remove, reorder, change language,
    * change merge or key — as a targeted edit of the entry's own YAML lines, in
@@ -475,6 +559,7 @@ export class WorkbenchDocumentController {
       editor === undefined ||
       range === undefined ||
       transaction.annotation(sliceEdit) === focused ||
+      transaction.annotation(externalEdit) === true ||
       transaction.isUserEvent("undo") ||
       transaction.isUserEvent("redo")
     ) {
@@ -584,7 +669,15 @@ export class WorkbenchDocumentController {
         to: document.annotationSection.end,
       });
       this.#dependencies = literatureNoteTemplateDependencies(document);
-      this.#problems = webProblems(document, source);
+      this.#problems = webProblems(document, source).filter(
+        (problem) =>
+          this.#runtime === "web" ||
+          ![
+            "unsupported-language",
+            "unsupported-partial-language",
+            "unsupported-js",
+          ].includes(problem.code),
+      );
     } catch (error) {
       if (!(error instanceof LiteratureNoteTemplateError)) throw error;
       this.#document = null;

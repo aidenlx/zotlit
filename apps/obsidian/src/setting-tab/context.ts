@@ -64,6 +64,7 @@ export type AttachmentImportActions = Pick<
  * search indexing.
  */
 export interface SettingTabContext {
+  webWorkbenchEnabled: boolean;
   app: App;
   importProfile: ImportProfile;
   /**

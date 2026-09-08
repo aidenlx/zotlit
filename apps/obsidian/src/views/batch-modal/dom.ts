@@ -1,5 +1,5 @@
 // Shared DOM primitives for the batch-modal shell and its manifest bodies.
-import { setIcon } from "obsidian";
+import { setIcon, setTooltip } from "obsidian";
 import type { App } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -23,38 +23,84 @@ export function profileChoiceControl(
   controls?: BatchListControls,
 ): void {
   const container = parent.createDiv({
-    cls: "zt:flex zt:flex-wrap zt:items-center zt:gap-2 zt:normal-case zt:tracking-normal zt:font-normal",
+    cls: "zt:flex zt:flex-wrap zt:items-start zt:gap-x-4 zt:gap-y-2 zt:normal-case zt:tracking-normal zt:font-normal",
     attr: choice.scope ? { "data-profile-choice-scope": choice.scope } : {},
   });
   const text = profileChoiceText(choice);
+  const description = container.createDiv({
+    cls: "zt:min-w-0 zt:flex-1 zt:basis-56 zt:space-y-1",
+  });
+  if (choice.scope) {
+    description.createDiv({
+      text: profileChoiceLabel(choice),
+      cls: "zt:text-sm zt:font-medium zt:text-(--text-normal)",
+    });
+  }
+  const help = profileChoiceHelp(choice.scope);
+  const helpEl = help
+    ? description.createDiv({
+        text: help,
+        cls: "zt:text-xs zt:leading-normal zt:text-pretty zt:text-(--text-muted)",
+        attr: { id: `zt-profile-choice-${crypto.randomUUID()}` },
+      })
+    : undefined;
+  const picker = container.createDiv({
+    cls: "zt:flex zt:min-w-0 zt:max-w-full zt:flex-col zt:items-start zt:gap-1",
+  });
   if (controls) {
-    const button = container.createEl("button", {
-      text,
+    const button = picker.createEl("button", {
+      cls: "zt:max-w-full zt:gap-2",
       attr: { type: "button", "data-profile-choice": "" },
     });
+    button.createSpan({
+      text: choice.scope
+        ? (choice.label ?? m.modal_profile_choose_placeholder())
+        : text,
+      cls: "zt:truncate",
+    });
+    setIcon(
+      button.createSpan({
+        cls: "zt:flex zt:shrink-0",
+        attr: { "aria-hidden": "true" },
+      }),
+      "chevron-down",
+    );
+    setTooltip(
+      button,
+      choice.scope && choice.label === undefined
+        ? m.batch_profile_choose({ scope: profileChoiceLabel(choice) ?? "" })
+        : text,
+    );
+    if (helpEl) button.setAttribute("aria-describedby", helpEl.id);
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
       void controls.chooseProfile(choice);
     });
   } else {
-    container.createSpan({ text });
+    picker.createSpan({ text, cls: "zt:text-sm zt:break-words" });
   }
+  if (!choice.scope) description.remove();
   const source =
     choice.label === undefined
       ? undefined
       : describeSelectionSource(choice.source);
   if (source)
-    container.createSpan({
+    picker.createSpan({
       text: source,
       cls: "zt:text-xs zt:text-(--text-muted)",
     });
-  const help = profileChoiceHelp(choice.scope);
-  if (help)
-    container.createDiv({
-      text: help,
-      cls: "zt:basis-full zt:text-xs zt:text-(--text-muted)",
-    });
+}
+
+function profileChoiceLabel({ count = 0, scope }: BatchProfileChoice) {
+  switch (scope) {
+    case "unresolved":
+      return m.batch_profile_unresolved_label({ count });
+    case "affected":
+      return m.batch_profile_affected_label({ count });
+    case "all-new":
+      return m.batch_profile_override_all_label();
+  }
 }
 
 /** The control's own words: which rows it governs and where they go. */

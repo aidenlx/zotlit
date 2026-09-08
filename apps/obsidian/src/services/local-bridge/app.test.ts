@@ -78,6 +78,7 @@ interface Harness {
   clock: TestClock;
   /** Mint a code and spend it, answering the credential the page would hold. */
   connect(): Promise<string>;
+  setAvailable(value: boolean): void;
   setEnabled(value: boolean): void;
   setPeer(address: string | undefined): void;
 }
@@ -85,9 +86,11 @@ interface Harness {
 function setup(): Harness {
   const clock = new TestClock();
   const sessions = new BridgeSessions(() => {}, clock.now);
+  let available = true;
   let enabled = true;
   let peer: string | undefined = "127.0.0.1";
   const app = createLocalBridgeApp({
+    available: () => available,
     enabled: () => enabled,
     peerAddress: () => peer,
     allowedOrigins: [STABLE_DOCS_ORIGIN, PRERELEASE_DOCS_ORIGIN],
@@ -108,6 +111,7 @@ function setup(): Harness {
     request,
     sessions,
     clock,
+    setAvailable: (value) => (available = value),
     setEnabled: (value) => (enabled = value),
     setPeer: (address) => (peer = address),
     async connect() {
@@ -182,6 +186,20 @@ describe("the bridge gates", () => {
       headers: { Origin: OTHER_ORIGIN },
     });
     expect(refused.status).toBe(403);
+  });
+
+  it("refuses every request before preflight when the build excludes the bridge", async () => {
+    const bridge = setup();
+    bridge.setAvailable(false);
+
+    const response = await bridge.request(LOCAL_BRIDGE_PATHS.resumeSession, {
+      method: "OPTIONS",
+    });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "bridge-disabled", message: expect.any(String) },
+    });
   });
 
   it("requires a bearer credential everywhere but the code exchange", async () => {

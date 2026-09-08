@@ -84,7 +84,7 @@ export async function renderSitemap(): Promise<string> {
     "/changelog": [{}],
     "/community": [{}],
     "/docs": [{}],
-    "/workbench": [{}],
+    "/workbench": [],
     "/blog/$slug": await blogEntries(),
     "/changelog/$version": changelog.getPages().map((page) => ({
       pathname: page.url,

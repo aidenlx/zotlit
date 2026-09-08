@@ -13,6 +13,7 @@ export interface ProfileHandoffProps {
   reasons: readonly UnsupportedReason[];
   /** Downloads the source as it was read, which is the only copy this page holds. */
   onDownload: () => void;
+  onOpenInObsidian: () => void;
   onImport: () => void;
   onUndo?: (() => void) | undefined;
   message?: string | null | undefined;
@@ -21,6 +22,7 @@ export interface ProfileHandoffProps {
 export function ProfileHandoff({
   reasons,
   onDownload,
+  onOpenInObsidian,
   onImport,
   onUndo,
   message,
@@ -43,7 +45,10 @@ export function ProfileHandoff({
           ))}
         </ul>
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="xs" onClick={onDownload}>
+          <Button size="xs" onClick={onOpenInObsidian}>
+            {m.workbench_open_obsidian()}
+          </Button>
+          <Button variant="outline" size="xs" onClick={onDownload}>
             {m.workbench_unsupported_download()}
           </Button>
           <Button variant="outline" size="xs" onClick={onImport}>

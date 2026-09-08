@@ -30,6 +30,10 @@ declare global {
 }
 
 declare module "obsidian" {
+  interface FileView {
+    /** Keeps an in-memory document leaf open before its first vault write. */
+    allowNoFile: boolean;
+  }
   interface Workspace {
     on(
       name: "zotlit:switch-profile",

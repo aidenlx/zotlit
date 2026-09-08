@@ -24,6 +24,7 @@ import {
   mergeManagedFrontmatterEntries,
 } from "@zotlit/templates/frontmatter-merge";
 import type { EvaluatedFrontmatterField } from "@zotlit/templates/frontmatter-merge";
+import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
 import { restoreTemplateData } from "./restore-template-data";
 import { failedRender, renderIdentity } from "./result";
@@ -175,7 +176,7 @@ export function renderProfile(
         part: "annotation",
       };
     }
-    const creationBody = facade.renderLiteratureNoteTemplateForCreate(
+    const createdBody = facade.renderLiteratureNoteTemplateForCreate(
       document,
       note,
     );
@@ -184,6 +185,14 @@ export function renderProfile(
       document.manifest.frontmatter ?? [],
       note,
     );
+    const managedRegion = facade.renderLiteratureNoteTemplateForUpdate(
+      document,
+      note,
+    );
+    const creationBody =
+      options.mode === "update" && managedRegion !== null
+        ? replaceManagedRegion(createdBody, () => managedRegion).content
+        : createdBody;
     return {
       ...identity,
       // A preview assumes a free filename; the vault resolves collisions on save.
@@ -195,10 +204,7 @@ export function renderProfile(
       fold: frontmatter.fold,
       frontmatterBlock: frontmatterBlock(frontmatter.fold),
       creationBody,
-      managedRegion: facade.renderLiteratureNoteTemplateForUpdate(
-        document,
-        note,
-      ),
+      managedRegion,
       annotation: preview,
       annotationCitation,
       annotationRanges: locateOutputs(

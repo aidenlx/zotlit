@@ -1,0 +1,67 @@
+.zt-profile-editor {
+  padding: 0;
+  overflow: hidden;
+}
+.zt-profile-editor [data-part="tab"][aria-selected="true"] {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+/* The shared parser emits semantic tokens; use the active theme's code colors. */
+.zt-profile-editor {
+  .tok-keyword {
+    color: var(--code-keyword);
+  }
+  .tok-string {
+    color: var(--code-string);
+  }
+  .tok-comment {
+    color: var(--code-comment);
+  }
+  .tok-number,
+  .tok-bool {
+    color: var(--code-value);
+  }
+  .tok-variableName {
+    color: var(--code-normal);
+  }
+  .tok-operator,
+  .tok-punctuation {
+    color: var(--code-operator);
+  }
+  .tok-heading {
+    color: var(--h1-color);
+    font-weight: var(--h1-weight);
+  }
+  .tok-strong {
+    font-weight: var(--bold-weight);
+  }
+  .tok-emphasis {
+    font-style: italic;
+  }
+}
+.zt-profile-editor .checkbox-container[aria-checked="true"] {
+  background-color: var(--interactive-accent);
+}
+.zt-profile-editor .checkbox-container[aria-checked="true"]::after {
+  transform: translateX(
+    calc(
+      var(--toggle-width) - var(--toggle-thumb-width) - 2 *
+        var(--toggle-border-width)
+    )
+  );
+}
+
+.zt-profile-editor [data-part="edit-toolbar"],
+.zt-profile-editor [data-part="tab-bar"] {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.zt-profile-editor [data-part="edit-toolbar"] > * {
+  flex-shrink: 0;
+}
+.zt-profile-editor .zt-profile-editor-item {
+  flex: 1 1 100%;
+  max-width: 100%;
+  text-align: start;
+  justify-content: flex-start;
+}

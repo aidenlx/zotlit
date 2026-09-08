@@ -2,12 +2,14 @@ import { defineConfig } from "tsdown";
 
 /** The browser-safe entries, each also published as its source. */
 const SOURCE = {
+  match: "./src/match/index.ts",
   language: "./src/language/index.ts",
   completion: "./src/language/semantics.ts",
   document: "./src/document/index.ts",
   render: "./src/render/index.ts",
   explorer: "./src/explorer/index.ts",
   bridge: "./src/bridge/index.ts",
+  ui: "./src/ui/index.tsx",
 };
 
 export default defineConfig({

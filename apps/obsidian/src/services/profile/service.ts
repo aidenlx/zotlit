@@ -822,20 +822,32 @@ export class ProfileService extends Service {
   }
 
   async ejectDefault(): Promise<TFile> {
+    return (await this.materializeDefault()).file;
+  }
+
+  /** The draft editor distinguishes its first write from a competing Default. */
+  async materializeDefault(
+    source?: string,
+  ): Promise<{ file: TFile; created: boolean }> {
     await this.ready;
     const path = this.defaultDocumentPath;
     await ensureParentFolder(this.#deps.app, path);
     let file: TFile;
+    let created = true;
     try {
-      file = await this.#deps.app.vault.create(path, this.#builtInDocument());
+      file = await this.#deps.app.vault.create(
+        path,
+        source ?? this.#builtInDocument(),
+      );
     } catch (error) {
       if (!isFileExistsError(error)) throw error;
       const existing = this.#deps.app.vault.getFileByPath(path);
       if (!existing) throw error;
       file = existing;
+      created = false;
     }
     await this.#settle();
-    return file;
+    return { file, created };
   }
 
   async restoreDefault(): Promise<void> {

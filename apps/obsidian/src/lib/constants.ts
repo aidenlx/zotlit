@@ -7,6 +7,7 @@
  */
 export const DOCS_SITE_URL = __DOCS_SITE_URL__;
 export const DOCS_COMPANION = `${DOCS_SITE_URL}/docs/install-companion`;
+export const WEB_WORKBENCH_ENABLED = __WEB_WORKBENCH_ENABLED__;
 
 /**
  * Host and repository ZotLit's releases are served from, as shown to the user

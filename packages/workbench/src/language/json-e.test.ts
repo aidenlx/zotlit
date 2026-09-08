@@ -11,6 +11,18 @@ const config: SuggestionConfig = {
   sample: { title: "Paper" },
 };
 
+it("prints a Sample hint for a JSON-e field whose value refers back to the root", () => {
+  const sample: Record<string, unknown> = { title: "Paper" };
+  sample.annotations = [{ parentItem: sample }];
+  expect(
+    hoverHint('{"$eval":"zt.annotations"}', 14, { ...config, sample })
+      ?.options[0],
+  ).toMatchObject({
+    label: "annotations",
+    example: 'Sample: [{"parentItem":{"$ref":"zt"}}]',
+  });
+});
+
 it("completes a JSON-e field without changing the expression or JSON quotes", () => {
   const source = '{"$eval":"zt.ti + \' suffix\'"}';
   const result = suggestions(source, source.indexOf(" +"), config)!;

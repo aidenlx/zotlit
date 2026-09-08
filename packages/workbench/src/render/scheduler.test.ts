@@ -163,3 +163,19 @@ describe("createRenderScheduler", () => {
     expect(results[0]!.sourceRevision).toBe(profileSourceRevision(fresh));
   });
 });
+
+it("runs immediately and drops a stopped render even when the next request has the same identity", () => {
+  const workers = fakeWorkers();
+  const results: ProfileRenderResult[] = [];
+  using scheduler = createRenderScheduler({
+    startWorker: workers.startWorker,
+    onResult: (result) => results.push(result),
+  });
+  const request = { source: DEFAULT_PROFILE_SOURCE, snapshot };
+  scheduler.run(request);
+  scheduler.run(request);
+  workers.started[0]!.deliver(renderProfile(request.source, snapshot));
+  expect(results).toHaveLength(0);
+  workers.started[1]!.deliver(renderProfile(request.source, snapshot));
+  expect(results).toHaveLength(1);
+});

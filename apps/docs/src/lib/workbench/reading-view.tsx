@@ -26,11 +26,11 @@ import remarkRehype from "remark-rehype";
 import { unified } from "unified";
 
 import type { RenderedProperty, RenderedRange } from "@zotlit/workbench/render";
+import { PropertyList, WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
 
 import { m } from "@/paraglide/messages.js";
 
 import imagePlaceholder from "./image-placeholder.svg";
-import { PropertyList } from "./property-list";
 
 /** What an `![[…]]` or `![](…)` embed points at, by the target's file type. */
 type EmbedKind = "audio" | "image" | "note" | "pdf" | "video";
@@ -355,11 +355,13 @@ export function ResultSheet({
   return (
     <div className="flex flex-1 flex-col">
       {properties.length > 0 && (
-        <PropertyList
-          properties={properties}
-          label={m.workbench_result_properties()}
-          className="mb-4 border-b border-fd-border pb-3 text-xs"
-        />
+        <WorkbenchMessagesProvider messages={m}>
+          <PropertyList
+            properties={properties}
+            label={m.workbench_result_properties()}
+            variant="note"
+          />
+        </WorkbenchMessagesProvider>
       )}
       <div
         role="document"

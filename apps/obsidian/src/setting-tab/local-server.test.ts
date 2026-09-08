@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { ButtonComponent, Setting, ToggleComponent } from "@mock/obsidian";
+import { ButtonComponent, Setting } from "@mock/obsidian";
 import type {
   Setting as ObsidianSetting,
   SettingDefinitionItem,
@@ -16,30 +16,23 @@ import type { SettingsKey, SettingTabContext } from "./context";
 import { localServerItems } from "./local-server";
 
 interface Options {
+  webWorkbenchEnabled?: boolean;
   effectivePort?: number | null;
   settings?: Partial<Settings>;
   connection?: WorkbenchConnection | null;
   disconnect?: () => void;
-  /** The vault-scoped device store the launch-sheet flag lives in. */
-  device?: Map<string, unknown>;
 }
 
 function setup({
+  webWorkbenchEnabled = true,
   effectivePort = null,
   settings = {},
   connection = null,
   disconnect = () => {},
-  device = new Map<string, unknown>(),
 }: Options = {}) {
   const current: Settings = { ...defaults, ...settings };
   const ctx = {
-    app: {
-      loadLocalStorage: (key: string) => device.get(key) ?? null,
-      saveLocalStorage: (key: string, value: unknown) => {
-        if (value === null) device.delete(key);
-        else device.set(key, value);
-      },
-    },
+    webWorkbenchEnabled,
     settings: { current },
     localServer: { effectivePort, on: () => () => {} },
     localBridge: { connection, disconnect, on: () => () => {} },
@@ -89,6 +82,31 @@ it("offers one toggle per hosted service beside the listener's own", () => {
   expect(defaults["server.enabled"]).toBe(false);
   expect(defaults["server.live-update"]).toBe(true);
   expect(defaults["server.workbench"]).toBe(true);
+});
+
+it("keeps Local Server and Live Update controls while hiding bridge controls", () => {
+  const items = setup({
+    webWorkbenchEnabled: false,
+    settings: { "server.enabled": true, "server.workbench": true },
+    connection: CONNECTION,
+  });
+
+  expect(row(items, m.settings_local_server_enabled_name())).toHaveProperty(
+    "control.key",
+    "server.enabled",
+  );
+  expect(row(items, m.settings_live_updates_enabled_name())).toHaveProperty(
+    "control.key",
+    "server.live-update",
+  );
+  expect(
+    items.some(
+      (item) =>
+        "name" in item &&
+        (item.name === m.settings_local_server_workbench_name() ||
+          item.name === m.settings_local_server_workbench_connection_name()),
+    ),
+  ).toBe(false);
 });
 
 it("hides everything but the listener toggle while the server is off", () => {
@@ -161,39 +179,4 @@ it("names the connected website and template, and ends the session", () => {
   expect(button.text).toBe(m.settings_local_server_workbench_disconnect());
   button.click();
   expect(disconnect).toHaveBeenCalledTimes(1);
-});
-
-it("offers the launch sheet's own switch, on until the sheet is dismissed for good", () => {
-  const device = new Map<string, unknown>();
-  const items = setup({ settings: { "server.enabled": true }, device });
-
-  const item = row(items, m.settings_local_server_workbench_confirm_name());
-  expect(visible(item)).toBe(true);
-  const toggle = render(item).components.find(
-    (control) => control instanceof ToggleComponent,
-  )!;
-  expect(toggle.getValue()).toBe(true);
-
-  toggle.toggle(false);
-  expect(device.get("zotlit-workbench-launch-approved")).toBe("1");
-
-  // A device that already skipped the sheet gets the switch back off, and
-  // turning it on clears the skip.
-  const back = setup({ settings: { "server.enabled": true }, device });
-  const backToggle = render(
-    row(back, m.settings_local_server_workbench_confirm_name()),
-  ).components.find((control) => control instanceof ToggleComponent)!;
-  expect(backToggle.getValue()).toBe(false);
-  backToggle.toggle(true);
-  expect(device.has("zotlit-workbench-launch-approved")).toBe(false);
-});
-
-it("withholds the launch sheet's switch while the Workbench is off", () => {
-  const items = setup({
-    settings: { "server.enabled": true, "server.workbench": false },
-  });
-
-  expect(
-    visible(row(items, m.settings_local_server_workbench_confirm_name())),
-  ).toBe(false);
 });
