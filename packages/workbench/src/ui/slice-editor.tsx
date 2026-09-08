@@ -180,7 +180,7 @@ export function SliceEditor({
             const config = read(position);
             return config?.language === "json-e" ? null : config;
           }),
-          report.current.adapter?.editorPopups?.(read) ?? [],
+          report.current.adapter?.editorPopups?.(read, host.current!) ?? [],
           ...(language === "json-e" || slice === "advanced"
             ? [
                 embeddedJsonE((source) =>

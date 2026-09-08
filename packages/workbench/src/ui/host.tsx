@@ -147,8 +147,8 @@ export interface WorkbenchHost {
   render: RenderSchedulerOptions["startWorker"];
   /** The host reading view for a rendered note or annotation. */
   markdown: ComponentType<WorkbenchMarkdownProps>;
-  /** Completion and hover presentation over the shared editor. */
-  editorPopups?(read: SuggestionSource): Extension;
+  /** Completion and hover presentation, with the editor's mount for window-local overlays. */
+  editorPopups?(read: SuggestionSource, parent: HTMLElement): Extension;
   matchData: WorkbenchMatchData;
   /** The focused slice editor, or `null` when none has had focus. */
   insertTarget(): WorkbenchInsertTarget | null;

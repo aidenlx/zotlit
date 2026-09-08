@@ -173,19 +173,25 @@ describe("Profile Editor host", () => {
 describe("Profile Editor typing popup", () => {
   it("wears Obsidian's suggestion classes, with the description and type as cells", async () => {
     const { host } = setup();
+    const input = document.createElement("div");
+    input.style.overflow = "hidden";
+    document.body.append(input);
     const view = new EditorView({
       state: EditorState.create({
         doc: "{{ zt.",
         extensions: [
           liquidTemplate,
-          host.editorPopups!(() => ({
-            root: "note",
-            partials: [],
-            fields: [{ path: "title", label: "Title" }],
-          })),
+          host.editorPopups!(
+            () => ({
+              root: "note",
+              partials: [],
+              fields: [{ path: "title", label: "Title" }],
+            }),
+            input,
+          ),
         ],
       }),
-      parent: document.body,
+      parent: input,
     });
     try {
       view.dispatch({
@@ -194,11 +200,13 @@ describe("Profile Editor typing popup", () => {
         userEvent: "input.type",
       });
       const popup = await vi.waitFor(() => {
-        const found = view.dom.querySelector(".cm-tooltip-autocomplete");
+        const found = document.body.querySelector(".cm-tooltip-autocomplete");
         if (!found) throw new Error("no popup yet");
         return found;
       });
       expect(popup.classList.contains("suggestion-container")).toBe(true);
+      expect(document.body.contains(popup)).toBe(true);
+      expect(input.contains(popup)).toBe(false);
       const rows = [...popup.querySelectorAll("li")];
       expect(rows.map((row) => row.className)).toEqual(
         rows.map(() => "suggestion-item mod-complex"),
@@ -208,13 +216,14 @@ describe("Profile Editor typing popup", () => {
           row.querySelector(".cm-completionLabel")!.textContent === "title",
       )!;
       expect(
-        row.querySelector(".suggestion-aux .suggestion-flair")!.textContent,
+        row.querySelector(".zt-template-completion-type")!.textContent,
       ).toBe("string | null");
       expect(row.querySelector(".suggestion-note")!.textContent).toBe(
         "Item title.",
       );
     } finally {
       view.destroy();
+      input.remove();
     }
   });
 });
