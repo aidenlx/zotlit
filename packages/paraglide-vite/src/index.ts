@@ -2,8 +2,9 @@
 
 import { compile } from "@inlang/paraglide-js";
 import type { CompilerOptions } from "@inlang/paraglide-js";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
-import { dirname, resolve, sep } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 
@@ -11,7 +12,7 @@ import type { Plugin } from "vite";
  * Uses Paraglide's compiler and incremental output cache with Vite-owned watching.
  * Initial generation runs in `config`: framework plugins can scan dependencies
  * before `buildStart`, including when their generated imports do not yet exist.
- * @see https://github.com/opral/paraglide-js/blob/main/src/bundler-plugins/unplugin.ts
+ * @see https://github.com/opral/paraglide-js/blob/abeba5009e22761518964dcfc1ec8f49d4551f41/src/bundler-plugins/unplugin.ts
  */
 export function paraglideVitePlugin(options: CompilerOptions): Plugin {
   let previous: Awaited<ReturnType<typeof compile>> | undefined;
@@ -62,11 +63,37 @@ export function paraglideVitePlugin(options: CompilerOptions): Plugin {
   };
 
   function ignored(path: string): boolean {
-    return (
-      path === paths.outdir ||
-      path.startsWith(`${paths.outdir}${sep}`) ||
-      path.includes("cache")
+    return [paths.outdir, resolve(paths.project, "cache")].some(
+      (directory) =>
+        path === directory || path.startsWith(`${directory}${sep}`),
     );
+  }
+
+  async function existingOutputHashes(): Promise<Record<string, string>> {
+    let entries: fs.Dirent[];
+    try {
+      entries = await sourceFs.promises.readdir(paths.outdir, {
+        recursive: true,
+        withFileTypes: true,
+      });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT")
+        return {};
+      throw error;
+    }
+    const hashes: Record<string, string> = {};
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const path = resolve(entry.parentPath, entry.name);
+      const content = await sourceFs.promises.readFile(path, "utf8");
+      // Paraglide's writer hashes content plus its absolute destination.
+      hashes[relative(paths.outdir, path).split(sep).join("/")] = createHash(
+        "sha256",
+      )
+        .update(content + path)
+        .digest("hex");
+    }
+    return hashes;
   }
 
   function watchPaths(): string[] {
@@ -75,14 +102,14 @@ export function paraglideVitePlugin(options: CompilerOptions): Plugin {
     ].filter((path) => !ignored(path));
   }
 
-  async function generate(initial = false): Promise<void> {
+  async function generate(): Promise<void> {
     reads = new Set();
     try {
       previous = await compile({
         ...paths,
         fs: trackedFs,
-        previousCompilation: previous,
-        cleanOutdir: options.cleanOutdir ?? initial,
+        previousCompilation: options.cleanOutdir ? undefined : previous,
+        cleanOutdir: options.cleanOutdir ?? false,
         outputStructure,
         isServer:
           options.isServer ??
@@ -111,7 +138,9 @@ export function paraglideVitePlugin(options: CompilerOptions): Plugin {
         options.outputStructure ??
         (production ? "message-modules" : "locale-modules");
       // Awaited config hooks precede every environment's dependency scanner.
-      await generate(true);
+      if (!options.cleanOutdir)
+        previous = { outputHashes: await existingOutputHashes() };
+      await generate();
     },
     buildStart() {
       for (const path of watchPaths()) this.addWatchFile(path);

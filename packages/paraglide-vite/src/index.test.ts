@@ -14,10 +14,10 @@ import { expect, onTestFinished, test } from "vitest";
 
 import { paraglideVitePlugin } from "./index.js";
 
-async function fixture() {
+async function fixture(prefix = "paraglide-") {
   const scratch = resolve(import.meta.dirname, "../../../tmp");
   await mkdir(scratch, { recursive: true });
-  const root = await mkdtemp(join(scratch, "paraglide-"));
+  const root = await mkdtemp(join(scratch, prefix));
   onTestFinished(() => rm(root, { recursive: true, force: true }));
   await mkdir(join(root, "project.inlang"));
   await copyFile(
@@ -41,7 +41,7 @@ async function fixture() {
 }
 
 test("generates before framework configuration and updates messages through Vite watching", async () => {
-  const root = await fixture();
+  const root = await fixture("cache-demo-");
   const file = join(root, "generated/messages/en.js");
   const server = await createServer({
     root,
@@ -106,4 +106,38 @@ test("keeps compiler output caches separate for two plugin instances", async () 
   expect(
     await readFile(join(second, "generated/messages/en.js"), "utf8"),
   ).toContain("Other application");
+});
+
+test("preserves unchanged outputs across starts and repairs removed output files", async () => {
+  const root = await fixture();
+  async function start() {
+    return createServer({
+      root,
+      configFile: false,
+      server: { middlewareMode: true },
+      plugins: [
+        paraglideVitePlugin({
+          project: join(root, "project.inlang"),
+          outdir: join(root, "generated"),
+          strategy: ["baseLocale"],
+        }),
+      ],
+    });
+  }
+  const first = await start();
+  await first.close();
+  const runtime = join(root, "generated/runtime.js");
+  const message = join(root, "generated/messages/en.js");
+  const timestamp = (await stat(runtime)).mtimeMs;
+  const second = await start();
+  expect((await stat(runtime)).mtimeMs).toBe(timestamp);
+  await second.close();
+  await rm(message);
+  const obsolete = join(root, "generated/obsolete.js");
+  await writeFile(obsolete, "old generated output");
+  const third = await start();
+  onTestFinished(() => third.close());
+  expect((await stat(runtime)).mtimeMs).toBe(timestamp);
+  expect(await readFile(message, "utf8")).toContain("First greeting");
+  await expect(stat(obsolete)).rejects.toMatchObject({ code: "ENOENT" });
 });
