@@ -141,11 +141,25 @@ it("tells the unmatched fallback, the affected recovery, and the all-new overrid
   const controls = [
     ...container.querySelectorAll<HTMLButtonElement>("[data-profile-choice]"),
   ];
-  expect(controls.map((button) => button.textContent)).toEqual([
+  expect(controls.map((button) => button.getAttribute("aria-label"))).toEqual([
     m.batch_profile_unresolved_destination({ count: 2, label: "Default" }),
-    m.batch_profile_affected_choose({ count: 1 }),
-    m.batch_profile_override_all(),
+    m.batch_profile_choose({
+      scope: m.batch_profile_affected_label({ count: 1 }),
+    }),
+    m.batch_profile_choose({ scope: m.batch_profile_override_all_label() }),
   ]);
+  expect(controls.map((button) => button.textContent)).toEqual([
+    "Default",
+    m.modal_profile_choose_placeholder(),
+    m.modal_profile_choose_placeholder(),
+  ]);
+  for (const button of controls) {
+    const descriptionId = button.getAttribute("aria-describedby");
+    expect(descriptionId).toBeTruthy();
+    expect(
+      container.querySelector(`[id="${descriptionId}"]`)?.textContent,
+    ).toBeTruthy();
+  }
   for (const help of [
     m.batch_profile_unresolved_help(),
     m.batch_profile_recovery_help(),
@@ -174,7 +188,7 @@ it("tells the unmatched fallback, the affected recovery, and the all-new overrid
   expect(
     container.querySelector('[data-profile-choice-scope="all-new"]')
       ?.textContent,
-  ).toContain(m.batch_profile_override_all_destination({ label: "Articles" }));
+  ).toContain("Articles");
   expect(container.textContent).toContain(m.batch_profile_source_chosen());
 });
 
