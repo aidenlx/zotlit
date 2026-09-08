@@ -67,7 +67,6 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.53.1",
-    "@inlang/paraglide-js": "^2.24.1",
     "@tailwindcss/vite": "catalog:",
     "@tanstack/devtools-vite": "^0.8.5",
     "@types/hast": "3.0.5",
@@ -80,6 +79,7 @@
     "@vitejs/plugin-react": "^6.0.1",
     "@zotlit/config": "workspace:*",
     "@zotlit/db": "workspace:*",
+    "@zotlit/paraglide-vite": "workspace:*",
     "@zotlit/scripts": "workspace:*",
     "cross-env": "catalog:",
     "fflate": "catalog:",

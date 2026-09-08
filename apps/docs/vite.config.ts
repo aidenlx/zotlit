@@ -1,5 +1,4 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
-import { paraglideVitePlugin } from "@inlang/paraglide-js";
 import tailwindcss from "@tailwindcss/vite";
 import { devtools } from "@tanstack/devtools-vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
@@ -9,6 +8,8 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
+
+import { paraglideVitePlugin } from "@zotlit/paraglide-vite";
 
 import { agentSkillAssets } from "./src/lib/agent-skills.js";
 import { renderHeadersFile } from "./src/lib/headers.js";
@@ -192,29 +193,12 @@ function workerHotUpdate(): Plugin {
   };
 }
 
-// Vite scans before the message and content plugins generate these entries on a cold tree.
-const GENERATED_ENTRIES = [
-  "@/paraglide/messages.js",
-  "@/paraglide/runtime.js",
-  "collections/server",
-  "collections/browser",
-];
-
 export default defineConfig(({ command }) => ({
-  environments: {
-    ssr: {
-      optimizeDeps: {
-        exclude: GENERATED_ENTRIES,
-        include: ["fumadocs-mdx/runtime/browser"],
-      },
-    },
-  },
   // `@base-ui/react` imports the named `useSyncExternalStoreWithSelector` from
   // a CommonJS shim. The dev server serves that file raw unless the pre-bundler
   // is told to convert it, and the missing named export stops hydration before
   // the page becomes interactive. The production build converts it either way.
   optimizeDeps: {
-    exclude: GENERATED_ENTRIES,
     include: ["@base-ui/react > use-sync-external-store/shim/with-selector"],
     // The Workbench sits behind a dynamic import the router's own entry scan
     // stops short of, so its dependencies — CodeMirror, the Lezer parsers, the

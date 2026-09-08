@@ -107,6 +107,9 @@ settings:
 
 catalogs:
   default:
+    '@inlang/plugin-message-format':
+      specifier: 4.4.1
+      version: 4.4.1
     '@codemirror/commands':
       specifier: 6.11.0
       version: 6.11.0
@@ -434,9 +437,6 @@ importers:
       '@cloudflare/vite-plugin':
         specifier: ^1.53.1
         version: 1.53.1(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))(wrangler@4.125.0)
-      '@inlang/paraglide-js':
-        specifier: ^2.24.1
-        version: 2.24.1(typescript@7.0.2)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
       '@tailwindcss/vite':
         specifier: 'catalog:'
         version: 4.3.0(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
@@ -473,6 +473,9 @@ importers:
       '@zotlit/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@zotlit/paraglide-vite':
+        specifier: workspace:*
+        version: link:../../packages/paraglide-vite
       '@zotlit/scripts':
         specifier: workspace:*
         version: link:../../packages/scripts
@@ -968,12 +971,43 @@ importers:
         specifier: 2.2.9
         version: 2.2.9
       '@inlang/plugin-message-format':
-        specifier: 4.4.1
+        specifier: 'catalog:'
         version: 4.4.1
       '@inlang/sdk':
         specifier: 2.9.3
         version: 2.9.3
     devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.1.2
+      '@zotlit/config':
+        specifier: workspace:*
+        version: link:../config
+      oxlint:
+        specifier: 'catalog:'
+        version: 1.70.0(oxlint-tsgolint@0.23.0)
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.5(typescript@7.0.2)
+      typescript:
+        specifier: 'catalog:'
+        version: 7.0.2
+      vite:
+        specifier: 'catalog:'
+        version: 8.1.5(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0)
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.6(@types/node@26.1.2)(happy-dom@20.9.0)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+
+  packages/paraglide-vite:
+    dependencies:
+      '@inlang/paraglide-js':
+        specifier: ^2.24.1
+        version: 2.24.1(typescript@7.0.2)(vite@8.1.5(@types/node@26.1.2)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
+    devDependencies:
+      '@inlang/plugin-message-format':
+        specifier: 'catalog:'
+        version: 4.4.1
       '@types/node':
         specifier: 'catalog:'
         version: 26.1.2
