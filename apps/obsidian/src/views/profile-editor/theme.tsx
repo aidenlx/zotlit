@@ -1,11 +1,12 @@
 // Shared authoring controls inherit Obsidian's surfaces and editor typography.
-import { EditorView } from "@codemirror/view";
-
 import { templateHighlighting } from "@zotlit/workbench/language";
 import type { WorkbenchTheme, WorkbenchIcon } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
+import { themeHook } from "@/lib/theme-hooks";
 import { cn } from "@/lib/utils";
+
+import { codePane, isCodePane } from "./editor-extension";
 
 export const profileEditorIcons: Record<WorkbenchIcon, string> = {
   copy: "copy",
@@ -26,24 +27,22 @@ export const profileEditorIcons: Record<WorkbenchIcon, string> = {
 };
 const row = "zt:flex zt:items-center zt:gap-2";
 const stack = "zt:flex zt:flex-col zt:gap-3";
+/** A boxed pane wears Obsidian's text-input surface, focus ring included. */
+const editorBox =
+  "zt:rounded-(--input-radius) zt:border zt:border-border zt:bg-input zt:px-2 zt:py-1 zt:focus-within:border-border-focus zt:focus-within:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]";
+/** In-editor chrome — labels and boxes CodeMirror paints between lines — reads in the interface font. */
+const editorChip =
+  "zt:rounded-sm zt:border zt:border-border zt:bg-card zt:font-sans zt:text-xs zt:font-medium zt:leading-tight zt:text-muted-foreground";
+/** An icon button small enough to sit inside a chip. */
+const chipIcon = "clickable-icon zt:p-1 zt:[--icon-size:var(--icon-xs)]";
+/** A one-line bar of chrome: a heading, a hint, and an action at the end. */
+const bar =
+  "zt:flex zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1 zt:rounded-md zt:border zt:border-border zt:bg-card zt:px-2.5 zt:py-1.5 zt:text-xs";
 export const profileEditorTheme: WorkbenchTheme = {
   icon: (name) => <Icon name={profileEditorIcons[name]} />,
-  editorExtension: () => [
+  editorExtension: (slice, language) => [
     templateHighlighting,
-    EditorView.theme({
-      "&": {
-        backgroundColor: "var(--background-primary)",
-        color: "var(--text-normal)",
-      },
-      ".cm-scroller": {
-        fontFamily: "var(--font-text)",
-        lineHeight: "var(--line-height-normal)",
-      },
-      ".cm-content": {
-        padding: "var(--size-4-2) 0",
-        caretColor: "var(--text-normal)",
-      },
-    }),
+    ...(isCodePane(slice, language) ? [codePane] : []),
   ],
   classes: {
     match: {
@@ -169,14 +168,32 @@ export const profileEditorTheme: WorkbenchTheme = {
     },
     tabPanel: { "tab-panel": "zt:p-3" },
     sliceEditor: {
-      "slice-editor": "markdown-source-view mod-cm6 cm-s-obsidian",
-      "slice-scroll": "zt:overflow-auto",
+      "slice-editor": cn(
+        "markdown-source-view mod-cm6 cm-s-obsidian zt:min-h-0",
+        themeHook.templateEditor,
+      ),
+      "slice-scroll": "zt:min-h-0 zt:overflow-auto",
     },
     notePane: {
-      "annotation-box": row,
-      "annotation-actions": row,
-      "annotation-toggle": "clickable-icon",
-      "annotation-edit": "clickable-icon",
+      "annotation-box": cn(
+        editorChip,
+        "zt:inline-flex zt:max-w-full zt:items-center zt:gap-1 zt:rounded-md zt:p-0.5 zt:ps-2 zt:align-middle",
+      ),
+      "annotation-label": "zt:min-w-0 zt:whitespace-normal",
+      "annotation-actions": "zt:inline-flex zt:shrink-0 zt:items-center",
+      "annotation-toggle": chipIcon,
+      "annotation-edit": chipIcon,
+      "annotation-preview":
+        "zt:mx-2 zt:my-1 zt:cursor-default zt:rounded-md zt:border zt:border-border zt:bg-background zt:p-2 zt:font-sans zt:text-sm zt:whitespace-normal zt:select-text",
+      "annotation-selector": "zt:mb-2",
+      "annotation-problem":
+        "zt:mb-2 zt:border-s-2 zt:border-(--text-error) zt:ps-2 zt:text-xs zt:text-muted-foreground",
+      pending: "zt:text-xs zt:text-muted-foreground",
+      "managed-label": cn(
+        editorChip,
+        "zt:inline-block zt:cursor-(--cursor-clickable) zt:px-2 zt:py-0.5 zt:select-none",
+      ),
+      "managed-line": "zt-profile-editor-managed",
     },
     properties: {
       pane: stack,
@@ -187,12 +204,16 @@ export const profileEditorTheme: WorkbenchTheme = {
       actions: row,
       form: stack,
       field: stack,
-      "field-group": row,
+      "field-group": "zt:flex zt:flex-col zt:gap-1.5",
       "confirm-actions": row,
       "expression-header": row,
       "hidden-label": "zt:sr-only",
       "row-action": "clickable-icon",
       hint: "setting-item-description",
+      expression: cn(
+        editorBox,
+        "zt:flex zt:min-h-28 zt:min-w-0 zt:flex-1 zt:flex-col",
+      ),
     },
     nameFolder: {
       pane: stack,
@@ -204,6 +225,7 @@ export const profileEditorTheme: WorkbenchTheme = {
       "binding-label": "setting-item-name",
       "toggle-row": row,
       switch: "checkbox-container",
+      "filename-editor": editorBox,
       "identity-fields": stack,
       "advanced-fields": stack,
       actions: row,
@@ -214,9 +236,21 @@ export const profileEditorTheme: WorkbenchTheme = {
       summary: row,
     },
     annotation: {
+      "sample-bar": row,
+      problem: "zt:mb-2 zt:text-xs zt:text-(--text-error)",
       pane: stack,
-      "section-bar": stack,
-      hint: "setting-item-description",
+      pointer: cn(bar, "zt:mt-2"),
+      heading: "zt:font-semibold",
+      hint: "zt:text-muted-foreground",
+      "section-bar": cn(bar, "zt:mb-2"),
+      "primary-action": "zt:ms-auto",
+      "section-go": "zt:ms-auto",
+    },
+    sampleSuggester: {
+      suggester: "zt:flex zt:min-w-0 zt:flex-1 zt:items-center zt:gap-2",
+      label:
+        "zt:min-w-0 zt:flex-1 zt:truncate zt:text-xs zt:text-muted-foreground",
+      trigger: "clickable-icon zt:shrink-0",
     },
     problemsFooter: {
       problems: "zt:p-3 zt:border-t zt:border-border",
