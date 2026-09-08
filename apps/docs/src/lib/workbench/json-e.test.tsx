@@ -46,9 +46,11 @@ it.each([false, true])(
       ),
     );
     const editor = host.querySelector<HTMLElement>('[contenteditable="true"]')!;
-    expect(host.querySelector(".tok-variableName")?.textContent).toBeTruthy();
     expect(
-      [...host.querySelectorAll(".tok-keyword")].some(
+      host.querySelector(".zt-template-variable")?.textContent,
+    ).toBeTruthy();
+    expect(
+      [...host.querySelectorAll(".zt-template-keyword")].some(
         (token) => token.textContent === "$eval",
       ),
     ).toBe(true);
@@ -94,12 +96,12 @@ it.each([false, true])(
       'value: {"$if":"true","then":"${zt.title}","else":"literal"}',
     );
     expect(
-      [...host.querySelectorAll(".tok-keyword")].some(
+      [...host.querySelectorAll(".zt-template-keyword")].some(
         (token) => token.textContent === "then",
       ),
     ).toBe(true);
     expect(
-      [...host.querySelectorAll(".tok-operator")].some(
+      [...host.querySelectorAll(".zt-template-operator")].some(
         (token) => token.textContent === "${",
       ),
     ).toBe(true);

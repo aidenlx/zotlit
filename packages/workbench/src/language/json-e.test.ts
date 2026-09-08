@@ -238,11 +238,11 @@ it("highlights JSON-e operators and only their contextual companion keys", () =>
     ["then", "keyword"],
     ["else", "keyword"],
     ["$eval", "keyword"],
-    ["len", "functionName"],
+    ["len", "filter"],
     ["(", "operator"],
-    ["zt", "variableName"],
+    ["zt", "variable"],
     [".", "operator"],
-    ["tags", "variableName"],
+    ["tags", "variable"],
     [")", "operator"],
   ]);
   expect(
@@ -258,14 +258,14 @@ it("highlights JSON-e operators and only their contextual companion keys", () =>
 it("highlights interpolation delimiters with raw escape offsets and leaves escaped interpolation literal", () => {
   expect(syntax('{"text":"${zt.title} $${literal} ${1 + 2}"}')).toEqual([
     ["${", "operator"],
-    ["zt", "variableName"],
+    ["zt", "variable"],
     [".", "operator"],
-    ["title", "variableName"],
+    ["title", "variable"],
     ["}", "operator"],
     ["${", "operator"],
-    ["1", "number"],
+    ["1", "value"],
     ["+", "operator"],
-    ["2", "number"],
+    ["2", "value"],
     ["}", "operator"],
   ]);
   expect(syntax(String.raw`{"\u0024eval":"zt.title"}`)[0]).toEqual([
@@ -274,7 +274,7 @@ it("highlights interpolation delimiters with raw escape offsets and leaves escap
   ]);
   expect(syntax('{"text":"${zt.')).toEqual([
     ["${", "operator"],
-    ["zt", "variableName"],
+    ["zt", "variable"],
     [".", "operator"],
   ]);
 });

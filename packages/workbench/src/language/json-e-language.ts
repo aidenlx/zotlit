@@ -5,8 +5,9 @@ import { Prec } from "@codemirror/state";
 import type { Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin } from "@codemirror/view";
 import type { ViewUpdate } from "@codemirror/view";
-import { classHighlighter, highlightTree } from "@lezer/highlight";
+import { highlightTree } from "@lezer/highlight";
 
+import { templateHighlighter, templateToken } from "./highlight";
 import { jsonSyntaxTokens } from "./json-e";
 
 export const jsonRule = [json(), closeBrackets()];
@@ -22,7 +23,7 @@ export function embeddedJsonE(
       if (!jsonLanguage.isActiveAt(view.state, region.from))
         highlightTree(
           jsonLanguage.parser.parse(source),
-          classHighlighter,
+          templateHighlighter,
           (from, to, classes) => {
             // Keep the outer JSON styling around semantic JSON-e tokens.
             let start = from;
@@ -50,7 +51,7 @@ export function embeddedJsonE(
         );
       for (const token of tokens)
         marks.push(
-          Decoration.mark({ class: `tok-${token.kind}` }).range(
+          Decoration.mark({ class: templateToken[token.kind] }).range(
             region.from + token.from,
             region.from + token.to,
           ),

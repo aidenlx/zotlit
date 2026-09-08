@@ -1,12 +1,7 @@
 export { eta, etaLanguage, etaRange } from "./eta-language";
 export type { EtaRange } from "./eta-language";
 export { etaAutoPair } from "./eta-auto-pair";
-export {
-  liquidMarkdown,
-  liquidRanges,
-  markdownSupport,
-  STRUCTURAL_TAGS,
-} from "./liquid";
+export { liquidTemplate, liquidRanges, STRUCTURAL_TAGS } from "./liquid";
 export type { LiquidRange } from "./liquid";
 export { jsonRule, embeddedJsonE } from "./json-e-language";
 export { applyTemplateCompletion, templateCompletion } from "./completion";
@@ -20,7 +15,12 @@ export type {
   CompletionEdit,
 } from "./suggestions";
 
-export { templateHighlighting } from "./highlight";
+export {
+  templateHighlighter,
+  templateHighlighting,
+  templateToken,
+} from "./highlight";
+export type { TemplateToken } from "./highlight";
 export { profileLanguage, embeddedLiquid } from "./embedded";
 
 export { templatePairing } from "./pairing";

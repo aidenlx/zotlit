@@ -5,7 +5,7 @@ import { EditorView, keymap } from "@codemirror/view";
 import { expect, it, vi } from "vitest";
 
 import { applyTemplateCompletion } from "./completion";
-import { liquidMarkdown } from "./liquid";
+import { liquidTemplate } from "./liquid";
 import { templatePairing } from "./pairing";
 import { suggestions } from "./suggestions";
 
@@ -255,7 +255,7 @@ it("leaves paste, composition, selections, and multiple cursors to normal editin
       ]),
       extensions: [
         EditorState.allowMultipleSelections.of(true),
-        liquidMarkdown,
+        liquidTemplate,
         templatePairing(),
       ],
     }),
