@@ -481,15 +481,9 @@ export function Workbench() {
     );
   }
 
-  /**
-   * Gives a note that calls the format nowhere its call: the loop over every
-   * annotation, put where the reader left the caret, so the box opens in the
-   * note. A document that also lacks the section is given one first, and told.
-   */
   function insertAnnotations() {
-    const { repaired } = controller.insertAnnotationLoop(caret);
-    // Both edits have told the subscriber by now, so the sentence is stamped
-    // with the revision the reader is looking at.
+    const { repaired, caret } = controller.insertAnnotationLoop();
+    setReveal({ from: caret, to: caret });
     if (repaired) {
       toast.add({
         title: m.workbench_annotation_section_added(),

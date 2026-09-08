@@ -130,15 +130,16 @@ export function AnnotationPane({
 }
 
 /**
- * The format's place under a note that calls it nowhere: the host puts the
- * call and its loop where the reader left the caret.
+ * Offers annotation insertion at the end of a note that has no render call.
  */
 export function AnnotationPointer({ onInsert }: { onInsert: () => void }) {
   const m = useWorkbenchMessages();
   const part = useParts("annotation");
   return (
     <div {...part("pointer")}>
-      <span {...part("heading")}>{m.workbench_annotation_label()}</span>
+      <span {...part("heading")}>
+        {m.workbench_annotation_pointer_heading()}
+      </span>
       <span {...part("hint")}>{m.workbench_annotation_pointer()}</span>
       <button type="button" {...part("primary-action")} onClick={onInsert}>
         {m.workbench_annotation_insert()}

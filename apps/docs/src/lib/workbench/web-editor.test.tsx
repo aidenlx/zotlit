@@ -688,8 +688,14 @@ describe("the annotation box", () => {
     using page = open();
     page.press(m.workbench_restore_accept());
     expect(page.host.textContent).toContain(m.workbench_annotation_insert());
+    const note = EditorView.findFromDOM(
+      page.host.querySelector<HTMLElement>(".cm-editor")!,
+    )!;
+    const body = note.state.doc.toString();
+    act(() => note.dispatch({ selection: { anchor: 0, head: body.length } }));
 
     page.press(m.workbench_annotation_insert());
+    expect(note.state.doc.toString().startsWith(body)).toBe(true);
 
     expect(
       document.querySelector('[data-slot="toast-viewport"]')?.textContent,

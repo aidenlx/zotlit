@@ -93,9 +93,37 @@ it("shares annotation insertion and section repair between authoring hosts", () 
   const controller = new WorkbenchDocumentController(source);
   const result = controller.insertAnnotationLoop();
   expect(result.repaired).toBe(true);
-  expect(controller.sliceText("note")).toContain(
+  expect(controller.source).toContain(
     "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n",
   );
   expect(controller.annotationSection).not.toBeNull();
   expect(controller.problems).toEqual([]);
+  controller.undo();
+  expect(controller.source).toBe(source);
 });
+
+for (const language of ["liquid", "eta"]) {
+  for (const body of ["", "Last line", "Last line\n", "Last line\n\n"]) {
+    it(`appends ${language} annotations after ${JSON.stringify(body)} without adding a blank line`, () => {
+      const source = SOURCE.replace(
+        "language: liquid",
+        `language: ${language}`,
+      ).replace("A stable note body.", body);
+      const controller = new WorkbenchDocumentController(source, {
+        runtime: "native",
+      });
+      controller.insertAnnotationLoop();
+      const start =
+        language === "eta"
+          ? "<% for (const annotation of zt.annotations) { %>"
+          : "{% for annotation in zt.annotations %}";
+      const prefix = body === "" || body.endsWith("\n") ? body : `${body}\n`;
+      expect(
+        controller.sliceText("note").startsWith(`${prefix}${start}\n`),
+      ).toBe(true);
+      expect(controller.problems).toEqual([]);
+      controller.undo();
+      expect(controller.source).toBe(source);
+    });
+  }
+}
