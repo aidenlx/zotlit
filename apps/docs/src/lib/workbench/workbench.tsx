@@ -41,8 +41,7 @@ import {
   WorkbenchEditorProvider,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
-  createRenderScheduler,
-  createWorkbenchStore,
+  createWorkbenchEditor,
   useRenderState,
   diagnosticText,
   problemText,
@@ -89,7 +88,6 @@ import {
 } from "./frame";
 import { ProfileHandoff } from "./handoff";
 import { useWebHost } from "./host";
-import { renderInThread } from "./render";
 import { SampleBar } from "./sample-bar";
 import { ensureTemporal } from "./temporal";
 import { WEB_THEME } from "./theme";
@@ -114,26 +112,20 @@ export function Workbench() {
   const fileInput = useRef<HTMLInputElement>(null);
   // Where the sheet was opened from, so closing it hands the keyboard back.
   const addField = useRef<HTMLButtonElement>(null);
-  // The view state the shared tree reads and writes: the tab strip and the
-  // toolbar change it, and what a change does beyond the store is below.
-  const [store] = useState(createWorkbenchStore);
-  // The one Render Scheduler this editor instance renders through; the page
-  // hands it the paper, the annotation example, and the connected bundle.
-  const [scheduler] = useState(() =>
-    createRenderScheduler({
-      render: renderInThread,
-      failed: (failure) => failure,
-      controller,
-      store,
-    }),
-  );
+  const [sample, setSample] = useState<SampleItem>(DEFAULT_SAMPLE);
+  const { host, overlays } = useWebHost({
+    snapshot: sample,
+    notice: (text) => toast.add({ title: text, type: "info" }),
+    insertTarget: () => ({ slice, range: caret }),
+  });
+  const [editor] = useState(() => createWorkbenchEditor({ host, controller }));
+  const { store, scheduler } = editor;
   const {
     result,
     busy: renderBusy,
     stale: resultStale,
   } = useRenderState(scheduler);
   const [revision, setRevision] = useState(0);
-  const [sample, setSample] = useState<SampleItem>(DEFAULT_SAMPLE);
   const [annotationChoice, setAnnotationChoice] = useState<string | null>(null);
   const { current: itemAnnotations, example: selectedAnnotation } = useMemo(
     () => annotationSamples(sample, annotationChoice),
@@ -264,7 +256,7 @@ export function Workbench() {
   );
   useEffect(() => setFileMessage(null), [revision]);
   useEffect(() => scheduler.attach(controller), [scheduler, controller]);
-  useEffect(() => () => scheduler[Symbol.dispose](), [scheduler]);
+  useEffect(() => () => editor[Symbol.dispose](), [editor]);
   useEffect(() => {
     void ensureTemporal().then(() => setTemporal(true));
   }, []);
@@ -397,11 +389,6 @@ export function Workbench() {
   // The note itself, which is the one result an update rewrites part of, so the
   // update-only Managed Region is offered beside it and nowhere else.
   const showAnnotation = !advanced && tab === "annotation";
-  const { host, overlays } = useWebHost({
-    snapshot: sample,
-    notice: (text) => toast.add({ title: text, type: "info" }),
-    insertTarget: () => ({ slice, range: caret }),
-  });
   // The render's complaint about the format alone, shown in the annotation box
   // where the format is edited rather than in the result column.
   const formatProblem = annotationResult?.diagnostics.find(

@@ -28,7 +28,7 @@ import {
   diagnosticText,
   AnnotationPointer,
   useWorkbenchHost,
-  createWorkbenchStore,
+  createWorkbenchEditor,
   EditToolbar,
   BUILT_IN_BINDING_DEFAULTS,
   NameFolderPane,
@@ -44,15 +44,16 @@ import {
   WorkbenchEditorProvider,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
-  createRenderScheduler,
   useDocumentRevision,
   useRenderState,
   useWorkbenchStore,
 } from "@zotlit/workbench/ui";
 import type {
   RenderScheduler,
+  WorkbenchEditorInstance,
   WorkbenchHost,
   WorkbenchInsertTarget,
+  WorkbenchStore,
   NameFolderPaneProps,
 } from "@zotlit/workbench/ui";
 
@@ -105,7 +106,8 @@ export type ProfileEditorDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
 };
 
 export class ProfileEditorView extends TextFileView {
-  readonly store = createWorkbenchStore();
+  readonly store: WorkbenchStore;
+  readonly #editor: WorkbenchEditorInstance<NativeRenderResult>;
   /** The one scheduler the editor and the Note Preview sidebar render through. */
   readonly scheduler: RenderScheduler<NativeRenderResult>;
   readonly preview: NativePreviewSession | null;
@@ -147,15 +149,6 @@ export class ProfileEditorView extends TextFileView {
         Promise.resolve(
           failedRender(renderIdentity(request), { code: "render-error" }),
         ));
-    this.scheduler = createRenderScheduler({
-      render: (request) => render(request).then(nativeResult),
-      failed: nativeResult,
-      controller: this.#controller,
-      store: this.store,
-    });
-    this.preview = deps.nativePreview
-      ? new NativePreviewSession(deps.nativePreview, this.scheduler, this.store)
-      : null;
     this.#host = createProfileEditorHost(
       this.app,
       {
@@ -172,6 +165,16 @@ export class ProfileEditorView extends TextFileView {
       },
       (content) => this.provide(content),
     );
+    this.#editor = createWorkbenchEditor({
+      host: this.#host,
+      controller: this.#controller,
+      mapResult: nativeResult,
+    });
+    this.store = this.#editor.store;
+    this.scheduler = this.#editor.scheduler;
+    this.preview = deps.nativePreview
+      ? new NativePreviewSession(deps.nativePreview, this.scheduler, this.store)
+      : null;
     this.scope = new Scope(this.app.scope);
     this.scope.register(["Mod"], "z", (event) => this.#history(event, false));
     this.scope.register(["Mod", "Shift"], "z", (event) =>
@@ -462,7 +465,7 @@ export class ProfileEditorView extends TextFileView {
   protected override async onClose(): Promise<void> {
     this.#closed = true;
     this.preview?.[Symbol.dispose]();
-    this.scheduler[Symbol.dispose]();
+    this.#editor[Symbol.dispose]();
     this.#host[Symbol.dispose]();
     this.#root?.unmount();
     this.#root = null;

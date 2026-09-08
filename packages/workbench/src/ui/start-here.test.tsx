@@ -7,7 +7,7 @@ import { mount, renderWithMessages as render } from "./test-host";
 afterEach(cleanup);
 
 it("explains the three surfaces and keeps dismissal across editor instances", () => {
-  const first = mount(<StartHere />);
+  using first = mount(<StartHere />);
   const rendered = render(first.ui);
   expect(
     screen
@@ -20,7 +20,7 @@ it("explains the three surfaces and keeps dismissal across editor instances", ()
     "true",
   );
   rendered.unmount();
-  const second = mount(<StartHere />);
+  using second = mount(<StartHere />);
   for (const [key, value] of first.host.preferences)
     second.host.preferences.set(key, value);
   render(second.ui);
