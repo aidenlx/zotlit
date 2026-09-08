@@ -266,6 +266,20 @@ export class ItemView {
     this.contentEl = content;
   }
 
+  readonly actions: HTMLElement[] = [];
+
+  addAction(
+    _icon: string,
+    title: string,
+    callback: (evt: MouseEvent) => unknown,
+  ): HTMLElement {
+    const action = document.createElement("div");
+    action.setAttribute("aria-label", title);
+    action.addEventListener("click", callback);
+    this.actions.push(action);
+    return action;
+  }
+
   registerEvent(_event: EventRef): void {}
   register<T extends () => void>(disposer: T): T {
     return disposer;
@@ -1001,14 +1015,24 @@ export class TextAreaComponent extends TextComponent {}
 export class ToggleComponent {
   #value = false;
   #changed: ((value: boolean) => unknown) | undefined;
+  readonly toggleEl: HTMLElement;
+  disabled = false;
   constructor(readonly containerEl: HTMLElement) {
     registerControl(containerEl, this);
+    this.toggleEl = containerEl.createEl("label");
   }
   getValue(): boolean {
     return this.#value;
   }
   setValue(value: boolean): this {
-    this.#value = value;
+    if (this.#value !== value) {
+      this.#value = value;
+      this.#changed?.(value);
+    }
+    return this;
+  }
+  setDisabled(disabled: boolean): this {
+    this.disabled = disabled;
     return this;
   }
   onChange(callback: (value: boolean) => unknown): this {
@@ -1017,8 +1041,7 @@ export class ToggleComponent {
   }
   /** Test helper: change the checked state, as the user does. */
   toggle(value: boolean): void {
-    this.setValue(value);
-    this.#changed?.(value);
+    if (!this.disabled) this.setValue(value);
   }
 }
 

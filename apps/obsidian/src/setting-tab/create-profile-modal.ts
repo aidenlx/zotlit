@@ -4,6 +4,7 @@ import type { App } from "obsidian";
 
 import type { NoteTemplateContext } from "@zotlit/db";
 
+import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -187,20 +188,19 @@ export class CreateProfileModal extends Modal {
         else delete bindings.folder;
         void update();
       });
-    const styleLabel = (id: string | null) =>
-      this.#options.styles.find((style) => style.id === id)?.title ??
-      id ??
-      m.settings_citation_references_style_default();
     const style = new DropdownComponent(
       field(differences, m.settings_profile_citation_style_name()),
     );
     style.addOption(
       "inherit",
       m.settings_profile_same_as_default({
-        value: styleLabel(base.bindings["citation.references-style"]),
+        value: citationStyleLabel(
+          base.bindings["citation.references-style"],
+          this.#options.styles,
+        ),
       }),
     );
-    style.addOption("none", m.settings_profile_citation_style_none());
+    style.addOption("none", citationStyleLabel());
     for (const item of this.#options.styles)
       style.addOption(item.id, item.title);
     style.setValue("inherit").onChange((value) => {

@@ -1,6 +1,9 @@
 import { EditorView } from "@codemirror/view";
 import { Menu } from "@mock/obsidian";
-import type { Scope as MockScope } from "@mock/obsidian";
+import type {
+  ItemView as MockItemView,
+  Scope as MockScope,
+} from "@mock/obsidian";
 import { TFile } from "obsidian";
 import type { App, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
@@ -69,6 +72,40 @@ function setup(deps: Partial<ProfileEditorDeps> = {}) {
 }
 
 describe("ProfileEditorView", () => {
+  it("keeps native view actions in sync across edits and document replacement", async () => {
+    const { view } = setup();
+    await act(async () => view.open());
+    const action = (title: string) =>
+      (view as unknown as MockItemView).actions.find(
+        (element) => element.getAttribute("aria-label") === title,
+      )!;
+    const undo = action("Undo");
+    const redo = action("Redo");
+    const source = action("Source");
+    expect(undo.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => {
+      view.controller.setManifestKey("name", "Edited");
+    });
+    expect(undo.getAttribute("aria-disabled")).toBe("false");
+    await act(async () => undo.click());
+    expect(view.getViewData()).toBe(SOURCE);
+    expect(redo.getAttribute("aria-disabled")).toBe("false");
+    await act(async () => redo.click());
+    expect(view.getViewData()).toContain("name: Edited");
+    await act(async () => source.click());
+    expect(view.store.getState().advanced).toBe(true);
+    expect(source.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => view.setViewData(SOURCE, true));
+    expect(undo.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => {
+      view.controller.setManifestKey("name", "Second");
+    });
+    expect(undo.getAttribute("aria-disabled")).toBe("false");
+    await act(async () => undo.click());
+    expect(view.getViewData()).toBe(SOURCE);
+    await act(async () => view.close());
+  });
+
   it("keeps a newly opened Profile when creation of the previous Default draft finishes", async () => {
     const file = new TFile();
     file.path = "templates/zotlit-profile.default.md";

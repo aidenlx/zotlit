@@ -34,6 +34,13 @@ function setup() {
 }
 
 describe("Profile Editor host", () => {
+  it("names the built-in citation style the same way as native citation settings", () => {
+    using host = setup().host;
+    expect(host.messages.workbench_name_value_no_style()).toBe(
+      "Default (Chicago author-date)",
+    );
+  });
+
   it("opens an Obsidian menu at its control and executes the selected action", () => {
     const { host } = setup();
     const anchor = document.createElement("button");

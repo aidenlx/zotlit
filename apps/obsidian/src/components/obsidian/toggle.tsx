@@ -1,74 +1,48 @@
-import type { HTMLAttributes, Ref } from "react";
-import type { VariantProps } from "tailwind-variants";
+import { ToggleComponent } from "obsidian";
+import { useLayoutEffect, useRef } from "react";
 
-import { tv } from "@/lib/tw";
-
-const toggle = tv({
-  base: "checkbox-container",
-  variants: {
-    on: { true: "is-enabled" },
-    disabled: { true: "is-disabled" },
-    size: {
-      default: "",
-      small: "mod-small",
-    },
-  },
-  defaultVariants: { size: "default" },
-});
-
-type ToggleVariants = VariantProps<typeof toggle>;
-
-export interface ToggleProps extends Omit<
-  HTMLAttributes<HTMLDivElement>,
-  "role" | "tabIndex" | "onClick" | "onChange"
-> {
+export interface ToggleProps {
   value: boolean;
   onChange: (next: boolean) => void;
   disabled?: boolean;
-  /** Omit in modals — the larger track is applied automatically. */
-  size?: ToggleVariants["size"];
-  ref?: Ref<HTMLDivElement>;
+  id?: string;
+  "aria-label"?: string;
 }
 
-/** @see {@link tooltipAttrs} for opting into Obsidian's hover tooltip. */
+/** React state binding for Obsidian's native toggle. */
 export function Toggle({
   value,
   onChange,
-  disabled,
-  size,
-  className,
-  ref,
-  ...rest
+  disabled = false,
+  id,
+  "aria-label": label,
 }: ToggleProps) {
-  return (
-    <div
-      ref={ref}
-      role="switch"
-      aria-checked={value}
-      aria-disabled={disabled || undefined}
-      tabIndex={disabled ? -1 : 0}
-      {...rest}
-      className={toggle({ on: value, disabled, size, className })}
-      onClick={(e) => {
-        if (disabled) return;
-        e.preventDefault();
-        onChange(!value);
-      }}
-      onKeyDown={(e) => {
-        if (disabled) return;
-        if (e.key === " " || e.key === "Enter") {
-          e.preventDefault();
-          onChange(!value);
-        }
-      }}
-    >
-      <input
-        type="checkbox"
-        checked={value}
-        disabled={disabled}
-        tabIndex={-1}
-        onChange={() => {}}
-      />
-    </div>
-  );
+  const container = useRef<HTMLSpanElement>(null);
+  const component = useRef<ToggleComponent | null>(null);
+
+  useLayoutEffect(() => {
+    const toggle = new ToggleComponent(container.current!);
+    component.current = toggle;
+    return () => {
+      toggle.toggleEl.remove();
+      component.current = null;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    const toggle = component.current!;
+    toggle
+      .onChange((next) => {
+        if (next !== value) onChange(next);
+      })
+      .setValue(value)
+      .setDisabled(disabled);
+    toggle.toggleEl.id = id ?? "";
+    toggle.toggleEl.setAttribute("role", "switch");
+    toggle.toggleEl.setAttribute("aria-label", label ?? "");
+    toggle.toggleEl.setAttribute("aria-checked", String(value));
+    toggle.toggleEl.setAttribute("aria-disabled", String(disabled));
+  }, [value, onChange, disabled, id, label]);
+
+  return <span ref={container} />;
 }

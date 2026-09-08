@@ -352,6 +352,7 @@ function EntryForm({
         <label {...part("field")}>
           {m.workbench_properties_name()}
           <input
+            type="text"
             ref={nameInput}
             value={name}
             onInput={(event) => setName(event.currentTarget.value)}
@@ -460,6 +461,7 @@ function EntryForm({
           )}
           {format === "text" ? (
             <input
+              type="text"
               aria-label={m.workbench_properties_expression()}
               value={fixedText ?? ""}
               onInput={(event) =>

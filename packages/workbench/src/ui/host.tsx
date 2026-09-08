@@ -129,8 +129,18 @@ export interface WorkbenchMarkdownProps {
   readonly marks?: readonly RenderedRange[];
 }
 
+/** State and accessible name for a host-native boolean control. */
+export interface WorkbenchToggleProps {
+  readonly id: string;
+  readonly "aria-label": string;
+  readonly value: boolean;
+  readonly disabled: boolean;
+  readonly onChange: (value: boolean) => void;
+}
+
 export interface WorkbenchHost {
   readonly messages: WorkbenchMessages;
+  readonly toggle?: ComponentType<WorkbenchToggleProps>;
   /** The locale currently used by the host's displayed messages. */
   getLocale(): string;
   menu(request: WorkbenchMenuRequest): void;

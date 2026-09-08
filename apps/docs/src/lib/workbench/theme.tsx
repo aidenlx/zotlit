@@ -12,6 +12,7 @@ import {
   Pencil,
   List,
   Redo2,
+  RotateCcw,
   Undo2,
   ChevronDown,
   ChevronRight,
@@ -44,6 +45,7 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   advanced: Code2,
   undo: Undo2,
   redo: Redo2,
+  reset: RotateCcw,
 };
 
 const historyButton = buttonVariants({ variant: "ghost", size: "icon-sm" });
@@ -138,6 +140,7 @@ export const WEB_THEME: WorkbenchTheme = {
         "data-[state=expanded]:break-words data-[state=expanded]:whitespace-pre-wrap",
     },
     nameFolder: {
+      "reset-button": buttonVariants({ variant: "outline", size: "xs" }),
       "source-button": cn(
         buttonVariants({ variant: "outline", size: "xs" }),
         "mt-2",
