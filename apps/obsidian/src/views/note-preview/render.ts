@@ -183,10 +183,12 @@ export async function renderNativeProfile(
           position: index + 1,
         });
     });
+    // Both the composition and the preparation carry the body they rendered,
+    // so only a refusal — which rendered none — renders one here.
     const created =
-      composed.outcome === "composed"
-        ? composed.body
-        : document.renderForCreate(context);
+      composed.outcome === "refused"
+        ? document.renderForCreate(context)
+        : composed.body;
     const managed = document.renderForUpdate(context);
     const existing = findExistingLitNote(deps.noteIndex, { indexedKey });
     sourcePath = existing?.path ?? "";

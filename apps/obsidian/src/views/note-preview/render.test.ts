@@ -13,6 +13,9 @@ import {
 import { presentCitations } from "./markdown";
 import { renderNativeProfile, previewBaseline } from "./render";
 
+/** Where the counting template records how often its body has rendered. */
+const BODY_RENDERS = "__zotlitPreviewBodyRenders";
+
 describe("native Profile rendering", () => {
   it("renders real TemplateService data with inert links and preserves the source files", async () => {
     await using fixture = await createRenderFixture();
@@ -276,6 +279,35 @@ frontmatter: []
     expect(element.querySelector("a")?.getAttribute("href")).toBe(
       "notes/paper.md",
     );
+  });
+
+  it("shows update mode the body the preparation rendered, without a second render", async () => {
+    // A JavaScript template may carry state between renders, so a body rendered
+    // a second time can differ from the one the preparation already produced.
+    await using fixture = await createRenderFixture({ javascript: true });
+    const counting = `---
+id: counting-paper
+name: Counting paper
+version: 1.0.0
+contract: 5
+language: eta
+filename: '<%= zt.title %>'
+frontmatter: []
+---
+Body render <%= (globalThis.${BODY_RENDERS} = (globalThis.${BODY_RENDERS} ?? 0) + 1) %>
+--- zotlit:annotation ---
+<%= zt.text %>`;
+    try {
+      const result = await renderNativeProfile(fixture.deps, {
+        source: counting,
+        snapshot: fixture.snapshot,
+        mode: "update",
+      });
+      expect(result.diagnostics).toEqual([]);
+      expect(result.creationBody?.trim()).toBe("Body render 1");
+    } finally {
+      delete (globalThis as Record<string, unknown>)[BODY_RENDERS];
+    }
   });
 
   it("ignores citations in code and comments, and reports an unavailable citation processor", async () => {

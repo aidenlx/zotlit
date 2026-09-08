@@ -184,6 +184,47 @@ it.each(
   },
 );
 
+it.each([
+  { live: true, mode: "Live" },
+  { live: false, mode: "On demand" },
+])(
+  "reads a delivered result as stale once another annotation example is chosen in $mode",
+  async ({ live }) => {
+    using mounted = open({ live });
+    await startRender(live);
+    await act(async () =>
+      mounted.host.renders[0]!.answer({ creationBody: "First example" }),
+    );
+    expect(output().textContent).toBe("First example");
+    expect(output().dataset["stale"]).toBe("false");
+    act(() =>
+      mounted.scheduler.setInput({
+        snapshot: PAPER,
+        annotation: OTHER_EXAMPLE,
+      }),
+    );
+    // The result still on screen describes the example the reader has left.
+    expect(output().textContent).toBe("First example");
+    expect(output().dataset["stale"]).toBe("true");
+  },
+);
+
+it("starts no render and publishes no state once disposed", async () => {
+  const mounted = open();
+  const { host, controller, scheduler } = mounted;
+  await advance(300);
+  await act(async () => host.renders[0]!.answer({ creationBody: "Last" }));
+  mounted[Symbol.dispose]();
+  // Run pressed as the view closes arrives after the scheduler is disposed.
+  act(() => scheduler.run());
+  act(() => scheduler.setInput({ snapshot: null }));
+  act(() => void controller.setManifestKey("name", "Typed after closing"));
+  await advance(1000);
+  expect(host.renders).toHaveLength(1);
+  expect(output().textContent).toBe("Last");
+  expect(output().dataset["busy"]).toBe("false");
+});
+
 it("shows a rejected render as a diagnostic carrying the engine's message", async () => {
   using mounted = open();
   await advance(300);
