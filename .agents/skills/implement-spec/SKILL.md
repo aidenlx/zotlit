@@ -24,11 +24,11 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 4. Use **implementer subagents** to implement each ticket. Each implementer subagent should work in its own worktree, on its own branch.
 
-5. Once an **implementer subagent** completes, merge its work to the PR branch with a **merger subagent**.
+5. Once an **implementer subagent** completes, merge its work to the PR branch with a **merger subagent**. Land each ticket as a single commit (squash merge).
 
 6. If this changes the **frontier** of available tickets, kick off more **implementer subagents** to work on the new tickets. This allows for maximum concurrency.
 
-7. Review each ticket as it lands, not only once at the end. When a ticket's merged work is on the PR branch, run /code-review with the pre-merge state as the fixed point. Fix every issue it raises back in that ticket's worktree, then update the ticket with a summary of what landed and close it (`gh issue close <number> --reason completed`).
+7. Review each ticket as it lands, not only once at the end. When a ticket's merged work is on the PR branch, run /code-review with the pre-merge state as the fixed point. Fix every issue it raises back in that ticket's worktree. Squash the fix commits into that ticket's implementation commit, so the finished ticket stays one commit on the PR branch, and force-push the rewritten branch. Then update the ticket with a summary of what landed and close it (`gh issue close <number> --reason completed`).
 
 8. Once all tickets are complete, run a final /code-review over the whole PR branch. Fix all issues raised by the code review in a single **implementer subagent**.
 
