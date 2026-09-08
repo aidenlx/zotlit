@@ -1,4 +1,5 @@
 // Native overlays and Markdown lifecycle for the shared Profile Editor tree.
+import { tooltips } from "@codemirror/view";
 import {
   Component,
   ConfirmationModal,
@@ -134,11 +135,11 @@ class EditorSuggester extends SuggestModal<
 
 /**
  * The typing popup wears Obsidian's own suggestion classes, the way Obsidian
- * skins CodeMirror's completion for a Bases formula: the label is the title,
- * a field's description is the note under it, and its type is the flair.
+ * skins CodeMirror's completion for a Bases formula. Types get their own
+ * line so unions and function signatures keep the same reading order.
  */
 const nativeCompletion: TemplateCompletionPresentation = {
-  tooltipClass: () => "suggestion-container",
+  tooltipClass: () => "suggestion-container zt-template-completion",
   optionClass: () => "suggestion-item mod-complex",
   addToOptions: [
     {
@@ -146,9 +147,7 @@ const nativeCompletion: TemplateCompletionPresentation = {
       render(completion) {
         const type = completionSuggestion(completion)?.type;
         if (!type) return null;
-        const aux = createDiv("suggestion-aux");
-        aux.createSpan({ cls: "suggestion-flair", text: type });
-        return aux;
+        return createDiv({ cls: "zt-template-completion-type", text: type });
       },
     },
     {
@@ -191,7 +190,8 @@ export function createProfileEditorHost(
       workbench_name_value_no_style: citationStyleLabel,
     },
     getLocale: () => runtime.getLocale(),
-    editorPopups: (read) => [
+    editorPopups: (read, parent) => [
+      tooltips({ parent: parent.ownerDocument.body }),
       templateCompletion(read, nativeCompletion),
       templateHover(read, hoverParent),
     ],

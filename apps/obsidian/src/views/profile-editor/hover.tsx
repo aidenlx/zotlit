@@ -46,28 +46,29 @@ class TemplateHoverPopover extends HoverPopover {
       ? ({ x: box.left, y: box.top + box.height / 2 } satisfies Point)
       : null;
     super.position();
+    if (!box) return;
+    const card = this.hoverEl.getBoundingClientRect();
+    // Keep Obsidian's side selection and horizontal viewport clamp.
+    if (card.top >= box.bottom) this.hoverEl.style.top = `${box.bottom + 4}px`;
+    else if (card.bottom <= box.top)
+      this.hoverEl.style.top = `${box.top - card.height - 4}px`;
   }
 }
 
 function HoverFacts({ option }: { option: Suggestion }) {
   return (
-    <div className="zt:flex zt:flex-col zt:gap-2 zt:p-3 zt:text-sm zt:leading-normal zt:break-words zt:select-text">
-      <div className="zt:flex zt:flex-wrap zt:items-baseline zt:gap-x-2 zt:gap-y-1">
+    <div className="zt:flex zt:flex-col zt:gap-2 zt:p-2 zt:text-sm zt:leading-normal zt:break-words zt:select-text">
+      <div className="zt:flex zt:flex-wrap zt:items-baseline zt:gap-x-2 zt:gap-y-0.5">
         <strong className="zt:max-w-full zt:min-w-0">
-          {option.displayLabel ?? option.label}
+          {option.path ?? option.displayLabel ?? option.label}
         </strong>
         {option.type && (
-          <span className="zt:ms-auto zt:max-w-full zt:min-w-0 zt:font-mono zt:text-xs zt:text-muted-foreground">
+          <span className="zt:max-w-full zt:min-w-0 zt:font-mono zt:text-xs zt:text-muted-foreground">
             {option.type}
           </span>
         )}
       </div>
-      {option.path && (
-        <div className="zt:font-mono zt:text-xs zt:text-muted-foreground">
-          {option.path}
-        </div>
-      )}
-      <p className="zt:whitespace-pre-wrap">{option.detail}</p>
+      <p>{option.detail}</p>
       {option.syntax && (
         <code className="zt:block zt:font-mono zt:text-xs zt:break-words zt:whitespace-pre-wrap">
           {option.syntax}
