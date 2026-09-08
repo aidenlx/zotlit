@@ -250,7 +250,8 @@ These are catalogs — read on demand, not all at once. Each file lists the Obsi
 - `references/editor.md` — markdown content: headings, links, tables, callouts, code, blockquotes, lists, tags, embeds, footnotes, properties, bases, inline title.
 - `references/window.md` — workspace chrome: ribbon, sidebar, status bar, dividers, scrollbars, window frame, vault profile, workspace.
 - `references/plugins.md` — built-in plugin views: file explorer, search, graph, canvas, sync.
-- `references/app.css` — the full Obsidian v1.12.7 stylesheet. Consult when you need to understand exactly what Obsidian applies to a bare element or class.
+
+When the catalogs leave a question open — exactly what Obsidian applies to a bare element or class, whether a rule is layered — read Obsidian's own stylesheet. Use the `obsidian-asar-extract` skill to get it: the extraction writes `app.css` next to `app.js` in `node_modules/.ob-rev-<version>/`, and `rg` over that file answers the question against the exact version you build for.
 
 To find a variable when you only have a CSS property in mind:
 
