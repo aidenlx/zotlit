@@ -71,6 +71,16 @@
 .zt-template-invalid {
   color: var(--zt-template-invalid);
 }
+/* The typing popup's rows wear Obsidian's complex-row classes; the note
+   line wraps under the title and its flair. */
+.zt-profile-editor .cm-tooltip-autocomplete .suggestion-item.mod-complex {
+  flex-wrap: wrap;
+}
+/* Obsidian sizes a popover's content for a note page; a hover card fits its text. */
+.popover.hover-popover > .zt-template-hover {
+  width: auto;
+  max-width: min(var(--popover-width), 80vw);
+}
 /* The preview toggle shows its pressed state the way Obsidian's active icons do. */
 .zt-profile-editor [data-part="annotation-toggle"][data-state="active"] {
   color: var(--icon-color-active);

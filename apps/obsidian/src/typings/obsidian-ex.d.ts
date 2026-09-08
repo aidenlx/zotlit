@@ -183,5 +183,11 @@ declare module "obsidian" {
     hide(): void;
     /** Re-runs {@link position} as `el` resizes, which is what lets content arrive after the popover opens. */
     watchResize(el: HTMLElement): void;
+    /**
+     * The point {@link position} anchors to in place of the target's boxes.
+     * Obsidian sets it from the pointer for a tall target; a subclass sets it
+     * before each placement to anchor elsewhere. `null` uses the target.
+     */
+    staticPos: Point | null;
   }
 }

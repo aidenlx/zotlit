@@ -90,10 +90,11 @@ The Profile Editor colors template source through one set of classes, in every p
 | `zt-template-punctuation` | Other punctuation: `,`, `:`, brackets.                                   |
 | `zt-template-comment`     | Comment text, and YAML document markers.                                 |
 | `zt-template-invalid`     | Source the parser refuses.                                               |
+| `zt-template-hover`       | The popover that explains the token under the pointer, in Obsidian only. |
 
 ### Default appearance [#template-defaults]
 
-The colors are custom properties on `zt-template-editor`, one per token class, named `--zt-template-<token>`. Delimiters, keywords, and operators take `--text-accent`. A filter takes `--color-blue`. Variables and properties take `--text-normal`. Strings, values, and punctuation take `--text-muted`. Comments take `--text-faint` in italics. Invalid source takes `--text-error`.
+The colors are custom properties on `zt-template-editor`, one per token class, named `--zt-template-<token>`. Delimiters, keywords, and operators take `--text-accent`. A filter takes `--color-blue`. Variables and properties take `--text-normal`. Strings, values, and punctuation take `--text-muted`. Comments take `--text-faint` in italics. Invalid source takes `--text-error`. The hover popover is Obsidian's own `hover-popover`, sized to its text.
 
 Set a custom property on the editor hook to recolor one kind of token in every pane, or style a token class directly:
 

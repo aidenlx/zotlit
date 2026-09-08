@@ -1,10 +1,13 @@
 // @vitest-environment happy-dom
+import { EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import { Menu, Modal, SuggestModal } from "@mock/obsidian";
 import type { App } from "obsidian";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import { liquidTemplate } from "@zotlit/workbench/language";
 import { AnnotationPointer } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -109,6 +112,54 @@ describe("Profile Editor host", () => {
     anchor.remove();
   });
 
+  it("draws a suggestion row the way Obsidian's own complex rows read", () => {
+    const { host } = setup();
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    void host.suggester({
+      title: "Styles",
+      selected: "apa",
+      groups: [
+        {
+          label: "Installed",
+          options: [
+            { id: "apa", label: "APA", hint: "Author-date" },
+            { id: "ieee", label: "IEEE" },
+          ],
+        },
+      ],
+    });
+    type Row = { id: string; label: string; hint?: string; group: string };
+    const modal = open.mock.contexts.at(-1)! as SuggestModal<Row>;
+    const rows = (modal.getSuggestions("") as Row[]).map((option) => {
+      const el = document.createElement("div");
+      modal.renderSuggestion(option, el);
+      return el;
+    });
+    expect(rows.map((el) => el.className)).toEqual([
+      "mod-complex",
+      "mod-complex",
+    ]);
+    expect(
+      rows.map((el) => el.querySelector(".suggestion-title")!.textContent),
+    ).toEqual(["APA", "IEEE"]);
+    expect(
+      rows.map(
+        (el) => el.querySelector(".suggestion-note")?.textContent ?? null,
+      ),
+    ).toEqual(["Author-date", null]);
+    expect(
+      rows.map((el) =>
+        [...el.querySelectorAll(".suggestion-aux .suggestion-flair")].map(
+          (flair) => flair.getAttribute("aria-label") ?? flair.textContent,
+        ),
+      ),
+    ).toEqual([[m.modal_profile_current(), "Installed"], ["Installed"]]);
+    expect(rows.map((el) => el.getAttribute("aria-current"))).toEqual([
+      "true",
+      null,
+    ]);
+  });
+
   it("keeps preferences in Obsidian's vault-local storage", () => {
     const { host, memory } = setup();
     host.persistence.write("vault", "last", "ABCD2345");
@@ -116,5 +167,54 @@ describe("Profile Editor host", () => {
     expect(host.persistence.read("vault", "last")).toBe("ABCD2345");
     host.persistence.write("vault", "last", null);
     expect(host.persistence.read("vault", "last")).toBeNull();
+  });
+});
+
+describe("Profile Editor typing popup", () => {
+  it("wears Obsidian's suggestion classes, with the description and type as cells", async () => {
+    const { host } = setup();
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: "{{ zt.",
+        extensions: [
+          liquidTemplate,
+          host.editorPopups!(() => ({
+            root: "note",
+            partials: [],
+            fields: [{ path: "title", label: "Title" }],
+          })),
+        ],
+      }),
+      parent: document.body,
+    });
+    try {
+      view.dispatch({
+        changes: { from: 6, insert: "t" },
+        selection: { anchor: 7 },
+        userEvent: "input.type",
+      });
+      const popup = await vi.waitFor(() => {
+        const found = view.dom.querySelector(".cm-tooltip-autocomplete");
+        if (!found) throw new Error("no popup yet");
+        return found;
+      });
+      expect(popup.classList.contains("suggestion-container")).toBe(true);
+      const rows = [...popup.querySelectorAll("li")];
+      expect(rows.map((row) => row.className)).toEqual(
+        rows.map(() => "suggestion-item mod-complex"),
+      );
+      const row = rows.find(
+        (row) =>
+          row.querySelector(".cm-completionLabel")!.textContent === "title",
+      )!;
+      expect(
+        row.querySelector(".suggestion-aux .suggestion-flair")!.textContent,
+      ).toBe("string | null");
+      expect(row.querySelector(".suggestion-note")!.textContent).toBe(
+        "Item title.",
+      );
+    } finally {
+      view.destroy();
+    }
   });
 });
