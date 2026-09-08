@@ -77,12 +77,31 @@ export function applyTemplateCompletion(
  */
 export type SuggestionSource = (position: number) => SuggestionConfig | null;
 
+/** How a host draws the popup and its rows; the classes it adds and the extra cells it renders. */
+export type TemplateCompletionPresentation = Pick<
+  NonNullable<Parameters<typeof autocompletion>[0]>,
+  "tooltipClass" | "optionClass" | "addToOptions"
+>;
+
 /** CodeMirror completion over the pane's current contract and source scope. */
-export function templateCompletion(read: SuggestionSource): Extension {
+export function templateCompletion(
+  read: SuggestionSource,
+  presentation: TemplateCompletionPresentation = {},
+): Extension {
   return autocompletion({
     override: [(context) => completionAt(context, read)],
     icons: false,
+    ...presentation,
   });
+}
+
+const suggestionOf = new WeakMap<Completion, Suggestion>();
+
+/** The shared suggestion a completion was made from, for a host that draws its own cells. */
+export function completionSuggestion(
+  completion: Completion,
+): Suggestion | undefined {
+  return suggestionOf.get(completion);
 }
 
 function completionAt(
@@ -96,12 +115,16 @@ function completionAt(
   return {
     from: result.from,
     to: result.to,
-    options: result.options.map((suggestion) => ({
-      ...option(suggestion),
-      apply: (view) => {
-        applyTemplateCompletion(view, result, suggestion);
-      },
-    })),
+    options: result.options.map((suggestion) => {
+      const completion: Completion = {
+        ...option(suggestion),
+        apply: (view) => {
+          applyTemplateCompletion(view, result, suggestion);
+        },
+      };
+      suggestionOf.set(completion, suggestion);
+      return completion;
+    }),
     filter: false,
   };
 }
@@ -112,11 +135,14 @@ function option(suggestion: Suggestion): Completion {
     apply: suggestion.insert,
     type: suggestion.category,
     ...(suggestion.type === undefined ? {} : { detail: suggestion.type }),
-    info: suggestion.syntax
-      ? [suggestion.detail, suggestion.syntax, suggestion.example]
-          .filter(Boolean)
-          .join("\n\n")
-      : suggestion.detail,
+    // A tag's syntax and example read in the docstring; a field's description is a row cell.
+    ...(suggestion.syntax
+      ? {
+          info: [suggestion.detail, suggestion.syntax, suggestion.example]
+            .filter(Boolean)
+            .join("\n\n"),
+        }
+      : {}),
   };
 }
 
