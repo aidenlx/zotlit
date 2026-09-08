@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import * as v from "valibot";
 
-type Messages = typeof import("@/paraglide/messages.js");
+type Messages = typeof import("#paraglide/messages.js");
 import { scanContent } from "./content-scan.js";
 import type { ContentEntry } from "./content-scan.js";
 import type { CardProps } from "./og-card.js";

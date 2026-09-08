@@ -1,8 +1,8 @@
 // The authored Markdown editions of every page, and the two llms indexes.
 //
-// Server-only: the editions come from `collections/server` through
+// Server-only: the editions come from the native macro collections through
 // `src/lib/source.ts`. Each page compiles to a `_markdown` component — the
-// `output: "function"` step in `source.config.ts` — whose prose is already
+// `output: "function"` step in `content.config.ts` — whose prose is already
 // stringified and whose JSX elements arrive with their evaluated props. This
 // module renders that component and owns `mdxComponents`, the map those
 // elements resolve against: a component there that calls `asMarkdown()` gives

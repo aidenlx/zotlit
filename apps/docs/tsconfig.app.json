@@ -24,8 +24,7 @@
     "noUncheckedSideEffectImports": true,
     "types": ["./worker-configuration.d.ts", "vite/client", "node"],
     "paths": {
-      "@/*": ["./src/*"],
-      "collections/*": ["./.source/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["./src/**/*.ts", "./src/**/*.tsx"],

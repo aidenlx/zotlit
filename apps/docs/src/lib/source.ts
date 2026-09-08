@@ -1,14 +1,13 @@
 // fumadocs loaders over the three collections, one per content directory.
 //
-// Server-only: `collections/server` reads the content directory. Routes reach
-// it through `createServerFn` handlers, and the MDX bodies compile in the
-// browser through `collections/browser` instead.
+// Routes reach these loaders through `createServerFn` handlers. The shared
+// macro collections also provide lazy MDX bodies in the browser.
 
-import { blogs, changelogs, docs } from "collections/server";
 import { loader } from "fumadocs-core/source";
 import { lucideIconsPlugin } from "fumadocs-core/source/lucide-icons";
-import { toFumadocsSource } from "fumadocs-mdx/runtime/server";
 import { rcompare } from "semver";
+
+import { blogs, changelogs, docs } from "./collections";
 
 /** @see https://github.com/fuma-nama/fumadocs/blob/fumadocs-mdx%4015.2.1/apps/docs/content/docs/headless/source-api/index.mdx */
 export const source = loader({
@@ -19,7 +18,7 @@ export const source = loader({
 
 export const changelog = loader({
   baseUrl: "/changelog",
-  source: toFumadocsSource(changelogs, []),
+  source: changelogs.toFumadocsSource(),
 });
 
 /**
@@ -41,7 +40,7 @@ export function getChangelogPages() {
 
 export const blog = loader({
   baseUrl: "/blog",
-  source: toFumadocsSource(blogs, []),
+  source: blogs.toFumadocsSource(),
 });
 
 /** Blog posts newest-first: day desc, title asc as the tiebreak. */
