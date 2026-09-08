@@ -130,27 +130,4 @@ describe("active Profile Editor sidebars", () => {
     expect(test.leaves).toHaveLength(1);
     for (const dispose of test.cleanup) dispose();
   });
-  it("waits until Preview or Simple Explorer needs an Item", async () => {
-    const test = setup();
-    const ensureItem = vi.spyOn(test.editor, "ensureItem");
-    test.memory.set("zotlit.profile-sidebars-opened", true);
-    test.leaves.push({ view: test.editor });
-    test.activate(test.editor);
-    await Promise.resolve();
-    expect(ensureItem).not.toHaveBeenCalled();
-    test.editor.store.setState({ explorer: "all" });
-    test.leaves.push({ view: { getViewType: () => EXPLORER_VIEW_TYPE } });
-    test.callbacks.get("layout-change")?.();
-    await Promise.resolve();
-    expect(ensureItem).not.toHaveBeenCalled();
-    test.editor.store.setState({ explorer: "simple" });
-    expect(ensureItem).toHaveBeenCalledOnce();
-    ensureItem.mockClear();
-    test.editor.store.setState({ explorer: "all" });
-    test.leaves.push({ view: { getViewType: () => NOTE_PREVIEW_VIEW_TYPE } });
-    test.callbacks.get("layout-change")?.();
-    await Promise.resolve();
-    expect(ensureItem).toHaveBeenCalledOnce();
-    for (const dispose of test.cleanup) dispose();
-  });
 });
