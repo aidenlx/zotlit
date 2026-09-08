@@ -22,4 +22,6 @@ export const themeHook = {
   templatePunctuation: "zt-template-punctuation",
   templateComment: "zt-template-comment",
   templateInvalid: "zt-template-invalid",
+  /** The popover that explains the template token under the pointer. */
+  templateHover: "zt-template-hover",
 } as const;

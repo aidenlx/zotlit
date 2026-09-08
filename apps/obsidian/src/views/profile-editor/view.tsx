@@ -1,6 +1,11 @@
 // One file-backed authoring session; TextFileView owns vault updates and saves.
 import { Menu, Scope, TextFileView } from "obsidian";
-import type { ViewStateResult, WorkspaceLeaf } from "obsidian";
+import type {
+  HoverParent,
+  HoverPopover,
+  ViewStateResult,
+  WorkspaceLeaf,
+} from "obsidian";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
@@ -60,6 +65,7 @@ import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import { tooltipAttrs } from "@/lib/utils";
+import { pickItem } from "@/services/item-lookup/search-modal";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ProfileService } from "@/services/profile/service";
@@ -77,7 +83,6 @@ import {
   lastTemplateItem,
   rememberTemplateItem,
 } from "@/views/template-data-explorer/item-memory";
-import { pickItem } from "@/views/template-data-explorer/item-picker";
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
 
 import { runProfileEditorAction } from "./actions";
@@ -101,7 +106,9 @@ export type ProfileEditorDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   >;
 };
 
-export class ProfileEditorView extends TextFileView {
+export class ProfileEditorView extends TextFileView implements HoverParent {
+  /** The editor hover popover now open, which the next one replaces. */
+  hoverPopover: HoverPopover | null = null;
   readonly store = createWorkbenchStore();
   readonly preview: NativePreviewSession | null;
   readonly #revealListeners = new Set<
@@ -175,6 +182,7 @@ export class ProfileEditorView extends TextFileView {
         ),
         matchData: createMatchData(deps.db),
         insertTarget: () => this.insertTarget,
+        hoverParent: this,
       },
       (content) => this.provide(content),
     );
@@ -662,11 +670,14 @@ export class ProfileEditorView extends TextFileView {
   }
   chooseItem(): Promise<void> {
     if (this.#choosePending) return this.#choosePending;
-    this.#choosePending = pickItem({
-      app: this.app,
-      lookup: this.#deps.itemLookup,
-      settings: this.#deps.settings,
-    })
+    this.#choosePending = pickItem(
+      {
+        app: this.app,
+        lookup: this.#deps.itemLookup,
+        settings: this.#deps.settings,
+      },
+      m.template_data_explorer_pick_placeholder(),
+    )
       .then((hit) => {
         if (hit && !this.#closed) this.#selectKey(hit.item.indexedKey);
       })
