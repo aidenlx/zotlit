@@ -507,7 +507,6 @@ describe("the annotation box", () => {
     await page.waitFor(() =>
       expect(title(page.host)).toBe("Connected profile"),
     );
-    page.press(m.workbench_refresh_item());
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(m.workbench_connected_badge()),
     );

@@ -12,11 +12,15 @@ import { useWebHost } from "./host";
 let host!: WorkbenchHost;
 const notices: string[] = [];
 
-function Page() {
+function Page({
+  insertTarget = () => ({ slice: "note", range: { from: 3, to: 3 } }),
+}: {
+  insertTarget?: WorkbenchHost["insertTarget"];
+}) {
   const bound = useWebHost({
     snapshot: SAMPLE_ITEMS[0]!,
     notice: (text) => void notices.push(text),
-    insertTarget: () => ({ slice: "note", range: { from: 3, to: 3 } }),
+    insertTarget,
   });
   host = bound.host;
   return (
@@ -170,14 +174,31 @@ describe("the web host", () => {
     await expect(answer).resolves.toBe("a");
   });
 
-  it("binds what needs no popup: tooltip, notice, insert target, names, storage", async () => {
+  it("keeps the existing host bound to the latest insertion selection", () => {
+    const existing = host;
+    act(() =>
+      root.render(
+        <Page
+          insertTarget={() => ({
+            slice: "annotation",
+            range: { from: 17, to: 24 },
+          })}
+        />,
+      ),
+    );
+    expect(host).toBe(existing);
+    expect(existing.insertTarget()).toEqual({
+      slice: "annotation",
+      range: { from: 17, to: 24 },
+    });
+    act(() => root.render(<Page insertTarget={() => null} />));
+    expect(existing.insertTarget()).toBeNull();
+  });
+
+  it("binds what needs no popup: tooltip, notice, names, storage", async () => {
     expect(host.tooltip("Undo")).toEqual({ title: "Undo" });
     host.notice("Saved");
     expect(notices).toEqual(["Saved"]);
-    expect(host.insertTarget()).toEqual({
-      slice: "note",
-      range: { from: 3, to: 3 },
-    });
     await expect(host.matchData.collections()).resolves.toEqual([
       ["Shared key"],
     ]);
