@@ -37,6 +37,7 @@ import {
 } from "@/lib/profile-stamp";
 import type { ProfileId, ProfileSelector } from "@/lib/profile-stamp";
 import { isFileExistsError } from "@/lib/vault-errors";
+import type { AvailableLibrary } from "@/services/library-scope/scope";
 import type { LibraryScopeService } from "@/services/library-scope/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import { compileProfileMatch } from "@/services/profile-selection";
@@ -1040,46 +1041,13 @@ export class ProfileService extends Service {
         this.#defaultDocument = status.reference;
         continue;
       }
-      const manifest = status.validation.manifest;
-      const match = compileProfileMatch(
-        manifest.match,
-        this.#deps.libraryScope.libraries,
+      this.#profiles.push(
+        seedProfileEntry(status.validation.manifest, {
+          document: status.reference,
+          path: status.path,
+          libraries: this.#deps.libraryScope.libraries,
+        }),
       );
-      if (match.state === "unevaluable")
-        logger.debug("Profile {id} match cannot be evaluated", {
-          id,
-          problem: match.problem,
-        });
-      this.#profiles.push({
-        id: id as ProfileId,
-        label: manifest.name,
-        match,
-        document: status.reference,
-        path: status.path,
-        bindings: {
-          ...(manifest.folder === undefined
-            ? {}
-            : { "note.literature-folder": manifest.folder }),
-          ...(manifest.citationStyle === undefined
-            ? {}
-            : { "citation.references-style": manifest.citationStyle }),
-          ...(manifest.importFolder === undefined
-            ? {}
-            : { "note.import-folder": manifest.importFolder }),
-          ...(manifest.importColoredHighlights === undefined
-            ? {}
-            : {
-                "note.import-colored-highlights":
-                  manifest.importColoredHighlights,
-              }),
-          ...(manifest.importAnnotationsAsTemplate === undefined
-            ? {}
-            : {
-                "note.import-annotations-as-template":
-                  manifest.importAnnotationsAsTemplate,
-              }),
-        },
-      });
     }
     logger.debug(
       "Profile scan completed with {profiles} Profiles and {diagnostics} diagnostics",
@@ -1092,6 +1060,58 @@ export class ProfileService extends Service {
     );
     if (this.#loaded) this.#events.emit("changed");
   }
+}
+
+/**
+ * The entry derives only from the manifest, so the same manifest always yields
+ * the same entry — whether it comes from a saved Profile document or from a
+ * draft the user is still editing.
+ *
+ * @see docs/adr/0031-a-literature-note-profile-is-its-document.md
+ */
+export function seedProfileEntry(
+  manifest: LiteratureNoteTemplateManifest,
+  options: {
+    document: string;
+    path: string;
+    libraries: readonly AvailableLibrary[];
+  },
+): LiteratureNoteProfile {
+  const match = compileProfileMatch(manifest.match, options.libraries);
+  if (match.state === "unevaluable")
+    logger.debug("Profile {id} match cannot be evaluated", {
+      id: manifest.id,
+      problem: match.problem,
+    });
+  return {
+    id: manifest.id as ProfileId,
+    label: manifest.name,
+    match,
+    document: options.document,
+    path: options.path,
+    bindings: {
+      ...(manifest.folder === undefined
+        ? {}
+        : { "note.literature-folder": manifest.folder }),
+      ...(manifest.citationStyle === undefined
+        ? {}
+        : { "citation.references-style": manifest.citationStyle }),
+      ...(manifest.importFolder === undefined
+        ? {}
+        : { "note.import-folder": manifest.importFolder }),
+      ...(manifest.importColoredHighlights === undefined
+        ? {}
+        : {
+            "note.import-colored-highlights": manifest.importColoredHighlights,
+          }),
+      ...(manifest.importAnnotationsAsTemplate === undefined
+        ? {}
+        : {
+            "note.import-annotations-as-template":
+              manifest.importAnnotationsAsTemplate,
+          }),
+    },
+  };
 }
 
 function documentId(status: LiteratureNoteTemplateStatus): string | undefined {
