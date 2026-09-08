@@ -13,6 +13,8 @@ allowBuilds:
   workerd: true
 
 catalog:
+  yargs: ^18.1.0
+  "@types/yargs": ^17.0.35
   nanoid: ^5.1.16
   "@hono/node-server": ^2.0.10
   "@codemirror/autocomplete": 6.20.3
