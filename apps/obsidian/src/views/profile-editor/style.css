@@ -71,15 +71,44 @@
 .zt-template-invalid {
   color: var(--zt-template-invalid);
 }
-/* The typing popup's rows wear Obsidian's complex-row classes; the note
-   line wraps under the title and its flair. */
-.zt-profile-editor .cm-tooltip-autocomplete .suggestion-item.mod-complex {
-  flex-wrap: wrap;
+/* Keep labels, signatures, and descriptions on a shared leading edge. */
+.cm-tooltip.cm-tooltip-autocomplete.zt-template-completion {
+  inline-size: min(28rem, calc(100vw - 20px));
+  max-inline-size: calc(100vw - 20px);
+  max-block-size: min(24rem, 50vh);
+}
+.cm-tooltip.zt-template-completion > ul[role="listbox"] {
+  max-height: min(24rem, 50vh);
+}
+.cm-tooltip.cm-tooltip-autocomplete.zt-template-completion
+  > ul
+  > li[role="option"] {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--size-2-1);
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.zt-template-completion .cm-completionLabel {
+  font-weight: var(--font-semibold);
+}
+.zt-template-completion .zt-template-completion-type {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+.zt-template-completion .suggestion-item.mod-complex .suggestion-note {
+  font-size: var(--font-ui-small);
+  white-space: normal;
 }
 /* Obsidian sizes a popover's content for a note page; a hover card fits its text. */
 .popover.hover-popover > .zt-template-hover {
   width: auto;
-  max-width: min(var(--popover-width), 80vw);
+  max-width: min(24rem, var(--popover-width), 80vw);
+  max-height: min(24rem, calc(100vh - 20px));
+  overflow: auto;
 }
 /* The preview toggle shows its pressed state the way Obsidian's active icons do. */
 .zt-profile-editor [data-part="annotation-toggle"][data-state="active"] {
