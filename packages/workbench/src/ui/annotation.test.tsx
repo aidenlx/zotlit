@@ -45,7 +45,7 @@ it("repairs a missing section and edits only its format through the master histo
     }),
   );
   expect(controller.source).toBe(
-    `${source}${source.endsWith("\n") ? "" : "\n"}--- zotlit:annotation ---\n{{ zt.comment }}`,
+    `${source}--- zotlit:annotation ---\n{{ zt.comment }}`,
   );
   act(() => {
     controller.undo();
