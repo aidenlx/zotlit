@@ -8,7 +8,7 @@ updated: "2.1.2"
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This reference lists ZotLit's public citation CSS classes and their activation rules.
+This reference lists ZotLit's public CSS classes: the citation classes and their activation rules, and the template editor classes.
 
 ## Hooks [#hooks]
 
@@ -71,6 +71,42 @@ ZotLit adds no aggregate style for `zt-citation-key-partially-unresolved`. A par
 Ambiguous citation keys keep the resolved link color and take the `--link-unresolved-decoration-*` variables, so the key reads as reachable — the <UiLabel name={m.settings_citation_hover_action_popover()} /> names its candidates — while stating that it matches more than one item.
 
 ZotLit adds no style to `zt-entry-serial` either. The serials render as superscript text in a Citation, as a plain label in the <UiLabel name={m.settings_citation_hover_action_popover()} />, and take their appearance from the theme.
+
+## Template editor hooks [#template-editor]
+
+The Profile Editor colors template source through one set of classes, in every pane that holds template code: the note body, the annotation format, a property expression, the note name, and the whole file in Source. The Template Workbench on this site emits the same classes.
+
+| Class                     | Meaning                                                                  |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `zt-template-editor`      | The element that holds one template editor pane.                         |
+| `zt-template-delimiter`   | A delimiter that opens or closes a tag or an output: `{{`, `{%-`, `<%=`. |
+| `zt-template-keyword`     | A tag name or keyword: `if`, `for`, `endbq`, `in`.                       |
+| `zt-template-variable`    | A variable or root name: `zt`, `it`.                                     |
+| `zt-template-property`    | A property name after a dot, or a YAML or JSON key.                      |
+| `zt-template-filter`      | A Liquid filter or a function call: `map`, `note_links`.                 |
+| `zt-template-string`      | A string literal.                                                        |
+| `zt-template-value`       | A number, boolean, or null.                                              |
+| `zt-template-operator`    | An operator: `.`, `>`, `\|`.                                             |
+| `zt-template-punctuation` | Other punctuation: `,`, `:`, brackets.                                   |
+| `zt-template-comment`     | Comment text, and YAML document markers.                                 |
+| `zt-template-invalid`     | Source the parser refuses.                                               |
+
+### Default appearance [#template-defaults]
+
+The colors are custom properties on `zt-template-editor`, one per token class, named `--zt-template-<token>`. Delimiters, keywords, and operators take `--text-accent`. A filter takes `--color-blue`. Variables and properties take `--text-normal`. Strings, values, and punctuation take `--text-muted`. Comments take `--text-faint` in italics. Invalid source takes `--text-error`.
+
+Set a custom property on the editor hook to recolor one kind of token in every pane, or style a token class directly:
+
+```css
+.zt-template-editor {
+  --zt-template-keyword: var(--color-purple);
+  --zt-template-filter: var(--color-cyan);
+}
+
+.zt-template-comment {
+  font-style: normal;
+}
+```
 
 ## CSS examples [#examples]
 
