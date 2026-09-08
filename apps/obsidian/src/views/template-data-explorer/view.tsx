@@ -31,6 +31,7 @@ import { getLogger } from "@/lib/log";
 import * as toast from "@/lib/toast";
 import type { DatabaseService } from "@/services/database/service";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
+import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { SettingsService } from "@/services/settings/service";
@@ -51,7 +52,6 @@ import type { ExplorerActions } from "./actions";
 import { Explorer } from "./Explorer";
 import { exportTemplateDataFile } from "./export-file";
 import { rememberTemplateItem } from "./item-memory";
-import { pickItem } from "./item-picker";
 import { ProfileExplorer } from "./profile-explorer";
 import { createExplorerStore, ExplorerStoreProvider } from "./store";
 import type { ExplorerState } from "./store";
@@ -502,11 +502,14 @@ export class TemplateDataExplorerView extends ItemView {
   }
 
   #chooseItem(): void {
-    void pickItem({
-      app: this.#deps.app,
-      lookup: this.#deps.itemLookup,
-      settings: this.#deps.settings,
-    }).then((hit) => {
+    void pickItem(
+      {
+        app: this.#deps.app,
+        lookup: this.#deps.itemLookup,
+        settings: this.#deps.settings,
+      },
+      m.template_data_explorer_pick_placeholder(),
+    ).then((hit) => {
       if (!hit) return;
       this.#item = hit.item;
       this.#itemIndexedKey = hit.item.indexedKey;
