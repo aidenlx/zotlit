@@ -146,26 +146,12 @@ export class ProfileEditorView extends TextFileView {
       {
         render:
           (deps.nativePreview
-            ? (request, deliver) => {
-                let current = true;
-                void renderNativeProfile(deps.nativePreview!, request).then(
-                  (result) => {
-                    if (current) deliver(result);
-                  },
-                );
-                return {
-                  terminate() {
-                    current = false;
-                  },
-                };
-              }
+            ? (request) => renderNativeProfile(deps.nativePreview!, request)
             : deps.render) ??
-          ((request, deliver) => {
-            deliver(
+          ((request) =>
+            Promise.resolve(
               failedRender(renderIdentity(request), { code: "render-error" }),
-            );
-            return { terminate() {} };
-          }),
+            )),
         markdown: (props) => (
           <NativeMarkdown
             {...props}

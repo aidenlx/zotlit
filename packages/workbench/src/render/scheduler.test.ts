@@ -14,29 +14,22 @@ import type { RenderRequest } from "./scheduler";
 const snapshot = SAMPLE_ITEMS[0]!;
 
 /**
- * Stands in for the Worker: each start records its request and hands back the
- * delivery callback, so a test decides when — or whether — a result arrives.
+ * Stands in for the host renderer: each start records its request and hands
+ * back the promise's own settlers, so a test decides when — or whether — a
+ * result arrives.
  */
-function fakeWorkers() {
+function fakeRenders() {
   const started: {
     request: RenderRequest;
     deliver: (result: ProfileRenderResult) => void;
-    terminated: boolean;
+    fail: (error: unknown) => void;
   }[] = [];
   return {
     started,
-    startWorker: (
-      request: RenderRequest,
-      deliver: (result: ProfileRenderResult) => void,
-    ) => {
-      const entry = { request, deliver, terminated: false };
-      started.push(entry);
-      return {
-        terminate: () => {
-          entry.terminated = true;
-        },
-      };
-    },
+    render: (request: RenderRequest) =>
+      new Promise<ProfileRenderResult>((deliver, fail) => {
+        started.push({ request, deliver, fail });
+      }),
   };
 }
 
@@ -50,7 +43,7 @@ describe("createRenderScheduler", () => {
 
   it.each(["selection", "refresh"])(
     "drops an old annotation result after %s without changing source or paper",
-    (change) => {
+    async (change) => {
       const first = SAMPLE_ANNOTATIONS[0]!;
       const next = {
         ...first,
@@ -58,10 +51,10 @@ describe("createRenderScheduler", () => {
         revision: change === "refresh" ? "refreshed" : first.revision,
         root: { ...first.root, text: "Newest example" },
       };
-      const workers = fakeWorkers();
+      const renders = fakeRenders();
       const results: ProfileRenderResult[] = [];
       using scheduler = createRenderScheduler({
-        startWorker: workers.startWorker,
+        render: renders.render,
         onResult: (result) => results.push(result),
       });
       scheduler.request({
@@ -76,73 +69,72 @@ describe("createRenderScheduler", () => {
         annotation: next,
       });
       vi.advanceTimersByTime(300);
-      workers.started[0]!.deliver(
+      renders.started[0]!.deliver(
         renderProfile(DEFAULT_PROFILE_SOURCE, snapshot, { annotation: first }),
       );
+      await vi.advanceTimersByTimeAsync(0);
       expect(results).toHaveLength(0);
-      workers.started[1]!.deliver(
+      renders.started[1]!.deliver(
         renderProfile(DEFAULT_PROFILE_SOURCE, snapshot, { annotation: next }),
       );
+      await vi.advanceTimersByTimeAsync(0);
       expect(results).toHaveLength(1);
       expect(results[0]!.annotation).toContain("Newest example");
     },
   );
 
-  it("renders once the reader stops typing", () => {
-    const workers = fakeWorkers();
+  it("renders once the reader stops typing", async () => {
+    const renders = fakeRenders();
     const results: ProfileRenderResult[] = [];
     using scheduler = createRenderScheduler({
-      startWorker: workers.startWorker,
+      render: renders.render,
       onResult: (result) => results.push(result),
     });
 
     scheduler.request({ source: DEFAULT_PROFILE_SOURCE, snapshot });
     vi.advanceTimersByTime(299);
-    expect(workers.started).toHaveLength(0);
+    expect(renders.started).toHaveLength(0);
 
     vi.advanceTimersByTime(1);
-    workers.started[0]!.deliver(
+    renders.started[0]!.deliver(
       renderProfile(DEFAULT_PROFILE_SOURCE, snapshot),
     );
+    await vi.advanceTimersByTimeAsync(0);
 
     expect(results).toHaveLength(1);
     expect(results[0]!.filename).toBe("ioannidisWhyMost2005");
   });
 
-  it("terminates a runaway render at the deadline and renders the next one", () => {
-    const workers = fakeWorkers();
+  it("reads a render that threw as a render error against the same draft", async () => {
+    const renders = fakeRenders();
     const results: ProfileRenderResult[] = [];
     using scheduler = createRenderScheduler({
-      startWorker: workers.startWorker,
+      render: renders.render,
       onResult: (result) => results.push(result),
-      deadlineMs: 1000,
     });
 
-    scheduler.request({ source: "{% forever %}", snapshot });
-    vi.advanceTimersByTime(300 + 1000);
+    scheduler.run({ source: DEFAULT_PROFILE_SOURCE, snapshot });
+    renders.started[0]!.fail(new Error("Liquid ran out of stack"));
+    await vi.advanceTimersByTimeAsync(0);
 
-    expect(workers.started[0]!.terminated).toBe(true);
-    expect(results[0]!.diagnostics[0]).toMatchObject({
-      code: "render-timeout",
-    });
-
-    scheduler.request({ source: DEFAULT_PROFILE_SOURCE, snapshot });
-    vi.advanceTimersByTime(300);
-    workers.started[1]!.deliver(
-      renderProfile(DEFAULT_PROFILE_SOURCE, snapshot),
-    );
-
-    expect(results).toHaveLength(2);
-    expect(results[1]!.creationBody).toContain(
-      "# Why Most Published Research Findings Are False",
+    expect(results).toHaveLength(1);
+    expect(results[0]!.diagnostics).toEqual([
+      {
+        code: "render-error",
+        message: "Liquid ran out of stack",
+        part: "render",
+      },
+    ]);
+    expect(results[0]!.sourceRevision).toBe(
+      profileSourceRevision(DEFAULT_PROFILE_SOURCE),
     );
   });
 
-  it("drops a result the reader has already typed past", () => {
-    const workers = fakeWorkers();
+  it("drops a result the reader has already typed past", async () => {
+    const renders = fakeRenders();
     const results: ProfileRenderResult[] = [];
     using scheduler = createRenderScheduler({
-      startWorker: workers.startWorker,
+      render: renders.render,
       onResult: (result) => results.push(result),
     });
     const stale = `${DEFAULT_PROFILE_SOURCE}stale`;
@@ -150,32 +142,36 @@ describe("createRenderScheduler", () => {
 
     scheduler.request({ source: stale, snapshot });
     vi.advanceTimersByTime(300);
-    const staleWorker = workers.started[0]!;
+    const staleRender = renders.started[0]!;
 
     scheduler.request({ source: fresh, snapshot });
     vi.advanceTimersByTime(300);
 
-    staleWorker.deliver(renderProfile(stale, snapshot));
+    staleRender.deliver(renderProfile(stale, snapshot));
+    await vi.advanceTimersByTimeAsync(0);
     expect(results).toHaveLength(0);
 
-    workers.started[1]!.deliver(renderProfile(fresh, snapshot));
+    renders.started[1]!.deliver(renderProfile(fresh, snapshot));
+    await vi.advanceTimersByTimeAsync(0);
     expect(results).toHaveLength(1);
     expect(results[0]!.sourceRevision).toBe(profileSourceRevision(fresh));
   });
 });
 
-it("runs immediately and drops a stopped render even when the next request has the same identity", () => {
-  const workers = fakeWorkers();
+it("runs immediately and drops a stopped render even when the next request has the same identity", async () => {
+  const renders = fakeRenders();
   const results: ProfileRenderResult[] = [];
   using scheduler = createRenderScheduler({
-    startWorker: workers.startWorker,
+    render: renders.render,
     onResult: (result) => results.push(result),
   });
   const request = { source: DEFAULT_PROFILE_SOURCE, snapshot };
   scheduler.run(request);
   scheduler.run(request);
-  workers.started[0]!.deliver(renderProfile(request.source, snapshot));
+  renders.started[0]!.deliver(renderProfile(request.source, snapshot));
+  await Promise.resolve();
   expect(results).toHaveLength(0);
-  workers.started[1]!.deliver(renderProfile(request.source, snapshot));
+  renders.started[1]!.deliver(renderProfile(request.source, snapshot));
+  await Promise.resolve();
   expect(results).toHaveLength(1);
 });

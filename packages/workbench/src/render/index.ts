@@ -57,7 +57,6 @@ export type {
   RenderResources,
   RenderScheduler,
   RenderSchedulerOptions,
-  RenderWorkerHandle,
 } from "./scheduler";
 export { restoreTemplateData } from "./restore-template-data";
 export { SAMPLE_ANNOTATIONS } from "./sample-annotations";
@@ -99,9 +98,9 @@ export function renderProfile(
     resources?.dependencies.diagnostics ?? []
   ).map((diagnostic) => ({ ...diagnostic, part: "profile" }));
   // The web host renders Liquid and JSON-e only, so an Eta dependency is named
-  // here rather than defined: a bundle reaches this Worker from a Local Bridge
-  // outside this package, and the engine that would run it is the one this
-  // host refuses.
+  // here rather than defined: a bundle reaches this renderer from a Local
+  // Bridge outside this package, and the engine that would run it is the one
+  // this host refuses.
   const bundled = resources?.dependencies.templates ?? [];
   const supported = bundled.filter(({ language }) => language === "liquid");
   const defined = new Set([

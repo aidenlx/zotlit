@@ -10,7 +10,7 @@
       "esnext.array",
       "esnext.disposable",
       // The Workbench renders Managed Frontmatter against `Temporal`, which the
-      // page and the render Worker polyfill when the runtime has none.
+      // page polyfills when the runtime has none.
       // @see src/lib/workbench/temporal.ts
       "esnext.temporal",
       "DOM"

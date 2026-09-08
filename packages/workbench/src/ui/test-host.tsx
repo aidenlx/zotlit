@@ -58,10 +58,10 @@ export function fakeHost(): FakeHost {
     tooltip: (text) => ({ "aria-description": text }),
     hoverCard: () => ({ close() {} }),
     notice: (text) => void host.calls.notices.push(text),
-    render: (request, deliver) => {
-      deliver(failedRender(renderIdentity(request), { code: "render-error" }));
-      return { terminate() {} };
-    },
+    render: (request) =>
+      Promise.resolve(
+        failedRender(renderIdentity(request), { code: "render-error" }),
+      ),
     markdown: ({ markdown }) => <div role="document">{markdown}</div>,
     matchData: {
       tags: () => Promise.resolve(["reading", "methods"]),

@@ -101,7 +101,7 @@ async function setup() {
       saveLocalStorage: () => {},
     } as unknown as App,
     {
-      render: () => ({ terminate() {} }),
+      render: () => Promise.reject(new Error("This test renders nothing.")),
       matchData: {
         tags: async () => [],
         collections: async () => [],

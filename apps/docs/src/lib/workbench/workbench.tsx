@@ -93,7 +93,7 @@ import {
 } from "./frame";
 import { ProfileHandoff } from "./handoff";
 import { useWebHost } from "./host";
-import { startRenderWorker } from "./render-client";
+import { renderInThread } from "./render";
 import { SampleBar } from "./sample-bar";
 import { ensureTemporal } from "./temporal";
 import { WEB_THEME } from "./theme";
@@ -122,7 +122,7 @@ export function Workbench() {
   const [renderBusy, setRenderBusy] = useState(false);
   const [scheduler] = useState(() =>
     createRenderScheduler({
-      startWorker: startRenderWorker,
+      render: renderInThread,
       onResult: setResult,
       onBusy: setRenderBusy,
     }),
@@ -281,7 +281,7 @@ export function Workbench() {
   // One reading of the problems behind both gates: the screen a refused Profile
   // gets, and the render it never starts. A connected bundle is read before any
   // compilation, so a partial the vault holds in Eta refuses the Profile here
-  // rather than through a diagnostic the Worker raises mid-render.
+  // rather than through a diagnostic the renderer raises mid-render.
   const unsupported = [
     ...unsupportedProblems(controller.problems),
     ...unsupportedDependencies(resources?.dependencies),

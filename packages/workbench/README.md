@@ -6,8 +6,8 @@ headless `ui`, and the Node-only `snapshot`. React is a peer dependency of `ui`
 alone; every other subpath is free of it. The package targets CodeMirror at the
 versions Obsidian pins.
 
-It carries no logger: it runs in a browser page, in a render Worker, and inside
-Obsidian, and it names every decision a host acts on in the value it returns —
+It carries no logger: it runs in a browser page and inside Obsidian, and it
+names every decision a host acts on in the value it returns —
 a `WorkbenchProblem`, a `RenderDiagnostic`, a `LocalBridgeConnection` state — so
 the host logs. That is a package-scoped exception to
 [the logging policy](../../policies/logging.md).
@@ -113,9 +113,9 @@ every component marks its parts with `data-part` and their state with
 `data-state`, and `WorkbenchThemeProvider` takes one optional class map, keyed
 by component and part (`WorkbenchParts` lists them), plus an icon renderer.
 Call sites pass no classes. `WorkbenchHostProvider` takes the host adapter —
-`menu`, `dialog`, `confirm`, `suggester`, `tooltip`, `hoverCard`, `notice`, the
-`render` Worker factory, `matchData`, `insertTarget`, `persistence`,
-`messages`, and `getLocale` — so
+`menu`, `dialog`, `confirm`, `suggester`, `tooltip`, `hoverCard`, `notice`,
+`render`, `matchData`, `insertTarget`, `persistence`, `messages`, and
+`getLocale` — so
 Obsidian shows its own `Menu`, `Modal`, `SuggestModal`, and `Notice` and the web
 shows Base UI. `WorkbenchEditorProvider` carries one editor instance: the
 zustand vanilla store from `createWorkbenchStore` (tab, selected Item, focused
@@ -166,16 +166,17 @@ schedules those renders:
   could not resolve, and one whose content is no standalone CSL style, are both
   `citation-style-error` diagnostics. CSL formatting itself stays in Obsidian,
   which is where a Literature Note's citations are rendered.
-- `createRenderScheduler(options)` — one debounce (300 ms), one Worker per
-  render terminated on its deadline, and a revision check that drops a result
-  the reader has already typed or selected past. The host supplies the Worker factory.
+- `createRenderScheduler(options)` — one debounce (300 ms) and a revision check
+  that drops a result the reader has already typed or selected past. The host
+  supplies `render`, which answers one request with a promise and runs on the
+  calling thread; a render that rejects reads as a `render-error` diagnostic.
 - `SAMPLE_ANNOTATIONS` — six built-in annotation examples covering highlight,
   underline, note, text, image, and ink, with comments, tags, and empty optional
   fields. Each example carries the matching descriptors needed to restore it.
 
 A `RenderDiagnostic` and a `WorkbenchProblem` name what went wrong by `code`,
 with the values that fill it in `params`. This package holds no Language Pack
-facade — it renders inside a Worker and inside Obsidian — so the host writes
+facade — it renders in a browser page and inside Obsidian — so the host writes
 each code in the reader's own language. `message` carries the wording this
 package did not author: the template engine's failure text, the Local Bridge's
 own, and the document parser's.
