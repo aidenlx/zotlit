@@ -118,23 +118,22 @@ Call sites pass no classes. `WorkbenchHostProvider` takes the host adapter —
 `getLocale` — so
 Obsidian shows its own `Menu`, `Modal`, `SuggestModal`, and `Notice` and the web
 shows Base UI. `WorkbenchEditorProvider` carries one editor instance: the
-zustand vanilla store from `createWorkbenchStore` (tab, selected Item, focused
+zustand vanilla store from `createWorkbenchEditor` (tab, selected Item, focused
 root, preview mode and live state, Explorer variant, Advanced, Start here
 dismissal) beside the `WorkbenchDocumentController`, which stays the document
 authority, and the one Render Scheduler its result surfaces share;
 `useWorkbenchStore`, `useWorkbenchController`, `useDocumentRevision`,
 `useRenderScheduler`, and `useRenderState` read them.
 
-`createRenderScheduler(options)` builds that scheduler, one per editor instance
-beside the store: a 300 ms quiet time after the last edit, `run()` for Run,
+`createWorkbenchEditor({ host, controller })` owns the store and its scheduler;
+dispose the editor when it closes. The scheduler uses a 300 ms quiet time after the last edit, `run()` for Run,
 `pause()` for Stop, which lets a render already in flight finish, On demand read
 from the store, and a per-start stamp that drops a result naming a source,
 paper, annotation example, or preview mode the reader has moved past. It reads
-the document controller and the store itself; the host passes `render`, which
+the document controller and the store itself; the editor calls `host.render`, which
 answers one request with a promise on the calling thread and whose rejection
-reads as a `render-error` diagnostic, and `failed`, which casts a result the
-scheduler composed itself into the host's own result shape so a failure reads
-like every other result that host publishes. The host calls `setInput` with the
+reads as a `render-error` diagnostic. An optional `mapResult` gives successful
+and failed results the host's own result shape. The host calls `setInput` with the
 paper, the annotation example, its own bundle, and `hold` where nothing may
 render yet. Its state — `result`, `busy`, `stale` — is what every result surface
 paints. Outside the editor provider the tree paints inert, which the web's

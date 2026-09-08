@@ -4,6 +4,7 @@
 // web's skeleton shows the chrome before the editor bundle arrives.
 
 import type { WorkbenchDocumentController } from "#/document/controller";
+import type { ProfileRenderResult } from "#/render/result";
 import {
   createContext,
   useContext,
@@ -15,6 +16,8 @@ import {
 import type { ReactNode } from "react";
 import { useStore } from "zustand";
 
+import type { WorkbenchHost } from "./host";
+import { createRenderScheduler } from "./scheduler";
 import type { RenderScheduler, RenderSchedulerState } from "./scheduler";
 import { createWorkbenchStore } from "./store";
 import type {
@@ -22,6 +25,55 @@ import type {
   WorkbenchViewActions,
   WorkbenchViewState,
 } from "./store";
+
+export interface WorkbenchEditorInstance<
+  R extends ProfileRenderResult = ProfileRenderResult,
+> extends Disposable {
+  readonly store: WorkbenchStore;
+  readonly scheduler: RenderScheduler<R>;
+}
+
+interface WorkbenchEditorOptions {
+  controller: WorkbenchDocumentController;
+  host: WorkbenchHost;
+  state?: Partial<WorkbenchViewState>;
+}
+
+/** Own one editor's view state and rendering through its host adapter. */
+export function createWorkbenchEditor<R extends ProfileRenderResult>(
+  options: WorkbenchEditorOptions & {
+    mapResult: (result: ProfileRenderResult) => R;
+  },
+): WorkbenchEditorInstance<R>;
+export function createWorkbenchEditor(
+  options: WorkbenchEditorOptions,
+): WorkbenchEditorInstance;
+export function createWorkbenchEditor({
+  controller,
+  host,
+  state,
+  mapResult,
+}: WorkbenchEditorOptions & {
+  mapResult?: (result: ProfileRenderResult) => ProfileRenderResult;
+}): WorkbenchEditorInstance {
+  const store = createWorkbenchStore(state);
+  const scheduler = createRenderScheduler({
+    controller,
+    store,
+    render: (request) => {
+      const result = host.render(request);
+      return mapResult ? result.then(mapResult) : result;
+    },
+    failed: mapResult ?? ((result) => result),
+  });
+  return {
+    store,
+    scheduler,
+    [Symbol.dispose]() {
+      scheduler[Symbol.dispose]();
+    },
+  };
+}
 
 export interface WorkbenchEditor {
   readonly store: WorkbenchStore;

@@ -13,6 +13,7 @@ export type { WorkbenchMessages } from "./generated/messages";
 export { EditToolbar } from "./edit-toolbar";
 export { StartHere } from "./start-here";
 export {
+  createWorkbenchEditor,
   WorkbenchEditorProvider,
   useDocumentRevision,
   useOptionalEditor,
@@ -22,7 +23,7 @@ export {
   useWorkbenchEditor,
   useWorkbenchStore,
 } from "./editor";
-export type { WorkbenchEditor } from "./editor";
+export type { WorkbenchEditor, WorkbenchEditorInstance } from "./editor";
 export { WorkbenchHostProvider, useTooltip, useWorkbenchHost } from "./host";
 export type {
   WorkbenchConfirmRequest,

@@ -6,7 +6,7 @@ import type { ProfileRenderResult } from "#/render/result";
 import { render as renderUI } from "@testing-library/react";
 import type { ReactNode } from "react";
 
-import { WorkbenchEditorProvider } from "./editor";
+import { createWorkbenchEditor, WorkbenchEditorProvider } from "./editor";
 import { WorkbenchHostProvider } from "./host";
 import type {
   WorkbenchHost,
@@ -15,9 +15,7 @@ import type {
   WorkbenchSuggesterRequest,
 } from "./host";
 import { WorkbenchMessagesProvider } from "./messages";
-import { createRenderScheduler } from "./scheduler";
 import type { RenderScheduler } from "./scheduler";
-import { createWorkbenchStore } from "./store";
 import type { WorkbenchStore, WorkbenchViewState } from "./store";
 import { m } from "./test-messages";
 import { WorkbenchThemeProvider } from "./theme";
@@ -140,14 +138,13 @@ export function mount(
   }: { source?: string; state?: Partial<WorkbenchViewState> } = {},
 ): Mounted {
   const host = fakeHost();
-  const store = createWorkbenchStore(state);
   const controller = new WorkbenchDocumentController(source);
-  const scheduler = createRenderScheduler({
-    render: (request) => host.render(request),
-    failed: (result) => result,
+  const editor = createWorkbenchEditor({
+    host,
     controller,
-    store,
+    state,
   });
+  const { store, scheduler } = editor;
   return {
     host,
     store,
@@ -167,7 +164,7 @@ export function mount(
       </WorkbenchThemeProvider>
     ),
     [Symbol.dispose]() {
-      scheduler[Symbol.dispose]();
+      editor[Symbol.dispose]();
     },
   };
 }
