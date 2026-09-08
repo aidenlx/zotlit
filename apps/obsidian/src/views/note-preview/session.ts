@@ -1,107 +1,77 @@
-// One editor's paper data and render queue; Stop lets the running render finish.
-import { useSyncExternalStore } from "react";
+// One editor's paper for the preview: the Item Snapshot a render is shown
+// against and the annotation examples the reader chooses between. Scheduling is
+// the shared Render Scheduler's; this session only feeds it what Obsidian alone
+// can read, and tells it when something outside the document changed.
 import { createStore } from "zustand/vanilla";
 
 import { parseIndexedKey } from "@zotlit/db";
-import type { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import type { AnnotationExample } from "@zotlit/workbench/render";
-import { failedRender, profileSourceRevision } from "@zotlit/workbench/render";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import { annotationSamples } from "@zotlit/workbench/ui";
-import type { WorkbenchStore } from "@zotlit/workbench/ui";
+import type { RenderScheduler, WorkbenchStore } from "@zotlit/workbench/ui";
 
 import { getLogger } from "@/lib/log";
 
-import { renderNativeProfile } from "./render";
 import type { NativeRenderDeps, NativeRenderResult } from "./render";
 
 const logger = getLogger(["note-preview", "session"]);
 
 export interface NativePreviewState {
-  result: NativeRenderResult | null;
   snapshot: ItemSnapshot | null;
   current: readonly AnnotationExample[];
   example: AnnotationExample | null;
-  busy: boolean;
 }
 const EMPTY_PREVIEW: NativePreviewState = {
-  result: null,
   snapshot: null,
   current: [],
   example: null,
-  busy: false,
 };
-const emptySubscribe = () => () => {};
-const emptyState = () => EMPTY_PREVIEW;
-export function useNativePreview(
-  session: NativePreviewSession | null,
-): NativePreviewState {
-  return useSyncExternalStore(
-    session?.state.subscribe ?? emptySubscribe,
-    session?.state.getState ?? emptyState,
-  );
-}
 export class NativePreviewSession implements Disposable {
   readonly state = createStore<NativePreviewState>(() => ({
     ...EMPTY_PREVIEW,
   }));
   readonly #deps: NativeRenderDeps;
   readonly #store: WorkbenchStore;
+  readonly #scheduler: RenderScheduler<NativeRenderResult>;
   readonly #cleanup: DisposableStack;
-  #controller: WorkbenchDocumentController;
-  #sourceSubscription: () => void;
-  #timer: ReturnType<typeof setTimeout> | undefined;
-  #generation = 0;
   #dataGeneration = 0;
   #loading: Promise<void>;
   #selection: string | null = null;
   #closed = false;
   constructor(
     deps: NativeRenderDeps,
-    controller: WorkbenchDocumentController,
+    scheduler: RenderScheduler<NativeRenderResult>,
     store: WorkbenchStore,
   ) {
     this.#deps = deps;
-    this.#controller = controller;
+    this.#scheduler = scheduler;
     this.#store = store;
     using cleanup = new DisposableStack();
-    this.#sourceSubscription = controller.subscribe(({ docChanged }) => {
-      if (docChanged) this.changed();
-    });
-    cleanup.defer(() => this.#sourceSubscription());
     cleanup.defer(
       store.subscribe((state, previous) => {
         if (state.item?.id !== previous.item?.id) this.refresh();
-        else if (state.preview.mode !== previous.preview.mode) this.changed();
-        else if (state.preview.live !== previous.preview.live) {
-          if (state.preview.live) this.changed();
-          else this.pause();
-        }
       }),
     );
     cleanup.defer(deps.db.on("changed", () => this.refresh()));
     cleanup.defer(
-      deps.templates.on("compile-status-changed", () => this.changed()),
+      deps.templates.on("compile-status-changed", () => scheduler.invalidate()),
     );
     cleanup.defer(
-      deps.bibliographyRender.on("invalidated", () => this.changed()),
+      deps.bibliographyRender.on("invalidated", () => scheduler.invalidate()),
     );
     const modify = deps.app.vault.on("modify", (file) => {
-      if (file.path === this.state.getState().result?.sourcePath)
-        this.changed();
+      if (file.path === scheduler.getState().result?.sourcePath)
+        scheduler.invalidate();
     });
     cleanup.defer(() => deps.app.vault.offref(modify));
+    cleanup.defer(this.#log());
     this.#cleanup = cleanup.move();
     this.#loading = this.#loadSnapshot();
   }
-  attach(controller: WorkbenchDocumentController): void {
-    this.#sourceSubscription();
-    this.#controller = controller;
-    this.#sourceSubscription = controller.subscribe(({ docChanged }) => {
-      if (docChanged) this.changed();
-    });
-    this.changed();
+  /** Resolves once the paper a render reads is loaded. */
+  get ready(): Promise<void> {
+    return this.#loading;
   }
   /** Data choice remains live even while template execution is on demand. */
   refresh(): void {
@@ -111,28 +81,42 @@ export class NativePreviewSession implements Disposable {
     this.#selection = id;
     const snapshot = this.state.getState().snapshot;
     if (snapshot) this.state.setState(annotationSamples(snapshot, id));
-    this.changed();
+    this.#feed();
   }
-  changed(): void {
-    this.#generation++;
-    logger.trace("Preview source changed", {
-      generation: this.#generation,
-      live: this.#store.getState().preview.live,
+  /**
+   * The scheduler decides on its own which render runs and which result the
+   * reader sees; this reads its state transitions back out as the log lines a
+   * diagnosis needs, so the shared package carries no logger of its own.
+   */
+  #log(): () => void {
+    let previous = this.#scheduler.getState();
+    return this.#scheduler.subscribe(() => {
+      const next = this.#scheduler.getState();
+      const before = previous;
+      previous = next;
+      if (next.busy === before.busy) return;
+      if (next.busy) {
+        logger.debug("Preview render started", {
+          revision: this.state.getState().snapshot?.revision,
+          live: this.#store.getState().preview.live,
+        });
+      } else if (next.result !== null && next.result !== before.result) {
+        logger.debug("Preview render published", {
+          revision: next.result.snapshotRevision,
+          diagnostics: next.result.diagnostics.length,
+        });
+      } else {
+        logger.debug("Discarded stale preview render", {
+          revision: this.state.getState().snapshot?.revision,
+          closed: this.#closed,
+        });
+      }
     });
-    this.state.setState({ busy: false });
-    this.pause();
-    if (this.#store.getState().preview.live)
-      this.#timer = setTimeout(() => {
-        void this.run();
-      }, 300);
   }
-  pause(): void {
-    if (this.#timer !== undefined)
-      logger.trace("Cancelled queued preview", {
-        generation: this.#generation,
-      });
-    clearTimeout(this.#timer);
-    this.#timer = undefined;
+  /** Hands the scheduler the paper and the example every render reads. */
+  #feed(): void {
+    const { snapshot, example } = this.state.getState();
+    this.#scheduler.setInput({ snapshot, annotation: example });
   }
   async #loadSnapshot(): Promise<void> {
     const generation = ++this.#dataGeneration;
@@ -140,9 +124,8 @@ export class NativePreviewSession implements Disposable {
       generation,
       item: this.#store.getState().item?.id,
     });
-    this.#generation++;
-    this.pause();
     this.state.setState({ ...EMPTY_PREVIEW });
+    this.#feed();
     const item = this.#store.getState().item;
     if (!item || this.#closed) return;
     try {
@@ -185,87 +168,22 @@ export class NativePreviewSession implements Disposable {
         snapshot,
         ...annotationSamples(snapshot, this.#selection),
       });
-      this.changed();
+      this.#feed();
     } catch (error) {
-      if (generation === this.#dataGeneration && !this.#closed)
-        this.#failed(error, item.id);
-    }
-  }
-  async run(): Promise<void> {
-    const item = this.#store.getState().item;
-    if (!item || this.#closed) return;
-    await this.#loading;
-    if (this.#closed || this.#store.getState().item?.id !== item.id) return;
-    const { snapshot, example } = this.state.getState();
-    if (!snapshot || !example) return;
-    this.pause();
-    const generation = ++this.#generation;
-    logger.debug("Preview render started", {
-      generation,
-      revision: snapshot.revision,
-    });
-    this.state.setState({ busy: true });
-    try {
-      const result = await renderNativeProfile(this.#deps, {
-        source: this.#controller.source,
-        snapshot,
-        mode: this.#store.getState().preview.mode,
-        annotation: example,
+      if (generation !== this.#dataGeneration || this.#closed) return;
+      logger.debug("Preview data failed", { error, item: item.id });
+      this.#scheduler.fail({
+        code: "render-error",
+        message: error instanceof Error ? error.message : String(error),
       });
-      if (generation === this.#generation && !this.#closed) {
-        logger.debug("Preview render published", {
-          generation,
-          diagnostics: result.diagnostics.length,
-        });
-        this.state.setState({ result });
-      } else
-        logger.debug("Discarded stale preview render", {
-          generation,
-          current: this.#generation,
-          closed: this.#closed,
-        });
-    } catch (error) {
-      if (generation === this.#generation && !this.#closed)
-        this.#failed(error, snapshot.revision);
-    } finally {
-      if (generation === this.#generation && !this.#closed)
-        this.state.setState({ busy: false });
     }
-  }
-  #failed(error: unknown, snapshotRevision: string): void {
-    logger.debug("Preview failed", {
-      error,
-      snapshotRevision,
-      generation: this.#generation,
-    });
-    this.state.setState({
-      result: {
-        ...failedRender(
-          {
-            sourceRevision: profileSourceRevision(this.#controller.source),
-            snapshotRevision,
-            previewMode: this.#store.getState().preview.mode,
-          },
-          {
-            code: "render-error",
-            message: error instanceof Error ? error.message : String(error),
-          },
-        ),
-        sourcePath: "",
-        citations: [],
-        annotationCitations: [],
-      },
-    });
   }
   [Symbol.dispose](): void {
     logger.debug("Preview session closed", {
-      generation: this.#generation,
       dataGeneration: this.#dataGeneration,
     });
     this.#closed = true;
-    this.#generation++;
     this.#dataGeneration++;
-    this.pause();
     this.#cleanup.dispose();
   }
 }

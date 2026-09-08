@@ -26,6 +26,7 @@ import {
 import type { EvaluatedFrontmatterField } from "@zotlit/templates/frontmatter-merge";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 
+import type { RenderOptions } from "./request";
 import { restoreTemplateData } from "./restore-template-data";
 import { failedRender, renderIdentity } from "./result";
 import type {
@@ -34,7 +35,6 @@ import type {
   RenderedProperty,
   RenderedRange,
 } from "./result";
-import type { RenderOptions } from "./scheduler";
 
 import book from "#/samples/book.json" with { type: "json" };
 import conferencePaper from "#/samples/conference-paper.json" with { type: "json" };
@@ -50,14 +50,7 @@ export type {
   RenderedRange,
   RenderIdentity,
 } from "./result";
-export { createRenderScheduler } from "./scheduler";
-export type {
-  RenderRequest,
-  RenderOptions,
-  RenderResources,
-  RenderScheduler,
-  RenderSchedulerOptions,
-} from "./scheduler";
+export type { RenderRequest, RenderOptions, RenderResources } from "./request";
 export { restoreTemplateData } from "./restore-template-data";
 export { SAMPLE_ANNOTATIONS } from "./sample-annotations";
 export type { AnnotationExample } from "./sample-annotations";

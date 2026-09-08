@@ -26,13 +26,7 @@ import type {
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
 import { snapshotMatchFacts } from "@zotlit/workbench/match";
-import {
-  DEFAULT_PROFILE_SOURCE,
-  SAMPLE_ITEMS,
-  createRenderScheduler,
-  profileSourceRevision,
-} from "@zotlit/workbench/render";
-import type { ProfileRenderResult } from "@zotlit/workbench/render";
+import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import { MatchPane } from "@zotlit/workbench/ui";
 import {
   EditToolbar,
@@ -47,7 +41,9 @@ import {
   WorkbenchEditorProvider,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
+  createRenderScheduler,
   createWorkbenchStore,
+  useRenderState,
   diagnosticText,
   problemText,
   AnnotationPane,
@@ -118,15 +114,24 @@ export function Workbench() {
   const fileInput = useRef<HTMLInputElement>(null);
   // Where the sheet was opened from, so closing it hands the keyboard back.
   const addField = useRef<HTMLButtonElement>(null);
-  const [result, setResult] = useState<ProfileRenderResult | null>(null);
-  const [renderBusy, setRenderBusy] = useState(false);
+  // The view state the shared tree reads and writes: the tab strip and the
+  // toolbar change it, and what a change does beyond the store is below.
+  const [store] = useState(createWorkbenchStore);
+  // The one Render Scheduler this editor instance renders through; the page
+  // hands it the paper, the annotation example, and the connected bundle.
   const [scheduler] = useState(() =>
     createRenderScheduler({
       render: renderInThread,
-      onResult: setResult,
-      onBusy: setRenderBusy,
+      failed: (failure) => failure,
+      controller,
+      store,
     }),
   );
+  const {
+    result,
+    busy: renderBusy,
+    stale: resultStale,
+  } = useRenderState(scheduler);
   const [revision, setRevision] = useState(0);
   const [sample, setSample] = useState<SampleItem>(DEFAULT_SAMPLE);
   const [annotationChoice, setAnnotationChoice] = useState<string | null>(null);
@@ -143,12 +148,8 @@ export function Workbench() {
     result.annotationRevision === selectedAnnotation.revision
       ? result
       : null;
-  // The view state the shared tree reads and writes: the tab strip and the
-  // toolbar change it, and what a change does beyond the store is below.
-  const [store] = useState(createWorkbenchStore);
   const tab = useStore(store, (state) => state.tab);
   const advanced = useStore(store, (state) => state.advanced);
-  const preview = useStore(store, (state) => state.preview);
   const { setTab, setAdvanced } = store.getState();
   // Which of the two the narrow screen is showing, and whether the field list
   // is open over it. Both are the narrow layout's alone: a wide screen shows
@@ -262,6 +263,7 @@ export function Workbench() {
     [controller],
   );
   useEffect(() => setFileMessage(null), [revision]);
+  useEffect(() => scheduler.attach(controller), [scheduler, controller]);
   useEffect(() => () => scheduler[Symbol.dispose](), [scheduler]);
   useEffect(() => {
     void ensureTemporal().then(() => setTemporal(true));
@@ -292,48 +294,27 @@ export function Workbench() {
   // emptying the sheet and reporting the same parse error twice.
   const renderable = !refused && controller.document !== null;
 
-  useEffect(() => {
-    // A Profile the web host refuses is never compiled, so nothing renders it,
-    // and a bundle read for another draft would render this one against the
-    // wrong partials — the last good result stands until its own bundle lands.
-    if (!renderable || resourcesStale) {
-      scheduler[Symbol.dispose]();
-      return;
-    }
-    if (!preview.live) {
-      scheduler.pause();
-      return;
-    }
-    scheduler.request({
-      mode: preview.mode,
-      source: controller.source,
-      snapshot: sample,
-      annotation: selectedAnnotation,
-      ...(resources ? { resources } : {}),
-    });
-  }, [
-    scheduler,
-    controller,
-    sample,
-    selectedAnnotation,
-    revision,
-    renderable,
-    resources,
-    resourcesStale,
-    preview.live,
-    preview.mode,
-  ]);
-
-  function runPreview() {
-    if (!renderable || resourcesStale) return;
-    scheduler.run({
-      mode: preview.mode,
-      source: controller.source,
-      snapshot: sample,
-      annotation: selectedAnnotation,
-      ...(resources ? { resources } : {}),
-    });
-  }
+  useEffect(
+    () =>
+      // A Profile the web host refuses is never compiled, so nothing renders
+      // it, and a bundle read for another draft would render this one against
+      // the wrong partials — the last good result stands until its own bundle
+      // lands.
+      scheduler.setInput({
+        snapshot: sample,
+        annotation: selectedAnnotation,
+        hold: !renderable || resourcesStale,
+        ...(resources ? { resources } : {}),
+      }),
+    [
+      scheduler,
+      sample,
+      selectedAnnotation,
+      renderable,
+      resources,
+      resourcesStale,
+    ],
+  );
 
   // The last manifest the document parsed with. The header and the Name and
   // folder form read it, so repairing an invalid draft blanks neither.
@@ -610,7 +591,6 @@ export function Workbench() {
   /** Opens `source` as the document being edited, with a history of its own. */
   function loadDocument(source: string) {
     setController(new WorkbenchDocumentController(source));
-    setResult(null);
     setFileMessage(null);
     setShownManifest(null);
     setAdvanced(false);
@@ -1131,7 +1111,7 @@ export function Workbench() {
           <PreviewControls
             busy={renderBusy}
             disabled={!renderable || resourcesStale}
-            onRun={runPreview}
+            onRun={() => scheduler.run()}
             onStop={() => scheduler.pause()}
           />
           <ResultColumn
@@ -1144,15 +1124,7 @@ export function Workbench() {
                   ? "properties"
                   : "note"
             }
-            stale={
-              !renderable ||
-              resourcesStale ||
-              (result !== null &&
-                (result.sourceRevision !==
-                  profileSourceRevision(controller.source) ||
-                  result.snapshotRevision !== sample.revision ||
-                  result.previewMode !== preview.mode))
-            }
+            stale={resultStale}
             showMarkdown={showMarkdown}
             onShowMarkdown={setShowMarkdown}
             showManaged={showManaged}
@@ -1193,7 +1165,11 @@ export function Workbench() {
   return (
     <WorkbenchThemeProvider theme={WEB_THEME}>
       <WorkbenchHostProvider host={host}>
-        <WorkbenchEditorProvider store={store} controller={controller}>
+        <WorkbenchEditorProvider
+          store={store}
+          controller={controller}
+          scheduler={scheduler}
+        >
           {page}
         </WorkbenchEditorProvider>
       </WorkbenchHostProvider>

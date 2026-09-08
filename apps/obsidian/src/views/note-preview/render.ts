@@ -62,6 +62,11 @@ export interface NativeRenderResult extends ProfileRenderResult {
   readonly annotationCitations: readonly PreviewCitation[];
 }
 
+/** A result composed outside this renderer, in the shape the preview reads. */
+export function nativeResult(result: ProfileRenderResult): NativeRenderResult {
+  return { sourcePath: "", citations: [], annotationCitations: [], ...result };
+}
+
 /** Keep the real note's outside body and unrelated Properties, entirely in memory. */
 export function previewBaseline(
   source: string | null,
