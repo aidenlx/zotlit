@@ -55,6 +55,7 @@ import { openTemplateDataExplorer } from "@/views/template-data-explorer/registe
 const logger = getLogger("protocol");
 
 export interface ProtocolDeps extends SingleUpdateDeps {
+  webWorkbenchEnabled: boolean;
   createProfile: CompanionNoteDeps["createProfile"];
   importProfile: CompanionNoteDeps["importProfile"];
   batchImport: Pick<BatchImport, "runBatchImport" | "runBatchImportAll">;
@@ -105,12 +106,13 @@ export function registerProtocolHandlers(
     },
   );
 
-  plugin.registerObsidianProtocolHandler(
-    importProfileProtocolActionId,
-    (data) => {
-      void handleProfileImportProtocol(data, deps);
-    },
-  );
+  if (deps.webWorkbenchEnabled)
+    plugin.registerObsidianProtocolHandler(
+      importProfileProtocolActionId,
+      (data) => {
+        void handleProfileImportProtocol(data, deps);
+      },
+    );
 
   // A batch update pushed over HTTP (companion couldn't fit the ids in a URL)
   // runs the same interactive flow as the `update-many` protocol link.

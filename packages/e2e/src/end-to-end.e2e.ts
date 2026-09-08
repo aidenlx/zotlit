@@ -84,6 +84,7 @@ async function availableLoopbackPort(): Promise<number> {
 }
 
 const reachable = await isObsidianReachable();
+const webWorkbenchEnabled = process.env.WEB_WORKBENCH_ENABLED === "true";
 
 async function openProfilesSettings(vaultId: string, pageName: string) {
   await obEval(
@@ -186,6 +187,21 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obEval(
       vaultId,
       `(function(){var editor=document.querySelector('.zt-profile-editor');if(!editor.querySelector('[data-condition-row]'))Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
+    );
+  }
+
+  async function mainSettings() {
+    await obEval(
+      vaultId,
+      "app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();app.setting.openTabById('zotlit');true",
+    );
+  }
+
+  function clickTemplateCustomize() {
+    return obEvalUntil(
+      vaultId,
+      `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_document_name())});var button=row&&Array.from(row.querySelectorAll('button')).find(el=>el.textContent===${JSON.stringify(m.settings_template_customize())});if(!button||button.disabled)return false;button.click();return true;})()`,
+      { expected: "true" },
     );
   }
 
@@ -1057,7 +1073,68 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     await obEval(vaultId, "app.setting.close();true");
   });
 
-  describe("Local Bridge", () => {
+  it.skipIf(webWorkbenchEnabled)(
+    "keeps desktop editing and Live Update available while web integration is off",
+    async () => {
+      await obEval(
+        vaultId,
+        "app.saveLocalStorage('zotlit-workbench-launch-approved','1');app.saveLocalStorage('zotlit-profile-customization','web');app.plugins.plugins.zotlit.services.settings.update({'server.enabled':true,'server.live-update':true,'server.workbench':true});true",
+      );
+      expect(
+        await obEvalUntil(
+          vaultId,
+          "String(app.plugins.plugins.zotlit.services.localServer.effectivePort!==null)",
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      const server = JSON.parse(
+        await obEval(
+          vaultId,
+          "(function(){var services=app.plugins.plugins.zotlit.services;var settings=services.settings.current;return JSON.stringify({port:services.localServer.effectivePort,sourceId:services.zoteroPref.sourceId,workbench:settings['server.workbench']});})()",
+        ),
+      ) as { port: number; sourceId: string; workbench: boolean };
+      expect(server.workbench).toBe(true);
+      const headers = {
+        [PROTOCOL_VERSION_HEADER]: String(PROTOCOL_VERSION),
+        [SOURCE_ID_HEADER]: server.sourceId,
+      };
+      const [bridge, liveUpdate] = await Promise.all([
+        fetch(`http://127.0.0.1:${server.port}/v1/profile/selected`, {
+          headers: { ...headers, Origin: "https://zotlit.aidenlx.site" },
+        }),
+        fetch(`http://127.0.0.1:${server.port}/literature-notes`, { headers }),
+      ]);
+      expect(bridge.status).toBe(403);
+      expect(await bridge.json()).toMatchObject({
+        error: { code: "bridge-disabled" },
+      });
+      expect(liveUpdate.status).toBe(200);
+
+      await openProfilesSettings(vaultId, m.settings_page_advanced());
+      expect(
+        await obEval(
+          vaultId,
+          `(function(){var names=Array.from(document.querySelectorAll('.setting-item-name'),el=>el.textContent);return String(names.includes(${JSON.stringify(m.settings_local_server_enabled_name())})&&names.includes(${JSON.stringify(m.settings_live_updates_enabled_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_confirm_name())})&&!names.includes(${JSON.stringify(m.profile_editor_preference_name())})&&!app.commands.commands['zotlit:open-profile-web-workbench']);})()`,
+        ),
+      ).toBe("true");
+
+      await mainSettings();
+      expect(await clickTemplateCustomize()).toBe(true);
+      expect(
+        await obEvalUntil(
+          vaultId,
+          "String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-profile-editor'&&!document.querySelector('input[name=\"zotlit-customize-destination\"]'))",
+          { expected: "true" },
+        ),
+      ).toBe(true);
+      await obEval(
+        vaultId,
+        "app.saveLocalStorage('zotlit-workbench-launch-approved',null);app.saveLocalStorage('zotlit-profile-customization','ask');app.plugins.plugins.zotlit.services.settings.update({'server.workbench':false});true",
+      );
+    },
+  );
+
+  describe.skipIf(!webWorkbenchEnabled)("Local Bridge", () => {
     let port = 0;
     let origin = "";
     let credential = "";
@@ -1076,21 +1153,6 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: AbortSignal.timeout(10000),
       });
-    }
-
-    async function mainSettings() {
-      await obEval(
-        vaultId,
-        "app.vault.setConfig('settingsPopoutWindow',false);app.setting.open();app.setting.openTabById('zotlit');true",
-      );
-    }
-
-    function clickTemplateCustomize() {
-      return obEvalUntil(
-        vaultId,
-        `(function(){var row=Array.from(document.querySelectorAll('.setting-item')).find(el=>el.querySelector('.setting-item-name')?.textContent===${JSON.stringify(m.settings_profile_document_name())});var button=row&&Array.from(row.querySelectorAll('button')).find(el=>el.textContent===${JSON.stringify(m.settings_template_customize())});if(!button||button.disabled)return false;button.click();return true;})()`,
-        { expected: "true" },
-      );
     }
 
     afterAll(async () => {

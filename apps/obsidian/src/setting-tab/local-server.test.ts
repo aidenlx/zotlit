@@ -16,6 +16,7 @@ import type { SettingsKey, SettingTabContext } from "./context";
 import { localServerItems } from "./local-server";
 
 interface Options {
+  webWorkbenchEnabled?: boolean;
   effectivePort?: number | null;
   settings?: Partial<Settings>;
   connection?: WorkbenchConnection | null;
@@ -23,6 +24,7 @@ interface Options {
 }
 
 function setup({
+  webWorkbenchEnabled = true,
   effectivePort = null,
   settings = {},
   connection = null,
@@ -30,6 +32,7 @@ function setup({
 }: Options = {}) {
   const current: Settings = { ...defaults, ...settings };
   const ctx = {
+    webWorkbenchEnabled,
     settings: { current },
     localServer: { effectivePort, on: () => () => {} },
     localBridge: { connection, disconnect, on: () => () => {} },
@@ -79,6 +82,31 @@ it("offers one toggle per hosted service beside the listener's own", () => {
   expect(defaults["server.enabled"]).toBe(false);
   expect(defaults["server.live-update"]).toBe(true);
   expect(defaults["server.workbench"]).toBe(true);
+});
+
+it("keeps Local Server and Live Update controls while hiding bridge controls", () => {
+  const items = setup({
+    webWorkbenchEnabled: false,
+    settings: { "server.enabled": true, "server.workbench": true },
+    connection: CONNECTION,
+  });
+
+  expect(row(items, m.settings_local_server_enabled_name())).toHaveProperty(
+    "control.key",
+    "server.enabled",
+  );
+  expect(row(items, m.settings_live_updates_enabled_name())).toHaveProperty(
+    "control.key",
+    "server.live-update",
+  );
+  expect(
+    items.some(
+      (item) =>
+        "name" in item &&
+        (item.name === m.settings_local_server_workbench_name() ||
+          item.name === m.settings_local_server_workbench_connection_name()),
+    ),
+  ).toBe(false);
 });
 
 it("hides everything but the listener toggle while the server is off", () => {

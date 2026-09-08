@@ -1,5 +1,7 @@
 # The web Workbench is public and standalone, with optional local data access
 
+> Current release scope is amended by [ADR 0046](0046-customize-is-a-chooser-between-the-web-workbench-and-the-profile-editor.md#current-release-amendment--2026-09-08): `/workbench` remains reachable by direct URL, with public links and its sitemap entry removed and `noindex` set. Obsidian integration is behind a build flag that defaults to off.
+
 The web Workbench is served publicly at `/workbench` in `apps/docs` and renders
 Liquid templates and JSON-e Properties in the browser so authoring works without
 Obsidian. A temporary connection approved in Obsidian supplies selected Item

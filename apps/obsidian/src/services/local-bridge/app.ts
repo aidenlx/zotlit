@@ -37,6 +37,8 @@ export type ConnectionGrantDescription = Omit<ConnectionGrant, "credential">;
 const BRIDGE_PATH_PREFIX = "/v1";
 
 export interface LocalBridgeAppDeps {
+  /** `false` when this build excludes web Workbench integration. */
+  available(): boolean;
   /** `false` while the web Template Workbench toggle is off — every path refuses. */
   enabled(): boolean;
   /** The peer's address, or `undefined` when the runtime cannot name it. */
@@ -98,6 +100,13 @@ export function createLocalBridgeApp(
       "Authorization, Content-Type",
     );
     context.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    if (!deps.available()) {
+      return refuse(context, {
+        status: 403,
+        code: "bridge-disabled",
+        message: "The web Template Workbench is turned off in this vault.",
+      });
+    }
     if (context.req.method === "OPTIONS") return context.body(null, 204);
 
     if (

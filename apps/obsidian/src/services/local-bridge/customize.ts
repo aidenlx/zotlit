@@ -79,6 +79,7 @@ export type ConfirmLaunch = (
 ) => Promise<LaunchConsent | null>;
 
 export interface CustomizeDeps {
+  webWorkbenchEnabled: boolean;
   app: App;
   settings: Pick<SettingsService, "current" | "update">;
   profile: Pick<
@@ -104,6 +105,10 @@ export function createCustomize(deps: CustomizeDeps): CustomizeAction {
     const item =
       request.item === undefined ? activeNoteItem(deps.app) : request.item;
     const nativeRequest = { ...request, item };
+    if (!deps.webWorkbenchEnabled) {
+      await deps.openNative(nativeRequest);
+      return;
+    }
     const preference = profileCustomization(deps.app);
     const source = await deps.profile.getSource(request.profileId);
     const reason = unsupportedProfileSourceReason(

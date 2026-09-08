@@ -1,7 +1,7 @@
 import { getLanguage, Plugin, requestUrl } from "obsidian";
 import semverGte from "semver/functions/gte";
 
-import { DOCS_SITE_URL } from "@/lib/constants";
+import { DOCS_SITE_URL, WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 
@@ -218,6 +218,7 @@ export default class ZotLitPlugin extends Plugin {
 
     // One Customize flow shared by every entry action.
     const customize = createCustomize({
+      webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       app: this.app,
       settings: services.settings,
       profile: services.profile,
@@ -245,6 +246,7 @@ export default class ZotLitPlugin extends Plugin {
 
     this.addSettingTab(
       new ZotLitSettingTab({
+        webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
         importProfile: services.importProfile,
         profile: services.profile,
         plugin: this,
@@ -323,6 +325,7 @@ export default class ZotLitPlugin extends Plugin {
 
     void stack.use(
       registerProtocolHandlers(this, {
+        webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
         createProfile: services.createProfile,
         importProfile: services.importProfile,
         profile: services.profile,
@@ -351,6 +354,7 @@ export default class ZotLitPlugin extends Plugin {
     });
 
     registerProfileEditor(this, {
+      webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
       app: this.app,
       db: services.db,

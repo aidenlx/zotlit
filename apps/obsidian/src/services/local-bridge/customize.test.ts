@@ -60,6 +60,7 @@ interface Harness {
 }
 
 interface Options {
+  webWorkbenchEnabled?: boolean;
   settings?: Partial<Settings>;
   source?: string;
   /** What the sheet answers; `null` is Cancel. */
@@ -73,6 +74,7 @@ interface Options {
 }
 
 function harness({
+  webWorkbenchEnabled = true,
   settings: overrides = {},
   source = LIQUID_PROFILE,
   consent = { destination: "web", remember: false },
@@ -124,6 +126,7 @@ function harness({
   } as unknown as App;
 
   const deps: CustomizeDeps = {
+    webWorkbenchEnabled,
     app,
     settings: {
       get current() {
@@ -187,6 +190,22 @@ describe("the Customize flow", () => {
 
   beforeEach(() => {
     h = harness({ settings: { "server.enabled": true } });
+  });
+
+  it("opens locally when the build gate is off despite persisted web access", async () => {
+    const local = harness({
+      webWorkbenchEnabled: false,
+      settings: { "server.enabled": true, "server.workbench": true },
+    });
+    saveProfileCustomization(deviceOf(local), "web");
+    local.device.set("zotlit-workbench-launch-approved", "1");
+
+    await local.customize({ profileId: "default", destination: "web" });
+
+    expect(local.openedFiles).toEqual(["templates/zotlit-profile.default.md"]);
+    expect(local.sheets).toEqual([]);
+    expect(local.launches).toEqual([]);
+    expect(local.update).not.toHaveBeenCalled();
   });
 
   it("shows the sheet on the first launch of this device, then opens the browser", async () => {

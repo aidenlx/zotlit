@@ -33,13 +33,20 @@ export function localServerItems(
       visible: enabled,
       control: { type: "toggle", key: "server.live-update" },
     },
-    {
-      name: m.settings_local_server_workbench_name(),
-      desc: m.settings_local_server_workbench_desc(),
-      visible: enabled,
-      control: { type: "toggle", key: "server.workbench" },
-    },
-    ...workbenchConnectionRows(ctx, enabled),
+    ...(ctx.webWorkbenchEnabled
+      ? [
+          {
+            name: m.settings_local_server_workbench_name(),
+            desc: m.settings_local_server_workbench_desc(),
+            visible: enabled,
+            control: {
+              type: "toggle" as const,
+              key: "server.workbench" as const,
+            },
+          },
+          ...workbenchConnectionRows(ctx, enabled),
+        ]
+      : []),
     {
       name: m.settings_live_updates_port_name(),
       desc: m.settings_live_updates_port_desc({

@@ -15,6 +15,7 @@ import { PROFILE_EDITOR_VIEW_TYPE, ProfileEditorView } from "./view";
 import type { ProfileEditorDeps } from "./view";
 
 type RegistrationDeps = ProfileEditorDeps & {
+  webWorkbenchEnabled: boolean;
   customize: CustomizeAction;
   profile: Pick<
     ProfileService,
@@ -92,19 +93,20 @@ export function registerProfileEditor(
       return true;
     },
   });
-  plugin.addCommand({
-    id: "open-profile-web-workbench",
-    name: m.profile_editor_web_open(),
-    checkCallback(checking) {
-      const target = targetOf(plugin.app.workspace.getActiveFile());
-      if (!target) return false;
-      if (!checking)
-        void runProfileEditorAction("open-web", () =>
-          customizeTarget(target, { destination: "web" }),
-        );
-      return true;
-    },
-  });
+  if (deps.webWorkbenchEnabled)
+    plugin.addCommand({
+      id: "open-profile-web-workbench",
+      name: m.profile_editor_web_open(),
+      checkCallback(checking) {
+        const target = targetOf(plugin.app.workspace.getActiveFile());
+        if (!target) return false;
+        if (!checking)
+          void runProfileEditorAction("open-web", () =>
+            customizeTarget(target, { destination: "web" }),
+          );
+        return true;
+      },
+    });
   plugin.addCommand({
     id: "open-profile-editor",
     name: m.profile_editor_open(),
@@ -140,18 +142,22 @@ export function registerProfileEditor(
                 ),
             ),
         );
-      menu.addItem((item) =>
-        item
-          .setSection("zotlit")
-          .setTitle(m.profile_editor_web_open())
-          .setIcon("external-link")
-          .onClick(
-            () =>
-              void runProfileEditorAction("open-web", () =>
-                customizeTarget(target, { ...options, destination: "web" }),
-              ),
-          ),
-      );
+      if (deps.webWorkbenchEnabled)
+        menu.addItem((item) =>
+          item
+            .setSection("zotlit")
+            .setTitle(m.profile_editor_web_open())
+            .setIcon("external-link")
+            .onClick(
+              () =>
+                void runProfileEditorAction("open-web", () =>
+                  customizeTarget(target, {
+                    ...options,
+                    destination: "web",
+                  }),
+                ),
+            ),
+        );
       menu.addItem((item) =>
         item
           .setSection("zotlit")

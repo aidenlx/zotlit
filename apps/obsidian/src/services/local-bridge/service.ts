@@ -68,6 +68,7 @@ export interface LocalBridgeEvents {
 }
 
 export interface LocalBridgeServiceDeps {
+  webWorkbenchEnabled: boolean;
   app: App;
   settings: SettingsService;
   profile: BridgeProfileWriter;
@@ -95,6 +96,7 @@ export interface LocalBridgeServiceDeps {
  */
 export class LocalBridgeService extends Service<void> {
   readonly #app;
+  readonly #webWorkbenchEnabled;
   readonly #settings;
   readonly #profile;
   readonly #localServer;
@@ -114,6 +116,7 @@ export class LocalBridgeService extends Service<void> {
   constructor(deps: LocalBridgeServiceDeps) {
     super();
     this.#app = deps.app;
+    this.#webWorkbenchEnabled = deps.webWorkbenchEnabled;
     this.#settings = deps.settings;
     this.#profile = deps.profile;
     this.#localServer = deps.localServer;
@@ -182,12 +185,13 @@ export class LocalBridgeService extends Service<void> {
     const settings = await this.#settings.loaded;
     await using stack = new AsyncDisposableStack();
 
-    this.#enabled = settings["server.workbench"];
+    this.#enabled = this.#webWorkbenchEnabled && settings["server.workbench"];
     this.#installationId = loadInstallationId(this.#app);
 
     this.#localServer.mount(
       "/",
       createLocalBridgeApp({
+        available: () => this.#webWorkbenchEnabled,
         enabled: () => this.#enabled,
         peerAddress: nodePeerAddress,
         allowedOrigins: ALLOWED_DOCS_ORIGINS,
@@ -214,7 +218,7 @@ export class LocalBridgeService extends Service<void> {
   }
 
   #onSettingsChanged(settings: Readonly<Settings>): void {
-    const enabled = settings["server.workbench"];
+    const enabled = this.#webWorkbenchEnabled && settings["server.workbench"];
     if (enabled === this.#enabled) return;
     this.#enabled = enabled;
     // Turning the Workbench off refuses every path, so the connection it left
