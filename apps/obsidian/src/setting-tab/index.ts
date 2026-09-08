@@ -46,6 +46,7 @@ import { AUTO_TRIM_KEYS, decodeAutoTrim, encodeAutoTrim } from "./templates";
 import { zoteroPageItems } from "./zotero";
 
 export interface ZotLitSettingTabOptions {
+  webWorkbenchEnabled: boolean;
   importProfile: SettingTabContext["importProfile"];
   plugin: ZotLitPlugin;
   settings: SettingsService;
@@ -65,6 +66,7 @@ export interface ZotLitSettingTabOptions {
 }
 
 export class ZotLitSettingTab extends PluginSettingTab {
+  readonly #webWorkbenchEnabled: boolean;
   readonly #importProfile: SettingTabContext["importProfile"];
   readonly #plugin: ZotLitPlugin;
   readonly #settings: SettingsService;
@@ -83,6 +85,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
   readonly #languagePack: LanguagePackLifecycle;
 
   constructor({
+    webWorkbenchEnabled,
     importProfile,
     plugin,
     settings,
@@ -101,6 +104,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
     languagePack,
   }: ZotLitSettingTabOptions) {
     super(plugin.app, plugin);
+    this.#webWorkbenchEnabled = webWorkbenchEnabled;
     this.#plugin = plugin;
     this.#importProfile = importProfile;
     this.#settings = settings;
@@ -211,6 +215,7 @@ export class ZotLitSettingTab extends PluginSettingTab {
 
   override getSettingDefinitions(): SettingDefinitionItem[] {
     const ctx: SettingTabContext = {
+      webWorkbenchEnabled: this.#webWorkbenchEnabled,
       app: this.#plugin.app,
       importProfile: this.#importProfile,
       manifest: this.#plugin.manifest,

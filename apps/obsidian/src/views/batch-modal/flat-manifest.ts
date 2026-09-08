@@ -75,7 +75,7 @@ export class FlatManifest implements BatchManifest {
     this.#rowIcons.clear();
     if (this.#options.profileChoices?.length) {
       const choices = parent.createDiv({
-        cls: "zt:mb-4 zt:flex zt:flex-col zt:gap-2",
+        cls: "zt:mb-6 zt:flex zt:flex-col zt:gap-4",
       });
       for (const choice of this.#options.profileChoices)
         profileChoiceControl(choices, choice, controls);

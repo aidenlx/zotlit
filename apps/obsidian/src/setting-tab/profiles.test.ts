@@ -1,5 +1,10 @@
 // @vitest-environment happy-dom
-import { ButtonComponent, ExtraButtonComponent, Setting } from "@mock/obsidian";
+import {
+  ButtonComponent,
+  ExtraButtonComponent,
+  Menu,
+  Setting,
+} from "@mock/obsidian";
 import type {
   ExtraButtonComponent as ObsidianExtraButton,
   Setting as ObsidianSetting,
@@ -92,15 +97,6 @@ function extraButtonTooltips(row: SettingDefinitionItem): string[] {
     .map((button) => button.tooltip);
 }
 
-/** The Customize icon on a Profile row, absent while the Workbench is off. */
-function customizeIcon(
-  row: SettingDefinitionItem,
-): ExtraButtonComponent | undefined {
-  return render(row)
-    .components.filter((control) => control instanceof ExtraButtonComponent)
-    .find(({ tooltip }) => tooltip === m.settings_template_customize());
-}
-
 /** The Profiles page with one Profile beside Default. */
 function pageWithOneProfile(ctx: SettingTabContext): {
   defaultRow: SettingDefinitionItem;
@@ -137,6 +133,38 @@ function customizeButton(row: SettingDefinitionItem): ButtonComponent {
 }
 
 describe("Profile settings", () => {
+  it("keeps Edit primary and offers Customize in each Profile's more menu", () => {
+    const ctx = context();
+    ctx.profile = {
+      diagnostics: [],
+      loaded: true,
+      defaultDocumentPath: "templates/zotlit-profile.default.md",
+      profiles: [
+        {
+          id: "Bk3Qn7XvT2Lp",
+          label: "Books",
+          document: "zotlit-profile.books.md",
+          path: "templates/zotlit-profile.books.md",
+          match: { state: "absent" },
+          bindings: {},
+        },
+      ],
+    } as unknown as SettingTabContext["profile"];
+    const row = list(profilesPage(ctx), m.settings_profile_other_heading())
+      .items![0]!;
+    expect(buttonLabels(row)[0]).toBe(m.profile_editor_edit());
+    const more = render(row)
+      .components.filter(
+        (component) => component instanceof ExtraButtonComponent,
+      )
+      .find((button) => button.icon === "more-horizontal")!;
+    Object.assign(more, { extraSettingsEl: document.createElement("button") });
+    more.click();
+    expect(Menu.instances.at(-1)?.items.map((item) => item.title)).toEqual([
+      m.profile_editor_customize(),
+      m.profile_editor_open_markdown(),
+    ]);
+  });
   it("points Properties at the template document instead of a field list", () => {
     const ctx = context();
     const builtIn = literatureNoteItems(ctx).find(
@@ -146,8 +174,8 @@ describe("Profile settings", () => {
     expect(builtIn).toMatchObject({
       desc: m.settings_profile_properties_builtin_desc(),
     });
-    // No document yet, so the action creates one — the template eject pair.
-    expect(buttonLabels(builtIn)).toEqual([m.settings_template_eject()]);
+    // Customize opens an in-memory draft before the first edit.
+    expect(buttonLabels(builtIn)).toEqual([m.profile_editor_customize()]);
     expect(buttonIcons(builtIn)).toEqual(["file-pen"]);
 
     ctx.app = {
@@ -161,16 +189,13 @@ describe("Profile settings", () => {
       desc: m.settings_profile_properties_desc(),
     });
     // The document exists, so the same action edits it instead.
-    expect(buttonLabels(ejected)).toEqual([m.settings_template_open()]);
+    expect(buttonLabels(ejected)).toEqual([m.profile_editor_customize()]);
     expect(buttonIcons(ejected)).toEqual(["pencil"]);
   });
 
-  it("makes Customize the Template document row's primary action", async () => {
+  it("offers one Customize action for the built-in and saved template", async () => {
     const ctx = context();
-    // Nothing ejected yet: the eject stays as the way into the vault, with
-    // Customize the primary action beside it.
     expect(buttonLabels(documentRow(ctx))).toEqual([
-      m.settings_template_eject(),
       m.settings_template_customize(),
     ]);
 
@@ -178,7 +203,6 @@ describe("Profile settings", () => {
       vault: { getFileByPath: (path: string) => ({ path }) as TFile },
     } as unknown as SettingTabContext["app"];
     expect(buttonLabels(documentRow(ctx))).toEqual([
-      m.settings_template_open(),
       m.settings_profile_document_restore(),
       m.settings_template_customize(),
     ]);
@@ -188,7 +212,7 @@ describe("Profile settings", () => {
     expect(ctx.customize).toHaveBeenCalledWith({ profileId: "default" });
   });
 
-  it("reverts to the eject while the web Template Workbench is off", () => {
+  it("keeps native customization while the web Template Workbench is off", () => {
     const ctx = context();
     ctx.settings = {
       current: { ...defaults, "server.workbench": false },
@@ -196,40 +220,43 @@ describe("Profile settings", () => {
     } as unknown as SettingTabContext["settings"];
 
     expect(buttonLabels(documentRow(ctx))).toEqual([
-      m.settings_template_eject(),
+      m.profile_editor_customize(),
     ]);
 
     ctx.app = {
       vault: { getFileByPath: (path: string) => ({ path }) as TFile },
     } as unknown as SettingTabContext["app"];
     expect(buttonLabels(documentRow(ctx))).toEqual([
-      m.settings_template_open(),
       m.settings_profile_document_restore(),
+      m.settings_template_customize(),
     ]);
   });
 
-  it("offers Customize on Default and on every other Profile row", async () => {
+  it("keeps native Default customization and offers connected Profile customization", async () => {
     const ctx = context();
     const { defaultRow, profileRow } = pageWithOneProfile(ctx);
 
     expect(extraButtonTooltips(defaultRow)).toEqual([
-      m.settings_template_customize(),
       m.settings_profile_share(),
     ]);
     expect(extraButtonTooltips(profileRow)).toEqual([
-      m.settings_template_customize(),
-      m.settings_template_open(),
+      m.workbench_more_actions(),
       m.settings_profile_duplicate(),
       m.settings_profile_share(),
     ]);
 
-    customizeIcon(defaultRow)!.click();
-    await vi.waitFor(() =>
-      expect(ctx.customize).toHaveBeenCalledWith({ profileId: "default" }),
-    );
+    expect(buttonLabels(defaultRow)).toContain(m.profile_editor_customize());
 
     // The row's own Profile is what its Customize opens, not the default.
-    customizeIcon(profileRow)!.click();
+    const more = render(profileRow)
+      .components.filter((control) => control instanceof ExtraButtonComponent)
+      .find(({ tooltip }) => tooltip === m.workbench_more_actions())!;
+    Object.assign(more, { extraSettingsEl: document.createElement("button") });
+    more.click();
+    Menu.instances
+      .at(-1)!
+      .items.find(({ title }) => title === m.profile_editor_customize())!
+      .click();
     await vi.waitFor(() =>
       expect(ctx.customize).toHaveBeenCalledWith({
         profileId: "Bk3Qn7XvT2Lp",
@@ -237,7 +264,7 @@ describe("Profile settings", () => {
     );
   });
 
-  it("drops Customize from every Profile row while the Workbench is off", () => {
+  it("keeps More actions available while web access is off", () => {
     const ctx = context();
     ctx.settings = {
       current: { ...defaults, "server.workbench": false },
@@ -249,7 +276,7 @@ describe("Profile settings", () => {
       m.settings_profile_share(),
     ]);
     expect(extraButtonTooltips(profileRow)).toEqual([
-      m.settings_template_open(),
+      m.workbench_more_actions(),
       m.settings_profile_duplicate(),
       m.settings_profile_share(),
     ]);

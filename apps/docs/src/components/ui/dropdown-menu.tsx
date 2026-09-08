@@ -11,12 +11,13 @@ export const DropdownMenuGroup = MenuPrimitive.Group;
 export function DropdownMenuContent({
   align = "start",
   sideOffset = 6,
+  anchor,
   className,
   size = "default",
   ...props
 }: MenuPrimitive.Popup.Props & { size?: "default" | "xs" } & Pick<
     MenuPrimitive.Positioner.Props,
-    "align" | "sideOffset"
+    "align" | "sideOffset" | "anchor"
   >) {
   return (
     <MenuPrimitive.Portal>
@@ -24,6 +25,7 @@ export function DropdownMenuContent({
         className="z-50"
         align={align}
         sideOffset={sideOffset}
+        anchor={anchor}
       >
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"

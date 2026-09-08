@@ -17,28 +17,23 @@ import {
 import type { Item, Library, NoteTemplateContext } from "@zotlit/db";
 import {
   annotationKeyAtPath,
-  buildDisplayTree,
-  buildFilteredDisplayTree,
   findAnnotationRoot,
-  initialTreeState,
-  setAnchor,
-  setFilter,
-  toggleNode,
 } from "@zotlit/workbench/explorer";
-import type { TreeState } from "@zotlit/workbench/explorer";
+import { failedRender, renderIdentity } from "@zotlit/workbench/render";
+import {
+  WorkbenchHostProvider,
+  WorkbenchThemeProvider,
+} from "@zotlit/workbench/ui";
 
-import { exportTimestamp, saveFile } from "@/lib/file-save";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
 import type { DatabaseService } from "@/services/database/service";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { SettingsService } from "@/services/settings/service";
-import { loadTemplateData } from "@/services/template-workbench/data";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import {
   buildObsidianInertNoteResolvers,
@@ -46,12 +41,18 @@ import {
   resolveObsidianExcerptImageContext,
 } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
+import { subscribeActiveProfileEditor } from "@/views/note-preview/register";
+import { createProfileEditorHost } from "@/views/profile-editor/host";
+import { profileEditorTheme } from "@/views/profile-editor/theme";
+import type { ProfileEditorView } from "@/views/profile-editor/view";
 
 import { createExplorerActions, ExplorerActionsContext } from "./actions";
 import type { ExplorerActions } from "./actions";
 import { Explorer } from "./Explorer";
-import { buildTemplateDataExport } from "./export";
+import { exportTemplateDataFile } from "./export-file";
+import { rememberTemplateItem } from "./item-memory";
 import { pickItem } from "./item-picker";
+import { ProfileExplorer } from "./profile-explorer";
 import { createExplorerStore, ExplorerStoreProvider } from "./store";
 import type { ExplorerState } from "./store";
 
@@ -88,11 +89,13 @@ export class TemplateDataExplorerView extends ItemView {
   readonly #store = createExplorerStore();
   readonly #deps: ExplorerViewDeps;
   #root: Root | null = null;
+  #host: ReturnType<typeof createProfileEditorHost> | null = null;
   #actions: ExplorerActions | null = null;
+  #activeEditor: ProfileEditorView | null = null;
   #context: NoteTemplateContext | null = null;
   #item: Item | null = null;
   #itemIndexedKey: string | null = null;
-  #treeState: TreeState = initialTreeState();
+  #anchorKey: string | null = null;
   #pendingRestoreKey: string | null = null;
   #pendingRestoreAnchor: string | null = null;
   #didInitialLoad = false;
@@ -132,8 +135,8 @@ export class TemplateDataExplorerView extends ItemView {
     if (!this.#itemIndexedKey) return {};
     return {
       itemIndexedKey: this.#itemIndexedKey,
-      ...(this.#treeState.anchorKey !== null
-        ? { anchorAnnotationKey: this.#treeState.anchorKey }
+      ...(this.#anchorKey !== null
+        ? { anchorAnnotationKey: this.#anchorKey }
         : {}),
     };
   }
@@ -154,9 +157,9 @@ export class TemplateDataExplorerView extends ItemView {
       // Re-opening the already-shown target keeps the user's exploration;
       // any item or anchor change starts from fresh navigation state.
       const sameTarget =
-        key === this.#itemIndexedKey && anchorKey === this.#treeState.anchorKey;
+        key === this.#itemIndexedKey && anchorKey === this.#anchorKey;
       this.#restoreItem(key);
-      if (!sameTarget) this.#treeState = initialTreeState(anchorKey);
+      if (!sameTarget) this.#anchorKey = anchorKey;
       this.#reload();
     } else {
       this.#pendingRestoreKey = key;
@@ -167,19 +170,25 @@ export class TemplateDataExplorerView extends ItemView {
   protected override async onOpen(): Promise<void> {
     this.#actions = createExplorerActions({
       onChooseItem: () => this.#chooseItem(),
-      onToggle: (key) => this.#toggle(key),
-      onFilter: (query) => this.#setFilter(query),
-      annotationKeyAt: (node) => {
-        if (this.#treeState.anchorKey !== null || !this.#context) return null;
-        return annotationKeyAtPath(this.#context, node.path);
-      },
-      onAnchorAnnotation: (key) => this.#setAnchor(key),
       onBackToNoteRoot: () => this.#setAnchor(null),
       onRefresh: () => this.#refresh(),
-      isEtaEnabled: () => this.#deps.templates.javascriptTemplatesEnabled,
-      canExport: () => this.#context !== null && this.#item !== null,
+      canExport: () =>
+        this.#activeEditor
+          ? this.#activeEditor.templateDataTarget() !== null
+          : this.#context !== null && this.#item !== null,
       onExport: () => void this.#exportTemplateData(),
+      exportLabel: () =>
+        this.#activeEditor?.templateDataExportLabel() ??
+        m.template_data_explorer_menu_export_json(),
       copyTarget: () => {
+        const active = this.#activeEditor?.templateDataTarget();
+        if (this.#activeEditor)
+          return active
+            ? {
+                indexedKey: active.indexedKey,
+                kind: active.root === "annotation" ? "annotation" : "item",
+              }
+            : null;
         const target = this.#anchoredTarget();
         if (!target) return null;
         return {
@@ -189,13 +198,32 @@ export class TemplateDataExplorerView extends ItemView {
       },
     });
 
+    this.#host = createProfileEditorHost(this.app, {
+      render: (request, deliver) => {
+        deliver(
+          failedRender(renderIdentity(request), { code: "render-error" }),
+        );
+        return { terminate() {} };
+      },
+      matchData: {
+        tags: async () => [],
+        collections: async () => [],
+        libraries: async () => [],
+      },
+      insertTarget: () => null,
+    });
     this.#root = createRoot(this.contentEl);
-    this.#root.render(
-      <ExplorerStoreProvider value={this.#store}>
-        <ExplorerActionsContext value={this.#actions}>
-          <Explorer />
-        </ExplorerActionsContext>
-      </ExplorerStoreProvider>,
+    this.register(
+      subscribeActiveProfileEditor(this.app, (editor) => {
+        logger.debug("Explorer editor handoff", {
+          previousProfile: this.#activeEditor?.file?.path ?? null,
+          profile: editor?.file?.path ?? null,
+          root: editor?.store.getState().root ?? null,
+          mode: editor?.preview ? "profile" : "standalone",
+        });
+        this.#activeEditor = editor;
+        this.#mount();
+      }),
     );
 
     this.register(
@@ -211,9 +239,57 @@ export class TemplateDataExplorerView extends ItemView {
     this.#initialLoad();
   }
 
+  #mount(): void {
+    const editor = this.#activeEditor;
+    if (editor?.preview) {
+      this.#root?.render(
+        editor.provide(
+          <ProfileExplorer
+            editor={editor}
+            deps={this.#deps}
+            isEtaEnabled={() => this.#deps.templates.javascriptTemplatesEnabled}
+          />,
+        ),
+      );
+      return;
+    }
+    if (!this.#host || !this.#actions) return;
+    this.#root?.render(
+      <WorkbenchHostProvider host={this.#host}>
+        <WorkbenchThemeProvider theme={profileEditorTheme}>
+          <ExplorerStoreProvider value={this.#store}>
+            <ExplorerActionsContext value={this.#actions}>
+              <Explorer
+                explorer={{
+                  copy: (text) => navigator.clipboard.writeText(text),
+                  engines: () =>
+                    this.#deps.templates.javascriptTemplatesEnabled
+                      ? ["liquid", "eta"]
+                      : ["liquid"],
+                  canExploreAnnotation: (node) =>
+                    this.#anchorKey === null &&
+                    this.#context !== null &&
+                    annotationKeyAtPath(this.#context, node.path) !== null,
+                  onExploreAnnotation: (node) => {
+                    if (this.#context)
+                      this.#setAnchor(
+                        annotationKeyAtPath(this.#context, node.path),
+                      );
+                  },
+                }}
+              />
+            </ExplorerActionsContext>
+          </ExplorerStoreProvider>
+        </WorkbenchThemeProvider>
+      </WorkbenchHostProvider>,
+    );
+  }
+
   protected override async onClose(): Promise<void> {
     this.#root?.unmount();
     this.#root = null;
+    this.#host?.[Symbol.dispose]();
+    this.#host = null;
     this.#actions = null;
   }
 
@@ -228,7 +304,7 @@ export class TemplateDataExplorerView extends ItemView {
     if (this.#pendingRestoreKey) {
       this.#restoreItem(this.#pendingRestoreKey);
       this.#pendingRestoreKey = null;
-      this.#treeState = initialTreeState(this.#pendingRestoreAnchor);
+      this.#anchorKey = this.#pendingRestoreAnchor;
       this.#pendingRestoreAnchor = null;
     } else if (this.#item === null) {
       this.#seedFromActiveNote();
@@ -248,7 +324,7 @@ export class TemplateDataExplorerView extends ItemView {
   #anchoredTarget(): { indexedKey: string; isAnnotation: boolean } | null {
     const item = this.#item;
     if (!item) return null;
-    const anchorKey = this.#treeState.anchorKey;
+    const anchorKey = this.#anchorKey;
     if (anchorKey === null) {
       return { indexedKey: item.indexedKey, isAnnotation: false };
     }
@@ -261,57 +337,24 @@ export class TemplateDataExplorerView extends ItemView {
     };
   }
 
-  /**
-   * The anchor picks the root, so an anchored Annotation exports exactly what
-   * the `annotation` Template receives; the active filter never narrows it.
-   * The data is rebuilt through the Workbench loader rather than read off the
-   * displayed tree: the tree's anchored annotation is the note context's own
-   * `TemplateAnnotation`, whose `parentItem` back-references the note root,
-   * while the `annotation` contract root carries a resolved parent item and a
-   * `citation`. Rebuilding also makes the file reproducible by
-   * `zotlit:template-data` with the echoed `request`.
-   */
   async #exportTemplateData(): Promise<void> {
-    const target = this.#anchoredTarget();
-    if (!target) return;
-    const contractRoot = target.isAnnotation ? "annotation" : "note";
-    const { indexedKey } = target;
-
-    try {
-      const result = await loadTemplateData(
-        this.#deps,
-        indexedKey,
-        contractRoot,
-      );
-      if (result.kind !== "data") {
-        logger.error("No template data to export for {indexedKey}: {reason}", {
-          indexedKey,
-          root: contractRoot,
-          reason: result.kind,
-        });
-        new BaseNotice(m.template_data_explorer_export_failed());
-        return;
-      }
-      const { filename, json } = buildTemplateDataExport({
-        root: result.data,
-        contractRoot,
-        indexedKey,
+    const active = this.#activeEditor?.templateDataTarget();
+    const own = this.#anchoredTarget();
+    const target = this.#activeEditor
+      ? active
+      : own
+        ? {
+            indexedKey: own.indexedKey,
+            root: own.isAnnotation
+              ? ("annotation" as const)
+              : ("note" as const),
+          }
+        : null;
+    if (target)
+      await exportTemplateDataFile(this.#deps, {
+        ...target,
         pluginVersion: this.#deps.pluginVersion,
-        timestamp: exportTimestamp(),
       });
-      saveFile(new Blob([json], { type: "application/json" }), filename);
-      logger.debug("Exported template data to {filename}", {
-        filename,
-        root: contractRoot,
-      });
-    } catch (error) {
-      logger.error("Failed to export template data for {indexedKey}", {
-        indexedKey,
-        root: contractRoot,
-        error,
-      });
-      new BaseNotice(m.template_data_explorer_export_failed());
-    }
   }
 
   #reload(): void {
@@ -330,9 +373,8 @@ export class TemplateDataExplorerView extends ItemView {
       this.#item = null;
       this.#context = null;
       this.#store.setState({
-        nodes: null,
+        data: null,
         anchor: null,
-        matchedKeys: null,
         itemVanished: true,
       });
       return;
@@ -390,12 +432,6 @@ export class TemplateDataExplorerView extends ItemView {
     });
   }
 
-  #toggle(key: string): void {
-    this.#treeState = toggleNode(this.#treeState, key);
-    if (!this.#context) return;
-    this.#store.setState(this.#render());
-  }
-
   #clearItem(): void {
     this.#item = null;
     this.#itemIndexedKey = null;
@@ -403,49 +439,21 @@ export class TemplateDataExplorerView extends ItemView {
     this.#resetNavigationState();
     this.#store.setState({
       itemLabel: null,
-      nodes: null,
+      data: null,
       itemVanished: false,
     });
   }
 
   #resetNavigationState(): void {
-    this.#treeState = initialTreeState();
-    this.#store.setState({ anchor: null, filterQuery: "", matchedKeys: null });
+    this.#anchorKey = null;
+    this.#store.setState({ anchor: null });
   }
 
-  /** Resolves `#treeState.anchorKey` exactly once: builds the anchored (or note-root) tree, and falls back to the note root when the anchored annotation has vanished. */
-  #render(): Pick<
-    ExplorerState,
-    "nodes" | "anchor" | "matchedKeys" | "filterQuery"
-  > {
-    if (!this.#context) {
-      return { nodes: [], anchor: null, matchedKeys: null, filterQuery: "" };
-    }
-
+  #render(): Pick<ExplorerState, "data" | "anchor"> {
     const root = this.#resolveRoot();
-    // Read after resolving: the vanish-fallback inside #resolveRoot may have
-    // reset #treeState (including filterQuery) via setAnchor.
-    const filterQuery = this.#treeState.filterQuery;
-    if (root === null) {
-      return { nodes: [], anchor: null, matchedKeys: null, filterQuery };
-    }
-
-    if (filterQuery) {
-      const { nodes, matchedKeys } = buildFilteredDisplayTree(
-        root.object,
-        filterQuery,
-        { collapsed: this.#treeState.filterCollapsed },
-      );
-      return { nodes, anchor: root.anchor, matchedKeys, filterQuery };
-    }
-
     return {
-      nodes: buildDisplayTree(root.object, {
-        expanded: this.#treeState.expanded,
-      }),
-      anchor: root.anchor,
-      matchedKeys: null,
-      filterQuery,
+      data: (root?.object as Record<string, unknown>) ?? null,
+      anchor: root?.anchor ?? null,
     };
   }
 
@@ -455,8 +463,8 @@ export class TemplateDataExplorerView extends ItemView {
   } | null {
     if (!this.#context) return null;
 
-    if (this.#treeState.anchorKey !== null) {
-      const anchorKey = this.#treeState.anchorKey;
+    if (this.#anchorKey !== null) {
+      const anchorKey = this.#anchorKey;
       const annotation = findAnnotationRoot(this.#context, anchorKey);
       if (annotation !== null) {
         return {
@@ -471,7 +479,7 @@ export class TemplateDataExplorerView extends ItemView {
         "Anchored annotation {key} vanished; falling back to note root",
         { key: anchorKey },
       );
-      this.#treeState = setAnchor(this.#treeState, null);
+      this.#anchorKey = null;
       this.#deps.app.workspace.requestSaveLayout();
     }
 
@@ -488,14 +496,9 @@ export class TemplateDataExplorerView extends ItemView {
   }
 
   #setAnchor(key: string | null): void {
-    this.#treeState = setAnchor(this.#treeState, key);
+    this.#anchorKey = key;
     this.#store.setState(this.#render());
     this.#deps.app.workspace.requestSaveLayout();
-  }
-
-  #setFilter(query: string): void {
-    this.#treeState = setFilter(this.#treeState, query);
-    this.#store.setState(this.#render());
   }
 
   #chooseItem(): void {
@@ -507,6 +510,7 @@ export class TemplateDataExplorerView extends ItemView {
       if (!hit) return;
       this.#item = hit.item;
       this.#itemIndexedKey = hit.item.indexedKey;
+      rememberTemplateItem(this.#deps.app, hit.item.indexedKey);
       this.#resetNavigationState();
       this.#store.setState({ itemVanished: false });
       this.#reload();
@@ -524,12 +528,14 @@ export class TemplateDataExplorerView extends ItemView {
     if (item) {
       this.#item = item;
       this.#itemIndexedKey = indexedKey;
+      rememberTemplateItem(this.#deps.app, indexedKey);
     }
   }
 
   #restoreItem(indexedKey: string): void {
     this.#itemIndexedKey = indexedKey;
     this.#item = this.#resolveItem(indexedKey);
+    if (this.#item) rememberTemplateItem(this.#deps.app, indexedKey);
   }
 
   #resolveItem(indexedKey: string): Item | null {

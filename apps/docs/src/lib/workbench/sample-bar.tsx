@@ -5,12 +5,12 @@ import { useEffect, useState } from "react";
 
 import type { LocalBridgeConnection } from "@zotlit/workbench/bridge";
 import { SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import { SampleSuggester } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
 import { m } from "@/paraglide/messages.js";
 
 import type { SampleItem } from "./fields";
-import { SampleSuggester } from "./sample-suggester";
 
 export function SampleBar({
   sample,

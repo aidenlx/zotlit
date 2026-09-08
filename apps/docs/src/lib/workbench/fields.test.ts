@@ -4,6 +4,7 @@ import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 import { buildDisplayTree, renderSnippet } from "@zotlit/workbench/explorer";
 import type { DisplayNode } from "@zotlit/workbench/explorer";
 import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import type { TemplateRoot } from "@zotlit/workbench/ui";
 
 import { m } from "@/paraglide/messages.js";
 
@@ -15,7 +16,7 @@ import {
   rowMatches,
   templateRootAt,
 } from "./fields";
-import type { SampleItem, TemplateRoot } from "./fields";
+import type { SampleItem } from "./fields";
 
 const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
 const profile = controller.document!;
@@ -30,7 +31,7 @@ const [journalArticle, conferencePaper, book] = SAMPLE_ITEMS as readonly [
 
 function rowsOf(snapshot: SampleItem, root: TemplateRoot) {
   const data = rootData(snapshot, root)!;
-  return commonRows(root, buildDisplayTree(data, { expanded: new Set() }));
+  return commonRows(m, root, buildDisplayTree(data, { expanded: new Set() }));
 }
 
 function nodeFor(root: TemplateRoot, label: string): DisplayNode {

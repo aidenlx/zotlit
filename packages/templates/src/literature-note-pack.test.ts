@@ -5,6 +5,7 @@ import {
   createLiteratureNotePackInstallRecord,
   diffLiteratureNotePack,
   exportLiteratureNotePack,
+  literatureNoteTemplateDependencies,
   parseLiteratureNotePack,
   planLiteratureNotePackRevert,
 } from "./literature-note-pack";
@@ -388,4 +389,35 @@ describe("Literature Note Pack install lifecycle", () => {
       },
     ]);
   });
+});
+
+describe("literatureNoteTemplateDependencies", () => {
+  it.each([
+    {
+      language: "liquid",
+      body: '{% render "summary" with zt as zt %}\n{%  %}',
+    },
+    {
+      language: "eta",
+      body: '<%~ include("summary", zt) %>\n<%= zt.title',
+    },
+  ] as const)(
+    "keeps the names a $language draft with an unfinished tag calls",
+    ({ language, body }) => {
+      const source = `---
+id: draft
+name: Draft
+version: 1.0.0
+contract: 2
+language: ${language}
+filename: note
+---
+${body}
+--- zotlit:annotation ---
+`;
+      expect(
+        literatureNoteTemplateDependencies(parseLiteratureNoteTemplate(source)),
+      ).toEqual(["summary"]);
+    },
+  );
 });

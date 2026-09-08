@@ -34,13 +34,12 @@
   },
   "dependencies": {
     "@inlang/plugin-m-function-matcher": "2.2.9",
-    "@inlang/plugin-message-format": "4.4.1",
+    "@inlang/plugin-message-format": "catalog:",
     "@inlang/sdk": "2.9.3"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "@zotlit/config": "workspace:*",
-    "@zotlit/scripts": "workspace:*",
     "oxlint": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",

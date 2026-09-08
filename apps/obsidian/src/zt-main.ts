@@ -1,7 +1,7 @@
 import { getLanguage, Plugin, requestUrl } from "obsidian";
 import semverGte from "semver/functions/gte";
 
-import { DOCS_SITE_URL } from "@/lib/constants";
+import { DOCS_SITE_URL, WEB_WORKBENCH_ENABLED } from "@/lib/constants";
 import { DisposableAbortController } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 
@@ -44,7 +44,12 @@ import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationPresentation } from "./views/citation-presentation/register";
 import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
+import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
+import {
+  openNativeProfile,
+  registerProfileEditor,
+} from "./views/profile-editor/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
 import { registerTemplateDataExplorer } from "./views/template-data-explorer/register";
@@ -213,6 +218,7 @@ export default class ZotLitPlugin extends Plugin {
 
     // One Customize flow shared by every entry action.
     const customize = createCustomize({
+      webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       app: this.app,
       settings: services.settings,
       profile: services.profile,
@@ -222,10 +228,25 @@ export default class ZotLitPlugin extends Plugin {
       pluginVersion: this.manifest.version,
       confirmLaunch: createLaunchSheet(this.app),
       openExternal: (url) => window.open(url),
+      openNative: async ({ profileId, item }) => {
+        const entry = services.profile.profiles.find(
+          (profile) => profile.id === profileId,
+        );
+        const target =
+          profileId === "default"
+            ? services.profile
+            : entry && this.app.vault.getFileByPath(entry.path);
+        if (target)
+          await openNativeProfile(this.app, target, {
+            ...(item ? { itemIndexedKey: item.key } : {}),
+            explainUnsupported: false,
+          });
+      },
     });
 
     this.addSettingTab(
       new ZotLitSettingTab({
+        webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
         importProfile: services.importProfile,
         profile: services.profile,
         plugin: this,
@@ -304,6 +325,7 @@ export default class ZotLitPlugin extends Plugin {
 
     void stack.use(
       registerProtocolHandlers(this, {
+        webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
         createProfile: services.createProfile,
         importProfile: services.importProfile,
         profile: services.profile,
@@ -331,6 +353,29 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
     });
 
+    registerProfileEditor(this, {
+      webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
+      customize,
+      app: this.app,
+      db: services.db,
+      noteIndex: services.noteIndex,
+      zoteroPref: services.zoteroPref,
+      itemLookup: services.itemLookup,
+      settings: services.settings,
+      templates: services.template,
+      profile: services.profile,
+      nativePreview: {
+        app: this.app,
+        db: services.db,
+        noteIndex: services.noteIndex,
+        zoteroPref: services.zoteroPref,
+        settings: services.settings,
+        templates: services.template,
+        bibliographyRender: services.bibliographyRender,
+        citationIndex: services.citationIndex,
+      },
+    });
+
     registerTemplateDataExplorer(this, {
       app: this.app,
       db: services.db,
@@ -340,6 +385,8 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
       templates: services.template,
     });
+
+    registerNotePreview(this);
 
     stack.defer(
       registerCitationStyleNotice(services.bibliographyRender, () => {

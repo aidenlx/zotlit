@@ -15,7 +15,7 @@ import { isLiteratureNote } from "@/services/note-index/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 
-import { noteItem, workbenchEnabled } from "./customize";
+import { noteItem } from "./customize";
 import type { CustomizeAction, CustomizeRequest } from "./customize";
 
 export interface CustomizeActionDeps {
@@ -61,7 +61,7 @@ export function addCustomizeActions(
 }
 
 /**
- * A Literature Note, while the web Template Workbench is on and the Profile
+ * A Literature Note, while the Profile
  * registry can answer which Profile the note carries.
  */
 function customizable(
@@ -72,7 +72,6 @@ function customizable(
   return (
     file instanceof TFile &&
     file.extension === "md" &&
-    workbenchEnabled(deps.settings) &&
     deps.profile.loaded &&
     isLiteratureNote(file, app)
   );

@@ -14,8 +14,11 @@ All surfaces share one document undo history, including text edits, form
 changes, row operations, and structural actions. Switching Advanced on or
 off preserves that history and adds no undo step. Save preserves history
 and marks the saved source. Invalid drafts remain editable in memory;
-existing document and Profile validation errors block Save, while errors
-found only during preview remain separate from Save. Problems shows the
+existing document and Profile validation errors block the web's connected
+Save, while errors found only during preview remain separate from Save.
+(Amended 2026-09-07: that blocking rule is the web transport's; the Obsidian
+Profile Editor autosaves the file and shows the same errors in Problems and on
+the settings row, see [ADR 0045](0045-the-profile-editor-is-a-dedicated-view-beside-the-markdown-view.md).) Problems shows the
 first validation error alongside a local indicator; selecting it opens
 the affected Properties row, Details field, Annotation editor, or Advanced
 source when its location is available.

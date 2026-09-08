@@ -4,8 +4,9 @@
 
 import type { TemplateDependenciesResponse } from "@zotlit/workbench/bridge";
 import type { WorkbenchProblem } from "@zotlit/workbench/document";
+import { problemText } from "@zotlit/workbench/ui";
 
-import { problemText } from "./problems";
+import { m } from "@/paraglide/messages.js";
 
 /** One line of the refusal, in the words the reader gets. */
 export interface UnsupportedReason {
@@ -26,7 +27,7 @@ export function unsupportedProblems(
     )
     .map((problem) => ({
       id: `${problem.code}:${problem.range?.from ?? ""}`,
-      message: problemText(problem).message,
+      message: problemText(m, problem).message,
     }));
 }
 
@@ -45,7 +46,7 @@ export function unsupportedDependencies(
       .filter(({ language }) => language !== "liquid")
       .map(({ name }) => ({
         id: `partial:${name}`,
-        message: problemText({
+        message: problemText(m, {
           code: "unsupported-partial-language",
           params: { name },
           slice: "advanced",

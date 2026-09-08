@@ -1,25 +1,19 @@
-// The standalone Template Workbench: one master Profile document behind a
-// header, three columns, and the result the reader would get. It folds twice:
-// under 1180 px the field column becomes the dialog the toolbar "Add a field"
-// button opens, and under 780 px the pane fills the screen with the result
-// behind a view switch.
-
 import {
   ArrowLeft,
   Download,
+  ExternalLink,
   FilePlus2,
   FolderOpen,
   Save,
   X,
 } from "lucide-react";
-import {
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// The standalone Template Workbench: one master Profile document behind a
+// header, three columns, and the result the reader would get. It folds twice:
+// under 1180 px the field column becomes the dialog the toolbar "Add a field"
+// button opens, and under 780 px the pane fills the screen with the result
+// behind a view switch.
+import { useStore } from "zustand";
 
 import {
   entryPosition,
@@ -31,12 +25,43 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
+import { snapshotMatchFacts } from "@zotlit/workbench/match";
 import {
   DEFAULT_PROFILE_SOURCE,
   SAMPLE_ITEMS,
   createRenderScheduler,
+  profileSourceRevision,
 } from "@zotlit/workbench/render";
 import type { ProfileRenderResult } from "@zotlit/workbench/render";
+import { MatchPane } from "@zotlit/workbench/ui";
+import {
+  EditToolbar,
+  StartHere,
+  ProblemsFooter,
+  PreviewControls,
+  ResultColumn,
+  tabLabel,
+  tabLede,
+  TabBar,
+  TabPanel,
+  WorkbenchEditorProvider,
+  WorkbenchHostProvider,
+  WorkbenchThemeProvider,
+  createWorkbenchStore,
+  diagnosticText,
+  problemText,
+  AnnotationPane,
+  AnnotationPointer,
+  AnnotationSampleBar,
+  AnnotationSectionBar,
+  annotationSamples,
+  NameFolderPane,
+  NotePane,
+  PropertiesPane,
+  PropertiesResult,
+  SliceEditor,
+} from "@zotlit/workbench/ui";
+import type { WorkbenchTab, EntryDiagnostic } from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -52,78 +77,39 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  NativeSelect,
-  NativeSelectOption,
-} from "@/components/ui/native-select";
-import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toast";
 import { m } from "@/paraglide/messages.js";
 
-import {
-  AnnotationPane,
-  AnnotationPointer,
-  AnnotationSampleBar,
-  AnnotationSectionBar,
-} from "./annotation";
 import { annotationHeaderMark } from "./annotation-mark";
-import { annotationSamples } from "./annotation-samples";
 import { ConnectionBar, ConnectionNotice } from "./connection-bar";
 import { FieldList } from "./field-list";
 import { insertSnippet, rootData, templateRootAt } from "./fields";
 import type { SampleItem } from "./fields";
 import {
-  EditToolbar,
-  PaneTabList,
+  AddFieldButton,
   ProfileMenuLabel,
-  ResultHeader,
-  ResultRegion,
   WorkbenchFrame,
   WorkbenchHelp,
 } from "./frame";
 import { ProfileHandoff } from "./handoff";
-import { NameFolderPane } from "./name-folder";
-import { NotePane } from "./note-pane";
-import { diagnosticText, problemText } from "./problems";
-import { PropertiesPane, PropertiesResult } from "./properties-tab";
-import type { EntryDiagnostic } from "./properties-tab";
+import { useWebHost } from "./host";
 import { startRenderWorker } from "./render-client";
-import { ResultSheet } from "./result-sheet";
 import { SampleBar } from "./sample-bar";
-import { SliceEditor } from "./slice-editor";
-import { StartHereStrip } from "./start-here";
-import { TAB_LABEL, TAB_LEDE } from "./tabs";
-import type { WorkbenchTab } from "./tabs";
 import { ensureTemporal } from "./temporal";
-import { downloadProfile, profileFileName } from "./transfer";
+import { WEB_THEME } from "./theme";
+import {
+  downloadProfile,
+  profileFileName,
+  openProfileInObsidian,
+  createProfileHandoffSource,
+} from "./transfer";
 import { unsupportedDependencies, unsupportedProblems } from "./unsupported";
 import { useWorkbenchConnection } from "./use-workbench-connection";
 import type { ProfileHydration } from "./use-workbench-connection";
 import { DEFAULT_SAMPLE, useWorkbenchDraft } from "./use-workbench-draft";
 
-/**
- * Where a problem is repaired, named for the reader. Every other slice is one
- * Managed Frontmatter row, which reads as the entry it is.
- */
-const PROBLEM_WHERE: Partial<Record<WorkbenchSliceId, () => string>> = {
-  advanced: m.workbench_problems_where_advanced,
-  note: m.workbench_problems_where_note,
-  filename: m.workbench_problems_where_filename,
-  details: m.workbench_problems_where_details,
-  annotation: m.workbench_annotation_label,
-};
-
 /** The result becomes a column once both reading and editing have room. */
 const WIDE_LAYOUT = "(min-width: 780px)";
-
-/**
- * The call a note without one is given: the format once per annotation, in
- * each language the Profile can be written in.
- */
-const ANNOTATIONS_LOOP =
-  "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n";
-const ETA_ANNOTATIONS_LOOP =
-  "<% for (const annotation of zt.annotations) { %>\n<%~ renderAnnotation(annotation) %>\n<% } %>\n";
 
 export function Workbench() {
   const [controller, setController] = useState(
@@ -133,10 +119,12 @@ export function Workbench() {
   // Where the sheet was opened from, so closing it hands the keyboard back.
   const addField = useRef<HTMLButtonElement>(null);
   const [result, setResult] = useState<ProfileRenderResult | null>(null);
+  const [renderBusy, setRenderBusy] = useState(false);
   const [scheduler] = useState(() =>
     createRenderScheduler({
       startWorker: startRenderWorker,
       onResult: setResult,
+      onBusy: setRenderBusy,
     }),
   );
   const [revision, setRevision] = useState(0);
@@ -155,20 +143,26 @@ export function Workbench() {
     result.annotationRevision === selectedAnnotation.revision
       ? result
       : null;
-  const [tab, setTab] = useState<WorkbenchTab>("note");
+  // The view state the shared tree reads and writes: the tab strip and the
+  // toolbar change it, and what a change does beyond the store is below.
+  const [store] = useState(createWorkbenchStore);
+  const tab = useStore(store, (state) => state.tab);
+  const advanced = useStore(store, (state) => state.advanced);
+  const preview = useStore(store, (state) => state.preview);
+  const { setTab, setAdvanced } = store.getState();
   // Which of the two the narrow screen is showing, and whether the field list
   // is open over it. Both are the narrow layout's alone: a wide screen shows
   // the pane, the result, and the field list at once.
   const [view, setView] = useState<"edit" | "result">("edit");
   const [sheet, setSheet] = useState(false);
   const [openRow, setOpenRow] = useState<number | null>(null);
-  const [advanced, setAdvanced] = useState(false);
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
   const latestRevision = useRef(0);
   const [pendingAction, setPendingAction] = useState<{
     label: string;
     run: () => void;
   } | null>(null);
+  const [handoffSource] = useState(createProfileHandoffSource);
   const [fileMessage, setFileMessage] = useState<string | null>(null);
   const replaceConnected = useRef(false);
   const [showMarkdown, setShowMarkdown] = useState(false);
@@ -302,8 +296,16 @@ export function Workbench() {
     // A Profile the web host refuses is never compiled, so nothing renders it,
     // and a bundle read for another draft would render this one against the
     // wrong partials — the last good result stands until its own bundle lands.
-    if (!renderable || resourcesStale) return;
+    if (!renderable || resourcesStale) {
+      scheduler[Symbol.dispose]();
+      return;
+    }
+    if (!preview.live) {
+      scheduler.pause();
+      return;
+    }
     scheduler.request({
+      mode: preview.mode,
       source: controller.source,
       snapshot: sample,
       annotation: selectedAnnotation,
@@ -318,7 +320,20 @@ export function Workbench() {
     renderable,
     resources,
     resourcesStale,
+    preview.live,
+    preview.mode,
   ]);
+
+  function runPreview() {
+    if (!renderable || resourcesStale) return;
+    scheduler.run({
+      mode: preview.mode,
+      source: controller.source,
+      snapshot: sample,
+      annotation: selectedAnnotation,
+      ...(resources ? { resources } : {}),
+    });
+  }
 
   // The last manifest the document parsed with. The header and the Name and
   // folder form read it, so repairing an invalid draft blanks neither.
@@ -358,10 +373,6 @@ export function Workbench() {
   );
 
   const problem = controller.problems[0];
-  // A failed note call also needs a route to the format from its empty result.
-  const previewProblem = result?.diagnostics.find(
-    ({ part }) => part !== "annotation" || result.creationBody === null,
-  );
   // Null while the manifest's list is one the rows cannot edit, which is what
   // sends the reader to Advanced with the source intact.
   const entries = controller.managedEntries;
@@ -380,7 +391,7 @@ export function Workbench() {
         : [
             {
               position: diagnostic.position,
-              message: diagnosticText(diagnostic),
+              message: diagnosticText(m, diagnostic),
             },
           ],
     ),
@@ -388,7 +399,7 @@ export function Workbench() {
       const position = entryPosition(entry.slice);
       return position === null
         ? []
-        : [{ position, message: problemText(entry).message }];
+        : [{ position, message: problemText(m, entry).message }];
     }),
   ];
   // The Name and folder tab writes the note name; a manifest that holds that
@@ -405,7 +416,11 @@ export function Workbench() {
   // The note itself, which is the one result an update rewrites part of, so the
   // update-only Managed Region is offered beside it and nowhere else.
   const showAnnotation = !advanced && tab === "annotation";
-  const showNote = advanced || (tab !== "properties" && tab !== "annotation");
+  const { host, overlays } = useWebHost({
+    snapshot: sample,
+    notice: (text) => toast.add({ title: text, type: "info" }),
+    insertTarget: () => ({ slice, range: caret }),
+  });
   // The render's complaint about the format alone, shown in the annotation box
   // where the format is edited rather than in the result column.
   const formatProblem = annotationResult?.diagnostics.find(
@@ -456,13 +471,6 @@ export function Workbench() {
     );
   }
 
-  /** Changes the authoring surface while keeping the note's position. */
-  function openTab(id: WorkbenchTab) {
-    setTab(id);
-    setReveal(null);
-    if (id === "note") setCaret(noteCaret.current);
-  }
-
   function openAnnotation() {
     setView("edit");
     setAdvanced(false);
@@ -479,12 +487,9 @@ export function Workbench() {
    * note. A document that also lacks the section is given one first, and told.
    */
   function insertAnnotations() {
-    const repaired = controller.repairAnnotationSection();
-    const language = controller.document?.manifest.language;
-    insertSnippet(controller, "note", {
-      target: caret,
-      snippet: language === "eta" ? ETA_ANNOTATIONS_LOOP : ANNOTATIONS_LOOP,
-    });
+    const { repaired } = controller.insertAnnotationLoop(caret);
+    // Both edits have told the subscriber by now, so the sentence is stamped
+    // with the revision the reader is looking at.
     if (repaired) {
       toast.add({
         title: m.workbench_annotation_section_added(),
@@ -618,6 +623,15 @@ export function Workbench() {
     setCaret(noteCaret.current);
   }
 
+  async function openInObsidian() {
+    try {
+      await openProfileInObsidian(handoffSource(controller.source));
+      setFileMessage(m.workbench_open_obsidian_copied());
+    } catch {
+      setFileMessage(m.workbench_open_obsidian_failed());
+    }
+  }
+
   /** Download always returns the exact source, including an unfinished draft. */
   function download() {
     downloadProfile(
@@ -648,10 +662,14 @@ export function Workbench() {
     );
   }
 
+  function openTab(id: WorkbenchTab) {
+    setReveal(null);
+    if (id === "note") setCaret(noteCaret.current);
+  }
+
   function changeMode(source: boolean) {
     setView("edit");
     setReveal(null);
-    setAdvanced(source);
     if (!source && tab === "note") setCaret(noteCaret.current);
   }
 
@@ -732,6 +750,7 @@ export function Workbench() {
         <ProfileHandoff
           reasons={unsupported}
           onDownload={download}
+          onOpenInObsidian={() => void openInObsidian()}
           onImport={openFile}
           onUndo={controller.canUndo ? () => controller.undo() : undefined}
           message={fileMessage}
@@ -740,13 +759,7 @@ export function Workbench() {
     );
   }
 
-  const pending = (
-    <p className="text-sm text-fd-muted-foreground">
-      {m.workbench_result_pending()}
-    </p>
-  );
-
-  return (
+  const page = (
     <WorkbenchFrame
       name={profile.name}
       actions={
@@ -786,6 +799,10 @@ export function Workbench() {
                   {m.workbench_reload_profile()}
                 </DropdownMenuItem>
               )}
+              <DropdownMenuItem onClick={() => void openInObsidian()}>
+                <ExternalLink aria-hidden />
+                {m.workbench_open_obsidian()}
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={download}>
                 <Download aria-hidden />
                 {m.workbench_download_copy()}
@@ -838,7 +855,7 @@ export function Workbench() {
           {/* The getting-started lede stands over a page Obsidian opened, and
               over that page alone: a standalone reader has no vault to send a
               template to. */}
-          {connected && <StartHereStrip />}
+
           {drafts.restorable && (
             <section
               aria-label={m.workbench_restore_heading()}
@@ -903,17 +920,14 @@ export function Workbench() {
       }
       editor={
         <>
-          <EditToolbar
-            advanced={advanced}
-            onMode={changeMode}
-            canUndo={controller.canUndo}
-            canRedo={controller.canRedo}
-            onUndo={() => controller.undo()}
-            onRedo={() => controller.redo()}
-            addFieldRef={addField}
-            sheetOpen={sheet}
-            onAddField={() => setSheet(true)}
-          />
+          <EditToolbar onModeChange={changeMode}>
+            <AddFieldButton
+              ref={addField}
+              open={sheet}
+              onClick={() => setSheet(true)}
+            />
+          </EditToolbar>
+          <StartHere connected={connected} />
           {advanced && (
             <>
               <div className="mb-2 flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-2">
@@ -928,7 +942,7 @@ export function Workbench() {
                 <Button
                   variant="ghost"
                   size="xs"
-                  onClick={() => changeMode(false)}
+                  onClick={() => setAdvanced(false)}
                 >
                   <ArrowLeft aria-hidden />
                   {m.workbench_back_basic()}
@@ -953,23 +967,17 @@ export function Workbench() {
               </>
             </>
           )}
-          <Tabs
+          <div
             hidden={advanced}
             className="flex min-h-0 flex-1 flex-col [&[hidden]]:hidden"
-            value={tab}
-            onValueChange={(value) => openTab(value as WorkbenchTab)}
           >
             <div className="mb-2 flex shrink-0 items-center gap-1">
-              <PaneTabList />
-              <WorkbenchHelp title={TAB_LABEL[tab]()}>
-                {TAB_LEDE[tab]()}
+              <TabBar onTabChange={openTab} />
+              <WorkbenchHelp title={tabLabel(m, tab)}>
+                {tabLede(m, tab)}
               </WorkbenchHelp>
             </div>
-            <TabsContent
-              value="note"
-              keepMounted
-              className="flex min-h-0 flex-1 flex-col [&[hidden]]:hidden"
-            >
+            <TabPanel tab="note" keepMounted>
               <h2 className="sr-only">{m.workbench_tab_note()}</h2>
               <NotePane
                 controller={controller}
@@ -985,7 +993,7 @@ export function Workbench() {
                   />
                 }
                 formatProblem={
-                  formatProblem ? diagnosticText(formatProblem) : null
+                  formatProblem ? diagnosticText(m, formatProblem) : null
                 }
                 onSelection={(selection) => {
                   noteCaret.current = selection;
@@ -996,14 +1004,14 @@ export function Workbench() {
               {controller.noteRegions.annotationCalls.length === 0 && (
                 <AnnotationPointer onInsert={insertAnnotations} />
               )}
-            </TabsContent>
+            </TabPanel>
             {!advanced && tab !== "note" && (
-              <TabsContent value={tab} className="flex min-h-0 flex-1 flex-col">
-                <h2 className="sr-only">{TAB_LABEL[tab]()}</h2>
+              <TabPanel tab={tab}>
+                <h2 className="sr-only">{tabLabel(m, tab)}</h2>
                 {tab === "name" ? (
                   <>
                     <NameFolderPane
-                      onOpenSource={() => changeMode(true)}
+                      onOpenSource={() => setAdvanced(true)}
                       controller={controller}
                       manifest={shownManifest}
                       filename={result?.filename ?? null}
@@ -1017,13 +1025,19 @@ export function Workbench() {
                       onSelection={trackSelection}
                     />
                   </>
+                ) : tab === "match" ? (
+                  <MatchPane
+                    controller={controller}
+                    facts={snapshotMatchFacts(sample)}
+                    vocabularyRevision={sample.revision}
+                  />
                 ) : tab === "annotation" ? (
                   <AnnotationPane
                     controller={controller}
                     reveal={reveal}
                     suggest={suggest}
                     problem={
-                      formatProblem ? diagnosticText(formatProblem) : null
+                      formatProblem ? diagnosticText(m, formatProblem) : null
                     }
                     onSelection={trackSelection}
                   />
@@ -1036,7 +1050,7 @@ export function Workbench() {
                           variant="outline"
                           size="xs"
                           className="mt-2"
-                          onClick={() => changeMode(true)}
+                          onClick={() => setAdvanced(true)}
                         >
                           {m.workbench_open_source()}
                         </Button>
@@ -1057,9 +1071,9 @@ export function Workbench() {
                     )}
                   </>
                 ) : null}
-              </TabsContent>
+              </TabPanel>
             )}
-          </Tabs>
+          </div>
           <Dialog open={sheet} onOpenChange={setSheet}>
             <DialogContent
               finalFocus={addField}
@@ -1114,41 +1128,47 @@ export function Workbench() {
               onSelect={setAnnotationChoice}
             />
           )}
-          <ResultHeader
-            heading={
+          <PreviewControls
+            busy={renderBusy}
+            disabled={!renderable || resourcesStale}
+            onRun={runPreview}
+            onStop={() => scheduler.pause()}
+          />
+          <ResultColumn
+            result={result}
+            annotationResult={annotationResult}
+            mode={
               showAnnotation
-                ? m.workbench_annotation_example()
+                ? "annotation"
                 : !advanced && tab === "properties"
-                  ? m.workbench_result_fold()
-                  : m.workbench_result_heading()
+                  ? "properties"
+                  : "note"
+            }
+            stale={
+              !renderable ||
+              resourcesStale ||
+              (result !== null &&
+                (result.sourceRevision !==
+                  profileSourceRevision(controller.source) ||
+                  result.snapshotRevision !== sample.revision ||
+                  result.previewMode !== preview.mode))
             }
             showMarkdown={showMarkdown}
             onShowMarkdown={setShowMarkdown}
-            controls={
-              showNote && (
-                <label className="flex min-w-0 items-center text-xs min-[1180px]:flex-1">
-                  <span className="sr-only">{m.workbench_preview_show()}</span>
-                  <NativeSelect
-                    value={showManaged ? "managed" : "whole"}
-                    onChange={(event) =>
-                      setShowManaged(event.target.value === "managed")
-                    }
-                    size="xs"
-                    className="w-full"
-                    title={
-                      showManaged
-                        ? m.workbench_result_managed_toggle()
-                        : m.workbench_preview_whole()
-                    }
-                  >
-                    <NativeSelectOption value="whole">
-                      {m.workbench_preview_whole()}
-                    </NativeSelectOption>
-                    <NativeSelectOption value="managed">
-                      {m.workbench_result_managed_toggle()}
-                    </NativeSelectOption>
-                  </NativeSelect>
-                </label>
+            showManaged={showManaged}
+            onShowManaged={setShowManaged}
+            openAnnotation={openAnnotation}
+            goToEntry={goToEntry}
+            openSource={() => setAdvanced(true)}
+            propertiesResult={
+              result && (
+                <PropertiesResult
+                  entries={entries ?? []}
+                  properties={result.properties}
+                  fold={result.fold}
+                  frontmatterBlock={result.frontmatterBlock}
+                  showMarkdown={showMarkdown}
+                />
               )
             }
             help={
@@ -1161,133 +1181,22 @@ export function Workbench() {
               </WorkbenchHelp>
             }
           />
-          {result && !renderable && (
-            <p role="status" className="mb-2 text-xs font-medium">
-              {m.workbench_preview_stale()}
-            </p>
-          )}
-          <ResultRegion emphasis={false}>
-            {result ? (
-              <Suspense fallback={pending}>
-                {!showAnnotation && (
-                  <header
-                    className="-mx-4 -mt-4 mb-4 rounded-t-md border-b border-fd-border bg-fd-muted/40 px-3 py-1.5 text-xs font-medium"
-                    title={result.filename ?? undefined}
-                  >
-                    <p className="truncate">
-                      <span className="sr-only">
-                        {m.workbench_result_filename()}:{" "}
-                      </span>
-                      {result.filename}
-                    </p>
-                  </header>
-                )}
-                {!showAnnotation && previewProblem && (
-                  <p className="mb-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal text-pretty">
-                    <strong className="font-semibold">
-                      {m.workbench_preview_problem()}
-                    </strong>{" "}
-                    {diagnosticText(previewProblem)}{" "}
-                    {previewProblem.part === "annotation" && (
-                      <button
-                        type="button"
-                        onClick={openAnnotation}
-                        className="cursor-pointer underline underline-offset-2"
-                      >
-                        {m.workbench_annotation_edit_format()}
-                      </button>
-                    )}
-                    {previewProblem.position !== undefined && (
-                      <button
-                        type="button"
-                        onClick={() => goToEntry(previewProblem.position!)}
-                        className="cursor-pointer underline underline-offset-2"
-                      >
-                        {m.workbench_problems_where_entry()}
-                      </button>
-                    )}
-                  </p>
-                )}
-                {showAnnotation ? (
-                  annotationResult ? (
-                    <ResultSheet
-                      markdown={annotationResult.annotation ?? ""}
-                      properties={[]}
-                      showMarkdown={showMarkdown}
-                    />
-                  ) : (
-                    pending
-                  )
-                ) : showNote && showManaged ? (
-                  result.managedRegion === null ? (
-                    <p className="text-sm text-fd-muted-foreground">
-                      {m.workbench_result_managed_none()}
-                    </p>
-                  ) : (
-                    <ResultSheet
-                      markdown={result.managedRegion}
-                      properties={[]}
-                      showMarkdown={showMarkdown}
-                    />
-                  )
-                ) : !advanced && tab === "properties" ? (
-                  <PropertiesResult
-                    entries={entries ?? []}
-                    properties={result.properties}
-                    fold={result.fold}
-                    frontmatterBlock={result.frontmatterBlock}
-                    showMarkdown={showMarkdown}
-                  />
-                ) : (
-                  <ResultSheet
-                    markdown={result.creationBody ?? ""}
-                    // The sheet is the note, so its list is the fold every
-                    // entry merged into, not each entry's own contribution.
-                    properties={result.fold}
-                    showMarkdown={showMarkdown}
-                    marks={result.annotationRanges}
-                  />
-                )}
-              </Suspense>
-            ) : (
-              pending
-            )}
-          </ResultRegion>
         </>
       }
-      footer={
-        problem && (
-          <section
-            aria-label={m.workbench_problems_heading()}
-            className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1 border-s-2 border-t border-s-fd-primary border-t-fd-border bg-fd-accent/40 px-3 py-2 text-xs leading-normal"
-          >
-            <p className="font-semibold">{m.workbench_problems_heading()}</p>
-            <p className="min-w-0 text-pretty">
-              {problemText(problem).message}{" "}
-              <span className="text-fd-muted-foreground">
-                {problemText(problem).recovery}
-              </span>{" "}
-              <button
-                type="button"
-                onClick={() => goToProblem(problem)}
-                className="cursor-pointer underline underline-offset-2"
-              >
-                {problem.code === "missing-annotation-section"
-                  ? m.workbench_annotation_label()
-                  : entryPosition(problem.slice) === null
-                    ? (
-                        PROBLEM_WHERE[problem.slice] ??
-                        m.workbench_problems_where_advanced
-                      )()
-                    : m.workbench_problems_where_entry()}
-              </button>
-            </p>
-          </section>
-        )
-      }
+      footer={<ProblemsFooter problem={problem ?? null} onOpen={goToProblem} />}
     >
       {filePicker}
       {replacementDialog}
+      {overlays}
     </WorkbenchFrame>
+  );
+  return (
+    <WorkbenchThemeProvider theme={WEB_THEME}>
+      <WorkbenchHostProvider host={host}>
+        <WorkbenchEditorProvider store={store} controller={controller}>
+          {page}
+        </WorkbenchEditorProvider>
+      </WorkbenchHostProvider>
+    </WorkbenchThemeProvider>
   );
 }

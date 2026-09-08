@@ -32,6 +32,10 @@
       "development": "./src/language/index.ts",
       "default": "./dist/language.mjs"
     },
+    "./match": {
+      "development": "./src/match/index.ts",
+      "default": "./dist/match.mjs"
+    },
     "./render": {
       "development": "./src/render/index.ts",
       "default": "./dist/render.mjs"
@@ -40,16 +44,21 @@
       "types": "./dist/snapshot.d.mts",
       "default": "./dist/snapshot.mjs"
     },
+    "./ui": {
+      "development": "./src/ui/index.tsx",
+      "default": "./dist/ui.mjs"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {
     "build": "tsdown",
-    "dev": "tsdown --watch",
+    "dev": "pnpm generate:message-types && tsdown --watch",
     "typecheck": "tsc --noEmit -p tsconfig.lib.json",
     "typecheck:test": "tsc --noEmit -p tsconfig.test.json",
     "lint": "oxlint",
     "test": "vitest run",
-    "generate:eta": "lezer-generator src/language/eta.grammar -o src/language/eta-parser.ts --typeScript"
+    "generate:eta": "lezer-generator src/language/eta.grammar -o src/language/eta-parser.ts --typeScript",
+    "generate:message-types": "node scripts/generate-message-types.ts"
   },
   "dependencies": {
     "@codemirror/commands": "6.11.0",
@@ -62,11 +71,15 @@
     "@lezer/javascript": "1.5.4",
     "@lezer/lr": "catalog:",
     "@zotlit/db": "workspace:*",
+    "@zotlit/filter-expression": "workspace:*",
     "@zotlit/templates": "workspace:*",
+    "@zotlit/zotero-types": "workspace:*",
     "arkregex": "catalog:",
+    "diff": "8.0.4",
     "jsonc-parser": "^3.3.1",
     "valibot": "catalog:",
-    "yaml": "catalog:"
+    "yaml": "catalog:",
+    "zustand": "catalog:"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "catalog:",
@@ -74,12 +87,20 @@
     "@codemirror/state": "catalog:",
     "@codemirror/view": "catalog:",
     "@lezer/generator": "1.8.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/preact": "^3.2.4",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "@zotlit/config": "workspace:*",
-    "@zotlit/zotero-types": "workspace:*",
+    "@zotlit/obsidian-i18n": "workspace:*",
     "ajv": "catalog:",
     "happy-dom": "catalog:",
     "oxlint": "catalog:",
+    "preact": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
@@ -88,6 +109,16 @@
     "@codemirror/autocomplete": "catalog:",
     "@codemirror/language": "catalog:",
     "@codemirror/state": "catalog:",
-    "@codemirror/view": "catalog:"
+    "@codemirror/view": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
   }
 }

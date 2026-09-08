@@ -1,7 +1,11 @@
+import type { TemplatePathSegment } from "#/explorer/accessor-path";
+
 // Template Contract traversal shared by completion and local-variable inference.
 import type { ContractMember, ContractType } from "@zotlit/db/contract/ir";
 import type { ContractIR } from "@zotlit/db/contract/ir";
 import contractJson from "@zotlit/db/contract/ir.json";
+
+import { formatAccessorPath } from "#/explorer/accessor-path";
 export const contract = contractJson as ContractIR;
 
 export function resolve(type: ContractType): ContractType {
@@ -46,14 +50,60 @@ export function child(
     return value.items;
   return members(value).find((member) => member.name === key)?.type;
 }
+/**
+ * Formats the value at `path` for a `Sample:` hint.
+ * @param sample - The data graph a template reads: link helpers are functions
+ * and an annotation links back to its parent Item.
+ * @param path - Keys from `zt` to the value, read the way `sampleValue` reads
+ * them.
+ * @returns JSON where a link helper is the text it outputs and a value that
+ * refers to one of its ancestors is a `$ref` to that ancestor's `zt` accessor;
+ * undefined when the path resolves to nothing.
+ */
+export function sampleJson(
+  sample: unknown,
+  path: readonly string[],
+): string | undefined {
+  const ancestors = new Map<object, readonly TemplatePathSegment[]>();
+  let value = sample;
+  path.forEach((key, depth) => {
+    if (value && typeof value === "object")
+      ancestors.set(value, path.slice(0, depth));
+    value = sampleStep(value, key);
+  });
+  if (value === undefined) return undefined;
+  const plain = (
+    node: unknown,
+    at: readonly TemplatePathSegment[],
+  ): unknown => {
+    if (typeof node === "function") return String(node);
+    if (!node || typeof node !== "object") return node;
+    const seen = ancestors.get(node);
+    if (seen) return { $ref: formatAccessorPath(seen, "zt") };
+    ancestors.set(node, at);
+    const out = Array.isArray(node)
+      ? node.map((entry, index) => plain(entry, [...at, index]))
+      : Object.fromEntries(
+          Object.entries(node).map(([key, entry]) => [
+            key,
+            plain(entry, [...at, key]),
+          ]),
+        );
+    ancestors.delete(node);
+    return out;
+  };
+  return JSON.stringify(plain(value, path));
+}
 export function sampleValue(sample: unknown, path: readonly string[]): unknown {
   let value = sample;
-  for (const key of path) {
-    if (Array.isArray(value) && (key === "first" || key === "last"))
-      value = key === "first" ? value[0] : value.at(-1);
-    else if (value && typeof value === "object")
-      value = (value as Record<string, unknown>)[key];
-    else return undefined;
-  }
+  for (const key of path) value = sampleStep(value, key);
   return value;
+}
+/** One key read on a Sample: `first` and `last` address an array's ends. */
+function sampleStep(value: unknown, key: string): unknown {
+  if (Array.isArray(value) && (key === "first" || key === "last"))
+    return key === "first" ? value[0] : value.at(-1);
+  if (value && typeof value === "object")
+    return (value as Record<string, unknown>)[key];
+  return undefined;
 }

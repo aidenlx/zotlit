@@ -9,13 +9,16 @@
 // the tab alone and no longer. A Sample Item is bundled with the page, so it
 // rides in the persistent record like the text does.
 
+import { customAlphabet } from "nanoid";
 import * as v from "valibot";
 
+import { buildImportProfileProtocolUrl } from "@zotlit/protocol";
 import {
   expectedProfileRevisionSchema,
   itemSnapshotSchema,
 } from "@zotlit/workbench/bridge";
 import type { SaveSelectedProfileRequest } from "@zotlit/workbench/bridge";
+import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 
 import type { SampleItem } from "./fields";
 
@@ -168,4 +171,30 @@ function clearRecord(storage: () => Storage, key: string): void {
   } catch {
     // Nothing was kept, so nothing is left to remove.
   }
+}
+
+/** Copies the exact document before handing control to the native import sheet. */
+export async function openProfileInObsidian(source: string): Promise<void> {
+  await navigator.clipboard.writeText(source);
+  const link = document.createElement("a");
+  link.href = buildImportProfileProtocolUrl();
+  link.click();
+}
+
+/** One transferable Default copy per editor, so a later handoff can replace it. */
+export function createProfileHandoffSource(): (source: string) => string {
+  const mintId = customAlphabet(
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
+    12,
+  );
+  let defaultId: string | undefined;
+  return (source) => {
+    const document = new WorkbenchDocumentController(source, {
+      runtime: "native",
+    });
+    if (document.document?.manifest.id !== "default") return source;
+    defaultId ??= mintId();
+    document.setManifestKey("id", defaultId);
+    return document.source;
+  };
 }

@@ -9,7 +9,6 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
-import { formatAccessorPath, renderSnippet } from "@zotlit/workbench/explorer";
 import type {
   DisplayNode,
   SnippetKind,
@@ -17,6 +16,8 @@ import type {
 } from "@zotlit/workbench/explorer";
 import { restoreTemplateData } from "@zotlit/workbench/render";
 import type { AnnotationExample, SAMPLE_ITEMS } from "@zotlit/workbench/render";
+import { fieldSnippet as sharedFieldSnippet } from "@zotlit/workbench/ui";
+import type { TemplateRoot } from "@zotlit/workbench/ui";
 
 import { m } from "@/paraglide/messages.js";
 
@@ -24,60 +25,6 @@ export type SampleItem = (typeof SAMPLE_ITEMS)[number];
 
 /** The parsed Profile document, named without depending on the templates package. */
 type ProfileDocument = NonNullable<WorkbenchDocumentController["document"]>;
-
-/** The Template data an editor position writes against. */
-export type TemplateRoot = "note" | "annotation" | "filename";
-
-export interface CommonField {
-  /** Top-level key on the root object, which is also its display-node key. */
-  readonly key: string;
-  /** The name the reader recognizes, in place of the raw key. */
-  readonly label: () => string;
-}
-
-/**
- * Familiar labels and preferred order for common fields in each root.
- */
-const COMMON_FIELDS: Record<TemplateRoot, readonly CommonField[]> = {
-  note: [
-    { key: "title", label: m.workbench_field_title },
-    { key: "authors", label: m.workbench_field_authors },
-    { key: "date", label: m.workbench_field_date },
-    { key: "abstract", label: m.workbench_field_abstract },
-    { key: "publicationTitle", label: m.workbench_field_publication_title },
-    { key: "citationKey", label: m.workbench_field_citation_key },
-    { key: "tags", label: m.workbench_field_tags },
-    { key: "collections", label: m.workbench_field_collections },
-    { key: "backlink", label: m.workbench_field_backlink },
-    { key: "attachments", label: m.workbench_field_attachments },
-    { key: "annotations", label: m.workbench_field_annotations },
-  ],
-  annotation: [
-    { key: "text", label: m.workbench_field_text },
-    { key: "comment", label: m.workbench_field_comment },
-    { key: "pageLabel", label: m.workbench_field_page_label },
-    { key: "colorName", label: m.workbench_field_color_name },
-    { key: "tags", label: m.workbench_field_tags },
-    { key: "backlink", label: m.workbench_field_backlink },
-    { key: "imgLink", label: m.workbench_field_img_link },
-    { key: "parentItem", label: m.workbench_field_parent_item },
-  ],
-  filename: [
-    { key: "title", label: m.workbench_field_title },
-    { key: "authors", label: m.workbench_field_authors },
-    { key: "date", label: m.workbench_field_date },
-    { key: "citationKey", label: m.workbench_field_citation_key },
-    { key: "key", label: m.workbench_field_key },
-  ],
-};
-
-/** Human labels and common-field order shared by discovery and typing completion. */
-export function completionFields(root: TemplateRoot) {
-  return COMMON_FIELDS[root].map((field) => ({
-    path: `zt.${field.key}`,
-    label: field.label(),
-  }));
-}
 
 /** The name shown in the panel's corner, so the reader knows what the list is for. */
 export const ROOT_LABEL: Record<TemplateRoot, () => string> = {
@@ -131,57 +78,6 @@ export function rootData(
     : null;
 }
 
-export interface FieldRow {
-  readonly node: DisplayNode;
-  readonly label: string;
-  readonly value: string;
-}
-
-/**
- * The common rows for `root` in their fixed order, over display nodes built
- * from that root. A row the paper has no key for is dropped rather than shown
- * empty.
- */
-export function commonRows(
-  root: TemplateRoot,
-  nodes: readonly DisplayNode[],
-): FieldRow[] {
-  const byKey = new Map(nodes.map((node) => [node.key, node]));
-  return COMMON_FIELDS[root].flatMap((field) => {
-    const node = byKey.get(field.key);
-    return node
-      ? [{ node, label: field.label(), value: fieldValueText(node) }]
-      : [];
-  });
-}
-
-/** Matches a row on the name the reader sees and on this paper's value. */
-export function rowMatches(row: FieldRow, query: string): boolean {
-  const needle = query.toLowerCase();
-  return (
-    row.label.toLowerCase().includes(needle) ||
-    row.value.toLowerCase().includes(needle)
-  );
-}
-
-/** This paper's value for one row, as the single line a row shows. */
-export function fieldValueText(node: DisplayNode): string {
-  if (node.kind === "placeholder") return node.reason;
-  if (node.kind === "helper") return node.evaluated ?? "";
-  switch (node.valueType) {
-    case "array":
-      return (node.value as unknown[]).map(String).join(", ");
-    case "object":
-      return node.preview ?? "";
-    case "getter":
-    case "null":
-    case "undefined":
-      return "";
-    default:
-      return String(node.value);
-  }
-}
-
 /**
  * The engine every snippet is written in, which the `{{` accelerator belongs
  * to as well. The web host edits and renders Liquid alone and sends an Eta
@@ -198,9 +94,7 @@ export function fieldSnippet(
   mode: FieldInsertionMode,
   kind: SnippetKind,
 ): string {
-  if (mode === "template") return renderSnippet(node, SNIPPET_ENGINE, kind);
-  const path = formatAccessorPath(node.path, "zt");
-  return mode === "expression" ? path : JSON.stringify({ $eval: path });
+  return sharedFieldSnippet(node, mode, { kind, engine: SNIPPET_ENGINE });
 }
 
 /** The opening delimiter that starts Template Completion. */
@@ -236,3 +130,5 @@ export function insertSnippet(
   });
   return from + snippet.length;
 }
+
+export { commonRows, fieldValueText, rowMatches } from "@zotlit/workbench/ui";

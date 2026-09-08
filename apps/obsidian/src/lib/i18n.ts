@@ -39,7 +39,7 @@ type InitI18nOptions = {
 };
 
 export function initI18n({ pluginVersion, ports }: InitI18nOptions) {
-  return createLanguagePackLifecycle({
+  const lifecycle = createLanguagePackLifecycle({
     runtime,
     pluginVersion,
     namespace: "zotlit",
@@ -49,4 +49,5 @@ export function initI18n({ pluginVersion, ports }: InitI18nOptions) {
     ports,
     logger,
   });
+  return lifecycle;
 }

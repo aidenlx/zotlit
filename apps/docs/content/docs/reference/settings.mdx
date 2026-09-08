@@ -24,12 +24,12 @@ The main page opens when you select ZotLit in Obsidian's settings. It holds the 
 
 The top of the page links to the release notes, the documentation, the community, and the bug report form. Reminders appear in the same place, such as the template conversion reminder.
 
-| Label                                                          | Key                         | Control                                                                                                                                                                                                             | Default                                                           | Dependency             | Storage |
-| -------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------- | ------- |
-| <UiLabel name={m.settings_profile_folder_name()} />            | `note.literature-folder`    | Folder picker                                                                                                                                                                                                       | `literatures`                                                     | None                   | Synced  |
-| <UiLabel name={m.settings_citation_references_style_name()} /> | `citation.references-style` | Dropdown (lists installed styles)                                                                                                                                                                                   | <UiLabel name={m.settings_citation_references_style_default()} /> | Zotero style directory | Synced  |
-| <UiLabel name={m.settings_profile_document_name()} />          | (default Profile)           | <UiLabel name={m.settings_template_customize()} />, <UiLabel name={m.settings_template_eject()} />, then <UiLabel name={m.settings_template_open()} /> and <UiLabel name={m.settings_profile_document_restore()} /> | <UiLabel name={m.settings_profile_document_builtin()} />          | None                   | Synced  |
-| <UiLabel name={m.settings_profile_properties_name()} />        | (template document)         | <UiLabel name={m.settings_template_eject()} /> or <UiLabel name={m.settings_template_open()} /> action                                                                                                              | Built-in fields                                                   | None                   | None    |
+| Label                                                          | Key                         | Control                                                                                                         | Default                                                           | Dependency             | Storage |
+| -------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- | ---------------------- | ------- |
+| <UiLabel name={m.settings_profile_folder_name()} />            | `note.literature-folder`    | Folder picker                                                                                                   | `literatures`                                                     | None                   | Synced  |
+| <UiLabel name={m.settings_citation_references_style_name()} /> | `citation.references-style` | Dropdown (lists installed styles)                                                                               | <UiLabel name={m.settings_citation_references_style_default()} /> | Zotero style directory | Synced  |
+| <UiLabel name={m.settings_profile_document_name()} />          | (default Profile)           | <UiLabel name={m.settings_template_customize()} /> and <UiLabel name={m.settings_profile_document_restore()} /> | <UiLabel name={m.settings_profile_document_builtin()} />          | None                   | Synced  |
+| <UiLabel name={m.settings_profile_properties_name()} />        | (template document)         | <UiLabel name={m.profile_editor_customize()} /> action                                                          | Built-in fields                                                   | None                   | None    |
 
 These four rows are the bindings of the default Profile. ZotLit stores them under `note.default-profile` in `data.json`. Every other Profile inherits a binding it does not set itself. See <SettingsPath page={m.settings_page_profiles()} />.
 
@@ -65,9 +65,9 @@ An empty `zotlit-csl` property stops the note the same way, and its built-in exp
 
 The document that renders a literature note: its filename, its properties, and its body.
 
-Until you customize it, the Profile uses ZotLit's built-in Literature Note Template and the row reads <UiLabel name={m.settings_profile_document_builtin_desc()} />. <UiLabel name={m.settings_template_customize()} /> opens the web Workbench when enabled. Its first save creates the template document. The secondary <UiLabel name={m.settings_template_eject()} /> action writes a copy into your template folder and opens it in Obsidian. The row then names that file.
+Until you customize it, the Profile uses ZotLit's built-in Literature Note Template and the row reads <UiLabel name={m.settings_profile_document_builtin_desc()} />. <UiLabel name={m.settings_template_customize()} /> opens the Profile Editor. The first edit creates the template document. The row then names that file and offers <UiLabel name={m.settings_profile_document_restore()} />.
 
-Select <UiLabel name={m.settings_template_open()} /> to open the customized document in the editor. Select <UiLabel name={m.settings_profile_document_restore()} /> to move it to Obsidian's configured trash and return the Profile to the built-in template.
+Select <UiLabel name={m.settings_template_customize()} /> to open the document in the Profile Editor. Select <UiLabel name={m.settings_profile_document_restore()} /> to move it to Obsidian's configured trash and return the Profile to the built-in template.
 
 ### Properties [#properties]
 
@@ -545,28 +545,17 @@ the release notes after ZotLit updates.
 
 ### Local Server [#local-server]
 
-| Label                                                                  | Key                  | Control                                                                                         | Default     | Visibility                  | Storage    |
-| ---------------------------------------------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------- | ----------- | --------------------------- | ---------- |
-| <UiLabel name={m.settings_local_server_enabled_name()} />              | `server.enabled`     | Toggle                                                                                          | Off         | Always                      | Synced     |
-| <UiLabel name={m.settings_live_updates_enabled_name()} />              | `server.live-update` | Toggle                                                                                          | On          | Server on                   | Synced     |
-| <UiLabel name={m.settings_local_server_workbench_name()} />            | `server.workbench`   | Toggle                                                                                          | On          | Server on                   | Synced     |
-| <UiLabel name={m.settings_local_server_workbench_confirm_name()} />    | (device-local)       | Toggle                                                                                          | On          | Server and web Workbench on | Per device |
-| <UiLabel name={m.settings_local_server_workbench_connection_name()} /> | (read-only)          | Website, template, and <UiLabel name={m.settings_local_server_workbench_disconnect()} /> action | Absent      | Server on with a connection | None       |
-| <UiLabel name={m.settings_live_updates_port_name()} />                 | `server.port`        | Number from 1024 to 65535                                                                       | `9091`      | Server on                   | Synced     |
-| <UiLabel name={m.settings_local_server_active_port_name()} />          | (read-only)          | Active port or listener status                                                                  | No listener | Server on                   | None       |
-| <UiLabel name={m.settings_live_updates_hostname_name()} />             | `server.hostname`    | Text                                                                                            | `127.0.0.1` | Server on                   | Synced     |
+| Label                                                         | Key                  | Control                   | Default     | Visibility | Storage |
+| ------------------------------------------------------------- | -------------------- | ------------------------- | ----------- | ---------- | ------- |
+| <UiLabel name={m.settings_local_server_enabled_name()} />     | `server.enabled`     | Toggle                    | Off         | Always     | Synced  |
+| <UiLabel name={m.settings_live_updates_enabled_name()} />     | `server.live-update` | Toggle                    | On          | Server on  | Synced  |
+| <UiLabel name={m.settings_live_updates_port_name()} />        | `server.port`        | Number from 1024 to 65535 | `9091`      | Server on  | Synced  |
+| <UiLabel name={m.settings_local_server_active_port_name()} /> | (read-only)          | Active port or status     | No listener | Server on  | None    |
+| <UiLabel name={m.settings_live_updates_hostname_name()} />    | `server.hostname`    | Text                      | `127.0.0.1` | Server on  | Synced  |
 
-The server binds to the configured hostname, which defaults to this computer's loopback address. The Local Bridge accepts loopback connections only, even if the hostname permits wider Live Update access. It tries the configured port, then up to 9 higher ports, stopping at 65535. <UiLabel name={m.settings_local_server_active_port_name()} /> reports the port actually used. ZotLit Companion's notification URL must use that port.
+The server binds to the configured hostname, which defaults to this computer's loopback address. It tries the configured port, then up to 9 higher ports, stopping at 65535. <UiLabel name={m.settings_local_server_active_port_name()} /> reports the port actually used. ZotLit Companion's notification URL must use that port.
 
-Turning off <UiLabel name={m.settings_local_server_enabled_name()} /> stops both services. Turning off <UiLabel name={m.settings_local_server_workbench_name()} /> ends the web connection and hides the web customization actions.
-
-<UiLabel name={m.settings_local_server_workbench_confirm_name()} /> controls the
-launch confirmation on this device. Selecting
-<UiLabel name={m.modal_workbench_launch_remember()} /> in that confirmation
-turns this setting off. Turning it on restores the confirmation. Launching with
-the server off always shows the confirmation.
-
-See [Local Server and browser access](/docs/concepts/template-workbench#local-server) for shared data and connection lifetime.
+Turning off <UiLabel name={m.settings_local_server_enabled_name()} /> stops Live Update connections.
 
 ### Template engine [#template-engine]
 
@@ -636,19 +625,19 @@ wrong or outdated.
 
 ZotLit 2.1 reorganized the settings tab around the literature note. Every row keeps its name, so Obsidian's own settings search still finds a setting by the name you know.
 
-| Old location                                                     | New location                                                                                                                                                              |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Literature note folder**, on the Literature note profiles page | The <UiLabel name={m.settings_profile_folder_name()} /> row on the main page                                                                                              |
-| **Note import** page                                             | The <UiLabel name={m.settings_imported_notes_heading()} /> group on the main page                                                                                         |
-| **Highlight mappings**, on the Literature note profiles page     | The <UiLabel name={m.settings_imported_notes_heading()} /> group on the main page                                                                                         |
-| **Frontmatter** field list, under the Templates page             | The template document. Open it from the <UiLabel name={m.settings_profile_properties_name()} /> row on the main page with <UiLabel name={m.settings_template_eject()} />. |
-| **Template folder**, on the Templates page                       | <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />                                                                            |
-| **JavaScript templates** and trim, on the Templates page         | The <UiLabel name={m.settings_advanced_template_engine_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />                                          |
-| **Citation** and **Alternate citation**, on the Templates page   | The <UiLabel name={m.settings_citation_templates_heading()} /> group on <SettingsPath page={m.settings_page_citations()} />                                               |
-| **Zotero database** page                                         | The <UiLabel name={m.settings_zotero_connection_heading()} /> group on <SettingsPath page={m.settings_page_zotero()} />                                                   |
-| **Library** page                                                 | The <UiLabel name={m.settings_zotero_libraries_heading()} /> group on <SettingsPath page={m.settings_page_zotero()} />                                                    |
-| **Live updates** page                                            | The <UiLabel name={m.settings_advanced_local_server_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />                                             |
-| **Maintenance** page                                             | <SettingsPath page={m.settings_page_advanced()} />                                                                                                                        |
+| Old location                                                     | New location                                                                                                                                                               |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Literature note folder**, on the Literature note profiles page | The <UiLabel name={m.settings_profile_folder_name()} /> row on the main page                                                                                               |
+| **Note import** page                                             | The <UiLabel name={m.settings_imported_notes_heading()} /> group on the main page                                                                                          |
+| **Highlight mappings**, on the Literature note profiles page     | The <UiLabel name={m.settings_imported_notes_heading()} /> group on the main page                                                                                          |
+| **Frontmatter** field list, under the Templates page             | The template document. Open it from the <UiLabel name={m.settings_profile_properties_name()} /> row on the main page with <UiLabel name={m.profile_editor_customize()} />. |
+| **Template folder**, on the Templates page                       | <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />                                                                             |
+| **JavaScript templates** and trim, on the Templates page         | The <UiLabel name={m.settings_advanced_template_engine_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />                                           |
+| **Citation** and **Alternate citation**, on the Templates page   | The <UiLabel name={m.settings_citation_templates_heading()} /> group on <SettingsPath page={m.settings_page_citations()} />                                                |
+| **Zotero database** page                                         | The <UiLabel name={m.settings_zotero_connection_heading()} /> group on <SettingsPath page={m.settings_page_zotero()} />                                                    |
+| **Library** page                                                 | The <UiLabel name={m.settings_zotero_libraries_heading()} /> group on <SettingsPath page={m.settings_page_zotero()} />                                                     |
+| **Live updates** page                                            | The <UiLabel name={m.settings_advanced_local_server_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />                                              |
+| **Maintenance** page                                             | <SettingsPath page={m.settings_page_advanced()} />                                                                                                                         |
 
 The legacy template rows for the literature note, the managed region, the annotation, and the note filename are no longer in settings. A literature note's body, filename, and properties come from its Profile's template document.
 

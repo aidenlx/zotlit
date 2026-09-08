@@ -9,8 +9,9 @@ import {
   WorkbenchDocumentController,
 } from "@zotlit/workbench/document";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
+import { SliceEditor } from "@zotlit/workbench/ui";
 
-import { SliceEditor } from "./slice-editor";
+import { WebTestHost } from "./test-host";
 
 it.each([false, true])(
   "completes a JSON-e rule through the shared source and history (Advanced=%s)",
@@ -33,13 +34,15 @@ it.each([false, true])(
     });
     await act(async () =>
       root.render(
-        <SliceEditor
-          controller={controller}
-          slice={advanced ? "advanced" : entrySlice(1)}
-          language={advanced ? "liquid" : "json-e"}
-          label="Rule"
-          reveal={{ from: position, to: position }}
-        />,
+        <WebTestHost>
+          <SliceEditor
+            controller={controller}
+            slice={advanced ? "advanced" : entrySlice(1)}
+            language={advanced ? "liquid" : "json-e"}
+            label="Rule"
+            reveal={{ from: position, to: position }}
+          />
+        </WebTestHost>,
       ),
     );
     const editor = host.querySelector<HTMLElement>('[contenteditable="true"]')!;

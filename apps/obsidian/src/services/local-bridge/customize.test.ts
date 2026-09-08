@@ -8,12 +8,12 @@ import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature
 
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
-
 import {
-  createCustomize,
-  launchSheetSkipped,
-  setLaunchSheetSkipped,
-} from "./customize";
+  profileCustomization,
+  saveProfileCustomization,
+} from "@/views/profile-editor/preferences";
+
+import { createCustomize } from "./customize";
 import type {
   CustomizeDeps,
   LaunchConsent,
@@ -60,6 +60,7 @@ interface Harness {
 }
 
 interface Options {
+  webWorkbenchEnabled?: boolean;
   settings?: Partial<Settings>;
   source?: string;
   /** What the sheet answers; `null` is Cancel. */
@@ -73,15 +74,20 @@ interface Options {
 }
 
 function harness({
+  webWorkbenchEnabled = true,
   settings: overrides = {},
   source = LIQUID_PROFILE,
-  consent = { doNotAskAgain: false },
+  consent = { destination: "web", remember: false },
   effectivePort = 9091,
   serverStarts = true,
   partials = [],
   activeNote = null,
 }: Options = {}): Harness {
-  const settings: Settings = { ...defaults, ...overrides };
+  const settings: Settings = {
+    ...defaults,
+    "server.workbench": true,
+    ...overrides,
+  };
   const device = new Map<string, unknown>();
   const opened: string[] = [];
   const sheets: LaunchSheetDetails[] = [];
@@ -120,6 +126,7 @@ function harness({
   } as unknown as App;
 
   const deps: CustomizeDeps = {
+    webWorkbenchEnabled,
     app,
     settings: {
       get current() {
@@ -161,6 +168,9 @@ function harness({
       return Promise.resolve(consent);
     },
     openExternal: (url) => opened.push(url),
+    openNative: async () => {
+      openedFiles.push("templates/zotlit-profile.default.md");
+    },
   };
 
   return {
@@ -182,6 +192,22 @@ describe("the Customize flow", () => {
     h = harness({ settings: { "server.enabled": true } });
   });
 
+  it("opens locally when the build gate is off despite persisted web access", async () => {
+    const local = harness({
+      webWorkbenchEnabled: false,
+      settings: { "server.enabled": true, "server.workbench": true },
+    });
+    saveProfileCustomization(deviceOf(local), "web");
+    local.device.set("zotlit-workbench-launch-approved", "1");
+
+    await local.customize({ profileId: "default", destination: "web" });
+
+    expect(local.openedFiles).toEqual(["templates/zotlit-profile.default.md"]);
+    expect(local.sheets).toEqual([]);
+    expect(local.launches).toEqual([]);
+    expect(local.update).not.toHaveBeenCalled();
+  });
+
   it("shows the sheet on the first launch of this device, then opens the browser", async () => {
     await h.customize({ profileId: "default" });
 
@@ -192,14 +218,15 @@ describe("the Customize flow", () => {
       item: null,
       template: "Default",
       turnServerOn: false,
+      turnWorkbenchOn: false,
     });
     expect(h.opened).toEqual([LAUNCH_URL]);
   });
 
-  it("skips the sheet once Do not ask again is ticked", async () => {
+  it("skips the sheet once the web choice is remembered", async () => {
     const asked = harness({
       settings: { "server.enabled": true },
-      consent: { doNotAskAgain: true },
+      consent: { destination: "web", remember: true },
     });
     await asked.customize({ profileId: "default" });
     expect(asked.sheets).toHaveLength(1);
@@ -209,15 +236,15 @@ describe("the Customize flow", () => {
     expect(asked.opened).toHaveLength(2);
   });
 
-  it("brings the sheet back once Confirm before opening clears the flag", async () => {
+  it("brings the sheet back once the destination preference returns to Ask", async () => {
     const asked = harness({
       settings: { "server.enabled": true },
-      consent: { doNotAskAgain: true },
+      consent: { destination: "web", remember: true },
     });
     await asked.customize({ profileId: "default" });
-    expect(launchSheetSkipped(deviceOf(asked))).toBe(true);
+    expect(profileCustomization(deviceOf(asked))).toBe("web");
 
-    setLaunchSheetSkipped(deviceOf(asked), false);
+    saveProfileCustomization(deviceOf(asked), "ask");
 
     await asked.customize({ profileId: "default" });
     expect(asked.sheets).toHaveLength(2);
@@ -226,11 +253,11 @@ describe("the Customize flow", () => {
   it("always shows the sheet while the Local Server is off, and turns it on", async () => {
     const off = harness({
       settings: { "server.enabled": false },
-      consent: { doNotAskAgain: true },
+      consent: { destination: "web", remember: true },
       effectivePort: null,
     });
     // A device that already ticked the box still meets the sheet.
-    setLaunchSheetSkipped(deviceOf(off), true);
+    saveProfileCustomization(deviceOf(off), "web");
 
     await off.customize({ profileId: "default" });
 
@@ -244,7 +271,7 @@ describe("the Customize flow", () => {
     try {
       const stuck = harness({
         settings: { "server.enabled": false },
-        consent: { doNotAskAgain: true },
+        consent: { destination: "web", remember: true },
         effectivePort: null,
         serverStarts: false,
       });
@@ -256,7 +283,7 @@ describe("the Customize flow", () => {
       expect(stuck.update).toHaveBeenCalledWith({ "server.enabled": true });
       expect(stuck.opened).toEqual([]);
       // The tick is not honoured for a launch that never happened.
-      expect(launchSheetSkipped(deviceOf(stuck))).toBe(false);
+      expect(profileCustomization(deviceOf(stuck))).toBe("ask");
     } finally {
       vi.useRealTimers();
     }
@@ -274,6 +301,68 @@ describe("the Customize flow", () => {
     expect(cancelled.opened).toEqual([]);
     expect(cancelled.update).not.toHaveBeenCalled();
     expect(cancelled.device.size).toBe(0);
+  });
+
+  it("remembers native editing without enabling either server service", async () => {
+    const native = harness({
+      settings: { "server.enabled": false, "server.workbench": false },
+      consent: { destination: "native", remember: true },
+    });
+    await native.customize({ profileId: "default" });
+    await native.customize({ profileId: "default" });
+    expect(native.sheets).toHaveLength(1);
+    expect(native.openedFiles).toHaveLength(2);
+    expect(native.launches).toEqual([]);
+    expect(native.update).not.toHaveBeenCalled();
+    expect(profileCustomization(deviceOf(native))).toBe("native");
+  });
+
+  it("an explicit web action asks for approval despite a remembered native choice", async () => {
+    saveProfileCustomization(deviceOf(h), "native");
+    await h.customize({ profileId: "default", destination: "web" });
+    expect(h.sheets).toHaveLength(1);
+    expect(h.opened).toEqual([LAUNCH_URL]);
+  });
+
+  it("an explicit native action skips the sheet despite a remembered web choice", async () => {
+    saveProfileCustomization(deviceOf(h), "web");
+    await h.customize({ profileId: "default", destination: "native" });
+    expect(h.sheets).toEqual([]);
+    expect(h.openedFiles).toHaveLength(1);
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it("asks before enabling web access even with a remembered web choice", async () => {
+    const disabled = harness({
+      settings: { "server.enabled": true, "server.workbench": false },
+    });
+    saveProfileCustomization(deviceOf(disabled), "web");
+    await disabled.customize({ profileId: "default" });
+    expect(disabled.sheets[0]).toMatchObject({ turnWorkbenchOn: true });
+    expect(disabled.update).toHaveBeenCalledWith({ "server.workbench": true });
+    expect(disabled.opened).toEqual([LAUNCH_URL]);
+  });
+
+  it("reads the legacy web approval only while the destination preference is absent", async () => {
+    h.device.set("zotlit-workbench-launch-approved", "1");
+    await h.customize({ profileId: "default" });
+    expect(h.sheets).toEqual([]);
+    saveProfileCustomization(deviceOf(h), "ask");
+    await h.customize({ profileId: "default" });
+    expect(h.sheets).toHaveLength(1);
+  });
+
+  it("opens JavaScript frontmatter in the native editor", async () => {
+    const javascript = harness({
+      source: LIQUID_PROFILE.replace(
+        "language: liquid",
+        "language: liquid\nfrontmatter:\n  - key: title\n    js: zt.title",
+      ),
+    });
+    await javascript.customize({ profileId: "default", destination: "web" });
+    expect(javascript.openedFiles).toHaveLength(1);
+    expect(javascript.sheets).toEqual([]);
+    expect(javascript.launches).toEqual([]);
   });
 
   it("takes the active Literature Note's paper, and a Sample Item without one", async () => {
@@ -313,6 +402,24 @@ describe("the Customize flow", () => {
     expect(eta.sheets).toEqual([]);
     expect(eta.openedFiles).toEqual(["templates/zotlit-profile.default.md"]);
   });
+
+  it.each([
+    ETA_PROFILE,
+    LIQUID_PROFILE.replace(
+      "language: liquid",
+      "language: liquid\nfrontmatter:\n  - key: title\n    js: zt.title",
+    ),
+  ])(
+    "keeps an unsupported Profile native with a remembered preference",
+    async (source) => {
+      const native = harness({ source });
+      saveProfileCustomization(deviceOf(native), "native");
+      await native.customize({ profileId: "default" });
+      expect(native.openedFiles).toHaveLength(1);
+      expect(native.sheets).toEqual([]);
+      expect(native.launches).toEqual([]);
+    },
+  );
 
   it("keeps a Profile that calls an Eta partial from the template folder in Obsidian", async () => {
     const byline = {

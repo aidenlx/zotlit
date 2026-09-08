@@ -2,6 +2,9 @@
   "$schema": "https://turborepo.dev/schema.json",
   "extends": ["//"],
   "tasks": {
+    "dev": {
+      "dependsOn": ["^build"]
+    },
     "build": {
       // The agent-skill archives are read from the repo-root `skills/` tree at
       // build time (src/lib/agent-skills.ts), so those files are build inputs.
@@ -11,25 +14,18 @@
         "$TURBO_ROOT$/project.inlang/settings.json",
         "$TURBO_ROOT$/messages/**"
       ],
-      "outputs": ["dist/**", ".tanstack/**", ".source/**"],
+      "outputs": ["dist/**", ".tanstack/**", "src/paraglide/**"],
       // The Cloudflare Web Analytics token is read at build time, so builds
       // with different values are distinct; `CLOUDFLARE_ENV` likewise
       // separates beta and production outputs.
       "env": ["VITE_CF_BEACON_TOKEN", "CLOUDFLARE_ENV", "GITHUB_SHA"]
     },
-    // The `.source/` collection index, which the typecheck reads. `vite build`
-    // regenerates it too, so a lint or typecheck run needs only this task.
-    "codegen": {
-      "outputs": [".source/**"],
-      "outputLogs": "errors-only"
+    // Vite's real build owns collection and message generation; checks reuse its cached output.
+    "typecheck": {
+      "dependsOn": ["$TURBO_EXTENDS$", "build", "cf-typegen:check"]
     },
-    "generate:i18n": {
-      "inputs": [
-        "$TURBO_ROOT$/project.inlang/settings.json",
-        "$TURBO_ROOT$/messages/**"
-      ],
-      "outputs": ["src/paraglide/**"],
-      "outputLogs": "errors-only"
+    "lint": {
+      "dependsOn": ["build"]
     },
     "cf-typegen:check": {
       "inputs": ["wrangler.jsonc", "worker-configuration.d.ts"],

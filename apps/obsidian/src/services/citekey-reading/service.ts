@@ -10,6 +10,7 @@ import { getLogger } from "@/lib/log";
 import { renderProfileRecovery } from "@/lib/profile-recovery";
 import {
   LiveSections,
+  isDraftMarkdown,
   rerenderReadingViews,
   sectionRange,
 } from "@/lib/reading-view";
@@ -234,6 +235,7 @@ export class CitekeyReading extends Service<void> {
    * place for as long as Obsidian shows the section.
    */
   #process(el: HTMLElement, ctx: MarkdownPostProcessorContext): void {
+    if (isDraftMarkdown(el)) return;
     if (this.#active !== true) return;
     const citations = sectionCitations(el);
     if (citations.length === 0) return;

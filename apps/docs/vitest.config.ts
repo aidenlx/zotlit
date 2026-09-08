@@ -9,8 +9,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": resolve(import.meta.dirname, "src"),
-      collections: resolve(import.meta.dirname, ".source"),
     },
   },
-  plugins: [fumadocsMdx()],
+  plugins: [fumadocsMdx({ index: false })],
 });
