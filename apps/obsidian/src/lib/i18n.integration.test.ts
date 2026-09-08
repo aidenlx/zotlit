@@ -13,9 +13,11 @@ afterEach(() => runtime.reset());
 
 test("the plugin pack contains its shared labels and fits the runtime cap", () => {
   expect(basePack.messages).not.toHaveProperty("docs_index_title");
-  // The web Workbench's strings belong to the docs catalog, so the plugin pack
-  // leaves them out.
-  expect(basePack.messages).not.toHaveProperty("workbench_title");
+  // Native shared controls read the same pack as the rest of the plugin.
+  expect(basePack.messages).toMatchObject({
+    workbench_title: "Template workbench",
+    workbench_tab_match: "Match",
+  });
   expect(basePack.messages).not.toHaveProperty(["zotero.menu_file.label"]);
   expect(basePack.messages).toHaveProperty(["zotero.prefs_notify_section"]);
   // A pack over the cap is refused at runtime, and copy another host owns is
@@ -42,5 +44,6 @@ test("the generated facade renders bundled lifecycle copy and base-locale fallba
   );
   // Everything outside the configured prefixes keeps the existing ladder.
   expect(m.hello()).toBe("world");
+  expect(m.workbench_tab_match()).toBe("Match");
   expect(m.creator_summary({ count: 3, first: "Ada" })).toBe("Ada et al.");
 });
