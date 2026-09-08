@@ -50,14 +50,14 @@ export function Explorer({
         </div>
       ) : (
         <>
-          <div className="zt:flex zt:shrink-0 zt:flex-col zt:gap-1.5 zt:border-b zt:border-border zt:bg-background zt:px-2 zt:py-2">
+          <div className="zt:flex zt:shrink-0 zt:flex-col zt:gap-1.5 zt:border-b zt:border-border zt:bg-background zt:px-3 zt:py-2">
             <div className="zt:flex zt:items-center zt:gap-1">
               <Icon
-                name="braces"
+                name="file-text"
                 className="zt:size-3.5 zt:shrink-0 zt:text-faint"
               />
               <span
-                className="zt:min-w-0 zt:flex-1 zt:truncate zt:text-xs zt:font-medium zt:text-foreground"
+                className="zt:line-clamp-2 zt:min-w-0 zt:flex-1 zt:text-sm zt:leading-normal zt:text-foreground"
                 {...(itemLabel ? tooltipAttrs(itemLabel) : {})}
               >
                 {itemLabel}

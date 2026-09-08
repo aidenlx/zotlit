@@ -1,3 +1,4 @@
+import "./style.css";
 // The active editor's result, shown as native Markdown in an independently owned leaf.
 import { ItemView } from "obsidian";
 import type { WorkspaceLeaf } from "obsidian";
@@ -48,7 +49,7 @@ export class NotePreviewView extends ItemView {
           editor?.preview ? (
             editor.provide(<PreviewContent editor={editor} />)
           ) : (
-            <div className="zt:flex zt:flex-col zt:gap-3 zt:p-3">
+            <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
               <p>{m.profile_preview_empty()}</p>
               <button
                 onClick={() =>
@@ -81,7 +82,7 @@ function PreviewContent({ editor }: { editor: ProfileEditorView }) {
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [showManaged, setShowManaged] = useState(false);
   return (
-    <div className="zt:flex zt:flex-col zt:gap-3 zt:p-3">
+    <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
       <PreviewControls
         busy={busy}
         onRun={() =>

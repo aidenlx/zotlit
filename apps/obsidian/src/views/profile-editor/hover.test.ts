@@ -62,7 +62,7 @@ describe("template hover", () => {
     expect(popover.hoverEl.className).toBe("popover hover-popover");
     const card = popover.hoverEl.querySelector(`.${themeHook.templateHover}`)!;
     expect(card.classList.contains("zt-root")).toBe(true);
-    expect(card.querySelector("strong")!.textContent).toBe("title");
+    expect(card.querySelector("strong")!.textContent).toBe("zt.title");
     expect(card.querySelector("span")!.textContent).toBe("string | null");
     expect(card.querySelector("p")!.textContent).toBe("Item title.");
     expect(card.textContent).toContain("zt.title");

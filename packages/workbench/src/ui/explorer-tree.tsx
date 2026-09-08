@@ -298,10 +298,39 @@ function ValueContent({ node }: { node: ValueNode }) {
 function SimpleNodeRow({ node }: { node: DisplayNode }) {
   const part = useParts("explorerTree");
   const path = formatPath(node.path, "zt");
+  const tooltip = useTooltip(path);
+  const container =
+    node.kind === "value" &&
+    (node.valueType === "array" || node.valueType === "object")
+      ? node
+      : null;
+  if (container && !container.preview) {
+    return (
+      <div {...part("simple-row")} {...tooltip}>
+        <div {...part("simple-heading")}>
+          <KeyLabel>{node.label}</KeyLabel>
+          {container.valueType === "array" && (
+            <>
+              {" "}
+              <span {...part("hint")}>({container.size})</span>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div {...part("simple-row")}>
+      <div {...part("simple-heading")} {...tooltip}>
+        <KeyLabel>{node.label}</KeyLabel>
+        <code {...part("path")} {...tooltip}>
+          {path}
+        </code>
+      </div>
       <div {...part("simple-value")}>
-        {node.kind === "value" ? (
+        {container ? (
+          <StringValue value={container.preview!} />
+        ) : node.kind === "value" ? (
           <ValueContent node={node} />
         ) : node.kind === "helper" ? (
           node.evaluated === null ? (
@@ -312,12 +341,6 @@ function SimpleNodeRow({ node }: { node: DisplayNode }) {
         ) : (
           <span {...part("placeholder")}>{node.reason}</span>
         )}
-      </div>
-      <div {...part("simple-heading")}>
-        <KeyLabel>{node.label}</KeyLabel>
-        <code {...part("path")} {...useTooltip(path)}>
-          {path}
-        </code>
       </div>
     </div>
   );
