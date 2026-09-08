@@ -140,9 +140,13 @@ _Avoid_: advanced templates, legacy templates, scripting, user scripts
 The `filename` Template, evaluated to determine a new Literature Note's filename. Uses the `zt.*` template data without note-path resolvers (the note doesn't exist yet at evaluation time); output is a single line.
 _Avoid_: filename expression, filename setting (it is a vault file, not configuration)
 
-**Template Workbench** _(Obsidian)_:
+**Template Workbench**:
+The workflow for building and testing a Literature Note Profile's template document. Three surfaces serve it: the web Workbench, the Template Workbench CLI, and the Profile Editor. The term names the activity, not one surface.
+_Avoid_: workbench (bare, too vague)
+
+**Template Workbench CLI** _(Obsidian)_:
 The agent-facing CLI surface over the template system: reports template-authoring state, returns the exact item-backed template data, renders templates entirely in memory, and manages Managed Frontmatter configuration. Inspection, rendering, and frontmatter evaluation are side-effect-free and reuse the Template Data Explorer's inert resolver behavior; mutation is scoped to Managed Frontmatter configuration only — never vault files, never note content. Selection takes one Indexed Key naming any Zotero object, with the data root as the lens on it. Every diagnostic carries its own recovery hint, so corrective guidance arrives with the failure it belongs to.
-_Avoid_: agent template workbench (names the audience, not the thing), template CLI (names the mechanism), template preview (implies rendered visual output)
+_Avoid_: agent template workbench (names the audience, not the thing), template CLI (names the mechanism), template preview (implies rendered visual output), Template Workbench (the umbrella term for the whole workflow)
 
 **Template Completion**:
 Suggestions for fields, local variables, and language constructs at the position being edited in a Template. Accepting a suggestion completes an expression or inserts a Template Snippet.

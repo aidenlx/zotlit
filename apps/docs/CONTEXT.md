@@ -12,9 +12,12 @@ _Avoid_: ZotLit for Obsidian, the Obsidian plugin (as a standing name; fine as a
 The required Zotero add-on. Write “ZotLit Companion, the Zotero add-on” on first use in a page and “the Companion” later. It installs under the display name “ZotLit” in Zotero's add-on manager, so docs never call it by its displayed name alone.
 _Avoid_: Zotero companion, ZotLit Zotero companion, companion plugin, Zotero plugin (v1 term), zotero-obsidian-note (v1 product), ZotLit for Zotero
 
-**Template Workbench** _(web)_:
-The human-facing surface at `/workbench` for editing a Literature Note Profile's template document, including its note content, Annotation format, properties, and file destination. The term is one with the Obsidian glossary's Template Workbench; the host qualifies it ("the web Workbench", "the agent CLI") only where the difference matters. Its beginner face prints "template" and the Profile's name, never Profile, manifest, or frontmatter.
-_Avoid_: note layout (the #938 draft's placeholder, retired by #945), web template editor, Profile editor
+**Template Workbench**:
+The workflow for building and testing a Literature Note Profile's template document. Three surfaces serve it: the web Workbench at `/workbench`, the Template Workbench CLI for agents, and the Profile Editor in Obsidian. The term names the activity, not one surface; each surface qualifies by host when the difference matters.
+
+**Web Workbench** _(web)_:
+The human-facing surface at `/workbench` for editing a Literature Note Profile's template document in the browser, including its note content, Annotation format, properties, and file destination. Its beginner face prints "template" and the Profile's name, never Profile, manifest, or frontmatter.
+_Avoid_: note layout (the #938 draft's placeholder, retired by #945), web template editor
 
 **UI Label**:
 A stable, untranslated name that identifies a product control or choice in the English base catalog, such as a command, setting, menu item, button, or tooltip. Documentation quotes it from its Message instead of restating its text. A notice text that documentation quotes verbatim is treated the same way.
