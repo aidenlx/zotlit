@@ -9,11 +9,11 @@ import type { SuggestionSource } from "#/language/index";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 
 import { completionFields } from "./completion-fields";
 import { useDocumentRevision } from "./editor";
-import { useOptionalHost } from "./host";
+import { HiddenName, useOptionalHost } from "./host";
 import type { WorkbenchInsertTarget } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { tagDescription } from "./tag-help";
@@ -99,6 +99,7 @@ export function SliceEditor({
   const part = useParts("sliceEditor");
   const adapter = useOptionalHost();
   const editorExtension = useEditorExtension();
+  const nameId = useId();
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView>(null);
   // The view outlives every render, so it reads the current callbacks through
@@ -225,7 +226,7 @@ export function SliceEditor({
           // The whole-file pane is the one place a reader counts lines, so the
           // gutter rides with Advanced alone.
           ...(slice === "advanced" ? [lineNumbers()] : []),
-          EditorView.contentAttributes.of({ "aria-label": label }),
+          EditorView.contentAttributes.of({ "aria-labelledby": nameId }),
           extensions ?? [],
           EditorView.updateListener.of((update) => {
             if (!update.selectionSet && !update.focusChanged) return;
@@ -259,7 +260,7 @@ export function SliceEditor({
       editor.current = null;
       view.destroy();
     };
-  }, [controller, slice, label, language, singleLine, extensions, readOnly]);
+  }, [controller, slice, nameId, language, singleLine, extensions, readOnly]);
 
   useEffect(() => {
     const view = editor.current;
@@ -305,6 +306,7 @@ export function SliceEditor({
   // as the site's Input control.
   return (
     <div {...part("slice-editor")}>
+      <HiddenName id={nameId}>{label}</HiddenName>
       <div
         ref={host}
         data-workbench-scroll={slice}

@@ -52,7 +52,7 @@ describe("preview scheduling", () => {
 
   function editNote(scope: HTMLElement, text: string) {
     const content = scope.querySelector<HTMLElement>(
-      `[aria-label="${m.workbench_tab_note()}"][contenteditable]`,
+      '[data-workbench-scroll="note"] [contenteditable]',
     )!;
     const view = EditorView.findFromDOM(content)!;
     act(() =>

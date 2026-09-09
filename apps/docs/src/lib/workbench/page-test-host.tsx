@@ -214,9 +214,7 @@ export async function chooseAnnotation(
 
 export function resultText(host: HTMLElement): string {
   return (
-    host.querySelector(
-      `[role="region"][aria-label="${m.workbench_view_result()}"]`,
-    )?.textContent ?? ""
+    host.querySelector('[role="region"][data-part="region"]')?.textContent ?? ""
   );
 }
 
@@ -231,9 +229,7 @@ export function sourceView(host: HTMLElement): EditorView {
 
 /** The pane tab the page reads as chosen. */
 export function chosenTab(host: HTMLElement): string {
-  const tabs = host.querySelector(
-    `[role="tablist"][aria-label="${m.workbench_title()}"]`,
-  )!;
+  const tabs = host.querySelector('[role="tablist"]')!;
   return tabs.querySelector('[aria-selected="true"]')!.textContent!;
 }
 

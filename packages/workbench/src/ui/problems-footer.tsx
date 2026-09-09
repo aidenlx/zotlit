@@ -3,6 +3,7 @@
 // name asks the host to open it there.
 
 import type { WorkbenchProblem, WorkbenchSliceId } from "#/document/controller";
+import { useId } from "react";
 
 import type { WorkbenchMessages } from "./generated/messages";
 import type { WorkbenchMessageLabel } from "./messages";
@@ -52,11 +53,14 @@ export function ProblemsFooter({
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("problemsFooter");
+  const headingId = useId();
   if (problem === null) return null;
   const text = problemText(m, problem);
   return (
-    <section aria-label={m.workbench_problems_heading()} {...part("problems")}>
-      <p {...part("problems-heading")}>{m.workbench_problems_heading()}</p>
+    <section aria-labelledby={headingId} {...part("problems")}>
+      <p id={headingId} {...part("problems-heading")}>
+        {m.workbench_problems_heading()}
+      </p>
       <p {...part("problems-text")}>
         {text.message}{" "}
         <span {...part("problems-recovery")}>{text.recovery}</span>{" "}

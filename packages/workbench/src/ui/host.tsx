@@ -207,6 +207,20 @@ export function useTooltip(text: string): HTMLAttributes<HTMLElement> {
   return host?.tooltip(text) ?? { title: text };
 }
 
+/**
+ * A container's accessible name, carried by a hidden element the container
+ * points `aria-labelledby` at. Obsidian reads `aria-label` as an element's
+ * hover tooltip, so a container names itself this way and stays quiet under
+ * the pointer.
+ */
+export function HiddenName({ id, children }: { id: string; children: string }) {
+  return (
+    <span hidden id={id}>
+      {children}
+    </span>
+  );
+}
+
 /** The host, when the surface is mounted inside one. */
 export function useOptionalHost(): WorkbenchHost | null {
   return useContext(HostContext);

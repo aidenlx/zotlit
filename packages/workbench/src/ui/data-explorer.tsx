@@ -1,11 +1,11 @@
 import type { DisplayNode, TemplateEngine, TreeState } from "#/explorer/index";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useId, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { commonRows, fieldSnippet, rowMatches } from "./explorer-fields";
 import type { FieldInsertionMode } from "./explorer-fields";
 import { DisplayTree } from "./explorer-tree";
-import { useWorkbenchHost } from "./host";
+import { HiddenName, useWorkbenchHost } from "./host";
 import type { WorkbenchMenuItem, WorkbenchMenuRequest } from "./host";
 // Both hosts use this field discovery tree. The host owns clipboard, insertion,
 // export, popup presentation, and the controlled filtering/expansion state.
@@ -100,6 +100,7 @@ export function DataExplorer({
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
   const part = useParts("dataExplorer");
+  const variantsId = useId();
   const insertNode =
     onInsertNode ??
     (onInsert
@@ -215,11 +216,10 @@ export function DataExplorer({
               ? m.workbench_fields_root_filename()
               : m.workbench_fields_root_note()}
         </span>
-        <div
-          role="group"
-          aria-label={m.workbench_explorer_variant()}
-          {...part("variants")}
-        >
+        <div role="group" aria-labelledby={variantsId} {...part("variants")}>
+          <HiddenName id={variantsId}>
+            {m.workbench_explorer_variant()}
+          </HiddenName>
           {(["simple", "all"] as const).map((value) => (
             <button
               key={value}

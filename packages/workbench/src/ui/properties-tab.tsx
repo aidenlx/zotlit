@@ -577,10 +577,7 @@ export function PropertiesResult({
   const part = useParts("properties");
   if (showMarkdown) {
     return (
-      <pre
-        aria-label={m.workbench_result_markdown_body()}
-        {...part("markdown")}
-      >
+      <pre {...part("markdown")}>
         {frontmatterBlock ?? m.workbench_properties_produced_none()}
       </pre>
     );
