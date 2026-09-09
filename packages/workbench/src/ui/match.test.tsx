@@ -49,6 +49,37 @@ it("places Match between Name and Profile on both hosts", () => {
   ]);
 });
 
+it("validates the starter condition after an autosaved edit", async () => {
+  const controller = new WorkbenchDocumentController(
+    DEFAULT_PROFILE_SOURCE.replace("id: default", "id: Bk3Qn7XvT2Lp"),
+  );
+  render(
+    <WorkbenchHostProvider host={fakeHost()}>
+      <MatchPane controller={controller} facts={facts} />
+    </WorkbenchHostProvider>,
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).not.toBe(
+      m.workbench_loading_item(),
+    ),
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(controller.document?.manifest.match).toBeUndefined();
+  const input = screen.getByLabelText(m.workbench_match_value());
+  fireEvent.input(input, { target: { value: "Thesis" } });
+  expect(controller.document?.manifest.match).toEqual({
+    and: ['collections.within("Thesis")'],
+  });
+  expect(screen.queryByRole("alert")).toBeNull();
+  fireEvent.input(input, { target: { value: "" } });
+  expect(screen.getByRole("alert").textContent).toBe(
+    m.workbench_match_collection_empty(),
+  );
+  expect(controller.document?.manifest.match).toEqual({
+    and: ['collections.within("")'],
+  });
+});
+
 it("keeps nested expression rows as written while a labelled row changes, and restores the source on undo", async () => {
   const { controller, source } = open(
     `{and: ['itemType == "book"', {or: ['tags.contains("Read") || tags.contains("Later")']}]}`,
