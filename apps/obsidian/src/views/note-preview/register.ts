@@ -1,7 +1,8 @@
-// Preview and Explorer follow the Profile Editor in their own window.
+// Explicit workbench opening and native group/follow association for companion views.
 import type { App, Plugin, WorkspaceLeaf } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { getLogger } from "@/lib/log";
 import { runProfileEditorAction } from "@/views/profile-editor/actions";
 import {
   PROFILE_EDITOR_VIEW_TYPE,
@@ -11,68 +12,79 @@ import { EXPLORER_VIEW_TYPE } from "@/views/template-data-explorer/view";
 
 import { NotePreviewView, NOTE_PREVIEW_VIEW_TYPE } from "./view";
 
-interface ActiveEditor {
-  editor: ProfileEditorView | null;
-  listeners: Map<
-    (editor: ProfileEditorView | null) => void,
-    { leaf?: WorkspaceLeaf; editor: ProfileEditorView | null }
-  >;
-  opening: Map<ProfileEditorView, Promise<void>>;
-}
-const sessions = new WeakMap<App, ActiveEditor>();
-function session(app: App): ActiveEditor {
-  let value = sessions.get(app);
-  if (!value) {
-    value = { editor: null, listeners: new Map(), opening: new Map() };
-    sessions.set(app, value);
-  }
-  return value;
-}
+const logger = getLogger(["views", "workbench-association"]);
+const openings = new WeakMap<ProfileEditorView, Promise<void>>();
+
+/** Native group order wins; unlinked panes follow Outline's app-wide file context. */
 export function activeProfileEditor(
   app: App,
-  leaf?: WorkspaceLeaf,
+  leaf: WorkspaceLeaf | null = app.workspace.activeLeaf,
+  retained: ProfileEditorView | null = null,
 ): ProfileEditorView | null {
-  const active = session(app).editor;
-  if (!leaf) return active;
-  const container = leaf.getContainer();
-  const focused = app.workspace.activeLeaf;
-  if (
-    focused?.getContainer() === container &&
-    !(focused.view instanceof ProfileEditorView) &&
-    focused.view.getViewType() !== NOTE_PREVIEW_VIEW_TYPE &&
-    focused.view.getViewType() !== EXPLORER_VIEW_TYPE
-  )
-    return null;
-  const open = app.workspace.getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE);
-  if (
-    active?.leaf.getContainer() === container &&
-    open.some((entry) => entry.view === active)
-  )
-    return active;
-  const local = open.find((entry) => entry.getContainer() === container)?.view;
-  return local instanceof ProfileEditorView ? local : null;
+  if (leaf?.view instanceof ProfileEditorView) return leaf.view;
+  if (leaf?.group) {
+    const editor = app.workspace
+      .getGroupLeaves(leaf.group)
+      .find((peer) => peer.view instanceof ProfileEditorView)?.view;
+    return editor instanceof ProfileEditorView ? editor : null;
+  }
+  if (leaf?.pinned && leaf.view.getViewType() !== PROFILE_EDITOR_VIEW_TYPE)
+    return retained &&
+      app.workspace
+        .getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE)
+        .some((peer) => peer.view === retained)
+      ? retained
+      : null;
+  const view = app.workspace.getActiveFileView();
+  return view instanceof ProfileEditorView ? view : null;
 }
+
+/** Each caller owns its native subscriptions, including peer layout changes. */
 export function subscribeActiveProfileEditor(
   app: App,
   listener: (editor: ProfileEditorView | null) => void,
   leaf?: WorkspaceLeaf,
 ): () => void {
-  const value = session(app);
-  const editor = activeProfileEditor(app, leaf);
-  value.listeners.set(listener, { leaf, editor });
-  try {
+  using cleanup = new DisposableStack();
+  let editor = activeProfileEditor(app, leaf);
+  let pinned = leaf?.pinned;
+  const refresh = () => {
+    const next = activeProfileEditor(app, leaf, editor);
+    const unpinned = pinned && !leaf?.pinned;
+    pinned = leaf?.pinned;
+    if (next === editor && !unpinned) return;
+    logger.debug("Workbench editor binding changed", {
+      leaf: leaf?.id ?? null,
+      previousLeaf: editor?.leaf.id ?? null,
+      nextLeaf: next?.leaf.id ?? null,
+      mode: leaf?.group ? "group" : leaf?.pinned ? "pinned" : "follow",
+      group: leaf?.group ?? null,
+      pinned: leaf?.pinned ?? false,
+    });
+    editor = next;
     listener(editor);
-  } catch (error) {
-    value.listeners.delete(listener);
-    throw error;
-  }
-  return () => {
-    value.listeners.delete(listener);
   };
+  for (const ref of [
+    app.workspace.on("active-leaf-change", refresh),
+    app.workspace.on("file-open", refresh),
+    app.workspace.on("layout-change", refresh),
+  ]) {
+    cleanup.defer(() => app.workspace.offref(ref));
+  }
+  if (leaf) {
+    for (const ref of [
+      leaf.on("group-change", refresh),
+      leaf.on("pinned-change", refresh),
+    ]) {
+      cleanup.defer(() => leaf.offref(ref));
+    }
+  }
+  listener(editor);
+  const subscriptions = cleanup.move();
+  return () => subscriptions.dispose();
 }
 export function registerNotePreview(plugin: Plugin): void {
   const { app } = plugin;
-  const value = session(app);
   plugin.registerView(
     NOTE_PREVIEW_VIEW_TYPE,
     (leaf) => new NotePreviewView(leaf, plugin.manifest.id),
@@ -103,34 +115,6 @@ export function registerNotePreview(plugin: Plugin): void {
       return true;
     },
   });
-  function refresh() {
-    const leaf = app.workspace.activeLeaf;
-    const view = leaf?.view;
-    const sidebar =
-      view?.getViewType() === NOTE_PREVIEW_VIEW_TYPE ||
-      view?.getViewType() === EXPLORER_VIEW_TYPE;
-    const editor =
-      view instanceof ProfileEditorView
-        ? view
-        : sidebar && leaf
-          ? activeProfileEditor(app, leaf)
-          : null;
-    value.editor = editor;
-    for (const [listener, subscription] of value.listeners) {
-      const local = activeProfileEditor(app, subscription.leaf);
-      if (local === subscription.editor) continue;
-      subscription.editor = local;
-      listener(local);
-    }
-  }
-  plugin.registerEvent(app.workspace.on("active-leaf-change", refresh));
-  plugin.registerEvent(app.workspace.on("layout-change", refresh));
-  app.workspace.onLayoutReady(refresh);
-  plugin.register(() => {
-    value.editor = null;
-    for (const listener of value.listeners.keys()) listener(null);
-    sessions.delete(app);
-  });
 }
 
 /** Move the same authoring session into an explicit three-column window. */
@@ -138,8 +122,7 @@ export function openProfileWorkbench(
   app: App,
   editor: ProfileEditorView,
 ): Promise<void> {
-  const value = session(app);
-  const pending = value.opening.get(editor);
+  const pending = openings.get(editor);
   if (pending) return pending;
   const opening = (async () => {
     const { workspace } = app;
@@ -151,6 +134,7 @@ export function openProfileWorkbench(
         size: { width: 1440, height: 900 },
       });
       editor.markWorkbenchWindow();
+      editor.onResize();
     }
     await openCompanion(app, editor, EXPLORER_VIEW_TYPE);
     await openCompanion(app, editor, NOTE_PREVIEW_VIEW_TYPE);
@@ -158,9 +142,9 @@ export function openProfileWorkbench(
     workspace.setActiveLeaf(editor.leaf, { focus: true });
     editor.leaf.getContainer().focus();
   })().finally(() => {
-    value.opening.delete(editor);
+    openings.delete(editor);
   });
-  value.opening.set(editor, opening);
+  openings.set(editor, opening);
   return opening;
 }
 
@@ -190,20 +174,16 @@ async function openCompanion(
   type: typeof EXPLORER_VIEW_TYPE | typeof NOTE_PREVIEW_VIEW_TYPE,
 ): Promise<WorkspaceLeaf> {
   const { workspace } = app;
-  const container = editor.leaf.getContainer();
   const existing = workspace
     .getLeavesOfType(type)
-    .find(
-      (leaf) =>
-        leaf.getContainer() === container &&
-        leaf.getRoot() === editor.leaf.getRoot(),
-    );
+    .find((leaf) => !!editor.leaf.group && leaf.group === editor.leaf.group);
   if (existing) return existing;
   const leaf = workspace.createLeafBySplit(
     editor.leaf,
     "vertical",
     type === EXPLORER_VIEW_TYPE,
   );
+  leaf.setGroupMember(editor.leaf);
   await leaf.setViewState({ type, active: false });
   return leaf;
 }

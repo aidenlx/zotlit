@@ -26,10 +26,16 @@ import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import type { TemplateService } from "@/services/template/service";
-import { subscribeActiveProfileEditor } from "@/views/note-preview/register";
+import {
+  activeProfileEditor,
+  subscribeActiveProfileEditor,
+} from "@/views/note-preview/register";
 import { createProfileEditorHost } from "@/views/profile-editor/host";
 import { profileEditorTheme } from "@/views/profile-editor/theme";
-import type { ProfileEditorView } from "@/views/profile-editor/view";
+import type {
+  ProfileAuthoringContext,
+  ProfileEditorView,
+} from "@/views/profile-editor/view";
 
 import { createExplorerActions, ExplorerActionsContext } from "./actions";
 import type { ExplorerActions } from "./actions";
@@ -166,8 +172,7 @@ export class TemplateDataExplorerView extends ItemView {
     const event = this.app.workspace.on(
       "zotlit:authoring-context",
       (context) => {
-        if (context.leaf === this.#editor?.leaf)
-          this.#session.setContext(context);
+        if (context.leaf === this.#editor?.leaf) this.#apply(context);
       },
     );
     cleanup.defer(() => this.app.workspace.offref(event));
@@ -176,8 +181,14 @@ export class TemplateDataExplorerView extends ItemView {
         this.app,
         (editor) => {
           this.#editor = editor;
-          if (editor) this.#session.setContext(editor.authoringContext);
-          else this.#session.state.setState({ context: null });
+          if (editor) this.#apply(editor.authoringContext);
+          else {
+            const context = this.#session.state.getState().context;
+            if (context)
+              this.#session.state.setState({
+                context: { ...context, canInsertField: false },
+              });
+          }
         },
         this.leaf,
       ),
@@ -195,6 +206,20 @@ export class TemplateDataExplorerView extends ItemView {
       if (key) this.#session.setTarget({ id: key, title: key }, "note");
     } else this.#session.refresh();
   }
+  #apply(context: ProfileAuthoringContext): void {
+    const previous = this.#session.state.getState().context;
+    if (this.leaf.pinned && previous) {
+      this.#session.state.setState({
+        context: {
+          ...previous,
+          canInsertField:
+            previous.path === context.path && context.canInsertField,
+        },
+      });
+      return;
+    }
+    this.#session.setContext(context);
+  }
   #mount(): void {
     if (!this.#host || !this.#actions) return;
     this.#root?.render(
@@ -210,11 +235,15 @@ export class TemplateDataExplorerView extends ItemView {
                       ? ["liquid", "eta"]
                       : ["liquid"],
                   onInsertNode: (node) => {
-                    const leaf = this.#session.state.getState().context?.leaf;
-                    if (leaf)
+                    const editor = activeProfileEditor(
+                      this.app,
+                      this.leaf,
+                      this.#editor,
+                    );
+                    if (editor && editor === this.#sourceEditor())
                       this.app.workspace.trigger(
                         "zotlit:insert-template-field",
-                        { leaf, node },
+                        { leaf: editor.leaf, node },
                       );
                   },
                   canExploreAnnotation: (node) =>
@@ -278,9 +307,17 @@ export class TemplateDataExplorerView extends ItemView {
         pluginVersion: this.#deps.pluginVersion,
       });
   }
+  #sourceEditor(): ProfileEditorView | null {
+    return this.#editor &&
+      this.#session.state.getState().context?.path ===
+        this.#editor.authoringContext.path
+      ? this.#editor
+      : null;
+  }
   async #chooseItem(): Promise<void> {
-    if (this.#editor) {
-      await this.#editor.chooseItem();
+    const editor = this.#sourceEditor();
+    if (editor) {
+      await editor.chooseItem();
       return;
     }
     const hit = await pickItem(
@@ -294,7 +331,7 @@ export class TemplateDataExplorerView extends ItemView {
     if (
       !hit ||
       this.#closed ||
-      this.#editor ||
+      this.#sourceEditor() ||
       isChildItemFields(hit.item.fields)
     )
       return;

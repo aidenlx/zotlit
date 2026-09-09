@@ -85,6 +85,33 @@ function setup(deps: Partial<ProfileEditorDeps> = {}, sharedApp?: App) {
 }
 
 describe("ProfileEditorView", () => {
+  it("updates the CodeMirror root after a native window move and keeps its document history", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    const frame = cleanup.adopt(document.createElement("iframe"), (element) =>
+      element.remove(),
+    );
+    cleanup.defer(() => act(async () => view.close()));
+    document.body.append(frame);
+    document.body.append(view.contentEl);
+    await act(async () => view.open());
+    const controller = view.controller;
+    await act(async () => {
+      controller.setManifestKey("name", "Moved paper");
+    });
+    const element = view.contentEl.querySelector<HTMLElement>(".cm-editor")!;
+    const editor = EditorView.findFromDOM(element)!;
+    frame.contentDocument!.body.append(view.contentEl);
+    view.onResize();
+    expect(editor.root).toBe(frame.contentDocument);
+    expect(view.controller).toBe(controller);
+    expect(view.getViewData()).toContain("name: Moved paper");
+    await act(async () => {
+      controller.undo();
+    });
+    expect(view.getViewData()).toBe(SOURCE);
+  });
+
   it("routes Settings from the current profile identity without selecting an Item", async () => {
     const openSettings = vi.fn<(defaultProfile: boolean) => void>();
     const { view } = setup({ openSettings });

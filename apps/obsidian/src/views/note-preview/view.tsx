@@ -191,6 +191,7 @@ export class NotePreviewView extends ItemView {
     const session = this.#session;
     if (!session) return;
     const previous = session.state.getState().context;
+    if (this.leaf.pinned && previous) return;
     if (previous === null && context.annotationId)
       session.select(context.annotationId);
     if (this.#file !== this.#editor?.file) this.#sourceGeneration++;
@@ -206,6 +207,13 @@ export class NotePreviewView extends ItemView {
     )
       session.setSource(this.#editor.getViewData());
   }
+  #sourceEditor(): ProfileEditorView | null {
+    return this.#editor &&
+      this.#session?.state.getState().context?.path ===
+        this.#editor.authoringContext.path
+      ? this.#editor
+      : null;
+  }
   #mount(): void {
     const session = this.#session;
     const scheduler = this.#scheduler;
@@ -217,8 +225,9 @@ export class NotePreviewView extends ItemView {
             <PreviewContent
               session={session}
               scheduler={scheduler}
-              chooseItem={() => void this.#editor?.chooseItem()}
-              reveal={(slice) => this.#editor?.revealSlice(slice)}
+              editorAvailable={this.#sourceEditor() !== null}
+              chooseItem={() => void this.#sourceEditor()?.chooseItem()}
+              reveal={(slice) => this.#sourceEditor()?.revealSlice(slice)}
             />
           </WorkbenchHostProvider>
         </WorkbenchThemeProvider>
@@ -248,9 +257,11 @@ function PreviewContent({
   scheduler,
   chooseItem,
   reveal,
+  editorAvailable,
 }: {
   session: NativePreviewSession;
   scheduler: RenderScheduler<NativeRenderResult>;
+  editorAvailable: boolean;
   chooseItem: () => void;
   reveal: (slice: "advanced" | "annotation" | `entry:${number}`) => void;
 }) {
@@ -277,7 +288,7 @@ function PreviewContent({
       {status === "empty" && (
         <div>
           <p>{m.workbench_example_select_item()}</p>
-          <button onClick={chooseItem}>
+          <button disabled={!editorAvailable} onClick={chooseItem}>
             {m.template_data_explorer_choose_item()}
           </button>
         </div>
@@ -291,7 +302,7 @@ function PreviewContent({
           <button onClick={() => session.refresh()}>
             {m.workbench_example_retry()}
           </button>
-          <button onClick={chooseItem}>
+          <button disabled={!editorAvailable} onClick={chooseItem}>
             {m.template_data_explorer_choose_item()}
           </button>
         </div>
@@ -299,7 +310,10 @@ function PreviewContent({
       {sourceProblem && (
         <div role="alert">
           <p>{sourceProblem}</p>
-          <button onClick={() => reveal("advanced")}>
+          <button
+            disabled={!editorAvailable}
+            onClick={() => reveal("advanced")}
+          >
             {m.workbench_problems_where_advanced()}
           </button>
         </div>
@@ -325,6 +339,7 @@ function PreviewContent({
           onShowManaged={(value) =>
             session.state.setState({ showManaged: value })
           }
+          sourceAvailable={editorAvailable}
           openAnnotation={() => reveal("annotation")}
           goToEntry={(position) => reveal(`entry:${position}`)}
           openSource={() => reveal("advanced")}

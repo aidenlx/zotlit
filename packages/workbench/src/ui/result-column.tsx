@@ -89,6 +89,7 @@ export interface ResultColumnProps {
   onShowMarkdown: (show: boolean) => void;
   showManaged: boolean;
   onShowManaged: (show: boolean) => void;
+  sourceAvailable?: boolean;
   openAnnotation: () => void;
   goToEntry: (position: number) => void;
   openSource: () => void;
@@ -105,6 +106,7 @@ export function ResultColumn({
   onShowMarkdown,
   showManaged,
   onShowManaged,
+  sourceAvailable = true,
   openAnnotation,
   goToEntry,
   openSource,
@@ -192,6 +194,7 @@ export function ResultColumn({
                 {previewProblem.part === "annotation" && (
                   <button
                     type="button"
+                    disabled={!sourceAvailable}
                     onClick={openAnnotation}
                     {...part("problem-open")}
                   >
@@ -202,6 +205,7 @@ export function ResultColumn({
                   previewProblem.position === undefined && (
                     <button
                       type="button"
+                      disabled={!sourceAvailable}
                       onClick={openSource}
                       {...part("problem-open")}
                     >
@@ -211,6 +215,7 @@ export function ResultColumn({
                 {previewProblem.position !== undefined && (
                   <button
                     type="button"
+                    disabled={!sourceAvailable}
                     onClick={() => goToEntry(previewProblem.position!)}
                     {...part("problem-open")}
                   >

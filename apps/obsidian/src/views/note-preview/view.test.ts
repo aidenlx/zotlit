@@ -462,4 +462,99 @@ describe("independent native Note Preview", () => {
     expect(preview.contentEl.textContent).toContain("Repaired output.");
     expect(preview.contentEl.querySelector('[role="alert"]')).toBeNull();
   });
+  it("holds pinned Item context, retains output after source closure, and disables source actions", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    const preview = await test.open();
+    await advance();
+    expect(preview.contentEl.textContent).toContain("Personal space.");
+    preview.leaf.pinned = true;
+    await act(async () => test.editor.store.getState().setItem(null));
+    await advance();
+    expect(preview.contentEl.textContent).toContain("Personal space.");
+    await act(async () => {
+      for (const listener of test.subscriptions) listener(null);
+    });
+    expect(preview.contentEl.textContent).toContain("Personal space.");
+    await act(async () =>
+      test.editor.setViewData("An incomplete Profile", false),
+    );
+    await advance();
+    const source = [...preview.contentEl.querySelectorAll("button")].find(
+      (button) => button.textContent === m.workbench_problems_where_advanced(),
+    );
+    expect(source?.disabled).toBe(true);
+  });
+  it("holds a pinned Profile when an earlier group peer joins and adopts that peer on unpin", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    const preview = await test.open();
+    await advance();
+    const otherFile = test.fixture.vault.addFile(
+      "templates/books.md",
+      PROFILE_SOURCE,
+    );
+    const chooseItem = vi.fn();
+    const revealSlice = vi.fn();
+    const earlierPeer = {
+      leaf: {} as WorkspaceLeaf,
+      file: otherFile,
+      nativeRenderDeps: test.editor.nativeRenderDeps,
+      authoringContext: {
+        ...test.editor.authoringContext,
+        leaf: {} as WorkspaceLeaf,
+        path: otherFile.path,
+        item: null,
+      },
+      getViewData: () =>
+        PROFILE_SOURCE.replace("Personal space.", "Books output."),
+      chooseItem,
+      revealSlice,
+    } as unknown as ProfileEditorView;
+    preview.leaf.pinned = true;
+    await act(async () => {
+      for (const listener of test.subscriptions) listener(earlierPeer);
+    });
+    await advance();
+    expect(preview.contentEl.textContent).toContain("Personal space.");
+    expect(preview.contentEl.textContent).not.toContain(
+      m.workbench_example_select_item(),
+    );
+    await act(async () =>
+      test.editor.setViewData("An incomplete Profile", false),
+    );
+    await advance();
+    const source = [...preview.contentEl.querySelectorAll("button")].find(
+      (button) => button.textContent === m.workbench_problems_where_advanced(),
+    )!;
+    expect(source.disabled).toBe(true);
+    await act(async () => source.click());
+    expect(revealSlice).not.toHaveBeenCalled();
+    expect(chooseItem).not.toHaveBeenCalled();
+    preview.leaf.pinned = false;
+    await act(async () => {
+      for (const listener of test.subscriptions) listener(earlierPeer);
+    });
+    await advance();
+    expect(preview.contentEl.textContent).toContain(
+      m.workbench_example_select_item(),
+    );
+    expect(preview.contentEl.querySelector('[role="alert"]')).toBeNull();
+    const choose = [...preview.contentEl.querySelectorAll("button")].find(
+      (button) => button.textContent === m.template_data_explorer_choose_item(),
+    )!;
+    expect(choose.disabled).toBe(false);
+    await act(async () => choose.click());
+    expect(chooseItem).toHaveBeenCalledOnce();
+  });
 });

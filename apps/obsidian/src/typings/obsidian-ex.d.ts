@@ -30,6 +30,13 @@ declare global {
 }
 
 declare module "obsidian" {
+  interface WorkspaceLeaf {
+    /** Native leaf identity, serialized by the workspace. */
+    id: string;
+    /** Native link and pin state, serialized by the workspace (Obsidian 1.14). */
+    group: string | null;
+    pinned: boolean;
+  }
   interface WorkspaceContainer {
     /**
      * Restores and focuses this desktop window. Unlike Workspace.revealLeaf,
@@ -50,6 +57,9 @@ declare module "obsidian" {
     allowNoFile: boolean;
   }
   interface Workspace {
+    /** Active/recent navigating FileView, also used by native Outline. */
+    getActiveFileView(): FileView | null;
+
     on(
       name: "zotlit:insert-template-field",
       callback: (request: {
