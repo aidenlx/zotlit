@@ -66,7 +66,6 @@ import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import { BaseNotice } from "@/lib/notice";
 import { tooltipAttrs } from "@/lib/utils";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
@@ -282,6 +281,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   };
 
   insertField(snippet: string): boolean {
+    if (this.#defaultDraft) return false;
     const target = this.insertTarget;
     if (!target) {
       logger.trace("Rejected Explorer insertion", {
@@ -374,13 +374,17 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     return this.#controller.source;
   }
   override setViewData(source: string, clear: boolean): void {
-    if (this.#bindingDraft) return;
+    if (this.#bindingDraft) {
+      this.data = source;
+      return;
+    }
     if (clear) {
       this.#host[Symbol.dispose]();
       this.#unsubscribe?.();
       this.#generation++;
       this.#controller = new WorkbenchDocumentController(source, {
         runtime: "native",
+        readOnly: this.#defaultDraft,
       });
       this.scheduler.attach(this.#controller);
       this.#insertTarget = null;
@@ -605,44 +609,24 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     });
   }
 
-  /** One file creation covers every local edit made while the write is pending. */
-  materializeDefault(): Promise<void> {
-    if (this.#materializing) {
-      logger.trace("Reusing pending Default materialization at {path}", {
-        path: this.#deps.profile?.defaultDocumentPath,
-      });
-      return this.#materializing;
-    }
+  /** Customize binds the existing document before enabling any edits. */
+  customizeDefault(): Promise<void> {
+    if (this.#materializing) return this.#materializing;
     const profile = this.#deps.profile;
     if (!profile || !this.#defaultDraft) return Promise.resolve();
     const controller = this.#controller;
-    logger.debug("Materializing Default Profile at {path}", {
+    this.store.setState({ customization: "pending" });
+    logger.debug("Opening Default Profile for customization at {path}", {
       path: profile.defaultDocumentPath,
     });
     this.#materializing = (async () => {
-      const { file, created } = await profile.materializeDefault(
-        controller.source,
-      );
-      if (!created) {
-        logger.debug(
-          "Retaining draft because Default already exists at {path}",
-          { path: file.path },
-        );
-        new BaseNotice(m.profile_editor_default_conflict());
-        return;
-      }
+      const { file } = await profile.materializeDefault();
       if (
         this.#closed ||
         !this.#defaultDraft ||
         this.#controller !== controller
-      ) {
-        logger.debug("Saving detached Default draft at {path}", {
-          path: file.path,
-          closed: this.#closed,
-        });
-        await this.app.vault.modify(file, controller.source);
+      )
         return;
-      }
       this.#bindingDraft = true;
       try {
         await this.leaf.setViewState({
@@ -650,25 +634,30 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
           state: { ...this.getState(), defaultDraft: false, file: file.path },
           active: true,
         });
+        const source = this.data;
+        this.#bindingDraft = false;
         this.#defaultDraft = false;
+        controller.setReadOnly(false);
+        if (source !== controller.source) this.setViewData(source, true);
         this.allowNoFile = false;
-        this.data = controller.source;
-        logger.debug("Bound Default draft to {path}", { path: file.path });
-        this.requestSave();
-        this.#mount();
+        this.data = this.#controller.source;
       } finally {
         this.#bindingDraft = false;
       }
+      this.#mount();
+      await openProfileWorkbench(this.app, this);
     })()
       .catch((error: unknown) => {
-        logger.error("Failed to create the edited Default Profile at {path}", {
+        logger.error("Failed to customize Default Profile at {path}", {
           path: profile.defaultDocumentPath,
           error,
         });
-        new BaseNotice(m.notice_profile_action_failed());
+        this.store.setState({ customization: "failed" });
       })
       .finally(() => {
         this.#materializing = null;
+        if (this.store.getState().customization === "pending")
+          this.store.setState({ customization: "idle" });
       });
     return this.#materializing;
   }
@@ -774,8 +763,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
         }
         this.data = this.#controller.source;
         if (transaction.annotation(externalEdit) !== true) {
-          if (this.#defaultDraft) void this.materializeDefault();
-          else this.requestSave();
+          if (!this.#defaultDraft) this.requestSave();
         }
       },
     );
@@ -847,6 +835,7 @@ function EditorContent({
     ({ part }) => part === "annotation",
   );
   const advanced = useWorkbenchStore((state) => state.advanced);
+  const customization = useWorkbenchStore((state) => state.customization);
   const [selected, setSelected] = useState<number | null>(null);
   const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
   const [fieldFocus, setFieldFocus] = useState<{ field: string } | null>(null);
@@ -910,7 +899,22 @@ function EditorContent({
           role="status"
           className="zt:px-3 zt:pb-2 zt:text-xs zt:leading-normal zt:text-muted-foreground"
         >
-          {m.profile_editor_default_first_edit()}
+          {m.profile_editor_default_inspect()}
+          <button
+            disabled={customization === "pending"}
+            onClick={() => void view.customizeDefault()}
+          >
+            {customization === "pending"
+              ? m.profile_editor_default_creating()
+              : customization === "failed"
+                ? m.settings_citation_engine_retry()
+                : m.profile_editor_customize()}
+          </button>
+          {customization === "failed" && (
+            <span role="alert">
+              {m.notice_profile_document_customize_failed()}
+            </span>
+          )}
         </p>
       )}
       {view.unavailableDependencies.map((message) => (
@@ -972,6 +976,7 @@ function EditorContent({
               />
               {controller.noteRegions.annotationCalls.length === 0 && (
                 <AnnotationPointer
+                  disabled={controller.readOnly}
                   onInsert={() => {
                     const { repaired, caret } =
                       controller.insertAnnotationLoop();

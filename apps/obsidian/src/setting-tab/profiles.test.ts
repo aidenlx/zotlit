@@ -174,7 +174,7 @@ describe("Profile settings", () => {
     expect(builtIn).toMatchObject({
       desc: m.settings_profile_properties_builtin_desc(),
     });
-    // Customize opens an in-memory draft before the first edit.
+    // Customize creates the document before enabling editing.
     expect(buttonLabels(builtIn)).toEqual([m.profile_editor_customize()]);
     expect(buttonIcons(builtIn)).toEqual(["file-pen"]);
 

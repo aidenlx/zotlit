@@ -826,20 +826,15 @@ export class ProfileService extends Service {
     return (await this.materializeDefault()).file;
   }
 
-  /** The draft editor distinguishes its first write from a competing Default. */
-  async materializeDefault(
-    source?: string,
-  ): Promise<{ file: TFile; created: boolean }> {
+  /** Atomically create Default or open the current document without changing it. */
+  async materializeDefault(): Promise<{ file: TFile; created: boolean }> {
     await this.ready;
     const path = this.defaultDocumentPath;
     await ensureParentFolder(this.#deps.app, path);
     let file: TFile;
     let created = true;
     try {
-      file = await this.#deps.app.vault.create(
-        path,
-        source ?? this.#builtInDocument(),
-      );
+      file = await this.#deps.app.vault.create(path, this.#builtInDocument());
     } catch (error) {
       if (!isFileExistsError(error)) throw error;
       const existing = this.#deps.app.vault.getFileByPath(path);

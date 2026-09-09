@@ -132,7 +132,13 @@ export function AnnotationPane({
 /**
  * Offers annotation insertion at the end of a note that has no render call.
  */
-export function AnnotationPointer({ onInsert }: { onInsert: () => void }) {
+export function AnnotationPointer({
+  onInsert,
+  disabled = false,
+}: {
+  onInsert: () => void;
+  disabled?: boolean;
+}) {
   const m = useWorkbenchMessages();
   const part = useParts("annotation");
   return (
@@ -141,7 +147,12 @@ export function AnnotationPointer({ onInsert }: { onInsert: () => void }) {
         {m.workbench_annotation_pointer_heading()}
       </span>
       <span {...part("hint")}>{m.workbench_annotation_pointer()}</span>
-      <button type="button" {...part("primary-action")} onClick={onInsert}>
+      <button
+        type="button"
+        disabled={disabled}
+        {...part("primary-action")}
+        onClick={onInsert}
+      >
         {m.workbench_annotation_insert()}
       </button>
     </div>
@@ -177,6 +188,7 @@ export function AnnotationSectionBar({
           <button
             type="button"
             {...part("primary-action")}
+            disabled={controller.readOnly}
             onClick={() => controller.repairAnnotationSection()}
           >
             {m.workbench_section_repair()}

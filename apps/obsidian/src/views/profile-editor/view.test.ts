@@ -14,6 +14,10 @@ import { createStore } from "zustand/vanilla";
 import { ProfileEditorView } from "./view";
 import type { ProfileEditorDeps } from "./view";
 
+vi.mock("@/views/note-preview/register", () => ({
+  openProfileWorkbench: vi.fn(async () => {}),
+}));
+
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 
 const SOURCE = `---
@@ -106,48 +110,12 @@ describe("ProfileEditorView", () => {
     await act(async () => view.close());
   });
 
-  it("keeps a newly opened Profile when creation of the previous Default draft finishes", async () => {
-    const file = new TFile();
-    file.path = "templates/zotlit-profile.default.md";
-    const pending = Promise.withResolvers<{ file: TFile; created: boolean }>();
-    const { view, leaf, modify } = setup({
-      profile: {
-        getSource: async () => SOURCE,
-        materializeDefault: () => pending.promise,
-      } as unknown as ProfileEditorDeps["profile"],
-    });
-    await view.setState(
-      { defaultDraft: true, file: null },
-      {} as ViewStateResult,
-    );
-    view.controller.setManifestKey("name", "First draft edit");
-    view.controller.setManifestKey("name", "Last draft edit");
-    await view.setState(
-      { file: "templates/zotlit-profile.other.md" },
-      {} as ViewStateResult,
-    );
-    view.setViewData(
-      SOURCE.replace("name: Paper", "name: Other Profile"),
-      true,
-    );
-    const current = view.controller;
-    pending.resolve({ file, created: true });
-    await view.materializeDefault();
-    expect(view.controller).toBe(current);
-    expect(view.getViewData()).toContain("name: Other Profile");
-    expect(modify).toHaveBeenCalledWith(
-      file,
-      expect.stringContaining("name: Last draft edit"),
-    );
-    expect(modify.mock.calls[0]?.[1]).not.toContain("Other Profile");
-    expect(vi.spyOn(leaf, "setViewState")).not.toHaveBeenCalled();
-  });
-  it("creates Default once on first edit and preserves later edits and Undo while binding", async () => {
+  it("inspects Default without creation or edits, then binds before native save requests", async () => {
     const file = new TFile();
     file.path = "templates/zotlit-profile.default.md";
     const pending = Promise.withResolvers<{ file: TFile; created: boolean }>();
     const materializeDefault = vi.fn(() => pending.promise);
-    const { view, leaf, requestSave } = setup({
+    const { view, requestSave } = setup({
       profile: {
         getSource: async () => SOURCE,
         materializeDefault,
@@ -157,41 +125,139 @@ describe("ProfileEditorView", () => {
       { defaultDraft: true, file: null },
       {} as ViewStateResult,
     );
-    expect(materializeDefault).not.toHaveBeenCalled();
-    expect(view.file).toBeNull();
     const controller = view.controller;
-    view.controller.setManifestKey("name", "First edit");
-    view.controller.setManifestKey("name", "Latest edit");
-    expect(materializeDefault).toHaveBeenCalledOnce();
-    expect(requestSave).not.toHaveBeenCalled();
-    vi.spyOn(leaf, "setViewState").mockImplementation(async () => {
-      view.setViewData(SOURCE, true);
-    });
+    controller.setManifestKey("name", "Typing attempt");
+    expect(controller.undo()).toBe(false);
+    expect(controller.redo()).toBe(false);
+    expect(view.getViewData()).toBe(SOURCE);
+    expect(materializeDefault).not.toHaveBeenCalled();
+    const creating = view.customizeDefault();
+    expect(view.store.getState().customization === "pending").toBe(true);
+    expect(view.customizeDefault()).toBe(creating);
+    expect(materializeDefault).toHaveBeenCalledExactlyOnceWith();
+    controller.setManifestKey("name", "Pending attempt");
     pending.resolve({ file, created: true });
-    await view.materializeDefault();
+    await creating;
     expect(view.controller).toBe(controller);
-    expect(view.getViewData()).toContain("Latest edit");
-    expect(view.isDefaultDraft).toBe(false);
+    expect(controller.readOnly).toBe(false);
+    expect(requestSave).not.toHaveBeenCalled();
+    controller.dispatch({
+      changes: {
+        from: 0,
+        to: controller.source.length,
+        insert: "invalid source",
+      },
+    });
+    expect(view.getViewData()).toBe("invalid source");
     expect(requestSave).toHaveBeenCalledOnce();
-    view.controller.undo();
-    expect(view.getViewData()).toContain("First edit");
+    controller.undo();
+    expect(view.getViewData()).toBe(SOURCE);
+    controller.redo();
+    expect(view.getViewData()).toBe("invalid source");
+    expect(requestSave).toHaveBeenCalledTimes(3);
   });
 
-  it("keeps a competing Default untouched and retains the draft for recovery", async () => {
+  it("keeps values readable after creation failure and retries only at Customize", async () => {
     const file = new TFile();
-    const { view, leaf, requestSave } = setup({
+    const materializeDefault = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Disk full"))
+      .mockResolvedValue({ file, created: true });
+    const { view, requestSave } = setup({
+      profile: {
+        getSource: async () => SOURCE,
+        materializeDefault,
+      } as unknown as ProfileEditorDeps["profile"],
+    });
+    await view.setState({ defaultDraft: true }, {} as ViewStateResult);
+    await view.customizeDefault();
+    expect(view.store.getState().customization === "failed").toBe(true);
+    expect(view.store.getState().customization === "pending").toBe(false);
+    view.controller.setManifestKey("name", "Attempt after failure");
+    view.controller.undo();
+    expect(view.getViewData()).toBe(SOURCE);
+    expect(materializeDefault).toHaveBeenCalledOnce();
+    expect(requestSave).not.toHaveBeenCalled();
+    await view.customizeDefault();
+    expect(view.store.getState().customization === "failed").toBe(false);
+    expect(view.isDefaultDraft).toBe(false);
+  });
+
+  it("opens competing Default bytes without adding built-in source to Undo", async () => {
+    const file = new TFile();
+    const { view, leaf, requestSave, modify } = setup({
       profile: {
         getSource: async () => SOURCE,
         materializeDefault: async () => ({ file, created: false }),
       } as unknown as ProfileEditorDeps["profile"],
     });
+    const existing = SOURCE.replace("name: Paper", "name: Existing Default");
+    vi.spyOn(leaf, "setViewState").mockImplementation(async () => {
+      view.setViewData(existing, true);
+    });
     await view.setState({ defaultDraft: true }, {} as ViewStateResult);
-    view.controller.setManifestKey("name", "Kept draft");
-    await view.materializeDefault();
-    expect(view.isDefaultDraft).toBe(true);
-    expect(view.getViewData()).toContain("Kept draft");
-    expect(vi.spyOn(leaf, "setViewState")).not.toHaveBeenCalled();
+    await view.customizeDefault();
+    expect(view.getViewData()).toBe(existing);
+    expect(view.controller.undo()).toBe(false);
     expect(requestSave).not.toHaveBeenCalled();
+    expect(modify).not.toHaveBeenCalled();
+  });
+
+  it("shows read-only source and one inline retry after the Customize action fails", async () => {
+    const materializeDefault = vi
+      .fn()
+      .mockRejectedValue(new Error("Disk full"));
+    const { view } = setup({
+      profile: {
+        getSource: async () => SOURCE,
+        materializeDefault,
+      } as unknown as ProfileEditorDeps["profile"],
+    });
+    document.body.append(view.contentEl);
+    await act(async () => {
+      await view.setState({ defaultDraft: true }, {} as ViewStateResult);
+      await view.open();
+    });
+    const editor = EditorView.findFromDOM(
+      view.contentEl.querySelector(".cm-editor")!,
+    );
+    expect(editor?.state.readOnly).toBe(true);
+    const customize = Array.from(
+      view.contentEl.querySelectorAll("button"),
+    ).find((button) => button.textContent === m.profile_editor_customize())!;
+    await act(async () => {
+      customize.click();
+      await view.customizeDefault();
+    });
+    expect(view.contentEl.querySelectorAll('[role="alert"]')).toHaveLength(1);
+    expect(view.contentEl.textContent).toContain(
+      m.settings_citation_engine_retry(),
+    );
+    expect(view.getViewData()).toBe(SOURCE);
+    expect(materializeDefault).toHaveBeenCalledOnce();
+    await act(async () => view.close());
+    view.contentEl.remove();
+  });
+
+  it("keeps a newly opened Profile when Default creation finishes", async () => {
+    const file = new TFile();
+    const pending = Promise.withResolvers<{ file: TFile; created: boolean }>();
+    const { view, modify } = setup({
+      profile: {
+        getSource: async () => SOURCE,
+        materializeDefault: () => pending.promise,
+      } as unknown as ProfileEditorDeps["profile"],
+    });
+    await view.setState({ defaultDraft: true }, {} as ViewStateResult);
+    const creating = view.customizeDefault();
+    await view.setState({ file: "other.md" }, {} as ViewStateResult);
+    view.setViewData(SOURCE.replace("name: Paper", "name: Other"), true);
+    const controller = view.controller;
+    pending.resolve({ file, created: true });
+    await creating;
+    expect(view.controller).toBe(controller);
+    expect(view.getViewData()).toContain("name: Other");
+    expect(modify).not.toHaveBeenCalled();
   });
   it("keeps authoring and restored state available when the database fails", async () => {
     const { view, requestSave } = setup({

@@ -585,19 +585,27 @@ describe("ProfileService", () => {
     expect(profile.resolveProfile("default")?.document).toBeUndefined();
   });
 
-  it("writes the first edited Default source atomically and preserves a competing file", async () => {
+  it("creates Default atomically and preserves a competing file", async () => {
     await using fixture = await harness();
     const { profile, vault } = fixture;
     const source = await profile.getSource("default");
     expect(vault.files.has("templates/zotlit-profile.default.md")).toBe(false);
     const edited = `${source}\nA custom annotation suffix.\n`;
-    const first = profile.materializeDefault(edited);
+    const first = profile.materializeDefault();
+    const competing = profile.materializeDefault();
     await vi.advanceTimersByTimeAsync(500);
-    expect(await first).toMatchObject({ created: true });
+    const results = await Promise.all([first, competing]);
+    expect(
+      results
+        .map(({ created }) => created)
+        .sort((a, b) => Number(a) - Number(b)),
+    ).toEqual([false, true]);
+    expect(results[0]!.file).toBe(results[1]!.file);
     expect(vault.contents.get("templates/zotlit-profile.default.md")).toBe(
-      edited,
+      source,
     );
-    const second = profile.materializeDefault("Competing stale source");
+    vault.contents.set("templates/zotlit-profile.default.md", edited);
+    const second = profile.materializeDefault();
     await vi.advanceTimersByTimeAsync(500);
     expect(await second).toMatchObject({ created: false });
     expect(vault.contents.get("templates/zotlit-profile.default.md")).toBe(

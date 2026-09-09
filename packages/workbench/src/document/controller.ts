@@ -133,6 +133,7 @@ export const externalEdit = Annotation.define<boolean>();
 
 export class WorkbenchDocumentController {
   #state: EditorState;
+  #readOnly: boolean;
   readonly #runtime: "web" | "native";
   #document: LiteratureNoteTemplateDocument | null = null;
   #problems: readonly WorkbenchProblem[] = [];
@@ -147,8 +148,12 @@ export class WorkbenchDocumentController {
   readonly #slices = new Map<WorkbenchSliceId, WorkbenchSliceEditor>();
   readonly #listeners = new Set<(update: WorkbenchUpdate) => void>();
 
-  constructor(source: string, options: { runtime?: "web" | "native" } = {}) {
+  constructor(
+    source: string,
+    options: { runtime?: "web" | "native"; readOnly?: boolean } = {},
+  ) {
     this.#runtime = options.runtime ?? "web";
+    this.#readOnly = options.readOnly ?? false;
     this.#state = EditorState.create({
       doc: source,
       extensions: [
@@ -284,11 +289,11 @@ export class WorkbenchDocumentController {
   }
 
   get canUndo(): boolean {
-    return undoDepth(this.#state) > 0;
+    return !this.#readOnly && undoDepth(this.#state) > 0;
   }
 
   get canRedo(): boolean {
-    return redoDepth(this.#state) > 0;
+    return !this.#readOnly && redoDepth(this.#state) > 0;
   }
 
   hasSlice(id: WorkbenchSliceId): boolean {
@@ -357,7 +362,18 @@ export class WorkbenchDocumentController {
     });
   }
 
+  get readOnly(): boolean {
+    return this.#readOnly;
+  }
+
+  setReadOnly(value: boolean): void {
+    if (value === this.#readOnly) return;
+    this.#readOnly = value;
+    this.#apply(this.#state.update({}));
+  }
+
   dispatch(spec: TransactionSpec): void {
+    if (this.#readOnly) return;
     const before = this.#state;
     let changes =
       spec.changes === undefined ? undefined : splitLineBreaks(spec.changes);
@@ -405,11 +421,11 @@ export class WorkbenchDocumentController {
   }
 
   undo(): boolean {
-    return undo(this.#target());
+    return !this.#readOnly && undo(this.#target());
   }
 
   redo(): boolean {
-    return redo(this.#target());
+    return !this.#readOnly && redo(this.#target());
   }
 
   /**
