@@ -4,6 +4,7 @@ import { completionEdit, hoverHint, rootAt, suggestions } from "./suggestions";
 import type { SuggestionConfig } from "./suggestions";
 
 import { restoreTemplateData } from "#/render/restore-template-data";
+import { m } from "#/ui/test-messages";
 
 const note: SuggestionConfig = { root: "note", partials: ["cite", "content"] };
 const eta: SuggestionConfig = { ...note, language: "eta" };
@@ -522,4 +523,31 @@ describe("hoverHint", () => {
     expect(hoverHint(source, 16, note)!.options[0]!.label).toBe("upcase");
     expect(hoverHint(source, 1, note)).toBeNull();
   });
+});
+
+it("describes every registered filter and shows the description on hover", () => {
+  const config: SuggestionConfig = {
+    ...note,
+    filterDescription: (name) => m.workbench_filter_description({ name }),
+  };
+  const source = "{{ zt.title | ";
+  const result = suggestions(source, source.length, config)!;
+  expect(result.options.length).toBeGreaterThan(0);
+  for (const option of result.options) {
+    expect(option.detail).not.toBe(`Applies the ${option.label} filter.`);
+    expect(option.detail).not.toBe("");
+  }
+  for (const [name, detail] of [
+    ["upcase", "Converts a string to all uppercase characters."],
+    ["arr_prefix", "Adds the given prefix to every item in an array."],
+    [
+      "normalize_whitespace",
+      "Replaces each sequence of whitespace with a single space.",
+    ],
+  ]) {
+    const text = `${source}${name} }}`;
+    expect(hoverHint(text, source.length + 2, config)?.options[0]?.detail).toBe(
+      detail,
+    );
+  }
 });

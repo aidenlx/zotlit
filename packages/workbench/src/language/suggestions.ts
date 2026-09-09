@@ -55,6 +55,8 @@ export interface SuggestionConfig {
   fields?: readonly { path: string; label: string }[];
   /** Localized tag descriptions supplied by the host; syntax is the fallback. */
   tagDescription?: (name: LiquidTagName) => string;
+  /** Localized filter descriptions supplied by the host; syntax is the fallback. */
+  filterDescription?: (name: string) => string;
 }
 
 /** Display category driving an option's icon/grouping in the editor UI. */
@@ -203,6 +205,7 @@ interface LanguageProfile {
     position: number;
     result: ResultBuilder;
     description?: SuggestionConfig["tagDescription"];
+    filterDescription?: SuggestionConfig["filterDescription"];
   }): SuggestionResult | null | undefined;
 }
 
@@ -215,7 +218,9 @@ function partialOptions(names: readonly string[]): Suggestion[] {
   }));
 }
 
-function filterOptions(): Suggestion[] {
+function filterOptions(
+  description?: SuggestionConfig["filterDescription"],
+): Suggestion[] {
   return [...new Set([...LIQUID_BUILTIN_FILTER_NAMES, ...ZOTLIT_FILTER_NAMES])]
     .sort()
     .map((name) => ({
@@ -224,7 +229,7 @@ function filterOptions(): Suggestion[] {
       category: ZOTLIT_FILTER_NAMES.includes(name)
         ? "zotlit-filter"
         : "liquid-filter",
-      detail: "A registered filter; the Workbench Guide lists the same names.",
+      detail: description?.(name) ?? `{{ value | ${name} }}`,
     }));
 }
 
@@ -432,6 +437,7 @@ function liquidExtraTrigger({
   position,
   result,
   description,
+  filterDescription,
 }: {
   range: TemplateRange;
   before: string;
@@ -439,6 +445,7 @@ function liquidExtraTrigger({
   position: number;
   result: ResultBuilder;
   description?: SuggestionConfig["tagDescription"];
+  filterDescription?: SuggestionConfig["filterDescription"];
 }): SuggestionResult | null | undefined {
   // Other strings are values, not completion triggers. Keep pipes inside quotes inert.
   let quote = "";
@@ -454,7 +461,12 @@ function liquidExtraTrigger({
   if (quote) return null;
   if (pipe !== -1) {
     const filter = regex("^\\s*(?<query>\\w*)$").exec(before.slice(pipe + 1));
-    if (filter) return result("Filters", filter.groups.query, filterOptions());
+    if (filter)
+      return result(
+        "Filters",
+        filter.groups.query,
+        filterOptions(filterDescription),
+      );
   }
   const tag = (
     line
@@ -580,6 +592,7 @@ export function suggestions(
     position,
     result,
     description: config.tagDescription,
+    filterDescription: config.filterDescription,
   });
   if (triggered !== undefined) return triggered;
 
