@@ -6,6 +6,7 @@ import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { openSettingsTab } from "@/lib/open-settings";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { ProfileService } from "@/services/profile/service";
@@ -45,6 +46,12 @@ export function registerProfileEditor(
       new ProfileEditorView(leaf, {
         ...deps,
         pluginVersion: plugin.manifest.version,
+        openSettings: (defaultProfile) =>
+          openSettingsTab(
+            plugin.app,
+            plugin.manifest.id,
+            defaultProfile ? [] : [m.settings_page_profiles()],
+          ),
       }),
   );
   const targetOf = (file: TFile | null) => {

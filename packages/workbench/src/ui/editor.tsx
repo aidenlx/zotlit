@@ -56,7 +56,11 @@ export function createWorkbenchEditor({
 }: WorkbenchEditorOptions & {
   mapResult?: (result: ProfileRenderResult) => ProfileRenderResult;
 }): WorkbenchEditorInstance {
-  const store = createWorkbenchStore(state);
+  const store = createWorkbenchStore(
+    controller.document?.manifest.id === "default" && state?.tab === "match"
+      ? { ...state, tab: "note" }
+      : state,
+  );
   const scheduler = createRenderScheduler({
     controller,
     store,

@@ -6,7 +6,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import { useDocumentRevision } from "./editor";
 import { WorkbenchHostProvider } from "./host";
@@ -407,4 +407,30 @@ it("shows the same Off value for explicit and inherited switches while naming th
   expect(
     controller.document!.manifest.importAnnotationsAsTemplate,
   ).toBeUndefined();
+});
+
+it("opens the host settings from the configuration pane", () => {
+  const onOpenSettings = vi.fn<() => void>();
+  open({ onOpenSettings });
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_open_settings() }),
+  );
+  expect(onOpenSettings).toHaveBeenCalledOnce();
+});
+
+it("keeps read-only configuration selectable and disables binding changes", () => {
+  const { controller } = open();
+  act(() => controller.setReadOnly(true));
+  expect(screen.getByLabelText(m.workbench_name_field_name())).toHaveProperty(
+    "readOnly",
+    true,
+  );
+  expect(
+    screen.getByLabelText(m.workbench_name_binding_folder()),
+  ).toHaveProperty("readOnly", true);
+  expect(
+    screen.getByRole("switch", {
+      name: m.workbench_name_binding_colored_highlights(),
+    }),
+  ).toHaveProperty("disabled", true);
 });
