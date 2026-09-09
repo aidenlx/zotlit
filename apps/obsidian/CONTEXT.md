@@ -182,6 +182,10 @@ _Avoid_: template export (suggests rendered note output), data dump (the file fo
 The main-area view that edits one Profile document with the Workbench UI: the same tabs, panes, and one undo history as the web Workbench, over the vault file, saved the way Obsidian saves any note. The native Markdown view keeps working on the same file; the two are one click apart.
 _Avoid_: native Workbench, template editor, profile view, Obsidian Workbench
 
+**Template Hover** _(Obsidian)_:
+The Profile Editor's hover popover that names the field, tag, or filter under the pointer, with its type, description, syntax, and example. One Template Hover serves one visit of the pointer to the editor: it opens after Obsidian's hover delay on the first token, follows the pointer from token to token with no further delay, and closes when the pointer rests off every token, leaves the editor, or the document changes.
+_Avoid_: hover card (the Citation Popover's retired alias), template-editor hover, token tooltip
+
 **Note Preview** _(Obsidian)_:
 The companion view that shows what the Profile Editor's document produces for the selected Item: note name, Properties, note body with the Managed Region marked, and one annotation, displayed as Obsidian renders it. It follows its natively linked editor, or the active editor when unlinked and unpinned, like Outline.
 _Avoid_: template preview (retired for the Explorer, which shows data, not output), render pane, result view (the web column's name)
