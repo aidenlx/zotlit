@@ -18,6 +18,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as confirmation from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
+import { openNativeProfile } from "@/views/profile-editor/register";
 
 import type { SettingTabContext } from "./context";
 import {
@@ -26,6 +27,10 @@ import {
   profilesPage,
   setProfileControlValue,
 } from "./profiles";
+
+vi.mock("@/views/profile-editor/register", () => ({
+  openNativeProfile: vi.fn(async () => {}),
+}));
 
 function context(): SettingTabContext {
   return {
@@ -358,11 +363,10 @@ it("warns once about repeated IDs and lists each excluded file with its own acti
     "templates/zotlit-profile.one.md",
     "templates/zotlit-profile.two.md",
   ];
-  const open = vi.fn();
   const trash = vi.fn();
   ctx.app = {
     vault: { getFileByPath: (path: string) => ({ path }) as TFile },
-    workspace: { getLeaf: () => ({ openFile: open }) },
+    setting: { close: vi.fn<() => void>() },
     fileManager: { trashFile: trash },
   } as unknown as SettingTabContext["app"];
   ctx.requestUpdate = vi.fn();
@@ -400,7 +404,13 @@ it("warns once about repeated IDs and lists each excluded file with its own acti
     .components.filter((control) => control instanceof ExtraButtonComponent)
     .find((button) => button.tooltip === m.settings_template_open())!
     .click();
-  expect(open).toHaveBeenCalledWith({ path: paths[0] });
+  await vi.waitFor(() =>
+    expect(openNativeProfile).toHaveBeenCalledWith(
+      ctx.app,
+      { path: paths[0] },
+      { customize: true },
+    ),
+  );
 
   // Deleting is the list's own affordance, addressed by row index.
   excluded.onDelete!(1);
@@ -419,6 +429,7 @@ it("warns once about repeated IDs and lists each excluded file with its own acti
 it("adds a Profile from Default under the first unused number, with no dialog", async () => {
   const ctx = context();
   const duplicate = vi.fn(async () => ({
+    id: "Jk6Lm8Np2Qr4",
     path: "templates/zotlit-profile.profile-2.md",
   }));
   ctx.profile = {
@@ -455,6 +466,11 @@ it("adds a Profile from Default under the first unused number, with no dialog", 
   await vi.waitFor(() =>
     expect(duplicate).toHaveBeenCalledWith("default", {
       label: m.settings_profile_numbered_name({ number: 2 }),
+    }),
+  );
+  await vi.waitFor(() =>
+    expect(ctx.customize).toHaveBeenCalledExactlyOnceWith({
+      profileId: "Jk6Lm8Np2Qr4",
     }),
   );
 });

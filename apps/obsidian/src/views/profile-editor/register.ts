@@ -84,7 +84,11 @@ export function registerProfileEditor(
               (profile) => profile.path === target.path,
             )?.id
         : "default";
-    if (!profileId) return openNativeProfile(plugin.app, target, options);
+    if (!profileId)
+      return openNativeProfile(plugin.app, target, {
+        ...options,
+        customize: true,
+      });
     return deps.customize({
       profileId,
       ...(options.destination ? { destination: options.destination } : {}),
@@ -130,11 +134,10 @@ export function registerProfileEditor(
           active &&
           itemKeyFromFrontmatter(plugin.app.metadataCache.getFileCache(active));
         void runProfileEditorAction("customize", () =>
-          openNativeProfile(
-            plugin.app,
-            target,
-            itemIndexedKey ? { itemIndexedKey } : {},
-          ),
+          customizeTarget(target, {
+            ...(itemIndexedKey ? { itemIndexedKey } : {}),
+            destination: "native",
+          }),
         );
       }
       return true;
@@ -186,7 +189,7 @@ export function registerProfileEditor(
           .onClick(
             () =>
               void runProfileEditorAction("customize", () =>
-                openNativeProfile(plugin.app, target, options),
+                customizeTarget(target, { ...options, destination: "native" }),
               ),
           ),
       );
@@ -215,9 +218,7 @@ export function registerProfileEditor(
           view.addAction("file-pen-line", m.profile_editor_open(), () => {
             if (view.file)
               void runProfileEditorAction("open-editor", () =>
-                openProfileEditor(plugin.app, view.file!, {
-                  leaf: view.leaf,
-                }),
+                customizeTarget(view.file!, { destination: "native" }),
               );
           }),
         );

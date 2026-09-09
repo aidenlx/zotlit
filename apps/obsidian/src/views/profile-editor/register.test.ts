@@ -312,7 +312,11 @@ Annotation`);
     await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
     expect(setViewState).not.toHaveBeenCalled();
   });
-  it.each(["customize-profile", "open-profile-web-workbench"])(
+  it.each([
+    "customize-profile",
+    "open-profile-editor",
+    "open-profile-web-workbench",
+  ])(
     "routes a registered Profile through the shared flow from %s",
     async (id) => {
       setMockPlatform({ isDesktopApp: true });
@@ -329,15 +333,36 @@ Annotation`);
           profileId: "default",
           ...(id === "open-profile-web-workbench"
             ? { destination: "web" }
-            : {}),
+            : id === "open-profile-editor"
+              ? { destination: "native" }
+              : {}),
         }),
       );
       expect(read).not.toHaveBeenCalled();
     },
   );
+  it("routes the file menu's native editor action through the shared flow", async () => {
+    setMockPlatform({ isDesktopApp: true });
+    const { file, deps, plugin, fileMenu } = setup();
+    deps.profile = { ...deps.profile, defaultDocumentPath: file.path };
+    deps.customize = vi.fn(async () => {});
+    registerProfileEditor(plugin, deps);
+
+    fileMenu()
+      .items.find((item) => item.title === m.profile_editor_open())!
+      .click();
+
+    await vi.waitFor(() =>
+      expect(deps.customize).toHaveBeenCalledExactlyOnceWith({
+        profileId: "default",
+        destination: "native",
+      }),
+    );
+  });
   it("opens the current Literature Note's resolved Default with that paper selected", async () => {
     setMockPlatform({ isDesktopApp: true });
-    const { app, file, deps, plugin, commands, setViewState } = setup();
+    const { app, file, deps, plugin, commands } = setup();
+    deps.customize = vi.fn(async () => {});
     file.path = "Literature/Figures.md";
     file.basename = "Figures";
     vi.spyOn(app.metadataCache, "getFileCache").mockReturnValue({
@@ -356,10 +381,10 @@ Annotation`);
     )!;
     expect(command.checkCallback?.(false)).toBe(true);
     await vi.waitFor(() =>
-      expect(setViewState).toHaveBeenCalledWith({
-        type: PROFILE_EDITOR_VIEW_TYPE,
-        state: { defaultDraft: true, file: null, itemIndexedKey: "PAPER234" },
-        active: true,
+      expect(deps.customize).toHaveBeenCalledWith({
+        profileId: "default",
+        destination: "native",
+        item: { key: "PAPER234", title: null },
       }),
     );
   });
