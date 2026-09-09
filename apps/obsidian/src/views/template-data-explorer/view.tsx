@@ -212,16 +212,20 @@ export class TemplateDataExplorerView extends ItemView {
     });
     this.#root = createRoot(this.contentEl);
     this.register(
-      subscribeActiveProfileEditor(this.app, (editor) => {
-        logger.debug("Explorer editor handoff", {
-          previousProfile: this.#activeEditor?.file?.path ?? null,
-          profile: editor?.file?.path ?? null,
-          root: editor?.store.getState().root ?? null,
-          mode: editor?.preview ? "profile" : "standalone",
-        });
-        this.#activeEditor = editor;
-        this.#mount();
-      }),
+      subscribeActiveProfileEditor(
+        this.app,
+        (editor) => {
+          logger.debug("Explorer editor handoff", {
+            previousProfile: this.#activeEditor?.file?.path ?? null,
+            profile: editor?.file?.path ?? null,
+            root: editor?.store.getState().root ?? null,
+            mode: editor?.preview ? "profile" : "standalone",
+          });
+          this.#activeEditor = editor;
+          this.#mount();
+        },
+        this.leaf,
+      ),
     );
 
     this.register(

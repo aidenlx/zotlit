@@ -2,7 +2,7 @@
 import { EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   eta,
@@ -13,12 +13,13 @@ import {
 
 import { themeHook } from "@/lib/theme-hooks";
 
-import { CODE_PANE_CLASS, codePane, isCodePane } from "./editor-extension";
+import { CODE_PANE_CLASS, codePane } from "./editor-extension";
 
 let view: EditorView | null = null;
 afterEach(() => {
   view?.destroy();
   view = null;
+  Reflect.deleteProperty(HTMLElement.prototype, "onWindowMigrated");
 });
 
 function mount(doc: string, language: Extension) {
@@ -120,20 +121,46 @@ describe("template token hooks", () => {
 });
 
 describe("code panes", () => {
-  it("names every pane over code and no pane over prose", () => {
-    expect(isCodePane("advanced", "liquid")).toBe(true);
-    expect(isCodePane("filename", "liquid")).toBe(true);
-    expect(isCodePane("entry:0", "json-e")).toBe(true);
-    expect(isCodePane("entry:0", "expression")).toBe(true);
-    expect(isCodePane("note", "liquid")).toBe(false);
-    expect(isCodePane("annotation", "liquid")).toBe(false);
-  });
-
+  function migrationHost() {
+    let migrate: ((win: Window) => void) | null = null;
+    const dispose = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "onWindowMigrated", {
+      configurable: true,
+      value: (listener: (win: Window) => void) => {
+        migrate = listener;
+        return dispose;
+      },
+    });
+    return { dispose, move: (win: Window) => migrate?.(win) };
+  }
   it("puts the code class on the editor element", () => {
+    migrationHost();
     view = new EditorView({
       state: EditorState.create({ doc: "", extensions: [codePane] }),
       parent: document.body,
     });
     expect(view.dom.classList.contains(CODE_PANE_CLASS)).toBe(true);
+  });
+
+  it("moves editor styles to its new document and releases the native listener", () => {
+    const host = migrationHost();
+    view = new EditorView({
+      state: EditorState.create({
+        doc: "{{ zt.title }}",
+        extensions: [codePane],
+      }),
+      parent: document.body,
+    });
+    const state = view.state;
+    const destination = document.implementation.createHTMLDocument();
+    const setRoot = vi.spyOn(view, "setRoot");
+    const measure = vi.spyOn(view, "requestMeasure");
+    host.move({ document: destination } as Window);
+    expect(setRoot).toHaveBeenCalledWith(destination);
+    expect(measure).toHaveBeenCalled();
+    expect(view.state).toBe(state);
+    view.destroy();
+    view = null;
+    expect(host.dispose).toHaveBeenCalledOnce();
   });
 });

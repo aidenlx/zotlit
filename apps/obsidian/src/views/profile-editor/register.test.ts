@@ -25,7 +25,11 @@ function setup() {
   file.basename = "zotlit-profile.paper";
   file.extension = "md";
   const setViewState = vi.fn(async () => {});
-  const leaf = { setViewState } as unknown as WorkspaceLeaf;
+  const focusWindow = vi.fn();
+  const leaf = {
+    setViewState,
+    getContainer: () => ({ focus: focusWindow }),
+  } as unknown as WorkspaceLeaf;
   const fileMenuHandlers: ((menu: Menu, file: TFile) => void)[] = [];
   const workspace = {
     getActiveFile: () => file,
@@ -83,10 +87,54 @@ function setup() {
     },
     registerView,
     setViewState,
+    focusWindow,
   };
 }
 
 describe("Profile Editor entry points", () => {
+  it.each(["file", "built-in Default"])(
+    "brings the %s editor window forward after its leaf is ready",
+    async (target) => {
+      const { app, file, leaf, focusWindow } = setup();
+      const reveal = Promise.withResolvers<void>();
+      const revealLeaf = vi
+        .spyOn(app.workspace, "revealLeaf")
+        .mockReturnValue(reveal.promise);
+      const opening = openNativeProfile(
+        app,
+        target === "file"
+          ? file
+          : {
+              defaultDocumentPath: "templates/zotlit-profile.default.md",
+              getSource: async () => "Configured built-in document",
+            },
+      );
+      await vi.waitFor(() => expect(revealLeaf).toHaveBeenCalledWith(leaf));
+      expect(focusWindow).not.toHaveBeenCalled();
+
+      reveal.resolve();
+      await opening;
+
+      expect(focusWindow).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("focuses the supplied editor leaf's window when the leaf is reused", async () => {
+    const { app, file, focusWindow } = setup();
+    const revealLeaf = vi.spyOn(app.workspace, "revealLeaf");
+    const focusExistingWindow = vi.fn();
+    const existing = {
+      setViewState: vi.fn(async () => {}),
+      getContainer: () => ({ focus: focusExistingWindow }),
+    } as unknown as WorkspaceLeaf;
+
+    await openProfileEditor(app, file, { leaf: existing });
+
+    expect(revealLeaf).toHaveBeenCalledWith(existing);
+    expect(focusExistingWindow).toHaveBeenCalledOnce();
+    expect(focusWindow).not.toHaveBeenCalled();
+  });
+
   it("omits the web command when the build gate is off", () => {
     setMockPlatform({ isDesktopApp: true });
     const { deps, plugin, commands, fileMenu } = setup();

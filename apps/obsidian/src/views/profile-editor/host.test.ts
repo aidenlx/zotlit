@@ -181,6 +181,12 @@ describe("Profile Editor typing popup", () => {
   it("wears Obsidian's suggestion classes, with the description and type as cells", async () => {
     const { host } = setup();
     const input = document.createElement("div");
+    const migrations: ((win: Window) => void)[] = [];
+    const disposeMigration = vi.fn();
+    input.onWindowMigrated = (listener) => {
+      migrations.push(listener);
+      return disposeMigration;
+    };
     input.style.overflow = "hidden";
     document.body.append(input);
     const view = new EditorView({
@@ -228,8 +234,21 @@ describe("Profile Editor typing popup", () => {
       expect(row.querySelector(".suggestion-note")!.textContent).toBe(
         "Item title.",
       );
+      const destination = document.implementation.createHTMLDocument();
+      destination.body.append(input);
+      view.setRoot(destination);
+      migrations[0]!({
+        document: destination,
+      } as Window);
+      expect(
+        destination.body.querySelector(".cm-tooltip-autocomplete"),
+      ).not.toBeNull();
+      expect(
+        document.body.querySelector(".cm-tooltip-autocomplete"),
+      ).toBeNull();
     } finally {
       view.destroy();
+      expect(disposeMigration).toHaveBeenCalledOnce();
       input.remove();
     }
   });
