@@ -158,6 +158,7 @@ it("keeps each pane's row controls and descriptions scoped to that pane", () => 
 it("shows row diagnostics and the produced properties beside the final fold", () => {
   const controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE);
   const result = renderProfile(DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS[0]!);
+  expect(result.diagnostics).toEqual([]);
   const pane = render(
     <PropertiesPane
       controller={controller}

@@ -14,11 +14,16 @@ import type {
   TemplateDataDeps,
   TemplateDataLoadResult,
 } from "@/services/template-workbench/data";
+import { chooseWorkbenchAnnotation } from "@/views/profile-editor/selection";
 import type { ProfileAuthoringContext } from "@/views/profile-editor/view";
 
 import { ExplorerActionsContext } from "./actions";
 import { Explorer } from "./Explorer";
-import { ExplorerStoreProvider, NativeExplorerSession } from "./store";
+import {
+  annotationIndexedKey,
+  ExplorerStoreProvider,
+  NativeExplorerSession,
+} from "./store";
 
 vi.mock("@/services/template-workbench/data", () => ({
   loadTemplateData: vi.fn(),
@@ -159,7 +164,7 @@ describe("independent native Explorer", () => {
     );
     expect(session.state.getState().status).toBe("ready");
   });
-  it("loads sample annotations with native inert parent data", async () => {
+  it("loads sample annotations with their own inert parent data", async () => {
     vi.mocked(loadTemplateData).mockResolvedValue({
       kind: "data",
       data: { title: "Native paper", noteLink: () => "[[Paper]]" },
@@ -174,9 +179,11 @@ describe("independent native Explorer", () => {
       SAMPLE_ANNOTATIONS[0]!.root.text,
     );
     const parent = session.state.getState().data?.parentItem as {
-      noteLink: () => string;
+      title: string;
+      noteLink: () => string | null;
     };
-    expect(parent.noteLink()).toBe("[[Paper]]");
+    expect(parent.title).toBe("Designing reproducible research interfaces");
+    expect(parent.noteLink()).toBeNull();
   });
   it("offers explicit Item selection without launching a picker on mount", async () => {
     using session = new NativeExplorerSession(deps);
@@ -204,15 +211,21 @@ describe("independent native Explorer", () => {
             createElement(
               ExplorerActionsContext,
               { value: { onChooseItem: choose } as never },
-              createElement(Explorer, { explorer: { copy: async () => {} } }),
+              createElement(Explorer, {
+                explorer: { copy: async () => {} },
+                lookup: { search: async () => [] },
+                onSearchItem: choose,
+                onSelectItem: (item) => session.setTarget(item, "note"),
+                onSelectAnnotation: (id) =>
+                  session.setTarget(null, "annotation", id),
+                onChooseAnnotation: choose,
+              }),
             ),
           ),
         ),
       ),
     );
-    expect(container.textContent).toContain(
-      m.template_data_explorer_choose_item(),
-    );
+    expect(container.textContent).toContain(m.workbench_search_zotero());
     expect(container.textContent).not.toContain(
       m.workbench_fields_no_annotations(),
     );
@@ -283,6 +296,19 @@ it("switches annotation data locally through the annotation chooser", async () =
           { value: session.state },
           createElement(Explorer, {
             explorer: { copy: async () => {} },
+            lookup: { search: async () => [] },
+            onSelectItem: (item) => session.setTarget(item, "note"),
+            onSearchItem: () => {},
+            onChooseAnnotation: async () => {
+              const state = session.state.getState();
+              const id = await chooseWorkbenchAnnotation(
+                { suggester } as never,
+                state.annotations ?? [],
+                annotationIndexedKey(state.item!.id, state.annotationId) ??
+                  state.annotationId,
+              );
+              if (id) session.setTarget(state.item, "annotation", id);
+            },
             onSelectAnnotation: (id) =>
               session.setTarget(
                 session.state.getState().item,

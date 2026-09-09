@@ -202,12 +202,12 @@ _Avoid_: render pipeline (bundles the scheduler with the composer and the transp
 The fixed template data for one selected Item and its annotations, retained until an explicit refresh. It includes permitted local link targets and explicit unavailable values where private local data is omitted.
 _Avoid_: Template Data Export (the separate inspection artifact), live Item data (a snapshot remains fixed)
 
-**Sample Item** _(web Workbench)_:
-A built-in Item Snapshot the web Workbench ships for standalone use, one per supported Item type, so the preview and field palette work before any Workbench Connection exists. The surface names it as sample data whenever it is the source.
+**Sample Item** _(Template Workbench)_:
+Built-in Item data for trying templates in the Template Workbench, with one example per supported Item type.
 _Avoid_: fixture item (the Fixture is test infrastructure), demo data, placeholder item
 
-**Sample Annotation** _(web Workbench)_:
-Built-in annotation data representing an annotation type or combination of content fields, offered alongside annotations from the selected Item Snapshot to try an Annotation format. Each example retains its own parent Item and attachment data, independently of the Item Snapshot selected for the note.
+**Sample Annotation** _(Template Workbench)_:
+Built-in Annotation data representing an annotation type or combination of content fields for trying an Annotation format in the Template Workbench. Each example retains its own parent Item and attachment data, independently of the Item selected for the note.
 _Avoid_: placeholder annotation (the placeholder marks a call in the note)
 
 **Local Server**:

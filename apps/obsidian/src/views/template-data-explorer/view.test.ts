@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import type { ItemView as MockItemView } from "@mock/obsidian";
 import type { App, EventRef, WorkspaceLeaf, ViewStateResult } from "obsidian";
 import { act } from "preact/test-utils";
 import { expect, it, vi } from "vitest";
@@ -207,9 +208,7 @@ it("binds copied context to its editor, addresses field requests, and releases w
     await act(async () => binding(earlierPeer));
     expect(view.getState()).toMatchObject({ itemIndexedKey: null });
     expect(view.contentEl.textContent).not.toContain("Native paper");
-    expect(view.contentEl.textContent).toContain(
-      m.template_data_explorer_choose_item(),
-    );
+    expect(view.contentEl.textContent).toContain(m.workbench_search_zotero());
     const launchResult: ViewStateResult = { history: false };
     await act(async () =>
       view.setState(
@@ -436,12 +435,8 @@ it("applies an explicit Item choice to the requesting pinned Explorer and leaves
       await view.setState({}, { history: false });
     }
   });
-  const choose = [
-    ...requesting.contentEl.querySelectorAll<HTMLElement>('[role="button"]'),
-  ].find(
-    (button) =>
-      button.getAttribute("aria-label") ===
-      m.template_data_explorer_choose_item(),
+  const choose = (requesting as unknown as MockItemView).actions.find(
+    (button) => button.getAttribute("aria-label") === m.workbench_choose_item(),
   )!;
   await act(async () => choose.click());
   expect(requesting.getState()).toMatchObject({ itemIndexedKey: "PAPER002" });

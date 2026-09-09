@@ -33,9 +33,11 @@ const logger = getLogger(["views", "profile-editor", "match"]);
 export function NativeMatchPane({
   controller,
   db,
+  onChooseItem,
 }: {
   controller: WorkbenchDocumentController;
   db: Pick<DatabaseService, "acquireRead" | "on">;
+  onChooseItem?: () => void;
 }) {
   const [vocabularyRevision, setVocabularyRevision] = useState(0);
   const item = useWorkbenchStore((state) => state.item);
@@ -101,10 +103,11 @@ export function NativeMatchPane({
   return (
     <WorkbenchThemeProvider theme={matchTheme}>
       <MatchPane
+        onChooseItem={onChooseItem}
         controller={controller}
         exampleMessage={
           !item
-            ? m.workbench_example_select_item()
+            ? m.workbench_match_choose_item()
             : loading || selected?.id !== item.id
               ? m.workbench_loading_item()
               : failed

@@ -109,6 +109,7 @@ export {
   AnnotationPane,
   AnnotationPointer,
   AnnotationSampleBar,
+  annotationOption,
   AnnotationSectionBar,
 } from "./annotation";
 export { annotationSamples } from "./annotation-samples";

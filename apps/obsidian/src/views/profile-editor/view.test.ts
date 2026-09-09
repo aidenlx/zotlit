@@ -463,6 +463,7 @@ describe("ProfileEditorView", () => {
       tab: "annotation",
       advanced: true,
       itemIndexedKey: null,
+      annotationId: null,
     });
   });
   it("labels a built-in annotation sample export as selected paper data", () => {
@@ -483,7 +484,9 @@ describe("ProfileEditorView", () => {
       indexedKey: "PAPER001g42",
       root: "note",
     });
-    expect(menu.items[0]?.title).toBe("Export selected paper data");
+    expect(menu.items.map((item) => item.title)).toContain(
+      "Export selected paper data",
+    );
   });
 
   it("keeps a real selected annotation export on its exact Indexed Key", () => {
@@ -505,7 +508,9 @@ describe("ProfileEditorView", () => {
       indexedKey: "ANNO0001g42",
       root: "annotation",
     });
-    expect(menu.items[0]?.title).toBe("Save template data as JSON");
+    expect(menu.items.map((item) => item.title)).toContain(
+      "Save template data as JSON",
+    );
   });
   it("inserts at the remembered slice selection and returns focus after sidebar use", async () => {
     const { view, leaf, requestSave, setActiveLeaf } = setup();
@@ -1003,6 +1008,7 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
     tab: "note",
     advanced: false,
     itemIndexedKey: null,
+    annotationId: null,
   });
   expect(view.controller.readOnly).toBe(true);
   expect(view.getViewData()).toBe(builtin);

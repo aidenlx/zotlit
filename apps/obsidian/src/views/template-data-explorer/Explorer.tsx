@@ -1,26 +1,38 @@
 // Presentational root for the Template Data Explorer: db-not-ready, no-item, and tree states.
 import { useContext } from "react";
 
-import { AnnotationSampleBar, DataExplorer } from "@zotlit/workbench/ui";
-import type { DataExplorerProps } from "@zotlit/workbench/ui";
+import { DataExplorer } from "@zotlit/workbench/ui";
+import type {
+  DataExplorerProps,
+  WorkbenchItemChoice,
+} from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
+import type { ItemLookup } from "@/services/item-lookup/service";
+import {
+  ItemSelectionList,
+  AnnotationSelectionList,
+} from "@/views/profile-editor/selection";
 
 import { ExplorerActionsContext } from "./actions";
-import {
-  annotationIndexedKey,
-  useExplorerStore,
-  useExplorerStoreApi,
-} from "./store";
+import { useExplorerStore, useExplorerStoreApi } from "./store";
 
 export function Explorer({
   explorer,
   onSelectAnnotation,
+  onChooseAnnotation,
+  onSelectItem,
+  onSearchItem,
+  lookup,
 }: {
-  onSelectAnnotation?: (id: string) => void;
+  onSelectAnnotation: (id: string) => void;
+  onChooseAnnotation: () => void;
+  onSelectItem: (item: WorkbenchItemChoice) => void;
+  onSearchItem: () => void;
+  lookup: Pick<ItemLookup, "search">;
   explorer: Omit<
     DataExplorerProps,
     | "data"
@@ -33,13 +45,8 @@ export function Explorer({
 }): React.ReactElement {
   const store = useExplorerStoreApi();
   const state = useExplorerStore((s) => s);
-  const { item, root, status, error, data, context, navigation, variant } =
-    state;
-  const showAnnotationSelector =
-    root === "annotation" &&
-    state.annotations !== null &&
-    onSelectAnnotation !== undefined;
-  const itemLabel = item?.title ?? item?.id;
+  const { root, status, error, data, context, navigation, variant } = state;
+  const showAnnotationSelector = root === "annotation";
   const anchor =
     root === "annotation"
       ? { label: m.workbench_fields_root_annotation() }
@@ -47,7 +54,7 @@ export function Explorer({
   const actions = useContext(ExplorerActionsContext);
 
   return (
-    <div className="zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
+    <div className="zt:flex zt:h-full zt:flex-col zt:overflow-auto">
       {status === "loading" && !showAnnotationSelector ? (
         <p role="status" className="zt:p-3">
           {m.workbench_loading_item()}
@@ -63,36 +70,45 @@ export function Explorer({
           </button>
         </div>
       ) : status === "no-item" ? (
-        <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-3 zt:p-4 zt:text-center">
-          <p>{m.template_data_explorer_empty_hint()}</p>
-          <button className="mod-cta" onClick={() => actions.onChooseItem()}>
-            {m.template_data_explorer_choose_item()}
-          </button>
-        </div>
+        root === "annotation" ? (
+          <AnnotationSelectionList
+            current={state.annotations ?? []}
+            onSelect={onSelectAnnotation}
+            onSearch={onChooseAnnotation}
+          />
+        ) : (
+          <ItemSelectionList
+            lookup={lookup}
+            onSelect={onSelectItem}
+            onSearch={onSearchItem}
+          />
+        )
       ) : (
         <>
-          <div className="zt:flex zt:shrink-0 zt:flex-col zt:gap-3 zt:border-b zt:border-border zt:bg-background zt:px-3 zt:py-2">
-            <div className="zt:flex zt:items-center zt:gap-1">
-              <Icon
-                name="file-text"
-                className="zt:size-3.5 zt:shrink-0 zt:text-faint"
-              />
-              <span
-                className="zt:line-clamp-2 zt:min-w-0 zt:flex-1 zt:text-sm zt:leading-normal zt:text-foreground"
-                {...(itemLabel ? tooltipAttrs(itemLabel) : {})}
+          <div
+            className={
+              anchor
+                ? "zt:flex zt:shrink-0 zt:flex-col zt:gap-3 zt:border-b zt:border-border zt:px-3 zt:py-2"
+                : "zt-workbench-sidebar-control zt:shrink-0 zt:justify-end zt:px-3 zt:py-2"
+            }
+          >
+            <div className="zt-workbench-sidebar-control zt:items-center zt:justify-end">
+              <button
+                aria-label={
+                  root === "annotation"
+                    ? m.workbench_choose_annotation()
+                    : m.workbench_choose_item()
+                }
+                onClick={
+                  root === "annotation"
+                    ? onChooseAnnotation
+                    : () => actions.onChooseItem()
+                }
               >
-                {itemLabel}
-              </span>
-              <IconButton
-                icon="arrow-left-right"
-                onClick={() => actions.onChooseItem()}
-                {...tooltipAttrs(m.template_data_explorer_choose_item())}
-              />
-              <IconButton
-                icon="refresh-ccw"
-                onClick={() => actions.onRefresh()}
-                {...tooltipAttrs(m.template_data_explorer_refresh_tooltip())}
-              />
+                {root === "annotation"
+                  ? m.workbench_choose_annotation()
+                  : m.workbench_choose_item()}
+              </button>
             </div>
             {anchor && (
               <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-1.5">
@@ -121,31 +137,6 @@ export function Explorer({
                     </span>
                   </div>
                 </nav>
-                {showAnnotationSelector && (
-                  <AnnotationSampleBar
-                    current={state.annotations ?? []}
-                    example={
-                      data && state.annotationId
-                        ? {
-                            id:
-                              annotationIndexedKey(
-                                item!.id,
-                                state.annotationId,
-                              ) ?? state.annotationId,
-                            root: data,
-                          }
-                        : null
-                    }
-                    onSelect={(id) => {
-                      const latest = store.getState();
-                      if (
-                        latest.item?.id === item?.id &&
-                        latest.root === "annotation"
-                      )
-                        onSelectAnnotation?.(id);
-                    }}
-                  />
-                )}
               </div>
             )}
           </div>

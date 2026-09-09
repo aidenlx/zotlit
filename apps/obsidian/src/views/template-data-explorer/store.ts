@@ -22,11 +22,16 @@ import type {
   TemplateRoot,
   WorkbenchItemChoice,
 } from "@zotlit/workbench/ui";
+import { annotationSamples } from "@zotlit/workbench/ui";
 
 import { getLogger } from "@/lib/log";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
 import { loadTemplateData } from "@/services/template-workbench/data";
-import type { TemplateDataDeps } from "@/services/template-workbench/data";
+import type {
+  TemplateDataDeps,
+  TemplateDataLoadResult,
+} from "@/services/template-workbench/data";
+import { getSampleItem } from "@/views/profile-editor/selection-data";
 import type { ProfileAuthoringContext } from "@/views/profile-editor/view";
 
 const logger = getLogger(["views", "template-data-explorer"]);
@@ -93,15 +98,18 @@ export class NativeExplorerSession implements Disposable {
     if (
       !previous ||
       previous.item?.id !== context.item?.id ||
-      previous.root !== context.root ||
-      (context.root === "annotation" &&
-        previous.annotationId !== context.annotationId)
+      previous.root !== context.root
     )
       this.setTarget(
         context.item,
         context.root,
         context.root === "annotation" ? context.annotationId : null,
       );
+    else if (
+      this.state.getState().root === "annotation" &&
+      previous.annotationId !== context.annotationId
+    )
+      this.setTarget(context.item, "annotation", context.annotationId);
   }
   setTarget(
     item: WorkbenchItemChoice | null,
@@ -142,30 +150,67 @@ export class NativeExplorerSession implements Disposable {
   async #load(): Promise<void> {
     const generation = ++this.#generation;
     const { item, root, annotationId } = this.state.getState();
+    const sample =
+      root === "annotation"
+        ? SAMPLE_ANNOTATIONS.find(({ id }) => id === annotationId)
+        : undefined;
+    const snapshot = item ? getSampleItem(item.id) : null;
     this.state.setState({
       data: null,
       error: null,
-      status: item ? "loading" : "no-item",
+      status: item || sample ? "loading" : "no-item",
     });
     logger.debug("Explorer data load started", {
       generation,
       indexedKey: item?.id,
       root,
     });
-    if (!item) return;
+    if (!item && !sample) return;
     try {
-      const sample =
-        root === "annotation"
-          ? SAMPLE_ANNOTATIONS.find(({ id }) => id === annotationId)
-          : undefined;
+      if (sample) {
+        this.state.setState({
+          data: restoreTemplateData(sample.root, sample.descriptors),
+          status: "ready",
+          annotations: snapshot
+            ? annotationSamples(snapshot, annotationId).current
+            : (this.state.getState().annotations ?? []),
+        });
+        if (!item || snapshot) return;
+      }
+      if (!item) return;
+      const loadRoot = (
+        key: string,
+        target: TemplateRoot,
+      ): Promise<TemplateDataLoadResult> => {
+        if (!item.id.startsWith("sample:"))
+          return loadTemplateData(this.#deps, key, target);
+        if (!snapshot) return Promise.resolve({ kind: "not-found" });
+        if (target !== "annotation")
+          return Promise.resolve({
+            kind: "data",
+            data: restoreTemplateData(
+              snapshot.roots[target],
+              snapshot.descriptors[target],
+            ),
+          });
+        const selected = annotationSamples(snapshot, annotationId).current.find(
+          ({ id, root }) => id === annotationId || root.indexedKey === key,
+        );
+        return Promise.resolve(
+          selected
+            ? {
+                kind: "data",
+                data: restoreTemplateData(selected.root, selected.descriptors),
+              }
+            : { kind: annotationId ? "not-found" : "annotation-required" },
+        );
+      };
       const key =
         root === "annotation" && !sample
           ? (annotationIndexedKey(item.id, annotationId) ?? item.id)
           : item.id;
       const note =
-        root === "annotation"
-          ? await loadTemplateData(this.#deps, item.id, "note")
-          : null;
+        root === "annotation" ? await loadRoot(item.id, "note") : null;
       if (note) {
         if (this.#closed || generation !== this.#generation) {
           logger.trace("Discarded stale Explorer annotation choices", {
@@ -178,26 +223,28 @@ export class NativeExplorerSession implements Disposable {
         if (note.kind === "data") {
           const values = (note.data as Record<string, unknown>).annotations;
           this.state.setState({
-            annotations: Array.isArray(values)
-              ? values.flatMap((value: unknown) => {
-                  if (
-                    !value ||
-                    typeof value !== "object" ||
-                    !("key" in value) ||
-                    typeof value.key !== "string"
-                  )
-                    return [];
-                  const id = annotationIndexedKey(item.id, value.key);
-                  return id
-                    ? [{ id, root: value as Record<string, unknown> }]
-                    : [];
-                })
-              : [],
+            annotations: snapshot
+              ? annotationSamples(snapshot, annotationId).current
+              : Array.isArray(values)
+                ? values.flatMap((value: unknown) => {
+                    if (
+                      !value ||
+                      typeof value !== "object" ||
+                      !("key" in value) ||
+                      typeof value.key !== "string"
+                    )
+                      return [];
+                    const id = annotationIndexedKey(item.id, value.key);
+                    return id
+                      ? [{ id, root: value as Record<string, unknown> }]
+                      : [];
+                  })
+                : [],
           });
         }
       }
-      const result =
-        sample && note ? note : await loadTemplateData(this.#deps, key, root);
+      if (sample) return;
+      const result = await loadRoot(key, root);
       if (this.#closed || generation !== this.#generation) {
         logger.trace("Discarded stale Explorer data", {
           generation,
@@ -218,14 +265,7 @@ export class NativeExplorerSession implements Disposable {
         });
         return;
       }
-      const data = (
-        sample
-          ? {
-              ...restoreTemplateData(sample.root, sample.descriptors),
-              parentItem: result.data,
-            }
-          : result.data
-      ) as Record<string, unknown>;
+      const data = result.data as Record<string, unknown>;
       logger.debug("Explorer data loaded", {
         generation,
         indexedKey: key,
@@ -247,9 +287,10 @@ export class NativeExplorerSession implements Disposable {
       }
       logger.warn("Explorer data load failed", {
         error,
-        indexedKey: item.id,
+        indexedKey: item?.id,
         root,
       });
+      if (sample && this.state.getState().data !== null) return;
       this.state.setState({
         status: "error",
         error: error instanceof Error ? error.message : String(error),
@@ -293,7 +334,9 @@ export function annotationIndexedKey(
   const key = Array.isArray(selection) ? selection[1] : selection;
   if (typeof key !== "string") return null;
   const annotation = parseIndexedKey(key);
-  const item = parseIndexedKey(itemId);
+  const item = parseIndexedKey(
+    getSampleItem(itemId)?.item.indexedKey ?? itemId,
+  );
   return annotation && item
     ? indexedKeyForClipboard({
         key: annotation.key,

@@ -12,11 +12,11 @@ import { Command } from "@/components/command";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-The Template Data Explorer shows the full data tree that templates receive for a Zotero item. Use it to discover field paths, inspect values, and copy ready-to-use snippets into your templates.
+The Template Data Explorer shows the data that templates receive for a Zotero item or built-in example. Use it to discover field paths, inspect values, and copy ready-to-use snippets into your templates.
 
 ## Open the explorer
 
-The explorer opens in the right sidebar. You can reach it from several entry points.
+The explorer can appear in a sidebar or beside the Profile Editor. You can reach it from several entry points.
 
 ### From the command palette
 
@@ -28,7 +28,7 @@ The explorer opens in the right sidebar. You can reach it from several entry poi
 
     <Command name={m.command_open_template_data_explorer_name()} />
 
-    If a literature note is active in the editor, the explorer seeds from that note's Zotero item. Otherwise it opens with an item picker.
+    If a literature note is active in the editor, the explorer uses that note's Zotero item. With no selected item, it shows a list of choices.
 
   </Step>
 </Steps>
@@ -50,6 +50,38 @@ ZotLit Companion, the Zotero add-on, adds these entry points in Zotero. Right-cl
 In Zotero's PDF reader, right-click an annotation and select <UiLabel name={m["zotero.menu_reader_annot_explore"]()} />, added by the Companion. The explorer opens in Obsidian anchored at that annotation.
 
 <include>./_security-prompt-callout.mdx</include>
+
+## Choose data
+
+Choose a built-in journal article, conference paper, book, or thesis example,
+or a library item under <UiLabel name={m.workbench_recently_updated()} />.
+This list contains items recently updated in Zotero. Select
+
+<UiLabel name={m.workbench_search_zotero()} /> to search your Zotero library.
+Selecting an item replaces the list with its fields.
+
+Use <UiLabel name={m.workbench_choose_item()} /> to change the item. For
+annotation fields, use <UiLabel name={m.workbench_choose_annotation()} />.
+The annotation chooser searches annotations from the selected item and six
+built-in examples: highlight, underline, note, text, image, and ink.
+
+Data choices update the other linked panes. Annotation fields and previews
+use the chosen annotation and its own parent item data; the note keeps its
+selected item. Separate workbenches keep their own selections.
+
+The pane title starts with the selected data and ends with
+
+<UiLabel name={m.workbench_view_fields()} />. Annotation titles show the type,
+page, and a short excerpt. Built-in examples are identified in the title; with
+no selection, the pane uses its generic name.
+
+Full panels have selection actions in the header. Sidebars have a small
+selection control near the data. Right-click the
+pane header to access its menu in either layout. To open the editor, fields, and
+preview together, select <UiLabel name={m.profile_editor_open_workbench()} />
+from the Profile Editor's pane menu.
+
+Data used for the preview updates automatically. To load it again, select <UiLabel name={m.workbench_refresh_item()} /> from the pane menu. In <UiLabel name={m.workbench_preview_on_demand()} /> mode, select <UiLabel name={m.workbench_preview_run()} /> to render the preview.
 
 ## Copy a Zotero key [#indexed-key]
 

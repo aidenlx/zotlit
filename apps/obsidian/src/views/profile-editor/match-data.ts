@@ -5,6 +5,7 @@ import {
   getLibraries,
 } from "@zotlit/db";
 import type { MatchItemFacts } from "@zotlit/workbench/match";
+import { snapshotMatchFacts } from "@zotlit/workbench/match";
 import type { WorkbenchHost, WorkbenchLibrary } from "@zotlit/workbench/ui";
 
 import type { DatabaseService } from "@/services/database/service";
@@ -16,6 +17,8 @@ import {
   listCollectionChoices,
   resolveMembershipFacts,
 } from "@/services/profile-selection/facts";
+
+import { getSampleItem } from "./selection-data";
 
 export function createMatchData(
   db: Pick<DatabaseService, "acquireRead">,
@@ -56,6 +59,8 @@ export async function loadMatchFacts(
   db: Pick<DatabaseService, "acquireRead">,
   indexedKey: string,
 ): Promise<MatchItemFacts | null> {
+  const sample = getSampleItem(indexedKey);
+  if (sample) return snapshotMatchFacts(sample);
   using lease = await db.acquireRead();
   const key = resolveIndexedKeyLibrary(lease.client, indexedKey);
   if (!key) return null;

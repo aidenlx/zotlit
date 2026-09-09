@@ -10,11 +10,12 @@ export function PreviewAnnotationSelection({
   session: NativePreviewSession;
 }) {
   const { current, example } = useStore(session.state, (state) => state);
-  return example ? (
+  return (
     <AnnotationSampleBar
+      compact
       current={current}
       example={example}
       onSelect={(id) => session.select(id)}
     />
-  ) : null;
+  );
 }

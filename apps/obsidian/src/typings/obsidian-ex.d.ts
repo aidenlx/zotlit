@@ -35,6 +35,8 @@ declare module "obsidian" {
     done?: () => void;
   }
   interface WorkspaceLeaf {
+    /** Refreshes native tab text and tooltip after selection changes (Obsidian 1.14). */
+    updateHeader(): void;
     /** Native descriptor/ephemeral history capture; verified in Obsidian 1.14. */
     recordHistory(state: unknown): void;
     /** Native leaf identity, serialized by the workspace. */
@@ -42,6 +44,10 @@ declare module "obsidian" {
     /** Native link and pin state, serialized by the workspace (Obsidian 1.14). */
     group: string | null;
     pinned: boolean;
+  }
+  interface ItemView {
+    /** Native content header title; refreshed separately from the tab (Obsidian 1.14). */
+    titleEl: HTMLElement;
   }
   interface WorkspaceContainer {
     /**
@@ -63,6 +69,13 @@ declare module "obsidian" {
     allowNoFile: boolean;
   }
   interface Workspace {
+    on(
+      name: "zotlit:workbench-selection",
+      callback: (
+        selection: import("../views/profile-editor/selection").WorkbenchSelectionEvent,
+      ) => void,
+      ctx?: any,
+    ): EventRef;
     /** Active/recent navigating FileView, also used by native Outline. */
     getActiveFileView(): FileView | null;
 

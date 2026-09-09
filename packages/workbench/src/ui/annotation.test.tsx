@@ -6,6 +6,7 @@ import {
   AnnotationPane,
   AnnotationPointer,
   AnnotationSampleBar,
+  annotationOption,
 } from "./annotation";
 import { annotationSamples } from "./annotation-samples";
 import { WorkbenchHostProvider } from "./host";
@@ -67,6 +68,7 @@ it("hands annotation choice to the host with current annotations first and empty
   const trigger = screen.getByRole("button", {
     name: m.workbench_choose_annotation(),
   });
+  expect(screen.getByText(annotationOption(m, example).label)).toBeTruthy();
   await act(async () => {
     fireEvent.click(trigger);
   });
@@ -82,6 +84,66 @@ it("hands annotation choice to the host with current annotations first and empty
     SAMPLE_ANNOTATIONS.map((option) => option.id),
   );
   expect(selected).toHaveBeenCalledWith(SAMPLE_ANNOTATIONS[1]!.id);
+});
+
+it.each(["compact", "hideLabel"] as const)(
+  "opens the same annotation choices from a %s native trigger without repeating its label",
+  async (prop) => {
+    const host = fakeHost();
+    const example = SAMPLE_ANNOTATIONS[0]!;
+    host.suggester = (request) => {
+      host.calls.suggesters.push(request);
+      return Promise.resolve(SAMPLE_ANNOTATIONS[1]!.id);
+    };
+    const selected = vi.fn<(id: string) => void>();
+    render(
+      <WorkbenchHostProvider host={host}>
+        <AnnotationSampleBar
+          {...{ [prop]: true }}
+          current={[example]}
+          example={example}
+          onSelect={selected}
+        />
+      </WorkbenchHostProvider>,
+    );
+    expect(screen.queryByText(annotationOption(m, example).label)).toBeNull();
+    const trigger = screen.getByRole("button", {
+      name: m.workbench_change_annotation(),
+    });
+    await act(async () => fireEvent.click(trigger));
+    const request = host.calls.suggesters[0]!;
+    expect(request.anchor).toBe(trigger);
+    expect(request.selected).toBe(example.id);
+    expect(request.groups[0]?.options[0]).toMatchObject({
+      id: example.id,
+      label: annotationOption(m, example).label,
+      hint: annotationOption(m, example).description,
+    });
+    expect(selected).toHaveBeenCalledWith(SAMPLE_ANNOTATIONS[1]!.id);
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  },
+);
+
+it("keeps a compact annotation selection when its chooser is dismissed", async () => {
+  const host = fakeHost();
+  host.suggester = async () => null;
+  const selected = vi.fn<(id: string) => void>();
+  render(
+    <WorkbenchHostProvider host={host}>
+      <AnnotationSampleBar
+        compact
+        current={[]}
+        example={null}
+        onSelect={selected}
+      />
+    </WorkbenchHostProvider>,
+  );
+  const trigger = screen.getByRole("button", {
+    name: m.workbench_choose_annotation(),
+  });
+  await act(async () => fireEvent.click(trigger));
+  expect(selected).not.toHaveBeenCalled();
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
 });
 
 it("keeps Item selection unchanged when its host chooser is dismissed", async () => {

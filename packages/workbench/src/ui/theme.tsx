@@ -171,7 +171,7 @@ export interface WorkbenchParts {
     | "section-bar"
     | "primary-action"
     | "section-go";
-  sampleSuggester: "suggester" | "label" | "trigger";
+  sampleSuggester: "suggester" | "label" | "trigger" | "text-trigger";
 
   select: "wrapper" | "select" | "icon" | "option";
   sliceEditor: "slice-editor" | "slice-scroll";

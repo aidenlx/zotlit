@@ -256,9 +256,15 @@ export class TFolder extends TAbstractFile {
 /** Minimal ItemView shell for tests of plugin-registered views. */
 export class ItemView {
   readonly contentEl: HTMLElement;
+  readonly titleEl: HTMLElement;
 
   constructor(readonly leaf: WorkspaceLeaf) {
+    if (typeof Reflect.get(leaf, "updateHeader") !== "function")
+      leaf.updateHeader = () => {};
     const content = globalThis.document?.createElement("div");
+    this.titleEl =
+      globalThis.document?.createElement("div") ??
+      ({ textContent: "" } as HTMLElement);
     if (!content) {
       this.contentEl = {
         addClass: (..._classes: string[]) => {},

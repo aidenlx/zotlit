@@ -21,7 +21,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 
-import { useExampleMessage } from "./example-state";
+import { ExampleActions, useExampleState } from "./example-state";
 import type { WorkbenchMessages } from "./generated/messages";
 import { useOptionalHost } from "./host";
 import type { WorkbenchMessageLabel } from "./messages";
@@ -124,6 +124,8 @@ export interface NameFolderPaneProps {
   controller: WorkbenchDocumentController;
   onOpenSource?: () => void;
   onOpenSettings?: () => void;
+  onChooseItem?: () => void;
+  onRetry?: () => void;
   /**
    * The manifest this form writes: the last one the document parsed with, so a
    * draft under repair keeps the values the reader is repairing. Null before
@@ -162,6 +164,8 @@ export function NameFolderPane({
   controller,
   onOpenSource,
   onOpenSettings,
+  onChooseItem,
+  onRetry,
   manifest,
   filename,
   citationStyles,
@@ -172,7 +176,7 @@ export function NameFolderPane({
   onSelection,
 }: NameFolderPaneProps) {
   const m = useWorkbenchMessages();
-  const exampleMessage = useExampleMessage("filename");
+  const example = useExampleState("filename");
   const prefix = useId();
   const container = useRef<HTMLDivElement>(null);
   const icon = useIcon();
@@ -248,9 +252,14 @@ export function NameFolderPane({
                 <span {...part("muted")}>
                   {m.workbench_name_filename_result()}
                 </span>
-                <output {...part("filename-output")}>
-                  {exampleMessage ?? filename ?? m.workbench_property_unset()}
+                <output {...part("filename-output", example.kind)}>
+                  {example.message ?? filename ?? m.workbench_property_unset()}
                 </output>
+                <ExampleActions
+                  chooseLabel={m.workbench_choose_preview_item()}
+                  onChooseItem={onChooseItem}
+                  onRetry={example.kind === "error" ? onRetry : undefined}
+                />
               </p>
             </Group>
 

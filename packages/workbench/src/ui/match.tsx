@@ -4,6 +4,8 @@ import { useEffect, useState, useRef } from "react";
 
 import type { MatchTree } from "@zotlit/templates/facade";
 
+import { useOptionalEditor, useWorkbenchStore } from "./editor";
+import { ExampleActions } from "./example-state";
 import { useWorkbenchHost } from "./host";
 import { describeProblem } from "./match.diagnostic";
 import {
@@ -39,6 +41,7 @@ export function MatchPane({
   vocabularyRevision,
   exampleMessage,
   onRetry,
+  onChooseItem,
 }: {
   controller: WorkbenchDocumentController;
   facts: MatchItemFacts | null;
@@ -46,10 +49,14 @@ export function MatchPane({
   vocabularyRevision?: string | number;
   exampleMessage?: string | null;
   onRetry?: () => void;
+  onChooseItem?: () => void;
 }) {
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
   const part = useParts("match");
+  const editor = useOptionalEditor();
+  const item = useWorkbenchStore((state) => state.item);
+  const hasItem = editor ? item !== null : facts !== null;
   const [match, setMatch] = useState<MatchTree | undefined>(
     controller.document?.manifest.match,
   );
@@ -159,6 +166,25 @@ export function MatchPane({
     compiled?.condition && facts
       ? matchCondition(compiled.condition, facts)
       : false;
+  const failed = problem ?? reason;
+  const resultMessage = !hasItem
+    ? m.workbench_match_choose_item()
+    : (exampleMessage ??
+      (loading ? m.workbench_loading_item() : null) ??
+      (failed
+        ? m.workbench_match_result_unavailable({ reason: failed })
+        : matched
+          ? m.workbench_match_result_yes()
+          : m.workbench_match_result_no()));
+  const resultState = !hasItem
+    ? "no-selection"
+    : onRetry || (!loading && failed)
+      ? "error"
+      : exampleMessage || loading
+        ? "loading"
+        : matched
+          ? "match"
+          : "no-match";
   return (
     <section
       {...part("pane")}
@@ -205,26 +231,20 @@ export function MatchPane({
           }}
         />
       </fieldset>
-      <p role="status" {...part("result")}>
-        {exampleMessage ??
-          (loading ? m.workbench_loading_item() : problem) ??
-          (reason
-            ? m.workbench_match_result_unavailable({ reason })
-            : matched
-              ? m.workbench_match_result_yes()
-              : m.workbench_match_result_no())}
-      </p>
-      {(onRetry || problem) && (
-        <button
-          type="button"
-          onClick={onRetry ?? (() => setRetry((value) => value + 1))}
-        >
-          {m.workbench_example_retry()}
-        </button>
-      )}
-      {(writeProblem ?? problem) && (
-        <p role="alert">{writeProblem ?? problem}</p>
-      )}
+      <div {...part("actions")}>
+        <p role="status" {...part("result", resultState)}>
+          {resultMessage}
+        </p>
+        <ExampleActions
+          chooseLabel={m.workbench_choose_match_item()}
+          onChooseItem={onChooseItem}
+          onRetry={
+            onRetry ??
+            (problem ? () => setRetry((value) => value + 1) : undefined)
+          }
+        />
+      </div>
+      {writeProblem && <p role="alert">{writeProblem}</p>}
     </section>
   );
 }

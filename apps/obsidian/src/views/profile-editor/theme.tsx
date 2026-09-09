@@ -320,8 +320,8 @@ export const profileEditorTheme: WorkbenchTheme = {
       "toggle-row": row,
       "filename-editor": editorBox,
       "filename-result":
-        "zt:flex zt:flex-wrap zt:gap-x-2 zt:gap-y-1 zt:text-xs",
-      "filename-output": "zt:[overflow-wrap:anywhere]",
+        "zt:flex zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1 zt:text-xs zt:leading-normal",
+      "filename-output": "zt:min-w-0 zt:[overflow-wrap:anywhere]",
       defaults: "zt:flex zt:flex-col zt:gap-2",
       "default-label": "zt:min-w-0 zt:flex-1",
       "default-value":
@@ -355,6 +355,8 @@ export const profileEditorTheme: WorkbenchTheme = {
       label:
         "zt:min-w-0 zt:flex-1 zt:truncate zt:text-xs zt:text-muted-foreground",
       trigger: "clickable-icon zt:shrink-0",
+      "text-trigger":
+        "clickable-icon zt:max-w-full zt:shrink-0 zt:gap-1.5 zt:leading-normal zt:[--icon-size:var(--icon-xs)] zt:[--icon-stroke:1.5] zt:[&_svg]:shrink-0",
     },
     problemsFooter: {
       "problems-open": profileEditorButton,

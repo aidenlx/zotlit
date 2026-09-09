@@ -122,9 +122,20 @@ export async function renderNativeProfile(
       settings: { loaded: Promise.resolve(profile.settings) },
     };
     const indexedKey = request.snapshot.item.indexedKey;
+    const sample = request.snapshot.provenance.kind === "sample";
+    const loadRoot = (root: "note" | "filename") =>
+      sample
+        ? Promise.resolve({
+            kind: "data" as const,
+            data: restoreTemplateData(
+              request.snapshot.roots[root],
+              request.snapshot.descriptors[root],
+            ),
+          })
+        : loadTemplateData(dataDeps, indexedKey, root);
     const [note, filename] = await Promise.all([
-      loadTemplateData(dataDeps, indexedKey, "note"),
-      loadTemplateData(dataDeps, indexedKey, "filename"),
+      loadRoot("note"),
+      loadRoot("filename"),
     ]);
     if (note.kind !== "data" || filename.kind !== "data")
       throw new Error("The selected Zotero item is unavailable.");
@@ -190,7 +201,9 @@ export async function renderNativeProfile(
         ? document.renderForCreate(context)
         : composed.body;
     const managed = document.renderForUpdate(context);
-    const existing = findExistingLitNote(deps.noteIndex, { indexedKey });
+    const existing = sample
+      ? null
+      : findExistingLitNote(deps.noteIndex, { indexedKey });
     sourcePath = existing?.path ?? "";
     const file = sourcePath ? deps.app.vault.getFileByPath(sourcePath) : null;
     const original =
@@ -226,6 +239,7 @@ export async function renderNativeProfile(
         const key = request.annotation.root.indexedKey;
         const live =
           typeof key === "string" &&
+          !sample &&
           !SAMPLE_ANNOTATIONS.some(({ id }) => id === request.annotation!.id)
             ? await loadTemplateData(dataDeps, key, "annotation")
             : null;
@@ -292,15 +306,19 @@ export async function renderNativeProfile(
       styleId: profile.bindings["citation.references-style"],
       wikilinks: settings["citation.wikilink-citations"],
     };
-    const noteCitations = invalidLanguage
-      ? { citations: [], diagnostics: [] }
-      : await renderDraftCitations(deps, { ...presentation, markdown: body });
-    const annotationCitations = invalidLanguage
-      ? { citations: [], diagnostics: [] }
-      : await renderDraftCitations(deps, {
-          ...presentation,
-          markdown: annotation ?? "",
-        });
+    const noteCitations =
+      invalidLanguage || sample
+        ? { citations: [], diagnostics: [] }
+        : await renderDraftCitations(deps, { ...presentation, markdown: body });
+    const annotationCitations =
+      invalidLanguage ||
+      sample ||
+      SAMPLE_ANNOTATIONS.some(({ id }) => id === request.annotation?.id)
+        ? { citations: [], diagnostics: [] }
+        : await renderDraftCitations(deps, {
+            ...presentation,
+            markdown: annotation ?? "",
+          });
     diagnostics.push(
       ...noteCitations.diagnostics,
       ...annotationCitations.diagnostics,

@@ -11,6 +11,8 @@ import {
   createWorkbenchStore,
 } from "@zotlit/workbench/ui";
 
+import { SAMPLE_ITEM_CHOICES } from "@/views/profile-editor/selection-data";
+
 import { createRenderFixture, PROFILE_SOURCE } from "./__fixtures__/render";
 import { nativeResult } from "./render";
 import type { NativeRenderResult } from "./render";
@@ -69,7 +71,8 @@ describe("native preview data", () => {
     expect(session.state.getState()).toMatchObject({
       snapshot: null,
       current: [],
-      example: null,
+      example: { id: "example:underline" },
+      status: "empty",
     });
   });
 
@@ -114,6 +117,119 @@ describe("native preview data", () => {
 });
 
 describe("native preview load boundaries", () => {
+  it.each(SAMPLE_ITEM_CHOICES)(
+    "loads $id without a database and retains its canonical selection",
+    async (item) => {
+      await using fixture = await createRenderFixture();
+      const acquire = vi
+        .spyOn(fixture.deps.db, "acquireRead")
+        .mockRejectedValue(new Error("Database offline"));
+      const { scheduler } = scheduling(false);
+      using _scheduler = scheduler;
+      using session = new NativePreviewSession(fixture.deps, scheduler, {
+        item,
+      });
+      await session.ready;
+      expect(session.state.getState()).toMatchObject({
+        item,
+        status: "ready",
+        snapshot: { provenance: { kind: "sample" } },
+      });
+      session.refresh();
+      await session.ready;
+      expect(session.state.getState().item?.id).toBe(item.id);
+      expect(acquire).not.toHaveBeenCalled();
+    },
+  );
+
+  it("renders an explicit built-in annotation without selecting a note Item", async () => {
+    await using fixture = await createRenderFixture();
+    vi.useFakeTimers();
+    const acquire = vi
+      .spyOn(fixture.deps.db, "acquireRead")
+      .mockRejectedValue(new Error("Database offline"));
+    const { render, scheduler } = scheduling(true);
+    using _scheduler = scheduler;
+    using session = new NativePreviewSession(fixture.deps, scheduler);
+    await session.ready;
+    await vi.advanceTimersByTimeAsync(300);
+    expect(render).not.toHaveBeenCalled();
+    expect(session.state.getState()).toMatchObject({
+      item: null,
+      snapshot: null,
+      example: null,
+      status: "empty",
+    });
+    session.select("example:underline");
+    await vi.advanceTimersByTimeAsync(300);
+    expect(render).toHaveBeenCalledOnce();
+    const request = render.mock.calls[0]![0];
+    expect(request.snapshot.item.indexedKey).toBe("CNPF226A");
+    expect(request.annotation?.root.text).toBe(
+      "Report the assumptions behind each result.",
+    );
+    expect(session.state.getState()).toMatchObject({
+      item: null,
+      snapshot: null,
+      current: [],
+      status: "empty",
+      annotationId: "example:underline",
+    });
+    session.select(null);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(session.state.getState().example).toBeNull();
+    expect(render).toHaveBeenCalledOnce();
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
+  it("keeps an unavailable sample selection out of the database", async () => {
+    await using fixture = await createRenderFixture();
+    const acquire = vi.spyOn(fixture.deps.db, "acquireRead");
+    const { scheduler } = scheduling(false);
+    using _scheduler = scheduler;
+    using session = new NativePreviewSession(fixture.deps, scheduler, {
+      item: { id: "sample:removed", title: null },
+    });
+    await session.ready;
+    expect(session.state.getState()).toMatchObject({
+      status: "error",
+      snapshot: null,
+      item: { id: "sample:removed" },
+    });
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
+  it.each(["resolve", "reject"] as const)(
+    "keeps a sample current when an older database read later %ss",
+    async (outcome) => {
+      await using fixture = await createRenderFixture();
+      const { scheduler } = scheduling(false);
+      using _scheduler = scheduler;
+      const acquire = fixture.deps.db.acquireRead.bind(fixture.deps.db);
+      const pending =
+        Promise.withResolvers<Awaited<ReturnType<typeof acquire>>>();
+      vi.spyOn(fixture.deps.db, "acquireRead").mockImplementationOnce(
+        () => pending.promise,
+      );
+      using session = new NativePreviewSession(fixture.deps, scheduler, {
+        item: { id: "MAIN2345", title: null },
+      });
+      const firstRead = session.ready;
+      session.setItem({ id: "sample:book", title: null });
+      await session.ready;
+      if (outcome === "resolve") pending.resolve(await acquire());
+      else pending.reject(new Error("Old database failed"));
+      await firstRead;
+      expect(session.state.getState()).toMatchObject({
+        status: "ready",
+        error: null,
+        item: { id: "sample:book" },
+        snapshot: { item: { title: "Thinking, fast and slow" } },
+      });
+      expect(scheduler.getState().result).toBeNull();
+    },
+  );
+
   it("distinguishes a failed load from a valid Item with no annotations and retries explicitly", async () => {
     await using fixture = await createRenderFixture();
     const { scheduler } = scheduling(false);

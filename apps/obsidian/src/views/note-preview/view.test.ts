@@ -52,6 +52,16 @@ vi.mock("./register", () => ({
 vi.mock("@/services/item-lookup/search-modal", () => ({
   pickItem: vi.fn(async () => null),
 }));
+vi.mock("@/views/profile-editor/selection", async (original) => ({
+  ...(await original<typeof import("@/views/profile-editor/selection")>()),
+  chooseWorkbenchItem: async (
+    _host: unknown,
+    deps: Parameters<typeof pickItem>[0],
+  ) => {
+    const hit = await pickItem(deps, "");
+    return hit ? { id: hit.item.indexedKey, title: null } : null;
+  },
+}));
 vi.mock("obsidian", async (original) => ({
   ...(await original<typeof import("obsidian")>()),
   MarkdownRenderer: {
@@ -328,7 +338,7 @@ describe("independent native Note Preview", () => {
     await advance();
     expect(second.getState()["item"]).toBeNull();
     expect(second.contentEl.textContent).toContain(
-      m.workbench_example_select_item(),
+      m.workbench_preview_choose_item(),
     );
     expect(first.getState()["item"]).toBe("MAIN2345");
   });
@@ -588,7 +598,7 @@ Annotation`,
     });
     await expect(test.open()).rejects.toThrow("Host unavailable");
     expect(released).toHaveBeenCalledOnce();
-    expect(test.events.size).toBe(1);
+    expect(test.events.size).toBe(2);
     expect(test.subscriptions.size).toBe(0);
     const scheduler = vi
       .mocked(createRenderScheduler)
@@ -609,7 +619,7 @@ Annotation`,
     expect(preview.contentEl.textContent).toContain("Personal space.");
     await act(async () => preview.close());
     expect(released).toHaveBeenCalledTimes(2);
-    expect(test.events.size).toBe(1);
+    expect(test.events.size).toBe(2);
     expect(test.subscriptions.size).toBe(0);
   });
 
@@ -748,7 +758,7 @@ Annotation`,
     expect(test.editor.controller.canUndo).toBe(true);
     await act(async () => first.close());
     expect(test.subscriptions.size).toBe(1);
-    expect(test.events.size).toBe(3);
+    expect(test.events.size).toBe(5);
     await act(async () => void test.editor.controller.undo());
     expect(test.editor.getViewData()).toBe(PROFILE_SOURCE);
     await act(async () => test.editor.scheduler.run());
@@ -823,7 +833,7 @@ Annotation`,
     await advance(0);
     expect(preview.contentEl.textContent).toBe("");
     expect(test.subscriptions.size).toBe(0);
-    expect(test.events.size).toBe(1);
+    expect(test.events.size).toBe(2);
     const calls = vi.mocked(renderNativeProfile).mock.calls.length;
     test.editor.setViewData(PROFILE_SOURCE, true);
     await advance();
@@ -927,7 +937,7 @@ Annotation`,
     await advance();
     expect(preview.contentEl.textContent).toContain("Personal space.");
     expect(preview.contentEl.textContent).not.toContain(
-      m.workbench_example_select_item(),
+      m.workbench_preview_choose_item(),
     );
     await act(async () =>
       test.editor.setViewData("An incomplete Profile", false),
@@ -946,7 +956,7 @@ Annotation`,
     });
     await advance();
     expect(preview.contentEl.textContent).toContain(
-      m.workbench_example_select_item(),
+      m.workbench_preview_choose_item(),
     );
     expect(preview.contentEl.querySelector('[role="alert"]')).toBeNull();
     const choose = [...preview.contentEl.querySelectorAll("button")].find(
