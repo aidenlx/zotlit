@@ -55,6 +55,7 @@ it("binds copied context to its editor, addresses field requests, and releases w
       if (event.name === name) event.callback(...args);
   });
   const app = {
+    vault: { on: vi.fn(() => ({})), offref: vi.fn() },
     workspace: {
       on(name: string, callback: (...args: unknown[]) => void) {
         const ref = {} as EventRef;
@@ -237,6 +238,7 @@ it("binds copied context to its editor, addresses field requests, and releases w
 
 it("restores independent Explorer navigation after delayed data and keeps search out of workspace saves", async () => {
   const app = {
+    vault: { on: vi.fn(() => ({})), offref: vi.fn() },
     workspace: {
       on: vi.fn(() => ({})),
       offref: vi.fn(),
@@ -279,88 +281,82 @@ it("restores independent Explorer navigation after delayed data and keeps search
     variant: "all",
     sourceFile: "profiles/paper.md",
   };
-  try {
-    await act(async () => view.open());
-    await act(async () => view.setState(descriptor, {} as ViewStateResult));
-    const saved = view.getEphemeralState() as {
-      zotlitDataExplorer: Record<string, unknown>;
-    };
-    saved.zotlitDataExplorer.navigation = {
-      anchorKey: null,
-      filterQuery: "answer",
-      expanded: ["details"],
-      noteRootExpanded: ["authors"],
-      preFilterExpanded: ["details"],
-      filterCollapsed: [],
-    };
-    saved.zotlitDataExplorer.presentation = {
-      top: 34,
-      left: 2,
-      field: "details.answer",
-    };
-    await act(async () => view.setEphemeralState(saved));
-    const saves = vi.mocked(app.workspace.requestSaveLayout);
-    saves.mockClear();
-    await act(async () =>
-      release({
-        kind: "data",
-        data: { title: "A paper", details: { answer: 42 } },
-      }),
-    );
-    const input =
-      view.contentEl.querySelector<HTMLInputElement>("input[type=search]")!;
-    expect(input.value).toBe("answer");
-    expect(view.contentEl.textContent).toContain("42");
-    const body =
-      view.contentEl.querySelector<HTMLElement>(
-        '[role="tree"]',
-      )!.parentElement!;
-    expect(body.scrollTop).toBe(34);
-    expect(body.scrollLeft).toBe(2);
-    expect(document.activeElement).toBe(typing);
-    expect(saves).not.toHaveBeenCalled();
-    expect(view.getState()).toEqual(descriptor);
-    await act(async () => {
-      input.value = "";
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    expect(
-      view.contentEl
-        .querySelector('[data-workbench-field="details"]')
-        ?.getAttribute("aria-expanded"),
-    ).toBe("true");
-    expect(view.contentEl.textContent).toContain("42");
-    expect(saves).not.toHaveBeenCalled();
-    const recreated = new ExplorerView(
-      { app } as unknown as WorkspaceLeaf,
-      {
-        app,
-        db: { ready: Promise.resolve(), on: () => () => {} },
-        templates: { javascriptTemplatesEnabled: true },
-      } as unknown as ExplorerViewDeps,
-    );
-    Object.defineProperty(recreated, "app", { value: app });
-    try {
-      await act(async () => recreated.open());
-      await act(async () =>
-        recreated.setState(view.getState(), {} as ViewStateResult),
-      );
-      expect(recreated.contentEl.textContent).toContain("A paper");
-      expect(recreated.getState()).toEqual(descriptor);
-      expect(
-        recreated.contentEl.querySelector<HTMLInputElement>(
-          "input[type=search]",
-        )!.value,
-      ).toBe("");
-    } finally {
-      await act(async () => recreated.close());
-    }
-  } finally {
-    await act(async () => view.close());
+  await using cleanup = new AsyncDisposableStack();
+  cleanup.defer(() => {
     view.contentEl.remove();
     typing.remove();
-  }
+  });
+  cleanup.defer(() => act(async () => view.close()));
+  await act(async () => view.open());
+  await act(async () => view.setState(descriptor, {} as ViewStateResult));
+  const saved = view.getEphemeralState() as {
+    zotlitDataExplorer: Record<string, unknown>;
+  };
+  saved.zotlitDataExplorer.navigation = {
+    anchorKey: null,
+    filterQuery: "answer",
+    expanded: ["details"],
+    noteRootExpanded: ["authors"],
+    preFilterExpanded: ["details"],
+    filterCollapsed: [],
+  };
+  saved.zotlitDataExplorer.presentation = {
+    top: 34,
+    left: 2,
+    field: "details.answer",
+  };
+  await act(async () => view.setEphemeralState(saved));
+  const saves = vi.mocked(app.workspace.requestSaveLayout);
+  saves.mockClear();
+  await act(async () =>
+    release({
+      kind: "data",
+      data: { title: "A paper", details: { answer: 42 } },
+    }),
+  );
+  const input =
+    view.contentEl.querySelector<HTMLInputElement>("input[type=search]")!;
+  expect(input.value).toBe("answer");
+  expect(view.contentEl.textContent).toContain("42");
+  const body =
+    view.contentEl.querySelector<HTMLElement>('[role="tree"]')!.parentElement!;
+  expect(body.scrollTop).toBe(34);
+  expect(body.scrollLeft).toBe(2);
+  expect(document.activeElement).toBe(typing);
+  expect(saves).not.toHaveBeenCalled();
+  expect(view.getState()).toEqual(descriptor);
+  await act(async () => {
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(
+    view.contentEl
+      .querySelector('[data-workbench-field="details"]')
+      ?.getAttribute("aria-expanded"),
+  ).toBe("true");
+  expect(view.contentEl.textContent).toContain("42");
+  expect(saves).not.toHaveBeenCalled();
+  const recreated = new ExplorerView(
+    { app } as unknown as WorkspaceLeaf,
+    {
+      app,
+      db: { ready: Promise.resolve(), on: () => () => {} },
+      templates: { javascriptTemplatesEnabled: true },
+    } as unknown as ExplorerViewDeps,
+  );
+  Object.defineProperty(recreated, "app", { value: app });
+  cleanup.defer(() => act(async () => recreated.close()));
+  await act(async () => recreated.open());
+  await act(async () =>
+    recreated.setState(view.getState(), {} as ViewStateResult),
+  );
+  expect(recreated.contentEl.textContent).toContain("A paper");
+  expect(recreated.getState()).toEqual(descriptor);
+  expect(
+    recreated.contentEl.querySelector<HTMLInputElement>("input[type=search]")!
+      .value,
+  ).toBe("");
 });
 
 it("applies an explicit Item choice to the requesting pinned Explorer and leaves cancellation and other pins unchanged", async () => {
@@ -369,6 +365,7 @@ it("applies an explicit Item choice to the requesting pinned Explorer and leaves
     { name: string; callback: (...args: unknown[]) => void }
   >();
   const app = {
+    vault: { on: vi.fn(() => ({})), offref: vi.fn() },
     workspace: {
       on(name: string, callback: (...args: unknown[]) => void) {
         const ref = {} as EventRef;
@@ -418,6 +415,7 @@ it("applies an explicit Item choice to the requesting pinned Explorer and leaves
     kind: "data",
     data: { title: key === "PAPER001" ? "First paper" : "Second paper" },
   }));
+  await using cleanup = new AsyncDisposableStack();
   const views = [0, 1].map(() => {
     const view = new ExplorerView(
       { app, pinned: true } as unknown as WorkspaceLeaf,
@@ -428,41 +426,153 @@ it("applies an explicit Item choice to the requesting pinned Explorer and leaves
       } as unknown as ExplorerViewDeps,
     );
     Object.defineProperty(view, "app", { value: app });
+    cleanup.defer(() => act(async () => view.close()));
     return view;
   });
   const [requesting, held] = views as [ExplorerView, ExplorerView];
+  await act(async () => {
+    for (const view of views) {
+      await view.open();
+      await view.setState({}, { history: false });
+    }
+  });
+  const choose = [
+    ...requesting.contentEl.querySelectorAll<HTMLElement>('[role="button"]'),
+  ].find(
+    (button) =>
+      button.getAttribute("aria-label") ===
+      m.template_data_explorer_choose_item(),
+  )!;
+  await act(async () => choose.click());
+  expect(requesting.getState()).toMatchObject({ itemIndexedKey: "PAPER002" });
+  await vi.waitFor(() =>
+    expect(requesting.contentEl.textContent).toContain("Second paper"),
+  );
+  expect(requesting.getState()).toMatchObject({ itemIndexedKey: "PAPER002" });
+  expect(held.contentEl.textContent).toContain("First paper");
+  expect(held.getState()).toMatchObject({ itemIndexedKey: "PAPER001" });
+  accepted = false;
+  context = {
+    ...context,
+    item: { id: "PAPER003", title: "Unrelated paper" },
+  };
+  await act(async () => choose.click());
+  expect(requesting.getState()).toMatchObject({ itemIndexedKey: "PAPER002" });
+});
+
+it("keeps pinned Explorer navigation and insertion when its Profile is renamed", async () => {
+  const events = new Map<
+    EventRef,
+    { name: string; callback: (...args: unknown[]) => void }
+  >();
+  const on = (name: string, callback: (...args: unknown[]) => void) => {
+    const ref = {} as EventRef;
+    events.set(ref, { name, callback });
+    return ref;
+  };
+  const offref = (ref: EventRef) => {
+    events.delete(ref);
+  };
+  const trigger = vi.fn((name: string, ...args: unknown[]) => {
+    for (const event of events.values())
+      if (event.name === name) event.callback(...args);
+  });
+  const app = {
+    vault: { on, offref },
+    workspace: {
+      on,
+      offref,
+      trigger,
+      requestSaveLayout: vi.fn(),
+      getActiveFile: () => null,
+    },
+    loadLocalStorage: () => null,
+  } as unknown as App;
+  const editorLeaf = { app } as unknown as WorkspaceLeaf;
+  const context: ProfileAuthoringContext = {
+    leaf: editorLeaf,
+    path: "profiles/paper.md",
+    item: { id: "PAPER001", title: "Paper" },
+    root: "note",
+    tab: "note",
+    annotationId: null,
+    advanced: false,
+    canInsertField: true,
+  };
+  const editor = {
+    leaf: editorLeaf,
+    authoringContext: context,
+    chooseItem: vi.fn(),
+  } as unknown as ProfileEditorView;
+  vi.mocked(activeProfileEditor).mockReturnValue(editor);
+  vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+    (_app, listener) => {
+      listener(editor);
+      return () => {};
+    },
+  );
+  vi.mocked(loadTemplateData).mockResolvedValue({
+    kind: "data",
+    data: { title: "Native paper" },
+  });
+  const view = new ExplorerView(
+    { app, pinned: true } as unknown as WorkspaceLeaf,
+    {
+      app,
+      db: { ready: Promise.resolve(), on: () => () => {} },
+      templates: { javascriptTemplatesEnabled: true },
+    } as unknown as ExplorerViewDeps,
+  );
+  Object.defineProperty(view, "app", { value: app });
+  document.body.append(view.contentEl);
   try {
+    await act(async () => view.open());
+    const input =
+      view.contentEl.querySelector<HTMLInputElement>('input[type="search"]') ??
+      view.contentEl.querySelector<HTMLInputElement>("input")!;
     await act(async () => {
-      for (const view of views) {
-        await view.open();
-        await view.setState({}, { history: false });
-      }
+      input.value = "Native";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    const choose = [
-      ...requesting.contentEl.querySelectorAll<HTMLElement>('[role="button"]'),
+    const before = view.getState();
+    const ephemeral = view.getEphemeralState();
+    const loads = vi.mocked(loadTemplateData).mock.calls.length;
+    Object.assign(editor, {
+      authoringContext: {
+        ...context,
+        path: "profiles/renamed.md",
+        item: { id: "OTHER001", title: "Other" },
+      },
+    });
+    await act(async () => {
+      trigger("zotlit:authoring-context", editor.authoringContext);
+      trigger("rename", { path: "profiles/renamed.md" }, "profiles/paper.md");
+    });
+    expect(view.getState()).toEqual({
+      ...before,
+      sourceFile: "profiles/renamed.md",
+    });
+    expect(view.getEphemeralState()).toEqual(ephemeral);
+    expect(vi.mocked(loadTemplateData).mock.calls.length).toBe(loads);
+    expect(view.contentEl.textContent).toContain("Native paper");
+    const insert = [
+      ...view.contentEl.querySelectorAll<HTMLElement>('[role="button"]'),
     ].find(
       (button) =>
-        button.getAttribute("aria-label") ===
-        m.template_data_explorer_choose_item(),
-    )!;
-    await act(async () => choose.click());
-    expect(requesting.getState()).toMatchObject({ itemIndexedKey: "PAPER002" });
-    await vi.waitFor(() =>
-      expect(requesting.contentEl.textContent).toContain("Second paper"),
+        button.getAttribute("aria-label") === m.workbench_fields_put_in_note(),
     );
-    expect(requesting.getState()).toMatchObject({ itemIndexedKey: "PAPER002" });
-    expect(held.contentEl.textContent).toContain("First paper");
-    expect(held.getState()).toMatchObject({ itemIndexedKey: "PAPER001" });
-    accepted = false;
-    context = {
-      ...context,
-      item: { id: "PAPER003", title: "Unrelated paper" },
-    };
-    await act(async () => choose.click());
-    expect(requesting.getState()).toMatchObject({ itemIndexedKey: "PAPER002" });
+    expect(insert).toBeDefined();
+    await act(async () => insert!.click());
+    expect(trigger).toHaveBeenCalledWith(
+      "zotlit:insert-template-field",
+      expect.objectContaining({
+        leaf: editorLeaf,
+        node: expect.objectContaining({ path: ["title"] }),
+      }),
+    );
   } finally {
-    await act(async () => {
-      for (const view of views) await view.close();
-    });
+    await act(async () => view.close());
+    view.contentEl.remove();
   }
+  expect(events.size).toBe(0);
 });
