@@ -56,7 +56,8 @@ function setup(deps: Partial<ProfileEditorDeps> = {}, sharedApp?: App) {
       workspace: {
         requestSaveLayout: vi.fn(),
         trigger: vi.fn(),
-        on: vi.fn(),
+        on: vi.fn(() => ({})),
+        offref: vi.fn(),
         iterateAllLeaves: vi.fn(),
         setActiveLeaf,
         getActiveFile: () => null,
@@ -418,7 +419,7 @@ describe("ProfileEditorView", () => {
     expect(view.controller.canUndo).toBe(false);
   });
 
-  it("restores authoring and Explorer state beside the file path", async () => {
+  it("restores editor authoring state beside the file path", async () => {
     const { view } = setup();
     const file = new TFile();
     file.path = "templates/paper.md";
@@ -427,9 +428,7 @@ describe("ProfileEditorView", () => {
       file: file.path,
       tab: "annotation",
       root: "annotation",
-      explorer: "all",
       advanced: true,
-      preview: { mode: "update", live: false },
     };
     await view.setState(state, {} as ViewStateResult);
     expect(view.getState()).toEqual({ ...state, itemIndexedKey: null });
@@ -516,6 +515,51 @@ describe("ProfileEditorView", () => {
       });
       view.contentEl.remove();
     }
+  });
+
+  it("addresses insertion to one editor and resolves its current language", async () => {
+    const { view, leaf, requestSave } = setup();
+    const node = {
+      kind: "value",
+      path: ["title"],
+      key: "title",
+      label: "title",
+      valueType: "string",
+      value: "Paper",
+      expandable: false,
+    } as const;
+    document.body.append(view.contentEl);
+    try {
+      await act(async () => view.open());
+      const editor = EditorView.findFromDOM(
+        view.contentEl.querySelector(".cm-editor")!,
+      )!;
+      await act(() => {
+        editor.focus();
+        editor.dispatch({ selection: { anchor: 3 } });
+      });
+      expect(
+        view.insertTemplateField({ leaf: {} as WorkspaceLeaf, node }),
+      ).toBe(false);
+      expect(requestSave).not.toHaveBeenCalled();
+      await act(() => {
+        view.controller.setManifestKey("language", "eta");
+      });
+      requestSave.mockClear();
+      await act(() => {
+        expect(view.insertTemplateField({ leaf, node })).toBe(true);
+      });
+      expect(view.getViewData()).toContain("A s<%= zt.title %>table note.");
+      expect(requestSave).toHaveBeenCalledOnce();
+      await act(() => {
+        view.controller.undo();
+      });
+      expect(view.getViewData()).toContain("A stable note.");
+    } finally {
+      await act(async () => view.close());
+      view.contentEl.remove();
+    }
+    expect(view.insertTemplateField({ leaf, node })).toBe(false);
   });
 
   it("keeps the caret target mapped when external text moves an unchanged focused slice", async () => {

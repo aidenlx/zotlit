@@ -8,15 +8,11 @@ export function useExampleMessage(
   const m = useWorkbenchMessages();
   const editor = useOptionalEditor();
   const item = useWorkbenchStore((state) => state.item);
-  const live = useWorkbenchStore((state) => state.preview.live);
   const { result, busy, stale } = useRenderState();
   if (!editor) return null;
   if (!item) return m.workbench_example_select_item();
   if (busy) return m.workbench_loading_item();
-  if (stale)
-    return live
-      ? m.workbench_preview_stale()
-      : m.workbench_example_awaiting_run();
+  if (stale) return m.workbench_preview_stale();
   if (
     result?.diagnostics.some(
       (problem) =>
@@ -28,9 +24,6 @@ export function useExampleMessage(
     )
   )
     return m.workbench_example_failed();
-  if (!result)
-    return live
-      ? m.workbench_loading_item()
-      : m.workbench_example_awaiting_run();
+  if (!result) return m.workbench_loading_item();
   return null;
 }

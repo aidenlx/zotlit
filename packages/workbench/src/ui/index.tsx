@@ -57,6 +57,7 @@ export { createWorkbenchStore } from "./store";
 export type {
   ExplorerVariant,
   PreviewMode,
+  PreviewSettings,
   TemplateRoot,
   WorkbenchItemChoice,
   WorkbenchStore,

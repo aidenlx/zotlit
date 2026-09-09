@@ -3,6 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 
+import { initialTreeState } from "@zotlit/workbench/explorer";
 import { DataExplorer, TabBar } from "@zotlit/workbench/ui";
 
 import { m } from "@/paraglide/messages.js";
@@ -27,6 +28,10 @@ it("keeps shared labels in the locale of each web request", async () => {
         <WebTestHost>
           <TabBar />
           <DataExplorer
+            variant="simple"
+            onVariantChange={() => {}}
+            navigation={initialTreeState()}
+            onNavigationChange={() => {}}
             root="note"
             data={{ title: "A paper" }}
             copy={async () => {}}

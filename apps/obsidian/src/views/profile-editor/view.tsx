@@ -29,7 +29,9 @@ import type {
   WorkbenchProblem,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
+import type { DisplayNode } from "@zotlit/workbench/explorer";
 import { failedRender, renderIdentity } from "@zotlit/workbench/render";
+import { fieldSnippet } from "@zotlit/workbench/ui";
 import {
   AnnotationPane,
   diagnosticText,
@@ -119,6 +121,7 @@ export interface ProfileAuthoringContext {
   readonly tab: WorkbenchViewState["tab"];
   readonly advanced: boolean;
   readonly annotationId: string | null;
+  readonly canInsertField?: boolean;
 }
 
 export class ProfileEditorView extends TextFileView implements HoverParent {
@@ -146,7 +149,6 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   #unsubscribe: (() => void) | null = null;
   #insertTarget: WorkbenchInsertTarget | null = null;
   #insertRequest: WorkbenchInsertTarget | null = null;
-  readonly #insertListeners = new Set<() => void>();
   #choosePending: Promise<void> | null = null;
   #itemGeneration = 0;
   #closed = false;
@@ -212,8 +214,6 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     this.register(
       this.store.subscribe((state, previous) => {
         if (state.item !== previous.item) this.preview?.setItem(state.item);
-        if (state.preview !== previous.preview)
-          this.preview?.setPreview(state.preview);
         if (
           state.item !== previous.item ||
           state.root !== previous.root ||
@@ -295,6 +295,10 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       tab,
       advanced,
       annotationId: this.preview?.state.getState().example?.id ?? null,
+      canInsertField:
+        !this.#closed &&
+        !this.#controller.readOnly &&
+        this.insertTarget !== null,
     };
   }
   #publishAuthoringContext(): void {
@@ -365,15 +369,31 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       ? this.#insertTarget
       : null;
   }
-  subscribeInsertion = (listener: () => void): (() => void) => {
-    this.#insertListeners.add(listener);
-    return () => {
-      this.#insertListeners.delete(listener);
-    };
-  };
+
+  insertTemplateField(request: {
+    leaf: WorkspaceLeaf;
+    node: DisplayNode;
+  }): boolean {
+    if (request.leaf !== this.leaf || this.#closed || this.#controller.readOnly)
+      return false;
+    const target = this.insertTarget;
+    if (!target) return false;
+    const region = this.#controller.templateRegions.find(
+      (region) =>
+        target.range.from >= region.from && target.range.to <= region.to,
+    );
+    const mode = region?.expression
+      ? "expression"
+      : region?.language === "json-e"
+        ? "json-e"
+        : "template";
+    const engine =
+      this.#controller.document?.manifest.language === "eta" ? "eta" : "liquid";
+    return this.insertField(fieldSnippet(request.node, mode, { engine }));
+  }
 
   insertField(snippet: string): boolean {
-    if (this.#defaultDraft) return false;
+    if (this.#controller.readOnly || this.#closed) return false;
     const target = this.insertTarget;
     if (!target) {
       logger.trace("Rejected Explorer insertion", {
@@ -398,40 +418,10 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     return true;
   }
 
-  exploreAnnotation(key: string): boolean {
-    const preview = this.preview;
-    const section = this.#controller.annotationSection;
-    const example = preview?.state
-      .getState()
-      .current.find((example) => example.root.key === key);
-    if (!preview || !section || !example) {
-      logger.trace("Rejected Explorer annotation navigation", {
-        key,
-        slice: "annotation",
-        reason: !preview
-          ? "no-preview"
-          : !section
-            ? "no-section"
-            : "no-example",
-      });
-      return false;
-    }
-    logger.debug("Applied Explorer annotation navigation", {
-      key,
-      slice: "annotation",
-    });
-    preview.select(example.id);
-    this.#focusTarget({
-      slice: "annotation",
-      range: { from: section.source.from, to: section.source.from },
-    });
-    return true;
-  }
-
   #focusTarget(target: WorkbenchInsertTarget): void {
     this.#insertRequest = target;
     this.#insertTarget = target;
-    for (const listener of this.#insertListeners) listener();
+    this.#publishAuthoringContext();
     const state = this.store.getState();
     state.setAdvanced(target.slice === "advanced");
     state.setTab(
@@ -490,7 +480,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       this.#editor.attach(this.#controller);
       this.#insertTarget = null;
       this.#insertRequest = null;
-      for (const listener of this.#insertListeners) listener();
+      this.#publishAuthoringContext();
       this.#subscribe();
       this.#mount();
     } else this.#controller.applyExternalSource(source);
@@ -567,8 +557,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   }
 
   override getState(): Record<string, unknown> {
-    const { tab, item, root, explorer, preview, advanced } =
-      this.store.getState();
+    const { tab, item, root, advanced } = this.store.getState();
     return {
       ...super.getState(),
       ...(this.#defaultDraft ? { defaultDraft: true } : {}),
@@ -576,8 +565,6 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       tab,
       itemIndexedKey: item?.id ?? null,
       root,
-      explorer,
-      preview,
       advanced,
     };
   }
@@ -623,16 +610,8 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       value.root === "filename"
     )
       store.setRoot(value.root);
-    if (value.explorer === "simple" || value.explorer === "all")
-      store.setExplorer(value.explorer);
     if (typeof value.advanced === "boolean") store.setAdvanced(value.advanced);
-    if (value.preview && typeof value.preview === "object") {
-      const preview = value.preview as Record<string, unknown>;
-      if (preview.mode === "create" || preview.mode === "update")
-        store.setPreview({ mode: preview.mode });
-      if (typeof preview.live === "boolean")
-        store.setPreview({ live: preview.live });
-    }
+
     const itemGeneration = ++this.#itemGeneration;
     if (typeof value.itemIndexedKey === "string") {
       store.setItem({ id: value.itemIndexedKey, title: null });
@@ -644,6 +623,11 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
 
   protected override async onOpen(): Promise<void> {
     this.#closed = false;
+    this.registerEvent(
+      this.app.workspace.on("zotlit:insert-template-field", (request) =>
+        this.insertTemplateField(request),
+      ),
+    );
     const source = this.addAction("code", m.workbench_advanced(), () => {
       const state = this.store.getState();
       state.setAdvanced(!state.advanced);
@@ -927,7 +911,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
         // What the scheduler follows on its own, named here so a diagnosis can
         // read the edit that queued or dropped a render.
         logger.trace("Preview source changed", {
-          live: this.store.getState().preview.live,
+          live: this.preview?.state.getState().preview.live ?? true,
         });
         if (this.#insertTarget) {
           const { slice, range } = this.#insertTarget;
@@ -938,7 +922,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
               to: transaction.changes.mapPos(range.to, 1),
             },
           };
-          for (const listener of this.#insertListeners) listener();
+          this.#publishAuthoringContext();
         }
         this.#sourceRevision++;
         this.data = this.#controller.source;
@@ -985,7 +969,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
           insertRequest={this.#insertRequest}
           onSelection={(target) => {
             this.#insertTarget = target;
-            for (const listener of this.#insertListeners) listener();
+            this.#publishAuthoringContext();
             const root =
               this.#controller.templateRegions.find(
                 (region) =>

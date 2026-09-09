@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
+import { initialTreeState } from "@zotlit/workbench/explorer";
 import type { MatchItemFacts } from "@zotlit/workbench/match";
 import {
   createRenderScheduler,
@@ -36,7 +37,6 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
   );
   const store = createWorkbenchStore({
     item: { id: "BOOK0001", title: "Book" },
-    preview: { mode: "create", live: false },
   });
   const first = Promise.withResolvers<MatchItemFacts | null>();
   const second = Promise.withResolvers<MatchItemFacts | null>();
@@ -73,7 +73,8 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
     input: {
       source: controller.source,
       snapshot: null,
-      ...store.getState().preview,
+      mode: "create",
+      live: false,
     },
   });
   const el = document.body.createDiv();
@@ -216,7 +217,8 @@ it("applies the installed pack to shared Match and Explorer controls after resta
     input: {
       source: controller.source,
       snapshot: null,
-      ...store.getState().preview,
+      mode: "create",
+      live: false,
     },
   });
   const el = document.body.createDiv();
@@ -235,6 +237,10 @@ it("applies the installed pack to shared Match and Explorer controls after resta
             { store, controller, scheduler },
             createElement(MatchPane, { controller, facts: null }),
             createElement(DataExplorer, {
+              variant: "simple",
+              onVariantChange: () => {},
+              navigation: initialTreeState(),
+              onNavigationChange: () => {},
               root: "note",
               data: { title: "A paper" },
               copy: async () => {},

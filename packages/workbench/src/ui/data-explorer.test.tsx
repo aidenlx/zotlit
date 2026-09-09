@@ -1,14 +1,51 @@
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  within,
+} from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useStore } from "zustand";
+import { createStore } from "zustand/vanilla";
 
-import { DataExplorer } from "./data-explorer";
+import { DataExplorer as ControlledDataExplorer } from "./data-explorer";
+import type { DataExplorerProps } from "./data-explorer";
+import type { ExplorerVariant } from "./store";
+
+import { initialTreeState } from "#/explorer/index";
+
+function DataExplorer(
+  props: Omit<
+    DataExplorerProps,
+    "variant" | "onVariantChange" | "navigation" | "onNavigationChange"
+  >,
+) {
+  const [store] = useState(() =>
+    createStore(() => ({
+      variant: "simple" as ExplorerVariant,
+      navigation: initialTreeState(),
+    })),
+  );
+  const { variant, navigation } = useStore(store);
+  return (
+    <ControlledDataExplorer
+      {...props}
+      variant={variant}
+      navigation={navigation}
+      onVariantChange={(variant) => store.setState({ variant })}
+      onNavigationChange={(navigation) => store.setState({ navigation })}
+    />
+  );
+}
 import { mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
 afterEach(cleanup);
 
 describe("shared Data Explorer", () => {
-  it("shows common labels first, switches to raw keys, and persists the choice", () => {
+  it("shows common labels first, switches to raw keys, and keeps the choice in its owner", () => {
     using mounted = mount(
       <DataExplorer
         root="note"
@@ -16,7 +53,7 @@ describe("shared Data Explorer", () => {
         copy={async () => {}}
       />,
     );
-    const { ui, host, store } = mounted;
+    const { ui } = mounted;
     render(ui);
     expect(
       screen
@@ -29,8 +66,6 @@ describe("shared Data Explorer", () => {
     fireEvent.click(
       screen.getByRole("button", { name: m.workbench_explorer_all() }),
     );
-    expect(store.getState().explorer).toBe("all");
-    expect(host.preferences.get("vault:explorer-variant")).toBe("all");
     expect(screen.getByText("title")).toBeTruthy();
   });
   it("labels Simple containers without a separate structural count row", () => {
@@ -223,4 +258,46 @@ describe("shared Data Explorer", () => {
     });
     expect(host.calls.notices).toEqual([m.workbench_field_copy_failed()]);
   });
+});
+
+it("keeps two Explorer owners independent through display and filter changes", () => {
+  using mounted = mount(
+    <>
+      <section aria-label="First explorer">
+        <DataExplorer
+          root="note"
+          data={{ authors: ["Ada"], title: "First paper" }}
+          copy={async () => {}}
+        />
+      </section>
+      <section aria-label="Second explorer">
+        <DataExplorer
+          root="note"
+          data={{ authors: ["Grace"], title: "Second paper" }}
+          copy={async () => {}}
+        />
+      </section>
+    </>,
+  );
+  render(mounted.ui);
+  const left = within(screen.getByRole("region", { name: "First explorer" }));
+  const right = within(screen.getByRole("region", { name: "Second explorer" }));
+  fireEvent.click(
+    left.getByRole("button", { name: m.workbench_explorer_toggle_node() }),
+  );
+  expect(left.getByText("Ada")).toBeTruthy();
+  expect(right.queryByText("Grace")).toBeNull();
+  fireEvent.click(
+    left.getByRole("button", { name: m.workbench_explorer_all() }),
+  );
+  expect(left.getByText("title")).toBeTruthy();
+  expect(right.getByText(m.workbench_field_title())).toBeTruthy();
+  const filter = left.getByRole("searchbox");
+  fireEvent.input(filter, { target: { value: "title" } });
+  fireEvent.change(filter, { target: { value: "title" } });
+  expect(left.queryByText("Ada")).toBeNull();
+  expect(right.getByText("Second paper")).toBeTruthy();
+  fireEvent.input(filter, { target: { value: "" } });
+  fireEvent.change(filter, { target: { value: "" } });
+  expect(left.getByText("Ada")).toBeTruthy();
 });

@@ -2,7 +2,7 @@
 
 import { useWorkbenchMessages } from "./messages";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
-import type { WorkbenchViewState } from "./store";
+import type { PreviewSettings } from "./store";
 import { useParts } from "./theme";
 
 export function PreviewControls({
@@ -12,8 +12,8 @@ export function PreviewControls({
   disabled = false,
   onRun,
 }: {
-  preview: WorkbenchViewState["preview"];
-  onChange: (value: Partial<WorkbenchViewState["preview"]>) => void;
+  preview: PreviewSettings;
+  onChange: (value: Partial<PreviewSettings>) => void;
   busy: boolean;
   disabled?: boolean;
   onRun: () => void;

@@ -11,12 +11,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-import {
-  useRenderScheduler,
-  useRenderState,
-  useWorkbenchEditor,
-  useWorkbenchStore,
-} from "./editor";
+import { useRenderScheduler, useRenderState } from "./editor";
 import { WorkbenchHostProvider } from "./host";
 import { PreviewControls } from "./preview-controls";
 import { ResultColumn } from "./result-column";
@@ -33,16 +28,24 @@ const EXAMPLE = SAMPLE_ANNOTATIONS[0]!;
 const OTHER_EXAMPLE = SAMPLE_ANNOTATIONS[1]!;
 
 /** The controls a reader presses, beside what the result surfaces read. */
-function Preview() {
+function Preview({ live = true }: { live?: boolean }) {
   const scheduler = useRenderScheduler();
-  const preview = useWorkbenchStore((state) => state.preview);
-  const editor = useWorkbenchEditor();
+  const [store] = useState(() =>
+    createStore<import("./store").PreviewSettings>(() => ({
+      mode: "create",
+      live,
+    })),
+  );
+  const preview = useStore(store);
   const { result, busy, stale } = useRenderState();
   return (
     <>
       <PreviewControls
         preview={preview}
-        onChange={editor.store.getState().setPreview}
+        onChange={(value) => {
+          store.setState(value);
+          scheduler.setInput(value);
+        }}
         busy={busy}
         onRun={() => scheduler.run()}
       />
@@ -70,12 +73,10 @@ afterEach(() => {
 
 /** The tree mounted with a paper loaded, which is when rendering may start. */
 function open({ live = true }: { live?: boolean } = {}): Mounted {
-  const mounted = mount(<Preview />, {
-    state: { preview: { mode: "create", live } },
-  });
+  const mounted = mount(<Preview live={live} />);
   render(mounted.ui);
   act(() =>
-    mounted.scheduler.setInput({ snapshot: PAPER, annotation: EXAMPLE }),
+    mounted.scheduler.setInput({ snapshot: PAPER, annotation: EXAMPLE, live }),
   );
   return mounted;
 }
@@ -170,7 +171,7 @@ const SUPERSEDED: readonly {
   },
   {
     what: "preview mode",
-    supersede: ({ store }) => store.getState().setPreview({ mode: "update" }),
+    supersede: ({ scheduler }) => scheduler.setInput({ mode: "update" }),
   },
 ];
 

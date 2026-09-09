@@ -69,7 +69,8 @@ export function createWorkbenchEditor({
     input: {
       source: controller.source,
       snapshot: null,
-      ...store.getState().preview,
+      mode: "create",
+      live: true,
     },
     render: (request) => {
       const result = host.render(request);
@@ -84,9 +85,6 @@ export function createWorkbenchEditor({
     });
   }
   let unfollow = follow(controller);
-  const unsubscribe = store.subscribe((next, previous) => {
-    if (next.preview !== previous.preview) scheduler.setInput(next.preview);
-  });
   return {
     store,
     scheduler,
@@ -96,7 +94,6 @@ export function createWorkbenchEditor({
     },
     [Symbol.dispose]() {
       unfollow();
-      unsubscribe();
       scheduler[Symbol.dispose]();
     },
   };

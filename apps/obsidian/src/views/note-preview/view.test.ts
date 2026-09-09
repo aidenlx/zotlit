@@ -116,7 +116,7 @@ async function setup() {
   editor.file = file;
   editor.setViewData(PROFILE_SOURCE, true);
   // The editor's compact examples have their own refresh choice.
-  editor.store.getState().setPreview({ live: false });
+  editor.preview?.setPreview({ live: false });
   const subscriptions = new Set<(view: ProfileEditorView | null) => void>();
   vi.mocked(subscribeActiveProfileEditor).mockImplementation(
     (_app, listener) => {
@@ -339,7 +339,7 @@ describe("independent native Note Preview", () => {
       "create",
     );
     expect(second.contentEl.querySelectorAll("select")[1]?.value).toBe("live");
-    expect(test.editor.store.getState().preview).toEqual({
+    expect(test.editor.preview?.state.getState().preview).toEqual({
       mode: "create",
       live: false,
     });

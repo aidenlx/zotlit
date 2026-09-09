@@ -32,6 +32,7 @@ import type {
   WorkbenchSliceId,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
+import type { DisplayNode } from "@zotlit/workbench/explorer";
 import { snapshotMatchFacts } from "@zotlit/workbench/match";
 import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import { MatchPane } from "@zotlit/workbench/ui";
@@ -50,6 +51,7 @@ import {
   createWorkbenchStore,
   useRenderState,
   diagnosticText,
+  fieldSnippet,
   problemText,
   AnnotationPane,
   AnnotationPointer,
@@ -519,7 +521,7 @@ export function Workbench() {
     !advanced && tab === "properties"
       ? entries?.find((entry) => entry.position === row)?.language
       : undefined;
-  const fieldMode =
+  const fieldMode: "template" | "expression" | "json-e" =
     sourceRegion?.language === "json-e" || propertyLanguage === "value"
       ? "json-e"
       : sourceRegion?.expression || propertyLanguage === "expr"
@@ -548,15 +550,6 @@ export function Workbench() {
     selectedAnnotation,
     annotationResult?.annotationCitation,
   ]);
-  const fields = useMemo(
-    () =>
-      !temporal
-        ? null
-        : root === "annotation"
-          ? annotationData
-          : rootData(sample, root),
-    [temporal, sample, root, annotationData],
-  );
   /**
    * What the editor's own completion and hover resolve against: the root the
    * pane the reader is in writes, the partials this Profile can call, and this
@@ -592,6 +585,13 @@ export function Workbench() {
     },
     [fieldDisabled, controller, slice, caret],
   );
+
+  const insertion = useRef({ insert, mode: fieldMode });
+  insertion.current = { insert, mode: fieldMode };
+  const insertNode = useCallback((node: DisplayNode) => {
+    const current = insertion.current;
+    current.insert(fieldSnippet(node, current.mode));
+  }, []);
 
   function trackSelection(selection: WorkbenchSliceRange) {
     setCaret(selection);
@@ -903,20 +903,16 @@ export function Workbench() {
         setSheet(false);
       }}
       fields={
-        <WorkbenchEditorProvider
-          store={store}
-          controller={controller}
-          scheduler={scheduler}
-        >
-          <FieldList
-            key={`${root}:${fieldMode}`}
-            root={root}
-            mode={fieldMode}
-            disabled={fieldDisabled}
-            data={fields}
-            onInsert={insert}
-          />
-        </WorkbenchEditorProvider>
+        <FieldList
+          root={root}
+          sample={sample}
+          annotation={selectedAnnotation}
+          citation={annotationResult?.annotationCitation}
+          ready={temporal}
+          mode={fieldMode}
+          disabled={fieldDisabled}
+          onInsertNode={insertNode}
+        />
       }
       editor={
         <WorkbenchEditorProvider
@@ -1100,12 +1096,14 @@ export function Workbench() {
                 </DialogClose>
               </div>
               <FieldList
-                key={`${root}:${fieldMode}`}
                 root={root}
+                sample={sample}
+                annotation={selectedAnnotation}
+                citation={annotationResult?.annotationCitation}
+                ready={temporal}
                 mode={fieldMode}
                 disabled={fieldDisabled}
-                data={fields}
-                onInsert={insert}
+                onInsertNode={insertNode}
               />
             </DialogContent>
           </Dialog>
