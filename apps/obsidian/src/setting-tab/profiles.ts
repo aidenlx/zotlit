@@ -410,6 +410,26 @@ async function deleteProfile(
   }, ctx);
 }
 
+/** Confirm before replacing the saved Default with the built-in template. */
+async function restoreDefaultProfile(ctx: SettingTabContext): Promise<void> {
+  await runAction(async () => {
+    if (
+      await confirm(
+        {
+          title: m.settings_profile_document_restore_title(),
+          content: m.settings_profile_document_restore_desc({
+            path: ctx.profile.defaultDocumentPath,
+          }),
+          action: m.settings_profile_document_restore_action(),
+          destructive: true,
+        },
+        ctx.app,
+      )
+    )
+      await ctx.profile.restoreDefault();
+  }, ctx);
+}
+
 /**
  * Templates and properties share one workbench entry; a saved Default also
  * offers Restore built-in.
@@ -430,25 +450,7 @@ function defaultDocumentItem(
             .setTooltip(m.settings_profile_document_restore())
             .setDisabled(profileActionsLocked(ctx))
             .setDestructive()
-            .onClick(
-              () =>
-                void runAction(async () => {
-                  if (
-                    await confirm(
-                      {
-                        title: m.settings_profile_document_restore_title(),
-                        content: m.settings_profile_document_restore_desc({
-                          path,
-                        }),
-                        action: m.settings_profile_document_restore_action(),
-                        destructive: true,
-                      },
-                      ctx.app,
-                    )
-                  )
-                    await ctx.profile.restoreDefault();
-                }, ctx),
-            ),
+            .onClick(() => void restoreDefaultProfile(ctx)),
         );
       setting.addButton((button) =>
         button
@@ -479,9 +481,20 @@ function defaultProfileItem(
   return {
     name: m.settings_profile_default_name(),
     desc: m.settings_profile_default_desc(),
-    render: (setting, group) => {
-      const documentItem = defaultDocumentItem(ctx);
-      if ("render" in documentItem) documentItem.render?.(setting, group);
+    render: (setting) => {
+      setting.addButton((button) =>
+        button
+          .setIcon("pencil")
+          .setTooltip(m.settings_profile_edit())
+          .setDisabled(profileActionsLocked(ctx))
+          .onClick(
+            () =>
+              void runAction(
+                () => ctx.customize({ profileId: DEFAULT_PROFILE }),
+                ctx,
+              ),
+          ),
+      );
 
       setting.addExtraButton((button) =>
         button
@@ -498,6 +511,16 @@ function defaultProfileItem(
                   () => void runAction(() => shareProfile(ctx, "default"), ctx),
                 ),
             );
+            if (ctx.app.vault.getFileByPath(ctx.profile.defaultDocumentPath)) {
+              menu.addSeparator();
+              menu.addItem((item) =>
+                item
+                  .setTitle(m.settings_profile_document_restore())
+                  .setIcon("rotate-ccw")
+                  .setWarning(true)
+                  .onClick(() => void restoreDefaultProfile(ctx)),
+              );
+            }
             const bounds = button.extraSettingsEl.getBoundingClientRect();
             menu.showAtPosition({ x: bounds.left, y: bounds.bottom });
           }),
