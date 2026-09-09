@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { synthesizeLegacyLiteratureNoteTemplate } from "@zotlit/templates/facade";
+
 import { entrySlice, WorkbenchDocumentController } from "./controller";
 
 /**
@@ -279,13 +281,51 @@ describe("WorkbenchDocumentController", () => {
     const controller = new WorkbenchDocumentController(
       HAND_WRITTEN.replace(
         "filename: '{{ zt.citationKey }}'",
-        "filename: |\n  {{ zt.citationKey }}",
+        "filename: |\n  {{ zt.citationKey }}\n  {{ zt.title }}",
       ),
     );
 
     expect(controller.problems).toEqual([]);
     expect(controller.filenameSlice).toBeNull();
   });
+
+  it.each(["\n", "\r\n"])(
+    "edits the generated Default note name with %j line endings",
+    (lineBreak) => {
+      const filename =
+        "{{ zt.citationKey | default: zt.DOI | default: zt.title | default: zt.key }}{% suffix %}";
+      const source = synthesizeLegacyLiteratureNoteTemplate({
+        note: {
+          source: '{% render "content" with zt as zt %}',
+          language: "liquid",
+        },
+        content: { source: "# {{ zt.title }}\n", language: "liquid" },
+        filename: { source: `${filename}\n`, language: "liquid" },
+      })
+        .split("\n")
+        .join(lineBreak);
+      const controller = new WorkbenchDocumentController(source);
+
+      expect(source).toContain(`filename: |${lineBreak}  ${filename}`);
+      expect(controller.filenameSlice).not.toBeNull();
+      expect(controller.sliceText("filename")).toBe(filename);
+      controller.dispatch({
+        changes: {
+          ...controller.sliceRange("filename"),
+          insert: "{{ zt.title }}",
+        },
+        userEvent: "input.type",
+      });
+      expect(controller.source).toBe(
+        source.replace(filename, "{{ zt.title }}"),
+      );
+      expect(controller.document?.manifest.filename).toBe("{{ zt.title }}\n");
+      expect(controller.undo()).toBe(true);
+      expect(controller.source).toBe(source);
+      expect(controller.redo()).toBe(true);
+      expect(controller.document?.manifest.filename).toBe("{{ zt.title }}\n");
+    },
+  );
 
   it("edits the note name through its own slice, quotes untouched", () => {
     const controller = new WorkbenchDocumentController(HAND_WRITTEN);

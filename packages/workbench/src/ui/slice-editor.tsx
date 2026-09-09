@@ -9,17 +9,19 @@ import type { SuggestionSource } from "#/language/index";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 
 import { completionFields } from "./completion-fields";
-import { useOptionalHost } from "./host";
+import { useDocumentRevision } from "./editor";
+import { HiddenName, useOptionalHost } from "./host";
+import type { WorkbenchInsertTarget } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { tagDescription } from "./tag-help";
 import { useParts, useEditorExtension } from "./theme";
 
 import { workbenchSlice, jsonLayout, jsonPosition } from "#/document/index";
 import {
-  liquidMarkdown,
+  liquidTemplate,
   templatePairing,
   profileLanguage,
   embeddedLiquid,
@@ -31,6 +33,15 @@ export type { SuggestionSource } from "#/language/index";
 
 /** The expression pane edits a bare Liquid expression; the note includes Markdown. */
 export type SliceLanguage = "liquid" | "json-e" | "expression";
+
+export interface SliceReveal extends WorkbenchSliceRange {
+  anchor?: number;
+  head?: number;
+  slice?: WorkbenchSliceId;
+  /** Native restoration can select text while preserving focus and scroll. */
+  focus?: boolean;
+  scrollIntoView?: boolean;
+}
 
 export interface SliceEditorProps {
   controller: WorkbenchDocumentController;
@@ -54,7 +65,7 @@ export interface SliceEditorProps {
    * Master offsets to select and scroll to, so a problem opens on the text
    * that caused it. Each new object reveals again.
    */
-  reveal?: WorkbenchSliceRange | null;
+  reveal?: SliceReveal | null;
   /**
    * The contract this pane's completion and hover resolve against. It is read
    * per keystroke, so a pane that follows the caret into another root needs no
@@ -63,7 +74,7 @@ export interface SliceEditorProps {
    */
   suggest?: SuggestionSource;
   /** The selection in master offsets, whenever it moves or the pane takes focus. */
-  onSelection?: (selection: WorkbenchSliceRange) => void;
+  onSelection?: (selection: WorkbenchInsertTarget["range"]) => void;
   /** The pane took focus, so the host knows which editor the reader is in. */
   onFocus?: () => void;
 }
@@ -82,10 +93,13 @@ export function SliceEditor({
   onSelection,
   onFocus,
 }: SliceEditorProps) {
+  useDocumentRevision(controller);
+  const readOnly = controller.readOnly;
   const m = useWorkbenchMessages();
   const part = useParts("sliceEditor");
   const adapter = useOptionalHost();
   const editorExtension = useEditorExtension();
+  const nameId = useId();
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView>(null);
   // The view outlives every render, so it reads the current callbacks through
@@ -151,6 +165,7 @@ export function SliceEditor({
             ? jsonLayout(controller.sliceText(slice), true).text
             : controller.sliceText(slice),
         extensions: [
+          EditorState.readOnly.of(readOnly),
           workbenchSlice(controller, slice, language === "json-e"),
           language === "json-e"
             ? jsonRule
@@ -158,7 +173,7 @@ export function SliceEditor({
               ? profileLanguage
               : language === "expression"
                 ? []
-                : liquidMarkdown,
+                : liquidTemplate,
           ...(language === "expression"
             ? [
                 embeddedLiquid((source) => [
@@ -180,7 +195,7 @@ export function SliceEditor({
             const config = read(position);
             return config?.language === "json-e" ? null : config;
           }),
-          report.current.adapter?.editorPopups?.(read) ?? [],
+          report.current.adapter?.editorPopups?.(read, host.current!) ?? [],
           ...(language === "json-e" || slice === "advanced"
             ? [
                 embeddedJsonE((source) =>
@@ -211,7 +226,7 @@ export function SliceEditor({
           // The whole-file pane is the one place a reader counts lines, so the
           // gutter rides with Advanced alone.
           ...(slice === "advanced" ? [lineNumbers()] : []),
-          EditorView.contentAttributes.of({ "aria-label": label }),
+          EditorView.contentAttributes.of({ "aria-labelledby": nameId }),
           extensions ?? [],
           EditorView.updateListener.of((update) => {
             if (!update.selectionSet && !update.focusChanged) return;
@@ -245,11 +260,11 @@ export function SliceEditor({
       editor.current = null;
       view.destroy();
     };
-  }, [controller, slice, label, language, singleLine, extensions]);
+  }, [controller, slice, nameId, language, singleLine, extensions, readOnly]);
 
   useEffect(() => {
     const view = editor.current;
-    if (!view || !reveal) return;
+    if (!view || !reveal || (reveal.slice && reveal.slice !== slice)) return;
     const { from } = controller.sliceRange(slice);
     const inSlice = (offset: number) => {
       const local = Math.min(
@@ -266,12 +281,12 @@ export function SliceEditor({
     };
     view.dispatch({
       selection: EditorSelection.range(
-        inSlice(reveal.from),
-        inSlice(reveal.to),
+        inSlice(reveal.anchor ?? reveal.from),
+        inSlice(reveal.head ?? reveal.to),
       ),
-      scrollIntoView: true,
+      scrollIntoView: reveal.scrollIntoView ?? true,
     });
-    view.focus();
+    if (reveal.focus !== false) view.focus();
   }, [controller, slice, reveal, language]);
 
   useEffect(() => {
@@ -291,7 +306,13 @@ export function SliceEditor({
   // as the site's Input control.
   return (
     <div {...part("slice-editor")}>
-      <div ref={host} dir="ltr" {...part("slice-scroll")} />
+      <HiddenName id={nameId}>{label}</HiddenName>
+      <div
+        ref={host}
+        data-workbench-scroll={slice}
+        dir="ltr"
+        {...part("slice-scroll")}
+      />
     </div>
   );
 }
@@ -301,12 +322,18 @@ function sliceSelection(
   view: EditorView,
   sliceFrom: number,
   jsonSource?: string,
-): WorkbenchSliceRange {
+): WorkbenchInsertTarget["range"] {
   const { main } = view.state.selection;
   const map = (position: number) =>
     sliceFrom +
     (jsonSource === undefined
       ? position
       : jsonPosition(view.state.doc.toString(), jsonSource, position));
-  return { from: map(main.from), to: map(main.to) };
+  return {
+    from: map(main.from),
+    to: map(main.to),
+    ...(main.anchor > main.head
+      ? { anchor: map(main.anchor), head: map(main.head) }
+      : {}),
+  };
 }

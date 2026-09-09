@@ -67,7 +67,9 @@ describe("the tab bar", () => {
   });
 
   it("follows the store and moves through the tabs from the keyboard", () => {
-    using mounted = mount(<TabBar />);
+    using mounted = mount(<TabBar />, {
+      source: DEFAULT_PROFILE_SOURCE.replace("id: default", "id: reading"),
+    });
     const { store, ui } = mounted;
     render(ui);
     act(() => store.getState().setTab("annotation"));
@@ -92,6 +94,56 @@ describe("the tab bar", () => {
     expect(store.getState().tab).toBe("name");
     // Only the chosen tab is in the tab order.
     expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, -1, -1, -1, 0]);
+  });
+
+  it("keeps Default Match disabled and skips it during traversal and restoration", () => {
+    using mounted = mount(
+      <>
+        <TabBar />
+        <TabPanel tab="match">match rules</TabPanel>
+      </>,
+      { state: { tab: "match" } },
+    );
+    const { store, ui } = mounted;
+    expect(store.getState().tab).toBe("note");
+    render(ui);
+    const match = screen.getByRole("tab", { name: m.workbench_tab_match() });
+    expect(match).toHaveProperty("disabled", true);
+    fireEvent.click(match);
+    expect(store.getState().tab).toBe("note");
+    act(() => store.getState().setTab("annotation"));
+    fireEvent.keyDown(screen.getByRole("tablist"), { key: "ArrowRight" });
+    expect(store.getState().tab).toBe("name");
+    fireEvent.keyDown(screen.getByRole("tablist"), { key: "ArrowLeft" });
+    expect(store.getState().tab).toBe("annotation");
+    act(() => store.getState().setTab("match"));
+    expect(store.getState().tab).toBe("note");
+    expect(screen.queryByText("match rules")).toBeNull();
+    act(() =>
+      mounted.controller.dispatch({
+        changes: {
+          from: 0,
+          to: mounted.controller.source.length,
+          insert: "---\nid: [",
+        },
+      }),
+    );
+    expect(mounted.controller.document).toBeNull();
+    expect(match).toHaveProperty("disabled", true);
+    act(() => store.getState().setTab("match"));
+    expect(store.getState().tab).toBe("note");
+  });
+
+  it("uses the host's Default identity when the first source cannot parse", () => {
+    using mounted = mount(<TabBar defaultProfile />, {
+      source: "---\nid: [",
+      state: { tab: "match" },
+    });
+    render(mounted.ui);
+    expect(
+      screen.getByRole("tab", { name: m.workbench_tab_match() }),
+    ).toHaveProperty("disabled", true);
+    expect(mounted.store.getState().tab).toBe("note");
   });
 
   it("marks its parts and wears the host's classes, nothing more", () => {
@@ -325,32 +377,27 @@ describe("the Problems footer", () => {
 });
 
 describe("the view store", () => {
-  it("starts on the Note tab in Basic mode with the Simple Explorer", () => {
+  it("starts on the Note tab in Basic mode", () => {
     const store = createWorkbenchStore();
     expect(store.getState()).toMatchObject({
       tab: "note",
       item: null,
       root: "note",
-      preview: { mode: "create", live: true },
-      explorer: "simple",
       advanced: false,
       startHereDismissed: false,
     });
   });
 
   it("takes a host's starting state and changes one field at a time", () => {
-    const store = createWorkbenchStore({ explorer: "all", tab: "name" });
-    const { setItem, setRoot, setPreview, dismissStartHere } = store.getState();
+    const store = createWorkbenchStore({ tab: "name" });
+    const { setItem, setRoot, dismissStartHere } = store.getState();
     setItem({ id: "ABCD1234", title: "A paper" });
     setRoot("filename");
-    setPreview({ live: false });
     dismissStartHere();
     expect(store.getState()).toMatchObject({
       tab: "name",
-      explorer: "all",
       item: { id: "ABCD1234", title: "A paper" },
       root: "filename",
-      preview: { mode: "create", live: false },
       startHereDismissed: true,
     });
   });

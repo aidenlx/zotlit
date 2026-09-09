@@ -10,6 +10,7 @@ import type {
 import type { RenderedProperty } from "#/render/result";
 import { useEffect, useState, useId, useRef } from "react";
 
+import { useExampleMessage } from "./example-state";
 import type { WorkbenchMessages } from "./generated/messages";
 import { useOptionalHost } from "./host";
 import type { WorkbenchMessageLabel } from "./messages";
@@ -123,6 +124,7 @@ export function PropertiesPane({
 }: PropertiesPaneProps) {
   const m = useWorkbenchMessages();
   const part = useParts("properties");
+  const exampleMessage = useExampleMessage("properties");
   const produced = byEntry(properties);
   const icon = useIcon();
   const instanceId = useId();
@@ -146,11 +148,22 @@ export function PropertiesPane({
       {entries.length === 0 && (
         <p {...part("empty")}>{m.workbench_properties_empty()}</p>
       )}
+      {exampleMessage && (
+        <p role="status" {...part("empty")}>
+          {exampleMessage}
+        </p>
+      )}
       <ul {...part("rows")}>
         {entries.map((entry) => {
           const fields = produced.get(entry.position) ?? [];
           const raised = problems.get(entry.position) ?? [];
           const open = selected === entry.position;
+          const summary = exampleMessage
+            ? controller.source.slice(
+                entry.expression.from,
+                entry.expression.to,
+              )
+            : summarize(m, { entry, produced: fields, fold });
           return (
             <li key={entry.position} {...part("row")}>
               <div {...part("row-header")}>
@@ -171,14 +184,12 @@ export function PropertiesPane({
                       </span>
                     )}
                   </span>
-                  {summarize(m, { entry, produced: fields, fold }) && (
+                  {summary && (
                     <span
                       {...part("summary", open ? "open" : "closed")}
-                      {...tooltip(
-                        summarize(m, { entry, produced: fields, fold }),
-                      )}
+                      {...tooltip(summary)}
                     >
-                      {summarize(m, { entry, produced: fields, fold })}
+                      {exampleMessage ? <code>{summary}</code> : summary}
                     </span>
                   )}
                 </button>
@@ -198,6 +209,7 @@ export function PropertiesPane({
                   <button
                     type="button"
                     {...part("row-action")}
+                    disabled={controller.readOnly}
                     aria-label={m.workbench_properties_add_override()}
                     {...tooltip(m.workbench_properties_add_override())}
                     onClick={() => add("property", entry.position)}
@@ -217,9 +229,10 @@ export function PropertiesPane({
                         aria-label={label}
                         {...tooltip(label)}
                         disabled={
-                          by === -1
+                          controller.readOnly ||
+                          (by === -1
                             ? entry.position === 1
-                            : entry.position === entries.length
+                            : entry.position === entries.length)
                         }
                         onClick={() => {
                           if (
@@ -242,6 +255,7 @@ export function PropertiesPane({
                   <button
                     type="button"
                     {...part("row-action")}
+                    disabled={controller.readOnly}
                     aria-label={m.workbench_properties_remove()}
                     {...tooltip(m.workbench_properties_remove())}
                     onClick={() => {
@@ -281,6 +295,7 @@ export function PropertiesPane({
         <button
           type="button"
           {...part("primary-action")}
+          disabled={controller.readOnly}
           onClick={() => add("property")}
         >
           {icon("add")}
@@ -289,6 +304,7 @@ export function PropertiesPane({
         <button
           type="button"
           {...part("secondary-action")}
+          disabled={controller.readOnly}
           onClick={() => add("spread")}
         >
           {icon("add")}
@@ -352,6 +368,8 @@ function EntryForm({
         <label {...part("field")}>
           {m.workbench_properties_name()}
           <input
+            type="text"
+            readOnly={controller.readOnly}
             ref={nameInput}
             value={name}
             onInput={(event) => setName(event.currentTarget.value)}
@@ -401,6 +419,7 @@ function EntryForm({
                   {m.workbench_properties_format()}
                 </span>
                 <WorkbenchSelect
+                  disabled={controller.readOnly}
                   value={pendingLanguage ?? format}
                   onInput={(event) =>
                     setPendingLanguage(
@@ -434,6 +453,7 @@ function EntryForm({
               <div {...part("confirm-actions")}>
                 <button
                   type="button"
+                  disabled={controller.readOnly}
                   {...part("primary-action")}
                   onClick={() => {
                     controller.editManagedEntry({
@@ -460,6 +480,8 @@ function EntryForm({
           )}
           {format === "text" ? (
             <input
+              type="text"
+              readOnly={controller.readOnly}
               aria-label={m.workbench_properties_expression()}
               value={fixedText ?? ""}
               onInput={(event) =>
@@ -505,6 +527,7 @@ function EntryForm({
         <label {...part("field")}>
           {m.workbench_properties_merge()}
           <WorkbenchSelect
+            disabled={controller.readOnly}
             value={entry.merge}
             onInput={(event) =>
               controller.editManagedEntry({
@@ -554,10 +577,7 @@ export function PropertiesResult({
   const part = useParts("properties");
   if (showMarkdown) {
     return (
-      <pre
-        aria-label={m.workbench_result_markdown_body()}
-        {...part("markdown")}
-      >
+      <pre {...part("markdown")}>
         {frontmatterBlock ?? m.workbench_properties_produced_none()}
       </pre>
     );

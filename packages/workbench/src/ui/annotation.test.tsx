@@ -238,3 +238,24 @@ it("edits the annotation format without a note call and leaves the rest of the P
   });
   expect(controller.source).toBe(source);
 });
+
+it("offers annotation examples before an annotation has been selected", async () => {
+  const host = fakeHost();
+  host.suggester = (request) => {
+    host.calls.suggesters.push(request);
+    return Promise.resolve(SAMPLE_ANNOTATIONS[1]!.id);
+  };
+  const selected = vi.fn<(id: string) => void>();
+  render(
+    <WorkbenchHostProvider host={host}>
+      <AnnotationSampleBar current={[]} example={null} onSelect={selected} />
+    </WorkbenchHostProvider>,
+  );
+  await act(async () => {
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_choose_annotation() }),
+    );
+  });
+  expect(host.calls.suggesters[0]?.selected).toBe("");
+  expect(selected).toHaveBeenCalledWith(SAMPLE_ANNOTATIONS[1]!.id);
+});

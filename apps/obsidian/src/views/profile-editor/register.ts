@@ -6,9 +6,14 @@ import { WorkbenchDocumentController } from "@zotlit/workbench/document";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
+import { openSettingsTab } from "@/lib/open-settings";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { ProfileService } from "@/services/profile/service";
+import {
+  findProfileWorkbench,
+  openProfileWorkbench,
+} from "@/views/note-preview/register";
 
 import { runProfileEditorAction } from "./actions";
 import { PROFILE_EDITOR_VIEW_TYPE, ProfileEditorView } from "./view";
@@ -44,6 +49,12 @@ export function registerProfileEditor(
       new ProfileEditorView(leaf, {
         ...deps,
         pluginVersion: plugin.manifest.version,
+        openSettings: (defaultProfile) =>
+          openSettingsTab(
+            plugin.app,
+            plugin.manifest.id,
+            defaultProfile ? [] : [m.settings_page_profiles()],
+          ),
       }),
   );
   const targetOf = (file: TFile | null) => {
@@ -73,7 +84,11 @@ export function registerProfileEditor(
               (profile) => profile.path === target.path,
             )?.id
         : "default";
-    if (!profileId) return openNativeProfile(plugin.app, target, options);
+    if (!profileId)
+      return openNativeProfile(plugin.app, target, {
+        ...options,
+        customize: true,
+      });
     return deps.customize({
       profileId,
       ...(options.destination ? { destination: options.destination } : {}),
@@ -111,12 +126,20 @@ export function registerProfileEditor(
     id: "open-profile-editor",
     name: m.profile_editor_open(),
     checkCallback(checking) {
-      const target = targetOf(plugin.app.workspace.getActiveFile());
+      const active = plugin.app.workspace.getActiveFile();
+      const target = targetOf(active);
       if (!target) return false;
-      if (!checking)
+      if (!checking) {
+        const itemIndexedKey =
+          active &&
+          itemKeyFromFrontmatter(plugin.app.metadataCache.getFileCache(active));
         void runProfileEditorAction("customize", () =>
-          openNativeProfile(plugin.app, target),
+          customizeTarget(target, {
+            ...(itemIndexedKey ? { itemIndexedKey } : {}),
+            destination: "native",
+          }),
         );
+      }
       return true;
     },
   });
@@ -166,7 +189,7 @@ export function registerProfileEditor(
           .onClick(
             () =>
               void runProfileEditorAction("customize", () =>
-                openNativeProfile(plugin.app, target, options),
+                customizeTarget(target, { ...options, destination: "native" }),
               ),
           ),
       );
@@ -195,9 +218,7 @@ export function registerProfileEditor(
           view.addAction("file-pen-line", m.profile_editor_open(), () => {
             if (view.file)
               void runProfileEditorAction("open-editor", () =>
-                openProfileEditor(plugin.app, view.file!, {
-                  leaf: view.leaf,
-                }),
+                customizeTarget(view.file!, { destination: "native" }),
               );
           }),
         );
@@ -217,7 +238,11 @@ export function registerProfileEditor(
 export async function openNativeProfile(
   app: App,
   target: TFile | Pick<ProfileService, "defaultDocumentPath" | "getSource">,
-  options: { itemIndexedKey?: string; explainUnsupported?: boolean } = {},
+  options: {
+    itemIndexedKey?: string;
+    explainUnsupported?: boolean;
+    customize?: boolean;
+  } = {},
 ): Promise<void> {
   const file =
     target instanceof TFile
@@ -226,22 +251,36 @@ export async function openNativeProfile(
   const source = file
     ? await app.vault.cachedRead(file)
     : await (target as Pick<ProfileService, "getSource">).getSource("default");
-  if (file) return openProfileEditor(app, file, options);
+  if (file) {
+    await openProfileEditor(app, file, {
+      ...options,
+      ...(target instanceof TFile ? {} : { defaultProfile: true }),
+    });
+    return;
+  }
   if (options.explainUnsupported !== false && requiresNative(source))
     new BaseNotice(m.profile_editor_native_required());
-  const active = app.workspace.getActiveFile();
-  const itemIndexedKey =
-    options.itemIndexedKey ??
-    (active
-      ? itemKeyFromFrontmatter(app.metadataCache.getFileCache(active))
-      : null);
+  const { itemIndexedKey } = options;
+  const workbench = options.customize
+    ? await findProfileWorkbench(app, { file: null, defaultProfile: true })
+    : null;
+  if (workbench?.file) {
+    await openProfileEditor(app, workbench.file, {
+      ...options,
+      leaf: workbench.leaf,
+      defaultProfile: true,
+    });
+    return;
+  }
   const leaf =
+    workbench?.leaf ??
     app.workspace
       .getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE)
       .find(
         (entry) =>
           entry.view instanceof ProfileEditorView && entry.view.isDefaultDraft,
-      ) ?? app.workspace.getLeaf("tab");
+      ) ??
+    app.workspace.getLeaf("tab");
   await leaf.setViewState({
     type: PROFILE_EDITOR_VIEW_TYPE,
     state: {
@@ -252,6 +291,9 @@ export async function openNativeProfile(
     active: true,
   });
   await app.workspace.revealLeaf(leaf);
+  leaf.getContainer().focus();
+  if (options.customize && leaf.view instanceof ProfileEditorView)
+    await leaf.view.customizeDefault();
 }
 
 export function requiresNative(source: string): boolean {
@@ -265,7 +307,7 @@ export function requiresNative(source: string): boolean {
   );
 }
 
-/** Every Profile document entry point preserves the selected Literature Note's Item. */
+/** Open a Profile document with an explicitly supplied launch Item. */
 export async function openProfileEditor(
   app: App,
   file: TFile,
@@ -274,6 +316,8 @@ export async function openProfileEditor(
     itemIndexedKey?: string;
     tab?: "match";
     explainUnsupported?: boolean;
+    customize?: boolean;
+    defaultProfile?: boolean;
   } = {},
 ): Promise<void> {
   if (
@@ -281,13 +325,15 @@ export async function openProfileEditor(
     requiresNative(await app.vault.cachedRead(file))
   )
     new BaseNotice(m.profile_editor_native_required());
-  const active = app.workspace.getActiveFile();
-  const itemIndexedKey =
-    options.itemIndexedKey ??
-    (active
-      ? itemKeyFromFrontmatter(app.metadataCache.getFileCache(active))
-      : null);
+  const { itemIndexedKey } = options;
+  const workbench = options.customize
+    ? await findProfileWorkbench(app, {
+        file: file.path,
+        defaultProfile: options.defaultProfile ?? false,
+      })
+    : null;
   const leaf =
+    workbench?.leaf ??
     options.leaf ??
     app.workspace
       .getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE)
@@ -301,10 +347,14 @@ export async function openProfileEditor(
     type: PROFILE_EDITOR_VIEW_TYPE,
     state: {
       file: file.path,
+      ...(workbench && !workbench.file ? { defaultDraft: false } : {}),
       ...(itemIndexedKey ? { itemIndexedKey } : {}),
       ...(options.tab ? { tab: options.tab, advanced: false } : {}),
     },
     active: true,
   });
   await app.workspace.revealLeaf(leaf);
+  leaf.getContainer().focus();
+  if (options.customize && leaf.view instanceof ProfileEditorView)
+    await openProfileWorkbench(app, leaf.view);
 }

@@ -1,11 +1,15 @@
 import type { ProfileRenderResult } from "#/render/result";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
+import { useStore } from "zustand";
+import { createStore } from "zustand/vanilla";
 
 import { PreviewControls } from "./preview-controls";
 import { PropertyList } from "./property-list";
 import { ResultColumn } from "./result-column";
 import type { ResultColumnProps } from "./result-column";
+import type { PreviewSettings } from "./store";
 import { mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
@@ -137,33 +141,60 @@ it("links a profile error to source", () => {
 
 it("changes preview mode, runs on demand, and pauses future work", () => {
   const onRun = vi.fn<() => void>();
-  const onStop = vi.fn<() => void>();
-  using mounted = mount(
-    <PreviewControls busy={false} onRun={onRun} onStop={onStop} />,
-  );
-  const { store, ui } = mounted;
+  function Controls() {
+    const [store] = useState(() =>
+      createStore<PreviewSettings>(() => ({ mode: "create", live: true })),
+    );
+    const preview = useStore(store);
+    return (
+      <PreviewControls
+        preview={preview}
+        onChange={store.setState}
+        busy={false}
+        onRun={onRun}
+      />
+    );
+  }
+  using mounted = mount(<Controls />);
+  const { ui } = mounted;
   render(ui);
   fireEvent.input(screen.getByLabelText(m.workbench_preview_mode()), {
     target: { value: "update" },
   });
-  expect(store.getState().preview.mode).toBe("update");
-  fireEvent.click(
-    screen.getByRole("button", { name: m.workbench_preview_stop() }),
-  );
-  expect(store.getState().preview.live).toBe(false);
-  expect(onStop).toHaveBeenCalledOnce();
+  expect(
+    (screen.getByLabelText(m.workbench_preview_mode()) as HTMLSelectElement)
+      .value,
+  ).toBe("update");
+  expect(
+    screen.queryByRole("button", { name: m.workbench_preview_run() }),
+  ).toBeNull();
+  fireEvent.input(screen.getByLabelText(m.workbench_preview_refresh()), {
+    target: { value: "demand" },
+  });
+  expect(
+    (screen.getByLabelText(m.workbench_preview_refresh()) as HTMLSelectElement)
+      .value,
+  ).toBe("demand");
   fireEvent.click(
     screen.getByRole("button", { name: m.workbench_preview_run() }),
   );
   expect(onRun).toHaveBeenCalledOnce();
-  expect(store.getState().preview.live).toBe(false);
+  expect(
+    (screen.getByLabelText(m.workbench_preview_refresh()) as HTMLSelectElement)
+      .value,
+  ).toBe("demand");
   fireEvent.input(screen.getByLabelText(m.workbench_preview_refresh()), {
     target: { value: "live" },
   });
-  expect(store.getState().preview.live).toBe(true);
+  expect(
+    (screen.getByLabelText(m.workbench_preview_refresh()) as HTMLSelectElement)
+      .value,
+  ).toBe("live");
   fireEvent.input(screen.getByLabelText(m.workbench_preview_refresh()), {
     target: { value: "demand" },
   });
-  expect(store.getState().preview.live).toBe(false);
-  expect(onStop).toHaveBeenCalledTimes(2);
+  expect(
+    (screen.getByLabelText(m.workbench_preview_refresh()) as HTMLSelectElement)
+      .value,
+  ).toBe("demand");
 });

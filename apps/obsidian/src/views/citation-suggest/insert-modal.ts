@@ -1,10 +1,9 @@
-import { Keymap, SuggestModal } from "obsidian";
+import { Keymap } from "obsidian";
 import type { Editor } from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
-import { renderSuggestion as renderSearchHit } from "@/services/item-lookup/render-hit";
-import { DEFAULT_LIMIT } from "@/services/item-lookup/service";
+import { ItemSearchModal } from "@/services/item-lookup/search-modal";
 import type { SearchHit } from "@/services/item-lookup/service";
 
 import { padCitationInsert, resolveCitationInsert } from "./editor-suggest";
@@ -15,15 +14,14 @@ import type { CitationSuggestDeps } from "./register";
  * rendered citation at the editor cursor. The inline `[@` flow lives in
  * {@link CitationEditorSuggest}; both render through `renderCitation`.
  */
-export class InsertCitationModal extends SuggestModal<SearchHit> {
+export class InsertCitationModal extends ItemSearchModal {
   readonly #deps: CitationSuggestDeps;
   readonly #editor: Editor;
 
   constructor(deps: CitationSuggestDeps, editor: Editor) {
-    super(deps.app);
+    super(deps);
     this.#deps = deps;
     this.#editor = editor;
-    this.limit = DEFAULT_LIMIT;
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_insert_citation() },
@@ -37,14 +35,6 @@ export class InsertCitationModal extends SuggestModal<SearchHit> {
       this.selectActiveSuggestion(evt);
       return false;
     });
-  }
-
-  override getSuggestions(query: string): SearchHit[] | Promise<SearchHit[]> {
-    return this.#deps.lookup.search(query, { limit: this.limit });
-  }
-
-  override renderSuggestion(hit: SearchHit, el: HTMLElement): void {
-    renderSearchHit(this.#deps.settings, hit, el);
   }
 
   override onChooseSuggestion(

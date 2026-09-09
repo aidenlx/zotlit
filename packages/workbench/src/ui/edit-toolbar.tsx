@@ -2,6 +2,7 @@
 // document's one history. A host's own controls for the row come as children.
 // Inert outside an editor.
 
+import { useId } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -9,7 +10,7 @@ import {
   useOptionalEditor,
   useWorkbenchStore,
 } from "./editor";
-import { useTooltip } from "./host";
+import { HiddenName, useTooltip } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { useIcon, useParts } from "./theme";
 
@@ -33,6 +34,7 @@ export function EditToolbar({
   const advanced = useWorkbenchStore((state) => state.advanced);
   const setAdvanced = useWorkbenchStore((state) => state.setAdvanced);
   const part = useParts("editToolbar");
+  const modeId = useId();
   const icon = useIcon();
   const undoTooltip = useTooltip(m.workbench_undo());
   const redoTooltip = useTooltip(m.workbench_redo());
@@ -94,11 +96,8 @@ export function EditToolbar({
         </>
       ) : (
         <>
-          <div
-            role="group"
-            aria-label={m.workbench_editing_mode()}
-            {...part("mode-group")}
-          >
+          <div role="group" aria-labelledby={modeId} {...part("mode-group")}>
+            <HiddenName id={modeId}>{m.workbench_editing_mode()}</HiddenName>
             {mode(false, m.workbench_basic(), "basic")}
             {mode(true, m.workbench_advanced(), "advanced")}
           </div>

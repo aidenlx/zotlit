@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { liquidMarkdown, liquidRanges } from "./liquid";
+import { liquidTemplate, liquidRanges } from "./liquid";
 import { nodeNames as nodeNamesFor } from "./test-utils";
 
 function nodeNames(source: string, from = 0, to = source.length): string[] {
-  return nodeNamesFor(liquidMarkdown.language.parser, source, { from, to });
+  return nodeNamesFor(liquidTemplate.language.parser, source, { from, to });
 }
 
-describe("liquidMarkdown grammar", () => {
+describe("liquidTemplate grammar", () => {
   it("parses an output with a filter chain inside Markdown", () => {
     const source = "# {{ zt.title | upcase }}";
     expect(nodeNames(source)).toEqual([

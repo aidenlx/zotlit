@@ -21,7 +21,9 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 
+import { useExampleMessage } from "./example-state";
 import type { WorkbenchMessages } from "./generated/messages";
+import { useOptionalHost } from "./host";
 import type { WorkbenchMessageLabel } from "./messages";
 import { useWorkbenchMessages } from "./messages";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
@@ -98,7 +100,7 @@ const DEFAULT_PROFILE_ID = "default";
  * The control that holds one manifest key. A problem the parser pinned to a key
  * opens the control under this id, so every field this form writes carries one.
  */
-const FieldIdContext = createContext("workbench");
+const FieldIdContext = createContext({ prefix: "workbench", readOnly: false });
 
 function fieldId(prefix: string, key: string): string {
   return `${prefix}-field-${key}`;
@@ -120,6 +122,7 @@ function valueText(
 export interface NameFolderPaneProps {
   controller: WorkbenchDocumentController;
   onOpenSource?: () => void;
+  onOpenSettings?: () => void;
   /**
    * The manifest this form writes: the last one the document parsed with, so a
    * draft under repair keeps the values the reader is repairing. Null before
@@ -142,7 +145,11 @@ export interface NameFolderPaneProps {
    * The manifest key to open, named by the problem that sent the reader here.
    * Each new object opens it again.
    */
-  focus?: { readonly field: string } | null;
+  focus?: {
+    readonly field: string;
+    readonly focus?: boolean;
+    readonly scrollIntoView?: boolean;
+  } | null;
   /** The contract the note-name editor completes and explains against. */
   suggest?: SuggestionSource;
   reveal?: WorkbenchSliceRange | null;
@@ -152,6 +159,7 @@ export interface NameFolderPaneProps {
 export function NameFolderPane({
   controller,
   onOpenSource,
+  onOpenSettings,
   manifest,
   filename,
   citationStyles,
@@ -162,6 +170,7 @@ export function NameFolderPane({
   onSelection,
 }: NameFolderPaneProps) {
   const m = useWorkbenchMessages();
+  const exampleMessage = useExampleMessage("filename");
   const prefix = useId();
   const container = useRef<HTMLDivElement>(null);
   const icon = useIcon();
@@ -170,25 +179,36 @@ export function NameFolderPane({
   // key the locked details hold opens that block first, so the reader lands on
   // the field rather than on the summary that hides it.
   useEffect(() => {
-    if (!focus) return;
-    const control = container.current?.querySelector<HTMLElement>(
-      `[id="${fieldId(prefix, focus.field)}"]`,
-    );
+    if (!focus || focus.focus === false) return;
+    const control = [
+      ...(container.current?.querySelectorAll<HTMLElement>("[id]") ?? []),
+    ].find((element) => element.id === fieldId(prefix, focus.field));
     if (!control) return;
     control.closest("details")?.setAttribute("open", "");
-    control.scrollIntoView({ block: "nearest" });
-    control.focus();
+    if (focus.scrollIntoView !== false)
+      control.scrollIntoView({ block: "nearest" });
+    control.focus({ preventScroll: focus.scrollIntoView === false });
   }, [focus, prefix]);
 
+  const settingsAction = onOpenSettings && (
+    <button type="button" {...part("source-button")} onClick={onOpenSettings}>
+      {m.workbench_open_settings()}
+    </button>
+  );
   if (!manifest) {
-    return <p {...part("unreadable")}>{m.workbench_name_unreadable()}</p>;
+    return (
+      <div {...part("pane")}>
+        <p {...part("unreadable")}>{m.workbench_name_unreadable()}</p>
+        {settingsAction}
+      </div>
+    );
   }
 
   const write = (key: string, value: ManifestScalar | undefined) =>
     controller.setManifestKey(key, value);
 
   return (
-    <FieldIdContext.Provider value={prefix}>
+    <FieldIdContext.Provider value={{ prefix, readOnly: controller.readOnly }}>
       <div ref={container} {...part("pane")}>
         <Group
           heading={m.workbench_name_filename_heading()}
@@ -222,7 +242,9 @@ export function NameFolderPane({
           )}
           <p {...part("filename-result")}>
             <span {...part("muted")}>{m.workbench_name_filename_result()}</span>
-            <output {...part("filename-output")}>{filename}</output>
+            <output {...part("filename-output")}>
+              {exampleMessage ?? filename ?? m.workbench_property_unset()}
+            </output>
           </p>
         </Group>
 
@@ -262,6 +284,7 @@ export function NameFolderPane({
           )}
         </Group>
 
+        {settingsAction}
         <details {...part("details")}>
           <summary {...part("summary")}>
             <span aria-hidden {...part("details-icon")}>
@@ -316,6 +339,7 @@ export function NameFolderPane({
             <div {...part("fields")}>
               <Field label={m.workbench_name_field_id()}>
                 <input
+                  type="text"
                   readOnly
                   value={manifest.id}
                   {...part("readonly-input")}
@@ -324,6 +348,7 @@ export function NameFolderPane({
               <p {...part("help")}>{m.workbench_name_id_note()}</p>
               <Field label={m.workbench_name_field_contract()}>
                 <input
+                  type="text"
                   readOnly
                   value={String(manifest.contract)}
                   {...part("readonly-input")}
@@ -331,6 +356,7 @@ export function NameFolderPane({
               </Field>
               <Field label={m.workbench_name_field_min_app_version()}>
                 <input
+                  type="text"
                   readOnly
                   value={manifest.minAppVersion ?? m.workbench_name_unset()}
                   {...part("readonly-input")}
@@ -410,13 +436,16 @@ function DraftText({
   binding?: boolean;
 }) {
   const part = useParts("nameFolder");
+  const readOnly = useContext(FieldIdContext).readOnly;
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   return (
     <input
+      type="text"
       id={id}
       value={draft}
       disabled={disabled}
+      readOnly={readOnly}
       placeholder={placeholder}
       onInput={(event) => setDraft(event.currentTarget.value)}
       onBlur={() => {
@@ -445,7 +474,7 @@ function TextValue({
   onCommit: (value: string | undefined) => void;
 }) {
   const m = useWorkbenchMessages();
-  const prefix = useContext(FieldIdContext);
+  const { prefix } = useContext(FieldIdContext);
   return (
     <DraftText
       id={fieldId(prefix, field)}
@@ -456,12 +485,7 @@ function TextValue({
   );
 }
 
-/**
- * One sparse binding: the effective value with the origin it comes from, and
- * the two actions that move it between them. Override writes the current
- * default as an explicit value; Use default removes the key, so an empty path,
- * a null style, and a false toggle each stay distinct from unset.
- */
+/** Editing an inherited binding stores an override; resetting removes its key. */
 function BindingRow({
   binding,
   value,
@@ -477,8 +501,12 @@ function BindingRow({
   onWrite: (value: ManifestScalar | undefined) => void;
 }) {
   const m = useWorkbenchMessages();
-  const prefix = useContext(FieldIdContext);
+  const { prefix } = useContext(FieldIdContext);
   const part = useParts("nameFolder");
+  const readOnly = useContext(FieldIdContext).readOnly;
+  const host = useOptionalHost();
+  const Toggle = host?.toggle;
+  const icon = useIcon();
   const label = m[binding.label]();
   const inherits = value === undefined;
   const effective = inherits ? fallback : value;
@@ -494,54 +522,63 @@ function BindingRow({
             ? m.workbench_name_origin_default()
             : m.workbench_name_origin_profile()}
         </span>
-        <button
-          type="button"
-          {...part("confirm-button")}
-          aria-label={
-            inherits
-              ? m.workbench_name_override_for({ name: label })
-              : m.workbench_name_use_default_for({ name: label })
-          }
-          onClick={() => onWrite(inherits ? fallback : undefined)}
-        >
-          {inherits
-            ? m.workbench_name_override()
-            : m.workbench_name_use_default()}
-        </button>
+        {!inherits && (
+          <button
+            type="button"
+            {...part("reset-button")}
+            disabled={readOnly}
+            aria-label={m.workbench_name_use_default_for({ name: label })}
+            {...host?.tooltip(m.workbench_name_use_default())}
+            onClick={() => onWrite(undefined)}
+          >
+            {icon("reset")}
+            <span {...part("reset-label")}>
+              {m.workbench_name_use_default()}
+            </span>
+          </button>
+        )}
       </div>
       {binding.kind === "style" && citationStyles ? (
         <StylePicker
           id={id}
           value={typeof effective === "string" ? effective : null}
-          disabled={inherits}
           styles={citationStyles}
           onWrite={onWrite}
         />
       ) : binding.kind === "toggle" ? (
         <span {...part("toggle-row")}>
-          <button
-            type="button"
-            role="switch"
-            id={id}
-            disabled={inherits}
-            aria-checked={effective === true}
-            {...part("switch", effective === true ? "checked" : "unchecked")}
-            onClick={() => onWrite(effective !== true)}
-          >
-            <span
-              {...part(
-                "switch-thumb",
-                effective === true ? "checked" : "unchecked",
-              )}
+          {Toggle ? (
+            <Toggle
+              id={id}
+              aria-label={label}
+              value={effective === true}
+              disabled={readOnly}
+              onChange={onWrite}
             />
-          </button>
+          ) : (
+            <button
+              type="button"
+              disabled={readOnly}
+              role="switch"
+              id={id}
+              aria-checked={effective === true}
+              {...part("switch", effective === true ? "checked" : "unchecked")}
+              onClick={() => onWrite(effective !== true)}
+            >
+              <span
+                {...part(
+                  "switch-thumb",
+                  effective === true ? "checked" : "unchecked",
+                )}
+              />
+            </button>
+          )}
           <span {...part("muted")}>{valueText(m, effective)}</span>
         </span>
       ) : (
         <DraftText
           id={id}
           value={effective === null ? "" : String(effective)}
-          disabled={inherits}
           placeholder={
             binding.kind === "style"
               ? m.workbench_name_citation_style_placeholder()
@@ -567,17 +604,16 @@ function BindingRow({
 function StylePicker({
   id,
   value,
-  disabled,
   styles,
   onWrite,
 }: {
   id: string;
   value: string | null;
-  disabled: boolean;
   styles: readonly InstalledCitationStyle[];
   onWrite: (value: ManifestScalar) => void;
 }) {
   const m = useWorkbenchMessages();
+  const readOnly = useContext(FieldIdContext).readOnly;
   const options =
     value !== null &&
     value !== "" &&
@@ -587,8 +623,8 @@ function StylePicker({
   return (
     <WorkbenchSelect
       id={id}
+      disabled={readOnly}
       value={value ?? ""}
-      disabled={disabled}
       onInput={(event) =>
         onWrite(
           event.currentTarget.value === "" ? null : event.currentTarget.value,
@@ -620,8 +656,9 @@ function LanguageGroup({
   onWrite: (key: string, value: ManifestScalar) => void;
 }) {
   const m = useWorkbenchMessages();
-  const prefix = useContext(FieldIdContext);
+  const { prefix } = useContext(FieldIdContext);
   const part = useParts("nameFolder");
+  const readOnly = useContext(FieldIdContext).readOnly;
   const [pending, setPending] = useState<string | null>(null);
   return (
     <Group
@@ -630,6 +667,7 @@ function LanguageGroup({
     >
       <Field label={m.workbench_name_language_heading()}>
         <WorkbenchSelect
+          disabled={readOnly}
           id={fieldId(prefix, "language")}
           value={pending ?? language}
           onInput={(event) => setPending(event.currentTarget.value)}
@@ -651,6 +689,7 @@ function LanguageGroup({
           <div {...part("confirmation-actions")}>
             <button
               type="button"
+              disabled={readOnly}
               {...part("confirm-button")}
               onClick={() => {
                 onWrite("language", pending);

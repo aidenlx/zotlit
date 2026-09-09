@@ -37,11 +37,15 @@ export function MatchPane({
   controller,
   facts,
   vocabularyRevision,
+  exampleMessage,
+  onRetry,
 }: {
   controller: WorkbenchDocumentController;
   facts: MatchItemFacts | null;
   /** Changes when the host has a new snapshot or database vocabulary. */
   vocabularyRevision?: string | number;
+  exampleMessage?: string | null;
+  onRetry?: () => void;
 }) {
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
@@ -63,6 +67,8 @@ export function MatchPane({
   });
   const [writeProblem, setWriteProblem] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
     const read = () => {
       setReadable(controller.document !== null);
@@ -82,6 +88,7 @@ export function MatchPane({
   }, [controller]);
   useEffect(() => {
     let active = true;
+    setLoading(true);
     void Promise.all([
       host.matchData.tags(),
       host.matchData.collections(),
@@ -101,16 +108,20 @@ export function MatchPane({
             })),
           });
           setProblem(null);
+          setLoading(false);
         }
       },
       () => {
-        if (active) setProblem(m.workbench_match_missing_facts());
+        if (active) {
+          setProblem(m.workbench_example_failed());
+          setLoading(false);
+        }
       },
     );
     return () => {
       active = false;
     };
-  }, [host.matchData, vocabularyRevision, m]);
+  }, [host.matchData, vocabularyRevision, m, retry]);
   function write(next: MatchTree | undefined) {
     ownEdit.current = true;
     const saved = controller.setMatch(next);
@@ -163,7 +174,11 @@ export function MatchPane({
     >
       <p>{m.workbench_match_conditions_desc()}</p>
       <fieldset
-        disabled={!readable || controller.document?.manifest.id === "default"}
+        disabled={
+          controller.readOnly ||
+          !readable ||
+          controller.document?.manifest.id === "default"
+        }
         {...part("fieldset")}
       >
         <Group
@@ -187,12 +202,22 @@ export function MatchPane({
         )}
       </fieldset>
       <p role="status" {...part("result")}>
-        {reason
-          ? m.workbench_match_result_unavailable({ reason })
-          : matched
-            ? m.workbench_match_result_yes()
-            : m.workbench_match_result_no()}
+        {exampleMessage ??
+          (loading ? m.workbench_loading_item() : problem) ??
+          (reason
+            ? m.workbench_match_result_unavailable({ reason })
+            : matched
+              ? m.workbench_match_result_yes()
+              : m.workbench_match_result_no())}
       </p>
+      {(onRetry || problem) && (
+        <button
+          type="button"
+          onClick={onRetry ?? (() => setRetry((value) => value + 1))}
+        >
+          {m.workbench_example_retry()}
+        </button>
+      )}
       {(writeProblem ?? problem) && (
         <p role="alert">{writeProblem ?? problem}</p>
       )}

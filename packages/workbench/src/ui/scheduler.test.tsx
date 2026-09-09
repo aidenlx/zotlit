@@ -4,12 +4,19 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
+import { useEffect, useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { useStore } from "zustand";
+import { createStore } from "zustand/vanilla";
 
 import { useRenderScheduler, useRenderState } from "./editor";
+import { WorkbenchHostProvider } from "./host";
 import { PreviewControls } from "./preview-controls";
-import { mount } from "./test-host";
+import { ResultColumn } from "./result-column";
+import { createRenderScheduler } from "./scheduler";
+import { mount, fakeHost } from "./test-host";
 import type { Mounted } from "./test-host";
 import { m } from "./test-messages";
 
@@ -21,15 +28,26 @@ const EXAMPLE = SAMPLE_ANNOTATIONS[0]!;
 const OTHER_EXAMPLE = SAMPLE_ANNOTATIONS[1]!;
 
 /** The controls a reader presses, beside what the result surfaces read. */
-function Preview() {
+function Preview({ live = true }: { live?: boolean }) {
   const scheduler = useRenderScheduler();
+  const [store] = useState(() =>
+    createStore<import("./store").PreviewSettings>(() => ({
+      mode: "create",
+      live,
+    })),
+  );
+  const preview = useStore(store);
   const { result, busy, stale } = useRenderState();
   return (
     <>
       <PreviewControls
+        preview={preview}
+        onChange={(value) => {
+          store.setState(value);
+          scheduler.setInput(value);
+        }}
         busy={busy}
         onRun={() => scheduler.run()}
-        onStop={() => scheduler.pause()}
       />
       <div
         data-testid="result"
@@ -55,12 +73,10 @@ afterEach(() => {
 
 /** The tree mounted with a paper loaded, which is when rendering may start. */
 function open({ live = true }: { live?: boolean } = {}): Mounted {
-  const mounted = mount(<Preview />, {
-    state: { preview: { mode: "create", live } },
-  });
+  const mounted = mount(<Preview live={live} />);
   render(mounted.ui);
   act(() =>
-    mounted.scheduler.setInput({ snapshot: PAPER, annotation: EXAMPLE }),
+    mounted.scheduler.setInput({ snapshot: PAPER, annotation: EXAMPLE, live }),
   );
   return mounted;
 }
@@ -93,22 +109,27 @@ it("renders after the quiet time and no sooner, and at once on Run", async () =>
   await act(async () => host.renders[0]!.answer({ creationBody: "First" }));
   expect(output().textContent).toBe("First");
   expect(output().dataset["busy"]).toBe("false");
+  fireEvent.input(screen.getByLabelText(m.workbench_preview_refresh()), {
+    target: { value: "demand" },
+  });
   press(m.workbench_preview_run());
   expect(host.renders).toHaveLength(2);
 });
 
-it("lets the render in flight finish after Stop and starts no other", async () => {
+it("lets the render in flight finish after selecting On demand and starts no other", async () => {
   using mounted = open();
   const { host, controller } = mounted;
   await advance(300);
   expect(host.renders).toHaveLength(1);
-  press(m.workbench_preview_stop());
+  fireEvent.input(screen.getByLabelText(m.workbench_preview_refresh()), {
+    target: { value: "demand" },
+  });
   expect(screen.getByRole("status").textContent).toBe(
     m.workbench_preview_paused(),
   );
-  // Stop pauses live rendering; the render already running is still running.
+  // On demand pauses live rendering; the render already running is still running.
   expect(output().dataset["busy"]).toBe("true");
-  // Stop leaves the input alone, so that render still answers for it.
+  // The refresh setting leaves the input alone, so that render still answers for it.
   await act(async () => host.renders[0]!.answer({ creationBody: "In flight" }));
   expect(output().textContent).toBe("In flight");
   expect(output().dataset["busy"]).toBe("false");
@@ -150,7 +171,7 @@ const SUPERSEDED: readonly {
   },
   {
     what: "preview mode",
-    supersede: ({ store }) => store.getState().setPreview({ mode: "update" }),
+    supersede: ({ scheduler }) => scheduler.setInput({ mode: "update" }),
   },
 ];
 
@@ -252,7 +273,165 @@ it("holds rendering on the host's word while the last result stands", async () =
   act(() => void controller.setManifestKey("name", "Held"));
   await advance(1000);
   expect(host.renders).toHaveLength(1);
-  act(() => scheduler.setInput({ snapshot: PAPER, annotation: EXAMPLE }));
+  act(() =>
+    scheduler.setInput({ snapshot: PAPER, annotation: EXAMPLE, hold: false }),
+  );
   await advance(300);
   expect(host.renders).toHaveLength(2);
+});
+
+/** The same shared result tree mounted without any editor authority. */
+function IndependentPreview({
+  scheduler,
+}: {
+  scheduler: import("./scheduler").RenderScheduler;
+}) {
+  const [store] = useState(() =>
+    createStore(() => ({
+      preview: { mode: "create" as import("./store").PreviewMode, live: true },
+      showMarkdown: false,
+      showManaged: false,
+    })),
+  );
+  const { preview, showMarkdown, showManaged } = useStore(store);
+  const { result, busy, stale } = useRenderState(scheduler);
+  useEffect(() => () => scheduler[Symbol.dispose](), [scheduler]);
+  return (
+    <>
+      <PreviewControls
+        preview={preview}
+        onChange={(value) => {
+          store.setState({
+            preview: { ...store.getState().preview, ...value },
+          });
+          scheduler.setInput(value);
+        }}
+        busy={busy}
+        onRun={() => scheduler.run()}
+      />
+      <ResultColumn
+        result={result}
+        mode="note"
+        stale={stale}
+        showMarkdown={showMarkdown}
+        onShowMarkdown={(value) => store.setState({ showMarkdown: value })}
+        showManaged={showManaged}
+        onShowManaged={(value) => store.setState({ showManaged: value })}
+        openAnnotation={() => {}}
+        goToEntry={() => {}}
+        openSource={() => {}}
+      />
+    </>
+  );
+}
+
+it("mounts independent Previews without an editor and keeps choices and late results local", async () => {
+  const left = fakeHost();
+  const right = fakeHost();
+  using first = createRenderScheduler({
+    input: {
+      source: "First draft",
+      snapshot: PAPER,
+      mode: "create",
+      live: true,
+    },
+    render: left.render,
+    failed: (result) => result,
+  });
+  using second = createRenderScheduler({
+    input: {
+      source: "Other draft",
+      snapshot: PAPER,
+      mode: "create",
+      live: true,
+    },
+    render: right.render,
+    failed: (result) => result,
+  });
+  const firstPane = (
+    <section key="first" aria-label="First preview">
+      <WorkbenchHostProvider host={left}>
+        <IndependentPreview scheduler={first} />
+      </WorkbenchHostProvider>
+    </section>
+  );
+  const secondPane = (
+    <section key="second" aria-label="Second preview">
+      <WorkbenchHostProvider host={right}>
+        <IndependentPreview scheduler={second} />
+      </WorkbenchHostProvider>
+    </section>
+  );
+  const mounted = render(
+    <>
+      {firstPane}
+      {secondPane}
+    </>,
+  );
+  await advance(300);
+  await act(async () => {
+    left.renders[0]!.answer({
+      creationBody: "First output",
+      managedRegion: "First managed",
+    });
+    right.renders[0]!.answer({ creationBody: "Second output" });
+  });
+  const firstUI = within(screen.getByRole("region", { name: "First preview" }));
+  const secondUI = within(
+    screen.getByRole("region", { name: "Second preview" }),
+  );
+  fireEvent.input(firstUI.getByLabelText(m.workbench_preview_refresh()), {
+    target: { value: "demand" },
+  });
+  fireEvent.input(firstUI.getByLabelText(m.workbench_preview_mode()), {
+    target: { value: "update" },
+  });
+  fireEvent.input(firstUI.getByLabelText(m.workbench_preview_format()), {
+    target: { value: "markdown" },
+  });
+  fireEvent.input(firstUI.getByLabelText(m.workbench_preview_show()), {
+    target: { value: "managed" },
+  });
+  expect(firstUI.getByRole("document").textContent).toBe("First managed");
+  expect(
+    (secondUI.getByLabelText(m.workbench_preview_mode()) as HTMLSelectElement)
+      .value,
+  ).toBe("create");
+  expect(
+    (
+      secondUI.getByLabelText(
+        m.workbench_preview_refresh(),
+      ) as HTMLSelectElement
+    ).value,
+  ).toBe("live");
+  expect(
+    (secondUI.getByLabelText(m.workbench_preview_format()) as HTMLSelectElement)
+      .value,
+  ).toBe("reading");
+  expect(secondUI.getByRole("document").textContent).toBe("Second output");
+  act(() => first.setInput({ source: "Current unsaved draft" }));
+  fireEvent.click(
+    firstUI.getByRole("button", { name: m.workbench_preview_run() }),
+  );
+  expect(left.renders[1]!.request.source).toBe("Current unsaved draft");
+  expect(left.renders[1]!.request.mode).toBe("update");
+  mounted.rerender(<>{secondPane}</>);
+  await act(async () =>
+    left.renders[1]!.answer({ creationBody: "Closed result" }),
+  );
+  expect(first.getState().result?.creationBody).toBe("First output");
+  expect(screen.queryByText("Closed result")).toBeNull();
+  expect(screen.getByRole("document").textContent).toBe("Second output");
+  fireEvent.input(secondUI.getByLabelText(m.workbench_preview_refresh()), {
+    target: { value: "demand" },
+  });
+  act(() => second.setInput({ source: "Surviving draft" }));
+  fireEvent.click(
+    secondUI.getByRole("button", { name: m.workbench_preview_run() }),
+  );
+  expect(right.renders[1]!.request.source).toBe("Surviving draft");
+  await act(async () =>
+    right.renders[1]!.answer({ creationBody: "Surviving output" }),
+  );
+  expect(screen.getByRole("document").textContent).toBe("Surviving output");
 });

@@ -147,6 +147,11 @@ edge. Apply it to restore prompts, Problems, preview problems, format and
 language confirmations, and annotation bars. The text states the condition
 and the next action; color supports that meaning.
 
+The annotation action adds all item annotations at the end of the note body.
+Start the insertion on a new line and add no blank line above it. Preserve
+the editor selection’s text, reveal the insertion, and undo the insertion
+and any required annotation-section repair together.
+
 ## Adapt the composition
 
 At 1180 px and wider, keep fields, editor, and result in three columns. Below

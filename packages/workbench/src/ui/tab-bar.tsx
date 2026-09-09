@@ -2,9 +2,15 @@
 // strip owns the keyboard: arrow keys move through the tabs and choose as they
 // go, Home and End jump to the ends. The chosen tab lives in the editor's store.
 
+import { useEffect, useId, useRef } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 
-import { useOptionalEditor, useWorkbenchStore } from "./editor";
+import {
+  useDocumentRevision,
+  useOptionalEditor,
+  useWorkbenchStore,
+} from "./editor";
+import { HiddenName } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { TABS, tabLabel } from "./tabs";
 import type { WorkbenchTab } from "./tabs";
@@ -19,8 +25,8 @@ function panelId(prefix: string, tab: WorkbenchTab): string {
 }
 
 /** Where an arrow or a jump key lands, from `index`; `null` for any other key. */
-function keyTarget(key: string, index: number): number | null {
-  const last = TABS.length - 1;
+function keyTarget(key: string, index: number, length: number): number | null {
+  const last = length - 1;
   switch (key) {
     case "ArrowRight":
       return index === last ? 0 : index + 1;
@@ -38,20 +44,43 @@ function keyTarget(key: string, index: number): number | null {
 /** The tabs' strip; inert outside an editor. */
 export function TabBar({
   onTabChange,
-}: { onTabChange?: (tab: WorkbenchTab) => void } = {}) {
+  defaultProfile,
+}: {
+  onTabChange?: (tab: WorkbenchTab) => void;
+  defaultProfile?: boolean;
+} = {}) {
   const m = useWorkbenchMessages();
   const editor = useOptionalEditor();
   const tab = useWorkbenchStore((state) => state.tab);
   const setTab = useWorkbenchStore((state) => state.setTab);
   const part = useParts("tabBar");
+  const nameId = useId();
   const prefix = editor?.id ?? "";
+  useDocumentRevision(editor?.controller ?? null);
   const disabled = editor === null;
+  const identity = useRef({
+    controller: editor?.controller,
+    id: editor?.controller.document?.manifest.id,
+  });
+  if (identity.current.controller !== editor?.controller)
+    identity.current = { controller: editor?.controller, id: undefined };
+  if (editor?.controller.document)
+    identity.current.id = editor.controller.document.manifest.id;
+  const isDefault = defaultProfile ?? identity.current.id === "default";
+  const enabledTabs = TABS.filter((id) => !(isDefault && id === "match"));
+  useEffect(() => {
+    if (isDefault && tab === "match") setTab("note");
+  }, [isDefault, tab, setTab]);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    const target = keyTarget(event.key, TABS.indexOf(tab));
+    const target = keyTarget(
+      event.key,
+      enabledTabs.indexOf(tab),
+      enabledTabs.length,
+    );
     if (target === null) return;
     event.preventDefault();
-    const next = TABS[target]!;
+    const next = enabledTabs[target]!;
     setTab(next);
     onTabChange?.(next);
     event.currentTarget
@@ -62,13 +91,15 @@ export function TabBar({
   return (
     <div
       role="tablist"
-      aria-label={m.workbench_title()}
+      aria-labelledby={nameId}
       aria-orientation="horizontal"
       onKeyDown={disabled ? undefined : onKeyDown}
       {...part("tab-bar")}
     >
+      <HiddenName id={nameId}>{m.workbench_title()}</HiddenName>
       {TABS.map((id) => {
-        const active = id === tab;
+        const tabDisabled = disabled || (isDefault && id === "match");
+        const active = id === tab && !tabDisabled;
         return (
           <button
             key={id}
@@ -77,10 +108,11 @@ export function TabBar({
             id={tabId(prefix, id)}
             aria-selected={active}
             aria-controls={panelId(prefix, id)}
-            aria-disabled={disabled || undefined}
-            disabled={disabled}
+            aria-disabled={tabDisabled || undefined}
+            disabled={tabDisabled}
             tabIndex={active ? 0 : -1}
             onClick={() => {
+              if (tabDisabled) return;
               setTab(id);
               onTabChange?.(id);
             }}

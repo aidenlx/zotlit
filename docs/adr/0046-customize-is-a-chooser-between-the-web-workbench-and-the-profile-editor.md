@@ -1,5 +1,7 @@
 # Customize is a chooser between the web Workbench and the Profile Editor
 
+> Amended 2026-09-09: the native Customize destination opens the linked three-panel workbench in a new Obsidian window and creates or opens Default's document before editing, as specified in ADR 0045. The web build flag and chooser policy below stay in effect.
+
 ## Current release amendment — 2026-09-08
 
 The current release focuses on the Obsidian Profile Editor. The web Workbench's

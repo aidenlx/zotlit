@@ -1,244 +1,368 @@
 // @vitest-environment happy-dom
-import type { App } from "obsidian";
+import type { WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
-import type { Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { createStore } from "zustand/vanilla";
+import { describe, expect, it, vi } from "vitest";
 
-import { WorkbenchDocumentController } from "@zotlit/workbench/document";
-import { SAMPLE_ITEMS, SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
-import {
-  createRenderScheduler,
-  createWorkbenchStore,
-  WorkbenchEditorProvider,
-  WorkbenchHostProvider,
-} from "@zotlit/workbench/ui";
-import type {
-  RenderScheduler,
-  WorkbenchInsertTarget,
-} from "@zotlit/workbench/ui";
+import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
+import { WorkbenchHostProvider } from "@zotlit/workbench/ui";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type {
   TemplateDataDeps,
   TemplateDataLoadResult,
 } from "@/services/template-workbench/data";
-import { createProfileEditorHost } from "@/views/profile-editor/host";
-import type { ProfileEditorView } from "@/views/profile-editor/view";
+import type { ProfileAuthoringContext } from "@/views/profile-editor/view";
 
-import { ProfileExplorer } from "./profile-explorer";
+import { ExplorerActionsContext } from "./actions";
+import { Explorer } from "./Explorer";
+import { ExplorerStoreProvider, NativeExplorerSession } from "./store";
 
 vi.mock("@/services/template-workbench/data", () => ({
   loadTemplateData: vi.fn(),
 }));
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-let root: Root | null = null;
-let scheduler: RenderScheduler | null = null;
-afterEach(() => {
-  void act(() => root?.unmount());
-  root = null;
-  scheduler?.[Symbol.dispose]();
-  scheduler = null;
-  document.body.replaceChildren();
-});
-
-const SOURCE = `---
-id: paper
-name: Paper
-version: 1.0.0
-contract: 2
-language: eta
-filename: paper
----
-A stable note.
---- zotlit:annotation ---
-An annotation.
-`;
-
-async function setup() {
-  vi.mocked(loadTemplateData).mockImplementation(
-    async (_deps, indexedKey, root) => ({
-      kind: "data",
-      data:
-        root === "annotation"
-          ? { text: "Live annotation", filePath: "/Users/research/Paper.pdf" }
-          : {
-              title:
-                indexedKey === "IANNP5A2"
-                  ? "Why Most Published Research Findings Are False"
-                  : "Designing reproducible research interfaces",
-              noteLink: () => "[[Library/Paper|Paper]]",
-            },
-    }),
-  );
-  const store = createWorkbenchStore({
-    item: { id: "IANNP5A2", title: "Paper" },
-    preview: { mode: "create", live: false },
-  });
-  const controller = new WorkbenchDocumentController(SOURCE, {
-    runtime: "native",
-  });
-  const state = createStore(() => ({
-    snapshot: SAMPLE_ITEMS[0]!,
-    current: [],
-    example: SAMPLE_ANNOTATIONS[0]!,
-  }));
-  const insertField = vi
-    .fn<(snippet: string) => boolean>()
-    .mockReturnValue(true);
-  const range = controller.sliceRange("note");
-  const target: WorkbenchInsertTarget = {
-    slice: "note",
-    range: { from: range.from, to: range.from },
+const deps = {} as TemplateDataDeps;
+const leaf = {} as WorkspaceLeaf;
+function context(
+  patch: Partial<ProfileAuthoringContext> = {},
+): ProfileAuthoringContext {
+  return {
+    leaf,
+    path: "profiles/paper.md",
+    item: { id: "PAPER234", title: "Paper" },
+    root: "note",
+    tab: "note",
+    advanced: false,
+    annotationId: null,
+    ...patch,
   };
-  const editor = {
-    store,
-    controller,
-    preview: { state },
-    insertTarget: target,
-    subscribeInsertion: () => () => {},
-    chooseItem: async () => {},
-    insertField,
-  } as unknown as ProfileEditorView;
-  const host = createProfileEditorHost(
-    {
-      loadLocalStorage: () => null,
-      saveLocalStorage: () => {},
-    } as unknown as App,
-    {
-      render: () => Promise.reject(new Error("This test renders nothing.")),
-      matchData: {
-        tags: async () => [],
-        collections: async () => [],
-        libraries: async () => [],
-      },
-      insertTarget: () => target,
-    },
-  );
-  const editorScheduler = createRenderScheduler({
-    render: (request) => host.render(request),
-    failed: (result) => result,
-    controller,
-    store,
+}
+describe("independent native Explorer", () => {
+  it("keeps filter, collapse, and variant local across editor display changes", async () => {
+    vi.mocked(loadTemplateData).mockResolvedValue({
+      kind: "data",
+      data: { title: "Paper", tags: ["methods"] },
+    });
+    using first = new NativeExplorerSession(deps);
+    using second = new NativeExplorerSession(deps);
+    first.setContext(context());
+    second.setContext(context());
+    await Promise.all([first.ready, second.ready]);
+    first.state.getState().toggleNode("tags");
+    first.state.getState().setFilter("methods");
+    first.state.getState().toggleNode("tags");
+    first.state.getState().setVariant("all");
+    first.setContext(
+      context({
+        advanced: true,
+        tab: "properties",
+        annotationId: SAMPLE_ANNOTATIONS[0]!.id,
+      }),
+    );
+    expect(first.state.getState().navigation.filterCollapsed.has("tags")).toBe(
+      true,
+    );
+    expect(first.state.getState().navigation.filterQuery).toBe("methods");
+    expect(second.state.getState().navigation.filterQuery).toBe("");
+    expect(second.state.getState().variant).toBe("simple");
+    first.state.getState().setFilter("");
+    expect(first.state.getState().navigation.expanded.has("tags")).toBe(true);
   });
-  scheduler = editorScheduler;
-  const container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () => {
-    root!.render(
-      createElement(
-        WorkbenchHostProvider,
-        { host },
+  it("restores note expansion after annotation exploration and resets for a new Item", async () => {
+    vi.mocked(loadTemplateData).mockResolvedValue({
+      kind: "data",
+      data: { text: "Evidence" },
+    });
+    using session = new NativeExplorerSession(deps);
+    session.setContext(context());
+    await session.ready;
+    session.state.getState().toggleNode("annotations");
+    const item = session.state.getState().item;
+    session.setTarget(item, "annotation", "ANNT2345");
+    await session.ready;
+    expect(session.state.getState().navigation.expanded.size).toBe(0);
+    session.setContext(context({ advanced: true }));
+    expect(session.state.getState().root).toBe("annotation");
+    session.setTarget(item, "note");
+    await session.ready;
+    expect(
+      session.state.getState().navigation.expanded.has("annotations"),
+    ).toBe(true);
+    session.setContext(context({ item: { id: "PAPER235", title: "Other" } }));
+    await session.ready;
+    expect(session.state.getState().navigation.expanded.size).toBe(0);
+  });
+  it("rejects late results after a new Item and after disposal", async () => {
+    let resolveOld!: (result: TemplateDataLoadResult) => void;
+    vi.mocked(loadTemplateData).mockImplementation(async (_deps, key) =>
+      key === "PAPER234"
+        ? new Promise((resolve) => {
+            resolveOld = resolve;
+          })
+        : { kind: "data", data: { title: "Current" } },
+    );
+    const session = new NativeExplorerSession(deps);
+    session.setContext(context());
+    const old = session.ready;
+    session.setContext(context({ item: { id: "PAPER235", title: "Other" } }));
+    await session.ready;
+    resolveOld({ kind: "data", data: { title: "Obsolete" } });
+    await old;
+    expect(session.state.getState().data?.title).toBe("Current");
+    session.setContext(context());
+    const pending = session.ready;
+    session[Symbol.dispose]();
+    resolveOld({ kind: "data", data: { title: "Closed" } });
+    await pending;
+    expect(session.state.getState().data).toBeNull();
+    expect(session.state.getState().context).toBeNull();
+  });
+  it("distinguishes no Item, load failure, valid empty data, and a retry", async () => {
+    using session = new NativeExplorerSession(deps);
+    expect(session.state.getState().status).toBe("no-item");
+    vi.mocked(loadTemplateData).mockRejectedValueOnce(
+      new Error("Disconnected"),
+    );
+    session.setContext(context());
+    expect(session.state.getState().status).toBe("loading");
+    await session.ready;
+    expect(session.state.getState().status).toBe("error");
+    expect(session.state.getState().error).toBe("Disconnected");
+    vi.mocked(loadTemplateData).mockResolvedValueOnce({
+      kind: "data",
+      data: {},
+    });
+    session.refresh();
+    await session.ready;
+    expect(session.state.getState().status).toBe("empty");
+    expect(session.state.getState().data).toEqual({});
+  });
+  it("restores an annotation anchor within its Item's group Library", async () => {
+    vi.mocked(loadTemplateData).mockResolvedValue({
+      kind: "data",
+      data: { text: "Group annotation" },
+    });
+    using session = new NativeExplorerSession(deps);
+    session.setTarget(
+      { id: "PAPER234g42", title: "Group paper" },
+      "annotation",
+      "ANNT2345",
+    );
+    await session.ready;
+    expect(loadTemplateData).toHaveBeenLastCalledWith(
+      deps,
+      "ANNT2345g42",
+      "annotation",
+    );
+    expect(session.state.getState().status).toBe("ready");
+  });
+  it("loads sample annotations with native inert parent data", async () => {
+    vi.mocked(loadTemplateData).mockResolvedValue({
+      kind: "data",
+      data: { title: "Native paper", noteLink: () => "[[Paper]]" },
+    });
+    using session = new NativeExplorerSession(deps);
+    session.setContext(
+      context({ root: "annotation", annotationId: SAMPLE_ANNOTATIONS[0]!.id }),
+    );
+    await session.ready;
+    expect(loadTemplateData).toHaveBeenLastCalledWith(deps, "PAPER234", "note");
+    expect(session.state.getState().data?.text).toBe(
+      SAMPLE_ANNOTATIONS[0]!.root.text,
+    );
+    const parent = session.state.getState().data?.parentItem as {
+      noteLink: () => string;
+    };
+    expect(parent.noteLink()).toBe("[[Paper]]");
+  });
+  it("offers explicit Item selection without launching a picker on mount", async () => {
+    using session = new NativeExplorerSession(deps);
+    const choose = vi.fn();
+    using cleanup = new DisposableStack();
+    const container = cleanup.adopt(document.createElement("div"), (element) =>
+      element.remove(),
+    );
+    document.body.append(container);
+    const root = cleanup.adopt(createRoot(container), (root) => {
+      void act(() => root.unmount());
+    });
+    await act(async () =>
+      root.render(
         createElement(
-          WorkbenchEditorProvider,
-          { store, controller, scheduler: editorScheduler },
-          createElement(ProfileExplorer, {
-            editor,
-            deps: {} as TemplateDataDeps,
-            isEtaEnabled: () => true,
-          }),
+          WorkbenchHostProvider,
+          {
+            host: {
+              persistence: { read: () => null, write: () => {} },
+            } as never,
+          },
+          createElement(
+            ExplorerStoreProvider,
+            { value: session.state },
+            createElement(
+              ExplorerActionsContext,
+              { value: { onChooseItem: choose } as never },
+              createElement(Explorer, { explorer: { copy: async () => {} } }),
+            ),
+          ),
         ),
       ),
     );
-  });
-  return { store, state, container, insertField };
-}
-
-describe("Profile Explorer binding", () => {
-  it("shows new snapshot data while preview remains On demand", async () => {
-    const { store, state, container } = await setup();
     expect(container.textContent).toContain(
-      "Why Most Published Research Findings Are False",
-    );
-    await act(async () => {
-      store.getState().setItem({ id: "CNPF226A", title: "Second paper" });
-      state.setState({ snapshot: SAMPLE_ITEMS[1]! });
-    });
-    expect(store.getState().preview.live).toBe(false);
-    await vi.waitFor(() =>
-      expect(container.textContent).toContain(
-        "Designing reproducible research interfaces",
-      ),
+      m.template_data_explorer_choose_item(),
     );
     expect(container.textContent).not.toContain(
-      "Why Most Published Research Findings Are False",
+      m.workbench_fields_no_annotations(),
     );
+    expect(choose).not.toHaveBeenCalled();
+    await act(async () =>
+      (container.querySelector("button") as HTMLButtonElement).click(),
+    );
+    expect(choose).toHaveBeenCalledOnce();
   });
+});
 
-  it("follows the Annotation root and sends Eta insertion to the remembered slice", async () => {
-    const { store, state, container, insertField } = await setup();
-    await act(async () => {
-      container
-        .querySelector<HTMLElement>('[aria-label="Insert field"]')!
-        .click();
-    });
-    expect(insertField).toHaveBeenCalledWith("<%= zt.title %>");
-    await act(async () => {
-      state.setState({
-        example: {
-          ...SAMPLE_ANNOTATIONS[0]!,
-          root: {
-            ...SAMPLE_ANNOTATIONS[0]!.root,
-            text: "Chosen annotation text",
+it("switches annotation data locally through the annotation chooser", async () => {
+  const first = {
+    key: "ANNT2345",
+    type: "highlight",
+    text: "First evidence",
+    tags: [],
+  };
+  const second = {
+    key: "ANNT2346",
+    type: "note",
+    comment: "Check the method",
+    tags: [],
+  };
+  vi.mocked(loadTemplateData).mockImplementation(async (_deps, key, root) => ({
+    kind: "data",
+    data:
+      root === "note"
+        ? { title: "Group paper", annotations: [first, second] }
+        : key === "ANNT2346g42"
+          ? second
+          : first,
+  }));
+  using session = new NativeExplorerSession(deps);
+  using other = new NativeExplorerSession(deps);
+  const authoring = context({
+    item: { id: "PAPER234g42", title: "Group paper" },
+    root: "annotation",
+    tab: "annotation",
+    annotationId: "ANNT2345",
+  });
+  session.setContext(authoring);
+  other.setContext(authoring);
+  await Promise.all([session.ready, other.ready]);
+  const suggester = vi.fn(async (_request: unknown) => "ANNT2346g42");
+  await using cleanup = new AsyncDisposableStack();
+  const container = cleanup.adopt(document.createElement("div"), (element) =>
+    element.remove(),
+  );
+  document.body.append(container);
+  const root = cleanup.adopt(createRoot(container), (root) =>
+    act(() => root.unmount()),
+  );
+  await act(async () =>
+    root.render(
+      createElement(
+        WorkbenchHostProvider,
+        {
+          host: {
+            messages: m,
+            tooltip: (text: string) => ({ title: text }),
+            persistence: { read: () => null, write: () => {} },
+            suggester,
+          } as never,
+        },
+        createElement(
+          ExplorerStoreProvider,
+          { value: session.state },
+          createElement(Explorer, {
+            explorer: { copy: async () => {} },
+            onSelectAnnotation: (id) =>
+              session.setTarget(
+                session.state.getState().item,
+                "annotation",
+                id,
+              ),
+          }),
+        ),
+      ),
+    ),
+  );
+  const choose = container.querySelector<HTMLButtonElement>(
+    `[aria-label="${m.workbench_choose_annotation()}"]`,
+  )!;
+  expect(choose).not.toBeNull();
+  await act(async () => {
+    choose.click();
+  });
+  await act(async () => session.ready);
+  expect(suggester.mock.calls[0]?.[0]).toMatchObject({
+    selected: "ANNT2345g42",
+    groups: [{ options: [{ id: "ANNT2345g42" }, { id: "ANNT2346g42" }] }, {}],
+  });
+  expect(session.state.getState().data?.comment).toBe("Check the method");
+  expect(session.state.getState().annotationId).toBe("ANNT2346g42");
+  expect(session.state.getState().context).toBe(authoring);
+  expect(other.state.getState().annotationId).toBe("ANNT2345");
+  suggester.mockResolvedValueOnce(SAMPLE_ANNOTATIONS[1]!.id);
+  await act(async () => {
+    container
+      .querySelector<HTMLButtonElement>(
+        `[aria-label="${m.workbench_choose_annotation()}"]`,
+      )!
+      .click();
+  });
+  await act(async () => session.ready);
+  expect(session.state.getState().data?.text).toBe(
+    SAMPLE_ANNOTATIONS[1]!.root.text,
+  );
+  session.setContext({ ...authoring, advanced: true });
+  expect(session.state.getState().annotationId).toBe(SAMPLE_ANNOTATIONS[1]!.id);
+  await act(async () => session.setTarget(authoring.item, "note"));
+  await act(async () => session.ready);
+  expect(
+    container.querySelector(
+      `[aria-label="${m.workbench_choose_annotation()}"]`,
+    ),
+  ).toBeNull();
+});
+
+it("discards annotation choices loaded for a superseded Item", async () => {
+  let finish!: (value: TemplateDataLoadResult) => void;
+  vi.mocked(loadTemplateData).mockImplementation(async (_deps, key) =>
+    key === "PAPER234"
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : {
+          kind: "data",
+          data: {
+            annotations: [{ key: "NEXT2345", text: "Current evidence" }],
           },
         },
-      });
-      store.getState().setRoot("annotation");
-    });
-    await vi.waitFor(() =>
-      expect(container.textContent).toContain("Chosen annotation text"),
-    );
-  });
-  it("keeps vault links and attachment paths from the native inert loader", async () => {
-    const { store, state, container } = await setup();
-    expect(container.textContent).toContain("[[Library/Paper|Paper]]");
-    await act(async () => {
-      state.setState({
-        example: {
-          ...SAMPLE_ANNOTATIONS[0]!,
-          id: "live-annotation",
-          root: { ...SAMPLE_ANNOTATIONS[0]!.root, indexedKey: "ANNO0001" },
-        },
-      });
-      store.getState().setRoot("annotation");
-    });
-    expect(loadTemplateData).toHaveBeenLastCalledWith(
-      expect.anything(),
-      "ANNO0001",
-      "annotation",
-    );
-    await vi.waitFor(() =>
-      expect(container.textContent).toContain("/Users/research/Paper.pdf"),
-    );
-    expect(container.textContent).toContain("Live annotation");
-  });
-  it("discards native context returned after the paper changes", async () => {
-    const { store, state, container } = await setup();
-    const old = Promise.withResolvers<TemplateDataLoadResult>();
-    vi.mocked(loadTemplateData)
-      .mockReturnValueOnce(old.promise)
-      .mockResolvedValueOnce({
-        kind: "data",
-        data: { title: "Newest local context" },
-      });
-    await act(async () => {
-      store.getState().setItem({ id: "CNPF226A", title: "Second paper" });
-      state.setState({ snapshot: SAMPLE_ITEMS[1]! });
-    });
-    await act(async () => {
-      store.getState().setItem({ id: "IANNP5A2", title: "First paper" });
-      state.setState({ snapshot: SAMPLE_ITEMS[0]! });
-    });
-    await vi.waitFor(() =>
-      expect(container.textContent).toContain("Newest local context"),
-    );
-    await act(async () => {
-      old.resolve({ kind: "data", data: { title: "Outdated local context" } });
-    });
-    expect(container.textContent).toContain("Newest local context");
-    expect(container.textContent).not.toContain("Outdated local context");
-  });
+  );
+  using session = new NativeExplorerSession(deps);
+  session.setContext(
+    context({ root: "annotation", annotationId: SAMPLE_ANNOTATIONS[0]!.id }),
+  );
+  const pending = session.ready;
+  session.setContext(
+    context({
+      item: { id: "PAPER235", title: "Next paper" },
+      root: "annotation",
+      annotationId: SAMPLE_ANNOTATIONS[0]!.id,
+    }),
+  );
+  await session.ready;
+  finish({ kind: "data", data: { annotations: [{ key: "OLD23456" }] } });
+  await pending;
+  expect(session.state.getState().annotations?.map(({ id }) => id)).toEqual([
+    "NEXT2345",
+  ]);
 });

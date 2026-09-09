@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { WorkbenchDocumentController } from "@zotlit/workbench/document";
+import { initialTreeState } from "@zotlit/workbench/explorer";
 import type { MatchItemFacts } from "@zotlit/workbench/match";
 import {
   createRenderScheduler,
@@ -36,7 +37,6 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
   );
   const store = createWorkbenchStore({
     item: { id: "BOOK0001", title: "Book" },
-    preview: { mode: "create", live: false },
   });
   const first = Promise.withResolvers<MatchItemFacts | null>();
   const second = Promise.withResolvers<MatchItemFacts | null>();
@@ -70,8 +70,12 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
   using scheduler = createRenderScheduler({
     render: (request) => host.render(request),
     failed: (result) => result,
-    controller,
-    store,
+    input: {
+      source: controller.source,
+      snapshot: null,
+      mode: "create",
+      live: false,
+    },
   });
   const el = document.body.createDiv();
   const root = createRoot(el);
@@ -93,6 +97,9 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
   });
   await vi.waitFor(() =>
     expect(loadMatchFacts).toHaveBeenCalledWith(db, "BOOK0001"),
+  );
+  expect(el.querySelector('[role="status"]')?.textContent).toBe(
+    m.workbench_loading_item(),
   );
   await act(async () => {
     store.getState().setItem({ id: "ARTC0001", title: "Article" });
@@ -132,7 +139,31 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
   });
   await vi.waitFor(() => expect(tags).toHaveBeenCalledTimes(2));
   expect(loadMatchFacts).toHaveBeenCalledTimes(2);
+  expect(el.querySelector('[role="status"]')?.textContent).toBe(
+    m.workbench_example_select_item(),
+  );
   expect(render).not.toHaveBeenCalled();
+  vi.mocked(loadMatchFacts).mockRejectedValueOnce(
+    new Error("Database unavailable"),
+  );
+  await act(async () => {
+    store.getState().setItem({ id: "FAIL0001", title: "Unavailable paper" });
+  });
+  await vi.waitFor(() =>
+    expect(el.querySelector('[role="status"]')?.textContent).toBe(
+      m.workbench_example_failed(),
+    ),
+  );
+  vi.mocked(loadMatchFacts).mockResolvedValueOnce(null);
+  const retry = [...el.querySelectorAll("button")].find(
+    (button) => button.textContent === m.workbench_example_retry(),
+  )!;
+  await act(async () => retry.click());
+  await vi.waitFor(() =>
+    expect(el.querySelector('[role="status"]')?.textContent).toBe(
+      m.workbench_example_missing_item(),
+    ),
+  );
 });
 
 it("applies the installed pack to shared Match and Explorer controls after restart", async () => {
@@ -183,8 +214,12 @@ it("applies the installed pack to shared Match and Explorer controls after resta
   using scheduler = createRenderScheduler({
     render: (request) => host.render(request),
     failed: (result) => result,
-    controller,
-    store,
+    input: {
+      source: controller.source,
+      snapshot: null,
+      mode: "create",
+      live: false,
+    },
   });
   const el = document.body.createDiv();
   const root = createRoot(el);
@@ -202,6 +237,10 @@ it("applies the installed pack to shared Match and Explorer controls after resta
             { store, controller, scheduler },
             createElement(MatchPane, { controller, facts: null }),
             createElement(DataExplorer, {
+              variant: "simple",
+              onVariantChange: () => {},
+              navigation: initialTreeState(),
+              onNavigationChange: () => {},
               root: "note",
               data: { title: "A paper" },
               copy: async () => {},
@@ -215,15 +254,17 @@ it("applies the installed pack to shared Match and Explorer controls after resta
   const englishViews =
     m.workbench_explorer_simple() + m.workbench_explorer_all();
   const variant = () =>
-    el.querySelector(`[aria-label="${m.workbench_explorer_variant()}"]`);
+    [...el.querySelectorAll('[data-part="variants"] button')]
+      .map((button) => button.textContent)
+      .join("");
   expect(el.textContent).toContain(englishMatch);
-  expect(variant()?.textContent).toBe(englishViews);
+  expect(variant()).toBe(englishViews);
   expect(host.getLocale()).toBe("en");
 
   await lifecycle.install();
   await show();
   expect(el.textContent).toContain(englishMatch);
-  expect(variant()?.textContent).toBe(englishViews);
+  expect(variant()).toBe(englishViews);
 
   initI18n({ pluginVersion: "2.0.0", ports });
   await show();
@@ -231,7 +272,5 @@ it("applies the installed pack to shared Match and Explorer controls after resta
   expect(el.textContent).toContain("测试包：匹配条件");
   expect(el.textContent).toContain("测试包：标题");
   // The pack overrides Simple; All fields falls back to bundled English.
-  expect(variant()?.textContent).toBe(
-    `测试包：简洁${m.workbench_explorer_all()}`,
-  );
+  expect(variant()).toBe(`测试包：简洁${m.workbench_explorer_all()}`);
 });

@@ -8,7 +8,7 @@ import {
   WorkbenchDocumentController,
   workbenchSlice,
 } from "@zotlit/workbench/document";
-import { liquidMarkdown, templatePairing } from "@zotlit/workbench/language";
+import { liquidTemplate, templatePairing } from "@zotlit/workbench/language";
 import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 
 import { webCompletion } from "./completion";
@@ -72,7 +72,7 @@ it("pairs typed delimiters, dismisses completion on a closer, and keeps composit
   });
   const view = new EditorView({
     state: EditorState.create({
-      extensions: [liquidMarkdown, templatePairing(read), webCompletion(read)],
+      extensions: [liquidTemplate, templatePairing(read), webCompletion(read)],
     }),
     parent: document.body,
   });

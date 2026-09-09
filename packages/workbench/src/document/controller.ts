@@ -133,6 +133,7 @@ export const externalEdit = Annotation.define<boolean>();
 
 export class WorkbenchDocumentController {
   #state: EditorState;
+  #readOnly: boolean;
   readonly #runtime: "web" | "native";
   #document: LiteratureNoteTemplateDocument | null = null;
   #problems: readonly WorkbenchProblem[] = [];
@@ -147,8 +148,12 @@ export class WorkbenchDocumentController {
   readonly #slices = new Map<WorkbenchSliceId, WorkbenchSliceEditor>();
   readonly #listeners = new Set<(update: WorkbenchUpdate) => void>();
 
-  constructor(source: string, options: { runtime?: "web" | "native" } = {}) {
+  constructor(
+    source: string,
+    options: { runtime?: "web" | "native"; readOnly?: boolean } = {},
+  ) {
     this.#runtime = options.runtime ?? "web";
+    this.#readOnly = options.readOnly ?? false;
     this.#state = EditorState.create({
       doc: source,
       extensions: [
@@ -284,11 +289,11 @@ export class WorkbenchDocumentController {
   }
 
   get canUndo(): boolean {
-    return undoDepth(this.#state) > 0;
+    return !this.#readOnly && undoDepth(this.#state) > 0;
   }
 
   get canRedo(): boolean {
-    return redoDepth(this.#state) > 0;
+    return !this.#readOnly && redoDepth(this.#state) > 0;
   }
 
   hasSlice(id: WorkbenchSliceId): boolean {
@@ -357,7 +362,18 @@ export class WorkbenchDocumentController {
     });
   }
 
+  get readOnly(): boolean {
+    return this.#readOnly;
+  }
+
+  setReadOnly(value: boolean): void {
+    if (value === this.#readOnly) return;
+    this.#readOnly = value;
+    this.#apply(this.#state.update({}));
+  }
+
   dispatch(spec: TransactionSpec): void {
+    if (this.#readOnly) return;
     const before = this.#state;
     let changes =
       spec.changes === undefined ? undefined : splitLineBreaks(spec.changes);
@@ -405,11 +421,11 @@ export class WorkbenchDocumentController {
   }
 
   undo(): boolean {
-    return undo(this.#target());
+    return !this.#readOnly && undo(this.#target());
   }
 
   redo(): boolean {
-    return redo(this.#target());
+    return !this.#readOnly && redo(this.#target());
   }
 
   /**
@@ -500,27 +516,37 @@ export class WorkbenchDocumentController {
     return true;
   }
 
-  /** Inserts the language's annotation loop at the note selection, repairing its section first. */
-  insertAnnotationLoop(target?: WorkbenchSliceRange): {
+  /** Appends annotations on a new line; section repair shares the same undo step. */
+  insertAnnotationLoop(): {
     repaired: boolean;
     caret: number;
   } {
-    const repaired = this.repairAnnotationSection();
-    const note = this.sliceRange("note");
-    const from = Math.min(
-      Math.max(target?.from ?? note.to, note.from),
-      note.to,
+    const repaired = this.#problems.some(
+      ({ code }) => code === "missing-annotation-section",
     );
-    const to = Math.min(Math.max(target?.to ?? from, from), note.to);
+    const from = repaired ? this.#state.doc.length : this.sliceRange("note").to;
+    const prefix =
+      from > 0 && this.#state.doc.sliceString(from - 1, from) !== "\n"
+        ? "\n"
+        : "";
+    const document = repaired
+      ? parseLiteratureNoteTemplate(
+          `${this.#text}${prefix}${ANNOTATION_HEADER}\n`,
+        )
+      : this.document;
     const snippet =
-      this.document?.manifest.language === "eta"
+      document?.manifest.language === "eta"
         ? "<% for (const annotation of zt.annotations) { %>\n<%~ renderAnnotation(annotation) %>\n<% } %>\n"
         : "{% for annotation in zt.annotations %}\n{% render_annotation annotation %}\n{% endfor %}\n";
     this.dispatch({
-      changes: { from, to, insert: snippet },
+      changes: {
+        from,
+        insert: `${prefix}${snippet}${repaired ? `${ANNOTATION_HEADER}\n` : ""}`,
+      },
       userEvent: "input.complete",
+      annotations: isolateHistory.of("full"),
     });
-    return { repaired, caret: from + snippet.length };
+    return { repaired, caret: from + prefix.length + snippet.length };
   }
 
   /**

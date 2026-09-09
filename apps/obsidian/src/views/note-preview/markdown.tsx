@@ -27,6 +27,7 @@ export function NativeMarkdown({
   marks = NO_MARKS,
   properties = [],
   showMarkdown = false,
+  onRendered,
 }: {
   app: App;
   markdown: string;
@@ -34,11 +35,13 @@ export function NativeMarkdown({
   marks?: readonly RenderedRange[];
   properties?: readonly RenderedProperty[];
   showMarkdown?: boolean;
+  onRendered?: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const element = container.current;
     if (!element || showMarkdown) return;
+    element.dataset["zotlitPreviewPending"] = "";
     const target = element.createDiv();
     target.dataset["zotlitDraft"] = "";
     const lifecycle = new Component();
@@ -62,11 +65,11 @@ export function NativeMarkdown({
               {
                 from: start + MARKER_START.length,
                 to: end,
-                className: "zt:border-l-2 zt:border-accent zt:pl-2",
+                className: "zt:border-l-2 zt:border-accent-foreground zt:ps-2",
               },
             ]
           : []),
-        ...marks.map((range) => ({ ...range, className: "zt:bg-accent/10" })),
+        ...marks.map((range) => ({ ...range, className: "zt:bg-accent" })),
       ];
       // Native rendering keeps all source bytes. Prefix renders locate the
       // visible range without inserting tokens into headings or callouts.
@@ -115,16 +118,22 @@ export function NativeMarkdown({
               );
       }
       presentCitations(target, citations);
+      delete element.dataset["zotlitPreviewPending"];
+      onRendered?.();
     })().catch((error: unknown) => {
       logger.warn("Draft Markdown rendering failed", { error });
-      if (!disposed) target.textContent = markdown;
+      if (!disposed) {
+        target.textContent = markdown;
+        delete element.dataset["zotlitPreviewPending"];
+        onRendered?.();
+      }
     });
     return () => {
       disposed = true;
       lifecycle.unload();
       target.remove();
     };
-  }, [app, markdown, result, marks, showMarkdown]);
+  }, [app, markdown, result, marks, showMarkdown, onRendered]);
   const present = properties.filter(({ missing }) => !missing);
   if (showMarkdown) {
     const frontmatter =
@@ -132,7 +141,7 @@ export function NativeMarkdown({
         ? ""
         : `---\n${stringifyYaml(Object.fromEntries(present.map(({ key, value }) => [key, value])))}---\n`;
     return (
-      <pre>
+      <pre className="zt:overflow-x-auto zt:font-mono zt:text-sm zt:[overflow-wrap:anywhere] zt:whitespace-pre-wrap zt:select-text">
         {frontmatter}
         {markdown}
       </pre>
@@ -143,7 +152,11 @@ export function NativeMarkdown({
       {present.length > 0 && (
         <PropertyList properties={present} variant="note" />
       )}
-      <div ref={container} className="markdown-rendered" />
+      <div
+        ref={container}
+        data-zotlit-preview-pending=""
+        className="markdown-rendered zt:w-full zt:max-w-(--file-line-width) zt:min-w-0 zt:self-center zt:font-(family-name:--font-text) zt:text-(length:--font-text-size) zt:leading-(--line-height-normal) zt:select-text"
+      />
     </>
   );
 }

@@ -183,7 +183,7 @@ The main-area view that edits one Profile document with the Workbench UI: the sa
 _Avoid_: native Workbench, template editor, profile view, Obsidian Workbench
 
 **Note Preview** _(Obsidian)_:
-The sidebar view that shows what the active Profile Editor's document produces for the selected Item — filename, Properties, note body with the Managed Region marked, and one annotation — rendered through the plugin's real template pipeline and displayed as Obsidian renders a note. It follows the active Profile Editor the way Outline follows the active note.
+The companion view that shows what the Profile Editor's document produces for the selected Item: note name, Properties, note body with the Managed Region marked, and one annotation, displayed as Obsidian renders it. It follows its natively linked editor, or the active editor when unlinked and unpinned, like Outline.
 _Avoid_: template preview (retired for the Explorer, which shows data, not output), render pane, result view (the web column's name)
 
 **Workbench UI**:

@@ -149,8 +149,9 @@ export function manifestKeyEdit(
  * The text a manifest scalar holds, inside its quotes when it has them — the
  * region a slice editor owns, so the note-name template is edited as template
  * source rather than as YAML.
- * @returns null when the value is written in a form one line cannot hold: a
- * block scalar, a folded plain scalar, or a quoted one carrying an escape.
+ * A block scalar's single content line leaves its header, indentation, and
+ * trailing line breaks outside the slice.
+ * @returns null for multi-line content or a quoted value carrying an escape.
  */
 export function manifestScalarSlice(
   source: string,
@@ -160,6 +161,25 @@ export function manifestScalarSlice(
   if (!found || !isScalar(found.node)) return null;
 
   const { node, from, to } = found;
+  if (node.srcToken?.type === "block-scalar") {
+    const body = node.srcToken.source;
+    const newline = body.indexOf("\n");
+    if (newline < 0 || body.slice(newline).trim() !== "") return null;
+    const line = body.slice(
+      0,
+      body[newline - 1] === "\r" ? newline - 1 : newline,
+    );
+    if (typeof node.value !== "string") return null;
+    const [text = "", ...trailing] = node.value.split("\n");
+    if (
+      trailing.some((part) => part !== "") ||
+      !line.endsWith(text) ||
+      line.slice(0, line.length - text.length).trim() !== ""
+    )
+      return null;
+    const end = to - body.length + line.length;
+    return { from: end - text.length, to: end };
+  }
   const quoted = node.type === "QUOTE_SINGLE" || node.type === "QUOTE_DOUBLE";
   if (node.type !== "PLAIN" && !quoted) return null;
   const slice = quoted ? { from: from + 1, to: to - 1 } : { from, to };

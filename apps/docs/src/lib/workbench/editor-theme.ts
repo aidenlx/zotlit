@@ -16,23 +16,19 @@ export const editorTheme = [
     },
     // The pane host draws the focus ring, so the editor's own stays off.
     "&.cm-focused": { outline: "none" },
-    ".tok-keyword, .tok-functionName, .tok-operator, .zt-liquid-delimiter, .zt-eta-delimiter":
+    ".zt-template-delimiter, .zt-template-keyword, .zt-template-filter, .zt-template-operator":
       {
         color: "var(--color-fd-primary)",
       },
-    ".tok-string, .tok-number, .tok-bool": {
+    ".zt-template-string, .zt-template-value": {
       color: "var(--color-fd-muted-foreground)",
     },
-    ".tok-variableName, .tok-propertyName": {
+    ".zt-template-variable, .zt-template-property": {
       color: "var(--color-fd-foreground)",
     },
-    ".tok-comment": {
+    ".zt-template-comment": {
       color: "var(--color-fd-muted-foreground)",
       fontStyle: "italic",
     },
-    ".tok-heading": { fontWeight: "600", color: "var(--color-fd-primary)" },
-    ".tok-strong": { fontWeight: "600" },
-    ".tok-emphasis": { fontStyle: "italic" },
-    ".tok-link, .tok-url": { textDecoration: "underline" },
   }),
 ];

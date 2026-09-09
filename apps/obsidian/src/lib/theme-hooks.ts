@@ -9,4 +9,19 @@ export const themeHook = {
   citationKeyAmbiguous: "zt-citation-key-ambiguous",
   literatureNoteLink: "zt-literature-note-link",
   entrySerial: "zt-entry-serial",
+  /** A template editor pane; the `--zt-template-*` colors are set here. */
+  templateEditor: "zt-template-editor",
+  templateDelimiter: "zt-template-delimiter",
+  templateKeyword: "zt-template-keyword",
+  templateVariable: "zt-template-variable",
+  templateProperty: "zt-template-property",
+  templateFilter: "zt-template-filter",
+  templateString: "zt-template-string",
+  templateValue: "zt-template-value",
+  templateOperator: "zt-template-operator",
+  templatePunctuation: "zt-template-punctuation",
+  templateComment: "zt-template-comment",
+  templateInvalid: "zt-template-invalid",
+  /** The popover that explains the template token under the pointer. */
+  templateHover: "zt-template-hover",
 } as const;
