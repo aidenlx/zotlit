@@ -241,9 +241,7 @@ export function useExplorerStoreApi(): ExplorerStore {
 }
 
 export function useExplorerStore<T>(selector: (s: ExplorerState) => T): T {
-  const store = useContext(ExplorerStoreContext);
-  if (!store) throw new Error("ExplorerStoreProvider is required");
-  return useStore(store, selector);
+  return useStore(useExplorerStoreApi(), selector);
 }
 
 /** Restored anchors use bare keys; copied authoring selections carry Indexed Keys. */

@@ -336,6 +336,26 @@ export class TemplateDataExplorerView extends ItemView {
       },
     );
     cleanup.defer(() => this.app.workspace.offref(event));
+    const rename = this.app.vault.on("rename", (file, oldPath) => {
+      const { context, sourcePath } = this.#session.state.getState();
+      if (sourcePath !== oldPath) return;
+      const editorContext = this.#editor?.authoringContext;
+      this.#session.state.setState({
+        sourcePath: file.path,
+        ...(context?.path === oldPath
+          ? {
+              context: {
+                ...context,
+                path: file.path,
+                canInsertField:
+                  editorContext?.path === file.path &&
+                  editorContext.canInsertField,
+              },
+            }
+          : {}),
+      });
+    });
+    cleanup.defer(() => this.app.vault.offref(rename));
     cleanup.defer(
       subscribeActiveProfileEditor(
         this.app,
