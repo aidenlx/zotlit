@@ -97,7 +97,12 @@ export class NativePreviewSession implements Disposable {
     if (!this.#closed) this.#loading = this.#loadSnapshot();
   }
   setSource(source: string): void {
-    if (this.#closed || source === this.state.getState().source) return;
+    const state = this.state.getState();
+    if (
+      this.#closed ||
+      (source === state.source && state.sourceProblem === null)
+    )
+      return;
     let sourceProblem: string | null = null;
     let entries = this.state.getState().entries;
     try {

@@ -2,6 +2,7 @@
 import { Scope, TextFileView } from "obsidian";
 import type {
   Menu,
+  TFile,
   HoverParent,
   HoverPopover,
   ViewStateResult,
@@ -91,6 +92,7 @@ import { runProfileEditorAction } from "./actions";
 import { createProfileEditorHost } from "./host";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
+import { currentProfileSource } from "./source";
 import { profileEditorTheme } from "./theme";
 
 export const PROFILE_EDITOR_VIEW_TYPE = "zotlit-profile-editor";
@@ -157,6 +159,12 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   #materializing: Promise<void> | null = null;
   #bindingDraft = false;
   #workbenchWindow = false;
+  #receivingSource = false;
+  #sourceRevision = 0;
+  #readGeneration = 0;
+  #initialRead: number | null = null;
+  #pendingSource: string | null = null;
+  #clearing = false;
 
   constructor(leaf: WorkspaceLeaf, deps: ProfileEditorDeps) {
     super(leaf);
@@ -229,6 +237,30 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     );
     this.scope.register(["Mod"], "y", (event) => this.#history(event, true));
     this.#subscribe();
+    this.registerEvent(
+      this.app.workspace.on("quick-preview", (file, source) => {
+        if (
+          this.#closed ||
+          this.#defaultDraft ||
+          this.#bindingDraft ||
+          file !== this.file
+        )
+          return;
+        if (this.#initialRead !== null) {
+          this.#pendingSource = source;
+          return;
+        }
+        if (source === this.#controller.source) return;
+        this.#receivingSource = true;
+        try {
+          this.#controller.applyExternalSource(source);
+          // Native external-file merging must include unsaved peer input.
+          this.dirty = true;
+        } finally {
+          this.#receivingSource = false;
+        }
+      }),
+    );
     this.register(
       deps.settings.subscribe((settings) => {
         if (!settings) return;
@@ -433,15 +465,24 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   override getViewData(): string {
     return this.#controller.source;
   }
-  override setViewData(source: string, clear: boolean): void {
+  override setViewData(input: string, clear: boolean): void {
+    let source = input;
     if (this.#bindingDraft) {
       this.data = source;
       return;
+    }
+    if (clear && this.file && !this.#clearing) {
+      source =
+        this.#pendingSource ??
+        currentProfileSource(this.app, this.file, this) ??
+        source;
+      this.#pendingSource = null;
     }
     if (clear) {
       this.#host[Symbol.dispose]();
       this.#unsubscribe?.();
       this.#generation++;
+      this.#sourceRevision++;
       this.#controller = new WorkbenchDocumentController(source, {
         runtime: "native",
         readOnly: this.#defaultDraft,
@@ -454,13 +495,75 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       this.#mount();
     } else this.#controller.applyExternalSource(source);
     this.data = this.#controller.source;
-    if (clear && this.file)
+    if (clear && this.file && !this.#clearing) {
+      if (this.data !== this.lastSavedData) this.dirty = true;
       this.app.workspace.trigger("quick-preview", this.file, this.data);
+    }
     this.#publishAuthoringContext();
+  }
+  override async loadFileInternal(file: TFile, clear: boolean): Promise<void> {
+    const generation = ++this.#readGeneration;
+    let reset = clear;
+    if (clear) this.#initialRead = generation;
+    const stale = Symbol("stale Profile source read");
+    try {
+      while (!this.#closed && file === this.file) {
+        const revision = this.#sourceRevision;
+        const baseline = this.lastSavedData;
+        // TextFileView writes its baseline immediately after the awaited read,
+        // before its native three-way merge. Cancel there, before any mutation;
+        // native methods still run on this view so private fields keep their owner.
+        const receiver = new Proxy(this, {
+          get(target, property) {
+            const value = Reflect.get(target, property, target);
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+          set: (target, property, value) => {
+            if (
+              property === "lastSavedData" &&
+              (this.#closed ||
+                file !== this.file ||
+                generation !== this.#readGeneration ||
+                revision !== this.#sourceRevision ||
+                baseline !== this.lastSavedData)
+            )
+              throw stale;
+            return Reflect.set(target, property, value, target);
+          },
+        });
+        try {
+          await super.loadFileInternal.call(receiver, file, reset);
+          return;
+        } catch (error) {
+          if (error !== stale) throw error;
+          logger.trace("Discarded stale Profile source read", {
+            path: file.path,
+            closed: this.#closed,
+            fileChanged: file !== this.file,
+            readChanged: generation !== this.#readGeneration,
+            sourceChanged: revision !== this.#sourceRevision,
+            baselineChanged: baseline !== this.lastSavedData,
+          });
+          if (generation !== this.#readGeneration) return;
+          if (revision !== this.#sourceRevision) reset = false;
+        }
+      }
+    } finally {
+      if (this.#initialRead === generation) {
+        this.#initialRead = null;
+        this.#pendingSource = null;
+      }
+    }
   }
   override clear(): void {
     if (this.#defaultDraft || this.#bindingDraft) return;
-    this.setViewData("", true);
+    this.#readGeneration++;
+    this.#clearing = true;
+    try {
+      this.setViewData("", true);
+    } finally {
+      this.#clearing = false;
+    }
   }
 
   override getState(): Record<string, unknown> {
@@ -572,13 +675,17 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   }
   protected override async onClose(): Promise<void> {
     this.#closed = true;
-    this.preview?.[Symbol.dispose]();
-    this.#editor[Symbol.dispose]();
-    this.#host[Symbol.dispose]();
-    this.#root?.unmount();
-    this.#root = null;
-    this.#unsubscribe?.();
-    this.#unsubscribe = null;
+    try {
+      await super.onClose();
+    } finally {
+      this.preview?.[Symbol.dispose]();
+      this.#editor[Symbol.dispose]();
+      this.#host[Symbol.dispose]();
+      this.#root?.unmount();
+      this.#root = null;
+      this.#unsubscribe?.();
+      this.#unsubscribe = null;
+    }
   }
   templateDataTarget(): TemplateDataExportTarget | null {
     const { item, root } = this.store.getState();
@@ -701,7 +808,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
           state: { ...this.getState(), defaultDraft: false, file: file.path },
           active: true,
         });
-        const source = this.data;
+        const source = currentProfileSource(this.app, file, this) ?? this.data;
         this.#bindingDraft = false;
         this.#defaultDraft = false;
         controller.setReadOnly(false);
@@ -833,8 +940,9 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
           };
           for (const listener of this.#insertListeners) listener();
         }
+        this.#sourceRevision++;
         this.data = this.#controller.source;
-        if (this.file)
+        if (this.file && !this.#receivingSource)
           this.app.workspace.trigger("quick-preview", this.file, this.data);
         this.#publishAuthoringContext();
         if (transaction.annotation(externalEdit) !== true) {

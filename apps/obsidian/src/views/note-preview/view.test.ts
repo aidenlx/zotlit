@@ -1,6 +1,5 @@
 // @vitest-environment happy-dom
-import { TFile } from "obsidian";
-import type { App, EventRef, WorkspaceLeaf } from "obsidian";
+import type { App, EventRef, TFile, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -94,6 +93,7 @@ async function setup() {
       for (const event of events.values())
         if (event.name === name) event.callback(...args);
     },
+    iterateAllLeaves: vi.fn(),
     requestSaveLayout: vi.fn(),
     setActiveLeaf: vi.fn(),
   };
@@ -112,8 +112,7 @@ async function setup() {
     zoteroPref: { ready: Promise.resolve(), dataDir: null },
     nativePreview: fixture.deps,
   } as unknown as ProfileEditorDeps);
-  const file = new TFile();
-  file.path = "templates/paper.md";
+  const file = fixture.vault.addFile("templates/paper.md", PROFILE_SOURCE);
   editor.file = file;
   editor.setViewData(PROFILE_SOURCE, true);
   // The editor's compact examples have their own refresh choice.
@@ -190,7 +189,7 @@ describe("independent native Note Preview", () => {
     });
     await expect(test.open()).rejects.toThrow("Host unavailable");
     expect(released).toHaveBeenCalledOnce();
-    expect(test.events.size).toBe(0);
+    expect(test.events.size).toBe(1);
     expect(test.subscriptions.size).toBe(0);
     const scheduler = vi
       .mocked(createRenderScheduler)
@@ -211,8 +210,109 @@ describe("independent native Note Preview", () => {
     expect(preview.contentEl.textContent).toContain("Personal space.");
     await act(async () => preview.close());
     expect(released).toHaveBeenCalledTimes(2);
-    expect(test.events.size).toBe(0);
+    expect(test.events.size).toBe(1);
     expect(test.subscriptions.size).toBe(0);
+  });
+
+  it("keeps an unlinked Preview current after its editor closes and rejects delayed disk source", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await test.open();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    await advance(1000);
+    const file = test.editor.file!;
+    for (const listener of test.subscriptions) listener(null);
+    await test.editor.close();
+    const { vault, deps } = test.fixture;
+    await act(async () => {
+      vault.modifyFile(
+        file.path,
+        PROFILE_SOURCE.replace("Personal space.", "Disk update."),
+      );
+    });
+    await advance(1000);
+    expect(preview.contentEl.textContent).toContain("Disk update.");
+    const delayed = Promise.withResolvers<string>();
+    vault.cachedRead.mockReturnValueOnce(delayed.promise);
+    vault.modifyFile(
+      file.path,
+      PROFILE_SOURCE.replace("Personal space.", "Old disk update."),
+    );
+    await act(async () => {
+      deps.app.workspace.trigger(
+        "quick-preview",
+        file,
+        PROFILE_SOURCE.replace("Personal space.", "Current live source."),
+      );
+      delayed.resolve(
+        PROFILE_SOURCE.replace("Personal space.", "Old disk update."),
+      );
+    });
+    await advance(1000);
+    expect(preview.contentEl.textContent).toContain("Current live source.");
+    expect(preview.contentEl.textContent).not.toContain("Old disk update.");
+    vault.renameFile(file.path, "templates/renamed.md");
+    await act(async () => {
+      vault.modifyFile(
+        file.path,
+        PROFILE_SOURCE.replace("Personal space.", "Renamed source."),
+      );
+    });
+    await advance(1000);
+    expect(preview.contentEl.textContent).toContain("Renamed source.");
+    await act(async () => vault.deleteFile(file.path));
+    expect(preview.contentEl.textContent).toContain(
+      m.settings_profile_document_missing({ path: "templates/renamed.md" }),
+    );
+    const foreign = vault.addFile("templates/renamed.md", PROFILE_SOURCE);
+    await act(async () =>
+      deps.app.workspace.trigger(
+        "quick-preview",
+        foreign,
+        PROFILE_SOURCE.replace("Personal space.", "Unrelated replacement."),
+      ),
+    );
+    await advance(1000);
+    expect(preview.contentEl.textContent).not.toContain(
+      "Unrelated replacement.",
+    );
+  });
+
+  it("refreshes a renamed Profile while an older modify read is pending", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await test.open();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    await advance(1000);
+    const file = test.editor.file!;
+    for (const listener of test.subscriptions) listener(null);
+    await test.editor.close();
+    const { vault, deps } = test.fixture;
+    const pending = Promise.withResolvers<string>();
+    const read = vi.fn((target: TFile) => vault.cachedRead(target));
+    Object.assign(deps.app.vault, { read });
+    read.mockReturnValueOnce(pending.promise);
+    await act(async () => {
+      vault.modifyFile(
+        file.path,
+        PROFILE_SOURCE.replace("Personal space.", "Renamed current source."),
+      );
+      vault.renameFile(file.path, "templates/renamed.md");
+    });
+    await advance(1000);
+    expect(preview.contentEl.textContent).toContain("Renamed current source.");
+    await act(async () => pending.resolve(PROFILE_SOURCE));
+    await advance(1000);
+    expect(preview.contentEl.textContent).toContain("Renamed current source.");
+    expect(preview.contentEl.textContent).not.toContain("Personal space.");
   });
 
   it("opens without a picker, gives each Preview its own controls, and preserves editor history on close", async () => {
@@ -249,7 +349,7 @@ describe("independent native Note Preview", () => {
     expect(test.editor.controller.canUndo).toBe(true);
     await act(async () => first.close());
     expect(test.subscriptions.size).toBe(1);
-    expect(test.events.size).toBe(2);
+    expect(test.events.size).toBe(3);
     await act(async () => void test.editor.controller.undo());
     expect(test.editor.getViewData()).toBe(PROFILE_SOURCE);
     await act(async () => test.editor.scheduler.run());
@@ -324,7 +424,7 @@ describe("independent native Note Preview", () => {
     await advance(0);
     expect(preview.contentEl.textContent).toBe("");
     expect(test.subscriptions.size).toBe(0);
-    expect(test.events.size).toBe(0);
+    expect(test.events.size).toBe(1);
     const calls = vi.mocked(renderNativeProfile).mock.calls.length;
     test.editor.setViewData(PROFILE_SOURCE, true);
     await advance();
