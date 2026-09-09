@@ -69,7 +69,9 @@ describe("CitationHoverPopover", () => {
   });
 
   it("tears its content down with the popover", async () => {
+    vi.useFakeTimers();
     const shown = popover();
+    vi.advanceTimersByTime(300);
     await act(() => {
       shown.render(entry());
     });

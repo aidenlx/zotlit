@@ -183,7 +183,7 @@ The main-area view that edits one Profile document with the Workbench UI: the sa
 _Avoid_: native Workbench, template editor, profile view, Obsidian Workbench
 
 **Template Hover** _(Obsidian)_:
-The Profile Editor's hover popover that names the field, tag, or filter under the pointer, with its type, description, syntax, and example. One Template Hover serves one visit of the pointer to the editor: it opens after Obsidian's hover delay on the first token, follows the pointer from token to token with no further delay, and closes when the pointer rests off every token, leaves the editor, or the document changes.
+The Profile Editor's hover popover that names the field, tag, or filter under the pointer, with its type, description, syntax, and example. One Template Hover serves one visit of the pointer to the editor: it opens after Obsidian's hover delay on the first token, follows the pointer from token to token without closing, swaps its content and anchor once the pointer has rested on the next token for that same delay, and closes when the pointer rests off every token, leaves the editor, or the document changes.
 _Avoid_: hover card (the Citation Popover's retired alias), template-editor hover, token tooltip
 
 **Note Preview** _(Obsidian)_:
