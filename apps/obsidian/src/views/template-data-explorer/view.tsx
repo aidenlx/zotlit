@@ -408,6 +408,13 @@ export class TemplateDataExplorerView extends ItemView {
           <ExplorerStoreProvider value={this.#session.state}>
             <ExplorerActionsContext value={this.#actions}>
               <Explorer
+                onSelectAnnotation={(id) => {
+                  this.#session.setTarget(
+                    this.#session.state.getState().item,
+                    "annotation",
+                    id,
+                  );
+                }}
                 explorer={{
                   copy: (text) => navigator.clipboard.writeText(text),
                   engines: () =>

@@ -223,3 +223,146 @@ describe("independent native Explorer", () => {
     expect(choose).toHaveBeenCalledOnce();
   });
 });
+
+it("switches annotation data locally through the annotation chooser", async () => {
+  const first = {
+    key: "ANNT2345",
+    type: "highlight",
+    text: "First evidence",
+    tags: [],
+  };
+  const second = {
+    key: "ANNT2346",
+    type: "note",
+    comment: "Check the method",
+    tags: [],
+  };
+  vi.mocked(loadTemplateData).mockImplementation(async (_deps, key, root) => ({
+    kind: "data",
+    data:
+      root === "note"
+        ? { title: "Group paper", annotations: [first, second] }
+        : key === "ANNT2346g42"
+          ? second
+          : first,
+  }));
+  using session = new NativeExplorerSession(deps);
+  using other = new NativeExplorerSession(deps);
+  const authoring = context({
+    item: { id: "PAPER234g42", title: "Group paper" },
+    root: "annotation",
+    tab: "annotation",
+    annotationId: "ANNT2345",
+  });
+  session.setContext(authoring);
+  other.setContext(authoring);
+  await Promise.all([session.ready, other.ready]);
+  const suggester = vi.fn(async (_request: unknown) => "ANNT2346g42");
+  await using cleanup = new AsyncDisposableStack();
+  const container = cleanup.adopt(document.createElement("div"), (element) =>
+    element.remove(),
+  );
+  document.body.append(container);
+  const root = cleanup.adopt(createRoot(container), (root) =>
+    act(() => root.unmount()),
+  );
+  await act(async () =>
+    root.render(
+      createElement(
+        WorkbenchHostProvider,
+        {
+          host: {
+            messages: m,
+            tooltip: (text: string) => ({ title: text }),
+            persistence: { read: () => null, write: () => {} },
+            suggester,
+          } as never,
+        },
+        createElement(
+          ExplorerStoreProvider,
+          { value: session.state },
+          createElement(Explorer, {
+            explorer: { copy: async () => {} },
+            onSelectAnnotation: (id) =>
+              session.setTarget(
+                session.state.getState().item,
+                "annotation",
+                id,
+              ),
+          }),
+        ),
+      ),
+    ),
+  );
+  const choose = container.querySelector<HTMLButtonElement>(
+    `[aria-label="${m.workbench_choose_annotation()}"]`,
+  )!;
+  expect(choose).not.toBeNull();
+  await act(async () => {
+    choose.click();
+  });
+  await act(async () => session.ready);
+  expect(suggester.mock.calls[0]?.[0]).toMatchObject({
+    selected: "ANNT2345g42",
+    groups: [{ options: [{ id: "ANNT2345g42" }, { id: "ANNT2346g42" }] }, {}],
+  });
+  expect(session.state.getState().data?.comment).toBe("Check the method");
+  expect(session.state.getState().annotationId).toBe("ANNT2346g42");
+  expect(session.state.getState().context).toBe(authoring);
+  expect(other.state.getState().annotationId).toBe("ANNT2345");
+  suggester.mockResolvedValueOnce(SAMPLE_ANNOTATIONS[1]!.id);
+  await act(async () => {
+    container
+      .querySelector<HTMLButtonElement>(
+        `[aria-label="${m.workbench_choose_annotation()}"]`,
+      )!
+      .click();
+  });
+  await act(async () => session.ready);
+  expect(session.state.getState().data?.text).toBe(
+    SAMPLE_ANNOTATIONS[1]!.root.text,
+  );
+  session.setContext({ ...authoring, advanced: true });
+  expect(session.state.getState().annotationId).toBe(SAMPLE_ANNOTATIONS[1]!.id);
+  await act(async () => session.setTarget(authoring.item, "note"));
+  await act(async () => session.ready);
+  expect(
+    container.querySelector(
+      `[aria-label="${m.workbench_choose_annotation()}"]`,
+    ),
+  ).toBeNull();
+});
+
+it("discards annotation choices loaded for a superseded Item", async () => {
+  let finish!: (value: TemplateDataLoadResult) => void;
+  vi.mocked(loadTemplateData).mockImplementation(async (_deps, key) =>
+    key === "PAPER234"
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : {
+          kind: "data",
+          data: {
+            annotations: [{ key: "NEXT2345", text: "Current evidence" }],
+          },
+        },
+  );
+  using session = new NativeExplorerSession(deps);
+  session.setContext(
+    context({ root: "annotation", annotationId: SAMPLE_ANNOTATIONS[0]!.id }),
+  );
+  const pending = session.ready;
+  session.setContext(
+    context({
+      item: { id: "PAPER235", title: "Next paper" },
+      root: "annotation",
+      annotationId: SAMPLE_ANNOTATIONS[0]!.id,
+    }),
+  );
+  await session.ready;
+  finish({ kind: "data", data: { annotations: [{ key: "OLD23456" }] } });
+  await pending;
+  expect(session.state.getState().annotations?.map(({ id }) => id)).toEqual([
+    "NEXT2345",
+  ]);
+});

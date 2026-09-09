@@ -15,6 +15,7 @@ import {
   restoreTemplateData,
   SAMPLE_ANNOTATIONS,
 } from "@zotlit/workbench/render";
+import type { AnnotationExample } from "@zotlit/workbench/render";
 import type {
   ExplorerVariant,
   ExplorerPresentation,
@@ -37,6 +38,7 @@ export interface ExplorerState {
   item: WorkbenchItemChoice | null;
   root: TemplateRoot;
   annotationId: string | null;
+  annotations: readonly Pick<AnnotationExample, "id" | "root">[] | null;
   data: Record<string, unknown> | null;
   status: "no-item" | "loading" | "ready" | "empty" | "error";
   error: string | null;
@@ -56,6 +58,7 @@ export function createExplorerStore() {
     item: null,
     root: "note",
     annotationId: null,
+    annotations: null,
     data: null,
     status: "no-item",
     error: null,
@@ -123,6 +126,7 @@ export class NativeExplorerSession implements Disposable {
       item,
       root,
       annotationId,
+      ...(previous.item?.id !== item?.id ? { annotations: null } : {}),
       navigation,
       ...(previous.item?.id !== item?.id ||
       previous.root !== root ||
@@ -158,11 +162,42 @@ export class NativeExplorerSession implements Disposable {
         root === "annotation" && !sample
           ? (annotationIndexedKey(item.id, annotationId) ?? item.id)
           : item.id;
-      const result = await loadTemplateData(
-        this.#deps,
-        key,
-        sample ? "note" : root,
-      );
+      const note =
+        root === "annotation"
+          ? await loadTemplateData(this.#deps, item.id, "note")
+          : null;
+      if (note) {
+        if (this.#closed || generation !== this.#generation) {
+          logger.trace("Discarded stale Explorer annotation choices", {
+            generation,
+            current: this.#generation,
+            closed: this.#closed,
+          });
+          return;
+        }
+        if (note.kind === "data") {
+          const values = (note.data as Record<string, unknown>).annotations;
+          this.state.setState({
+            annotations: Array.isArray(values)
+              ? values.flatMap((value: unknown) => {
+                  if (
+                    !value ||
+                    typeof value !== "object" ||
+                    !("key" in value) ||
+                    typeof value.key !== "string"
+                  )
+                    return [];
+                  const id = annotationIndexedKey(item.id, value.key);
+                  return id
+                    ? [{ id, root: value as Record<string, unknown> }]
+                    : [];
+                })
+              : [],
+          });
+        }
+      }
+      const result =
+        sample && note ? note : await loadTemplateData(this.#deps, key, root);
       if (this.#closed || generation !== this.#generation) {
         logger.trace("Discarded stale Explorer data", {
           generation,
@@ -228,6 +263,7 @@ export class NativeExplorerSession implements Disposable {
       context: null,
       item: null,
       data: null,
+      annotations: null,
       status: "no-item",
     });
   }
