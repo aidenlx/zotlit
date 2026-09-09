@@ -692,6 +692,10 @@ export class MenuItem {
     return this;
   }
 
+  setWarning(_isWarning: boolean): this {
+    return this;
+  }
+
   setSection(section: string): this {
     this.#section = section;
     return this;

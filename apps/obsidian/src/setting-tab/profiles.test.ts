@@ -127,13 +127,13 @@ function pageWithOneProfile(ctx: SettingTabContext): {
 function customizeButton(row: SettingDefinitionItem): ButtonComponent {
   const button = render(row)
     .components.filter((control) => control instanceof ButtonComponent)
-    .find(({ text }) => text === m.settings_template_customize());
+    .find(({ tooltip }) => tooltip === m.settings_profile_edit());
   if (!button) throw new Error("No Customize button");
   return button;
 }
 
 describe("Profile settings", () => {
-  it("keeps Edit primary and offers Customize in each Profile's more menu", () => {
+  it("opens the workbench from Edit and groups profile management in More actions", () => {
     const ctx = context();
     ctx.profile = {
       diagnostics: [],
@@ -152,7 +152,11 @@ describe("Profile settings", () => {
     } as unknown as SettingTabContext["profile"];
     const row = list(profilesPage(ctx), m.settings_profile_other_heading())
       .items![0]!;
-    expect(buttonLabels(row)[0]).toBe(m.profile_editor_edit());
+    expect(buttonLabels(row)).toEqual([m.settings_profile_edit()]);
+    expect(buttonIcons(row)).toEqual(["pencil"]);
+    expect(
+      list(profilesPage(ctx), m.settings_profile_other_heading()).onDelete,
+    ).toBeUndefined();
     const more = render(row)
       .components.filter(
         (component) => component instanceof ExtraButtonComponent,
@@ -161,50 +165,35 @@ describe("Profile settings", () => {
     Object.assign(more, { extraSettingsEl: document.createElement("button") });
     more.click();
     expect(Menu.instances.at(-1)?.items.map((item) => item.title)).toEqual([
-      m.profile_editor_customize(),
-      m.profile_editor_open_markdown(),
+      m.settings_profile_duplicate(),
+      m.settings_profile_share(),
+      m.settings_profile_delete(),
     ]);
   });
-  it("points Properties at the template document instead of a field list", () => {
+  it("combines templates and properties in one editing row", () => {
     const ctx = context();
-    const builtIn = literatureNoteItems(ctx).find(
-      (row) =>
-        "name" in row && row.name === m.settings_profile_properties_name(),
-    )!;
-    expect(builtIn).toMatchObject({
-      desc: m.settings_profile_properties_builtin_desc(),
+    expect(
+      literatureNoteItems(ctx).filter(
+        (row) =>
+          "name" in row && row.name === m.settings_profile_properties_name(),
+      ),
+    ).toEqual([]);
+    expect(documentRow(ctx)).toMatchObject({
+      desc: m.settings_profile_document_desc(),
     });
-    // Customize creates the document before enabling editing.
-    expect(buttonLabels(builtIn)).toEqual([m.profile_editor_customize()]);
-    expect(buttonIcons(builtIn)).toEqual(["file-pen"]);
-
-    ctx.app = {
-      vault: { getFileByPath: (path: string) => ({ path }) as TFile },
-    } as unknown as SettingTabContext["app"];
-    const ejected = literatureNoteItems(ctx).find(
-      (row) =>
-        "name" in row && row.name === m.settings_profile_properties_name(),
-    )!;
-    expect(ejected).toMatchObject({
-      desc: m.settings_profile_properties_desc(),
-    });
-    // The document exists, so the same action edits it instead.
-    expect(buttonLabels(ejected)).toEqual([m.profile_editor_customize()]);
-    expect(buttonIcons(ejected)).toEqual(["pencil"]);
+    expect(buttonIcons(documentRow(ctx))).toEqual(["pencil"]);
   });
 
   it("offers one Customize action for the built-in and saved template", async () => {
     const ctx = context();
-    expect(buttonLabels(documentRow(ctx))).toEqual([
-      m.settings_template_customize(),
-    ]);
+    expect(buttonLabels(documentRow(ctx))).toEqual([m.settings_profile_edit()]);
 
     ctx.app = {
       vault: { getFileByPath: (path: string) => ({ path }) as TFile },
     } as unknown as SettingTabContext["app"];
     expect(buttonLabels(documentRow(ctx))).toEqual([
       m.settings_profile_document_restore(),
-      m.settings_template_customize(),
+      m.settings_profile_edit(),
     ]);
 
     customizeButton(documentRow(ctx)).click();
@@ -219,16 +208,14 @@ describe("Profile settings", () => {
       updateDefaultLiteratureNoteProfileBindings: vi.fn(),
     } as unknown as SettingTabContext["settings"];
 
-    expect(buttonLabels(documentRow(ctx))).toEqual([
-      m.profile_editor_customize(),
-    ]);
+    expect(buttonLabels(documentRow(ctx))).toEqual([m.settings_profile_edit()]);
 
     ctx.app = {
       vault: { getFileByPath: (path: string) => ({ path }) as TFile },
     } as unknown as SettingTabContext["app"];
     expect(buttonLabels(documentRow(ctx))).toEqual([
       m.settings_profile_document_restore(),
-      m.settings_template_customize(),
+      m.settings_profile_edit(),
     ]);
   });
 
@@ -237,26 +224,16 @@ describe("Profile settings", () => {
     const { defaultRow, profileRow } = pageWithOneProfile(ctx);
 
     expect(extraButtonTooltips(defaultRow)).toEqual([
-      m.settings_profile_share(),
+      m.workbench_more_actions(),
     ]);
     expect(extraButtonTooltips(profileRow)).toEqual([
       m.workbench_more_actions(),
-      m.settings_profile_duplicate(),
-      m.settings_profile_share(),
     ]);
 
-    expect(buttonLabels(defaultRow)).toContain(m.profile_editor_customize());
+    expect(buttonLabels(defaultRow)).toContain(m.settings_profile_edit());
 
-    // The row's own Profile is what its Customize opens, not the default.
-    const more = render(profileRow)
-      .components.filter((control) => control instanceof ExtraButtonComponent)
-      .find(({ tooltip }) => tooltip === m.workbench_more_actions())!;
-    Object.assign(more, { extraSettingsEl: document.createElement("button") });
-    more.click();
-    Menu.instances
-      .at(-1)!
-      .items.find(({ title }) => title === m.profile_editor_customize())!
-      .click();
+    // The row opens its own Profile through the configured workbench launcher.
+    customizeButton(profileRow).click();
     await vi.waitFor(() =>
       expect(ctx.customize).toHaveBeenCalledWith({
         profileId: "Bk3Qn7XvT2Lp",
@@ -273,12 +250,10 @@ describe("Profile settings", () => {
     const { defaultRow, profileRow } = pageWithOneProfile(ctx);
 
     expect(extraButtonTooltips(defaultRow)).toEqual([
-      m.settings_profile_share(),
+      m.workbench_more_actions(),
     ]);
     expect(extraButtonTooltips(profileRow)).toEqual([
       m.workbench_more_actions(),
-      m.settings_profile_duplicate(),
-      m.settings_profile_share(),
     ]);
   });
 
@@ -298,7 +273,7 @@ describe("Profile settings", () => {
     expect(profiles.extraButtons).toBeUndefined();
   });
 
-  it("lists repeated labels with filenames and excluded documents with diagnostics", () => {
+  it("keeps match summaries on profile rows and file paths on excluded documents", () => {
     const ctx = context();
     ctx.profile = {
       profiles: [
@@ -332,15 +307,11 @@ describe("Profile settings", () => {
     expect(list(page, m.settings_profile_other_heading()).items).toEqual([
       expect.objectContaining({
         name: "Books",
-        desc: expect.objectContaining({
-          textContent: `zotlit-profile.one.md${m.settings_profile_match_status({ state: "absent" })}`,
-        }),
+        desc: m.settings_profile_match_status({ state: "absent" }),
       }),
       expect.objectContaining({
         name: "Books",
-        desc: expect.objectContaining({
-          textContent: `zotlit-profile.two.md${m.settings_profile_match_status({ state: "all" })}`,
-        }),
+        desc: m.settings_profile_match_status({ state: "all" }),
       }),
     ]);
     // A refused document never shares the list with the Profiles that loaded.
@@ -518,13 +489,9 @@ it("shows a short match status for each non-default row", () => {
   const page = profilesPage(ctx);
   const rows = list(page, m.settings_profile_other_heading()).items!;
   for (const [index, row] of rows.entries()) {
-    const desc = (row as { desc: DocumentFragment }).desc;
-    expect(desc.firstElementChild?.textContent).toBe(
-      m.settings_profile_match_status({ state: states[index]! }),
-    );
-    expect(desc.textContent).toBe(
-      `zotlit-profile.${index}.md${m.settings_profile_match_status({ state: states[index]! })}`,
-    );
+    expect(row).toMatchObject({
+      desc: m.settings_profile_match_status({ state: states[index]! }),
+    });
   }
   const defaultRow = page.items![0]!;
   expect(defaultRow).toMatchObject({ name: m.settings_profile_default_name() });
