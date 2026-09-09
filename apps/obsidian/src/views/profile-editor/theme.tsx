@@ -26,6 +26,9 @@ export const profileEditorIcons: Record<WorkbenchIcon, string> = {
   "chevron-down": "chevron-down",
   "chevron-right": "chevron-right",
 };
+/** Text actions share the Match tab's outlined native control surface. */
+export const profileEditorButton =
+  "zt:inline-flex zt:items-center zt:gap-1.5 zt:whitespace-normal zt:text-start zt:text-muted-foreground";
 const row = "zt:flex zt:items-center zt:gap-2";
 const stack = "zt:flex zt:min-w-0 zt:flex-col zt:gap-3";
 const field = "zt:flex zt:min-w-0 zt:flex-col zt:gap-1.5";
@@ -49,10 +52,7 @@ export const profileEditorTheme: WorkbenchTheme = {
   classes: {
     match: {
       "remove-button": "mod-destructive zt:shrink-0",
-      button: cn(
-        "zt:inline-flex zt:items-center zt:gap-1.5 zt:text-muted-foreground",
-        "zt:[--input-shadow:0_0_0_1px_var(--background-modifier-border)] zt:[--interactive-hover:var(--background-modifier-hover)] zt:[--interactive-normal:var(--background-primary)]",
-      ),
+      button: profileEditorButton,
       "icon-button": "clickable-icon zt:shrink-0",
       input: "zt:min-w-0 zt:w-full zt:flex-1",
       "chip-input":
@@ -67,7 +67,7 @@ export const profileEditorTheme: WorkbenchTheme = {
       fieldset:
         "zt:flex zt:min-w-0 zt:flex-col zt:items-start zt:gap-4 zt:border-0 zt:p-0",
       group:
-        "zt:flex zt:min-w-0 zt:w-full zt:flex-1 zt:flex-col zt:gap-2 zt:data-[state=nested]:rounded-md zt:data-[state=nested]:border zt:data-[state=nested]:border-border zt:data-[state=nested]:bg-card zt:data-[state=nested]:p-2 zt:[&>[data-part=actions]:first-child]:justify-between zt:[&>[data-part=actions]:first-child]:[--input-shadow:0_0_0_1px_var(--background-modifier-border)] zt:[&>[data-part=actions]:first-child]:[--dropdown-background:var(--background-primary)] zt:[&>[data-part=actions]:first-child]:[--dropdown-background-hover:var(--background-modifier-hover)]",
+        "zt:flex zt:min-w-0 zt:w-full zt:flex-1 zt:flex-col zt:gap-2 zt:data-[state=nested]:rounded-md zt:data-[state=nested]:border zt:data-[state=nested]:border-border zt:data-[state=nested]:bg-card zt:data-[state=nested]:p-2 zt:[&>[data-part=actions]:first-child]:justify-between",
       rows: "zt:flex zt:flex-col zt:gap-2 zt:list-none zt:m-0 zt:p-0",
       row: "zt:grid zt:min-w-0 zt:grid-cols-[4.5rem_minmax(0,1fr)] zt:items-start zt:gap-2 zt:[&>[data-part=group]]:col-span-2",
       condition: "zt:col-start-2 zt:min-w-0",
@@ -154,6 +154,7 @@ export const profileEditorTheme: WorkbenchTheme = {
     },
     editToolbar: {
       "edit-toolbar": cn(row, "zt:p-2"),
+      mode: profileEditorButton,
       "mode-group": row,
       "toolbar-actions": row,
       undo: "clickable-icon",
@@ -260,7 +261,7 @@ export const profileEditorTheme: WorkbenchTheme = {
         "clickable-icon zt:min-w-0 zt:flex-1 zt:flex-wrap zt:justify-start zt:gap-x-3 zt:gap-y-1 zt:text-start",
       "row-name": "zt:flex zt:min-w-0 zt:items-center zt:gap-2",
       key: "zt:font-medium zt:text-foreground zt:[overflow-wrap:anywhere]",
-      label: "zt:text-sm",
+      label: "zt:text-xs zt:font-medium",
       summary:
         "zt:min-w-0 zt:max-w-full zt:truncate zt:text-xs zt:text-muted-foreground",
       "row-actions":
@@ -268,19 +269,17 @@ export const profileEditorTheme: WorkbenchTheme = {
       edit: "clickable-icon",
       "row-action": "clickable-icon",
       actions,
-      form: cn(stack, "zt:mt-3 zt:gap-4"),
-      field,
-      "name-input": "zt:w-full zt:min-w-0",
-      "text-input": "zt:w-full zt:min-w-0",
+      form: cn(stack, "zt:mt-3 zt:px-(--size-2-3)"),
+      field: cn(field, "zt:text-xs zt:font-medium"),
+      "name-input": "zt:w-full zt:min-w-0 zt:font-normal",
+      "text-input": "zt:w-full zt:min-w-0 zt:font-normal",
       "field-group": field,
       "confirm-actions": actions,
-      "expression-header": cn(actions, "zt:justify-between"),
-      "format-label": "zt:min-w-0",
+      "expression-header": cn(actions, "zt:justify-start"),
+      "format-label": "zt:min-w-0 zt:max-w-full",
       "hidden-label": "zt:sr-only",
-      "primary-action":
-        "zt:inline-flex zt:items-center zt:gap-1.5 zt:whitespace-normal zt:text-start",
-      "secondary-action":
-        "zt:inline-flex zt:items-center zt:gap-1.5 zt:whitespace-normal zt:text-start",
+      "primary-action": profileEditorButton,
+      "secondary-action": profileEditorButton,
       confirm: cn(stack, "zt:rounded-md zt:bg-card zt:p-3"),
       diagnostics: "zt:text-xs zt:text-error",
       hint,
@@ -305,7 +304,9 @@ export const profileEditorTheme: WorkbenchTheme = {
       "binding-input": "zt:w-full zt:min-w-0",
       input: "zt:w-full zt:min-w-0",
       "readonly-input": "zt:w-full zt:min-w-0",
-      "confirm-button": "zt:ms-auto",
+      "confirm-button": cn(profileEditorButton, "zt:ms-auto"),
+      "cancel-button": profileEditorButton,
+      "source-button": profileEditorButton,
       "toggle-row": row,
       "filename-editor": editorBox,
       "filename-result":
@@ -336,8 +337,8 @@ export const profileEditorTheme: WorkbenchTheme = {
       heading: "zt:font-semibold",
       hint: "zt:text-muted-foreground",
       "section-bar": cn(bar, "zt:mb-2"),
-      "primary-action": "zt:ms-auto",
-      "section-go": "zt:ms-auto",
+      "primary-action": cn(profileEditorButton, "zt:ms-auto"),
+      "section-go": cn(profileEditorButton, "zt:ms-auto"),
     },
     sampleSuggester: {
       suggester: "zt:flex zt:min-w-0 zt:flex-1 zt:items-center zt:gap-2",
@@ -346,6 +347,7 @@ export const profileEditorTheme: WorkbenchTheme = {
       trigger: "clickable-icon zt:shrink-0",
     },
     problemsFooter: {
+      "problems-open": profileEditorButton,
       problems: "zt:shrink-0 zt:p-3 zt:border-t zt:border-border zt:text-xs",
       "problems-heading": "zt:font-semibold",
       "problems-text": "zt:text-muted-foreground",

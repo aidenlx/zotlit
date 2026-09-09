@@ -77,6 +77,21 @@ chrome keep their `sm` and `default` sizes.
 Menus use the same density as their triggers, with 4 px outer insets and 8 px
 horizontal row padding. Let labels wrap within the viewport.
 
+In Obsidian, all Profile editor text buttons and standalone selects share the
+Match tab's outlined native surface. Define its normal, hover, and border
+variables once on the Profile editor root. Share text-button classes through
+`profileEditorButton`; call sites add layout and state only. Match condition
+controls retain their joined input surface through local variable overrides.
+Use native icon controls for row actions and navigation.
+
+In the Obsidian Profile editor, property cards keep the compact 8 px inset and
+native medium radius. Preserve the title button’s native padding and align the
+expanded form to the title and summary with a matching inline inset
+(`--size-2-3`). Use 6 px within field
+groups and 12 px between groups. Keep labels compact and place the value format
+selector beside its label in a wrapping row. A chevron shows whether the
+property is expanded. Name and folder contains its editing controls directly.
+
 ## Popovers and editor cards
 
 Compose button-triggered popovers with the shared

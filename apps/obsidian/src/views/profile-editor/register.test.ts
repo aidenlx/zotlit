@@ -485,38 +485,6 @@ Annotation`);
     });
   });
 
-  it("routes Default to main settings and named profiles to profile settings", () => {
-    setMockPlatform({ isDesktopApp: true });
-    const { app, plugin, deps, registerView } = setup();
-    const tab = {};
-    const navigateToSearchResult =
-      vi.fn<(request: { tab: object; pagePath: string[] }) => void>();
-    const openTabById = vi.fn(() => tab);
-    Object.assign(app, {
-      setting: {
-        open: vi.fn<() => void>(),
-        openTabById,
-        navigateToSearchResult,
-      },
-    });
-    Object.assign(plugin, { manifest: { id: "zotlit", version: "2.1.3" } });
-    Object.assign(deps, { settings: { subscribe: () => () => {} } });
-    registerProfileEditor(plugin, deps);
-    const create = registerView.mock.calls[0]![1] as (
-      leaf: WorkspaceLeaf,
-    ) => ProfileEditorView;
-    const view = create({ app } as unknown as WorkspaceLeaf);
-    view.openSettings!(true);
-    expect(openTabById).toHaveBeenCalledWith("zotlit");
-    expect(navigateToSearchResult).not.toHaveBeenCalled();
-    view.openSettings!(false);
-    expect(navigateToSearchResult).toHaveBeenCalledWith({
-      tab,
-      pagePath: [m.settings_page_profiles()],
-    });
-    view.scheduler[Symbol.dispose]();
-  });
-
   it("opens the requested Match tab in Basic mode", async () => {
     const { app, file, setViewState } = setup();
     await openProfileEditor(app, file, { tab: "match" });

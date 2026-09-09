@@ -1,4 +1,10 @@
 .zt-profile-editor {
+  /* Shared native control surface; Match statements override these locally. */
+  --input-shadow: 0 0 0 1px var(--background-modifier-border);
+  --interactive-normal: var(--background-primary);
+  --interactive-hover: var(--background-modifier-hover);
+  --dropdown-background: var(--background-primary);
+  --dropdown-background-hover: var(--background-modifier-hover);
   padding: 0;
   overflow: hidden;
 }
@@ -140,7 +146,7 @@
   line-height: 1.4;
 }
 
-/* The row title and value align as text within Obsidian's centered icon control. */
+/* Keep the title and summary inside the native disclosure-button inset. */
 .zt-profile-editor [data-part="row-toggle"] {
   flex-direction: column;
   align-items: flex-start;

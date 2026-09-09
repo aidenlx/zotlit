@@ -72,7 +72,7 @@ import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import { tooltipAttrs } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ProfileService } from "@/services/profile/service";
@@ -95,13 +95,12 @@ import { createProfileEditorHost } from "./host";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
 import { currentProfileSource } from "./source";
-import { profileEditorTheme } from "./theme";
+import { profileEditorButton, profileEditorTheme } from "./theme";
 
 export const PROFILE_EDITOR_VIEW_TYPE = "zotlit-profile-editor";
 const logger = getLogger(["views", "profile-editor"]);
 export type ProfileEditorDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   render?: WorkbenchHost["render"];
-  openSettings?: (defaultProfile: boolean) => void;
   nativePreview?: NativeRenderDeps;
   pluginVersion?: string;
   profile?: Pick<
@@ -136,9 +135,6 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   readonly #revealListeners = new Set<
     (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
   >();
-  get openSettings() {
-    return this.#deps.openSettings;
-  }
   get matchDatabase() {
     return this.#deps.db;
   }
@@ -1275,6 +1271,7 @@ function EditorContent({
         >
           {m.profile_editor_default_inspect()}
           <button
+            className={profileEditorButton}
             disabled={customization === "pending"}
             onClick={() => void view.customizeDefault()}
           >
@@ -1368,7 +1365,10 @@ function EditorContent({
               {controller.managedEntries === null ? (
                 <p>
                   {m.profile_editor_properties_advanced()}{" "}
-                  <button onClick={() => state.setAdvanced(true)}>
+                  <button
+                    className={profileEditorButton}
+                    onClick={() => state.setAdvanced(true)}
+                  >
                     {m.workbench_advanced()}
                   </button>
                 </p>
@@ -1432,15 +1432,6 @@ function EditorContent({
             </TabPanel>
             <TabPanel tab="name">
               <NameFolderPane
-                onOpenSettings={
-                  view.openSettings
-                    ? () =>
-                        view.openSettings?.(
-                          view.isDefaultProfile ||
-                            manifest.current?.id === "default",
-                        )
-                    : undefined
-                }
                 controller={controller}
                 manifest={manifest.current}
                 defaults={view.bindingDefaults}
@@ -1475,7 +1466,10 @@ function EditorHeader({ view }: { view: ProfileEditorView }) {
   return (
     <div className="zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-2 zt:px-3 zt:py-2">
       <button
-        className="zt-profile-editor-item zt:max-w-full zt:min-w-0 zt:truncate"
+        className={cn(
+          profileEditorButton,
+          "zt-profile-editor-item zt:max-w-full zt:min-w-0 zt:truncate",
+        )}
         {...tooltipAttrs(item?.title ?? m.profile_editor_choose_paper())}
         onClick={() => void view.chooseItem()}
       >
@@ -1484,7 +1478,7 @@ function EditorHeader({ view }: { view: ProfileEditorView }) {
         </span>
       </button>
       <button
-        className="zt:ms-auto"
+        className={cn(profileEditorButton, "zt:ms-auto")}
         onClick={() =>
           void runProfileEditorAction("open-workbench", () =>
             openProfileWorkbench(view.app, view),

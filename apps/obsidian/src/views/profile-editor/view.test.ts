@@ -112,32 +112,26 @@ describe("ProfileEditorView", () => {
     expect(view.getViewData()).toBe(SOURCE);
   });
 
-  it("routes Settings from the current profile identity without selecting an Item", async () => {
+  it("shows Name and folder controls without a Settings shortcut", async () => {
     await using cleanup = new AsyncDisposableStack();
-    const openSettings = vi.fn<(defaultProfile: boolean) => void>();
-    const { view } = setup({ openSettings });
+    const { view } = setup();
     cleanup.defer(() => act(async () => view.close()));
     await act(async () => view.open());
     await act(async () => view.store.getState().setTab("name"));
-    expect(view.store.getState().item).toBeNull();
-    const button = [...view.contentEl.querySelectorAll("button")].find(
-      (element) => element.textContent === m.workbench_open_settings(),
-    )!;
-    await act(async () => button.click());
-    expect(openSettings).toHaveBeenLastCalledWith(false);
-    await act(async () =>
-      view.setViewData(SOURCE.replace("id: paper", "id: default"), false),
-    );
-    await act(async () => button.click());
-    expect(openSettings).toHaveBeenLastCalledWith(true);
+    expect(
+      view.contentEl.querySelector('[data-part="filename-editor"]'),
+    ).not.toBeNull();
+    expect(
+      [...view.contentEl.querySelectorAll("button")].some(
+        (button) => button.textContent === m.workbench_open_settings(),
+      ),
+    ).toBe(false);
   });
 
-  it("keeps a file-known Default disabled and routes Settings when opened with invalid source", async () => {
+  it("keeps a file-known Default disabled when opened with invalid source", async () => {
     await using cleanup = new AsyncDisposableStack();
-    const openSettings = vi.fn<(defaultProfile: boolean) => void>();
     const path = "templates/zotlit-profile.default.md";
     const { view } = setup({
-      openSettings,
       profile: { defaultDocumentPath: path } as ProfileEditorDeps["profile"],
     });
     const file = new TFile();
@@ -153,11 +147,11 @@ describe("ProfileEditorView", () => {
     ].find((tab) => tab.textContent === m.workbench_tab_match())!;
     expect(match.disabled).toBe(true);
     await act(async () => view.store.getState().setTab("name"));
-    const settings = [...view.contentEl.querySelectorAll("button")].find(
-      (button) => button.textContent === m.workbench_open_settings(),
-    )!;
-    await act(async () => settings.click());
-    expect(openSettings).toHaveBeenCalledWith(true);
+    expect(
+      [...view.contentEl.querySelectorAll("button")].some(
+        (button) => button.textContent === m.workbench_open_settings(),
+      ),
+    ).toBe(false);
   });
 
   it("keeps native view actions in sync across edits and document replacement", async () => {
