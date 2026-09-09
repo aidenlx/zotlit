@@ -1,10 +1,10 @@
 // The shared result controls and render selection, with Markdown supplied by the host.
 
 import type { ProfileRenderResult } from "#/render/result";
-import { Suspense } from "react";
+import { Suspense, useId } from "react";
 import type { ReactNode, Ref } from "react";
 
-import { useWorkbenchHost, useTooltip } from "./host";
+import { HiddenName, useWorkbenchHost, useTooltip } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { diagnosticText } from "./problems";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
@@ -66,15 +66,17 @@ export function ResultRegion({
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("resultRegion");
+  const nameId = useId();
   return (
     <div
       role="region"
       tabIndex={0}
-      aria-label={m.workbench_view_result()}
+      aria-labelledby={nameId}
       ref={ref}
       data-emphasis={emphasis || undefined}
       {...part("region")}
     >
+      <HiddenName id={nameId}>{m.workbench_view_result()}</HiddenName>
       {children}
     </div>
   );

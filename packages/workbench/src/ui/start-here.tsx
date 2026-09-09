@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 
 import { useWorkbenchStore } from "./editor";
 import { useWorkbenchHost } from "./host";
@@ -14,15 +14,16 @@ export function StartHere({ connected = false }: { connected?: boolean }) {
   const dismissed = useWorkbenchStore((state) => state.startHereDismissed);
   const dismiss = useWorkbenchStore((state) => state.dismissStartHere);
   const part = useParts("startHere");
+  const headingId = useId();
   const saved = host.persistence.read("device", KEY) === "true";
   useEffect(() => {
     if (saved) dismiss();
   }, [saved, dismiss]);
   if (dismissed || saved) return null;
   return (
-    <aside {...part("strip")} aria-label={m.workbench_start_here()}>
+    <aside {...part("strip")} aria-labelledby={headingId}>
       <div {...part("heading")}>
-        <strong>{m.workbench_start_here()}</strong>
+        <strong id={headingId}>{m.workbench_start_here()}</strong>
         <button
           type="button"
           onClick={() => {

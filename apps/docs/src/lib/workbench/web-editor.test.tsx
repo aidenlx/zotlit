@@ -444,7 +444,7 @@ describe("the annotation box", () => {
     expect(resultText(page.host)).toContain("missing-for-highlight");
     press(
       page.host.querySelector<HTMLElement>(
-        `[role="region"][aria-label="${m.workbench_view_result()}"]`,
+        '[role="region"][data-part="region"]',
       )!,
       m.workbench_annotation_edit_format(),
     );
@@ -592,9 +592,8 @@ describe("the annotation box", () => {
     await page.settle();
     await page.waitFor(() =>
       expect(
-        page.host.querySelector(
-          `[role="region"][aria-label="${m.workbench_view_result()}"]`,
-        )?.textContent,
+        page.host.querySelector('[role="region"][data-part="region"]')
+          ?.textContent,
       ).toContain("Clear methods make research easier to reproduce."),
     );
     page.press(m.workbench_choose_annotation());
@@ -622,23 +621,20 @@ describe("the annotation box", () => {
     });
     await page.settle();
     expect(
-      page.host.querySelector(
-        `[role="region"][aria-label="${m.workbench_view_result()}"]`,
-      )?.textContent,
+      page.host.querySelector('[role="region"][data-part="region"]')
+        ?.textContent,
     ).toContain("Compare these findings with the replication study.");
     expect(
       fieldRow(page.host, m.workbench_field_comment()).textContent,
     ).toContain("Use this point in the literature review.");
     page.press(m.workbench_tab_note());
     expect(
-      page.host.querySelector(
-        `[role="region"][aria-label="${m.workbench_view_result()}"]`,
-      )?.textContent,
+      page.host.querySelector('[role="region"][data-part="region"]')
+        ?.textContent,
     ).toContain("Why Most Published Research Findings Are False");
     expect(
-      page.host.querySelector(
-        `[role="region"][aria-label="${m.workbench_view_result()}"]`,
-      )?.textContent,
+      page.host.querySelector('[role="region"][data-part="region"]')
+        ?.textContent,
     ).not.toContain("Compare these findings");
     const placeholder = page.host.querySelector<HTMLElement>(
       "[data-annotation-box]",

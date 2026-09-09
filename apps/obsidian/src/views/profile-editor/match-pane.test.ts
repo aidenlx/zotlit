@@ -254,15 +254,17 @@ it("applies the installed pack to shared Match and Explorer controls after resta
   const englishViews =
     m.workbench_explorer_simple() + m.workbench_explorer_all();
   const variant = () =>
-    el.querySelector(`[aria-label="${m.workbench_explorer_variant()}"]`);
+    [...el.querySelectorAll('[data-part="variants"] button')]
+      .map((button) => button.textContent)
+      .join("");
   expect(el.textContent).toContain(englishMatch);
-  expect(variant()?.textContent).toBe(englishViews);
+  expect(variant()).toBe(englishViews);
   expect(host.getLocale()).toBe("en");
 
   await lifecycle.install();
   await show();
   expect(el.textContent).toContain(englishMatch);
-  expect(variant()?.textContent).toBe(englishViews);
+  expect(variant()).toBe(englishViews);
 
   initI18n({ pluginVersion: "2.0.0", ports });
   await show();
@@ -270,7 +272,5 @@ it("applies the installed pack to shared Match and Explorer controls after resta
   expect(el.textContent).toContain("测试包：匹配条件");
   expect(el.textContent).toContain("测试包：标题");
   // The pack overrides Simple; All fields falls back to bundled English.
-  expect(variant()?.textContent).toBe(
-    `测试包：简洁${m.workbench_explorer_all()}`,
-  );
+  expect(variant()).toBe(`测试包：简洁${m.workbench_explorer_all()}`);
 });
