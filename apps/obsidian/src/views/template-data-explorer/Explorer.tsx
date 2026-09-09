@@ -1,7 +1,7 @@
 // Presentational root for the Template Data Explorer: db-not-ready, no-item, and tree states.
 import { useContext } from "react";
 
-import { DataExplorer } from "@zotlit/workbench/ui";
+import { AnnotationSampleBar, DataExplorer } from "@zotlit/workbench/ui";
 import type { DataExplorerProps } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
@@ -10,11 +10,17 @@ import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
 
 import { ExplorerActionsContext } from "./actions";
-import { useExplorerStore, useExplorerStoreApi } from "./store";
+import {
+  annotationIndexedKey,
+  useExplorerStore,
+  useExplorerStoreApi,
+} from "./store";
 
 export function Explorer({
   explorer,
+  onSelectAnnotation,
 }: {
+  onSelectAnnotation?: (id: string) => void;
   explorer: Omit<
     DataExplorerProps,
     | "data"
@@ -29,6 +35,10 @@ export function Explorer({
   const state = useExplorerStore((s) => s);
   const { item, root, status, error, data, context, navigation, variant } =
     state;
+  const showAnnotationSelector =
+    root === "annotation" &&
+    state.annotations !== null &&
+    onSelectAnnotation !== undefined;
   const itemLabel = item?.title ?? item?.id;
   const anchor =
     root === "annotation"
@@ -38,11 +48,11 @@ export function Explorer({
 
   return (
     <div className="zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
-      {status === "loading" ? (
+      {status === "loading" && !showAnnotationSelector ? (
         <p role="status" className="zt:p-3">
           {m.workbench_loading_item()}
         </p>
-      ) : status === "error" ? (
+      ) : status === "error" && !showAnnotationSelector ? (
         <div role="alert" className="pane-empty zt:p-3">
           <p>{error ?? m.workbench_example_missing_item()}</p>
           <button onClick={() => actions.onRefresh()}>
@@ -61,7 +71,7 @@ export function Explorer({
         </div>
       ) : (
         <>
-          <div className="zt:flex zt:shrink-0 zt:flex-col zt:gap-1.5 zt:border-b zt:border-border zt:bg-background zt:px-3 zt:py-2">
+          <div className="zt:flex zt:shrink-0 zt:flex-col zt:gap-3 zt:border-b zt:border-border zt:bg-background zt:px-3 zt:py-2">
             <div className="zt:flex zt:items-center zt:gap-1">
               <Icon
                 name="file-text"
@@ -85,48 +95,88 @@ export function Explorer({
               />
             </div>
             {anchor && (
-              <nav className="zt:flex zt:min-w-0 zt:items-center zt:gap-1.5">
-                <IconButton
-                  icon="corner-left-up"
-                  className="zt:shrink-0"
-                  onClick={() => actions.onBackToNoteRoot()}
-                  {...tooltipAttrs(
-                    m.template_data_explorer_back_to_note_root(),
-                  )}
-                />
-                <div className="zt:flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-xs">
-                  <span className="zt:shrink-0 zt:text-muted-foreground">
-                    {m.template_data_explorer_note_root()}
-                  </span>
-                  <Icon
-                    name="chevron-right"
-                    className="zt:size-3 zt:shrink-0 zt:text-faint"
+              <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-1.5">
+                <nav className="zt:flex zt:min-w-0 zt:items-center zt:gap-1.5">
+                  <IconButton
+                    icon="corner-left-up"
+                    className="zt:shrink-0"
+                    onClick={() => actions.onBackToNoteRoot()}
+                    {...tooltipAttrs(
+                      m.template_data_explorer_back_to_note_root(),
+                    )}
                   />
-                  <span
-                    className="zt:min-w-0 zt:truncate zt:font-medium zt:text-accent-foreground"
-                    {...tooltipAttrs(anchor.label)}
-                  >
-                    {anchor.label}
-                  </span>
-                </div>
-              </nav>
+                  <div className="zt:flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-xs">
+                    <span className="zt:shrink-0 zt:text-muted-foreground">
+                      {m.template_data_explorer_note_root()}
+                    </span>
+                    <Icon
+                      name="chevron-right"
+                      className="zt:size-3 zt:shrink-0 zt:text-faint"
+                    />
+                    <span
+                      className="zt:min-w-0 zt:truncate zt:font-medium zt:text-accent-foreground"
+                      {...tooltipAttrs(anchor.label)}
+                    >
+                      {anchor.label}
+                    </span>
+                  </div>
+                </nav>
+                {showAnnotationSelector && (
+                  <AnnotationSampleBar
+                    current={state.annotations ?? []}
+                    example={
+                      data && state.annotationId
+                        ? {
+                            id:
+                              annotationIndexedKey(
+                                item!.id,
+                                state.annotationId,
+                              ) ?? state.annotationId,
+                            root: data,
+                          }
+                        : null
+                    }
+                    onSelect={(id) => {
+                      const latest = store.getState();
+                      if (
+                        latest.item?.id === item?.id &&
+                        latest.root === "annotation"
+                      )
+                        onSelectAnnotation?.(id);
+                    }}
+                  />
+                )}
+              </div>
             )}
           </div>
-          <DataExplorer
-            {...explorer}
-            restore={state.restore}
-            onRestored={() => store.setState({ restore: null })}
-            onPresentationChange={(presentation) =>
-              store.setState({ presentation })
-            }
-            data={data}
-            root={root}
-            disabled={!context?.canInsertField}
-            navigation={navigation}
-            variant={variant}
-            onVariantChange={state.setVariant}
-            onNavigationChange={state.setNavigation}
-          />
+          {status === "loading" ? (
+            <p role="status" className="zt:p-3">
+              {m.workbench_loading_item()}
+            </p>
+          ) : status === "error" ? (
+            <div role="alert" className="pane-empty zt:p-3">
+              <p>{error ?? m.workbench_example_missing_item()}</p>
+              <button onClick={() => actions.onRefresh()}>
+                {m.workbench_example_retry()}
+              </button>
+            </div>
+          ) : (
+            <DataExplorer
+              {...explorer}
+              restore={state.restore}
+              onRestored={() => store.setState({ restore: null })}
+              onPresentationChange={(presentation) =>
+                store.setState({ presentation })
+              }
+              data={data}
+              root={root}
+              disabled={!context?.canInsertField}
+              navigation={navigation}
+              variant={variant}
+              onVariantChange={state.setVariant}
+              onNavigationChange={state.setNavigation}
+            />
+          )}
         </>
       )}
     </div>
