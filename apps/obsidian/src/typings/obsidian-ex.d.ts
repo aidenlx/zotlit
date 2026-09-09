@@ -234,6 +234,12 @@ declare module "obsidian" {
   }
   /** Runtime members Obsidian's own popovers are driven by, verified against Obsidian 1.13.7. */
   interface HoverPopover {
+    targetEl: HTMLElement | null;
+    onTarget: boolean;
+    /** Target listeners bound to the instance by the native constructor. */
+    onMouseIn: (event: MouseEvent) => void;
+    onMouseOut: (event: MouseEvent) => void;
+    transition(): void;
     /**
      * What the wait timer armed in the constructor calls: the popover takes its
      * place in the document through {@link position}, then claims its parent

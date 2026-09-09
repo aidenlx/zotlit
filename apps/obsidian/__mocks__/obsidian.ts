@@ -152,6 +152,13 @@ export class MarkdownRenderChild extends Component {
   }
 }
 
+export enum PopoverState {
+  Showing,
+  Shown,
+  Hiding,
+  Hidden,
+}
+
 /**
  * Stand-in for Obsidian's own hover popover: the element a plugin fills, the
  * unload hook its content is torn down through, and the placement `position()`
@@ -164,12 +171,16 @@ export class MarkdownRenderChild extends Component {
  */
 export class HoverPopover {
   readonly hoverEl: HTMLElement;
-  readonly targetEl: HTMLElement | null;
+  targetEl: HTMLElement | null;
+  onTarget = true;
+  onHover = false;
+  state = PopoverState.Showing;
   readonly waitTime: number;
   hidden = false;
   readonly #parent: HoverParent;
   readonly #unload: (() => void)[] = [];
-  readonly #timer: ReturnType<typeof setTimeout>;
+  #loaded = false;
+  #timer: ReturnType<typeof setTimeout>;
 
   constructor(
     parent: HoverParent,
@@ -181,13 +192,66 @@ export class HoverPopover {
     this.targetEl = targetEl;
     this.waitTime = waitTime;
     this.#parent = parent;
+    targetEl?.addEventListener("mouseover", this.onMouseIn);
+    targetEl?.addEventListener("mouseout", this.onMouseOut);
+    this.hoverEl.addEventListener("mouseover", (event) => {
+      if (this.hoverEl.contains(event.relatedTarget as Node | null)) return;
+      this.onHover = true;
+      this.transition();
+    });
+    this.hoverEl.addEventListener("mouseout", (event) => {
+      if (this.hoverEl.contains(event.relatedTarget as Node | null)) return;
+      this.onHover = false;
+      this.transition();
+    });
     this.#timer = setTimeout(() => {
       this.show();
     }, waitTime);
   }
 
+  onMouseIn = (event: MouseEvent): void => {
+    if (this.targetEl?.contains(event.relatedTarget as Node | null)) return;
+    this.onTarget = true;
+    this.transition();
+  };
+
+  onMouseOut = (event: MouseEvent): void => {
+    if (this.targetEl?.contains(event.relatedTarget as Node | null)) return;
+    this.onTarget = false;
+    this.transition();
+  };
+
+  #shouldShow(): boolean {
+    return (
+      this.onTarget ||
+      this.onHover ||
+      this.hoverEl.contains(document.activeElement)
+    );
+  }
+
+  transition(): void {
+    if (this.#shouldShow()) {
+      if (this.state === PopoverState.Hiding) {
+        this.state = PopoverState.Shown;
+        clearTimeout(this.#timer);
+      }
+    } else if (this.state === PopoverState.Showing) {
+      this.hide();
+    } else if (this.state === PopoverState.Shown) {
+      this.state = PopoverState.Hiding;
+      this.#timer = setTimeout(() => {
+        if (this.#shouldShow()) this.transition();
+        else this.hide();
+      }, this.waitTime);
+    }
+  }
+
   register(cb: () => void): void {
     this.#unload.push(cb);
+  }
+
+  load(): void {
+    this.#loaded = true;
   }
 
   registerEvent(ref: EventRef): void {
@@ -196,8 +260,14 @@ export class HoverPopover {
   }
 
   show(): void {
+    if (this.targetEl && !document.body.contains(this.targetEl)) {
+      this.hide();
+      return;
+    }
+    this.state = PopoverState.Shown;
     this.position();
     this.onShow();
+    this.load();
   }
 
   /** This popover as the parent holds it, which the vendored type names. */
@@ -206,6 +276,7 @@ export class HoverPopover {
   }
 
   onShow(): void {
+    this.#parent.hoverPopover?.hide();
     this.#parent.hoverPopover = this.#self;
   }
 
@@ -219,10 +290,18 @@ export class HoverPopover {
 
   hide(): void {
     clearTimeout(this.#timer);
+    this.state = PopoverState.Hidden;
+    this.targetEl?.removeEventListener("mouseover", this.onMouseIn);
+    this.targetEl?.removeEventListener("mouseout", this.onMouseOut);
+    this.onTarget = false;
+    this.onHover = false;
     this.hidden = true;
     this.hoverEl.remove();
     this.onHide();
-    for (const cb of this.#unload.splice(0)) cb();
+    if (this.#loaded) {
+      this.#loaded = false;
+      for (const cb of this.#unload.splice(0).reverse()) cb();
+    }
   }
 
   onHide(): void {

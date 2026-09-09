@@ -1,27 +1,32 @@
 // What the template token under the pointer means, shown in Obsidian's own
 // popover: the shared resolver names the field, tag, or filter; the popover
-// opens after Obsidian's hover delay and closes when the pointer leaves.
+// opens once per pointer visit and follows the pointer between tokens. As in
+// VS Code, the open card keeps its content and rendered place until the
+// pointer has rested on the next token for the hover delay, then swaps; its
+// native target moves at once so the off-token grace keeps working.
 import { ViewPlugin } from "@codemirror/view";
 import type { EditorView, ViewUpdate } from "@codemirror/view";
-import { HoverPopover } from "obsidian";
 import type { HoverParent, Point } from "obsidian";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
 import { hoverHint } from "@zotlit/workbench/completion";
 import type { Suggestion, SuggestionSource } from "@zotlit/workbench/language";
 
+import { SingletonHoverPopover } from "@/lib/singleton-hover-popover";
 import { themeHook } from "@/lib/theme-hooks";
 
-/** Obsidian's own hover delay, which every popover of its own opens after. */
+/**
+ * Obsidian's own hover delay, which every popover of its own opens after. It
+ * also serves as the dwell before an open card swaps to the next token.
+ */
 const WAIT_TIME = 300;
 
-class TemplateHoverPopover extends HoverPopover {
+class TemplateHoverPopover extends SingletonHoverPopover {
   #root: Root | null;
-  readonly #token: HTMLElement;
   constructor(parent: HoverParent, token: HTMLElement, option: Suggestion) {
     super(parent, token, WAIT_TIME);
-    this.#token = token;
     const mount = this.hoverEl.createDiv({
       cls: ["zt-root", themeHook.templateHover],
     });
@@ -33,6 +38,13 @@ class TemplateHoverPopover extends HoverPopover {
       this.#root?.unmount();
       this.#root = null;
     });
+    // Content exists before show(); cancelling the enter delay must unload it.
+    this.load();
+  }
+
+  render(option: Suggestion): void {
+    flushSync(() => this.#root?.render(<HoverFacts option={option} />));
+    if (this.hoverEl.isConnected) this.position();
   }
 
   /**
@@ -41,7 +53,7 @@ class TemplateHoverPopover extends HoverPopover {
    * first box instead, read live on every placement.
    */
   override position(): void {
-    const box = this.#token.getClientRects()[0];
+    const box = this.targetEl?.getClientRects()[0];
     this.staticPos = box
       ? ({ x: box.left, y: box.top + box.height / 2 } satisfies Point)
       : null;
@@ -85,10 +97,11 @@ function HoverFacts({ option }: { option: Suggestion }) {
 
 /**
  * Hover presentation over one pane. The resolved token's range is the
- * popover's identity, so the pointer crossing a highlight boundary inside one
- * token leaves the popover in place; Obsidian hides the popover as the
- * pointer leaves its target span, and an edit, a keystroke, or a click closes
- * it early.
+ * content's identity. An open card swaps to a new range only after the pointer
+ * has dwelt on it for the hover delay; a card still opening swaps at once so
+ * the first card is never stale. Native target events own the off-token
+ * grace; leaving the editor, an edit, a keystroke, or a click closes the visit
+ * early.
  */
 export function templateHover(read: SuggestionSource, parent: HoverParent) {
   return ViewPlugin.fromClass(
@@ -96,19 +109,35 @@ export function templateHover(read: SuggestionSource, parent: HoverParent) {
       #popover: TemplateHoverPopover | null = null;
       #target: HTMLElement | null = null;
       #range: { from: number; to: number } | null = null;
-      constructor(readonly view: EditorView) {}
+      #pending: {
+        range: { from: number; to: number };
+        timer: ReturnType<typeof setTimeout>;
+      } | null = null;
+      constructor(readonly view: EditorView) {
+        view.contentDOM.addEventListener("mouseout", this.#handoff, true);
+      }
+
+      // Native mouseout hides a still-Showing popover immediately. Move its
+      // listeners before that handler runs to retain the original enter timer.
+      readonly #handoff = (event: MouseEvent) => {
+        if (this.#popover) this.move(event, event.relatedTarget);
+      };
 
       update(update: ViewUpdate) {
         if (update.docChanged || update.selectionSet || update.focusChanged)
           this.close();
       }
 
-      move(event: MouseEvent) {
+      move(event: MouseEvent, element = event.target) {
         const target =
-          event.target instanceof HTMLElement
-            ? event.target.closest<HTMLElement>(".cm-line span")
+          element instanceof HTMLElement
+            ? element.closest<HTMLElement>(".cm-line span")
             : null;
-        if (!target || !this.view.contentDOM.contains(target)) return;
+        if (!target || !this.view.contentDOM.contains(target)) {
+          this.#target = null;
+          this.#cancelSwap();
+          return;
+        }
         if (target === this.#target) return;
         this.#target = target;
         const position = this.view.posAtCoords({
@@ -122,18 +151,54 @@ export function templateHover(read: SuggestionSource, parent: HoverParent) {
             : null;
         const option = hint?.options[0];
         if (!hint || !option) {
-          this.close();
+          this.#cancelSwap();
           return;
         }
-        if (this.#range?.from === hint.from && this.#range.to === hint.to)
+        this.#popover?.retarget(target);
+        if (this.#range?.from === hint.from && this.#range.to === hint.to) {
+          this.#cancelSwap();
           return;
-        this.close();
+        }
+        const popover = this.#popover;
+        // An attached card is open; one still waiting to open swaps at once.
+        if (popover?.hoverEl.isConnected) {
+          if (
+            this.#pending?.range.from === hint.from &&
+            this.#pending.range.to === hint.to
+          )
+            return;
+          this.#cancelSwap();
+          const range = { from: hint.from, to: hint.to };
+          this.#pending = {
+            range,
+            timer: setTimeout(() => {
+              this.#pending = null;
+              this.#range = range;
+              popover.render(option);
+            }, WAIT_TIME),
+          };
+          return;
+        }
         this.#range = { from: hint.from, to: hint.to };
-        const popover = new TemplateHoverPopover(parent, target, option);
-        this.#popover = popover;
-        popover.register(() => {
-          if (this.#popover === popover) this.close();
+        if (popover) {
+          popover.render(option);
+          return;
+        }
+        const opened = new TemplateHoverPopover(parent, target, option);
+        this.#popover = opened;
+        opened.register(() => {
+          if (this.#popover !== opened) return;
+          this.#popover = null;
+          this.#target = null;
+          this.#range = null;
+          this.#cancelSwap();
         });
+      }
+
+      #cancelSwap() {
+        if (!this.#pending) return;
+        clearTimeout(this.#pending.timer);
+        this.#pending = null;
       }
 
       close() {
@@ -141,10 +206,25 @@ export function templateHover(read: SuggestionSource, parent: HoverParent) {
         this.#popover = null;
         this.#target = null;
         this.#range = null;
+        this.#cancelSwap();
         popover?.hide();
       }
 
+      leave(event: MouseEvent) {
+        if (
+          event.relatedTarget instanceof Node &&
+          this.#popover?.hoverEl.contains(event.relatedTarget)
+        )
+          return;
+        this.close();
+      }
+
       destroy() {
+        this.view.contentDOM.removeEventListener(
+          "mouseout",
+          this.#handoff,
+          true,
+        );
         this.close();
       }
     },
@@ -152,6 +232,9 @@ export function templateHover(read: SuggestionSource, parent: HoverParent) {
       eventObservers: {
         mousemove(event) {
           this.move(event);
+        },
+        mouseleave(event) {
+          this.leave(event);
         },
         mousedown() {
           this.close();
