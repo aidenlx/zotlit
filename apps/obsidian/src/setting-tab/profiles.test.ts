@@ -196,6 +196,18 @@ describe("Profile settings", () => {
       m.settings_profile_edit(),
     ]);
 
+    const { defaultRow } = pageWithOneProfile(ctx);
+    expect(buttonLabels(defaultRow)).toEqual([m.settings_profile_edit()]);
+    const more = render(defaultRow).components.filter(
+      (control) => control instanceof ExtraButtonComponent,
+    )[0]!;
+    Object.assign(more, { extraSettingsEl: document.createElement("button") });
+    more.click();
+    expect(Menu.instances.at(-1)?.items.map((item) => item.title)).toEqual([
+      m.settings_profile_share(),
+      m.settings_profile_document_restore(),
+    ]);
+
     customizeButton(documentRow(ctx)).click();
     await Promise.resolve();
     expect(ctx.customize).toHaveBeenCalledWith({ profileId: "default" });
