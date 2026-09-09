@@ -140,6 +140,20 @@ function setup() {
 }
 
 describe("active Profile Editor sidebars", () => {
+  it("removes a subscription whose initial binding fails", () => {
+    const test = setup();
+    const listener = vi.fn<() => void>(() => {
+      throw new Error("Binding unavailable");
+    });
+    expect(() => subscribeActiveProfileEditor(test.app, listener)).toThrow(
+      "Binding unavailable",
+    );
+    listener.mockImplementation(() => {});
+    test.activate(test.editor);
+    expect(listener).toHaveBeenCalledOnce();
+    for (const dispose of test.cleanup) dispose();
+  });
+
   it("follows each editor, retains it in its sidebar, and clears when the editor closes", async () => {
     const test = setup();
     const seen: (ProfileEditorView | null)[] = [];

@@ -44,6 +44,19 @@ declare module "obsidian" {
   }
   interface Workspace {
     on(
+      name: "quick-preview",
+      callback: (file: TFile, source: string) => void,
+      ctx?: any,
+    ): EventRef;
+    on(
+      name: "zotlit:authoring-context",
+      callback: (
+        context: import("@/views/profile-editor/view").ProfileAuthoringContext,
+      ) => void,
+      ctx?: any,
+    ): EventRef;
+
+    on(
       name: "zotlit:switch-profile",
       callback: (request: { path: string }) => void,
       ctx?: any,

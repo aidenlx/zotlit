@@ -60,7 +60,12 @@ export function subscribeActiveProfileEditor(
   const value = session(app);
   const editor = activeProfileEditor(app, leaf);
   value.listeners.set(listener, { leaf, editor });
-  listener(editor);
+  try {
+    listener(editor);
+  } catch (error) {
+    value.listeners.delete(listener);
+    throw error;
+  }
   return () => {
     value.listeners.delete(listener);
   };

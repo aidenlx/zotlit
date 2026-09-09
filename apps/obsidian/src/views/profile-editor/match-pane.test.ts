@@ -70,8 +70,11 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
   using scheduler = createRenderScheduler({
     render: (request) => host.render(request),
     failed: (result) => result,
-    controller,
-    store,
+    input: {
+      source: controller.source,
+      snapshot: null,
+      ...store.getState().preview,
+    },
   });
   const el = document.body.createDiv();
   const root = createRoot(el);
@@ -210,8 +213,11 @@ it("applies the installed pack to shared Match and Explorer controls after resta
   using scheduler = createRenderScheduler({
     render: (request) => host.render(request),
     failed: (result) => result,
-    controller,
-    store,
+    input: {
+      source: controller.source,
+      snapshot: null,
+      ...store.getState().preview,
+    },
   });
   const el = document.body.createDiv();
   const root = createRoot(el);

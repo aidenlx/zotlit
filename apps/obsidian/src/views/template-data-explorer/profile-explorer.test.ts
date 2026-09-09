@@ -120,8 +120,11 @@ async function setup() {
   const editorScheduler = createRenderScheduler({
     render: (request) => host.render(request),
     failed: (result) => result,
-    controller,
-    store,
+    input: {
+      source: controller.source,
+      snapshot: null,
+      ...store.getState().preview,
+    },
   });
   scheduler = editorScheduler;
   const container = document.createElement("div");
