@@ -12,7 +12,7 @@ import {
 } from "./editor";
 import { HiddenName } from "./host";
 import { useWorkbenchMessages } from "./messages";
-import { TABS, tabLabel } from "./tabs";
+import { TABS, tabLabel, tabLede } from "./tabs";
 import type { WorkbenchTab } from "./tabs";
 import { useParts } from "./theme";
 
@@ -134,11 +134,14 @@ export function TabPanel({
   tab,
   keepMounted = false,
   children,
+  description = true,
 }: {
   tab: WorkbenchTab;
   keepMounted?: boolean;
   children?: ReactNode;
+  description?: boolean;
 }) {
+  const m = useWorkbenchMessages();
   const editor = useOptionalEditor();
   const active = useWorkbenchStore((state) => state.tab) === tab;
   const part = useParts("tabPanel");
@@ -152,6 +155,9 @@ export function TabPanel({
       hidden={!active}
       {...part("tab-panel", active ? "active" : "inactive")}
     >
+      {description && tab !== "name" && tab !== "match" && (
+        <p {...part("description")}>{tabLede(m, tab)}</p>
+      )}
       {children}
     </div>
   );

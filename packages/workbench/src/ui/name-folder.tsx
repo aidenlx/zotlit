@@ -1,6 +1,6 @@
-// The Name and folder tab: the Profile's own identity, the note-name template
-// over the manifest's `filename` value, the five sparse bindings with their
-// effective value and origin, the language key, and the locked details.
+// The Name and folder and Profile forms share manifest controls. Name and
+// folder owns the note-name template and bindings; Profile owns identity,
+// language, and compatibility details.
 
 import type {
   InstalledCitationStyle,
@@ -120,6 +120,7 @@ function valueText(
 }
 
 export interface NameFolderPaneProps {
+  section?: "name" | "profile";
   controller: WorkbenchDocumentController;
   onOpenSource?: () => void;
   onOpenSettings?: () => void;
@@ -157,6 +158,7 @@ export interface NameFolderPaneProps {
 }
 
 export function NameFolderPane({
+  section = "name",
   controller,
   onOpenSource,
   onOpenSettings,
@@ -210,175 +212,179 @@ export function NameFolderPane({
   return (
     <FieldIdContext.Provider value={{ prefix, readOnly: controller.readOnly }}>
       <div ref={container} {...part("pane")}>
-        <Group
-          heading={m.workbench_name_filename_heading()}
-          lede={m.workbench_name_filename_lede()}
-        >
-          {controller.filenameSlice ? (
-            <div {...part("filename-editor")}>
-              <SliceEditor
-                controller={controller}
-                slice="filename"
-                label={m.workbench_name_filename_label()}
-                singleLine
-                reveal={reveal}
-                suggest={suggest}
-                onSelection={onSelection}
-              />
-            </div>
-          ) : (
-            <p {...part("help")}>
-              {m.workbench_name_filename_source_only()}
-              {onOpenSource && (
-                <button
-                  type="button"
-                  {...part("source-button")}
-                  onClick={onOpenSource}
-                >
-                  {m.workbench_open_source()}
-                </button>
+        {section === "name" && (
+          <>
+            <Group
+              heading={m.workbench_name_filename_heading()}
+              lede={m.workbench_name_filename_lede()}
+            >
+              {controller.filenameSlice ? (
+                <div {...part("filename-editor")}>
+                  <SliceEditor
+                    controller={controller}
+                    slice="filename"
+                    label={m.workbench_name_filename_label()}
+                    singleLine
+                    reveal={reveal}
+                    suggest={suggest}
+                    onSelection={onSelection}
+                  />
+                </div>
+              ) : (
+                <p {...part("help")}>
+                  {m.workbench_name_filename_source_only()}
+                  {onOpenSource && (
+                    <button
+                      type="button"
+                      {...part("source-button")}
+                      onClick={onOpenSource}
+                    >
+                      {m.workbench_open_source()}
+                    </button>
+                  )}
+                </p>
               )}
-            </p>
-          )}
-          <p {...part("filename-result")}>
-            <span {...part("muted")}>{m.workbench_name_filename_result()}</span>
-            <output {...part("filename-output")}>
-              {exampleMessage ?? filename ?? m.workbench_property_unset()}
-            </output>
-          </p>
-        </Group>
-
-        <Group
-          heading={m.workbench_name_bindings_heading()}
-          lede={
-            manifest.id === DEFAULT_PROFILE_ID
-              ? m.workbench_name_default_lede()
-              : m.workbench_name_bindings_lede()
-          }
-        >
-          {manifest.id === DEFAULT_PROFILE_ID ? (
-            <>
-              <dl {...part("defaults")}>
-                {BINDINGS.map((binding) => (
-                  <div key={binding.key} {...part("actions")}>
-                    <dt {...part("default-label")}>{m[binding.label]()}</dt>
-                    <dd {...part("default-value")}>
-                      {valueText(m, defaults[binding.key])}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-              <p {...part("secondary")}>{m.workbench_name_default_note()}</p>
-            </>
-          ) : (
-            BINDINGS.map((binding) => (
-              <BindingRow
-                key={binding.key}
-                binding={binding}
-                value={manifest[binding.key]}
-                fallback={defaults[binding.key]}
-                citationStyles={citationStyles ?? null}
-                onWrite={(value) => write(binding.key, value)}
-              />
-            ))
-          )}
-        </Group>
-
-        {settingsAction}
-        <details {...part("details")}>
-          <summary {...part("summary")}>
-            <span aria-hidden {...part("details-icon")}>
-              {icon("chevron-right")}
-            </span>
-            {m.workbench_name_profile_heading()}
-          </summary>
-          <div {...part("identity-fields")}>
-            <Field label={m.workbench_name_field_name()}>
-              <TextValue
-                field="name"
-                value={manifest.name}
-                onCommit={(value) => write("name", value)}
-              />
-            </Field>
-            <Field label={m.workbench_name_field_description()}>
-              <TextValue
-                field="description"
-                value={manifest.description ?? ""}
-                optional
-                onCommit={(value) => write("description", value)}
-              />
-            </Field>
-            <Field label={m.workbench_name_field_version()}>
-              <TextValue
-                field="version"
-                value={manifest.version}
-                onCommit={(value) => write("version", value)}
-              />
-            </Field>
-            <Field label={m.workbench_name_field_author()}>
-              <TextValue
-                field="author"
-                value={manifest.author ?? ""}
-                optional
-                onCommit={(value) => write("author", value)}
-              />
-            </Field>
-          </div>
-        </details>
-
-        <details {...part("details")}>
-          <summary {...part("summary")}>
-            <span aria-hidden {...part("details-icon")}>
-              {icon("chevron-right")}
-            </span>
-            {m.workbench_name_advanced_summary()}
-          </summary>
-          <div {...part("advanced-fields")}>
-            <LanguageGroup language={manifest.language} onWrite={write} />
-
-            <div {...part("fields")}>
-              <Field label={m.workbench_name_field_id()}>
-                <input
-                  type="text"
-                  readOnly
-                  value={manifest.id}
-                  {...part("readonly-input")}
-                />
-              </Field>
-              <p {...part("help")}>{m.workbench_name_id_note()}</p>
-              <Field label={m.workbench_name_field_contract()}>
-                <input
-                  type="text"
-                  readOnly
-                  value={String(manifest.contract)}
-                  {...part("readonly-input")}
-                />
-              </Field>
-              <Field label={m.workbench_name_field_min_app_version()}>
-                <input
-                  type="text"
-                  readOnly
-                  value={manifest.minAppVersion ?? m.workbench_name_unset()}
-                  {...part("readonly-input")}
-                />
-              </Field>
-              <p {...part("help")}>{m.workbench_name_locked_note()}</p>
-            </div>
-            <div {...part("fields")}>
-              <Field label={m.workbench_name_field_sample_item_type()}>
-                <TextValue
-                  field="sampleItemType"
-                  value={manifest.sampleItemType ?? ""}
-                  optional
-                  onCommit={(value) => write("sampleItemType", value)}
-                />
-              </Field>
-              <p {...part("help")}>
-                {m.workbench_name_sample_item_type_note()}
+              <p {...part("filename-result")}>
+                <span {...part("muted")}>
+                  {m.workbench_name_filename_result()}
+                </span>
+                <output {...part("filename-output")}>
+                  {exampleMessage ?? filename ?? m.workbench_property_unset()}
+                </output>
               </p>
+            </Group>
+
+            <Group
+              heading={m.workbench_name_bindings_heading()}
+              lede={
+                manifest.id === DEFAULT_PROFILE_ID
+                  ? m.workbench_name_default_lede()
+                  : m.workbench_name_bindings_lede()
+              }
+            >
+              {manifest.id === DEFAULT_PROFILE_ID ? (
+                <>
+                  <dl {...part("defaults")}>
+                    {BINDINGS.map((binding) => (
+                      <div key={binding.key} {...part("actions")}>
+                        <dt {...part("default-label")}>{m[binding.label]()}</dt>
+                        <dd {...part("default-value")}>
+                          {valueText(m, defaults[binding.key])}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <p {...part("secondary")}>
+                    {m.workbench_name_default_note()}
+                  </p>
+                </>
+              ) : (
+                BINDINGS.map((binding) => (
+                  <BindingRow
+                    key={binding.key}
+                    binding={binding}
+                    value={manifest[binding.key]}
+                    fallback={defaults[binding.key]}
+                    citationStyles={citationStyles ?? null}
+                    onWrite={(value) => write(binding.key, value)}
+                  />
+                ))
+              )}
+            </Group>
+
+            {settingsAction}
+          </>
+        )}
+        {section === "profile" && (
+          <>
+            <div {...part("identity-fields")}>
+              <Field label={m.workbench_name_field_name()}>
+                <TextValue
+                  field="name"
+                  value={manifest.name}
+                  onCommit={(value) => write("name", value)}
+                />
+              </Field>
+              <Field label={m.workbench_name_field_description()}>
+                <TextValue
+                  field="description"
+                  value={manifest.description ?? ""}
+                  optional
+                  onCommit={(value) => write("description", value)}
+                />
+              </Field>
+              <Field label={m.workbench_name_field_version()}>
+                <TextValue
+                  field="version"
+                  value={manifest.version}
+                  onCommit={(value) => write("version", value)}
+                />
+              </Field>
+              <Field label={m.workbench_name_field_author()}>
+                <TextValue
+                  field="author"
+                  value={manifest.author ?? ""}
+                  optional
+                  onCommit={(value) => write("author", value)}
+                />
+              </Field>
             </div>
-          </div>
-        </details>
+
+            <details {...part("details")}>
+              <summary {...part("summary")}>
+                <span aria-hidden {...part("details-icon")}>
+                  {icon("chevron-right")}
+                </span>
+                {m.workbench_name_advanced_summary()}
+              </summary>
+              <div {...part("advanced-fields")}>
+                <LanguageGroup language={manifest.language} onWrite={write} />
+
+                <div {...part("fields")}>
+                  <Field label={m.workbench_name_field_id()}>
+                    <input
+                      type="text"
+                      readOnly
+                      value={manifest.id}
+                      {...part("readonly-input")}
+                    />
+                  </Field>
+                  <p {...part("help")}>{m.workbench_name_id_note()}</p>
+                  <Field label={m.workbench_name_field_contract()}>
+                    <input
+                      type="text"
+                      readOnly
+                      value={String(manifest.contract)}
+                      {...part("readonly-input")}
+                    />
+                  </Field>
+                  <Field label={m.workbench_name_field_min_app_version()}>
+                    <input
+                      type="text"
+                      readOnly
+                      value={manifest.minAppVersion ?? m.workbench_name_unset()}
+                      {...part("readonly-input")}
+                    />
+                  </Field>
+                  <p {...part("help")}>{m.workbench_name_locked_note()}</p>
+                </div>
+                <div {...part("fields")}>
+                  <Field label={m.workbench_name_field_sample_item_type()}>
+                    <TextValue
+                      field="sampleItemType"
+                      value={manifest.sampleItemType ?? ""}
+                      optional
+                      onCommit={(value) => write("sampleItemType", value)}
+                    />
+                  </Field>
+                  <p {...part("help")}>
+                    {m.workbench_name_sample_item_type_note()}
+                  </p>
+                </div>
+              </div>
+            </details>
+          </>
+        )}
       </div>
     </FieldIdContext.Provider>
   );

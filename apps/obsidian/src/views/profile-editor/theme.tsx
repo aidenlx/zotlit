@@ -48,9 +48,10 @@ export const profileEditorTheme: WorkbenchTheme = {
   editorExtension: () => [templateHighlighting, codePane],
   classes: {
     match: {
+      "remove-button": "mod-destructive zt:shrink-0",
       button: cn(
         "zt:inline-flex zt:items-center zt:gap-1.5 zt:text-muted-foreground",
-        "zt:[--input-shadow:none] zt:[--interactive-hover:var(--background-modifier-hover)] zt:[--interactive-normal:transparent]",
+        "zt:[--input-shadow:0_0_0_1px_var(--background-modifier-border)] zt:[--interactive-hover:var(--background-modifier-hover)] zt:[--interactive-normal:var(--background-primary)]",
       ),
       "icon-button": "clickable-icon zt:shrink-0",
       input: "zt:min-w-0 zt:w-full zt:flex-1",
@@ -66,9 +67,9 @@ export const profileEditorTheme: WorkbenchTheme = {
       fieldset:
         "zt:flex zt:min-w-0 zt:flex-col zt:items-start zt:gap-4 zt:border-0 zt:p-0",
       group:
-        "zt:flex zt:min-w-0 zt:w-full zt:flex-1 zt:flex-col zt:gap-1.5 zt:data-[state=nested]:rounded-md zt:data-[state=nested]:border zt:data-[state=nested]:border-border zt:data-[state=nested]:bg-card zt:data-[state=nested]:p-1.5 zt:[&>[data-part=actions]:first-child]:justify-between zt:[&>[data-part=actions]:first-child]:[--input-shadow:none] zt:[&>[data-part=actions]:first-child]:[--dropdown-background:transparent] zt:[&>[data-part=actions]:first-child]:[--dropdown-background-hover:var(--background-modifier-hover)] zt:[&>[data-part=actions]:last-child]:pt-1",
-      rows: "zt:flex zt:flex-col zt:gap-1.5 zt:list-none zt:m-0 zt:p-0",
-      row: "zt:grid zt:min-w-0 zt:grid-cols-[2.25rem_minmax(0,1fr)] zt:items-center zt:gap-x-2 zt:[&>[data-part=group]]:col-start-2",
+        "zt:flex zt:min-w-0 zt:w-full zt:flex-1 zt:flex-col zt:gap-2 zt:data-[state=nested]:rounded-md zt:data-[state=nested]:border zt:data-[state=nested]:border-border zt:data-[state=nested]:bg-card zt:data-[state=nested]:p-2 zt:[&>[data-part=actions]:first-child]:justify-between zt:[&>[data-part=actions]:first-child]:[--input-shadow:0_0_0_1px_var(--background-modifier-border)] zt:[&>[data-part=actions]:first-child]:[--dropdown-background:var(--background-primary)] zt:[&>[data-part=actions]:first-child]:[--dropdown-background-hover:var(--background-modifier-hover)]",
+      rows: "zt:flex zt:flex-col zt:gap-2 zt:list-none zt:m-0 zt:p-0",
+      row: "zt:grid zt:min-w-0 zt:grid-cols-[4.5rem_minmax(0,1fr)] zt:items-start zt:gap-2 zt:[&>[data-part=group]]:col-span-2",
       condition: "zt:col-start-2 zt:min-w-0",
       statement: cn(
         "zt:grid zt:min-w-0 zt:grid-cols-[auto_auto_minmax(0,1fr)_auto] zt:items-start zt:overflow-hidden zt:rounded-md zt:bg-input zt:ring-1 zt:ring-border-hover zt:focus-within:ring-2 zt:focus-within:ring-border-focus",
@@ -77,18 +78,18 @@ export const profileEditorTheme: WorkbenchTheme = {
         "zt:[&>[data-part=actions]]:col-start-4 zt:[&>[data-part=actions]]:row-start-1 zt:[&>[data-part=actions]]:h-(--input-height) zt:[&>[data-part=actions]]:flex-nowrap zt:[&>[data-part=actions]]:gap-0 zt:[&>[data-part=actions]]:border-s zt:[&>[data-part=actions]]:border-border zt:[&>[data-part=actions]]:px-0.5",
         "zt:@container zt:[&:has([aria-invalid=true])]:ring-(--background-modifier-error)",
         "zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:col-span-4 zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:row-start-2 zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-s-0 zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-t zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-border",
-        "zt:@xl:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:col-span-1 zt:@xl:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:col-start-3 zt:@xl:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:row-start-1 zt:@xl:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-s zt:@xl:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-t-0",
+        "zt:@lg:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:col-span-1 zt:@lg:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:col-start-3 zt:@lg:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:row-start-1 zt:@lg:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-s zt:@lg:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-t-0",
       ),
-      actions: "zt:flex zt:flex-wrap zt:items-center zt:gap-1.5",
+      actions: "zt:flex zt:flex-wrap zt:items-center zt:gap-2",
       control:
         "zt:min-w-0 zt:max-w-full zt:[div&]:flex zt:[div&]:flex-col zt:[span&]:px-2 zt:[span&]:pb-1 zt:[span&]:text-xs zt:[span&]:leading-normal zt:[span&]:text-muted-foreground",
       chips:
-        "zt:col-span-4 zt:row-start-2 zt:flex zt:min-h-(--input-height) zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-1 zt:border-t zt:border-border zt:px-1.5 zt:py-1 zt:@xl:col-span-1 zt:@xl:col-start-3 zt:@xl:row-start-1 zt:@xl:border-s zt:@xl:border-t-0 zt:[&>div:last-of-type]:max-w-[calc(100%_-_2ch_-_0.25rem)]",
+        "zt:col-span-4 zt:row-start-2 zt:flex zt:min-h-(--input-height) zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-1 zt:border-t zt:border-border zt:px-1.5 zt:py-1 zt:@lg:col-span-1 zt:@lg:col-start-3 zt:@lg:row-start-1 zt:@lg:border-s zt:@lg:border-t-0 zt:[&>div:last-of-type]:max-w-[calc(100%_-_2ch_-_0.25rem)]",
       chip: "zt:inline-flex zt:max-w-full zt:items-center zt:gap-0.5 zt:self-start zt:rounded-sm zt:bg-muted zt:py-0.5 zt:ps-1.5 zt:text-sm zt:leading-tight zt:[&>[data-part=icon-button]]:size-7 zt:[&_[data-part=icon-button]>svg]:shrink-0",
       expression:
         "zt:col-span-3 zt:min-w-0 zt:w-full zt:font-mono zt:text-sm zt:leading-normal zt:[field-sizing:content] zt:resize-y",
       conjunction:
-        "zt:col-start-1 zt:row-start-1 zt:text-end zt:text-sm zt:text-muted-foreground",
+        "zt:flex zt:min-h-(--input-height) zt:items-center zt:justify-end zt:text-end zt:text-sm zt:text-muted-foreground zt:[overflow-wrap:anywhere]",
       result: "zt:text-xs zt:leading-normal zt:text-muted-foreground",
       error:
         "zt:pt-1 zt:text-xs zt:leading-normal zt:text-pretty zt:text-(--text-error)",
@@ -151,12 +152,6 @@ export const profileEditorTheme: WorkbenchTheme = {
       "long-text":
         "zt:line-clamp-3 zt:data-[state=expanded]:line-clamp-none zt:data-[state=expanded]:break-words zt:data-[state=expanded]:whitespace-pre-wrap",
     },
-    startHere: {
-      strip: "zt:mx-3 zt:my-2 zt:rounded-md zt:bg-card zt:p-3 zt:text-xs",
-      heading: "zt:flex zt:items-center zt:justify-between zt:gap-2",
-      line: cn(hint, "zt:mt-1"),
-      dismiss: "",
-    },
     editToolbar: {
       "edit-toolbar": cn(row, "zt:p-2"),
       "mode-group": row,
@@ -212,7 +207,10 @@ export const profileEditorTheme: WorkbenchTheme = {
         "zt:flex zt:shrink-0 zt:flex-wrap zt:gap-1 zt:border-b zt:border-border zt:px-3 zt:pb-2",
       tab: "clickable-icon zt:disabled:opacity-50 zt:shrink-0 zt:text-sm",
     },
-    tabPanel: { "tab-panel": "zt:min-w-0 zt:p-3" },
+    tabPanel: {
+      "tab-panel": "zt:min-w-0 zt:p-3",
+      description: cn(hint, "zt:mb-3"),
+    },
     sliceEditor: {
       "slice-editor": cn(
         "markdown-source-view mod-cm6 cm-s-obsidian zt:min-h-0",

@@ -64,7 +64,7 @@ describe("a draft the parser refuses", () => {
     expect(chosenTab(page.host)).toBe(m.workbench_tab_note());
   });
 
-  it("opens Name and folder for a field that tab writes", async () => {
+  it("opens Profile for a field that tab writes", async () => {
     using page = open();
     page.press(m.workbench_advanced());
     const view = sourceView(page.host);
@@ -79,7 +79,7 @@ describe("a draft the parser refuses", () => {
     expect(page.host.textContent).toContain(m.workbench_problems_heading());
     page.press(m.workbench_problems_where_details());
 
-    expect(chosenTab(page.host)).toBe(m.workbench_tab_name_and_folder());
+    expect(chosenTab(page.host)).toBe(m.workbench_tab_profile());
     // The form writes its fields through controls, so the reader lands in the
     // one holding the field the parser named.
     expect(document.activeElement?.id.endsWith("-field-name")).toBe(true);

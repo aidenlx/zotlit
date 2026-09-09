@@ -63,6 +63,10 @@ export const WEB_THEME: WorkbenchTheme = {
   ],
   classes: {
     match: {
+      "remove-button": cn(
+        buttonVariants({ variant: "outline", size: "xs" }),
+        "text-destructive hover:text-destructive",
+      ),
       button: buttonVariants({ variant: "outline", size: "xs" }),
       "icon-button": buttonVariants({ variant: "ghost", size: "icon-xs" }),
       input: cn(nameInput, "min-w-0 flex-1"),
@@ -73,13 +77,13 @@ export const WEB_THEME: WorkbenchTheme = {
       pane: "flex min-w-0 flex-col gap-3",
       fieldset: "min-w-0 border-0 p-0",
       group:
-        "flex min-w-0 flex-1 flex-col gap-2 rounded-md border border-fd-border p-2 data-[state=root]:border-0 data-[state=root]:p-0",
+        "flex min-w-0 flex-1 flex-col gap-2 rounded-md border border-fd-border p-2 data-[state=root]:border-0 data-[state=root]:p-0 [&>[data-part=actions]:first-child]:justify-between",
       rows: "flex flex-col gap-2 list-none m-0 p-0",
-      row: "flex min-w-0 items-start gap-2",
+      row: "grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-2 [&>[data-part=group]]:col-span-2",
       condition: "min-w-0 flex-1",
       statement:
         "flex flex-wrap min-w-0 items-start gap-1 [&>[data-part=wrapper]]:w-auto",
-      actions: "flex flex-wrap items-center gap-1",
+      actions: "flex flex-wrap items-center gap-2",
       control: "min-w-0 max-w-full",
       chips: "flex flex-1 min-w-0 flex-wrap items-center gap-1",
       chip: "inline-flex min-w-0 items-center gap-1 rounded-sm border border-fd-border px-1",
@@ -87,7 +91,8 @@ export const WEB_THEME: WorkbenchTheme = {
         nameInput,
         "[field-sizing:content] min-w-0 flex-1 resize-y font-mono",
       ),
-      conjunction: "text-xs",
+      conjunction:
+        "flex min-h-8 items-center justify-end text-end text-xs [overflow-wrap:anywhere]",
       result: "text-sm",
       error: "text-xs",
     },
@@ -359,14 +364,8 @@ export const WEB_THEME: WorkbenchTheme = {
       tab: "disabled:cursor-default disabled:opacity-50 flex min-h-7 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-sm px-2 py-0.5 text-xs font-medium text-fd-muted-foreground data-[state=active]:bg-fd-card data-[state=active]:text-fd-foreground data-[state=active]:shadow-sm [&_svg]:size-4",
     },
     tabPanel: {
+      description: "mb-3 shrink-0 text-xs text-pretty text-fd-muted-foreground",
       "tab-panel": "flex min-h-0 min-w-0 flex-1 flex-col [&[hidden]]:hidden",
-    },
-    startHere: {
-      strip: "mb-2 rounded-md border border-fd-border p-3 text-xs",
-      heading: "flex items-center justify-between gap-2",
-      line: "my-1 text-fd-muted-foreground",
-      dismiss:
-        "cursor-pointer text-fd-muted-foreground hover:text-fd-foreground",
     },
     editToolbar: {
       "edit-toolbar":

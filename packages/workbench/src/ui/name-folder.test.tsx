@@ -62,7 +62,7 @@ function write(label: string, value: string) {
 }
 
 it("commits identity on blur and restores the input on undo", () => {
-  const { controller } = open();
+  const { controller } = open({ section: "profile" });
   const name = screen.getByLabelText<HTMLInputElement>(
     m.workbench_name_field_name(),
   );
@@ -233,7 +233,7 @@ it("retains a citation style absent from the installed list", () => {
 });
 
 it("changes only the language key after the inline confirmation", () => {
-  const { controller } = open();
+  const { controller } = open({ section: "profile" });
   const select = screen.getByLabelText<HTMLSelectElement>(
     m.workbench_name_language_heading(),
   );
@@ -273,7 +273,7 @@ it("shares undo between filename text and a form edit, and refuses newlines", ()
   });
   const filenameSource = SOURCE.replace("filename: '", "filename: 'Reading-");
   expect(controller.source).toBe(filenameSource);
-  write(m.workbench_name_field_name(), "Methods notes");
+  write(m.workbench_name_binding_folder(), "Methods");
   act(() => {
     controller.undo();
   });
@@ -297,8 +297,12 @@ it("scopes problem navigation to the selected editor instance", () => {
   const second = new WorkbenchDocumentController(SOURCE);
   render(
     <>
-      <ReactivePane controller={first} />
-      <ReactivePane controller={second} focus={{ field: "name" }} />
+      <ReactivePane section="profile" controller={first} />
+      <ReactivePane
+        section="profile"
+        controller={second}
+        focus={{ field: "name" }}
+      />
     </>,
   );
   const fields = screen.getAllByLabelText<HTMLInputElement>(
@@ -306,8 +310,8 @@ it("scopes problem navigation to the selected editor instance", () => {
   );
   expect(fields[0]!.id).not.toBe(fields[1]!.id);
   expect(document.activeElement).toBe(fields[1]);
-  expect(fields[1]!.closest("details")?.open).toBe(true);
-  expect(fields[0]!.closest("details")?.open).toBe(false);
+  expect(fields[1]!.closest("details")).toBeNull();
+  expect(fields[0]!.closest("details")).toBeNull();
 });
 
 it("shows Default bindings as read-only inherited values", () => {
@@ -331,6 +335,7 @@ it("shows Default bindings as read-only inherited values", () => {
 });
 
 it("shows identity, the live note name, and each binding's source", () => {
+  open({ section: "profile" });
   open();
   expect(
     screen.getByLabelText<HTMLInputElement>(m.workbench_name_field_name())
@@ -420,6 +425,7 @@ it("opens the host settings from the configuration pane", () => {
 
 it("keeps read-only configuration selectable and disables binding changes", () => {
   const { controller } = open();
+  render(<ReactivePane controller={controller} section="profile" />);
   act(() => controller.setReadOnly(true));
   expect(screen.getByLabelText(m.workbench_name_field_name())).toHaveProperty(
     "readOnly",

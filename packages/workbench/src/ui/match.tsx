@@ -186,20 +186,14 @@ export function MatchPane({
           group={root}
           path={[]}
           deps={deps}
+          onRemoveMatch={
+            match === undefined ? undefined : () => write(undefined)
+          }
           onChange={(next) => {
             setRoot(next);
             write(toFilter(next));
           }}
         />
-        {match !== undefined && (
-          <button
-            {...part("button")}
-            type="button"
-            onClick={() => write(undefined)}
-          >
-            {m.workbench_match_remove()}
-          </button>
-        )}
       </fieldset>
       <p role="status" {...part("result")}>
         {exampleMessage ??
@@ -231,12 +225,14 @@ function Group({
   path,
   deps,
   onChange,
+  onRemoveMatch,
 }: {
   root: ConditionGroup;
   group: ConditionGroup;
   path: ConditionPath;
   deps: MatchEditorDeps;
   onChange: (root: ConditionGroup) => void;
+  onRemoveMatch?: () => void;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("match");
@@ -260,6 +256,15 @@ function Group({
           <option value="all">{m.workbench_match_match_all()}</option>
           <option value="any">{m.workbench_match_match_any()}</option>
         </MatchSelect>
+        {onRemoveMatch && (
+          <button
+            {...part("remove-button")}
+            type="button"
+            onClick={onRemoveMatch}
+          >
+            {m.workbench_match_remove()}
+          </button>
+        )}
         {path.length > 0 && (
           <button
             {...part("icon-button")}
@@ -274,12 +279,17 @@ function Group({
       </div>
       <ul {...part("rows")}>
         {group.conditions.map((node, index) => (
-          <li key={index} {...part("row")}>
-            {index > 0 && (
+          <li
+            key={index}
+            {...part("row", node.kind === "group" ? "group" : "condition")}
+          >
+            {node.kind !== "group" && (
               <span {...part("conjunction")}>
-                {group.match === "all"
-                  ? m.workbench_match_conjunction_and()
-                  : m.workbench_match_conjunction_or()}
+                {index === 0
+                  ? m.workbench_match_conjunction_where()
+                  : group.match === "all"
+                    ? m.workbench_match_conjunction_and()
+                    : m.workbench_match_conjunction_or()}
               </span>
             )}
             {node.kind === "group" ? (

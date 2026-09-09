@@ -38,7 +38,6 @@ import { DEFAULT_PROFILE_SOURCE, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import { MatchPane } from "@zotlit/workbench/ui";
 import {
   EditToolbar,
-  StartHere,
   ProblemsFooter,
   tabLabel,
   tabLede,
@@ -456,7 +455,21 @@ export function Workbench() {
       openAnnotation();
       return;
     }
-    if (id === "filename" || id === "details") setTab("name");
+    if (id === "filename" || id === "details") {
+      setTab(
+        id === "details" &&
+          [
+            "name",
+            "description",
+            "version",
+            "author",
+            "sampleItemType",
+            "language",
+          ].includes(problem.params?.field ?? "")
+          ? "profile"
+          : "name",
+      );
+    }
     // A fresh object every time, so selecting the same problem twice reveals it
     // again. The Name and folder form writes its manifest fields through
     // controls rather than an editor, so a problem it owns opens the control
@@ -927,7 +940,6 @@ export function Workbench() {
               onClick={() => setSheet(true)}
             />
           </EditToolbar>
-          <StartHere connected={connected} />
           {advanced && (
             <>
               <div className="mb-2 flex min-h-8 shrink-0 flex-wrap items-center justify-between gap-2">
@@ -977,7 +989,7 @@ export function Workbench() {
                 {tabLede(m, tab)}
               </WorkbenchHelp>
             </div>
-            <TabPanel tab="note" keepMounted>
+            <TabPanel tab="note" keepMounted description={!advanced}>
               <h2 className="sr-only">{m.workbench_tab_note()}</h2>
               <NotePane
                 controller={controller}
@@ -1008,9 +1020,10 @@ export function Workbench() {
             {!advanced && tab !== "note" && (
               <TabPanel tab={tab}>
                 <h2 className="sr-only">{tabLabel(m, tab)}</h2>
-                {tab === "name" ? (
+                {tab === "name" || tab === "profile" ? (
                   <>
                     <NameFolderPane
+                      section={tab}
                       onOpenSource={() => setAdvanced(true)}
                       controller={controller}
                       manifest={shownManifest}
