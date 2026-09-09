@@ -10,7 +10,10 @@ import { openSettingsTab } from "@/lib/open-settings";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { ProfileService } from "@/services/profile/service";
-import { openProfileWorkbench } from "@/views/note-preview/register";
+import {
+  findProfileWorkbench,
+  openProfileWorkbench,
+} from "@/views/note-preview/register";
 
 import { runProfileEditorAction } from "./actions";
 import { PROFILE_EDITOR_VIEW_TYPE, ProfileEditorView } from "./view";
@@ -248,19 +251,35 @@ export async function openNativeProfile(
     ? await app.vault.cachedRead(file)
     : await (target as Pick<ProfileService, "getSource">).getSource("default");
   if (file) {
-    await openProfileEditor(app, file, options);
+    await openProfileEditor(app, file, {
+      ...options,
+      ...(target instanceof TFile ? {} : { defaultProfile: true }),
+    });
     return;
   }
   if (options.explainUnsupported !== false && requiresNative(source))
     new BaseNotice(m.profile_editor_native_required());
   const { itemIndexedKey } = options;
+  const workbench = options.customize
+    ? await findProfileWorkbench(app, { file: null, defaultProfile: true })
+    : null;
+  if (workbench?.file) {
+    await openProfileEditor(app, workbench.file, {
+      ...options,
+      leaf: workbench.leaf,
+      defaultProfile: true,
+    });
+    return;
+  }
   const leaf =
+    workbench?.leaf ??
     app.workspace
       .getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE)
       .find(
         (entry) =>
           entry.view instanceof ProfileEditorView && entry.view.isDefaultDraft,
-      ) ?? app.workspace.getLeaf("tab");
+      ) ??
+    app.workspace.getLeaf("tab");
   await leaf.setViewState({
     type: PROFILE_EDITOR_VIEW_TYPE,
     state: {
@@ -297,6 +316,7 @@ export async function openProfileEditor(
     tab?: "match";
     explainUnsupported?: boolean;
     customize?: boolean;
+    defaultProfile?: boolean;
   } = {},
 ): Promise<void> {
   if (
@@ -305,7 +325,14 @@ export async function openProfileEditor(
   )
     new BaseNotice(m.profile_editor_native_required());
   const { itemIndexedKey } = options;
+  const workbench = options.customize
+    ? await findProfileWorkbench(app, {
+        file: file.path,
+        defaultProfile: options.defaultProfile ?? false,
+      })
+    : null;
   const leaf =
+    workbench?.leaf ??
     options.leaf ??
     app.workspace
       .getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE)
@@ -319,6 +346,7 @@ export async function openProfileEditor(
     type: PROFILE_EDITOR_VIEW_TYPE,
     state: {
       file: file.path,
+      ...(workbench && !workbench.file ? { defaultDraft: false } : {}),
       ...(itemIndexedKey ? { itemIndexedKey } : {}),
       ...(options.tab ? { tab: options.tab, advanced: false } : {}),
     },

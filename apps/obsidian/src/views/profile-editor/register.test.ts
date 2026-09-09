@@ -5,7 +5,10 @@ import type { App, Command, Plugin, WorkspaceLeaf } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { openProfileWorkbench } from "@/views/note-preview/register";
+import {
+  findProfileWorkbench,
+  openProfileWorkbench,
+} from "@/views/note-preview/register";
 
 import { profileCustomization, saveProfileCustomization } from "./preferences";
 import {
@@ -19,10 +22,14 @@ import { PROFILE_EDITOR_VIEW_TYPE, ProfileEditorView } from "./view";
 
 vi.mock("@/views/note-preview/register", () => ({
   openProfileWorkbench: vi.fn(async () => {}),
+  findProfileWorkbench: vi.fn(async () => null),
 }));
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-afterEach(resetMockPlatform);
+afterEach(() => {
+  resetMockPlatform();
+  vi.mocked(findProfileWorkbench).mockReset().mockResolvedValue(null);
+});
 
 function setup() {
   const file = new TFile();
@@ -97,6 +104,103 @@ function setup() {
 }
 
 describe("Profile Editor entry points", () => {
+  it.each(["named", "copied-default", "default"])(
+    "applies a Customize launch Item to the existing %s workbench and leaves its compact editor unchanged",
+    async (kind) => {
+      const {
+        app,
+        file,
+        leaf: compactLeaf,
+        setViewState: compactSetState,
+      } = setup();
+      if (kind === "default") file.path = "templates/zotlit-profile.default.md";
+      if (kind !== "named") {
+        vi.spyOn(app.vault, "cachedRead").mockResolvedValue(`---
+id: default
+name: Default
+version: 1.0.0
+contract: 2
+filename: "{{ zt.title }}"
+---
+Body
+--- zotlit:annotation ---
+Annotation`);
+      }
+      const chooseCompactItem = vi.fn();
+      const chooseWorkbenchItem = vi.fn();
+      const compact = Object.assign(
+        Object.create(ProfileEditorView.prototype),
+        { file, leaf: compactLeaf, chooseItem: chooseCompactItem },
+      ) as ProfileEditorView;
+      Object.assign(compactLeaf, { view: compact });
+      const workbenchSetState = vi.fn(async () => {});
+      const workbenchLeaf = {
+        setViewState: workbenchSetState,
+        getContainer: () => ({ focus: vi.fn() }),
+      } as unknown as WorkspaceLeaf;
+      const workbench = Object.assign(
+        Object.create(ProfileEditorView.prototype),
+        { file, leaf: workbenchLeaf, chooseItem: chooseWorkbenchItem },
+      ) as ProfileEditorView;
+      Object.assign(workbenchLeaf, { view: workbench });
+      vi.spyOn(app.workspace, "getLeavesOfType").mockReturnValue([
+        compactLeaf,
+        workbenchLeaf,
+      ]);
+      vi.mocked(findProfileWorkbench).mockResolvedValueOnce(workbench);
+      await openNativeProfile(app, file, {
+        customize: true,
+        itemIndexedKey: "MAIN2345",
+      });
+      expect(findProfileWorkbench).toHaveBeenCalledWith(app, {
+        file: file.path,
+        defaultProfile: false,
+      });
+      expect(workbenchSetState).toHaveBeenCalledWith({
+        type: PROFILE_EDITOR_VIEW_TYPE,
+        state: { file: file.path, itemIndexedKey: "MAIN2345" },
+        active: true,
+      });
+      expect(compactSetState).not.toHaveBeenCalled();
+      expect(openProfileWorkbench).toHaveBeenLastCalledWith(app, workbench);
+      expect(chooseWorkbenchItem).not.toHaveBeenCalled();
+      expect(chooseCompactItem).not.toHaveBeenCalled();
+    },
+  );
+
+  it("binds an existing built-in Default workbench to the custom file before applying its launch Item", async () => {
+    const { app, file, leaf, setViewState } = setup();
+    file.path = "templates/zotlit-profile.default.md";
+    const chooseItem = vi.fn();
+    const workbench = Object.assign(
+      Object.create(ProfileEditorView.prototype),
+      { file: null, leaf, chooseItem },
+    ) as ProfileEditorView;
+    Object.assign(leaf, { view: workbench });
+    vi.mocked(findProfileWorkbench).mockResolvedValueOnce(workbench);
+    vi.spyOn(app.vault, "getFileByPath").mockReturnValue(file);
+    await openNativeProfile(
+      app,
+      { defaultDocumentPath: file.path, getSource: vi.fn() },
+      { customize: true, itemIndexedKey: "MAIN2345" },
+    );
+    expect(findProfileWorkbench).toHaveBeenCalledWith(app, {
+      file: file.path,
+      defaultProfile: true,
+    });
+    expect(setViewState).toHaveBeenCalledWith({
+      type: PROFILE_EDITOR_VIEW_TYPE,
+      state: {
+        file: file.path,
+        defaultDraft: false,
+        itemIndexedKey: "MAIN2345",
+      },
+      active: true,
+    });
+    expect(openProfileWorkbench).toHaveBeenLastCalledWith(app, workbench);
+    expect(chooseItem).not.toHaveBeenCalled();
+  });
+
   it("routes explicit Default customization through the ready inspection view", async () => {
     const { app, leaf, setViewState } = setup();
     const customizeDefault = vi.fn(async () => {});

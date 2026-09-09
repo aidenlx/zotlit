@@ -186,31 +186,155 @@ export function registerNotePreview(
   });
 }
 
-/** Move the same authoring session into an explicit three-column window. */
+const workspaceOpenings = new WeakMap<App, Promise<void>>();
+
+type ProfileSource = { file: string | null; defaultProfile: boolean };
+
+/** Resolve restored leaves before deciding whether this Profile already has a workbench. */
+export async function findProfileWorkbench(
+  app: App,
+  source: ProfileSource,
+  requesting?: ProfileEditorView,
+): Promise<ProfileEditorView | null> {
+  if (
+    requesting?.leaf.group &&
+    requesting.leaf.getContainer() !== app.workspace.rootSplit &&
+    [EXPLORER_VIEW_TYPE, NOTE_PREVIEW_VIEW_TYPE].some((type) =>
+      app.workspace
+        .getLeavesOfType(type)
+        .some(
+          (leaf) =>
+            leaf.group === requesting.leaf.group &&
+            leaf.getContainer() === requesting.leaf.getContainer(),
+        ),
+    )
+  )
+    return requesting;
+  for (const leaf of app.workspace.getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE)) {
+    if (leaf.getContainer() === app.workspace.rootSplit) continue;
+    if (!(leaf.view instanceof ProfileEditorView)) {
+      const state = leaf.view.getState();
+      if (
+        state.file !== source.file &&
+        !(source.defaultProfile && (state.defaultDraft || state.file))
+      )
+        continue;
+      await leaf.loadIfDeferred();
+    }
+    const candidate = leaf.view;
+    if (!(candidate instanceof ProfileEditorView)) continue;
+    if (
+      candidate !== requesting &&
+      !(source.defaultProfile && candidate.isDefaultProfile) &&
+      !(source.file && candidate.file?.path === source.file)
+    )
+      continue;
+    if (hasWorkbenchPanes(app, candidate)) return candidate;
+  }
+  return null;
+}
+
+/** Reveal the Profile's workbench, or move this editor into a dedicated window. */
 export function openProfileWorkbench(
   app: App,
   editor: ProfileEditorView,
 ): Promise<void> {
   const pending = openings.get(editor);
   if (pending) return pending;
-  const opening = (async () => {
-    const { workspace } = app;
-    if (editor.leaf.getContainer() === workspace.rootSplit) {
-      workspace.moveLeafToPopout(editor.leaf, {
-        size: { width: 1440, height: 900 },
-      });
-      editor.onResize();
-    }
-    await openCompanion(app, editor, EXPLORER_VIEW_TYPE);
-    await openCompanion(app, editor, NOTE_PREVIEW_VIEW_TYPE);
-    await workspace.revealLeaf(editor.leaf);
-    workspace.setActiveLeaf(editor.leaf, { focus: true });
-    editor.leaf.getContainer().focus();
-  })().finally(() => {
-    openings.delete(editor);
-  });
+  const opening = (workspaceOpenings.get(app) ?? Promise.resolve())
+    .catch(() => {})
+    .then(async () => {
+      const { workspace } = app;
+      const existing = await findProfileWorkbench(
+        app,
+        {
+          file: editor.file?.path ?? null,
+          defaultProfile: editor.isDefaultProfile,
+        },
+        editor,
+      );
+      if (existing && existing !== editor) {
+        if (editor.file && !existing.file && existing.isDefaultProfile) {
+          await existing.leaf.setViewState({
+            type: PROFILE_EDITOR_VIEW_TYPE,
+            state: {
+              ...existing.getState(),
+              file: editor.file.path,
+              defaultDraft: false,
+            },
+          });
+        }
+        await revealWorkbench(app, existing);
+        return;
+      }
+      const container = editor.leaf.getContainer();
+      const otherEditor = workspace
+        .getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE)
+        .some(
+          (leaf) => leaf !== editor.leaf && leaf.getContainer() === container,
+        );
+      const unrelatedCompanion = [
+        EXPLORER_VIEW_TYPE,
+        NOTE_PREVIEW_VIEW_TYPE,
+      ].some((type) =>
+        workspace
+          .getLeavesOfType(type)
+          .some(
+            (leaf) =>
+              leaf.getContainer() === container &&
+              (!editor.leaf.group || leaf.group !== editor.leaf.group),
+          ),
+      );
+      if (
+        container === workspace.rootSplit ||
+        (otherEditor && existing !== editor) ||
+        unrelatedCompanion
+      ) {
+        workspace.moveLeafToPopout(editor.leaf, {
+          size: { width: 1440, height: 900 },
+        });
+        editor.onResize();
+      }
+      await openCompanion(app, editor, EXPLORER_VIEW_TYPE);
+      await openCompanion(app, editor, NOTE_PREVIEW_VIEW_TYPE);
+      await revealWorkbench(app, editor);
+    })
+    .finally(() => {
+      openings.delete(editor);
+      if (workspaceOpenings.get(app) === opening) workspaceOpenings.delete(app);
+    });
   openings.set(editor, opening);
+  workspaceOpenings.set(app, opening);
   return opening;
+}
+
+async function revealWorkbench(
+  app: App,
+  editor: ProfileEditorView,
+): Promise<void> {
+  await app.workspace.revealLeaf(editor.leaf);
+  app.workspace.setActiveLeaf(editor.leaf, { focus: true });
+  editor.leaf.getContainer().focus();
+}
+
+function hasWorkbenchPanes(app: App, editor: ProfileEditorView): boolean {
+  const container = editor.leaf.getContainer();
+  return [EXPLORER_VIEW_TYPE, NOTE_PREVIEW_VIEW_TYPE].some((type) =>
+    app.workspace.getLeavesOfType(type).some((leaf) => {
+      if (leaf.getContainer() !== container) return false;
+      if (editor.leaf.group && leaf.group === editor.leaf.group) return true;
+      const state = leaf.view.getState();
+      const source = state.source as
+        | { path?: string; builtin?: boolean }
+        | undefined;
+      return (
+        (!!editor.file &&
+          (state.sourceFile === editor.file.path ||
+            source?.path === editor.file.path)) ||
+        (editor.isDefaultProfile && source?.builtin === true)
+      );
+    }),
+  );
 }
 
 /** Reopen the result beside its editor without opening the other workbench pane. */
