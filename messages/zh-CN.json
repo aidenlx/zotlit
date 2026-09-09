@@ -1125,7 +1125,7 @@
   "workbench_match_problem_syntax": "表达式在“{text}”附近有语法错误。",
   "workbench_match_problem_unsupported": "“{text}”不是支持的条件。",
   "workbench_match_problem_unknown_item_type": "{text} 不是 Zotero 条目类型。",
-  "workbench_match_remove": "移除匹配",
+  "workbench_match_remove": "清空全部",
   "workbench_tab_match": "匹配",
   "workbench_match_result_yes": "与所选条目匹配：是",
   "workbench_match_result_no": "与所选条目匹配：否",

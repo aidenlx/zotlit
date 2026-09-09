@@ -13,6 +13,7 @@ export const profileEditorIcons: Record<WorkbenchIcon, string> = {
   confirm: "check",
   add: "plus",
   remove: "trash-2",
+  close: "x",
   "move-up": "arrow-up",
   "move-down": "arrow-down",
   "choose-sample": "search",
@@ -54,11 +55,15 @@ export const profileEditorTheme: WorkbenchTheme = {
       "remove-button": "mod-destructive zt:shrink-0",
       button: profileEditorButton,
       "icon-button": "clickable-icon zt:shrink-0",
-      input: "zt:min-w-0 zt:w-full zt:flex-1",
+      input:
+        "zt:min-h-(--input-height) zt:min-w-0 zt:w-full zt:flex-auto zt:shrink-0",
       "chip-input":
-        "zt:[field-sizing:content] zt:w-auto zt:max-w-full zt:min-w-[2ch] zt:flex-none zt:self-center zt:[--background-modifier-form-field:transparent] zt:[--input-height:auto] zt:[--input-padding:0px]",
-      "chip-value": "zt:min-w-0 zt:[overflow-wrap:anywhere]",
-      hint: "zt:text-xs zt:leading-normal zt:text-pretty zt:text-muted-foreground",
+        "zt:[field-sizing:content] zt:w-auto zt:max-w-full zt:min-w-[2ch] zt:flex-none zt:[--background-modifier-form-field:transparent] zt:[--input-padding:0px]",
+      "chip-item": "zt:flex zt:min-w-0 zt:max-w-full zt:flex-col",
+      "chip-line": "metadata-property-value zt:min-w-0",
+      "chip-value": "multi-select-pill-content",
+      "chip-remove": "multi-select-pill-remove-button clickable-icon",
+      hint: "zt:pb-1 zt:text-xs zt:leading-normal zt:text-pretty zt:text-muted-foreground",
       pane: cn(
         "zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:text-sm",
         "zt:[--icon-size:var(--icon-s)] zt:[--icon-stroke:var(--icon-s-stroke-width)]",
@@ -72,22 +77,27 @@ export const profileEditorTheme: WorkbenchTheme = {
       row: "zt:grid zt:min-w-0 zt:grid-cols-[4.5rem_minmax(0,1fr)] zt:items-start zt:gap-2 zt:[&>[data-part=group]]:col-span-2",
       condition: "zt:col-start-2 zt:min-w-0",
       statement: cn(
-        "zt:grid zt:min-w-0 zt:grid-cols-[auto_auto_minmax(0,1fr)_auto] zt:items-start zt:overflow-hidden zt:rounded-md zt:bg-input zt:ring-1 zt:ring-border-hover zt:focus-within:ring-2 zt:focus-within:ring-border-focus",
+        "zt:flex zt:min-w-0 zt:items-start zt:overflow-hidden zt:rounded-md zt:bg-input zt:ring-1 zt:ring-border-hover zt:focus-within:ring-2 zt:focus-within:ring-border-focus",
         "zt:[--dropdown-background-hover:var(--background-modifier-form-field-hover)] zt:[--dropdown-background:var(--background-modifier-form-field)] zt:[--input-border-width-focus:0px] zt:[--input-border-width:0px] zt:[--input-radius:0px] zt:[--input-shadow:none]",
-        "zt:[&_[data-part=wrapper]>select]:w-full zt:[&>[data-part=wrapper]]:border-border zt:[&>[data-part=wrapper]:nth-child(2)]:border-s",
-        "zt:[&>[data-part=actions]]:col-start-4 zt:[&>[data-part=actions]]:row-start-1 zt:[&>[data-part=actions]]:h-(--input-height) zt:[&>[data-part=actions]]:flex-nowrap zt:[&>[data-part=actions]]:gap-0 zt:[&>[data-part=actions]]:border-s zt:[&>[data-part=actions]]:border-border zt:[&>[data-part=actions]]:px-0.5",
-        "zt:@container zt:[&:has([aria-invalid=true])]:ring-(--background-modifier-error)",
-        "zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:col-span-4 zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:row-start-2 zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-s-0 zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-t zt:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-border",
-        "zt:@lg:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:col-span-1 zt:@lg:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:col-start-3 zt:@lg:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:row-start-1 zt:@lg:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-s zt:@lg:[&>:is([data-part=input],div[data-part=control],[data-part=wrapper]:nth-child(3))]:border-t-0",
+        "zt:[&_[data-part=wrapper]>select]:[field-sizing:content] zt:[&_[data-part=wrapper]>select]:w-full zt:[&:has([aria-invalid=true])]:ring-(--background-modifier-error)",
+        "zt:[&>[data-part=actions]]:h-(--input-height) zt:[&>[data-part=actions]]:shrink-0 zt:[&>[data-part=actions]]:flex-nowrap zt:[&>[data-part=actions]]:gap-0 zt:[&>[data-part=actions]]:px-0.5",
+      ),
+      fields:
+        "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-stretch zt:overflow-hidden",
+      predicate:
+        "zt:flex zt:min-w-0 zt:max-w-full zt:[&>[data-part=wrapper]:nth-child(2)]:border-s zt:[&>[data-part=wrapper]]:border-border",
+      value: cn(
+        "zt:-ms-px zt:-mt-px zt:flex zt:max-w-full zt:min-w-0 zt:flex-auto zt:items-start zt:border-s zt:border-t zt:border-border zt:empty:hidden",
+        "zt:[&>:is([data-part=input],div[data-part=control])]:w-[12ch] zt:[&>:not([data-part=actions],datalist)]:flex-auto",
       ),
       actions: "zt:flex zt:flex-wrap zt:items-center zt:gap-2",
       control:
         "zt:min-w-0 zt:max-w-full zt:[div&]:flex zt:[div&]:flex-col zt:[span&]:px-2 zt:[span&]:pb-1 zt:[span&]:text-xs zt:[span&]:leading-normal zt:[span&]:text-muted-foreground",
       chips:
-        "zt:col-span-4 zt:row-start-2 zt:flex zt:min-h-(--input-height) zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-1 zt:border-t zt:border-border zt:px-1.5 zt:py-1 zt:@lg:col-span-1 zt:@lg:col-start-3 zt:@lg:row-start-1 zt:@lg:border-s zt:@lg:border-t-0 zt:[&>div:last-of-type]:max-w-[calc(100%_-_2ch_-_0.25rem)]",
-      chip: "zt:inline-flex zt:max-w-full zt:items-center zt:gap-0.5 zt:self-start zt:rounded-sm zt:bg-muted zt:py-0.5 zt:ps-1.5 zt:text-sm zt:leading-tight zt:[&>[data-part=icon-button]]:size-7 zt:[&_[data-part=icon-button]>svg]:shrink-0",
+        "zt:flex zt:min-h-(--input-height) zt:min-w-0 zt:w-max zt:flex-wrap zt:items-start zt:gap-x-1.5 zt:px-2 zt:[--metadata-divider-width:0px] zt:[--metadata-input-font-size:var(--font-ui-small)] zt:[--metadata-input-text-color:var(--text-normal)]",
+      chip: "multi-select-pill",
       expression:
-        "zt:col-span-3 zt:min-w-0 zt:w-full zt:font-mono zt:text-sm zt:leading-normal zt:[field-sizing:content] zt:resize-y",
+        "zt:min-w-0 zt:w-full zt:font-mono zt:text-sm zt:leading-normal zt:[field-sizing:content] zt:resize-y",
       conjunction:
         "zt:flex zt:min-h-(--input-height) zt:items-center zt:justify-end zt:text-end zt:text-sm zt:text-muted-foreground zt:[overflow-wrap:anywhere]",
       result: "zt:text-xs zt:leading-normal zt:text-muted-foreground",

@@ -1931,7 +1931,7 @@
   "workbench_match_problem_syntax": "The expression has a syntax error near “{text}”.",
   "workbench_match_problem_unsupported": "“{text}” is not a supported condition.",
   "workbench_match_problem_unknown_item_type": "{text} is not a Zotero item type.",
-  "workbench_match_remove": "Remove match",
+  "workbench_match_remove": "Clear all",
   "workbench_tab_match": "Match",
   "workbench_match_result_yes": "Matches the selected paper: yes",
   "workbench_match_result_no": "Matches the selected paper: no",

@@ -54,6 +54,7 @@ export function MatchPane({
     controller.document?.manifest.match,
   );
   const ownEdit = useRef(false);
+  const [showStarter, setShowStarter] = useState(true);
   const [root, setRoot] = useState<ConditionGroup>(() =>
     match === undefined
       ? { kind: "group", match: "all", conditions: [] }
@@ -75,12 +76,14 @@ export function MatchPane({
       if (controller.document) {
         const next = controller.document.manifest.match;
         setMatch(next);
-        if (!ownEdit.current)
+        if (!ownEdit.current) {
+          setShowStarter(true);
           setRoot(
             next === undefined
               ? { kind: "group", match: "all", conditions: [] }
               : fromFilter(next),
           );
+        }
       }
     };
     read();
@@ -138,6 +141,7 @@ export function MatchPane({
       if (next === undefined)
         setRoot({ kind: "group", match: "all", conditions: [] });
     }
+    return saved;
   }
   const compiled =
     match === undefined ? null : compileFilter(match, deps.libraries);
@@ -186,10 +190,16 @@ export function MatchPane({
           group={root}
           path={[]}
           deps={deps}
+          showStarter={showStarter}
           onRemoveMatch={
-            match === undefined ? undefined : () => write(undefined)
+            match === undefined && !showStarter
+              ? undefined
+              : () => {
+                  if (write(undefined)) setShowStarter(false);
+                }
           }
           onChange={(next) => {
+            setShowStarter(true);
             setRoot(next);
             write(toFilter(next));
           }}
@@ -226,6 +236,7 @@ function Group({
   deps,
   onChange,
   onRemoveMatch,
+  showStarter = false,
 }: {
   root: ConditionGroup;
   group: ConditionGroup;
@@ -233,11 +244,16 @@ function Group({
   deps: MatchEditorDeps;
   onChange: (root: ConditionGroup) => void;
   onRemoveMatch?: () => void;
+  showStarter?: boolean;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("match");
   const icon = useIcon();
   const host = useWorkbenchHost();
+  const starter = showStarter && group.conditions.length === 0;
+  const conditions = starter
+    ? [freshCondition("collections", false)]
+    : group.conditions;
   return (
     <div {...part("group", path.length ? "nested" : "root")}>
       <div {...part("actions")}>
@@ -278,7 +294,7 @@ function Group({
         )}
       </div>
       <ul {...part("rows")}>
-        {group.conditions.map((node, index) => (
+        {conditions.map((node, index) => (
           <li
             key={index}
             {...part("row", node.kind === "group" ? "group" : "condition")}
@@ -303,11 +319,18 @@ function Group({
             ) : (
               <Row
                 condition={node}
+                starter={starter}
                 deps={deps}
                 onChange={(next) =>
-                  onChange(replaceAt(root, [...path, index], next))
+                  onChange(
+                    starter
+                      ? appendAt(root, path, next)
+                      : replaceAt(root, [...path, index], next),
+                  )
                 }
-                onRemove={() => onChange(removeAt(root, [...path, index]))}
+                onRemove={() => {
+                  if (!starter) onChange(removeAt(root, [...path, index]));
+                }}
               />
             )}
           </li>
@@ -341,11 +364,13 @@ function Group({
 
 function Row({
   condition,
+  starter = false,
   deps,
   onChange,
   onRemove,
 }: {
   condition: RowCondition;
+  starter?: boolean;
   deps: MatchEditorDeps;
   onChange: (condition: RowCondition) => void;
   onRemove: () => void;
@@ -354,51 +379,62 @@ function Row({
   const part = useParts("match");
   const icon = useIcon();
   const host = useWorkbenchHost();
-  const issue = conditionIssue(m, condition, deps);
+  const issue = starter ? null : conditionIssue(m, condition, deps);
   const labelled =
     condition.kind === "expression" ? asLabelled(condition) : null;
   return (
     <div {...part("condition")} data-condition-row="">
       <div {...part("statement")}>
-        {condition.kind === "expression" ? (
-          <textarea
-            rows={1}
-            {...part("expression")}
-            aria-label={m.workbench_match_expression()}
-            aria-invalid={issue !== null}
-            value={condition.text}
-            onChange={(event) =>
-              onChange({ kind: "expression", text: event.currentTarget.value })
-            }
-          />
-        ) : (
-          <>
-            <MatchSelect
-              aria-label={m.workbench_match_condition_kind()}
-              value={condition.kind}
-              onChange={(kind) =>
-                onChange(freshCondition(kind as ConditionKind, false))
-              }
-            >
-              <option value="library">
-                {m.workbench_match_condition_library()}
-              </option>
-              <option value="item-type">
-                {m.workbench_match_condition_item_type()}
-              </option>
-              <option value="collections">
-                {m.workbench_match_condition_collection()}
-              </option>
-              <option value="tags">{m.workbench_match_condition_tag()}</option>
-            </MatchSelect>
-            <ConditionOperator condition={condition} onChange={onChange} />
-            <ConditionValue
-              condition={condition}
-              onChange={onChange}
-              deps={deps}
-            />
-          </>
-        )}
+        <div {...part("fields")}>
+          {condition.kind !== "expression" && (
+            <div {...part("predicate")}>
+              <MatchSelect
+                aria-label={m.workbench_match_condition_kind()}
+                value={condition.kind}
+                onChange={(kind) =>
+                  onChange(freshCondition(kind as ConditionKind, false))
+                }
+              >
+                <option value="library">
+                  {m.workbench_match_condition_library()}
+                </option>
+                <option value="item-type">
+                  {m.workbench_match_condition_item_type()}
+                </option>
+                <option value="collections">
+                  {m.workbench_match_condition_collection()}
+                </option>
+                <option value="tags">
+                  {m.workbench_match_condition_tag()}
+                </option>
+              </MatchSelect>
+              <ConditionOperator condition={condition} onChange={onChange} />
+            </div>
+          )}
+          <div {...part("value")}>
+            {condition.kind === "expression" ? (
+              <textarea
+                rows={1}
+                {...part("expression")}
+                aria-label={m.workbench_match_expression()}
+                aria-invalid={issue !== null}
+                value={condition.text}
+                onChange={(event) =>
+                  onChange({
+                    kind: "expression",
+                    text: event.currentTarget.value,
+                  })
+                }
+              />
+            ) : (
+              <ConditionValue
+                condition={condition}
+                onChange={onChange}
+                deps={deps}
+              />
+            )}
+          </div>
+        </div>
         <div {...part("actions")}>
           {condition.kind === "expression" ? (
             <button

@@ -32,6 +32,7 @@ export type {
   WorkbenchHoverCardHandle,
   WorkbenchHoverCardRequest,
   WorkbenchInsertTarget,
+  WorkbenchInputSuggestionsRequest,
   WorkbenchLibrary,
   WorkbenchMatchData,
   WorkbenchMenuItem,
