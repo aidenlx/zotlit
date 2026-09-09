@@ -204,7 +204,7 @@ export function PropertiesPane({
                     aria-controls={`${instanceId}-property-${entry.position}`}
                     onClick={() => onSelect(open ? null : entry.position)}
                   >
-                    {icon("edit")}
+                    {icon(open ? "chevron-down" : "chevron-right")}
                   </button>
                   <button
                     type="button"
