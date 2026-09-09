@@ -1,5 +1,5 @@
 import { EditorView } from "@codemirror/view";
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, vi } from "vitest";
 
@@ -124,18 +124,17 @@ export interface OpenPage extends Disposable {
 }
 
 /** The page mounted for real, so its own effects run. */
-export function open(): OpenPage {
+export function open({ strict = false }: { strict?: boolean } = {}): OpenPage {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
-  act(() =>
-    root.render(
-      <>
-        <Workbench />
-        <Toaster />
-      </>,
-    ),
+  const content = (
+    <>
+      <Workbench />
+      <Toaster />
+    </>
   );
+  act(() => root.render(strict ? <StrictMode>{content}</StrictMode> : content));
   return {
     host,
     press: (label) => press(host, label),

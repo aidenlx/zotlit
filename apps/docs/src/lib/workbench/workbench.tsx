@@ -7,7 +7,14 @@ import {
   Save,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 // The standalone Template Workbench: one master Profile document behind a
 // header, three columns, and the result the reader would get. It folds twice:
 // under 1180 px the field column becomes the dialog the toolbar "Add a field"
@@ -32,8 +39,6 @@ import {
   EditToolbar,
   StartHere,
   ProblemsFooter,
-  PreviewControls,
-  ResultColumn,
   tabLabel,
   tabLede,
   TabBar,
@@ -42,6 +47,7 @@ import {
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
   createWorkbenchEditor,
+  createWorkbenchStore,
   useRenderState,
   diagnosticText,
   problemText,
@@ -53,10 +59,15 @@ import {
   NameFolderPane,
   NotePane,
   PropertiesPane,
-  PropertiesResult,
   SliceEditor,
 } from "@zotlit/workbench/ui";
-import type { WorkbenchTab, EntryDiagnostic } from "@zotlit/workbench/ui";
+import type {
+  WorkbenchTab,
+  EntryDiagnostic,
+  WorkbenchEditorInstance,
+  WorkbenchHost,
+  WorkbenchStore,
+} from "@zotlit/workbench/ui";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -84,10 +95,12 @@ import {
   AddFieldButton,
   ProfileMenuLabel,
   WorkbenchFrame,
+  WorkbenchSkeleton,
   WorkbenchHelp,
 } from "./frame";
 import { ProfileHandoff } from "./handoff";
 import { useWebHost } from "./host";
+import { WebPreview } from "./preview";
 import { SampleBar } from "./sample-bar";
 import { ensureTemporal } from "./temporal";
 import { WEB_THEME } from "./theme";
@@ -118,19 +131,26 @@ export function Workbench() {
     notice: (text) => toast.add({ title: text, type: "info" }),
     insertTarget: () => ({ slice, range: caret }),
   });
-  const [editor] = useState(() => createWorkbenchEditor({ host, controller }));
-  const { store, scheduler } = editor;
+  const [store] = useState(createWorkbenchStore);
+  const [editor, setEditor] = useState<WorkbenchEditorInstance | null>(null);
+  // Resource ownership follows the host; a replacement document attaches below.
+  const acquireEditor = useEffectEvent(
+    (ownerHost: WorkbenchHost, ownerStore: WorkbenchStore) =>
+      createWorkbenchEditor({ host: ownerHost, store: ownerStore, controller }),
+  );
+  useEffect(() => {
+    const owner = acquireEditor(host, store);
+    setEditor(owner);
+    return () => owner[Symbol.dispose]();
+  }, [host, store]);
+  const scheduler = editor?.scheduler ?? null;
   useEffect(() => {
     store.getState().setItem({
       id: sample.item.indexedKey,
       title: sample.item.title,
     });
   }, [store, sample]);
-  const {
-    result,
-    busy: renderBusy,
-    stale: resultStale,
-  } = useRenderState(scheduler);
+  const { result } = useRenderState(scheduler);
   const [revision, setRevision] = useState(0);
   const [annotationChoice, setAnnotationChoice] = useState<string | null>(null);
   const { current: itemAnnotations, example: selectedAnnotation } = useMemo(
@@ -140,6 +160,9 @@ export function Workbench() {
   useEffect(
     () => setAnnotationChoice(selectedAnnotation.id),
     [selectedAnnotation.id],
+  );
+  const [previewAnnotationChoice, setPreviewAnnotationChoice] = useState(
+    selectedAnnotation.id,
   );
   const annotationResult =
     result?.annotationId === selectedAnnotation.id &&
@@ -164,8 +187,6 @@ export function Workbench() {
   const [handoffSource] = useState(createProfileHandoffSource);
   const [fileMessage, setFileMessage] = useState<string | null>(null);
   const replaceConnected = useRef(false);
-  const [showMarkdown, setShowMarkdown] = useState(false);
-  const [showManaged, setShowManaged] = useState(false);
   // The Name and folder control a manifest problem opens, as a fresh object
   // every time, so selecting the same problem twice opens it again.
   const [focusField, setFocusField] = useState<{ field: string } | null>(null);
@@ -204,7 +225,7 @@ export function Workbench() {
     controller,
     revision,
     sample,
-    annotationSelection: selectedAnnotation.id,
+    annotationSelection: previewAnnotationChoice,
     saveTarget,
   });
 
@@ -223,8 +244,10 @@ export function Workbench() {
       ...(snapshot
         ? {
             snapshot,
-            annotationSelection: annotationSamples(snapshot, annotationChoice)
-              .example.id,
+            annotationSelection: annotationSamples(
+              snapshot,
+              previewAnnotationChoice,
+            ).example.id,
           }
         : {}),
     };
@@ -261,8 +284,7 @@ export function Workbench() {
     [controller],
   );
   useEffect(() => setFileMessage(null), [revision]);
-  useEffect(() => scheduler.attach(controller), [scheduler, controller]);
-  useEffect(() => () => editor[Symbol.dispose](), [editor]);
+  useEffect(() => editor?.attach(controller), [editor, controller]);
   useEffect(() => {
     void ensureTemporal().then(() => setTemporal(true));
   }, []);
@@ -298,11 +320,11 @@ export function Workbench() {
       // it, and a bundle read for another draft would render this one against
       // the wrong partials — the last good result stands until its own bundle
       // lands.
-      scheduler.setInput({
+      scheduler?.setInput({
         snapshot: sample,
         annotation: selectedAnnotation,
         hold: !renderable || resourcesStale,
-        ...(resources ? { resources } : {}),
+        resources,
       }),
     [
       scheduler,
@@ -709,6 +731,8 @@ export function Workbench() {
     </Dialog>
   );
 
+  if (!scheduler) return <WorkbenchSkeleton />;
+
   if (unsupported.length > 0) {
     return (
       <>
@@ -844,6 +868,9 @@ export function Workbench() {
                     // text alone, so the paper on screen stands.
                     if (kept.snapshot) setSample(kept.snapshot);
                     setAnnotationChoice(kept.annotationSelection ?? null);
+                    setPreviewAnnotationChoice(
+                      kept.annotationSelection ?? selectedAnnotation.id,
+                    );
                     if (kept.expected) saveAgainst(kept.expected);
                   }}
                 >
@@ -876,17 +903,27 @@ export function Workbench() {
         setSheet(false);
       }}
       fields={
-        <FieldList
-          key={`${root}:${fieldMode}`}
-          root={root}
-          mode={fieldMode}
-          disabled={fieldDisabled}
-          data={fields}
-          onInsert={insert}
-        />
+        <WorkbenchEditorProvider
+          store={store}
+          controller={controller}
+          scheduler={scheduler}
+        >
+          <FieldList
+            key={`${root}:${fieldMode}`}
+            root={root}
+            mode={fieldMode}
+            disabled={fieldDisabled}
+            data={fields}
+            onInsert={insert}
+          />
+        </WorkbenchEditorProvider>
       }
       editor={
-        <>
+        <WorkbenchEditorProvider
+          store={store}
+          controller={controller}
+          scheduler={scheduler}
+        >
           <EditToolbar onModeChange={changeMode}>
             <AddFieldButton
               ref={addField}
@@ -1072,11 +1109,28 @@ export function Workbench() {
               />
             </DialogContent>
           </Dialog>
-        </>
+        </WorkbenchEditorProvider>
       }
       result={
-        <>
-          <div className={showAnnotation ? "hidden" : "contents"}>
+        <WebPreview
+          annotationChoice={previewAnnotationChoice}
+          onAnnotationChoice={setPreviewAnnotationChoice}
+          source={controller.source}
+          sample={sample}
+          resources={resources}
+          hold={!renderable || resourcesStale}
+          mode={
+            showAnnotation
+              ? "annotation"
+              : !advanced && tab === "properties"
+                ? "properties"
+                : "note"
+          }
+          entries={entries ?? []}
+          openAnnotation={openAnnotation}
+          goToEntry={goToEntry}
+          openSource={() => setAdvanced(true)}
+          sampleBar={
             <SampleBar
               sample={sample}
               connection={connection}
@@ -1087,59 +1141,8 @@ export function Workbench() {
               onShow={setSample}
               onLoad={() => void loadSelectedItem()}
             />
-          </div>
-          {showAnnotation && (
-            <AnnotationSampleBar
-              current={itemAnnotations}
-              example={selectedAnnotation}
-              onSelect={setAnnotationChoice}
-            />
-          )}
-          <PreviewControls
-            busy={renderBusy}
-            disabled={!renderable || resourcesStale}
-            onRun={() => scheduler.run()}
-          />
-          <ResultColumn
-            result={result}
-            annotationResult={annotationResult}
-            mode={
-              showAnnotation
-                ? "annotation"
-                : !advanced && tab === "properties"
-                  ? "properties"
-                  : "note"
-            }
-            stale={resultStale}
-            showMarkdown={showMarkdown}
-            onShowMarkdown={setShowMarkdown}
-            showManaged={showManaged}
-            onShowManaged={setShowManaged}
-            openAnnotation={openAnnotation}
-            goToEntry={goToEntry}
-            openSource={() => setAdvanced(true)}
-            propertiesResult={
-              result && (
-                <PropertiesResult
-                  entries={entries ?? []}
-                  properties={result.properties}
-                  fold={result.fold}
-                  frontmatterBlock={result.frontmatterBlock}
-                  showMarkdown={showMarkdown}
-                />
-              )
-            }
-            help={
-              <WorkbenchHelp title={m.workbench_result_heading()}>
-                {showAnnotation
-                  ? m.workbench_annotation_lede()
-                  : showManaged
-                    ? m.workbench_result_managed_lede()
-                    : m.workbench_result_lede()}
-              </WorkbenchHelp>
-            }
-          />
-        </>
+          }
+        />
       }
       footer={<ProblemsFooter problem={problem ?? null} onOpen={goToProblem} />}
     >
@@ -1150,15 +1153,7 @@ export function Workbench() {
   );
   return (
     <WorkbenchThemeProvider theme={WEB_THEME}>
-      <WorkbenchHostProvider host={host}>
-        <WorkbenchEditorProvider
-          store={store}
-          controller={controller}
-          scheduler={scheduler}
-        >
-          {page}
-        </WorkbenchEditorProvider>
-      </WorkbenchHostProvider>
+      <WorkbenchHostProvider host={host}>{page}</WorkbenchHostProvider>
     </WorkbenchThemeProvider>
   );
 }

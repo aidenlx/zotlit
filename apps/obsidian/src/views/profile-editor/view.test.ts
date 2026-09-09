@@ -53,6 +53,7 @@ function setup(deps: Partial<ProfileEditorDeps> = {}) {
     scope: null,
     workspace: {
       requestSaveLayout: vi.fn(),
+      trigger: vi.fn(),
       setActiveLeaf,
       getActiveFile: () => null,
     },

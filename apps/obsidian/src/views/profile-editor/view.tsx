@@ -59,6 +59,9 @@ import type {
   WorkbenchHost,
   WorkbenchInsertTarget,
   WorkbenchStore,
+  WorkbenchItemChoice,
+  WorkbenchViewState,
+  TemplateRoot,
   NameFolderPaneProps,
 } from "@zotlit/workbench/ui";
 
@@ -68,7 +71,6 @@ import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { tooltipAttrs } from "@/lib/utils";
 import { pickItem } from "@/services/item-lookup/search-modal";
-import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ProfileService } from "@/services/profile/service";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
@@ -82,10 +84,7 @@ import { nativeResult, renderNativeProfile } from "@/views/note-preview/render";
 import { NativePreviewSession } from "@/views/note-preview/session";
 import { exportTemplateDataFile } from "@/views/template-data-explorer/export-file";
 import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
-import {
-  lastTemplateItem,
-  rememberTemplateItem,
-} from "@/views/template-data-explorer/item-memory";
+import { rememberTemplateItem } from "@/views/template-data-explorer/item-memory";
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
 
 import { runProfileEditorAction } from "./actions";
@@ -110,12 +109,22 @@ export type ProfileEditorDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   >;
 };
 
+export interface ProfileAuthoringContext {
+  readonly leaf: WorkspaceLeaf;
+  readonly path: string | null;
+  readonly item: WorkbenchItemChoice | null;
+  readonly root: TemplateRoot;
+  readonly tab: WorkbenchViewState["tab"];
+  readonly advanced: boolean;
+  readonly annotationId: string | null;
+}
+
 export class ProfileEditorView extends TextFileView implements HoverParent {
   /** The editor hover popover now open, which the next one replaces. */
   hoverPopover: HoverPopover | null = null;
   readonly store: WorkbenchStore;
   readonly #editor: WorkbenchEditorInstance<NativeRenderResult>;
-  /** The one scheduler the editor and the Note Preview sidebar render through. */
+  /** Renders compact examples independently of companion views. */
   readonly scheduler: RenderScheduler<NativeRenderResult>;
   readonly preview: NativePreviewSession | null;
   readonly #revealListeners = new Set<
@@ -137,7 +146,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   #insertRequest: WorkbenchInsertTarget | null = null;
   readonly #insertListeners = new Set<() => void>();
   #choosePending: Promise<void> | null = null;
-  #prompted = false;
+  #itemGeneration = 0;
   #closed = false;
   #generation = 0;
   #bindingDefaults = BUILT_IN_BINDING_DEFAULTS;
@@ -186,8 +195,33 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     this.store = this.#editor.store;
     this.scheduler = this.#editor.scheduler;
     this.preview = deps.nativePreview
-      ? new NativePreviewSession(deps.nativePreview, this.scheduler, this.store)
+      ? new NativePreviewSession(
+          deps.nativePreview,
+          this.scheduler,
+          this.store.getState().item,
+        )
       : null;
+    this.register(
+      this.store.subscribe((state, previous) => {
+        if (state.item !== previous.item) this.preview?.setItem(state.item);
+        if (state.preview !== previous.preview)
+          this.preview?.setPreview(state.preview);
+        if (
+          state.item !== previous.item ||
+          state.root !== previous.root ||
+          state.tab !== previous.tab ||
+          state.advanced !== previous.advanced
+        )
+          this.#publishAuthoringContext();
+      }),
+    );
+    if (this.preview)
+      this.register(
+        this.preview.state.subscribe((state, previous) => {
+          if (state.example !== previous.example)
+            this.#publishAuthoringContext();
+        }),
+      );
     this.scope = new Scope(this.app.scope);
     this.scope.register(["Mod"], "z", (event) => this.#history(event, false));
     this.scope.register(["Mod", "Shift"], "z", (event) =>
@@ -213,6 +247,28 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     );
     this.register(
       this.store.subscribe(() => this.app.workspace.requestSaveLayout()),
+    );
+  }
+
+  get nativeRenderDeps(): NativeRenderDeps | undefined {
+    return this.#deps.nativePreview;
+  }
+  get authoringContext(): ProfileAuthoringContext {
+    const { item, root, tab, advanced } = this.store.getState();
+    return {
+      leaf: this.leaf,
+      path: this.file?.path ?? null,
+      item,
+      root,
+      tab,
+      advanced,
+      annotationId: this.preview?.state.getState().example?.id ?? null,
+    };
+  }
+  #publishAuthoringContext(): void {
+    this.app.workspace.trigger(
+      "zotlit:authoring-context",
+      this.authoringContext,
     );
   }
 
@@ -390,7 +446,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
         runtime: "native",
         readOnly: this.#defaultDraft,
       });
-      this.scheduler.attach(this.#controller);
+      this.#editor.attach(this.#controller);
       this.#insertTarget = null;
       this.#insertRequest = null;
       for (const listener of this.#insertListeners) listener();
@@ -398,6 +454,9 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       this.#mount();
     } else this.#controller.applyExternalSource(source);
     this.data = this.#controller.source;
+    if (clear && this.file)
+      this.app.workspace.trigger("quick-preview", this.file, this.data);
+    this.#publishAuthoringContext();
   }
   override clear(): void {
     if (this.#defaultDraft || this.#bindingDraft) return;
@@ -471,10 +530,13 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       if (typeof preview.live === "boolean")
         store.setPreview({ live: preview.live });
     }
+    const itemGeneration = ++this.#itemGeneration;
     if (typeof value.itemIndexedKey === "string") {
+      store.setItem({ id: value.itemIndexedKey, title: null });
       if (!(await this.#databaseReady())) return;
-      if (!this.#closed) this.#selectKey(value.itemIndexedKey);
-    }
+      if (!this.#closed && itemGeneration === this.#itemGeneration)
+        this.#selectKey(value.itemIndexedKey);
+    } else if (value.itemIndexedKey === null) store.setItem(null);
   }
 
   protected override async onOpen(): Promise<void> {
@@ -506,14 +568,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     this.#root = createRoot(this.contentEl);
     this.#mount();
     void this.refreshStyles();
-    if (!(await this.#databaseReady())) return;
-    if (this.#closed || this.store.getState().item) return;
-    const active = this.app.workspace.getActiveFile();
-    const key =
-      (active &&
-        itemKeyFromFrontmatter(this.app.metadataCache.getFileCache(active))) ||
-      lastTemplateItem(this.app);
-    if (key) this.#selectKey(key);
+    void this.#databaseReady();
   }
   protected override async onClose(): Promise<void> {
     this.#closed = true;
@@ -700,6 +755,8 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   }
   chooseItem(): Promise<void> {
     if (this.#choosePending) return this.#choosePending;
+    const generation = this.#generation;
+    const itemGeneration = ++this.#itemGeneration;
     this.#choosePending = pickItem(
       {
         app: this.app,
@@ -709,20 +766,23 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       m.template_data_explorer_pick_placeholder(),
     )
       .then((hit) => {
-        if (hit && !this.#closed) this.#selectKey(hit.item.indexedKey);
+        if (
+          hit &&
+          !this.#closed &&
+          generation === this.#generation &&
+          itemGeneration === this.#itemGeneration
+        )
+          this.#selectKey(hit.item.indexedKey);
       })
       .finally(() => {
         this.#choosePending = null;
       });
     return this.#choosePending;
   }
-  /** Preview and Explorer call this at their first need for an Item. */
+  /** Resolve an explicit action that requires an Item. */
   async ensureItem(): Promise<boolean> {
     if (this.store.getState().item) return true;
-    if (!this.#prompted) {
-      this.#prompted = true;
-      await this.chooseItem();
-    }
+    await this.chooseItem();
     return this.store.getState().item !== null;
   }
   #selectKey(indexedKey: string): void {
@@ -774,6 +834,9 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
           for (const listener of this.#insertListeners) listener();
         }
         this.data = this.#controller.source;
+        if (this.file)
+          this.app.workspace.trigger("quick-preview", this.file, this.data);
+        this.#publishAuthoringContext();
         if (transaction.annotation(externalEdit) !== true) {
           if (!this.#defaultDraft) this.requestSave();
         }

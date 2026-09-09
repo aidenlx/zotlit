@@ -2,6 +2,7 @@ import type { ProfileRenderResult } from "#/render/result";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { useWorkbenchStore, useWorkbenchEditor } from "./editor";
 import { PreviewControls } from "./preview-controls";
 import { PropertyList } from "./property-list";
 import { ResultColumn } from "./result-column";
@@ -137,7 +138,19 @@ it("links a profile error to source", () => {
 
 it("changes preview mode, runs on demand, and pauses future work", () => {
   const onRun = vi.fn<() => void>();
-  using mounted = mount(<PreviewControls busy={false} onRun={onRun} />);
+  function Controls() {
+    const preview = useWorkbenchStore((state) => state.preview);
+    const { store } = useWorkbenchEditor();
+    return (
+      <PreviewControls
+        preview={preview}
+        onChange={store.getState().setPreview}
+        busy={false}
+        onRun={onRun}
+      />
+    );
+  }
+  using mounted = mount(<Controls />);
   const { store, ui } = mounted;
   render(ui);
   fireEvent.input(screen.getByLabelText(m.workbench_preview_mode()), {

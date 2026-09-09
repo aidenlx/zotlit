@@ -287,6 +287,33 @@ describe("Profile Editor entry points", () => {
       });
     },
   );
+  it.each(["file", "default"])(
+    "opens %s without borrowing the active note's Item",
+    async (kind) => {
+      const { app, file, setViewState } = setup();
+      vi.spyOn(app.metadataCache, "getFileCache").mockReturnValue({
+        frontmatter: { "zotero-key": "MAIN2345" },
+      });
+      await openNativeProfile(
+        app,
+        kind === "file"
+          ? file
+          : {
+              defaultDocumentPath: "templates/zotlit-profile.default.md",
+              getSource: async () => "Configured built-in document",
+            },
+      );
+      expect(setViewState).toHaveBeenCalledWith({
+        type: PROFILE_EDITOR_VIEW_TYPE,
+        state:
+          kind === "file"
+            ? { file: file.path }
+            : { defaultDraft: true, file: null },
+        active: true,
+      });
+    },
+  );
+
   it("opens built-in Default from the effective source without ejecting it", async () => {
     const { app, setViewState } = setup();
     const getSource = vi.fn(async () => "Configured built-in document");

@@ -119,12 +119,21 @@ export function registerProfileEditor(
     id: "open-profile-editor",
     name: m.profile_editor_open(),
     checkCallback(checking) {
-      const target = targetOf(plugin.app.workspace.getActiveFile());
+      const active = plugin.app.workspace.getActiveFile();
+      const target = targetOf(active);
       if (!target) return false;
-      if (!checking)
+      if (!checking) {
+        const itemIndexedKey =
+          active &&
+          itemKeyFromFrontmatter(plugin.app.metadataCache.getFileCache(active));
         void runProfileEditorAction("customize", () =>
-          openNativeProfile(plugin.app, target),
+          openNativeProfile(
+            plugin.app,
+            target,
+            itemIndexedKey ? { itemIndexedKey } : {},
+          ),
         );
+      }
       return true;
     },
   });
@@ -244,12 +253,7 @@ export async function openNativeProfile(
   }
   if (options.explainUnsupported !== false && requiresNative(source))
     new BaseNotice(m.profile_editor_native_required());
-  const active = app.workspace.getActiveFile();
-  const itemIndexedKey =
-    options.itemIndexedKey ??
-    (active
-      ? itemKeyFromFrontmatter(app.metadataCache.getFileCache(active))
-      : null);
+  const { itemIndexedKey } = options;
   const leaf =
     app.workspace
       .getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE)
@@ -283,7 +287,7 @@ export function requiresNative(source: string): boolean {
   );
 }
 
-/** Every Profile document entry point preserves the selected Literature Note's Item. */
+/** Open a Profile document with an explicitly supplied launch Item. */
 export async function openProfileEditor(
   app: App,
   file: TFile,
@@ -300,12 +304,7 @@ export async function openProfileEditor(
     requiresNative(await app.vault.cachedRead(file))
   )
     new BaseNotice(m.profile_editor_native_required());
-  const active = app.workspace.getActiveFile();
-  const itemIndexedKey =
-    options.itemIndexedKey ??
-    (active
-      ? itemKeyFromFrontmatter(app.metadataCache.getFileCache(active))
-      : null);
+  const { itemIndexedKey } = options;
   const leaf =
     options.leaf ??
     app.workspace

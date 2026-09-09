@@ -1,28 +1,53 @@
-// One editor's paper for the preview: the Item Snapshot a render is shown
-// against and the annotation examples the reader chooses between. Scheduling is
-// the shared Render Scheduler's; this session only feeds it what Obsidian alone
-// can read, and tells it when something outside the document changed.
+// One native render owner loads its own Item Snapshot and annotation examples.
 import { createStore } from "zustand/vanilla";
 
 import { parseIndexedKey } from "@zotlit/db";
+import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
+import { managedFrontmatterEntries } from "@zotlit/workbench/document";
+import type { ManagedEntrySource } from "@zotlit/workbench/document";
 import type { AnnotationExample } from "@zotlit/workbench/render";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import { annotationSamples } from "@zotlit/workbench/ui";
-import type { RenderScheduler, WorkbenchStore } from "@zotlit/workbench/ui";
+import type {
+  RenderScheduler,
+  WorkbenchItemChoice,
+  PreviewMode,
+} from "@zotlit/workbench/ui";
 
 import { getLogger } from "@/lib/log";
+import type { ProfileAuthoringContext } from "@/views/profile-editor/view";
 
 import type { NativeRenderDeps, NativeRenderResult } from "./render";
 
 const logger = getLogger(["note-preview", "session"]);
 
 export interface NativePreviewState {
+  context: ProfileAuthoringContext | null;
+  source: string | null;
+  sourceProblem: string | null;
+  entries: readonly ManagedEntrySource[];
+  item: WorkbenchItemChoice | null;
+  preview: { mode: PreviewMode; live: boolean };
+  status: "empty" | "loading" | "ready" | "error";
+  error: string | null;
+  showMarkdown: boolean;
+  showManaged: boolean;
   snapshot: ItemSnapshot | null;
   current: readonly AnnotationExample[];
   example: AnnotationExample | null;
 }
 const EMPTY_PREVIEW: NativePreviewState = {
+  context: null,
+  source: null,
+  sourceProblem: null,
+  entries: [],
+  item: null,
+  preview: { mode: "create", live: true },
+  status: "empty",
+  error: null,
+  showMarkdown: false,
+  showManaged: false,
   snapshot: null,
   current: [],
   example: null,
@@ -32,7 +57,6 @@ export class NativePreviewSession implements Disposable {
     ...EMPTY_PREVIEW,
   }));
   readonly #deps: NativeRenderDeps;
-  readonly #store: WorkbenchStore;
   readonly #scheduler: RenderScheduler<NativeRenderResult>;
   readonly #cleanup: DisposableStack;
   #dataGeneration = 0;
@@ -42,17 +66,12 @@ export class NativePreviewSession implements Disposable {
   constructor(
     deps: NativeRenderDeps,
     scheduler: RenderScheduler<NativeRenderResult>,
-    store: WorkbenchStore,
+    item: WorkbenchItemChoice | null = null,
   ) {
     this.#deps = deps;
     this.#scheduler = scheduler;
-    this.#store = store;
+    this.state.setState({ item });
     using cleanup = new DisposableStack();
-    cleanup.defer(
-      store.subscribe((state, previous) => {
-        if (state.item?.id !== previous.item?.id) this.refresh();
-      }),
-    );
     cleanup.defer(deps.db.on("changed", () => this.refresh()));
     cleanup.defer(
       deps.templates.on("compile-status-changed", () => scheduler.invalidate()),
@@ -75,9 +94,35 @@ export class NativePreviewSession implements Disposable {
   }
   /** Data choice remains live even while template execution is on demand. */
   refresh(): void {
-    this.#loading = this.#loadSnapshot();
+    if (!this.#closed) this.#loading = this.#loadSnapshot();
+  }
+  setSource(source: string): void {
+    if (this.#closed || source === this.state.getState().source) return;
+    let sourceProblem: string | null = null;
+    let entries = this.state.getState().entries;
+    try {
+      parseLiteratureNoteTemplate(source);
+      const list = managedFrontmatterEntries(source);
+      entries = list.status === "rows" ? list.entries : [];
+    } catch (error) {
+      sourceProblem = error instanceof Error ? error.message : String(error);
+    }
+    this.state.setState({ source, sourceProblem, entries });
+    this.#scheduler.setInput({ source, hold: sourceProblem !== null });
+  }
+  setItem(item: WorkbenchItemChoice | null): void {
+    if (this.#closed || item?.id === this.state.getState().item?.id) return;
+    this.state.setState({ item });
+    this.refresh();
+  }
+  setPreview(value: Partial<NativePreviewState["preview"]>): void {
+    if (this.#closed) return;
+    const preview = { ...this.state.getState().preview, ...value };
+    this.state.setState({ preview });
+    this.#scheduler.setInput(preview);
   }
   select(id: string): void {
+    if (this.#closed) return;
     this.#selection = id;
     const snapshot = this.state.getState().snapshot;
     if (snapshot) this.state.setState(annotationSamples(snapshot, id));
@@ -98,7 +143,7 @@ export class NativePreviewSession implements Disposable {
       if (next.busy) {
         logger.debug("Preview render started", {
           revision: this.state.getState().snapshot?.revision,
-          live: this.#store.getState().preview.live,
+          live: this.state.getState().preview.live,
         });
       } else if (next.result !== null && next.result !== before.result) {
         logger.debug("Preview render published", {
@@ -122,15 +167,24 @@ export class NativePreviewSession implements Disposable {
     const generation = ++this.#dataGeneration;
     logger.debug("Loading preview data", {
       generation,
-      item: this.#store.getState().item?.id,
+      item: this.state.getState().item?.id,
     });
-    this.state.setState({ ...EMPTY_PREVIEW });
+    this.state.setState({
+      snapshot: null,
+      current: [],
+      example: null,
+      error: null,
+      status: this.state.getState().item ? "loading" : "empty",
+    });
     this.#feed();
-    const item = this.#store.getState().item;
+    const item = this.state.getState().item;
     if (!item || this.#closed) return;
     try {
       const parsed = parseIndexedKey(item.id);
-      if (!parsed) return;
+      if (!parsed) {
+        this.state.setState({ status: "error" });
+        return;
+      }
       let snapshot: ItemSnapshot;
       {
         using lease = await this.#deps.db.acquireRead();
@@ -166,12 +220,17 @@ export class NativePreviewSession implements Disposable {
       });
       this.state.setState({
         snapshot,
+        status: "ready",
         ...annotationSamples(snapshot, this.#selection),
       });
       this.#feed();
     } catch (error) {
       if (generation !== this.#dataGeneration || this.#closed) return;
       logger.debug("Preview data failed", { error, item: item.id });
+      this.state.setState({
+        status: "error",
+        error: error instanceof Error ? error.message : String(error),
+      });
       this.#scheduler.fail({
         code: "render-error",
         message: error instanceof Error ? error.message : String(error),

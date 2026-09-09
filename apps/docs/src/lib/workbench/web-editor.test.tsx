@@ -586,7 +586,7 @@ describe("the annotation box", () => {
     expect(resultText(restored.host)).toContain("Thinking, fast and slow");
   });
 
-  it("uses the selected example for fields and preview while leaving the paper unchanged", async () => {
+  it("keeps Preview annotation choices separate from editor fields and compact examples", async () => {
     using page = open();
     page.press(m.workbench_tab_annotation());
     await page.settle();
@@ -628,7 +628,7 @@ describe("the annotation box", () => {
     ).toContain("Compare these findings with the replication study.");
     expect(
       fieldRow(page.host, m.workbench_field_comment()).textContent,
-    ).toContain("Compare these findings with the replication study.");
+    ).toContain("Use this point in the literature review.");
     page.press(m.workbench_tab_note());
     expect(
       page.host.querySelector(
@@ -649,7 +649,7 @@ describe("the annotation box", () => {
     await page.waitFor(() =>
       expect(
         page.host.querySelector("[data-annotation-preview]")?.textContent,
-      ).toContain("Compare these findings with the replication study."),
+      ).toContain("Clear methods make research easier to reproduce."),
     );
     const note = EditorView.findFromDOM(
       page.host.querySelector<HTMLElement>(".cm-editor")!,
@@ -663,17 +663,19 @@ describe("the annotation box", () => {
       document.querySelector<HTMLElement>('[role="dialog"]')!;
     act(() =>
       [...inlineDialog.querySelectorAll<HTMLElement>('[role="option"]')]
-        .find((option) => option.textContent?.includes("Clear methods"))!
+        .find((option) =>
+          option.textContent?.includes("Report the assumptions"),
+        )!
         .click(),
     );
     await page.settle();
     expect(note.state.doc.toString()).toBe(sourceBefore);
     expect(
       page.host.querySelector("[data-annotation-preview]")?.textContent,
-    ).toContain("Clear methods make research easier to reproduce.");
+    ).toContain("Report the assumptions behind each result.");
     page.press(m.workbench_tab_annotation());
     expect(resultText(page.host)).toContain(
-      "Clear methods make research easier to reproduce.",
+      "Compare these findings with the replication study.",
     );
   });
 
