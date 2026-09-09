@@ -24,13 +24,23 @@ Use the Profile Editor to change a literature note's name, folder, properties, b
 
     Customizing the built-in Default creates its document in the configured template folder before editing becomes available. If a custom document already exists, ZotLit opens it. If creation fails, use the retry action beside the error.
 
-    To edit the profile used by an existing literature note, open that note and run <Command name={m.command_customize_note_template_name()} />. The same action is in the note's file menu. ZotLit opens the Profile Editor with that note's paper selected.
+    To edit the profile used by an existing literature note, open that note and run <Command name={m.command_customize_note_template_name()} />. The same action is in the note's file menu. ZotLit opens the Profile Editor with that note's item selected.
+
+    From a compact Profile Editor, open its pane menu and select <UiLabel name={m.profile_editor_open_workbench()} />. This opens the editor, Data Explorer, and preview together in a separate Obsidian window.
 
   </Step>
   <Step>
     ### Choose preview data
 
-    The editor uses a paper from your Zotero library for its preview. Select <UiLabel name={m.profile_editor_choose_paper()} /> to use another paper.
+    If no item is selected, choose one in Data Explorer or select <UiLabel name={m.workbench_choose_item()} />. You can try a built-in journal article, conference paper, book, or thesis example.
+
+    Choose a library item under <UiLabel name={m.workbench_recently_updated()} />, or select <UiLabel name={m.workbench_search_zotero()} /> to search your Zotero library. Selecting an item replaces the Explorer's list with its fields.
+
+    For annotation formatting, select <UiLabel name={m.workbench_choose_annotation()} />. Search annotations from the selected item or try a highlight, underline, note, text, image, or ink example. Annotation examples keep their own parent item data; the note preview keeps its selected item.
+
+    Choosing data in any linked pane updates the other linked panes. Separate workbenches keep their own selections. Full panels have selection actions in the header; sidebars have a small selection control. Right-click the pane header to access its menu in either layout.
+
+    Data used for the preview updates automatically. To load it again, select <UiLabel name={m.workbench_refresh_item()} /> from the pane menu. In <UiLabel name={m.workbench_preview_on_demand()} /> mode, select <UiLabel name={m.workbench_preview_run()} /> to render the preview.
 
   </Step>
   <Step>
@@ -39,6 +49,10 @@ Use the Profile Editor to change a literature note's name, folder, properties, b
     Use the <UiLabel name={m.workbench_tab_note()} />, <UiLabel name={m.workbench_tab_properties()} />, <UiLabel name={m.workbench_tab_annotation()} />, <UiLabel name={m.workbench_tab_match()} />, and <UiLabel name={m.workbench_tab_name_and_folder()} /> tabs to edit the profile. The Default profile does not use <UiLabel name={m.workbench_tab_match()} /> conditions.
 
     Check the <UiLabel name={m.profile_preview_name()} /> as you edit. Select <UiLabel name={m.workbench_advanced()} /> to edit the complete profile document as Markdown.
+
+    The note name result is labeled <UiLabel name={m.workbench_name_filename_result()} />. The <UiLabel name={m.workbench_tab_match()} /> tab reports <UiLabel name={m.workbench_match_result_yes()} /> or <UiLabel name={m.workbench_match_result_no()} /> for the selected item.
+
+    If the preview fails, retry or choose another item. You can continue editing the profile.
 
   </Step>
   <Step>

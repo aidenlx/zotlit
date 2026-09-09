@@ -10,7 +10,7 @@ import type {
 import type { RenderedProperty } from "#/render/result";
 import { useEffect, useState, useId, useRef } from "react";
 
-import { useExampleMessage } from "./example-state";
+import { ExampleActions, useExampleState } from "./example-state";
 import type { WorkbenchMessages } from "./generated/messages";
 import { useOptionalHost } from "./host";
 import type { WorkbenchMessageLabel } from "./messages";
@@ -51,6 +51,8 @@ export interface PropertiesPaneProps {
   onSelect: (position: number | null) => void;
   /** A native host can edit JavaScript in its whole-document editor. */
   onOpenSource?: (range: WorkbenchSliceRange) => void;
+  onChooseItem?: () => void;
+  onRetry?: () => void;
   reveal?: WorkbenchSliceRange | null;
   onSelection?: (selection: WorkbenchSliceRange) => void;
   suggest?: SuggestionSource;
@@ -118,14 +120,17 @@ export function PropertiesPane({
   selected,
   onSelect,
   onOpenSource,
+  onChooseItem,
+  onRetry,
   reveal,
   onSelection,
   suggest,
 }: PropertiesPaneProps) {
   const m = useWorkbenchMessages();
   const part = useParts("properties");
-  const exampleMessage = useExampleMessage("properties");
-  const produced = byEntry(properties);
+  const example = useExampleState("properties");
+  const exampleMessage = example.message;
+  const produced = byEntry(exampleMessage ? [] : properties);
   const icon = useIcon();
   const instanceId = useId();
   const host = useOptionalHost();
@@ -148,10 +153,21 @@ export function PropertiesPane({
       {entries.length === 0 && (
         <p {...part("empty")}>{m.workbench_properties_empty()}</p>
       )}
-      {exampleMessage && (
-        <p role="status" {...part("empty")}>
-          {exampleMessage}
-        </p>
+      {(exampleMessage ||
+        onChooseItem ||
+        (example.kind === "error" && onRetry)) && (
+        <div {...part("actions")}>
+          {exampleMessage && (
+            <p role="status" {...part("empty", example.kind)}>
+              {exampleMessage}
+            </p>
+          )}
+          <ExampleActions
+            chooseLabel={m.workbench_choose_preview_item()}
+            onChooseItem={onChooseItem}
+            onRetry={example.kind === "error" ? onRetry : undefined}
+          />
+        </div>
       )}
       <ul {...part("rows")}>
         {entries.map((entry) => {
@@ -279,6 +295,7 @@ export function PropertiesPane({
                   instanceId={instanceId}
                   entry={entry}
                   produced={fields}
+                  showResult={!exampleMessage}
                   diagnostics={raised}
                   focusName={newRow === entry.position}
                   onOpenSource={onOpenSource}
@@ -320,6 +337,7 @@ interface EntryFormProps {
   controller: WorkbenchDocumentController;
   entry: ManagedEntrySource;
   produced: readonly RenderedProperty[];
+  showResult: boolean;
   diagnostics: readonly EntryDiagnostic[];
   focusName: boolean;
   onOpenSource?: (range: WorkbenchSliceRange) => void;
@@ -334,6 +352,7 @@ function EntryForm({
   controller,
   entry,
   produced,
+  showResult,
   diagnostics,
   focusName,
   onOpenSource,
@@ -513,7 +532,9 @@ function EntryForm({
           )}
         </div>
       )}
-      {spread && <PropertyList properties={produced} variant="spread" />}
+      {spread && showResult && (
+        <PropertyList properties={produced} variant="spread" />
+      )}
       {diagnostics.length > 0 && (
         <div id={errorId} {...part("diagnostics")}>
           {diagnostics.map((diagnostic, index) => (

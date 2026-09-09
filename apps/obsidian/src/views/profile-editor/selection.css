@@ -1,0 +1,22 @@
+.zt-workbench-sidebar-control {
+  display: none;
+}
+
+/* Follow the same native containers that hide Obsidian's view header. */
+:is(
+    .workspace-split.mod-primary-split,
+    .workspace-split.mod-secondary-split,
+    .workspace-fake-target-overlay.is-in-sidebar
+  )
+  .zt-workbench-sidebar-control,
+body:not(.show-view-header):not(.is-phone) .zt-workbench-sidebar-control {
+  display: flex;
+}
+
+.zt-workbench-options button {
+  height: auto;
+  min-height: var(--input-height);
+  white-space: normal;
+  text-align: start;
+  justify-content: flex-start;
+}

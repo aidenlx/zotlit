@@ -1,9 +1,14 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import { annotationSamples } from "@zotlit/workbench/ui";
+
+import {
+  getSampleItem,
+  SAMPLE_ITEM_CHOICES,
+} from "@/views/profile-editor/selection-data";
 
 import {
   createRenderFixture,
@@ -17,6 +22,126 @@ import { renderNativeProfile, previewBaseline } from "./render";
 const BODY_RENDERS = "__zotlitPreviewBodyRenders";
 
 describe("native Profile rendering", () => {
+  it.each(SAMPLE_ITEM_CHOICES)(
+    "renders $id with installed templates and no database",
+    async ({ id, title }) => {
+      await using fixture = await createRenderFixture();
+      const acquire = vi
+        .spyOn(fixture.deps.db, "acquireRead")
+        .mockRejectedValue(new Error("Database offline"));
+      const lookup = vi.spyOn(fixture.deps.noteIndex, "getNotesByItemKey");
+      const snapshot = getSampleItem(id)!;
+      const result = await renderNativeProfile(fixture.deps, {
+        source: PROFILE_SOURCE.replace(
+          "Personal space.",
+          "See [@figures2014].",
+        ),
+        snapshot,
+        annotation: annotationSamples(snapshot, null).example,
+      });
+      expect(result.diagnostics).toEqual([]);
+      expect(result.filename).toBe(title);
+      expect(result.creationBody).toContain(`# ${title}`);
+      expect(result.creationBody).toContain("See [@figures2014].");
+      expect(result.properties[0]?.value).toBe(title);
+      expect(result.annotation).toBeTruthy();
+      expect(result.sourcePath).toBe("");
+      expect(acquire).not.toHaveBeenCalled();
+      expect(lookup).not.toHaveBeenCalled();
+      expect(fixture.renderCitations).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps a colliding sample key separate from an existing Literature Note in update mode", async () => {
+    await using fixture = await createRenderFixture({ existing: SAVED_NOTE });
+    const sample = getSampleItem("sample:conference-paper")!;
+    const acquire = vi
+      .spyOn(fixture.deps.db, "acquireRead")
+      .mockRejectedValue(new Error("Database offline"));
+    const lookup = vi.spyOn(fixture.deps.noteIndex, "getNotesByItemKey");
+    const result = await renderNativeProfile(fixture.deps, {
+      source: PROFILE_SOURCE,
+      snapshot: { ...sample, item: { ...sample.item, indexedKey: "MAIN2345" } },
+      mode: "update",
+    });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.sourcePath).toBe("");
+    expect(result.creationBody).toContain(
+      "# Designing reproducible research interfaces",
+    );
+    expect(result.creationBody).toContain("Personal space.");
+    expect(result.creationBody).not.toContain("Personal introduction.");
+    expect(parse(result.frontmatterBlock!)).not.toHaveProperty("private");
+    expect(acquire).not.toHaveBeenCalled();
+    expect(lookup).not.toHaveBeenCalled();
+    expect(fixture.vault.contents.get("notes/paper.md")).toBe(SAVED_NOTE);
+  });
+
+  it("restores sample helpers, dates, and coercions for installed Eta and JavaScript", async () => {
+    const source = `---
+id: sample-eta
+name: Sample Eta
+version: 1.0.0
+contract: 5
+language: eta
+filename: '<%= zt.title %>'
+frontmatter:
+  - key: author
+    merge: replace
+    js: String(zt.creators[0])
+---
+<%= zt.dateAdded.toZonedDateTimeISO('UTC').year %>|<%= zt.creators.join(', ') %>|<%= zt.noteLink() === null %>
+--- zotlit:annotation ---
+<%= String(zt.parentItem) %>|<%= zt.fileLink() === null %>`;
+    const snapshot = getSampleItem("sample:conference-paper")!;
+    await using gated = await createRenderFixture();
+    const disabled = await renderNativeProfile(gated.deps, {
+      source,
+      snapshot,
+    });
+    expect(disabled.creationBody).toBeNull();
+    expect(disabled.diagnostics[0]?.message).toContain("JavaScript templates");
+    await using fixture = await createRenderFixture({ javascript: true });
+    const acquire = vi
+      .spyOn(fixture.deps.db, "acquireRead")
+      .mockRejectedValue(new Error("Database offline"));
+    const result = await renderNativeProfile(fixture.deps, {
+      source,
+      snapshot,
+      annotation: annotationSamples(snapshot, null).example,
+    });
+    expect(result.diagnostics).toEqual([]);
+    expect(result.creationBody?.trim()).toBe("2025|Mara Rivera, Tao Chen|true");
+    expect(result.properties[0]?.value).toBe("Mara Rivera");
+    expect(result.annotation?.trim()).toBe(
+      "Designing reproducible research interfaces|true",
+    );
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
+  it.each(SAMPLE_ANNOTATIONS)(
+    "renders $id against its own parent when the note Item differs",
+    async (annotation) => {
+      await using fixture = await createRenderFixture();
+      const result = await renderNativeProfile(fixture.deps, {
+        source: PROFILE_SOURCE.replace(
+          "> {{ zt.text }}",
+          "> {{ zt.parentItem.title }}: {{ zt.type }}",
+        ),
+        snapshot: fixture.snapshot,
+        annotation,
+      });
+      expect(result.diagnostics).toEqual([]);
+      expect(result.creationBody).toContain("# Better figures");
+      expect(result.annotation).toBe(
+        `> [!quote]\n> Designing reproducible research interfaces: ${String(annotation.root.type)}\n`,
+      );
+      expect(result.annotationCitation).toContain(
+        "riveraResearchInterfaces2026",
+      );
+    },
+  );
+
   it("renders real TemplateService data with inert links and preserves the source files", async () => {
     await using fixture = await createRenderFixture();
     const { example } = annotationSamples(fixture.snapshot, null);

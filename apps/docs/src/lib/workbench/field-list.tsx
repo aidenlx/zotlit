@@ -123,7 +123,9 @@ export function FieldList({
       data={data}
       empty={
         status === "no-item"
-          ? m.workbench_example_select_item()
+          ? props.root === "annotation"
+            ? m.workbench_fields_choose_annotation()
+            : m.workbench_fields_choose_item()
           : status === "loading"
             ? m.workbench_loading_item()
             : undefined

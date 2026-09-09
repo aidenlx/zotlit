@@ -8,7 +8,7 @@ import {
   X,
   ArrowUp,
   ArrowDown,
-  ArrowLeftRight,
+  Search,
   Eye,
   Pencil,
   List,
@@ -39,7 +39,7 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   close: X,
   "move-up": ArrowUp,
   "move-down": ArrowDown,
-  "choose-sample": ArrowLeftRight,
+  "choose-sample": Search,
   "chevron-down": ChevronDown,
   preview: Eye,
   edit: Pencil,
@@ -164,9 +164,10 @@ export const WEB_THEME: WorkbenchTheme = {
       pane: "-m-1 flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-1 pb-3",
       "filename-editor": "rounded-md border border-fd-border bg-fd-card",
       help: "text-xs leading-normal text-pretty text-fd-muted-foreground",
-      "filename-result": "flex items-baseline gap-2 text-xs",
+      "filename-result":
+        "flex flex-wrap items-center gap-2 text-xs leading-normal",
       muted: "text-fd-muted-foreground",
-      "filename-output": "min-w-0 flex-1 break-words",
+      "filename-output": "min-w-0 [overflow-wrap:anywhere]",
       defaults: "flex flex-col gap-1.5 text-xs",
       actions: "flex flex-wrap items-center gap-2",
       "default-label": "min-w-0 flex-1",
@@ -284,6 +285,10 @@ export const WEB_THEME: WorkbenchTheme = {
       suggester: "flex min-w-0 flex-1 items-center gap-2",
       label: "min-w-0 flex-1 truncate text-xs",
       trigger: buttonVariants({ variant: "ghost", size: "icon-2xs" }),
+      "text-trigger": cn(
+        buttonVariants({ variant: "ghost", size: "2xs" }),
+        "max-w-full rounded-sm text-start leading-normal font-normal whitespace-normal text-fd-muted-foreground hover:text-fd-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fd-ring [&_svg]:[stroke-width:1.5]",
+      ),
     },
 
     select: {

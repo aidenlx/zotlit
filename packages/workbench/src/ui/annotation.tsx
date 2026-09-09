@@ -5,16 +5,17 @@ import type {
   WorkbenchSliceRange,
 } from "#/document/index";
 import type { AnnotationExample } from "#/render/index";
-import { useId } from "react";
+import { useId, useState } from "react";
 
 import { useDocumentRevision } from "./editor";
 import type { WorkbenchMessages } from "./generated/messages";
+import { useWorkbenchHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { SampleSuggester } from "./sample-suggester";
 import type { SampleOption } from "./sample-suggester";
 import { SliceEditor } from "./slice-editor";
 import type { SliceEditorProps } from "./slice-editor";
-import { useParts } from "./theme";
+import { useIcon, useParts } from "./theme";
 
 import { SAMPLE_ANNOTATIONS } from "#/render/index";
 
@@ -23,45 +24,94 @@ export function AnnotationSampleBar({
   current,
   example,
   onSelect,
+  hideLabel = false,
+  compact = false,
 }: {
   id?: string;
   current: readonly Pick<AnnotationExample, "id" | "root">[];
   example: Pick<AnnotationExample, "id" | "root"> | null;
   onSelect: (id: string) => void;
+  /** Native headers already identify the selected annotation. */
+  hideLabel?: boolean;
+  compact?: boolean;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("annotation");
+  const triggerPart = useParts("sampleSuggester");
+  const host = useWorkbenchHost();
+  const icon = useIcon();
+  const [open, setOpen] = useState(false);
+  const title = example
+    ? m.workbench_change_annotation()
+    : m.workbench_choose_annotation();
+  const groups = [
+    {
+      heading: m.workbench_annotation_from_item(),
+      options: current.map((example) => annotationOption(m, example)),
+      empty: m.workbench_annotation_empty(),
+    },
+    {
+      heading: m.workbench_sample_examples(),
+      options: SAMPLE_ANNOTATIONS.map((example) =>
+        annotationOption(m, example),
+      ),
+    },
+  ];
   return (
-    <div {...part("sample-bar")}>
-      <SampleSuggester
-        id={id}
-        title={m.workbench_choose_annotation()}
-        label={
-          example
-            ? annotationOption(m, example).label
-            : m.workbench_choose_annotation()
-        }
-        selected={example?.id ?? ""}
-        groups={[
-          {
-            heading: m.workbench_annotation_from_item(),
-            options: current.map((example) => annotationOption(m, example)),
-            empty: m.workbench_annotation_empty(),
-          },
-          {
-            heading: m.workbench_sample_examples(),
-            options: SAMPLE_ANNOTATIONS.map((example) =>
-              annotationOption(m, example),
-            ),
-          },
-        ]}
-        onSelect={onSelect}
-      />
+    <div {...part("sample-bar", compact || hideLabel ? "compact" : "labelled")}>
+      {hideLabel || compact ? (
+        <button
+          id={id}
+          type="button"
+          {...triggerPart("trigger")}
+          {...host.tooltip(title)}
+          aria-label={title}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={async (event) => {
+            setOpen(true);
+            try {
+              const choice = await host.suggester({
+                anchor: event.currentTarget,
+                title,
+                selected: example?.id ?? "",
+                groups: groups.map((group) => ({
+                  label: group.heading,
+                  empty: group.empty,
+                  options: group.options.map((option) => ({
+                    id: option.value,
+                    label: option.label,
+                    hint: option.description,
+                  })),
+                })),
+              });
+              if (choice !== null) onSelect(choice);
+            } finally {
+              setOpen(false);
+            }
+          }}
+        >
+          {icon("choose-sample")}
+        </button>
+      ) : (
+        <SampleSuggester
+          id={id}
+          title={m.workbench_choose_annotation()}
+          label={
+            example
+              ? annotationOption(m, example).label
+              : m.workbench_choose_annotation()
+          }
+          selected={example?.id ?? ""}
+          groups={groups}
+          onSelect={onSelect}
+        />
+      )}
     </div>
   );
 }
 
-function annotationOption(
+export function annotationOption(
   m: WorkbenchMessages,
   { id, root }: Pick<AnnotationExample, "id" | "root">,
 ): SampleOption {

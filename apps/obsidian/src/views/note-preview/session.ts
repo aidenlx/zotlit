@@ -6,6 +6,7 @@ import { parseIndexedKey } from "@zotlit/db";
 import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
 import { managedFrontmatterEntries } from "@zotlit/workbench/document";
 import type { ManagedEntrySource } from "@zotlit/workbench/document";
+import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import type { AnnotationExample } from "@zotlit/workbench/render";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
@@ -17,6 +18,10 @@ import type {
 } from "@zotlit/workbench/ui";
 
 import { getLogger } from "@/lib/log";
+import {
+  getSampleAnnotationParent,
+  getSampleItem,
+} from "@/views/profile-editor/selection-data";
 import type { ProfileAuthoringContext } from "@/views/profile-editor/view";
 
 import type { NativeRenderDeps, NativeRenderResult } from "./render";
@@ -143,8 +148,12 @@ export class NativePreviewSession implements Disposable {
         ? { presentation: { scrollTop: 0, reveal: null, pending: false } }
         : {}),
     });
-    const snapshot = this.state.getState().snapshot;
+    const { snapshot, item } = this.state.getState();
     if (snapshot) this.state.setState(annotationSamples(snapshot, id));
+    else if (!item)
+      this.state.setState({
+        example: SAMPLE_ANNOTATIONS.find((sample) => sample.id === id) ?? null,
+      });
     this.#feed();
   }
   /**
@@ -179,8 +188,13 @@ export class NativePreviewSession implements Disposable {
   }
   /** Hands the scheduler the paper and the example every render reads. */
   #feed(): void {
-    const { snapshot, example } = this.state.getState();
-    this.#scheduler.setInput({ snapshot, annotation: example });
+    const { snapshot, example, item } = this.state.getState();
+    this.#scheduler.setInput({
+      snapshot:
+        snapshot ??
+        (!item && example ? getSampleAnnotationParent(example.id) : null),
+      annotation: example,
+    });
   }
   async #loadSnapshot(): Promise<void> {
     const generation = ++this.#dataGeneration;
@@ -191,7 +205,11 @@ export class NativePreviewSession implements Disposable {
     this.state.setState({
       snapshot: null,
       current: [],
-      example: null,
+      example: !this.state.getState().item
+        ? (SAMPLE_ANNOTATIONS.find(
+            ({ id }) => id === this.state.getState().annotationId,
+          ) ?? null)
+        : null,
       error: null,
       status: this.state.getState().item ? "loading" : "empty",
     });
@@ -199,14 +217,17 @@ export class NativePreviewSession implements Disposable {
     const item = this.state.getState().item;
     if (!item || this.#closed) return;
     try {
-      const parsed = parseIndexedKey(item.id);
-      if (!parsed) {
-        this.state.setState({ status: "error" });
-        return;
-      }
-      let snapshot: ItemSnapshot;
-      {
+      let snapshot = getSampleItem(item.id);
+      if (!snapshot) {
+        const parsed = item.id.startsWith("sample:")
+          ? null
+          : parseIndexedKey(item.id);
+        if (!parsed) {
+          this.state.setState({ status: "error" });
+          return;
+        }
         using lease = await this.#deps.db.acquireRead();
+        if (generation !== this.#dataGeneration || this.#closed) return;
         snapshot = exportItemSnapshot(
           lease.client,
           {

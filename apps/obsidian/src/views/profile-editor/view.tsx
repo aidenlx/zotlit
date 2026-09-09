@@ -72,8 +72,6 @@ import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import { cn, tooltipAttrs } from "@/lib/utils";
-import { pickItem } from "@/services/item-lookup/search-modal";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ProfileService } from "@/services/profile/service";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
@@ -94,6 +92,13 @@ import { runProfileEditorAction } from "./actions";
 import { createProfileEditorHost } from "./host";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
+import {
+  chooseWorkbenchItem,
+  chooseWorkbenchAnnotation,
+  publishWorkbenchSelection,
+  subscribeWorkbenchSelection,
+} from "./selection";
+import { getSampleItem } from "./selection-data";
 import { currentProfileSource } from "./source";
 import { profileEditorButton, profileEditorTheme } from "./theme";
 
@@ -205,6 +210,15 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     });
     this.store = this.#editor.store;
     this.scheduler = this.#editor.scheduler;
+    this.register(
+      subscribeWorkbenchSelection(this, {
+        editor: () => this.leaf,
+        apply: (selection) => {
+          if (selection.kind === "item") this.selectItem(selection.item);
+          else this.preview?.select(selection.annotationId);
+        },
+      }),
+    );
     this.preview = deps.nativePreview
       ? new NativePreviewSession(deps.nativePreview, this.scheduler, {
           item: this.store.getState().item,
@@ -225,8 +239,13 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     if (this.preview)
       this.register(
         this.preview.state.subscribe((state, previous) => {
-          if (state.example !== previous.example)
+          if (
+            state.example !== previous.example ||
+            state.annotationId !== previous.annotationId
+          )
             this.#publishAuthoringContext();
+          if (state.annotationId !== previous.annotationId)
+            this.app.workspace.requestSaveLayout();
           if (state.status !== previous.status) this.#mount();
         }),
       );
@@ -301,7 +320,10 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       root,
       tab,
       advanced,
-      annotationId: this.preview?.state.getState().example?.id ?? null,
+      annotationId:
+        this.preview?.state.getState().annotationId ??
+        this.preview?.state.getState().example?.id ??
+        null,
       canInsertField:
         !this.#closed &&
         !this.#controller.readOnly &&
@@ -579,6 +601,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       ...(this.#defaultDraft ? { defaultDraft: true, file: null } : {}),
       tab,
       itemIndexedKey: item?.id ?? null,
+      annotationId: this.preview?.state.getState().annotationId ?? null,
       advanced,
     };
   }
@@ -771,10 +794,16 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     const itemGeneration = ++this.#itemGeneration;
     if (typeof value.itemIndexedKey === "string") {
       store.setItem({ id: value.itemIndexedKey, title: null });
-      if (!(await this.#databaseReady())) return;
+      if (
+        !getSampleItem(value.itemIndexedKey) &&
+        !(await this.#databaseReady())
+      )
+        return;
       if (!this.#closed && itemGeneration === this.#itemGeneration)
         this.#selectKey(value.itemIndexedKey);
     } else if (value.itemIndexedKey === null) store.setItem(null);
+    if (typeof value.annotationId === "string" || value.annotationId === null)
+      this.preview?.select(value.annotationId);
   }
 
   protected override async onOpen(): Promise<void> {
@@ -804,6 +833,11 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       const state = this.store.getState();
       state.setAdvanced(!state.advanced);
     });
+    const choose = this.addAction("search", m.workbench_choose_item(), () => {
+      if (this.store.getState().root === "annotation")
+        void this.chooseAnnotation();
+      else void this.chooseItem();
+    });
     const redo = this.addAction("redo-2", m.workbench_redo(), () => {
       this.#controller.redo();
     });
@@ -811,6 +845,12 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       this.#controller.undo();
     });
     this.#updateActions = () => {
+      choose.setAttribute(
+        "aria-label",
+        this.store.getState().root === "annotation"
+          ? m.workbench_choose_annotation()
+          : m.workbench_choose_item(),
+      );
       for (const [action, enabled] of [
         [undo, this.#controller.canUndo],
         [redo, this.#controller.canRedo],
@@ -845,7 +885,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   }
   templateDataTarget(): TemplateDataExportTarget | null {
     const { item, root } = this.store.getState();
-    if (!item) return null;
+    if (!item || getSampleItem(item.id)) return null;
     if (root !== "annotation") return { indexedKey: item.id, root };
     const preview = this.preview?.state.getState();
     const example = preview?.example;
@@ -867,6 +907,32 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
 
   override onPaneMenu(menu: Menu, source: string): void {
     super.onPaneMenu(menu, source);
+    menu.addItem((item) =>
+      item
+        .setSection("zotlit")
+        .setTitle(m.profile_editor_open_workbench())
+        .setIcon("panels-top-left")
+        .onClick(
+          () =>
+            void runProfileEditorAction("open-workbench", () =>
+              openProfileWorkbench(this.app, this),
+            ),
+        ),
+    );
+    menu.addItem((item) =>
+      item
+        .setSection("zotlit")
+        .setTitle(m.workbench_choose_item())
+        .setIcon("search")
+        .onClick(() => void this.chooseItem()),
+    );
+    menu.addItem((item) =>
+      item
+        .setSection("zotlit")
+        .setTitle(m.workbench_choose_annotation())
+        .setIcon("highlighter")
+        .onClick(() => void this.chooseAnnotation()),
+    );
     const target = this.templateDataTarget();
     const pluginVersion = this.#deps.pluginVersion;
     if (target && pluginVersion)
@@ -1020,23 +1086,29 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     if (this.#choosePending) return this.#choosePending;
     const generation = this.#generation;
     const itemGeneration = ++this.#itemGeneration;
-    this.#choosePending = pickItem(
+    this.#choosePending = chooseWorkbenchItem(
+      this.#host,
       {
         app: this.app,
         lookup: this.#deps.itemLookup,
         settings: this.#deps.settings,
       },
-      m.template_data_explorer_pick_placeholder(),
+      this.store.getState().item ?? undefined,
     )
-      .then((hit) => {
+      .then((choice) => {
         if (
-          hit &&
+          choice &&
           !this.#closed &&
           generation === this.#generation &&
           itemGeneration === this.#itemGeneration
         ) {
-          this.#selectKey(hit.item.indexedKey);
-          return this.store.getState().item?.id === hit.item.indexedKey;
+          this.selectItem(choice);
+          publishWorkbenchSelection(
+            this,
+            { kind: "item", item: choice },
+            this.leaf,
+          );
+          return this.store.getState().item?.id === choice.id;
         }
         return false;
       })
@@ -1051,7 +1123,43 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     await this.chooseItem();
     return this.store.getState().item !== null;
   }
+  selectItem(item: WorkbenchItemChoice): void {
+    if (this.#closed) return;
+    this.#itemGeneration++;
+    this.#selectKey(item.id);
+  }
+  async chooseAnnotation(): Promise<void> {
+    const preview = this.preview;
+    if (!preview) return;
+    const generation = this.#generation;
+    const state = preview.state.getState();
+    const id = await chooseWorkbenchAnnotation(
+      this.#host,
+      state.current,
+      state.example?.id ?? null,
+    );
+    if (
+      id !== null &&
+      !this.#closed &&
+      generation === this.#generation &&
+      preview === this.preview
+    ) {
+      preview.select(id);
+      publishWorkbenchSelection(
+        this,
+        { kind: "annotation", annotationId: id },
+        this.leaf,
+      );
+    }
+  }
   #selectKey(indexedKey: string): void {
+    const sample = getSampleItem(indexedKey);
+    if (sample) {
+      this.store
+        .getState()
+        .setItem({ id: indexedKey, title: sample.item.title ?? null });
+      return;
+    }
     const parsed = parseIndexedKey(indexedKey);
     if (!parsed || this.#deps.db.state !== "ready") return;
     try {
@@ -1374,6 +1482,8 @@ function EditorContent({
                 </p>
               ) : (
                 <PropertiesPane
+                  onChooseItem={() => void view.chooseItem()}
+                  onRetry={() => view.preview?.refresh()}
                   controller={controller}
                   entries={controller.managedEntries}
                   properties={result?.properties ?? []}
@@ -1416,6 +1526,7 @@ function EditorContent({
             </TabPanel>
             <TabPanel tab="match">
               <NativeMatchPane
+                onChooseItem={() => void view.chooseItem()}
                 controller={controller}
                 db={view.matchDatabase}
               />
@@ -1432,6 +1543,8 @@ function EditorContent({
             </TabPanel>
             <TabPanel tab="name">
               <NameFolderPane
+                onChooseItem={() => void view.chooseItem()}
+                onRetry={() => view.preview?.refresh()}
                 controller={controller}
                 manifest={manifest.current}
                 defaults={view.bindingDefaults}
@@ -1462,30 +1575,20 @@ function EditorContent({
 }
 
 function EditorHeader({ view }: { view: ProfileEditorView }) {
-  const item = useWorkbenchStore((state) => state.item);
+  const root = useWorkbenchStore((state) => state.root);
   return (
-    <div className="zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-2 zt:px-3 zt:py-2">
+    <div className="zt-workbench-sidebar-control zt:min-w-0 zt:shrink-0 zt:items-center zt:justify-end zt:px-3 zt:py-2">
       <button
-        className={cn(
-          profileEditorButton,
-          "zt-profile-editor-item zt:max-w-full zt:min-w-0 zt:truncate",
-        )}
-        {...tooltipAttrs(item?.title ?? m.profile_editor_choose_paper())}
-        onClick={() => void view.chooseItem()}
-      >
-        <span className="zt:min-w-0 zt:truncate">
-          {item?.title ?? m.profile_editor_choose_paper()}
-        </span>
-      </button>
-      <button
-        className={cn(profileEditorButton, "zt:ms-auto")}
+        className={profileEditorButton}
         onClick={() =>
-          void runProfileEditorAction("open-workbench", () =>
-            openProfileWorkbench(view.app, view),
-          )
+          root === "annotation"
+            ? void view.chooseAnnotation()
+            : void view.chooseItem()
         }
       >
-        {m.profile_editor_open_workbench()}
+        {root === "annotation"
+          ? m.workbench_choose_annotation()
+          : m.workbench_choose_item()}
       </button>
     </div>
   );

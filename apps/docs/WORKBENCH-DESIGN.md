@@ -50,6 +50,57 @@ in a bounded recovery area above the row. Routine action confirmations use
 toasts. In the connected popover, show Vault, Profile, and Item first; put
 website and access permissions behind **Connection details**.
 
+## Item and annotation selection
+
+Data Explorer's initial Item selection list offers four Sample Item types:
+journal article, conference paper, book, and thesis. It also offers a short
+list of recently updated Zotero Items and an action to open the full Zotero
+Item suggester. Selecting an Item replaces the list with its fields.
+
+The initial Annotation list and chooser offer annotations from the selected
+Item and six built-in examples: highlight, underline, note, text, image, and
+ink. The Annotation suggester searches these choices.
+
+Item and Annotation selections made in any linked view propagate to the other
+linked views. Independent workbenches retain their own selections. Annotation
+fields and previews follow the chosen Annotation with its own parent context;
+the note's Item stays selected.
+
+Each view keeps its Item or Annotation selection trigger near the task that
+uses it. Use selection details in content where they help the current task.
+Inline Item selection uses a search icon and visible task wording: "Choose
+item to preview" in Name and Properties, and "Choose item to check" in Match.
+Use compact, borderless text-and-icon controls with normal text weight and a
+muted resting color. Keep them visually subordinate to the result, with subtle
+hover emphasis and clear keyboard focus.
+Use the shared button spacing between icon and text. Align button and result text with
+matching line heights, and let labels and results wrap in narrow panes.
+
+Review selection hints, result labels, and match indicators together with the
+tab's description. Name the result and distinguish configured values from
+results for the selected data. Give no selection, loading, an empty result,
+and a failed result distinct wording, with selection actions near the result.
+Match reports "Matches selected item" or "Does not match selected item".
+Label the Note name result "Preview". Keep selection, retry, and data reload
+actions relevant to the displayed state.
+
+In Obsidian, native headers and titles lead with the selected data, followed
+by the Preview or Fields role. Identify an Annotation by type, page, and a
+short excerpt. Label built-in data as Example. With no selection, use the
+generic Note preview and Template data explorer names.
+
+Full panels offer selection through native header actions. Keep Reload preview
+data in the pane menu. It rereads the available fields, annotations, or built-in
+examples for the current selection. Automatic refresh continues; in on-demand
+mode, Run renders the preview.
+Sidebars keep a small selection trigger near the current task. The pane menu
+provides actions in both layouts. Place Open template workbench in the Profile
+Editor's pane menu.
+
+Use CSS selectors on Obsidian's native sidebar containers to switch these
+layouts. Container membership determines the layout; keep viewport and
+layout detection out of JavaScript state.
+
 ## Control vocabulary
 
 Use the kit's size variants for button, input, and select height, internal

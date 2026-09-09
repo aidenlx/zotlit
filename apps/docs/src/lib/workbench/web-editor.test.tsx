@@ -89,7 +89,7 @@ describe("a draft the parser refuses", () => {
 describe("the paper a profile is written for", () => {
   it("searches paper details in a dialog and restores focus without changing a dismissed choice", async () => {
     using page = open();
-    page.press(m.workbench_choose_paper());
+    page.press(m.workbench_choose_item());
     const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
     const input = dialog.querySelector<HTMLInputElement>('[role="combobox"]')!;
     await page.waitFor(() => expect(document.activeElement).toBe(input));

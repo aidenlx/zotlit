@@ -123,7 +123,7 @@ it("shows filename and property examples for the current Sample Item", async () 
       ).toContain(title),
     );
     expect(page.host.textContent).not.toContain(
-      m.workbench_example_select_item(),
+      m.workbench_properties_choose_item(),
     );
   }
 });
@@ -142,7 +142,7 @@ it("mounts the shared editor with the web theme and its searchable Base UI choos
       "Why Most Published Research Findings Are False",
     ),
   );
-  page.press(m.workbench_choose_paper());
+  page.press(m.workbench_choose_item());
   const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
   expect(dialog).not.toBeNull();
   expect(dialog.querySelector('[role="combobox"]')).not.toBeNull();

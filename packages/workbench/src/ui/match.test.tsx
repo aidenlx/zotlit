@@ -7,11 +7,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { useWorkbenchController } from "./editor";
 import { WorkbenchHostProvider } from "./host";
 import type { WorkbenchInputSuggestionsRequest } from "./host";
 import { MatchPane } from "./match";
 import { TABS } from "./tabs";
-import { fakeHost, renderWithMessages as render } from "./test-host";
+import { fakeHost, mount, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
@@ -24,6 +25,88 @@ const facts = {
   collections: [["Thesis", "Chapter 1"]],
 };
 afterEach(cleanup);
+
+it("keeps Match editable with a local chooser and clears a previous match when selection is removed", async () => {
+  const choose = vi.fn<() => void>();
+  function Pane() {
+    return (
+      <MatchPane
+        controller={useWorkbenchController()}
+        facts={facts}
+        onChooseItem={choose}
+      />
+    );
+  }
+  using mounted = mount(<Pane />, {
+    source: DEFAULT_PROFILE_SOURCE.replace(
+      "id: default",
+      "id: Bk3Qn7XvT2Lp\nmatch: 'itemType == \"book\"'",
+    ),
+    state: { item: { id: "selected", title: "Selected item title" } },
+  });
+  render(mounted.ui);
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toBe(
+      m.workbench_match_result_yes(),
+    ),
+  );
+  expect(screen.getByRole("status").getAttribute("data-state")).toBe("match");
+  const chooseButton = screen.getByRole("button", {
+    name: m.workbench_choose_match_item(),
+  });
+  expect(chooseButton.textContent).toBe(m.workbench_choose_match_item());
+  fireEvent.click(chooseButton);
+  expect(choose).toHaveBeenCalledOnce();
+  expect(screen.queryByText("Selected item title")).toBeNull();
+  act(() => mounted.store.getState().setItem(null));
+  expect(screen.getByRole("status").textContent).toBe(
+    m.workbench_match_choose_item(),
+  );
+  expect(screen.queryByText(m.workbench_match_result_yes())).toBeNull();
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_choose_match_item() }),
+  );
+  expect(choose).toHaveBeenCalledTimes(2);
+  expect(document.querySelector("fieldset")?.disabled).toBe(false);
+});
+
+it("reports a failed vocabulary check beside its retry action and recovers", async () => {
+  const host = fakeHost();
+  host.matchData.tags = vi
+    .fn<typeof host.matchData.tags>()
+    .mockRejectedValueOnce(new Error("unavailable"))
+    .mockResolvedValue([]);
+  const controller = new WorkbenchDocumentController(
+    DEFAULT_PROFILE_SOURCE.replace(
+      "id: default",
+      "id: Bk3Qn7XvT2Lp\nmatch: 'itemType == \"book\"'",
+    ),
+  );
+  render(
+    <WorkbenchHostProvider host={host}>
+      <MatchPane controller={controller} facts={facts} />
+    </WorkbenchHostProvider>,
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toBe(
+      m.workbench_match_result_unavailable({
+        reason: m.workbench_example_failed(),
+      }),
+    ),
+  );
+  expect(screen.getByRole("status").getAttribute("data-state")).toBe("error");
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_example_retry() }),
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toBe(
+      m.workbench_match_result_yes(),
+    ),
+  );
+  expect(
+    screen.queryByRole("button", { name: m.workbench_example_retry() }),
+  ).toBeNull();
+});
 function open(match: string) {
   const source = DEFAULT_PROFILE_SOURCE.replace(
     "id: default",
@@ -114,7 +197,11 @@ it("keeps nested expression rows as written while a labelled row changes, and re
 it("reports an unsupported expression and keeps it in source", async () => {
   const { controller } = open(`'tags.has("Read")'`);
   await waitFor(() =>
-    expect(screen.getByRole("status").textContent).toContain("unevaluable"),
+    expect(screen.getByRole("status").textContent).toBe(
+      m.workbench_match_result_unavailable({
+        reason: m.workbench_match_problem_unsupported({ text: "tags.has" }),
+      }),
+    ),
   );
   const expression = screen.getByLabelText<HTMLInputElement>(
     m.workbench_match_expression(),

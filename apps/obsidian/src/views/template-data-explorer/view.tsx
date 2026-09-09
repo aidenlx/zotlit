@@ -4,7 +4,7 @@ import type { Menu, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
-import { isChildItemFields, parseIndexedKey } from "@zotlit/db";
+import { parseIndexedKey } from "@zotlit/db";
 import type { DisplayNode } from "@zotlit/workbench/explorer";
 import {
   failedRender,
@@ -15,12 +15,11 @@ import {
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
 } from "@zotlit/workbench/ui";
+import type { WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { itemSummary } from "@/lib/item-summary";
 import type { DatabaseService } from "@/services/database/service";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
-import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { SettingsService } from "@/services/settings/service";
@@ -33,6 +32,16 @@ import {
   subscribeActiveProfileEditor,
 } from "@/views/note-preview/register";
 import { createProfileEditorHost } from "@/views/profile-editor/host";
+import {
+  chooseWorkbenchItem,
+  searchWorkbenchItem,
+  chooseWorkbenchAnnotation,
+  publishWorkbenchSelection,
+  subscribeWorkbenchSelection,
+  selectionViewTitle,
+  updateSelectionTitle,
+} from "@/views/profile-editor/selection";
+import { getSampleItem } from "@/views/profile-editor/selection-data";
 import { profileEditorTheme } from "@/views/profile-editor/theme";
 import type {
   ProfileAuthoringContext,
@@ -73,6 +82,7 @@ export class TemplateDataExplorerView extends ItemView {
   #host: ReturnType<typeof createProfileEditorHost> | null = null;
   #actions: ExplorerActions | null = null;
   #closed = false;
+  #choiceGeneration = 0;
   constructor(leaf: WorkspaceLeaf, deps: ExplorerViewDeps) {
     super(leaf);
     this.contentEl.addClass("zt-root");
@@ -83,18 +93,45 @@ export class TemplateDataExplorerView extends ItemView {
     return EXPLORER_VIEW_TYPE;
   }
   override getDisplayText(): string {
-    return m.template_data_explorer_view_name();
+    const state = this.#session.state.getState();
+    const title =
+      state.root === "note" && typeof state.data?.title === "string"
+        ? state.data.title
+        : state.item?.title;
+    return selectionViewTitle({
+      item: state.item && { ...state.item, title: title ?? null },
+      annotation:
+        state.root === "annotation" && state.data && state.annotationId
+          ? { id: state.annotationId, root: state.data }
+          : null,
+      annotationMode: state.root === "annotation",
+      view: "fields",
+    });
   }
   override getIcon(): string {
     return "braces";
   }
   override onPaneMenu(menu: Menu, source: string): void {
     super.onPaneMenu(menu, source);
+    menu.addItem((item) =>
+      item
+        .setSection("zotlit")
+        .setTitle(m.workbench_choose_item())
+        .setIcon("search")
+        .onClick(() => void this.#chooseItem()),
+    );
+    menu.addItem((item) =>
+      item
+        .setSection("zotlit")
+        .setTitle(m.workbench_choose_annotation())
+        .setIcon("highlighter")
+        .onClick(() => void this.#chooseAnnotation()),
+    );
     this.#actions?.addCopyKeyMenuItem(menu);
     menu.addItem((item) =>
       item
         .setSection("zotlit")
-        .setTitle(m.template_data_explorer_refresh_tooltip())
+        .setTitle(m.workbench_refresh_item())
         .setIcon("refresh-cw")
         .onClick(() => this.#session.refresh()),
     );
@@ -277,8 +314,42 @@ export class TemplateDataExplorerView extends ItemView {
     using cleanup = new DisposableStack();
     cleanup.defer(registerCompanionHistory(this));
     cleanup.use(this.#session);
+    const chooseAction = this.addAction(
+      "search",
+      m.workbench_choose_item(),
+      () => {
+        if (this.#session.state.getState().root === "annotation")
+          void this.#chooseAnnotation();
+        else void this.#chooseItem();
+      },
+    );
+    cleanup.defer(
+      subscribeWorkbenchSelection(this, {
+        editor: () => this.#sourceEditor()?.leaf ?? null,
+        apply: (selection) => {
+          if (selection.kind === "item")
+            this.#selectItem(selection.item, false);
+          else {
+            const state = this.#session.state.getState();
+            if (state.annotationId !== selection.annotationId)
+              this.#session.setTarget(
+                state.item,
+                state.root,
+                selection.annotationId,
+              );
+          }
+        },
+      }),
+    );
     cleanup.defer(
       this.#session.state.subscribe((state, previous) => {
+        updateSelectionTitle(this);
+        chooseAction.setAttribute(
+          "aria-label",
+          state.root === "annotation"
+            ? m.workbench_choose_annotation()
+            : m.workbench_choose_item(),
+        );
         if (
           state.item?.id !== previous.item?.id ||
           state.root !== previous.root ||
@@ -376,6 +447,7 @@ export class TemplateDataExplorerView extends ItemView {
     cleanup.defer(this.#deps.db.on("changed", () => this.#session.refresh()));
     this.#mount();
     this.#cleanup = cleanup.move();
+    updateSelectionTitle(this);
     await this.#deps.db.ready;
     if (this.#closed || this.#session.state.getState().context) return;
     if (!this.#session.state.getState().item) {
@@ -408,13 +480,11 @@ export class TemplateDataExplorerView extends ItemView {
           <ExplorerStoreProvider value={this.#session.state}>
             <ExplorerActionsContext value={this.#actions}>
               <Explorer
-                onSelectAnnotation={(id) => {
-                  this.#session.setTarget(
-                    this.#session.state.getState().item,
-                    "annotation",
-                    id,
-                  );
-                }}
+                onSelectAnnotation={(id) => this.#selectAnnotation(id)}
+                onChooseAnnotation={() => void this.#chooseAnnotation()}
+                onSelectItem={(item) => this.#selectItem(item)}
+                onSearchItem={() => void this.#chooseItem(true)}
+                lookup={this.#deps.itemLookup}
                 explorer={{
                   copy: (text) => navigator.clipboard.writeText(text),
                   engines: () =>
@@ -438,11 +508,7 @@ export class TemplateDataExplorerView extends ItemView {
                   onExploreAnnotation: (node) => {
                     const key = this.#annotationKey(node);
                     if (key) {
-                      this.#session.setTarget(
-                        this.#session.state.getState().item,
-                        "annotation",
-                        key,
-                      );
+                      this.#selectAnnotation(key);
                     }
                   },
                 }}
@@ -469,13 +535,19 @@ export class TemplateDataExplorerView extends ItemView {
     )
       return null;
     const parsed = parseIndexedKey(item.id);
+    if (getSampleItem(item.id)) return node.value.key;
     return parsed
       ? indexedKeyForClipboard({ key: node.value.key, groupID: parsed.groupID })
       : null;
   }
   #exportTarget() {
     const { item, root, annotationId, status } = this.#session.state.getState();
-    if (!item || (status !== "ready" && status !== "empty")) return null;
+    if (
+      !item ||
+      getSampleItem(item.id) ||
+      (status !== "ready" && status !== "empty")
+    )
+      return null;
     if (root !== "annotation") return { indexedKey: item.id, root };
     if (
       !annotationId ||
@@ -500,37 +572,76 @@ export class TemplateDataExplorerView extends ItemView {
       ? this.#editor
       : null;
   }
-  async #chooseItem(): Promise<void> {
+  async #chooseItem(searchAll = false): Promise<void> {
     const editor = this.#sourceEditor();
-    if (editor) {
+    if (editor && !searchAll) {
       const selected = await editor.chooseItem();
       if (selected && !this.#closed && editor === this.#sourceEditor())
         this.#apply(editor.authoringContext, true);
       return;
     }
-    const hit = await pickItem(
-      {
-        app: this.app,
-        lookup: this.#deps.itemLookup,
-        settings: this.#deps.settings,
-      },
-      m.template_data_explorer_pick_placeholder(),
-    );
+    const host = this.#host;
+    if (!host) return;
+    const generation = ++this.#choiceGeneration;
+    const previous = this.#session.state.getState().item;
+    const deps = {
+      app: this.app,
+      lookup: this.#deps.itemLookup,
+      settings: this.#deps.settings,
+    };
+    const item = await (searchAll
+      ? searchWorkbenchItem(deps)
+      : chooseWorkbenchItem(host, deps, previous ?? undefined));
     if (
-      !hit ||
+      !item ||
       this.#closed ||
-      this.#sourceEditor() ||
-      isChildItemFields(hit.item.fields)
+      generation !== this.#choiceGeneration ||
+      this.#session.state.getState().item !== previous
     )
       return;
-    this.#session.setTarget(
-      {
-        id: hit.item.indexedKey,
-        title: itemSummary(hit.item, hit.item.fields).formatted,
-      },
-      "note",
+    this.#selectItem(item);
+  }
+  #selectItem(item: WorkbenchItemChoice, notify = true): void {
+    const state = this.#session.state.getState();
+    if (this.#closed) return;
+    this.#session.setTarget(item, state.root, state.annotationId);
+    if (!getSampleItem(item.id)) rememberTemplateItem(this.app, item.id);
+    if (notify)
+      publishWorkbenchSelection(
+        this,
+        { kind: "item", item },
+        this.#sourceEditor()?.leaf ?? null,
+      );
+  }
+  #selectAnnotation(id: string): void {
+    const state = this.#session.state.getState();
+    this.#session.setTarget(state.item, "annotation", id);
+    publishWorkbenchSelection(
+      this,
+      { kind: "annotation", annotationId: id },
+      this.#sourceEditor()?.leaf ?? null,
     );
-    rememberTemplateItem(this.app, hit.item.indexedKey);
+  }
+  async #chooseAnnotation(): Promise<void> {
+    const host = this.#host;
+    if (!host) return;
+    const state = this.#session.state.getState();
+    const generation = ++this.#choiceGeneration;
+    const id = await chooseWorkbenchAnnotation(
+      host,
+      state.annotations ?? [],
+      state.item
+        ? (annotationIndexedKey(state.item.id, state.annotationId) ??
+            state.annotationId)
+        : state.annotationId,
+    );
+    if (
+      id !== null &&
+      !this.#closed &&
+      generation === this.#choiceGeneration &&
+      state.item === this.#session.state.getState().item
+    )
+      this.#selectAnnotation(id);
   }
   protected override async onClose(): Promise<void> {
     this.#closed = true;

@@ -1,14 +1,13 @@
 import "./style.css";
 // Each Preview owns its inputs, render work, data, and output presentation.
 import { ItemView } from "obsidian";
-import type { ViewStateResult } from "obsidian";
+import type { Menu, ViewStateResult } from "obsidian";
 import type { TFile, WorkspaceLeaf } from "obsidian";
 import { useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { useStore } from "zustand";
 
-import { isChildItemFields, parseIndexedKey } from "@zotlit/db";
 import {
   createRenderScheduler,
   TABS,
@@ -19,16 +18,26 @@ import {
   WorkbenchThemeProvider,
   useRenderState,
 } from "@zotlit/workbench/ui";
-import type { RenderScheduler, WorkbenchHost } from "@zotlit/workbench/ui";
+import type {
+  RenderScheduler,
+  WorkbenchHost,
+  WorkbenchItemChoice,
+} from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
-import { itemSummary } from "@/lib/item-summary";
 import { openSettingsTab } from "@/lib/open-settings";
-import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
 import { createProfileEditorHost } from "@/views/profile-editor/host";
+import {
+  chooseWorkbenchItem,
+  chooseWorkbenchAnnotation,
+  publishWorkbenchSelection,
+  subscribeWorkbenchSelection,
+  selectionViewTitle,
+  updateSelectionTitle,
+} from "@/views/profile-editor/selection";
 import { currentProfileSource } from "@/views/profile-editor/source";
 import { profileEditorTheme } from "@/views/profile-editor/theme";
 import type {
@@ -36,7 +45,6 @@ import type {
   ProfileAuthoringContext,
 } from "@/views/profile-editor/view";
 
-import { PreviewAnnotationSelection } from "./annotation-selection";
 import { NativeMarkdown } from "./markdown";
 import {
   activeProfileEditor,
@@ -79,10 +87,43 @@ export class NotePreviewView extends ItemView {
     return NOTE_PREVIEW_VIEW_TYPE;
   }
   override getDisplayText(): string {
-    return m.profile_preview_name();
+    const state = this.state.getState();
+    return selectionViewTitle({
+      item: state.item && {
+        ...state.item,
+        title: state.item.title ?? state.snapshot?.item.title ?? null,
+      },
+      annotation: state.example,
+      annotationMode: state.context?.root === "annotation",
+      view: "preview",
+    });
   }
   override getIcon(): string {
     return "eye";
+  }
+  override onPaneMenu(menu: Menu, source: string): void {
+    super.onPaneMenu(menu, source);
+    menu.addItem((item) =>
+      item
+        .setSection("zotlit")
+        .setTitle(m.workbench_choose_item())
+        .setIcon("search")
+        .onClick(() => void this.#chooseItem()),
+    );
+    menu.addItem((item) =>
+      item
+        .setSection("zotlit")
+        .setTitle(m.workbench_choose_annotation())
+        .setIcon("highlighter")
+        .onClick(() => void this.#chooseAnnotation()),
+    );
+    menu.addItem((item) =>
+      item
+        .setSection("zotlit")
+        .setTitle(m.workbench_refresh_item())
+        .setIcon("refresh-cw")
+        .onClick(() => this.#session?.refresh()),
+    );
   }
   protected override async onOpen(): Promise<void> {
     using cleanup = new DisposableStack();
@@ -134,9 +175,34 @@ export class NotePreviewView extends ItemView {
     this.#scheduler = scheduler;
     this.#session = session;
     this.#host = host;
+    const chooseAction = this.addAction(
+      "search",
+      m.workbench_choose_item(),
+      () => {
+        if (this.state.getState().context?.root === "annotation")
+          void this.#chooseAnnotation();
+        else void this.#chooseItem();
+      },
+    );
+    cleanup.defer(
+      subscribeWorkbenchSelection(this, {
+        editor: () => this.#sourceEditor()?.leaf ?? null,
+        apply: (selection) => {
+          if (selection.kind === "item") this.#setItem(selection.item);
+          else session.select(selection.annotationId);
+        },
+      }),
+    );
     let persisted = JSON.stringify(this.getState());
     cleanup.defer(
       this.state.subscribe(() => {
+        updateSelectionTitle(this);
+        chooseAction.setAttribute(
+          "aria-label",
+          this.state.getState().context?.root === "annotation"
+            ? m.workbench_choose_annotation()
+            : m.workbench_choose_item(),
+        );
         const next = JSON.stringify(this.getState());
         if (next === persisted) return;
         persisted = next;
@@ -211,6 +277,7 @@ export class NotePreviewView extends ItemView {
     );
     this.#cleanup = cleanup.move();
     if (!this.#editor) await this.#restoreSource();
+    updateSelectionTitle(this);
   }
   override getState(): Record<string, unknown> {
     const state = this.state.getState();
@@ -428,7 +495,7 @@ export class NotePreviewView extends ItemView {
     if (!session) return;
     const previous = session.state.getState().context;
     if (this.leaf.pinned && previous && !explicit) return;
-    if (previous === null && context.annotationId)
+    if (previous?.annotationId !== context.annotationId)
       session.select(context.annotationId);
     if (this.#file !== this.#editor?.file) this.#sourceGeneration++;
     this.#file = this.#editor?.file ?? null;
@@ -463,7 +530,8 @@ export class NotePreviewView extends ItemView {
   async #chooseItem(): Promise<void> {
     const editor = this.#sourceEditor();
     const session = this.#session;
-    if (!session) return;
+    const host = this.#host;
+    if (!session || !host) return;
     const generation = ++this.#choiceGeneration;
     if (editor) {
       const accepted = await editor.chooseItem();
@@ -476,37 +544,66 @@ export class NotePreviewView extends ItemView {
         this.#apply(editor.authoringContext, true);
       return;
     }
-    const context = session.state.getState().context;
     const previousItem = session.state.getState().item;
-    if (!context) return;
-    const hit = await pickItem(
+    const previousContext = session.state.getState().context;
+    const choice = await chooseWorkbenchItem(
+      host,
       {
         app: this.app,
         settings: this.#deps.settings,
         lookup: this.#deps.itemLookup,
       },
-      m.template_data_explorer_pick_placeholder(),
+      previousItem ?? undefined,
     );
     if (
-      !hit ||
+      !choice ||
       this.#session !== session ||
-      this.#sourceEditor() ||
       generation !== this.#choiceGeneration ||
-      session.state.getState().context !== context ||
-      session.state.getState().item !== previousItem ||
-      !parseIndexedKey(hit.item.indexedKey) ||
-      isChildItemFields(hit.item.fields)
+      session.state.getState().context !== previousContext ||
+      session.state.getState().item !== previousItem
     )
       return;
-    const item = {
-      id: hit.item.indexedKey,
-      title: itemSummary(hit.item, hit.item.fields).formatted,
-    };
+    this.#setItem(choice);
+    publishWorkbenchSelection(
+      this,
+      { kind: "item", item: choice },
+      this.#sourceEditor()?.leaf ?? null,
+    );
+  }
+  #setItem(item: WorkbenchItemChoice): void {
+    const session = this.#session;
+    if (!session) return;
+    const context = session.state.getState().context;
     session.state.setState({
-      context: { ...context, item },
+      ...(context ? { context: { ...context, item } } : {}),
       presentation: { scrollTop: 0, reveal: null, pending: false },
     });
     session.setItem(item);
+  }
+  async #chooseAnnotation(): Promise<void> {
+    const session = this.#session;
+    const host = this.#host;
+    if (!session || !host) return;
+    const generation = ++this.#choiceGeneration;
+    const state = session.state.getState();
+    const id = await chooseWorkbenchAnnotation(
+      host,
+      state.current,
+      state.example?.id ?? null,
+    );
+    if (
+      id !== null &&
+      this.#session === session &&
+      generation === this.#choiceGeneration &&
+      state.item === session.state.getState().item
+    ) {
+      session.select(id);
+      publishWorkbenchSelection(
+        this,
+        { kind: "annotation", annotationId: id },
+        this.#sourceEditor()?.leaf ?? null,
+      );
+    }
   }
   #mount(): void {
     const session = this.#session;
@@ -522,6 +619,7 @@ export class NotePreviewView extends ItemView {
               scheduler={scheduler}
               editorAvailable={this.#sourceEditor() !== null}
               chooseItem={() => void this.#chooseItem()}
+              chooseAnnotation={() => void this.#chooseAnnotation()}
               reveal={(slice) => this.#sourceEditor()?.revealSlice(slice)}
             />
           </WorkbenchHostProvider>
@@ -551,6 +649,7 @@ function PreviewContent({
   session,
   scheduler,
   chooseItem,
+  chooseAnnotation,
   reveal,
   editorAvailable,
   rendered,
@@ -560,6 +659,7 @@ function PreviewContent({
   scheduler: RenderScheduler<NativeRenderResult>;
   editorAvailable: boolean;
   chooseItem: () => void;
+  chooseAnnotation: () => void;
   reveal: (slice: "advanced" | "annotation" | `entry:${number}`) => void;
 }) {
   const { result, busy, stale } = useRenderState(scheduler);
@@ -572,25 +672,44 @@ function PreviewContent({
     entries,
     showMarkdown,
     showManaged,
+    example,
   } = useStore(session.state, (state) => state);
   useEffect(rendered, [result, status, showMarkdown, showManaged, rendered]);
+  const annotationMode = context?.root === "annotation";
+  const ready = status === "ready" || (annotationMode && example !== null);
+  const choose = annotationMode ? chooseAnnotation : chooseItem;
   return (
     <div
       data-zotlit-preview-result={result?.sourceRevision}
       className="zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3"
     >
-      <PreviewControls
-        preview={preview}
-        onChange={(value) => session.setPreview(value)}
-        busy={busy}
-        disabled={status !== "ready" || sourceProblem !== null}
-        onRun={() => scheduler.run()}
-      />
-      {status === "empty" && (
+      <div className="zt-workbench-sidebar-control zt:items-center zt:justify-end">
+        <button onClick={choose}>
+          {annotationMode
+            ? m.workbench_choose_annotation()
+            : m.workbench_choose_item()}
+        </button>
+      </div>
+      {ready && (
+        <PreviewControls
+          preview={preview}
+          onChange={(value) => session.setPreview(value)}
+          busy={busy}
+          disabled={!ready || sourceProblem !== null}
+          onRun={() => scheduler.run()}
+        />
+      )}
+      {status === "empty" && !ready && (
         <div>
-          <p>{m.workbench_example_select_item()}</p>
-          <button onClick={chooseItem}>
-            {m.template_data_explorer_choose_item()}
+          <p>
+            {annotationMode
+              ? m.workbench_preview_choose_annotation()
+              : m.workbench_preview_choose_item()}
+          </p>
+          <button onClick={choose}>
+            {annotationMode
+              ? m.workbench_choose_annotation()
+              : m.workbench_choose_item()}
           </button>
         </div>
       )}
@@ -619,8 +738,7 @@ function PreviewContent({
           </button>
         </div>
       )}
-      <PreviewAnnotationSelection session={session} />
-      {status === "ready" && (
+      {ready && (
         <ResultColumn
           result={result}
           annotationResult={result}

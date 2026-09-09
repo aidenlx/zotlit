@@ -117,7 +117,7 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
   });
   await vi.waitFor(() =>
     expect(el.querySelector('[role="status"]')?.textContent).toBe(
-      "Matches the selected paper: no",
+      m.workbench_match_result_no(),
     ),
   );
   await act(async () => {
@@ -129,7 +129,7 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
     });
   });
   expect(el.querySelector('[role="status"]')?.textContent).toBe(
-    "Matches the selected paper: no",
+    m.workbench_match_result_no(),
   );
   await act(async () => {
     store.getState().setItem(null);
@@ -140,7 +140,7 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
   await vi.waitFor(() => expect(tags).toHaveBeenCalledTimes(2));
   expect(loadMatchFacts).toHaveBeenCalledTimes(2);
   expect(el.querySelector('[role="status"]')?.textContent).toBe(
-    m.workbench_example_select_item(),
+    m.workbench_match_choose_item(),
   );
   expect(render).not.toHaveBeenCalled();
   vi.mocked(loadMatchFacts).mockRejectedValueOnce(
@@ -156,7 +156,8 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
   );
   vi.mocked(loadMatchFacts).mockResolvedValueOnce(null);
   const retry = [...el.querySelectorAll("button")].find(
-    (button) => button.textContent === m.workbench_example_retry(),
+    (button) =>
+      button.getAttribute("aria-label") === m.workbench_example_retry(),
   )!;
   await act(async () => retry.click());
   await vi.waitFor(() =>

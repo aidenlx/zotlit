@@ -1,4 +1,4 @@
-// The paper the page is shown against, beside the result: which Item it is, where
+// The item the page is shown against, beside the result: which Item it is, where
 // it came from, and the one request that loads or refreshes a connected one.
 
 import { useEffect, useState } from "react";
@@ -24,7 +24,7 @@ export function SampleBar({
   readonly connection: LocalBridgeConnection;
   /**
    * The sample item type this Profile asks for where no bundled Item carries
-   * it, so the reader is told which paper they are not being shown.
+   * it, so the reader knows which item type has no sample.
    */
   readonly unmatchedItemType?: string;
   /** True while the connection is fetching the selected Item. */
@@ -34,7 +34,7 @@ export function SampleBar({
 }) {
   const connected = connection.state === "connected";
   const fromVault = sample.provenance.kind === "connected";
-  // Keep the loaded paper available when comparing it with bundled samples.
+  // Keep the loaded item available when comparing it with bundled samples.
   const [loadedItem, setLoadedItem] = useState(fromVault ? sample : null);
   useEffect(() => {
     if (sample.provenance.kind === "connected") setLoadedItem(sample);
@@ -45,8 +45,8 @@ export function SampleBar({
     sample.provenance.installationId === connection.installation.id &&
     sample.item.indexedKey === connection.selectedItem?.key;
   const name = sample.item.title ?? sample.item.key;
-  const papers = loadedItem ? [...SAMPLE_ITEMS, loadedItem] : SAMPLE_ITEMS;
-  const options = papers.map((item) => ({
+  const items = loadedItem ? [...SAMPLE_ITEMS, loadedItem] : SAMPLE_ITEMS;
+  const options = items.map((item) => ({
     sample: item,
     value:
       item.provenance.kind === "connected"
@@ -71,7 +71,7 @@ export function SampleBar({
     <div className="mb-2 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
       <SampleSuggester
         id="workbench-sample"
-        title={m.workbench_choose_paper()}
+        title={m.workbench_choose_item()}
         label={name}
         selected={fromVault ? `connected:${sample.item.key}` : sample.item.key}
         groups={[

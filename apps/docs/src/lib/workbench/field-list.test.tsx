@@ -116,7 +116,7 @@ it("owns restored data for each view and distinguishes no Item, pending data, an
   expect(second.container.textContent).toContain("A paper");
   first.show({ sample: null });
   expect(first.container.textContent).toContain(
-    m.workbench_example_select_item(),
+    m.workbench_fields_choose_item(),
   );
   first.show({ ready: false });
   expect(first.container.textContent).toContain(m.workbench_loading_item());

@@ -12,6 +12,13 @@
   background: var(--background-modifier-active-hover);
   color: var(--text-accent);
 }
+/* Native button rules are unlayered; match the result text and allow wrapping. */
+.zt-profile-editor [data-part="text-trigger"] {
+  height: auto;
+  font-size: var(--font-ui-smaller);
+  font-weight: var(--font-normal);
+  white-space: normal;
+}
 /* Native pills keep their compact text/remove layout inside the Match input. */
 .zt-profile-editor [data-chip-input] .multi-select-pill {
   max-width: 100%;
