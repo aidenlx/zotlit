@@ -14,6 +14,7 @@ import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { SettingsService } from "@/services/settings/service";
+import { openNativeProfile } from "@/views/profile-editor/register";
 
 import { referencesStyleDefinition } from "./citations";
 import type {
@@ -41,8 +42,8 @@ export {
   type ImportProfile,
   type ImportProfileDeps,
 } from "./import-profile-modal";
-import { duplicateProfileToEditor } from "./duplicate-profile";
-export { duplicateProfileToEditor } from "./duplicate-profile";
+import { duplicateProfileToWorkbench } from "./duplicate-profile";
+export { duplicateProfileToWorkbench } from "./duplicate-profile";
 import { confirmProfileDeletion } from "./delete-profile-modal";
 export {
   confirmProfileDeletion,
@@ -181,12 +182,11 @@ function profilesList(
       ? undefined
       : {
           name: m.settings_profile_add(),
-          // A Profile is its document, so adding one copies Default's and opens
-          // it with the name selected. There is nothing to ask up front.
+          // Start from Default and edit the copy in the workbench.
           action: () =>
             void runAction(
               () =>
-                duplicateProfileToEditor(ctx, "default", {
+                duplicateProfileToWorkbench(ctx, "default", {
                   label: nextProfileLabel(ctx),
                 }),
               ctx,
@@ -238,7 +238,7 @@ function profilesList(
                   .onClick(
                     () =>
                       void runAction(
-                        () => duplicateProfileToEditor(ctx, profile.id),
+                        () => duplicateProfileToWorkbench(ctx, profile.id),
                         ctx,
                       ),
                   ),
@@ -335,7 +335,10 @@ function excludedDocumentItems(
             button
               .setIcon("pencil")
               .setTooltip(m.settings_template_open())
-              .onClick(() => void openDocument(ctx, diagnostic.path)),
+              .onClick(
+                () =>
+                  void runAction(() => openDocument(ctx, diagnostic.path), ctx),
+              ),
           );
         },
       })),
@@ -377,7 +380,10 @@ async function openDocument(
   path: string,
 ): Promise<void> {
   const file = ctx.app.vault.getFileByPath(path);
-  if (file) await ctx.app.workspace.getLeaf(true).openFile(file);
+  if (file) {
+    ctx.app.setting.close();
+    await openNativeProfile(ctx.app, file, { customize: true });
+  }
 }
 
 async function runAction(
