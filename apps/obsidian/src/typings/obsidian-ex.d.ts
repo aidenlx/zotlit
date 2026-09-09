@@ -38,6 +38,13 @@ declare module "obsidian" {
      */
     focus(): void;
   }
+  interface TextFileView {
+    /** Native unsaved-text marker used by external-file three-way merging. */
+    dirty: boolean;
+    /** Native saved-text baseline and file-read/merge boundary (Obsidian 1.14). */
+    lastSavedData: string | null;
+    loadFileInternal(file: TFile, clear: boolean): Promise<void>;
+  }
   interface FileView {
     /** Keeps an in-memory document leaf open before its first vault write. */
     allowNoFile: boolean;

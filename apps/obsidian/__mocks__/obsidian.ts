@@ -324,6 +324,8 @@ export class TextFileView extends ItemView {
   readonly app: App;
   file: TFile | null = null;
   data = "";
+  dirty = false;
+  lastSavedData: string | null = null;
   scope: Scope | null = null;
   requestSave = (): void => {};
   constructor(leaf: WorkspaceLeaf) {
@@ -341,6 +343,17 @@ export class TextFileView extends ItemView {
   }
   async save(): Promise<void> {
     this.data = this.getViewData();
+  }
+  /** Native read/baseline ordering; real-app checks cover native three-way merging. */
+  async loadFileInternal(file: TFile, clear: boolean): Promise<void> {
+    const source = await this.app.vault.read(
+      file as unknown as import("obsidian").TFile,
+    );
+    const previous = this.lastSavedData;
+    this.lastSavedData = source;
+    if (!clear && previous === source) return;
+    this.data = source;
+    this.setViewData(source, clear);
   }
   onPaneMenu(_menu: Menu, _source: string): void {}
   override getState(): Record<string, unknown> {

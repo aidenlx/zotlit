@@ -1,7 +1,7 @@
 import "./style.css";
 // Each Preview owns its inputs, render work, data, and output presentation.
 import { ItemView } from "obsidian";
-import type { WorkspaceLeaf } from "obsidian";
+import type { TFile, WorkspaceLeaf } from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { useStore } from "zustand";
@@ -20,6 +20,7 @@ import type { RenderScheduler, WorkbenchHost } from "@zotlit/workbench/ui";
 import * as m from "@/lib/i18n/generated/messages";
 import { openSettingsTab } from "@/lib/open-settings";
 import { createProfileEditorHost } from "@/views/profile-editor/host";
+import { currentProfileSource } from "@/views/profile-editor/source";
 import { profileEditorTheme } from "@/views/profile-editor/theme";
 import type {
   ProfileEditorView,
@@ -39,6 +40,8 @@ export class NotePreviewView extends ItemView {
   #root: Root | null = null;
   #cleanup: DisposableStack | null = null;
   #editor: ProfileEditorView | null = null;
+  #file: TFile | null = null;
+  #sourceGeneration = 0;
   #session: NativePreviewSession | null = null;
   #scheduler: RenderScheduler<NativeRenderResult> | null = null;
   #host: (WorkbenchHost & Disposable) | null = null;
@@ -64,6 +67,8 @@ export class NotePreviewView extends ItemView {
       this.#scheduler = null;
       this.#host = null;
       this.#editor = null;
+      this.#file = null;
+      this.#sourceGeneration++;
     });
     const resources = cleanup.use(new DisposableStack());
     this.#root = cleanup.adopt(createRoot(this.contentEl), (root) =>
@@ -79,11 +84,35 @@ export class NotePreviewView extends ItemView {
     const sourceEvent = this.app.workspace.on(
       "quick-preview",
       (file, source) => {
-        if (file.path === this.#session?.state.getState().context?.path)
+        if (file === this.#file) {
+          this.#sourceGeneration++;
           this.#session?.setSource(source);
+        }
       },
     );
     cleanup.defer(() => this.app.workspace.offref(sourceEvent));
+    const modify = this.app.vault.on("modify", (file) => {
+      if (file === this.#file) void this.#readSource(this.#file);
+    });
+    cleanup.defer(() => this.app.vault.offref(modify));
+    const rename = this.app.vault.on("rename", (file) => {
+      const session = this.#session;
+      const context = session?.state.getState().context;
+      if (file !== this.#file || !session || !context) return;
+      session.state.setState({ context: { ...context, path: file.path } });
+      void this.#readSource(this.#file);
+    });
+    cleanup.defer(() => this.app.vault.offref(rename));
+    const remove = this.app.vault.on("delete", (file) => {
+      if (file !== this.#file) return;
+      this.#sourceGeneration++;
+      this.#file = null;
+      this.#session?.state.setState({
+        sourceProblem: m.settings_profile_document_missing({ path: file.path }),
+      });
+      this.#scheduler?.setInput({ hold: true });
+    });
+    cleanup.defer(() => this.app.vault.offref(remove));
     cleanup.defer(
       subscribeActiveProfileEditor(
         this.app,
@@ -142,12 +171,30 @@ export class NotePreviewView extends ItemView {
     );
     this.#cleanup = cleanup.move();
   }
+  async #readSource(file: TFile): Promise<void> {
+    const generation = ++this.#sourceGeneration;
+    try {
+      const source =
+        currentProfileSource(this.app, file) ??
+        (await this.app.vault.read(file));
+      if (file === this.#file && generation === this.#sourceGeneration)
+        this.#session?.setSource(source);
+    } catch (error) {
+      if (file !== this.#file || generation !== this.#sourceGeneration) return;
+      this.#session?.state.setState({
+        sourceProblem: error instanceof Error ? error.message : String(error),
+      });
+      this.#scheduler?.setInput({ hold: true });
+    }
+  }
   #apply(context: ProfileAuthoringContext): void {
     const session = this.#session;
     if (!session) return;
     const previous = session.state.getState().context;
     if (previous === null && context.annotationId)
       session.select(context.annotationId);
+    if (this.#file !== this.#editor?.file) this.#sourceGeneration++;
+    this.#file = this.#editor?.file ?? null;
     session.state.setState({ context });
     session.setItem(context.item);
     if (
