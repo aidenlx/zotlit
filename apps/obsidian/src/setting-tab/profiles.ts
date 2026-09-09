@@ -544,8 +544,8 @@ function defaultProfileItem(
 
 /**
  * Managed Frontmatter has one editor, the template document. While the default
- * look is built in, Customize opens an in-memory draft with the current fields;
- * the first edit writes its document.
+ * look is built in, Customize creates its document with the current fields
+ * before opening the workbench for editing.
  */
 function propertiesItem(
   ctx: SettingTabContext,

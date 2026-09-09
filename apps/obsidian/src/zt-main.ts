@@ -240,6 +240,7 @@ export default class ZotLitPlugin extends Plugin {
           await openNativeProfile(this.app, target, {
             ...(item ? { itemIndexedKey: item.key } : {}),
             explainUnsupported: false,
+            customize: true,
           });
       },
     });

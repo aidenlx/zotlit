@@ -37,6 +37,8 @@ export interface WorkbenchViewState {
   /** Whether the whole document is open in the Advanced editor. */
   readonly advanced: boolean;
   readonly startHereDismissed: boolean;
+  /** Progress of the explicit action that creates the built-in Profile document. */
+  readonly customization: "idle" | "pending" | "failed";
 }
 
 export interface WorkbenchViewActions {
@@ -63,6 +65,7 @@ const INITIAL: WorkbenchViewState = {
   explorer: "simple",
   advanced: false,
   startHereDismissed: false,
+  customization: "idle",
 };
 
 export function createWorkbenchStore(

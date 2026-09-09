@@ -9,6 +9,7 @@ import { BaseNotice } from "@/lib/notice";
 import type { CustomizeAction } from "@/services/local-bridge/customize";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { ProfileService } from "@/services/profile/service";
+import { openProfileWorkbench } from "@/views/note-preview/register";
 
 import { runProfileEditorAction } from "./actions";
 import { PROFILE_EDITOR_VIEW_TYPE, ProfileEditorView } from "./view";
@@ -217,7 +218,11 @@ export function registerProfileEditor(
 export async function openNativeProfile(
   app: App,
   target: TFile | Pick<ProfileService, "defaultDocumentPath" | "getSource">,
-  options: { itemIndexedKey?: string; explainUnsupported?: boolean } = {},
+  options: {
+    itemIndexedKey?: string;
+    explainUnsupported?: boolean;
+    customize?: boolean;
+  } = {},
 ): Promise<void> {
   const file =
     target instanceof TFile
@@ -226,7 +231,10 @@ export async function openNativeProfile(
   const source = file
     ? await app.vault.cachedRead(file)
     : await (target as Pick<ProfileService, "getSource">).getSource("default");
-  if (file) return openProfileEditor(app, file, options);
+  if (file) {
+    await openProfileEditor(app, file, options);
+    return;
+  }
   if (options.explainUnsupported !== false && requiresNative(source))
     new BaseNotice(m.profile_editor_native_required());
   const active = app.workspace.getActiveFile();
@@ -253,6 +261,8 @@ export async function openNativeProfile(
   });
   await app.workspace.revealLeaf(leaf);
   leaf.getContainer().focus();
+  if (options.customize && leaf.view instanceof ProfileEditorView)
+    await leaf.view.customizeDefault();
 }
 
 export function requiresNative(source: string): boolean {
@@ -275,6 +285,7 @@ export async function openProfileEditor(
     itemIndexedKey?: string;
     tab?: "match";
     explainUnsupported?: boolean;
+    customize?: boolean;
   } = {},
 ): Promise<void> {
   if (
@@ -309,4 +320,6 @@ export async function openProfileEditor(
   });
   await app.workspace.revealLeaf(leaf);
   leaf.getContainer().focus();
+  if (options.customize && leaf.view instanceof ProfileEditorView)
+    await openProfileWorkbench(app, leaf.view);
 }

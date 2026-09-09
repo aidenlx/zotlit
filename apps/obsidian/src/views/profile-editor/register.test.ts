@@ -5,6 +5,7 @@ import type { App, Command, Plugin, WorkspaceLeaf } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { openProfileWorkbench } from "@/views/note-preview/register";
 
 import { profileCustomization, saveProfileCustomization } from "./preferences";
 import {
@@ -14,7 +15,11 @@ import {
   registerProfileEditor,
 } from "./register";
 import type { ProfileEditorDeps } from "./view";
-import { PROFILE_EDITOR_VIEW_TYPE } from "./view";
+import { PROFILE_EDITOR_VIEW_TYPE, ProfileEditorView } from "./view";
+
+vi.mock("@/views/note-preview/register", () => ({
+  openProfileWorkbench: vi.fn(async () => {}),
+}));
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 afterEach(resetMockPlatform);
@@ -92,6 +97,40 @@ function setup() {
 }
 
 describe("Profile Editor entry points", () => {
+  it("routes explicit Default customization through the ready inspection view", async () => {
+    const { app, leaf, setViewState } = setup();
+    const customizeDefault = vi.fn(async () => {});
+    Object.assign(leaf, {
+      view: Object.assign(Object.create(ProfileEditorView.prototype), {
+        customizeDefault,
+      }),
+    });
+    await openNativeProfile(
+      app,
+      {
+        defaultDocumentPath: "templates/zotlit-profile.default.md",
+        getSource: async () => "Built-in source",
+      },
+      { customize: true, itemIndexedKey: "0:ABCDEFGH" },
+    );
+    expect(setViewState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: { file: null, defaultDraft: true, itemIndexedKey: "0:ABCDEFGH" },
+      }),
+    );
+    expect(customizeDefault).toHaveBeenCalledOnce();
+  });
+
+  it("opens an existing customized document in the full workbench", async () => {
+    const { app, file, leaf } = setup();
+    const view = Object.create(
+      ProfileEditorView.prototype,
+    ) as ProfileEditorView;
+    Object.assign(leaf, { view });
+    await openNativeProfile(app, file, { customize: true });
+    expect(openProfileWorkbench).toHaveBeenCalledWith(app, view);
+  });
+
   it.each(["file", "built-in Default"])(
     "brings the %s editor window forward after its leaf is ready",
     async (target) => {

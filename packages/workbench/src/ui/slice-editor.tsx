@@ -12,6 +12,7 @@ import { EditorView, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 
 import { completionFields } from "./completion-fields";
+import { useDocumentRevision } from "./editor";
 import { useOptionalHost } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { tagDescription } from "./tag-help";
@@ -82,6 +83,8 @@ export function SliceEditor({
   onSelection,
   onFocus,
 }: SliceEditorProps) {
+  useDocumentRevision(controller);
+  const readOnly = controller.readOnly;
   const m = useWorkbenchMessages();
   const part = useParts("sliceEditor");
   const adapter = useOptionalHost();
@@ -151,6 +154,7 @@ export function SliceEditor({
             ? jsonLayout(controller.sliceText(slice), true).text
             : controller.sliceText(slice),
         extensions: [
+          EditorState.readOnly.of(readOnly),
           workbenchSlice(controller, slice, language === "json-e"),
           language === "json-e"
             ? jsonRule
@@ -245,7 +249,7 @@ export function SliceEditor({
       editor.current = null;
       view.destroy();
     };
-  }, [controller, slice, label, language, singleLine, extensions]);
+  }, [controller, slice, label, language, singleLine, extensions, readOnly]);
 
   useEffect(() => {
     const view = editor.current;

@@ -22,6 +22,8 @@ Use the Profile Editor to change a literature note's name, folder, properties, b
 
     In Obsidian, open <SettingsPath />. On the <UiLabel name={m.settings_profile_document_name()} /> row, select <UiLabel name={m.settings_template_customize()} />.
 
+    Customizing the built-in Default creates its document in the configured template folder before editing becomes available. If a custom document already exists, ZotLit opens it. If creation fails, use the retry action beside the error.
+
     To edit the profile used by an existing literature note, open that note and run <Command name={m.command_customize_note_template_name()} />. The same action is in the note's file menu. ZotLit opens the Profile Editor with that note's paper selected.
 
   </Step>
@@ -42,7 +44,7 @@ Use the Profile Editor to change a literature note's name, folder, properties, b
   <Step>
     ### Apply the changes
 
-    ZotLit saves changes automatically. A profile with an error stays saved and shows its diagnostics in the editor. Your first edit to the built-in Default profile creates its document in the configured template folder.
+    The Profile Editor uses Obsidian's automatic saving for edits, Undo, and Redo. A profile with an error remains editable and saves with its diagnostics shown in the editor.
 
     Existing notes keep their content until you update them. Open a literature note and run <Command name={m.command_update_note_name()} /> to apply its profile.
 
