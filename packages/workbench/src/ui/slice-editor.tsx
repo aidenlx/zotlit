@@ -156,6 +156,8 @@ export function SliceEditor({
               },
         fields: completionFields(report.current.m, root),
         tagDescription: (name) => tagDescription(report.current.m, name),
+        filterDescription: (name) =>
+          report.current.m.workbench_filter_description({ name }),
       };
     };
     const view = new EditorView({
