@@ -90,6 +90,9 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
   // the view was still open, and a disposed one answers for nothing.
   let closed = false;
   const listeners = new Set<() => void>();
+  using cleanup = new DisposableStack();
+  cleanup.defer(() => listeners.clear());
+  cleanup.defer(abandon);
 
   function publish(next: { result?: R | null; busy?: boolean }): void {
     if (closed) return;
@@ -188,6 +191,7 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
 
   changed();
 
+  const lifetime = cleanup.move();
   return {
     getState: () => state,
     subscribe(listener) {
@@ -250,8 +254,7 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
     },
     [Symbol.dispose]() {
       closed = true;
-      abandon();
-      listeners.clear();
+      lifetime.dispose();
     },
   };
 }

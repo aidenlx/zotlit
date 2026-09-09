@@ -35,7 +35,7 @@
     "arkregex": "catalog:",
     "eta": "catalog:",
     "json-e": "^4.8.4",
-    "liquidjs": "^10.27.1",
+    "liquidjs": "^10.27.2",
     "valibot": "catalog:",
     "yaml": "catalog:"
   },
