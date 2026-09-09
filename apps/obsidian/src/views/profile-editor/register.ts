@@ -252,6 +252,7 @@ export async function openNativeProfile(
     active: true,
   });
   await app.workspace.revealLeaf(leaf);
+  leaf.getContainer().focus();
 }
 
 export function requiresNative(source: string): boolean {
@@ -307,4 +308,5 @@ export async function openProfileEditor(
     active: true,
   });
   await app.workspace.revealLeaf(leaf);
+  leaf.getContainer().focus();
 }

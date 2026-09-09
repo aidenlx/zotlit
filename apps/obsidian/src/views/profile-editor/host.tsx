@@ -1,5 +1,6 @@
 // Native overlays and Markdown lifecycle for the shared Profile Editor tree.
-import { tooltips } from "@codemirror/view";
+import { Compartment } from "@codemirror/state";
+import { tooltips, ViewPlugin } from "@codemirror/view";
 import {
   Component,
   ConfirmationModal,
@@ -190,11 +191,23 @@ export function createProfileEditorHost(
       workbench_name_value_no_style: citationStyleLabel,
     },
     getLocale: () => runtime.getLocale(),
-    editorPopups: (read, parent) => [
-      tooltips({ parent: parent.ownerDocument.body }),
-      templateCompletion(read, nativeCompletion),
-      templateHover(read, hoverParent),
-    ],
+    editorPopups(read, parent) {
+      const placement = new Compartment();
+      return [
+        placement.of(tooltips({ parent: parent.ownerDocument.body })),
+        ViewPlugin.define((view) => ({
+          destroy: parent.onWindowMigrated((win) => {
+            view.dispatch({
+              effects: placement.reconfigure(
+                tooltips({ parent: win.document.body }),
+              ),
+            });
+          }),
+        })),
+        templateCompletion(read, nativeCompletion),
+        templateHover(read, hoverParent),
+      ];
+    },
     menu({ anchor, items, submenus }) {
       const menu = new Menu();
       for (const item of items)

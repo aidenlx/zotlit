@@ -74,6 +74,7 @@ import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ProfileService } from "@/services/profile/service";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
 import { NativeMarkdown } from "@/views/note-preview/markdown";
+import { openProfileWorkbench } from "@/views/note-preview/register";
 import type {
   NativeRenderDeps,
   NativeRenderResult,
@@ -143,6 +144,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   #defaultDraft = false;
   #materializing: Promise<void> | null = null;
   #bindingDraft = false;
+  #workbenchWindow = false;
 
   constructor(leaf: WorkspaceLeaf, deps: ProfileEditorDeps) {
     super(leaf);
@@ -209,6 +211,14 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     this.register(
       this.store.subscribe(() => this.app.workspace.requestSaveLayout()),
     );
+  }
+
+  get isWorkbenchWindow(): boolean {
+    return this.#workbenchWindow;
+  }
+  markWorkbenchWindow(): void {
+    this.#workbenchWindow = true;
+    this.app.workspace.requestSaveLayout();
   }
 
   get unavailableDependencies(): string[] {
@@ -392,6 +402,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     return {
       ...super.getState(),
       ...(this.#defaultDraft ? { defaultDraft: true } : {}),
+      ...(this.#workbenchWindow ? { workbenchWindow: true } : {}),
       tab,
       itemIndexedKey: item?.id ?? null,
       root,
@@ -431,6 +442,8 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     await super.setState(state, result);
     if (!state || typeof state !== "object") return;
     const value = state as Record<string, unknown>;
+    if (typeof value.workbenchWindow === "boolean")
+      this.#workbenchWindow = value.workbenchWindow;
     const store = this.store.getState();
     if (TABS.some((tab) => tab === value.tab))
       store.setTab(value.tab as typeof store.tab);
@@ -1059,7 +1072,7 @@ function EditorContent({
 function EditorHeader({ view }: { view: ProfileEditorView }) {
   const item = useWorkbenchStore((state) => state.item);
   return (
-    <div className="zt:flex zt:min-w-0 zt:shrink-0 zt:px-3 zt:py-2">
+    <div className="zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-2 zt:px-3 zt:py-2">
       <button
         className="zt-profile-editor-item zt:max-w-full zt:min-w-0 zt:truncate"
         {...tooltipAttrs(item?.title ?? m.profile_editor_choose_paper())}
@@ -1068,6 +1081,16 @@ function EditorHeader({ view }: { view: ProfileEditorView }) {
         <span className="zt:min-w-0 zt:truncate">
           {item?.title ?? m.profile_editor_choose_paper()}
         </span>
+      </button>
+      <button
+        className="zt:ms-auto"
+        onClick={() =>
+          void runProfileEditorAction("open-workbench", () =>
+            openProfileWorkbench(view.app, view),
+          )
+        }
+      >
+        {m.profile_editor_open_workbench()}
       </button>
     </div>
   );

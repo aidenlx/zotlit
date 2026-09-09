@@ -43,26 +43,30 @@ export class NotePreviewView extends ItemView {
   protected override async onOpen(): Promise<void> {
     this.#root = createRoot(this.contentEl);
     this.register(
-      subscribeActiveProfileEditor(this.app, (editor) => {
-        this.#root?.render(
-          editor?.preview ? (
-            editor.provide(<PreviewContent editor={editor} />)
-          ) : (
-            <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
-              <p>{m.profile_preview_empty()}</p>
-              <button
-                onClick={() =>
-                  openSettingsTab(this.app, this.#pluginId, [
-                    m.settings_page_profiles(),
-                  ])
-                }
-              >
-                {m.settings_page_profiles()}
-              </button>
-            </div>
-          ),
-        );
-      }),
+      subscribeActiveProfileEditor(
+        this.app,
+        (editor) => {
+          this.#root?.render(
+            editor?.preview ? (
+              editor.provide(<PreviewContent editor={editor} />)
+            ) : (
+              <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3">
+                <p>{m.profile_preview_empty()}</p>
+                <button
+                  onClick={() =>
+                    openSettingsTab(this.app, this.#pluginId, [
+                      m.settings_page_profiles(),
+                    ])
+                  }
+                >
+                  {m.settings_page_profiles()}
+                </button>
+              </div>
+            ),
+          );
+        },
+        this.leaf,
+      ),
     );
   }
   protected override async onClose(): Promise<void> {

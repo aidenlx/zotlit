@@ -10,6 +10,10 @@ import type { NoteIndex } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import {
+  activeProfileEditor,
+  openProfileExplorer,
+} from "@/views/note-preview/register";
 
 import { EXPLORER_VIEW_TYPE, TemplateDataExplorerView } from "./view";
 
@@ -55,6 +59,9 @@ export async function openTemplateDataExplorer(
   app: App,
   state?: { itemIndexedKey: string; anchorAnnotationKey?: string },
 ): Promise<void> {
+  const editor = activeProfileEditor(app);
+  if (!state && editor?.isWorkbenchWindow)
+    return openProfileExplorer(app, editor);
   const { workspace } = app;
   let leaf = workspace.getLeavesOfType(EXPLORER_VIEW_TYPE)[0];
   if (!leaf) {

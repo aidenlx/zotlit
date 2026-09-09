@@ -6,7 +6,7 @@ import { Icon } from "@/components/obsidian/icon";
 import { themeHook } from "@/lib/theme-hooks";
 import { cn } from "@/lib/utils";
 
-import { codePane, isCodePane } from "./editor-extension";
+import { codePane } from "./editor-extension";
 
 export const profileEditorIcons: Record<WorkbenchIcon, string> = {
   copy: "copy",
@@ -45,10 +45,7 @@ const bar =
   "zt:flex zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1 zt:rounded-md zt:border zt:border-border zt:bg-card zt:px-2.5 zt:py-1.5 zt:text-xs";
 export const profileEditorTheme: WorkbenchTheme = {
   icon: (name) => <Icon name={profileEditorIcons[name]} />,
-  editorExtension: (slice, language) => [
-    templateHighlighting,
-    ...(isCodePane(slice, language) ? [codePane] : []),
-  ],
+  editorExtension: () => [templateHighlighting, codePane],
   classes: {
     match: {
       button: cn(

@@ -30,6 +30,14 @@ declare global {
 }
 
 declare module "obsidian" {
+  interface WorkspaceContainer {
+    /**
+     * Restores and focuses this desktop window. Unlike Workspace.revealLeaf,
+     * this also works when a detached Settings window has focus.
+     * Internal; verified against Obsidian 1.13.7 and 1.14.0.
+     */
+    focus(): void;
+  }
   interface FileView {
     /** Keeps an in-memory document leaf open before its first vault write. */
     allowNoFile: boolean;
