@@ -84,15 +84,18 @@ function HoverFacts({ option }: { option: Suggestion }) {
 }
 
 /**
- * Hover presentation over one pane. A highlighted token is the popover's
- * target, so Obsidian hides the popover as the pointer leaves it; an edit,
- * a keystroke, or a click closes it early.
+ * Hover presentation over one pane. The resolved token's range is the
+ * popover's identity, so the pointer crossing a highlight boundary inside one
+ * token leaves the popover in place; Obsidian hides the popover as the
+ * pointer leaves its target span, and an edit, a keystroke, or a click closes
+ * it early.
  */
 export function templateHover(read: SuggestionSource, parent: HoverParent) {
   return ViewPlugin.fromClass(
     class {
       #popover: TemplateHoverPopover | null = null;
       #target: HTMLElement | null = null;
+      #range: { from: number; to: number } | null = null;
       constructor(readonly view: EditorView) {}
 
       update(update: ViewUpdate) {
@@ -107,25 +110,38 @@ export function templateHover(read: SuggestionSource, parent: HoverParent) {
             : null;
         if (!target || !this.view.contentDOM.contains(target)) return;
         if (target === this.#target) return;
-        this.close();
-        const position = this.view.posAtDOM(target);
-        const config = read(position);
-        const hint = config
-          ? hoverHint(this.view.state.doc.toString(), position, config)
-          : null;
-        const option = hint?.options[0];
-        if (!option) return;
         this.#target = target;
-        target.addEventListener("mouseleave", () => this.close(), {
-          once: true,
+        const position = this.view.posAtCoords({
+          x: event.clientX,
+          y: event.clientY,
         });
-        this.#popover = new TemplateHoverPopover(parent, target, option);
+        const config = position === null ? null : read(position);
+        const hint =
+          config && position !== null
+            ? hoverHint(this.view.state.doc.toString(), position, config)
+            : null;
+        const option = hint?.options[0];
+        if (!hint || !option) {
+          this.close();
+          return;
+        }
+        if (this.#range?.from === hint.from && this.#range.to === hint.to)
+          return;
+        this.close();
+        this.#range = { from: hint.from, to: hint.to };
+        const popover = new TemplateHoverPopover(parent, target, option);
+        this.#popover = popover;
+        popover.register(() => {
+          if (this.#popover === popover) this.close();
+        });
       }
 
       close() {
-        this.#popover?.hide();
+        const popover = this.#popover;
         this.#popover = null;
         this.#target = null;
+        this.#range = null;
+        popover?.hide();
       }
 
       destroy() {
