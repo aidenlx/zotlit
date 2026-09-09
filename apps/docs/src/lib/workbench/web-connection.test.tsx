@@ -510,34 +510,14 @@ describe("a Workbench Connection", () => {
     expect(page.host.textContent).not.toContain(m.workbench_load_item());
   });
 
-  it("meets a first connected reader with the Start here strip", async () => {
+  it("opens connected profiles with concise tab guidance", async () => {
     vi.stubGlobal("fetch", bridgeFetch([]));
-    {
-      using page = launch();
-      await page.waitFor(() =>
-        expect(title(page.host)).toBe("Connected profile"),
-      );
-
-      // Three lines and no tour: where the fields are, where the note is
-      // written, and where Save sends it.
-      expect(page.host.textContent).toContain(m.workbench_start_here_field());
-      expect(page.host.textContent).toContain(m.workbench_start_here_note());
-      expect(page.host.textContent).toContain(m.workbench_start_here_save());
-
-      page.press(m.workbench_start_here_dismiss());
-      expect(page.host.textContent).not.toContain(
-        m.workbench_start_here_field(),
-      );
-    }
-
-    // Dismissed once, dismissed in this browser: the next launch never nags.
-    using again = launch();
-    await again.waitFor(() =>
-      expect(title(again.host)).toBe("Connected profile"),
+    using page = launch();
+    await page.waitFor(() =>
+      expect(title(page.host)).toBe("Connected profile"),
     );
-    expect(again.host.textContent).not.toContain(
-      m.workbench_start_here_field(),
-    );
+    expect(page.host.textContent).toContain(m.workbench_note_lede());
+    expect(page.host.textContent).not.toContain("Start here");
   });
 
   it("shows standalone guidance without claiming a vault connection", async () => {
@@ -545,8 +525,8 @@ describe("a Workbench Connection", () => {
     await page.settle();
 
     // A page nothing opened from Obsidian has no vault to send a note to.
-    expect(page.host.textContent).toContain(m.workbench_start_here_field());
-    expect(page.host.textContent).not.toContain(m.workbench_start_here_save());
+    expect(page.host.textContent).toContain(m.workbench_note_lede());
+    expect(page.host.textContent).not.toContain("Start here");
   });
 
   it("keeps a vault paper for the tab and the draft for the browser", async () => {

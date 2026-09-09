@@ -26,12 +26,13 @@ beside its task. Give connection state, draft status, and persistent action
 failures a dedicated status area below the panes; keep that area visible in
 short viewports. Keep required confirmations beside the action they affect.
 
-One piece of guidance stands in the flow: the getting-started strip a page
-opened from Obsidian carries under the header, naming the three tasks of the
-main loop in three lines. It is dismissible, it stays dismissed in that
-browser, and it is the whole of the first-run guidance — there is no tour.
-Word its lines so they hold at every fold, since the field list and the result
-change place below 1180 px and 780 px.
+Each editing tab starts with one concise sentence that explains its task.
+Order the tabs Note, Properties, Annotation, Name and folder, Match, Profile.
+Use familiar terms for researchers and academics. Section descriptions add
+only guidance needed to use that group, such as how defaults apply. Keep
+self-explanatory fields brief and place detailed instructions in Help.
+The Profile tab shows its identity fields directly, followed by collapsed
+Advanced details. Its description needs no additional section heading.
 
 Use 12 px outer insets and column gaps. In the three-column Note view, align
 the top edges of the field list, editor, and preview content. Size the rows
@@ -134,6 +135,13 @@ Use space to show relationships: 4 px from a form label to its control, 8 px
 between rows in a card, 12 px between fields, and 16 px between groups.
 Cards inset 10 px horizontally and 8 px vertically. A disclosure card uses
 its summary as the heading and a chevron as the visible expansion cue.
+
+In Match, follow the Bases editor's hierarchy: nested groups span their
+parent's content width and add a small inner inset. Individual conditions
+use a right-aligned label column: “where” first, then “and” or “or”. Align
+each group's selector and add actions to its leading edge, with 8 px gaps
+between controls. Place Remove match as a destructive text button beside
+the root group's selector.
 
 Use the site's semantic color tokens. Save or Download is the filled primary
 header action; Connect and the Profile menu use outline buttons. Basic and

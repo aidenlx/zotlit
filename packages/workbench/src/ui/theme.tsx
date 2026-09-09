@@ -16,6 +16,7 @@ import type { SliceLanguage } from "./slice-editor";
 export interface WorkbenchParts {
   match:
     | "button"
+    | "remove-button"
     | "icon-button"
     | "input"
     | "chip-input"
@@ -75,7 +76,6 @@ export interface WorkbenchParts {
     | "null"
     | "undefined"
     | "long-text";
-  startHere: "strip" | "heading" | "line" | "dismiss";
   nameFolder:
     | "reset-button"
     | "reset-label"
@@ -211,7 +211,7 @@ export interface WorkbenchParts {
   propertyList: "key" | "value" | "empty" | "list" | "note" | "spread" | "fold";
 
   tabBar: "tab-bar" | "tab";
-  tabPanel: "tab-panel";
+  tabPanel: "tab-panel" | "description";
   editToolbar:
     | "edit-toolbar"
     | "mode-group"

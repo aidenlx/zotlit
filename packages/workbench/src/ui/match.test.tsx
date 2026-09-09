@@ -37,8 +37,15 @@ function open(match: string) {
   return { controller, source, ...view };
 }
 
-it("places Match between Annotation and Name on both hosts", () => {
-  expect(TABS).toEqual(["note", "properties", "annotation", "match", "name"]);
+it("places Match between Name and Profile on both hosts", () => {
+  expect(TABS).toEqual([
+    "note",
+    "properties",
+    "annotation",
+    "name",
+    "match",
+    "profile",
+  ]);
 });
 
 it("keeps nested expression rows as written while a labelled row changes, and restores the source on undo", async () => {

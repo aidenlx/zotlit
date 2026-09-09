@@ -8,9 +8,7 @@ import {
   WorkbenchThemeProvider,
   useWorkbenchStore,
 } from "@zotlit/workbench/ui";
-import type { WorkbenchIcon } from "@zotlit/workbench/ui";
 
-import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
@@ -20,8 +18,6 @@ import { profileEditorTheme } from "./theme";
 
 const matchTheme = {
   ...profileEditorTheme,
-  icon: (name: WorkbenchIcon) =>
-    name === "remove" ? <Icon name="x" /> : profileEditorTheme.icon?.(name),
   classes: {
     ...profileEditorTheme.classes,
     select: {

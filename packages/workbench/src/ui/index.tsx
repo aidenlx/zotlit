@@ -11,7 +11,6 @@ export { WorkbenchMessagesProvider, useWorkbenchMessages } from "./messages";
 export type { WorkbenchMessages } from "./generated/messages";
 
 export { EditToolbar } from "./edit-toolbar";
-export { StartHere } from "./start-here";
 export {
   createWorkbenchEditor,
   WorkbenchEditorProvider,

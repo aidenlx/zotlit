@@ -46,7 +46,6 @@ import {
   ProblemsFooter,
   problemText,
   SliceEditor,
-  StartHere,
   TabBar,
   TabPanel,
   TABS,
@@ -1226,11 +1225,21 @@ function EditorContent({
     state.setTab(
       entry !== null
         ? "properties"
-        : problem.slice === "filename" || problem.slice === "details"
-          ? "name"
-          : problem.slice === "annotation"
-            ? "annotation"
-            : "note",
+        : problem.slice === "details" &&
+            [
+              "name",
+              "description",
+              "version",
+              "author",
+              "sampleItemType",
+              "language",
+            ].includes(problem.params?.field ?? "")
+          ? "profile"
+          : problem.slice === "filename" || problem.slice === "details"
+            ? "name"
+            : problem.slice === "annotation"
+              ? "annotation"
+              : "note",
     );
     state.setRoot(
       problem.slice === "annotation"
@@ -1311,7 +1320,6 @@ function EditorContent({
         data-workbench-scroll="editor"
         className="zt:min-h-0 zt:flex-1 zt:overflow-auto"
       >
-        <StartHere />
         {advanced ? (
           <SliceEditor
             controller={controller}
@@ -1442,6 +1450,16 @@ function EditorContent({
                 onOpenSource={() => state.setAdvanced(true)}
                 reveal={reveal}
                 onSelection={selection("filename")}
+              />
+            </TabPanel>
+            <TabPanel tab="profile">
+              <NameFolderPane
+                section="profile"
+                controller={controller}
+                manifest={manifest.current}
+                focus={fieldFocus}
+                filename={null}
+                onOpenSource={() => state.setAdvanced(true)}
               />
             </TabPanel>
           </>

@@ -52,7 +52,6 @@ export interface WorkbenchViewState {
   readonly root: TemplateRoot;
   /** Whether the whole document is open in the Advanced editor. */
   readonly advanced: boolean;
-  readonly startHereDismissed: boolean;
   /** Progress of the explicit action that creates the built-in Profile document. */
   readonly customization: "idle" | "pending" | "failed";
 }
@@ -62,7 +61,6 @@ export interface WorkbenchViewActions {
   readonly setItem: (item: WorkbenchItemChoice | null) => void;
   readonly setRoot: (root: TemplateRoot) => void;
   readonly setAdvanced: (advanced: boolean) => void;
-  readonly dismissStartHere: () => void;
 }
 
 export type WorkbenchStore = StoreApi<
@@ -83,7 +81,6 @@ const INITIAL: WorkbenchViewState = {
   item: null,
   root: "note",
   advanced: false,
-  startHereDismissed: false,
   customization: "idle",
 };
 
@@ -97,6 +94,5 @@ export function createWorkbenchStore(
     setItem: (item) => set({ item }),
     setRoot: (root) => set({ root }),
     setAdvanced: (advanced) => set({ advanced }),
-    dismissStartHere: () => set({ startHereDismissed: true }),
   }));
 }

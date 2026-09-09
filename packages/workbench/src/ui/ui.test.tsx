@@ -23,14 +23,16 @@ function selectedTab(): string | undefined {
 }
 
 describe("the tab bar", () => {
-  it("offers the five panes in order and opens the one pressed", () => {
+  it("offers the six panes in order and opens the one pressed", () => {
     using mounted = mount(
       <>
         <TabBar />
-        <TabPanel tab="note" keepMounted>
+        <TabPanel tab="note" keepMounted description={false}>
           note body
         </TabPanel>
-        <TabPanel tab="properties">properties rows</TabPanel>
+        <TabPanel tab="properties" description={false}>
+          properties rows
+        </TabPanel>
       </>,
     );
     const { store, ui } = mounted;
@@ -40,8 +42,9 @@ describe("the tab bar", () => {
       m.workbench_tab_note(),
       m.workbench_tab_properties(),
       m.workbench_tab_annotation(),
-      m.workbench_tab_match(),
       m.workbench_tab_name_and_folder(),
+      m.workbench_tab_match(),
+      m.workbench_tab_profile(),
     ]);
     expect(selectedTab()).toBe(m.workbench_tab_note());
     expect(screen.getByRole("tabpanel")).toHaveProperty(
@@ -77,23 +80,25 @@ describe("the tab bar", () => {
 
     const list = screen.getByRole("tablist");
     fireEvent.keyDown(list, { key: "ArrowRight" });
-    expect(store.getState().tab).toBe("match");
-    expect(document.activeElement?.textContent).toBe(m.workbench_tab_match());
-    fireEvent.keyDown(list, { key: "ArrowRight" });
     expect(store.getState().tab).toBe("name");
     expect(document.activeElement?.textContent).toBe(
       m.workbench_tab_name_and_folder(),
     );
     fireEvent.keyDown(list, { key: "ArrowRight" });
+    expect(store.getState().tab).toBe("match");
+    expect(document.activeElement?.textContent).toBe(m.workbench_tab_match());
+    fireEvent.keyDown(list, { key: "ArrowRight" });
+    expect(store.getState().tab).toBe("profile");
+    fireEvent.keyDown(list, { key: "ArrowRight" });
     expect(store.getState().tab).toBe("note");
     fireEvent.keyDown(list, { key: "ArrowLeft" });
-    expect(store.getState().tab).toBe("name");
+    expect(store.getState().tab).toBe("profile");
     fireEvent.keyDown(list, { key: "Home" });
     expect(store.getState().tab).toBe("note");
     fireEvent.keyDown(list, { key: "End" });
-    expect(store.getState().tab).toBe("name");
+    expect(store.getState().tab).toBe("profile");
     // Only the chosen tab is in the tab order.
-    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, -1, -1, -1, 0]);
+    expect(tabs().map((tab) => tab.tabIndex)).toEqual([-1, -1, -1, -1, -1, 0]);
   });
 
   it("keeps Default Match disabled and skips it during traversal and restoration", () => {
@@ -163,6 +168,7 @@ describe("the tab bar", () => {
       "inactive",
       "inactive",
       "inactive",
+      "inactive",
     ]);
   });
 
@@ -187,7 +193,7 @@ describe("the tab bar", () => {
     fireEvent.click(screen.getByRole("tab", { name: m.workbench_tab_note() }));
     expect(onTabChange).toHaveBeenLastCalledWith("note");
     fireEvent.keyDown(screen.getByRole("tablist"), { key: "End" });
-    expect(onTabChange).toHaveBeenLastCalledWith("name");
+    expect(onTabChange).toHaveBeenLastCalledWith("profile");
     const basic = screen.getByRole("button", { name: m.workbench_basic() });
     fireEvent.click(basic);
     fireEvent.click(basic);
@@ -198,7 +204,9 @@ describe("the tab bar", () => {
     render(
       <>
         <TabBar />
-        <TabPanel tab="note">quiet</TabPanel>
+        <TabPanel tab="note" description={false}>
+          quiet
+        </TabPanel>
       </>,
     );
     for (const tab of tabs()) {
@@ -384,21 +392,18 @@ describe("the view store", () => {
       item: null,
       root: "note",
       advanced: false,
-      startHereDismissed: false,
     });
   });
 
   it("takes a host's starting state and changes one field at a time", () => {
     const store = createWorkbenchStore({ tab: "name" });
-    const { setItem, setRoot, dismissStartHere } = store.getState();
+    const { setItem, setRoot } = store.getState();
     setItem({ id: "ABCD1234", title: "A paper" });
     setRoot("filename");
-    dismissStartHere();
     expect(store.getState()).toMatchObject({
       tab: "name",
       item: { id: "ABCD1234", title: "A paper" },
       root: "filename",
-      startHereDismissed: true,
     });
   });
 });

@@ -8,14 +8,16 @@ export type WorkbenchTab =
   | "annotation"
   | "properties"
   | "name"
+  | "profile"
   | "match";
 
 export const TABS: readonly WorkbenchTab[] = [
   "note",
   "properties",
   "annotation",
-  "match",
   "name",
+  "match",
+  "profile",
 ];
 
 const TAB_LABEL: Record<WorkbenchTab, WorkbenchMessageLabel> = {
@@ -24,6 +26,7 @@ const TAB_LABEL: Record<WorkbenchTab, WorkbenchMessageLabel> = {
   properties: "workbench_tab_properties",
   match: "workbench_tab_match",
   name: "workbench_tab_name_and_folder",
+  profile: "workbench_tab_profile",
 };
 
 const TAB_LEDE: Record<WorkbenchTab, WorkbenchMessageLabel> = {
@@ -32,6 +35,7 @@ const TAB_LEDE: Record<WorkbenchTab, WorkbenchMessageLabel> = {
   properties: "workbench_properties_lede",
   match: "workbench_match_conditions_desc",
   name: "workbench_name_lede",
+  profile: "workbench_profile_lede",
 };
 
 export function tabLabel(m: WorkbenchMessages, tab: WorkbenchTab): string {
