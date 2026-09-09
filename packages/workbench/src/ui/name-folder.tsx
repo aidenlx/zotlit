@@ -21,6 +21,7 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 
+import { useExampleMessage } from "./example-state";
 import type { WorkbenchMessages } from "./generated/messages";
 import { useOptionalHost } from "./host";
 import type { WorkbenchMessageLabel } from "./messages";
@@ -99,7 +100,7 @@ const DEFAULT_PROFILE_ID = "default";
  * The control that holds one manifest key. A problem the parser pinned to a key
  * opens the control under this id, so every field this form writes carries one.
  */
-const FieldIdContext = createContext("workbench");
+const FieldIdContext = createContext({ prefix: "workbench", readOnly: false });
 
 function fieldId(prefix: string, key: string): string {
   return `${prefix}-field-${key}`;
@@ -121,6 +122,7 @@ function valueText(
 export interface NameFolderPaneProps {
   controller: WorkbenchDocumentController;
   onOpenSource?: () => void;
+  onOpenSettings?: () => void;
   /**
    * The manifest this form writes: the last one the document parsed with, so a
    * draft under repair keeps the values the reader is repairing. Null before
@@ -153,6 +155,7 @@ export interface NameFolderPaneProps {
 export function NameFolderPane({
   controller,
   onOpenSource,
+  onOpenSettings,
   manifest,
   filename,
   citationStyles,
@@ -163,6 +166,7 @@ export function NameFolderPane({
   onSelection,
 }: NameFolderPaneProps) {
   const m = useWorkbenchMessages();
+  const exampleMessage = useExampleMessage("filename");
   const prefix = useId();
   const container = useRef<HTMLDivElement>(null);
   const icon = useIcon();
@@ -181,15 +185,25 @@ export function NameFolderPane({
     control.focus();
   }, [focus, prefix]);
 
+  const settingsAction = onOpenSettings && (
+    <button type="button" {...part("source-button")} onClick={onOpenSettings}>
+      {m.workbench_open_settings()}
+    </button>
+  );
   if (!manifest) {
-    return <p {...part("unreadable")}>{m.workbench_name_unreadable()}</p>;
+    return (
+      <div {...part("pane")}>
+        <p {...part("unreadable")}>{m.workbench_name_unreadable()}</p>
+        {settingsAction}
+      </div>
+    );
   }
 
   const write = (key: string, value: ManifestScalar | undefined) =>
     controller.setManifestKey(key, value);
 
   return (
-    <FieldIdContext.Provider value={prefix}>
+    <FieldIdContext.Provider value={{ prefix, readOnly: controller.readOnly }}>
       <div ref={container} {...part("pane")}>
         <Group
           heading={m.workbench_name_filename_heading()}
@@ -223,7 +237,9 @@ export function NameFolderPane({
           )}
           <p {...part("filename-result")}>
             <span {...part("muted")}>{m.workbench_name_filename_result()}</span>
-            <output {...part("filename-output")}>{filename}</output>
+            <output {...part("filename-output")}>
+              {exampleMessage ?? filename ?? m.workbench_property_unset()}
+            </output>
           </p>
         </Group>
 
@@ -263,6 +279,7 @@ export function NameFolderPane({
           )}
         </Group>
 
+        {settingsAction}
         <details {...part("details")}>
           <summary {...part("summary")}>
             <span aria-hidden {...part("details-icon")}>
@@ -414,6 +431,7 @@ function DraftText({
   binding?: boolean;
 }) {
   const part = useParts("nameFolder");
+  const readOnly = useContext(FieldIdContext).readOnly;
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   return (
@@ -422,6 +440,7 @@ function DraftText({
       id={id}
       value={draft}
       disabled={disabled}
+      readOnly={readOnly}
       placeholder={placeholder}
       onInput={(event) => setDraft(event.currentTarget.value)}
       onBlur={() => {
@@ -450,7 +469,7 @@ function TextValue({
   onCommit: (value: string | undefined) => void;
 }) {
   const m = useWorkbenchMessages();
-  const prefix = useContext(FieldIdContext);
+  const { prefix } = useContext(FieldIdContext);
   return (
     <DraftText
       id={fieldId(prefix, field)}
@@ -477,8 +496,9 @@ function BindingRow({
   onWrite: (value: ManifestScalar | undefined) => void;
 }) {
   const m = useWorkbenchMessages();
-  const prefix = useContext(FieldIdContext);
+  const { prefix } = useContext(FieldIdContext);
   const part = useParts("nameFolder");
+  const readOnly = useContext(FieldIdContext).readOnly;
   const host = useOptionalHost();
   const Toggle = host?.toggle;
   const icon = useIcon();
@@ -501,6 +521,7 @@ function BindingRow({
           <button
             type="button"
             {...part("reset-button")}
+            disabled={readOnly}
             aria-label={m.workbench_name_use_default_for({ name: label })}
             {...host?.tooltip(m.workbench_name_use_default())}
             onClick={() => onWrite(undefined)}
@@ -526,12 +547,13 @@ function BindingRow({
               id={id}
               aria-label={label}
               value={effective === true}
-              disabled={false}
+              disabled={readOnly}
               onChange={onWrite}
             />
           ) : (
             <button
               type="button"
+              disabled={readOnly}
               role="switch"
               id={id}
               aria-checked={effective === true}
@@ -586,6 +608,7 @@ function StylePicker({
   onWrite: (value: ManifestScalar) => void;
 }) {
   const m = useWorkbenchMessages();
+  const readOnly = useContext(FieldIdContext).readOnly;
   const options =
     value !== null &&
     value !== "" &&
@@ -595,6 +618,7 @@ function StylePicker({
   return (
     <WorkbenchSelect
       id={id}
+      disabled={readOnly}
       value={value ?? ""}
       onInput={(event) =>
         onWrite(
@@ -627,8 +651,9 @@ function LanguageGroup({
   onWrite: (key: string, value: ManifestScalar) => void;
 }) {
   const m = useWorkbenchMessages();
-  const prefix = useContext(FieldIdContext);
+  const { prefix } = useContext(FieldIdContext);
   const part = useParts("nameFolder");
+  const readOnly = useContext(FieldIdContext).readOnly;
   const [pending, setPending] = useState<string | null>(null);
   return (
     <Group
@@ -637,6 +662,7 @@ function LanguageGroup({
     >
       <Field label={m.workbench_name_language_heading()}>
         <WorkbenchSelect
+          disabled={readOnly}
           id={fieldId(prefix, "language")}
           value={pending ?? language}
           onInput={(event) => setPending(event.currentTarget.value)}
@@ -658,6 +684,7 @@ function LanguageGroup({
           <div {...part("confirmation-actions")}>
             <button
               type="button"
+              disabled={readOnly}
               {...part("confirm-button")}
               onClick={() => {
                 onWrite("language", pending);

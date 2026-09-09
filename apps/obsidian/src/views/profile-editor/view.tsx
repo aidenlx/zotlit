@@ -98,6 +98,7 @@ export const PROFILE_EDITOR_VIEW_TYPE = "zotlit-profile-editor";
 const logger = getLogger(["views", "profile-editor"]);
 export type ProfileEditorDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   render?: WorkbenchHost["render"];
+  openSettings?: (defaultProfile: boolean) => void;
   nativePreview?: NativeRenderDeps;
   pluginVersion?: string;
   profile?: Pick<
@@ -120,6 +121,9 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   readonly #revealListeners = new Set<
     (target: Pick<WorkbenchProblem, "slice" | "range" | "params">) => void
   >();
+  get openSettings() {
+    return this.#deps.openSettings;
+  }
   get matchDatabase() {
     return this.#deps.db;
   }
@@ -575,6 +579,14 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
           .onClick(() => void this.restoreDefault()),
       );
   }
+  get isDefaultProfile(): boolean {
+    return (
+      this.#defaultDraft ||
+      Boolean(
+        this.file && this.file.path === this.#deps.profile?.defaultDocumentPath,
+      )
+    );
+  }
   get isDefaultDraft(): boolean {
     return this.#defaultDraft;
   }
@@ -928,6 +940,7 @@ function EditorContent({
       ))}
       {!advanced && (
         <TabBar
+          defaultProfile={view.isDefaultProfile ? true : undefined}
           onTabChange={(tab) => {
             state.setRoot(
               tab === "annotation"
@@ -1055,6 +1068,15 @@ function EditorContent({
             </TabPanel>
             <TabPanel tab="name">
               <NameFolderPane
+                onOpenSettings={
+                  view.openSettings
+                    ? () =>
+                        view.openSettings?.(
+                          view.isDefaultProfile ||
+                            manifest.current?.id === "default",
+                        )
+                    : undefined
+                }
                 controller={controller}
                 manifest={manifest.current}
                 defaults={view.bindingDefaults}

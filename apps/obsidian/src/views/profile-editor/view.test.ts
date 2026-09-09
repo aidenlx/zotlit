@@ -11,6 +11,8 @@ import { act } from "preact/test-utils";
 import { describe, expect, it, vi } from "vitest";
 import { createStore } from "zustand/vanilla";
 
+import * as m from "@/lib/i18n/generated/messages";
+
 import { ProfileEditorView } from "./view";
 import type { ProfileEditorDeps } from "./view";
 
@@ -76,6 +78,58 @@ function setup(deps: Partial<ProfileEditorDeps> = {}) {
 }
 
 describe("ProfileEditorView", () => {
+  it("routes Settings from the current profile identity without selecting an Item", async () => {
+    const openSettings = vi.fn<(defaultProfile: boolean) => void>();
+    const { view } = setup({ openSettings });
+    try {
+      await act(async () => view.open());
+      await act(async () => view.store.getState().setTab("name"));
+      expect(view.store.getState().item).toBeNull();
+      const button = [...view.contentEl.querySelectorAll("button")].find(
+        (element) => element.textContent === m.workbench_open_settings(),
+      )!;
+      await act(async () => button.click());
+      expect(openSettings).toHaveBeenLastCalledWith(false);
+      await act(async () =>
+        view.setViewData(SOURCE.replace("id: paper", "id: default"), false),
+      );
+      await act(async () => button.click());
+      expect(openSettings).toHaveBeenLastCalledWith(true);
+    } finally {
+      await act(async () => view.close());
+    }
+  });
+
+  it("keeps a file-known Default disabled and routes Settings when opened with invalid source", async () => {
+    const openSettings = vi.fn<(defaultProfile: boolean) => void>();
+    const path = "templates/zotlit-profile.default.md";
+    const { view } = setup({
+      openSettings,
+      profile: { defaultDocumentPath: path } as ProfileEditorDeps["profile"],
+    });
+    const file = new TFile();
+    file.path = path;
+    view.file = file;
+    view.setViewData("---\nid: [", true);
+    try {
+      await act(async () => view.open());
+      await act(async () => view.store.getState().setTab("match"));
+      expect(view.store.getState().tab).toBe("note");
+      const match = [
+        ...view.contentEl.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
+      ].find((tab) => tab.textContent === m.workbench_tab_match())!;
+      expect(match.disabled).toBe(true);
+      await act(async () => view.store.getState().setTab("name"));
+      const settings = [...view.contentEl.querySelectorAll("button")].find(
+        (button) => button.textContent === m.workbench_open_settings(),
+      )!;
+      await act(async () => settings.click());
+      expect(openSettings).toHaveBeenCalledWith(true);
+    } finally {
+      await act(async () => view.close());
+    }
+  });
+
   it("keeps native view actions in sync across edits and document replacement", async () => {
     const { view } = setup();
     await act(async () => view.open());

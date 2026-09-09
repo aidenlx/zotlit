@@ -210,7 +210,7 @@ export const profileEditorTheme: WorkbenchTheme = {
     tabBar: {
       "tab-bar":
         "zt:flex zt:shrink-0 zt:flex-wrap zt:gap-1 zt:border-b zt:border-border zt:px-3 zt:pb-2",
-      tab: "clickable-icon zt:shrink-0 zt:text-sm",
+      tab: "clickable-icon zt:disabled:opacity-50 zt:shrink-0 zt:text-sm",
     },
     tabPanel: { "tab-panel": "zt:min-w-0 zt:p-3" },
     sliceEditor: {
@@ -312,7 +312,7 @@ export const profileEditorTheme: WorkbenchTheme = {
       "filename-editor": editorBox,
       "filename-result":
         "zt:flex zt:flex-wrap zt:gap-x-2 zt:gap-y-1 zt:text-xs",
-      "filename-output": "zt:font-mono zt:[overflow-wrap:anywhere]",
+      "filename-output": "zt:[overflow-wrap:anywhere]",
       defaults: "zt:flex zt:flex-col zt:gap-2",
       "default-label": "zt:min-w-0 zt:flex-1",
       "default-value":

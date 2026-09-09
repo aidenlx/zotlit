@@ -94,6 +94,9 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
   await vi.waitFor(() =>
     expect(loadMatchFacts).toHaveBeenCalledWith(db, "BOOK0001"),
   );
+  expect(el.querySelector('[role="status"]')?.textContent).toBe(
+    m.workbench_loading_item(),
+  );
   await act(async () => {
     store.getState().setItem({ id: "ARTC0001", title: "Article" });
   });
@@ -132,7 +135,31 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
   });
   await vi.waitFor(() => expect(tags).toHaveBeenCalledTimes(2));
   expect(loadMatchFacts).toHaveBeenCalledTimes(2);
+  expect(el.querySelector('[role="status"]')?.textContent).toBe(
+    m.workbench_example_select_item(),
+  );
   expect(render).not.toHaveBeenCalled();
+  vi.mocked(loadMatchFacts).mockRejectedValueOnce(
+    new Error("Database unavailable"),
+  );
+  await act(async () => {
+    store.getState().setItem({ id: "FAIL0001", title: "Unavailable paper" });
+  });
+  await vi.waitFor(() =>
+    expect(el.querySelector('[role="status"]')?.textContent).toBe(
+      m.workbench_example_failed(),
+    ),
+  );
+  vi.mocked(loadMatchFacts).mockResolvedValueOnce(null);
+  const retry = [...el.querySelectorAll("button")].find(
+    (button) => button.textContent === m.workbench_example_retry(),
+  )!;
+  await act(async () => retry.click());
+  await vi.waitFor(() =>
+    expect(el.querySelector('[role="status"]')?.textContent).toBe(
+      m.workbench_example_missing_item(),
+    ),
+  );
 });
 
 it("applies the installed pack to shared Match and Explorer controls after restart", async () => {

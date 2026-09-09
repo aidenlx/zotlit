@@ -120,6 +120,12 @@ export function Workbench() {
   });
   const [editor] = useState(() => createWorkbenchEditor({ host, controller }));
   const { store, scheduler } = editor;
+  useEffect(() => {
+    store.getState().setItem({
+      id: sample.item.indexedKey,
+      title: sample.item.title,
+    });
+  }, [store, sample]);
   const {
     result,
     busy: renderBusy,
