@@ -103,6 +103,9 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
   // the view was still open, and a disposed one answers for nothing.
   let closed = false;
   const listeners = new Set<() => void>();
+  using cleanup = new DisposableStack();
+  cleanup.defer(() => listeners.clear());
+  cleanup.defer(abandon);
 
   function follow(next: WorkbenchDocumentController): () => void {
     return next.subscribe(({ docChanged }) => {
@@ -110,13 +113,16 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
     });
   }
   let unfollow = follow(attached);
-  const unsubscribe = store.subscribe((next, previous) => {
-    if (next.preview.mode !== previous.preview.mode) changed();
-    else if (next.preview.live !== previous.preview.live) {
-      if (next.preview.live) changed();
-      else pause();
-    }
-  });
+  cleanup.defer(() => unfollow());
+  cleanup.defer(
+    store.subscribe((next, previous) => {
+      if (next.preview.mode !== previous.preview.mode) changed();
+      else if (next.preview.live !== previous.preview.live) {
+        if (next.preview.live) changed();
+        else pause();
+      }
+    }),
+  );
 
   function publish(next: { result?: R | null; busy?: boolean }): void {
     if (closed) return;
@@ -213,6 +219,7 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
     publish({ busy: false });
   }
 
+  const lifetime = cleanup.move();
   return {
     getState: () => state,
     subscribe(listener) {
@@ -268,10 +275,7 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
     },
     [Symbol.dispose]() {
       closed = true;
-      abandon();
-      unfollow();
-      unsubscribe();
-      listeners.clear();
+      lifetime.dispose();
     },
   };
 }
