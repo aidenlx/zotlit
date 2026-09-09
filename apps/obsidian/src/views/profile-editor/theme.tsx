@@ -52,7 +52,7 @@ export const profileEditorTheme: WorkbenchTheme = {
   editorExtension: () => [templateHighlighting, codePane],
   classes: {
     match: {
-      "remove-button": "mod-destructive zt:shrink-0",
+      "remove-button": "mod-destructive zt:shrink-0 zt:[--input-shadow:none]",
       button: profileEditorButton,
       "icon-button": "clickable-icon zt:shrink-0",
       input:
