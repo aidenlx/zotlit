@@ -43,8 +43,14 @@ function mount(parent: HoverParent) {
   return view;
 }
 
+/**
+ * Moves the pointer onto the first span carrying `hook`. happy-dom lays
+ * nothing out, so the pointer resolves to the span's start, the way a pointer
+ * at its left edge would.
+ */
 async function hover(editor: EditorView, hook: string) {
   const token = editor.contentDOM.querySelector(`.${hook}`)!;
+  vi.spyOn(editor, "posAtCoords").mockReturnValue(editor.posAtDOM(token));
   await act(async () => {
     token.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
   });
@@ -66,6 +72,18 @@ describe("template hover", () => {
     expect(card.querySelector("span")!.textContent).toBe("string | null");
     expect(card.querySelector("p")!.textContent).toBe("Item title.");
     expect(card.textContent).toContain("zt.title");
+  });
+
+  it("keeps the popover as the pointer crosses the dot of the same token", async () => {
+    vi.useFakeTimers();
+    const parent: HoverParent = { hoverPopover: null };
+    const editor = mount(parent);
+    await hover(editor, themeHook.templateVariable);
+    vi.advanceTimersByTime(300);
+    const popover = parent.hoverPopover!;
+    await hover(editor, themeHook.templateOperator);
+    expect(parent.hoverPopover).toBe(popover);
+    expect(popover.hoverEl.querySelector("strong")!.textContent).toBe("zt");
   });
 
   it("closes the popover on an edit", async () => {
