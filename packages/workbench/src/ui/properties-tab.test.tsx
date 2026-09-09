@@ -270,3 +270,18 @@ Annotation`;
   fireEvent.click(screen.getByRole("button", { name: m.workbench_advanced() }));
   expect(opened).toBe("zt.title");
 });
+
+it("keeps read-only rows openable and disables property changes", () => {
+  const { controller, press } = setup();
+  act(() => controller.setReadOnly(true));
+  press(m.workbench_properties_edit());
+  expect(
+    screen.getByRole("textbox", { name: m.workbench_properties_name() }),
+  ).toHaveProperty("readOnly", true);
+  expect(
+    screen.getByRole("button", { name: m.workbench_properties_add() }),
+  ).toHaveProperty("disabled", true);
+  expect(
+    screen.getAllByRole("button", { name: m.workbench_properties_remove() })[0],
+  ).toHaveProperty("disabled", true);
+});

@@ -1194,7 +1194,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEval(
           vaultId,
-          `String(!app.vault.getFileByPath(${JSON.stringify(defaultPath)})&&window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.settings.current['server.enabled']&&!app.plugins.plugins.zotlit.services.settings.current['server.workbench'])`,
+          `String(!!app.vault.getFileByPath(${JSON.stringify(defaultPath)})&&app.workspace.activeLeaf?.view.controller?.readOnly===false&&window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.settings.current['server.enabled']&&!app.plugins.plugins.zotlit.services.settings.current['server.workbench'])`,
         ),
       ).toBe("true");
       await mainSettings();
@@ -1212,6 +1212,18 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           "String(window.zotlitE2ELaunch===undefined&&!app.plugins.plugins.zotlit.services.settings.current['server.enabled'])",
         ),
       ).toBe("true");
+      // The web save cases start from the built-in Default again.
+      await obEval(
+        vaultId,
+        "app.plugins.plugins.zotlit.services.profile.restoreDefault();true",
+      );
+      expect(
+        await obEvalUntil(
+          vaultId,
+          `String(!app.vault.getFileByPath(${JSON.stringify(defaultPath)}))`,
+          { expected: "true" },
+        ),
+      ).toBe(true);
       await obEval(
         vaultId,
         "app.saveLocalStorage('zotlit-profile-customization','ask');true",

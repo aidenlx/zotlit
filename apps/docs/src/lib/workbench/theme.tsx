@@ -12,6 +12,7 @@ import {
   Pencil,
   List,
   Redo2,
+  RotateCcw,
   Undo2,
   ChevronDown,
   ChevronRight,
@@ -44,6 +45,7 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   advanced: Code2,
   undo: Undo2,
   redo: Redo2,
+  reset: RotateCcw,
 };
 
 const historyButton = buttonVariants({ variant: "ghost", size: "icon-sm" });
@@ -138,6 +140,7 @@ export const WEB_THEME: WorkbenchTheme = {
         "data-[state=expanded]:break-words data-[state=expanded]:whitespace-pre-wrap",
     },
     nameFolder: {
+      "reset-button": buttonVariants({ variant: "outline", size: "xs" }),
       "source-button": cn(
         buttonVariants({ variant: "outline", size: "xs" }),
         "mt-2",
@@ -150,7 +153,7 @@ export const WEB_THEME: WorkbenchTheme = {
       help: "text-xs leading-normal text-pretty text-fd-muted-foreground",
       "filename-result": "flex items-baseline gap-2 text-xs",
       muted: "text-fd-muted-foreground",
-      "filename-output": "min-w-0 flex-1 font-mono break-words",
+      "filename-output": "min-w-0 flex-1 break-words",
       defaults: "flex flex-col gap-1.5 text-xs",
       actions: "flex flex-wrap items-center gap-2",
       "default-label": "min-w-0 flex-1",
@@ -353,7 +356,7 @@ export const WEB_THEME: WorkbenchTheme = {
     },
     tabBar: {
       "tab-bar": "flex min-w-0 flex-wrap gap-0.5 rounded-md bg-fd-muted p-0.5",
-      tab: "flex min-h-7 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-sm px-2 py-0.5 text-xs font-medium text-fd-muted-foreground data-[state=active]:bg-fd-card data-[state=active]:text-fd-foreground data-[state=active]:shadow-sm [&_svg]:size-4",
+      tab: "disabled:cursor-default disabled:opacity-50 flex min-h-7 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-sm px-2 py-0.5 text-xs font-medium text-fd-muted-foreground data-[state=active]:bg-fd-card data-[state=active]:text-fd-foreground data-[state=active]:shadow-sm [&_svg]:size-4",
     },
     tabPanel: {
       "tab-panel": "flex min-h-0 min-w-0 flex-1 flex-col [&[hidden]]:hidden",

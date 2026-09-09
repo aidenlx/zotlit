@@ -25,8 +25,8 @@ export function AnnotationSampleBar({
   onSelect,
 }: {
   id?: string;
-  current: readonly AnnotationExample[];
-  example: AnnotationExample;
+  current: readonly Pick<AnnotationExample, "id" | "root">[];
+  example: Pick<AnnotationExample, "id" | "root"> | null;
   onSelect: (id: string) => void;
 }) {
   const m = useWorkbenchMessages();
@@ -36,8 +36,12 @@ export function AnnotationSampleBar({
       <SampleSuggester
         id={id}
         title={m.workbench_choose_annotation()}
-        label={annotationOption(m, example).label}
-        selected={example.id}
+        label={
+          example
+            ? annotationOption(m, example).label
+            : m.workbench_choose_annotation()
+        }
+        selected={example?.id ?? ""}
         groups={[
           {
             heading: m.workbench_annotation_from_item(),
@@ -59,14 +63,14 @@ export function AnnotationSampleBar({
 
 function annotationOption(
   m: WorkbenchMessages,
-  { id, root }: AnnotationExample,
+  { id, root }: Pick<AnnotationExample, "id" | "root">,
 ): SampleOption {
   const type = m.workbench_annotation_type({
     type: typeof root.type === "string" ? root.type : "unknown",
   });
   const content = root.text || root.comment;
   const parent = root.parentItem as Record<string, unknown> | null;
-  const tags = root.tags as readonly { name: string }[];
+  const tags = (root.tags ?? []) as readonly { name: string }[];
   return {
     value: id,
     label:
@@ -130,17 +134,29 @@ export function AnnotationPane({
 }
 
 /**
- * The format's place under a note that calls it nowhere: the host puts the
- * call and its loop where the reader left the caret.
+ * Offers annotation insertion at the end of a note that has no render call.
  */
-export function AnnotationPointer({ onInsert }: { onInsert: () => void }) {
+export function AnnotationPointer({
+  onInsert,
+  disabled = false,
+}: {
+  onInsert: () => void;
+  disabled?: boolean;
+}) {
   const m = useWorkbenchMessages();
   const part = useParts("annotation");
   return (
     <div {...part("pointer")}>
-      <span {...part("heading")}>{m.workbench_annotation_label()}</span>
+      <span {...part("heading")}>
+        {m.workbench_annotation_pointer_heading()}
+      </span>
       <span {...part("hint")}>{m.workbench_annotation_pointer()}</span>
-      <button type="button" {...part("primary-action")} onClick={onInsert}>
+      <button
+        type="button"
+        disabled={disabled}
+        {...part("primary-action")}
+        onClick={onInsert}
+      >
         {m.workbench_annotation_insert()}
       </button>
     </div>
@@ -176,6 +192,7 @@ export function AnnotationSectionBar({
           <button
             type="button"
             {...part("primary-action")}
+            disabled={controller.readOnly}
             onClick={() => controller.repairAnnotationSection()}
           >
             {m.workbench_section_repair()}

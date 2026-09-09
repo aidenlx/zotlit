@@ -1,17 +1,15 @@
-import type { DisplayNode, TemplateEngine } from "#/explorer/index";
-import { useEffect, useMemo, useState } from "react";
-import { useStore } from "zustand";
+import type { DisplayNode, TemplateEngine, TreeState } from "#/explorer/index";
+import { useEffect, useId, useMemo, useRef } from "react";
+import type { ReactNode } from "react";
 
-import { useOptionalEditor } from "./editor";
 import { commonRows, fieldSnippet, rowMatches } from "./explorer-fields";
 import type { FieldInsertionMode } from "./explorer-fields";
 import { DisplayTree } from "./explorer-tree";
-import { useWorkbenchHost } from "./host";
+import { HiddenName, useWorkbenchHost } from "./host";
 import type { WorkbenchMenuItem, WorkbenchMenuRequest } from "./host";
 // Both hosts use this field discovery tree. The host owns clipboard, insertion,
-// export, and popup presentation; this component owns filtering and expansion.
+// export, popup presentation, and the controlled filtering/expansion state.
 import { useWorkbenchMessages } from "./messages";
-import { createWorkbenchStore } from "./store";
 import type { TemplateRoot, ExplorerVariant } from "./store";
 import { useParts } from "./theme";
 
@@ -20,14 +18,29 @@ import {
   buildFilteredDisplayTree,
   copyValue,
   formatPath,
-  initialTreeState,
   renderSnippet,
   setFilter,
   snippetKindsFor,
   toggleNode,
 } from "#/explorer/index";
 
+export interface ExplorerPresentation {
+  top: number;
+  left: number;
+  field: string | null;
+  focus?: boolean;
+}
+
 export interface DataExplorerProps {
+  restore?: ExplorerPresentation | null;
+  onRestored?: () => void;
+  onPresentationChange?: (value: ExplorerPresentation) => void;
+  variant: ExplorerVariant;
+  onVariantChange: (variant: ExplorerVariant) => void;
+  navigation: TreeState;
+  onNavigationChange: (navigation: TreeState) => void;
+  /** The host distinguishes absent input, loading, and data failures. */
+  empty?: ReactNode;
   root: TemplateRoot;
   data: Record<string, unknown> | null;
   mode?: FieldInsertionMode;
@@ -37,12 +50,22 @@ export interface DataExplorerProps {
   engines?: () => readonly TemplateEngine[];
   disabled?: boolean;
   onInsert?: (snippet: string) => void;
+  /** Resolves insertion against the receiving editor at action time. */
+  onInsertNode?: (node: DisplayNode) => void;
   copy: (text: string) => Promise<void>;
   onExploreAnnotation?: (node: DisplayNode) => void;
   canExploreAnnotation?: (node: DisplayNode) => boolean;
 }
 
 export function DataExplorer({
+  restore,
+  onRestored,
+  onPresentationChange,
+  variant,
+  onVariantChange,
+  navigation: tree,
+  onNavigationChange,
+  empty,
   root,
   data,
   mode = "template",
@@ -51,25 +74,38 @@ export function DataExplorer({
   engines,
   disabled = false,
   onInsert,
+  onInsertNode,
   copy,
   onExploreAnnotation,
   canExploreAnnotation,
 }: DataExplorerProps) {
+  const body = useRef<HTMLDivElement>(null);
+  const field = useRef<string | null>(null);
+  useEffect(() => {
+    if (!restore || !body.current || !data) return;
+    const element = body.current;
+    element.scrollTop = restore.top;
+    element.scrollLeft = restore.left;
+    field.current = restore.field;
+    if (restore.focus && restore.field) {
+      const row = [
+        ...element.querySelectorAll<HTMLElement>("[data-workbench-field]"),
+      ].find((row) => row.dataset.workbenchField === restore.field);
+      row
+        ?.querySelector<HTMLElement>("button, [tabindex]")
+        ?.focus({ preventScroll: true });
+    }
+    onRestored?.();
+  }, [restore, data, onRestored]);
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
   const part = useParts("dataExplorer");
-  const editor = useOptionalEditor();
-  const [fallback] = useState(createWorkbenchStore);
-  const store = editor?.store ?? fallback;
-  const variant = useStore(store, (state) => state.explorer);
-  const setVariant = (value: ExplorerVariant) =>
-    store.getState().setExplorer(value);
-  useEffect(() => {
-    const saved = host.persistence.read("vault", "explorer-variant");
-    if (saved === "simple" || saved === "all")
-      store.getState().setExplorer(saved);
-  }, [host, store]);
-  const [tree, setTree] = useState(initialTreeState);
+  const variantsId = useId();
+  const insertNode =
+    onInsertNode ??
+    (onInsert
+      ? (node: DisplayNode) => onInsert(fieldSnippet(node, mode, { engine }))
+      : undefined);
   const visible = useMemo(() => {
     if (!data) return { nodes: [], matchedKeys: null };
     if (tree.filterQuery)
@@ -136,10 +172,10 @@ export function DataExplorer({
         },
       },
     ];
-    if (onInsert && !disabled)
+    if (insertNode && !disabled)
       items.unshift({
         label: m.workbench_fields_put_in_note(),
-        onSelect: () => onInsert(fieldSnippet(node, mode, { engine })),
+        onSelect: () => insertNode(node),
       });
     const labels = {
       output: m.workbench_explorer_menu_copy_output,
@@ -180,21 +216,17 @@ export function DataExplorer({
               ? m.workbench_fields_root_filename()
               : m.workbench_fields_root_note()}
         </span>
-        <div
-          role="group"
-          aria-label={m.workbench_explorer_variant()}
-          {...part("variants")}
-        >
+        <div role="group" aria-labelledby={variantsId} {...part("variants")}>
+          <HiddenName id={variantsId}>
+            {m.workbench_explorer_variant()}
+          </HiddenName>
           {(["simple", "all"] as const).map((value) => (
             <button
               key={value}
               type="button"
               aria-pressed={variant === value}
               {...part("variant", variant === value ? "active" : "inactive")}
-              onClick={() => {
-                setVariant(value);
-                host.persistence.write("vault", "explorer-variant", value);
-              }}
+              onClick={() => onVariantChange(value)}
             >
               {value === "simple"
                 ? m.workbench_explorer_simple()
@@ -210,28 +242,47 @@ export function DataExplorer({
         placeholder={m.workbench_fields_search()}
         {...part("search")}
         onChange={(event) =>
-          setTree((current) => setFilter(current, event.currentTarget.value))
+          onNavigationChange(setFilter(tree, event.currentTarget.value))
         }
       />
-      <div {...part("body")}>
+      <div
+        ref={body}
+        {...part("body")}
+        onScroll={(event) =>
+          onPresentationChange?.({
+            top: event.currentTarget.scrollTop,
+            left: event.currentTarget.scrollLeft,
+            field: field.current,
+          })
+        }
+        onFocusCapture={(event) => {
+          field.current =
+            (event.target as HTMLElement).closest<HTMLElement>(
+              "[data-workbench-field]",
+            )?.dataset.workbenchField ?? null;
+          onPresentationChange?.({
+            top: event.currentTarget.scrollTop,
+            left: event.currentTarget.scrollLeft,
+            field: field.current,
+          });
+        }}
+      >
         {nodes.length === 0 ? (
-          <p {...part("empty")}>
-            {data === null
-              ? m.workbench_fields_no_annotations()
-              : m.workbench_fields_no_matches()}
-          </p>
+          (empty ?? (
+            <p {...part("empty")}>
+              {data === null
+                ? m.workbench_fields_no_annotations()
+                : m.workbench_fields_no_matches()}
+            </p>
+          ))
         ) : (
           <DisplayTree
             variant={variant}
             nodes={nodes}
             matchedKeys={visible.matchedKeys}
-            onToggle={(key) => setTree((current) => toggleNode(current, key))}
+            onToggle={(key) => onNavigationChange(toggleNode(tree, key))}
             onCopyValue={copyNode}
-            onInsert={
-              onInsert && !disabled
-                ? (node) => onInsert(fieldSnippet(node, mode, { engine }))
-                : undefined
-            }
+            onInsert={!disabled ? insertNode : undefined}
             onTemplateMenu={menu}
           />
         )}

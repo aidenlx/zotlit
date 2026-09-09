@@ -1,12 +1,4 @@
-// One Render Scheduler per editor instance, which both hosts drive live
-// rendering through: a quiet time after the last edit, Run to render now, Stop
-// to pause while a render already running finishes, On demand to hold until
-// Run, and a stamp that drops a result the reader has already typed or chosen
-// past. It follows the document controller and the view store on its own; a
-// host adds only what a render reads that this package cannot know — the paper,
-// the annotation example, and its own bundle.
-
-import type { WorkbenchDocumentController } from "#/document/controller";
+// A view-owned scheduler consumes values and rejects work for superseded inputs.
 import type { RenderRequest, RenderResources } from "#/render/request";
 import type {
   ProfileRenderResult,
@@ -16,7 +8,7 @@ import type {
 import type { AnnotationExample } from "#/render/sample-annotations";
 import type { ItemSnapshot } from "#/snapshot/index";
 
-import type { WorkbenchStore } from "./store";
+import type { PreviewMode } from "./store";
 
 import {
   failedRender,
@@ -25,6 +17,9 @@ import {
 } from "#/render/result";
 
 export interface RenderSchedulerInput {
+  readonly source: string;
+  readonly mode: PreviewMode;
+  readonly live: boolean;
   /** The paper a render is shown against; `null` while the host loads one. */
   readonly snapshot: ItemSnapshot | null;
   readonly annotation?: AnnotationExample | null;
@@ -55,8 +50,7 @@ export interface RenderSchedulerOptions<R extends ProfileRenderResult> {
    * failure reads like every other result the host publishes.
    */
   readonly failed: (result: ProfileRenderResult) => R;
-  readonly controller: WorkbenchDocumentController;
-  readonly store: WorkbenchStore;
+  readonly input: RenderSchedulerInput;
   /** Quiet time after the last edit before a render starts. @default 300 */
   readonly debounceMs?: number;
 }
@@ -67,7 +61,7 @@ export interface RenderScheduler<
   readonly getState: () => RenderSchedulerState<R>;
   readonly subscribe: (listener: () => void) => () => void;
   /** What the host supplies for every render from here on. */
-  setInput(input: RenderSchedulerInput): void;
+  setInput(input: Partial<RenderSchedulerInput>): void;
   /** Something a render reads changed outside the document. */
   invalidate(): void;
   /** Run: renders now, whatever the refresh setting says. */
@@ -76,22 +70,15 @@ export interface RenderScheduler<
   pause(): void;
   /** Shows `diagnostic` where the host could not supply what a render reads. */
   fail(diagnostic: RenderDiagnostic): void;
-  /**
-   * Swaps the document authority — one editor instance keeps its scheduler
-   * across the controllers a reopened file brings.
-   */
-  attach(controller: WorkbenchDocumentController): void;
 }
 
 export function createRenderScheduler<R extends ProfileRenderResult>({
   render,
   failed,
-  controller: attached,
-  store,
+  input: initial,
   debounceMs = 300,
 }: RenderSchedulerOptions<R>): RenderScheduler<R> {
-  let controller = attached;
-  let input: RenderSchedulerInput = { snapshot: null };
+  let input = initial;
   let state: RenderSchedulerState<R> = {
     result: null,
     busy: false,
@@ -107,23 +94,6 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
   cleanup.defer(() => listeners.clear());
   cleanup.defer(abandon);
 
-  function follow(next: WorkbenchDocumentController): () => void {
-    return next.subscribe(({ docChanged }) => {
-      if (docChanged) changed();
-    });
-  }
-  let unfollow = follow(attached);
-  cleanup.defer(() => unfollow());
-  cleanup.defer(
-    store.subscribe((next, previous) => {
-      if (next.preview.mode !== previous.preview.mode) changed();
-      else if (next.preview.live !== previous.preview.live) {
-        if (next.preview.live) changed();
-        else pause();
-      }
-    }),
-  );
-
   function publish(next: { result?: R | null; busy?: boolean }): void {
     if (closed) return;
     const result = next.result === undefined ? state.result : next.result;
@@ -131,7 +101,7 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
     const stale =
       input.hold === true ||
       (result !== null &&
-        (result.sourceRevision !== profileSourceRevision(controller.source) ||
+        (result.sourceRevision !== profileSourceRevision(input.source) ||
           (input.snapshot !== null &&
             result.snapshotRevision !== input.snapshot.revision) ||
           // A result already on screen describes the example it was rendered
@@ -139,7 +109,7 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
           (input.annotation != null &&
             (result.annotationId !== input.annotation.id ||
               result.annotationRevision !== input.annotation.revision)) ||
-          result.previewMode !== store.getState().preview.mode));
+          result.previewMode !== input.mode));
     if (
       result === state.result &&
       busy === state.busy &&
@@ -156,8 +126,8 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
     const { snapshot, annotation, resources, hold } = input;
     if (closed || hold === true || snapshot === null) return null;
     return {
-      mode: store.getState().preview.mode,
-      source: controller.source,
+      mode: input.mode,
+      source: input.source,
       snapshot,
       ...(annotation ? { annotation } : {}),
       ...(resources ? { resources } : {}),
@@ -213,11 +183,13 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
     // only Stop, which leaves the input alone, lets one land.
     abandon();
     const request = nextRequest();
-    if (request !== null && store.getState().preview.live) {
+    if (request !== null && input.live) {
       pending = setTimeout(() => start(request), debounceMs);
     }
     publish({ busy: false });
   }
+
+  changed();
 
   const lifetime = cleanup.move();
   return {
@@ -227,11 +199,25 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
       return () => listeners.delete(listener);
     },
     setInput(next) {
-      input = next;
+      if (closed) return;
+      const previous = input;
+      input = { ...input, ...next };
       // No paper, nothing to render: whatever is shown describes another one.
-      if (next.snapshot === null) {
+      if (input.snapshot === null) {
         abandon();
         publish({ result: null, busy: false });
+        return;
+      }
+      const sameRenderInput =
+        input.source === previous.source &&
+        input.mode === previous.mode &&
+        input.snapshot === previous.snapshot &&
+        input.annotation === previous.annotation &&
+        input.resources === previous.resources &&
+        input.hold === previous.hold;
+      if (sameRenderInput && input.live === previous.live) return;
+      if (sameRenderInput && !input.live) {
+        pause();
         return;
       }
       changed();
@@ -250,8 +236,8 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
         result: failed(
           failedRender(
             {
-              previewMode: store.getState().preview.mode,
-              sourceRevision: profileSourceRevision(controller.source),
+              previewMode: input.mode,
+              sourceRevision: profileSourceRevision(input.source),
               snapshotRevision: input.snapshot?.revision ?? "",
               ...(input.annotation
                 ? {
@@ -265,13 +251,6 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
         ),
         busy: false,
       });
-    },
-    attach(next) {
-      if (closed) return;
-      unfollow();
-      controller = next;
-      unfollow = follow(next);
-      changed();
     },
     [Symbol.dispose]() {
       closed = true;

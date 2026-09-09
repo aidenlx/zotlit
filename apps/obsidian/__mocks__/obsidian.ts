@@ -271,7 +271,31 @@ export class ItemView {
     this.contentEl = content;
   }
 
+  readonly actions: HTMLElement[] = [];
+
+  addAction(
+    _icon: string,
+    title: string,
+    callback: (evt: MouseEvent) => unknown,
+  ): HTMLElement {
+    const action = document.createElement("div");
+    action.setAttribute("aria-label", title);
+    action.addEventListener("click", callback);
+    this.actions.push(action);
+    return action;
+  }
+
   registerEvent(_event: EventRef): void {}
+  registerDomEvent(
+    ...[element, type, callback, options]: [
+      HTMLElement,
+      string,
+      EventListener,
+      (boolean | AddEventListenerOptions)?,
+    ]
+  ): void {
+    element.addEventListener(type, callback, options);
+  }
   register<T extends () => void>(disposer: T): T {
     return disposer;
   }
@@ -284,6 +308,7 @@ export class ItemView {
     return Promise.resolve();
   }
 
+  onResize(): void {}
   getViewType(): string {
     return "";
   }
@@ -310,6 +335,8 @@ export class TextFileView extends ItemView {
   readonly app: App;
   file: TFile | null = null;
   data = "";
+  dirty = false;
+  lastSavedData: string | null = null;
   scope: Scope | null = null;
   requestSave = (): void => {};
   constructor(leaf: WorkspaceLeaf) {
@@ -328,7 +355,31 @@ export class TextFileView extends ItemView {
   async save(): Promise<void> {
     this.data = this.getViewData();
   }
+  /** Native read/baseline ordering; real-app checks cover native three-way merging. */
+  async loadFileInternal(file: TFile, clear: boolean): Promise<void> {
+    const source = await this.app.vault.read(
+      file as unknown as import("obsidian").TFile,
+    );
+    const previous = this.lastSavedData;
+    this.lastSavedData = source;
+    if (!clear && previous === source) return;
+    this.data = source;
+    this.setViewData(source, clear);
+  }
   onPaneMenu(_menu: Menu, _source: string): void {}
+  override async setState(state: unknown, result: unknown): Promise<void> {
+    if (
+      state &&
+      typeof state === "object" &&
+      "file" in state &&
+      state.file === null &&
+      this.file
+    ) {
+      await this.save();
+      this.file = null;
+    }
+    await super.setState(state, result);
+  }
   override getState(): Record<string, unknown> {
     return this.file ? { file: this.file.path } : {};
   }
@@ -638,6 +689,10 @@ export class MenuItem {
   }
 
   setDisabled(_disabled: boolean): this {
+    return this;
+  }
+
+  setWarning(_isWarning: boolean): this {
     return this;
   }
 
@@ -1022,14 +1077,24 @@ export class TextAreaComponent extends TextComponent {}
 export class ToggleComponent {
   #value = false;
   #changed: ((value: boolean) => unknown) | undefined;
+  readonly toggleEl: HTMLElement;
+  disabled = false;
   constructor(readonly containerEl: HTMLElement) {
     registerControl(containerEl, this);
+    this.toggleEl = containerEl.createEl("label");
   }
   getValue(): boolean {
     return this.#value;
   }
   setValue(value: boolean): this {
-    this.#value = value;
+    if (this.#value !== value) {
+      this.#value = value;
+      this.#changed?.(value);
+    }
+    return this;
+  }
+  setDisabled(disabled: boolean): this {
+    this.disabled = disabled;
     return this;
   }
   onChange(callback: (value: boolean) => unknown): this {
@@ -1038,8 +1103,7 @@ export class ToggleComponent {
   }
   /** Test helper: change the checked state, as the user does. */
   toggle(value: boolean): void {
-    this.setValue(value);
-    this.#changed?.(value);
+    if (!this.disabled) this.setValue(value);
   }
 }
 

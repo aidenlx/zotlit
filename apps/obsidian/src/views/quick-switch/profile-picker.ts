@@ -1,6 +1,7 @@
 import { SuggestModal } from "obsidian";
 import type { App } from "obsidian";
 
+import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -112,7 +113,7 @@ class LiteratureNoteProfileModal extends SuggestModal<ProfilePickerRow> {
                 m.settings_profile_inherit(),
               style:
                 bindings["citation.references-style"] === null
-                  ? m.settings_profile_citation_style_none()
+                  ? citationStyleLabel()
                   : (bindings["citation.references-style"] ??
                     m.settings_profile_inherit()),
               document,
@@ -231,10 +232,7 @@ export function profilePreviewChoice(
     label: preview.label ?? m.settings_profile_default_name(),
     detail: m.settings_profile_display({
       folder: preview.folder || m.modal_profile_root_folder(),
-      style:
-        options.styles?.find(({ id }) => id === preview.citationStyle)?.title ??
-        preview.citationStyle ??
-        m.settings_citation_references_style_default(),
+      style: citationStyleLabel(preview.citationStyle, options.styles),
       document: preview.document ?? m.settings_profile_document_builtin(),
     }),
     path: preview.path,

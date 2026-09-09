@@ -30,11 +30,64 @@ declare global {
 }
 
 declare module "obsidian" {
+  interface ViewStateResult {
+    /** Runs after native group assignment and ephemeral handoff (Obsidian 1.14). */
+    done?: () => void;
+  }
+  interface WorkspaceLeaf {
+    /** Native descriptor/ephemeral history capture; verified in Obsidian 1.14. */
+    recordHistory(state: unknown): void;
+    /** Native leaf identity, serialized by the workspace. */
+    id: string;
+    /** Native link and pin state, serialized by the workspace (Obsidian 1.14). */
+    group: string | null;
+    pinned: boolean;
+  }
+  interface WorkspaceContainer {
+    /**
+     * Restores and focuses this desktop window. Unlike Workspace.revealLeaf,
+     * this also works when a detached Settings window has focus.
+     * Internal; verified against Obsidian 1.13.7 and 1.14.0.
+     */
+    focus(): void;
+  }
+  interface TextFileView {
+    /** Native unsaved-text marker used by external-file three-way merging. */
+    dirty: boolean;
+    /** Native saved-text baseline and file-read/merge boundary (Obsidian 1.14). */
+    lastSavedData: string | null;
+    loadFileInternal(file: TFile, clear: boolean): Promise<void>;
+  }
   interface FileView {
     /** Keeps an in-memory document leaf open before its first vault write. */
     allowNoFile: boolean;
   }
   interface Workspace {
+    /** Active/recent navigating FileView, also used by native Outline. */
+    getActiveFileView(): FileView | null;
+
+    on(
+      name: "zotlit:insert-template-field",
+      callback: (request: {
+        leaf: WorkspaceLeaf;
+        node: import("@zotlit/workbench/explorer").DisplayNode;
+      }) => void,
+      ctx?: any,
+    ): EventRef;
+
+    on(
+      name: "quick-preview",
+      callback: (file: TFile, source: string) => void,
+      ctx?: any,
+    ): EventRef;
+    on(
+      name: "zotlit:authoring-context",
+      callback: (
+        context: import("@/views/profile-editor/view").ProfileAuthoringContext,
+      ) => void,
+      ctx?: any,
+    ): EventRef;
+
     on(
       name: "zotlit:switch-profile",
       callback: (request: { path: string }) => void,
@@ -183,5 +236,11 @@ declare module "obsidian" {
     hide(): void;
     /** Re-runs {@link position} as `el` resizes, which is what lets content arrive after the popover opens. */
     watchResize(el: HTMLElement): void;
+    /**
+     * The point {@link position} anchors to in place of the target's boxes.
+     * Obsidian sets it from the pointer for a tall target; a subclass sets it
+     * before each placement to anchor elsewhere. `null` uses the target.
+     */
+    staticPos: Point | null;
   }
 }

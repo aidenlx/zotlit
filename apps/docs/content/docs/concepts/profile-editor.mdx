@@ -38,14 +38,18 @@ The preview changes as you edit. A database or citation-style warning can limit 
 
 ## Saving changes
 
-The Profile Editor saves changes to the profile document automatically. A document with an error stays on disk and shows its diagnostics in the editor. The built-in Default profile has no document until you edit it. Your first edit creates a custom Default profile in the configured template folder.
+The built-in Default profile is read-only. You can read and select its values without creating a document. <UiLabel name={m.profile_editor_customize()} /> creates its document in the configured template folder before editing becomes available, or opens the existing custom document.
+
+If creation fails, the built-in values remain readable and an inline error offers a retry. Closing an untouched customization keeps the created document.
+
+Once the document exists, the Profile Editor uses Obsidian's automatic saving for edits, Undo, and Redo. A document with an error remains editable and saves with its diagnostics shown in the editor.
 
 Existing literature notes keep their current content. Run <Command name={m.command_update_note_name()} /> to apply the edited profile to the active note.
 
 <Callout type="info" title="Edit the Markdown document">
   Select <UiLabel name={m.profile_editor_open_markdown()} /> to open an existing
-  profile document as Markdown. The built-in Default profile gets a document
-  after your first edit.
+  profile document as Markdown. Customizing the built-in Default creates its
+  document before editing becomes available.
 </Callout>
 
 ## Open the editor

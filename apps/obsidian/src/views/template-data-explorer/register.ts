@@ -10,6 +10,10 @@ import type { NoteIndex } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
+import {
+  activeProfileEditor,
+  openProfileExplorer,
+} from "@/views/note-preview/register";
 
 import { EXPLORER_VIEW_TYPE, TemplateDataExplorerView } from "./view";
 
@@ -55,15 +59,28 @@ export async function openTemplateDataExplorer(
   app: App,
   state?: { itemIndexedKey: string; anchorAnnotationKey?: string },
 ): Promise<void> {
+  const editor = activeProfileEditor(app);
+  if (!state && editor) return openProfileExplorer(app, editor);
   const { workspace } = app;
-  let leaf = workspace.getLeavesOfType(EXPLORER_VIEW_TYPE)[0];
+  let leaf = workspace
+    .getLeavesOfType(EXPLORER_VIEW_TYPE)
+    .find((leaf) => !leaf.group && !leaf.pinned);
+  const launch = state ? { ...state, zotlitLaunch: true } : undefined;
   if (!leaf) {
-    const right = workspace.getRightLeaf(false);
+    const right = workspace.getRightLeaf(true);
     if (!right) return;
     leaf = right;
-    await leaf.setViewState({ type: EXPLORER_VIEW_TYPE, active: true, state });
-  } else if (state) {
-    await leaf.setViewState({ type: EXPLORER_VIEW_TYPE, active: true, state });
+    await leaf.setViewState({
+      type: EXPLORER_VIEW_TYPE,
+      active: true,
+      state: launch,
+    });
+  } else if (launch) {
+    await leaf.setViewState({
+      type: EXPLORER_VIEW_TYPE,
+      active: true,
+      state: launch,
+    });
   }
   void workspace.revealLeaf(leaf);
 }

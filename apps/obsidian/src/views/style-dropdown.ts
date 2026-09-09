@@ -3,9 +3,9 @@
 
 import type { Setting } from "obsidian";
 
+import type { ReferencesStyleOption } from "@/lib/citation-style";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
-import type { ReferencesStyleOption } from "@/setting-tab/citations";
 
 export interface StyleDropdownOptions {
   /** Zotero data directory the installed styles are listed from. */

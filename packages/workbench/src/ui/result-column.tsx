@@ -1,10 +1,10 @@
 // The shared result controls and render selection, with Markdown supplied by the host.
 
 import type { ProfileRenderResult } from "#/render/result";
-import { Suspense } from "react";
+import { Suspense, useId } from "react";
 import type { ReactNode, Ref } from "react";
 
-import { useWorkbenchHost, useTooltip } from "./host";
+import { HiddenName, useWorkbenchHost, useTooltip } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { diagnosticText } from "./problems";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
@@ -66,15 +66,17 @@ export function ResultRegion({
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("resultRegion");
+  const nameId = useId();
   return (
     <div
       role="region"
       tabIndex={0}
-      aria-label={m.workbench_view_result()}
+      aria-labelledby={nameId}
       ref={ref}
       data-emphasis={emphasis || undefined}
       {...part("region")}
     >
+      <HiddenName id={nameId}>{m.workbench_view_result()}</HiddenName>
       {children}
     </div>
   );
@@ -89,6 +91,7 @@ export interface ResultColumnProps {
   onShowMarkdown: (show: boolean) => void;
   showManaged: boolean;
   onShowManaged: (show: boolean) => void;
+  sourceAvailable?: boolean;
   openAnnotation: () => void;
   goToEntry: (position: number) => void;
   openSource: () => void;
@@ -105,6 +108,7 @@ export function ResultColumn({
   onShowMarkdown,
   showManaged,
   onShowManaged,
+  sourceAvailable = true,
   openAnnotation,
   goToEntry,
   openSource,
@@ -192,6 +196,7 @@ export function ResultColumn({
                 {previewProblem.part === "annotation" && (
                   <button
                     type="button"
+                    disabled={!sourceAvailable}
                     onClick={openAnnotation}
                     {...part("problem-open")}
                   >
@@ -202,6 +207,7 @@ export function ResultColumn({
                   previewProblem.position === undefined && (
                     <button
                       type="button"
+                      disabled={!sourceAvailable}
                       onClick={openSource}
                       {...part("problem-open")}
                     >
@@ -211,6 +217,7 @@ export function ResultColumn({
                 {previewProblem.position !== undefined && (
                   <button
                     type="button"
+                    disabled={!sourceAvailable}
                     onClick={() => goToEntry(previewProblem.position!)}
                     {...part("problem-open")}
                   >

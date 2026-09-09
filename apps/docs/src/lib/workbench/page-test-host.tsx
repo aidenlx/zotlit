@@ -1,5 +1,5 @@
 import { EditorView } from "@codemirror/view";
-import { act } from "react";
+import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, vi } from "vitest";
 
@@ -124,18 +124,17 @@ export interface OpenPage extends Disposable {
 }
 
 /** The page mounted for real, so its own effects run. */
-export function open(): OpenPage {
+export function open({ strict = false }: { strict?: boolean } = {}): OpenPage {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
-  act(() =>
-    root.render(
-      <>
-        <Workbench />
-        <Toaster />
-      </>,
-    ),
+  const content = (
+    <>
+      <Workbench />
+      <Toaster />
+    </>
   );
+  act(() => root.render(strict ? <StrictMode>{content}</StrictMode> : content));
   return {
     host,
     press: (label) => press(host, label),
@@ -215,9 +214,7 @@ export async function chooseAnnotation(
 
 export function resultText(host: HTMLElement): string {
   return (
-    host.querySelector(
-      `[role="region"][aria-label="${m.workbench_view_result()}"]`,
-    )?.textContent ?? ""
+    host.querySelector('[role="region"][data-part="region"]')?.textContent ?? ""
   );
 }
 
@@ -232,9 +229,7 @@ export function sourceView(host: HTMLElement): EditorView {
 
 /** The pane tab the page reads as chosen. */
 export function chosenTab(host: HTMLElement): string {
-  const tabs = host.querySelector(
-    `[role="tablist"][aria-label="${m.workbench_title()}"]`,
-  )!;
+  const tabs = host.querySelector('[role="tablist"]')!;
   return tabs.querySelector('[aria-selected="true"]')!.textContent!;
 }
 

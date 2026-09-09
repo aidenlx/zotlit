@@ -1,6 +1,7 @@
 import {
   ButtonComponent,
   ExtraButtonComponent,
+  Menu,
   Modal,
   Setting,
   TextComponent,
@@ -181,9 +182,14 @@ it.each(["default", id] as const)(
     if (!row || !("render" in row)) throw new Error("Profile row missing");
     const setting = new Setting(container);
     row.render?.(setting as never, {} as never);
-    setting.components
+    const more = setting.components
       .filter((control) => control instanceof ExtraButtonComponent)
-      .find((button) => button.tooltip === m.settings_profile_share())!
+      .find((button) => button.tooltip === m.workbench_more_actions())!;
+    Object.assign(more, { extraSettingsEl: document.createElement("button") });
+    more.click();
+    Menu.instances
+      .at(-1)!
+      .items.find((item) => item.title === m.settings_profile_share())!
       .click();
     await vi.waitFor(() => expect(opened).toHaveBeenCalledOnce());
     const modal = opened.mock.instances[0] as unknown as ShareProfileModal;

@@ -110,7 +110,10 @@ export interface WorkbenchMatchData {
 /** The slice editor a field is inserted into, and where in it. */
 export interface WorkbenchInsertTarget {
   readonly slice: WorkbenchSliceId;
-  readonly range: WorkbenchSliceRange;
+  readonly range: WorkbenchSliceRange & {
+    readonly anchor?: number;
+    readonly head?: number;
+  };
 }
 
 /** Per-device preferences follow the machine; per-vault ones follow the vault. */
@@ -133,8 +136,18 @@ export interface WorkbenchMarkdownProps {
   readonly marks?: readonly RenderedRange[];
 }
 
+/** State and accessible name for a host-native boolean control. */
+export interface WorkbenchToggleProps {
+  readonly id: string;
+  readonly "aria-label": string;
+  readonly value: boolean;
+  readonly disabled: boolean;
+  readonly onChange: (value: boolean) => void;
+}
+
 export interface WorkbenchHost {
   readonly messages: WorkbenchMessages;
+  readonly toggle?: ComponentType<WorkbenchToggleProps>;
   /** The locale currently used by the host's displayed messages. */
   getLocale(): string;
   menu(request: WorkbenchMenuRequest): void;
@@ -151,8 +164,8 @@ export interface WorkbenchHost {
   render: (request: RenderRequest) => Promise<ProfileRenderResult>;
   /** The host reading view for a rendered note or annotation. */
   markdown: ComponentType<WorkbenchMarkdownProps>;
-  /** Completion and hover presentation over the shared editor. */
-  editorPopups?(read: SuggestionSource): Extension;
+  /** Completion and hover presentation, with the editor's mount for window-local overlays. */
+  editorPopups?(read: SuggestionSource, parent: HTMLElement): Extension;
   matchData: WorkbenchMatchData;
   /** The focused slice editor, or `null` when none has had focus. */
   insertTarget(): WorkbenchInsertTarget | null;
@@ -192,6 +205,20 @@ export function useWorkbenchHost(): WorkbenchHost {
 export function useTooltip(text: string): HTMLAttributes<HTMLElement> {
   const host = useContext(HostContext);
   return host?.tooltip(text) ?? { title: text };
+}
+
+/**
+ * A container's accessible name, carried by a hidden element the container
+ * points `aria-labelledby` at. Obsidian reads `aria-label` as an element's
+ * hover tooltip, so a container names itself this way and stays quiet under
+ * the pointer.
+ */
+export function HiddenName({ id, children }: { id: string; children: string }) {
+  return (
+    <span hidden id={id}>
+      {children}
+    </span>
+  );
 }
 
 /** The host, when the surface is mounted inside one. */

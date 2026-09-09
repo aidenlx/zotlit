@@ -1,24 +1,24 @@
-// Preview scheduling controls use the editor store; the host starts or pauses work.
+// The Refresh setting drives scheduling; the host starts an on-demand render.
 
-import { useOptionalEditor, useWorkbenchStore } from "./editor";
 import { useWorkbenchMessages } from "./messages";
 import { WorkbenchSelect, WorkbenchOption } from "./select";
+import type { PreviewSettings } from "./store";
 import { useParts } from "./theme";
 
 export function PreviewControls({
+  preview,
+  onChange,
   busy,
   disabled = false,
   onRun,
-  onStop,
 }: {
+  preview: PreviewSettings;
+  onChange: (value: Partial<PreviewSettings>) => void;
   busy: boolean;
   disabled?: boolean;
   onRun: () => void;
-  onStop: () => void;
 }) {
   const m = useWorkbenchMessages();
-  const editor = useOptionalEditor();
-  const preview = useWorkbenchStore((state) => state.preview);
   const part = useParts("previewControls");
   return (
     <div {...part("controls")}>
@@ -26,9 +26,8 @@ export function PreviewControls({
         <span {...part("label-text")}>{m.workbench_preview_mode()}</span>
         <WorkbenchSelect
           value={preview.mode}
-          disabled={!editor}
           onInput={(event) =>
-            editor?.store.getState().setPreview({
+            onChange({
               mode:
                 event.currentTarget.value === "update" ? "update" : "create",
             })
@@ -46,11 +45,9 @@ export function PreviewControls({
         <span {...part("label-text")}>{m.workbench_preview_refresh()}</span>
         <WorkbenchSelect
           value={preview.live ? "live" : "demand"}
-          disabled={!editor}
           onInput={(event) => {
             const live = event.currentTarget.value === "live";
-            editor?.store.getState().setPreview({ live });
-            if (!live) onStop();
+            onChange({ live });
           }}
         >
           <WorkbenchOption value="live">
@@ -66,25 +63,16 @@ export function PreviewControls({
           {m.workbench_preview_paused()}
         </span>
       )}
-      <button
-        {...part("run")}
-        type="button"
-        disabled={!editor || busy || disabled}
-        onClick={onRun}
-      >
-        {m.workbench_preview_run()}
-      </button>
-      <button
-        {...part("stop")}
-        type="button"
-        disabled={!editor || (!busy && !preview.live)}
-        onClick={() => {
-          editor?.store.getState().setPreview({ live: false });
-          onStop();
-        }}
-      >
-        {m.workbench_preview_stop()}
-      </button>
+      {!preview.live && (
+        <button
+          {...part("run")}
+          type="button"
+          disabled={busy || disabled}
+          onClick={onRun}
+        >
+          {m.workbench_preview_run()}
+        </button>
+      )}
     </div>
   );
 }

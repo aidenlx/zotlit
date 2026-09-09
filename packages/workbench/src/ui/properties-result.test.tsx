@@ -25,7 +25,7 @@ const result = renderProfile(ROWS_PROFILE, SAMPLE_ITEMS[0]!);
 afterEach(cleanup);
 
 function pane(diagnostics: { position: number; message: string }[] = []) {
-  const mounted = mount(
+  const rendered = render(
     <PropertiesPane
       controller={controller}
       entries={controller.managedEntries!}
@@ -36,7 +36,10 @@ function pane(diagnostics: { position: number; message: string }[] = []) {
       onSelect={() => {}}
     />,
   );
-  return Object.assign(mounted, { container: render(mounted.ui).container });
+  return {
+    container: rendered.container,
+    [Symbol.dispose]: () => rendered.unmount(),
+  };
 }
 
 function output(showMarkdown = false) {

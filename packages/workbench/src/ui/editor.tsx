@@ -1,7 +1,5 @@
-// One editor instance in context: its view store, the document controller that
-// is the authority on the document, and the one Render Scheduler every result
-// surface reads. Outside the provider the tree paints inert, which is how the
-// web's skeleton shows the chrome before the editor bundle arrives.
+// One editor owns its document, view state, and compact render examples.
+// Companion views consume source values through their own render owners.
 
 import type { WorkbenchDocumentController } from "#/document/controller";
 import type { ProfileRenderResult } from "#/render/result";
@@ -31,12 +29,15 @@ export interface WorkbenchEditorInstance<
 > extends Disposable {
   readonly store: WorkbenchStore;
   readonly scheduler: RenderScheduler<R>;
+  attach(controller: WorkbenchDocumentController): void;
 }
 
 interface WorkbenchEditorOptions {
   controller: WorkbenchDocumentController;
   host: WorkbenchHost;
   state?: Partial<WorkbenchViewState>;
+  /** A host may initialize its pure view store before acquiring render resources. */
+  store?: WorkbenchStore;
 }
 
 /** Own one editor's view state and rendering through its host adapter. */
@@ -52,24 +53,47 @@ export function createWorkbenchEditor({
   controller,
   host,
   state,
+  store: providedStore,
   mapResult,
 }: WorkbenchEditorOptions & {
   mapResult?: (result: ProfileRenderResult) => ProfileRenderResult;
 }): WorkbenchEditorInstance {
-  const store = createWorkbenchStore(state);
+  const store =
+    providedStore ??
+    createWorkbenchStore(
+      controller.document?.manifest.id === "default" && state?.tab === "match"
+        ? { ...state, tab: "note" }
+        : state,
+    );
   const scheduler = createRenderScheduler({
-    controller,
-    store,
+    input: {
+      source: controller.source,
+      snapshot: null,
+      mode: "create",
+      live: true,
+    },
     render: (request) => {
       const result = host.render(request);
       return mapResult ? result.then(mapResult) : result;
     },
     failed: mapResult ?? ((result) => result),
   });
+  function follow(next: WorkbenchDocumentController) {
+    scheduler.setInput({ source: next.source });
+    return next.subscribe(({ docChanged }) => {
+      if (docChanged) scheduler.setInput({ source: next.source });
+    });
+  }
+  let unfollow = follow(controller);
   return {
     store,
     scheduler,
+    attach(next) {
+      unfollow();
+      unfollow = follow(next);
+    },
     [Symbol.dispose]() {
+      unfollow();
       scheduler[Symbol.dispose]();
     },
   };
@@ -78,7 +102,7 @@ export function createWorkbenchEditor({
 export interface WorkbenchEditor {
   readonly store: WorkbenchStore;
   readonly controller: WorkbenchDocumentController;
-  /** The one scheduler this instance's result surfaces share. */
+  /** The scheduler for this editor's compact examples. */
   readonly scheduler: RenderScheduler;
   /** The prefix of this instance's element ids. */
   readonly id: string;
@@ -104,7 +128,6 @@ const INERT_SCHEDULER: RenderScheduler = {
   run() {},
   pause() {},
   fail() {},
-  attach() {},
   [Symbol.dispose]() {},
 };
 
@@ -160,12 +183,13 @@ export function useRenderScheduler(): RenderScheduler {
 /**
  * What the result surfaces paint. A host that holds its scheduler above the
  * editor provider, as the web page does, passes it rather than the context one.
+ * A null owner has not acquired its scheduler yet and reads the inert state.
  */
 export function useRenderState(
-  scheduler?: RenderScheduler,
+  scheduler?: RenderScheduler | null,
 ): RenderSchedulerState {
   const inContext = useRenderScheduler();
-  const read = scheduler ?? inContext;
+  const read = scheduler === null ? INERT_SCHEDULER : (scheduler ?? inContext);
   return useSyncExternalStore(read.subscribe, read.getState);
 }
 

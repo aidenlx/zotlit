@@ -1,18 +1,26 @@
 // Native overlays and Markdown lifecycle for the shared Profile Editor tree.
+import { Compartment } from "@codemirror/state";
+import { tooltips, ViewPlugin } from "@codemirror/view";
 import {
   Component,
   ConfirmationModal,
   MarkdownRenderer,
   Menu,
   Modal,
+  setIcon,
   SuggestModal,
 } from "obsidian";
-import type { App } from "obsidian";
+import type { App, HoverParent } from "obsidian";
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 
+import {
+  completionSuggestion,
+  templateCompletion,
+} from "@zotlit/workbench/language";
+import type { TemplateCompletionPresentation } from "@zotlit/workbench/language";
 import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
 import type {
   WorkbenchHost,
@@ -21,11 +29,14 @@ import type {
   WorkbenchSuggesterOption,
 } from "@zotlit/workbench/ui";
 
+import { Toggle } from "@/components/obsidian/toggle";
+import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import { BaseNotice } from "@/lib/notice";
 import { tooltipAttrs } from "@/lib/utils";
 
+import { templateHover } from "./hover";
 import { profileEditorIcons } from "./theme";
 
 class EditorDialog extends Modal {
@@ -59,6 +70,11 @@ class EditorSuggester extends SuggestModal<
     this.setTitle(request.title);
     this.#request = request;
     this.setPlaceholder(request.placeholder ?? request.title);
+    this.setInstructions([
+      { command: "↑↓", purpose: m.instruction_navigate() },
+      { command: "↵", purpose: m.instruction_select() },
+      { command: "esc", purpose: m.instruction_dismiss() },
+    ]);
     const empty = request.groups.find((group) => group.empty)?.empty;
     if (empty && request.groups.every((group) => group.options.length === 0))
       this.emptyStateText = empty;
@@ -79,11 +95,23 @@ class EditorSuggester extends SuggestModal<
     option: WorkbenchSuggesterOption & { group: string },
     el: HTMLElement,
   ): void {
-    el.createDiv({ text: option.label });
-    el.createDiv({
-      cls: "suggestion-note",
-      text: [option.group, option.hint].filter(Boolean).join(" · "),
-    });
+    el.addClass("mod-complex");
+    const content = el.createDiv("suggestion-content");
+    content.createDiv({ cls: "suggestion-title", text: option.label });
+    if (option.hint)
+      content.createDiv({ cls: "suggestion-note", text: option.hint });
+    const aux = el.createDiv("suggestion-aux");
+    if (option.id === this.#request.selected) {
+      el.setAttribute("aria-current", "true");
+      setIcon(
+        aux.createSpan({
+          cls: "suggestion-flair",
+          attr: { "aria-label": m.modal_profile_current() },
+        }),
+        "check",
+      );
+    }
+    aux.createSpan({ cls: "suggestion-flair", text: option.group });
   }
   override selectSuggestion(
     value: WorkbenchSuggesterOption & { group: string },
@@ -106,13 +134,46 @@ class EditorSuggester extends SuggestModal<
   }
 }
 
+/**
+ * The typing popup wears Obsidian's own suggestion classes, the way Obsidian
+ * skins CodeMirror's completion for a Bases formula. Types get their own
+ * line so unions and function signatures keep the same reading order.
+ */
+const nativeCompletion: TemplateCompletionPresentation = {
+  tooltipClass: () => "suggestion-container zt-template-completion",
+  optionClass: () => "suggestion-item mod-complex",
+  addToOptions: [
+    {
+      position: 60,
+      render(completion) {
+        const type = completionSuggestion(completion)?.type;
+        if (!type) return null;
+        return createDiv({ cls: "zt-template-completion-type", text: type });
+      },
+    },
+    {
+      position: 70,
+      render(completion) {
+        const suggestion = completionSuggestion(completion);
+        return suggestion && !suggestion.syntax
+          ? createDiv({ cls: "suggestion-note", text: suggestion.detail })
+          : null;
+      },
+    },
+  ],
+};
+
 export function createProfileEditorHost(
   app: App,
   ports: Pick<WorkbenchHost, "render" | "matchData" | "insertTarget"> &
-    Partial<Pick<WorkbenchHost, "markdown">>,
+    Partial<Pick<WorkbenchHost, "markdown">> & {
+      /** The view an editor hover popover belongs to; one popover shows at a time. */
+      hoverParent?: HoverParent;
+    },
   wrap: (content: ReactNode) => ReactNode = (content) => content,
 ): WorkbenchHost & Disposable {
   const open = new Set<() => void>();
+  const { hoverParent = { hoverPopover: null }, ...rest } = ports;
   function track(close: () => void): () => void {
     const release = () => {
       if (open.delete(release)) close();
@@ -124,9 +185,29 @@ export function createProfileEditorHost(
     [Symbol.dispose]() {
       for (const close of open) close();
     },
-    ...ports,
-    messages: m,
+    ...rest,
+    messages: {
+      ...m,
+      workbench_name_value_no_style: citationStyleLabel,
+    },
     getLocale: () => runtime.getLocale(),
+    editorPopups(read, parent) {
+      const placement = new Compartment();
+      return [
+        placement.of(tooltips({ parent: parent.ownerDocument.body })),
+        ViewPlugin.define((view) => ({
+          destroy: parent.onWindowMigrated((win) => {
+            view.dispatch({
+              effects: placement.reconfigure(
+                tooltips({ parent: win.document.body }),
+              ),
+            });
+          }),
+        })),
+        templateCompletion(read, nativeCompletion),
+        templateHover(read, hoverParent),
+      ];
+    },
     menu({ anchor, items, submenus }) {
       const menu = new Menu();
       for (const item of items)
@@ -228,6 +309,7 @@ export function createProfileEditorHost(
         app.saveLocalStorage(`zotlit.workbench.${scope}.${key}`, value);
       },
     },
+    toggle: Toggle,
     markdown:
       ports.markdown ??
       function EditorMarkdown({ markdown, showMarkdown }) {

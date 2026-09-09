@@ -9,6 +9,7 @@ import {
 } from "obsidian";
 import type { App, ButtonComponent } from "obsidian";
 
+import { citationStyleLabel } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
@@ -284,17 +285,15 @@ export class ImportProfileModal extends Modal {
       m.settings_profile_citation_style_name(),
     );
     const style = new DropdownComponent(styleField);
-    const baseStyle =
-      this.#styles.find(
-        ({ id }) => id === base.bindings["citation.references-style"],
-      )?.title ??
-      base.bindings["citation.references-style"] ??
-      m.settings_citation_references_style_default();
+    const baseStyle = citationStyleLabel(
+      base.bindings["citation.references-style"],
+      this.#styles,
+    );
     style.addOption(
       "inherit",
       m.settings_profile_same_as_default({ value: baseStyle }),
     );
-    style.addOption("none", m.settings_citation_references_style_default());
+    style.addOption("none", citationStyleLabel());
     for (const item of this.#styles) style.addOption(item.id, item.title);
     style
       .setValue(

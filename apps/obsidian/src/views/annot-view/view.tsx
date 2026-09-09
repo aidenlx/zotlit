@@ -24,6 +24,7 @@ import type {
   AttachmentImportService,
 } from "@/services/attachment-import/service";
 import type { DatabaseService } from "@/services/database/service";
+import { pickItem } from "@/services/item-lookup/search-modal";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { LocalServerService } from "@/services/local-server/service";
 import type { NoteFeature } from "@/services/note-feature";
@@ -40,7 +41,6 @@ import { createCommentRenderer } from "./comment-render";
 import { createDragInsertHandler } from "./drag-insert";
 import { sanitizeSavedFilter } from "./filter";
 import type { SavedFilter } from "./filter";
-import { pickItem } from "./item-picker";
 import { resolveLibraryID, resolveLoadTarget } from "./resolve-target";
 import type { LoadTarget } from "./resolve-target";
 import {
@@ -280,11 +280,14 @@ export class AnnotationView extends ItemView {
   }
 
   #linkItem(): void {
-    void pickItem({
-      app: this.#deps.app,
-      lookup: this.#deps.itemLookup,
-      settings: this.#deps.settings,
-    }).then((hit) => {
+    void pickItem(
+      {
+        app: this.#deps.app,
+        lookup: this.#deps.itemLookup,
+        settings: this.#deps.settings,
+      },
+      m.annot_view_link_placeholder(),
+    ).then((hit) => {
       if (!hit) return;
       const { item } = hit;
       this.#setLinkedItem(item);

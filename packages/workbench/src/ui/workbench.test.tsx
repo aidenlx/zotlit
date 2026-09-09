@@ -153,3 +153,41 @@ it("opens the format from a collapsed placeholder and preserves the note across 
       ?.getAttribute("aria-pressed"),
   ).toBe("true");
 });
+
+it("restores a reversed stale slice selection without moving focus or host scroll", () => {
+  function RestorePane() {
+    const controller = useWorkbenchController();
+    const { from, to } = controller.sliceRange("note");
+    return (
+      <SliceEditor
+        controller={controller}
+        slice="note"
+        label="Restored note"
+        reveal={{
+          from: to + 100,
+          to: from + 2,
+          focus: false,
+          scrollIntoView: false,
+        }}
+      />
+    );
+  }
+  using cleanup = new DisposableStack();
+  const external = cleanup.adopt(document.createElement("input"), (element) =>
+    element.remove(),
+  );
+  document.body.append(external);
+  external.focus();
+  using mounted = mount(<RestorePane />);
+  const { container } = render(mounted.ui);
+  const editor = EditorView.findFromDOM(
+    screen.getByRole("textbox", { name: "Restored note" }),
+  )!;
+  expect(editor.state.selection.main.anchor).toBe(editor.state.doc.length);
+  expect(editor.state.selection.main.head).toBe(2);
+  expect(document.activeElement).toBe(external);
+  expect(
+    container.querySelector<HTMLElement>("[data-workbench-scroll=note]")!
+      .scrollTop,
+  ).toBe(0);
+});

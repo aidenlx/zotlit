@@ -444,7 +444,7 @@ describe("the annotation box", () => {
     expect(resultText(page.host)).toContain("missing-for-highlight");
     press(
       page.host.querySelector<HTMLElement>(
-        `[role="region"][aria-label="${m.workbench_view_result()}"]`,
+        '[role="region"][data-part="region"]',
       )!,
       m.workbench_annotation_edit_format(),
     );
@@ -586,15 +586,14 @@ describe("the annotation box", () => {
     expect(resultText(restored.host)).toContain("Thinking, fast and slow");
   });
 
-  it("uses the selected example for fields and preview while leaving the paper unchanged", async () => {
+  it("keeps Preview annotation choices separate from editor fields and compact examples", async () => {
     using page = open();
     page.press(m.workbench_tab_annotation());
     await page.settle();
     await page.waitFor(() =>
       expect(
-        page.host.querySelector(
-          `[role="region"][aria-label="${m.workbench_view_result()}"]`,
-        )?.textContent,
+        page.host.querySelector('[role="region"][data-part="region"]')
+          ?.textContent,
       ).toContain("Clear methods make research easier to reproduce."),
     );
     page.press(m.workbench_choose_annotation());
@@ -622,23 +621,20 @@ describe("the annotation box", () => {
     });
     await page.settle();
     expect(
-      page.host.querySelector(
-        `[role="region"][aria-label="${m.workbench_view_result()}"]`,
-      )?.textContent,
+      page.host.querySelector('[role="region"][data-part="region"]')
+        ?.textContent,
     ).toContain("Compare these findings with the replication study.");
     expect(
       fieldRow(page.host, m.workbench_field_comment()).textContent,
-    ).toContain("Compare these findings with the replication study.");
+    ).toContain("Use this point in the literature review.");
     page.press(m.workbench_tab_note());
     expect(
-      page.host.querySelector(
-        `[role="region"][aria-label="${m.workbench_view_result()}"]`,
-      )?.textContent,
+      page.host.querySelector('[role="region"][data-part="region"]')
+        ?.textContent,
     ).toContain("Why Most Published Research Findings Are False");
     expect(
-      page.host.querySelector(
-        `[role="region"][aria-label="${m.workbench_view_result()}"]`,
-      )?.textContent,
+      page.host.querySelector('[role="region"][data-part="region"]')
+        ?.textContent,
     ).not.toContain("Compare these findings");
     const placeholder = page.host.querySelector<HTMLElement>(
       "[data-annotation-box]",
@@ -649,7 +645,7 @@ describe("the annotation box", () => {
     await page.waitFor(() =>
       expect(
         page.host.querySelector("[data-annotation-preview]")?.textContent,
-      ).toContain("Compare these findings with the replication study."),
+      ).toContain("Clear methods make research easier to reproduce."),
     );
     const note = EditorView.findFromDOM(
       page.host.querySelector<HTMLElement>(".cm-editor")!,
@@ -663,17 +659,19 @@ describe("the annotation box", () => {
       document.querySelector<HTMLElement>('[role="dialog"]')!;
     act(() =>
       [...inlineDialog.querySelectorAll<HTMLElement>('[role="option"]')]
-        .find((option) => option.textContent?.includes("Clear methods"))!
+        .find((option) =>
+          option.textContent?.includes("Report the assumptions"),
+        )!
         .click(),
     );
     await page.settle();
     expect(note.state.doc.toString()).toBe(sourceBefore);
     expect(
       page.host.querySelector("[data-annotation-preview]")?.textContent,
-    ).toContain("Clear methods make research easier to reproduce.");
+    ).toContain("Report the assumptions behind each result.");
     page.press(m.workbench_tab_annotation());
     expect(resultText(page.host)).toContain(
-      "Clear methods make research easier to reproduce.",
+      "Compare these findings with the replication study.",
     );
   });
 
@@ -688,8 +686,14 @@ describe("the annotation box", () => {
     using page = open();
     page.press(m.workbench_restore_accept());
     expect(page.host.textContent).toContain(m.workbench_annotation_insert());
+    const note = EditorView.findFromDOM(
+      page.host.querySelector<HTMLElement>(".cm-editor")!,
+    )!;
+    const body = note.state.doc.toString();
+    act(() => note.dispatch({ selection: { anchor: 0, head: body.length } }));
 
     page.press(m.workbench_annotation_insert());
+    expect(note.state.doc.toString().startsWith(body)).toBe(true);
 
     expect(
       document.querySelector('[data-slot="toast-viewport"]')?.textContent,

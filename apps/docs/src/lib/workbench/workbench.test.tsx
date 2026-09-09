@@ -1,11 +1,132 @@
 import { act } from "react";
 import { expect, it, vi } from "vitest";
 
+import { createWorkbenchEditor } from "@zotlit/workbench/ui";
+
 // @vitest-environment happy-dom
 import { m } from "@/paraglide/messages.js";
 
-import { open, openMenu } from "./page-test-host";
+import { open, openMenu, importFile, KEPT } from "./page-test-host";
 import { WEB_THEME } from "./theme";
+
+vi.mock("@zotlit/workbench/ui", async (original) => {
+  const actual = await original<typeof import("@zotlit/workbench/ui")>();
+  return {
+    ...actual,
+    createWorkbenchEditor: vi.fn(
+      (...args: Parameters<typeof actual.createWorkbenchEditor>) => {
+        const editor = actual.createWorkbenchEditor(...args);
+        editor[Symbol.dispose] = vi.fn(editor[Symbol.dispose]);
+        return editor;
+      },
+    ),
+  };
+});
+
+it("renders editor examples and independent Preview after StrictMode replays effects", async () => {
+  vi.mocked(createWorkbenchEditor).mockClear();
+  using page = open({ strict: true });
+  const owners = vi
+    .mocked(createWorkbenchEditor)
+    .mock.results.map((result) => result.value);
+  expect(owners).toHaveLength(2);
+  expect(owners[0]![Symbol.dispose]).toHaveBeenCalledOnce();
+  expect(owners[1]![Symbol.dispose]).not.toHaveBeenCalled();
+  await page.settle();
+  page.press(m.workbench_tab_name_and_folder());
+  await page.waitFor(() =>
+    expect(
+      page.host.querySelector('[data-part="filename-output"]')?.textContent,
+    ).toBe("ioannidisWhyMost2005"),
+  );
+  await page.waitFor(() =>
+    expect(page.host.querySelector('[role="document"]')?.textContent).toContain(
+      "Why Most Published Research Findings Are False",
+    ),
+  );
+  await page.show("NW2CPDTC");
+  await page.settle();
+  await page.waitFor(() =>
+    expect(
+      page.host.querySelector('[data-part="filename-output"]')?.textContent,
+    ).toBe("Kahneman2011"),
+  );
+  await page.waitFor(() =>
+    expect(page.host.querySelector('[role="document"]')?.textContent).toContain(
+      "Thinking, fast and slow",
+    ),
+  );
+});
+
+it("releases the StrictMode editor owner when the page closes", () => {
+  vi.mocked(createWorkbenchEditor).mockClear();
+  const page = open({ strict: true });
+  const owners = vi
+    .mocked(createWorkbenchEditor)
+    .mock.results.map((result) => result.value);
+  page[Symbol.dispose]();
+  expect(owners).toHaveLength(2);
+  for (const owner of owners)
+    expect(owner[Symbol.dispose]).toHaveBeenCalledOnce();
+});
+
+it("keeps independent Preview and Explorer choices when a new document opens", async () => {
+  using page = open({ strict: true });
+  await page.settle();
+  const refresh = () =>
+    [...page.host.querySelectorAll("label")]
+      .find((label) =>
+        label.textContent?.includes(m.workbench_preview_refresh()),
+      )!
+      .querySelector("select")!;
+  act(() => {
+    refresh().value = "demand";
+    refresh().dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  page.press(m.workbench_explorer_all());
+  importFile(page.host, KEPT);
+  await page.waitFor(() =>
+    expect(page.host.querySelector("h1")?.textContent).toBe("Kept work"),
+  );
+  expect(refresh().value).toBe("demand");
+  const all = [...page.host.querySelectorAll("button")].find(
+    (button) => button.textContent === m.workbench_explorer_all(),
+  )!;
+  expect(all.getAttribute("aria-pressed")).toBe("true");
+});
+
+it("shows filename and property examples for the current Sample Item", async () => {
+  using page = open();
+  await page.settle();
+  for (const [key, filename, title] of [
+    [
+      null,
+      "ioannidisWhyMost2005",
+      "Why Most Published Research Findings Are False",
+    ],
+    ["NW2CPDTC", "Kahneman2011", "Thinking, fast and slow"],
+  ] as const) {
+    if (key) {
+      await page.show(key);
+      await page.settle();
+    }
+    page.press(m.workbench_tab_name_and_folder());
+    await page.waitFor(() =>
+      expect(
+        page.host.querySelector('[data-part="filename-output"]')?.textContent,
+      ).toBe(filename),
+    );
+    page.press(m.workbench_tab_properties());
+    await page.waitFor(() =>
+      expect(
+        page.host.querySelector('[data-part="summary"]')?.textContent,
+      ).toContain(title),
+    );
+    expect(page.host.textContent).not.toContain(
+      m.workbench_example_select_item(),
+    );
+  }
+});
 
 it("mounts the shared editor with the web theme and its searchable Base UI chooser", async () => {
   using page = open();

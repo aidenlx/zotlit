@@ -5,6 +5,10 @@ import type { App, Command, Plugin, WorkspaceLeaf } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
+import {
+  findProfileWorkbench,
+  openProfileWorkbench,
+} from "@/views/note-preview/register";
 
 import { profileCustomization, saveProfileCustomization } from "./preferences";
 import {
@@ -14,10 +18,18 @@ import {
   registerProfileEditor,
 } from "./register";
 import type { ProfileEditorDeps } from "./view";
-import { PROFILE_EDITOR_VIEW_TYPE } from "./view";
+import { PROFILE_EDITOR_VIEW_TYPE, ProfileEditorView } from "./view";
+
+vi.mock("@/views/note-preview/register", () => ({
+  openProfileWorkbench: vi.fn(async () => {}),
+  findProfileWorkbench: vi.fn(async () => null),
+}));
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
-afterEach(resetMockPlatform);
+afterEach(() => {
+  resetMockPlatform();
+  vi.mocked(findProfileWorkbench).mockReset().mockResolvedValue(null);
+});
 
 function setup() {
   const file = new TFile();
@@ -25,7 +37,11 @@ function setup() {
   file.basename = "zotlit-profile.paper";
   file.extension = "md";
   const setViewState = vi.fn(async () => {});
-  const leaf = { setViewState } as unknown as WorkspaceLeaf;
+  const focusWindow = vi.fn();
+  const leaf = {
+    setViewState,
+    getContainer: () => ({ focus: focusWindow }),
+  } as unknown as WorkspaceLeaf;
   const fileMenuHandlers: ((menu: Menu, file: TFile) => void)[] = [];
   const workspace = {
     getActiveFile: () => file,
@@ -83,10 +99,185 @@ function setup() {
     },
     registerView,
     setViewState,
+    focusWindow,
   };
 }
 
 describe("Profile Editor entry points", () => {
+  it.each(["named", "copied-default", "default"])(
+    "applies a Customize launch Item to the existing %s workbench and leaves its compact editor unchanged",
+    async (kind) => {
+      const {
+        app,
+        file,
+        leaf: compactLeaf,
+        setViewState: compactSetState,
+      } = setup();
+      if (kind === "default") file.path = "templates/zotlit-profile.default.md";
+      if (kind !== "named") {
+        vi.spyOn(app.vault, "cachedRead").mockResolvedValue(`---
+id: default
+name: Default
+version: 1.0.0
+contract: 2
+filename: "{{ zt.title }}"
+---
+Body
+--- zotlit:annotation ---
+Annotation`);
+      }
+      const chooseCompactItem = vi.fn();
+      const chooseWorkbenchItem = vi.fn();
+      const compact = Object.assign(
+        Object.create(ProfileEditorView.prototype),
+        { file, leaf: compactLeaf, chooseItem: chooseCompactItem },
+      ) as ProfileEditorView;
+      Object.assign(compactLeaf, { view: compact });
+      const workbenchSetState = vi.fn(async () => {});
+      const workbenchLeaf = {
+        setViewState: workbenchSetState,
+        getContainer: () => ({ focus: vi.fn() }),
+      } as unknown as WorkspaceLeaf;
+      const workbench = Object.assign(
+        Object.create(ProfileEditorView.prototype),
+        { file, leaf: workbenchLeaf, chooseItem: chooseWorkbenchItem },
+      ) as ProfileEditorView;
+      Object.assign(workbenchLeaf, { view: workbench });
+      vi.spyOn(app.workspace, "getLeavesOfType").mockReturnValue([
+        compactLeaf,
+        workbenchLeaf,
+      ]);
+      vi.mocked(findProfileWorkbench).mockResolvedValueOnce(workbench);
+      await openNativeProfile(app, file, {
+        customize: true,
+        itemIndexedKey: "MAIN2345",
+      });
+      expect(findProfileWorkbench).toHaveBeenCalledWith(app, {
+        file: file.path,
+        defaultProfile: false,
+      });
+      expect(workbenchSetState).toHaveBeenCalledWith({
+        type: PROFILE_EDITOR_VIEW_TYPE,
+        state: { file: file.path, itemIndexedKey: "MAIN2345" },
+        active: true,
+      });
+      expect(compactSetState).not.toHaveBeenCalled();
+      expect(openProfileWorkbench).toHaveBeenLastCalledWith(app, workbench);
+      expect(chooseWorkbenchItem).not.toHaveBeenCalled();
+      expect(chooseCompactItem).not.toHaveBeenCalled();
+    },
+  );
+
+  it("binds an existing built-in Default workbench to the custom file before applying its launch Item", async () => {
+    const { app, file, leaf, setViewState } = setup();
+    file.path = "templates/zotlit-profile.default.md";
+    const chooseItem = vi.fn();
+    const workbench = Object.assign(
+      Object.create(ProfileEditorView.prototype),
+      { file: null, leaf, chooseItem },
+    ) as ProfileEditorView;
+    Object.assign(leaf, { view: workbench });
+    vi.mocked(findProfileWorkbench).mockResolvedValueOnce(workbench);
+    vi.spyOn(app.vault, "getFileByPath").mockReturnValue(file);
+    await openNativeProfile(
+      app,
+      { defaultDocumentPath: file.path, getSource: vi.fn() },
+      { customize: true, itemIndexedKey: "MAIN2345" },
+    );
+    expect(findProfileWorkbench).toHaveBeenCalledWith(app, {
+      file: file.path,
+      defaultProfile: true,
+    });
+    expect(setViewState).toHaveBeenCalledWith({
+      type: PROFILE_EDITOR_VIEW_TYPE,
+      state: {
+        file: file.path,
+        defaultDraft: false,
+        itemIndexedKey: "MAIN2345",
+      },
+      active: true,
+    });
+    expect(openProfileWorkbench).toHaveBeenLastCalledWith(app, workbench);
+    expect(chooseItem).not.toHaveBeenCalled();
+  });
+
+  it("routes explicit Default customization through the ready inspection view", async () => {
+    const { app, leaf, setViewState } = setup();
+    const customizeDefault = vi.fn(async () => {});
+    Object.assign(leaf, {
+      view: Object.assign(Object.create(ProfileEditorView.prototype), {
+        customizeDefault,
+      }),
+    });
+    await openNativeProfile(
+      app,
+      {
+        defaultDocumentPath: "templates/zotlit-profile.default.md",
+        getSource: async () => "Built-in source",
+      },
+      { customize: true, itemIndexedKey: "0:ABCDEFGH" },
+    );
+    expect(setViewState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        state: { file: null, defaultDraft: true, itemIndexedKey: "0:ABCDEFGH" },
+      }),
+    );
+    expect(customizeDefault).toHaveBeenCalledOnce();
+  });
+
+  it("opens an existing customized document in the full workbench", async () => {
+    const { app, file, leaf } = setup();
+    const view = Object.create(
+      ProfileEditorView.prototype,
+    ) as ProfileEditorView;
+    Object.assign(leaf, { view });
+    await openNativeProfile(app, file, { customize: true });
+    expect(openProfileWorkbench).toHaveBeenCalledWith(app, view);
+  });
+
+  it.each(["file", "built-in Default"])(
+    "brings the %s editor window forward after its leaf is ready",
+    async (target) => {
+      const { app, file, leaf, focusWindow } = setup();
+      const reveal = Promise.withResolvers<void>();
+      const revealLeaf = vi
+        .spyOn(app.workspace, "revealLeaf")
+        .mockReturnValue(reveal.promise);
+      const opening = openNativeProfile(
+        app,
+        target === "file"
+          ? file
+          : {
+              defaultDocumentPath: "templates/zotlit-profile.default.md",
+              getSource: async () => "Configured built-in document",
+            },
+      );
+      await vi.waitFor(() => expect(revealLeaf).toHaveBeenCalledWith(leaf));
+      expect(focusWindow).not.toHaveBeenCalled();
+
+      reveal.resolve();
+      await opening;
+
+      expect(focusWindow).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("focuses the supplied editor leaf's window when the leaf is reused", async () => {
+    const { app, file, focusWindow } = setup();
+    const revealLeaf = vi.spyOn(app.workspace, "revealLeaf");
+    const focusExistingWindow = vi.fn();
+    const existing = {
+      setViewState: vi.fn(async () => {}),
+      getContainer: () => ({ focus: focusExistingWindow }),
+    } as unknown as WorkspaceLeaf;
+
+    await openProfileEditor(app, file, { leaf: existing });
+
+    expect(revealLeaf).toHaveBeenCalledWith(existing);
+    expect(focusExistingWindow).toHaveBeenCalledOnce();
+    expect(focusWindow).not.toHaveBeenCalled();
+  });
+
   it("omits the web command when the build gate is off", () => {
     setMockPlatform({ isDesktopApp: true });
     const { deps, plugin, commands, fileMenu } = setup();
@@ -121,7 +312,11 @@ describe("Profile Editor entry points", () => {
     await vi.waitFor(() => expect(read).toHaveBeenCalledOnce());
     expect(setViewState).not.toHaveBeenCalled();
   });
-  it.each(["customize-profile", "open-profile-web-workbench"])(
+  it.each([
+    "customize-profile",
+    "open-profile-editor",
+    "open-profile-web-workbench",
+  ])(
     "routes a registered Profile through the shared flow from %s",
     async (id) => {
       setMockPlatform({ isDesktopApp: true });
@@ -138,15 +333,36 @@ describe("Profile Editor entry points", () => {
           profileId: "default",
           ...(id === "open-profile-web-workbench"
             ? { destination: "web" }
-            : {}),
+            : id === "open-profile-editor"
+              ? { destination: "native" }
+              : {}),
         }),
       );
       expect(read).not.toHaveBeenCalled();
     },
   );
+  it("routes the file menu's native editor action through the shared flow", async () => {
+    setMockPlatform({ isDesktopApp: true });
+    const { file, deps, plugin, fileMenu } = setup();
+    deps.profile = { ...deps.profile, defaultDocumentPath: file.path };
+    deps.customize = vi.fn(async () => {});
+    registerProfileEditor(plugin, deps);
+
+    fileMenu()
+      .items.find((item) => item.title === m.profile_editor_open())!
+      .click();
+
+    await vi.waitFor(() =>
+      expect(deps.customize).toHaveBeenCalledExactlyOnceWith({
+        profileId: "default",
+        destination: "native",
+      }),
+    );
+  });
   it("opens the current Literature Note's resolved Default with that paper selected", async () => {
     setMockPlatform({ isDesktopApp: true });
-    const { app, file, deps, plugin, commands, setViewState } = setup();
+    const { app, file, deps, plugin, commands } = setup();
+    deps.customize = vi.fn(async () => {});
     file.path = "Literature/Figures.md";
     file.basename = "Figures";
     vi.spyOn(app.metadataCache, "getFileCache").mockReturnValue({
@@ -165,10 +381,10 @@ describe("Profile Editor entry points", () => {
     )!;
     expect(command.checkCallback?.(false)).toBe(true);
     await vi.waitFor(() =>
-      expect(setViewState).toHaveBeenCalledWith({
-        type: PROFILE_EDITOR_VIEW_TYPE,
-        state: { defaultDraft: true, file: null, itemIndexedKey: "PAPER234" },
-        active: true,
+      expect(deps.customize).toHaveBeenCalledWith({
+        profileId: "default",
+        destination: "native",
+        item: { key: "PAPER234", title: null },
       }),
     );
   });
@@ -200,6 +416,33 @@ describe("Profile Editor entry points", () => {
       });
     },
   );
+  it.each(["file", "default"])(
+    "opens %s without borrowing the active note's Item",
+    async (kind) => {
+      const { app, file, setViewState } = setup();
+      vi.spyOn(app.metadataCache, "getFileCache").mockReturnValue({
+        frontmatter: { "zotero-key": "MAIN2345" },
+      });
+      await openNativeProfile(
+        app,
+        kind === "file"
+          ? file
+          : {
+              defaultDocumentPath: "templates/zotlit-profile.default.md",
+              getSource: async () => "Configured built-in document",
+            },
+      );
+      expect(setViewState).toHaveBeenCalledWith({
+        type: PROFILE_EDITOR_VIEW_TYPE,
+        state:
+          kind === "file"
+            ? { file: file.path }
+            : { defaultDraft: true, file: null },
+        active: true,
+      });
+    },
+  );
+
   it("opens built-in Default from the effective source without ejecting it", async () => {
     const { app, setViewState } = setup();
     const getSource = vi.fn(async () => "Configured built-in document");
@@ -240,6 +483,38 @@ describe("Profile Editor entry points", () => {
       state: { file: file.path },
       active: true,
     });
+  });
+
+  it("routes Default to main settings and named profiles to profile settings", () => {
+    setMockPlatform({ isDesktopApp: true });
+    const { app, plugin, deps, registerView } = setup();
+    const tab = {};
+    const navigateToSearchResult =
+      vi.fn<(request: { tab: object; pagePath: string[] }) => void>();
+    const openTabById = vi.fn(() => tab);
+    Object.assign(app, {
+      setting: {
+        open: vi.fn<() => void>(),
+        openTabById,
+        navigateToSearchResult,
+      },
+    });
+    Object.assign(plugin, { manifest: { id: "zotlit", version: "2.1.3" } });
+    Object.assign(deps, { settings: { subscribe: () => () => {} } });
+    registerProfileEditor(plugin, deps);
+    const create = registerView.mock.calls[0]![1] as (
+      leaf: WorkspaceLeaf,
+    ) => ProfileEditorView;
+    const view = create({ app } as unknown as WorkspaceLeaf);
+    view.openSettings!(true);
+    expect(openTabById).toHaveBeenCalledWith("zotlit");
+    expect(navigateToSearchResult).not.toHaveBeenCalled();
+    view.openSettings!(false);
+    expect(navigateToSearchResult).toHaveBeenCalledWith({
+      tab,
+      pagePath: [m.settings_page_profiles()],
+    });
+    view.scheduler[Symbol.dispose]();
   });
 
   it("opens the requested Match tab in Basic mode", async () => {
