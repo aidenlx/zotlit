@@ -1,5 +1,4 @@
 // The default Profile's main-page rows and the Literature note profiles page.
-import { basename } from "node:path/posix";
 import { Menu } from "obsidian";
 import type {
   SettingDefinitionItem,
@@ -15,7 +14,6 @@ import { DEFAULT_PROFILE } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { SettingsService } from "@/services/settings/service";
-import { openProfileEditor } from "@/views/profile-editor/register";
 
 import { referencesStyleDefinition } from "./citations";
 import type {
@@ -52,7 +50,6 @@ export {
 } from "./delete-profile-modal";
 import { highlightMappingItems } from "./note-import";
 import { defaultProfileBindingPlaceholder } from "./placeholder";
-import { editProfileMatch } from "./profile-match";
 import { shareProfile } from "./share-profile-modal";
 export { shareProfile, ShareProfileModal } from "./share-profile-modal";
 
@@ -104,7 +101,6 @@ export function literatureNoteItems(
     },
     referencesStyleDefinition(ctx),
     defaultDocumentItem(ctx),
-    propertiesItem(ctx),
     {
       type: "group",
       heading: m.settings_imported_notes_heading(),
@@ -168,8 +164,7 @@ export function profilesPage(
 /**
  * The Profiles themselves, one row per document. Add and Import are the list
  * header's own affordances, so each row carries only what acts on that Profile:
- * customize, open, duplicate, and share as icons, with delete as the list's own
- * control.
+ * edit opens the workbench; the menu holds duplicate, share, and delete.
  */
 function profilesList(
   ctx: SettingTabContext,
@@ -211,41 +206,22 @@ function profilesList(
                   }, ctx),
               ),
         ],
-    onDelete: (index) => {
-      const profile = profiles[index];
-      if (profile) void deleteProfile(ctx, profile.id);
-    },
     items: profiles.map((profile) => ({
       name: profile.label,
-      // Its document names it: that file is what every icon on the row acts on,
-      // and it is what tells two Profiles of the same label apart.
-      desc: (() => {
-        const description = document.createDocumentFragment();
-        description.append(profile.document);
-        description.createDiv({
-          text: m.settings_profile_match_status({ state: profile.match.state }),
-        });
-        return description;
-      })(),
+      desc: m.settings_profile_match_status({ state: profile.match.state }),
       searchable: false,
       render: (setting) => {
         setting.addButton((button) =>
           button
-            .setButtonText(m.profile_editor_edit())
-            .setDisabled(locked)
-            .onClick(() => {
-              const file = ctx.app.vault.getFileByPath(profile.path);
-              if (file)
-                void runAction(() => openProfileEditor(ctx.app, file), ctx);
-            }),
-        );
-        setting.addButton((button) =>
-          button
-            .setButtonText(m.settings_profile_match_action())
+            .setIcon("pencil")
+            .setTooltip(m.settings_profile_edit())
             .setDisabled(locked)
             .onClick(
               () =>
-                void runAction(() => editProfileMatch(ctx, profile.id), ctx),
+                void runAction(
+                  () => ctx.customize({ profileId: profile.id }),
+                  ctx,
+                ),
             ),
         );
         setting.addExtraButton((button) =>
@@ -256,52 +232,39 @@ function profilesList(
               const menu = new Menu();
               menu.addItem((item) =>
                 item
-                  .setTitle(m.profile_editor_customize())
-                  .setIcon("pencil")
+                  .setTitle(m.settings_profile_duplicate())
+                  .setIcon("copy")
                   .setDisabled(locked)
                   .onClick(
                     () =>
                       void runAction(
-                        () => ctx.customize({ profileId: profile.id }),
+                        () => duplicateProfileToEditor(ctx, profile.id),
                         ctx,
                       ),
                   ),
               );
               menu.addItem((item) =>
                 item
-                  .setTitle(m.profile_editor_open_markdown())
-                  .setIcon("file-text")
+                  .setTitle(m.settings_profile_share())
+                  .setIcon("share")
+                  .setDisabled(locked)
                   .onClick(
                     () =>
-                      void runAction(
-                        () => openDocument(ctx, profile.path),
-                        ctx,
-                      ),
+                      void runAction(() => shareProfile(ctx, profile.id), ctx),
                   ),
+              );
+              menu.addSeparator();
+              menu.addItem((item) =>
+                item
+                  .setTitle(m.settings_profile_delete())
+                  .setIcon("trash-2")
+                  .setWarning(true)
+                  .setDisabled(locked)
+                  .onClick(() => void deleteProfile(ctx, profile.id)),
               );
               const bounds = button.extraSettingsEl.getBoundingClientRect();
               menu.showAtPosition({ x: bounds.left, y: bounds.bottom });
             }),
-        );
-        setting.addExtraButton((button) =>
-          button
-            .setIcon("copy")
-            .setTooltip(m.settings_profile_duplicate())
-            .onClick(
-              () =>
-                void runAction(
-                  () => duplicateProfileToEditor(ctx, profile.id),
-                  ctx,
-                ),
-            ),
-        );
-        setting.addExtraButton((button) =>
-          button
-            .setIcon("share")
-            .setTooltip(m.settings_profile_share())
-            .onClick(
-              () => void runAction(() => shareProfile(ctx, profile.id), ctx),
-            ),
         );
       },
     })),
@@ -448,8 +411,8 @@ async function deleteProfile(
 }
 
 /**
- * The Template document row. Customize opens the editor chooser; a saved
- * document also offers Restore built-in.
+ * Templates and properties share one workbench entry; a saved Default also
+ * offers Restore built-in.
  */
 function defaultDocumentItem(
   ctx: SettingTabContext,
@@ -458,7 +421,7 @@ function defaultDocumentItem(
   const ejected = ctx.app.vault.getFileByPath(path) !== null;
   return {
     name: m.settings_profile_document_name(),
-    desc: ejected ? basename(path) : m.settings_profile_document_builtin(),
+    desc: m.settings_profile_document_desc(),
     render: (setting) => {
       if (ejected)
         setting.addButton((button) =>
@@ -489,8 +452,8 @@ function defaultDocumentItem(
         );
       setting.addButton((button) =>
         button
-          .setButtonText(m.settings_template_customize())
-          .setCta()
+          .setIcon("pencil")
+          .setTooltip(m.settings_profile_edit())
           .setDisabled(profileActionsLocked(ctx))
           .onClick(
             () =>
@@ -516,59 +479,28 @@ function defaultProfileItem(
   return {
     name: m.settings_profile_default_name(),
     desc: m.settings_profile_default_desc(),
-    render: (setting) => {
-      setting.addButton((button) =>
-        button
-          .setButtonText(m.profile_editor_customize())
-          .setDisabled(profileActionsLocked(ctx))
-          .onClick(
-            () =>
-              void runAction(
-                () => ctx.customize({ profileId: DEFAULT_PROFILE }),
-                ctx,
-              ),
-          ),
-      );
+    render: (setting, group) => {
+      const documentItem = defaultDocumentItem(ctx);
+      if ("render" in documentItem) documentItem.render?.(setting, group);
+
       setting.addExtraButton((button) =>
         button
-          .setIcon("share")
-          .setTooltip(m.settings_profile_share())
+          .setIcon("more-horizontal")
+          .setTooltip(m.workbench_more_actions())
           .setDisabled(profileActionsLocked(ctx))
-          .onClick(
-            () => void runAction(() => shareProfile(ctx, "default"), ctx),
-          ),
-      );
-    },
-  };
-}
-
-/**
- * Managed Frontmatter has one editor, the template document. While the default
- * look is built in, Customize creates its document with the current fields
- * before opening the workbench for editing.
- */
-function propertiesItem(
-  ctx: SettingTabContext,
-): SettingDefinitionItem<SettingsControlKey> {
-  const path = ctx.profile.defaultDocumentPath;
-  const ejected = ctx.app.vault.getFileByPath(path) !== null;
-  return {
-    name: m.settings_profile_properties_name(),
-    desc: ejected
-      ? m.settings_profile_properties_desc()
-      : m.settings_profile_properties_builtin_desc(),
-    render: (setting) => {
-      setting.addButton((button) =>
-        button
-          .setIcon(ejected ? "pencil" : "file-pen")
-          .setTooltip(m.profile_editor_customize())
-          .setDisabled(profileActionsLocked(ctx))
-          .onClick(
-            () =>
-              void runAction(async () => {
-                await ctx.customize({ profileId: DEFAULT_PROFILE });
-              }, ctx),
-          ),
+          .onClick(() => {
+            const menu = new Menu();
+            menu.addItem((item) =>
+              item
+                .setTitle(m.settings_profile_share())
+                .setIcon("share")
+                .onClick(
+                  () => void runAction(() => shareProfile(ctx, "default"), ctx),
+                ),
+            );
+            const bounds = button.extraSettingsEl.getBoundingClientRect();
+            menu.showAtPosition({ x: bounds.left, y: bounds.bottom });
+          }),
       );
     },
   };
