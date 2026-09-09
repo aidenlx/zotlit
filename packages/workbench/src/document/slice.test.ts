@@ -57,6 +57,50 @@ function open(
 }
 
 describe("workbenchSlice", () => {
+  it.each([
+    { header: "|", suffix: "\n", valueSuffix: "\n" },
+    { header: "|-", suffix: "\n", valueSuffix: "" },
+    { header: "|+", suffix: "\n\n", valueSuffix: "\n\n" },
+    { header: ">-", suffix: "\n", valueSuffix: "" },
+    { header: "|2 # keep this comment", suffix: "\n", valueSuffix: "\n" },
+  ])(
+    "keeps $header note-name syntax through edits and history",
+    ({ header, suffix, valueSuffix }) => {
+      const source = PROFILE.replace(
+        "filename: '{{ zt.citationKey }}'\n",
+        `filename: ${header}\n  {{ zt.citationKey }}${suffix}`,
+      );
+      const controller = new WorkbenchDocumentController(source);
+      using filename = open(controller, "filename");
+      filename.view.focus();
+
+      for (const text of ["{{ zt.title }}", "", "{{ zt.key }}"]) {
+        const previous = controller.source;
+        filename.view.dispatch({
+          changes: {
+            from: 0,
+            to: filename.view.state.doc.length,
+            insert: text,
+          },
+          userEvent: "input.type",
+          annotations: isolateHistory.of("full"),
+        });
+        const expected = source.replace("{{ zt.citationKey }}", text);
+        expect(controller.source).toBe(expected);
+        expect(filename.text()).toBe(text);
+        expect(controller.filenameSlice).not.toBeNull();
+        expect(controller.document?.manifest.filename).toBe(
+          text ? text + valueSuffix : undefined,
+        );
+        expect(controller.undo()).toBe(true);
+        expect(controller.source).toBe(previous);
+        expect(controller.redo()).toBe(true);
+        expect(controller.source).toBe(expected);
+        expect(filename.text()).toBe(text);
+      }
+    },
+  );
+
   it("keeps a focused caret between separated external edits", () => {
     const controller = new WorkbenchDocumentController(PROFILE);
     using note = open(controller, "note");
