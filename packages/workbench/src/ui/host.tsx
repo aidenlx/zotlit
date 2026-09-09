@@ -82,6 +82,13 @@ export interface WorkbenchSuggesterRequest {
   readonly selected?: string;
 }
 
+/** Suggestions anchored to a text field while the author types. */
+export interface WorkbenchInputSuggestionsRequest {
+  readonly input: HTMLInputElement;
+  readonly getSuggestions: (query: string) => WorkbenchSuggesterOption[];
+  readonly onSelect: (value: string) => void;
+}
+
 export interface WorkbenchHoverCardRequest {
   readonly anchor: HTMLElement | DOMRect;
   readonly content: ReactNode;
@@ -156,6 +163,9 @@ export interface WorkbenchHost {
   confirm(request: WorkbenchConfirmRequest): Promise<boolean>;
   /** Resolves the chosen option's id, or `null` when dismissed. */
   suggester(request: WorkbenchSuggesterRequest): Promise<string | null>;
+  inputSuggestions?(
+    request: WorkbenchInputSuggestionsRequest,
+  ): WorkbenchDialogHandle;
   /** The attributes that give an in-page element a tooltip reading `text`. */
   tooltip(text: string): HTMLAttributes<HTMLElement>;
   hoverCard(request: WorkbenchHoverCardRequest): WorkbenchHoverCardHandle;

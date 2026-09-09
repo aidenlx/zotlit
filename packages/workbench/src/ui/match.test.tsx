@@ -5,9 +5,10 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 
 import { WorkbenchHostProvider } from "./host";
+import type { WorkbenchInputSuggestionsRequest } from "./host";
 import { MatchPane } from "./match";
 import { TABS } from "./tabs";
 import { fakeHost, renderWithMessages as render } from "./test-host";
@@ -156,6 +157,67 @@ it("refreshes suggestions when the snapshot revision changes through one stable 
     ).not.toBeNull(),
   );
   expect(document.querySelector('option[value="First paper"]')).toBeNull();
+});
+
+it("accepts native suggestions into text and array values and releases their popups on clear", async () => {
+  const controller = new WorkbenchDocumentController(
+    DEFAULT_PROFILE_SOURCE.replace("id: default", "id: Bk3Qn7XvT2Lp"),
+  );
+  controller.setMatch({
+    and: ['collections.within("Thesis")', 'tags.containsAny("Read")'],
+  });
+  const requests: WorkbenchInputSuggestionsRequest[] = [];
+  const close = vi.fn<() => void>();
+  const host = {
+    ...fakeHost(),
+    inputSuggestions(request: WorkbenchInputSuggestionsRequest) {
+      requests.push(request);
+      return { close };
+    },
+  };
+  host.matchData.tags = async () => ["Read", "Methods"];
+  host.matchData.collections = async () => [["Thesis", "Chapter 1"]];
+  render(
+    <WorkbenchHostProvider host={host}>
+      <MatchPane controller={controller} facts={facts} />
+    </WorkbenchHostProvider>,
+  );
+  await waitFor(() =>
+    expect(requests[1]?.getSuggestions("met")).toEqual([
+      { id: "Methods", label: "Methods", hint: undefined },
+    ]),
+  );
+  expect(document.querySelector("datalist")).toBeNull();
+  expect(requests[0]!.getSuggestions("chapter")[0]?.id).toBe(
+    "Thesis/Chapter 1",
+  );
+  act(() => {
+    requests[0]!.onSelect("Thesis/Chapter 1");
+  });
+  act(() => {
+    requests[1]!.onSelect("Methods");
+  });
+  expect(controller.document?.manifest.match).toEqual({
+    and: [
+      'collections.within("Thesis/Chapter 1")',
+      'tags.containsAny("Read", "Methods")',
+    ],
+  });
+  expect(requests).toHaveLength(2);
+  expect(requests[1]!.input.value).toBe("");
+  expect(requests[1]!.getSuggestions("")).toEqual([]);
+  fireEvent.blur(requests[1]!.input);
+  expect(controller.document?.manifest.match).toEqual({
+    and: [
+      'collections.within("Thesis/Chapter 1")',
+      'tags.containsAny("Read", "Methods")',
+    ],
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_match_remove() }),
+  );
+  expect(document.querySelector("[data-condition-row]")).toBeNull();
+  expect(close).toHaveBeenCalledTimes(2);
 });
 
 it("keeps a labelled expression in expression mode as the author types", async () => {

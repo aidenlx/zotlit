@@ -1,4 +1,3 @@
-import { useId } from "react";
 import type { ComponentProps } from "react";
 
 import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
@@ -6,6 +5,7 @@ import { ITEM_TYPES } from "@zotlit/zotero-types/item-types";
 import { useWorkbenchHost } from "./host";
 import { ChipInput } from "./match.chips";
 import type { RowCondition, MatchEditorDeps } from "./match.draft";
+import { MatchInput } from "./match.input";
 // Kind, operator, and value controls preserve the established Match vocabulary.
 import { useWorkbenchMessages } from "./messages";
 import { WorkbenchSelect } from "./select";
@@ -160,7 +160,6 @@ export function ConditionValue({
   const part = useParts("match");
   const host = useWorkbenchHost();
   const collections = deps.collections;
-  const suggestionsId = useId();
   switch (condition.kind) {
     case "library":
       return (
@@ -229,30 +228,22 @@ export function ConditionValue({
       const value = condition.values[0]?.join("/") ?? "";
       return (
         <div {...part("control")}>
-          <input
-            type="text"
+          <MatchInput
             {...part("input")}
             aria-label={m.workbench_match_value()}
             placeholder={m.workbench_match_collection_placeholder()}
             value={value}
-            list={suggestions.length ? suggestionsId : undefined}
-            onChange={(event) =>
+            suggestions={suggestions}
+            onChange={(value) =>
               onChange({
                 ...condition,
-                values: [event.currentTarget.value.split("/")],
+                values: [value.split("/")],
               })
             }
           />
           {value !== "" && hint(value) && (
             <span {...part("control")}>{hint(value)}</span>
           )}
-          {suggestions.length ? (
-            <datalist id={suggestionsId}>
-              {suggestions.map((suggestion) => (
-                <option key={suggestion} value={suggestion} />
-              ))}
-            </datalist>
-          ) : null}
         </div>
       );
     }
@@ -271,24 +262,14 @@ export function ConditionValue({
           />
         );
       return (
-        <>
-          <datalist id={suggestionsId}>
-            {deps.tags.map((tag) => (
-              <option key={tag} value={tag} />
-            ))}
-          </datalist>
-          <input
-            type="text"
-            {...part("input")}
-            aria-label={m.workbench_match_value()}
-            placeholder={m.workbench_match_tag_placeholder()}
-            list={suggestionsId}
-            value={condition.values[0] ?? ""}
-            onChange={(event) =>
-              onChange({ ...condition, values: [event.currentTarget.value] })
-            }
-          />
-        </>
+        <MatchInput
+          {...part("input")}
+          aria-label={m.workbench_match_value()}
+          placeholder={m.workbench_match_tag_placeholder()}
+          suggestions={deps.tags}
+          value={condition.values[0] ?? ""}
+          onChange={(value) => onChange({ ...condition, values: [value] })}
+        />
       );
     }
   }

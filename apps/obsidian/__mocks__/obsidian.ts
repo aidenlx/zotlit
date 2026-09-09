@@ -497,6 +497,14 @@ export abstract class EditorSuggest<T> {
   abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
 }
 
+export abstract class AbstractInputSuggest<T> {
+  constructor(_app: App, _input: HTMLInputElement | HTMLDivElement) {}
+  close(): void {}
+  protected abstract getSuggestions(query: string): T[] | Promise<T[]>;
+  abstract renderSuggestion(value: T, el: HTMLElement): void;
+  abstract selectSuggestion(value: T, event: MouseEvent | KeyboardEvent): void;
+}
+
 /**
  * Records keymap registrations so a test can look one up by modifiers plus key
  * and invoke its handler, standing in for a real keypress.

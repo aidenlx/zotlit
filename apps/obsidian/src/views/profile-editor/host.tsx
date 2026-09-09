@@ -2,6 +2,7 @@
 import { Compartment } from "@codemirror/state";
 import { tooltips, ViewPlugin } from "@codemirror/view";
 import {
+  AbstractInputSuggest,
   Component,
   ConfirmationModal,
   MarkdownRenderer,
@@ -27,6 +28,7 @@ import type {
   WorkbenchDialogRequest,
   WorkbenchSuggesterRequest,
   WorkbenchSuggesterOption,
+  WorkbenchInputSuggestionsRequest,
 } from "@zotlit/workbench/ui";
 
 import { Toggle } from "@/components/obsidian/toggle";
@@ -56,6 +58,37 @@ class EditorDialog extends Modal {
     this.#root?.unmount();
     this.#root = null;
     this.#request.onClose?.();
+  }
+}
+
+class MatchInputSuggest extends AbstractInputSuggest<WorkbenchSuggesterOption> {
+  readonly #request: WorkbenchInputSuggestionsRequest;
+
+  constructor(app: App, request: WorkbenchInputSuggestionsRequest) {
+    super(app, request.input);
+    this.#request = request;
+  }
+
+  override getSuggestions(query: string) {
+    return this.#request.getSuggestions(query);
+  }
+
+  override renderSuggestion(option: WorkbenchSuggesterOption, el: HTMLElement) {
+    el.addClass("zt-profile-editor-suggestion");
+    if (!option.hint) {
+      el.addClass("mod-nowrap");
+      el.setText(option.label);
+      return;
+    }
+    el.addClass("mod-complex");
+    const content = el.createDiv("suggestion-content");
+    content.createDiv({ cls: "suggestion-title", text: option.label });
+    content.createDiv({ cls: "suggestion-note", text: option.hint });
+  }
+
+  override selectSuggestion(option: WorkbenchSuggesterOption) {
+    this.#request.onSelect(option.id);
+    this.close();
   }
 }
 
@@ -191,6 +224,10 @@ export function createProfileEditorHost(
       workbench_name_value_no_style: citationStyleLabel,
     },
     getLocale: () => runtime.getLocale(),
+    inputSuggestions(request) {
+      const popup = new MatchInputSuggest(app, request);
+      return { close: track(() => popup.close()) };
+    },
     editorPopups(read, parent) {
       const placement = new Compartment();
       return [
