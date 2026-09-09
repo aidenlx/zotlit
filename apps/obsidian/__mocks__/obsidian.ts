@@ -298,6 +298,7 @@ export class ItemView {
     return Promise.resolve();
   }
 
+  onResize(): void {}
   getViewType(): string {
     return "";
   }

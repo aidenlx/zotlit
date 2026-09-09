@@ -1,4 +1,5 @@
 // One file-backed authoring session; TextFileView owns vault updates and saves.
+import { EditorView } from "@codemirror/view";
 import { Scope, TextFileView } from "obsidian";
 import type {
   Menu,
@@ -308,6 +309,16 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     );
   }
 
+  override onResize(): void {
+    super.onResize();
+    for (const element of this.contentEl.querySelectorAll<HTMLElement>(
+      ".cm-editor",
+    )) {
+      const editor = EditorView.findFromDOM(element);
+      if (editor && editor.root !== element.ownerDocument)
+        editor.setRoot(element.ownerDocument);
+    }
+  }
   get isWorkbenchWindow(): boolean {
     return this.#workbenchWindow;
   }
