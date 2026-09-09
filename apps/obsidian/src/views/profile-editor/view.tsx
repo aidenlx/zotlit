@@ -9,7 +9,7 @@ import type {
   ViewStateResult,
   WorkspaceLeaf,
 } from "obsidian";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -108,6 +108,7 @@ export type ProfileEditorDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   profile?: Pick<
     ProfileService,
     | "getSource"
+    | "getBuiltInSource"
     | "materializeDefault"
     | "restoreDefault"
     | "defaultDocumentPath"
@@ -148,9 +149,14 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   #root: Root | null = null;
   #updateActions = () => {};
   #unsubscribe: (() => void) | null = null;
-  #insertTarget: WorkbenchInsertTarget | null = null;
+  get #insertTarget(): WorkbenchInsertTarget | null {
+    return this.store.getState().presentation.selection;
+  }
+  set #insertTarget(selection: WorkbenchInsertTarget | null) {
+    this.setPresentation({ selection });
+  }
   #insertRequest: WorkbenchInsertTarget | null = null;
-  #choosePending: Promise<void> | null = null;
+  #choosePending: Promise<boolean> | null = null;
   #itemGeneration = 0;
   #closed = false;
   #generation = 0;
@@ -161,7 +167,6 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   #defaultDraft = false;
   #materializing: Promise<void> | null = null;
   #bindingDraft = false;
-  #workbenchWindow = false;
   #receivingSource = false;
   #sourceRevision = 0;
   #readGeneration = 0;
@@ -206,11 +211,9 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     this.store = this.#editor.store;
     this.scheduler = this.#editor.scheduler;
     this.preview = deps.nativePreview
-      ? new NativePreviewSession(
-          deps.nativePreview,
-          this.scheduler,
-          this.store.getState().item,
-        )
+      ? new NativePreviewSession(deps.nativePreview, this.scheduler, {
+          item: this.store.getState().item,
+        })
       : null;
     this.register(
       this.store.subscribe((state, previous) => {
@@ -229,6 +232,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
         this.preview.state.subscribe((state, previous) => {
           if (state.example !== previous.example)
             this.#publishAuthoringContext();
+          if (state.status !== previous.status) this.#mount();
         }),
       );
     this.scope = new Scope(this.app.scope);
@@ -279,7 +283,14 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       }),
     );
     this.register(
-      this.store.subscribe(() => this.app.workspace.requestSaveLayout()),
+      this.store.subscribe((state, previous) => {
+        if (
+          state.tab !== previous.tab ||
+          state.advanced !== previous.advanced ||
+          state.item?.id !== previous.item?.id
+        )
+          this.app.workspace.requestSaveLayout();
+      }),
     );
   }
 
@@ -319,14 +330,6 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
         editor.setRoot(element.ownerDocument);
     }
   }
-  get isWorkbenchWindow(): boolean {
-    return this.#workbenchWindow;
-  }
-  markWorkbenchWindow(): void {
-    this.#workbenchWindow = true;
-    this.app.workspace.requestSaveLayout();
-  }
-
   get unavailableDependencies(): string[] {
     return [
       ...(this.#databaseUnavailable
@@ -489,7 +492,14 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
         readOnly: this.#defaultDraft,
       });
       this.#editor.attach(this.#controller);
-      this.#insertTarget = null;
+      this.setPresentation({
+        selection: null,
+        selected: null,
+        reveal: null,
+        fieldFocus: null,
+        scroll: {},
+        restoring: false,
+      });
       this.#insertRequest = null;
       this.#publishAuthoringContext();
       this.#subscribe();
@@ -568,59 +578,199 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   }
 
   override getState(): Record<string, unknown> {
-    const { tab, item, root, advanced } = this.store.getState();
+    const { tab, item, advanced } = this.store.getState();
     return {
       ...super.getState(),
-      ...(this.#defaultDraft ? { defaultDraft: true } : {}),
-      ...(this.#workbenchWindow ? { workbenchWindow: true } : {}),
+      ...(this.#defaultDraft ? { defaultDraft: true, file: null } : {}),
       tab,
       itemIndexedKey: item?.id ?? null,
-      root,
       advanced,
     };
+  }
+  setPresentation(value: Partial<WorkbenchViewState["presentation"]>): void {
+    this.store.setState((state) => ({
+      presentation: { ...state.presentation, ...value },
+    }));
+  }
+  #presentationContext(): string {
+    return JSON.stringify([
+      this.file?.path ?? (this.#defaultDraft ? "default" : null),
+      this.store.getState().item?.id ?? null,
+    ]);
+  }
+  override getEphemeralState(): Record<string, unknown> {
+    const { presentation } = this.store.getState();
+    return {
+      zotlitProfileEditor: {
+        context: this.#presentationContext(),
+        selection: presentation.selection,
+        selected: presentation.selected,
+        field: presentation.fieldFocus?.field ?? null,
+        scroll: presentation.scroll,
+      },
+    };
+  }
+  override setEphemeralState(input: unknown): void {
+    if (!input || typeof input !== "object") return;
+    const value = input as Record<string, unknown>;
+    const payload = value.zotlitProfileEditor;
+    if (!payload || typeof payload !== "object") return;
+    const state = payload as Record<string, unknown>;
+    if (state.context !== this.#presentationContext()) return;
+    const selection = state.selection as WorkbenchInsertTarget | null;
+    const valid =
+      selection &&
+      typeof selection.slice === "string" &&
+      this.controller.hasSlice(selection.slice) &&
+      selection.range &&
+      Number.isFinite(selection.range.from) &&
+      Number.isFinite(selection.range.to);
+    let restoredSelection: WorkbenchInsertTarget | null = null;
+    if (valid) {
+      const slice = this.controller.sliceRange(selection.slice);
+      const clamp = (position: number) =>
+        Math.max(slice.from, Math.min(slice.to, position));
+      const anchor = clamp(
+        Number.isFinite(selection.range.anchor)
+          ? selection.range.anchor!
+          : selection.range.from,
+      );
+      const head = clamp(
+        Number.isFinite(selection.range.head)
+          ? selection.range.head!
+          : selection.range.to,
+      );
+      restoredSelection = {
+        slice: selection.slice,
+        range: {
+          from: Math.min(anchor, head),
+          to: Math.max(anchor, head),
+          ...(anchor > head ? { anchor, head } : {}),
+        },
+      };
+    }
+    const selected =
+      Number.isInteger(state.selected) &&
+      (state.selected as number) >= 0 &&
+      (state.selected as number) < (this.controller.managedEntries?.length ?? 0)
+        ? (state.selected as number)
+        : null;
+    const scroll: WorkbenchViewState["presentation"]["scroll"] = {};
+    if (state.scroll && typeof state.scroll === "object") {
+      for (const [key, position] of Object.entries(state.scroll)) {
+        if (
+          position &&
+          typeof position === "object" &&
+          Number.isFinite(position.top) &&
+          Number.isFinite(position.left)
+        )
+          scroll[key] = {
+            top: Math.max(0, position.top),
+            left: Math.max(0, position.left),
+          };
+      }
+    }
+    this.setPresentation({
+      selection: restoredSelection,
+      selected,
+      reveal: restoredSelection
+        ? {
+            ...restoredSelection.range,
+            slice: restoredSelection.slice,
+            focus: value.focus === true,
+            scrollIntoView: false,
+          }
+        : null,
+      fieldFocus:
+        typeof state.field === "string"
+          ? {
+              field: state.field,
+              focus: value.focus === true,
+              scrollIntoView: false,
+            }
+          : null,
+      scroll,
+      restoreVersion: this.store.getState().presentation.restoreVersion + 1,
+      restoring: true,
+    });
+  }
+  restoreScroll(): void {
+    const { scroll, restoring } = this.store.getState().presentation;
+    if (
+      !restoring ||
+      this.preview?.state.getState().status === "loading" ||
+      !this.contentEl.querySelector("[data-workbench-scroll]")
+    )
+      return;
+    for (const element of this.contentEl.querySelectorAll<HTMLElement>(
+      "[data-workbench-scroll]",
+    )) {
+      const position = scroll[element.dataset.workbenchScroll!];
+      if (position) {
+        element.scrollTop = position.top;
+        element.scrollLeft = position.left;
+      }
+    }
+    this.setPresentation({ restoring: false });
   }
   override async setState(
     state: unknown,
     result: ViewStateResult,
   ): Promise<void> {
-    if (
-      !this.#bindingDraft &&
-      state &&
-      typeof state === "object" &&
-      "file" in state &&
-      typeof state.file === "string"
-    ) {
-      this.#defaultDraft = false;
-      this.allowNoFile = false;
+    const previous = JSON.stringify(this.getState());
+    try {
+      await this.#restoreState(state, result);
+    } finally {
+      if (previous !== JSON.stringify(this.getState())) result.history = true;
     }
-    if (
-      state &&
+  }
+  async #restoreState(state: unknown, result: ViewStateResult): Promise<void> {
+    const builtin =
+      !!state &&
       typeof state === "object" &&
       "defaultDraft" in state &&
-      state.defaultDraft === true &&
-      !this.#defaultDraft
-    ) {
-      const profile = this.#deps.profile;
-      if (profile) {
-        this.allowNoFile = true;
-        this.#defaultDraft = true;
-        this.setViewData(await profile.getSource("default"), true);
+      state.defaultDraft === true;
+    if (builtin && this.#deps.profile) {
+      this.allowNoFile = true;
+      await super.setState({ ...state, file: null }, result);
+      this.#defaultDraft = true;
+      this.setViewData(this.#deps.profile.getBuiltInSource(), true);
+    } else {
+      if (
+        !this.#bindingDraft &&
+        state &&
+        typeof state === "object" &&
+        "file" in state &&
+        typeof state.file === "string"
+      ) {
+        this.#defaultDraft = false;
+        this.allowNoFile = false;
       }
+      await super.setState(state, result);
     }
-    await super.setState(state, result);
     if (!state || typeof state !== "object") return;
     const value = state as Record<string, unknown>;
-    if (typeof value.workbenchWindow === "boolean")
-      this.#workbenchWindow = value.workbenchWindow;
     const store = this.store.getState();
     if (TABS.some((tab) => tab === value.tab))
-      store.setTab(value.tab as typeof store.tab);
+      store.setTab(
+        value.tab === "match" && this.isDefaultProfile
+          ? "note"
+          : (value.tab as typeof store.tab),
+      );
     if (
       value.root === "note" ||
       value.root === "annotation" ||
       value.root === "filename"
     )
       store.setRoot(value.root);
+    else
+      store.setRoot(
+        value.tab === "annotation"
+          ? "annotation"
+          : value.tab === "name"
+            ? "filename"
+            : "note",
+      );
     if (typeof value.advanced === "boolean") store.setAdvanced(value.advanced);
 
     const itemGeneration = ++this.#itemGeneration;
@@ -634,6 +784,22 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
 
   protected override async onOpen(): Promise<void> {
     this.#closed = false;
+    this.registerDomEvent(
+      this.contentEl,
+      "scroll",
+      (event) => {
+        const element = event.target as HTMLElement;
+        const key = element.dataset?.workbenchScroll;
+        if (!key || this.store.getState().presentation.restoring) return;
+        this.setPresentation({
+          scroll: {
+            ...this.store.getState().presentation.scroll,
+            [key]: { top: element.scrollTop, left: element.scrollLeft },
+          },
+        });
+      },
+      true,
+    );
     this.registerEvent(
       this.app.workspace.on("zotlit:insert-template-field", (request) =>
         this.insertTemplateField(request),
@@ -855,7 +1021,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       active: true,
     });
   }
-  chooseItem(): Promise<void> {
+  chooseItem(): Promise<boolean> {
     if (this.#choosePending) return this.#choosePending;
     const generation = this.#generation;
     const itemGeneration = ++this.#itemGeneration;
@@ -873,8 +1039,11 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
           !this.#closed &&
           generation === this.#generation &&
           itemGeneration === this.#itemGeneration
-        )
+        ) {
           this.#selectKey(hit.item.indexedKey);
+          return this.store.getState().item?.id === hit.item.indexedKey;
+        }
+        return false;
       })
       .finally(() => {
         this.#choosePending = null;
@@ -931,6 +1100,12 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
             range: {
               from: transaction.changes.mapPos(range.from, 1),
               to: transaction.changes.mapPos(range.to, 1),
+              ...(range.anchor === undefined
+                ? {}
+                : {
+                    anchor: transaction.changes.mapPos(range.anchor, 1),
+                    head: transaction.changes.mapPos(range.head ?? range.to, 1),
+                  }),
             },
           };
           this.#publishAuthoringContext();
@@ -1014,15 +1189,27 @@ function EditorContent({
   );
   const advanced = useWorkbenchStore((state) => state.advanced);
   const customization = useWorkbenchStore((state) => state.customization);
-  const [selected, setSelected] = useState<number | null>(null);
-  const [reveal, setReveal] = useState<WorkbenchSliceRange | null>(null);
-  const [fieldFocus, setFieldFocus] = useState<{ field: string } | null>(null);
+  const presentation = useWorkbenchStore((state) => state.presentation);
+  const { selected, reveal, fieldFocus } = presentation;
+  const setSelected = (selected: number | null) =>
+    view.setPresentation({ selected });
+  const setReveal = (reveal: WorkbenchViewState["presentation"]["reveal"]) =>
+    view.setPresentation({ reveal });
+  const setFieldFocus = (fieldFocus: { field: string } | null) =>
+    view.setPresentation({ fieldFocus });
+  const previewStatus = view.preview?.state.getState().status;
+  useEffect(
+    () => view.restoreScroll(),
+    [view, presentation.restoreVersion, previewStatus, reveal],
+  );
   useEffect(() => {
     if (!insertRequest) return;
     const position = entryPosition(insertRequest.slice);
-    if (position !== null) setSelected(position);
-    setReveal(insertRequest.range);
-  }, [insertRequest]);
+    view.setPresentation({
+      ...(position === null ? {} : { selected: position }),
+      reveal: insertRequest.range,
+    });
+  }, [view, insertRequest]);
   const manifest = useRef(controller.document?.manifest ?? null);
   if (controller.document) manifest.current = controller.document.manifest;
   const firstProblem = controller.problems[0] ?? null;
@@ -1120,7 +1307,10 @@ function EditorContent({
           }}
         />
       )}
-      <div className="zt:min-h-0 zt:flex-1 zt:overflow-auto">
+      <div
+        data-workbench-scroll="editor"
+        className="zt:min-h-0 zt:flex-1 zt:overflow-auto"
+      >
         <StartHere />
         {advanced ? (
           <SliceEditor

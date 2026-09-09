@@ -206,6 +206,7 @@ describe("ProfileEditorView", () => {
     const { view, requestSave } = setup({
       profile: {
         getSource: async () => SOURCE,
+        getBuiltInSource: () => SOURCE,
         materializeDefault,
       } as unknown as ProfileEditorDeps["profile"],
     });
@@ -254,6 +255,7 @@ describe("ProfileEditorView", () => {
     const { view, requestSave } = setup({
       profile: {
         getSource: async () => SOURCE,
+        getBuiltInSource: () => SOURCE,
         materializeDefault,
       } as unknown as ProfileEditorDeps["profile"],
     });
@@ -276,6 +278,7 @@ describe("ProfileEditorView", () => {
     const { view, leaf, requestSave, modify } = setup({
       profile: {
         getSource: async () => SOURCE,
+        getBuiltInSource: () => SOURCE,
         materializeDefault: async () => ({ file, created: false }),
       } as unknown as ProfileEditorDeps["profile"],
     });
@@ -298,6 +301,7 @@ describe("ProfileEditorView", () => {
     const { view } = setup({
       profile: {
         getSource: async () => SOURCE,
+        getBuiltInSource: () => SOURCE,
         materializeDefault,
       } as unknown as ProfileEditorDeps["profile"],
     });
@@ -333,6 +337,7 @@ describe("ProfileEditorView", () => {
     const { view, modify } = setup({
       profile: {
         getSource: async () => SOURCE,
+        getBuiltInSource: () => SOURCE,
         materializeDefault: () => pending.promise,
       } as unknown as ProfileEditorDeps["profile"],
     });
@@ -457,8 +462,18 @@ describe("ProfileEditorView", () => {
       root: "annotation",
       advanced: true,
     };
-    await view.setState(state, {} as ViewStateResult);
-    expect(view.getState()).toEqual({ ...state, itemIndexedKey: null });
+    const result = { history: false };
+    await view.setState(state, result);
+    expect(result.history).toBe(true);
+    result.history = false;
+    await view.setState(state, result);
+    expect(result.history).toBe(false);
+    expect(view.getState()).toEqual({
+      file: file.path,
+      tab: "annotation",
+      advanced: true,
+      itemIndexedKey: null,
+    });
   });
   it("labels a built-in annotation sample export as selected paper data", () => {
     const { view } = setup();
@@ -867,4 +882,139 @@ describe("native Profile source exchange", () => {
       trigger.mock.calls.filter(([name]) => name === "quick-preview"),
     ).toHaveLength(0);
   });
+});
+
+it("recreates persisted editor choices and restores namespaced presentation after mount without focus or layout writes", async () => {
+  await using cleanup = new AsyncDisposableStack();
+  const original = setup();
+  cleanup.defer(() => act(async () => original.view.close()));
+  document.body.append(original.view.contentEl);
+  cleanup.defer(() => original.view.contentEl.remove());
+  await act(async () => original.view.open());
+  await act(async () => original.view.store.getState().setAdvanced(true));
+  const editor = EditorView.findFromDOM(
+    original.view.contentEl.querySelector<HTMLElement>(".cm-editor")!,
+  )!;
+  const scroll = original.view.contentEl.querySelector<HTMLElement>(
+    "[data-workbench-scroll=advanced]",
+  )!;
+  await act(async () => {
+    editor.dispatch({ selection: { anchor: 25, head: 7 } });
+    scroll.scrollTop = 43;
+    scroll.dispatchEvent(new Event("scroll"));
+  });
+  const persisted = original.view.getState();
+  const ephemeral = original.view.getEphemeralState();
+  expect(ephemeral).not.toHaveProperty("cursor");
+  expect(ephemeral).not.toHaveProperty("scroll");
+  expect(persisted).not.toHaveProperty("presentation");
+  expect(persisted).not.toHaveProperty("root");
+  const restored = setup();
+  cleanup.defer(() => act(async () => restored.view.close()));
+  document.body.append(restored.view.contentEl);
+  cleanup.defer(() => restored.view.contentEl.remove());
+  const typing = document.createElement("input");
+  document.body.append(typing);
+  cleanup.defer(() => typing.remove());
+  typing.focus();
+  await act(async () =>
+    restored.view.setState(persisted, {} as ViewStateResult),
+  );
+  restored.view.setEphemeralState(ephemeral);
+  await act(async () => restored.view.open());
+  const restoredEditor = EditorView.findFromDOM(
+    restored.view.contentEl.querySelector<HTMLElement>(".cm-editor")!,
+  )!;
+  expect(restoredEditor.state.selection.main.anchor).toBe(25);
+  expect(restoredEditor.state.selection.main.head).toBe(7);
+  expect(
+    restored.view.contentEl.querySelector<HTMLElement>(
+      "[data-workbench-scroll=advanced]",
+    )!.scrollTop,
+  ).toBe(43);
+  expect(document.activeElement).toBe(typing);
+  expect(restored.view.getState()).toEqual(persisted);
+  const saves = vi.mocked(restored.app.workspace.requestSaveLayout);
+  saves.mockClear();
+  await act(async () => {
+    restoredEditor.dispatch({ selection: { anchor: 5 } });
+    restored.view.contentEl
+      .querySelector<HTMLElement>("[data-workbench-scroll=advanced]")!
+      .dispatchEvent(new Event("scroll"));
+  });
+  expect(saves).not.toHaveBeenCalled();
+  expect(restored.view.getState()).toEqual(persisted);
+});
+
+it("clamps stale restored ranges, ignores removed Properties, and discards a different Item's presentation", async () => {
+  await using cleanup = new AsyncDisposableStack();
+  const { view } = setup();
+  cleanup.defer(() => act(async () => view.close()));
+  await act(async () => {
+    await view.open();
+    view.store.getState().setAdvanced(true);
+  });
+  const saved = view.getEphemeralState() as {
+    zotlitProfileEditor: Record<string, unknown>;
+  };
+  saved.zotlitProfileEditor.selection = {
+    slice: "advanced",
+    range: { from: -8, to: 99999 },
+  };
+  saved.zotlitProfileEditor.selected = 55;
+  await act(async () => view.setEphemeralState(saved));
+  const editor = EditorView.findFromDOM(
+    view.contentEl.querySelector<HTMLElement>(".cm-editor")!,
+  )!;
+  expect(editor.state.selection.main.from).toBe(0);
+  expect(editor.state.selection.main.to).toBe(SOURCE.length);
+  expect(view.store.getState().presentation.selected).toBeNull();
+  await act(async () =>
+    view.store.getState().setItem({ id: "OTHER001", title: "Other" }),
+  );
+  await act(async () => editor.dispatch({ selection: { anchor: 3 } }));
+  await act(async () => view.setEphemeralState(saved));
+  expect(editor.state.selection.main.head).toBe(3);
+});
+
+it("unloads and saves a named Profile before restoring a file-free built-in descriptor", async () => {
+  await using cleanup = new AsyncDisposableStack();
+  const builtin = SOURCE.replace("id: paper", "id: default").replace(
+    "A stable note.",
+    "Built-in note.",
+  );
+  const { view, app } = setup({
+    profile: {
+      getBuiltInSource: () => builtin,
+    } as ProfileEditorDeps["profile"],
+  });
+  cleanup.defer(() => act(async () => view.close()));
+  const file = new TFile();
+  file.path = "templates/paper.md";
+  view.file = file;
+  const writes: { file: TFile | null; source: string }[] = [];
+  const save = vi.spyOn(view, "save").mockImplementation(async () => {
+    writes.push({ file: view.file, source: view.getViewData() });
+  });
+  cleanup.defer(() => save.mockRestore());
+  const publish = vi.spyOn(app.workspace, "trigger");
+  cleanup.defer(() => publish.mockRestore());
+  await act(async () =>
+    view.setState(
+      { defaultDraft: true, tab: "match", advanced: false },
+      { history: false },
+    ),
+  );
+  expect(writes).toEqual([{ file, source: SOURCE }]);
+  expect(view.file).toBeNull();
+  expect(view.getState()).toEqual({
+    file: null,
+    defaultDraft: true,
+    tab: "note",
+    advanced: false,
+    itemIndexedKey: null,
+  });
+  expect(view.controller.readOnly).toBe(true);
+  expect(view.getViewData()).toBe(builtin);
+  expect(publish).not.toHaveBeenCalledWith("quick-preview", file, builtin);
 });

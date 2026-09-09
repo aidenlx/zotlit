@@ -387,7 +387,18 @@ export default class ZotLitPlugin extends Plugin {
       templates: services.template,
     });
 
-    registerNotePreview(this);
+    registerNotePreview(this, {
+      app: this.app,
+      itemLookup: services.itemLookup,
+      profile: services.profile,
+      db: services.db,
+      noteIndex: services.noteIndex,
+      zoteroPref: services.zoteroPref,
+      settings: services.settings,
+      templates: services.template,
+      bibliographyRender: services.bibliographyRender,
+      citationIndex: services.citationIndex,
+    });
 
     stack.defer(
       registerCitationStyleNotice(services.bibliographyRender, () => {

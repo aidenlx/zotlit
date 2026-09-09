@@ -94,7 +94,11 @@ function TreeNode({
   const isMatched = matchedKeys?.has(node.key) ?? false;
 
   return (
-    <li role="treeitem" aria-expanded={isExpandable ? isExpanded : undefined}>
+    <li
+      role="treeitem"
+      data-workbench-field={node.key}
+      aria-expanded={isExpandable ? isExpanded : undefined}
+    >
       <div {...part("row", isMatched ? "matched" : undefined)}>
         {isExpandable ? (
           <Chevron expanded={isExpanded} onClick={() => onToggle(node.key)} />

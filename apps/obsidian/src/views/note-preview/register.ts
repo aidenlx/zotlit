@@ -1,5 +1,11 @@
 // Explicit workbench opening and native group/follow association for companion views.
-import type { App, Plugin, WorkspaceLeaf } from "obsidian";
+import type {
+  App,
+  Plugin,
+  WorkspaceLeaf,
+  ItemView,
+  ViewStateResult,
+} from "obsidian";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
@@ -10,10 +16,59 @@ import {
 } from "@/views/profile-editor/view";
 import { EXPLORER_VIEW_TYPE } from "@/views/template-data-explorer/view";
 
+import type { PreviewViewDeps } from "./view";
 import { NotePreviewView, NOTE_PREVIEW_VIEW_TYPE } from "./view";
 
 const logger = getLogger(["views", "workbench-association"]);
 const openings = new WeakMap<ProfileEditorView, Promise<void>>();
+
+/**
+ * Native history gates ItemViews on navigation, while Outline needs these panes
+ * to remain non-navigating. Only the synchronous native recorder sees the proxy;
+ * its history owner and history-change listeners keep the real leaf and view.
+ */
+export function registerCompanionHistory(view: ItemView): () => void {
+  const leaf = view.leaf;
+  const descriptor = Object.getOwnPropertyDescriptor(leaf, "recordHistory");
+  // oxlint-disable-next-line typescript/unbound-method -- The native recorder receives an explicit proxy receiver below.
+  const original = leaf.recordHistory;
+  let owner: ItemView | null = view;
+  const record = function (this: WorkspaceLeaf, state: unknown): void {
+    const current = owner;
+    if (!current || this.view !== current) return original.call(this, state);
+    const historyView = new Proxy(current, {
+      get(target, key) {
+        return key === "navigation" ? true : Reflect.get(target, key, target);
+      },
+    });
+    const receiver = new Proxy(this, {
+      get(target, key) {
+        return key === "view" ? historyView : Reflect.get(target, key, target);
+      },
+    });
+    original.call(receiver, state);
+  };
+  leaf.recordHistory = record;
+  return () => {
+    owner = null;
+    if (leaf.recordHistory !== record) return;
+    if (descriptor) Object.defineProperty(leaf, "recordHistory", descriptor);
+    else Reflect.deleteProperty(leaf, "recordHistory");
+  };
+}
+
+/** Native completion follows group assignment; layout readiness also gates startup restores. */
+export function onCompanionStateRestored(
+  app: App,
+  result: ViewStateResult,
+  callback: () => void,
+): void {
+  const done = result.done;
+  result.done = () => {
+    done?.();
+    app.workspace.onLayoutReady(callback);
+  };
+}
 
 /** Native group order wins; unlinked panes follow Outline's app-wide file context. */
 export function activeProfileEditor(
@@ -46,13 +101,21 @@ export function subscribeActiveProfileEditor(
   leaf?: WorkspaceLeaf,
 ): () => void {
   using cleanup = new DisposableStack();
-  let editor = activeProfileEditor(app, leaf);
+  let editor: ProfileEditorView | null = null;
+  let ready = false;
+  let initialized = false;
   let pinned = leaf?.pinned;
+  let disposed = false;
+  cleanup.defer(() => {
+    disposed = true;
+  });
   const refresh = () => {
+    if (disposed || !ready) return;
     const next = activeProfileEditor(app, leaf, editor);
     const unpinned = pinned && !leaf?.pinned;
     pinned = leaf?.pinned;
-    if (next === editor && !unpinned) return;
+    if (initialized && next === editor && !unpinned) return;
+    initialized = true;
     logger.debug("Workbench editor binding changed", {
       leaf: leaf?.id ?? null,
       previousLeaf: editor?.leaf.id ?? null,
@@ -79,15 +142,21 @@ export function subscribeActiveProfileEditor(
       cleanup.defer(() => leaf.offref(ref));
     }
   }
-  listener(editor);
+  app.workspace.onLayoutReady(() => {
+    ready = true;
+    refresh();
+  });
   const subscriptions = cleanup.move();
   return () => subscriptions.dispose();
 }
-export function registerNotePreview(plugin: Plugin): void {
+export function registerNotePreview(
+  plugin: Plugin,
+  deps: PreviewViewDeps,
+): void {
   const { app } = plugin;
   plugin.registerView(
     NOTE_PREVIEW_VIEW_TYPE,
-    (leaf) => new NotePreviewView(leaf, plugin.manifest.id),
+    (leaf) => new NotePreviewView(leaf, plugin.manifest.id, deps),
   );
   plugin.addCommand({
     id: "open-template-workbench",
@@ -126,14 +195,10 @@ export function openProfileWorkbench(
   if (pending) return pending;
   const opening = (async () => {
     const { workspace } = app;
-    if (
-      !editor.isWorkbenchWindow ||
-      editor.leaf.getContainer() === workspace.rootSplit
-    ) {
+    if (editor.leaf.getContainer() === workspace.rootSplit) {
       workspace.moveLeafToPopout(editor.leaf, {
         size: { width: 1440, height: 900 },
       });
-      editor.markWorkbenchWindow();
       editor.onResize();
     }
     await openCompanion(app, editor, EXPLORER_VIEW_TYPE);

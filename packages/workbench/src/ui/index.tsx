@@ -124,4 +124,4 @@ export {
   fieldSnippet,
 } from "./explorer-fields";
 export { DataExplorer } from "./data-explorer";
-export type { DataExplorerProps } from "./data-explorer";
+export type { DataExplorerProps, ExplorerPresentation } from "./data-explorer";

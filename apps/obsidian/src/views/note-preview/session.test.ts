@@ -50,11 +50,9 @@ describe("native preview data", () => {
     await using fixture = await createRenderFixture();
     vi.useFakeTimers();
     const { render, store, scheduler } = scheduling(false);
-    using session = new NativePreviewSession(
-      fixture.deps,
-      scheduler,
-      store.getState().item,
-    );
+    using session = new NativePreviewSession(fixture.deps, scheduler, {
+      item: store.getState().item,
+    });
     await vi.advanceTimersByTimeAsync(0);
     expect(session.state.getState().snapshot?.item.indexedKey).toBe("MAIN2345");
     expect(session.state.getState().current).toHaveLength(1);
@@ -79,11 +77,9 @@ describe("native preview data", () => {
     await using fixture = await createRenderFixture();
     vi.useFakeTimers();
     const { render, store, scheduler } = scheduling(true);
-    using session = new NativePreviewSession(
-      fixture.deps,
-      scheduler,
-      store.getState().item,
-    );
+    using session = new NativePreviewSession(fixture.deps, scheduler, {
+      item: store.getState().item,
+    });
     await vi.advanceTimersByTimeAsync(300);
     expect(render).toHaveBeenCalledOnce();
     const request = render.mock.calls[0]![0];
@@ -97,11 +93,9 @@ describe("native preview data", () => {
     await using fixture = await createRenderFixture();
     vi.useFakeTimers();
     const { render, store, scheduler } = scheduling(false);
-    using session = new NativePreviewSession(
-      fixture.deps,
-      scheduler,
-      store.getState().item,
-    );
+    using session = new NativePreviewSession(fixture.deps, scheduler, {
+      item: store.getState().item,
+    });
     await vi.advanceTimersByTimeAsync(0);
     {
       using lease = await fixture.deps.db.acquireRead();
@@ -134,8 +128,7 @@ describe("native preview load boundaries", () => {
       new Error("Database offline"),
     );
     using session = new NativePreviewSession(fixture.deps, scheduler, {
-      id: "MAIN2345",
-      title: null,
+      item: { id: "MAIN2345", title: null },
     });
     expect(session.state.getState().status).toBe("loading");
     await session.ready;
@@ -165,8 +158,7 @@ describe("native preview load boundaries", () => {
       () => pending.promise,
     );
     using session = new NativePreviewSession(fixture.deps, scheduler, {
-      id: "MAIN2345",
-      title: null,
+      item: { id: "MAIN2345", title: null },
     });
     const firstRead = session.ready;
     session.setItem({ id: "ABCD2345", title: null });
@@ -191,8 +183,7 @@ describe("native preview load boundaries", () => {
       () => pending.promise,
     );
     using session = new NativePreviewSession(fixture.deps, scheduler, {
-      id: "MAIN2345",
-      title: null,
+      item: { id: "MAIN2345", title: null },
     });
     const changed = vi.fn();
     session.state.subscribe(changed);

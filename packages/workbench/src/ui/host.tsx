@@ -110,7 +110,10 @@ export interface WorkbenchMatchData {
 /** The slice editor a field is inserted into, and where in it. */
 export interface WorkbenchInsertTarget {
   readonly slice: WorkbenchSliceId;
-  readonly range: WorkbenchSliceRange;
+  readonly range: WorkbenchSliceRange & {
+    readonly anchor?: number;
+    readonly head?: number;
+  };
 }
 
 /** Per-device preferences follow the machine; per-vault ones follow the vault. */

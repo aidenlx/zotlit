@@ -10,7 +10,7 @@ import * as m from "@/lib/i18n/generated/messages";
 import { tooltipAttrs } from "@/lib/utils";
 
 import { ExplorerActionsContext } from "./actions";
-import { useExplorerStore } from "./store";
+import { useExplorerStore, useExplorerStoreApi } from "./store";
 
 export function Explorer({
   explorer,
@@ -25,6 +25,7 @@ export function Explorer({
     | "onNavigationChange"
   >;
 }): React.ReactElement {
+  const store = useExplorerStoreApi();
   const state = useExplorerStore((s) => s);
   const { item, root, status, error, data, context, navigation, variant } =
     state;
@@ -113,6 +114,11 @@ export function Explorer({
           </div>
           <DataExplorer
             {...explorer}
+            restore={state.restore}
+            onRestored={() => store.setState({ restore: null })}
+            onPresentationChange={(presentation) =>
+              store.setState({ presentation })
+            }
             data={data}
             root={root}
             disabled={!context?.canInsertField}
