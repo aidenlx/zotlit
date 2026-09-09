@@ -1,17 +1,15 @@
-import type { DisplayNode, TemplateEngine } from "#/explorer/index";
-import { useEffect, useMemo, useState } from "react";
-import { useStore } from "zustand";
+import type { DisplayNode, TemplateEngine, TreeState } from "#/explorer/index";
+import { useMemo } from "react";
+import type { ReactNode } from "react";
 
-import { useOptionalEditor } from "./editor";
 import { commonRows, fieldSnippet, rowMatches } from "./explorer-fields";
 import type { FieldInsertionMode } from "./explorer-fields";
 import { DisplayTree } from "./explorer-tree";
 import { useWorkbenchHost } from "./host";
 import type { WorkbenchMenuItem, WorkbenchMenuRequest } from "./host";
 // Both hosts use this field discovery tree. The host owns clipboard, insertion,
-// export, and popup presentation; this component owns filtering and expansion.
+// export, popup presentation, and the controlled filtering/expansion state.
 import { useWorkbenchMessages } from "./messages";
-import { createWorkbenchStore } from "./store";
 import type { TemplateRoot, ExplorerVariant } from "./store";
 import { useParts } from "./theme";
 
@@ -20,7 +18,6 @@ import {
   buildFilteredDisplayTree,
   copyValue,
   formatPath,
-  initialTreeState,
   renderSnippet,
   setFilter,
   snippetKindsFor,
@@ -28,6 +25,12 @@ import {
 } from "#/explorer/index";
 
 export interface DataExplorerProps {
+  variant: ExplorerVariant;
+  onVariantChange: (variant: ExplorerVariant) => void;
+  navigation: TreeState;
+  onNavigationChange: (navigation: TreeState) => void;
+  /** The host distinguishes absent input, loading, and data failures. */
+  empty?: ReactNode;
   root: TemplateRoot;
   data: Record<string, unknown> | null;
   mode?: FieldInsertionMode;
@@ -37,12 +40,19 @@ export interface DataExplorerProps {
   engines?: () => readonly TemplateEngine[];
   disabled?: boolean;
   onInsert?: (snippet: string) => void;
+  /** Resolves insertion against the receiving editor at action time. */
+  onInsertNode?: (node: DisplayNode) => void;
   copy: (text: string) => Promise<void>;
   onExploreAnnotation?: (node: DisplayNode) => void;
   canExploreAnnotation?: (node: DisplayNode) => boolean;
 }
 
 export function DataExplorer({
+  variant,
+  onVariantChange,
+  navigation: tree,
+  onNavigationChange,
+  empty,
   root,
   data,
   mode = "template",
@@ -51,6 +61,7 @@ export function DataExplorer({
   engines,
   disabled = false,
   onInsert,
+  onInsertNode,
   copy,
   onExploreAnnotation,
   canExploreAnnotation,
@@ -58,18 +69,11 @@ export function DataExplorer({
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
   const part = useParts("dataExplorer");
-  const editor = useOptionalEditor();
-  const [fallback] = useState(createWorkbenchStore);
-  const store = editor?.store ?? fallback;
-  const variant = useStore(store, (state) => state.explorer);
-  const setVariant = (value: ExplorerVariant) =>
-    store.getState().setExplorer(value);
-  useEffect(() => {
-    const saved = host.persistence.read("vault", "explorer-variant");
-    if (saved === "simple" || saved === "all")
-      store.getState().setExplorer(saved);
-  }, [host, store]);
-  const [tree, setTree] = useState(initialTreeState);
+  const insertNode =
+    onInsertNode ??
+    (onInsert
+      ? (node: DisplayNode) => onInsert(fieldSnippet(node, mode, { engine }))
+      : undefined);
   const visible = useMemo(() => {
     if (!data) return { nodes: [], matchedKeys: null };
     if (tree.filterQuery)
@@ -136,10 +140,10 @@ export function DataExplorer({
         },
       },
     ];
-    if (onInsert && !disabled)
+    if (insertNode && !disabled)
       items.unshift({
         label: m.workbench_fields_put_in_note(),
-        onSelect: () => onInsert(fieldSnippet(node, mode, { engine })),
+        onSelect: () => insertNode(node),
       });
     const labels = {
       output: m.workbench_explorer_menu_copy_output,
@@ -191,10 +195,7 @@ export function DataExplorer({
               type="button"
               aria-pressed={variant === value}
               {...part("variant", variant === value ? "active" : "inactive")}
-              onClick={() => {
-                setVariant(value);
-                host.persistence.write("vault", "explorer-variant", value);
-              }}
+              onClick={() => onVariantChange(value)}
             >
               {value === "simple"
                 ? m.workbench_explorer_simple()
@@ -210,28 +211,26 @@ export function DataExplorer({
         placeholder={m.workbench_fields_search()}
         {...part("search")}
         onChange={(event) =>
-          setTree((current) => setFilter(current, event.currentTarget.value))
+          onNavigationChange(setFilter(tree, event.currentTarget.value))
         }
       />
       <div {...part("body")}>
         {nodes.length === 0 ? (
-          <p {...part("empty")}>
-            {data === null
-              ? m.workbench_fields_no_annotations()
-              : m.workbench_fields_no_matches()}
-          </p>
+          (empty ?? (
+            <p {...part("empty")}>
+              {data === null
+                ? m.workbench_fields_no_annotations()
+                : m.workbench_fields_no_matches()}
+            </p>
+          ))
         ) : (
           <DisplayTree
             variant={variant}
             nodes={nodes}
             matchedKeys={visible.matchedKeys}
-            onToggle={(key) => setTree((current) => toggleNode(current, key))}
+            onToggle={(key) => onNavigationChange(toggleNode(tree, key))}
             onCopyValue={copyNode}
-            onInsert={
-              onInsert && !disabled
-                ? (node) => onInsert(fieldSnippet(node, mode, { engine }))
-                : undefined
-            }
+            onInsert={!disabled ? insertNode : undefined}
             onTemplateMenu={menu}
           />
         )}

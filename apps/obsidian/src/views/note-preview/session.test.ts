@@ -31,7 +31,6 @@ function scheduling(live: boolean) {
   );
   const store = createWorkbenchStore({
     item: { id: "MAIN2345", title: "Better figures" },
-    preview: { live, mode: "create" },
   });
   const scheduler = createRenderScheduler({
     render,
@@ -39,7 +38,8 @@ function scheduling(live: boolean) {
     input: {
       source: PROFILE_SOURCE,
       snapshot: null,
-      ...store.getState().preview,
+      live,
+      mode: "create",
     },
   });
   return { render, store, scheduler };

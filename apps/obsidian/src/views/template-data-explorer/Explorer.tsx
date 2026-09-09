@@ -15,35 +15,45 @@ import { useExplorerStore } from "./store";
 export function Explorer({
   explorer,
 }: {
-  explorer: Omit<DataExplorerProps, "data" | "root">;
+  explorer: Omit<
+    DataExplorerProps,
+    | "data"
+    | "root"
+    | "variant"
+    | "navigation"
+    | "onVariantChange"
+    | "onNavigationChange"
+  >;
 }): React.ReactElement {
-  const dbReady = useExplorerStore((s) => s.dbReady);
-  const itemLabel = useExplorerStore((s) => s.itemLabel);
-  const anchor = useExplorerStore((s) => s.anchor);
-  const data = useExplorerStore((s) => s.data);
-  const itemVanished = useExplorerStore((s) => s.itemVanished);
+  const state = useExplorerStore((s) => s);
+  const { item, root, status, error, data, context, navigation, variant } =
+    state;
+  const itemLabel = item?.title ?? item?.id;
+  const anchor =
+    root === "annotation"
+      ? { label: m.workbench_fields_root_annotation() }
+      : null;
   const actions = useContext(ExplorerActionsContext);
 
   return (
     <div className="zt:flex zt:h-full zt:flex-col zt:overflow-hidden">
-      {!dbReady ? (
-        <div className="pane-empty zt:p-2">
-          {m.template_data_explorer_loading_db()}
-        </div>
-      ) : itemVanished ? (
-        <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-3 zt:p-4 zt:text-center">
-          <p className="zt:text-muted-foreground">
-            {m.template_data_explorer_item_vanished()}
-          </p>
-          <button className="mod-cta" onClick={() => actions.onChooseItem()}>
+      {status === "loading" ? (
+        <p role="status" className="zt:p-3">
+          {m.workbench_loading_item()}
+        </p>
+      ) : status === "error" ? (
+        <div role="alert" className="pane-empty zt:p-3">
+          <p>{error ?? m.workbench_example_missing_item()}</p>
+          <button onClick={() => actions.onRefresh()}>
+            {m.workbench_example_retry()}
+          </button>
+          <button onClick={() => actions.onChooseItem()}>
             {m.template_data_explorer_choose_item()}
           </button>
         </div>
-      ) : data === null ? (
+      ) : status === "no-item" ? (
         <div className="pane-empty zt:flex zt:flex-col zt:items-center zt:gap-3 zt:p-4 zt:text-center">
-          <p className="zt:text-muted-foreground">
-            {m.template_data_explorer_empty_hint()}
-          </p>
+          <p>{m.template_data_explorer_empty_hint()}</p>
           <button className="mod-cta" onClick={() => actions.onChooseItem()}>
             {m.template_data_explorer_choose_item()}
           </button>
@@ -104,7 +114,12 @@ export function Explorer({
           <DataExplorer
             {...explorer}
             data={data}
-            root={anchor ? "annotation" : "note"}
+            root={root}
+            disabled={!context?.canInsertField}
+            navigation={navigation}
+            variant={variant}
+            onVariantChange={state.setVariant}
+            onNavigationChange={state.setNavigation}
           />
         </>
       )}

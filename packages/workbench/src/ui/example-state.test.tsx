@@ -54,7 +54,7 @@ it("shows configuration before an Item is selected and distinguishes pending and
   expect(screen.getAllByText(m.workbench_example_failed())).toHaveLength(2);
 });
 
-it("shows an action to update a stale example when Live is off", async () => {
+it("marks the previous example stale after the source changes", async () => {
   using mounted = mount(<Configuration />, {
     state: { item: { id: "1:ABCDEFGH", title: "A paper" } },
   });
@@ -67,7 +67,6 @@ it("shows an action to update a stale example when Live is off", async () => {
     mounted.host.renders[0]!.answer({ filename: "Research.md" }),
   );
   act(() => {
-    mounted.store.getState().setPreview({ live: false });
     mounted.controller.setManifestKey("filename", "Updated");
   });
   expect(mounted.scheduler.getState()).toMatchObject({
@@ -75,9 +74,7 @@ it("shows an action to update a stale example when Live is off", async () => {
     busy: false,
   });
   expect(screen.queryByText(m.workbench_loading_item())).toBeNull();
-  expect(screen.getAllByText(m.workbench_example_awaiting_run())).toHaveLength(
-    2,
-  );
+  expect(screen.getAllByText(m.workbench_preview_stale())).toHaveLength(2);
 });
 
 it("keeps Name and Properties examples when only Annotation fails", async () => {

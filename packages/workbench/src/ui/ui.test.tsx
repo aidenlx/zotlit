@@ -377,32 +377,27 @@ describe("the Problems footer", () => {
 });
 
 describe("the view store", () => {
-  it("starts on the Note tab in Basic mode with the Simple Explorer", () => {
+  it("starts on the Note tab in Basic mode", () => {
     const store = createWorkbenchStore();
     expect(store.getState()).toMatchObject({
       tab: "note",
       item: null,
       root: "note",
-      preview: { mode: "create", live: true },
-      explorer: "simple",
       advanced: false,
       startHereDismissed: false,
     });
   });
 
   it("takes a host's starting state and changes one field at a time", () => {
-    const store = createWorkbenchStore({ explorer: "all", tab: "name" });
-    const { setItem, setRoot, setPreview, dismissStartHere } = store.getState();
+    const store = createWorkbenchStore({ tab: "name" });
+    const { setItem, setRoot, dismissStartHere } = store.getState();
     setItem({ id: "ABCD1234", title: "A paper" });
     setRoot("filename");
-    setPreview({ live: false });
     dismissStartHere();
     expect(store.getState()).toMatchObject({
       tab: "name",
-      explorer: "all",
       item: { id: "ABCD1234", title: "A paper" },
       root: "filename",
-      preview: { mode: "create", live: false },
       startHereDismissed: true,
     });
   });
