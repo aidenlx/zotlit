@@ -8,6 +8,8 @@ import {
   MarkdownRenderer,
   Menu,
   Modal,
+  prepareSimpleSearch,
+  renderMatches,
   setIcon,
   SuggestModal,
 } from "obsidian";
@@ -63,6 +65,7 @@ class EditorDialog extends Modal {
 
 class MatchInputSuggest extends AbstractInputSuggest<WorkbenchSuggesterOption> {
   readonly #request: WorkbenchInputSuggestionsRequest;
+  #search = prepareSimpleSearch("");
 
   constructor(app: App, request: WorkbenchInputSuggestionsRequest) {
     super(app, request.input);
@@ -70,6 +73,7 @@ class MatchInputSuggest extends AbstractInputSuggest<WorkbenchSuggesterOption> {
   }
 
   override getSuggestions(query: string) {
+    this.#search = prepareSimpleSearch(query);
     return this.#request.getSuggestions(query);
   }
 
@@ -77,13 +81,25 @@ class MatchInputSuggest extends AbstractInputSuggest<WorkbenchSuggesterOption> {
     el.addClass("zt-profile-editor-suggestion");
     if (!option.hint) {
       el.addClass("mod-nowrap");
-      el.setText(option.label);
+      renderMatches(
+        el,
+        option.label,
+        this.#search(option.label)?.matches ?? null,
+      );
       return;
     }
     el.addClass("mod-complex");
     const content = el.createDiv("suggestion-content");
-    content.createDiv({ cls: "suggestion-title", text: option.label });
-    content.createDiv({ cls: "suggestion-note", text: option.hint });
+    renderMatches(
+      content.createDiv("suggestion-title"),
+      option.label,
+      this.#search(option.label)?.matches ?? null,
+    );
+    renderMatches(
+      content.createDiv("suggestion-note"),
+      option.hint,
+      this.#search(option.hint)?.matches ?? null,
+    );
   }
 
   override selectSuggestion(option: WorkbenchSuggesterOption) {
