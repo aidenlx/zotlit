@@ -14,6 +14,7 @@ import { useEffect, useRef } from "react";
 import { completionFields } from "./completion-fields";
 import { useDocumentRevision } from "./editor";
 import { useOptionalHost } from "./host";
+import type { WorkbenchInsertTarget } from "./host";
 import { useWorkbenchMessages } from "./messages";
 import { tagDescription } from "./tag-help";
 import { useParts, useEditorExtension } from "./theme";
@@ -32,6 +33,15 @@ export type { SuggestionSource } from "#/language/index";
 
 /** The expression pane edits a bare Liquid expression; the note includes Markdown. */
 export type SliceLanguage = "liquid" | "json-e" | "expression";
+
+export interface SliceReveal extends WorkbenchSliceRange {
+  anchor?: number;
+  head?: number;
+  slice?: WorkbenchSliceId;
+  /** Native restoration can select text while preserving focus and scroll. */
+  focus?: boolean;
+  scrollIntoView?: boolean;
+}
 
 export interface SliceEditorProps {
   controller: WorkbenchDocumentController;
@@ -55,7 +65,7 @@ export interface SliceEditorProps {
    * Master offsets to select and scroll to, so a problem opens on the text
    * that caused it. Each new object reveals again.
    */
-  reveal?: WorkbenchSliceRange | null;
+  reveal?: SliceReveal | null;
   /**
    * The contract this pane's completion and hover resolve against. It is read
    * per keystroke, so a pane that follows the caret into another root needs no
@@ -64,7 +74,7 @@ export interface SliceEditorProps {
    */
   suggest?: SuggestionSource;
   /** The selection in master offsets, whenever it moves or the pane takes focus. */
-  onSelection?: (selection: WorkbenchSliceRange) => void;
+  onSelection?: (selection: WorkbenchInsertTarget["range"]) => void;
   /** The pane took focus, so the host knows which editor the reader is in. */
   onFocus?: () => void;
 }
@@ -253,7 +263,7 @@ export function SliceEditor({
 
   useEffect(() => {
     const view = editor.current;
-    if (!view || !reveal) return;
+    if (!view || !reveal || (reveal.slice && reveal.slice !== slice)) return;
     const { from } = controller.sliceRange(slice);
     const inSlice = (offset: number) => {
       const local = Math.min(
@@ -270,12 +280,12 @@ export function SliceEditor({
     };
     view.dispatch({
       selection: EditorSelection.range(
-        inSlice(reveal.from),
-        inSlice(reveal.to),
+        inSlice(reveal.anchor ?? reveal.from),
+        inSlice(reveal.head ?? reveal.to),
       ),
-      scrollIntoView: true,
+      scrollIntoView: reveal.scrollIntoView ?? true,
     });
-    view.focus();
+    if (reveal.focus !== false) view.focus();
   }, [controller, slice, reveal, language]);
 
   useEffect(() => {
@@ -295,7 +305,12 @@ export function SliceEditor({
   // as the site's Input control.
   return (
     <div {...part("slice-editor")}>
-      <div ref={host} dir="ltr" {...part("slice-scroll")} />
+      <div
+        ref={host}
+        data-workbench-scroll={slice}
+        dir="ltr"
+        {...part("slice-scroll")}
+      />
     </div>
   );
 }
@@ -305,12 +320,18 @@ function sliceSelection(
   view: EditorView,
   sliceFrom: number,
   jsonSource?: string,
-): WorkbenchSliceRange {
+): WorkbenchInsertTarget["range"] {
   const { main } = view.state.selection;
   const map = (position: number) =>
     sliceFrom +
     (jsonSource === undefined
       ? position
       : jsonPosition(view.state.doc.toString(), jsonSource, position));
-  return { from: map(main.from), to: map(main.to) };
+  return {
+    from: map(main.from),
+    to: map(main.to),
+    ...(main.anchor > main.head
+      ? { anchor: map(main.anchor), head: map(main.head) }
+      : {}),
+  };
 }

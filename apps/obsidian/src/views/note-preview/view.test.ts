@@ -3,18 +3,23 @@ import type { App, EventRef, TFile, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { getItemsByKey } from "@zotlit/db";
+import { DEFAULT_PROFILE_SOURCE } from "@zotlit/workbench/render";
 import { createRenderScheduler } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
 import { pickItem } from "@/services/item-lookup/search-modal";
+import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
+import type { SettingsService } from "@/services/settings/service";
 import { createProfileEditorHost } from "@/views/profile-editor/host";
 import { ProfileEditorView } from "@/views/profile-editor/view";
 import type { ProfileEditorDeps } from "@/views/profile-editor/view";
 
 import { createRenderFixture, PROFILE_SOURCE } from "./__fixtures__/render";
-import { subscribeActiveProfileEditor } from "./register";
+import { activeProfileEditor, subscribeActiveProfileEditor } from "./register";
 import { renderNativeProfile } from "./render";
 import { NotePreviewView } from "./view";
+import type { PreviewViewDeps } from "./view";
 
 vi.mock("@zotlit/workbench/ui", async (original) => {
   const actual = await original<typeof import("@zotlit/workbench/ui")>();
@@ -32,8 +37,17 @@ vi.mock("@/views/profile-editor/host", async (original) => {
 });
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 vi.mock("./register", () => ({
+  onCompanionStateRestored: (
+    app: App,
+    result: import("obsidian").ViewStateResult,
+    callback: () => void,
+  ) => {
+    result.done = () => app.workspace.onLayoutReady(callback);
+  },
   subscribeActiveProfileEditor: vi.fn(),
+  registerCompanionHistory: vi.fn(() => () => {}),
   openProfileWorkbench: vi.fn(),
+  activeProfileEditor: vi.fn(),
 }));
 vi.mock("@/services/item-lookup/search-modal", () => ({
   pickItem: vi.fn(async () => null),
@@ -73,7 +87,11 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-async function setup() {
+async function setup(
+  profile: PreviewViewDeps["profile"] = {
+    getBuiltInSource: () => DEFAULT_PROFILE_SOURCE,
+  },
+) {
   const fixture = await createRenderFixture();
   const { app } = fixture.deps;
   const events = new Map<
@@ -93,6 +111,7 @@ async function setup() {
       for (const event of events.values())
         if (event.name === name) event.callback(...args);
     },
+    onLayoutReady: (callback: () => void) => callback(),
     iterateAllLeaves: vi.fn(),
     requestSaveLayout: vi.fn(),
     setActiveLeaf: vi.fn(),
@@ -133,11 +152,25 @@ async function setup() {
     },
   );
   const previews: Preview[] = [];
-  async function open() {
-    const preview = new Preview({ app } as unknown as WorkspaceLeaf, "zotlit");
+  async function open(
+    state?: Record<string, unknown>,
+    ephemeral?: Record<string, unknown>,
+  ) {
+    const preview = new Preview({ app } as unknown as WorkspaceLeaf, "zotlit", {
+      ...fixture.deps,
+      settings: fixture.deps.settings as SettingsService,
+      profile,
+      itemLookup: { search: vi.fn() },
+    });
     // The lightweight ItemView mock leaves this native base property to its test.
     Object.defineProperty(preview, "app", { value: app });
     previews.push(preview);
+    if (state) await preview.setState(state, { history: false });
+    if (ephemeral) preview.setEphemeralState(ephemeral);
+    Object.defineProperties(preview.contentEl, {
+      scrollHeight: { value: 1200 },
+      clientHeight: { value: 200 },
+    });
     document.body.append(preview.contentEl);
     await act(async () => preview.open());
     return preview;
@@ -180,6 +213,372 @@ async function run(view: Preview) {
 }
 
 describe("independent native Note Preview", () => {
+  it.each([null, "ABCD2345"])(
+    "chooses an Item in a standalone restored Preview from %s and preserves cancellation",
+    async (item) => {
+      await using test = await setup();
+      vi.useFakeTimers();
+      vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+        (_app, listener) => {
+          listener(null);
+          return () => {};
+        },
+      );
+      const saved = { source: { path: "templates/paper.md" }, item };
+      const preview = await test.open(saved);
+      await advance();
+      const choose = () =>
+        [...preview.contentEl.querySelectorAll("button")].find(
+          (button) =>
+            button.textContent === m.template_data_explorer_choose_item(),
+        )!;
+      expect(choose().disabled).toBe(false);
+      vi.mocked(pickItem).mockResolvedValueOnce(null);
+      await act(async () => choose().click());
+      expect(preview.getState()["item"]).toBe(item);
+      using lease = await test.fixture.deps.db.acquireRead();
+      const hit = {
+        item: getItemsByKey(lease.client, 1, ["MAIN2345"])[0]!,
+        score: 1,
+        matches: [],
+        library: null,
+      };
+      vi.mocked(pickItem).mockResolvedValueOnce(hit);
+      await act(async () => choose().click());
+      await advance();
+      expect(preview.getState()).toMatchObject({
+        source: saved.source,
+        item: "MAIN2345",
+      });
+      expect(preview.contentEl.textContent).toContain("Personal space.");
+      expect(test.editor.store.getState().item).toBeNull();
+    },
+  );
+
+  it("discards standalone Item choices after context changes or closure", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+      (_app, listener) => {
+        listener(null);
+        return () => {};
+      },
+    );
+    const saved = { source: { path: "templates/paper.md" }, item: null };
+    const preview = await test.open(saved);
+    const choose = () =>
+      [...preview.contentEl.querySelectorAll("button")].find(
+        (button) =>
+          button.textContent === m.template_data_explorer_choose_item(),
+      )!;
+    using lease = await test.fixture.deps.db.acquireRead();
+    const hit = {
+      item: getItemsByKey(lease.client, 1, ["MAIN2345"])[0]!,
+      score: 1,
+      matches: [],
+      library: null,
+    };
+    const changed =
+      Promise.withResolvers<Awaited<ReturnType<typeof pickItem>>>();
+    vi.mocked(pickItem).mockReturnValueOnce(changed.promise);
+    await act(async () => choose().click());
+    await act(async () =>
+      preview.setState(
+        { source: { builtin: true }, item: null },
+        { history: false },
+      ),
+    );
+    await act(async () => changed.resolve(hit));
+    expect(preview.getState()).toMatchObject({
+      source: { builtin: true },
+      item: null,
+    });
+    const closed =
+      Promise.withResolvers<Awaited<ReturnType<typeof pickItem>>>();
+    vi.mocked(pickItem).mockReturnValueOnce(closed.promise);
+    await act(async () => choose().click());
+    await act(async () => preview.close());
+    await act(async () => closed.resolve(hit));
+    expect(preview.getState()["item"]).toBeNull();
+    expect(preview.contentEl.textContent).toBe("");
+  });
+
+  it("applies an explicit Item choice only to the requesting pinned Preview and preserves cancellation", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const first = await test.open();
+    const second = await test.open();
+    first.leaf.pinned = true;
+    second.leaf.pinned = true;
+    vi.mocked(pickItem).mockResolvedValueOnce({
+      item: { indexedKey: "MAIN2345" },
+    } as NonNullable<Awaited<ReturnType<typeof pickItem>>>);
+    const choose = (preview: Preview) =>
+      [...preview.contentEl.querySelectorAll("button")].find(
+        (button) =>
+          button.textContent === m.template_data_explorer_choose_item(),
+      )!;
+    await act(async () => choose(first).click());
+    await advance();
+    expect(first.getState()["item"]).toBe("MAIN2345");
+    expect(first.contentEl.textContent).toContain("Personal space.");
+    expect(second.getState()["item"]).toBeNull();
+    vi.mocked(pickItem).mockResolvedValueOnce(null);
+    await act(async () => choose(second).click());
+    await advance();
+    expect(second.getState()["item"]).toBeNull();
+    expect(second.contentEl.textContent).toContain(
+      m.workbench_example_select_item(),
+    );
+    expect(first.getState()["item"]).toBe("MAIN2345");
+  });
+
+  it("keeps the followed editor when native opening applies an empty state after onOpen", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    const preview = await test.open();
+    await act(async () => preview.setState({}, { history: false }));
+    await advance();
+    expect(preview.getState()).toMatchObject({
+      source: { path: "templates/paper.md" },
+      item: "MAIN2345",
+    });
+    expect(preview.contentEl.textContent).toContain("Personal space.");
+    expect(pickItem).not.toHaveBeenCalled();
+  });
+
+  it("rebinds a restored linked Preview to live group context and preserves pinned context", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () => {
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" });
+      test.editor.setViewData(
+        PROFILE_SOURCE.replace("Personal space.", "Current group draft."),
+        false,
+      );
+    });
+    const preview = await test.open();
+    vi.mocked(activeProfileEditor).mockReturnValue(test.editor);
+    const saved = {
+      source: { builtin: true },
+      item: "ABCD2345",
+      mode: "create",
+      live: true,
+      showMarkdown: true,
+    };
+    const result: import("obsidian").ViewStateResult = { history: false };
+    await act(async () => preview.setState(saved, result));
+    expect(preview.getState()).toMatchObject({
+      source: { builtin: true },
+      item: "ABCD2345",
+    });
+    preview.leaf.group = "saved-group";
+    await act(async () => result.done?.());
+    await advance();
+    expect(preview.getState()).toMatchObject({
+      source: { path: "templates/paper.md" },
+      item: "MAIN2345",
+      showMarkdown: true,
+    });
+    expect(preview.contentEl.textContent).toContain("Current group draft.");
+    preview.leaf.pinned = true;
+    const pinnedResult: import("obsidian").ViewStateResult = { history: false };
+    await act(async () => preview.setState(saved, pinnedResult));
+    await act(async () => pinnedResult.done?.());
+    await advance();
+    expect(preview.getState()).toMatchObject({
+      source: { builtin: true },
+      item: "ABCD2345",
+      showMarkdown: true,
+    });
+    expect(
+      preview.contentEl.querySelector("[role=alert]")?.textContent,
+    ).toContain("ABCD2345");
+    expect(pickItem).not.toHaveBeenCalled();
+  });
+
+  it("recreates persisted output choices from disk without an editor or picker", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    const first = await test.open();
+    await advance();
+    await choose(first, m.workbench_preview_format(), "markdown");
+    const saved = first.getState();
+    expect(saved).toMatchObject({
+      source: { path: "templates/paper.md" },
+      item: "MAIN2345",
+      showMarkdown: true,
+    });
+    expect(Object.keys(saved)).not.toContain("sourceText");
+    await act(async () => first.close());
+    vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+      (_app, listener) => {
+        listener(null);
+        return () => {};
+      },
+    );
+    const restored = await test.open(saved);
+    await advance();
+    expect(restored.contentEl.textContent).toContain("Personal space.");
+    expect(
+      [...restored.contentEl.querySelectorAll("select")].some(
+        (select) => select.value === "markdown",
+      ),
+    ).toBe(true);
+    expect(restored.getState()).toEqual(saved);
+    expect(pickItem).not.toHaveBeenCalled();
+  });
+
+  it("restores pending result scroll after data mounts, without focus or layout writes", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    const first = await test.open();
+    await advance();
+    first.contentEl.scrollTop = 350;
+    const saved = first.getState();
+    const ephemeral = first.getEphemeralState();
+    vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+      (_app, listener) => {
+        listener(null);
+        return () => {};
+      },
+    );
+    const input = document.createElement("input");
+    document.body.append(input);
+    input.focus();
+    const restored = await test.open(saved, ephemeral);
+    expect(restored.contentEl.scrollTop).toBe(0);
+    const saveLayout = vi.mocked(
+      test.fixture.deps.app.workspace.requestSaveLayout,
+    );
+    saveLayout.mockClear();
+    await advance();
+    await advance(0);
+    expect(restored.contentEl.scrollTop).toBe(350);
+    expect(document.activeElement).toBe(input);
+    restored.contentEl.scrollTop = 400;
+    restored.contentEl.dispatchEvent(new Event("scroll"));
+    expect(saveLayout).not.toHaveBeenCalled();
+    expect(restored.getState()).toEqual(saved);
+    restored.setEphemeralState({
+      zotlitPreview: {
+        ...(ephemeral["zotlitPreview"] as object),
+        scrollTop: 9000,
+        reveal: "removed-heading",
+      },
+    });
+    expect(restored.contentEl.scrollTop).toBe(1000);
+    expect(document.activeElement).toBe(input);
+    expect(saveLayout).not.toHaveBeenCalled();
+    await act(async () =>
+      restored.setState({ ...saved, item: "ABCD2345" }, { history: false }),
+    );
+    restored.setEphemeralState(ephemeral);
+    await advance();
+    expect(restored.getState()["item"]).toBe("ABCD2345");
+    expect(restored.state.getState().presentation.pending).toBe(false);
+    expect(
+      restored.contentEl.querySelector("[role=alert]")?.textContent,
+    ).toContain("ABCD2345");
+  });
+
+  it("restores configured built-in frontmatter even when a custom Default document exists", async () => {
+    await using source = await profileServiceFixture({
+      "templates/zotlit-profile.default.md": `---
+id: default
+name: Default
+version: 1.0.0
+contract: 2
+filename: "{{ zt.title }}"
+---
+Custom Default body.
+{% managed %}Managed{% endmanaged %}
+--- zotlit:annotation ---
+Annotation`,
+    });
+    source.settings.update({
+      "note.frontmatter-fields": [
+        {
+          key: "reading-status",
+          expr: "'unread'",
+          merge: "keep",
+          language: "liquid",
+        },
+      ],
+    });
+    expect(await source.profile.getSource("default")).toContain(
+      "Custom Default body.",
+    );
+    await using test = await setup(source.profile);
+    vi.useFakeTimers();
+    vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+      (_app, listener) => {
+        listener(null);
+        return () => {};
+      },
+    );
+    const restored = await test.open({
+      source: { builtin: true },
+      item: "MAIN2345",
+      showMarkdown: true,
+    });
+    await advance();
+    expect(restored.contentEl.textContent).toContain("reading-status: unread");
+    expect(restored.contentEl.textContent).not.toContain(
+      "Custom Default body.",
+    );
+    expect(restored.getState()["source"]).toEqual({ builtin: true });
+  });
+
+  it("restores a built-in source and keeps on-demand rendering paused", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+      (_app, listener) => {
+        listener(null);
+        return () => {};
+      },
+    );
+    const restored = await test.open({
+      source: { builtin: true },
+      item: "MAIN2345",
+      mode: "update",
+      live: false,
+      showManaged: true,
+    });
+    await advance();
+    expect(restored.getState()).toMatchObject({
+      source: { builtin: true },
+      item: "MAIN2345",
+      mode: "update",
+      live: false,
+      showManaged: true,
+    });
+    expect(restored.contentEl.querySelectorAll("select")[1]?.value).toBe(
+      "demand",
+    );
+    expect(renderNativeProfile).not.toHaveBeenCalled();
+    await run(restored);
+    expect(renderNativeProfile).toHaveBeenCalled();
+  });
+
   it("rolls back failed binding resources and can retry the same view", async () => {
     await using test = await setup();
     const released = vi.fn();

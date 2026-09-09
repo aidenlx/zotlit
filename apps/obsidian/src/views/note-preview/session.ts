@@ -1,5 +1,6 @@
 // One native render owner loads its own Item Snapshot and annotation examples.
 import { createStore } from "zustand/vanilla";
+import type { StoreApi } from "zustand/vanilla";
 
 import { parseIndexedKey } from "@zotlit/db";
 import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
@@ -24,6 +25,8 @@ const logger = getLogger(["note-preview", "session"]);
 
 export interface NativePreviewState {
   context: ProfileAuthoringContext | null;
+  annotationId: string | null;
+  presentation: { scrollTop: number; reveal: string | null; pending: boolean };
   source: string | null;
   sourceProblem: string | null;
   entries: readonly ManagedEntrySource[];
@@ -39,6 +42,8 @@ export interface NativePreviewState {
 }
 const EMPTY_PREVIEW: NativePreviewState = {
   context: null,
+  annotationId: null,
+  presentation: { scrollTop: 0, reveal: null, pending: false },
   source: null,
   sourceProblem: null,
   entries: [],
@@ -52,25 +57,29 @@ const EMPTY_PREVIEW: NativePreviewState = {
   current: [],
   example: null,
 };
+export const createNativePreviewStore = () =>
+  createStore<NativePreviewState>(() => ({ ...EMPTY_PREVIEW }));
+
 export class NativePreviewSession implements Disposable {
-  readonly state = createStore<NativePreviewState>(() => ({
-    ...EMPTY_PREVIEW,
-  }));
+  readonly state: StoreApi<NativePreviewState>;
   readonly #deps: NativeRenderDeps;
   readonly #scheduler: RenderScheduler<NativeRenderResult>;
   readonly #cleanup: DisposableStack;
   #dataGeneration = 0;
   #loading: Promise<void>;
-  #selection: string | null = null;
   #closed = false;
   constructor(
     deps: NativeRenderDeps,
     scheduler: RenderScheduler<NativeRenderResult>,
-    item: WorkbenchItemChoice | null = null,
+    options: {
+      item?: WorkbenchItemChoice | null;
+      state?: StoreApi<NativePreviewState>;
+    } = {},
   ) {
     this.#deps = deps;
     this.#scheduler = scheduler;
-    this.state.setState({ item });
+    this.state = options.state ?? createNativePreviewStore();
+    if (options.item !== undefined) this.state.setState({ item: options.item });
     using cleanup = new DisposableStack();
     cleanup.defer(deps.db.on("changed", () => this.refresh()));
     cleanup.defer(
@@ -126,9 +135,14 @@ export class NativePreviewSession implements Disposable {
     this.state.setState({ preview });
     this.#scheduler.setInput(preview);
   }
-  select(id: string): void {
+  select(id: string | null): void {
     if (this.#closed) return;
-    this.#selection = id;
+    this.state.setState({
+      annotationId: id,
+      ...(id !== this.state.getState().annotationId
+        ? { presentation: { scrollTop: 0, reveal: null, pending: false } }
+        : {}),
+    });
     const snapshot = this.state.getState().snapshot;
     if (snapshot) this.state.setState(annotationSamples(snapshot, id));
     this.#feed();
@@ -226,7 +240,7 @@ export class NativePreviewSession implements Disposable {
       this.state.setState({
         snapshot,
         status: "ready",
-        ...annotationSamples(snapshot, this.#selection),
+        ...annotationSamples(snapshot, this.state.getState().annotationId),
       });
       this.#feed();
     } catch (error) {

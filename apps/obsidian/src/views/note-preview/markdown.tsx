@@ -27,6 +27,7 @@ export function NativeMarkdown({
   marks = NO_MARKS,
   properties = [],
   showMarkdown = false,
+  onRendered,
 }: {
   app: App;
   markdown: string;
@@ -34,11 +35,13 @@ export function NativeMarkdown({
   marks?: readonly RenderedRange[];
   properties?: readonly RenderedProperty[];
   showMarkdown?: boolean;
+  onRendered?: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const element = container.current;
     if (!element || showMarkdown) return;
+    element.dataset["zotlitPreviewPending"] = "";
     const target = element.createDiv();
     target.dataset["zotlitDraft"] = "";
     const lifecycle = new Component();
@@ -115,16 +118,22 @@ export function NativeMarkdown({
               );
       }
       presentCitations(target, citations);
+      delete element.dataset["zotlitPreviewPending"];
+      onRendered?.();
     })().catch((error: unknown) => {
       logger.warn("Draft Markdown rendering failed", { error });
-      if (!disposed) target.textContent = markdown;
+      if (!disposed) {
+        target.textContent = markdown;
+        delete element.dataset["zotlitPreviewPending"];
+        onRendered?.();
+      }
     });
     return () => {
       disposed = true;
       lifecycle.unload();
       target.remove();
     };
-  }, [app, markdown, result, marks, showMarkdown]);
+  }, [app, markdown, result, marks, showMarkdown, onRendered]);
   const present = properties.filter(({ missing }) => !missing);
   if (showMarkdown) {
     const frontmatter =
@@ -145,6 +154,7 @@ export function NativeMarkdown({
       )}
       <div
         ref={container}
+        data-zotlit-preview-pending=""
         className="markdown-rendered zt:w-full zt:max-w-(--file-line-width) zt:min-w-0 zt:self-center zt:font-(family-name:--font-text) zt:text-(length:--font-text-size) zt:leading-(--line-height-normal) zt:select-text"
       />
     </>

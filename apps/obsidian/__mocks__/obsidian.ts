@@ -286,6 +286,16 @@ export class ItemView {
   }
 
   registerEvent(_event: EventRef): void {}
+  registerDomEvent(
+    ...[element, type, callback, options]: [
+      HTMLElement,
+      string,
+      EventListener,
+      (boolean | AddEventListenerOptions)?,
+    ]
+  ): void {
+    element.addEventListener(type, callback, options);
+  }
   register<T extends () => void>(disposer: T): T {
     return disposer;
   }
@@ -357,6 +367,19 @@ export class TextFileView extends ItemView {
     this.setViewData(source, clear);
   }
   onPaneMenu(_menu: Menu, _source: string): void {}
+  override async setState(state: unknown, result: unknown): Promise<void> {
+    if (
+      state &&
+      typeof state === "object" &&
+      "file" in state &&
+      state.file === null &&
+      this.file
+    ) {
+      await this.save();
+      this.file = null;
+    }
+    await super.setState(state, result);
+  }
   override getState(): Record<string, unknown> {
     return this.file ? { file: this.file.path } : {};
   }

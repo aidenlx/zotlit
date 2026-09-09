@@ -30,7 +30,13 @@ declare global {
 }
 
 declare module "obsidian" {
+  interface ViewStateResult {
+    /** Runs after native group assignment and ephemeral handoff (Obsidian 1.14). */
+    done?: () => void;
+  }
   interface WorkspaceLeaf {
+    /** Native descriptor/ephemeral history capture; verified in Obsidian 1.14. */
+    recordHistory(state: unknown): void;
     /** Native leaf identity, serialized by the workspace. */
     id: string;
     /** Native link and pin state, serialized by the workspace (Obsidian 1.14). */

@@ -1,5 +1,5 @@
 import type { DisplayNode, TemplateEngine, TreeState } from "#/explorer/index";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { commonRows, fieldSnippet, rowMatches } from "./explorer-fields";
@@ -24,7 +24,17 @@ import {
   toggleNode,
 } from "#/explorer/index";
 
+export interface ExplorerPresentation {
+  top: number;
+  left: number;
+  field: string | null;
+  focus?: boolean;
+}
+
 export interface DataExplorerProps {
+  restore?: ExplorerPresentation | null;
+  onRestored?: () => void;
+  onPresentationChange?: (value: ExplorerPresentation) => void;
   variant: ExplorerVariant;
   onVariantChange: (variant: ExplorerVariant) => void;
   navigation: TreeState;
@@ -48,6 +58,9 @@ export interface DataExplorerProps {
 }
 
 export function DataExplorer({
+  restore,
+  onRestored,
+  onPresentationChange,
   variant,
   onVariantChange,
   navigation: tree,
@@ -66,6 +79,24 @@ export function DataExplorer({
   onExploreAnnotation,
   canExploreAnnotation,
 }: DataExplorerProps) {
+  const body = useRef<HTMLDivElement>(null);
+  const field = useRef<string | null>(null);
+  useEffect(() => {
+    if (!restore || !body.current || !data) return;
+    const element = body.current;
+    element.scrollTop = restore.top;
+    element.scrollLeft = restore.left;
+    field.current = restore.field;
+    if (restore.focus && restore.field) {
+      const row = [
+        ...element.querySelectorAll<HTMLElement>("[data-workbench-field]"),
+      ].find((row) => row.dataset.workbenchField === restore.field);
+      row
+        ?.querySelector<HTMLElement>("button, [tabindex]")
+        ?.focus({ preventScroll: true });
+    }
+    onRestored?.();
+  }, [restore, data, onRestored]);
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
   const part = useParts("dataExplorer");
@@ -214,7 +245,28 @@ export function DataExplorer({
           onNavigationChange(setFilter(tree, event.currentTarget.value))
         }
       />
-      <div {...part("body")}>
+      <div
+        ref={body}
+        {...part("body")}
+        onScroll={(event) =>
+          onPresentationChange?.({
+            top: event.currentTarget.scrollTop,
+            left: event.currentTarget.scrollLeft,
+            field: field.current,
+          })
+        }
+        onFocusCapture={(event) => {
+          field.current =
+            (event.target as HTMLElement).closest<HTMLElement>(
+              "[data-workbench-field]",
+            )?.dataset.workbenchField ?? null;
+          onPresentationChange?.({
+            top: event.currentTarget.scrollTop,
+            left: event.currentTarget.scrollLeft,
+            field: field.current,
+          });
+        }}
+      >
         {nodes.length === 0 ? (
           (empty ?? (
             <p {...part("empty")}>

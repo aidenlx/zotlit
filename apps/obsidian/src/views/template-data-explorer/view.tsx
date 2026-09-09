@@ -28,6 +28,8 @@ import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import type { TemplateService } from "@/services/template/service";
 import {
   activeProfileEditor,
+  registerCompanionHistory,
+  onCompanionStateRestored,
   subscribeActiveProfileEditor,
 } from "@/views/note-preview/register";
 import { createProfileEditorHost } from "@/views/profile-editor/host";
@@ -99,35 +101,194 @@ export class TemplateDataExplorerView extends ItemView {
     this.#actions?.addExportMenuItem(menu);
   }
   override getState(): Record<string, unknown> {
-    const { item, annotationId } = this.#session.state.getState();
-    return item
-      ? {
-          itemIndexedKey: item.id,
-          ...(annotationId ? { anchorAnnotationKey: annotationId } : {}),
-        }
-      : {};
+    const { item, annotationId, root, variant, sourcePath } =
+      this.#session.state.getState();
+    return {
+      itemIndexedKey: item?.id ?? null,
+      anchorAnnotationKey: annotationId,
+      root,
+      variant,
+      sourceFile: sourcePath,
+    };
   }
   override async setState(
     state: unknown,
     result: ViewStateResult,
   ): Promise<void> {
+    const previous = JSON.stringify(this.getState());
+    const launch =
+      !!state &&
+      typeof state === "object" &&
+      "zotlitLaunch" in state &&
+      state.zotlitLaunch === true;
+    try {
+      await this.#restoreState(state, result);
+    } finally {
+      if (previous !== JSON.stringify(this.getState())) result.history = true;
+      if (!launch)
+        onCompanionStateRestored(this.app, result, () => {
+          if (!this.#cleanup) return;
+          this.#editor = activeProfileEditor(this.app, this.leaf, this.#editor);
+          if (this.#editor) this.#apply(this.#editor.authoringContext);
+          this.#mount();
+        });
+    }
+  }
+  async #restoreState(state: unknown, result: ViewStateResult): Promise<void> {
     await super.setState(state, result);
     if (!state || typeof state !== "object") return;
     const value = state as Record<string, unknown>;
-    if (typeof value.itemIndexedKey !== "string") return;
+    if (!Object.hasOwn(value, "itemIndexedKey")) return;
     const annotationId =
       typeof value.anchorAnnotationKey === "string"
         ? value.anchorAnnotationKey
         : null;
+    const root =
+      value.root === "filename" ||
+      value.root === "annotation" ||
+      value.root === "note"
+        ? value.root
+        : annotationId
+          ? "annotation"
+          : "note";
+    this.#session.state.setState({
+      variant: value.variant === "all" ? "all" : "simple",
+      sourcePath:
+        typeof value.sourceFile === "string" ? value.sourceFile : null,
+    });
+    const item =
+      typeof value.itemIndexedKey === "string"
+        ? { id: value.itemIndexedKey, title: value.itemIndexedKey }
+        : null;
+    this.#session.state.setState({
+      context:
+        typeof value.sourceFile === "string"
+          ? {
+              leaf: this.leaf,
+              path: value.sourceFile,
+              item,
+              root,
+              annotationId,
+              tab:
+                root === "annotation"
+                  ? "annotation"
+                  : root === "filename"
+                    ? "name"
+                    : "note",
+              advanced: false,
+              canInsertField: false,
+            }
+          : null,
+    });
     this.#session.setTarget(
-      { id: value.itemIndexedKey, title: value.itemIndexedKey },
-      annotationId ? "annotation" : "note",
+      typeof value.itemIndexedKey === "string"
+        ? { id: value.itemIndexedKey, title: value.itemIndexedKey }
+        : null,
+      root,
       annotationId,
     );
   }
+  #presentationContext(): string {
+    const { item, root, annotationId } = this.#session.state.getState();
+    return JSON.stringify([item?.id ?? null, root, annotationId]);
+  }
+  override getEphemeralState(): Record<string, unknown> {
+    const { navigation, presentation } = this.#session.state.getState();
+    return {
+      zotlitDataExplorer: {
+        context: this.#presentationContext(),
+        navigation: {
+          ...navigation,
+          expanded: [...navigation.expanded],
+          filterCollapsed: [...navigation.filterCollapsed],
+          noteRootExpanded: navigation.noteRootExpanded && [
+            ...navigation.noteRootExpanded,
+          ],
+          preFilterExpanded: navigation.preFilterExpanded && [
+            ...navigation.preFilterExpanded,
+          ],
+        },
+        presentation,
+      },
+    };
+  }
+  override setEphemeralState(input: unknown): void {
+    if (!input || typeof input !== "object") return;
+    const value = input as Record<string, unknown>;
+    const payload = value.zotlitDataExplorer;
+    if (!payload || typeof payload !== "object") return;
+    const state = payload as Record<string, unknown>;
+    if (state.context !== this.#presentationContext()) return;
+    const raw = state.navigation;
+    if (!raw || typeof raw !== "object") return;
+    const navigation = raw as Record<string, unknown>;
+    const strings = (input: unknown): ReadonlySet<string> =>
+      new Set(
+        Array.isArray(input)
+          ? input.filter((entry): entry is string => typeof entry === "string")
+          : [],
+      );
+    const rawPresentation = state.presentation as Record<
+      string,
+      unknown
+    > | null;
+    const presentation = {
+      top:
+        typeof rawPresentation?.top === "number" &&
+        Number.isFinite(rawPresentation.top)
+          ? Math.max(0, rawPresentation.top)
+          : 0,
+      left:
+        typeof rawPresentation?.left === "number" &&
+        Number.isFinite(rawPresentation.left)
+          ? Math.max(0, rawPresentation.left)
+          : 0,
+      field:
+        typeof rawPresentation?.field === "string"
+          ? rawPresentation.field
+          : null,
+    };
+    this.#session.state.setState({
+      navigation: {
+        anchorKey:
+          typeof navigation.anchorKey === "string"
+            ? navigation.anchorKey
+            : null,
+        filterQuery:
+          typeof navigation.filterQuery === "string"
+            ? navigation.filterQuery
+            : "",
+        expanded: strings(navigation.expanded),
+        filterCollapsed: strings(navigation.filterCollapsed),
+        noteRootExpanded:
+          navigation.noteRootExpanded === null
+            ? null
+            : strings(navigation.noteRootExpanded),
+        preFilterExpanded:
+          navigation.preFilterExpanded === null
+            ? null
+            : strings(navigation.preFilterExpanded),
+      },
+      presentation,
+      restore: { ...presentation, focus: value.focus === true },
+    });
+  }
   protected override async onOpen(): Promise<void> {
     using cleanup = new DisposableStack();
+    cleanup.defer(registerCompanionHistory(this));
     cleanup.use(this.#session);
+    cleanup.defer(
+      this.#session.state.subscribe((state, previous) => {
+        if (
+          state.item?.id !== previous.item?.id ||
+          state.root !== previous.root ||
+          state.annotationId !== previous.annotationId ||
+          state.variant !== previous.variant ||
+          state.sourcePath !== previous.sourcePath
+        )
+          this.app.workspace.requestSaveLayout();
+      }),
+    );
     this.#host = cleanup.use(
       createProfileEditorHost(this.app, {
         render: (request) =>
@@ -146,7 +307,6 @@ export class TemplateDataExplorerView extends ItemView {
       onChooseItem: () => void this.#chooseItem(),
       onBackToNoteRoot: () => {
         this.#session.setTarget(this.#session.state.getState().item, "note");
-        this.app.workspace.requestSaveLayout();
       },
       onRefresh: () => this.#session.refresh(),
       canExport: () => this.#exportTarget() !== null,
@@ -206,9 +366,9 @@ export class TemplateDataExplorerView extends ItemView {
       if (key) this.#session.setTarget({ id: key, title: key }, "note");
     } else this.#session.refresh();
   }
-  #apply(context: ProfileAuthoringContext): void {
+  #apply(context: ProfileAuthoringContext, explicit = false): void {
     const previous = this.#session.state.getState().context;
-    if (this.leaf.pinned && previous) {
+    if (!explicit && this.leaf.pinned && previous) {
       this.#session.state.setState({
         context: {
           ...previous,
@@ -256,7 +416,6 @@ export class TemplateDataExplorerView extends ItemView {
                         "annotation",
                         key,
                       );
-                      this.app.workspace.requestSaveLayout();
                     }
                   },
                 }}
@@ -317,7 +476,9 @@ export class TemplateDataExplorerView extends ItemView {
   async #chooseItem(): Promise<void> {
     const editor = this.#sourceEditor();
     if (editor) {
-      await editor.chooseItem();
+      const selected = await editor.chooseItem();
+      if (selected && !this.#closed && editor === this.#sourceEditor())
+        this.#apply(editor.authoringContext, true);
       return;
     }
     const hit = await pickItem(
@@ -343,7 +504,6 @@ export class TemplateDataExplorerView extends ItemView {
       "note",
     );
     rememberTemplateItem(this.app, hit.item.indexedKey);
-    this.app.workspace.requestSaveLayout();
   }
   protected override async onClose(): Promise<void> {
     this.#closed = true;

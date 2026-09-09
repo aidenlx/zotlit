@@ -145,7 +145,11 @@ export interface NameFolderPaneProps {
    * The manifest key to open, named by the problem that sent the reader here.
    * Each new object opens it again.
    */
-  focus?: { readonly field: string } | null;
+  focus?: {
+    readonly field: string;
+    readonly focus?: boolean;
+    readonly scrollIntoView?: boolean;
+  } | null;
   /** The contract the note-name editor completes and explains against. */
   suggest?: SuggestionSource;
   reveal?: WorkbenchSliceRange | null;
@@ -175,14 +179,15 @@ export function NameFolderPane({
   // key the locked details hold opens that block first, so the reader lands on
   // the field rather than on the summary that hides it.
   useEffect(() => {
-    if (!focus) return;
-    const control = container.current?.querySelector<HTMLElement>(
-      `[id="${fieldId(prefix, focus.field)}"]`,
-    );
+    if (!focus || focus.focus === false) return;
+    const control = [
+      ...(container.current?.querySelectorAll<HTMLElement>("[id]") ?? []),
+    ].find((element) => element.id === fieldId(prefix, focus.field));
     if (!control) return;
     control.closest("details")?.setAttribute("open", "");
-    control.scrollIntoView({ block: "nearest" });
-    control.focus();
+    if (focus.scrollIntoView !== false)
+      control.scrollIntoView({ block: "nearest" });
+    control.focus({ preventScroll: focus.scrollIntoView === false });
   }, [focus, prefix]);
 
   const settingsAction = onOpenSettings && (

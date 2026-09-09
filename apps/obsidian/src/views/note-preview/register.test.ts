@@ -1,4 +1,4 @@
-import type { App, Plugin, WorkspaceLeaf } from "obsidian";
+import type { App, Plugin, WorkspaceLeaf, ItemView } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -13,6 +13,8 @@ import {
   openNotePreview,
   openProfileWorkbench,
   registerNotePreview,
+  registerCompanionHistory,
+  onCompanionStateRestored,
   subscribeActiveProfileEditor,
 } from "./register";
 import { NOTE_PREVIEW_VIEW_TYPE } from "./view";
@@ -23,10 +25,6 @@ vi.mock("@/views/profile-editor/view", async () => {
     PROFILE_EDITOR_VIEW_TYPE: "zotlit-profile-editor",
     ProfileEditorView: class {
       constructor(readonly leaf: WorkspaceLeaf) {}
-      isWorkbenchWindow = false;
-      markWorkbenchWindow() {
-        this.isWorkbenchWindow = true;
-      }
       store = createStore(() => ({ explorer: "simple" }));
       ensureItem = vi.fn(async () => true);
       onResize = vi.fn();
@@ -165,7 +163,7 @@ function setup() {
     }) => commands.set(command.id, command),
     register: (dispose: () => void) => cleanup.push(dispose),
   } as unknown as Plugin;
-  registerNotePreview(plugin);
+  registerNotePreview(plugin, {} as import("./view").PreviewViewDeps);
   const editorLeaf = makeLeaf();
   const editor = new ProfileEditorView(
     editorLeaf as unknown as WorkspaceLeaf,
@@ -286,22 +284,21 @@ describe("active Profile Editor sidebars", () => {
     expect(test.editorLeaf.container.focus).toHaveBeenCalledTimes(2);
   });
 
-  it("opens a dedicated window when the editor starts in an ordinary popout", async () => {
+  it("adds companions in the existing native window of a popout editor", async () => {
     const test = setup();
     const ordinary = { focus: vi.fn() };
     test.editorLeaf.container = ordinary;
     test.activate(test.editor);
     await openProfileWorkbench(test.app, test.editor);
-    expect(test.workspace.moveLeafToPopout).toHaveBeenCalledOnce();
-    expect(test.editorLeaf.container).not.toBe(ordinary);
-    expect(test.editor.isWorkbenchWindow).toBe(true);
+    expect(test.workspace.moveLeafToPopout).not.toHaveBeenCalled();
+    expect(test.editorLeaf.container).toBe(ordinary);
+    expect(test.leaves.every((leaf) => leaf.container === ordinary)).toBe(true);
   });
 
   it("reuses a restored workbench window even when its companion panes are closed", async () => {
     const test = setup();
     const restored = { focus: vi.fn() };
     test.editorLeaf.container = restored;
-    test.editor.markWorkbenchWindow();
     test.activate(test.editor);
     await openProfileWorkbench(test.app, test.editor);
     expect(test.workspace.moveLeafToPopout).not.toHaveBeenCalled();
@@ -520,4 +517,83 @@ describe("active Profile Editor sidebars", () => {
     companion.trigger("pinned-change");
     expect(seen).toEqual([held, test.editor, test.editor]);
   });
+});
+
+it("lets native history capture a companion while synchronous listeners still see a non-navigating view", () => {
+  const snapshots: unknown[] = [];
+  const view = { navigation: false } as ItemView;
+  const history = { owner: null as unknown as WorkspaceLeaf };
+  const leaf = {
+    view,
+    history,
+    recordHistory(this: WorkspaceLeaf, state: unknown) {
+      if (!this.view.navigation) return;
+      expect(leaf.view.navigation).toBe(false);
+      expect(history.owner).toBe(leaf);
+      snapshots.push(state);
+    },
+  } as unknown as WorkspaceLeaf;
+  history.owner = leaf;
+  Object.assign(view, { leaf });
+  const native = Object.getOwnPropertyDescriptor(leaf, "recordHistory")!.value;
+  const remove = registerCompanionHistory(view);
+  const snapshot = {
+    state: { item: "PAPER001" },
+    eState: { zotlitPreview: { scrollTop: 30 } },
+  };
+  leaf.recordHistory(snapshot);
+  expect(snapshots).toEqual([snapshot]);
+  expect(view.navigation).toBe(false);
+  leaf.view = { navigation: false } as ItemView;
+  leaf.recordHistory({ state: { item: "PAPER002" } });
+  expect(snapshots).toHaveLength(1);
+  remove();
+  expect(Object.getOwnPropertyDescriptor(leaf, "recordHistory")!.value).toBe(
+    native,
+  );
+});
+
+it("waits for native layout readiness before choosing a restored companion's source", () => {
+  const test = setup();
+  let ready = () => {};
+  test.workspace.onLayoutReady = (callback: () => void) => {
+    ready = callback;
+  };
+  test.activate(test.editor);
+  const listener = vi.fn();
+  const stop = subscribeActiveProfileEditor(test.app, listener);
+  test.callbacks.get("layout-change")?.();
+  expect(listener).not.toHaveBeenCalled();
+  ready();
+  expect(listener).toHaveBeenLastCalledWith(test.editor);
+  stop();
+  listener.mockClear();
+  ready();
+  expect(listener).not.toHaveBeenCalled();
+});
+
+it("preserves native completion before waiting for layout-ready restoration", () => {
+  const events: string[] = [];
+  let ready = () => {};
+  const app = {
+    workspace: {
+      onLayoutReady(callback: () => void) {
+        ready = callback;
+      },
+    },
+  } as App;
+  const result = {
+    history: false,
+    done: () => {
+      events.push("native done");
+    },
+  };
+  onCompanionStateRestored(app, result, () => {
+    events.push("restore");
+  });
+  expect(events).toEqual([]);
+  result.done();
+  expect(events).toEqual(["native done"]);
+  ready();
+  expect(events).toEqual(["native done", "restore"]);
 });

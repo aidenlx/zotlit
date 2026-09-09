@@ -5,6 +5,8 @@
 import { createStore } from "zustand/vanilla";
 import type { StoreApi } from "zustand/vanilla";
 
+import type { WorkbenchInsertTarget } from "./host";
+import type { SliceReveal } from "./slice-editor";
 import type { WorkbenchTab } from "./tabs";
 
 /** The template root a pane edits, which the Explorer and the preview follow. */
@@ -28,7 +30,22 @@ export interface WorkbenchItemChoice {
   readonly title: string | null;
 }
 
+export interface EditorPresentation {
+  restoreVersion: number;
+  restoring: boolean;
+  selection: WorkbenchInsertTarget | null;
+  selected: number | null;
+  reveal: SliceReveal | null;
+  fieldFocus: {
+    field: string;
+    focus?: boolean;
+    scrollIntoView?: boolean;
+  } | null;
+  scroll: Record<string, { top: number; left: number }>;
+}
+
 export interface WorkbenchViewState {
+  readonly presentation: EditorPresentation;
   readonly tab: WorkbenchTab;
   readonly item: WorkbenchItemChoice | null;
   /** The root the focused editor writes. */
@@ -53,6 +70,15 @@ export type WorkbenchStore = StoreApi<
 >;
 
 const INITIAL: WorkbenchViewState = {
+  presentation: {
+    restoreVersion: 0,
+    restoring: false,
+    selection: null,
+    selected: null,
+    reveal: null,
+    fieldFocus: null,
+    scroll: {},
+  },
   tab: "note",
   item: null,
   root: "note",

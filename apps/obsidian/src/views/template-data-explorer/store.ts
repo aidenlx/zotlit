@@ -17,6 +17,7 @@ import {
 } from "@zotlit/workbench/render";
 import type {
   ExplorerVariant,
+  ExplorerPresentation,
   TemplateRoot,
   WorkbenchItemChoice,
 } from "@zotlit/workbench/ui";
@@ -29,6 +30,9 @@ import type { ProfileAuthoringContext } from "@/views/profile-editor/view";
 
 const logger = getLogger(["views", "template-data-explorer"]);
 export interface ExplorerState {
+  sourcePath: string | null;
+  presentation: ExplorerPresentation;
+  restore: ExplorerPresentation | null;
   context: ProfileAuthoringContext | null;
   item: WorkbenchItemChoice | null;
   root: TemplateRoot;
@@ -45,6 +49,9 @@ export interface ExplorerState {
 }
 export function createExplorerStore() {
   return createStore<ExplorerState>()((set) => ({
+    sourcePath: null,
+    presentation: { top: 0, left: 0, field: null },
+    restore: null,
     context: null,
     item: null,
     root: "note",
@@ -78,7 +85,7 @@ export class NativeExplorerSession implements Disposable {
   setContext(context: ProfileAuthoringContext): void {
     if (this.#closed) return;
     const previous = this.state.getState().context;
-    this.state.setState({ context });
+    this.state.setState({ context, sourcePath: context.path });
     // Display-only editor changes leave an Explorer's own annotation navigation intact.
     if (
       !previous ||
@@ -112,7 +119,17 @@ export class NativeExplorerSession implements Disposable {
       root,
       annotationId,
     });
-    this.state.setState({ item, root, annotationId, navigation });
+    this.state.setState({
+      item,
+      root,
+      annotationId,
+      navigation,
+      ...(previous.item?.id !== item?.id ||
+      previous.root !== root ||
+      previous.annotationId !== annotationId
+        ? { presentation: { top: 0, left: 0, field: null }, restore: null }
+        : {}),
+    });
     this.refresh();
   }
   refresh(): void {
@@ -217,6 +234,12 @@ export class NativeExplorerSession implements Disposable {
 }
 const ExplorerStoreContext = createContext<ExplorerStore | null>(null);
 export const ExplorerStoreProvider = ExplorerStoreContext.Provider;
+export function useExplorerStoreApi(): ExplorerStore {
+  const store = useContext(ExplorerStoreContext);
+  if (!store) throw new Error("ExplorerStoreProvider is required");
+  return store;
+}
+
 export function useExplorerStore<T>(selector: (s: ExplorerState) => T): T {
   const store = useContext(ExplorerStoreContext);
   if (!store) throw new Error("ExplorerStoreProvider is required");
