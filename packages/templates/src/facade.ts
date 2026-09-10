@@ -70,6 +70,16 @@ export type {
   SynthesizedLiteratureNoteTemplateManifest,
 } from "./literature-note-template";
 
+export {
+  parsePlainTemplateDocument,
+  PlainTemplateDocumentError,
+} from "./plain-template-document";
+export type {
+  PlainTemplateDocument,
+  PlainTemplateDocumentErrorCode,
+  PlainTemplateDocumentManifest,
+} from "./plain-template-document";
+
 export interface ConvertedLegacyLiteratureNoteTemplate {
   readonly source: string;
   readonly document: LiteratureNoteTemplateDocument;

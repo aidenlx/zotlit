@@ -47,37 +47,42 @@ afterEach(async () => {
 describe("TemplateService", () => {
   it("discovers and reconciles Literature Note Template documents", async () => {
     const vault = new MockVault();
-    vault.addFile("templates/books.md", literatureNoteDocument("Books"));
+    vault.addFile(
+      "templates/zotlit-profile.books.md",
+      literatureNoteDocument("Books"),
+    );
     const { service } = await makeHarness({ vault });
 
     expect(
       service
-        .getLiteratureNoteTemplate("books.md")
+        .getLiteratureNoteTemplate("zotlit-profile.books.md")
         ?.renderForCreate({ title: "First" }),
     ).toContain("# Books First");
 
     vault.modifyFile(
-      "templates/books.md",
+      "templates/zotlit-profile.books.md",
       literatureNoteDocument("Revised books"),
     );
     await vi.advanceTimersByTimeAsync(500);
 
     expect(
       service
-        .getLiteratureNoteTemplate("books.md")
+        .getLiteratureNoteTemplate("zotlit-profile.books.md")
         ?.renderForCreate({ title: "Second" }),
     ).toContain("# Revised books Second");
 
-    vault.deleteFile("templates/books.md");
+    vault.deleteFile("templates/zotlit-profile.books.md");
     await vi.advanceTimersByTimeAsync(500);
 
-    expect(service.getLiteratureNoteTemplate("books.md")).toBeUndefined();
+    expect(
+      service.getLiteratureNoteTemplate("zotlit-profile.books.md"),
+    ).toBeUndefined();
   });
 
   it("compiles document frontmatter with the per-device JavaScript gate", async () => {
     const vault = new MockVault();
     vault.addFile(
-      "templates/books.md",
+      "templates/zotlit-profile.books.md",
       literatureNoteDocument("Books").replace(
         'filename: "{{ zt.title }}"',
         `filename: "{{ zt.title }}"
@@ -92,7 +97,9 @@ frontmatter:
     );
     const { service } = await makeHarness({ vault });
 
-    const inert = service.getLiteratureNoteTemplate("books.md")?.frontmatter;
+    const inert = service.getLiteratureNoteTemplate(
+      "zotlit-profile.books.md",
+    )?.frontmatter;
     expect(inert?.inertKeys).toEqual(["scripted"]);
     expect(
       evalManagedFrontmatterEntries(
@@ -106,7 +113,9 @@ frontmatter:
 
     await service.setJavascriptTemplatesEnabled(true);
 
-    const active = service.getLiteratureNoteTemplate("books.md")?.frontmatter;
+    const active = service.getLiteratureNoteTemplate(
+      "zotlit-profile.books.md",
+    )?.frontmatter;
     expect(active?.inertKeys).toEqual([]);
     expect(
       evalManagedFrontmatterEntries(
@@ -123,11 +132,11 @@ frontmatter:
   it("renders Profile Annotation Sections, refuses a blockless document, and keeps the documentless and legacy paths", async () => {
     const vault = new MockVault();
     vault.addFile(
-      "templates/books.md",
+      "templates/zotlit-profile.books.md",
       literatureNoteDocument("Books", "PROFILE {{ zt.text }}"),
     );
     vault.addFile(
-      "templates/plain.md",
+      "templates/zotlit-profile.plain.md",
       `---
 id: plain
 name: Plain
@@ -151,12 +160,12 @@ filename: "{{ zt.title }}"
       {
         id: "Bk3Qn7XvT2Lp" as ProfileId,
         label: "Books",
-        document: "books.md",
+        document: "zotlit-profile.books.md",
       },
       {
         id: "Rz9Wm4YfH6Kd" as ProfileId,
         label: "Plain",
-        document: "plain.md",
+        document: "zotlit-profile.plain.md",
       },
       {
         id: "Vv1Ww2Xx3Yy4" as ProfileId,
@@ -213,7 +222,7 @@ filename: "{{ zt.title }}"
         {
           id: "Tt2Uu4Vv6Ww8" as ProfileId,
           label: "Books",
-          document: "missing.md",
+          document: "zotlit-profile.missing.md",
         },
       ],
     };
@@ -229,7 +238,7 @@ filename: "{{ zt.title }}"
       expect.objectContaining({
         diagnostic: expect.objectContaining({
           code: "missing-literature-note-template",
-          document: "missing.md",
+          document: "zotlit-profile.missing.md",
         }),
       }),
     );
@@ -253,7 +262,7 @@ filename: "{{ zt.title }}"
           `filename: note\nlanguage: ${language}`,
         )
         .replace("Managed {{ zt.title }}", call);
-      vault.addFile("templates/books.md", source);
+      vault.addFile("templates/zotlit-profile.books.md", source);
       vault.addFile(
         "templates/zotlit-annotation.liquid.md",
         "GLOBAL {{ zt.text }}",
@@ -270,14 +279,16 @@ filename: "{{ zt.title }}"
             {
               id: "Bk3Qn7XvT2Lp" as ProfileId,
               label: "Books",
-              document: "books.md",
+              document: "zotlit-profile.books.md",
             },
           ],
         },
         "Bk3Qn7XvT2Lp" as ProfileId,
       )!;
       const data = { annotation: { text: "A" } };
-      const original = service.getLiteratureNoteTemplate("books.md")!;
+      const original = service.getLiteratureNoteTemplate(
+        "zotlit-profile.books.md",
+      )!;
       expect(original.renderForUpdate(data)).toBe(
         "%%zt-managed%%\nPROFILE A\n%%/zt-managed%%",
       );
@@ -285,7 +296,9 @@ filename: "{{ zt.title }}"
       expect(
         service.renderProfileAnnotation(data.annotation, { profile }),
       ).toBe("PROFILE A");
-      const exported = await service.exportLiteratureNotePack("books.md");
+      const exported = await service.exportLiteratureNotePack(
+        "zotlit-profile.books.md",
+      );
       expect(
         new TemplateFacade().parseLiteratureNoteTemplate(exported).manifest
           .partials,
@@ -296,7 +309,7 @@ filename: "{{ zt.title }}"
           .renderAnnotation(data.annotation),
       ).toBe("PROFILE A");
       vault.modifyFile(
-        "templates/books.md",
+        "templates/zotlit-profile.books.md",
         source.replace("PROFILE", "CHANGED"),
       );
       await vi.advanceTimersByTimeAsync(500);
@@ -304,7 +317,9 @@ filename: "{{ zt.title }}"
         service.renderProfileAnnotation(data.annotation, { profile }),
       ).toBe("CHANGED A");
       expect(
-        service.getLiteratureNoteTemplate("books.md")!.renderForUpdate(data),
+        service
+          .getLiteratureNoteTemplate("zotlit-profile.books.md")!
+          .renderForUpdate(data),
       ).toBe("%%zt-managed%%\nCHANGED A\n%%/zt-managed%%");
       expect(original.renderAnnotation(data.annotation)).toBe("PROFILE A");
       expect(service.render("annotation", data.annotation)).toBe("GLOBAL A");
@@ -337,22 +352,25 @@ partials:
 
   it("reports valid and invalid Literature Note Template documents", async () => {
     const vault = new MockVault();
-    vault.addFile("templates/books.md", literatureNoteDocument("Books"));
     vault.addFile(
-      "templates/duplicate.md",
+      "templates/zotlit-profile.books.md",
+      literatureNoteDocument("Books"),
+    );
+    vault.addFile(
+      "templates/zotlit-profile.duplicate.md",
       literatureNoteDocument("{% managed %}One{% endmanaged %}"),
     );
     const { service } = await makeHarness({ vault });
 
     expect(service.getLiteratureNoteTemplateStatuses()).toMatchObject([
       {
-        reference: "books.md",
-        path: "templates/books.md",
+        reference: "zotlit-profile.books.md",
+        path: "templates/zotlit-profile.books.md",
         validation: { state: "valid", hasManagedBlock: true },
       },
       {
-        reference: "duplicate.md",
-        path: "templates/duplicate.md",
+        reference: "zotlit-profile.duplicate.md",
+        path: "templates/zotlit-profile.duplicate.md",
         validation: {
           state: "invalid",
           error: { code: "duplicate-managed-block" },
@@ -378,20 +396,20 @@ partials:
   it("exports an installed document with its reachable partials bundled", async () => {
     const vault = new MockVault();
     vault.addFile(
-      "templates/books.md",
+      "templates/zotlit-profile.books.md",
       literatureNoteDocument("Draft").replace(
         "Managed {{ zt.title }}",
         '{% render "summary" with zt as zt %}',
       ),
     );
     vault.addFile(
-      "templates/zotlit-summary.liquid.md",
+      "templates/zotlit-partial.summary.md",
       "Summary {{ zt.title }}",
     );
     const { service } = await makeHarness({ vault });
 
     const exported = new TemplateFacade().parseLiteratureNoteTemplate(
-      await service.exportLiteratureNotePack("books.md"),
+      await service.exportLiteratureNotePack("zotlit-profile.books.md"),
     );
 
     expect(exported.manifest.partials).toEqual([
@@ -439,10 +457,13 @@ partials:
         },
       ],
     );
-    vault.addFile("templates/shared.md", source);
-    vault.addFile("templates/zotlit-summary.liquid.md", "Local {{ zt.title }}");
+    vault.addFile("templates/zotlit-profile.shared.md", source);
     vault.addFile(
-      "templates/local.md",
+      "templates/zotlit-partial.summary.md",
+      "Local {{ zt.title }}",
+    );
+    vault.addFile(
+      "templates/zotlit-profile.local.md",
       literatureNoteDocument("Local").replace(
         "Managed {{ zt.title }}",
         partial,
@@ -450,7 +471,9 @@ partials:
     );
     const { service } = await makeHarness({ vault });
     const paths = [...vault.files.keys()];
-    const document = service.getLiteratureNoteTemplate("shared.md")!;
+    const document = service.getLiteratureNoteTemplate(
+      "zotlit-profile.shared.md",
+    )!;
 
     expect(document.renderForCreate({ title: "Paper" })).toContain(
       "Bundled Paper",
@@ -462,13 +485,13 @@ partials:
     expect(document.renderAnnotation({ title: "Paper" })).toBe("Bundled Paper");
     expect(
       service
-        .getLiteratureNoteTemplate("local.md")!
+        .getLiteratureNoteTemplate("zotlit-profile.local.md")!
         .renderForCreate({ title: "Paper" }),
     ).toContain("Local Paper");
     expect([...vault.files.keys()]).toEqual(paths);
     expect(
       await vault.cachedRead(
-        vault.getFileByPath("templates/zotlit-summary.liquid.md")!,
+        vault.getFileByPath("templates/zotlit-partial.summary.md")!,
       ),
     ).toBe("Local {{ zt.title }}");
   });
@@ -476,7 +499,7 @@ partials:
   it("keeps an installed bundled Eta partial behind the JavaScript consent gate", async () => {
     const vault = new MockVault();
     vault.addFile(
-      "templates/shared.md",
+      "templates/zotlit-profile.shared.md",
       exportLiteratureNotePack(
         literatureNoteDocument("Shared").replace(
           "Managed {{ zt.title }}",
@@ -493,13 +516,17 @@ partials:
     );
     const { service } = await makeHarness({ vault });
 
-    expect(() => service.getLiteratureNoteTemplate("shared.md")).toThrow(
-      m.settings_template_inert_eta({ path: "templates/shared.md" }),
+    expect(() =>
+      service.getLiteratureNoteTemplate("zotlit-profile.shared.md"),
+    ).toThrow(
+      m.settings_template_inert_eta({
+        path: "templates/zotlit-profile.shared.md",
+      }),
     );
     await service.setJavascriptTemplatesEnabled(true);
     expect(
       service
-        .getLiteratureNoteTemplate("shared.md")!
+        .getLiteratureNoteTemplate("zotlit-profile.shared.md")!
         .renderForCreate({ title: "Paper" }),
     ).toContain("Bundled Paper");
   });
@@ -925,9 +952,12 @@ partials:
     expect(service.render("note", { title: "B" })).toBe("other B");
   });
 
-  it("drops non-canonical templates from the previous folder when it changes", async () => {
+  it("drops partials from the previous folder when it changes", async () => {
     const vault = new MockVault();
-    vault.addFile("templates/zotlit-custom.eta.md", "custom <%= zt.title %>");
+    vault.addFile(
+      "templates/zotlit-partial.custom.md",
+      "---\nlanguage: eta\n---\ncustom <%= zt.title %>",
+    );
     const { service, settings } = await makeHarness({
       vault,
       javascriptTemplates: true,
@@ -1625,6 +1655,140 @@ describe("frontmatter fields", () => {
 
     await service.setJavascriptTemplatesEnabled(false);
     expect(() => service.frontmatterFields).toThrow(InertTemplateError);
+  });
+});
+
+describe("Template Document kinds", () => {
+  it("classifies a Profile document, the Citation Template, and a partial by prefix", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-profile.books.md",
+      literatureNoteDocument("Books"),
+    );
+    vault.addFile("templates/zotlit-citation.md", "{{ zt.citations }}");
+    vault.addFile(
+      "templates/zotlit-partial.authors.md",
+      "Authors: {{ zt.authors }}",
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(
+      service
+        .getLiteratureNoteTemplateStatuses()
+        .map(({ reference }) => reference),
+    ).toEqual(["zotlit-profile.books.md"]);
+    expect(service.render("authors", { authors: "Ada Lovelace" })).toBe(
+      "Authors: Ada Lovelace",
+    );
+    expect(service.getUnrecognizedFiles()).toEqual([]);
+  });
+
+  it("renders a Liquid partial with no manifest while a note is created", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-partial.authors.md",
+      "Authors: {{ zt.authors }}",
+    );
+    vault.addFile(
+      "templates/zotlit-profile.books.md",
+      literatureNoteDocument("Books").replace(
+        "Managed {{ zt.title }}",
+        '{% render "authors" with zt as zt %}',
+      ),
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(
+      service
+        .getLiteratureNoteTemplate("zotlit-profile.books.md")!
+        .renderForCreate({ title: "Paper", authors: "Ada Lovelace" }),
+    ).toContain("Authors: Ada Lovelace");
+  });
+
+  it("keeps an Eta partial inert until the JavaScript Templates gate is on", async () => {
+    const path = "templates/zotlit-partial.authors.md";
+    const vault = new MockVault();
+    vault.addFile(path, "---\nlanguage: eta\n---\nAuthors: <%= zt.authors %>");
+    const { service } = await makeHarness({ vault });
+
+    expect(() =>
+      service.render("authors", { authors: "Ada Lovelace" }),
+    ).toThrow(m.settings_template_inert_eta({ path }));
+
+    await service.setJavascriptTemplatesEnabled(true);
+
+    expect(service.render("authors", { authors: "Ada Lovelace" })).toBe(
+      "Authors: Ada Lovelace",
+    );
+  });
+
+  it("reports an Eta partial inert when a Profile renders it with the gate off", async () => {
+    const path = "templates/zotlit-partial.authors.md";
+    const vault = new MockVault();
+    vault.addFile(path, "---\nlanguage: eta\n---\nAuthors: <%= zt.authors %>");
+    vault.addFile(
+      "templates/zotlit-profile.books.md",
+      literatureNoteDocument("Books").replace(
+        "Managed {{ zt.title }}",
+        '{% render "authors" with zt as zt %}',
+      ),
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(() =>
+      service
+        .getLiteratureNoteTemplate("zotlit-profile.books.md")!
+        .renderForCreate({ title: "Paper", authors: "Ada Lovelace" }),
+    ).toThrow(m.settings_template_inert_eta({ path }));
+  });
+
+  it("re-registers a partial under its new name on rename and drops it on delete", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-partial.authors.md",
+      "Authors: {{ zt.authors }}",
+    );
+    const { service } = await makeHarness({ vault });
+    const data = { authors: "Ada Lovelace" };
+
+    expect(service.render("authors", data)).toBe("Authors: Ada Lovelace");
+
+    vault.renameFile(
+      "templates/zotlit-partial.authors.md",
+      "templates/zotlit-partial.creators.md",
+    );
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(service.render("creators", data)).toBe("Authors: Ada Lovelace");
+    expect(() => service.render("authors", data)).toThrowError(
+      expect.objectContaining<Partial<TemplateError>>({
+        templateName: "authors",
+      }),
+    );
+
+    vault.deleteFile("templates/zotlit-partial.creators.md");
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(() => service.render("creators", data)).toThrowError(
+      expect.objectContaining<Partial<TemplateError>>({
+        templateName: "creators",
+      }),
+    );
+  });
+
+  it("names a zotlit- file no kind claims and ignores a file without the prefix", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-foo.md", "Stray");
+    vault.addFile("templates/notes.md", "A note of my own");
+    const { service } = await makeHarness({ vault });
+
+    expect(service.getUnrecognizedFiles()).toEqual(["templates/zotlit-foo.md"]);
+    expect(service.getLiteratureNoteTemplateStatuses()).toEqual([]);
+
+    vault.deleteFile("templates/zotlit-foo.md");
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(service.getUnrecognizedFiles()).toEqual([]);
   });
 });
 

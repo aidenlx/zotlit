@@ -10,6 +10,7 @@ function items(webWorkbenchEnabled: boolean) {
   return advancedPageItems({
     webWorkbenchEnabled,
     settings: { current: { "log.to-file": false } },
+    template: { loaded: false },
     localServer: { effectivePort: null },
     localBridge: { connection: null },
   } as unknown as SettingTabContext);
