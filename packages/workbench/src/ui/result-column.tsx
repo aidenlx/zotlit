@@ -82,10 +82,13 @@ export function ResultRegion({
   );
 }
 
+/** Which of the four outputs a preview shows, which picks its heading and body. */
+export type ResultMode = "note" | "annotation" | "citation" | "partial";
+
 export interface ResultBodyProps {
   result: TemplateRenderResult | null;
   annotationResult?: TemplateRenderResult | null;
-  mode: "note" | "annotation" | "citation";
+  mode: ResultMode;
   stale: boolean;
   /** Why `result` is stale, or why none exists yet; `null` while it is current. */
   staleReason: "hold" | "demand" | "live" | null;
@@ -122,6 +125,7 @@ export function ResultBody({
   const showAnnotation = mode === "annotation";
   const showNote = mode === "note";
   const showCitation = mode === "citation";
+  const showPartial = mode === "partial";
   const previewProblem = showAnnotation
     ? (annotationResult?.diagnostics.find(
         ({ part }) => part === "annotation",
@@ -160,7 +164,7 @@ export function ResultBody({
       <ResultRegion emphasis={false}>
         {result ? (
           <Suspense fallback={pending}>
-            {!showAnnotation && !showCitation && (
+            {showNote && (
               <header {...part("filename")} {...filenameTooltip}>
                 <p {...part("filename-text")}>
                   <span {...part("label-text")}>
@@ -209,9 +213,11 @@ export function ResultBody({
                 )}
               </p>
             )}
-            {showCitation ? (
+            {showCitation || showPartial ? (
               <Markdown
-                markdown={result.citation ?? ""}
+                markdown={
+                  (showPartial ? result.partial : result.citation) ?? ""
+                }
                 properties={[]}
                 showMarkdown={showMarkdown}
               />

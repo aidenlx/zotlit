@@ -86,6 +86,7 @@ function makeHandlers(options?: {
       javascriptTemplatesEnabled: false,
       compileErrors: new Map(),
       getTemplateFileStatuses: () => [],
+      getPartialDocument: () => null,
       render: () => "",
       renderFilename: () => "",
       analyzeRootVariables: () => null,

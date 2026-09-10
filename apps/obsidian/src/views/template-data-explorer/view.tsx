@@ -263,8 +263,10 @@ export class TemplateDataExplorerView extends ItemView {
                     : "note",
               advanced: false,
               // The workspace saves a Profile Explorer alone, which names no
-              // Citation set; the editor supplies one the moment it arrives.
+              // Citation set and no Shared Partial; the editor supplies both
+              // the moment it arrives.
               citation: null,
+              partial: null,
               canInsertField: false,
             }
           : null,

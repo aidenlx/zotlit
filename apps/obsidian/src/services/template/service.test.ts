@@ -1911,6 +1911,36 @@ describe("Template Document kinds", () => {
     );
   });
 
+  it("names the document behind a partial, registered or not", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-partial.authors.md", "{{ zt.authors }}");
+    vault.addFile(
+      "templates/zotlit-partial.venue.md",
+      "---\nlanguage: eta\n---\n<%= zt.venue %>",
+    );
+    vault.addFile("templates/zotlit-partial.broken.md", "---\nlanguage\n---\n");
+    const { service } = await makeHarness({ vault });
+
+    expect(service.getPartialDocument("authors")).toEqual({
+      name: "authors",
+      path: "templates/zotlit-partial.authors.md",
+      language: "liquid",
+    });
+    // The gate keeps this one inert, but the document still owns the name.
+    expect(service.getPartialDocument("venue")).toEqual({
+      name: "venue",
+      path: "templates/zotlit-partial.venue.md",
+      language: "eta",
+    });
+    // A manifest the parser refused names no language, so Liquid stands in.
+    expect(service.getPartialDocument("broken")).toEqual({
+      name: "broken",
+      path: "templates/zotlit-partial.broken.md",
+      language: "liquid",
+    });
+    expect(service.getPartialDocument("missing")).toBeNull();
+  });
+
   it("reports an Eta partial inert when a Profile renders it with the gate off", async () => {
     const path = "templates/zotlit-partial.authors.md";
     const vault = new MockVault();

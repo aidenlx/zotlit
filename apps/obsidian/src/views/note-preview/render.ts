@@ -20,6 +20,8 @@ import {
   SAMPLE_ANNOTATIONS,
 } from "@zotlit/workbench/render";
 import type {
+  PartialContext,
+  PartialPreviewSelection,
   TemplateRenderResult,
   RenderRequest,
   RenderDiagnostic,
@@ -39,6 +41,7 @@ import {
 } from "@/services/note-feature";
 import { bindProfile } from "@/services/profile/bindings";
 import { seedProfileEntry } from "@/services/profile/service";
+import type { ProfileService } from "@/services/profile/service";
 import { loadTemplateData } from "@/services/template-workbench/data";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import { findExistingLitNote } from "@/services/template/inert-resolver-host";
@@ -55,11 +58,14 @@ export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
     | "render"
     | "renderCitation"
     | "renderCitationSource"
+    | "renderPartialSource"
     | "prepareLiteratureNoteTemplateSource"
     | "frontmatterFields"
     | "javascriptTemplatesEnabled"
     | "on"
   >;
+  /** Reads the Profile a Shared Partial preview renders its bindings under. */
+  profile: Pick<ProfileService, "resolveProfile">;
 }
 export interface NativeRenderResult extends TemplateRenderResult {
   readonly sourcePath: string;
@@ -73,18 +79,147 @@ export function nativeResult(result: TemplateRenderResult): NativeRenderResult {
 }
 
 /**
- * Render whichever Template Document the request names: a Citation Template
- * when the request carries a Citation selection, a Profile otherwise. One
- * entry, so a preview that follows the active editor across document kinds
- * keeps the one render function it was built with.
+ * Render whichever Template Document the request names: a Shared Partial when
+ * the request carries a partial selection, a Citation Template when it carries
+ * a Citation selection, a Profile otherwise. One entry, so a preview that
+ * follows the active editor across document kinds keeps the one render
+ * function it was built with.
  */
 export function renderNativeTemplate(
   deps: NativeRenderDeps,
   request: RenderRequest,
 ): Promise<NativeRenderResult> {
+  if (request.partial)
+    return renderNativePartial(deps, request, request.partial);
   return request.citation
     ? renderNativeCitation(deps, request)
     : renderNativeProfile(deps, request);
+}
+
+/**
+ * The text the draft Shared Partial produces for the caller the reader chose
+ * to see it as called from: the note root of the selected Item, the Annotation
+ * root of the selected annotation, or the selected Citation set. The data is
+ * built under the chosen Profile's bindings, so folder, citation style, and the
+ * import settings a partial reads are a real Profile's.
+ */
+async function renderNativePartial(
+  deps: NativeRenderDeps,
+  request: RenderRequest,
+  selection: PartialPreviewSelection,
+): Promise<NativeRenderResult> {
+  const identity = renderIdentity(request);
+  try {
+    await deps.templates.ready;
+    const settings = await deps.settings.loaded;
+    const profile =
+      (selection.profile === null
+        ? undefined
+        : deps.profile.resolveProfile(selection.profile as ProfileId)) ??
+      bindProfile(settings, { selector: DEFAULT_PROFILE });
+    const dataDeps = {
+      ...deps,
+      settings: { loaded: Promise.resolve(profile.settings) },
+    };
+    const data = await partialContextData(dataDeps, request, selection.context);
+    if (data.kind !== "data") {
+      return nativeResult(
+        failedRender(identity, {
+          code: "render-error",
+          message: data.message,
+          part: "render",
+        }),
+      );
+    }
+    return {
+      ...nativeResult(emptyRender(identity)),
+      partial: deps.templates.renderPartialSource(request.source, data.data, {
+        name: selection.name,
+      }),
+    };
+  } catch (error) {
+    return nativeResult(
+      failedRender(identity, {
+        code: "render-error",
+        message: errorText(error),
+        part: "render",
+      }),
+    );
+  }
+}
+
+/**
+ * The root data one Shared Partial reads under `context`: the Citation set the
+ * preview holds, the Annotation root of the selected annotation, or the note
+ * root of the selected Item. A Sample Item answers from its own snapshot; a
+ * real one is loaded exactly as a Profile preview loads it.
+ */
+async function partialContextData(
+  deps: NativeRenderDeps,
+  request: RenderRequest,
+  context: PartialContext,
+): Promise<
+  { kind: "data"; data: object } | { kind: "unavailable"; message: string }
+> {
+  const sample = request.snapshot.provenance.kind === "sample";
+  if (context === "citation") {
+    const selection = request.citation;
+    const variant = selection?.variant ?? "main";
+    return {
+      kind: "data",
+      data: selection?.example
+        ? citationExampleData(selection.example, variant)
+        : sampleItemCitation(request.snapshot, variant),
+    };
+  }
+  if (context === "annotation") {
+    const example = request.annotation;
+    if (!example) {
+      return {
+        kind: "unavailable",
+        message: m.workbench_preview_choose_annotation(),
+      };
+    }
+    const key = example.root.indexedKey;
+    const live =
+      typeof key === "string" &&
+      !sample &&
+      !SAMPLE_ANNOTATIONS.some(({ id }) => id === example.id)
+        ? await loadTemplateData(deps, key, "annotation")
+        : null;
+    if (live?.kind === "data") return { kind: "data", data: live.data };
+    const restored = restoreTemplateData(
+      example.root,
+      example.descriptors,
+    ) as unknown as AnnotationTemplateContext;
+    return {
+      kind: "data",
+      data: withAnnotationCitation(restored, () =>
+        renderAnnotationCitation(
+          restored.parentItem,
+          restored.pageLabel,
+          deps.templates,
+        ),
+      ),
+    };
+  }
+  if (sample) {
+    return {
+      kind: "data",
+      data: restoreTemplateData(
+        request.snapshot.roots.note,
+        request.snapshot.descriptors.note,
+      ),
+    };
+  }
+  const note = await loadTemplateData(
+    deps,
+    request.snapshot.item.indexedKey,
+    "note",
+  );
+  return note.kind === "data"
+    ? { kind: "data", data: note.data }
+    : { kind: "unavailable", message: m.workbench_example_missing_item() };
 }
 
 /**
@@ -397,6 +532,7 @@ export async function renderNativeProfile(
       annotation,
       annotationCitation,
       citation: null,
+      partial: null,
       annotationRanges,
       diagnostics,
     };

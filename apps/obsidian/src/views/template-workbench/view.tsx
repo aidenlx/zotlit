@@ -33,8 +33,17 @@ import type {
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
 import type { DisplayNode } from "@zotlit/workbench/explorer";
-import { failedRender, renderIdentity } from "@zotlit/workbench/render";
-import type { CitationExampleId } from "@zotlit/workbench/render";
+import {
+  DEFAULT_PARTIAL_CONTEXT,
+  failedRender,
+  isPartialContext,
+  renderIdentity,
+} from "@zotlit/workbench/render";
+import type {
+  CitationExampleId,
+  PartialChoice,
+  PartialContext,
+} from "@zotlit/workbench/render";
 import { fieldSnippet } from "@zotlit/workbench/ui";
 import {
   AnnotationPane,
@@ -96,7 +105,7 @@ import { rememberTemplateItem } from "@/views/template-data-explorer/item-memory
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
 
 import { runTemplateWorkbenchAction } from "./actions";
-import { templateDocumentKind } from "./document-kind";
+import { templateDocumentKind, templatePartialName } from "./document-kind";
 import { createTemplateWorkbenchHost } from "./host";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
@@ -153,6 +162,16 @@ export interface TemplateAuthoringContext {
     readonly variant: CitationVariant;
     readonly example: CitationExampleId | null;
   } | null;
+  /**
+   * The Shared Partial this editor holds, the caller the reader chose to
+   * preview it as called from, and the Profile whose bindings that caller's
+   * data is built with. Null on a document of another kind.
+   */
+  readonly partial: {
+    readonly name: string;
+    readonly context: PartialContext;
+    readonly profile: string | null;
+  } | null;
   readonly canInsertField?: boolean;
 }
 
@@ -191,6 +210,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   #databaseUnavailable = false;
   #stylesUnavailable = false;
   #citationStyles: NameFolderPaneProps["citationStyles"] = [];
+  /** The Profile a Shared Partial preview reads bindings from; null is the default one. */
+  #partialProfile: string | null = null;
+  /** The partial `#partialProfile` and this leaf's root were chosen for. */
+  #partialChoiceFile: string | null = null;
   #defaultDraft = false;
   #materializing: Promise<void> | null = null;
   #bindingDraft = false;
@@ -244,6 +267,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           if (selection.kind === "item") this.selectItem(selection.item);
           else if (selection.kind === "annotation")
             this.preview?.select(selection.annotationId);
+          else if (selection.kind === "partial")
+            this.setPartialSelection(selection);
           else
             this.preview?.setCitation({
               variant: selection.variant,
@@ -260,6 +285,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.register(
       this.store.subscribe((state, previous) => {
         if (state.item !== previous.item) this.preview?.setItem(state.item);
+        // The one editor a Shared Partial opens completes under the caller the
+        // reader chose, which is this root.
+        if (state.root !== previous.root && this.documentKind === "partial")
+          this.#controller.setPartialContext(this.partialContext);
         if (
           state.item !== previous.item ||
           state.root !== previous.root ||
@@ -335,6 +364,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.store.subscribe((state, previous) => {
         if (
           state.tab !== previous.tab ||
+          state.root !== previous.root ||
           state.advanced !== previous.advanced ||
           state.item?.id !== previous.item?.id
         )
@@ -352,10 +382,34 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /** The root an editor with no template region of its own writes. */
   get #defaultRoot(): TemplateRoot {
-    return this.documentKind === "citation" ? "citation" : "note";
+    if (this.documentKind === "citation") return "citation";
+    return this.documentKind === "partial" ? this.partialContext : "note";
+  }
+  /**
+   * The caller a Shared Partial is previewed as called from, which is the root
+   * its one editor completes and its companions read.
+   *
+   * @see {@link PartialContext} for whose choice it is.
+   */
+  get partialContext(): PartialContext {
+    const { root } = this.store.getState();
+    return isPartialContext(root) ? root : DEFAULT_PARTIAL_CONTEXT;
+  }
+  /** {@link TemplateWorkbenchView.#partialProfile} */
+  get partialProfile(): string | null {
+    return this.#partialProfile;
+  }
+  /** Applies the caller and Profile another pane chose for this partial. */
+  setPartialSelection(selection: PartialChoice): void {
+    if (this.documentKind !== "partial") return;
+    this.#partialProfile = selection.profile;
+    this.store.getState().setRoot(selection.context);
+    this.app.workspace.requestSaveLayout();
+    this.#publishAuthoringContext();
   }
   get authoringContext(): TemplateAuthoringContext {
     const { item, root, tab, advanced } = this.store.getState();
+    const partialName = templatePartialName(this.file?.path ?? "");
     return {
       leaf: this.leaf,
       path: this.file?.path ?? null,
@@ -368,11 +422,21 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         this.preview?.state.getState().annotationId ??
         this.preview?.state.getState().example?.id ??
         null,
+      // A partial previewed as called from a Citation reads the same set the
+      // Citation Template does, so both name it here for every pane to follow.
       citation:
-        this.documentKind === "citation" && this.preview
+        root === "citation" && this.preview
           ? {
               variant: this.preview.state.getState().variant,
               example: this.preview.state.getState().citationExample,
+            }
+          : null,
+      partial:
+        this.documentKind === "partial" && partialName !== null
+          ? {
+              name: partialName,
+              context: this.partialContext,
+              profile: this.#partialProfile,
             }
           : null,
       canInsertField:
@@ -516,7 +580,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           : target.slice === "annotation"
             ? "annotation"
             : target.slice === "source"
-              ? "citation"
+              ? this.documentKind === "partial"
+                ? "partial"
+                : "citation"
               : "note",
     );
     state.setRoot(
@@ -535,6 +601,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   override getDisplayText(): string {
     if (this.documentKind === "citation")
       return m.template_workbench_title_citation();
+    const name = templatePartialName(this.file?.path ?? "");
+    if (name !== null) return m.template_workbench_title_partial({ name });
     const label = this.profileLabel;
     return label === null
       ? m.template_workbench_name()
@@ -578,6 +646,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         runtime: "native",
         readOnly: this.#defaultDraft,
         kind: this.documentKind,
+        context: this.partialContext,
       });
       this.#editor.attach(this.#controller);
       this.setPresentation({
@@ -675,6 +744,15 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       itemIndexedKey: item?.id ?? null,
       annotationId: this.preview?.state.getState().annotationId ?? null,
       advanced,
+      // A Shared Partial's caller is a choice nothing else can name, so the
+      // workspace carries it back with the file it belongs to. No other kind
+      // has one to carry.
+      ...(this.documentKind === "partial"
+        ? {
+            partialContext: this.partialContext,
+            partialProfile: this.#partialProfile,
+          }
+        : {}),
     };
   }
   setPresentation(value: Partial<WorkbenchViewState["presentation"]>): void {
@@ -842,8 +920,20 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const value = state as Record<string, unknown>;
     const store = this.store.getState();
     if (this.#applyKindDefaults()) {
-      // A plain document has one tab, one root, and one editor: nothing of the
-      // saved tab, root, or Basic and Source choice applies to it.
+      // A plain document has one tab and one editor, so nothing of the saved
+      // tab or Basic and Source choice applies to it. A Shared Partial's root
+      // is the reader's own "as called from" choice, which is restored.
+      if (this.documentKind === "partial") {
+        store.setRoot(
+          isPartialContext(value.partialContext)
+            ? value.partialContext
+            : DEFAULT_PARTIAL_CONTEXT,
+        );
+        this.#partialProfile =
+          typeof value.partialProfile === "string"
+            ? value.partialProfile
+            : null;
+      }
     } else {
       if (TABS.some((tab) => tab === value.tab))
         store.setTab(
@@ -893,7 +983,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    */
   #applyKindDefaults(): boolean {
     const store = this.store.getState();
-    if (this.documentKind !== "citation") {
+    const kind = this.documentKind;
+    if (kind === "profile") {
       // A tab and root this leaf kept from a document of another kind name no
       // panel and no data here, which would leave every panel unmounted.
       if (!TABS.includes(store.tab)) {
@@ -902,9 +993,22 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       }
       return false;
     }
-    store.setTab("citation");
-    store.setRoot("citation");
+    store.setTab(kind);
     store.setAdvanced(false);
+    if (kind === "citation") {
+      store.setRoot("citation");
+      return true;
+    }
+    // The caller and the Profile belong to the partial they were chosen for, so
+    // a leaf that moves to another partial — or that kept a root from a document
+    // of another kind — opens on the default caller rather than on that choice.
+    const path = this.file?.path ?? null;
+    if (path !== this.#partialChoiceFile) {
+      this.#partialChoiceFile = path;
+      this.#partialProfile = null;
+      store.setRoot(DEFAULT_PARTIAL_CONTEXT);
+    } else if (!isPartialContext(store.root))
+      store.setRoot(DEFAULT_PARTIAL_CONTEXT);
     return true;
   }
 
@@ -1031,7 +1135,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         .setIcon("search")
         .onClick(() => void this.chooseItem()),
     );
-    if (this.documentKind === "profile")
+    if (this.documentKind !== "citation")
       menu.addItem((item) =>
         item
           .setSection("zotlit")
@@ -1051,7 +1155,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             ),
         ),
     );
-    if (this.documentKind === "citation") this.#addLanguageMenu(menu);
+    if (this.documentKind !== "profile") this.#addLanguageMenu(menu);
     const target = this.templateDataTarget();
     const pluginVersion = this.#deps.pluginVersion;
     if (target && pluginVersion)
@@ -1273,7 +1377,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#selectKey(item.id);
     // An Item the reader picked is the Citation set they asked to see, so the
     // built-in example that outranks it stands down.
-    if (this.documentKind === "citation")
+    if (this.store.getState().root === "citation")
       this.preview?.setCitation({ citationExample: null });
   }
   async chooseAnnotation(): Promise<void> {
@@ -1573,15 +1677,18 @@ function EditorContent({
           tabs={tabsFor(kind)}
           defaultProfile={view.isDefaultProfile ? true : undefined}
           onTabChange={(tab) => {
-            state.setRoot(
-              tab === "annotation"
-                ? "annotation"
-                : tab === "name"
-                  ? "filename"
-                  : tab === "citation"
-                    ? "citation"
-                    : "note",
-            );
+            // The Partial tab keeps the caller the reader chose; every other
+            // tab names one root of its own.
+            if (tab !== "partial")
+              state.setRoot(
+                tab === "annotation"
+                  ? "annotation"
+                  : tab === "name"
+                    ? "filename"
+                    : tab === "citation"
+                      ? "citation"
+                      : "note",
+              );
             setReveal(null);
             if (tab === "name") void view.refreshStyles();
           }}
@@ -1591,13 +1698,17 @@ function EditorContent({
         data-workbench-scroll="editor"
         className="zt:min-h-0 zt:flex-1 zt:overflow-auto"
       >
-        {kind === "citation" ? (
-          <TabPanel tab="citation">
+        {kind !== "profile" ? (
+          <TabPanel tab={kind}>
             <p className={selectionHint}>{languageCaption}</p>
             <SliceEditor
               controller={controller}
               slice="source"
-              label={m.workbench_tab_citation()}
+              label={
+                kind === "citation"
+                  ? m.workbench_tab_citation()
+                  : m.workbench_tab_partial()
+              }
               reveal={reveal}
               onSelection={selection("source")}
             />

@@ -148,10 +148,10 @@ export class NativePreviewSession implements Disposable {
     let sourceProblem: string | null = null;
     // A plain document is one source under an optional manifest: it authors no
     // Properties, so the row list a Profile carries stays empty for it.
-    let entries = state.context?.kind === "citation" ? [] : state.entries;
+    const plain = state.context !== null && state.context.kind !== "profile";
+    let entries = plain ? [] : state.entries;
     try {
-      if (state.context?.kind === "citation")
-        parsePlainTemplateDocument(source);
+      if (plain) parsePlainTemplateDocument(source);
       else {
         parseLiteratureNoteTemplate(source);
         const list = managedFrontmatterEntries(source);
@@ -243,14 +243,17 @@ export class NativePreviewSession implements Disposable {
   #feed(): void {
     const { snapshot, example, item, context, variant, citationExample } =
       this.state.getState();
+    // A Shared Partial previewed as called from a Citation reads the same set
+    // a Citation Template does, so both kinds hand the scheduler one selection.
+    const citationSet =
+      context?.kind === "citation" ||
+      (context?.kind === "partial" && context.partial?.context === "citation");
     // A Citation example carries its own citation data, so the render needs no
     // Item; the paper it cites still stamps the result the scheduler compares.
-    const citation =
-      context?.kind === "citation"
-        ? { variant, example: citationExample }
-        : null;
+    const citation = citationSet ? { variant, example: citationExample } : null;
     this.#scheduler.setInput({
       citation,
+      partial: context?.partial ?? null,
       snapshot:
         (citation?.example ? CITATION_EXAMPLE_ITEM : null) ??
         snapshot ??

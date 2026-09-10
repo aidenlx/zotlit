@@ -8,8 +8,14 @@ import type {
   FrontmatterLanguage,
   FrontmatterMergeStrategy,
 } from "@zotlit/templates/constants";
-import { isCitationExampleId } from "@zotlit/workbench/render";
-import type { CitationExampleId } from "@zotlit/workbench/render";
+import {
+  isCitationExampleId,
+  isPartialContext,
+} from "@zotlit/workbench/render";
+import type {
+  CitationExampleId,
+  PartialContext,
+} from "@zotlit/workbench/render";
 
 import { diagnostic } from "./envelope";
 import type { Diagnostic, WorkbenchIdentity } from "./envelope";
@@ -23,6 +29,9 @@ import {
   CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
+  isPartialTemplate,
+  PARTIAL_CONTEXT_NAMES,
+  partialTemplateName,
   quotedList,
   RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
@@ -34,9 +43,13 @@ export {
   CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
+  PARTIAL_CONTEXT_NAMES,
   RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
 };
+
+/** Shared Partial names: letters, digits, and hyphens, as the files allow. */
+const PARTIAL_NAME = /^[A-Za-z0-9-]+$/;
 
 /** A parsed selector, or the one parameter that made it invalid. */
 export type ParsedRequest<T> =
@@ -76,6 +89,7 @@ export const SCHEMA_PARAMS = [] as const;
 export const RENDER_PARAMS = [
   "key",
   "template",
+  "root",
   "variant",
   "example",
   "format",
@@ -104,6 +118,8 @@ export type DataRequest = ObjectSelector & {
 
 export type RenderRequest = ObjectSelector & {
   template: RenderTemplate;
+  /** The caller a partial render reads its data as; absent for every other Template. */
+  root?: PartialContext;
   /** The Citation Variant a citation render names; absent for every other Template. */
   variant?: CitationVariant;
   format: "markdown" | "json";
@@ -141,7 +157,6 @@ export function parseRenderRequest(
   const rejected = rejectAccepted(params, {
     command: "template-render",
     accepted: RENDER_PARAMS,
-    hints: { root: "template-render infers the data root from template." },
   });
   if (rejected) return invalid(rejected.parameter, rejected.message);
 
@@ -152,12 +167,24 @@ export function parseRenderRequest(
       `template must be ${quotedList(RENDER_TEMPLATE_NAMES)}.`,
     );
   }
-  const citation = template === CITATION_TEMPLATE;
+  const partial = partialTemplateName(template);
+  if (partial !== null && !PARTIAL_NAME.test(partial)) {
+    return invalid(
+      "template",
+      "A Shared Partial name is letters, digits, and hyphens: template=partial:<name>.",
+    );
+  }
+  const root = parsePartialRoot(params, partial !== null);
+  if (root.kind === "invalid") return root;
+  // A partial read as called from a Citation takes the same set the Citation
+  // Template does; under every other caller it takes the caller's own object.
+  const citationSet =
+    template === CITATION_TEMPLATE || root.value.root === "citation";
 
-  const selector = parseObjectSelector(params, citation);
+  const selector = parseObjectSelector(params, citationSet);
   if (selector.kind === "invalid") return selector;
 
-  const variant = parseCitationVariant(params, citation);
+  const variant = parseCitationVariant(params, citationSet);
   if (variant.kind === "invalid") return variant;
 
   const format = params.format ?? "json";
@@ -167,9 +194,37 @@ export function parseRenderRequest(
   return withExpectations(params, {
     ...selector.value,
     template,
+    ...root.value,
     ...variant.value,
     format,
   });
+}
+
+/**
+ * The caller a partial render reads its data as. Only a partial has one to
+ * choose: every other Template names the root its own slot answers for.
+ */
+function parsePartialRoot(
+  params: CliData,
+  partial: boolean,
+): ParsedRequest<{ root?: PartialContext }> {
+  const root = params.root;
+  if (root === undefined) {
+    return { kind: "valid", value: partial ? { root: "note" } : {} };
+  }
+  if (!partial) {
+    return invalid(
+      "root",
+      "template-render infers the data root from template; root names the caller a partial is rendered as, on template=partial:<name> only.",
+    );
+  }
+  if (!isPartialContext(root)) {
+    return invalid(
+      "root",
+      `root must be ${quotedList(PARTIAL_CONTEXT_NAMES)}.`,
+    );
+  }
+  return { kind: "valid", value: { root } };
 }
 
 /**
@@ -601,6 +656,7 @@ function parseTemplateSlot(value: string | undefined): TemplateSlot | null {
 
 function parseRenderTemplate(value: string | undefined): RenderTemplate | null {
   if (value === CITATION_TEMPLATE) return CITATION_TEMPLATE;
+  if (value !== undefined && isPartialTemplate(value)) return value;
   return parseTemplateSlot(value);
 }
 

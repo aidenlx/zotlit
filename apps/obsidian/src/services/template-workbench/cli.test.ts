@@ -132,6 +132,7 @@ describe("Template Workbench CLI", () => {
           callOrder.push("status");
           return TEMPLATE_FILES;
         },
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -180,6 +181,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -226,6 +228,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -294,6 +297,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -363,6 +367,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -414,6 +419,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -460,6 +466,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -495,6 +502,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -535,6 +543,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -580,7 +589,24 @@ describe("Template Workbench CLI", () => {
 
   it.each([
     ["data", ["$helper", "$inert", "$ref", ...CONTRACT_ROOT_NAMES]],
-    ["render", [...TEMPLATE_SLOT_NAMES]],
+    [
+      "render",
+      [
+        ...TEMPLATE_SLOT_NAMES,
+        "partial:<name>",
+        "root=<note|annotation|citation>",
+      ],
+    ],
+    [
+      "profiles",
+      [
+        "SHARED PARTIALS",
+        "zotlit-partial.<name>.md",
+        "template=partial:<name>",
+        "root=<note|annotation|citation>",
+        "ADR 0050",
+      ],
+    ],
     ["editing", ["editablePath", "shadowedFiles"]],
     [
       "eta",
@@ -617,6 +643,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -649,6 +676,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -722,6 +750,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -764,6 +793,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -802,6 +832,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -839,6 +870,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -886,6 +918,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -933,6 +966,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -977,6 +1011,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1033,6 +1068,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1084,6 +1120,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1134,6 +1171,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1179,6 +1217,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1222,6 +1261,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1272,6 +1312,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1313,6 +1354,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => [],
+        getPartialDocument: () => null,
         render,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1368,6 +1410,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render,
           renderFilename,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1410,6 +1453,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: () => markdown,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1473,6 +1517,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: (name, data) => templates.render(name, data),
         renderFilename: (data) => templates.render("filename", data),
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1511,6 +1556,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1611,6 +1657,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: () => {
             throw error;
           },
@@ -1664,6 +1711,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: () => "",
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1710,6 +1758,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1786,6 +1835,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1829,6 +1879,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1853,7 +1904,8 @@ describe("Template Workbench CLI", () => {
     expect(JSON.parse(output)).toMatchObject({
       ok: false,
       diagnostic: {
-        message: "template-render infers the data root from template.",
+        message:
+          "template-render infers the data root from template; root names the caller a partial is rendered as, on template=partial:<name> only.",
       },
     });
   });
@@ -1870,6 +1922,7 @@ describe("Template Workbench CLI", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
+        getPartialDocument: () => null,
         render: () => "# Paper\n",
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1911,6 +1964,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: (name, data) => templates.render(name, data),
           renderFilename: (data) => templates.render("filename", data),
           analyzeRootVariables: (name) => templates.analyzeRootVariables(name),
@@ -1953,6 +2007,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: (name, data) => templates.render(name, data),
           renderFilename: (data) => templates.render("filename", data),
           analyzeRootVariables: (name) => templates.analyzeRootVariables(name),
@@ -1990,6 +2045,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: (name, data) => templates.render(name, data),
           renderFilename: (data) => templates.render("filename", data),
           analyzeRootVariables: (name) => templates.analyzeRootVariables(name),
@@ -2028,6 +2084,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2073,6 +2130,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2108,6 +2166,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2150,6 +2209,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2188,6 +2248,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2230,6 +2291,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2263,6 +2325,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2310,6 +2373,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: () => {
             throw error;
           },
@@ -2356,6 +2420,7 @@ describe("Template Workbench CLI", () => {
             ["note", { message: "Unexpected token", context }],
           ]),
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: () => {
             throw new Error("note cannot compile");
           },
@@ -2417,6 +2482,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2480,6 +2546,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: true,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2522,6 +2589,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2563,6 +2631,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -2631,6 +2700,7 @@ describe("Template Workbench CLI", () => {
             overrides.javascriptTemplatesEnabled ?? false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -3062,6 +3132,7 @@ describe("Template Workbench CLI", () => {
             overrides.javascriptTemplatesEnabled ?? false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -3489,6 +3560,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -3681,6 +3753,7 @@ describe("Template Workbench CLI", () => {
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
+          getPartialDocument: () => null,
           render: EMPTY_RENDER,
           renderFilename: EMPTY_RENDER,
           analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -3907,6 +3980,7 @@ describe("zotlit:template-render for the Citation Template", () => {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => [],
+        getPartialDocument: () => null,
         render: EMPTY_RENDER,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -4133,6 +4207,175 @@ describe("zotlit:template-render for the Citation Template", () => {
       diagnostic: {
         code: "INVALID_SELECTOR",
         details: { parameter: "example" },
+      },
+    });
+  });
+});
+
+describe("zotlit:template-render for a Shared Partial", () => {
+  const PARTIAL_DOCUMENT = {
+    name: "authors",
+    path: "Templates/zotlit-partial.authors.md",
+    language: "liquid" as const,
+  };
+
+  /**
+   * One partial registered on a facade, rendered by name the way production
+   * renders it, against the note root and the Citation example sets alike.
+   */
+  function partialHandlers(source = "[{{ zt.title }}|{{ zt.variant }}]") {
+    const facade = new TemplateFacade();
+    facade.define("authors", source, "liquid");
+    return createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadCitation: async (selector, variant) =>
+        "example" in selector
+          ? {
+              kind: "data",
+              data: citationExampleData(selector.example, variant),
+            }
+          : { kind: "not-found" },
+      loadData: async (_key, root) => ({
+        kind: "data",
+        data: root === "annotation" ? { text: "Read me" } : { title: "Paper" },
+      }),
+      templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => [],
+        getPartialDocument: (name: string) =>
+          name === PARTIAL_DOCUMENT.name ? PARTIAL_DOCUMENT : null,
+        render: (name, data) => facade.render(name, data),
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
+      },
+    });
+  }
+
+  it("renders a partial under the citation set an example names", async () => {
+    const handlers = partialHandlers();
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_RENDER_COMMAND]({
+          template: "partial:authors",
+          root: "citation",
+          example: "one-item",
+        }),
+      ),
+    ).toMatchObject({
+      contractVersion: CONTRACT_VERSION,
+      command: TEMPLATE_RENDER_COMMAND,
+      ok: true,
+      request: {
+        template: "partial:authors",
+        root: "citation",
+        example: "one-item",
+        variant: "main",
+        format: "json",
+      },
+      template: {
+        name: "partial:authors",
+        language: "liquid",
+        source: { kind: "vault", path: PARTIAL_DOCUMENT.path },
+      },
+      markdown: "[|main]",
+    });
+  });
+
+  it("reads the note root when the request names no caller", async () => {
+    const handlers = partialHandlers();
+
+    expect(
+      await handlers[TEMPLATE_RENDER_COMMAND]({
+        template: "partial:authors",
+        key: "ITEM2345",
+        format: "markdown",
+      }),
+    ).toBe("[Paper|]");
+  });
+
+  it("reads the Annotation root when the request names it", async () => {
+    const handlers = partialHandlers("{{ zt.text }}");
+
+    expect(
+      await handlers[TEMPLATE_RENDER_COMMAND]({
+        template: "partial:authors",
+        root: "annotation",
+        key: "ITEM2345",
+        format: "markdown",
+      }),
+    ).toBe("Read me");
+  });
+
+  it("names a partial the vault registers no document for", async () => {
+    const handlers = partialHandlers();
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_RENDER_COMMAND]({
+          template: "partial:venue-line",
+          key: "ITEM2345",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message:
+          "No Shared Partial named 'venue-line'. Create 'zotlit-partial.venue-line.md' in the template folder.",
+        details: { parameter: "template" },
+      },
+    });
+  });
+
+  it("refuses a partial name that is not letters, digits, and hyphens", async () => {
+    const handlers = partialHandlers();
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_RENDER_COMMAND]({
+          template: "partial:my authors",
+          key: "ITEM2345",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        details: { parameter: "template" },
+      },
+    });
+  });
+
+  it("refuses a caller that names no root a partial is called from", async () => {
+    const handlers = partialHandlers();
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_RENDER_COMMAND]({
+          template: "partial:authors",
+          root: "filename",
+          key: "ITEM2345",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message: "root must be 'note', 'annotation', or 'citation'.",
+        details: { parameter: "root" },
       },
     });
   });

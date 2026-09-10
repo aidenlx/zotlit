@@ -37,9 +37,10 @@ export function registerTemplateWorkbenchView(
   deps: RegistrationDeps,
 ): void {
   if (!Platform.isDesktopApp) return;
-  /** The Citation Template, which the view opens without any Profile flow. */
-  const isCitation = (file: TFile | null): file is TFile =>
-    file !== null && templateDocumentKind(file) === "citation";
+  /** A plain document — the Citation Template or a Shared Partial — which the
+   *  view opens on its own tab without any Profile flow. */
+  const isPlainDocument = (file: TFile | null): file is TFile =>
+    file !== null && templateDocumentKind(file) !== "profile";
   const isProfile = (file: TFile | null): file is TFile =>
     file !== null &&
     file.extension === "md" &&
@@ -126,9 +127,9 @@ export function registerTemplateWorkbenchView(
     name: m.template_workbench_open(),
     checkCallback(checking) {
       const active = plugin.app.workspace.getActiveFile();
-      // The Citation Template opens without any Profile flow, on the route the
+      // A plain document opens without any Profile flow, on the route the
       // file menu and the Markdown header action already take.
-      if (isCitation(active)) {
+      if (isPlainDocument(active)) {
         if (!checking)
           void runTemplateWorkbenchAction("open-editor", () =>
             openTemplateWorkbench(plugin.app, active, {
@@ -156,7 +157,7 @@ export function registerTemplateWorkbenchView(
   plugin.registerEvent(
     plugin.app.workspace.on("file-menu", (menu, file) => {
       if (!(file instanceof TFile)) return;
-      if (isCitation(file)) {
+      if (isPlainDocument(file)) {
         menu.addItem((item) =>
           item
             .setSection("zotlit")
@@ -231,7 +232,7 @@ export function registerTemplateWorkbenchView(
         .filter(
           (view): view is MarkdownView =>
             view instanceof MarkdownView &&
-            (isProfile(view.file) || isCitation(view.file)),
+            (isProfile(view.file) || isPlainDocument(view.file)),
         ),
     );
     for (const [view, action] of actions)
@@ -247,7 +248,7 @@ export function registerTemplateWorkbenchView(
             const file = view.file;
             if (!file) return;
             void runTemplateWorkbenchAction("open-editor", () =>
-              isCitation(file)
+              isPlainDocument(file)
                 ? openTemplateWorkbench(plugin.app, file, {
                     explainUnsupported: false,
                   })

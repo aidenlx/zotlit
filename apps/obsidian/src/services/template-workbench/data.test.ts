@@ -586,6 +586,7 @@ async function runTemplateData(
       javascriptTemplatesEnabled: false,
       compileErrors: deps.templates.compileErrors,
       getTemplateFileStatuses: () => [],
+      getPartialDocument: () => null,
       render: deps.templates.render,
       renderFilename: (data) => deps.templates.render("filename", data),
       analyzeRootVariables: () => null,
@@ -639,6 +640,7 @@ async function runTemplateRender(
       renderCitationData: (data) => JSON.stringify(data),
       javascriptTemplatesEnabled: false,
       compileErrors: deps.templates.compileErrors,
+      getPartialDocument: () => null,
       getTemplateFileStatuses: () => [
         {
           name: "note",

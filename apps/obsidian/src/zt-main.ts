@@ -374,6 +374,7 @@ export default class ZotLitPlugin extends Plugin {
         zoteroPref: services.zoteroPref,
         settings: services.settings,
         templates: services.template,
+        profile: services.profile,
         bibliographyRender: services.bibliographyRender,
         citationIndex: services.citationIndex,
       },

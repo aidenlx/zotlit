@@ -1,3 +1,4 @@
+import type { PartialContext } from "#/render/partial-preview";
 import {
   history,
   isolateHistory,
@@ -53,6 +54,7 @@ import { noteRegions } from "./regions";
 import type { NoteRegions } from "./regions";
 
 import { pairingState, pairingHistory } from "#/language/pairing-state";
+import { DEFAULT_PARTIAL_CONTEXT } from "#/render/partial-preview";
 
 /** The pane that edits one Managed Frontmatter entry's expression. */
 export type WorkbenchEntrySliceId = `entry:${number}`;
@@ -60,10 +62,11 @@ export type WorkbenchEntrySliceId = `entry:${number}`;
 /**
  * The Template Document this controller holds. A Profile document carries the
  * manifest, the note body, and the Annotation Section that the six Profile
- * tabs edit; the Citation Template is a plain document — an optional manifest
- * naming its language, then one source — which one editor holds whole.
+ * tabs edit; the Citation Template and a Shared Partial are plain documents —
+ * an optional manifest naming the language, then one source — which one editor
+ * holds whole.
  */
-export type WorkbenchDocumentKind = "profile" | "citation";
+export type WorkbenchDocumentKind = "profile" | "citation" | "partial";
 
 /**
  * A pane a problem is repaired in. Every id but `details` is an editor over one
@@ -150,6 +153,7 @@ export class WorkbenchDocumentController {
   #readOnly: boolean;
   readonly #runtime: "web" | "native";
   readonly #kind: WorkbenchDocumentKind;
+  #context: PartialContext = DEFAULT_PARTIAL_CONTEXT;
   #document: LiteratureNoteTemplateDocument | null = null;
   #plain: PlainTemplateDocument | null = null;
   #problems: readonly WorkbenchProblem[] = [];
@@ -170,10 +174,13 @@ export class WorkbenchDocumentController {
       runtime?: "web" | "native";
       readOnly?: boolean;
       kind?: WorkbenchDocumentKind;
+      /** The caller a Shared Partial opens as called from. @default "note" */
+      context?: PartialContext;
     } = {},
   ) {
     this.#runtime = options.runtime ?? "web";
     this.#kind = options.kind ?? "profile";
+    if (options.context) this.#context = options.context;
     this.#readOnly = options.readOnly ?? false;
     this.#state = EditorState.create({
       doc: source,
@@ -200,7 +207,7 @@ export class WorkbenchDocumentController {
     });
     // The one editor a plain document opens holds this slice, so it exists
     // from the start, including for a draft whose manifest never parsed.
-    if (this.#kind === "citation")
+    if (this.#kind !== "profile")
       this.#ranges.set("source", { from: 0, to: source.length });
     this.#analyze();
   }
@@ -227,6 +234,20 @@ export class WorkbenchDocumentController {
   /** The Template Document kind this controller was opened for. */
   get kind(): WorkbenchDocumentKind {
     return this.#kind;
+  }
+
+  /**
+   * The caller a Shared Partial's one editor reads its root data as, which
+   * completion and the preview alike follow.
+   *
+   * @see {@link PartialContext} for whose choice it is.
+   */
+  get partialContext(): PartialContext {
+    return this.#context;
+  }
+
+  setPartialContext(context: PartialContext): void {
+    this.#context = context;
   }
 
   /** The parsed document, or null while the draft does not parse. */
@@ -328,9 +349,13 @@ export class WorkbenchDocumentController {
     expression: boolean;
     language?: "json-e";
   })[] {
-    if (this.#kind === "citation") {
+    if (this.#kind !== "profile") {
       return [
-        { ...this.sliceRange("source"), root: "citation", expression: false },
+        {
+          ...this.sliceRange("source"),
+          root: this.#kind === "citation" ? "citation" : this.#context,
+          expression: false,
+        },
       ];
     }
     const annotation = this.annotationSection?.source;
@@ -752,7 +777,7 @@ export class WorkbenchDocumentController {
   #analyze(): void {
     const source = this.#text;
     this.#ranges.set("advanced", { from: 0, to: source.length });
-    if (this.#kind === "citation") {
+    if (this.#kind !== "profile") {
       this.#analyzePlain(source);
       return;
     }

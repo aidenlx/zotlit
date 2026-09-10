@@ -1026,6 +1026,12 @@ language: liquid
 {% if zt.variant == "alt" %}{{ zt.citations | pandoc_cite: "prefer-author-in-text" }}{% else %}{{ zt.citations | pandoc_cite }}{% endif %}
 `;
 
+  const PARTIAL_SOURCE = `---
+language: liquid
+---
+{{ zt.authors | join: ", " }}
+`;
+
   function openKind(path: string, source: string) {
     const harness = setup({
       templates: {
@@ -1186,6 +1192,128 @@ language: liquid
     expect(view.getViewData()).toBe(
       CITATION_SOURCE.replace("{% if", "{{ zt.variant }}{% if"),
     );
+  });
+
+  it("opens a Shared Partial on a lone Partial tab titled by its name", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = openKind(
+      "templates/zotlit-partial.authors.md",
+      PARTIAL_SOURCE,
+    );
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+
+    expect(view.getDisplayText()).toBe(
+      m.template_workbench_title_partial({ name: "authors" }),
+    );
+    expect(tabLabels(view)).toEqual([m.workbench_tab_partial()]);
+    expect(view.store.getState()).toMatchObject({
+      tab: "partial",
+      root: "note",
+      advanced: false,
+    });
+    expect(view.partialContext).toBe("note");
+    expect(sourceAction(view).style.display).toBe("none");
+  });
+
+  it("offers the language switch and the annotation chooser on a partial", () => {
+    const { view } = openKind(
+      "templates/zotlit-partial.authors.md",
+      PARTIAL_SOURCE,
+    );
+    const menu = new Menu();
+    view.onPaneMenu(menu as never, "more-options");
+    const titles = menu.items.map((item) => item.title);
+
+    expect(titles).toContain(m.template_workbench_change_language());
+    expect(titles).toContain(m.workbench_choose_annotation());
+  });
+
+  it("follows a chosen caller with the completion root and the saved state", async () => {
+    const { view } = openKind(
+      "templates/zotlit-partial.authors.md",
+      PARTIAL_SOURCE,
+    );
+    expect(view.controller.templateRegions[0]!.root).toBe("note");
+
+    await act(async () =>
+      view.setPartialSelection({ context: "annotation", profile: "reading1" }),
+    );
+
+    expect(view.store.getState().root).toBe("annotation");
+    expect(view.controller.templateRegions[0]!.root).toBe("annotation");
+    expect(view.authoringContext.partial).toEqual({
+      name: "authors",
+      context: "annotation",
+      profile: "reading1",
+    });
+    const saved = view.getState();
+    expect(saved).toMatchObject({
+      partialContext: "annotation",
+      partialProfile: "reading1",
+    });
+
+    // The workspace hands the same descriptor back when the file reopens.
+    const reopened = openKind(
+      "templates/zotlit-partial.authors.md",
+      PARTIAL_SOURCE,
+    );
+    await act(async () =>
+      reopened.view.setState(
+        { ...saved, file: "templates/zotlit-partial.authors.md" },
+        { history: false },
+      ),
+    );
+    expect(reopened.view.partialContext).toBe("annotation");
+    expect(reopened.view.partialProfile).toBe("reading1");
+    expect(reopened.view.controller.templateRegions[0]!.root).toBe(
+      "annotation",
+    );
+  });
+
+  it("opens another partial on the default caller, not the last one's", async () => {
+    const { view } = openKind(
+      "templates/zotlit-partial.authors.md",
+      PARTIAL_SOURCE,
+    );
+    await act(async () =>
+      view.setPartialSelection({ context: "annotation", profile: "reading1" }),
+    );
+
+    // The same leaf moves to a second partial, which was never chosen for.
+    const other = new TFile();
+    other.path = "templates/zotlit-partial.venue.md";
+    await act(async () => {
+      view.file = other;
+      view.setViewData(PARTIAL_SOURCE, true);
+    });
+
+    expect(view.partialContext).toBe("note");
+    expect(view.partialProfile).toBeNull();
+    expect(view.controller.templateRegions[0]!.root).toBe("note");
+    expect(view.getState()).toMatchObject({
+      partialContext: "note",
+      partialProfile: null,
+    });
+  });
+
+  it("returns a leaf that held a partial to the Profile tabs", async () => {
+    const { view } = openKind(
+      "templates/zotlit-partial.authors.md",
+      PARTIAL_SOURCE,
+    );
+    await act(async () =>
+      view.setPartialSelection({ context: "citation", profile: null }),
+    );
+
+    const profile = new TFile();
+    profile.path = "templates/zotlit-profile.paper.md";
+    await act(async () => {
+      view.file = profile;
+      view.setViewData(SOURCE, true);
+    });
+
+    expect(view.store.getState()).toMatchObject({ tab: "note", root: "note" });
   });
 
   it("switches the rendering language on the manifest key alone", () => {

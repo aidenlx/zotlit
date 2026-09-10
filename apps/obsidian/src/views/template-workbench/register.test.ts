@@ -368,6 +368,31 @@ Annotation`);
     ]);
     expect(deps.customize).not.toHaveBeenCalled();
   });
+  it("opens a Shared Partial on the same plain-document route", async () => {
+    setMockPlatform({ isDesktopApp: true });
+    const { file, deps, plugin, commands, fileMenu, setViewState } = setup();
+    file.path = "templates/zotlit-partial.authors.md";
+    file.basename = "zotlit-partial.authors";
+    deps.customize = vi.fn(async () => {});
+    registerTemplateWorkbenchView(plugin, deps);
+
+    const command = commands.find(
+      (entry) => entry.id === "open-template-workbench-view",
+    )!;
+    expect(command.checkCallback?.(false)).toBe(true);
+    await vi.waitFor(() =>
+      expect(setViewState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+          state: expect.objectContaining({ file: file.path }),
+        }),
+      ),
+    );
+    expect(fileMenu().items.map(({ title }) => title)).toEqual([
+      m.template_workbench_open(),
+    ]);
+    expect(deps.customize).not.toHaveBeenCalled();
+  });
   it("routes the file menu's native editor action through the shared flow", async () => {
     setMockPlatform({ isDesktopApp: true });
     const { file, deps, plugin, fileMenu } = setup();

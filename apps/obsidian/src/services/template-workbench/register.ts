@@ -40,6 +40,7 @@ import {
   CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
+  PARTIAL_CONTEXT_NAMES,
   RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
 } from "./request";
@@ -152,6 +153,11 @@ function renderFlags(): CliFlags {
       value: choices(RENDER_TEMPLATE_NAMES),
       description: "Template to render",
       required: true,
+    },
+    root: {
+      value: choices(PARTIAL_CONTEXT_NAMES),
+      description:
+        "Caller a partial is rendered as, for template=partial:<name>, default note",
     },
     variant: {
       value: choices(CITATION_VARIANT_NAMES),

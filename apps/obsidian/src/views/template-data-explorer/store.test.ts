@@ -211,6 +211,7 @@ describe("native Explorer sample data", () => {
       advanced: false,
       annotationId: null,
       citation: null,
+      partial: null,
     };
     using annotation = new NativeExplorerSession(deps);
     using note = new NativeExplorerSession(deps);
@@ -281,6 +282,7 @@ describe("the citation root", () => {
       advanced: false,
       annotationId: null,
       citation: { variant: "main", example: "one-item" },
+      partial: null,
     };
     using session = new NativeExplorerSession(deps);
     session.setContext(context);
@@ -293,6 +295,7 @@ describe("the citation root", () => {
     session.setContext({
       ...context,
       citation: { variant: "alt", example: "two-items" },
+      partial: null,
     });
     await session.ready;
     // Two citations under the alternate Variant: the set and the gesture the
@@ -301,6 +304,43 @@ describe("the citation root", () => {
     expect(state.data).toMatchObject({ variant: "alt" });
     expect((state.data!["citations"] as unknown[]).length).toBe(2);
     expect(loadCitationData).not.toHaveBeenCalled();
+  });
+
+  it("follows the caller a Shared Partial is previewed as called from", async () => {
+    vi.mocked(loadTemplateData).mockResolvedValue({
+      kind: "data",
+      data: { text: "Read me", type: "highlight" },
+    } as TemplateDataLoadResult);
+    const context: TemplateAuthoringContext = {
+      leaf: {} as WorkspaceLeaf,
+      path: "templates/zotlit-partial.authors.md",
+      kind: "partial",
+      item: real,
+      root: "note",
+      tab: "partial",
+      advanced: false,
+      annotationId: null,
+      citation: null,
+      partial: { name: "authors", context: "note", profile: null },
+    };
+    using session = new NativeExplorerSession(deps);
+    session.setContext(context);
+    await session.ready;
+    expect(loadTemplateData).toHaveBeenLastCalledWith(deps, real.id, "note");
+
+    session.setContext({
+      ...context,
+      root: "annotation",
+      annotationId: "example:highlight",
+      partial: { name: "authors", context: "annotation", profile: null },
+    });
+    await session.ready;
+
+    expect(session.state.getState()).toMatchObject({
+      root: "annotation",
+      annotationId: "example:highlight",
+      data: { type: "highlight" },
+    });
   });
 
   it("reads a chosen Item's set under the Variant the preview renders", async () => {
@@ -319,6 +359,7 @@ describe("the citation root", () => {
       advanced: false,
       annotationId: null,
       citation: { variant: "alt", example: null },
+      partial: null,
     });
     await session.ready;
 

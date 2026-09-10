@@ -65,6 +65,7 @@ export type {
   WorkbenchViewState,
 } from "./store";
 export { citationExampleLabel, citationVariantLabel } from "./citation-preview";
+export { partialContextLabel } from "./partial-preview";
 export { TabBar, TabPanel } from "./tab-bar";
 export { TABS, tabLabel, tabLede, tabsFor } from "./tabs";
 export type { WorkbenchTab } from "./tabs";
@@ -98,7 +99,11 @@ export {
   ResultHeader,
   ResultRegion,
 } from "./result-column";
-export type { ResultBodyProps, ResultColumnProps } from "./result-column";
+export type {
+  ResultBodyProps,
+  ResultColumnProps,
+  ResultMode,
+} from "./result-column";
 export {
   PropertyList,
   PropertyValue,

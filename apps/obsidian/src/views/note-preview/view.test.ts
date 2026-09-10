@@ -106,11 +106,13 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-async function setup(
-  profile: PreviewViewDeps["profile"] = {
-    getBuiltInSource: () => DEFAULT_PROFILE_SOURCE,
-  },
-) {
+const NO_PROFILES: PreviewViewDeps["profile"] = {
+  getBuiltInSource: () => DEFAULT_PROFILE_SOURCE,
+  profiles: [],
+  resolveProfile: () => undefined,
+};
+
+async function setup(profile: PreviewViewDeps["profile"] = NO_PROFILES) {
   const fixture = await createRenderFixture();
   const { app } = fixture.deps;
   const events = new Map<
@@ -1261,5 +1263,194 @@ language: liquid
     expect(titles()).not.toContain(m.workbench_preview_as_updated_note());
     expect(titles()).not.toContain(m.workbench_choose_annotation());
     expect(titles()).toContain(m.workbench_choose_item());
+  });
+});
+
+describe("a Shared Partial preview", () => {
+  // One source that shows which root answered: only the note root carries a
+  // title, only the Annotation root a text, and only a Citation set a variant.
+  const PARTIAL_DOCUMENT = `---
+language: liquid
+---
+[{{ zt.title }}|{{ zt.text }}|{{ zt.variant }}]
+`;
+
+  async function openPartialPreview(
+    test: Awaited<ReturnType<typeof setup>>,
+    options: { item?: boolean } = {},
+  ) {
+    const file = test.fixture.vault.addFile(
+      "templates/zotlit-partial.authors.md",
+      PARTIAL_DOCUMENT,
+    );
+    test.editor.file = file;
+    test.editor.setViewData(PARTIAL_DOCUMENT, true);
+    if (options.item !== false)
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" });
+    const preview = await test.open();
+    await advance();
+    return preview;
+  }
+
+  const caption = (preview: Preview) =>
+    [...preview.contentEl.querySelectorAll("p")].map((p) => p.textContent);
+
+  it("renders the partial with the selected Item under Note", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await openPartialPreview(test);
+
+    expect(preview.contentEl.textContent).toContain("[Better figures||]");
+    expect(caption(preview)).toContain(m.workbench_partial_context_note());
+    expect(
+      menuItem(preview, m.template_workbench_preview_as_note()).checked,
+    ).toBe(true);
+    expect(preview.getState()).toMatchObject({
+      kind: "partial",
+      root: "note",
+      partialProfile: null,
+    });
+  });
+
+  it("re-renders under the Annotation root and moves the editor with it", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await openPartialPreview(test);
+
+    await pick(preview, m.template_workbench_preview_as_annotation());
+    await advance();
+
+    expect(preview.contentEl.textContent).toContain(
+      "[|Use readable figures.|]",
+    );
+    expect(caption(preview)).toContain(
+      m.workbench_partial_context_annotation(),
+    );
+    expect(
+      menuItem(preview, m.template_workbench_preview_as_annotation()).checked,
+    ).toBe(true);
+    // The editor and every companion that follows it read the one choice.
+    expect(test.editor.store.getState().root).toBe("annotation");
+    expect(test.editor.controller.templateRegions[0]!.root).toBe("annotation");
+    expect(preview.getState()["root"]).toBe("annotation");
+  });
+
+  it("re-renders under the Citation set the reader chose", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await openPartialPreview(test);
+
+    await pick(preview, m.template_workbench_preview_as_citation());
+    await advance();
+
+    expect(preview.contentEl.textContent).toContain("[||main]");
+    expect(test.editor.store.getState().root).toBe("citation");
+    // A partial read as called from a Citation takes the Citation Template's
+    // own two choices, so both reach its menu.
+    expect(
+      menuItem(preview, m.template_workbench_preview_alt_citation()),
+    ).toBeDefined();
+    await pick(preview, m.template_workbench_preview_alt_citation());
+    await advance();
+    expect(preview.contentEl.textContent).toContain("[||alt]");
+  });
+
+  it("leaves the Profile unasked where the vault holds one", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await openPartialPreview(test);
+    const menu = new Menu();
+    preview.onPaneMenu(menu as never, "more-options");
+
+    expect(menu.items.map((item) => item.title)).not.toContain(
+      m.template_workbench_use_profile(),
+    );
+  });
+
+  // `ProfileService.profiles` holds the custom Profiles alone, so one entry
+  // already means the vault holds two Profiles: the default one and this.
+  it("offers a Profile choice where the vault holds the default and one more", async () => {
+    await using test = await setup({
+      ...NO_PROFILES,
+      profiles: [
+        { id: "reading12345", label: "Reading" },
+      ] as unknown as PreviewViewDeps["profile"]["profiles"],
+    });
+    vi.useFakeTimers();
+    const preview = await openPartialPreview(test);
+    const choice = menuItem(preview, m.template_workbench_use_profile());
+    expect(choice.submenu!.items.map((item) => item.title)).toEqual([
+      m.settings_profile_default_name(),
+      "Reading",
+    ]);
+    expect(choice.submenu!.items[0]!.checked).toBe(true);
+
+    await act(async () => choice.submenu!.items[1]!.click());
+    expect(preview.getState()["partialProfile"]).toBe("reading12345");
+    expect(test.editor.authoringContext.partial).toMatchObject({
+      profile: "reading12345",
+    });
+  });
+
+  it("restores the caller a reopened partial was left on", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
+      (_app, listener) => {
+        listener(null);
+        return () => {};
+      },
+    );
+    test.fixture.vault.addFile(
+      "templates/zotlit-partial.authors.md",
+      PARTIAL_DOCUMENT,
+    );
+    const preview = await test.open({
+      source: { path: "templates/zotlit-partial.authors.md" },
+      kind: "partial",
+      root: "annotation",
+      item: "MAIN2345",
+      partialProfile: null,
+    });
+    await advance();
+
+    expect(preview.getState()).toMatchObject({
+      kind: "partial",
+      root: "annotation",
+    });
+    expect(preview.contentEl.textContent).toContain(
+      "[|Use readable figures.|]",
+    );
+  });
+
+  it("re-renders an open Profile preview when a partial it calls is saved", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const partial = test.fixture.vault.createFile(
+      "templates/zotlit-partial.authors.md",
+      "Alpha",
+    );
+    // The folder watcher debounces; the registry answers once it has settled.
+    await act(async () => void (await vi.advanceTimersByTimeAsync(600)));
+    const calling = PROFILE_SOURCE.replace(
+      "Personal space.",
+      `Personal space. {% render 'authors' %}`,
+    );
+    test.editor.setViewData(calling, true);
+    const preview = await test.open();
+    test.editor.store
+      .getState()
+      .setItem({ id: "MAIN2345", title: "Better figures" });
+    await advance();
+    expect(preview.contentEl.textContent).toContain("Alpha");
+
+    test.fixture.vault.modifyFile(partial.path, "Beta");
+    await act(async () => void (await vi.advanceTimersByTimeAsync(600)));
+    await advance();
+
+    expect(preview.contentEl.textContent).toContain("Beta");
+    expect(preview.contentEl.textContent).not.toContain("Alpha");
   });
 });

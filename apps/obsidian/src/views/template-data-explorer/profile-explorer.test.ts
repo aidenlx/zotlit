@@ -44,6 +44,7 @@ function context(
     advanced: false,
     annotationId: null,
     citation: null,
+    partial: null,
     ...patch,
   };
 }

@@ -245,6 +245,17 @@ interface RegisteredCitationTemplate {
   source: string;
 }
 
+/**
+ * One Shared Partial as the agent CLI reports it: the document that owns the
+ * name, and the language that document renders in.
+ */
+export interface SharedPartialDocument {
+  readonly name: string;
+  /** Where `zotlit-partial.<name>.md` lives. */
+  readonly path: string;
+  readonly language: TemplateLanguage;
+}
+
 /** The Citation Template's state, as the Citations settings row reads it. */
 export interface CitationTemplateStatus {
   /** Where `zotlit-citation.md` lives, whether or not the vault holds it. */
@@ -990,6 +1001,63 @@ export class TemplateService extends Service<void> {
    */
   renderCitationData(data: CitationTemplateData): string {
     return inlineCitation(this.render(CITATION_TEMPLATE_NAME, data));
+  }
+
+  /**
+   * The Shared Partial document `name` answers to, read off the folder scan: a
+   * document the JavaScript Templates gate left inert or the parser refused
+   * still owns the name, and still names the language its manifest declares.
+   *
+   * @returns null while the template folder holds no `zotlit-partial.<name>.md`.
+   */
+  getPartialDocument(name: string): SharedPartialDocument | null {
+    this.#requireLoaded("getPartialDocument");
+    const registered = this.#partials.get(name);
+    if (registered)
+      return { name, path: registered.path, language: registered.language };
+    const path = partialPath(this.#currentTemplateFolder(), name);
+    if (this.#inertEta.get(name) === path)
+      return { name, path, language: "eta" };
+    // A document the parser refused names no language, so it reads as the
+    // Liquid default a manifest-less document declares.
+    return this.#app.vault.getFileByPath(path) === null
+      ? null
+      : { name, path, language: "liquid" };
+  }
+
+  /**
+   * Render a draft Shared Partial — the unsaved bytes of
+   * `zotlit-partial.<name>.md` — against the installed partials, without
+   * registering the draft or writing it. This is what the Template Workbench
+   * View previews while the reader types.
+   *
+   * @throws {@link InertTemplateError} when the draft names Eta and the
+   *   JavaScript Templates gate is off.
+   * @throws {@link PlainTemplateDocumentError} when the draft's manifest is
+   *   malformed, and whatever the compile or the render itself raises.
+   */
+  renderPartialSource<T extends object>(
+    source: string,
+    data: T,
+    options: { name: string },
+  ): string {
+    this.#requireLoaded("renderPartialSource");
+    const parsed = parsePlainTemplateDocument(source);
+    const { language } = parsed.manifest;
+    if (language === "eta" && !this.#javascriptTemplatesEnabled) {
+      throw new InertTemplateError(
+        m.settings_template_inert_eta({
+          path: partialPath(this.#currentTemplateFolder(), options.name),
+        }),
+        options.name,
+      );
+    }
+    return this.#classifyRender(() =>
+      this.#facade.render(options.name, data, {
+        source: parsed.source,
+        language,
+      }),
+    );
   }
 
   /**

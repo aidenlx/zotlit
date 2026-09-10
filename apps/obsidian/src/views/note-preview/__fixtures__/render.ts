@@ -97,6 +97,7 @@ export async function createRenderFixture(options: { existing?: string; javascri
   });
   const deps: NativeRenderDeps = {
     app, settings, templates,
+    profile: { resolveProfile: () => undefined },
     db: { on: () => () => {}, acquireRead: async () => ({ client, [Symbol.dispose]() {} }) as never },
     noteIndex: { getNotesByItemKey: (key) => file && key === "MAIN2345" ? [file] : [], getImportedNoteByNoteKey: () => [], whenIndexed: async () => {} },
     zoteroPref: { ready: Promise.resolve(), dataDir: "/Zotero", baseAttachmentPath: null },
