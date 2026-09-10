@@ -437,6 +437,41 @@ export class CitationIndex extends Service<void> {
   }
 
   /**
+   * The admitted Citation Occurrences of every covered document, by path —
+   * the Document Citation Set membership {@link #admitted} gates, read
+   * synchronously for a caller that redraws the whole vault in one pass: the
+   * Graph Citations render facade.
+   *
+   * Reads what the backfill and the metadata events have covered so far, so
+   * a document the backfill has not reached is absent until it is; the
+   * `backfilled` event marks the pass complete. Occurrences are raw: what
+   * each cites is the caller's question.
+   *
+   * @param syntaxes the Citation Syntaxes to answer with. Wikilink
+   *   occurrences are derived from the link cache on every call, so a caller
+   *   that draws citekeys alone asks for those alone and pays for no more.
+   * @returns paths holding at least one admitted occurrence, in vault order.
+   */
+  citationsByPath(
+    syntaxes: readonly CitationSyntax[],
+  ): ReadonlyMap<string, readonly CitationOccurrence[]> {
+    const wantCitekeys = syntaxes.includes("citekey");
+    const wantWikilinks = syntaxes.includes("wikilink");
+    const byPath = new Map<string, readonly CitationOccurrence[]>();
+    for (const file of this.#app.vault.getMarkdownFiles()) {
+      const { citekeys, links } = this.#admitted(
+        file,
+        wantCitekeys ? (this.#covered(file) ?? []) : [],
+      );
+      const occurrences = wantWikilinks
+        ? [...citekeys, ...documentWikilinks(links).occurrences]
+        : citekeys;
+      if (occurrences.length > 0) byPath.set(file.path, occurrences);
+    }
+    return byPath;
+  }
+
+  /**
    * What a native citation key names in the current Library Scope, read
    * synchronously: no Item, exactly one, or several candidates.
    */

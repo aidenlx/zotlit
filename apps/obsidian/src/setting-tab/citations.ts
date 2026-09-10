@@ -8,6 +8,7 @@ import type {
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
+import { GRAPH_CORE_PLUGIN_ID } from "@/services/graph-citations/install";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import type { HoverAction } from "@/services/settings/schema";
@@ -61,6 +62,17 @@ export function citationsPageItems(
           name: m.settings_citation_wikilink_citations_name(),
           desc: m.settings_citation_wikilink_citations_desc(),
           control: { type: "toggle", key: "citation.wikilink-citations" },
+        },
+      ],
+    },
+    {
+      type: "group",
+      heading: m.settings_citation_graph_heading(),
+      items: [
+        {
+          name: m.settings_citation_graph_name(),
+          desc: graphCitationsDescription(ctx),
+          control: { type: "toggle", key: "citation.graph-citations" },
         },
       ],
     },
@@ -133,6 +145,17 @@ export function referencesStyleDefinition(
     desc: referencesStyleDescription(false),
     render: (setting) => renderReferencesStyleRow(setting, ctx),
   };
+}
+
+/**
+ * Names the Graph view core plugin while it is disabled, since the toggle
+ * then changes nothing on screen. Read at build time: the page is rebuilt on
+ * every open, which is when a core-plugin change can reach it.
+ */
+function graphCitationsDescription(ctx: SettingTabContext): string {
+  return ctx.app.internalPlugins.getEnabledPluginById(GRAPH_CORE_PLUGIN_ID)
+    ? m.settings_citation_graph_desc()
+    : m.settings_citation_graph_desc_disabled();
 }
 
 /** The Hover Action choices, in the order the select offers them. */

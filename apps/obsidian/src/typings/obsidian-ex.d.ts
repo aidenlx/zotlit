@@ -120,6 +120,44 @@ declare module "obsidian" {
      */
     onCleanCache?(callback: () => void): void;
   }
+  /**
+   * The core `graph` view (`leaf.view` of view type `"graph"`). Internal;
+   * shape verified against Obsidian 1.13.7 and 1.14.0. Every member optional
+   * so a build that drops one is a guarded branch, not a crash.
+   */
+  interface GraphView extends ItemView {
+    renderer?: GraphRenderer;
+    dataEngine?: GraphEngine;
+  }
+  /** The core `localgraph` view; same provenance as {@link GraphView}. */
+  interface LocalGraphView extends ItemView {
+    renderer?: GraphRenderer;
+    engine?: GraphEngine;
+  }
+  /**
+   * The graph data engine one view owns. `render()` reads `app` once at its
+   * top and hands the result to `renderer.setData` — the seam ADR 0029 rests
+   * on. Internal; shape verified against Obsidian 1.13.7 and 1.14.0.
+   */
+  interface GraphEngine {
+    app?: App;
+    /** Rebuilds the node set from scratch on every call; returns the link count. */
+    render?(): unknown;
+  }
+  /**
+   * The PIXI renderer one view owns; the click callback is an own property
+   * the engine binds in its constructor. Internal; shape verified against
+   * Obsidian 1.13.7 and 1.14.0.
+   */
+  interface GraphRenderer {
+    onNodeClick?: GraphNodeCallback;
+  }
+  /**
+   * @param id the node id: a vault path, an unresolved linkpath, or a tag.
+   * @param type `""` for a note, else `"unresolved"`, `"tag"`, `"attachment"`, or `"focused"`.
+   */
+  type GraphNodeCallback = (evt: MouseEvent, id: string, type: string) => void;
+
   interface App {
     /** Stable per-vault id, the namespace Obsidian gives its own IndexedDB databases. */
     appId: string;
