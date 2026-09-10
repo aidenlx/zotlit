@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
+import { Menu } from "@mock/obsidian";
 import type { App, EventRef, WorkspaceLeaf } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
+import * as m from "@/lib/i18n/generated/messages";
 import type { CitationOccurrence } from "@/services/citation-index/scan";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import { SettingsStub } from "@/services/citation-index/test-harness";
@@ -35,17 +37,30 @@ const ROE_GROUP = {
   key: "ROE00002",
   indexedKey: "4_ROE00002",
 };
+/** One Item, in a group library, that has no Literature Note yet. */
+const PINE = {
+  itemID: 4,
+  libraryID: 4,
+  key: "PINE2345",
+  indexedKey: "PINE2345g4",
+};
 const RESOLUTIONS: Record<string, CitekeyResolution> = {
   doe2024: { kind: "unique", item: DOE },
+  pine2023: { kind: "unique", item: PINE },
   roe2025: { kind: "ambiguous", candidates: [ROE, ROE_GROUP] },
   typo2024: { kind: "missing" },
 };
 
-/** Draft cites Doe (with a Literature Note), an ambiguous key, and a missing key. */
+/** Draft cites Doe (with a Literature Note), a noteless key, an ambiguous key, and a missing key. */
 const OCCURRENCES = new Map<string, readonly CitationOccurrence[]>([
   [
     "Draft.md",
-    [occurrence("doe2024"), occurrence("roe2025"), occurrence("typo2024")],
+    [
+      occurrence("doe2024"),
+      occurrence("pine2023"),
+      occurrence("roe2025"),
+      occurrence("typo2024"),
+    ],
   ],
 ]);
 
@@ -54,8 +69,19 @@ const EXPECTED_RESOLVED = {
   "Draft.md": { "Other.md": 1, "Literature/Doe 2024.md": 1 },
 };
 const EXPECTED_UNRESOLVED = {
-  "Draft.md": { "@roe2025": 1, "@typo2024": 1 },
+  "Draft.md": { "@pine2023": 1, "@roe2025": 1, "@typo2024": 1 },
 };
+
+/** Right-clicks a node; answers the menu ZotLit built for it, or `null` when it built none. */
+function rightClick(
+  engine: FakeEngine,
+  id: string,
+  type = "unresolved",
+): Menu | null {
+  Menu.instances.length = 0;
+  engine.renderer.onNodeRightClick(new MouseEvent("contextmenu"), id, type);
+  return Menu.instances[0] ?? null;
+}
 
 function occurrence(raw: string): CitationOccurrence {
   return {
@@ -85,6 +111,7 @@ class FakeEngine {
     this.app = app;
     this.renderer = new FakeRenderer();
     this.renderer.onNodeClick = this.onNodeClick.bind(this);
+    this.renderer.onNodeRightClick = this.onNodeRightClick.bind(this);
     this.#realApp = realApp;
   }
 
@@ -110,10 +137,17 @@ class FakeEngine {
   onNodeClick(_evt: MouseEvent, id: string, type: string): void {
     this.nativeClicks.push([id, type]);
   }
+
+  readonly nativeRightClicks: [string, string][] = [];
+
+  onNodeRightClick(_evt: MouseEvent, id: string, type: string): void {
+    this.nativeRightClicks.push([id, type]);
+  }
 }
 
 class FakeRenderer {
   onNodeClick!: (evt: MouseEvent, id: string, type: string) => void;
+  onNodeRightClick!: (evt: MouseEvent, id: string, type: string) => void;
   setData = vi.fn();
 }
 
@@ -148,8 +182,10 @@ class CitationIndexStub {
   readonly #emitter =
     createNanoEvents<Record<string, (...args: never[]) => void>>();
   citationsByPath = vi.fn(() => OCCURRENCES);
+  /** Answers every key `null`, as the index does until its snapshot is warm. */
+  cold = false;
   resolveCitekey = (citekey: string): CitekeyResolution | null =>
-    RESOLUTIONS[citekey] ?? null;
+    this.cold ? null : (RESOLUTIONS[citekey] ?? null);
 
   on(event: string, cb: () => void): () => void {
     return this.#emitter.on(event, cb);
@@ -429,6 +465,143 @@ describe("GraphCitations clicks", () => {
   });
 });
 
+describe("GraphCitations right-clicks", () => {
+  it("offers every action for a Cited Work Node whose key names one item", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    const menu = rightClick(engine, "@pine2023");
+
+    expect(menu?.items.map((item) => item.title)).toEqual([
+      m.graph_citations_menu_create_note(),
+      m.references_open_in_zotero(),
+      m.graph_citations_menu_copy_citekey(),
+    ]);
+    expect(engine.nativeRightClicks).toEqual([]);
+
+    const opened = vi.spyOn(window, "open").mockReturnValue(null);
+    const copied = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockResolvedValue();
+    for (const item of menu!.items) item.click();
+
+    expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
+      "pine2023",
+      false,
+    );
+    expect(opened).toHaveBeenCalledExactlyOnceWith(
+      "zotero://select/groups/4/items/PINE2345",
+    );
+    expect(copied).toHaveBeenCalledExactlyOnceWith("pine2023");
+  });
+
+  it("leaves out Open in Zotero for an ambiguous key, which names no single item", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("localgraph");
+    fixture.layoutReady();
+
+    const menu = rightClick(engine, "@roe2025");
+
+    expect(menu?.items.map((item) => item.title)).toEqual([
+      m.graph_citations_menu_create_note(),
+      m.graph_citations_menu_copy_citekey(),
+    ]);
+    menu!.items[0]!.click();
+    expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
+      "roe2025",
+      false,
+    );
+  });
+
+  it("offers the citation key alone for a key that names no item", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    const menu = rightClick(engine, "@typo2024");
+
+    expect(menu?.items.map((item) => item.title)).toEqual([
+      m.graph_citations_menu_copy_citekey(),
+    ]);
+    const copied = vi
+      .spyOn(navigator.clipboard, "writeText")
+      .mockResolvedValue();
+    menu!.items[0]!.click();
+
+    expect(copied).toHaveBeenCalledExactlyOnceWith("typo2024");
+    expect(fixture.openCitekey).not.toHaveBeenCalled();
+  });
+
+  it("offers the create action while the resolution snapshot is cold", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    fixture.citationIndex.cold = true;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    // The key names one Item once the snapshot warms, and the menu cannot read
+    // that yet: create shows, and Open in Zotero waits for a named Item.
+    const menu = rightClick(engine, "@doe2024");
+
+    expect(menu?.items.map((item) => item.title)).toEqual([
+      m.graph_citations_menu_create_note(),
+      m.graph_citations_menu_copy_citekey(),
+    ]);
+    menu!.items[0]!.click();
+    expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
+      "doe2024",
+      false,
+    );
+  });
+
+  it("calls through for every node while the additions carry no Cited Work Node", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    fixture.citationIndex.citationsByPath.mockReturnValue(
+      new Map<string, readonly CitationOccurrence[]>(),
+    );
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    engine.renderer.onNodeClick(
+      new MouseEvent("click"),
+      "@pine2023",
+      "unresolved",
+    );
+
+    expect(rightClick(engine, "@pine2023")).toBeNull();
+    expect(engine.nativeClicks).toEqual([["@pine2023", "unresolved"]]);
+    expect(engine.nativeRightClicks).toEqual([["@pine2023", "unresolved"]]);
+    expect(fixture.openCitekey).not.toHaveBeenCalled();
+  });
+
+  it("calls through to the native menu for every other node", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    expect(rightClick(engine, "Literature/Doe 2024.md", "")).toBeNull();
+    expect(rightClick(engine, "missing", "unresolved")).toBeNull();
+
+    expect(engine.nativeRightClicks).toEqual([
+      ["Literature/Doe 2024.md", ""],
+      ["missing", "unresolved"],
+    ]);
+    expect(fixture.openCitekey).not.toHaveBeenCalled();
+  });
+});
+
 describe("GraphCitations re-rendering", () => {
   it("re-renders every installed leaf once per burst of index events", async () => {
     vi.useFakeTimers();
@@ -467,9 +640,11 @@ describe("GraphCitations teardown", () => {
     const global = fixture.addLeaf("graph");
     const local = fixture.addLeaf("localgraph");
     const nativeClick = global.renderer.onNodeClick;
+    const nativeRightClick = global.renderer.onNodeRightClick;
     fixture.layoutReady();
     expect(Object.hasOwn(global, "render")).toBe(true);
     expect(global.renderer.onNodeClick).not.toBe(nativeClick);
+    expect(global.renderer.onNodeRightClick).not.toBe(nativeRightClick);
 
     fixture.settings.update({ "citation.graph-citations": false });
 
@@ -483,6 +658,7 @@ describe("GraphCitations teardown", () => {
       });
     }
     expect(global.renderer.onNodeClick).toBe(nativeClick);
+    expect(global.renderer.onNodeRightClick).toBe(nativeRightClick);
 
     fixture.fire("layout-change");
     fixture.citationIndex.emit("backfilled");
@@ -494,13 +670,19 @@ describe("GraphCitations teardown", () => {
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
+    const nativeClick = engine.renderer.onNodeClick;
+    const nativeRightClick = engine.renderer.onNodeRightClick;
     fixture.layoutReady();
     fixture.settings.update({ "citation.graph-citations": false });
+    expect(engine.renderer.onNodeClick).toBe(nativeClick);
+    expect(engine.renderer.onNodeRightClick).toBe(nativeRightClick);
 
     fixture.settings.update({ "citation.graph-citations": true });
 
     expect(engine.renders).toHaveLength(3);
     expect(engine.renders[2]!.facaded).toBe(true);
+    expect(engine.renderer.onNodeClick).not.toBe(nativeClick);
+    expect(engine.renderer.onNodeRightClick).not.toBe(nativeRightClick);
   });
 
   it("restores every member, draws natively once, and unsubscribes on dispose", async () => {
@@ -509,12 +691,14 @@ describe("GraphCitations teardown", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     const nativeClick = engine.renderer.onNodeClick;
+    const nativeRightClick = engine.renderer.onNodeRightClick;
     fixture.layoutReady();
 
     await service[Symbol.asyncDispose]();
 
     expect(Object.hasOwn(engine, "render")).toBe(false);
     expect(engine.renderer.onNodeClick).toBe(nativeClick);
+    expect(engine.renderer.onNodeRightClick).toBe(nativeRightClick);
     expect(engine.renders).toHaveLength(2);
     expect(engine.renders[1]!.facaded).toBe(false);
     expect(fixture.listenerCount()).toBe(0);
