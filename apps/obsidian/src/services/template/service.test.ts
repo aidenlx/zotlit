@@ -1965,6 +1965,27 @@ describe("Template Document kinds", () => {
     );
   });
 
+  it("keeps a converted partial registered when its legacy file is deleted later", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-authors.liquid.md", "By {{ zt.authors }}");
+    const { service } = await makeHarness({ vault });
+    const data = { authors: "Ada Lovelace" };
+
+    // The conversion writes the partial document first and trashes the legacy
+    // file after, so the two events can land in separate debounce windows.
+    vault.createFile(
+      "templates/zotlit-partial.authors.md",
+      "---\nlanguage: liquid\n---\nBy {{ zt.authors }}",
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    expect(service.render("authors", data)).toBe("By Ada Lovelace");
+
+    vault.deleteFile("templates/zotlit-authors.liquid.md");
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(service.render("authors", data)).toBe("By Ada Lovelace");
+  });
+
   it("names a zotlit- file no kind claims and ignores a file without the prefix", async () => {
     const vault = new MockVault();
     vault.addFile("templates/zotlit-foo.md", "Stray");
@@ -1978,6 +1999,53 @@ describe("Template Document kinds", () => {
     await vi.advanceTimersByTimeAsync(500);
 
     expect(service.getUnrecognizedFiles()).toEqual([]);
+  });
+
+  it("lists the remaining 2.1.x cite and partial files as convertible", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-cite.liquid.md", "{{ zt.citations }}");
+    vault.addFile("templates/zotlit-cite2.eta.md", "<%= zt.citations %>");
+    vault.addFile("templates/zotlit-authors.liquid.md", "By {{ zt.authors }}");
+    vault.addFile("templates/zotlit-citation.liquid.md", "Reserved");
+    const { service } = await makeHarness({ vault });
+
+    expect(service.getLegacyTemplateDocuments()).toEqual({
+      citation: [
+        {
+          name: "cite",
+          path: "templates/zotlit-cite.liquid.md",
+          language: "liquid",
+          inert: false,
+          shadowed: [],
+        },
+        {
+          name: "cite2",
+          path: "templates/zotlit-cite2.eta.md",
+          language: "eta",
+          inert: true,
+          shadowed: [],
+        },
+      ],
+      partials: [
+        {
+          name: "authors",
+          path: "templates/zotlit-authors.liquid.md",
+          language: "liquid",
+          inert: false,
+          shadowed: [],
+        },
+      ],
+    });
+    // A legacy partial still answers by its bare name, the way 2.1.x
+    // registered it, so a note template that calls it keeps rendering.
+    expect(service.render("authors", { authors: "Ada Lovelace" })).toBe(
+      "By Ada Lovelace",
+    );
+    // `citation` is the Citation Template's name; the extension-named file
+    // claiming it is reported instead of registered.
+    expect(service.getUnrecognizedFiles()).toEqual([
+      "templates/zotlit-citation.liquid.md",
+    ]);
   });
 });
 

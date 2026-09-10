@@ -30,6 +30,12 @@ import type {
 } from "./frontmatter";
 import { mergeManagedFrontmatterEntries } from "./frontmatter-merge";
 import { TemplateEngine } from "./index";
+import { inlineCitation } from "./inline-citation";
+import {
+  DEFAULT_CITATION_BRANCHES,
+  foldLegacyCitationTemplates,
+} from "./legacy-citation";
+import type { LegacyCitationSources } from "./legacy-citation";
 import { createLiquidEngine } from "./liquid";
 import {
   LegacyTemplateConversionError,
@@ -71,6 +77,13 @@ export type {
 } from "./literature-note-template";
 
 export {
+  DEFAULT_CITATION_BRANCHES,
+  foldLegacyCitationTemplates,
+} from "./legacy-citation";
+export type { LegacyCitationSources } from "./legacy-citation";
+
+export {
+  formatPlainTemplateDocument,
   parsePlainTemplateDocument,
   PlainTemplateDocumentError,
 } from "./plain-template-document";
@@ -90,6 +103,21 @@ export interface ConvertedLegacyLiteratureNoteTemplate {
     readonly annotation: string | null;
   };
   readonly frontmatterPatch: Readonly<Record<string, unknown>>;
+}
+
+export interface ConvertedLegacyCitationTemplate {
+  /** The Citation Template source both gestures now render through. */
+  readonly source: string;
+  /** The verified citation each Citation Variant renders, in inline form. */
+  readonly rendered: { readonly main: string; readonly alt: string };
+}
+
+export interface ConvertLegacyCitationTemplateOptions {
+  /** The names the conversion unregisters along with the files it trashes.
+   *  The folded source is verified with these absent — the registry the vault
+   *  has after the pass — so a branch that renders one of them is refused
+   *  instead of converting into a citation that fails on the next insert. */
+  readonly removedNames?: readonly string[];
 }
 
 export interface ConvertLegacyLiteratureNoteTemplateOptions {
@@ -163,6 +191,9 @@ function bridgeSource(name: string): string {
  */
 export class TemplateFacade {
   readonly #registry = new Map<string, TemplateSlot>();
+  /** Names {@link #withRegistryWithout} hides for the duration of one render,
+   *  so a conversion verifies against the registry the vault ends up with. */
+  #hiddenNames: ReadonlySet<string> | undefined;
   readonly #transform: (name: string, output: string) => string;
   readonly #eta: TemplateEngine;
   readonly #liquid: Liquid;
@@ -252,6 +283,61 @@ export class TemplateFacade {
 
   parseLiteratureNoteTemplate(source: string): LiteratureNoteTemplateDocument {
     return parseLiteratureNoteTemplateImpl(source);
+  }
+
+  /**
+   * Fold the 2.1.x `cite` and `cite2` sources into one Citation Template and
+   * verify it: each Citation Variant must render exactly the bytes the legacy
+   * file it replaces rendered, in the inline form a citation is inserted as.
+   * Nothing is registered and nothing is written — the caller persists the
+   * returned source only once both variants matched.
+   *
+   * The legacy branches render against the registry as it stands now, and the
+   * folded source against the registry the pass leaves behind — the names in
+   * `options.removedNames` already gone. A branch that renders one of them
+   * therefore fails here, before the write, instead of on the first insert
+   * after the legacy files reach the trash.
+   *
+   * @param data the citation-template data root per variant, each already
+   *   carrying its own `variant`.
+   * @throws {@link LegacyTemplateConversionError} `legacy-render-mismatch` on
+   *   the first variant whose output differs, or `unsupported-legacy-template`
+   *   when either side fails to render at all.
+   */
+  convertLegacyCitationTemplates(
+    legacy: LegacyCitationSources,
+    data: { readonly main: object; readonly alt: object },
+    options: ConvertLegacyCitationTemplateOptions = {},
+  ): ConvertedLegacyCitationTemplate {
+    const { language } = legacy;
+    const source = foldLegacyCitationTemplates(legacy);
+    const branches = DEFAULT_CITATION_BRANCHES[language];
+    const render = (variant: "main" | "alt", from: string, name: string) =>
+      inlineCitation(
+        this.render(name, data[variant], { source: from, language }),
+      );
+
+    const rendered = this.#withRegistryWithout(options.removedNames ?? [], () =>
+      refuseUnrenderable(() => ({
+        main: render("main", source, "citation"),
+        alt: render("alt", source, "citation"),
+      })),
+    );
+    assertSameRender(
+      "main citation output",
+      refuseUnrenderable(() =>
+        render("main", legacy.main ?? branches.main, "cite"),
+      ),
+      rendered.main,
+    );
+    assertSameRender(
+      "alternate citation output",
+      refuseUnrenderable(() =>
+        render("alt", legacy.alt ?? branches.alt, "cite2"),
+      ),
+      rendered.alt,
+    );
+    return { source, rendered };
   }
 
   /**
@@ -566,6 +652,24 @@ export class TemplateFacade {
     else this.#registry.delete(name);
   }
 
+  /** The one registry lookup every name resolution goes through, so hiding a
+   *  name hides it from a direct render and from every include alike. */
+  #slot(name: string): TemplateSlot | undefined {
+    if (this.#hiddenNames?.has(name)) return undefined;
+    return this.#registry.get(name);
+  }
+
+  /** Run `render` against the registry `names` have already left. */
+  #withRegistryWithout<T>(names: readonly string[], render: () => T): T {
+    const previous = this.#hiddenNames;
+    this.#hiddenNames = new Set(names);
+    try {
+      return render();
+    } finally {
+      this.#hiddenNames = previous;
+    }
+  }
+
   /**
    * Single dispatch point for every named render: direct `render()`, an eta
    * include (via the overridden `this.#eta.render`), and a bridge-tag include
@@ -579,7 +683,7 @@ export class TemplateFacade {
     if (name === "annotation" && this.#annotationSource) {
       return this.#renderSource(name, data, this.#annotationSource);
     }
-    const slot = this.#registry.get(name);
+    const slot = this.#slot(name);
     if (!slot) throw new TemplateError(`Template "${name}" not found`, name);
 
     const out = slot.liquid
@@ -649,13 +753,12 @@ export class TemplateFacade {
    *   `exists` check accepts, then the parser reads it through `readFileSync`.
    */
   #makeFs(): FS {
-    const registry = this.#registry;
     // Shared by readFileSync/readFile (liquidjs's `FS.exists`/`readFile` are
     // required, not optional — see fs.d.ts — so both sync and async paths
     // must be implemented, not just the sync one).
     const readSource = (name: string): string => {
       if (
-        !registry.has(name) &&
+        !this.#slot(name) &&
         !(name === "annotation" && this.#annotationSource)
       ) {
         throw new TemplateError(`Template "${name}" not found`, name);
@@ -705,7 +808,7 @@ export class TemplateFacade {
         const name = (yield evalToken(this.#nameToken, ctx)) as string;
         const binding =
           name === "annotation" ? self.#annotationSource : undefined;
-        const slot = self.#registry.get(name);
+        const slot = self.#slot(name);
         if (!slot && !binding)
           throw new TemplateError(`Template "${name}" not found`, name);
         const templates = binding
@@ -726,6 +829,29 @@ export class TemplateFacade {
         }
       }
     };
+  }
+}
+
+/**
+ * Carry a render that throws out as a refusal the prompt can report, so a
+ * legacy pair the pass cannot render leaves the vault unchanged instead of
+ * failing the conversion with an unhandled error.
+ */
+function refuseUnrenderable<T>(render: () => T): T {
+  try {
+    return render();
+  } catch (error) {
+    if (error instanceof LegacyTemplateConversionError) throw error;
+    throw new LegacyTemplateConversionError(
+      "unsupported-legacy-template",
+      `The legacy citation templates failed to render: ${(error as Error).message}`,
+      {
+        difference: "citation render",
+        recovery:
+          "Keep the legacy files unchanged and adjust the templates before retrying conversion.",
+        cause: error,
+      },
+    );
   }
 }
 
