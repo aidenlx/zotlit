@@ -130,7 +130,7 @@ describe("Profile Editor host", () => {
           label: "Installed",
           options: [
             { id: "apa", label: "APA", hint: "Author-date" },
-            { id: "ieee", label: "IEEE" },
+            { id: "ieee", label: "IEEE", icon: "choose-sample" },
           ],
         },
       ],
@@ -177,6 +177,12 @@ describe("Profile Editor host", () => {
       "true",
       null,
     ]);
+    // An action row leads with its icon, in Obsidian's own icon slot.
+    expect(
+      rows.map((el) =>
+        el.firstElementChild!.classList.contains("suggestion-icon"),
+      ),
+    ).toEqual([false, true]);
   });
 
   it("highlights the searched text in the title and the hint", () => {
