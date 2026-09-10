@@ -1,7 +1,11 @@
 // Presentational root for the Template Data Explorer: db-not-ready, no-item, and tree states.
 import { useContext } from "react";
 
-import { DataExplorer } from "@zotlit/workbench/ui";
+import {
+  DataExplorer,
+  useWorkbenchHost,
+  visibleSectionIds,
+} from "@zotlit/workbench/ui";
 import type {
   DataExplorerProps,
   WorkbenchItemChoice,
@@ -20,6 +24,7 @@ import {
 import {
   profileEditorButton,
   selectionBar,
+  selectionControl,
   selectionHint,
 } from "@/views/profile-editor/theme";
 
@@ -45,15 +50,25 @@ export function Explorer({
     DataExplorerProps,
     | "data"
     | "root"
-    | "variant"
+    | "collapsedSections"
     | "navigation"
-    | "onVariantChange"
+    | "onCollapsedSectionsChange"
     | "onNavigationChange"
   >;
 }): React.ReactElement {
   const store = useExplorerStoreApi();
   const state = useExplorerStore((s) => s);
-  const { root, status, error, data, context, navigation, variant } = state;
+  const { root, status, error, data, context, navigation, collapsedSections } =
+    state;
+  const host = useWorkbenchHost();
+  const shownSections = visibleSectionIds(data, {
+    m: host.messages,
+    root,
+    locale: host.getLocale(),
+  });
+  const allCollapsed =
+    shownSections.length > 0 &&
+    shownSections.every((id) => collapsedSections.has(id));
   const showAnnotationSelector = root === "annotation";
   const anchor =
     root === "annotation"
@@ -149,6 +164,16 @@ export function Explorer({
                     : m.workbench_choose_item()}
                 </span>
               </button>
+              <IconButton
+                icon={allCollapsed ? "chevrons-up-down" : "chevrons-down-up"}
+                className={selectionControl({ kind: "icon" })}
+                onClick={() => actions.onToggleSections()}
+                {...tooltipAttrs(
+                  allCollapsed
+                    ? m.workbench_explorer_expand_all()
+                    : m.workbench_explorer_collapse_all(),
+                )}
+              />
             </div>
             {anchor && (
               <div className="zt:flex zt:min-w-0 zt:flex-col zt:gap-1.5">
@@ -211,8 +236,8 @@ export function Explorer({
               root={root}
               disabled={!context?.canInsertField}
               navigation={navigation}
-              variant={variant}
-              onVariantChange={state.setVariant}
+              collapsedSections={collapsedSections}
+              onCollapsedSectionsChange={state.setCollapsedSections}
               onNavigationChange={state.setNavigation}
             />
           )}

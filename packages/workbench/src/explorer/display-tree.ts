@@ -344,6 +344,8 @@ function stringifyContainer(value: unknown): string {
 export interface BuildFilteredDisplayTreeOptions {
   /** Keys (see {@link formatPath}) of containers to render without children, even when they have filtered matches. */
   readonly collapsed?: ReadonlySet<string>;
+  /** Extra searchable text per key, such as the reader-facing name of a top-level field. */
+  readonly aliases?: ReadonlyMap<string, string>;
 }
 
 export function buildFilteredDisplayTree(
@@ -359,6 +361,7 @@ export function buildFilteredDisplayTree(
     matchedKeys: new Set(),
     activeContainers: new WeakSet(),
     collapsed: options?.collapsed ?? new Set(),
+    aliases: options?.aliases ?? new Map(),
   };
   const nodes = filterChildren(root, [], ctx);
   return { nodes, matchedKeys: ctx.matchedKeys };
@@ -369,6 +372,7 @@ interface FilterContext {
   readonly matchedKeys: Set<string>;
   readonly activeContainers: WeakSet<object>;
   readonly collapsed: ReadonlySet<string>;
+  readonly aliases: ReadonlyMap<string, string>;
 }
 
 function filterChildren(
@@ -396,7 +400,9 @@ function filterNode(
   const path = [...parentPath, entry.segment];
   const key = formatPath(path);
   const label = String(entry.segment);
-  const labelMatches = label.toLowerCase().includes(ctx.lowerQuery);
+  const labelMatches =
+    label.toLowerCase().includes(ctx.lowerQuery) ||
+    (ctx.aliases.get(key)?.toLowerCase().includes(ctx.lowerQuery) ?? false);
   const nodeBase = { path, key, label };
 
   if (entry.isGetter && labelMatches) {

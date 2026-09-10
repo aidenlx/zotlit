@@ -28,8 +28,8 @@ it("keeps shared labels in the locale of each web request", async () => {
         <WebTestHost>
           <TabBar />
           <DataExplorer
-            variant="simple"
-            onVariantChange={() => {}}
+            collapsedSections={new Set()}
+            onCollapsedSectionsChange={() => {}}
             navigation={initialTreeState()}
             onNavigationChange={() => {}}
             root="note"
@@ -55,7 +55,7 @@ it("keeps shared labels in the locale of each web request", async () => {
     ] as const) {
       expect(html).toContain(`>${m.workbench_tab_match({}, { locale })}<`);
       expect(html).toContain(
-        `>${m.workbench_explorer_simple({}, { locale })}<`,
+        `>${m.workbench_explorer_section_common({}, { locale })}<`,
       );
     }
   } finally {

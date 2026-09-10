@@ -46,7 +46,7 @@ function context(
   };
 }
 describe("independent native Explorer", () => {
-  it("keeps filter, collapse, and variant local across editor display changes", async () => {
+  it("keeps filter, collapse, and closed sections local across editor display changes", async () => {
     vi.mocked(loadTemplateData).mockResolvedValue({
       kind: "data",
       data: { title: "Paper", tags: ["methods"] },
@@ -59,7 +59,7 @@ describe("independent native Explorer", () => {
     first.state.getState().toggleNode("tags");
     first.state.getState().setFilter("methods");
     first.state.getState().toggleNode("tags");
-    first.state.getState().setVariant("all");
+    first.state.getState().setCollapsedSections(new Set(["record"]));
     first.setContext(
       context({
         advanced: true,
@@ -72,7 +72,8 @@ describe("independent native Explorer", () => {
     );
     expect(first.state.getState().navigation.filterQuery).toBe("methods");
     expect(second.state.getState().navigation.filterQuery).toBe("");
-    expect(second.state.getState().variant).toBe("simple");
+    expect(first.state.getState().collapsedSections.has("record")).toBe(true);
+    expect(second.state.getState().collapsedSections.size).toBe(0);
     first.state.getState().setFilter("");
     expect(first.state.getState().navigation.expanded.has("tags")).toBe(true);
   });
@@ -202,6 +203,7 @@ describe("independent native Explorer", () => {
           WorkbenchHostProvider,
           {
             host: {
+              getLocale: () => "en",
               persistence: { read: () => null, write: () => {} },
             } as never,
           },
@@ -286,6 +288,7 @@ it("switches annotation data locally through the annotation chooser", async () =
         {
           host: {
             messages: m,
+            getLocale: () => "en",
             tooltip: (text: string) => ({ title: text }),
             persistence: { read: () => null, write: () => {} },
             suggester,

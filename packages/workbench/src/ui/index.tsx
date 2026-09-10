@@ -55,7 +55,6 @@ export type {
 } from "./scheduler";
 export { createWorkbenchStore } from "./store";
 export type {
-  ExplorerVariant,
   PreviewMode,
   PreviewSettings,
   TemplateRoot,
@@ -122,12 +121,24 @@ export { SampleSuggester } from "./sample-suggester";
 export type { SampleOption } from "./sample-suggester";
 
 export { DisplayTree } from "./explorer-tree";
-export type { DisplayTreeProps } from "./explorer-tree";
+export type { DisplaySection, DisplayTreeProps } from "./explorer-tree";
 export {
   commonRows,
   fieldValueText,
   rowMatches,
   fieldSnippet,
 } from "./explorer-fields";
+export {
+  explorerSectionIds,
+  explorerSections,
+  fieldLabel,
+  sentenceCase,
+  visibleSectionIds,
+} from "./explorer-sections";
+export type {
+  ExplorerReader,
+  ExplorerSection,
+  ExplorerSectionId,
+} from "./explorer-sections";
 export { DataExplorer } from "./data-explorer";
 export type { DataExplorerProps, ExplorerPresentation } from "./data-explorer";

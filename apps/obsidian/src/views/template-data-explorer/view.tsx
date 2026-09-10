@@ -1,5 +1,5 @@
 // A native Explorer owns its data and navigation; workspace values supply its authoring context.
-import { ItemView } from "obsidian";
+import { ItemView, setIcon } from "obsidian";
 import type { Menu, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -12,6 +12,8 @@ import {
   SAMPLE_ANNOTATIONS,
 } from "@zotlit/workbench/render";
 import {
+  explorerSectionIds,
+  visibleSectionIds,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
 } from "@zotlit/workbench/ui";
@@ -127,6 +129,21 @@ export class TemplateDataExplorerView extends ItemView {
         .setIcon("highlighter")
         .onClick(() => void this.#chooseAnnotation()),
     );
+    menu.addItem((item) =>
+      item
+        .setSection("zotlit")
+        .setTitle(
+          this.#allSectionsCollapsed()
+            ? m.workbench_explorer_expand_all()
+            : m.workbench_explorer_collapse_all(),
+        )
+        .setIcon(
+          this.#allSectionsCollapsed()
+            ? "chevrons-up-down"
+            : "chevrons-down-up",
+        )
+        .onClick(() => this.#toggleSections()),
+    );
     this.#actions?.addCopyKeyMenuItem(menu);
     menu.addItem((item) =>
       item
@@ -138,15 +155,36 @@ export class TemplateDataExplorerView extends ItemView {
     this.#actions?.addExportMenuItem(menu);
   }
   override getState(): Record<string, unknown> {
-    const { item, annotationId, root, variant, sourcePath } =
+    const { item, annotationId, root, collapsedSections, sourcePath } =
       this.#session.state.getState();
     return {
       itemIndexedKey: item?.id ?? null,
       anchorAnnotationKey: annotationId,
       root,
-      variant,
+      collapsedSections: [...collapsedSections],
       sourceFile: sourcePath,
     };
+  }
+  /** Judged on the sections the reader can see, so the action's label matches the pane. */
+  #allSectionsCollapsed(): boolean {
+    const host = this.#host;
+    if (!host) return false;
+    const { root, data, collapsedSections } = this.#session.state.getState();
+    const shown = visibleSectionIds(data, {
+      m: host.messages,
+      root,
+      locale: host.getLocale(),
+    });
+    return shown.length > 0 && shown.every((id) => collapsedSections.has(id));
+  }
+  /** Closes every section, or opens every section once all are closed. */
+  #toggleSections(): void {
+    const { root, setCollapsedSections } = this.#session.state.getState();
+    setCollapsedSections(
+      this.#allSectionsCollapsed()
+        ? new Set()
+        : new Set<string>(explorerSectionIds(root)),
+    );
   }
   override async setState(
     state: unknown,
@@ -189,7 +227,13 @@ export class TemplateDataExplorerView extends ItemView {
           ? "annotation"
           : "note";
     this.#session.state.setState({
-      variant: value.variant === "all" ? "all" : "simple",
+      collapsedSections: new Set(
+        Array.isArray(value.collapsedSections)
+          ? value.collapsedSections.filter(
+              (id): id is string => typeof id === "string",
+            )
+          : [],
+      ),
       sourcePath:
         typeof value.sourceFile === "string" ? value.sourceFile : null,
     });
@@ -314,6 +358,30 @@ export class TemplateDataExplorerView extends ItemView {
     using cleanup = new DisposableStack();
     cleanup.defer(registerCompanionHistory(this));
     cleanup.use(this.#session);
+    // Swaps icon and label like the file explorer's collapse action: each
+    // names what the next press does.
+    const sectionsAction = this.addAction(
+      "chevrons-down-up",
+      m.workbench_explorer_collapse_all(),
+      () => this.#toggleSections(),
+    );
+    let syncedSections: boolean | null = null;
+    const syncSectionsAction = () => {
+      const collapsed = this.#allSectionsCollapsed();
+      if (collapsed === syncedSections) return;
+      syncedSections = collapsed;
+      setIcon(
+        sectionsAction,
+        collapsed ? "chevrons-up-down" : "chevrons-down-up",
+      );
+      sectionsAction.setAttribute(
+        "aria-label",
+        collapsed
+          ? m.workbench_explorer_expand_all()
+          : m.workbench_explorer_collapse_all(),
+      );
+    };
+    syncSectionsAction();
     const chooseAction = this.addAction(
       "search",
       m.workbench_choose_item(),
@@ -344,6 +412,7 @@ export class TemplateDataExplorerView extends ItemView {
     cleanup.defer(
       this.#session.state.subscribe((state, previous) => {
         updateSelectionTitle(this);
+        syncSectionsAction();
         chooseAction.setAttribute(
           "aria-label",
           state.root === "annotation"
@@ -354,7 +423,7 @@ export class TemplateDataExplorerView extends ItemView {
           state.item?.id !== previous.item?.id ||
           state.root !== previous.root ||
           state.annotationId !== previous.annotationId ||
-          state.variant !== previous.variant ||
+          state.collapsedSections !== previous.collapsedSections ||
           state.sourcePath !== previous.sourcePath
         )
           this.app.workspace.requestSaveLayout();
@@ -379,6 +448,7 @@ export class TemplateDataExplorerView extends ItemView {
       onBackToNoteRoot: () => {
         this.#session.setTarget(this.#session.state.getState().item, "note");
       },
+      onToggleSections: () => this.#toggleSections(),
       onRefresh: () => this.#session.refresh(),
       canExport: () => this.#exportTarget() !== null,
       onExport: () => void this.#export(),

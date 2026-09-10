@@ -277,7 +277,7 @@ it("restores independent Explorer navigation after delayed data and keeps search
     itemIndexedKey: "PAPER001",
     anchorAnnotationKey: null,
     root: "note",
-    variant: "all",
+    collapsedSections: ["record"],
     sourceFile: "profiles/paper.md",
   };
   await using cleanup = new AsyncDisposableStack();
@@ -317,8 +317,7 @@ it("restores independent Explorer navigation after delayed data and keeps search
     view.contentEl.querySelector<HTMLInputElement>("input[type=search]")!;
   expect(input.value).toBe("answer");
   expect(view.contentEl.textContent).toContain("42");
-  const body =
-    view.contentEl.querySelector<HTMLElement>('[role="tree"]')!.parentElement!;
+  const body = view.contentEl.querySelector<HTMLElement>('[data-part="body"]')!;
   expect(body.scrollTop).toBe(34);
   expect(body.scrollLeft).toBe(2);
   expect(document.activeElement).toBe(typing);

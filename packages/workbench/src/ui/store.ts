@@ -13,7 +13,6 @@ import type { WorkbenchTab } from "./tabs";
 export type TemplateRoot = "note" | "annotation" | "filename";
 
 /** The Data Explorer's two renderings. */
-export type ExplorerVariant = "simple" | "all";
 
 /** What the preview shows: a new note, or an existing note after Update. */
 export type PreviewMode = "create" | "update";

@@ -10,7 +10,7 @@ The state projections are concrete:
 | --- | --- | --- |
 | Profile Editor | File or built-in reference, active tab, Source mode, item key for examples | Active slice and selection, property/reveal target, editor scroll |
 | Note Preview | Profile/item references, annotation choice, Create/Update, Live/On demand, Reading/Markdown and whole/managed choices | Result scroll and reveal target |
-| Data Explorer | Item and annotation references, authoring root, Simple/All, source reference when needed to reconstruct context | Search, complete tree expansion/filter state, scroll and revealed field |
+| Data Explorer | Item and annotation references, authoring root, Simple/All (closed sections since [ADR 0047](0047-the-data-explorer-lists-fields-by-section-with-no-view-modes.md)), source reference when needed to reconstruct context | Search, complete tree expansion/filter state, scroll and revealed field |
 
 Each native view reads these projections from its own store and restores them through its own actions. Changes to persisted fields request a layout save. Ephemeral restoration waits for the matching source and mounted pane, clamps old selections, and preserves focus unless focus was requested. ZotLit ephemeral fields are namespaced by view so slice coordinates cannot be mistaken for native Markdown cursor or scroll coordinates. Native ephemeral state supports Back/Forward, duplicate tab, and reopening a closed tab within the session; workspace restart uses persisted state. Document recovery and undo history keep their native/runtime owners.
 

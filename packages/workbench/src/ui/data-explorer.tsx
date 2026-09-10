@@ -1,16 +1,19 @@
 import type { DisplayNode, TemplateEngine, TreeState } from "#/explorer/index";
-import { useEffect, useId, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
-import { commonRows, fieldSnippet, rowMatches } from "./explorer-fields";
+import { fieldSnippet } from "./explorer-fields";
 import type { FieldInsertionMode } from "./explorer-fields";
+import { explorerSections } from "./explorer-sections";
+import type { ExplorerReader } from "./explorer-sections";
 import { DisplayTree } from "./explorer-tree";
-import { HiddenName, useWorkbenchHost } from "./host";
+import type { DisplaySection } from "./explorer-tree";
+import { useWorkbenchHost } from "./host";
 import type { WorkbenchMenuItem, WorkbenchMenuRequest } from "./host";
 // Both hosts use this field discovery tree. The host owns clipboard, insertion,
 // export, popup presentation, and the controlled filtering/expansion state.
 import { useWorkbenchMessages } from "./messages";
-import type { TemplateRoot, ExplorerVariant } from "./store";
+import type { TemplateRoot } from "./store";
 import { useParts } from "./theme";
 
 import {
@@ -35,8 +38,9 @@ export interface DataExplorerProps {
   restore?: ExplorerPresentation | null;
   onRestored?: () => void;
   onPresentationChange?: (value: ExplorerPresentation) => void;
-  variant: ExplorerVariant;
-  onVariantChange: (variant: ExplorerVariant) => void;
+  /** Section ids the reader has closed; the host keeps them with its view state. */
+  collapsedSections: ReadonlySet<string>;
+  onCollapsedSectionsChange: (collapsed: ReadonlySet<string>) => void;
   navigation: TreeState;
   onNavigationChange: (navigation: TreeState) => void;
   /** The host distinguishes absent input, loading, and data failures. */
@@ -61,8 +65,8 @@ export function DataExplorer({
   restore,
   onRestored,
   onPresentationChange,
-  variant,
-  onVariantChange,
+  collapsedSections,
+  onCollapsedSectionsChange,
   navigation: tree,
   onNavigationChange,
   empty,
@@ -100,56 +104,56 @@ export function DataExplorer({
   const m = useWorkbenchMessages();
   const host = useWorkbenchHost();
   const part = useParts("dataExplorer");
-  const variantsId = useId();
   const insertNode =
     onInsertNode ??
     (onInsert
       ? (node: DisplayNode) => onInsert(fieldSnippet(node, mode, { engine }))
       : undefined);
+  const locale = host.getLocale();
+  const reader = useMemo<ExplorerReader>(
+    () => ({ m, root, locale }),
+    [m, root, locale],
+  );
+  // The names top-level fields show, which the filter also searches.
+  const labels = useMemo(() => {
+    if (!data) return new Map<string, string>();
+    const nodes = buildDisplayTree(data, { expanded: new Set() });
+    return new Map(
+      explorerSections(nodes, reader).flatMap((section) =>
+        section.rows.map((row) => [row.node.key, row.label] as const),
+      ),
+    );
+  }, [data, reader]);
   const visible = useMemo(() => {
     if (!data) return { nodes: [], matchedKeys: null };
     if (tree.filterQuery)
       return buildFilteredDisplayTree(data, tree.filterQuery, {
         collapsed: tree.filterCollapsed,
+        aliases: labels,
       });
     return {
       nodes: buildDisplayTree(data, { expanded: tree.expanded }),
       matchedKeys: null,
     };
-  }, [data, tree]);
-  // Resolve the labels on each render; the display tree above remains cached.
-  const nodes = (() => {
-    if (variant === "all") return visible.nodes;
-    const full =
-      data && tree.filterQuery
-        ? buildDisplayTree(data, { expanded: tree.expanded })
-        : visible.nodes;
-    const common = commonRows(m, root, full);
-    const labels = new Map(common.map((row) => [row.node.key, row.label]));
-    const order = new Map(common.map((row, index) => [row.node.key, index]));
-    const displayed = new Map(visible.nodes.map((node) => [node.key, node]));
-    if (tree.filterQuery) {
-      for (const row of common)
-        if (rowMatches(row, tree.filterQuery))
-          displayed.set(row.node.key, row.node);
-    }
-    return [...displayed.values()]
-      .map((node) => ({ ...node, label: labels.get(node.key) ?? node.label }))
-      .toSorted(
-        (a, b) =>
-          (order.get(a.key) ?? order.size) - (order.get(b.key) ?? order.size),
-      );
-  })();
-  const copyNode = async (node: DisplayNode) => {
-    const value = copyValue(node);
-    if (value !== null) {
-      try {
-        await copy(value);
-      } catch (error) {
-        host.notice(m.workbench_field_copy_failed());
-        throw error;
-      }
-    }
+  }, [data, tree, labels]);
+  const filtering = tree.filterQuery !== "";
+  // A filter holds every section that still has a row open.
+  const sections = useMemo<DisplaySection[]>(
+    () =>
+      explorerSections(visible.nodes, reader).map((section) => ({
+        id: section.id,
+        label: section.label,
+        collapsed: !filtering && collapsedSections.has(section.id),
+        nodes: section.rows.map((row) => row.node),
+        labels: new Map(section.rows.map((row) => [row.node.key, row.label])),
+      })),
+    [visible, reader, filtering, collapsedSections],
+  );
+  const toggleSection = (id: string) => {
+    const next = new Set(collapsedSections);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onCollapsedSectionsChange(next);
   };
   const copyMenu = (text: string) => {
     void copy(text).then(
@@ -205,8 +209,14 @@ export function DataExplorer({
       });
     host.menu({ anchor: event.currentTarget as HTMLElement, items, submenus });
   };
+  const search =
+    root === "annotation"
+      ? m.workbench_fields_search_annotation()
+      : root === "filename"
+        ? m.workbench_fields_search_filename()
+        : m.workbench_fields_search_note();
   return (
-    <section {...part("explorer", variant)}>
+    <section {...part("explorer")}>
       <div {...part("header")}>
         <h2 {...part("heading")}>{m.workbench_fields_heading()}</h2>
         <span {...part("root-label")}>
@@ -216,30 +226,12 @@ export function DataExplorer({
               ? m.workbench_fields_root_filename()
               : m.workbench_fields_root_note()}
         </span>
-        <div role="group" aria-labelledby={variantsId} {...part("variants")}>
-          <HiddenName id={variantsId}>
-            {m.workbench_explorer_variant()}
-          </HiddenName>
-          {(["simple", "all"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={variant === value}
-              {...part("variant", variant === value ? "active" : "inactive")}
-              onClick={() => onVariantChange(value)}
-            >
-              {value === "simple"
-                ? m.workbench_explorer_simple()
-                : m.workbench_explorer_all()}
-            </button>
-          ))}
-        </div>
       </div>
       <input
         type="search"
         value={tree.filterQuery}
-        aria-label={m.workbench_fields_search()}
-        placeholder={m.workbench_fields_search()}
+        aria-label={search}
+        placeholder={search}
         {...part("search")}
         onChange={(event) =>
           onNavigationChange(setFilter(tree, event.currentTarget.value))
@@ -267,7 +259,7 @@ export function DataExplorer({
           });
         }}
       >
-        {nodes.length === 0 ? (
+        {sections.length === 0 ? (
           (empty ?? (
             <p {...part("empty")}>
               {data === null
@@ -277,11 +269,10 @@ export function DataExplorer({
           ))
         ) : (
           <DisplayTree
-            variant={variant}
-            nodes={nodes}
+            sections={sections}
             matchedKeys={visible.matchedKeys}
             onToggle={(key) => onNavigationChange(toggleNode(tree, key))}
-            onCopyValue={copyNode}
+            onToggleSection={filtering ? undefined : toggleSection}
             onInsert={!disabled ? insertNode : undefined}
             onTemplateMenu={menu}
           />

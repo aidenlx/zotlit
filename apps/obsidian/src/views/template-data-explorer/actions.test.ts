@@ -14,6 +14,7 @@ function makeActions(overrides?: {
   return createExplorerActions({
     onChooseItem: vi.fn(),
     onBackToNoteRoot: vi.fn(),
+    onToggleSections: vi.fn(),
     onRefresh: vi.fn(),
     copyTarget: overrides?.copyTarget ?? (() => null),
     canExport: overrides?.canExport ?? (() => true),
