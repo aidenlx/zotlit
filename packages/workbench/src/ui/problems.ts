@@ -85,7 +85,28 @@ export function problemText(
         message: m.workbench_problem_reserved_annotation_partial(),
         recovery: m.workbench_problem_reserved_annotation_partial_recovery(),
       };
+    case "bundled-partial":
+      return {
+        message: m.workbench_problem_bundled_partial({
+          names: String(problem.params?.names),
+        }),
+        recovery: m.workbench_problem_bundled_partial_recovery(),
+      };
   }
+}
+
+/**
+ * The button one problem carries beside its recovery line, for a problem the
+ * host can repair on the reader's word. Absent for every code whose repair is
+ * the reader's own edit.
+ */
+export function problemAction(
+  m: WorkbenchMessages,
+  problem: WorkbenchProblem,
+): string | null {
+  return problem.code === "bundled-partial"
+    ? m.workbench_problem_bundled_partial_unpack()
+    : null;
 }
 
 /** The one line a render diagnostic reads as. */

@@ -89,6 +89,7 @@ import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import { BaseNotice } from "@/lib/notice";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ProfileService } from "@/services/profile/service";
 import { openCitationTemplate } from "@/services/template/actions";
@@ -146,6 +147,8 @@ export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
       | "getPartialDocuments"
       | "getPartialNames"
       | "createPartial"
+      | "planPartialUnpack"
+      | "unpackPartials"
     >;
   profile?: Pick<
     ProfileService,
@@ -1345,6 +1348,33 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.#openPartial(document.path),
     );
   }
+  /**
+   * Write every partial this document still carries in its manifest into the
+   * Shared Partial file it belongs in, then drop the entries those names came
+   * from, so each partial is edited in one place from here on.
+   *
+   * A name the vault already holds a document for keeps that document, and its
+   * entry goes with the rest: the reader's own file answers the call. The
+   * keep-or-replace ask belongs to import, which is where the bundle's copy
+   * still has somewhere to go.
+   */
+  unpackBundledPartials(): Promise<boolean> {
+    return runTemplateWorkbenchAction("unpack-partials", async () => {
+      const templates = this.#deps.templates;
+      const bundled = this.#controller.document?.manifest.partials ?? [];
+      if (!templates.loaded || this.#controller.readOnly || !bundled.length)
+        return;
+      const plan = templates.planPartialUnpack(bundled);
+      const { written, kept, dropped } = await templates.unpackPartials(plan);
+      this.#controller.dropBundledPartials(dropped);
+      if (written.length > 0)
+        new BaseNotice(
+          m.notice_partials_unpacked({ names: written.join(", ") }),
+        );
+      if (kept.length > 0)
+        new BaseNotice(m.notice_partials_kept({ names: kept.join(", ") }));
+    });
+  }
   async restoreDefault(): Promise<void> {
     await runTemplateWorkbenchAction("restore-default", async () => {
       const profile = this.#deps.profile;
@@ -2021,7 +2051,11 @@ function EditorContent({
           </>
         )}
       </div>
-      <ProblemsFooter problem={problem} onOpen={openProblem} />
+      <ProblemsFooter
+        problem={problem}
+        onOpen={openProblem}
+        onAction={() => void view.unpackBundledPartials()}
+      />
     </div>
   );
 }

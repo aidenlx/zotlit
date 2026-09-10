@@ -18,6 +18,17 @@ import { ImportProfileModal, createProfileImporter } from "./profiles";
 import type { ImportProfileDeps, ProfileDialogServices } from "./profiles";
 
 const id = "Ry4Ua8Nv2Mx6" as ProfileId;
+/** The keep-or-replace toggle of one partial, read off the row that names it. */
+function replaceToggle(container: HTMLElement, name: string) {
+  const label = m.profile_import_partial_replace({ name });
+  // The row is the one element that both names this partial and holds a toggle.
+  const row = [...container.querySelectorAll<HTMLElement>("*")].find(
+    (element) =>
+      element.textContent === label &&
+      controlsOf(element).some((control) => control instanceof ToggleComponent),
+  )!;
+  return controlsOf(row).find((control) => control instanceof ToggleComponent)!;
+}
 function observeButtons() {
   using stack = new DisposableStack();
   const labels = stack.use(
@@ -74,8 +85,17 @@ function fixture(kind: "fresh" | "replace" = "fresh") {
       description: "Reading notes",
       folder: "Sender",
       citationStyle: "missing-style",
-      partials: [{ name: "summary" }],
+      partials: [
+        { name: "summary" },
+        { name: "authors" },
+        { name: "venue-line" },
+      ],
     },
+    partials: [
+      { name: "summary", verdict: "write", document: "Summary" },
+      { name: "authors", verdict: "conflict", document: "Authors" },
+      { name: "venue-line", verdict: "unchanged", document: "Venue" },
+    ],
     source: "Shared source",
     path: "templates/zotlit-profile.shared.md",
     profile: {
@@ -129,8 +149,15 @@ it("opens fresh consent with metadata, recipient preview, editable bindings and 
   expect(f.modal.contentEl.textContent).toContain("Research group");
   expect(f.modal.contentEl.textContent).toContain("Recipient item");
   expect(f.modal.contentEl.textContent).toContain("Shared (Ry4Ua8Nv2Mx6)");
+  // Only the partials that reach a new file are announced; the one whose name
+  // the vault already holds waits for the reader's word, and the one whose
+  // text this vault already holds changes nothing and is passed over.
   expect(f.modal.contentEl.textContent).toContain(
     m.profile_import_partials({ names: "summary" }),
+  );
+  expect(f.modal.contentEl.textContent).not.toContain("venue-line");
+  expect(f.modal.contentEl.textContent).toContain(
+    m.profile_import_partial_replace({ name: "authors" }),
   );
   expect(f.modal.contentEl.textContent).toContain(
     m.profile_import_missing_style({ style: "missing-style" }),
@@ -152,7 +179,28 @@ it("opens fresh consent with metadata, recipient preview, editable bindings and 
   expect(f.save).not.toHaveBeenCalled();
   buttons.click(m.profile_import_confirm());
   await expect(f.modal.result).resolves.toMatchObject({ id });
-  expect(f.save).toHaveBeenCalledOnce();
+  expect(f.save).toHaveBeenCalledWith({
+    includeMatch: true,
+    replacePartials: [],
+  });
+});
+
+it("keeps a partial the reader leaves alone and replaces the one they approve", async () => {
+  using buttons = observeButtons();
+  const f = fixture();
+  f.modal.onOpen();
+  await vi.waitFor(() =>
+    expect(f.modal.contentEl.textContent).toContain("Recipient item"),
+  );
+  const toggle = replaceToggle(f.modal.contentEl, "authors");
+  expect(toggle.getValue()).toBe(false);
+  toggle.toggle(true);
+  buttons.click(m.profile_import_confirm());
+  await expect(f.modal.result).resolves.toMatchObject({ id });
+  expect(f.save).toHaveBeenCalledWith({
+    includeMatch: true,
+    replacePartials: ["authors"],
+  });
 });
 
 it("shows only Replace and Cancel for a held ID, naming version and separate note counts", async () => {

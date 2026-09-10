@@ -1201,6 +1201,65 @@ language: liquid
     ]);
   });
 
+  it("reports the partials a shared Profile still carries, and unpacks them", async () => {
+    const bundled = SOURCE.replace(
+      "filename: paper",
+      [
+        "filename: paper",
+        "partials:",
+        "  - name: authors",
+        "    language: liquid",
+        "    source: Authors",
+        "  - name: venue-line",
+        "    language: liquid",
+        "    source: Venue",
+      ].join("\n"),
+    );
+    const unpacked: string[] = [];
+    const { view } = setup({
+      templates: {
+        loaded: true,
+        getPartialNames: () => [],
+        getPartialDocuments: () => [],
+        planPartialUnpack: (
+          partials: readonly { name: string; source: string }[],
+        ) =>
+          partials.map(({ name, source }) => ({
+            name,
+            // The vault holds a venue-line of the reader's own already.
+            verdict: name === "venue-line" ? "conflict" : "write",
+            document: source,
+          })),
+        unpackPartials: async (
+          plan: readonly { name: string; verdict: string }[],
+        ) => {
+          unpacked.push(...plan.map(({ name }) => name));
+          const written = plan
+            .filter(({ verdict }) => verdict === "write")
+            .map(({ name }) => name);
+          return {
+            written,
+            kept: ["venue-line"],
+            dropped: plan.map(({ name }) => name),
+          };
+        },
+      } as unknown as TemplateWorkbenchDeps["templates"],
+    });
+    view.setViewData(bundled, true);
+    expect(view.controller.problems[0]).toMatchObject({
+      code: "bundled-partial",
+      params: { names: "authors, venue-line" },
+    });
+
+    // Both entries go — the written one and the one the reader's own file
+    // answers — so the problem clears and neither name has two homes left.
+    expect(await view.unpackBundledPartials()).toBe(true);
+    expect(unpacked).toEqual(["authors", "venue-line"]);
+    expect(view.getViewData()).not.toContain("partials:");
+    expect(view.getViewData()).toContain("filename: paper");
+    expect(view.controller.problems).toEqual([]);
+  });
+
   it("names no partial while the template service is still scanning the folder", () => {
     const { view } = setup({
       templates: {

@@ -146,8 +146,12 @@ render yet. Its state — `result`, `busy`, `stale` — is what every result sur
 paints. Outside the editor provider the tree paints inert, which the web's
 skeleton relies on. The components so far: `TabBar` and
 `TabPanel`, `EditToolbar` (Basic against Advanced, undo, redo, a host's own
-controls as children), and `ProblemsFooter` with `problemText` and
-`diagnosticText`, the words for every core code.
+controls as children), and `ProblemsFooter` with `problemText`,
+`problemAction`, and `diagnosticText`, the words for every core code. A host
+that passes `onAction` gets the button `problemAction` names for the codes a
+host can repair on the reader's word; a Profile edited beside a vault reports
+`bundled-partial` for the partials its manifest still carries, and the vault
+host unpacks them into files with `dropBundledPartials`.
 
 `usePartialBoxes(controller, slice, host)` draws the Partial Placeholder over
 every Shared Partial call in one pane: the editor extension to pass that pane

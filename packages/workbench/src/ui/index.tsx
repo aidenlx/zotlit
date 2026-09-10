@@ -44,7 +44,7 @@ export type {
   WorkbenchSuggesterOption,
   WorkbenchSuggesterRequest,
 } from "./host";
-export { diagnosticText, problemText } from "./problems";
+export { diagnosticText, problemAction, problemText } from "./problems";
 export type { ProblemText } from "./problems";
 export { ProblemsFooter, problemWhere } from "./problems-footer";
 export { createRenderScheduler } from "./scheduler";

@@ -245,6 +245,7 @@ export interface WorkbenchParts {
     | "problems-heading"
     | "problems-text"
     | "problems-recovery"
+    | "problems-action"
     | "problems-open";
 }
 

@@ -256,6 +256,44 @@ describe("WorkbenchDocumentController", () => {
     expect(controller.dependencies).toEqual(["cite", "summary"]);
   });
 
+  it("drops the transport copy of the partials a host has written to files", () => {
+    const bundled = HAND_WRITTEN.replace(
+      "language: liquid",
+      [
+        "language: liquid",
+        "partials:",
+        "  - name: authors",
+        "    language: liquid",
+        "    source: Authors",
+        "  - name: venue-line",
+        "    language: liquid",
+        "    source: Venue",
+      ].join("\n"),
+    );
+    const controller = new WorkbenchDocumentController(bundled, {
+      runtime: "native",
+    });
+
+    expect(controller.dropBundledPartials(["authors"])).toBe(true);
+    expect(controller.document!.manifest.partials).toEqual([
+      { name: "venue-line", language: "liquid", source: "Venue" },
+    ]);
+    // The reader's own manifest bytes survive the edit.
+    expect(controller.source).toContain("# my own profile, do not reformat");
+    expect(controller.source).toContain("filename: '{{ zt.citationKey }}'");
+
+    // The last entry goes with its key, so the problem goes with it.
+    expect(controller.dropBundledPartials(["venue-line"])).toBe(true);
+    expect(controller.source).not.toContain("partials:");
+    expect(controller.problems).toEqual([]);
+
+    // One undo step each, so the reader gets the bundle back as it was.
+    expect(controller.undo()).toBe(true);
+    expect(controller.undo()).toBe(true);
+    expect(controller.source).toBe(bundled);
+    expect(controller.dropBundledPartials(["unknown"])).toBe(false);
+  });
+
   it("reports an Eta profile as unsupported on the web and points at the value", () => {
     const controller = new WorkbenchDocumentController(
       HAND_WRITTEN.replace("language: liquid", "language: eta"),
