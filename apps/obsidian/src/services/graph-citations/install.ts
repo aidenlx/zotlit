@@ -2,6 +2,7 @@
 
 import type {
   App,
+  GraphData,
   GraphEngine,
   GraphNodeCallback,
   GraphRenderer,
@@ -28,6 +29,7 @@ export interface GraphLeafMembers {
   renderer: GraphRenderer & {
     onNodeClick: GraphNodeCallback;
     onNodeRightClick: GraphNodeCallback;
+    setData: (data: GraphData) => unknown;
   };
 }
 
@@ -60,6 +62,7 @@ export function graphMembersOf(leaf: WorkspaceLeaf): GraphLeafMembers | null {
       "renderer.onNodeClick": typeof renderer?.onNodeClick === "function",
       "renderer.onNodeRightClick":
         typeof renderer?.onNodeRightClick === "function",
+      "renderer.setData": typeof renderer?.setData === "function",
     },
     { viewType },
   );

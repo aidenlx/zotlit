@@ -25,3 +25,15 @@ export const themeHook = {
   /** The popover that explains the template token under the pointer. */
   templateHover: "zt-template-hover",
 } as const;
+
+/**
+ * The stable CSS custom properties ZotLit reads, for a value a theme states
+ * rather than a rule it writes. Set one anywhere the surface inherits from —
+ * `body` reaches every one of them.
+ */
+export const themeProperty = {
+  /** The fill colour of a Literature Note's node in the graph views. */
+  graphLiteratureNote: "--zt-graph-literature-note-color",
+  /** The fill colour of a Cited Work Node in the graph views. */
+  graphCitedWorkNode: "--zt-graph-cited-work-node-color",
+} as const;

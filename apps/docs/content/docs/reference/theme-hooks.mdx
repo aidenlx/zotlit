@@ -8,7 +8,7 @@ updated: "2.1.2"
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This reference lists ZotLit's public CSS classes: the citation classes and their activation rules, and the template editor classes.
+This reference lists ZotLit's public CSS classes: the citation classes and their activation rules, and the template editor classes. It also lists the custom properties that color ZotLit's nodes in the graph views.
 
 ## Hooks [#hooks]
 
@@ -71,6 +71,30 @@ ZotLit adds no aggregate style for `zt-citation-key-partially-unresolved`. A par
 Ambiguous citation keys keep the resolved link color and take the `--link-unresolved-decoration-*` variables, so the key reads as reachable — the <UiLabel name={m.settings_citation_hover_action_popover()} /> names its candidates — while stating that it matches more than one item.
 
 ZotLit adds no style to `zt-entry-serial` either. The serials render as superscript text in a Citation, as a plain label in the <UiLabel name={m.settings_citation_hover_action_popover()} />, and take their appearance from the theme.
+
+## Graph view colors [#graph]
+
+The graph and local graph views draw on a canvas, so ZotLit colors its nodes through custom properties instead of classes. Set one anywhere the view inherits from — `body` reaches both.
+
+| Custom property                    | Meaning                                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------ |
+| `--zt-graph-literature-note-color` | The fill color of a Literature Note that a citation reaches.             |
+| `--zt-graph-cited-work-node-color` | The fill color of a cited work that has no Literature Note in the vault. |
+
+ZotLit accepts any color syntax the app itself accepts, `oklch()` and `color-mix()` included.
+
+### Default appearance [#graph-defaults]
+
+A Literature Note node takes `--color-purple`. A cited work with no Literature Note takes `--text-faint`. Both follow the theme and its dark mode.
+
+A color group defined in the graph settings wins over both. ZotLit colors only the nodes that no color group matched.
+
+```css
+body {
+  --zt-graph-literature-note-color: var(--color-green);
+  --zt-graph-cited-work-node-color: oklch(0.6 0.02 250);
+}
+```
 
 ## Template editor hooks [#template-editor]
 
