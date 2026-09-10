@@ -22,6 +22,7 @@ import {
   USER_LIBRARY_ID,
 } from "@zotlit/db";
 import type { CitationVariant } from "@zotlit/db";
+import type { TemplateLanguage } from "@zotlit/templates/facade";
 import {
   externalEdit,
   WorkbenchDocumentController,
@@ -108,6 +109,7 @@ import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
 
 import { runTemplateWorkbenchAction } from "./actions";
 import { templateDocumentKind, templatePartialName } from "./document-kind";
+import { partialCall } from "./extract-partial";
 import { createTemplateWorkbenchHost } from "./host";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
@@ -266,6 +268,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
             deps.templates.loaded ? deps.templates.getPartialNames() : [],
           create: (query) => this.createPartial(query),
         },
+        extractPartial: (source) => this.extractPartial(source),
         hoverParent: this,
       },
       (content) => this.provide(content),
@@ -550,10 +553,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       : region?.language === "json-e"
         ? "json-e"
         : "template";
-    const language =
-      this.#controller.document?.manifest.language ??
-      this.#controller.plainDocument?.manifest.language;
-    const engine = language === "eta" ? "eta" : "liquid";
+    const engine = this.#documentLanguage;
     return this.insertField(fieldSnippet(request.node, mode, { engine }));
   }
 
@@ -1252,6 +1252,33 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    */
   createPartial(query = ""): Promise<string | null> {
     return createSharedPartial(this.app, this.#deps.templates, { name: query });
+  }
+
+  /**
+   * Move an editor selection into a new Shared Partial through the same create
+   * flow, under this document's own language: an Eta document gets a manifest
+   * naming it, and a Liquid one is a plain source file.
+   *
+   * @returns the call that replaces the selection, or `null` when the reader
+   *   dismisses the prompt.
+   */
+  async extractPartial(source: string): Promise<string | null> {
+    const language = this.#documentLanguage;
+    const name = await createSharedPartial(this.app, this.#deps.templates, {
+      source,
+      ...(language === "eta" ? { language } : {}),
+      open: "split",
+    });
+    return name === null ? null : partialCall(name, language);
+  }
+
+  /** The language this document renders in; a document with no manifest is Liquid. */
+  get #documentLanguage(): TemplateLanguage {
+    return (
+      this.#controller.document?.manifest.language ??
+      this.#controller.plainDocument?.manifest.language ??
+      "liquid"
+    );
   }
 
   /**

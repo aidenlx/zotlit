@@ -1,5 +1,5 @@
 import { EditorView } from "@codemirror/view";
-import { Menu, TextFileView as MockTextFileView } from "@mock/obsidian";
+import { Menu, Notice, TextFileView as MockTextFileView } from "@mock/obsidian";
 import type {
   ItemView as MockItemView,
   Scope as MockScope,
@@ -13,11 +13,19 @@ import { createStore } from "zustand/vanilla";
 
 import * as m from "@/lib/i18n/generated/messages";
 
+import { createSharedPartial } from "./new-partial";
 import { TemplateWorkbenchView } from "./view";
 import type { TemplateWorkbenchDeps } from "./view";
 
 vi.mock("@/views/note-preview/register", () => ({
   openWorkbenchLayout: vi.fn(async () => {}),
+}));
+
+// The create flow is #1046's own, driven end to end by new-partial.test.ts.
+// Here it stands in, so a right-click reports the source and the language it
+// was handed and the extraction's own edit is what the assertions read.
+vi.mock("./new-partial", () => ({
+  createSharedPartial: vi.fn(async () => null),
 }));
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
@@ -1387,5 +1395,250 @@ language: liquid
       CITATION_SOURCE.replace("language: liquid", "language: eta"),
     );
     expect(view.controller.plainDocument?.manifest.language).toBe("eta");
+  });
+});
+
+describe("Extract to partial", () => {
+  const EXTRACT_SOURCE = `---
+id: paper
+name: Paper
+version: 1.0.0
+contract: 2
+language: liquid
+filename: paper
+---
+{{ zt.authors }}
+{{ zt.publicationTitle }}
+{{ zt.date }}
+--- zotlit:annotation ---
+An annotation.
+`;
+
+  /** The three lines the reader selects, hand-counted off EXTRACT_SOURCE. */
+  const SELECTION =
+    "{{ zt.authors }}\n{{ zt.publicationTitle }}\n{{ zt.date }}";
+
+  /** The Liquid call the extraction leaves in its place. */
+  const CALL = '{% render "authors" with zt as zt %}';
+
+  /** Every row the menu carries, in order; the extraction is the last one. */
+  const MENU_TITLES = [
+    m.template_workbench_cut(),
+    m.template_workbench_copy(),
+    m.template_workbench_paste(),
+    m.template_workbench_extract_partial(),
+  ];
+
+  async function openProfile(language: "liquid" | "eta") {
+    const harness = setup();
+    harness.view.setViewData(
+      language === "eta"
+        ? EXTRACT_SOURCE.replace("language: liquid", "language: eta")
+        : EXTRACT_SOURCE,
+      true,
+    );
+    document.body.append(harness.view.contentEl);
+    await act(async () => harness.view.open());
+    const editor = EditorView.findFromDOM(
+      harness.view.contentEl.querySelector(".cm-editor")!,
+    )!;
+    return { ...harness, editor };
+  }
+
+  /** The right-click gesture, answering with the menu it opened or none. */
+  function rightClick(editor: EditorView): Menu | null {
+    const opened = Menu.instances.length;
+    editor.contentDOM.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+    return Menu.instances[opened] ?? null;
+  }
+
+  async function extract(editor: EditorView, head: number) {
+    await act(() => {
+      editor.focus();
+      editor.dispatch({ selection: { anchor: 0, head } });
+    });
+    const menu = rightClick(editor);
+    expect(menu?.items.map((item) => item.title)).toEqual(MENU_TITLES);
+    await act(async () => {
+      menu!.items.at(-1)!.click();
+      await Promise.resolve();
+    });
+  }
+
+  it("leaves a Liquid render tag over the three lines it moved out", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    vi.mocked(createSharedPartial).mockResolvedValueOnce("authors");
+    const { view, editor } = await openProfile("liquid");
+    cleanup.defer(() => act(async () => view.close()));
+    cleanup.defer(() => view.contentEl.remove());
+
+    await extract(editor, SELECTION.length);
+
+    expect(vi.mocked(createSharedPartial).mock.lastCall?.[2]).toEqual({
+      source: SELECTION,
+      open: "split",
+    });
+    expect(view.getViewData()).toBe(EXTRACT_SOURCE.replace(SELECTION, CALL));
+  });
+
+  it("writes an Eta include and asks the create flow for an Eta partial", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    vi.mocked(createSharedPartial).mockResolvedValueOnce("authors");
+    const { view, editor } = await openProfile("eta");
+    cleanup.defer(() => act(async () => view.close()));
+    cleanup.defer(() => view.contentEl.remove());
+
+    await extract(editor, SELECTION.length);
+
+    expect(vi.mocked(createSharedPartial).mock.lastCall?.[2]).toEqual({
+      source: SELECTION,
+      language: "eta",
+      open: "split",
+    });
+    expect(view.getViewData()).toBe(
+      EXTRACT_SOURCE.replace("language: liquid", "language: eta").replace(
+        SELECTION,
+        '<%~ include("authors", zt) %>',
+      ),
+    );
+  });
+
+  // One transaction is one history event, so this passes on the dispatch alone;
+  // the isolated-history annotation is what the next test guards.
+  it("restores the selection in one undo and keeps the created file", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    vi.mocked(createSharedPartial).mockResolvedValueOnce("authors");
+    const { view, editor } = await openProfile("liquid");
+    cleanup.defer(() => act(async () => view.close()));
+    cleanup.defer(() => view.contentEl.remove());
+    await extract(editor, SELECTION.length);
+
+    await act(() => {
+      view.controller.undo();
+    });
+
+    expect(view.getViewData()).toBe(EXTRACT_SOURCE);
+    expect(view.controller.canUndo).toBe(false);
+    // Undo rewrites the caller alone: nothing takes the partial back.
+    expect(createSharedPartial).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the keystrokes around it out of its undo step", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    vi.mocked(createSharedPartial).mockResolvedValueOnce("authors");
+    const { view, editor } = await openProfile("liquid");
+    cleanup.defer(() => act(async () => view.close()));
+    cleanup.defer(() => view.contentEl.remove());
+    const type = (from: number, insert: string) =>
+      act(() => {
+        editor.focus();
+        editor.dispatch({ changes: { from, insert }, userEvent: "input.type" });
+      });
+    await type(SELECTION.length, " · 2020");
+
+    await extract(editor, SELECTION.length);
+    await type(CALL.length, "!");
+    await act(() => {
+      view.controller.undo();
+    });
+
+    // One undo takes back the keystroke alone, and the next one the extraction
+    // alone: neither joins the other.
+    expect(view.getViewData()).toBe(
+      EXTRACT_SOURCE.replace(SELECTION, `${CALL} · 2020`),
+    );
+    await act(() => {
+      view.controller.undo();
+    });
+    expect(view.getViewData()).toBe(
+      EXTRACT_SOURCE.replace(SELECTION, `${SELECTION} · 2020`),
+    );
+  });
+
+  it("keeps a changed template and says the call was not written", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const prompt = Promise.withResolvers<string | null>();
+    vi.mocked(createSharedPartial).mockReturnValueOnce(prompt.promise);
+    const { view, editor } = await openProfile("liquid");
+    cleanup.defer(() => act(async () => view.close()));
+    cleanup.defer(() => view.contentEl.remove());
+    await act(() => {
+      editor.focus();
+      editor.dispatch({ selection: { anchor: 0, head: SELECTION.length } });
+    });
+    await act(async () => {
+      rightClick(editor)!.items.at(-1)!.click();
+      await Promise.resolve();
+    });
+
+    // The reader edits the template while the name prompt is still open.
+    await act(() => {
+      editor.dispatch({
+        changes: { from: SELECTION.length, insert: " · 2020" },
+        userEvent: "input.type",
+      });
+    });
+    const shown = Notice.instances.length;
+    await act(async () => {
+      prompt.resolve("authors");
+      await prompt.promise;
+      await Promise.resolve();
+    });
+
+    expect(view.getViewData()).toBe(
+      EXTRACT_SOURCE.replace(SELECTION, `${SELECTION} · 2020`),
+    );
+    expect(
+      Notice.instances.slice(shown).map((notice) => notice.message),
+    ).toEqual([m.notice_partial_extract_stale()]);
+  });
+
+  it("cuts the selection out to the clipboard", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    // The gesture takes the Electron menu's place, so the menu owns cut itself.
+    const writeText = vi.fn(async () => {});
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    cleanup.defer(() => {
+      if (clipboard) Object.defineProperty(navigator, "clipboard", clipboard);
+    });
+    const { view, editor } = await openProfile("liquid");
+    cleanup.defer(() => act(async () => view.close()));
+    cleanup.defer(() => view.contentEl.remove());
+    await act(() => {
+      editor.focus();
+      editor.dispatch({ selection: { anchor: 0, head: SELECTION.length } });
+    });
+
+    const menu = rightClick(editor);
+    expect(menu?.items.map((item) => item.title)).toEqual(MENU_TITLES);
+    await act(async () => {
+      menu!.items[0]!.click();
+      await Promise.resolve();
+    });
+
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(SELECTION);
+    expect(view.getViewData()).toBe(EXTRACT_SOURCE.replace(SELECTION, ""));
+    expect(createSharedPartial).not.toHaveBeenCalled();
+  });
+
+  it("offers no action over an empty selection", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view, editor } = await openProfile("liquid");
+    cleanup.defer(() => act(async () => view.close()));
+    cleanup.defer(() => view.contentEl.remove());
+
+    await act(() => {
+      editor.focus();
+      editor.dispatch({ selection: { anchor: 4 } });
+    });
+
+    expect(rightClick(editor)).toBeNull();
+    expect(createSharedPartial).not.toHaveBeenCalled();
   });
 });
