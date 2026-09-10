@@ -319,6 +319,14 @@ _Avoid_: backlinks (Obsidian's view omits literal Pandoc citations), reverse ref
 The raw source range shown around one Citation Occurrence in the Cited By Sidebar. Its initial range contains every source line spanned by the occurrence, and the user can extend it independently before or after.
 _Avoid_: matched line, context preview, source preview
 
+**Graph Citations** _(Obsidian)_:
+The citation edges and Cited Work Nodes ZotLit adds to Obsidian's own graph views from the Citation Index, so a note connects to the works it cites. Membership follows the Document Citation Set: a literal Pandoc citation gains an edge to the cited Item's Literature Note, or to a Cited Work Node when no Literature Note exists; a wikilink citation is already a link and needs no addition. Turning the feature off removes every added edge and node and leaves Obsidian's graph as it was.
+_Avoid_: citation graph (implies a separate view), graph overlay (names the mechanism, not the feature)
+
+**Cited Work Node** _(Obsidian)_:
+A node ZotLit places in Obsidian's graph for a work cited in the vault that has no Literature Note yet, or whose Citation Key is missing or ambiguous. Labelled by its Citation Key. Obsidian's "Existing files only" toggle hides it, and clicking it creates the Literature Note.
+_Avoid_: ghost node, virtual node, unresolved node (Obsidian's term for a link to a missing note)
+
 **Citation and References Style**:
 The Zotero-installed CSL style used for both Document Citation Text and rendered entries in the References Sidebar. A vault selection supplies the default, and a document's `zotlit-csl` property can select its own installed style by CSL ID. Zotero owns style installation; choosing Default uses the Pandoc Engine's embedded style. An unavailable selected style leaves in-text sources visible and the sidebar minimal, shows a settings warning, and raises one notice per plugin lifecycle with an action that opens the Citations settings.
 _Avoid_: citation style (conflicts with the `cite` Template's format), references style (omits in-text Citations), CSL file (names the file, not the selection)
