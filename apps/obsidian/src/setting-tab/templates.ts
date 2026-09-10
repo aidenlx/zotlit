@@ -55,8 +55,9 @@ export function decodeAutoTrim(value: unknown): AutoTrim {
 }
 
 /**
- * The Advanced page's Template engine rows: the template folder and the
- * JavaScript Templates gate with its Eta editing options.
+ * The Advanced page's Template engine rows: the template folder, the
+ * JavaScript Templates gate with its Eta editing options, and one row per
+ * unrecognized file in the folder.
  */
 export function templateEngineItems(
   ctx: SettingTabContext,
@@ -88,7 +89,24 @@ export function templateEngineItems(
       visible: () => ctx.template.javascriptTemplatesEnabled,
       control: trimControl("template.auto-trim-trailing"),
     },
+    ...unrecognizedFileItems(ctx),
   ];
+}
+
+/**
+ * One row per `zotlit-` prefixed file in the template folder that answers to
+ * no Template Document kind, so a misnamed file is named where the folder is
+ * configured. Structural, for the reason {@link citationTemplateItems} gives.
+ */
+function unrecognizedFileItems(
+  ctx: SettingTabContext,
+): SettingDefinition<SettingsKey>[] {
+  if (!ctx.template.loaded) return [];
+  return ctx.template.getUnrecognizedFiles().map((path) => ({
+    name: m.settings_template_unrecognized_name(),
+    desc: m.settings_template_unrecognized_desc({ path }),
+    searchable: false,
+  }));
 }
 
 /**

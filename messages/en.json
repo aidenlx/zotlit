@@ -905,6 +905,8 @@
   "settings_template_js_confirm_body": "Eta templates run JavaScript with the same access as ZotLit itself: they can read and modify your vault, connect to the internet, and on desktop, access your system. Only enable this if you trust every template file in your vault.",
   "settings_template_js_confirm_action": "Enable",
   "settings_template_eject": "Create editable template file",
+  "settings_template_unrecognized_name": "Unrecognized ZotLit file",
+  "settings_template_unrecognized_desc": "ZotLit does not use {path}. A template document is named zotlit-profile.books.md, zotlit-citation.md, or zotlit-partial.authors.md.",
   "profile_editor_properties_advanced": "This list needs to be edited in Advanced.",
   "profile_editor_database_unavailable": "Open the Zotero database to choose an item. You can continue editing this profile.",
   "profile_editor_styles_unavailable": "Zotero citation styles are unavailable. You can continue editing this profile.",

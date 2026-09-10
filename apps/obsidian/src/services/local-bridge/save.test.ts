@@ -293,7 +293,8 @@ it("refuses an installed Eta dependency without writing the Profile", async () =
   await using bridge = await harness({
     files: {
       [BOOKS_PATH]: BOOKS_SOURCE,
-      "templates/zotlit-byline.eta.md": "<%= it.zt.title %>",
+      "templates/zotlit-partial.byline.md":
+        "---\nlanguage: eta\n---\n<%= it.zt.title %>",
     },
   });
   bridge.app.saveLocalStorage = vi.fn();

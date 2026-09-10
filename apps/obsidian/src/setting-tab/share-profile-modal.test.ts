@@ -77,7 +77,7 @@ it("edits share metadata, bumps the version, and writes identical file and clipb
   const f = stack.use(
     await profileServiceFixture({
       "templates/zotlit-profile.books.md": source,
-      "templates/zotlit-summary.liquid.md": "Shared summary",
+      "templates/zotlit-partial.summary.md": "Shared summary",
     }),
   );
   const before = new Map(f.vault.contents);
@@ -164,7 +164,7 @@ it.each(["default", id] as const)(
   async (selector) => {
     await using f = await profileServiceFixture({
       "templates/zotlit-profile.books.md": source,
-      "templates/zotlit-summary.liquid.md": "Shared summary",
+      "templates/zotlit-partial.summary.md": "Shared summary",
     });
     using opened = vi.spyOn(Modal.prototype, "open");
     const container = document.createElement("div");

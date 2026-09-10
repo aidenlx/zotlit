@@ -87,7 +87,7 @@ describe("ProfileService", () => {
     await using f = await harness({
       "templates/zotlit-profile.default.md": defaultSource,
       "templates/zotlit-profile.books.md": booksSource,
-      "templates/zotlit-summary.liquid.md": "Shared partial",
+      "templates/zotlit-partial.summary.md": "Shared partial",
     });
     const before = new Map(f.vault.contents);
     const plan = await f.profile.prepareShare(BOOKS);

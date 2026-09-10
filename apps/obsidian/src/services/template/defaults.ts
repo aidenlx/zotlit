@@ -49,6 +49,17 @@ const TEMPLATE_FILE = regex(
   "^zotlit-(?<name>[A-Za-z0-9-]+)\\.(?<language>liquid|eta)\\.md$",
 );
 
+const PARTIAL_FILE = regex("^zotlit-partial\\.(?<name>[A-Za-z0-9-]+)\\.md$");
+
+/** Every Template Document filename starts with it; so does an unrecognized file. */
+const TEMPLATE_DOCUMENT_PREFIX = "zotlit-";
+
+/** A Profile document is `zotlit-profile.<slug>.md`; the slug is never read. */
+const PROFILE_DOCUMENT_PREFIX = "zotlit-profile.";
+
+/** The Citation Template is exactly one file. */
+const CITATION_DOCUMENT_FILENAME = "zotlit-citation.md";
+
 /** Template whose render output is wrapped in managed-region markers. */
 export const MANAGED_CONTENT_TEMPLATE = "content" as const;
 
@@ -107,11 +118,62 @@ export function templatePath(
 export function templateFileFromPath(
   path: string,
 ): { name: string; language: TemplateLanguage } | null {
-  const filename = basename(normalizeVaultPath(path));
-  if (filename.startsWith("zotlit-profile.")) return null;
-  const match = TEMPLATE_FILE.exec(filename);
+  const match = TEMPLATE_FILE.exec(basename(normalizeVaultPath(path)));
   if (!match) return null;
   return { name: match.groups.name, language: match.groups.language };
+}
+
+/** Vault path of the Shared Partial named `name` inside `folder`. */
+export function partialPath(folder: string, name: string): string {
+  const file = `zotlit-partial.${name}.md`;
+  const normalizedFolder = normalizeVaultPath(folder);
+  return normalizedFolder === "" ? file : join(normalizedFolder, file);
+}
+
+/**
+ * What a file in the template folder is, by its filename alone.
+ *
+ * `"unrecognized"` is a `zotlit-` prefixed Markdown file that is none of the
+ * three Template Document kinds and no Legacy Template File: ZotLit reports it
+ * once in settings rather than guessing at it.
+ */
+export type TemplateFolderFile =
+  | { kind: "profile"; reference: string }
+  | { kind: "citation" }
+  | { kind: "partial"; name: string }
+  | { kind: "legacy-slot"; name: TemplateName; language: TemplateLanguage }
+  | { kind: "unrecognized" };
+
+/**
+ * Classify one file of the template folder by its filename prefix.
+ *
+ * @returns `null` for a file ZotLit ignores: anything that is not a
+ *   `zotlit-` prefixed Markdown file.
+ */
+export function classifyTemplateFolderFile(
+  path: string,
+): TemplateFolderFile | null {
+  const filename = basename(normalizeVaultPath(path));
+  if (!filename.startsWith(TEMPLATE_DOCUMENT_PREFIX)) return null;
+  if (!filename.endsWith(".md")) return null;
+
+  if (filename.startsWith(PROFILE_DOCUMENT_PREFIX)) {
+    return { kind: "profile", reference: filename };
+  }
+  if (filename === CITATION_DOCUMENT_FILENAME) return { kind: "citation" };
+
+  const partial = PARTIAL_FILE.exec(filename);
+  if (partial) return { kind: "partial", name: partial.groups.name };
+
+  const legacy = TEMPLATE_FILE.exec(filename);
+  if (legacy && isTemplateName(legacy.groups.name)) {
+    return {
+      kind: "legacy-slot",
+      name: legacy.groups.name,
+      language: legacy.groups.language,
+    };
+  }
+  return { kind: "unrecognized" };
 }
 
 export function isTemplateName(name: string): name is TemplateName {

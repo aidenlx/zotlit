@@ -746,6 +746,8 @@
   "settings_template_js_confirm_body": "Eta 模板运行 JavaScript，具有与 ZotLit 本身相同的访问权限：它们可以读取和修改您的仓库、连接到互联网以及在桌面上访问您的系统。仅当您信任仓库中的每个模板文件时才启用此功能。",
   "settings_template_js_confirm_action": "启用",
   "settings_template_eject": "创建可编辑模板文件",
+  "settings_template_unrecognized_name": "无法识别的 ZotLit 文件",
+  "settings_template_unrecognized_desc": "ZotLit 不会使用 {path}。模板文档的名称应为 zotlit-profile.books.md、zotlit-citation.md 或 zotlit-partial.authors.md。",
   "settings_template_open": "打开模板",
   "settings_template_customize": "自定义",
   "settings_template_reset": "重置为默认值",

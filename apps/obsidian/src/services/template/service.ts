@@ -10,6 +10,7 @@ import type {
 import {
   LegacyTemplateConversionError,
   LiteratureNoteTemplateError,
+  parsePlainTemplateDocument,
   TemplateError,
   TemplateFacade,
 } from "@zotlit/templates/facade";
@@ -41,11 +42,12 @@ import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
 import {
+  classifyTemplateFolderFile,
   DEFAULT_TEMPLATES,
   GLOBAL_TEMPLATE_NAMES,
   isTemplateName,
   MANAGED_CONTENT_TEMPLATE,
-  templateFileFromPath,
+  partialPath,
   templatePath,
   TEMPLATE_NAMES,
 } from "./defaults";
@@ -57,6 +59,16 @@ const logger = getLogger("template");
 const FLUSH_DEBOUNCE_MS = 500;
 const LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES: ReadonlySet<TemplateName> =
   new Set(["filename", "note", "annotation", MANAGED_CONTENT_TEMPLATE]);
+
+/**
+ * Names a Shared Partial file cannot claim: the Citation Template answers to
+ * `citation`, and each Legacy Template File slot answers to its own name for
+ * as long as the slots exist.
+ */
+const RESERVED_PARTIAL_NAMES: ReadonlySet<string> = new Set([
+  ...TEMPLATE_NAMES,
+  "citation",
+]);
 
 /** localStorage key for the per-device JavaScript Templates consent flag. */
 const JS_TEMPLATES_STORAGE_KEY = "zotlit-javascript-templates";
@@ -169,6 +181,87 @@ interface ReconciledLiteratureNoteTemplate {
   document: LiteratureNoteTemplateDocument;
 }
 
+/** One Shared Partial as its document parsed it, ready to bundle into a pack. */
+interface RegisteredPartial {
+  path: string;
+  language: TemplateLanguage;
+  source: string;
+}
+
+/**
+ * The reconciliation work one folder scan or one debounce window collected,
+ * bucketed by the Template Document kind that reconciles each entry.
+ */
+interface TemplateWork {
+  readonly names: Set<string>;
+  readonly documentReferences: Set<string>;
+  readonly partialNames: Set<string>;
+  readonly unrecognizedPaths: Set<string>;
+}
+
+function emptyTemplateWork(): TemplateWork {
+  return {
+    names: new Set(),
+    documentReferences: new Set(),
+    partialNames: new Set(),
+    unrecognizedPaths: new Set(),
+  };
+}
+
+/** Every bucket of `work`, so the whole set clears and counts as one. */
+function templateWorkBuckets(work: TemplateWork): readonly Set<string>[] {
+  return [
+    work.names,
+    work.documentReferences,
+    work.partialNames,
+    work.unrecognizedPaths,
+  ];
+}
+
+function isTemplateWorkEmpty(work: TemplateWork): boolean {
+  return templateWorkBuckets(work).every((bucket) => bucket.size === 0);
+}
+
+/** Move everything `pending` holds into the work one flush reconciles. */
+function takeTemplateWork(pending: TemplateWork): TemplateWork {
+  const work: TemplateWork = {
+    names: new Set(pending.names),
+    documentReferences: new Set(pending.documentReferences),
+    partialNames: new Set(pending.partialNames),
+    unrecognizedPaths: new Set(pending.unrecognizedPaths),
+  };
+  for (const bucket of templateWorkBuckets(pending)) bucket.clear();
+  return work;
+}
+
+/**
+ * Route one template-folder file into the bucket its Template Document kind
+ * reconciles from — the one place a kind maps to its reconciliation.
+ *
+ * @returns whether `path` landed in a bucket. A file ZotLit ignores lands in
+ *   none, and so does the Citation Template: it is recognized, so it is read
+ *   neither as a Profile document nor as an unrecognized file.
+ */
+function collectTemplatePath(work: TemplateWork, path: string): boolean {
+  const classified = classifyTemplateFolderFile(path);
+  switch (classified?.kind) {
+    case "legacy-slot":
+      work.names.add(classified.name);
+      return true;
+    case "profile":
+      work.documentReferences.add(classified.reference);
+      return true;
+    case "partial":
+      work.partialNames.add(classified.name);
+      return true;
+    case "unrecognized":
+      work.unrecognizedPaths.add(path);
+      return true;
+    default:
+      return false;
+  }
+}
+
 /** A recorded compile error: its message, and the liquidjs caret-annotated
  *  source excerpt when the underlying error carried one. */
 export interface CompileError {
@@ -217,8 +310,11 @@ export class TemplateService extends Service<void> {
   readonly #winners = new Map<string, TemplateWinner>();
   readonly #shadowed = new Map<string, string>();
   readonly #inertEta = new Map<string, string>();
-  readonly #pendingFlush = new Set<string>();
-  readonly #pendingDocumentFlush = new Set<string>();
+  readonly #pending: TemplateWork = emptyTemplateWork();
+  /** Partial name → the `zotlit-partial.<name>.md` document backing it. */
+  readonly #partials = new Map<string, RegisteredPartial>();
+  /** Vault paths of the `zotlit-` files no kind claims, reported in settings. */
+  readonly #unrecognizedFiles = new Set<string>();
   readonly #literatureNoteDocuments = new Map<
     string,
     ReconciledLiteratureNoteTemplate
@@ -276,6 +372,16 @@ export class TemplateService extends Service<void> {
    *  e.g. `dragstart` and `selectSuggestion` handlers. */
   get loaded(): boolean {
     return this.#loaded;
+  }
+
+  /**
+   * Vault paths of the `zotlit-` prefixed Markdown files in the template
+   * folder that answer to no Template Document kind, sorted, so the setting
+   * tab can name each one. A file without the prefix is ignored and absent.
+   */
+  getUnrecognizedFiles(): readonly string[] {
+    this.#requireLoaded("getUnrecognizedFiles");
+    return [...this.#unrecognizedFiles].sort();
   }
 
   getTemplateFileStatuses(): readonly TemplateFileStatus[] {
@@ -369,16 +475,38 @@ export class TemplateService extends Service<void> {
       frontmatter,
       hasManagedBlock: document.managedBlock !== null,
       renderForCreate: <T extends object>(data: T) =>
-        facade.renderLiteratureNoteTemplateForCreate(document, data),
+        this.#classifyRender(() =>
+          facade.renderLiteratureNoteTemplateForCreate(document, data),
+        ),
       renderForUpdate: <T extends object>(data: T) =>
-        facade.renderLiteratureNoteTemplateForUpdate(document, data),
+        this.#classifyRender(() =>
+          facade.renderLiteratureNoteTemplateForUpdate(document, data),
+        ),
       renderAnnotation: <T extends object>(data: T) =>
-        facade.renderLiteratureNoteTemplateAnnotation(document, data),
+        this.#classifyRender(() =>
+          facade.renderLiteratureNoteTemplateAnnotation(document, data),
+        ),
       renderFilename: <T extends object>(data: T) =>
         toSingleLine(
-          facade.renderLiteratureNoteTemplateFilename(document, data),
+          this.#classifyRender(() =>
+            facade.renderLiteratureNoteTemplateFilename(document, data),
+          ),
         ),
     };
+  }
+
+  /**
+   * Run one render and name the artifact any failure belongs to, so a Shared
+   * Partial the JavaScript Templates gate left inert reports the localized
+   * inert notice instead of the facade's bare "not found". Every render path
+   * — {@link render} and every Profile document render — passes through here.
+   */
+  #classifyRender<T>(render: () => T): T {
+    try {
+      return render();
+    } catch (error) {
+      throw classifyRenderFailure(error, this.#compileErrors, this.#inertEta);
+    }
   }
 
   /** Render one annotation through its Profile document or legacy slot. */
@@ -525,6 +653,15 @@ export class TemplateService extends Service<void> {
         }),
       )
     ).filter((partial) => partial !== null);
+    // A Shared Partial bundles the source its document holds, without the
+    // manifest line that named the language.
+    for (const [name, partial] of this.#partials) {
+      partials.push({
+        name,
+        language: partial.language,
+        source: partial.source,
+      });
+    }
     return exportLiteratureNotePack(source, partials, options);
   }
 
@@ -662,11 +799,7 @@ export class TemplateService extends Service<void> {
         name,
       );
     }
-    try {
-      return this.#facade.render(name, data);
-    } catch (error) {
-      throw classifyRenderFailure(error, this.#compileErrors, this.#inertEta);
-    }
+    return this.#classifyRender(() => this.#facade.render(name, data));
   }
 
   /**
@@ -837,9 +970,9 @@ export class TemplateService extends Service<void> {
 
     await using stack = new AsyncDisposableStack();
     // Registered before the initial scan, so an edit landing while the scan
-    // runs queues instead of being dropped: #rebuildFolder clears
-    // #pendingFlush before it walks the folder, so anything queued during the
-    // walk survives into the debounced flush that follows.
+    // runs queues instead of being dropped: #rebuildFolder clears #pending
+    // before it walks the folder, so anything queued during the walk survives
+    // into the debounced flush that follows.
     stack.defer(this.#registerVaultEvents());
     await this.#rebuildFolder(this.#lastTemplateFolder);
 
@@ -907,11 +1040,12 @@ export class TemplateService extends Service<void> {
     try {
       const generation = ++this.#folderGeneration;
       this.#cancelFlush();
-      this.#pendingFlush.clear();
-      this.#pendingDocumentFlush.clear();
+      for (const bucket of templateWorkBuckets(this.#pending)) bucket.clear();
       this.#shadowed.clear();
       this.#inertEta.clear();
       this.#winners.clear();
+      this.#partials.clear();
+      this.#unrecognizedFiles.clear();
       this.#facade.reset();
       this.#compileErrors.clear();
       this.#literatureNoteDocuments.clear();
@@ -922,17 +1056,10 @@ export class TemplateService extends Service<void> {
           ? this.#app.vault.getRoot()
           : this.#app.vault.getFolderByPath(folder);
 
-      const names = new Set<string>();
-      const documentReferences = new Set<string>();
+      const work = emptyTemplateWork();
       if (root) {
         for (const child of root.children) {
-          if (child instanceof TFile) {
-            const parsed = templateFileFromPath(child.path);
-            if (parsed) names.add(parsed.name);
-            else if (child.extension === "md") {
-              documentReferences.add(child.name);
-            }
-          }
+          if (child instanceof TFile) collectTemplatePath(work, child.path);
         }
       } else {
         logger.debug("Template folder not found; embedded defaults remain", {
@@ -941,21 +1068,16 @@ export class TemplateService extends Service<void> {
       }
 
       for (const name of TEMPLATE_NAMES) {
-        if (!names.has(name)) this.#useDefault(name);
+        if (!work.names.has(name)) this.#useDefault(name);
       }
 
-      await Promise.all([
-        ...[...names].map((name) => this.#reconcileName(name, generation)),
-        ...[...documentReferences].map((reference) =>
-          this.#reconcileDocument(reference, generation),
-        ),
-      ]);
+      await this.#reconcileWork(work, generation);
       if (generation !== this.#folderGeneration) return;
 
       this.#emitter.emit("compile-status-changed");
       logger.debug("Template folder rebuilt", {
         folder,
-        count: names.size,
+        count: work.names.size,
       });
     } finally {
       this.#settlingTasks -= 1;
@@ -977,18 +1099,16 @@ export class TemplateService extends Service<void> {
     this.#queueTemplatePath(file.path);
   }
 
+  /** Queue one vault event's path; a watched file is a direct child of the
+   *  configured template folder (no recursion). */
   #queueTemplatePath(path: string): void {
     const normalized = normalizeVaultPath(path);
-    const parsed = templateFileFromPath(normalized);
-    if (parsed && this.#isWatchedTemplatePath(normalized)) {
-      this.#pendingFlush.add(parsed.name);
-    } else if (
-      isWatchedDocumentPath(normalized, this.#currentTemplateFolder())
+    if (
+      normalizeVaultPath(dirname(normalized)) !== this.#currentTemplateFolder()
     ) {
-      this.#pendingDocumentFlush.add(normalized.split("/").at(-1)!);
-    } else {
       return;
     }
+    if (!collectTemplatePath(this.#pending, normalized)) return;
     this.#scheduleFlush();
   }
 
@@ -1004,25 +1124,41 @@ export class TemplateService extends Service<void> {
     this.#settlingTasks += 1;
     try {
       const generation = this.#folderGeneration;
-      const names = [...this.#pendingFlush];
-      const documentReferences = [...this.#pendingDocumentFlush];
-      this.#pendingFlush.clear();
-      this.#pendingDocumentFlush.clear();
-      await Promise.all([
-        ...names.map((name) => this.#reconcileName(name, generation)),
-        ...documentReferences.map((reference) =>
-          this.#reconcileDocument(reference, generation),
-        ),
-      ]);
+      const work = takeTemplateWork(this.#pending);
+      await this.#reconcileWork(work, generation);
 
       if (generation !== this.#folderGeneration) return;
 
       this.#emitter.emit("compile-status-changed");
-      logger.debug("Template flush completed", { count: names.length });
+      logger.debug("Template flush completed", { count: work.names.size });
     } finally {
       this.#settlingTasks -= 1;
       this.#resolveSettledWaiters();
     }
+  }
+
+  /**
+   * Reconcile every bucket of `work`: a `zotlit-` file no kind claims is
+   * reported or dropped by whether it still exists, and each remaining kind
+   * reconciles through its own routine.
+   */
+  async #reconcileWork(work: TemplateWork, generation: number): Promise<void> {
+    for (const path of work.unrecognizedPaths) {
+      if (this.#app.vault.getFileByPath(path)) {
+        this.#unrecognizedFiles.add(path);
+      } else {
+        this.#unrecognizedFiles.delete(path);
+      }
+    }
+    await Promise.all([
+      ...[...work.names].map((name) => this.#reconcileName(name, generation)),
+      ...[...work.documentReferences].map((reference) =>
+        this.#reconcileDocument(reference, generation),
+      ),
+      ...[...work.partialNames].map((name) =>
+        this.#reconcilePartial(name, generation),
+      ),
+    ]);
   }
 
   /**
@@ -1149,6 +1285,89 @@ export class TemplateService extends Service<void> {
   }
 
   /**
+   * Register the Shared Partial `name` from its `zotlit-partial.<name>.md`
+   * document, which carries the partial's language and its source.
+   *
+   * A partial whose document fails to parse or to compile is left undefined
+   * and records a compile error, and one written in Eta while the JavaScript
+   * Templates gate is off is left inert — a template that calls it then fails
+   * loudly rather than rendering a hole.
+   */
+  async #reconcilePartial(name: string, generation: number): Promise<void> {
+    if (generation !== this.#folderGeneration) return;
+
+    const path = partialPath(this.#currentTemplateFolder(), name);
+    const file = this.#app.vault.getFileByPath(path);
+
+    if (RESERVED_PARTIAL_NAMES.has(name)) {
+      if (!file) {
+        this.#unrecognizedFiles.delete(path);
+        return;
+      }
+      logger.warn("Partial file claims a reserved template name", {
+        name,
+        path,
+      });
+      this.#unrecognizedFiles.add(path);
+      return;
+    }
+
+    if (!file) {
+      this.#removePartial(name);
+      return;
+    }
+
+    let source: string;
+    try {
+      source = await this.#app.vault.cachedRead(file);
+    } catch (error) {
+      if (generation !== this.#folderGeneration) return;
+      logger.warn("Failed to read partial file", { error, path });
+      this.#removePartial(name);
+      return;
+    }
+    if (generation !== this.#folderGeneration) return;
+
+    let parsed;
+    try {
+      parsed = parsePlainTemplateDocument(source);
+    } catch (error) {
+      this.#removePartial(name);
+      this.#compileErrors.set(name, { message: errorMessage(error) });
+      logger.warn("Failed to parse partial document", { error, path });
+      return;
+    }
+
+    const { language } = parsed.manifest;
+    if (language === "eta" && !this.#javascriptTemplatesEnabled) {
+      if (this.#inertEta.get(name) !== path) {
+        logger.debug(
+          "Eta partial inert while JavaScript templates are disabled",
+          {
+            name,
+            path,
+          },
+        );
+      }
+      this.#removePartial(name);
+      this.#inertEta.set(name, path);
+      return;
+    }
+
+    this.#removePartial(name);
+    this.#partials.set(name, { path, language, source: parsed.source });
+    this.#defineTemplate(name, parsed.source, language);
+  }
+
+  #removePartial(name: string): void {
+    this.#partials.delete(name);
+    this.#compileErrors.delete(name);
+    this.#inertEta.delete(name);
+    this.#facade.remove(name, "liquid");
+    this.#facade.remove(name, "eta");
+  }
+
+  /**
    * Compile and register a vault template, recording any compile error. A
    * template that fails to compile is removed from the facade and never falls
    * back to a package default: it fails loudly through {@link render} and
@@ -1203,10 +1422,6 @@ export class TemplateService extends Service<void> {
     );
   }
 
-  #isWatchedTemplatePath(path: string): boolean {
-    return isWatchedTemplatePath(path, this.#currentTemplateFolder());
-  }
-
   /**
    * Compile the managed-frontmatter fields, dropping reserved keys the system
    * owns so user and system keys stay disjoint, and hold them for reuse.
@@ -1243,8 +1458,7 @@ export class TemplateService extends Service<void> {
     return (
       this.#settlingTasks === 0 &&
       this.#flushTimer === null &&
-      this.#pendingFlush.size === 0 &&
-      this.#pendingDocumentFlush.size === 0
+      isTemplateWorkEmpty(this.#pending)
     );
   }
 
@@ -1363,23 +1577,4 @@ function errorMessage(error: unknown): string {
 /** Collapse rendered filename output to one trimmed line. */
 function toSingleLine(rendered: string): string {
   return rendered.trim().replaceAll(/\s*\n\s*/g, "");
-}
-
-/** A watched template is a `zotlit-<name>.(liquid|eta).md` file directly inside `folder` (no recursion). */
-function isWatchedTemplatePath(path: string, folder: string): boolean {
-  const normalized = normalizeVaultPath(path);
-  return (
-    templateFileFromPath(normalized) !== null &&
-    normalizeVaultPath(dirname(normalized)) === normalizeVaultPath(folder)
-  );
-}
-
-/** A document is a direct Markdown child of the configured template folder. */
-function isWatchedDocumentPath(path: string, folder: string): boolean {
-  const normalized = normalizeVaultPath(path);
-  return (
-    normalized.endsWith(".md") &&
-    templateFileFromPath(normalized) === null &&
-    normalizeVaultPath(dirname(normalized)) === normalizeVaultPath(folder)
-  );
 }
