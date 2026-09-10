@@ -58,6 +58,7 @@ import {
   ProblemsFooter,
   problemText,
   SliceEditor,
+  usePartialBoxes,
   TabBar,
   TabPanel,
   TABS,
@@ -79,6 +80,7 @@ import type {
   WorkbenchViewState,
   TemplateRoot,
   NameFolderPaneProps,
+  PartialPlaceholderHost,
 } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
@@ -138,6 +140,7 @@ export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
       TemplateService,
       | "loaded"
       | "materializeCitationTemplate"
+      | "getPartialDocument"
       | "getPartialDocuments"
       | "getPartialNames"
       | "createPartial"
@@ -1285,6 +1288,36 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   get isDefaultDraft(): boolean {
     return this.#defaultDraft;
   }
+  /**
+   * Every Shared Partial the vault registers, which Pick another chooses from.
+   * Read during render, so it answers empty until the folder scan has run.
+   */
+  get partialNames(): readonly string[] {
+    const templates = this.#deps.templates;
+    return templates.loaded ? templates.getPartialNames() : [];
+  }
+  /**
+   * Open the Shared Partial `name` in a Template Workbench View of its own.
+   * Edit partial reaches a document the vault already holds; a call to a name
+   * with no document offers Create instead.
+   */
+  openPartial(name: string): void {
+    const templates = this.#deps.templates;
+    if (!templates.loaded) {
+      logger.debug("Edit partial before the folder scan settled", { name });
+      return;
+    }
+    const document = templates.getPartialDocument(name);
+    if (!document) {
+      logger.debug("Edit partial for a name the vault holds no document for", {
+        name,
+      });
+      return;
+    }
+    void runTemplateWorkbenchAction("open-partial", () =>
+      this.#openPartial(document.path),
+    );
+  }
   async restoreDefault(): Promise<void> {
     await runTemplateWorkbenchAction("restore-default", async () => {
       const profile = this.#deps.profile;
@@ -1640,6 +1673,38 @@ function EditorContent({
   }, [view, insertRequest]);
   const manifest = useRef(controller.document?.manifest ?? null);
   if (controller.document) manifest.current = controller.document.manifest;
+  // A missing partial is the engine's own render failure, so the boxes read
+  // the names the last render could not resolve rather than a scan.
+  const missingPartials = (result?.diagnostics ?? []).flatMap((diagnostic) =>
+    diagnostic.code === "missing-partial" &&
+    diagnostic.params?.name !== undefined
+      ? [String(diagnostic.params.name)]
+      : [],
+  );
+  const partialsFor = (
+    partialContext: PartialContext,
+  ): PartialPlaceholderHost | undefined => {
+    // Bound once: the box renders whatever this session produces, so a later
+    // session swap must not be read from inside the render callback.
+    const preview = view.preview;
+    if (!preview) return undefined;
+    return {
+      names: view.partialNames,
+      missing: missingPartials,
+      onEdit: (name) => view.openPartial(name),
+      onCreate: (name) => void view.createPartial(name),
+      onRender: (name) => preview.renderPartial(name, partialContext),
+    };
+  };
+  const sourceBoxes = usePartialBoxes(
+    controller,
+    "source",
+    kind === "profile"
+      ? undefined
+      : partialsFor(
+          kind === "citation" ? "citation" : controller.partialContext,
+        ),
+  );
   const firstProblem = controller.problems[0] ?? null;
   const problem =
     firstProblem?.slice === "details" && manifest.current === null
@@ -1774,9 +1839,11 @@ function EditorContent({
                   ? m.workbench_tab_citation()
                   : m.workbench_tab_partial()
               }
+              extensions={sourceBoxes.extensions}
               reveal={reveal}
               onSelection={selection("source")}
             />
+            {sourceBoxes.boxes}
           </TabPanel>
         ) : advanced ? (
           <SliceEditor
@@ -1807,6 +1874,7 @@ function EditorContent({
                   state.setTab("annotation");
                   state.setRoot("annotation");
                 }}
+                partials={partialsFor("note")}
                 reveal={reveal}
                 onSelection={(range) => {
                   selection("note")(range);
@@ -1893,6 +1961,7 @@ function EditorContent({
                 problem={
                   formatProblem ? diagnosticText(m, formatProblem) : null
                 }
+                partials={partialsFor("annotation")}
                 reveal={reveal}
                 onSelection={selection("annotation")}
               />

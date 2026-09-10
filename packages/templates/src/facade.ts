@@ -165,6 +165,19 @@ export class TemplateError extends Error {
   }
 }
 
+/**
+ * The render reached a name nothing is registered under — a call to a Shared
+ * Partial the vault holds no document for. It is its own type so a caller
+ * tells this failure from every other named one by structure rather than by
+ * the message text.
+ */
+export class MissingTemplateError extends TemplateError {
+  constructor(templateName: string, options?: ErrorOptions) {
+    super(`Template "${templateName}" not found`, templateName, options);
+    this.name = "MissingTemplateError";
+  }
+}
+
 /** A registered template's source, keyed by language; liquid wins when both are present. */
 interface TemplateSlot {
   liquid?: Template[];
@@ -684,7 +697,7 @@ export class TemplateFacade {
       return this.#renderSource(name, data, this.#annotationSource);
     }
     const slot = this.#slot(name);
-    if (!slot) throw new TemplateError(`Template "${name}" not found`, name);
+    if (!slot) throw new MissingTemplateError(name);
 
     const out = slot.liquid
       ? (this.#liquid.renderSync(slot.liquid, { zt: data }) as string)
@@ -761,7 +774,7 @@ export class TemplateFacade {
         !this.#slot(name) &&
         !(name === "annotation" && this.#annotationSource)
       ) {
-        throw new TemplateError(`Template "${name}" not found`, name);
+        throw new MissingTemplateError(name);
       }
       return bridgeSource(name);
     };
@@ -809,8 +822,7 @@ export class TemplateFacade {
         const binding =
           name === "annotation" ? self.#annotationSource : undefined;
         const slot = self.#slot(name);
-        if (!slot && !binding)
-          throw new TemplateError(`Template "${name}" not found`, name);
+        if (!slot && !binding) throw new MissingTemplateError(name);
         const templates = binding
           ? binding.language === "liquid"
             ? self.#liquid.parse(binding.source, name)

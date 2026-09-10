@@ -21,6 +21,7 @@ import {
   templatePath,
 } from "./defaults";
 import { InertTemplateError } from "./errors";
+import type { MissingPartialError } from "./errors";
 import { TemplateService } from "./service";
 import { MockVault, PluginStub } from "./test-vault";
 
@@ -1939,6 +1940,32 @@ describe("Template Document kinds", () => {
       language: "liquid",
     });
     expect(service.getPartialDocument("missing")).toBeNull();
+  });
+
+  it("reports a call to a partial the folder holds no document for as missing", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-profile.books.md",
+      literatureNoteDocument("Books").replace(
+        "Managed {{ zt.title }}",
+        '{% render "venue-line" %}',
+      ),
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(() =>
+      service
+        .getLiteratureNoteTemplate("zotlit-profile.books.md")!
+        .renderForCreate({ title: "Paper" }),
+    ).toThrowError(
+      expect.objectContaining<Partial<MissingPartialError>>({
+        name: "MissingTemplateError",
+        templateName: "venue-line",
+        // The refusal notice opens the Workbench here, not on the Default
+        // Profile, so the reader lands on the call to repair.
+        documentPath: "templates/zotlit-profile.books.md",
+      }),
+    );
   });
 
   it("reports an Eta partial inert when a Profile renders it with the gate off", async () => {

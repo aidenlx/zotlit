@@ -154,6 +154,24 @@ export function registerTemplateWorkbenchView(
       return true;
     },
   });
+  // A note operation that refused offers this route back: the Workbench opens
+  // on the document whose call refused, so the repair is one click away. The
+  // Default Profile stands in when the refusal named no document — a legacy
+  // slot render, or a draft compiled from source rather than from a file.
+  plugin.registerEvent(
+    plugin.app.workspace.on("zotlit:open-template-workbench", (document) => {
+      const file = document ? plugin.app.vault.getFileByPath(document) : null;
+      void runTemplateWorkbenchAction("open-workbench", () =>
+        file
+          ? openTemplateWorkbench(plugin.app, file, {
+              explainUnsupported: false,
+            })
+          : openNativeProfile(plugin.app, deps.profile, {
+              explainUnsupported: false,
+            }),
+      );
+    }),
+  );
   plugin.registerEvent(
     plugin.app.workspace.on("file-menu", (menu, file) => {
       if (!(file instanceof TFile)) return;

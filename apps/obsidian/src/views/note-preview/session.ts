@@ -18,6 +18,7 @@ import {
 import type {
   AnnotationExample,
   CitationExampleId,
+  PartialContext,
 } from "@zotlit/workbench/render";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
@@ -28,6 +29,7 @@ import type {
   PreviewMode,
 } from "@zotlit/workbench/ui";
 
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import {
   getSampleAnnotationParent,
@@ -35,6 +37,7 @@ import {
 } from "@/views/template-workbench/selection-data";
 import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
+import { renderRegisteredPartial } from "./render";
 import type { NativeRenderDeps, NativeRenderResult } from "./render";
 
 const logger = getLogger(["note-preview", "session"]);
@@ -239,6 +242,38 @@ export class NativePreviewSession implements Disposable {
       }
     });
   }
+  /**
+   * The text one registered Shared Partial produces for `context`, under this
+   * session's own selections. This is what a Partial Placeholder's preview
+   * shows, so the box under a call reads the data the slice it sits in reads.
+   *
+   * @throws when no paper is chosen yet, and whatever the render raises.
+   */
+  async renderPartial(name: string, context: PartialContext): Promise<string> {
+    await this.ready;
+    const state = this.state.getState();
+    const citation =
+      context === "citation"
+        ? { variant: state.variant, example: state.citationExample }
+        : undefined;
+    const snapshot = previewSnapshot(state, citation?.example ?? null);
+    if (!snapshot) throw new Error(m.workbench_example_missing_item());
+    return await renderRegisteredPartial(
+      this.#deps,
+      {
+        source: state.source ?? "",
+        snapshot,
+        ...(state.example ? { annotation: state.example } : {}),
+        ...(citation ? { citation } : {}),
+      },
+      {
+        name,
+        context,
+        profile: state.context?.partial?.profile ?? null,
+      },
+    );
+  }
+
   /** Hands the scheduler the paper and the example every render reads. */
   #feed(): void {
     const { snapshot, example, item, context, variant, citationExample } =
@@ -254,10 +289,10 @@ export class NativePreviewSession implements Disposable {
     this.#scheduler.setInput({
       citation,
       partial: context?.partial ?? null,
-      snapshot:
-        (citation?.example ? CITATION_EXAMPLE_ITEM : null) ??
-        snapshot ??
-        (!item && example ? getSampleAnnotationParent(example.id) : null),
+      snapshot: previewSnapshot(
+        { snapshot, item, example },
+        citation?.example ?? null,
+      ),
       annotation: example,
     });
   }
@@ -350,4 +385,24 @@ export class NativePreviewSession implements Disposable {
     this.#dataGeneration++;
     this.#cleanup.dispose();
   }
+}
+
+/**
+ * The paper one render reads, from the session's own selections. A chosen
+ * Citation example carries its own data and outranks the Item; otherwise the
+ * loaded snapshot stands, and a session with no Item at all falls back to the
+ * Sample Annotation's own parent.
+ *
+ * @param citationExample - the chosen Citation example, or null when the
+ *   render is not reading a citation set.
+ */
+function previewSnapshot(
+  state: Pick<NativePreviewState, "snapshot" | "item" | "example">,
+  citationExample: CitationExampleId | null,
+): ItemSnapshot | null {
+  if (citationExample) return CITATION_EXAMPLE_ITEM;
+  if (state.snapshot) return state.snapshot;
+  return !state.item && state.example
+    ? getSampleAnnotationParent(state.example.id)
+    : null;
 }

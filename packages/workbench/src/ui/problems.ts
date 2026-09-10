@@ -115,6 +115,12 @@ export function diagnosticText(
         : m.workbench_diagnostic_property_javascript({
             key: String(params.key),
           });
+    case "missing-partial":
+      // The engine's own render failure, which names the partial it could not
+      // resolve; ADR 0050 rules out reading a missing partial off a scan.
+      return m.workbench_diagnostic_missing_partial({
+        name: String(params.name),
+      });
     case "unsupported-dependency":
       // The renderer names the dependency it refused and leaves the words
       // here; a Local Bridge that reports its own bundle failure sends the

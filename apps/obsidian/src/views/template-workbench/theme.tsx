@@ -313,6 +313,19 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
       "annotation-actions": "zt:inline-flex zt:shrink-0 zt:items-center",
       "annotation-toggle": chipIcon,
       "annotation-edit": chipIcon,
+      "partial-box": cn(
+        editorChip,
+        "zt:inline-flex zt:max-w-full zt:items-center zt:gap-1 zt:rounded-md zt:p-0.5 zt:ps-2 zt:align-middle zt:data-[state=missing]:border-(--text-error)",
+      ),
+      "partial-name": "zt:min-w-0 zt:whitespace-normal",
+      "partial-arguments":
+        "zt:min-w-0 zt:truncate zt:font-normal zt:opacity-75",
+      "partial-problem":
+        "zt:min-w-0 zt:whitespace-normal zt:text-(--text-error)",
+      "partial-action": cn(
+        templateWorkbenchButton,
+        "zt:shrink-0 zt:rounded-sm zt:px-1.5 zt:py-0.5 zt:underline",
+      ),
       "annotation-preview":
         "zt:mx-2 zt:my-1 zt:cursor-default zt:rounded-md zt:border zt:border-border zt:bg-background zt:p-2 zt:font-sans zt:text-sm zt:whitespace-normal zt:select-text",
       "annotation-selector": "zt:mb-2",
