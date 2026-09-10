@@ -30,6 +30,7 @@ import type {
   LiteratureNoteTemplateStatus,
   ResolvedLiteratureNoteTemplate,
   SettleOutcome,
+  SharedPartialDocument,
   TemplateFileStatus,
 } from "@/services/template/service";
 
@@ -73,7 +74,11 @@ import {
 } from "./request";
 import type { ParsedRequest, RenderRequest } from "./request";
 import { schemaAssets } from "./schema";
-import { CITATION_TEMPLATE } from "./vocabulary";
+import {
+  CITATION_TEMPLATE,
+  isPartialTemplate,
+  partialTemplateName,
+} from "./vocabulary";
 
 export type { WorkbenchIdentity } from "./envelope";
 
@@ -133,6 +138,7 @@ interface TemplateWorkbenchDeps {
     readonly compileErrors: ReadonlyMap<string, CompileError>;
     getTemplateFileStatuses: () => readonly TemplateFileStatus[];
     getCitationTemplateStatus: () => CitationTemplateStatus;
+    getPartialDocument: (name: string) => SharedPartialDocument | null;
     render: (name: string, data: object) => string;
     renderFilename: (data: object) => string;
     renderCitationData: (data: CitationTemplateData) => string;
@@ -365,6 +371,50 @@ export function createTemplateWorkbenchHandlers(
       render: (data) => deps.templates.renderCitationData(data),
     });
 
+  /**
+   * Render one Shared Partial as called from the root the request names: the
+   * note or annotation of one Zotero object, or one Citation set. A partial is
+   * a Template Document, so its identity comes from the partial the vault
+   * registered rather than from the Legacy Template File slots.
+   */
+  const renderPartial = (
+    request: RenderRequest,
+    name: string,
+    identity: WorkbenchIdentity,
+  ): Promise<string> => {
+    const document = deps.templates.getPartialDocument(name);
+    if (!document) {
+      return Promise.resolve(
+        envelope(TEMPLATE_RENDER_COMMAND, {
+          ok: false,
+          request,
+          identity,
+          diagnostic: inactivePartialDiagnostic(name),
+        }),
+      );
+    }
+    const root = request.root ?? "note";
+    return renderResponse(request, {
+      echoed: {
+        request,
+        identity,
+        template: {
+          name: request.template,
+          language: document.language,
+          source: { kind: "vault" as const, path: document.path },
+        },
+        warnings: rootVariableWarnings(
+          deps.templates.analyzeRootVariables(name),
+        ),
+      },
+      load: () =>
+        root === "citation"
+          ? deps.loadCitation(request, request.variant ?? "main")
+          : deps.loadData(selectedObject(request), root),
+      render: (data) => deps.templates.render(name, data as object),
+    });
+  };
+
   return {
     [TEMPLATE_STATUS_COMMAND]: async (params: CliData): Promise<string> => {
       const request = parseStatusRequest(params);
@@ -454,6 +504,13 @@ export function createTemplateWorkbenchHandlers(
       async (request, identity) => {
         if (request.template === CITATION_TEMPLATE) {
           return await renderCitation(request, identity);
+        }
+        if (isPartialTemplate(request.template)) {
+          return await renderPartial(
+            request,
+            partialTemplateName(request.template),
+            identity,
+          );
         }
         const slot = request.template;
         const template = templateIdentity(
@@ -1254,6 +1311,18 @@ function selectedObject(
   request: { key: string } | { example: string },
 ): string {
   return "key" in request ? request.key : request.example;
+}
+
+/**
+ * A partial the vault registers no document for. #1045 replaces this with the
+ * `MISSING_PARTIAL` diagnostic the Workbench and a refused note creation share.
+ */
+function inactivePartialDiagnostic(name: string): Diagnostic {
+  return diagnostic(
+    "INVALID_SELECTOR",
+    `No Shared Partial named '${name}'. Create 'zotlit-partial.${name}.md' in the template folder.`,
+    { parameter: "template" },
+  );
 }
 
 function inactiveTemplateDiagnostic(name: TemplateSlot): Diagnostic {

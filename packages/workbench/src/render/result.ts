@@ -2,6 +2,7 @@
 // the scheduler that decides which result is still current.
 
 import type { CitationExampleId } from "./citation-examples";
+import type { PartialContext } from "./partial-preview";
 import type { RenderRequest } from "./request";
 
 /**
@@ -58,6 +59,10 @@ export interface RenderIdentity {
   readonly citationVariant?: "main" | "alt";
   /** The built-in example set it rendered; absent when the chosen Item supplied one. */
   readonly citationExample?: CitationExampleId;
+  /** The caller a Shared Partial render read its root data as. */
+  readonly partialContext?: PartialContext;
+  /** The Profile that render's bindings came from; absent for the default one. */
+  readonly partialProfile?: string;
 }
 
 export function renderIdentity({
@@ -65,6 +70,7 @@ export function renderIdentity({
   snapshot,
   annotation,
   citation,
+  partial,
   mode,
 }: RenderRequest): RenderIdentity {
   return {
@@ -78,6 +84,12 @@ export function renderIdentity({
       ? {
           citationVariant: citation.variant,
           ...(citation.example ? { citationExample: citation.example } : {}),
+        }
+      : {}),
+    ...(partial
+      ? {
+          partialContext: partial.context,
+          ...(partial.profile ? { partialProfile: partial.profile } : {}),
         }
       : {}),
   };
@@ -105,6 +117,8 @@ export interface TemplateRenderResult extends RenderIdentity {
   readonly annotationCitation: string | null;
   /** The Citation Template's own output for the selected set; null for a Profile. */
   readonly citation: string | null;
+  /** The Shared Partial's own output under the chosen context; null otherwise. */
+  readonly partial: string | null;
   /**
    * Where each highlight the format rendered landed in `creationBody`, in
    * reading order, so a host can point at the many outputs of the one format.
@@ -145,6 +159,7 @@ export function emptyRender(identity: RenderIdentity): TemplateRenderResult {
     annotation: null,
     annotationCitation: null,
     citation: null,
+    partial: null,
     annotationRanges: [],
     diagnostics: [],
   };

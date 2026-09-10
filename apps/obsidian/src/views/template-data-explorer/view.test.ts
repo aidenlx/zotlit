@@ -83,6 +83,7 @@ it("binds copied context to its editor, addresses field requests, and releases w
     advanced: false,
     annotationId: null,
     citation: null,
+    partial: null,
     canInsertField: true,
   };
   const editor = {
@@ -390,6 +391,7 @@ it("applies an explicit Item choice to the requesting pinned Explorer and leaves
     advanced: false,
     annotationId: null,
     citation: null,
+    partial: null,
     canInsertField: true,
   };
   let accepted = true;
@@ -496,6 +498,7 @@ it("keeps pinned Explorer navigation and insertion when its Profile is renamed",
     tab: "note",
     annotationId: null,
     citation: null,
+    partial: null,
     advanced: false,
     canInsertField: true,
   };

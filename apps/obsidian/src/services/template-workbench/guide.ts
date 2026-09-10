@@ -16,6 +16,7 @@ import {
   CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
+  PARTIAL_CONTEXT_NAMES,
   quotedList,
   RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
@@ -52,6 +53,7 @@ const TEMPLATE_DATA_SYNOPSIS = `obsidian zotlit:template-data \\
 const TEMPLATE_RENDER_SYNOPSIS = `obsidian zotlit:template-render \\
     (key=<zotero-key> | example=<citation-set>) \\
     template=<${RENDER_TEMPLATE_NAMES.join("|")}> expect-source=<source-id> \\
+    [root=<${PARTIAL_CONTEXT_NAMES.join("|")}>] \\
     [variant=<${CITATION_VARIANT_NAMES.join("|")}>] [format=<json|markdown>]`;
 
 const DOCUMENT_RENDER_SYNOPSIS = `obsidian zotlit:template-document-render key=<zotero-key> \\
@@ -149,10 +151,15 @@ TEMPLATES
   filename    Name of a new literature note.
   citation    One in-text citation. Renders zotlit-citation.md, or the built-in
               citation text while the vault holds no such file.
+  partial:<name>
+              One Shared Partial, from zotlit-partial.<name>.md. Names are
+              letters, digits, and hyphens.
 
 DATA ROOTS
-  template-render infers the root from the template. It has no root option. For
-  template-data, select the root shown below.
+  template-render infers the root from the template, except for a partial: a
+  partial is called from more than one root, so root=<${PARTIAL_CONTEXT_NAMES.join("|")}>
+  names the caller it is rendered as, default note. For template-data, select
+  the root shown below.
 
 ${TEMPLATE_SLOT_NAMES.map(rootRow).join("\n")}
   ${"citation".padEnd(12)} citation
@@ -164,7 +171,8 @@ CITATIONS
   Select the Citation with key=<indexed-key>, which cites that Item alone with
   no locator, or with example=<set> for a built-in Citation. The built-in
   citation text renders while the vault holds no zotlit-citation.md, and
-  template.source reports which one answered.
+  template.source reports which one answered. A partial rendered with
+  root=citation reads the same set and takes the same variant and example.
 
 FORMATS
   json        Default. Returns an envelope with "markdown", echoed request,
@@ -537,6 +545,28 @@ INSPECTION
   Duplicate labels remain usable. Identity comes from the manifest ID. Read the
   template document for its Profile Match; template-status lists the Profile's
   identity and bindings, plus document validation and exclusion diagnostics.
+
+SHARED PARTIALS
+  A Shared Partial is a zotlit-partial.<name>.md document directly inside the
+  template folder, vault-global and reachable from every Template by name. The
+  name is letters, digits, and hyphens, unique in the vault, and never
+  annotation or citation. Like the Citation Template, the document is an
+  optional YAML manifest carrying language, then the source under it; no
+  manifest means Liquid. Rename and delete are file operations; ZotLit never
+  rewrites the calls.
+
+  A partial has no root of its own: the same partial can be called from a note
+  body, from an Annotation Section, and from the Citation Template. Its own
+  editor and template-render therefore take the caller as a choice —
+  root=<${PARTIAL_CONTEXT_NAMES.join("|")}>, default note — rather than reading it off
+  the callers, since a partial nothing calls and one two roots call each name
+  no caller to read (ADR 0050).
+
+  obsidian zotlit:template-render template=partial:<name> \\
+      root=<${PARTIAL_CONTEXT_NAMES.join("|")}> key=<zotero-key> expect-source=<source-id>
+
+  A manifest partials list on a Profile document is a share transport only:
+  import unpacks each entry to its own zotlit-partial.<name>.md.
 
 RENDER
   ${DOCUMENT_RENDER_SYNOPSIS}

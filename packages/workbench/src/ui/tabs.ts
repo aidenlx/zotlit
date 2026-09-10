@@ -12,7 +12,8 @@ export type WorkbenchTab =
   | "name"
   | "profile"
   | "match"
-  | "citation";
+  | "citation"
+  | "partial";
 
 /** The tabs a Profile document opens with, which is also the web Workbench's set. */
 export const TABS: readonly WorkbenchTab[] = [
@@ -27,6 +28,7 @@ export const TABS: readonly WorkbenchTab[] = [
 const KIND_TABS: Record<WorkbenchDocumentKind, readonly WorkbenchTab[]> = {
   profile: TABS,
   citation: ["citation"],
+  partial: ["partial"],
 };
 
 /** The tabs `kind` shows, in the order the tab strip offers them. */
@@ -42,6 +44,7 @@ const TAB_LABEL: Record<WorkbenchTab, WorkbenchMessageLabel> = {
   name: "workbench_tab_name_and_folder",
   profile: "workbench_tab_profile",
   citation: "workbench_tab_citation",
+  partial: "workbench_tab_partial",
 };
 
 const TAB_LEDE: Record<WorkbenchTab, WorkbenchMessageLabel> = {
@@ -52,6 +55,7 @@ const TAB_LEDE: Record<WorkbenchTab, WorkbenchMessageLabel> = {
   name: "workbench_name_lede",
   profile: "workbench_profile_lede",
   citation: "workbench_citation_lede",
+  partial: "workbench_partial_lede",
 };
 
 export function tabLabel(m: WorkbenchMessages, tab: WorkbenchTab): string {

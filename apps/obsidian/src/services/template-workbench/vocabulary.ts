@@ -7,8 +7,14 @@ import type {
   FrontmatterLanguage,
   FrontmatterMergeStrategy,
 } from "@zotlit/templates/constants";
-import { CITATION_EXAMPLE_IDS } from "@zotlit/workbench/render";
-import type { CitationExampleId } from "@zotlit/workbench/render";
+import {
+  CITATION_EXAMPLE_IDS,
+  PARTIAL_CONTEXTS,
+} from "@zotlit/workbench/render";
+import type {
+  CitationExampleId,
+  PartialContext,
+} from "@zotlit/workbench/render";
 
 /** The accepted `template` values, in the order selector messages list them. */
 export const TEMPLATE_SLOT_NAMES = Object.keys(
@@ -19,14 +25,41 @@ export const TEMPLATE_SLOT_NAMES = Object.keys(
  *  is no Legacy Template File slot and renders against the `citation` root. */
 export const CITATION_TEMPLATE = "citation";
 
-/** A Template `template-render` renders. */
-export type RenderTemplate = TemplateSlot | typeof CITATION_TEMPLATE;
+/** A Shared Partial's `template` value is its name behind this prefix. */
+export const PARTIAL_TEMPLATE_PREFIX = "partial:";
 
-/** The accepted `template` values on `template-render`, slots first. */
-export const RENDER_TEMPLATE_NAMES: readonly RenderTemplate[] = [
+/** Whether `template` names a Shared Partial rather than another Template. */
+export function isPartialTemplate(
+  template: string,
+): template is `partial:${string}` {
+  return template.startsWith(PARTIAL_TEMPLATE_PREFIX);
+}
+
+/** The partial `template` names, or null when it names another Template. */
+export function partialTemplateName(template: `partial:${string}`): string;
+export function partialTemplateName(template: string): string | null;
+export function partialTemplateName(template: string): string | null {
+  return isPartialTemplate(template)
+    ? template.slice(PARTIAL_TEMPLATE_PREFIX.length)
+    : null;
+}
+
+/** A Template `template-render` renders. */
+export type RenderTemplate =
+  | TemplateSlot
+  | typeof CITATION_TEMPLATE
+  | `partial:${string}`;
+
+/** The accepted `template` forms on `template-render`, slots first. */
+export const RENDER_TEMPLATE_NAMES: readonly string[] = [
   ...TEMPLATE_SLOT_NAMES,
   CITATION_TEMPLATE,
+  `${PARTIAL_TEMPLATE_PREFIX}<name>`,
 ];
+
+/** The accepted `root` values on a partial render, in menu order. */
+export const PARTIAL_CONTEXT_NAMES: readonly PartialContext[] =
+  PARTIAL_CONTEXTS;
 
 /** The accepted `variant` values, in the order selector messages list them. */
 export const CITATION_VARIANT_NAMES = [

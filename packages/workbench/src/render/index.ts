@@ -55,6 +55,16 @@ export type {
 } from "./citation-examples";
 export { DEFAULT_PROFILE_SOURCE } from "./default-profile";
 export {
+  DEFAULT_PARTIAL_CONTEXT,
+  isPartialContext,
+  PARTIAL_CONTEXTS,
+} from "./partial-preview";
+export type {
+  PartialChoice,
+  PartialContext,
+  PartialPreviewSelection,
+} from "./partial-preview";
+export {
   emptyRender,
   failedRender,
   profileSourceRevision,
@@ -214,9 +224,10 @@ export function renderProfile(
       frontmatterBlock: frontmatterBlock(frontmatter.fold),
       creationBody,
       managedRegion,
-      // The web host renders a Profile only; a Citation Template preview is
-      // Obsidian's, where the installed Citation Template lives.
+      // The web host renders a Profile only; a Citation Template and a Shared
+      // Partial are previewed in Obsidian, where both documents live.
       citation: null,
+      partial: null,
       annotation: preview,
       annotationCitation,
       annotationRanges: locateOutputs(

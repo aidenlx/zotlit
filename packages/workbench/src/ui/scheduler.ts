@@ -1,5 +1,6 @@
 // A view-owned scheduler consumes values and rejects work for superseded inputs.
 import type { CitationPreviewSelection } from "#/render/citation-examples";
+import type { PartialPreviewSelection } from "#/render/partial-preview";
 import type { RenderRequest, RenderResources } from "#/render/request";
 import type {
   TemplateRenderResult,
@@ -29,6 +30,11 @@ export interface RenderSchedulerInput {
    * per choice, so a reader's pick of another example or variant is a new input.
    */
   readonly citation?: CitationPreviewSelection | null;
+  /**
+   * The context and Profile a Shared Partial render reads. A new object per
+   * choice, so the reader's pick of another caller is a new input.
+   */
+  readonly partial?: PartialPreviewSelection | null;
   readonly resources?: RenderResources;
   /**
    * Holds rendering while the host cannot answer for this draft — a Profile it
@@ -130,6 +136,9 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
         (input.citation != null &&
           (result.citationVariant !== input.citation.variant ||
             (result.citationExample ?? null) !== input.citation.example)) ||
+        (input.partial != null &&
+          (result.partialContext !== input.partial.context ||
+            (result.partialProfile ?? null) !== input.partial.profile)) ||
         result.previewMode !== input.mode);
     const stale = input.hold === true || identityMismatch;
     const staleReason = staleReasonFor(
@@ -150,7 +159,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
 
   /** What a render would be asked for now, or `null` while nothing may run. */
   function nextRequest(): RenderRequest | null {
-    const { snapshot, annotation, citation, resources, hold } = input;
+    const { snapshot, annotation, citation, partial, resources, hold } = input;
     if (closed || hold === true || snapshot === null) return null;
     return {
       mode: input.mode,
@@ -158,6 +167,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
       snapshot,
       ...(annotation ? { annotation } : {}),
       ...(citation ? { citation } : {}),
+      ...(partial ? { partial } : {}),
       ...(resources ? { resources } : {}),
     };
   }
@@ -242,6 +252,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
         input.snapshot === previous.snapshot &&
         input.annotation === previous.annotation &&
         input.citation === previous.citation &&
+        input.partial === previous.partial &&
         input.resources === previous.resources &&
         input.hold === previous.hold;
       if (sameRenderInput && input.live === previous.live) return;

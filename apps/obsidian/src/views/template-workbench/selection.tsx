@@ -9,6 +9,7 @@ import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import type {
   AnnotationExample,
   CitationExampleId,
+  PartialChoice,
 } from "@zotlit/workbench/render";
 import { annotationOption } from "@zotlit/workbench/ui";
 import type { WorkbenchHost, WorkbenchItemChoice } from "@zotlit/workbench/ui";
@@ -41,7 +42,9 @@ export type WorkbenchSelection =
       kind: "citation";
       variant: CitationVariant;
       example: CitationExampleId | null;
-    };
+    }
+  /** The caller and the Profile a Shared Partial preview renders under. */
+  | ({ kind: "partial" } & PartialChoice);
 export type WorkbenchSelectionEvent = WorkbenchSelection & {
   leaf: WorkspaceLeaf;
   editor: WorkspaceLeaf | null;

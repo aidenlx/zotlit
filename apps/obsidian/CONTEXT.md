@@ -55,6 +55,10 @@ _Avoid_: secondary citation, parenthetical / author-in-text (one possible mappin
 A vault-global Template Document, `zotlit-partial.<name>.md`, that any template renders by name. Partials live in one flat namespace; a Profile, the Citation Template, or another partial calls one with a render or include tag. A partial has no root data of its own: it renders with the data of the template that calls it. User-facing copy says **partial**.
 _Avoid_: snippet, block, include file, annotation partial (the Annotation Section belongs to the Profile document), bundled partial (the manifest copy is a sharing transport, not the partial)
 
+**Partial Preview Context**:
+The caller a Shared Partial is previewed as called from — Note, Annotation, or Citation — which picks the root data the partial's own editor renders, completes, and explores against. It is the reader's choice, remembered per file with the workspace, and it opens on Note. ADR 0050 rules out reading it off the callers: a partial nothing calls yet names no caller, and one two roots call names two. User-facing copy says **Preview as called from Note**.
+_Avoid_: partial root (a partial has no root of its own), inferred context, caller detection
+
 **Literature Note Template**:
 The single authoring object controlling what Literature Notes look like: one document per Literature Note Profile with a manifest, a note source with an optional Managed Block, and a required final Annotation Section. Both sources use one rendering language and may render shared partials by name; this document supersedes the `note`/`content` Template pair.
 _Avoid_: note template (names only the retired `note` half), unified template (vague), literature note (that is the vault file, not its template)
