@@ -18,3 +18,4 @@ The facade lives only inside one render call on one engine instance. Nothing els
 
 - Every touched surface is undocumented Obsidian runtime behaviour verified against 1.13.4; the wrapper must guard each access, degrade to a message when the Graph core plugin is unavailable, and be re-verified when the minimum app version moves.
 - The render wrapper depends on the engine reading its app reference once at the top of render; the edge tint proxy depends on the link sprite lifecycle. These two are the re-verification points.
+- The Citation Graph commands apply a preset to a native graph leaf. Global graph options are one saved set, so a later panel change in a preset leaf saves the preset as the user's graph settings; the native "Restore default settings" button is the documented escape, chosen over snapshot-and-restore, which races with other graph leaves and with Obsidian's own save.
