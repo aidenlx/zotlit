@@ -1,6 +1,8 @@
+import { settingsOf } from "@mock/obsidian";
+import type { ToggleComponent } from "@mock/obsidian";
 // @vitest-environment happy-dom
 import { Menu } from "@mock/obsidian";
-import type { App, EventRef, WorkspaceLeaf } from "obsidian";
+import type { App, EventRef, GraphOptions, WorkspaceLeaf } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
@@ -12,7 +14,9 @@ import { SettingsStub } from "@/services/citation-index/test-harness";
 import type { NoteIndex } from "@/services/note-index/service";
 import { NoteIndexStub } from "@/services/note-index/test-stub";
 
+import type { LinkMap } from "./adapter";
 import { GraphCitations } from "./service";
+import { FakeControlSection } from "./test-double";
 
 const warn = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/log", () => ({
@@ -64,6 +68,12 @@ const OCCURRENCES = new Map<string, readonly CitationOccurrence[]>([
   ],
 ]);
 
+/** What each linkpath in the fixture's vault resolves to, as Obsidian answers it. */
+const LINK_TARGETS: Record<string, string> = {
+  "Doe 2024": "Literature/Doe 2024.md",
+  Other: "Other.md",
+};
+
 /** The link maps one facaded render of the fixture is expected to see. */
 const EXPECTED_RESOLVED = {
   "Draft.md": { "Other.md": 1, "Literature/Doe 2024.md": 1 },
@@ -83,9 +93,12 @@ function rightClick(
   return Menu.instances[0] ?? null;
 }
 
-function occurrence(raw: string): CitationOccurrence {
+function occurrence(
+  raw: string,
+  kind: CitationOccurrence["kind"] = "citekey",
+): CitationOccurrence {
   return {
-    kind: "citekey",
+    kind,
     raw,
     position: {
       start: { line: 0, col: 0, offset: 0 },
@@ -100,10 +113,19 @@ interface RenderRecord {
   unresolved: Record<string, Record<string, number>>;
 }
 
+/** The vault's own files, and the link map every fixture starts from. */
+const CACHED_FILES = ["Draft.md", "Other.md", "Literature/Doe 2024.md"];
+const VAULT_LINKS: LinkMap = { "Draft.md": { "Other.md": 1 } };
+
 /** Stands in for Obsidian's engine: `render` is inherited, reads `app` once, hands off to the renderer. */
 class FakeEngine {
   readonly renders: RenderRecord[] = [];
+  /** What each render saw as the vault's file list, for the narrowing rows. */
+  readonly cachedFiles: string[][] = [];
   readonly renderer: FakeRenderer;
+  readonly filterOptions = new FakeControlSection();
+  readonly onOptionsChange = vi.fn();
+  options: GraphOptions = {};
   app: App;
   throwNext = false;
 
@@ -117,6 +139,15 @@ class FakeEngine {
 
   readonly #realApp: App;
 
+  getOptions(): GraphOptions {
+    return this.filterOptions.getOptions();
+  }
+
+  setOptions(options: GraphOptions): void {
+    this.filterOptions.setOptions(options);
+    this.render();
+  }
+
   render(): number {
     const { metadataCache } = this.app;
     this.renders.push({
@@ -124,6 +155,7 @@ class FakeEngine {
       resolved: metadataCache.resolvedLinks,
       unresolved: metadataCache.unresolvedLinks,
     });
+    this.cachedFiles.push(metadataCache.getCachedFiles!());
     if (this.throwNext) {
       this.throwNext = false;
       throw new Error("render failed");
@@ -165,7 +197,14 @@ function fakeLeaf(
           renderer: engine.renderer,
           dataEngine: engine,
         }
-      : { getViewType: () => viewType, renderer: engine.renderer, engine };
+      : {
+          getViewType: () => viewType,
+          renderer: engine.renderer,
+          engine,
+          // `LocalGraphView.getState` reports the engine's options, which is
+          // how a local graph's rows reach the workspace file.
+          getState: () => ({ options: engine.getOptions() }),
+        };
   const leaf = { view, isDeferred: false };
   return {
     leaf: leaf as unknown as WorkspaceLeaf,
@@ -181,7 +220,16 @@ class CitationIndexStub {
   readonly ready = Promise.resolve();
   readonly #emitter =
     createNanoEvents<Record<string, (...args: never[]) => void>>();
-  citationsByPath = vi.fn(() => OCCURRENCES);
+  /** What the wikilink syntax adds to {@link OCCURRENCES}, per path. */
+  wikilinks = new Map<string, readonly CitationOccurrence[]>();
+  citationsByPath = vi.fn((syntaxes: readonly string[]) => {
+    if (!syntaxes.includes("wikilink")) return OCCURRENCES;
+    const byPath = new Map(OCCURRENCES);
+    for (const [path, occurrences] of this.wikilinks) {
+      byPath.set(path, [...(byPath.get(path) ?? []), ...occurrences]);
+    }
+    return byPath as ReadonlyMap<string, readonly CitationOccurrence[]>;
+  });
   /** Answers every key `null`, as the index does until its snapshot is warm. */
   cold = false;
   resolveCitekey = (citekey: string): CitekeyResolution | null =>
@@ -196,7 +244,19 @@ class CitationIndexStub {
   }
 }
 
-function makeFixture(options: { graphEnabled?: boolean } = {}) {
+interface FixtureOptions {
+  graphEnabled?: boolean;
+  /** What the Graph core plugin saved, which the global graph starts from. */
+  savedGlobal?: GraphOptions;
+  /** Whether the vault-wide Wikilink Citations setting admits the syntax. */
+  wikilinkCitations?: boolean;
+  /** The vault's own resolved links. */
+  links?: LinkMap;
+  /** The serialized layout Obsidian restored this session's leaves from. */
+  savedLayout?: unknown;
+}
+
+function makeFixture(options: FixtureOptions = {}) {
   const listeners = new Map<string, Set<() => void>>();
   const leaves: WorkspaceLeaf[] = [];
   let layoutReady: (() => void) | undefined;
@@ -215,23 +275,32 @@ function makeFixture(options: { graphEnabled?: boolean } = {}) {
     },
     getLeavesOfType: (type: string) =>
       leaves.filter((leaf) => leaf.view.getViewType() === type),
+    readWorkspaceFile: () => Promise.resolve(options.savedLayout ?? {}),
   };
+  const graphPlugin = { options: options.savedGlobal ?? {} };
   const app = {
     workspace,
     internalPlugins: {
       getEnabledPluginById: (id: string) =>
-        id === "graph" && (options.graphEnabled ?? true) ? {} : null,
+        id === "graph" && (options.graphEnabled ?? true) ? graphPlugin : null,
     },
     metadataCache: {
-      resolvedLinks: { "Draft.md": { "Other.md": 1 } },
+      resolvedLinks: options.links ?? VAULT_LINKS,
       unresolvedLinks: {},
+      getCachedFiles: () => [...CACHED_FILES],
+      getFirstLinkpathDest: (linkpath: string) => {
+        const path = LINK_TARGETS[linkpath];
+        return path ? { path } : null;
+      },
     },
   } as unknown as App;
   const citationIndex = new CitationIndexStub();
   const noteIndex = new NoteIndexStub({
     DOE00001: [{ path: "Literature/Doe 2024.md" }],
   });
-  const settings = new SettingsStub();
+  const settings = new SettingsStub({
+    "citation.wikilink-citations": options.wikilinkCitations ?? false,
+  });
   const openCitekey = vi.fn(() => Promise.resolve());
   const service = new GraphCitations({
     app,
@@ -239,7 +308,7 @@ function makeFixture(options: { graphEnabled?: boolean } = {}) {
     // The stub answers plain `{ path }` records where the index answers files.
     noteIndex: noteIndex as unknown as Pick<
       NoteIndex,
-      "getNotesByItemKey" | "on"
+      "getIndexedItemKeys" | "getNotesByItemKey" | "on"
     >,
     citekeyEditor: { openCitekey },
     settings,
@@ -251,20 +320,33 @@ function makeFixture(options: { graphEnabled?: boolean } = {}) {
     noteIndex,
     settings,
     openCitekey,
-    addLeaf(viewType: "graph" | "localgraph") {
+    addLeaf(viewType: "graph" | "localgraph", id = `leaf-${leaves.length}`) {
       const made = fakeLeaf(viewType, app, app);
+      Object.assign(made.leaf, { id });
       leaves.push(made.leaf);
       return made.engine;
     },
-    /** A leaf in a background tab: its view is Obsidian's placeholder until `load()`. */
-    addDeferredLeaf(viewType: "graph" | "localgraph") {
+    /**
+     * A leaf in a background tab: its view is Obsidian's placeholder, which
+     * carries the state the leaf saved until the leaf loads.
+     */
+    addDeferredLeaf(viewType: "graph" | "localgraph", saved?: GraphOptions) {
       const made = fakeLeaf(viewType, app, app);
       Object.assign(made.leaf, {
-        view: { getViewType: () => viewType },
+        id: `leaf-${leaves.length}`,
+        view: {
+          getViewType: () => viewType,
+          getState: () => (saved ? { options: saved } : {}),
+        },
         isDeferred: true,
       });
       leaves.push(made.leaf);
       return { engine: made.engine, load: made.load };
+    },
+    /** What Obsidian would serialize for a leaf, as its view reports it. */
+    leafState(id: string) {
+      const leaf = leaves.find((candidate) => candidate.id === id);
+      return leaf!.view.getState();
     },
     layoutReady: () => layoutReady?.(),
     fire: (name: string) => {
@@ -304,6 +386,8 @@ describe("GraphCitations installation", () => {
     }
     global.renderer.onNodeClick(new MouseEvent("click"), "Other.md", "");
     expect(global.nativeClicks).toEqual([["Other.md", ""]]);
+    // Wikilink occurrences cost a link-cache pass, so a graph that cannot
+    // take those edges away does not ask for them.
     expect(fixture.citationIndex.citationsByPath).toHaveBeenCalledWith([
       "citekey",
     ]);
@@ -705,5 +789,281 @@ describe("GraphCitations teardown", () => {
     fixture.citationIndex.emit("backfilled");
     fixture.noteIndex.emit("changed");
     expect(engine.renders).toHaveLength(2);
+  });
+});
+
+/** The rows the panel shows, in the order the user reads them. */
+function rowNames(engine: FakeEngine): string[] {
+  return settingsOf(engine.filterOptions.childrenEl).map((row) => row.name);
+}
+
+function rowToggle(engine: FakeEngine, name: string): ToggleComponent {
+  const row = settingsOf(engine.filterOptions.childrenEl).find(
+    (candidate) => candidate.name === name,
+  );
+  return row!.components[0] as ToggleComponent;
+}
+
+describe("GraphCitations Filters rows", () => {
+  it("builds the rows in the Filters section, without the Wikilink row while the vault-wide setting excludes the syntax", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+
+    fixture.layoutReady();
+
+    expect(rowNames(engine)).toEqual([
+      "Pandoc citations",
+      "Citation-connected only",
+    ]);
+    expect(engine.getOptions()).toEqual({
+      "zotlit-pandoc-citations": true,
+      "zotlit-citation-connected-only": false,
+    });
+  });
+
+  it("adds the Wikilink row while the vault-wide setting admits the syntax, and rebuilds the rows when that choice changes", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    fixture.settings.update({ "citation.wikilink-citations": true });
+
+    expect(rowNames(engine)).toEqual([
+      "Pandoc citations",
+      "Wikilink citations",
+      "Citation-connected only",
+    ]);
+
+    fixture.settings.update({ "citation.wikilink-citations": false });
+
+    expect(rowNames(engine)).toEqual([
+      "Pandoc citations",
+      "Citation-connected only",
+    ]);
+  });
+
+  it("starts the global graph at what the Graph core plugin saved", async () => {
+    const fixture = makeFixture({
+      savedGlobal: { "zotlit-pandoc-citations": false, showTags: true },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+
+    fixture.layoutReady();
+
+    expect(rowToggle(engine, "Pandoc citations").getValue()).toBe(false);
+    expect(engine.renders.at(-1)).toEqual({
+      facaded: true,
+      resolved: VAULT_LINKS,
+      unresolved: {},
+    });
+  });
+
+  it("starts a local graph at what its leaf carried while deferred", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const { engine, load } = fixture.addDeferredLeaf("localgraph", {
+      "zotlit-citation-connected-only": true,
+    });
+    fixture.layoutReady();
+
+    load();
+    fixture.fire("layout-change");
+
+    expect(rowToggle(engine, "Citation-connected only").getValue()).toBe(true);
+    expect(engine.cachedFiles.at(-1)).toEqual([
+      "Draft.md",
+      "Literature/Doe 2024.md",
+    ]);
+  });
+
+  it("starts a local graph the layout loaded straight away from the workspace file", async () => {
+    const fixture = makeFixture({
+      savedLayout: {
+        main: {
+          type: "split",
+          children: [
+            {
+              id: "local-1",
+              type: "leaf",
+              state: {
+                type: "localgraph",
+                state: { options: { "zotlit-pandoc-citations": false } },
+              },
+            },
+          ],
+        },
+      },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("localgraph", "local-1");
+
+    fixture.layoutReady();
+
+    expect(rowToggle(engine, "Pandoc citations").getValue()).toBe(false);
+    expect(engine.renders.at(-1)).toEqual({
+      facaded: true,
+      resolved: VAULT_LINKS,
+      unresolved: {},
+    });
+  });
+
+  it("round-trips through the engine's set options", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    engine.setOptions({
+      "zotlit-pandoc-citations": false,
+      "zotlit-citation-connected-only": true,
+    });
+
+    expect(engine.getOptions()).toEqual({
+      "zotlit-pandoc-citations": false,
+      "zotlit-citation-connected-only": true,
+    });
+    expect(rowToggle(engine, "Pandoc citations").getValue()).toBe(false);
+    expect(engine.renders.at(-1)).toEqual({
+      facaded: true,
+      resolved: VAULT_LINKS,
+      unresolved: {},
+    });
+    expect(engine.cachedFiles.at(-1)).toEqual(["Literature/Doe 2024.md"]);
+  });
+
+  it("returns the rows to their defaults when the panel restores default settings", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+    rowToggle(engine, "Pandoc citations").toggle(false);
+    rowToggle(engine, "Citation-connected only").toggle(true);
+
+    engine.filterOptions.setDefaultOptions();
+
+    expect(engine.getOptions()).toEqual({
+      "zotlit-pandoc-citations": true,
+      "zotlit-citation-connected-only": false,
+    });
+    expect(engine.filterOptions.natives).toBe(1);
+    expect(engine.renders.at(-1)).toEqual({
+      facaded: true,
+      resolved: EXPECTED_RESOLVED,
+      unresolved: EXPECTED_UNRESOLVED,
+    });
+  });
+
+  it("draws no citation edge while Pandoc citations is off", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    rowToggle(engine, "Pandoc citations").toggle(false);
+
+    expect(engine.renders.at(-1)).toEqual({
+      facaded: true,
+      resolved: VAULT_LINKS,
+      unresolved: {},
+    });
+  });
+
+  it("takes each note's Wikilink Citations away while that row is off, and leaves every other link to a Literature Note alone", async () => {
+    const fixture = makeFixture({
+      wikilinkCitations: true,
+      links: {
+        "Draft.md": { "Other.md": 1 },
+        // Reading writes `[[Doe 2024]]`, a Citation; Alias writes
+        // `[[Doe 2024|that paper]]` and Heading writes `[[Doe 2024#Notes]]`,
+        // which ADR 0022 leaves as ordinary Obsidian links.
+        "Reading.md": { "Literature/Doe 2024.md": 1 },
+        "Alias.md": { "Literature/Doe 2024.md": 1 },
+        "Heading.md": { "Literature/Doe 2024.md": 1 },
+      },
+    });
+    fixture.citationIndex.wikilinks.set("Reading.md", [
+      occurrence("Doe 2024", "wikilink"),
+    ]);
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    rowToggle(engine, "Wikilink citations").toggle(false);
+
+    expect(engine.renders.at(-1)!.resolved).toEqual({
+      "Draft.md": { "Other.md": 1, "Literature/Doe 2024.md": 1 },
+      "Reading.md": {},
+      "Alias.md": { "Literature/Doe 2024.md": 1 },
+      "Heading.md": { "Literature/Doe 2024.md": 1 },
+    });
+    expect(fixture.citationIndex.citationsByPath).toHaveBeenCalledWith([
+      "citekey",
+      "wikilink",
+    ]);
+  });
+
+  it("keeps a local graph's row in the leaf state Obsidian persists", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("localgraph", "local-1");
+    fixture.layoutReady();
+
+    rowToggle(engine, "Citation-connected only").toggle(true);
+
+    expect(fixture.leafState("local-1")).toEqual({
+      options: {
+        "zotlit-pandoc-citations": true,
+        "zotlit-citation-connected-only": true,
+      },
+    });
+  });
+
+  it("rebuilds the rows without drawing the graph natively in between", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+    const drawn = engine.renders.length;
+
+    fixture.settings.update({ "citation.wikilink-citations": true });
+
+    expect(engine.renders.slice(drawn).map((render) => render.facaded)).toEqual(
+      [true],
+    );
+    expect(rowNames(engine)).toEqual([
+      "Pandoc citations",
+      "Wikilink citations",
+      "Citation-connected only",
+    ]);
+  });
+
+  it("removes every row when the feature turns off", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    fixture.settings.update({ "citation.graph-citations": false });
+
+    expect(rowNames(engine)).toEqual([]);
+    expect(engine.filterOptions.optionListeners).toEqual({});
+    expect(Object.hasOwn(engine.filterOptions, "setDefaultOptions")).toBe(
+      false,
+    );
   });
 });

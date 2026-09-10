@@ -82,6 +82,13 @@ declare module "obsidian" {
     ): EventRef;
     /** Active/recent navigating FileView, also used by native Outline. */
     getActiveFileView(): FileView | null;
+    /**
+     * Re-reads the serialized layout Obsidian restored this session's leaves
+     * from, `{}` when it cannot. Internal; shape verified against Obsidian
+     * 1.13.7 and 1.14.0. Optional so a build that drops it is a guarded
+     * branch, not a crash.
+     */
+    readWorkspaceFile?(): Promise<unknown>;
 
     on(
       name: "zotlit:insert-template-field",
@@ -119,6 +126,12 @@ declare module "obsidian" {
      * that drops it is a runtime branch, not a crash.
      */
     onCleanCache?(callback: () => void): void;
+    /**
+     * Every path the cache holds — the file list one graph render walks to
+     * build its nodes. Internal; shape verified against Obsidian 1.13.7 and
+     * 1.14.0. Optional so a build that drops it is a guarded branch.
+     */
+    getCachedFiles?(): string[];
   }
   /**
    * The core `graph` view (`leaf.view` of view type `"graph"`). Internal;
@@ -136,14 +149,51 @@ declare module "obsidian" {
   }
   /**
    * The graph data engine one view owns. `render()` reads `app` once at its
-   * top and hands the result to `renderer.setData` — the seam ADR 0029 rests
-   * on. Internal; shape verified against Obsidian 1.13.7 and 1.14.0.
+   * top and hands the result to `renderer.setData` — the seam Graph Citations
+   * rests on. Internal; shape verified against Obsidian 1.13.7 and 1.14.0.
+   *
+   * @see apps/obsidian/docs/adr/0029-graph-citations-extend-obsidian-graph-through-a-per-render-metadata-facade.md
    */
   interface GraphEngine {
     app?: App;
     /** Rebuilds the node set from scratch on every call; returns the link count. */
     render?(): unknown;
+    /** What one render reads. Only a key some section owns ever lands here. */
+    options?: GraphOptions;
+    /** The Filters section of the controls panel. */
+    filterOptions?: GraphControlSection;
+    /** Saves the options where this graph persists them; debounced. */
+    onOptionsChange?(): void;
   }
+  /**
+   * One graph's options: the native keys, plus every key a controls-panel
+   * section registered an option listener for. Persisted per graph — Graph
+   * core plugin data for the global graph, leaf state for a local one.
+   */
+  type GraphOptions = Record<string, unknown>;
+  /**
+   * One section of the graph controls panel, `engine.filterOptions` and its
+   * siblings. Internal; shape verified against Obsidian 1.13.7 and 1.14.0.
+   */
+  interface GraphControlSection {
+    /** The section body, below its header: what a row is built into. */
+    childrenEl: HTMLElement;
+    /** Keyed by option key. `engine.getOptions` enumerates these, not `engine.options`. */
+    optionListeners: Record<string, GraphOptionListener>;
+    /**
+     * What "Restore default settings" calls. It replays a fixed object of
+     * native keys, so a plugin key is skipped: a plugin row reaches the
+     * button only through a wrap of this member.
+     */
+    setDefaultOptions(): void;
+  }
+  /**
+   * What one controls-panel row registers under its option key. Reads the
+   * row's value, and writes it first when called with one. `any` because a
+   * section holds rows of every control type, as Obsidian's own
+   * `ValueComponent.registerOptionListener` declares them.
+   */
+  type GraphOptionListener = (value?: any) => any;
   /**
    * The PIXI renderer one view owns; the click callback is an own property
    * the engine binds in its constructor. Internal; shape verified against

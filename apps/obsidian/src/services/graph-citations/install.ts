@@ -50,24 +50,42 @@ export function graphMembersOf(leaf: WorkspaceLeaf): GraphLeafMembers | null {
         ? (leaf.view as LocalGraphView).engine
         : undefined;
   const renderer = (leaf.view as GraphView).renderer;
-  const missing = [
-    engine ? null : "engine",
-    engine?.app ? null : "engine.app",
-    typeof engine?.render === "function" ? null : "engine.render",
-    renderer ? null : "renderer",
-    typeof renderer?.onNodeClick === "function" ? null : "renderer.onNodeClick",
-    typeof renderer?.onNodeRightClick === "function"
-      ? null
-      : "renderer.onNodeRightClick",
-  ].filter((member) => member !== null);
-  if (missing.length > 0) {
-    logger.warn("Graph leaf is missing an internal member; left native", {
-      viewType,
-      missing,
-    });
-    return null;
-  }
-  return { viewType, engine, renderer } as GraphLeafMembers;
+  const present = membersPresent(
+    "Graph leaf is missing an internal member; left native",
+    {
+      engine: Boolean(engine),
+      "engine.app": Boolean(engine?.app),
+      "engine.render": typeof engine?.render === "function",
+      renderer: Boolean(renderer),
+      "renderer.onNodeClick": typeof renderer?.onNodeClick === "function",
+      "renderer.onNodeRightClick":
+        typeof renderer?.onNodeRightClick === "function",
+    },
+    { viewType },
+  );
+  return present ? ({ viewType, engine, renderer } as GraphLeafMembers) : null;
+}
+
+/**
+ * The one report an installation makes when an Obsidian build moved an
+ * internal member, so the caller can leave that surface native instead of
+ * crashing on it.
+ *
+ * @param present each member this code reads, by name, against whether the
+ *   build still has it.
+ * @param context what the report names beside the missing members.
+ * @returns `true` when every member is there; `false` after one `warn`
+ *   naming those that are not.
+ */
+export function membersPresent(
+  message: string,
+  present: Record<string, boolean>,
+  context: Record<string, unknown>,
+): boolean {
+  const missing = Object.keys(present).filter((member) => !present[member]);
+  if (missing.length === 0) return true;
+  logger.warn(message, { ...context, missing });
+  return false;
 }
 
 /**

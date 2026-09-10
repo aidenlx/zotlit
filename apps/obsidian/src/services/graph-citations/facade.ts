@@ -1,4 +1,4 @@
-// The per-render metadata-cache facade: the engine's app, with the link maps augmented for one render call (ADR 0029).
+// The per-render metadata-cache facade: the engine's app, with the link maps augmented for one render call.
 
 import type { App, MetadataCache } from "obsidian";
 
@@ -19,6 +19,7 @@ export interface FacadeEngine {
  * @param render the engine's native `render`, called on the engine.
  * @returns whatever the native `render` returns.
  * @throws whatever the native `render` throws; the real app is restored first.
+ * @see apps/obsidian/docs/adr/0029-graph-citations-extend-obsidian-graph-through-a-per-render-metadata-facade.md
  */
 export function renderWithFacade(
   engine: FacadeEngine,
@@ -37,7 +38,8 @@ export function renderWithFacade(
 /**
  * The real app, with `metadataCache` alone replaced. Every other read, and
  * every method the scan calls on the cache, forwards to the real object, so
- * the facade needs no knowledge of the cache beyond its two link maps.
+ * the facade needs no knowledge of the cache beyond its two link maps and its
+ * file list.
  */
 export function facadeApp(app: App, additions: GraphCitationAdditions): App {
   const metadataCache = facadeMetadataCache(app.metadataCache, additions);
@@ -54,20 +56,56 @@ function facadeMetadataCache(
   additions: GraphCitationAdditions,
 ): MetadataCache {
   const resolvedLinks = mergeLinkMaps(
-    cache.resolvedLinks,
+    withoutLinks(cache.resolvedLinks, additions.hiddenLinks),
     additions.resolvedLinks,
   );
   const unresolvedLinks = mergeLinkMaps(
     cache.unresolvedLinks,
     additions.unresolvedLinks,
   );
+  const { survivingPaths } = additions;
+  // The scan builds a node per cached file, so the narrowed list is what
+  // "Citation-connected only" takes away — and the local narrowing and the
+  // orphan sweep, which run after it inside the same render, run on what is
+  // left. An edge into a file that is gone draws nothing.
+  const narrows =
+    survivingPaths !== null && typeof cache.getCachedFiles === "function";
   return new Proxy(cache, {
     get(target, key, receiver) {
       if (key === "resolvedLinks") return resolvedLinks;
       if (key === "unresolvedLinks") return unresolvedLinks;
+      if (key === "getCachedFiles" && narrows) {
+        return () =>
+          target.getCachedFiles!().filter((path) => survivingPaths.has(path));
+      }
       return forward(target, key, receiver);
     },
   });
+}
+
+/**
+ * Subtracts the links a citation syntax drew that this render does not,
+ * counted per source and target, so a target a source also reaches by an
+ * ordinary link keeps its edge.
+ *
+ * @returns `base` less `hidden`; `base` itself when there is nothing to take
+ *   away. Neither input is mutated.
+ */
+export function withoutLinks(base: LinkMap, hidden: LinkMap): LinkMap {
+  const sources = Object.keys(hidden);
+  if (sources.length === 0) return base;
+  const stripped: LinkMap = { ...base };
+  for (const source of sources) {
+    const links = base[source];
+    if (!links) continue;
+    const kept: Record<string, number> = {};
+    for (const [target, count] of Object.entries(links)) {
+      const remaining = count - (hidden[source]![target] ?? 0);
+      if (remaining > 0) kept[target] = remaining;
+    }
+    stripped[source] = kept;
+  }
+  return stripped;
 }
 
 /**

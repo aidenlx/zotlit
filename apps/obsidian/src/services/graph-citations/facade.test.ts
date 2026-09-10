@@ -2,7 +2,12 @@ import type { App, MetadataCache } from "obsidian";
 import { describe, expect, it } from "vitest";
 
 import type { GraphCitationAdditions } from "./adapter";
-import { facadeApp, mergeLinkMaps, renderWithFacade } from "./facade";
+import {
+  facadeApp,
+  mergeLinkMaps,
+  renderWithFacade,
+  withoutLinks,
+} from "./facade";
 import type { FacadeEngine } from "./facade";
 
 function additionsOf(
@@ -12,6 +17,9 @@ function additionsOf(
     resolvedLinks: {},
     unresolvedLinks: {},
     citedWorkNodes: new Map(),
+    literatureNotes: new Set(),
+    hiddenLinks: {},
+    survivingPaths: null,
     ...overrides,
   };
 }
@@ -128,5 +136,110 @@ describe("mergeLinkMaps", () => {
       "Draft.md": { "Doe.md": 1 },
       "New.md": { "Doe.md": 1 },
     });
+  });
+});
+
+describe("facadeApp under the Filters rows", () => {
+  it("takes each note's Wikilink Citation edges away and draws the citekey edge in their place", () => {
+    const cache = cacheWith({
+      resolved: {
+        "Draft.md": { "Literature/Doe 2024.md": 1, "Other.md": 1 },
+        "Other.md": { "Literature/Doe 2024.md": 1 },
+        // An aliased link no citation names, so the edge stays.
+        "Alias.md": { "Literature/Doe 2024.md": 1 },
+      },
+      unresolved: {},
+    });
+    const app = { metadataCache: cache } as unknown as App;
+
+    const facade = facadeApp(
+      app,
+      additionsOf({
+        resolvedLinks: { "Draft.md": { "Literature/Doe 2024.md": 1 } },
+        hiddenLinks: {
+          "Draft.md": { "Literature/Doe 2024.md": 1 },
+          "Other.md": { "Literature/Doe 2024.md": 1 },
+        },
+      }),
+    );
+
+    expect(facade.metadataCache.resolvedLinks).toEqual({
+      "Draft.md": { "Other.md": 1, "Literature/Doe 2024.md": 1 },
+      "Other.md": {},
+      "Alias.md": { "Literature/Doe 2024.md": 1 },
+    });
+    expect(cache.resolvedLinks["Other.md"]).toEqual({
+      "Literature/Doe 2024.md": 1,
+    });
+  });
+
+  it("narrows the cached files to the surviving paths, so the render's own narrowing runs on them", () => {
+    const cache = cacheWith({ resolved: {}, unresolved: {} });
+    const app = { metadataCache: cache } as unknown as App;
+
+    const facade = facadeApp(
+      app,
+      additionsOf({ survivingPaths: new Set(["Draft.md"]) }),
+    );
+
+    expect(
+      (
+        facade.metadataCache as unknown as { getCachedFiles(): string[] }
+      ).getCachedFiles(),
+    ).toEqual(["Draft.md"]);
+  });
+
+  it("leaves the file list whole while Citation-connected only is off", () => {
+    const cache = cacheWith({ resolved: {}, unresolved: {} });
+    const app = { metadataCache: cache } as unknown as App;
+
+    const facade = facadeApp(app, additionsOf({}));
+
+    expect(
+      (
+        facade.metadataCache as unknown as { getCachedFiles(): string[] }
+      ).getCachedFiles(),
+    ).toEqual(["Draft.md", "Other.md"]);
+  });
+});
+
+describe("withoutLinks", () => {
+  it("returns the base itself when there is nothing to take away", () => {
+    const base = { "Draft.md": { "Other.md": 1 } };
+    expect(withoutLinks(base, {})).toBe(base);
+  });
+
+  it("drops the named edges of the named sources without touching the base", () => {
+    const base = {
+      "Draft.md": { "Doe.md": 1, "Other.md": 1 },
+      "Other.md": { "Doe.md": 1 },
+      "Alias.md": { "Doe.md": 1 },
+    };
+
+    expect(
+      withoutLinks(base, {
+        "Draft.md": { "Doe.md": 1 },
+        "Other.md": { "Doe.md": 1 },
+      }),
+    ).toEqual({
+      "Draft.md": { "Other.md": 1 },
+      "Other.md": {},
+      "Alias.md": { "Doe.md": 1 },
+    });
+    expect(base["Draft.md"]).toEqual({ "Doe.md": 1, "Other.md": 1 });
+  });
+
+  it("keeps the edge while an ordinary link to the same target remains", () => {
+    const base = { "Draft.md": { "Doe.md": 3 } };
+
+    expect(withoutLinks(base, { "Draft.md": { "Doe.md": 2 } })).toEqual({
+      "Draft.md": { "Doe.md": 1 },
+    });
+  });
+
+  it("leaves a source the vault holds no links for", () => {
+    const base = { "Draft.md": { "Doe.md": 1 } };
+
+    expect(withoutLinks(base, { "Gone.md": { "Doe.md": 1 } })).toEqual(base);
   });
 });
