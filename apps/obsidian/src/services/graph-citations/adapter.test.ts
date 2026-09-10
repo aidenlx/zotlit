@@ -535,3 +535,93 @@ describe("graphCitationAdditions under the Filters rows", () => {
     expect(additions.survivingPaths!.has("Draft.md")).toBe(true);
   });
 });
+
+describe("graphCitationAdditions citing sources", () => {
+  it("names the smallest citing path, whatever order the documents come in", () => {
+    const additions = graphCitationAdditions(
+      input({
+        "Zeta.md": [
+          occurrence("citekey", "doe2024"),
+          occurrence("citekey", "typo2024"),
+        ],
+        "Alpha.md": [occurrence("citekey", "doe2024")],
+      }),
+    );
+
+    expect([...additions.citingSources]).toEqual([
+      ["Literature/Doe 2024.md", "Alpha.md"],
+      ["@typo2024", "Zeta.md"],
+    ]);
+  });
+
+  it("names the source of a wikilink citation, which adds no edge of its own", () => {
+    const additions = graphCitationAdditions(
+      input(
+        { "Draft.md": [occurrence("wikilink", "Doe 2024")] },
+        { resolvedLinks: { "Draft.md": { "Literature/Doe 2024.md": 1 } } },
+      ),
+    );
+
+    expect(summary(additions)).toEqual({
+      resolved: {},
+      unresolved: {},
+      nodes: [],
+      notes: ALL_NOTES,
+    });
+    expect([...additions.citingSources]).toEqual([
+      ["Literature/Doe 2024.md", "Draft.md"],
+    ]);
+  });
+
+  it("names the source for every Literature Note of the cited Item", () => {
+    const additions = graphCitationAdditions(
+      input({ "Draft.md": [occurrence("citekey", "poe2021")] }),
+    );
+
+    expect([...additions.citingSources]).toEqual([
+      ["Literature/Poe 2021.md", "Draft.md"],
+      ["Literature/Poe 2021 reread.md", "Draft.md"],
+    ]);
+  });
+
+  it("names no source for a wikilink to an ordinary note", () => {
+    const additions = graphCitationAdditions(
+      input({ "Draft.md": [occurrence("wikilink", "Other")] }),
+    );
+
+    expect([...additions.citingSources]).toEqual([]);
+  });
+
+  it("names the citing source of every node, whatever the rows leave drawn", () => {
+    const additions = graphCitationAdditions(
+      input(
+        {
+          "Draft.md": [
+            occurrence("citekey", "doe2024"),
+            occurrence("citekey", "typo2024"),
+          ],
+          "Reading.md": [occurrence("wikilink", "Poe 2021")],
+        },
+        {
+          resolvedLinks: { "Reading.md": { "Literature/Poe 2021.md": 1 } },
+          filters: filters({
+            pandocCitations: false,
+            wikilinkCitations: false,
+          }),
+        },
+      ),
+    );
+
+    expect(summary(additions)).toEqual({
+      resolved: {},
+      unresolved: {},
+      nodes: [],
+      notes: ALL_NOTES,
+    });
+    expect([...additions.citingSources]).toEqual([
+      ["Literature/Poe 2021.md", "Reading.md"],
+      ["Literature/Doe 2024.md", "Draft.md"],
+      ["@typo2024", "Draft.md"],
+    ]);
+  });
+});

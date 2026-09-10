@@ -2,12 +2,14 @@ import { settingsOf } from "@mock/obsidian";
 import type { ToggleComponent } from "@mock/obsidian";
 // @vitest-environment happy-dom
 import { Menu } from "@mock/obsidian";
+import { PopoverState } from "obsidian";
 import type {
   App,
   EventRef,
   GraphColor,
   GraphData,
   GraphOptions,
+  HoverPopover,
   WorkspaceLeaf,
 } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -19,8 +21,10 @@ import { themeProperty } from "@/lib/theme-hooks";
 import type { CitationOccurrence } from "@/services/citation-index/scan";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import { SettingsStub } from "@/services/citation-index/test-harness";
+import { CITEKEY_HOVER_SOURCE } from "@/services/citekey-navigation";
 import type { NoteIndex } from "@/services/note-index/service";
 import { NoteIndexStub } from "@/services/note-index/test-stub";
+import type { Settings } from "@/services/settings/schema";
 
 import type { LinkMap } from "./adapter";
 import { GraphCitations } from "./service";
@@ -35,20 +39,20 @@ vi.mock("@/lib/log", () => ({
 const DOE = {
   itemID: 1,
   libraryID: 1,
-  key: "DOE00001",
-  indexedKey: "DOE00001",
+  key: "DEE23456",
+  indexedKey: "DEE23456",
 };
 const ROE = {
   itemID: 2,
   libraryID: 1,
-  key: "ROE00002",
-  indexedKey: "ROE00002",
+  key: "REE34567",
+  indexedKey: "REE34567",
 };
 const ROE_GROUP = {
   itemID: 3,
   libraryID: 4,
-  key: "ROE00002",
-  indexedKey: "4_ROE00002",
+  key: "REE34567",
+  indexedKey: "4_REE34567",
 };
 /** One Item, in a group library, that has no Literature Note yet. */
 const PINE = {
@@ -57,11 +61,32 @@ const PINE = {
   key: "PINE2345",
   indexedKey: "PINE2345g4",
 };
+/** Two more Items with a Literature Note each: Lee is cited, Kay is not. */
+const LEE = {
+  itemID: 5,
+  libraryID: 1,
+  key: "LEE56789",
+  indexedKey: "LEE56789",
+};
+const KAY = {
+  itemID: 6,
+  libraryID: 1,
+  key: "KAY23456",
+  indexedKey: "KAY23456",
+};
+/** The key each Item is written as, which a Literature Note node is read by. */
+const CITEKEYS: Record<string, string> = {
+  DEE23456: "doe2024",
+  LEE56789: "lee2019",
+  KAY23456: "kay2020",
+};
 const RESOLUTIONS: Record<string, CitekeyResolution> = {
   doe2024: { kind: "unique", item: DOE },
   pine2023: { kind: "unique", item: PINE },
   roe2025: { kind: "ambiguous", candidates: [ROE, ROE_GROUP] },
   typo2024: { kind: "missing" },
+  lee2019: { kind: "unique", item: LEE },
+  kay2020: { kind: "unique", item: KAY },
 };
 
 /** Draft cites Doe (with a Literature Note), a noteless key, an ambiguous key, and a missing key. */
@@ -81,7 +106,15 @@ const OCCURRENCES = new Map<string, readonly CitationOccurrence[]>([
 const LINK_TARGETS: Record<string, string> = {
   "Doe 2024": "Literature/Doe 2024.md",
   "Roe 2025": "Literature/Roe 2025.md",
+  "Literature/Lee 2019": "Literature/Lee 2019.md",
   Other: "Other.md",
+};
+
+/** The metadata each node id answers, which a Literature Note is told by. */
+const CACHES: Record<string, { frontmatter: Record<string, string> }> = {
+  "Literature/Doe 2024.md": { frontmatter: { "zotero-key": "DEE23456" } },
+  "Literature/Lee 2019.md": { frontmatter: { "zotero-key": "LEE56789" } },
+  "Literature/Kay 2020.md": { frontmatter: { "zotero-key": "KAY23456" } },
 };
 
 /** The link maps one facaded render of the fixture is expected to see. */
@@ -138,6 +171,8 @@ class FakeEngine {
   options: GraphOptions = {};
   app: App;
   throwNext = false;
+  /** The engine is the `HoverParent` of the hover its own nodes answer. */
+  hoverPopover: HoverPopover | null = null;
   /** The node set one render builds; the native engine builds a fresh one per render. */
   nodes: () => GraphData["nodes"] = () => ({});
   /** The node set of the last hand-off, as the renderer received it. */
@@ -148,6 +183,8 @@ class FakeEngine {
     this.renderer = new FakeRenderer();
     this.renderer.onNodeClick = this.onNodeClick.bind(this);
     this.renderer.onNodeRightClick = this.onNodeRightClick.bind(this);
+    this.renderer.onNodeHover = this.onNodeHover.bind(this);
+    this.renderer.onNodeUnhover = this.onNodeUnhover.bind(this);
     this.#realApp = realApp;
   }
 
@@ -191,11 +228,40 @@ class FakeEngine {
   onNodeRightClick(_evt: MouseEvent, id: string, type: string): void {
     this.nativeRightClicks.push([id, type]);
   }
+
+  readonly nativeHovers: [string, string][] = [];
+  nativeUnhovers = 0;
+
+  onNodeHover(_evt: MouseEvent, id: string, type: string): void {
+    this.nativeHovers.push([id, type]);
+  }
+
+  onNodeUnhover(): void {
+    this.nativeUnhovers += 1;
+  }
 }
+
+/** World coordinates the fake renderer holds each node at. */
+const NODE_POSITIONS: Record<string, { x: number; y: number }> = {
+  "@typo2024": { x: 10, y: 20 },
+  "Literature/Doe 2024.md": { x: -5, y: 5 },
+  "Literature/Lee 2019.md": { x: 0, y: 0 },
+  "Literature/Kay 2020.md": { x: 1, y: 1 },
+};
 
 class FakeRenderer {
   onNodeClick!: (evt: MouseEvent, id: string, type: string) => void;
   onNodeRightClick!: (evt: MouseEvent, id: string, type: string) => void;
+  onNodeHover!: (evt: MouseEvent, id: string, type: string) => void;
+  onNodeUnhover!: () => void;
+  containerEl = document.createElement("div");
+  /** Copied, so a test that takes a node out leaves the fixture as it found it. */
+  nodeLookup: Record<string, { x: number; y: number } | undefined> = {
+    ...NODE_POSITIONS,
+  };
+  scale = 2;
+  panX = 4;
+  panY = 6;
   setData = vi.fn();
 }
 
@@ -250,6 +316,8 @@ class CitationIndexStub {
   cold = false;
   resolveCitekey = (citekey: string): CitekeyResolution | null =>
     this.cold ? null : (RESOLUTIONS[citekey] ?? null);
+  citekeyOf = (indexedKey: string): string | null =>
+    CITEKEYS[indexedKey] ?? null;
 
   on(event: string, cb: () => void): () => void {
     return this.#emitter.on(event, cb);
@@ -272,6 +340,8 @@ interface FixtureOptions {
   notes?: Record<string, { path: string }[]>;
   /** The serialized layout Obsidian restored this session's leaves from. */
   savedLayout?: unknown;
+  /** What the vault-wide settings say beyond the Wikilink Citations choice. */
+  settings?: Partial<Settings>;
 }
 
 function makeFixture(options: FixtureOptions = {}) {
@@ -294,6 +364,7 @@ function makeFixture(options: FixtureOptions = {}) {
     getLeavesOfType: (type: string) =>
       leaves.filter((leaf) => leaf.view.getViewType() === type),
     readWorkspaceFile: () => Promise.resolve(options.savedLayout ?? {}),
+    trigger: vi.fn(),
   };
   const graphPlugin = { options: options.savedGlobal ?? {} };
   const app = {
@@ -310,16 +381,20 @@ function makeFixture(options: FixtureOptions = {}) {
         const path = LINK_TARGETS[linkpath];
         return path ? { path } : null;
       },
+      getCache: (path: string) => CACHES[path] ?? null,
+      getFileCache: ({ path }: { path: string }) => CACHES[path] ?? null,
     },
   } as unknown as App;
   const citationIndex = new CitationIndexStub();
   const noteIndex = new NoteIndexStub(
-    options.notes ?? { DOE00001: [{ path: "Literature/Doe 2024.md" }] },
+    options.notes ?? { DEE23456: [{ path: "Literature/Doe 2024.md" }] },
   );
   const settings = new SettingsStub({
     "citation.wikilink-citations": options.wikilinkCitations ?? false,
+    ...options.settings,
   });
   const openCitekey = vi.fn(() => Promise.resolve());
+  const citationPopover = { show: vi.fn() };
   const service = new GraphCitations({
     app,
     citationIndex,
@@ -329,6 +404,7 @@ function makeFixture(options: FixtureOptions = {}) {
       "getIndexedItemKeys" | "getNotesByItemKey" | "on"
     >,
     citekeyEditor: { openCitekey },
+    citationPopover,
     settings,
   });
   return {
@@ -338,6 +414,9 @@ function makeFixture(options: FixtureOptions = {}) {
     noteIndex,
     settings,
     openCitekey,
+    citationPopover,
+    /** What a page preview goes out through: `workspace.trigger("hover-link", …)`. */
+    trigger: workspace.trigger,
     addLeaf(viewType: "graph" | "localgraph", id = `leaf-${leaves.length}`) {
       const made = fakeLeaf(viewType, app, app);
       Object.assign(made.leaf, { id });
@@ -705,6 +784,389 @@ describe("GraphCitations right-clicks", () => {
   });
 });
 
+describe("GraphCitations hovers", () => {
+  it("shows the Citation Popover of a Cited Work Node, anchored at the node", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "@typo2024",
+      "unresolved",
+    );
+
+    expect(fixture.citationPopover.show).toHaveBeenCalledOnce();
+    const request = fixture.citationPopover.show.mock.calls[0]![0];
+    expect(request).toMatchObject({
+      hoverParent: engine,
+      sourcePath: "Draft.md",
+      works: [{ citekey: "typo2024" }],
+    });
+    expect(request.works[0].indexedKey).toBeUndefined();
+    // The node sits at world (10, 20), drawn at scale 2 with pan (4, 6).
+    const anchor = request.targetEl as HTMLElement;
+    expect(anchor.parentElement).toBe(engine.renderer.containerEl);
+    expect([anchor.style.left, anchor.style.top]).toEqual(["24px", "46px"]);
+    expect(engine.nativeHovers).toEqual([]);
+  });
+
+  it("shows the Citation Popover of the Item a Literature Note carries", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("localgraph");
+    fixture.layoutReady();
+
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "Literature/Doe 2024.md",
+      "",
+    );
+
+    expect(fixture.citationPopover.show).toHaveBeenCalledOnce();
+    const request = fixture.citationPopover.show.mock.calls[0]![0];
+    expect(request).toMatchObject({
+      sourcePath: "Draft.md",
+      works: [{ citekey: "doe2024", indexedKey: "DEE23456" }],
+    });
+    // The node sits at world (-5, 5), drawn at scale 2 with pan (4, 6).
+    const anchor = request.targetEl as HTMLElement;
+    expect([anchor.style.left, anchor.style.top]).toEqual(["-6px", "16px"]);
+    expect(engine.nativeHovers).toEqual([]);
+  });
+
+  it("keeps the native hover on every node while the Hover Action is off", async () => {
+    const fixture = makeFixture({
+      settings: { "citation.hover-action": "off" },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    hoverEach(engine);
+
+    expect(fixture.citationPopover.show).not.toHaveBeenCalled();
+    expect(engine.nativeHovers).toEqual([
+      ["@typo2024", "unresolved"],
+      ["Literature/Doe 2024.md", ""],
+    ]);
+  });
+
+  it("asks for a Literature Note's page preview under the shared citekey source, and shows nothing for a Cited Work Node", async () => {
+    const fixture = makeFixture({
+      settings: { "citation.hover-action": "page-preview" },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    hoverEach(engine);
+
+    expect(fixture.citationPopover.show).not.toHaveBeenCalled();
+    // Both node kinds are answered here, so neither reaches the graph's own
+    // hover — and with it the graph's row of Obsidian's Page preview settings.
+    expect(engine.nativeHovers).toEqual([]);
+    expect(fixture.trigger).toHaveBeenCalledExactlyOnceWith(
+      "hover-link",
+      expect.objectContaining({
+        source: CITEKEY_HOVER_SOURCE,
+        hoverParent: engine,
+        linktext: "Literature/Doe 2024.md",
+        sourcePath: "",
+      }),
+    );
+    // The node sits at world (-5, 5), drawn at scale 2 with pan (4, 6).
+    const link = fixture.trigger.mock.calls[0]![1] as { targetEl: HTMLElement };
+    expect(link.targetEl.parentElement).toBe(engine.renderer.containerEl);
+    expect([link.targetEl.style.left, link.targetEl.style.top]).toEqual([
+      "-6px",
+      "16px",
+    ]);
+  });
+
+  it("shows the Citation Popover of a Literature Note only a wikilink Citation cites", async () => {
+    const fixture = makeFixture({
+      wikilinkCitations: true,
+      notes: {
+        DEE23456: [{ path: "Literature/Doe 2024.md" }],
+        LEE56789: [{ path: "Literature/Lee 2019.md" }],
+      },
+    });
+    // Wiki cites Lee by wikilink alone, which adds no edge of its own.
+    fixture.citationIndex.wikilinks.set("Notes/Wiki.md", [
+      occurrence("Literature/Lee 2019", "wikilink"),
+    ]);
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "Literature/Lee 2019.md",
+      "",
+    );
+
+    expect(fixture.citationPopover.show).toHaveBeenCalledOnce();
+    expect(fixture.citationPopover.show.mock.calls[0]![0]).toMatchObject({
+      sourcePath: "Notes/Wiki.md",
+      works: [{ citekey: "lee2019", indexedKey: "LEE56789" }],
+    });
+    expect(engine.nativeHovers).toEqual([]);
+  });
+
+  it("keeps the native hover on a Literature Note no document cites", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "Literature/Kay 2020.md",
+      "",
+    );
+
+    expect(fixture.citationPopover.show).not.toHaveBeenCalled();
+    expect(engine.nativeHovers).toEqual([["Literature/Kay 2020.md", ""]]);
+  });
+
+  it("calls through for every other node", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    engine.renderer.onNodeHover(new MouseEvent("mouseover"), "Other.md", "");
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "missing",
+      "unresolved",
+    );
+
+    expect(fixture.citationPopover.show).not.toHaveBeenCalled();
+    expect(engine.nativeHovers).toEqual([
+      ["Other.md", ""],
+      ["missing", "unresolved"],
+    ]);
+  });
+
+  it("retires the anchor on the unhover no popover outlives, and keeps it for one that does", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    const { containerEl } = engine.renderer;
+    fixture.layoutReady();
+
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "@typo2024",
+      "unresolved",
+    );
+    expect(containerEl.children).toHaveLength(1);
+
+    engine.hoverPopover = fakePopover();
+    engine.renderer.onNodeUnhover();
+    expect(containerEl.children).toHaveLength(1);
+    expect(engine.nativeUnhovers).toBe(1);
+
+    engine.hoverPopover = null;
+    engine.renderer.onNodeUnhover();
+    expect(containerEl.children).toHaveLength(0);
+    expect(engine.nativeUnhovers).toBe(2);
+  });
+
+  it("states the popover's target again after Obsidian's sweep drops it, until the pointer leaves", async () => {
+    vi.useFakeTimers();
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "@typo2024",
+      "unresolved",
+    );
+    const popover = fakePopover();
+    engine.hoverPopover = popover;
+    // What Obsidian's own sweep does to a popover it finds no pointer on.
+    popover.onTarget = false;
+    vi.advanceTimersByTime(200);
+
+    expect(popover.onTarget).toBe(true);
+    expect(popover.transition).toHaveBeenCalledOnce();
+
+    popover.onTarget = false;
+    engine.renderer.onNodeUnhover();
+    vi.advanceTimersByTime(600);
+
+    expect(popover.onTarget).toBe(false);
+    expect(popover.transition).toHaveBeenCalledOnce();
+  });
+
+  it("stops holding a popover that has hidden, with no unhover of its own", async () => {
+    vi.useFakeTimers();
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "@typo2024",
+      "unresolved",
+    );
+    const popover = fakePopover();
+    engine.hoverPopover = popover;
+    vi.advanceTimersByTime(200);
+    expect(popover.transition).toHaveBeenCalledOnce();
+
+    // What Obsidian's own transition leaves behind once the popover is gone.
+    Object.assign(popover, { state: PopoverState.Hidden });
+    vi.advanceTimersByTime(200);
+
+    // The hold released itself, so a popover shown again is no longer held.
+    Object.assign(popover, { state: PopoverState.Shown, onTarget: false });
+    vi.advanceTimersByTime(600);
+
+    expect(popover.onTarget).toBe(false);
+    expect(popover.transition).toHaveBeenCalledOnce();
+  });
+
+  it("waits for a page preview that opens on Obsidian's own delay, then holds it", async () => {
+    vi.useFakeTimers();
+    const fixture = makeFixture({
+      settings: { "citation.hover-action": "page-preview" },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "Literature/Doe 2024.md",
+      "",
+    );
+    // Obsidian's page preview opens well after the hover that asked for it,
+    // so the engine carries no popover for the first few beats of the hold.
+    vi.advanceTimersByTime(400);
+    const popover = fakePopover();
+    popover.onTarget = false;
+    engine.hoverPopover = popover;
+    vi.advanceTimersByTime(200);
+
+    expect(popover.onTarget).toBe(true);
+    expect(popover.transition).toHaveBeenCalledOnce();
+  });
+
+  it("gives up on a hover no popover ever answers", async () => {
+    vi.useFakeTimers();
+    const fixture = makeFixture({
+      settings: { "citation.hover-action": "page-preview" },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "Literature/Doe 2024.md",
+      "",
+    );
+    // Page preview waits for a held Mod, so a hover without one is answered
+    // by nothing at all and the hold has no popover to wait for.
+    vi.advanceTimersByTime(2200);
+    const popover = fakePopover();
+    popover.onTarget = false;
+    engine.hoverPopover = popover;
+    vi.advanceTimersByTime(600);
+
+    expect(popover.onTarget).toBe(false);
+    expect(popover.transition).not.toHaveBeenCalled();
+  });
+
+  it("keeps the native hover on a node the renderer holds no place for", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+    delete engine.renderer.nodeLookup["Literature/Doe 2024.md"];
+
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "Literature/Doe 2024.md",
+      "",
+    );
+
+    expect(fixture.citationPopover.show).not.toHaveBeenCalled();
+    expect(engine.nativeHovers).toEqual([["Literature/Doe 2024.md", ""]]);
+  });
+
+  it("restores both hover members and takes the anchor away on teardown", async () => {
+    const fixture = makeFixture();
+    const service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    const nativeHover = engine.renderer.onNodeHover;
+    const nativeUnhover = engine.renderer.onNodeUnhover;
+    fixture.layoutReady();
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "@typo2024",
+      "unresolved",
+    );
+
+    await service[Symbol.asyncDispose]();
+
+    expect(engine.renderer.onNodeHover).toBe(nativeHover);
+    expect(engine.renderer.onNodeUnhover).toBe(nativeUnhover);
+    expect(engine.renderer.containerEl.children).toHaveLength(0);
+  });
+});
+
+/** A popover already shown, as the engine holds the one its nodes stand on. */
+function fakePopover(): HoverPopover & {
+  onTarget: boolean;
+  transition: ReturnType<typeof vi.fn>;
+} {
+  return {
+    state: PopoverState.Shown,
+    onTarget: true,
+    transition: vi.fn(),
+  } as unknown as HoverPopover & {
+    onTarget: boolean;
+    transition: ReturnType<typeof vi.fn>;
+  };
+}
+
+/** One hover over a Cited Work Node and one over a Literature Note. */
+function hoverEach(engine: FakeEngine): void {
+  engine.renderer.onNodeHover(
+    new MouseEvent("mouseover"),
+    "@typo2024",
+    "unresolved",
+  );
+  engine.renderer.onNodeHover(
+    new MouseEvent("mouseover"),
+    "Literature/Doe 2024.md",
+    "",
+  );
+}
+
 describe("GraphCitations re-rendering", () => {
   it("re-renders every installed leaf once per burst of index events", async () => {
     vi.useFakeTimers();
@@ -818,8 +1280,8 @@ describe("GraphCitations node colours", () => {
       // Reading cites Roe's note by `[[Roe 2025]]` and no citekey reaches it:
       // `roe2025` is ambiguous, so it draws a Cited Work Node of its own.
       notes: {
-        DOE00001: [{ path: "Literature/Doe 2024.md" }],
-        ROE00002: [{ path: "Literature/Roe 2025.md" }],
+        DEE23456: [{ path: "Literature/Doe 2024.md" }],
+        REE34567: [{ path: "Literature/Roe 2025.md" }],
       },
       links: {
         "Draft.md": { "Other.md": 1 },
