@@ -2,12 +2,20 @@ import { settingsOf } from "@mock/obsidian";
 import type { ToggleComponent } from "@mock/obsidian";
 // @vitest-environment happy-dom
 import { Menu } from "@mock/obsidian";
-import type { App, EventRef, GraphOptions, WorkspaceLeaf } from "obsidian";
+import type {
+  App,
+  EventRef,
+  GraphColor,
+  GraphData,
+  GraphOptions,
+  WorkspaceLeaf,
+} from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import * as m from "@/lib/i18n/generated/messages";
+import { themeProperty } from "@/lib/theme-hooks";
 import type { CitationOccurrence } from "@/services/citation-index/scan";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 import { SettingsStub } from "@/services/citation-index/test-harness";
@@ -17,6 +25,7 @@ import { NoteIndexStub } from "@/services/note-index/test-stub";
 import type { LinkMap } from "./adapter";
 import { GraphCitations } from "./service";
 import { FakeControlSection } from "./test-double";
+import { graphNode, themeStates, themeStatesNothing } from "./test-stub";
 
 const warn = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/log", () => ({
@@ -71,6 +80,7 @@ const OCCURRENCES = new Map<string, readonly CitationOccurrence[]>([
 /** What each linkpath in the fixture's vault resolves to, as Obsidian answers it. */
 const LINK_TARGETS: Record<string, string> = {
   "Doe 2024": "Literature/Doe 2024.md",
+  "Roe 2025": "Literature/Roe 2025.md",
   Other: "Other.md",
 };
 
@@ -128,6 +138,10 @@ class FakeEngine {
   options: GraphOptions = {};
   app: App;
   throwNext = false;
+  /** The node set one render builds; the native engine builds a fresh one per render. */
+  nodes: () => GraphData["nodes"] = () => ({});
+  /** The node set of the last hand-off, as the renderer received it. */
+  handedOff: GraphData["nodes"] = {};
 
   constructor(app: App, realApp: App) {
     this.app = app;
@@ -160,7 +174,9 @@ class FakeEngine {
       this.throwNext = false;
       throw new Error("render failed");
     }
-    this.renderer.setData({ nodes: {} });
+    const data: GraphData = { nodes: this.nodes() };
+    this.renderer.setData(data);
+    this.handedOff = data.nodes;
     return 0;
   }
 
@@ -252,6 +268,8 @@ interface FixtureOptions {
   wikilinkCitations?: boolean;
   /** The vault's own resolved links. */
   links?: LinkMap;
+  /** The Note Index's key-to-notes table; Doe's one note by default. */
+  notes?: Record<string, { path: string }[]>;
   /** The serialized layout Obsidian restored this session's leaves from. */
   savedLayout?: unknown;
 }
@@ -295,9 +313,9 @@ function makeFixture(options: FixtureOptions = {}) {
     },
   } as unknown as App;
   const citationIndex = new CitationIndexStub();
-  const noteIndex = new NoteIndexStub({
-    DOE00001: [{ path: "Literature/Doe 2024.md" }],
-  });
+  const noteIndex = new NoteIndexStub(
+    options.notes ?? { DOE00001: [{ path: "Literature/Doe 2024.md" }] },
+  );
   const settings = new SettingsStub({
     "citation.wikilink-citations": options.wikilinkCitations ?? false,
   });
@@ -360,6 +378,7 @@ function makeFixture(options: FixtureOptions = {}) {
 afterEach(() => {
   vi.useRealTimers();
   warn.mockClear();
+  themeStatesNothing();
 });
 
 describe("GraphCitations installation", () => {
@@ -715,6 +734,173 @@ describe("GraphCitations re-rendering", () => {
     expect(global.renders.every((render) => render.facaded)).toBe(true);
   });
 });
+
+describe("GraphCitations node colours", () => {
+  /** Doe's note, two Cited Work Nodes, and a plain note. */
+  const nodes = () => ({
+    "Literature/Doe 2024.md": graphNode(""),
+    "@typo2024": graphNode("unresolved"),
+    "@roe2025": graphNode("unresolved"),
+    "Draft.md": graphNode(""),
+  });
+  /**
+   * The same set with Doe's note in a user colour group. A colour group can
+   * only ever match a node with a file behind it, so the group sits on the
+   * Literature Note, never on a Cited Work Node.
+   */
+  const GROUP = { a: 1, rgb: 0x00ff00 };
+  const grouped = () => ({
+    ...nodes(),
+    "Literature/Doe 2024.md": graphNode("", GROUP),
+  });
+
+  it("colours Literature Notes and Cited Work Nodes and no other node", async () => {
+    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.nodes = nodes;
+
+    fixture.layoutReady();
+
+    expect(colorsOf(engine.handedOff)).toEqual({
+      "Literature/Doe 2024.md": { a: 1, rgb: 0x7852ee },
+      "@typo2024": { a: 1, rgb: 0x888888 },
+      "@roe2025": { a: 1, rgb: 0x888888 },
+      "Draft.md": undefined,
+    });
+  });
+
+  it("leaves a Literature Note the user's colour group matched as the group coloured it", async () => {
+    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.nodes = grouped;
+
+    fixture.layoutReady();
+
+    expect(colorsOf(engine.handedOff)).toEqual({
+      "Literature/Doe 2024.md": GROUP,
+      "@typo2024": { a: 1, rgb: 0x888888 },
+      "@roe2025": { a: 1, rgb: 0x888888 },
+      "Draft.md": undefined,
+    });
+  });
+
+  it("colours a Literature Note while the Pandoc citations row is off", async () => {
+    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.nodes = nodes;
+    fixture.layoutReady();
+
+    rowToggle(engine, "Pandoc citations").toggle(false);
+
+    // The row takes every citekey edge away, and with it every Cited Work
+    // Node; a Literature Note is one whatever the rows say.
+    expect(colorsOf(engine.handedOff)).toEqual({
+      "Literature/Doe 2024.md": { a: 1, rgb: 0x7852ee },
+      "@typo2024": undefined,
+      "@roe2025": undefined,
+      "Draft.md": undefined,
+    });
+  });
+
+  it("colours a Literature Note only a Wikilink Citation reaches", async () => {
+    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
+    const fixture = makeFixture({
+      wikilinkCitations: true,
+      // Reading cites Roe's note by `[[Roe 2025]]` and no citekey reaches it:
+      // `roe2025` is ambiguous, so it draws a Cited Work Node of its own.
+      notes: {
+        DOE00001: [{ path: "Literature/Doe 2024.md" }],
+        ROE00002: [{ path: "Literature/Roe 2025.md" }],
+      },
+      links: {
+        "Draft.md": { "Other.md": 1 },
+        "Reading.md": { "Literature/Roe 2025.md": 1 },
+      },
+    });
+    fixture.citationIndex.wikilinks.set("Reading.md", [
+      occurrence("Roe 2025", "wikilink"),
+    ]);
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.nodes = () => ({
+      ...nodes(),
+      "Literature/Roe 2025.md": graphNode(""),
+    });
+
+    fixture.layoutReady();
+
+    expect(colorsOf(engine.handedOff)).toEqual({
+      "Literature/Doe 2024.md": { a: 1, rgb: 0x7852ee },
+      "Literature/Roe 2025.md": { a: 1, rgb: 0x7852ee },
+      "@typo2024": { a: 1, rgb: 0x888888 },
+      "@roe2025": { a: 1, rgb: 0x888888 },
+      "Draft.md": undefined,
+    });
+  });
+
+  it("reads the theme again on a css change and colours the next render from it", async () => {
+    vi.useFakeTimers();
+    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.nodes = nodes;
+    fixture.layoutReady();
+
+    document.body.style.setProperty(
+      themeProperty.graphLiteratureNote,
+      "rgb(0, 0, 255)",
+    );
+    fixture.fire("css-change");
+    vi.runAllTimers();
+
+    expect(engine.renders).toHaveLength(2);
+    expect(colorsOf(engine.handedOff)).toEqual({
+      "Literature/Doe 2024.md": { a: 1, rgb: 0x0000ff },
+      "@typo2024": { a: 1, rgb: 0x888888 },
+      "@roe2025": { a: 1, rgb: 0x888888 },
+      "Draft.md": undefined,
+    });
+  });
+
+  it("hands off the native node set once the feature is off", async () => {
+    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.nodes = grouped;
+    fixture.layoutReady();
+
+    fixture.settings.update({ "citation.graph-citations": false });
+
+    expect(colorsOf(engine.handedOff)).toEqual({
+      "Literature/Doe 2024.md": GROUP,
+      "@typo2024": undefined,
+      "@roe2025": undefined,
+      "Draft.md": undefined,
+    });
+  });
+});
+
+function colorsOf(
+  nodes: GraphData["nodes"],
+): Record<string, GraphColor | null | undefined> {
+  return Object.fromEntries(
+    Object.entries(nodes).map(([id, node]) => [id, node.color]),
+  );
+}
 
 describe("GraphCitations teardown", () => {
   it("restores every member and draws natively once per leaf when the setting turns off", async () => {

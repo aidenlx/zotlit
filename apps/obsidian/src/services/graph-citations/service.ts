@@ -31,6 +31,7 @@ import {
   wrapMember,
 } from "./install";
 import type { GraphLeafMembers } from "./install";
+import { GraphNodeColors, installNodeColors } from "./node-color";
 import { wrapNodeRightClick } from "./right-click";
 import type { NodeRightClickDeps } from "./right-click";
 import {
@@ -98,6 +99,8 @@ export class GraphCitations extends Service<void> {
   readonly #installations = new WeakMap<GraphRenderer, GraphInstallation>();
   /** Views that failed the member check, so each is reported once. */
   readonly #leftNative = new WeakSet<View>();
+  /** The node colours the theme states, shared by every installed leaf. */
+  readonly #nodeColors = new GraphNodeColors();
   /**
    * What a still-deferred graph leaf carries, so a row installed after the
    * leaf loads starts where the user left it: the load applies the saved
@@ -142,6 +145,16 @@ export class GraphCitations extends Service<void> {
     );
     stack.use(
       registerEvent(workspace.on("active-leaf-change", () => this.#refresh())),
+    );
+    // A node holds the colour it was stamped with until the next hand-off, so
+    // a theme change is read again and drawn again.
+    stack.use(
+      registerEvent(
+        workspace.on("css-change", () => {
+          this.#nodeColors.invalidate();
+          this.#requestRender();
+        }),
+      ),
     );
     for (const event of CITATION_INDEX_EVENTS) {
       stack.defer(this.#citationIndex.on(event, () => this.#requestRender()));
@@ -243,6 +256,7 @@ export class GraphCitations extends Service<void> {
       }),
     );
     restores.defer(() => installation.rows[Symbol.dispose]());
+    restores.use(installNodeColors(renderer, installation, this.#nodeColors));
     const nodeDeps: NodeRightClickDeps = {
       citekeyOf: (id) => installation.additions.citedWorkNodes.get(id),
       resolveCitekey: (citekey) => this.#citationIndex.resolveCitekey(citekey),

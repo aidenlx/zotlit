@@ -50,6 +50,13 @@ const NOTES: Record<string, string[]> = {
   POE00005: ["Literature/Poe 2021.md", "Literature/Poe 2021 reread.md"],
 };
 
+/** Every Literature Note in the fixture's vault, in the order the Note Index holds them. */
+const ALL_NOTES = [
+  "Literature/Doe 2024.md",
+  "Literature/Poe 2021.md",
+  "Literature/Poe 2021 reread.md",
+];
+
 /** What each linkpath in the fixture's vault resolves to, as Obsidian answers it. */
 const LINK_TARGETS: Record<string, string> = {
   "Doe 2024": "Literature/Doe 2024.md",
@@ -106,6 +113,7 @@ function summary(additions: ReturnType<typeof graphCitationAdditions>) {
     resolved: additions.resolvedLinks,
     unresolved: additions.unresolvedLinks,
     nodes: [...additions.citedWorkNodes],
+    notes: [...additions.literatureNotes],
   };
 }
 
@@ -119,6 +127,7 @@ describe("graphCitationAdditions", () => {
       resolved: { "Draft.md": { "Literature/Doe 2024.md": 1 } },
       unresolved: {},
       nodes: [],
+      notes: ALL_NOTES,
     });
   });
 
@@ -134,6 +143,7 @@ describe("graphCitationAdditions", () => {
       resolved: {},
       unresolved: {},
       nodes: [],
+      notes: ALL_NOTES,
     });
   });
 
@@ -154,6 +164,7 @@ describe("graphCitationAdditions", () => {
       resolved: {},
       unresolved: {},
       nodes: [],
+      notes: ALL_NOTES,
     });
   });
 
@@ -166,6 +177,7 @@ describe("graphCitationAdditions", () => {
       resolved: { "Draft.md": { "Literature/Poe 2021.md": 1 } },
       unresolved: {},
       nodes: [],
+      notes: ALL_NOTES,
     });
   });
 
@@ -188,6 +200,7 @@ describe("graphCitationAdditions", () => {
       resolved: {},
       unresolved: {},
       nodes: [],
+      notes: ALL_NOTES,
     });
   });
 
@@ -200,6 +213,7 @@ describe("graphCitationAdditions", () => {
       resolved: {},
       unresolved: { "Draft.md": { "@roe2025": 1 } },
       nodes: [["@roe2025", "roe2025"]],
+      notes: ALL_NOTES,
     });
   });
 
@@ -220,6 +234,7 @@ describe("graphCitationAdditions", () => {
         ["@typo2024", "typo2024"],
         ["@unknown2020", "unknown2020"],
       ],
+      notes: ALL_NOTES,
     });
   });
 
@@ -232,6 +247,7 @@ describe("graphCitationAdditions", () => {
       resolved: {},
       unresolved: { "Draft.md": { "@lee∕2023": 1 } },
       nodes: [["@lee∕2023", "lee/2023"]],
+      notes: ALL_NOTES,
     });
   });
 
@@ -260,6 +276,7 @@ describe("graphCitationAdditions", () => {
         "Other.md": { "@typo2024": 1 },
       },
       nodes: [["@typo2024", "typo2024"]],
+      notes: ALL_NOTES,
     });
   });
 
@@ -281,6 +298,7 @@ describe("graphCitationAdditions", () => {
       resolved: { "Other.md": { "Literature/Doe 2024.md": 1 } },
       unresolved: {},
       nodes: [],
+      notes: ALL_NOTES,
     });
     expect(resolvedLinks).toEqual({
       "Draft.md": { "Literature/Doe 2024.md": 2, "Other.md": 1 },
@@ -306,6 +324,7 @@ describe("graphCitationAdditions under the Filters rows", () => {
       resolved: {},
       unresolved: {},
       nodes: [],
+      notes: ALL_NOTES,
     });
     expect(additions.hiddenLinks).toEqual({});
     expect(additions.survivingPaths).toBeNull();
@@ -345,6 +364,7 @@ describe("graphCitationAdditions under the Filters rows", () => {
       resolved: { "Draft.md": { "Literature/Doe 2024.md": 1 } },
       unresolved: {},
       nodes: [],
+      notes: ALL_NOTES,
     });
     expect(additions.hiddenLinks).toEqual({
       "Draft.md": { "Literature/Doe 2024.md": 1 },
@@ -426,6 +446,7 @@ describe("graphCitationAdditions under the Filters rows", () => {
       resolved: {},
       unresolved: {},
       nodes: [],
+      notes: ALL_NOTES,
     });
     expect(additions.hiddenLinks).toEqual({});
   });

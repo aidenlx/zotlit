@@ -207,12 +207,36 @@ declare module "obsidian" {
      * Shape verified against Obsidian 1.13.7 and 1.14.1.
      */
     onNodeRightClick?: GraphNodeCallback;
+    /** The data hand-off: diffs `data` into the live node set. */
+    setData?(data: GraphData): void;
   }
   /**
    * @param id the node id: a vault path, an unresolved linkpath, or a tag.
    * @param type `""` for a note, else `"unresolved"`, `"tag"`, `"attachment"`, or `"focused"`.
    */
   type GraphNodeCallback = (evt: MouseEvent, id: string, type: string) => void;
+  /**
+   * The whole node set one render drew, keyed by node id. Internal; shape
+   * verified against Obsidian 1.13.7 through 1.14.1.
+   */
+  interface GraphData {
+    nodes: Record<string, GraphDataNode>;
+  }
+  interface GraphDataNode {
+    /** As {@link GraphNodeCallback} spells it. */
+    type: string;
+    /**
+     * The colour the node is drawn in, ahead of the one its type carries. The
+     * engine writes a matching colour group's colour here before the hand-off,
+     * and leaves it absent for every other node.
+     */
+    color?: GraphColor | null;
+  }
+  /** A graph colour: an alpha, and the channels packed `(r << 16) | (g << 8) | b`. */
+  interface GraphColor {
+    a: number;
+    rgb: number;
+  }
 
   interface App {
     /** Stable per-vault id, the namespace Obsidian gives its own IndexedDB databases. */
