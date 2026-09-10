@@ -41,7 +41,8 @@ function libraryText(library: AvailableLibrary | null): string | null {
   const el = document.createElement("div");
   renderSuggestion(settings, hit(library), el);
   return (
-    el.querySelector(".suggestion-aux-library .library")?.textContent ?? null
+    el.querySelector(".zt-suggestion-flair .zt-suggestion-flair-text")
+      ?.textContent ?? null
   );
 }
 

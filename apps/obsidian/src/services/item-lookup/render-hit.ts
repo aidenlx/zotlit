@@ -24,39 +24,40 @@ const CITEKEY_CHIP_CLASS =
   "citekey zt:max-w-full zt:truncate zt:rounded-sm zt:bg-muted zt:px-1.5 zt:py-0.5 zt:font-mono zt:text-xs zt:leading-tight zt:font-normal zt:text-muted-foreground";
 
 /**
- * A row is a size container so the Library label can change slot with the
- * row's width: a trailing flair from `@lg` (the 700px prompt), an inline
- * note below it (the 500px editor popup), where a flair would squeeze the
- * title to a few words. Callers put this class on the row.
+ * A row is a size container so a flair, the label that names where a row
+ * comes from (its Library, its group), can change slot with the row's width:
+ * a trailing flair from `@lg` (the 700px prompt), an inline badge below it
+ * (the 500px editor popup), where a flair would squeeze the title to a few
+ * words. Callers put this class on the row.
  */
-export const LIBRARY_ROW_CLASS = "zt:@container";
+export const FLAIR_ROW_CLASS = "zt:@container";
 
 /**
- * The Library copy for a narrow row: a compact faint badge, the same shape
- * as the citekey chip, paired with {@link appendLibraryFlair}. It is a plain
+ * The flair for a narrow row: a compact faint badge, the same shape as the
+ * citekey chip, paired with {@link appendTrailingFlair}. It is a plain
  * inline box, so its text shares the baseline of the text beside it; a box
  * that clips its overflow would move its baseline to its bottom edge. A long
  * name wraps whole to the next line.
  */
-export function appendLibraryBadge(
+export function appendInlineFlair(
   parent: HTMLElement,
   label: string,
   cls = "",
 ): void {
   parent.createSpan({
-    cls: `library-inline zt:@lg:hidden zt:inline zt:whitespace-nowrap zt:rounded-sm zt:bg-muted zt:px-1.5 zt:py-0.5 zt:text-xs zt:text-faint ${cls}`,
+    cls: `zt-suggestion-flair-inline zt:@lg:hidden zt:inline zt:whitespace-nowrap zt:rounded-sm zt:bg-muted zt:px-1.5 zt:py-0.5 zt:text-xs zt:text-faint ${cls}`,
     text: label,
   });
 }
 
-/** Trailing-edge Library flair, the same slot on every item row. */
-export function appendLibraryFlair(el: HTMLElement, label: string): void {
+/** Trailing-edge flair, the same slot on every row. */
+export function appendTrailingFlair(el: HTMLElement, label: string): void {
   // Obsidian's aux slot is an unlayered flex box that a utility cannot hide,
   // so the flair is drawn with the same shape from utilities instead.
   el.createDiv({
-    cls: "suggestion-aux-library zt:hidden zt:@lg:flex zt:shrink-0 zt:self-center zt:ps-3 zt:pe-1 zt:text-muted-foreground zt:opacity-(--icon-opacity)",
+    cls: "zt-suggestion-flair zt:hidden zt:@lg:flex zt:shrink-0 zt:self-center zt:ps-3 zt:pe-1 zt:text-muted-foreground zt:opacity-(--icon-opacity)",
   }).createSpan({
-    cls: "library zt:block zt:truncate zt:text-xs zt:leading-tight zt:max-w-[calc(var(--zt-citation-library-max-chars)*1ch)]",
+    cls: "zt-suggestion-flair-text zt:block zt:truncate zt:text-xs zt:leading-tight zt:max-w-[calc(var(--zt-citation-library-max-chars)*1ch)]",
     text: label,
   });
 }
@@ -69,7 +70,7 @@ export function renderSuggestion(
   el.empty();
   if (isChildItemFields(hit.item.fields)) return;
 
-  el.classList.add("zt-citations", "mod-complex", LIBRARY_ROW_CLASS);
+  el.classList.add("zt-citations", "mod-complex", FLAIR_ROW_CLASS);
 
   const contentEl = el.createDiv({
     cls: "suggestion-content zt:min-w-0 zt:gap-0.5",
@@ -105,7 +106,7 @@ export function renderSuggestion(
     item: hit.item,
     library,
   });
-  if (library) appendLibraryFlair(el, library);
+  if (library) appendTrailingFlair(el, library);
 }
 
 /**
@@ -161,8 +162,7 @@ function appendMeta(
     separate();
     metaEl.createSpan({ cls: "pages", text: pages });
   }
-  if (library)
-    appendLibraryBadge(metaEl, library, parts > 0 ? "zt:ms-1.5" : "");
+  if (library) appendInlineFlair(metaEl, library, parts > 0 ? "zt:ms-1.5" : "");
 }
 
 /**
