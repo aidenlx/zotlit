@@ -1,7 +1,8 @@
-// The Graph Citations service: installs the render facade and the click and right-click wraps on every graph leaf, re-renders on index changes, and restores every swapped member on feature-off and unload (ADR 0029).
+// The Graph Citations service: installs the render facade and the click and right-click wraps on every graph leaf, re-renders on index changes, and restores every swapped member on feature-off and unload.
 
 import type {
   App,
+  GraphOptions,
   GraphRenderer,
   GraphView,
   View,
@@ -10,6 +11,7 @@ import type {
 
 import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
+import type { CitationSyntax } from "@/services/citation-index/scan";
 import type { CitationIndex } from "@/services/citation-index/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
 import type { NoteIndex } from "@/services/note-index/service";
@@ -21,6 +23,7 @@ import { graphCitationAdditions, NO_ADDITIONS } from "./adapter";
 import type { GraphCitationAdditions } from "./adapter";
 import { wrapNodeClick } from "./click";
 import { renderWithFacade } from "./facade";
+import { graphCitationFilters, installFilterRows } from "./filters";
 import {
   GRAPH_CORE_PLUGIN_ID,
   GRAPH_VIEW_TYPES,
@@ -30,6 +33,11 @@ import {
 import type { GraphLeafMembers } from "./install";
 import { wrapNodeRightClick } from "./right-click";
 import type { NodeRightClickDeps } from "./right-click";
+import {
+  deferredLeafOptions,
+  savedGlobalOptions,
+  savedLeafOptions,
+} from "./saved-options";
 
 const logger = getLogger("graph-citations");
 
@@ -54,7 +62,7 @@ export interface GraphCitationsDeps {
     CitationIndex,
     "ready" | "citationsByPath" | "resolveCitekey" | "on"
   >;
-  noteIndex: Pick<NoteIndex, "getNotesByItemKey" | "on">;
+  noteIndex: Pick<NoteIndex, "getIndexedItemKeys" | "getNotesByItemKey" | "on">;
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
   settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
 }
@@ -63,10 +71,19 @@ export interface GraphCitationsDeps {
 interface GraphInstallation {
   members: GraphLeafMembers;
   restores: DisposableStack;
+  /**
+   * The Filters rows, held apart from {@link restores} because the vault-wide
+   * Wikilink Citations choice replaces them on their own, leaving the render
+   * facade and the click wrap in place.
+   */
+  rows: Disposable;
   /** What the last facaded render drew; the click wrap answers node ids from it. */
   additions: GraphCitationAdditions;
 }
 
+/**
+ * @see apps/obsidian/docs/adr/0029-graph-citations-extend-obsidian-graph-through-a-per-render-metadata-facade.md
+ */
 export class GraphCitations extends Service<void> {
   readonly #app;
   readonly #citationIndex;
@@ -81,7 +98,17 @@ export class GraphCitations extends Service<void> {
   readonly #installations = new WeakMap<GraphRenderer, GraphInstallation>();
   /** Views that failed the member check, so each is reported once. */
   readonly #leftNative = new WeakSet<View>();
+  /**
+   * What a still-deferred graph leaf carries, so a row installed after the
+   * leaf loads starts where the user left it: the load applies the saved
+   * state before any row exists to hear it.
+   */
+  readonly #deferredOptions = new WeakMap<WorkspaceLeaf, GraphOptions>();
+  /** The same, by leaf id, for the leaves the layout loaded straight away. */
+  #savedLeaves = new Map<string, GraphOptions>();
   #enabled = true;
+  /** Whether the vault-wide setting admits wikilink citations. */
+  #wikilinkCitations = false;
   #stopped = false;
   #renderTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -98,7 +125,15 @@ export class GraphCitations extends Service<void> {
   }
 
   async #load(): Promise<void> {
-    await Promise.all([this.#settings.ready, this.#citationIndex.ready]);
+    // Read before layout-ready where startup allows it: Obsidian saves the
+    // layout no earlier, and a save made while ZotLit's rows are absent
+    // writes their keys out of the file.
+    const [, , savedLeaves] = await Promise.all([
+      this.#settings.ready,
+      this.#citationIndex.ready,
+      savedLeafOptions(this.#app),
+    ]);
+    this.#savedLeaves = savedLeaves;
 
     await using stack = new AsyncDisposableStack();
     const { workspace } = this.#app;
@@ -133,7 +168,15 @@ export class GraphCitations extends Service<void> {
 
   #applySettings(settings: Readonly<Settings>): void {
     const enabled = settings["citation.graph-citations"];
-    if (enabled === this.#enabled) return;
+    const wikilinkCitations = settings["citation.wikilink-citations"];
+    const rowsChanged = wikilinkCitations !== this.#wikilinkCitations;
+    this.#wikilinkCitations = wikilinkCitations;
+    if (enabled === this.#enabled) {
+      // The "Wikilink citations" row is absent while the syntax is excluded,
+      // so that choice rebuilds the rows of every installed leaf.
+      if (enabled && rowsChanged) this.#rebuildRows();
+      return;
+    }
     this.#enabled = enabled;
     logger.debug("Graph citations toggled", { enabled });
     if (enabled) this.#refresh();
@@ -152,6 +195,8 @@ export class GraphCitations extends Service<void> {
       // (Obsidian 1.7.2+). Loading it replaces the view and fires
       // `layout-change`, which lands here again with the real members.
       if (leaf.isDeferred) {
+        const saved = deferredLeafOptions(leaf);
+        if (saved) this.#deferredOptions.set(leaf, saved);
         logger.trace("Graph leaf deferred; install waits for its load", {
           viewType: leaf.view.getViewType(),
         });
@@ -165,25 +210,39 @@ export class GraphCitations extends Service<void> {
         this.#leftNative.add(leaf.view);
         continue;
       }
-      this.#install(members);
+      this.#install(members, this.#savedOptions(leaf, members.viewType));
       this.#render(members);
     }
   }
 
-  #install(members: GraphLeafMembers): void {
+  /**
+   * The options this graph persisted, which it applied before ZotLit's rows
+   * existed to hear them: the Graph core plugin's own for the global graph,
+   * the leaf's saved state for a local one.
+   */
+  #savedOptions(leaf: WorkspaceLeaf, viewType: string): GraphOptions | null {
+    if (viewType === "graph") return savedGlobalOptions(this.#app);
+    return (
+      this.#deferredOptions.get(leaf) ?? this.#savedLeaves.get(leaf.id) ?? null
+    );
+  }
+
+  #install(members: GraphLeafMembers, saved: GraphOptions | null): void {
     const { engine, renderer, viewType } = members;
     const installation: GraphInstallation = {
       members,
       restores: new DisposableStack(),
+      rows: this.#filterRows(engine, saved),
       additions: NO_ADDITIONS,
     };
     const { restores } = installation;
     restores.use(
       wrapMember(engine, "render", (render) => () => {
-        installation.additions = this.#additions();
+        installation.additions = this.#additions(engine);
         return renderWithFacade(engine, render, installation.additions);
       }),
     );
+    restores.defer(() => installation.rows[Symbol.dispose]());
     const nodeDeps: NodeRightClickDeps = {
       citekeyOf: (id) => installation.additions.citedWorkNodes.get(id),
       resolveCitekey: (citekey) => this.#citationIndex.resolveCitekey(citekey),
@@ -196,9 +255,38 @@ export class GraphCitations extends Service<void> {
     logger.debug("Graph citations installed", { viewType });
   }
 
+  #filterRows(
+    engine: GraphLeafMembers["engine"],
+    saved: GraphOptions | null,
+  ): Disposable {
+    return installFilterRows(engine, {
+      wikilinkCitations: this.#wikilinkCitations,
+      saved,
+    });
+  }
+
+  /**
+   * Replaces the Filters rows of every installed leaf, keeping the render
+   * facade: one render per leaf, and none of it drawn natively in between.
+   */
+  #rebuildRows(): void {
+    for (const { leaf, installation } of this.#installed()) {
+      installation.rows[Symbol.dispose]();
+      installation.rows = this.#filterRows(
+        installation.members.engine,
+        this.#savedOptions(leaf, installation.members.viewType),
+      );
+      this.#render(installation.members);
+    }
+    logger.debug("Graph rows rebuilt", {
+      wikilinkCitations: this.#wikilinkCitations,
+    });
+  }
+
   /** Restores every installed leaf and draws each natively once. */
   #uninstallAll(): void {
-    for (const { members, restores } of this.#installed()) {
+    for (const { installation } of this.#installed()) {
+      const { members, restores } = installation;
       restores.dispose();
       this.#installations.delete(members.renderer);
       this.#render(members);
@@ -212,7 +300,9 @@ export class GraphCitations extends Service<void> {
     if (this.#renderTimer !== null) clearTimeout(this.#renderTimer);
     this.#renderTimer = setTimeout(() => {
       this.#renderTimer = null;
-      for (const { members } of this.#installed()) this.#render(members);
+      for (const { installation } of this.#installed()) {
+        this.#render(installation.members);
+      }
     }, RENDER_SETTLE_MS);
   }
 
@@ -224,22 +314,42 @@ export class GraphCitations extends Service<void> {
     }
   }
 
-  #additions(): GraphCitationAdditions {
+  #additions(engine: GraphLeafMembers["engine"]): GraphCitationAdditions {
+    // Wikilink occurrences derive from the link cache on every call, so they
+    // are asked for only while the vault-wide setting admits the syntax and
+    // the "Wikilink citations" row can take those edges away.
+    const syntaxes: CitationSyntax[] = this.#wikilinkCitations
+      ? ["citekey", "wikilink"]
+      : ["citekey"];
     return graphCitationAdditions({
-      occurrences: this.#citationIndex.citationsByPath(["citekey"]),
+      occurrences: this.#citationIndex.citationsByPath(syntaxes),
       resolveCitekey: (citekey) => this.#citationIndex.resolveCitekey(citekey),
-      notePathsOf: (indexedKey) =>
-        this.#noteIndex.getNotesByItemKey(indexedKey).map((note) => note.path),
+      resolveLink: (linkpath, sourcePath) =>
+        this.#app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath)
+          ?.path ?? null,
+      notePathsOf: (indexedKey) => this.#notePathsOf(indexedKey),
+      literatureNotes: this.#noteIndex
+        .getIndexedItemKeys()
+        .flatMap((indexedKey) => this.#notePathsOf(indexedKey)),
       resolvedLinks: this.#app.metadataCache.resolvedLinks,
+      filters: graphCitationFilters(engine, {
+        wikilinkCitations: this.#wikilinkCitations,
+      }),
     });
   }
 
-  /** The installations the live graph leaves hold, in leaf order. */
-  #installed(): GraphInstallation[] {
+  #notePathsOf(indexedKey: string): string[] {
+    return this.#noteIndex
+      .getNotesByItemKey(indexedKey)
+      .map((note) => note.path);
+  }
+
+  /** The installations the live graph leaves hold, each with its leaf, in leaf order. */
+  #installed(): { leaf: WorkspaceLeaf; installation: GraphInstallation }[] {
     return this.#graphLeaves().flatMap((leaf) => {
       const { renderer } = leaf.view as GraphView;
       const installation = renderer && this.#installations.get(renderer);
-      return installation ? [installation] : [];
+      return installation ? [{ leaf, installation }] : [];
     });
   }
 
