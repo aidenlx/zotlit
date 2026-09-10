@@ -4,6 +4,7 @@ import { ItemView, setIcon } from "obsidian";
 import type { Menu, ViewStateResult } from "obsidian";
 import type { TFile, WorkspaceLeaf } from "obsidian";
 import { useEffect } from "react";
+import type { ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { useStore } from "zustand";
@@ -12,7 +13,6 @@ import {
   createRenderScheduler,
   TABS,
   ResultBody,
-  PropertiesResult,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
   useRenderState,
@@ -70,14 +70,24 @@ export interface PreviewViewDeps extends NativeRenderDeps {
 }
 
 /** Which result the preview shows for the editor's current authoring context. */
-function resultMode(
-  context: ProfileAuthoringContext,
-): "note" | "annotation" | "properties" {
-  return context.root === "annotation"
-    ? "annotation"
-    : !context.advanced && context.tab === "properties"
-      ? "properties"
-      : "note";
+function resultMode(context: ProfileAuthoringContext): "note" | "annotation" {
+  return context.root === "annotation" ? "annotation" : "note";
+}
+
+/** The Properties tab reads the sheet's own Properties block, so it opens there. */
+function propertiesTabOpen(context: ProfileAuthoringContext | null): boolean {
+  return context !== null && !context.advanced && context.tab === "properties";
+}
+
+/** The host sheet, which opens its Properties block while the editor is on Properties. */
+function PreviewSheet({
+  session,
+  ...props
+}: ComponentProps<typeof NativeMarkdown> & { session: NativePreviewSession }) {
+  const context = useStore(session.state, (state) => state.context);
+  return (
+    <NativeMarkdown {...props} expandProperties={propertiesTabOpen(context)} />
+  );
 }
 
 export const NOTE_PREVIEW_VIEW_TYPE = "zotlit-note-preview";
@@ -260,9 +270,10 @@ export class NotePreviewView extends ItemView {
         },
         insertTarget: () => null,
         markdown: (props) => (
-          <NativeMarkdown
+          <PreviewSheet
             {...props}
             app={this.app}
+            session={session}
             result={scheduler.getState().result}
             onRendered={this.#rendered}
           />
@@ -828,7 +839,6 @@ function PreviewContent({
     status,
     error,
     sourceProblem,
-    entries,
     showMarkdown,
     showManaged,
     example,
@@ -851,9 +861,7 @@ function PreviewContent({
   const heading =
     mode === "annotation"
       ? m.workbench_annotation_example()
-      : mode === "properties"
-        ? m.workbench_result_fold()
-        : m.workbench_result_heading();
+      : m.workbench_result_heading();
   const caption = [
     ...(mode !== "annotation"
       ? [
@@ -961,17 +969,6 @@ function PreviewContent({
             openAnnotation={() => reveal("annotation")}
             goToEntry={(position) => reveal(`entry:${position}`)}
             openSource={() => reveal("advanced")}
-            propertiesResult={
-              result && (
-                <PropertiesResult
-                  entries={entries}
-                  properties={result.properties}
-                  fold={result.fold}
-                  frontmatterBlock={result.frontmatterBlock}
-                  showMarkdown={showMarkdown}
-                />
-              )
-            }
             onRun={() => scheduler.run()}
             busy={busy}
           />

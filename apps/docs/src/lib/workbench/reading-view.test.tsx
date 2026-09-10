@@ -246,6 +246,18 @@ describe("inert marks", () => {
     expect(textOf(source)).toBe(markdown);
     expect(source).not.toContain("<img ");
   });
+
+  it("prints the render's own frontmatter block above the body in Markdown", () => {
+    const source = renderToStaticMarkup(
+      <ResultSheet
+        markdown={"# A study\n"}
+        properties={[]}
+        frontmatterBlock={"title: A study\n"}
+        showMarkdown
+      />,
+    );
+    expect(textOf(source)).toBe("---\ntitle: A study\n---\n# A study\n");
+  });
 });
 
 describe("callouts", () => {

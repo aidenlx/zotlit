@@ -85,7 +85,7 @@ export function ResultRegion({
 export interface ResultBodyProps {
   result: ProfileRenderResult | null;
   annotationResult?: ProfileRenderResult | null;
-  mode: "note" | "annotation" | "properties";
+  mode: "note" | "annotation";
   stale: boolean;
   /** Why `result` is stale, or why none exists yet; `null` while it is current. */
   staleReason: "hold" | "demand" | "live" | null;
@@ -95,7 +95,6 @@ export interface ResultBodyProps {
   openAnnotation: () => void;
   goToEntry: (position: number) => void;
   openSource: () => void;
-  propertiesResult?: ReactNode;
   /** Runs a render now; on demand, this is how the stale-behind notice offers Run. */
   onRun?: () => void;
   busy?: boolean;
@@ -113,7 +112,6 @@ export function ResultBody({
   openAnnotation,
   goToEntry,
   openSource,
-  propertiesResult,
   onRun,
   busy,
 }: ResultBodyProps) {
@@ -230,14 +228,13 @@ export function ResultBody({
                   showMarkdown={showMarkdown}
                 />
               )
-            ) : mode === "properties" ? (
-              propertiesResult
             ) : (
               <Markdown
                 markdown={result.creationBody ?? ""}
                 // The sheet is the note, so its list is the fold every
                 // entry merged into, not each entry's own contribution.
                 properties={result.fold}
+                frontmatterBlock={result.frontmatterBlock}
                 showMarkdown={showMarkdown}
                 marks={result.annotationRanges}
               />
@@ -273,7 +270,6 @@ export function ResultColumn({
   openAnnotation,
   goToEntry,
   openSource,
-  propertiesResult,
   onRun,
   busy,
   help,
@@ -293,9 +289,7 @@ export function ResultColumn({
         heading={
           showAnnotation
             ? m.workbench_annotation_example()
-            : mode === "properties"
-              ? m.workbench_result_fold()
-              : m.workbench_result_heading()
+            : m.workbench_result_heading()
         }
         showMarkdown={showMarkdown}
         onShowMarkdown={onShowMarkdown}
@@ -334,7 +328,6 @@ export function ResultColumn({
         openAnnotation={openAnnotation}
         goToEntry={goToEntry}
         openSource={openSource}
-        propertiesResult={propertiesResult}
         onRun={onRun}
         busy={busy}
       />

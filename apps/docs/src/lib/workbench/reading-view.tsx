@@ -328,17 +328,21 @@ function EmptyNote() {
 export function ResultSheet({
   markdown,
   properties,
+  frontmatterBlock = null,
   showMarkdown,
   marks = [],
 }: {
   markdown: string;
   properties: readonly RenderedProperty[];
+  /** The note's YAML block as the render wrote it; the Markdown view prints it above the body. */
+  frontmatterBlock?: string | null;
   showMarkdown: boolean;
   /** Where each annotation the format produced landed in `markdown`. */
   marks?: readonly RenderedRange[];
 }) {
   if (showMarkdown) {
-    if (!markdown.trim()) return <EmptyNote />;
+    const frontmatter = frontmatterBlock ? `---\n${frontmatterBlock}---\n` : "";
+    if (!markdown.trim() && !frontmatter) return <EmptyNote />;
     return (
       <pre
         dir="ltr"
@@ -346,6 +350,7 @@ export function ResultSheet({
         aria-label={m.workbench_result_markdown_body()}
         className="font-mono text-[0.8rem] leading-relaxed break-words whitespace-pre-wrap"
       >
+        {frontmatter}
         {markedText(markdown, marks)}
       </pre>
     );

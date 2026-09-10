@@ -1130,14 +1130,7 @@ export function Workbench() {
           sample={sample}
           resources={resources}
           hold={!renderable || resourcesStale}
-          mode={
-            showAnnotation
-              ? "annotation"
-              : !advanced && tab === "properties"
-                ? "properties"
-                : "note"
-          }
-          entries={entries ?? []}
+          mode={showAnnotation ? "annotation" : "note"}
           openAnnotation={openAnnotation}
           goToEntry={goToEntry}
           openSource={() => setAdvanced(true)}

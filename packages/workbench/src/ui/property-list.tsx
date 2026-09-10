@@ -53,7 +53,7 @@ export function PropertyList({
 }: {
   properties: readonly RenderedProperty[];
   label?: string;
-  variant?: "list" | "note" | "spread" | "fold";
+  variant?: "list" | "note" | "spread";
 }) {
   const part = useParts("propertyList");
   const icon = useIcon();
