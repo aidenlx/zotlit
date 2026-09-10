@@ -24,8 +24,10 @@ import type {
   WorkbenchItemChoice,
 } from "@zotlit/workbench/ui";
 
+import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { openSettingsTab } from "@/lib/open-settings";
+import { cn } from "@/lib/utils";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
@@ -35,11 +37,18 @@ import {
   chooseWorkbenchAnnotation,
   publishWorkbenchSelection,
   subscribeWorkbenchSelection,
+  selectionName,
   selectionViewTitle,
   updateSelectionTitle,
 } from "@/views/profile-editor/selection";
 import { currentProfileSource } from "@/views/profile-editor/source";
-import { profileEditorTheme } from "@/views/profile-editor/theme";
+import {
+  profileEditorButton,
+  profileEditorTheme,
+  selectionCaption,
+  selectionHint,
+  selectionTrigger,
+} from "@/views/profile-editor/theme";
 import type {
   ProfileEditorView,
   ProfileAuthoringContext,
@@ -673,21 +682,35 @@ function PreviewContent({
     showMarkdown,
     showManaged,
     example,
+    item,
+    snapshot,
   } = useStore(session.state, (state) => state);
   useEffect(rendered, [result, status, showMarkdown, showManaged, rendered]);
   const annotationMode = context?.root === "annotation";
   const ready = status === "ready" || (annotationMode && example !== null);
   const choose = annotationMode ? chooseAnnotation : chooseItem;
+  const name = selectionName({
+    item: item && {
+      ...item,
+      title: item.title ?? snapshot?.item.title ?? null,
+    },
+    annotation: example,
+    annotationMode,
+  });
   return (
     <div
       data-zotlit-preview-result={result?.sourceRevision}
       className="zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3"
     >
-      <div className="zt-workbench-sidebar-control zt:items-center zt:justify-end">
-        <button onClick={choose}>
-          {annotationMode
-            ? m.workbench_choose_annotation()
-            : m.workbench_choose_item()}
+      <div className="zt-workbench-sidebar-control zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1">
+        {name && <p className={selectionCaption}>{name}</p>}
+        <button className={cn(selectionTrigger, "zt:ms-auto")} onClick={choose}>
+          <Icon name="search" />
+          <span>
+            {annotationMode
+              ? m.workbench_choose_annotation()
+              : m.workbench_choose_item()}
+          </span>
         </button>
       </div>
       {ready && (
@@ -700,37 +723,56 @@ function PreviewContent({
         />
       )}
       {status === "empty" && !ready && (
-        <div>
-          <p>
+        <div className="zt:flex zt:min-w-0 zt:flex-col zt:items-start zt:gap-2">
+          <p className={selectionHint}>
             {annotationMode
               ? m.workbench_preview_choose_annotation()
               : m.workbench_preview_choose_item()}
           </p>
-          <button onClick={choose}>
-            {annotationMode
-              ? m.workbench_choose_annotation()
-              : m.workbench_choose_item()}
+          <button className={selectionTrigger} onClick={choose}>
+            <Icon name="search" />
+            <span>
+              {annotationMode
+                ? m.workbench_choose_annotation()
+                : m.workbench_choose_item()}
+            </span>
           </button>
         </div>
       )}
       {status === "loading" && (
-        <p role="status">{m.workbench_loading_item()}</p>
+        <p role="status" className={selectionHint}>
+          {m.workbench_loading_item()}
+        </p>
       )}
       {status === "error" && (
-        <div role="alert">
-          <p>{error ?? m.workbench_example_missing_item()}</p>
-          <button onClick={() => session.refresh()}>
-            {m.workbench_example_retry()}
-          </button>
-          <button onClick={chooseItem}>
-            {m.template_data_explorer_choose_item()}
-          </button>
+        <div
+          role="alert"
+          className="zt:flex zt:min-w-0 zt:flex-col zt:items-start zt:gap-1.5"
+        >
+          <p className={selectionHint}>
+            {error ?? m.workbench_example_missing_item()}
+          </p>
+          <div className="zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-2">
+            <button
+              className={profileEditorButton}
+              onClick={() => session.refresh()}
+            >
+              {m.workbench_example_retry()}
+            </button>
+            <button className={profileEditorButton} onClick={chooseItem}>
+              {m.template_data_explorer_choose_item()}
+            </button>
+          </div>
         </div>
       )}
       {sourceProblem && (
-        <div role="alert">
-          <p>{sourceProblem}</p>
+        <div
+          role="alert"
+          className="zt:flex zt:min-w-0 zt:flex-col zt:items-start zt:gap-1.5"
+        >
+          <p className={selectionHint}>{sourceProblem}</p>
           <button
+            className={profileEditorButton}
             disabled={!editorAvailable}
             onClick={() => reveal("advanced")}
           >

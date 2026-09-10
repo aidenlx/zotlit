@@ -20,7 +20,7 @@ sentence case, including labels and pane headings.
 
 ## Protect the editing space
 
-Keep the Profile name and file actions in the header. Place the sample picker
+Keep the Profile name and file actions in the header. Place the example picker
 with the result it changes. Put optional guidance behind a visible Help control
 beside its task. Give connection state, draft status, and persistent action
 failures a dedicated status area below the panes; keep that area visible in

@@ -65,7 +65,7 @@ export function SampleBar({
       item.roots.note.containerTitle,
     ]
       .filter((value) => typeof value === "string" && value.length > 0)
-      .join(" · "),
+      .join(m.workbench_selection_separator()),
   }));
   return (
     <div className="mb-2 flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -105,7 +105,9 @@ export function SampleBar({
       </span>
       {unmatchedItemType !== undefined && (
         <span className="text-xs text-fd-muted-foreground">
-          {m.workbench_sample_type_missing({ itemType: unmatchedItemType })}
+          {m.docs_workbench_sample_type_missing({
+            itemType: unmatchedItemType,
+          })}
         </span>
       )}
       {/* A launch that chose no Item grants nothing to load, so the page stays

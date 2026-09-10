@@ -30,12 +30,31 @@ export const profileEditorIcons: Record<WorkbenchIcon, string> = {
 /** Text actions share the Match tab's outlined native control surface. */
 export const profileEditorButton =
   "zt:inline-flex zt:items-center zt:gap-1.5 zt:whitespace-normal zt:text-start zt:text-muted-foreground";
+/** A control row that names the selected data beside the control that changes it. */
+export const selectionRow =
+  "zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1 zt:px-3";
+/** The selected data reads as a muted caption, subordinate to the result. */
+export const selectionCaption =
+  "zt:min-w-0 zt:flex-1 zt:py-2 zt:text-xs zt:leading-normal zt:text-pretty zt:text-muted-foreground";
+/** A group of selection choices: its heading, then its options. */
+export const selectionGroup = "zt:flex zt:min-w-0 zt:flex-col zt:gap-0.5";
+/** A choice that carries a hint under its label reads as two stacked lines. */
+export const selectionOption =
+  "clickable-icon zt-workbench-option zt:min-w-0 zt:flex-col zt:gap-0.5 zt:text-start zt:leading-tight";
+/** A borderless text-and-icon control, subordinate to the result it changes. */
+export const selectionTrigger =
+  "clickable-icon zt-workbench-trigger zt:min-w-0 zt:max-w-full zt:gap-1.5 zt:text-start zt:leading-normal zt:[--icon-size:var(--icon-xs)] zt:[--icon-stroke:1.5] zt:[&_svg]:shrink-0";
+/** A group heading names the source the options beneath it come from. */
+export const selectionGroupHeading =
+  "zt:mb-1.5 zt:px-1.5 zt:text-xs zt:font-semibold zt:leading-normal zt:text-muted-foreground";
 const row = "zt:flex zt:items-center zt:gap-2";
 const stack = "zt:flex zt:min-w-0 zt:flex-col zt:gap-3";
 const field = "zt:flex zt:min-w-0 zt:flex-col zt:gap-1.5";
 const actions = "zt:flex zt:flex-wrap zt:items-center zt:gap-2";
 const hint =
   "zt:text-xs zt:leading-normal zt:text-muted-foreground zt:text-pretty";
+/** Guidance and status read at hint size wherever the selection UI states a task. */
+export const selectionHint = hint;
 /** A boxed pane wears Obsidian's text-input surface, focus ring included. */
 const editorBox =
   "zt:rounded-(--input-radius) zt:border zt:border-border zt:bg-input zt:px-2 zt:py-1 zt:focus-within:border-border-focus zt:focus-within:shadow-[0_0_0_var(--input-border-width-focus)_var(--background-modifier-border-focus)]";
@@ -354,9 +373,9 @@ export const profileEditorTheme: WorkbenchTheme = {
       suggester: "zt:flex zt:min-w-0 zt:flex-1 zt:items-center zt:gap-2",
       label:
         "zt:min-w-0 zt:flex-1 zt:truncate zt:text-xs zt:text-muted-foreground",
-      trigger: "clickable-icon zt:shrink-0",
-      "text-trigger":
-        "clickable-icon zt:max-w-full zt:shrink-0 zt:gap-1.5 zt:leading-normal zt:[--icon-size:var(--icon-xs)] zt:[--icon-stroke:1.5] zt:[&_svg]:shrink-0",
+      trigger:
+        "clickable-icon zt:shrink-0 zt:[--icon-size:var(--icon-xs)] zt:[--icon-stroke:1.5]",
+      "text-trigger": cn(selectionTrigger, "zt:shrink-0"),
     },
     problemsFooter: {
       "problems-open": profileEditorButton,

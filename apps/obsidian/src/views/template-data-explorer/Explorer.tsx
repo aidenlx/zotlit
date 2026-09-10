@@ -10,12 +10,19 @@ import type {
 import { Icon } from "@/components/obsidian/icon";
 import { IconButton } from "@/components/obsidian/icon-button";
 import * as m from "@/lib/i18n/generated/messages";
-import { tooltipAttrs } from "@/lib/utils";
+import { cn, tooltipAttrs } from "@/lib/utils";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import {
   ItemSelectionList,
   AnnotationSelectionList,
+  selectionName,
 } from "@/views/profile-editor/selection";
+import {
+  profileEditorButton,
+  selectionCaption,
+  selectionHint,
+  selectionTrigger,
+} from "@/views/profile-editor/theme";
 
 import { ExplorerActionsContext } from "./actions";
 import { useExplorerStore, useExplorerStoreApi } from "./store";
@@ -52,22 +59,49 @@ export function Explorer({
       ? { label: m.workbench_fields_root_annotation() }
       : null;
   const actions = useContext(ExplorerActionsContext);
+  const name = selectionName({
+    item: state.item && {
+      ...state.item,
+      title:
+        (root === "note" && typeof data?.title === "string"
+          ? data.title
+          : state.item.title) ?? null,
+    },
+    annotation:
+      root === "annotation" && data && state.annotationId
+        ? { id: state.annotationId, root: data }
+        : null,
+    annotationMode: root === "annotation",
+  });
 
   return (
     <div className="zt:flex zt:h-full zt:flex-col zt:overflow-auto">
       {status === "loading" && !showAnnotationSelector ? (
-        <p role="status" className="zt:p-3">
+        <p role="status" className={cn(selectionHint, "zt:p-3")}>
           {m.workbench_loading_item()}
         </p>
       ) : status === "error" && !showAnnotationSelector ? (
-        <div role="alert" className="pane-empty zt:p-3">
-          <p>{error ?? m.workbench_example_missing_item()}</p>
-          <button onClick={() => actions.onRefresh()}>
-            {m.workbench_example_retry()}
-          </button>
-          <button onClick={() => actions.onChooseItem()}>
-            {m.template_data_explorer_choose_item()}
-          </button>
+        <div
+          role="alert"
+          className="pane-empty zt:flex zt:min-w-0 zt:flex-col zt:items-start zt:gap-1.5 zt:p-3"
+        >
+          <p className={selectionHint}>
+            {error ?? m.workbench_example_missing_item()}
+          </p>
+          <div className="zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-2">
+            <button
+              className={profileEditorButton}
+              onClick={() => actions.onRefresh()}
+            >
+              {m.workbench_example_retry()}
+            </button>
+            <button
+              className={profileEditorButton}
+              onClick={() => actions.onChooseItem()}
+            >
+              {m.template_data_explorer_choose_item()}
+            </button>
+          </div>
         </div>
       ) : status === "no-item" ? (
         root === "annotation" ? (
@@ -92,8 +126,10 @@ export function Explorer({
                 : "zt-workbench-sidebar-control zt:shrink-0 zt:justify-end zt:px-3 zt:py-2"
             }
           >
-            <div className="zt-workbench-sidebar-control zt:items-center zt:justify-end">
+            <div className="zt-workbench-sidebar-control zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1">
+              {name && <p className={selectionCaption}>{name}</p>}
               <button
+                className={cn(selectionTrigger, "zt:ms-auto")}
                 aria-label={
                   root === "annotation"
                     ? m.workbench_choose_annotation()
@@ -105,9 +141,12 @@ export function Explorer({
                     : () => actions.onChooseItem()
                 }
               >
-                {root === "annotation"
-                  ? m.workbench_choose_annotation()
-                  : m.workbench_choose_item()}
+                <Icon name="search" />
+                <span>
+                  {root === "annotation"
+                    ? m.workbench_choose_annotation()
+                    : m.workbench_choose_item()}
+                </span>
               </button>
             </div>
             {anchor && (
@@ -141,13 +180,21 @@ export function Explorer({
             )}
           </div>
           {status === "loading" ? (
-            <p role="status" className="zt:p-3">
+            <p role="status" className={cn(selectionHint, "zt:p-3")}>
               {m.workbench_loading_item()}
             </p>
           ) : status === "error" ? (
-            <div role="alert" className="pane-empty zt:p-3">
-              <p>{error ?? m.workbench_example_missing_item()}</p>
-              <button onClick={() => actions.onRefresh()}>
+            <div
+              role="alert"
+              className="pane-empty zt:flex zt:min-w-0 zt:flex-col zt:items-start zt:gap-1.5 zt:p-3"
+            >
+              <p className={selectionHint}>
+                {error ?? m.workbench_example_missing_item()}
+              </p>
+              <button
+                className={profileEditorButton}
+                onClick={() => actions.onRefresh()}
+              >
                 {m.workbench_example_retry()}
               </button>
             </div>

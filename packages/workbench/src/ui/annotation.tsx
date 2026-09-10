@@ -136,7 +136,7 @@ export function annotationOption(
       ...tags.map(({ name }) => `#${name}`),
     ]
       .filter((value) => typeof value === "string" && value.length > 0)
-      .join(" · "),
+      .join(m.workbench_selection_separator()),
   };
 }
 
