@@ -5,6 +5,9 @@
 // AGENTS.md → Obsidian guideline review) throws `ReferenceError: window is
 // not defined` under Vitest without this stub.
 globalThis.window ??= globalThis;
+// Obsidian's `activeWindow` names the window that last held focus and starts
+// out as the main window itself.
+globalThis.activeWindow ??= globalThis;
 
 // Obsidian's renderer also supplies `DOMParser`, which source code reads XML
 // and HTML with. The `node` test environment has none, so a test that runs

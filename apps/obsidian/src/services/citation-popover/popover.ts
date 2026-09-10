@@ -1,10 +1,11 @@
 // Obsidian's own popover, hosting one live React root of ZotLit's own content.
 
-import { HoverPopover } from "obsidian";
 import type { HoverParent } from "obsidian";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
+
+import { PopoutAwareHoverPopover } from "@/lib/popout-aware-hover-popover";
 
 import "./style.css";
 
@@ -27,7 +28,7 @@ export const PLACEMENT_CLASS = {
  * tall stack of entries scrolls inside the content rather than being cut off by
  * it.
  */
-export class CitationHoverPopover extends HoverPopover {
+export class CitationHoverPopover extends PopoutAwareHoverPopover {
   #root: Root | null;
 
   constructor(parent: HoverParent, targetEl: HTMLElement) {

@@ -236,10 +236,23 @@ declare module "obsidian" {
     /** Undocumented internal driving the popover's selection; invoking it from a custom keymap handler selects the highlighted suggestion as if Enter were pressed. */
     suggestions: { useSelectedItem(evt: KeyboardEvent | MouseEvent): void };
   }
-  /** Runtime members Obsidian's own popovers are driven by, verified against Obsidian 1.13.7. */
+  /** The members Obsidian's runtime gives {@link PopoverState}; the vendored declaration lists none. */
+  enum PopoverState {
+    Showing = 0,
+    Shown = 1,
+    Hiding = 2,
+    Hidden = 3,
+  }
+  /** Runtime members Obsidian's own popovers are driven by, verified against Obsidian 1.14.1. */
   interface HoverPopover {
     targetEl: HTMLElement | null;
     onTarget: boolean;
+    /**
+     * The pending show or hide timer. Obsidian arms it on `activeWindow` and
+     * cancels it with the main window's `clearTimeout`, so a subclass that
+     * must cancel it clears it on the window that armed it.
+     */
+    timer: number;
     /** Target listeners bound to the instance by the native constructor. */
     onMouseIn: (event: MouseEvent) => void;
     onMouseOut: (event: MouseEvent) => void;

@@ -168,7 +168,9 @@ export enum PopoverState {
  *
  * The opening sequence follows the runtime one — the constructor arms the wait
  * timer, and the timer opens the popover — so a subclass meets the lifecycle it
- * inherits rather than a stub of it.
+ * inherits rather than a stub of it. Timers keep the runtime's windows too: each
+ * is armed on `activeWindow` and cancelled with the main window's
+ * `clearTimeout`, which is what misses while a popout owns focus.
  */
 export class HoverPopover {
   readonly hoverEl: HTMLElement;
@@ -181,7 +183,7 @@ export class HoverPopover {
   readonly #parent: HoverParent;
   readonly #unload: (() => void)[] = [];
   #loaded = false;
-  #timer: ReturnType<typeof setTimeout>;
+  timer: number;
 
   constructor(
     parent: HoverParent,
@@ -205,7 +207,7 @@ export class HoverPopover {
       this.onHover = false;
       this.transition();
     });
-    this.#timer = setTimeout(() => {
+    this.timer = activeWindow.setTimeout(() => {
       this.show();
     }, waitTime);
   }
@@ -234,13 +236,13 @@ export class HoverPopover {
     if (this.#shouldShow()) {
       if (this.state === PopoverState.Hiding) {
         this.state = PopoverState.Shown;
-        clearTimeout(this.#timer);
+        clearTimeout(this.timer);
       }
     } else if (this.state === PopoverState.Showing) {
       this.hide();
     } else if (this.state === PopoverState.Shown) {
       this.state = PopoverState.Hiding;
-      this.#timer = setTimeout(() => {
+      this.timer = activeWindow.setTimeout(() => {
         if (this.#shouldShow()) this.transition();
         else this.hide();
       }, this.waitTime);
@@ -290,7 +292,7 @@ export class HoverPopover {
   watchResize(_el: HTMLElement): void {}
 
   hide(): void {
-    clearTimeout(this.#timer);
+    clearTimeout(this.timer);
     this.state = PopoverState.Hidden;
     this.targetEl?.removeEventListener("mouseover", this.onMouseIn);
     this.targetEl?.removeEventListener("mouseout", this.onMouseOut);
