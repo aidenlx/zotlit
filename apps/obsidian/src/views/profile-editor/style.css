@@ -16,12 +16,16 @@
 .view-content.zt-profile-editor [data-chip-input] .multi-select-pill {
   max-width: 100%;
 }
-.view-content.zt-profile-editor [data-chip-input] .multi-select-pill-remove-button {
+.view-content.zt-profile-editor
+  [data-chip-input]
+  .multi-select-pill-remove-button {
   padding: var(--size-2-1);
   height: auto;
   color: var(--pill-color-remove);
 }
-.view-content.zt-profile-editor [data-chip-input] .multi-select-pill-remove-button:hover {
+.view-content.zt-profile-editor
+  [data-chip-input]
+  .multi-select-pill-remove-button:hover {
   color: var(--pill-color-remove-hover);
 }
 /* A rendered Properties list wears Obsidian's own classes. The tree's key is
@@ -163,9 +167,17 @@
   overflow: auto;
 }
 /* The preview toggle shows its pressed state the way Obsidian's active icons do. */
-.view-content.zt-profile-editor [data-part="annotation-toggle"][data-state="active"] {
+.view-content.zt-profile-editor
+  [data-part="annotation-toggle"][data-state="active"] {
   color: var(--icon-color-active);
   background-color: var(--background-modifier-active-hover);
+}
+/* Obsidian pads a reading view with the file margins of a full note page. The
+   sheet renders inline in the editor, so the preview card owns the inset. */
+.view-content.zt-profile-editor
+  [data-part="annotation-preview"]
+  .markdown-preview-view {
+  padding: 0;
 }
 /* Obsidian gives rendered blocks their own margins; the preview card sets the edges. */
 .view-content.zt-profile-editor
