@@ -97,7 +97,13 @@ export {
   ResultRegion,
 } from "./result-column";
 export type { ResultBodyProps, ResultColumnProps } from "./result-column";
-export { PropertyList, PropertyValue, propertyText } from "./property-list";
+export {
+  PropertyList,
+  PropertyValue,
+  propertyText,
+  propertyType,
+} from "./property-list";
+export type { PropertyType } from "./property-list";
 
 export { PreviewControls } from "./preview-controls";
 

@@ -8,6 +8,10 @@ type VaultEvent = "create" | "modify" | "rename" | "delete";
 type VaultCallback = (...args: unknown[]) => void;
 
 export class MockVault {
+  /** App settings the rendered surfaces read; tests run with Obsidian's defaults. */
+  getConfig(_key: string): boolean {
+    return false;
+  }
   readonly root = makeFolder("", null, this);
   readonly files = new Map<string, TFile>();
   readonly folders = new Map<string, TFolder>([["", this.root]]);

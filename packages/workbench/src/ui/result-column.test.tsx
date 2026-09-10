@@ -77,7 +77,7 @@ it("passes the complete note and folded properties to the host renderer", () => 
       .getAttribute("aria-description"),
   ).toBe(m.workbench_preview_whole());
   expect(screen.getByTestId("markdown").textContent).toBe(
-    "Created notetagsreading, science",
+    "Created notetagsreadingscience",
   );
   expect(screen.getByRole("status").textContent).toBe(
     m.workbench_preview_stale(),

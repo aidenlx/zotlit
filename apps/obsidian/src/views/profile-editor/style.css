@@ -24,6 +24,33 @@
 .zt-profile-editor [data-chip-input] .multi-select-pill-remove-button:hover {
   color: var(--pill-color-remove-hover);
 }
+/* A rendered Properties list wears Obsidian's own classes. The tree's key is
+   a span where the app styles an `input.metadata-property-key-input`, so the
+   span takes that rule's box; an empty value reads in the app's placeholder
+   colour; and the tree states a property's type as `data-state`, where the
+   app keys tag colours on its own `data-property-type`. */
+.zt-root .metadata-property-key > .metadata-property-key-input {
+  display: flex;
+  align-items: center;
+  flex-grow: 1;
+  height: var(--input-height);
+  padding: var(--metadata-input-padding);
+  font-size: var(--metadata-label-font-size);
+  font-weight: var(--metadata-label-font-weight);
+  color: var(--metadata-label-text-color);
+}
+.zt-root .metadata-property-value > [data-part="empty"] {
+  --metadata-input-text-color: var(--text-faint);
+}
+.zt-root .metadata-property-value[data-state="tags"] .multi-select-pill {
+  --pill-color: var(--tag-color);
+  --pill-color-hover: var(--tag-color-hover);
+  --pill-decoration: var(--tag-decoration);
+  --pill-decoration-hover: var(--tag-decoration-hover);
+  --pill-background: var(--tag-background);
+  --pill-background-hover: var(--tag-background-hover);
+  --pill-border-color: var(--tag-border-color);
+}
 .suggestion-item.zt-profile-editor-suggestion {
   min-height: var(--size-4-6);
   margin-bottom: 0;

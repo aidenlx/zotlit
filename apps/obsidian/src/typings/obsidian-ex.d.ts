@@ -68,6 +68,10 @@ declare module "obsidian" {
     /** Keeps an in-memory document leaf open before its first vault write. */
     allowNoFile: boolean;
   }
+  interface Vault {
+    /** Reads an app setting; `readableLineLength` is Settings → Editor → Readable line length. */
+    getConfig(key: "readableLineLength"): boolean;
+  }
   interface Workspace {
     on(
       name: "zotlit:workbench-selection",

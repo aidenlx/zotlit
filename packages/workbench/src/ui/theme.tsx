@@ -218,7 +218,22 @@ export interface WorkbenchParts {
     | "pending"
     | "label"
     | "label-text";
-  propertyList: "key" | "value" | "empty" | "list" | "note" | "spread" | "fold";
+  propertyList:
+    | "key"
+    | "value"
+    | "empty"
+    | "list"
+    | "note"
+    | "spread"
+    | "fold"
+    | "row"
+    | "icon"
+    | "label"
+    | "pills"
+    | "pill"
+    | "pill-text"
+    | "text"
+    | "checkbox";
 
   tabBar: "tab-bar" | "tab";
   tabPanel: "tab-panel" | "description";
@@ -265,7 +280,15 @@ export type WorkbenchIcon =
   | "edit"
   | "chevron-down"
   | "chevron-right"
-  | "more";
+  | "more"
+  | "property-text"
+  | "property-list"
+  | "property-tags"
+  | "property-aliases"
+  | "property-number"
+  | "property-checkbox"
+  | "property-date"
+  | "property-datetime";
 
 export interface WorkbenchTheme {
   readonly classes?: WorkbenchClassMap;
