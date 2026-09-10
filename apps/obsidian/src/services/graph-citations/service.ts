@@ -1,4 +1,4 @@
-// The Graph Citations service: installs the render facade and click wrap on every graph leaf, re-renders on index changes, and restores every swapped member on feature-off and unload (ADR 0029).
+// The Graph Citations service: installs the render facade and the click and right-click wraps on every graph leaf, re-renders on index changes, and restores every swapped member on feature-off and unload (ADR 0029).
 
 import type {
   App,
@@ -28,6 +28,8 @@ import {
   wrapMember,
 } from "./install";
 import type { GraphLeafMembers } from "./install";
+import { wrapNodeRightClick } from "./right-click";
+import type { NodeRightClickDeps } from "./right-click";
 
 const logger = getLogger("graph-citations");
 
@@ -182,13 +184,14 @@ export class GraphCitations extends Service<void> {
         return renderWithFacade(engine, render, installation.additions);
       }),
     );
-    restores.use(
-      wrapNodeClick(renderer, {
-        citekeyOf: (id) => installation.additions.citedWorkNodes.get(id),
-        open: (citekey, pane) =>
-          void this.#citekeyEditor.openCitekey(citekey, pane),
-      }),
-    );
+    const nodeDeps: NodeRightClickDeps = {
+      citekeyOf: (id) => installation.additions.citedWorkNodes.get(id),
+      resolveCitekey: (citekey) => this.#citationIndex.resolveCitekey(citekey),
+      open: (citekey, pane) =>
+        void this.#citekeyEditor.openCitekey(citekey, pane),
+    };
+    restores.use(wrapNodeClick(renderer, nodeDeps));
+    restores.use(wrapNodeRightClick(renderer, nodeDeps));
     this.#installations.set(renderer, installation);
     logger.debug("Graph citations installed", { viewType });
   }

@@ -25,7 +25,10 @@ export const GRAPH_VIEW_TYPES = ["graph", "localgraph"] as const;
 export interface GraphLeafMembers {
   viewType: string;
   engine: GraphEngine & { app: App; render: () => unknown };
-  renderer: GraphRenderer & { onNodeClick: GraphNodeCallback };
+  renderer: GraphRenderer & {
+    onNodeClick: GraphNodeCallback;
+    onNodeRightClick: GraphNodeCallback;
+  };
 }
 
 /**
@@ -53,6 +56,9 @@ export function graphMembersOf(leaf: WorkspaceLeaf): GraphLeafMembers | null {
     typeof engine?.render === "function" ? null : "engine.render",
     renderer ? null : "renderer",
     typeof renderer?.onNodeClick === "function" ? null : "renderer.onNodeClick",
+    typeof renderer?.onNodeRightClick === "function"
+      ? null
+      : "renderer.onNodeRightClick",
   ].filter((member) => member !== null);
   if (missing.length > 0) {
     logger.warn("Graph leaf is missing an internal member; left native", {

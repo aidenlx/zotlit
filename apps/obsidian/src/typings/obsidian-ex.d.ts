@@ -151,6 +151,12 @@ declare module "obsidian" {
    */
   interface GraphRenderer {
     onNodeClick?: GraphNodeCallback;
+    /**
+     * The right-click callback, bound beside {@link onNodeClick} in the same
+     * engine constructor and called by the renderer only where it is present.
+     * Shape verified against Obsidian 1.13.7 and 1.14.1.
+     */
+    onNodeRightClick?: GraphNodeCallback;
   }
   /**
    * @param id the node id: a vault path, an unresolved linkpath, or a tag.
