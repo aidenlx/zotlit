@@ -4340,6 +4340,29 @@ describe("zotlit:template-render for a Shared Partial", () => {
     });
   });
 
+  it("reports a partial name another ZotLit Template answers to", async () => {
+    const handlers = partialHandlers();
+
+    for (const name of ["citation", "annotation"]) {
+      expect(
+        JSON.parse(
+          await handlers[TEMPLATE_RENDER_COMMAND]({
+            template: `partial:${name}`,
+            key: "ITEM2345",
+          }),
+        ),
+      ).toMatchObject({
+        ok: false,
+        diagnostic: {
+          code: "RESERVED_PARTIAL_NAME",
+          message: `'${name}' names another ZotLit Template, so no Shared Partial answers to it.`,
+          hint: DIAGNOSTIC_HINTS.RESERVED_PARTIAL_NAME,
+          details: { parameter: "template" },
+        },
+      });
+    }
+  });
+
   it("refuses a partial name that is not letters, digits, and hyphens", async () => {
     const handlers = partialHandlers();
 

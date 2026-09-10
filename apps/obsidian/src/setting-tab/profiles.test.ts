@@ -46,6 +46,11 @@ function context(): SettingTabContext {
       loaded: true,
       defaultDocumentPath: "templates/zotlit-profile.default.md",
     },
+    template: {
+      loaded: true,
+      getPartialDocuments: () => [],
+      getReservedPartialFiles: () => [],
+    },
   } as unknown as SettingTabContext;
 }
 

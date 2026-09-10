@@ -21,12 +21,33 @@ import type {
   SuggestionResult,
 } from "./suggestions";
 
-/** Apply one shared edit through CodeMirror and isolate it in the document history. */
+/**
+ * Apply one shared edit through CodeMirror and isolate it in the document
+ * history. An option that resolves its own text — "New partial…" — writes once
+ * the host answers with the name it created.
+ */
 export function applyTemplateCompletion(
   view: EditorView,
   result: SuggestionResult,
   option: Suggestion,
 ): boolean {
+  if (option.resolveInsert) {
+    // The ranges were measured when the popup opened. Resolving hands control
+    // back to the host, which may take a while and may end with the document
+    // rewritten, so a changed document drops the edit rather than writing at an
+    // offset that now means something else. A closed pane needs no guard:
+    // CodeMirror absorbs a dispatch to a destroyed view.
+    const source = view.state.doc.toString();
+    void option.resolveInsert().then((insert) => {
+      if (insert === null || view.state.doc.toString() !== source) return;
+      applyTemplateCompletion(view, result, {
+        ...option,
+        insert,
+        resolveInsert: undefined,
+      });
+    });
+    return false;
+  }
   const edit = completionEdit(view.state.doc.toString(), result, option);
   const effects = snippetPairs(edit, result, option);
   const previous = view.state

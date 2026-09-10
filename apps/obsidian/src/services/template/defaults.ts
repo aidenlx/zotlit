@@ -127,9 +127,71 @@ export function citationPath(folder: string): string {
     : join(normalizedFolder, CITATION_DOCUMENT_FILENAME);
 }
 
+/** The file a Shared Partial named `name` lives in. */
+export function partialFilename(name: string): string {
+  return `zotlit-partial.${name}.md`;
+}
+
+/**
+ * Names a Shared Partial cannot claim: the Citation Template answers to
+ * `citation`, and each Legacy Template File slot answers to its own name —
+ * `annotation` among them, which a Profile's Annotation Section also renders
+ * under.
+ *
+ * The template facade is one namespace, so a partial registered under a slot
+ * name replaces that slot's compiled template: a `zotlit-partial.filename.md`
+ * would name every new Literature Note.
+ */
+export const RESERVED_PARTIAL_NAMES: ReadonlySet<string> = new Set<string>([
+  ...TEMPLATE_NAMES,
+  CITATION_TEMPLATE_NAME,
+]);
+
+const PARTIAL_NAME = /^[A-Za-z0-9-]+$/;
+const PARTIAL_NAME_SPACES = /\s+/g;
+
+/** Why a name cannot be given to a Shared Partial; `null` accepts it. */
+export type PartialNameRefusal =
+  | "empty"
+  | "characters"
+  | "reserved"
+  | "duplicate";
+
+/**
+ * Fold what the reader typed into a Shared Partial name: trim it, join the
+ * words with hyphens, and lowercase it, so "Venue line" reaches the vault as
+ * `venue-line`.
+ */
+export function normalizePartialName(input: string): string {
+  return input.trim().replace(PARTIAL_NAME_SPACES, "-").toLowerCase();
+}
+
+/**
+ * Judge one {@link normalizePartialName} result against the rule every entry
+ * point shares: letters, digits, and hyphens, free of the reserved names, and
+ * unique among `taken`.
+ *
+ * `taken` is compared without case: the rule admits uppercase, so a hand-made
+ * `zotlit-partial.Authors.md` takes `authors` too — a case-insensitive
+ * filesystem holds one file for both, and the reader gets the duplicate
+ * message rather than a failed write.
+ */
+export function partialNameRefusal(
+  name: string,
+  taken: Iterable<string>,
+): PartialNameRefusal | null {
+  if (name === "") return "empty";
+  if (!PARTIAL_NAME.test(name)) return "characters";
+  if (RESERVED_PARTIAL_NAMES.has(name)) return "reserved";
+  const folded = name.toLowerCase();
+  return [...taken].some((used) => used.toLowerCase() === folded)
+    ? "duplicate"
+    : null;
+}
+
 /** Vault path of the Shared Partial named `name` inside `folder`. */
 export function partialPath(folder: string, name: string): string {
-  const file = `zotlit-partial.${name}.md`;
+  const file = partialFilename(name);
   const normalizedFolder = normalizeVaultPath(folder);
   return normalizedFolder === "" ? file : join(normalizedFolder, file);
 }

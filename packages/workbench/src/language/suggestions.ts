@@ -46,6 +46,22 @@ export interface SuggestionConfig {
   /** Partial names the host has registered, offered after `render` / `include(`. */
   partials: readonly string[];
   /**
+   * The entry that ends the partial list: the label the host words it with, and
+   * the flow that names and creates the file. A host that writes no files
+   * supplies none, and the list holds the registered names alone.
+   */
+  createPartial?: {
+    label: string;
+    detail: string;
+    /**
+     * Name and create one partial, seeded with what the reader has typed.
+     *
+     * @returns the created name, which the editor writes as the call's
+     *   argument, or `null` when the reader dismisses the prompt.
+     */
+    run(query: string): Promise<string | null>;
+  };
+  /**
    * The Template data the root binds to `zt`, as a template reads it: link
    * helpers are functions and an annotation links back to its parent Item.
    * Supplies `Sample:` hints.
@@ -64,6 +80,7 @@ export type SuggestionCategory =
   | "field"
   | "loop"
   | "partial"
+  | "new-partial"
   | "liquid-filter"
   | "zotlit-filter"
   | "tag"
@@ -88,6 +105,17 @@ export interface Suggestion {
   displayLabel?: string;
   /** Accepting this value continues member completion. */
   continuation?: boolean;
+  /**
+   * Offered whatever the reader has typed, and ranked after every match: an
+   * option that acts rather than names something already in the source.
+   */
+  pinned?: boolean;
+  /**
+   * Accepting this option asks the host for the text to write, which is how
+   * "New partial…" names and creates a file first. A `null` answer leaves the
+   * source as it stands.
+   */
+  resolveInsert?: () => Promise<string | null>;
 }
 export interface SuggestionResult {
   from: number;
@@ -185,7 +213,7 @@ type ResultBuilder = (
  */
 interface LanguageProfile {
   findRange(source: string, position: number): TemplateRange | null | undefined;
-  /** Matches a partial-name trigger (`render "` for Liquid, `include("` for Eta) against `before`. */
+  /** Matches a partial-name trigger (`render "` / `include "` for Liquid, `include("` for Eta) against `before`. */
   partialPattern: { exec(text: string): { groups: { query: string } } | null };
   /** Array pseudo-members include `first`/`last` for Liquid; Eta offers only the size member. */
   includeArrayFirstLast: boolean;
@@ -209,13 +237,28 @@ interface LanguageProfile {
   }): SuggestionResult | null | undefined;
 }
 
-function partialOptions(names: readonly string[]): Suggestion[] {
-  return names.map((name) => ({
+/**
+ * Every partial the host has registered, in the order it supplied them, and —
+ * where the host creates files — the create entry that ends the list.
+ */
+function partialOptions(config: SuggestionConfig, query: string): Suggestion[] {
+  const options: Suggestion[] = config.partials.map((name) => ({
     label: name,
     insert: name,
     category: "partial",
     detail: "A partial the host has registered.",
   }));
+  const create = config.createPartial;
+  if (create)
+    options.push({
+      label: create.label,
+      insert: "",
+      category: "new-partial",
+      detail: create.detail,
+      pinned: true,
+      resolveInsert: () => create.run(query),
+    });
+  return options;
 }
 
 function filterOptions(
@@ -484,7 +527,9 @@ function liquidExtraTrigger({
 
 const liquidProfile: LanguageProfile = {
   findRange: liquidCodeRange,
-  partialPattern: regex("^\\{%-?\\s*render\\s+[\"'](?<query>[^\"']*)$"),
+  partialPattern: regex(
+    "^\\{%-?\\s*(?:render|include)\\s+[\"'](?<query>[^\"']*)$",
+  ),
   includeArrayFirstLast: true,
   arraySizeName: "size",
   simpleOutputPattern: /^\{\{-?\s*zt(?:\.\w*)*$/,
@@ -582,7 +627,7 @@ export function suggestions(
     return result(
       "Partial names",
       partial.groups.query,
-      partialOptions(config.partials),
+      partialOptions(config, partial.groups.query),
     );
 
   const triggered = profile.extraTrigger({

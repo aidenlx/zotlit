@@ -2077,6 +2077,148 @@ describe("Template Document kinds", () => {
       "templates/zotlit-citation.liquid.md",
     ]);
   });
+
+  it("names every Shared Partial the folder holds, sorted", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-partial.venue-line.md", "{{ zt.venue }}");
+    vault.addFile("templates/zotlit-partial.authors.md", "{{ zt.authors }}");
+    // A document the parser refuses still owns its name: the file exists.
+    vault.addFile(
+      "templates/zotlit-partial.broken.md",
+      "---\nlanguage: liquid\n",
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(service.getPartialNames()).toEqual([
+      "authors",
+      "broken",
+      "venue-line",
+    ]);
+    expect(service.getPartialDocuments()).toEqual([
+      {
+        name: "authors",
+        path: "templates/zotlit-partial.authors.md",
+        language: "liquid",
+      },
+      {
+        name: "broken",
+        path: "templates/zotlit-partial.broken.md",
+        language: "liquid",
+      },
+      {
+        name: "venue-line",
+        path: "templates/zotlit-partial.venue-line.md",
+        language: "liquid",
+      },
+    ]);
+  });
+
+  it("creates a Shared Partial that renders at once and trashes it again", async () => {
+    const { service, vault } = await makeHarness();
+
+    const created = service.createPartial("venue-line", {
+      source: "{{ zt.venue }}",
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    const file = await created;
+
+    expect(file.path).toBe("templates/zotlit-partial.venue-line.md");
+    expect(vault.contents.get(file.path)).toBe("{{ zt.venue }}");
+    expect(service.getPartialNames()).toEqual(["venue-line"]);
+    expect(service.render("venue-line", { venue: "JMLR" })).toBe("JMLR");
+
+    const deleted = service.deletePartial("venue-line");
+    await vi.advanceTimersByTimeAsync(500);
+    await deleted;
+
+    expect(vault.getFileByPath(file.path)).toBeNull();
+    expect(service.getPartialNames()).toEqual([]);
+  });
+
+  it("writes the language manifest only for an Eta partial", async () => {
+    const { service, vault } = await makeHarness({ javascriptTemplates: true });
+
+    const created = service.createPartial("venue-line", {
+      source: "<%= zt.venue %>",
+      language: "eta",
+    });
+    await vi.advanceTimersByTimeAsync(500);
+    const file = await created;
+
+    expect(vault.contents.get(file.path)).toBe(
+      "---\nlanguage: eta\n---\n<%= zt.venue %>",
+    );
+    expect(service.getPartialDocument("venue-line")).toEqual({
+      name: "venue-line",
+      path: file.path,
+      language: "eta",
+    });
+  });
+
+  it("refuses a name the rule rejects before writing anything", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-partial.authors.md", "{{ zt.authors }}");
+    const { service } = await makeHarness({ vault });
+
+    await expect(service.createPartial("citation")).rejects.toMatchObject({
+      name: "PartialNameError",
+      refusal: "reserved",
+    });
+    await expect(service.createPartial("authors")).rejects.toMatchObject({
+      refusal: "duplicate",
+    });
+    await expect(service.createPartial("venue line")).rejects.toMatchObject({
+      refusal: "characters",
+    });
+    expect(service.getPartialNames()).toEqual(["authors"]);
+  });
+
+  it("reports a partial file whose name another Template answers to", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-partial.citation.md", "Mine");
+    vault.addFile("templates/zotlit-partial.annotation.md", "Mine too");
+    const { service } = await makeHarness({ vault });
+
+    expect(service.getReservedPartialFiles()).toEqual([
+      { name: "annotation", path: "templates/zotlit-partial.annotation.md" },
+      { name: "citation", path: "templates/zotlit-partial.citation.md" },
+    ]);
+    expect(service.getPartialNames()).toEqual([]);
+    // The Citation Template still renders its own built-in text.
+    expect(service.renderCitation([{ citationKey: "smith2024" }], "main")).toBe(
+      "[@smith2024]",
+    );
+
+    vault.deleteFile("templates/zotlit-partial.annotation.md");
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(service.getReservedPartialFiles()).toEqual([
+      { name: "citation", path: "templates/zotlit-partial.citation.md" },
+    ]);
+  });
+
+  it("keeps a slot-named partial file out of the template namespace", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-partial.filename.md",
+      "Renamed by a partial",
+    );
+    const { service } = await makeHarness({ vault });
+
+    // One namespace: registering this file would name every Literature Note.
+    expect(
+      service.renderFilename({
+        citationKey: "smith2024",
+        DOI: null,
+        title: "Paper",
+        key: "AB12CD34",
+      }),
+    ).toBe("smith2024%zt-suffix:6:_:%");
+    expect(service.getPartialNames()).toEqual([]);
+    expect(service.getReservedPartialFiles()).toEqual([
+      { name: "filename", path: "templates/zotlit-partial.filename.md" },
+    ]);
+  });
 });
 
 async function makeHarness(options?: {

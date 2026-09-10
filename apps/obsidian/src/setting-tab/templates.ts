@@ -1,6 +1,8 @@
+import { Menu } from "obsidian";
 import type {
   SettingControl,
   SettingDefinition,
+  SettingDefinitionItem,
   Setting,
   SettingGroupItem,
 } from "obsidian";
@@ -11,6 +13,8 @@ import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
 import type { AutoTrim } from "@/services/settings/schema";
 import { openCitationTemplate } from "@/services/template/actions";
+import { createSharedPartial } from "@/views/template-workbench/new-partial";
+import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import { appendCompileError } from "./compile-error";
 import type { SettingsKey, SettingTabContext } from "./context";
@@ -94,6 +98,119 @@ function unrecognizedFileItems(
     desc: m.settings_template_unrecognized_desc({ path }),
     searchable: false,
   }));
+}
+
+/**
+ * The Literature note page's Partials list, mirroring the Profile list: an Add
+ * partial row on the header, one row per partial with Open and a menu holding
+ * Delete, and one row per partial file whose name another Template already
+ * answers to. Rename stays an Obsidian file operation.
+ *
+ * Structural, for the reason {@link citationTextItems} gives.
+ */
+export function partialItems(
+  ctx: SettingTabContext,
+): SettingDefinitionItem<SettingsKey>[] {
+  if (!ctx.template.loaded) return [];
+  const partials = ctx.template.getPartialDocuments();
+  return [
+    {
+      type: "list",
+      heading: m.settings_partials_heading(),
+      emptyState: m.settings_partials_empty_desc(),
+      addItem: {
+        name: m.settings_partial_add(),
+        action: () => void addPartial(ctx),
+      },
+      items: partials.map((partial) => ({
+        name: partial.name,
+        desc: partial.path,
+        searchable: false,
+        render: (setting) => {
+          setting.addButton((button) =>
+            button
+              .setIcon("pencil")
+              .setTooltip(m.settings_partial_open())
+              .onClick(() => {
+                button.buttonEl.blur();
+                void openPartial(ctx, partial.path);
+              }),
+          );
+          setting.addExtraButton((button) =>
+            button
+              .setIcon("more-horizontal")
+              .setTooltip(m.workbench_more_actions())
+              .onClick(() => {
+                const menu = new Menu();
+                menu.addItem((item) =>
+                  item
+                    .setTitle(m.settings_partial_delete())
+                    .setIcon("trash-2")
+                    .setWarning(true)
+                    .onClick(() => void deletePartial(ctx, partial)),
+                );
+                const bounds = button.extraSettingsEl.getBoundingClientRect();
+                menu.showAtPosition({ x: bounds.left, y: bounds.bottom });
+              }),
+          );
+        },
+      })),
+    },
+    ...ctx.template.getReservedPartialFiles().map(({ name, path }) => ({
+      name: m.settings_partial_reserved_name(),
+      desc: m.settings_partial_reserved_desc({ name, path }),
+      searchable: false,
+    })),
+  ];
+}
+
+/**
+ * Add partial: the name prompt opens over settings, and settings closes only
+ * once the document exists, the way `duplicateProfileToWorkbench` does. A
+ * dismissed prompt leaves the reader on the page they started from.
+ */
+async function addPartial(ctx: SettingTabContext): Promise<void> {
+  const name = await createSharedPartial(ctx.app, ctx.template, {
+    open: false,
+  });
+  ctx.requestUpdate();
+  if (name === null) return;
+  const document = ctx.template.getPartialDocument(name);
+  if (document) await openPartial(ctx, document.path);
+}
+
+async function openPartial(
+  ctx: SettingTabContext,
+  path: string,
+): Promise<void> {
+  const file = ctx.app.vault.getFileByPath(path);
+  if (!file) return;
+  ctx.app.setting.close();
+  await openTemplateWorkbench(ctx.app, file, { explainUnsupported: false });
+}
+
+async function deletePartial(
+  ctx: SettingTabContext,
+  partial: { name: string; path: string },
+): Promise<void> {
+  try {
+    const confirmed = await confirm(
+      {
+        title: m.settings_partial_delete_confirm_title(),
+        content: m.settings_partial_delete_confirm_body({ path: partial.path }),
+        action: m.settings_partial_delete(),
+        destructive: true,
+      },
+      ctx.app,
+    );
+    if (!confirmed) return;
+    await ctx.template.deletePartial(partial.name);
+  } catch (error) {
+    logger.error("Failed to delete a partial", { error, name: partial.name });
+    new BaseNotice(m.notice_partial_delete_failed());
+  } finally {
+    ctx.requestUpdate();
+  }
 }
 
 /**

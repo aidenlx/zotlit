@@ -23,6 +23,7 @@ import { DEFAULT_PROFILE, parseProfileSelector } from "@/lib/profile-stamp";
 import type { ProfileId } from "@/lib/profile-stamp";
 import type { ResolvedLiteratureNoteProfileBindings } from "@/services/profile/bindings";
 import type { ProfileDiagnostic } from "@/services/profile/service";
+import { RESERVED_PARTIAL_NAMES } from "@/services/template/defaults";
 import { InertTemplateError } from "@/services/template/errors";
 import type {
   CitationTemplateStatus,
@@ -382,6 +383,16 @@ export function createTemplateWorkbenchHandlers(
     name: string,
     identity: WorkbenchIdentity,
   ): Promise<string> => {
+    if (RESERVED_PARTIAL_NAMES.has(name)) {
+      return Promise.resolve(
+        envelope(TEMPLATE_RENDER_COMMAND, {
+          ok: false,
+          request,
+          identity,
+          diagnostic: reservedPartialNameDiagnostic(name),
+        }),
+      );
+    }
     const document = deps.templates.getPartialDocument(name);
     if (!document) {
       return Promise.resolve(
@@ -1321,6 +1332,19 @@ function inactivePartialDiagnostic(name: string): Diagnostic {
   return diagnostic(
     "INVALID_SELECTOR",
     `No Shared Partial named '${name}'. Create 'zotlit-partial.${name}.md' in the template folder.`,
+    { parameter: "template" },
+  );
+}
+
+/**
+ * A partial name another Template already answers to.
+ *
+ * @see RESERVED_PARTIAL_NAMES for which names those are and why.
+ */
+function reservedPartialNameDiagnostic(name: string): Diagnostic {
+  return diagnostic(
+    "RESERVED_PARTIAL_NAME",
+    `'${name}' names another ZotLit Template, so no Shared Partial answers to it.`,
     { parameter: "template" },
   );
 }

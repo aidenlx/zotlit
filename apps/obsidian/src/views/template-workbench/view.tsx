@@ -109,6 +109,8 @@ import { templateDocumentKind, templatePartialName } from "./document-kind";
 import { createTemplateWorkbenchHost } from "./host";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
+import { createSharedPartial } from "./new-partial";
+import { openTemplateWorkbench } from "./register";
 import {
   chooseWorkbenchItem,
   chooseWorkbenchAnnotation,
@@ -132,7 +134,14 @@ export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   nativePreview?: NativeRenderDeps;
   pluginVersion?: string;
   templates: ExplorerViewDeps["templates"] &
-    Pick<TemplateService, "materializeCitationTemplate">;
+    Pick<
+      TemplateService,
+      | "loaded"
+      | "materializeCitationTemplate"
+      | "getPartialDocuments"
+      | "getPartialNames"
+      | "createPartial"
+    >;
   profile?: Pick<
     ProfileService,
     | "getSource"
@@ -249,6 +258,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         ),
         matchData: createMatchData(deps.db),
         insertTarget: () => this.insertTarget,
+        partials: {
+          names: () =>
+            deps.templates.loaded ? deps.templates.getPartialNames() : [],
+          create: (query) => this.createPartial(query),
+        },
         hoverParent: this,
       },
       (content) => this.provide(content),
@@ -1143,6 +1157,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .setIcon("highlighter")
           .onClick(() => void this.chooseAnnotation()),
       );
+    this.#addPartialsMenu(menu);
     menu.addItem((item) =>
       item
         .setSection("zotlit")
@@ -1186,6 +1201,56 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
           .onClick(() => void this.restoreDefault()),
       );
   }
+  /**
+   * Every Shared Partial the vault holds, so the reader moves between
+   * documents without leaving the view, and the create flow that ends the list.
+   */
+  #addPartialsMenu(menu: Menu): void {
+    const templates = this.#deps.templates;
+    if (!templates.loaded) return;
+    menu.addItem((item) => {
+      item.setSection("zotlit").setTitle(m.template_workbench_partials());
+      const submenu = item.setSubmenu();
+      for (const partial of templates.getPartialDocuments())
+        submenu.addItem((entry) =>
+          entry
+            .setTitle(partial.name)
+            .setChecked(this.file?.path === partial.path)
+            .onClick(
+              () =>
+                void runTemplateWorkbenchAction("open-partial", () =>
+                  this.#openPartial(partial.path),
+                ),
+            ),
+        );
+      submenu.addSeparator();
+      submenu.addItem((entry) =>
+        entry
+          .setTitle(m.workbench_partial_new())
+          .setIcon("plus")
+          .onClick(() => void this.createPartial()),
+      );
+    });
+  }
+
+  async #openPartial(path: string): Promise<void> {
+    const file = this.app.vault.getFileByPath(path);
+    if (file)
+      await openTemplateWorkbench(this.app, file, {
+        explainUnsupported: false,
+      });
+  }
+
+  /**
+   * The shared create flow, seeded with `query` — what the reader had typed
+   * into the render call the completion is finishing.
+   *
+   * @returns the created name, or `null` when the reader dismisses the prompt.
+   */
+  createPartial(query = ""): Promise<string | null> {
+    return createSharedPartial(this.app, this.#deps.templates, { name: query });
+  }
+
   /**
    * The rendering language, switched on the manifest key alone: a Template
    * changes language by being rewritten, so no source is converted here.
