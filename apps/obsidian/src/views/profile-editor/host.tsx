@@ -157,6 +157,11 @@ class EditorSuggester extends SuggestModal<
     el: HTMLElement,
   ): void {
     el.addClass("mod-complex", "zt-workbench-suggestion", FLAIR_ROW_CLASS);
+    if (option.icon)
+      setIcon(
+        el.createDiv("suggestion-icon").createSpan("suggestion-flair"),
+        profileEditorIcons[option.icon],
+      );
     const content = el.createDiv({
       cls: "suggestion-content zt:min-w-0 zt:gap-0.5",
     });

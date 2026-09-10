@@ -63,6 +63,8 @@ export interface WorkbenchSuggesterOption {
   readonly id: string;
   readonly label: string;
   readonly hint?: string;
+  /** A leading icon that marks an action row apart from the choices. */
+  readonly icon?: WorkbenchIcon;
 }
 
 export interface WorkbenchSuggesterGroup {

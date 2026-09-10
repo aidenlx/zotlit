@@ -49,6 +49,7 @@ import { webCompletion } from "./completion";
 import { webHover } from "./hover";
 import { renderInThread } from "./render";
 import { ResultSheet } from "./result-sheet";
+import { WEB_THEME } from "./theme";
 
 const STORAGE_PREFIX = "zotlit.workbench.preference";
 
@@ -343,6 +344,11 @@ export function useWebHost({
                         data-checked={option.id === suggester.request.selected}
                         className="min-h-11"
                       >
+                        {option.icon && (
+                          <span className="shrink-0 text-fd-muted-foreground [&>svg]:size-4">
+                            {WEB_THEME.icon?.(option.icon)}
+                          </span>
+                        )}
                         <span className="min-w-0 flex-1">
                           <span className="block font-medium break-words">
                             {option.label}

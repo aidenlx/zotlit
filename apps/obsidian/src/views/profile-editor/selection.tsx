@@ -133,7 +133,13 @@ export async function chooseWorkbenchItem(
     groups: [
       {
         label: "",
-        options: [{ id: "search-zotero", label: m.workbench_search_zotero() }],
+        options: [
+          {
+            id: "search-zotero",
+            label: m.workbench_search_zotero(),
+            icon: "choose-sample",
+          },
+        ],
       },
       ...retained.map((item) => ({
         label: m.workbench_selected_label(),
