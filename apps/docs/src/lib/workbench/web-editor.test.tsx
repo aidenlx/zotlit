@@ -166,7 +166,7 @@ describe("the paper a profile is written for", () => {
 
     await page.waitFor(() =>
       expect(page.host.textContent).toContain(
-        m.workbench_sample_type_missing({ itemType: "webpage" }),
+        m.docs_workbench_sample_type_missing({ itemType: "webpage" }),
       ),
     );
     expect(shownItem(page.host)).toBe(SAMPLE_ITEMS[0]!.item.title);

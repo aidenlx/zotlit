@@ -315,7 +315,7 @@ export function WorkbenchSkeleton() {
             <>
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <span className="text-xs text-fd-muted-foreground">
-                  {m.workbench_showing_label()}
+                  {m.docs_workbench_showing_label()}
                 </span>
                 <Placeholder className="h-8 min-w-0 flex-1" />
               </div>

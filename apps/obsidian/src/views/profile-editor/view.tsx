@@ -9,7 +9,7 @@ import type {
   ViewStateResult,
   WorkspaceLeaf,
 } from "obsidian";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -68,10 +68,12 @@ import type {
   NameFolderPaneProps,
 } from "@zotlit/workbench/ui";
 
+import { Icon } from "@/components/obsidian/icon";
 import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
+import { cn } from "@/lib/utils";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ProfileService } from "@/services/profile/service";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
@@ -96,11 +98,18 @@ import {
   chooseWorkbenchItem,
   chooseWorkbenchAnnotation,
   publishWorkbenchSelection,
+  selectionName,
   subscribeWorkbenchSelection,
 } from "./selection";
 import { getSampleItem } from "./selection-data";
 import { currentProfileSource } from "./source";
-import { profileEditorButton, profileEditorTheme } from "./theme";
+import {
+  profileEditorButton,
+  profileEditorTheme,
+  selectionCaption,
+  selectionRow,
+  selectionTrigger,
+} from "./theme";
 
 export const PROFILE_EDITOR_VIEW_TYPE = "zotlit-profile-editor";
 const logger = getLogger(["views", "profile-editor"]);
@@ -1574,21 +1583,47 @@ function EditorContent({
   );
 }
 
+/** The pane title carries the file, so the header names the selected data itself. */
+function useSelectedAnnotation(view: ProfileEditorView) {
+  const store = view.preview?.state;
+  return useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => store?.subscribe(listener) ?? (() => {}),
+      [store],
+    ),
+    () => store?.getState().example ?? null,
+  );
+}
+
 function EditorHeader({ view }: { view: ProfileEditorView }) {
   const root = useWorkbenchStore((state) => state.root);
+  const item = useWorkbenchStore((state) => state.item);
+  const annotation = useSelectedAnnotation(view);
+  const name = selectionName({
+    item,
+    annotation,
+    annotationMode: root === "annotation",
+  });
   return (
-    <div className="zt-workbench-sidebar-control zt:min-w-0 zt:shrink-0 zt:items-center zt:justify-end zt:px-3 zt:py-2">
+    <div className={selectionRow}>
+      {name && <p className={selectionCaption}>{name}</p>}
       <button
-        className={profileEditorButton}
+        className={cn(
+          selectionTrigger,
+          "zt-workbench-sidebar-control zt:my-1 zt:ms-auto",
+        )}
         onClick={() =>
           root === "annotation"
             ? void view.chooseAnnotation()
             : void view.chooseItem()
         }
       >
-        {root === "annotation"
-          ? m.workbench_choose_annotation()
-          : m.workbench_choose_item()}
+        <Icon name="search" />
+        <span>
+          {root === "annotation"
+            ? m.workbench_choose_annotation()
+            : m.workbench_choose_item()}
+        </span>
       </button>
     </div>
   );

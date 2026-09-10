@@ -13,10 +13,25 @@ body:not(.show-view-header):not(.is-phone) .zt-workbench-sidebar-control {
   display: flex;
 }
 
-.zt-workbench-options button {
-  height: auto;
-  min-height: var(--input-height);
+/* `clickable-icon` already supplies the flat surface: transparent background,
+   `height: auto`, inset, radius, hover and the focus ring. These are the few
+   declarations Obsidian's own rules still win, and no `zt:` utility can set
+   them from `@layer utilities`. */
+.zt-root button.zt-workbench-option,
+.zt-root button.zt-workbench-trigger {
+  /* button { white-space: nowrap } */
   white-space: normal;
-  text-align: start;
+  /* button { font-size: var(--font-ui-small) } */
+  font-size: var(--font-ui-smaller);
+  /* button { font-weight: var(--input-font-weight) } */
+  font-weight: var(--font-normal);
+  /* .clickable-icon { justify-content: center } */
   justify-content: flex-start;
+}
+/* A choice names itself on the first line and its hint on the second. */
+.zt-root button.zt-workbench-option {
+  /* .clickable-icon { align-items: center } */
+  align-items: flex-start;
+  /* .clickable-icon { color: var(--icon-color) } */
+  color: var(--text-normal);
 }
