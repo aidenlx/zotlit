@@ -27,7 +27,6 @@ import type {
 import { Icon } from "@/components/obsidian/icon";
 import * as m from "@/lib/i18n/generated/messages";
 import { openSettingsTab } from "@/lib/open-settings";
-import { cn } from "@/lib/utils";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
@@ -45,9 +44,9 @@ import { currentProfileSource } from "@/views/profile-editor/source";
 import {
   profileEditorButton,
   profileEditorTheme,
-  selectionCaption,
+  selectionBar,
+  selectionControl,
   selectionHint,
-  selectionTrigger,
 } from "@/views/profile-editor/theme";
 import type {
   ProfileEditorView,
@@ -654,6 +653,8 @@ export class NotePreviewView extends ItemView {
     this.#cleanup = null;
   }
 }
+const sidebarBar = selectionBar({ placement: "sidebar" });
+
 function PreviewContent({
   session,
   scheduler,
@@ -702,9 +703,9 @@ function PreviewContent({
       data-zotlit-preview-result={result?.sourceRevision}
       className="zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3"
     >
-      <div className="zt-workbench-sidebar-control zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1">
-        {name && <p className={selectionCaption}>{name}</p>}
-        <button className={cn(selectionTrigger, "zt:ms-auto")} onClick={choose}>
+      <div className={sidebarBar.row()}>
+        {name && <p className={sidebarBar.caption()}>{name}</p>}
+        <button className={sidebarBar.trigger()} onClick={choose}>
           <Icon name="search" />
           <span>
             {annotationMode
@@ -729,7 +730,10 @@ function PreviewContent({
               ? m.workbench_preview_choose_annotation()
               : m.workbench_preview_choose_item()}
           </p>
-          <button className={selectionTrigger} onClick={choose}>
+          <button
+            className={selectionControl({ kind: "trigger" })}
+            onClick={choose}
+          >
             <Icon name="search" />
             <span>
               {annotationMode

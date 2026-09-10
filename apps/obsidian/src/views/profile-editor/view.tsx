@@ -73,7 +73,6 @@ import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
-import { cn } from "@/lib/utils";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ProfileService } from "@/services/profile/service";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
@@ -103,13 +102,7 @@ import {
 } from "./selection";
 import { getSampleItem } from "./selection-data";
 import { currentProfileSource } from "./source";
-import {
-  profileEditorButton,
-  profileEditorTheme,
-  selectionCaption,
-  selectionRow,
-  selectionTrigger,
-} from "./theme";
+import { profileEditorButton, profileEditorTheme, selectionBar } from "./theme";
 
 export const PROFILE_EDITOR_VIEW_TYPE = "zotlit-profile-editor";
 const logger = getLogger(["views", "profile-editor"]);
@@ -1604,14 +1597,12 @@ function EditorHeader({ view }: { view: ProfileEditorView }) {
     annotation,
     annotationMode: root === "annotation",
   });
+  const { row, caption, trigger } = selectionBar({ placement: "header" });
   return (
-    <div className={selectionRow}>
-      {name && <p className={selectionCaption}>{name}</p>}
+    <div className={row()}>
+      {name && <p className={caption()}>{name}</p>}
       <button
-        className={cn(
-          selectionTrigger,
-          "zt-workbench-sidebar-control zt:my-1 zt:ms-auto",
-        )}
+        className={trigger()}
         onClick={() =>
           root === "annotation"
             ? void view.chooseAnnotation()

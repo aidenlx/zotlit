@@ -4,6 +4,7 @@ import type { WorkbenchTheme, WorkbenchIcon } from "@zotlit/workbench/ui";
 
 import { Icon } from "@/components/obsidian/icon";
 import { themeHook } from "@/lib/theme-hooks";
+import { tv } from "@/lib/tw";
 import { cn } from "@/lib/utils";
 
 import { codePane } from "./editor-extension";
@@ -30,20 +31,52 @@ export const profileEditorIcons: Record<WorkbenchIcon, string> = {
 /** Text actions share the Match tab's outlined native control surface. */
 export const profileEditorButton =
   "zt:inline-flex zt:items-center zt:gap-1.5 zt:whitespace-normal zt:text-start zt:text-muted-foreground";
-/** A control row that names the selected data beside the control that changes it. */
-export const selectionRow =
-  "zt:flex zt:min-w-0 zt:shrink-0 zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1 zt:px-3";
-/** The selected data reads as a muted caption, subordinate to the result. */
-export const selectionCaption =
-  "zt:min-w-0 zt:flex-1 zt:py-2 zt:text-xs zt:leading-normal zt:text-pretty zt:text-muted-foreground";
+/** Icons beside 12 px regular text carry the same optical weight. */
+const captionIcon = "zt:[--icon-size:var(--icon-xs)] zt:[--icon-stroke:1.5]";
+/** Every choose control shares the flat `clickable-icon` surface; `kind` sets its shape. */
+export const selectionControl = tv({
+  base: "clickable-icon",
+  variants: {
+    kind: {
+      /** An icon-only action that sits beside a text trigger. */
+      icon: cn("zt:shrink-0", captionIcon),
+      /** A borderless text-and-icon control, subordinate to the result it changes. */
+      trigger: cn(
+        "zt-workbench-trigger zt:max-w-full zt:min-w-0 zt:gap-1.5 zt:text-start zt:leading-normal zt:[&_svg]:shrink-0",
+        captionIcon,
+      ),
+      /** A choice that carries a hint under its label reads as two stacked lines. */
+      option:
+        "zt-workbench-option zt:min-w-0 zt:flex-col zt:gap-0.5 zt:text-start zt:leading-tight",
+    },
+  },
+});
+/**
+ * A control row that names the selected data beside the control that changes it.
+ * `placement` decides which part hides outside a sidebar: the whole row, or only the trigger.
+ */
+export const selectionBar = tv({
+  slots: {
+    row: "zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1",
+    /** The selected data reads as a muted caption, subordinate to the result. */
+    caption:
+      "zt:min-w-0 zt:flex-1 zt:py-2 zt:text-xs zt:leading-normal zt:text-pretty zt:text-muted-foreground",
+    trigger: [selectionControl({ kind: "trigger" }), "zt:ms-auto"],
+  },
+  variants: {
+    placement: {
+      /** The pane header always names the selection; only the trigger waits for a sidebar. */
+      header: {
+        row: "zt:flex zt:shrink-0 zt:px-3",
+        trigger: "zt-workbench-sidebar-control zt:my-1",
+      },
+      /** A row inside the result appears only where Obsidian hides the view header. */
+      sidebar: { row: "zt-workbench-sidebar-control" },
+    },
+  },
+});
 /** A group of selection choices: its heading, then its options. */
 export const selectionGroup = "zt:flex zt:min-w-0 zt:flex-col zt:gap-0.5";
-/** A choice that carries a hint under its label reads as two stacked lines. */
-export const selectionOption =
-  "clickable-icon zt-workbench-option zt:min-w-0 zt:flex-col zt:gap-0.5 zt:text-start zt:leading-tight";
-/** A borderless text-and-icon control, subordinate to the result it changes. */
-export const selectionTrigger =
-  "clickable-icon zt-workbench-trigger zt:min-w-0 zt:max-w-full zt:gap-1.5 zt:text-start zt:leading-normal zt:[--icon-size:var(--icon-xs)] zt:[--icon-stroke:1.5] zt:[&_svg]:shrink-0";
 /** A group heading names the source the options beneath it come from. */
 export const selectionGroupHeading =
   "zt:mb-1.5 zt:px-1.5 zt:text-xs zt:font-semibold zt:leading-normal zt:text-muted-foreground";
@@ -373,9 +406,11 @@ export const profileEditorTheme: WorkbenchTheme = {
       suggester: "zt:flex zt:min-w-0 zt:flex-1 zt:items-center zt:gap-2",
       label:
         "zt:min-w-0 zt:flex-1 zt:truncate zt:text-xs zt:text-muted-foreground",
-      trigger:
-        "clickable-icon zt:shrink-0 zt:[--icon-size:var(--icon-xs)] zt:[--icon-stroke:1.5]",
-      "text-trigger": cn(selectionTrigger, "zt:shrink-0"),
+      trigger: selectionControl({ kind: "icon" }),
+      "text-trigger": selectionControl({
+        kind: "trigger",
+        className: "zt:shrink-0",
+      }),
     },
     problemsFooter: {
       "problems-open": profileEditorButton,
