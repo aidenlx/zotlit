@@ -358,6 +358,36 @@ describe("the Problems footer", () => {
     expect(opened).toEqual(["unsupported-language"]);
   });
 
+  it("offers the unpack button only to a host that can perform it", () => {
+    const problem = {
+      code: "bundled-partial",
+      params: { names: "authors" },
+      slice: "advanced",
+    } as const;
+    const unpacked: string[] = [];
+    using mounted = mount(
+      <>
+        <ProblemsFooter
+          problem={problem}
+          onOpen={() => {}}
+          onAction={(target) => unpacked.push(target.code)}
+        />
+        <ProblemsFooter problem={problem} onOpen={() => {}} />
+      </>,
+    );
+    const { ui } = mounted;
+    render(ui);
+
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      m.workbench_problem_bundled_partial_unpack(),
+      m.workbench_problems_where_advanced(),
+      m.workbench_problems_where_advanced(),
+    ]);
+    fireEvent.click(buttons[0]!);
+    expect(unpacked).toEqual(["bundled-partial"]);
+  });
+
   it("points a row problem at its entry and a section problem at the Annotation tab", () => {
     using mounted = mount(
       <>

@@ -439,6 +439,7 @@ export const templateWorkbenchTheme: WorkbenchTheme = {
     },
     problemsFooter: {
       "problems-open": templateWorkbenchButton,
+      "problems-action": templateWorkbenchButton,
       problems: "zt:shrink-0 zt:p-3 zt:border-t zt:border-border zt:text-xs",
       "problems-heading": "zt:font-semibold",
       "problems-text": "zt:text-muted-foreground",

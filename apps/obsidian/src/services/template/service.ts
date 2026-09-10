@@ -37,8 +37,14 @@ import type {
   CompiledManagedFrontmatter,
   FrontmatterField,
 } from "@zotlit/templates/frontmatter";
-import { exportLiteratureNotePack } from "@zotlit/templates/literature-note-pack";
-import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature-note-pack";
+import {
+  exportLiteratureNotePack,
+  unpackLiteratureNotePartials,
+} from "@zotlit/templates/literature-note-pack";
+import type {
+  LiteratureNotePartialUnpack,
+  LiteratureNoteTemplatePartial,
+} from "@zotlit/templates/literature-note-pack";
 import { managedRegionTransform } from "@zotlit/templates/obsidian";
 
 import { RESERVED_KEYS } from "@/lib/constants";
@@ -46,6 +52,7 @@ import { ensureFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
+import { isFileExistsError } from "@/lib/vault-errors";
 import type { ResolvedProfile } from "@/services/profile/bindings";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
@@ -251,6 +258,21 @@ export interface SharedPartialDocument {
   /** Where `zotlit-partial.<name>.md` lives. */
   readonly path: string;
   readonly language: TemplateLanguage;
+}
+
+/** What {@link TemplateService.unpackPartials} did with each planned partial. */
+export interface PartialUnpackOutcome {
+  /** The names a Shared Partial document now holds the bundle's source under. */
+  readonly written: readonly string[];
+  /** The names the reader's own document answers, left exactly as they were. */
+  readonly kept: readonly string[];
+  /**
+   * Every name whose transport copy has no reader left — written, already
+   * identical, or answered by the reader's own document — so the caller drops
+   * exactly those manifest entries. A name no Shared Partial file can carry
+   * stays out: the manifest copy is all that answers it.
+   */
+  readonly dropped: readonly string[];
 }
 
 /** The Citation Template's state, as the Citations settings row reads it. */
@@ -1063,6 +1085,159 @@ export class TemplateService extends Service<void> {
     return this.getPartialNames()
       .map((name) => this.getPartialDocument(name))
       .filter((document) => document !== null);
+  }
+
+  /**
+   * {@link getPartialNames} as bundle entries — the name, the language, and
+   * the source under the manifest — which is what a Share writes into a
+   * Profile manifest's transport list. A name whose document failed to parse
+   * or is left inert by the JavaScript Templates gate carries no source, so it
+   * is left out: a bundle holds only text this vault can render.
+   */
+  getPartialEntries(): readonly LiteratureNoteTemplatePartial[] {
+    this.#requireLoaded("getPartialEntries");
+    return this.getPartialNames().flatMap((name) => {
+      const registered = this.#partials.get(name);
+      return registered
+        ? [{ name, language: registered.language, source: registered.source }]
+        : [];
+    });
+  }
+
+  /**
+   * What each partial a Profile manifest bundles does to the template folder,
+   * read against the documents the vault holds right now.
+   *
+   * A name another Template already answers — `citation`, which the Citation
+   * Template carries — reads as `unchanged`: this vault renders that name with
+   * a document of its own, so no partial file is written for it and its
+   * transport entry simply goes.
+   *
+   * A held name is matched the way the Shared Partial name rule folds case, so
+   * a bundled `Authors` reads against the vault's own `authors` rather than
+   * asking for a second file the same filesystem entry answers to.
+   *
+   * @see unpackPartials for the write this plan feeds.
+   */
+  planPartialUnpack(
+    bundled: readonly LiteratureNoteTemplatePartial[],
+  ): readonly LiteratureNotePartialUnpack[] {
+    this.#requireLoaded("planPartialUnpack");
+    const held = new Map<
+      string,
+      Pick<LiteratureNoteTemplatePartial, "language" | "source"> | null
+    >();
+    for (const partial of bundled) {
+      if (RESERVED_PARTIAL_NAMES.has(partial.name)) {
+        held.set(partial.name, partial);
+        continue;
+      }
+      const name = this.#heldPartialName(partial.name);
+      if (name === undefined) continue;
+      const registered = this.#partials.get(name);
+      held.set(
+        partial.name,
+        registered
+          ? { language: registered.language, source: registered.source }
+          : null,
+      );
+    }
+    return unpackLiteratureNotePartials(bundled, held);
+  }
+
+  /**
+   * Write the planned partials into the template folder, leaving every
+   * document the vault already holds exactly as it is: a `conflict` the reader
+   * did not name in `replace` keeps their file, and so does a file that
+   * appeared between the plan and this write.
+   *
+   * Either way that name has no transport left — the reader's own document
+   * answers it from now on — so it lands in `dropped` beside the ones written.
+   * The one name that stays out of `dropped` is a name no Shared Partial file
+   * can carry, which the manifest copy alone answers.
+   */
+  async unpackPartials(
+    plan: readonly LiteratureNotePartialUnpack[],
+    options: { replace?: readonly string[] } = {},
+  ): Promise<PartialUnpackOutcome> {
+    await this.ready;
+    this.#requireLoaded("unpackPartials");
+    const replace = new Set(options.replace);
+    const folder = this.#currentTemplateFolder();
+    const written: string[] = [];
+    const kept: string[] = [];
+    const refused: string[] = [];
+    const dropped: string[] = [];
+    for (const step of plan) {
+      if (step.verdict === "unchanged") {
+        dropped.push(step.name);
+        continue;
+      }
+      // The name arrives inside a pasted bundle, so it passes the rule every
+      // entry point shares before it ever reaches a vault path.
+      if (partialNameRefusal(step.name, [])) {
+        refused.push(step.name);
+        continue;
+      }
+      const declined = step.verdict === "conflict" && !replace.has(step.name);
+      if (!declined && (await this.#writePartialFile(folder, step)))
+        written.push(step.name);
+      else kept.push(step.name);
+      dropped.push(step.name);
+    }
+    if (written.length > 0) await this.#settle();
+    logger.debug("Unpacked bundled partials", { written, kept, refused });
+    return { written, kept, dropped };
+  }
+
+  /**
+   * The name this vault's own Shared Partial files answer `name` under, folded
+   * the way {@link partialNameRefusal} folds it; `undefined` when none does.
+   */
+  #heldPartialName(name: string): string | undefined {
+    const folded = name.toLowerCase();
+    return [...this.#partialNames].find(
+      (taken) => taken.toLowerCase() === folded,
+    );
+  }
+
+  /**
+   * Write one planned partial into the document it belongs in. A `conflict`
+   * reaches here only once the reader has approved that very name, so it is
+   * the one step that replaces a document — every other write creates.
+   *
+   * @returns false when a document the plan never read holds the path, which
+   *   is left exactly as the reader wrote it.
+   */
+  async #writePartialFile(
+    folder: string,
+    step: LiteratureNotePartialUnpack,
+  ): Promise<boolean> {
+    if (step.verdict === "conflict") {
+      const held = this.#heldPartialName(step.name);
+      const file =
+        held === undefined
+          ? null
+          : this.#app.vault.getFileByPath(partialPath(folder, held));
+      if (file) {
+        await this.#app.vault.process(file, () => step.document);
+        return true;
+      }
+    }
+    await ensureFolder(this.#app, folder || "/");
+    try {
+      await this.#app.vault.create(
+        partialPath(folder, step.name),
+        step.document,
+      );
+    } catch (error) {
+      if (!isFileExistsError(error)) throw error;
+      logger.debug("A partial document appeared after the unpack plan", {
+        name: step.name,
+      });
+      return false;
+    }
+    return true;
   }
 
   /**

@@ -211,15 +211,115 @@ describe("ProfileService", () => {
     });
     expect(plan.manifest.importFolder).toBeUndefined();
     expect(f.vault.files.size).toBe(0);
+    expect(plan.partials).toEqual([
+      {
+        name: "shared",
+        verdict: "write",
+        document: "---\nlanguage: liquid\n---\nShared body",
+      },
+    ]);
     const pending = plan.import();
+    // Two debounced template-folder reconciles: the one the import settles on
+    // before it reads its target, then the one the files it writes raise.
+    await vi.advanceTimersByTimeAsync(500);
     await vi.advanceTimersByTimeAsync(500);
     const imported = await pending;
     expect(imported.id).toBe(BOOKS);
-    expect([...f.vault.files.keys()]).toEqual([
+    // The bundle's partial becomes a file of its own, and the transport copy
+    // it travelled in goes with it.
+    expect([...f.vault.files.keys()].sort()).toEqual([
+      "templates/zotlit-partial.shared.md",
       "templates/zotlit-profile.books.md",
     ]);
-    expect(f.vault.contents.get(imported.path)).toContain("Shared body");
+    expect(f.vault.contents.get("templates/zotlit-partial.shared.md")).toBe(
+      "---\nlanguage: liquid\n---\nShared body",
+    );
+    expect(f.vault.contents.get(imported.path)).not.toContain("Shared body");
     expect(stamp).not.toHaveBeenCalled();
+  });
+
+  it("skips a partial the vault already matches and replaces only the one approved", async () => {
+    await using f = await harness({
+      "templates/zotlit-partial.summary.md":
+        "---\nlanguage: liquid\n---\nShared body",
+      "templates/zotlit-partial.authors.md": "Mine",
+    });
+    const source = document(
+      BOOKS,
+      [
+        "partials:",
+        "  - name: summary",
+        "    language: liquid",
+        "    source: Shared body",
+        "  - name: authors",
+        "    language: liquid",
+        "    source: Theirs",
+      ].join("\n"),
+    );
+    const plan = await f.profile.prepareImport(source);
+    expect(
+      plan.partials.map(({ name, verdict }) => `${name}:${verdict}`),
+    ).toEqual(["summary:unchanged", "authors:conflict"]);
+
+    // Nothing approved: the reader's own authors file stands untouched, and
+    // its entry goes all the same — their document answers that name now.
+    const pending = plan.import();
+    // Two debounced template-folder reconciles: the one the import settles on
+    // before it reads its target, then the one the files it writes raise.
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(500);
+    const imported = await pending;
+    expect(f.vault.contents.get("templates/zotlit-partial.authors.md")).toBe(
+      "Mine",
+    );
+    expect(
+      parseLiteratureNoteTemplate(f.vault.contents.get(imported.path)!).manifest
+        .partials,
+    ).toBeUndefined();
+
+    const replace = await f.profile.prepareImport(source);
+    const second = replace.import({ replacePartials: ["authors"] });
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(500);
+    const replaced = await second;
+    expect(f.vault.contents.get("templates/zotlit-partial.authors.md")).toBe(
+      "---\nlanguage: liquid\n---\nTheirs",
+    );
+    expect(
+      parseLiteratureNoteTemplate(f.vault.contents.get(replaced.path)!).manifest
+        .partials,
+    ).toBeUndefined();
+  });
+
+  it("renders a kept partial from the reader's own file, and the rest from the bundle", async () => {
+    await using f = await harness({
+      "templates/zotlit-partial.authors.md": "Mine",
+    });
+    const source = document(
+      BOOKS,
+      [
+        "partials:",
+        "  - name: summary",
+        "    language: liquid",
+        "    source: Their summary",
+        "  - name: authors",
+        "    language: liquid",
+        "    source: Their authors",
+      ].join("\n"),
+    ).replace("Managed", '{% render "summary" %} {% render "authors" %}');
+    const plan = await f.profile.prepareImport(source);
+    const pending = plan.import();
+    await vi.advanceTimersByTimeAsync(500);
+    await vi.advanceTimersByTimeAsync(500);
+    await pending;
+
+    // The reader kept their authors, so the Profile calls their file — and
+    // summary, unpacked to a file of its own, still answers.
+    expect(
+      f.template
+        .getLiteratureNoteTemplate("zotlit-profile.books.md")!
+        .renderForCreate({ title: "First" }),
+    ).toContain("Their summary Mine");
   });
 
   it("offers Replace with the held version and real note counts, then changes only that document", async () => {

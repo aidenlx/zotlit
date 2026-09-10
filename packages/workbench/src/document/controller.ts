@@ -33,7 +33,10 @@ import type {
   LiteratureNoteTemplateErrorCode,
   PlainTemplateDocument,
 } from "@zotlit/templates/facade";
-import { literatureNoteTemplateDependencies } from "@zotlit/templates/literature-note-pack";
+import {
+  literatureNoteTemplateDependencies,
+  updateLiteratureNotePackMetadata,
+} from "@zotlit/templates/literature-note-pack";
 
 import { jsonSliceHistory } from "./json-source";
 import {
@@ -103,9 +106,13 @@ export function entryPosition(id: WorkbenchSliceId): number | null {
   return name === "entry" ? Number(position) : null;
 }
 
-/** Why a draft is refused: the parser's own codes, plus the web host's three. */
+/**
+ * Why a draft is refused: the parser's own codes, the web host's three, and
+ * the vault host's one.
+ */
 export type WorkbenchProblemCode =
   | LiteratureNoteTemplateErrorCode
+  | "bundled-partial"
   | "unsupported-js"
   | "unsupported-language"
   | "unsupported-partial-language";
@@ -546,7 +553,46 @@ export class WorkbenchDocumentController {
     } catch {
       return false;
     }
-    if (next === this.#text) return true;
+    this.#rewrite(next);
+    return true;
+  }
+
+  /**
+   * Drops the manifest's transport copy of each partial `names` holds, as one
+   * undo step: a file of the host's own answers each of those names now,
+   * whether the host just wrote it or the reader had written it already.
+   * @returns false on a document that does not parse, and on one whose
+   *   manifest carries none of those names — the state the caller wanted.
+   */
+  dropBundledPartials(names: readonly string[]): boolean {
+    let document;
+    try {
+      document = parseLiteratureNoteTemplate(this.#text);
+    } catch {
+      return false;
+    }
+    const partials = document.manifest.partials ?? [];
+    const kept = partials.filter(({ name }) => !names.includes(name));
+    if (kept.length === partials.length) return false;
+    let next: string;
+    try {
+      next = updateLiteratureNotePackMetadata(this.#text, {
+        partials: kept.length > 0 ? kept : undefined,
+      });
+    } catch {
+      return false;
+    }
+    this.#rewrite(next);
+    return true;
+  }
+
+  /**
+   * Replaces the document with `next` through the one changed span between
+   * them, so a whole-document rewrite lands as one undo step and leaves every
+   * byte the two share where the author put it.
+   */
+  #rewrite(next: string): void {
+    if (next === this.#text) return;
     let from = 0;
     while (
       from < this.#text.length &&
@@ -565,7 +611,6 @@ export class WorkbenchDocumentController {
       userEvent: "input.form",
       annotations: isolateHistory.of("full"),
     });
-    return true;
   }
 
   /**
@@ -794,15 +839,20 @@ export class WorkbenchDocumentController {
         to: document.annotationSection.end,
       });
       this.#dependencies = literatureNoteTemplateDependencies(document);
-      this.#problems = webProblems(document, source).filter(
-        (problem) =>
-          this.#runtime === "web" ||
-          ![
-            "unsupported-language",
-            "unsupported-partial-language",
-            "unsupported-js",
-          ].includes(problem.code),
-      );
+      this.#problems = [
+        ...webProblems(document, source).filter(
+          (problem) =>
+            this.#runtime === "web" ||
+            ![
+              "unsupported-language",
+              "unsupported-partial-language",
+              "unsupported-js",
+            ].includes(problem.code),
+        ),
+        ...(this.#runtime === "web"
+          ? []
+          : bundledPartialProblems(document, source)),
+      ];
     } catch (error) {
       if (!(error instanceof LiteratureNoteTemplateError)) throw error;
       this.#document = null;
@@ -1012,6 +1062,29 @@ function webProblems(
       }
     }
   return problems;
+}
+
+/**
+ * The vault host's own restriction: a Profile edited beside the vault reads
+ * its partials from `zotlit-partial.<name>.md` files, so the manifest's
+ * transport copy is text with two homes until it is unpacked. The web host
+ * has no vault to unpack into and reads the copy as the bundle it is.
+ * @see docs/adr/0050-citation-template-and-shared-partials-are-template-documents.md
+ */
+function bundledPartialProblems(
+  document: LiteratureNoteTemplateDocument,
+  source: string,
+): readonly WorkbenchProblem[] {
+  const partials = document.manifest.partials ?? [];
+  if (partials.length === 0) return [];
+  return [
+    {
+      code: "bundled-partial",
+      params: { names: partials.map(({ name }) => name).join(", ") },
+      slice: "advanced",
+      ...at(source, ["partials"]),
+    },
+  ];
 }
 
 /** The manifest node's own text, so a problem points at the value it is about. */

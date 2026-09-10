@@ -395,12 +395,19 @@ export function createTemplateWorkbenchHandlers(
     }
     const document = deps.templates.getPartialDocument(name);
     if (!document) {
+      const carrier = bundledPartialCarrier(
+        deps.literatureNotes?.getDocumentStatuses() ?? [],
+        name,
+      );
       return Promise.resolve(
         envelope(TEMPLATE_RENDER_COMMAND, {
           ok: false,
           request,
           identity,
-          diagnostic: missingPartialDiagnostic(name),
+          diagnostic:
+            carrier === null
+              ? missingPartialDiagnostic(name)
+              : bundledPartialDiagnostic(name, carrier),
         }),
       );
     }
@@ -1332,6 +1339,39 @@ function missingPartialDiagnostic(name: string): Diagnostic {
   return diagnostic("MISSING_PARTIAL", `No Shared Partial named '${name}'.`, {
     template: name,
   });
+}
+
+/**
+ * The first installed Profile document whose manifest still carries `name`,
+ * or null when none does. A manifest entry is a share transport, so a partial
+ * found only there answers no render until it is unpacked into its own file.
+ */
+function bundledPartialCarrier(
+  statuses: readonly LiteratureNoteTemplateStatus[],
+  name: string,
+): string | null {
+  for (const status of statuses) {
+    if (
+      status.validation.state === "valid" &&
+      status.validation.manifest.partials?.some(
+        (partial) => partial.name === name,
+      )
+    )
+      return status.reference;
+  }
+  return null;
+}
+
+/**
+ * A partial the vault registers no document for because a Profile document
+ * still carries it in its manifest, where nothing renders it.
+ */
+function bundledPartialDiagnostic(name: string, reference: string): Diagnostic {
+  return diagnostic(
+    "BUNDLED_PARTIAL",
+    `No Shared Partial named '${name}': the Profile document '${reference}' still carries it in its manifest.`,
+    { template: name },
+  );
 }
 
 /**

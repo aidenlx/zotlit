@@ -17,10 +17,10 @@ import type {
 } from "@/services/profile/service";
 
 import {
-  NOTE_CLASS,
   dialogFooter,
   footerButton,
   frameDialog,
+  heading,
   note,
 } from "./profile-dialog";
 
@@ -36,7 +36,10 @@ export async function shareProfile(
 
 export class ShareProfileModal extends Modal {
   readonly #plan: PreparedProfileShare;
-  readonly #options: ProfileShareOptions;
+  /** Every share choice but the checked partials, which {@link #partials} holds. */
+  readonly #options: Omit<ProfileShareOptions, "partials">;
+  /** The checked partials, which the bundle carries and nothing else. */
+  readonly #partials: Set<string>;
   #source: string | undefined;
   #reason: { set(text: string, tone?: "muted" | "error"): void } | undefined;
   #bump: ButtonComponent | undefined;
@@ -47,6 +50,7 @@ export class ShareProfileModal extends Modal {
   constructor(app: App, plan: PreparedProfileShare) {
     super(app);
     this.#plan = plan;
+    this.#partials = new Set(plan.reachable);
     this.#options = {
       version: plan.manifest.version,
       author: plan.manifest.author ?? "",
@@ -101,12 +105,7 @@ export class ShareProfileModal extends Modal {
     // Stacked so the text area gets the row's full width.
     description.settingEl.addClasses(["zt:flex-col", "zt:gap-2"]);
     description.controlEl.addClass("zt:w-full");
-    this.contentEl.createEl("p", {
-      cls: `${NOTE_CLASS} zt:pb-3`,
-      text: this.#plan.partials.length
-        ? m.profile_share_partials({ names: this.#plan.partials.join(", ") })
-        : m.profile_share_no_partials(),
-    });
+    this.#partialChecklist(this.contentEl);
     new Setting(this.contentEl)
       .setName(m.profile_share_folders())
       .setDesc(m.profile_share_folders_desc())
@@ -143,9 +142,34 @@ export class ShareProfileModal extends Modal {
     this.contentEl.empty();
   }
 
+  /**
+   * One checkbox per partial the bundle can carry, opened on the set the
+   * dependency scan reaches. The scan reads a quoted name wherever it stands,
+   * so a partial named only in prose starts checked and the reader clears it.
+   */
+  #partialChecklist(parent: HTMLElement): void {
+    heading(parent, m.profile_share_partials()).addClass("zt:pt-3");
+    note(parent, {
+      text: this.#plan.partials.length
+        ? m.profile_share_partials_desc()
+        : m.profile_share_no_partials(),
+    });
+    for (const name of this.#plan.partials)
+      new Setting(parent).setName(name).addToggle((toggle) =>
+        toggle.setValue(this.#partials.has(name)).onChange((value) => {
+          if (value) this.#partials.add(name);
+          else this.#partials.delete(name);
+          this.#refresh();
+        }),
+      );
+  }
+
   #refresh(): void {
     try {
-      this.#source = this.#plan.render(this.#options);
+      this.#source = this.#plan.render({
+        ...this.#options,
+        partials: [...this.#partials],
+      });
       this.#reason?.set("");
     } catch (error) {
       this.#source = undefined;

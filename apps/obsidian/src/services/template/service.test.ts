@@ -2140,6 +2140,98 @@ describe("Template Document kinds", () => {
     ]);
   });
 
+  it("unpacks a bundle's partials into files and keeps the reader's own", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-partial.authors.md", "Mine");
+    vault.addFile(
+      "templates/zotlit-partial.summary.md",
+      "---\nlanguage: liquid\n---\nShared body",
+    );
+    const { service } = await makeHarness({ vault });
+    const bundled = [
+      { name: "summary", language: "liquid", source: "Shared body" },
+      { name: "authors", language: "liquid", source: "Theirs" },
+      { name: "venue-line", language: "liquid", source: "{{ zt.venue }}" },
+      // The Citation Template travels under its own name and has a document of
+      // its own, so nothing is written for it and its entry can go.
+      { name: "citation", language: "liquid", source: "Their citation" },
+    ] as const;
+
+    const plan = service.planPartialUnpack(bundled);
+    expect(plan.map(({ name, verdict }) => `${name}:${verdict}`)).toEqual([
+      "summary:unchanged",
+      "authors:conflict",
+      "venue-line:write",
+      "citation:unchanged",
+    ]);
+
+    const outcome = service.unpackPartials(plan);
+    await vi.advanceTimersByTimeAsync(500);
+
+    // Nothing was approved, so the reader's own authors stands — and its entry
+    // goes with the rest, because their document answers that name from here.
+    expect(await outcome).toEqual({
+      written: ["venue-line"],
+      kept: ["authors"],
+      dropped: ["summary", "authors", "venue-line", "citation"],
+    });
+    expect(vault.contents.get("templates/zotlit-partial.venue-line.md")).toBe(
+      "---\nlanguage: liquid\n---\n{{ zt.venue }}",
+    );
+    expect(vault.contents.get("templates/zotlit-partial.authors.md")).toBe(
+      "Mine",
+    );
+    expect(
+      vault.getFileByPath("templates/zotlit-partial.citation.md"),
+    ).toBeNull();
+    expect(service.render("venue-line", { venue: "JMLR" })).toBe("JMLR");
+
+    // Re-planned against the folder as it stands now, with authors approved.
+    const replaced = service.unpackPartials(
+      service.planPartialUnpack(bundled),
+      {
+        replace: ["authors"],
+      },
+    );
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(await replaced).toMatchObject({ written: ["authors"], kept: [] });
+    expect(vault.contents.get("templates/zotlit-partial.authors.md")).toBe(
+      "---\nlanguage: liquid\n---\nTheirs",
+    );
+  });
+
+  it("keeps a partial file that appeared after the plan, and refuses a name no file can hold", async () => {
+    const vault = new MockVault();
+    const { service } = await makeHarness({ vault });
+    const plan = service.planPartialUnpack([
+      { name: "authors", language: "liquid", source: "Theirs" },
+      { name: "../../../escape", language: "liquid", source: "Escaped" },
+    ]);
+    expect(plan.map(({ name, verdict }) => `${name}:${verdict}`)).toEqual([
+      "authors:write",
+      "../../../escape:write",
+    ]);
+
+    // The reader writes their own authors between the plan and the write.
+    vault.createFile("templates/zotlit-partial.authors.md", "Mine");
+    const outcome = service.unpackPartials(plan);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(vault.contents.get("templates/zotlit-partial.authors.md")).toBe(
+      "Mine",
+    );
+    // Nothing else was written: no second document, and none outside the folder.
+    expect([...vault.contents.keys()]).toEqual([
+      "templates/zotlit-partial.authors.md",
+    ]);
+    expect(await outcome).toEqual({
+      written: [],
+      kept: ["authors"],
+      dropped: ["authors"],
+    });
+  });
+
   it("creates a Shared Partial that renders at once and trashes it again", async () => {
     const { service, vault } = await makeHarness();
 

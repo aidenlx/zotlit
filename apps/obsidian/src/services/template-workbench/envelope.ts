@@ -100,6 +100,8 @@ export const DIAGNOSTIC_HINTS = {
     "Rename the Shared Partial file to a name ZotLit does not already use. 'citation' names the Citation Template, and 'filename', 'note', 'annotation', and 'content' name the Literature Note Template slots.",
   MISSING_PARTIAL:
     "Create zotlit-partial.<name>.md in the template folder for the partial named in details.template, or correct the name the template calls.",
+  BUNDLED_PARTIAL:
+    "The partial named in details.template is still carried in a Profile document's manifest. Open that document in the Template Workbench and run Unpack partials, which writes zotlit-partial.<name>.md and clears the manifest entry.",
 } as const satisfies Record<string, string>;
 
 export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;

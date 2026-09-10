@@ -5,6 +5,7 @@ import type {
   LiteratureNoteTemplatePartial,
 } from "./literature-note-template";
 import { updateLiteratureNoteTemplateManifestKeys } from "./literature-note-template-manifest-edit";
+import { formatPlainTemplateDocument } from "./plain-template-document";
 
 export type { LiteratureNoteTemplatePartial } from "./literature-note-template";
 
@@ -59,6 +60,57 @@ export function parseLiteratureNotePack(
       })),
     ],
   };
+}
+
+/**
+ * What one bundled partial does to the vault's own Shared Partial files:
+ * `write` for a name no document answers, `unchanged` for a document that
+ * already holds this very source under this very language, and `conflict` for
+ * one that holds something else, which only a keep-or-replace answer settles.
+ */
+export type LiteratureNotePartialUnpackVerdict =
+  | "write"
+  | "unchanged"
+  | "conflict";
+
+/** One bundled partial and the file it unpacks to. */
+export interface LiteratureNotePartialUnpack {
+  readonly name: string;
+  readonly verdict: LiteratureNotePartialUnpackVerdict;
+  /** The plain Template Document bytes the partial's own file holds. */
+  readonly document: string;
+}
+
+/**
+ * Decide what the manifest's transport copy of each partial does to the files
+ * a vault already holds, so a caller writes what is new, leaves identical text
+ * alone, and asks about the rest before any byte of the reader's own file goes.
+ *
+ * @param held - what the vault holds under each name, keyed by name: a name
+ *   the map does not carry has no document, and one mapped to `null` has a
+ *   document whose text is unavailable, which reads as a conflict.
+ */
+export function unpackLiteratureNotePartials(
+  bundled: readonly LiteratureNoteTemplatePartial[],
+  held: ReadonlyMap<
+    string,
+    Pick<LiteratureNoteTemplatePartial, "language" | "source"> | null
+  >,
+): LiteratureNotePartialUnpack[] {
+  return bundled.map((partial) => {
+    const current = held.get(partial.name);
+    const verdict: LiteratureNotePartialUnpackVerdict = !held.has(partial.name)
+      ? "write"
+      : current?.language === partial.language &&
+          current.source === partial.source
+        ? "unchanged"
+        : "conflict";
+    return {
+      name: partial.name,
+      verdict,
+      document: formatPlainTemplateDocument(partial.source, partial.language),
+    };
+  });
 }
 
 export interface LiteratureNotePackCurrentFile {

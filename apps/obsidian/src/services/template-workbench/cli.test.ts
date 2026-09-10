@@ -15,7 +15,10 @@ import { citationExampleData } from "@zotlit/workbench/render";
 
 import { CITATION_TEMPLATE_SOURCE } from "@/services/template/defaults";
 import { InertTemplateError } from "@/services/template/errors";
-import type { CompileError } from "@/services/template/service";
+import type {
+  CompileError,
+  LiteratureNoteTemplateStatus,
+} from "@/services/template/service";
 
 import {
   createTemplateWorkbenchHandlers,
@@ -4234,10 +4237,20 @@ describe("zotlit:template-render for a Shared Partial", () => {
    * One partial registered on a facade, rendered by name the way production
    * renders it, against the note root and the Citation example sets alike.
    */
-  function partialHandlers(source = "[{{ zt.title }}|{{ zt.variant }}]") {
+  function partialHandlers(
+    source = "[{{ zt.title }}|{{ zt.variant }}]",
+    /** Installed Profile documents, for the manifests a bundle still sits in. */
+    documents: readonly LiteratureNoteTemplateStatus[] = [],
+  ) {
     const facade = new TemplateFacade();
     facade.define("authors", source, "liquid");
     return createTemplateWorkbenchHandlers({
+      literatureNotes: {
+        readProfiles: () => ({ defaultProfile: undefined, profiles: [] }),
+        getDocumentStatuses: () => documents,
+        getDocument: () => undefined,
+        renderSource: () => ({ create: "", update: null }),
+      },
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
       loadCitation: async (selector, variant) =>
@@ -4346,6 +4359,42 @@ describe("zotlit:template-render for a Shared Partial", () => {
         code: "MISSING_PARTIAL",
         message: "No Shared Partial named 'venue-line'.",
         hint: "Create zotlit-partial.<name>.md in the template folder for the partial named in details.template, or correct the name the template calls.",
+        details: { template: "venue-line" },
+      },
+    });
+  });
+
+  it("names the Profile document a partial is still bundled inside", async () => {
+    const handlers = partialHandlers("{{ zt.title }}", [
+      {
+        reference: "zotlit-profile.books.md",
+        path: "templates/zotlit-profile.books.md",
+        validation: {
+          state: "valid",
+          hasManagedBlock: false,
+          manifest: {
+            partials: [
+              { name: "venue-line", language: "liquid", source: "Venue" },
+            ],
+          },
+        },
+      } as unknown as LiteratureNoteTemplateStatus,
+    ]);
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_RENDER_COMMAND]({
+          template: "partial:venue-line",
+          key: "ITEM2345",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "BUNDLED_PARTIAL",
+        message:
+          "No Shared Partial named 'venue-line': the Profile document 'zotlit-profile.books.md' still carries it in its manifest.",
+        hint: DIAGNOSTIC_HINTS.BUNDLED_PARTIAL,
         details: { template: "venue-line" },
       },
     });
