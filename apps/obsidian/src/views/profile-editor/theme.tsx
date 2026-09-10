@@ -28,6 +28,14 @@ export const profileEditorIcons: Record<WorkbenchIcon, string> = {
   "chevron-down": "chevron-down",
   "chevron-right": "chevron-right",
   more: "ellipsis",
+  "property-text": "text",
+  "property-list": "list",
+  "property-tags": "tags",
+  "property-aliases": "forward",
+  "property-number": "binary",
+  "property-checkbox": "check-square",
+  "property-date": "calendar",
+  "property-datetime": "clock",
 };
 /** Text actions share the Match tab's outlined native control surface. */
 export const profileEditorButton =
@@ -264,12 +272,22 @@ export const profileEditorTheme: WorkbenchTheme = {
       empty: "zt:text-sm zt:text-muted-foreground",
     },
     propertyList: {
-      note: "zt:grid zt:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] zt:gap-x-3 zt:gap-y-2 zt:text-sm",
-      list: "zt:grid zt:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] zt:gap-x-3 zt:gap-y-2 zt:text-sm",
-      fold: "zt:grid zt:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] zt:gap-x-3 zt:gap-y-2 zt:text-sm",
-      key: "zt:min-w-0 zt:text-muted-foreground zt:[overflow-wrap:anywhere]",
-      value: "zt:min-w-0 zt:[overflow-wrap:anywhere]",
-      empty: "zt:text-muted-foreground",
+      /** The note's own Properties list sits in the app's container, which the preview supplies. */
+      note: "metadata-properties",
+      list: "metadata-properties",
+      spread: "metadata-properties",
+      fold: "metadata-properties",
+      row: "metadata-property",
+      key: "metadata-property-key",
+      icon: "metadata-property-icon",
+      label: "metadata-property-key-input",
+      value: "metadata-property-value",
+      text: "metadata-input-longtext",
+      pills: "multi-select-container",
+      pill: "multi-select-pill",
+      "pill-text": "multi-select-pill-content",
+      checkbox: "metadata-input-checkbox",
+      empty: "metadata-input-longtext",
     },
     tabBar: {
       "tab-bar":

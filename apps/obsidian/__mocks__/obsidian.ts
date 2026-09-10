@@ -473,6 +473,9 @@ export class TextFileView extends ItemView {
 }
 
 export class Vault {
+  getConfig(_key: string): boolean {
+    return false;
+  }
   static recurseChildren(
     root: TFolder,
     cb: (file: TAbstractFile) => any,

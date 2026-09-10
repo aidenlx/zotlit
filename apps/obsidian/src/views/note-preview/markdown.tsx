@@ -1,13 +1,16 @@
 // Obsidian owns Markdown rendering; each output owns and unloads its render children.
 import { Component, MarkdownRenderer, stringifyYaml } from "obsidian";
 import type { App } from "obsidian";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { MARKER_START, MARKER_END } from "@zotlit/templates/obsidian";
 import type { RenderedProperty, RenderedRange } from "@zotlit/workbench/render";
 import { PropertyList } from "@zotlit/workbench/ui";
 
+import { Icon } from "@/components/obsidian/icon";
+import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
+import { cn } from "@/lib/utils";
 import { citationElement } from "@/services/citation-text/present";
 import {
   replaceCitations,
@@ -38,10 +41,17 @@ export function NativeMarkdown({
   onRendered?: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  // Source that renders to nothing, such as an empty Managed Region between
+  // its markers, is known only once the app has rendered it.
+  const [renderedEmpty, setRenderedEmpty] = useState(false);
+  const toggleCollapsed = () => setCollapsed((value) => !value);
   useEffect(() => {
     const element = container.current;
     if (!element || showMarkdown) return;
     element.dataset["zotlitPreviewPending"] = "";
+    // The pusher stands where the app's does, so its first-block rule applies.
+    const pusher = element.createDiv({ cls: "markdown-preview-pusher" });
     const target = element.createDiv();
     target.dataset["zotlitDraft"] = "";
     const lifecycle = new Component();
@@ -118,12 +128,18 @@ export function NativeMarkdown({
               );
       }
       presentCitations(target, citations);
+      setRenderedEmpty(
+        visibleText(target) === "" &&
+          target.querySelector("img, svg, video, audio, iframe, input") ===
+            null,
+      );
       delete element.dataset["zotlitPreviewPending"];
       onRendered?.();
     })().catch((error: unknown) => {
       logger.warn("Draft Markdown rendering failed", { error });
       if (!disposed) {
         target.textContent = markdown;
+        setRenderedEmpty(false);
         delete element.dataset["zotlitPreviewPending"];
         onRendered?.();
       }
@@ -131,15 +147,18 @@ export function NativeMarkdown({
     return () => {
       disposed = true;
       lifecycle.unload();
+      pusher.remove();
       target.remove();
     };
   }, [app, markdown, result, marks, showMarkdown, onRendered]);
   const present = properties.filter(({ missing }) => !missing);
+  const blank = markdown.trim() === "";
   if (showMarkdown) {
     const frontmatter =
       present.length === 0
         ? ""
         : `---\n${stringifyYaml(Object.fromEntries(present.map(({ key, value }) => [key, value])))}---\n`;
+    if (blank && !frontmatter) return <EmptyNote />;
     return (
       <pre className="zt:overflow-x-auto zt:font-mono zt:text-sm zt:[overflow-wrap:anywhere] zt:whitespace-pre-wrap zt:select-text">
         {frontmatter}
@@ -147,17 +166,82 @@ export function NativeMarkdown({
       </pre>
     );
   }
+  if (blank && present.length === 0) return <EmptyNote />;
+  // The sheet is a reading view: the app's own classes lay out the file margins,
+  // the readable line width, the Properties block, and the body spacing. The
+  // Properties always show here, whatever the vault's own document setting,
+  // under the app's own heading, which folds them the way the editor does.
   return (
-    <>
-      {present.length > 0 && (
-        <PropertyList properties={present} variant="note" />
+    <div
+      className={cn(
+        "markdown-preview-view markdown-rendered show-properties zt-note-preview-sheet",
+        app.vault.getConfig("readableLineLength") && "is-readable-line-width",
       )}
-      <div
-        ref={container}
-        data-zotlit-preview-pending=""
-        className="markdown-rendered zt:w-full zt:max-w-(--file-line-width) zt:min-w-0 zt:self-center zt:font-(family-name:--font-text) zt:text-(length:--font-text-size) zt:leading-(--line-height-normal) zt:select-text"
-      />
-    </>
+    >
+      {present.length > 0 && (
+        <div className="markdown-preview-sizer">
+          <div className="mod-header mod-ui">
+            <div
+              className={cn("metadata-container", collapsed && "is-collapsed")}
+            >
+              <div
+                className="metadata-properties-heading"
+                role="button"
+                tabIndex={0}
+                aria-expanded={!collapsed}
+                onClick={toggleCollapsed}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    toggleCollapsed();
+                  }
+                }}
+              >
+                <div
+                  className={cn(
+                    "collapse-indicator collapse-icon",
+                    collapsed && "is-collapsed",
+                  )}
+                >
+                  <Icon name="right-triangle" />
+                </div>
+                <div className="metadata-properties-title">
+                  {m.workbench_result_properties()}
+                </div>
+              </div>
+              <div className="metadata-content">
+                <PropertyList properties={present} variant="note" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {blank ? (
+        <div className="markdown-preview-sizer">
+          <EmptyNote />
+        </div>
+      ) : (
+        <div
+          ref={container}
+          data-zotlit-preview-pending=""
+          hidden={renderedEmpty}
+          className="markdown-preview-sizer markdown-preview-section"
+        />
+      )}
+      {!blank && renderedEmpty && (
+        <div className="markdown-preview-sizer">
+          <EmptyNote />
+        </div>
+      )}
+    </div>
+  );
+}
+/** Stands where the note would, so a blank result reads as one rather than as a gap. */
+function EmptyNote() {
+  return (
+    <p className="zt:my-6 zt:text-center zt:text-sm zt:text-muted-foreground">
+      {m.workbench_result_empty()}
+    </p>
   );
 }
 /** Whitespace carries layout, while these offsets locate the rendered characters. */

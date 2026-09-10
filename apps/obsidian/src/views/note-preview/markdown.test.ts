@@ -3,8 +3,12 @@ import { Component } from "obsidian";
 import type { App } from "obsidian";
 import { h, render } from "preact";
 import { act } from "preact/test-utils";
+import type { ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { WorkbenchMessagesProvider } from "@zotlit/workbench/ui";
+
+import * as m from "@/lib/i18n/generated/messages";
 import { isDraftMarkdown } from "@/lib/reading-view";
 
 import { NativeMarkdown } from "./markdown";
@@ -49,7 +53,11 @@ it("keeps original Markdown, marks its managed text, and unloads children when r
     "Outside\n%%zt-managed%%\nManaged text\n%%/zt-managed%%\nAfter";
   await act(async () => {
     render(
-      h(NativeMarkdown, { app: {} as App, markdown: source, result: null }),
+      h(NativeMarkdown, {
+        app: { vault: { getConfig: () => false } } as unknown as App,
+        markdown: source,
+        result: null,
+      }),
       container,
     );
   });
@@ -65,7 +73,7 @@ it("keeps original Markdown, marks its managed text, and unloads children when r
   await act(async () => {
     render(
       h(NativeMarkdown, {
-        app: {} as App,
+        app: { vault: { getConfig: () => false } } as unknown as App,
         markdown: "Replacement",
         result: null,
       }),
@@ -78,4 +86,88 @@ it("keeps original Markdown, marks its managed text, and unloads children when r
     render(null, container);
   });
   expect(unloaded).toHaveBeenCalledTimes(calls.length);
+});
+
+it("shows a placeholder instead of a blank sheet when there is nothing to preview", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const app = { vault: { getConfig: () => false } } as unknown as App;
+  await act(async () => {
+    render(
+      h(NativeMarkdown, { app, markdown: " \n", result: null }),
+      container,
+    );
+  });
+  expect(container.textContent).toBe("No content to preview");
+  expect(container.querySelector(".markdown-preview-view")).toBeNull();
+  expect(renderer.render).not.toHaveBeenCalled();
+  await act(async () => {
+    render(
+      h(WorkbenchMessagesProvider, {
+        messages: m,
+        // A preact node is the React node under `preact/compat`.
+        children: h(NativeMarkdown, {
+          app,
+          markdown: "",
+          result: null,
+          properties: [
+            { key: "title", value: "A study", missing: false, position: 1 },
+          ],
+        }) as unknown as ReactNode,
+      }),
+      container,
+    );
+  });
+  expect(container.querySelector("[data-part=row]")?.textContent).toBe(
+    "titleA study",
+  );
+  expect(
+    container.querySelector(".markdown-preview-view")?.textContent,
+  ).toContain("No content to preview");
+  await act(async () => {
+    render(
+      h(NativeMarkdown, {
+        app,
+        markdown: "",
+        result: null,
+        showMarkdown: true,
+      }),
+      container,
+    );
+  });
+  expect(container.querySelector("pre")).toBeNull();
+  expect(container.textContent).toBe("No content to preview");
+});
+
+it("shows the placeholder when the source renders to nothing, as an empty Managed Region does", async () => {
+  renderer.render.mockImplementation(
+    async (
+      ...args: Parameters<typeof import("obsidian").MarkdownRenderer.render>
+    ) => {
+      const [, , target] = args;
+      target.append(document.createElement("p"));
+    },
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  const app = { vault: { getConfig: () => false } } as unknown as App;
+  await act(async () => {
+    render(
+      h(NativeMarkdown, {
+        app,
+        markdown: "%%zt-managed%%\n\n%%/zt-managed%%",
+        result: null,
+      }),
+      container,
+    );
+  });
+  await vi.waitFor(() =>
+    expect(container.textContent).toContain("No content to preview"),
+  );
+  expect(
+    container.querySelector<HTMLElement>("[data-zotlit-preview-pending]"),
+  ).toBeNull();
+  expect(
+    container.querySelector("[data-zotlit-draft]")?.closest("[hidden]"),
+  ).not.toBeNull();
 });

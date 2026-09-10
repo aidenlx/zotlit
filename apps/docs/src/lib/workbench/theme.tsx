@@ -18,6 +18,13 @@ import {
   ChevronDown,
   ChevronRight,
   Ellipsis,
+  TextAlignStart,
+  Tags,
+  Forward,
+  Binary,
+  SquareCheck,
+  Calendar,
+  Clock,
 } from "lucide-react";
 // The web's look for the Workbench UI: the site's Tailwind classes for each
 // part of the shared tree, and Lucide for its icons. The tree carries no class
@@ -50,7 +57,18 @@ const ICON: Record<WorkbenchIcon, typeof List> = {
   undo: Undo2,
   redo: Redo2,
   reset: RotateCcw,
+  "property-text": TextAlignStart,
+  "property-list": List,
+  "property-tags": Tags,
+  "property-aliases": Forward,
+  "property-number": Binary,
+  "property-checkbox": SquareCheck,
+  "property-date": Calendar,
+  "property-datetime": Clock,
 };
+
+/** A read-only Properties block: one row per property, key beside value. */
+const propertyGrid = "@container flex min-w-0 flex-col gap-y-0.5 text-xs";
 
 const historyButton = buttonVariants({ variant: "ghost", size: "icon-sm" });
 
@@ -373,14 +391,22 @@ export const WEB_THEME: WorkbenchTheme = {
       "label-text": "sr-only",
     },
     propertyList: {
-      note: "grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-1 mb-4 border-b border-fd-border pb-3 text-xs",
-      spread:
-        "grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs",
-      fold: "grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-1 mt-2 text-xs",
-      key: "truncate font-mono text-fd-muted-foreground",
-      value: "break-words",
+      note: cn(propertyGrid, "mb-4 border-b border-fd-border pb-3"),
+      spread: propertyGrid,
+      fold: cn(propertyGrid, "mt-2"),
+      list: propertyGrid,
+      row: "flex min-w-0 items-start @max-[250px]:flex-wrap",
+      key: "flex w-32 min-w-0 shrink-0 items-start gap-1 py-0.5 text-fd-muted-foreground @max-[250px]:w-full",
+      icon: "flex h-[1lh] shrink-0 items-center [&_svg]:size-3.5",
+      label: "min-w-0 break-words",
+      value:
+        "flex min-w-0 flex-1 flex-wrap items-center gap-x-2 py-0.5 ps-2 break-words in-data-[state=number]:tabular-nums @max-[250px]:ps-[1.125rem]",
+      pills: "flex min-w-0 flex-wrap gap-x-2 gap-y-0.5",
+      pill: "min-w-0 in-data-[state=tags]:text-fd-primary",
+      "pill-text": "min-w-0",
+      text: "min-w-0",
+      checkbox: "m-0 size-3.5 accent-fd-primary",
       empty: "text-fd-muted-foreground italic",
-      list: "grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-3 gap-y-1",
     },
     tabBar: {
       "tab-bar": "flex min-w-0 flex-wrap gap-0.5 rounded-md bg-fd-muted p-0.5",
