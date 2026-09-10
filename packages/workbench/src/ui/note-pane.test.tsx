@@ -15,6 +15,7 @@ afterEach(cleanup);
 
 function note(
   controller = new WorkbenchDocumentController(DEFAULT_PROFILE_SOURCE),
+  example: { preview?: string | null; previewHint?: string | null } = {},
 ) {
   const host = fakeHost();
   const open = vi.fn<() => void>();
@@ -25,6 +26,7 @@ function note(
         preview="An example annotation"
         formatProblem={null}
         onOpenAnnotation={open}
+        {...example}
       />
     </WorkbenchHostProvider>,
   );
@@ -76,6 +78,30 @@ it("opens the injected example and routes each placeholder to Annotation", () =>
   expect(open).toHaveBeenCalledOnce();
   fireEvent.click(toggle);
   expect(screen.queryByText("An example annotation")).toBeNull();
+});
+
+it("names the choice the example waits on instead of a render in flight", () => {
+  const { container } = note(undefined, {
+    preview: null,
+    previewHint: "Choose an annotation",
+  });
+  fireEvent.click(
+    screen.getAllByRole("button", {
+      name: m.workbench_annotation_preview(),
+    })[0]!,
+  );
+  expect(container.textContent).toContain("Choose an annotation");
+  expect(container.textContent).not.toContain(m.workbench_result_pending());
+});
+
+it("reads as pending while a render is on its way", () => {
+  const { container } = note(undefined, { preview: null });
+  fireEvent.click(
+    screen.getAllByRole("button", {
+      name: m.workbench_annotation_preview(),
+    })[0]!,
+  );
+  expect(container.textContent).toContain(m.workbench_result_pending());
 });
 
 it("keeps edits in the master history when Advanced mounts and unmounts", () => {
