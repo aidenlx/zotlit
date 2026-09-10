@@ -4,8 +4,12 @@ import type { ItemView, WorkspaceLeaf } from "obsidian";
 import { useEffect, useId, useState } from "react";
 
 import { isChildItemFields } from "@zotlit/db";
+import type { CitationVariant } from "@zotlit/db";
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
-import type { AnnotationExample } from "@zotlit/workbench/render";
+import type {
+  AnnotationExample,
+  CitationExampleId,
+} from "@zotlit/workbench/render";
 import { annotationOption } from "@zotlit/workbench/ui";
 import type { WorkbenchHost, WorkbenchItemChoice } from "@zotlit/workbench/ui";
 
@@ -31,7 +35,13 @@ type AnnotationChoice = Pick<AnnotationExample, "id" | "root">;
 
 export type WorkbenchSelection =
   | { kind: "item"; item: WorkbenchItemChoice }
-  | { kind: "annotation"; annotationId: string };
+  | { kind: "annotation"; annotationId: string }
+  /** The Citation set and Variant a Citation Template preview renders under. */
+  | {
+      kind: "citation";
+      variant: CitationVariant;
+      example: CitationExampleId | null;
+    };
 export type WorkbenchSelectionEvent = WorkbenchSelection & {
   leaf: WorkspaceLeaf;
   editor: WorkspaceLeaf | null;

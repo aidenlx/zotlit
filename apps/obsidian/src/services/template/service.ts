@@ -993,6 +993,39 @@ export class TemplateService extends Service<void> {
   }
 
   /**
+   * Render one in-text Citation through a draft Citation Template — the
+   * unsaved bytes of `zotlit-citation.md` — against the installed partials,
+   * without registering the draft or writing it. This is what the Template
+   * Workbench View previews while the reader types.
+   *
+   * @throws {@link InertTemplateError} when the draft names Eta and the
+   *   JavaScript Templates gate is off.
+   * @throws {@link PlainTemplateDocumentError} when the draft's manifest is
+   *   malformed, and whatever the compile or the render itself raises.
+   */
+  renderCitationSource(source: string, data: CitationTemplateData): string {
+    this.#requireLoaded("renderCitationSource");
+    const parsed = parsePlainTemplateDocument(source);
+    const { language } = parsed.manifest;
+    if (language === "eta" && !this.#javascriptTemplatesEnabled) {
+      throw new InertTemplateError(
+        m.settings_template_inert_eta({
+          path: citationPath(this.#currentTemplateFolder()),
+        }),
+        CITATION_TEMPLATE_NAME,
+      );
+    }
+    return inlineCitation(
+      this.#classifyRender(() =>
+        this.#facade.render(CITATION_TEMPLATE_NAME, data, {
+          source: parsed.source,
+          language,
+        }),
+      ),
+    );
+  }
+
+  /**
    * Render the `filename` Template and collapse the output to one trimmed
    * line: line breaks and their surrounding whitespace are removed, so
    * template-structural newlines never leak into the note name.

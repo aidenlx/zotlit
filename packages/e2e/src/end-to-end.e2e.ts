@@ -128,7 +128,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     const valueProperty = kind === "library" ? "textContent" : "value";
     return obEvalUntil(
       vaultId,
-      `(function(){var editor=document.querySelector('.zt-profile-editor');var row=editor?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}')?.${valueProperty}===${JSON.stringify(value)});})()`,
+      `(function(){var editor=document.querySelector('.zt-template-workbench');var row=editor?.querySelectorAll('[data-condition-row]')[${row}];return String(row?.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]')?.value===${JSON.stringify(kind)}&&row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]')?.value===${JSON.stringify(operator)}&&row.querySelector('${valueControl}')?.${valueProperty}===${JSON.stringify(value)});})()`,
       { expected: "true" },
     );
   }
@@ -136,7 +136,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
   async function addLibraryCondition(selector: string): Promise<void> {
     await obEval(
       vaultId,
-      `(function(){var editor=document.querySelector('.zt-profile-editor');Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
+      `(function(){var editor=document.querySelector('.zt-template-workbench');Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
     );
     expect(
       await conditionReady({
@@ -148,7 +148,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var row=Array.from(document.querySelector('.zt-profile-editor').querySelectorAll('[data-condition-row]')).at(-1);var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]');kind.value='library';kind.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(function(){var row=Array.from(document.querySelector('.zt-template-workbench').querySelectorAll('[data-condition-row]')).at(-1);var kind=row.querySelector('select[aria-label=${JSON.stringify(m.settings_profile_match_condition_kind())}]');kind.value='library';kind.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     expect(
       await conditionReady({
@@ -160,11 +160,11 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var row=Array.from(document.querySelector('.zt-profile-editor').querySelectorAll('[data-condition-row]')).at(-1);var value=row.querySelector('input[aria-label=${JSON.stringify(m.settings_profile_match_value())}]');value.value=${JSON.stringify(selector)};value.dispatchEvent(new Event('input',{bubbles:true}));return value.value;})()`,
+      `(function(){var row=Array.from(document.querySelector('.zt-template-workbench').querySelectorAll('[data-condition-row]')).at(-1);var value=row.querySelector('input[aria-label=${JSON.stringify(m.settings_profile_match_value())}]');value.value=${JSON.stringify(selector)};value.dispatchEvent(new Event('input',{bubbles:true}));return value.value;})()`,
     );
     await obEval(
       vaultId,
-      `(function(){var row=Array.from(document.querySelector('.zt-profile-editor').querySelectorAll('[data-condition-row]')).at(-1);row.querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`,
+      `(function(){var row=Array.from(document.querySelector('.zt-template-workbench').querySelectorAll('[data-condition-row]')).at(-1);row.querySelector('input').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));return true;})()`,
     );
   }
 
@@ -180,13 +180,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     expect(
       await obEvalUntil(
         vaultId,
-        `(function(){var editor=document.querySelector('.zt-profile-editor');return String(!!editor?.querySelector('[data-part=fieldset]')&&!document.querySelector('.modal.mod-settings'));})()`,
+        `(function(){var editor=document.querySelector('.zt-template-workbench');return String(!!editor?.querySelector('[data-part=fieldset]')&&!document.querySelector('.modal.mod-settings'));})()`,
         { expected: "true" },
       ),
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var editor=document.querySelector('.zt-profile-editor');if(!editor.querySelector('[data-condition-row]'))Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
+      `(function(){var editor=document.querySelector('.zt-template-workbench');if(!editor.querySelector('[data-condition-row]'))Array.from(editor.querySelectorAll('button')).find(button=>button.textContent.trim()===${JSON.stringify(m.settings_profile_match_add_condition())}).click();return true;})()`,
     );
   }
 
@@ -900,7 +900,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
     ).toBe(true);
     await obEval(
       vaultId,
-      `(function(){var operator=document.querySelector('.zt-profile-editor [data-condition-row] select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
+      `(function(){var operator=document.querySelector('.zt-template-workbench [data-condition-row] select[aria-label=${JSON.stringify(m.settings_profile_match_operator())}]');operator.value='contains';operator.dispatchEvent(new Event('input',{bubbles:true}));return true;})()`,
     );
     expect(
       await conditionReady({
@@ -1114,7 +1114,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEval(
           vaultId,
-          `(function(){var names=Array.from(document.querySelectorAll('.setting-item-name'),el=>el.textContent);return String(names.includes(${JSON.stringify(m.settings_local_server_enabled_name())})&&names.includes(${JSON.stringify(m.settings_live_updates_enabled_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_confirm_name())})&&!names.includes(${JSON.stringify(m.profile_editor_preference_name())})&&!app.commands.commands['zotlit:open-profile-web-workbench']);})()`,
+          `(function(){var names=Array.from(document.querySelectorAll('.setting-item-name'),el=>el.textContent);return String(names.includes(${JSON.stringify(m.settings_local_server_enabled_name())})&&names.includes(${JSON.stringify(m.settings_live_updates_enabled_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_name())})&&!names.includes(${JSON.stringify(m.settings_local_server_workbench_confirm_name())})&&!names.includes(${JSON.stringify(m.template_workbench_preference_name())})&&!app.commands.commands['zotlit:open-profile-web-workbench']);})()`,
         ),
       ).toBe("true");
 
@@ -1123,7 +1123,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEvalUntil(
           vaultId,
-          "String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-profile-editor'&&!document.querySelector('input[name=\"zotlit-customize-destination\"]'))",
+          "String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-template-workbench'&&!document.querySelector('input[name=\"zotlit-customize-destination\"]'))",
           { expected: "true" },
         ),
       ).toBe(true);
@@ -1187,7 +1187,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEvalUntil(
           vaultId,
-          "String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-profile-editor'&&app.loadLocalStorage('zotlit-profile-customization')==='native')",
+          "String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-template-workbench'&&app.loadLocalStorage('zotlit-profile-customization')==='native')",
           { expected: "true" },
         ),
       ).toBe(true);
@@ -1202,7 +1202,7 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
       expect(
         await obEvalUntil(
           vaultId,
-          `String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-profile-editor'&&!document.querySelector('input[name="zotlit-customize-destination"]'))`,
+          `String(app.workspace.activeLeaf?.view.getViewType()==='zotlit-template-workbench'&&!document.querySelector('input[name="zotlit-customize-destination"]'))`,
           { expected: "true" },
         ),
       ).toBe(true);
@@ -1412,13 +1412,13 @@ describe.skipIf(!reachable)("End-to-end Run", () => {
           (await notices.read()).filter(
             (text) =>
               text.includes(m.notice_workbench_unsupported_profile()) ||
-              text.includes(m.profile_editor_native_required()),
+              text.includes(m.template_workbench_native_required()),
           ),
         ).toHaveLength(1);
         expect(
           await obEvalUntil(
             vaultId,
-            `String(app.workspace.getActiveFile()?.path===${JSON.stringify(defaultPath)}&&app.workspace.activeLeaf?.view.getViewType()==='zotlit-profile-editor')`,
+            `String(app.workspace.getActiveFile()?.path===${JSON.stringify(defaultPath)}&&app.workspace.activeLeaf?.view.getViewType()==='zotlit-template-workbench')`,
             { expected: "true" },
           ),
         ).toBe(true);

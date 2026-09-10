@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 
 import { codePane } from "./editor-extension";
 
-export const profileEditorIcons: Record<WorkbenchIcon, string> = {
+export const templateWorkbenchIcons: Record<WorkbenchIcon, string> = {
   copy: "copy",
   confirm: "check",
   add: "plus",
@@ -38,7 +38,7 @@ export const profileEditorIcons: Record<WorkbenchIcon, string> = {
   "property-datetime": "clock",
 };
 /** Text actions share the Match tab's outlined native control surface. */
-export const profileEditorButton =
+export const templateWorkbenchButton =
   "zt:inline-flex zt:items-center zt:gap-1.5 zt:whitespace-normal zt:text-start zt:text-muted-foreground";
 /** Icons beside 12 px regular text carry the same optical weight. */
 const captionIcon = "zt:[--icon-size:var(--icon-xs)] zt:[--icon-stroke:1.5]";
@@ -108,13 +108,13 @@ const chipIcon = "clickable-icon zt:p-1 zt:[--icon-size:var(--icon-xs)]";
 /** A one-line bar of chrome: a heading, a hint, and an action at the end. */
 const bar =
   "zt:flex zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1 zt:rounded-md zt:border zt:border-border zt:bg-card zt:px-2.5 zt:py-1.5 zt:text-xs";
-export const profileEditorTheme: WorkbenchTheme = {
-  icon: (name) => <Icon name={profileEditorIcons[name]} />,
+export const templateWorkbenchTheme: WorkbenchTheme = {
+  icon: (name) => <Icon name={templateWorkbenchIcons[name]} />,
   editorExtension: () => [templateHighlighting, codePane],
   classes: {
     match: {
       "remove-button": "mod-destructive zt:shrink-0 zt:[--input-shadow:none]",
-      button: profileEditorButton,
+      button: templateWorkbenchButton,
       "icon-button": "clickable-icon zt:shrink-0",
       input:
         "zt:min-h-(--input-height) zt:min-w-0 zt:w-full zt:flex-auto zt:shrink-0",
@@ -226,7 +226,7 @@ export const profileEditorTheme: WorkbenchTheme = {
     },
     editToolbar: {
       "edit-toolbar": cn(row, "zt:p-2"),
-      mode: profileEditorButton,
+      mode: templateWorkbenchButton,
       "mode-group": row,
       "toolbar-actions": row,
       undo: "clickable-icon",
@@ -267,7 +267,7 @@ export const profileEditorTheme: WorkbenchTheme = {
       behind:
         "zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1 zt:border-s-2 zt:border-(--interactive-accent) zt:bg-(--background-secondary) zt:px-3 zt:py-2 zt:text-xs zt:leading-normal zt:text-muted-foreground",
       "behind-text": "zt:min-w-0 zt:flex-1 zt:text-pretty",
-      run: cn(profileEditorButton, "zt:ms-auto zt:shrink-0"),
+      run: cn(templateWorkbenchButton, "zt:ms-auto zt:shrink-0"),
       pending: "zt:text-sm zt:text-muted-foreground",
       empty: "zt:text-sm zt:text-muted-foreground",
     },
@@ -323,7 +323,7 @@ export const profileEditorTheme: WorkbenchTheme = {
         editorChip,
         "zt:inline-block zt:cursor-(--cursor-clickable) zt:px-2 zt:py-0.5 zt:select-none",
       ),
-      "managed-line": "zt-profile-editor-managed",
+      "managed-line": "zt-template-workbench-managed",
     },
     properties: {
       pane: stack,
@@ -352,8 +352,8 @@ export const profileEditorTheme: WorkbenchTheme = {
       "expression-header": cn(actions, "zt:justify-start"),
       "format-label": "zt:min-w-0 zt:max-w-full",
       "hidden-label": "zt:sr-only",
-      "primary-action": profileEditorButton,
-      "secondary-action": profileEditorButton,
+      "primary-action": templateWorkbenchButton,
+      "secondary-action": templateWorkbenchButton,
       confirm: cn(stack, "zt:rounded-md zt:bg-card zt:p-3"),
       diagnostics: "zt:text-xs zt:text-error",
       hint,
@@ -367,7 +367,7 @@ export const profileEditorTheme: WorkbenchTheme = {
       "reset-label": "zt:sr-only",
       pane: cn(stack, "zt:gap-6"),
       group: stack,
-      heading: "zt-profile-editor-heading",
+      heading: "zt-template-workbench-heading",
       fields: stack,
       field,
       "binding-row":
@@ -378,9 +378,9 @@ export const profileEditorTheme: WorkbenchTheme = {
       "binding-input": "zt:w-full zt:min-w-0",
       input: "zt:w-full zt:min-w-0",
       "readonly-input": "zt:w-full zt:min-w-0",
-      "confirm-button": cn(profileEditorButton, "zt:ms-auto"),
-      "cancel-button": profileEditorButton,
-      "source-button": profileEditorButton,
+      "confirm-button": cn(templateWorkbenchButton, "zt:ms-auto"),
+      "cancel-button": templateWorkbenchButton,
+      "source-button": templateWorkbenchButton,
       "toggle-row": row,
       "filename-editor": editorBox,
       "filename-result":
@@ -411,8 +411,8 @@ export const profileEditorTheme: WorkbenchTheme = {
       heading: "zt:font-semibold",
       hint: "zt:text-muted-foreground",
       "section-bar": cn(bar, "zt:mb-2"),
-      "primary-action": cn(profileEditorButton, "zt:ms-auto"),
-      "section-go": cn(profileEditorButton, "zt:ms-auto"),
+      "primary-action": cn(templateWorkbenchButton, "zt:ms-auto"),
+      "section-go": cn(templateWorkbenchButton, "zt:ms-auto"),
     },
     sampleSuggester: {
       suggester: "zt:flex zt:min-w-0 zt:flex-1 zt:items-center zt:gap-2",
@@ -425,7 +425,7 @@ export const profileEditorTheme: WorkbenchTheme = {
       }),
     },
     problemsFooter: {
-      "problems-open": profileEditorButton,
+      "problems-open": templateWorkbenchButton,
       problems: "zt:shrink-0 zt:p-3 zt:border-t zt:border-border zt:text-xs",
       "problems-heading": "zt:font-semibold",
       "problems-text": "zt:text-muted-foreground",

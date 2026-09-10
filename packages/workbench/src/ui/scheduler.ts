@@ -1,7 +1,8 @@
 // A view-owned scheduler consumes values and rejects work for superseded inputs.
+import type { CitationPreviewSelection } from "#/render/citation-examples";
 import type { RenderRequest, RenderResources } from "#/render/request";
 import type {
-  ProfileRenderResult,
+  TemplateRenderResult,
   RenderDiagnostic,
   RenderIdentity,
 } from "#/render/result";
@@ -23,6 +24,11 @@ export interface RenderSchedulerInput {
   /** The paper a render is shown against; `null` while the host loads one. */
   readonly snapshot: ItemSnapshot | null;
   readonly annotation?: AnnotationExample | null;
+  /**
+   * The Citation set and Variant a Citation Template render reads. A new object
+   * per choice, so a reader's pick of another example or variant is a new input.
+   */
+  readonly citation?: CitationPreviewSelection | null;
   readonly resources?: RenderResources;
   /**
    * Holds rendering while the host cannot answer for this draft — a Profile it
@@ -33,7 +39,7 @@ export interface RenderSchedulerInput {
 }
 
 export interface RenderSchedulerState<
-  R extends ProfileRenderResult = ProfileRenderResult,
+  R extends TemplateRenderResult = TemplateRenderResult,
 > {
   readonly result: R | null;
   /** Set from the moment a render starts until its result lands or is dropped. */
@@ -44,21 +50,21 @@ export interface RenderSchedulerState<
   readonly staleReason: "hold" | "demand" | "live" | null;
 }
 
-export interface RenderSchedulerOptions<R extends ProfileRenderResult> {
+export interface RenderSchedulerOptions<R extends TemplateRenderResult> {
   /** Renders one request on the calling thread. */
   readonly render: (request: RenderRequest) => Promise<R>;
   /**
    * The host's own shape for a result this scheduler composed itself, so a
    * failure reads like every other result the host publishes.
    */
-  readonly failed: (result: ProfileRenderResult) => R;
+  readonly failed: (result: TemplateRenderResult) => R;
   readonly input: RenderSchedulerInput;
   /** Quiet time after the last edit before a render starts. @default 300 */
   readonly debounceMs?: number;
 }
 
 export interface RenderScheduler<
-  R extends ProfileRenderResult = ProfileRenderResult,
+  R extends TemplateRenderResult = TemplateRenderResult,
 > extends Disposable {
   readonly getState: () => RenderSchedulerState<R>;
   readonly subscribe: (listener: () => void) => () => void;
@@ -84,7 +90,7 @@ function staleReasonFor(
   return input.live ? "live" : "demand";
 }
 
-export function createRenderScheduler<R extends ProfileRenderResult>({
+export function createRenderScheduler<R extends TemplateRenderResult>({
   render,
   failed,
   input: initial,
@@ -121,6 +127,9 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
         (input.annotation != null &&
           (result.annotationId !== input.annotation.id ||
             result.annotationRevision !== input.annotation.revision)) ||
+        (input.citation != null &&
+          (result.citationVariant !== input.citation.variant ||
+            (result.citationExample ?? null) !== input.citation.example)) ||
         result.previewMode !== input.mode);
     const stale = input.hold === true || identityMismatch;
     const staleReason = staleReasonFor(
@@ -141,13 +150,14 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
 
   /** What a render would be asked for now, or `null` while nothing may run. */
   function nextRequest(): RenderRequest | null {
-    const { snapshot, annotation, resources, hold } = input;
+    const { snapshot, annotation, citation, resources, hold } = input;
     if (closed || hold === true || snapshot === null) return null;
     return {
       mode: input.mode,
       source: input.source,
       snapshot,
       ...(annotation ? { annotation } : {}),
+      ...(citation ? { citation } : {}),
       ...(resources ? { resources } : {}),
     };
   }
@@ -231,6 +241,7 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
         input.mode === previous.mode &&
         input.snapshot === previous.snapshot &&
         input.annotation === previous.annotation &&
+        input.citation === previous.citation &&
         input.resources === previous.resources &&
         input.hold === previous.hold;
       if (sameRenderInput && input.live === previous.live) return;

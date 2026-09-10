@@ -14,7 +14,7 @@ import type { LogLevel } from "@/services/settings/schema";
 import {
   profileCustomization,
   saveProfileCustomization,
-} from "@/views/profile-editor/preferences";
+} from "@/views/template-workbench/preferences";
 
 import type { SettingsKey, SettingTabContext } from "./context";
 import { localServerItems } from "./local-server";
@@ -68,15 +68,15 @@ export function advancedPageItems(
     ...(ctx.webWorkbenchEnabled
       ? [
           {
-            name: m.profile_editor_preference_name(),
-            desc: m.profile_editor_preference_desc(),
+            name: m.template_workbench_preference_name(),
+            desc: m.template_workbench_preference_desc(),
             render: (setting) => {
               setting.addDropdown((dropdown) =>
                 dropdown
                   .addOptions({
-                    ask: m.profile_editor_preference_ask(),
-                    web: m.profile_editor_preference_web(),
-                    native: m.profile_editor_name(),
+                    ask: m.template_workbench_preference_ask(),
+                    web: m.template_workbench_preference_web(),
+                    native: m.template_workbench_name(),
                   })
                   .setValue(profileCustomization(ctx.app))
                   .onChange((value) => {

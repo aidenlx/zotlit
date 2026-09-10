@@ -17,7 +17,7 @@ function items(webWorkbenchEnabled: boolean) {
 }
 
 it("includes the editor-choice preference only in web-enabled builds", () => {
-  const preferenceName = m.profile_editor_preference_name();
+  const preferenceName = m.template_workbench_preference_name();
 
   expect(items(true)).toContainEqual(
     expect.objectContaining({ name: preferenceName }),

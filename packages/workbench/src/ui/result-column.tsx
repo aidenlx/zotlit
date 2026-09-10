@@ -1,6 +1,6 @@
 // The shared result controls and render selection, with Markdown supplied by the host.
 
-import type { ProfileRenderResult } from "#/render/result";
+import type { TemplateRenderResult } from "#/render/result";
 import { Suspense, useId } from "react";
 import type { ReactNode, Ref } from "react";
 
@@ -83,9 +83,9 @@ export function ResultRegion({
 }
 
 export interface ResultBodyProps {
-  result: ProfileRenderResult | null;
-  annotationResult?: ProfileRenderResult | null;
-  mode: "note" | "annotation";
+  result: TemplateRenderResult | null;
+  annotationResult?: TemplateRenderResult | null;
+  mode: "note" | "annotation" | "citation";
   stale: boolean;
   /** Why `result` is stale, or why none exists yet; `null` while it is current. */
   staleReason: "hold" | "demand" | "live" | null;
@@ -121,6 +121,7 @@ export function ResultBody({
   const filenameTooltip = useTooltip(result?.filename ?? "");
   const showAnnotation = mode === "annotation";
   const showNote = mode === "note";
+  const showCitation = mode === "citation";
   const previewProblem = showAnnotation
     ? (annotationResult?.diagnostics.find(
         ({ part }) => part === "annotation",
@@ -159,7 +160,7 @@ export function ResultBody({
       <ResultRegion emphasis={false}>
         {result ? (
           <Suspense fallback={pending}>
-            {!showAnnotation && (
+            {!showAnnotation && !showCitation && (
               <header {...part("filename")} {...filenameTooltip}>
                 <p {...part("filename-text")}>
                   <span {...part("label-text")}>
@@ -208,7 +209,13 @@ export function ResultBody({
                 )}
               </p>
             )}
-            {showAnnotation ? (
+            {showCitation ? (
+              <Markdown
+                markdown={result.citation ?? ""}
+                properties={[]}
+                showMarkdown={showMarkdown}
+              />
+            ) : showAnnotation ? (
               annotationResult ? (
                 <Markdown
                   markdown={annotationResult.annotation ?? ""}

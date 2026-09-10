@@ -49,8 +49,8 @@ import {
   batchImportToast,
 } from "@/services/note-import/batch-import-notices";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-import { openProfileEditor } from "@/views/profile-editor/register";
 import { openTemplateDataExplorer } from "@/views/template-data-explorer/register";
+import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 const logger = getLogger("protocol");
 
@@ -422,7 +422,7 @@ async function handleProfileImportProtocol(
       throw new Error(
         `Imported Profile document is unavailable: ${profile.path}`,
       );
-    await openProfileEditor(deps.app, file);
+    await openTemplateWorkbench(deps.app, file);
     logger.debug("Opened imported Profile in editor", { path: profile.path });
   } catch (error) {
     logger.error("Failed to open clipboard Profile handoff", { error });

@@ -12,12 +12,15 @@ import type { FrontmatterMergeConflictHandler } from "@zotlit/templates/frontmat
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
 import { restoreTemplateData } from "@zotlit/workbench/render";
 import {
+  citationExampleData,
+  emptyRender,
   failedRender,
   renderIdentity,
+  sampleItemCitation,
   SAMPLE_ANNOTATIONS,
 } from "@zotlit/workbench/render";
 import type {
-  ProfileRenderResult,
+  TemplateRenderResult,
   RenderRequest,
   RenderDiagnostic,
 } from "@zotlit/workbench/render";
@@ -51,21 +54,69 @@ export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
     | "ready"
     | "render"
     | "renderCitation"
+    | "renderCitationSource"
     | "prepareLiteratureNoteTemplateSource"
     | "frontmatterFields"
     | "javascriptTemplatesEnabled"
     | "on"
   >;
 }
-export interface NativeRenderResult extends ProfileRenderResult {
+export interface NativeRenderResult extends TemplateRenderResult {
   readonly sourcePath: string;
   readonly citations: readonly PreviewCitation[];
   readonly annotationCitations: readonly PreviewCitation[];
 }
 
 /** A result composed outside this renderer, in the shape the preview reads. */
-export function nativeResult(result: ProfileRenderResult): NativeRenderResult {
+export function nativeResult(result: TemplateRenderResult): NativeRenderResult {
   return { sourcePath: "", citations: [], annotationCitations: [], ...result };
+}
+
+/**
+ * Render whichever Template Document the request names: a Citation Template
+ * when the request carries a Citation selection, a Profile otherwise. One
+ * entry, so a preview that follows the active editor across document kinds
+ * keeps the one render function it was built with.
+ */
+export function renderNativeTemplate(
+  deps: NativeRenderDeps,
+  request: RenderRequest,
+): Promise<NativeRenderResult> {
+  return request.citation
+    ? renderNativeCitation(deps, request)
+    : renderNativeProfile(deps, request);
+}
+
+/**
+ * The in-text Citation the draft Citation Template produces for the selected
+ * example set — or for the chosen Item's own one-item set — under the selected
+ * Citation Variant. Nothing else of a note is rendered here: a Citation
+ * Template answers one gesture with one line.
+ */
+async function renderNativeCitation(
+  deps: NativeRenderDeps,
+  request: RenderRequest,
+): Promise<NativeRenderResult> {
+  const identity = renderIdentity(request);
+  const selection = request.citation!;
+  try {
+    await deps.templates.ready;
+    const data = selection.example
+      ? citationExampleData(selection.example, selection.variant)
+      : sampleItemCitation(request.snapshot, selection.variant);
+    return {
+      ...nativeResult(emptyRender(identity)),
+      citation: deps.templates.renderCitationSource(request.source, data),
+    };
+  } catch (error) {
+    return nativeResult(
+      failedRender(identity, {
+        code: "render-error",
+        message: errorText(error),
+        part: "render",
+      }),
+    );
+  }
 }
 
 /** Keep the real note's outside body and unrelated Properties, entirely in memory. */
@@ -165,7 +216,7 @@ export async function renderNativeProfile(
     // A write refuses on a failing field; the preview keeps going and shows
     // the field with its position, reading the view the refusal carries.
     const { prepared } = composed;
-    const properties: ProfileRenderResult["properties"][number][] = [];
+    const properties: TemplateRenderResult["properties"][number][] = [];
     if (prepared.kind === "document")
       for (const field of prepared.fields) {
         const missing =
@@ -345,6 +396,7 @@ export async function renderNativeProfile(
       managedRegion: managed,
       annotation,
       annotationCitation,
+      citation: null,
       annotationRanges,
       diagnostics,
     };

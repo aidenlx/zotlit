@@ -1,6 +1,7 @@
 export { MatchPane } from "./match";
 // The Workbench UI: the headless component tree both the web Template
-// Workbench and the Obsidian Profile Editor mount over one Profile document
+// Workbench and the Obsidian Template Workbench View mount over one Template
+// Document
 // (ADR 0044). It renders structure and behaviour; the host supplies the look
 // through `WorkbenchThemeProvider` and its popups through
 // `WorkbenchHostProvider`, and each editor instance keeps its view state in
@@ -63,8 +64,9 @@ export type {
   WorkbenchViewActions,
   WorkbenchViewState,
 } from "./store";
+export { citationExampleLabel, citationVariantLabel } from "./citation-preview";
 export { TabBar, TabPanel } from "./tab-bar";
-export { TABS, tabLabel, tabLede } from "./tabs";
+export { TABS, tabLabel, tabLede, tabsFor } from "./tabs";
 export type { WorkbenchTab } from "./tabs";
 export { WorkbenchThemeProvider, useIcon, useParts } from "./theme";
 export type {

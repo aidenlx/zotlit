@@ -8,7 +8,7 @@ import { annotationSamples } from "@zotlit/workbench/ui";
 import {
   getSampleItem,
   SAMPLE_ITEM_CHOICES,
-} from "@/views/profile-editor/selection-data";
+} from "@/views/template-workbench/selection-data";
 
 import {
   createRenderFixture,

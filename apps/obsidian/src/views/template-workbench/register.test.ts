@@ -6,29 +6,29 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 import {
-  findProfileWorkbench,
-  openProfileWorkbench,
+  findWorkbenchLayout,
+  openWorkbenchLayout,
 } from "@/views/note-preview/register";
 
 import { profileCustomization, saveProfileCustomization } from "./preferences";
 import {
   openNativeProfile,
   requiresNative,
-  openProfileEditor,
-  registerProfileEditor,
+  openTemplateWorkbench,
+  registerTemplateWorkbenchView,
 } from "./register";
-import type { ProfileEditorDeps } from "./view";
-import { PROFILE_EDITOR_VIEW_TYPE, ProfileEditorView } from "./view";
+import type { TemplateWorkbenchDeps } from "./view";
+import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 
 vi.mock("@/views/note-preview/register", () => ({
-  openProfileWorkbench: vi.fn(async () => {}),
-  findProfileWorkbench: vi.fn(async () => null),
+  openWorkbenchLayout: vi.fn(async () => {}),
+  findWorkbenchLayout: vi.fn(async () => null),
 }));
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 afterEach(() => {
   resetMockPlatform();
-  vi.mocked(findProfileWorkbench).mockReset().mockResolvedValue(null);
+  vi.mocked(findWorkbenchLayout).mockReset().mockResolvedValue(null);
 });
 
 function setup() {
@@ -81,8 +81,8 @@ function setup() {
       profiles: [],
       defaultDocumentPath: "templates/zotlit-profile.default.md",
     },
-  } as unknown as ProfileEditorDeps &
-    Parameters<typeof registerProfileEditor>[1];
+  } as unknown as TemplateWorkbenchDeps &
+    Parameters<typeof registerTemplateWorkbenchView>[1];
   return {
     app,
     loadLocalStorage,
@@ -103,7 +103,7 @@ function setup() {
   };
 }
 
-describe("Profile Editor entry points", () => {
+describe("Template Workbench entry points", () => {
   it.each(["named", "copied-default", "default"])(
     "applies a Customize launch Item to the existing %s workbench and leaves its compact editor unchanged",
     async (kind) => {
@@ -129,9 +129,9 @@ Annotation`);
       const chooseCompactItem = vi.fn();
       const chooseWorkbenchItem = vi.fn();
       const compact = Object.assign(
-        Object.create(ProfileEditorView.prototype),
+        Object.create(TemplateWorkbenchView.prototype),
         { file, leaf: compactLeaf, chooseItem: chooseCompactItem },
-      ) as ProfileEditorView;
+      ) as TemplateWorkbenchView;
       Object.assign(compactLeaf, { view: compact });
       const workbenchSetState = vi.fn(async () => {});
       const workbenchLeaf = {
@@ -139,30 +139,30 @@ Annotation`);
         getContainer: () => ({ focus: vi.fn() }),
       } as unknown as WorkspaceLeaf;
       const workbench = Object.assign(
-        Object.create(ProfileEditorView.prototype),
+        Object.create(TemplateWorkbenchView.prototype),
         { file, leaf: workbenchLeaf, chooseItem: chooseWorkbenchItem },
-      ) as ProfileEditorView;
+      ) as TemplateWorkbenchView;
       Object.assign(workbenchLeaf, { view: workbench });
       vi.spyOn(app.workspace, "getLeavesOfType").mockReturnValue([
         compactLeaf,
         workbenchLeaf,
       ]);
-      vi.mocked(findProfileWorkbench).mockResolvedValueOnce(workbench);
+      vi.mocked(findWorkbenchLayout).mockResolvedValueOnce(workbench);
       await openNativeProfile(app, file, {
         customize: true,
         itemIndexedKey: "MAIN2345",
       });
-      expect(findProfileWorkbench).toHaveBeenCalledWith(app, {
+      expect(findWorkbenchLayout).toHaveBeenCalledWith(app, {
         file: file.path,
         defaultProfile: false,
       });
       expect(workbenchSetState).toHaveBeenCalledWith({
-        type: PROFILE_EDITOR_VIEW_TYPE,
+        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
         state: { file: file.path, itemIndexedKey: "MAIN2345" },
         active: true,
       });
       expect(compactSetState).not.toHaveBeenCalled();
-      expect(openProfileWorkbench).toHaveBeenLastCalledWith(app, workbench);
+      expect(openWorkbenchLayout).toHaveBeenLastCalledWith(app, workbench);
       expect(chooseWorkbenchItem).not.toHaveBeenCalled();
       expect(chooseCompactItem).not.toHaveBeenCalled();
     },
@@ -173,23 +173,23 @@ Annotation`);
     file.path = "templates/zotlit-profile.default.md";
     const chooseItem = vi.fn();
     const workbench = Object.assign(
-      Object.create(ProfileEditorView.prototype),
+      Object.create(TemplateWorkbenchView.prototype),
       { file: null, leaf, chooseItem },
-    ) as ProfileEditorView;
+    ) as TemplateWorkbenchView;
     Object.assign(leaf, { view: workbench });
-    vi.mocked(findProfileWorkbench).mockResolvedValueOnce(workbench);
+    vi.mocked(findWorkbenchLayout).mockResolvedValueOnce(workbench);
     vi.spyOn(app.vault, "getFileByPath").mockReturnValue(file);
     await openNativeProfile(
       app,
       { defaultDocumentPath: file.path, getSource: vi.fn() },
       { customize: true, itemIndexedKey: "MAIN2345" },
     );
-    expect(findProfileWorkbench).toHaveBeenCalledWith(app, {
+    expect(findWorkbenchLayout).toHaveBeenCalledWith(app, {
       file: file.path,
       defaultProfile: true,
     });
     expect(setViewState).toHaveBeenCalledWith({
-      type: PROFILE_EDITOR_VIEW_TYPE,
+      type: TEMPLATE_WORKBENCH_VIEW_TYPE,
       state: {
         file: file.path,
         defaultDraft: false,
@@ -197,7 +197,7 @@ Annotation`);
       },
       active: true,
     });
-    expect(openProfileWorkbench).toHaveBeenLastCalledWith(app, workbench);
+    expect(openWorkbenchLayout).toHaveBeenLastCalledWith(app, workbench);
     expect(chooseItem).not.toHaveBeenCalled();
   });
 
@@ -205,7 +205,7 @@ Annotation`);
     const { app, leaf, setViewState } = setup();
     const customizeDefault = vi.fn(async () => {});
     Object.assign(leaf, {
-      view: Object.assign(Object.create(ProfileEditorView.prototype), {
+      view: Object.assign(Object.create(TemplateWorkbenchView.prototype), {
         customizeDefault,
       }),
     });
@@ -228,11 +228,11 @@ Annotation`);
   it("opens an existing customized document in the full workbench", async () => {
     const { app, file, leaf } = setup();
     const view = Object.create(
-      ProfileEditorView.prototype,
-    ) as ProfileEditorView;
+      TemplateWorkbenchView.prototype,
+    ) as TemplateWorkbenchView;
     Object.assign(leaf, { view });
     await openNativeProfile(app, file, { customize: true });
-    expect(openProfileWorkbench).toHaveBeenCalledWith(app, view);
+    expect(openWorkbenchLayout).toHaveBeenCalledWith(app, view);
   });
 
   it.each(["file", "built-in Default"])(
@@ -271,7 +271,7 @@ Annotation`);
       getContainer: () => ({ focus: focusExistingWindow }),
     } as unknown as WorkspaceLeaf;
 
-    await openProfileEditor(app, file, { leaf: existing });
+    await openTemplateWorkbench(app, file, { leaf: existing });
 
     expect(revealLeaf).toHaveBeenCalledWith(existing);
     expect(focusExistingWindow).toHaveBeenCalledOnce();
@@ -283,21 +283,21 @@ Annotation`);
     const { deps, plugin, commands, fileMenu } = setup();
     deps.webWorkbenchEnabled = false;
 
-    registerProfileEditor(plugin, deps);
+    registerTemplateWorkbenchView(plugin, deps);
 
     expect(commands.map(({ id }) => id)).toEqual([
       "customize-profile",
-      "open-profile-editor",
+      "open-template-workbench-view",
     ]);
     expect(fileMenu().items.map(({ title }) => title)).toEqual([
-      m.profile_editor_customize(),
-      m.profile_editor_open(),
+      m.template_workbench_customize(),
+      m.template_workbench_open(),
     ]);
   });
 
   it.each([
     "customize-profile",
-    "open-profile-editor",
+    "open-template-workbench-view",
     "open-profile-web-workbench",
   ])("handles a source read failure from %s", async (id) => {
     setMockPlatform({ isDesktopApp: true });
@@ -305,7 +305,7 @@ Annotation`);
     const read = vi
       .spyOn(app.vault, "cachedRead")
       .mockRejectedValue(new Error("File unavailable"));
-    registerProfileEditor(plugin, deps);
+    registerTemplateWorkbenchView(plugin, deps);
     expect(
       commands.find((command) => command.id === id)!.checkCallback?.(false),
     ).toBe(true);
@@ -314,7 +314,7 @@ Annotation`);
   });
   it.each([
     "customize-profile",
-    "open-profile-editor",
+    "open-template-workbench-view",
     "open-profile-web-workbench",
   ])(
     "routes a registered Profile through the shared flow from %s",
@@ -324,7 +324,7 @@ Annotation`);
       const read = vi.spyOn(app.vault, "cachedRead");
       deps.profile = { ...deps.profile, defaultDocumentPath: file.path };
       deps.customize = vi.fn(async () => {});
-      registerProfileEditor(plugin, deps);
+      registerTemplateWorkbenchView(plugin, deps);
       expect(
         commands.find((entry) => entry.id === id)!.checkCallback?.(false),
       ).toBe(true);
@@ -333,7 +333,7 @@ Annotation`);
           profileId: "default",
           ...(id === "open-profile-web-workbench"
             ? { destination: "web" }
-            : id === "open-profile-editor"
+            : id === "open-template-workbench-view"
               ? { destination: "native" }
               : {}),
         }),
@@ -341,15 +341,42 @@ Annotation`);
       expect(read).not.toHaveBeenCalled();
     },
   );
+  it("opens the Citation Template from the command, the file menu, and no Profile flow", async () => {
+    setMockPlatform({ isDesktopApp: true });
+    const { file, deps, plugin, commands, fileMenu, setViewState } = setup();
+    file.path = "templates/zotlit-citation.md";
+    file.basename = "zotlit-citation";
+    deps.customize = vi.fn(async () => {});
+    registerTemplateWorkbenchView(plugin, deps);
+
+    const command = commands.find(
+      (entry) => entry.id === "open-template-workbench-view",
+    )!;
+    expect(command.checkCallback?.(true)).toBe(true);
+    expect(command.checkCallback?.(false)).toBe(true);
+    await vi.waitFor(() =>
+      expect(setViewState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: TEMPLATE_WORKBENCH_VIEW_TYPE,
+          state: expect.objectContaining({ file: file.path }),
+        }),
+      ),
+    );
+    // The file menu offers the one action, on the same route.
+    expect(fileMenu().items.map(({ title }) => title)).toEqual([
+      m.template_workbench_open(),
+    ]);
+    expect(deps.customize).not.toHaveBeenCalled();
+  });
   it("routes the file menu's native editor action through the shared flow", async () => {
     setMockPlatform({ isDesktopApp: true });
     const { file, deps, plugin, fileMenu } = setup();
     deps.profile = { ...deps.profile, defaultDocumentPath: file.path };
     deps.customize = vi.fn(async () => {});
-    registerProfileEditor(plugin, deps);
+    registerTemplateWorkbenchView(plugin, deps);
 
     fileMenu()
-      .items.find((item) => item.title === m.profile_editor_open())!
+      .items.find((item) => item.title === m.template_workbench_open())!
       .click();
 
     await vi.waitFor(() =>
@@ -375,9 +402,9 @@ Annotation`);
         >,
     );
     deps.profile.getSource = vi.fn(async () => "Configured Default");
-    registerProfileEditor(plugin, deps);
+    registerTemplateWorkbenchView(plugin, deps);
     const command = commands.find(
-      (entry) => entry.id === "open-profile-editor",
+      (entry) => entry.id === "open-template-workbench-view",
     )!;
     expect(command.checkCallback?.(false)).toBe(true);
     await vi.waitFor(() =>
@@ -410,7 +437,7 @@ Annotation`);
       loadLocalStorage.mockReturnValue(preference);
       await openNativeProfile(app, file, { itemIndexedKey: "0:ABCDEFGH" });
       expect(setViewState).toHaveBeenCalledWith({
-        type: PROFILE_EDITOR_VIEW_TYPE,
+        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
         state: { file: file.path, itemIndexedKey: "0:ABCDEFGH" },
         active: true,
       });
@@ -433,7 +460,7 @@ Annotation`);
             },
       );
       expect(setViewState).toHaveBeenCalledWith({
-        type: PROFILE_EDITOR_VIEW_TYPE,
+        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
         state:
           kind === "file"
             ? { file: file.path }
@@ -452,7 +479,7 @@ Annotation`);
     });
     expect(getSource).toHaveBeenCalledWith("default");
     expect(setViewState).toHaveBeenCalledWith({
-      type: PROFILE_EDITOR_VIEW_TYPE,
+      type: TEMPLATE_WORKBENCH_VIEW_TYPE,
       state: { defaultDraft: true, file: null },
       active: true,
     });
@@ -471,15 +498,15 @@ Annotation`);
     setMockPlatform({ isDesktopApp: true });
     const { app, file, plugin, deps, commands, registerView, setViewState } =
       setup();
-    registerProfileEditor(plugin, deps);
+    registerTemplateWorkbenchView(plugin, deps);
     expect(registerView).toHaveBeenCalledWith(
-      PROFILE_EDITOR_VIEW_TYPE,
+      TEMPLATE_WORKBENCH_VIEW_TYPE,
       expect.any(Function),
     );
     expect(commands[0]!.checkCallback?.(true)).toBe(true);
-    await openProfileEditor(app, file);
+    await openTemplateWorkbench(app, file);
     expect(setViewState).toHaveBeenCalledWith({
-      type: PROFILE_EDITOR_VIEW_TYPE,
+      type: TEMPLATE_WORKBENCH_VIEW_TYPE,
       state: { file: file.path },
       active: true,
     });
@@ -487,9 +514,9 @@ Annotation`);
 
   it("opens the requested Match tab in Basic mode", async () => {
     const { app, file, setViewState } = setup();
-    await openProfileEditor(app, file, { tab: "match" });
+    await openTemplateWorkbench(app, file, { tab: "match" });
     expect(setViewState).toHaveBeenCalledWith({
-      type: PROFILE_EDITOR_VIEW_TYPE,
+      type: TEMPLATE_WORKBENCH_VIEW_TYPE,
       state: { file: file.path, tab: "match", advanced: false },
       active: true,
     });
@@ -498,7 +525,7 @@ Annotation`);
   it("keeps registration desktop-only", () => {
     setMockPlatform({ isDesktopApp: false });
     const { plugin, deps, registerView } = setup();
-    registerProfileEditor(plugin, deps);
+    registerTemplateWorkbenchView(plugin, deps);
     expect(registerView).not.toHaveBeenCalled();
   });
 });

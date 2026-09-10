@@ -9,6 +9,7 @@ export {
 } from "./controller";
 export type {
   WorkbenchAnnotationSection,
+  WorkbenchDocumentKind,
   WorkbenchEntrySliceId,
   WorkbenchProblem,
   WorkbenchProblemCode,

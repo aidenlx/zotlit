@@ -20,7 +20,7 @@ import { initI18n } from "@/lib/i18n";
 import * as m from "@/lib/i18n/generated/messages";
 import type { DatabaseService } from "@/services/database/service";
 
-import { createProfileEditorHost } from "./host";
+import { createTemplateWorkbenchHost } from "./host";
 import { loadMatchFacts } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
@@ -55,8 +55,8 @@ it("refreshes Match and vocabulary in On demand mode and ignores the old paper r
   const render = vi.fn(() =>
     Promise.reject(new Error("This test renders nothing.")),
   );
-  using host = createProfileEditorHost(
-    {} as Parameters<typeof createProfileEditorHost>[0],
+  using host = createTemplateWorkbenchHost(
+    {} as Parameters<typeof createTemplateWorkbenchHost>[0],
     {
       render,
       matchData: {
@@ -200,8 +200,8 @@ it("applies the installed pack to shared Match and Explorer controls after resta
     `---\nid: Bk3Qn7XvT2Lp\nname: Books\nversion: 1.0.0\ncontract: 2\nfilename: '{{ zt.title }}'\n---\nBody\n--- zotlit:annotation ---\nAnnotation`,
   );
   const store = createWorkbenchStore();
-  using host = createProfileEditorHost(
-    ports as unknown as Parameters<typeof createProfileEditorHost>[0],
+  using host = createTemplateWorkbenchHost(
+    ports as unknown as Parameters<typeof createTemplateWorkbenchHost>[0],
     {
       render: () => Promise.reject(new Error("This test renders nothing.")),
       matchData: {

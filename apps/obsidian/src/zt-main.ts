@@ -47,13 +47,13 @@ import { registerCitationSuggest } from "./views/citation-suggest/register";
 import { registerCitedByView } from "./views/cited-by/register";
 import { registerNotePreview } from "./views/note-preview/register";
 import { registerPandocExport } from "./views/pandoc-export/register";
-import {
-  openNativeProfile,
-  registerProfileEditor,
-} from "./views/profile-editor/register";
 import { registerQuickSwitch } from "./views/quick-switch/register";
 import { registerReferencesView } from "./views/references/register";
 import { registerTemplateDataExplorer } from "./views/template-data-explorer/register";
+import {
+  openNativeProfile,
+  registerTemplateWorkbenchView,
+} from "./views/template-workbench/register";
 import { registerWelcomeView } from "./views/welcome/register";
 import "./zt-main.css";
 
@@ -356,7 +356,7 @@ export default class ZotLitPlugin extends Plugin {
       settings: services.settings,
     });
 
-    registerProfileEditor(this, {
+    registerTemplateWorkbenchView(this, {
       webWorkbenchEnabled: WEB_WORKBENCH_ENABLED,
       customize,
       app: this.app,

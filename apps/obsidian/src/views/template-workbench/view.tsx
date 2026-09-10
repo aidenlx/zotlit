@@ -21,17 +21,20 @@ import {
   parseIndexedKey,
   USER_LIBRARY_ID,
 } from "@zotlit/db";
+import type { CitationVariant } from "@zotlit/db";
 import {
   externalEdit,
   WorkbenchDocumentController,
   entryPosition,
 } from "@zotlit/workbench/document";
 import type {
+  WorkbenchDocumentKind,
   WorkbenchProblem,
   WorkbenchSliceRange,
 } from "@zotlit/workbench/document";
 import type { DisplayNode } from "@zotlit/workbench/explorer";
 import { failedRender, renderIdentity } from "@zotlit/workbench/render";
+import type { CitationExampleId } from "@zotlit/workbench/render";
 import { fieldSnippet } from "@zotlit/workbench/ui";
 import {
   AnnotationPane,
@@ -49,6 +52,7 @@ import {
   TabBar,
   TabPanel,
   TABS,
+  tabsFor,
   WorkbenchEditorProvider,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
@@ -75,9 +79,11 @@ import { itemSummary } from "@/lib/item-summary";
 import { getLogger } from "@/lib/log";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { ProfileService } from "@/services/profile/service";
+import { openCitationTemplate } from "@/services/template/actions";
+import type { TemplateService } from "@/services/template/service";
 import { PreviewAnnotationSelection } from "@/views/note-preview/annotation-selection";
 import { NativeMarkdown } from "@/views/note-preview/markdown";
-import { openProfileWorkbench } from "@/views/note-preview/register";
+import { openWorkbenchLayout } from "@/views/note-preview/register";
 import type {
   NativeRenderDeps,
   NativeRenderResult,
@@ -89,8 +95,9 @@ import type { TemplateDataExportTarget } from "@/views/template-data-explorer/ex
 import { rememberTemplateItem } from "@/views/template-data-explorer/item-memory";
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
 
-import { runProfileEditorAction } from "./actions";
-import { createProfileEditorHost } from "./host";
+import { runTemplateWorkbenchAction } from "./actions";
+import { templateDocumentKind } from "./document-kind";
+import { createTemplateWorkbenchHost } from "./host";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
 import {
@@ -102,14 +109,21 @@ import {
 } from "./selection";
 import { getSampleItem } from "./selection-data";
 import { currentProfileSource } from "./source";
-import { profileEditorButton, profileEditorTheme, selectionBar } from "./theme";
+import {
+  templateWorkbenchButton,
+  templateWorkbenchTheme,
+  selectionBar,
+  selectionHint,
+} from "./theme";
 
-export const PROFILE_EDITOR_VIEW_TYPE = "zotlit-profile-editor";
-const logger = getLogger(["views", "profile-editor"]);
-export type ProfileEditorDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
+export const TEMPLATE_WORKBENCH_VIEW_TYPE = "zotlit-template-workbench";
+const logger = getLogger(["views", "template-workbench"]);
+export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   render?: WorkbenchHost["render"];
   nativePreview?: NativeRenderDeps;
   pluginVersion?: string;
+  templates: ExplorerViewDeps["templates"] &
+    Pick<TemplateService, "materializeCitationTemplate">;
   profile?: Pick<
     ProfileService,
     | "getSource"
@@ -120,18 +134,29 @@ export type ProfileEditorDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
   >;
 };
 
-export interface ProfileAuthoringContext {
+export interface TemplateAuthoringContext {
   readonly leaf: WorkspaceLeaf;
   readonly path: string | null;
+  /** The Template Document kind, which picks the preview's own root data. */
+  readonly kind: WorkbenchDocumentKind;
   readonly item: WorkbenchItemChoice | null;
   readonly root: TemplateRoot;
   readonly tab: WorkbenchViewState["tab"];
   readonly advanced: boolean;
   readonly annotationId: string | null;
+  /**
+   * The Citation set and Variant a Citation Template renders under, so every
+   * pane that follows this editor reads the one selection. Null on a document
+   * of another kind, which has no Citation set to name.
+   */
+  readonly citation: {
+    readonly variant: CitationVariant;
+    readonly example: CitationExampleId | null;
+  } | null;
   readonly canInsertField?: boolean;
 }
 
-export class ProfileEditorView extends TextFileView implements HoverParent {
+export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   /** The editor hover popover now open, which the next one replaces. */
   hoverPopover: HoverPopover | null = null;
   readonly store: WorkbenchStore;
@@ -145,8 +170,8 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   get matchDatabase() {
     return this.#deps.db;
   }
-  readonly #deps: ProfileEditorDeps;
-  readonly #host: ReturnType<typeof createProfileEditorHost>;
+  readonly #deps: TemplateWorkbenchDeps;
+  readonly #host: ReturnType<typeof createTemplateWorkbenchHost>;
   #controller = new WorkbenchDocumentController("", { runtime: "native" });
   #root: Root | null = null;
   #updateActions = () => {};
@@ -176,10 +201,10 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   #pendingSource: string | null = null;
   #clearing = false;
 
-  constructor(leaf: WorkspaceLeaf, deps: ProfileEditorDeps) {
+  constructor(leaf: WorkspaceLeaf, deps: TemplateWorkbenchDeps) {
     super(leaf);
     this.#deps = deps;
-    this.contentEl.addClass("zt-root", "zt-profile-editor");
+    this.contentEl.addClass("zt-root", "zt-template-workbench");
     const render: WorkbenchHost["render"] =
       (deps.nativePreview
         ? (request) => renderNativeProfile(deps.nativePreview!, request)
@@ -188,7 +213,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
         Promise.resolve(
           failedRender(renderIdentity(request), { code: "render-error" }),
         ));
-    this.#host = createProfileEditorHost(
+    this.#host = createTemplateWorkbenchHost(
       this.app,
       {
         render,
@@ -217,7 +242,13 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
         editor: () => this.leaf,
         apply: (selection) => {
           if (selection.kind === "item") this.selectItem(selection.item);
-          else this.preview?.select(selection.annotationId);
+          else if (selection.kind === "annotation")
+            this.preview?.select(selection.annotationId);
+          else
+            this.preview?.setCitation({
+              variant: selection.variant,
+              citationExample: selection.example,
+            });
         },
       }),
     );
@@ -243,7 +274,9 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
         this.preview.state.subscribe((state, previous) => {
           if (
             state.example !== previous.example ||
-            state.annotationId !== previous.annotationId
+            state.annotationId !== previous.annotationId ||
+            state.variant !== previous.variant ||
+            state.citationExample !== previous.citationExample
           )
             this.#publishAuthoringContext();
           if (state.annotationId !== previous.annotationId)
@@ -313,11 +346,20 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   get nativeRenderDeps(): NativeRenderDeps | undefined {
     return this.#deps.nativePreview;
   }
-  get authoringContext(): ProfileAuthoringContext {
+  /** The Template Document this view holds, which picks its tabs and its root. */
+  get documentKind(): WorkbenchDocumentKind {
+    return templateDocumentKind(this.file);
+  }
+  /** The root an editor with no template region of its own writes. */
+  get #defaultRoot(): TemplateRoot {
+    return this.documentKind === "citation" ? "citation" : "note";
+  }
+  get authoringContext(): TemplateAuthoringContext {
     const { item, root, tab, advanced } = this.store.getState();
     return {
       leaf: this.leaf,
       path: this.file?.path ?? null,
+      kind: this.documentKind,
       item,
       root,
       tab,
@@ -326,6 +368,13 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
         this.preview?.state.getState().annotationId ??
         this.preview?.state.getState().example?.id ??
         null,
+      citation:
+        this.documentKind === "citation" && this.preview
+          ? {
+              variant: this.preview.state.getState().variant,
+              example: this.preview.state.getState().citationExample,
+            }
+          : null,
       canInsertField:
         !this.#closed &&
         !this.#controller.readOnly &&
@@ -352,10 +401,10 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   get unavailableDependencies(): string[] {
     return [
       ...(this.#databaseUnavailable
-        ? [m.profile_editor_database_unavailable()]
+        ? [m.template_workbench_database_unavailable()]
         : []),
       ...(this.#stylesUnavailable
-        ? [m.profile_editor_styles_unavailable()]
+        ? [m.template_workbench_styles_unavailable()]
         : []),
     ];
   }
@@ -420,8 +469,10 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       : region?.language === "json-e"
         ? "json-e"
         : "template";
-    const engine =
-      this.#controller.document?.manifest.language === "eta" ? "eta" : "liquid";
+    const language =
+      this.#controller.document?.manifest.language ??
+      this.#controller.plainDocument?.manifest.language;
+    const engine = language === "eta" ? "eta" : "liquid";
     return this.insertField(fieldSnippet(request.node, mode, { engine }));
   }
 
@@ -464,23 +515,40 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
           ? "name"
           : target.slice === "annotation"
             ? "annotation"
-            : "note",
+            : target.slice === "source"
+              ? "citation"
+              : "note",
     );
     state.setRoot(
       this.#controller.templateRegions.find(
         (region) =>
           target.range.from >= region.from && target.range.to <= region.to,
-      )?.root ?? "note",
+      )?.root ?? this.#defaultRoot,
     );
     this.app.workspace.setActiveLeaf(this.leaf, { focus: false });
     this.#mount();
   }
 
   override getViewType(): string {
-    return PROFILE_EDITOR_VIEW_TYPE;
+    return TEMPLATE_WORKBENCH_VIEW_TYPE;
   }
   override getDisplayText(): string {
-    return this.file?.basename ?? m.profile_editor_name();
+    if (this.documentKind === "citation")
+      return m.template_workbench_title_citation();
+    const label = this.profileLabel;
+    return label === null
+      ? m.template_workbench_name()
+      : m.template_workbench_title_profile({ label });
+  }
+  /**
+   * The name the Profile calls itself, which the tab title carries beside its
+   * kind. The manifest's own name leads, so a renamed file still reads as the
+   * Profile the reader knows; a draft that does not parse falls back to it.
+   */
+  get profileLabel(): string | null {
+    return (
+      this.#controller.document?.manifest.name ?? this.file?.basename ?? null
+    );
   }
   override getIcon(): string {
     return "file-pen-line";
@@ -509,6 +577,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       this.#controller = new WorkbenchDocumentController(source, {
         runtime: "native",
         readOnly: this.#defaultDraft,
+        kind: this.documentKind,
       });
       this.#editor.attach(this.#controller);
       this.setPresentation({
@@ -520,6 +589,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
         restoring: false,
       });
       this.#insertRequest = null;
+      this.#applyKindDefaults();
       this.#publishAuthoringContext();
       this.#subscribe();
       this.#mount();
@@ -621,7 +691,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   override getEphemeralState(): Record<string, unknown> {
     const { presentation } = this.store.getState();
     return {
-      zotlitProfileEditor: {
+      zotlitTemplateWorkbench: {
         context: this.#presentationContext(),
         selection: presentation.selection,
         selected: presentation.selected,
@@ -633,7 +703,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   override setEphemeralState(input: unknown): void {
     if (!input || typeof input !== "object") return;
     const value = input as Record<string, unknown>;
-    const payload = value.zotlitProfileEditor;
+    const payload = value.zotlitTemplateWorkbench;
     if (!payload || typeof payload !== "object") return;
     const state = payload as Record<string, unknown>;
     if (state.context !== this.#presentationContext()) return;
@@ -771,27 +841,33 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     if (!state || typeof state !== "object") return;
     const value = state as Record<string, unknown>;
     const store = this.store.getState();
-    if (TABS.some((tab) => tab === value.tab))
-      store.setTab(
-        value.tab === "match" && this.isDefaultProfile
-          ? "note"
-          : (value.tab as typeof store.tab),
-      );
-    if (
-      value.root === "note" ||
-      value.root === "annotation" ||
-      value.root === "filename"
-    )
-      store.setRoot(value.root);
-    else
-      store.setRoot(
-        value.tab === "annotation"
-          ? "annotation"
-          : value.tab === "name"
-            ? "filename"
-            : "note",
-      );
-    if (typeof value.advanced === "boolean") store.setAdvanced(value.advanced);
+    if (this.#applyKindDefaults()) {
+      // A plain document has one tab, one root, and one editor: nothing of the
+      // saved tab, root, or Basic and Source choice applies to it.
+    } else {
+      if (TABS.some((tab) => tab === value.tab))
+        store.setTab(
+          value.tab === "match" && this.isDefaultProfile
+            ? "note"
+            : (value.tab as typeof store.tab),
+        );
+      if (
+        value.root === "note" ||
+        value.root === "annotation" ||
+        value.root === "filename"
+      )
+        store.setRoot(value.root);
+      else
+        store.setRoot(
+          value.tab === "annotation"
+            ? "annotation"
+            : value.tab === "name"
+              ? "filename"
+              : "note",
+        );
+      if (typeof value.advanced === "boolean")
+        store.setAdvanced(value.advanced);
+    }
 
     const itemGeneration = ++this.#itemGeneration;
     if (typeof value.itemIndexedKey === "string") {
@@ -806,6 +882,30 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     } else if (value.itemIndexedKey === null) store.setItem(null);
     if (typeof value.annotationId === "string" || value.annotationId === null)
       this.preview?.select(value.annotationId);
+  }
+
+  /**
+   * The tab, root, and edit mode the kind fixes. A plain document is one
+   * editor over one source under one root, so it has no such choice to make or
+   * to restore. A Profile document keeps the reader's own choice, less a tab
+   * and root the leaf held for a document of another kind.
+   * @returns whether the kind fixed them.
+   */
+  #applyKindDefaults(): boolean {
+    const store = this.store.getState();
+    if (this.documentKind !== "citation") {
+      // A tab and root this leaf kept from a document of another kind name no
+      // panel and no data here, which would leave every panel unmounted.
+      if (!TABS.includes(store.tab)) {
+        store.setTab("note");
+        store.setRoot("note");
+      }
+      return false;
+    }
+    store.setTab("citation");
+    store.setRoot("citation");
+    store.setAdvanced(false);
+    return true;
   }
 
   protected override async onOpen(): Promise<void> {
@@ -860,6 +960,9 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
         action.setAttribute("aria-disabled", String(!enabled));
         action.classList.toggle("is-disabled", !enabled);
       }
+      // Basic and Source are two views of a Profile document's structure; a
+      // plain document is one source, so it is never offered the choice.
+      source.toggle(this.documentKind === "profile");
       const advanced = this.store.getState().advanced;
       source.setAttribute("aria-pressed", String(advanced));
       source.classList.toggle("is-active", advanced);
@@ -912,12 +1015,12 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     menu.addItem((item) =>
       item
         .setSection("zotlit")
-        .setTitle(m.profile_editor_open_workbench())
+        .setTitle(m.template_workbench_open_layout())
         .setIcon("panels-top-left")
         .onClick(
           () =>
-            void runProfileEditorAction("open-workbench", () =>
-              openProfileWorkbench(this.app, this),
+            void runTemplateWorkbenchAction("open-workbench", () =>
+              openWorkbenchLayout(this.app, this),
             ),
         ),
     );
@@ -928,13 +1031,27 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
         .setIcon("search")
         .onClick(() => void this.chooseItem()),
     );
+    if (this.documentKind === "profile")
+      menu.addItem((item) =>
+        item
+          .setSection("zotlit")
+          .setTitle(m.workbench_choose_annotation())
+          .setIcon("highlighter")
+          .onClick(() => void this.chooseAnnotation()),
+      );
     menu.addItem((item) =>
       item
         .setSection("zotlit")
-        .setTitle(m.workbench_choose_annotation())
-        .setIcon("highlighter")
-        .onClick(() => void this.chooseAnnotation()),
+        .setTitle(m.template_workbench_open_citation())
+        .setIcon("quote")
+        .onClick(
+          () =>
+            void runTemplateWorkbenchAction("open-citation", () =>
+              openCitationTemplate(this.app, this.#deps.templates),
+            ),
+        ),
     );
+    if (this.documentKind === "citation") this.#addLanguageMenu(menu);
     const target = this.templateDataTarget();
     const pluginVersion = this.#deps.pluginVersion;
     if (target && pluginVersion)
@@ -952,7 +1069,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       );
     menu.addItem((item) =>
       item
-        .setTitle(m.profile_editor_open_markdown())
+        .setTitle(m.template_workbench_open_markdown())
         .setIcon("file-text")
         .setDisabled(!this.file)
         .onClick(() => void this.openMarkdown()),
@@ -964,6 +1081,29 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
           .setIcon("rotate-ccw")
           .onClick(() => void this.restoreDefault()),
       );
+  }
+  /**
+   * The rendering language, switched on the manifest key alone: a Template
+   * changes language by being rewritten, so no source is converted here.
+   */
+  #addLanguageMenu(menu: Menu): void {
+    const current = this.#controller.plainDocument?.manifest.language;
+    if (current === undefined) return;
+    menu.addItem((item) => {
+      item.setTitle(m.template_workbench_change_language()).setIcon("code-2");
+      const submenu = item.setSubmenu();
+      for (const [language, title] of [
+        ["liquid", m.workbench_name_language_liquid()],
+        ["eta", m.workbench_name_language_eta()],
+      ] as const)
+        submenu.addItem((entry) =>
+          entry
+            .setTitle(title)
+            .setChecked(current === language)
+            .setDisabled(this.#controller.readOnly)
+            .onClick(() => this.#controller.setPlainLanguage(language)),
+        );
+    });
   }
   get isDefaultProfile(): boolean {
     return (
@@ -977,7 +1117,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     return this.#defaultDraft;
   }
   async restoreDefault(): Promise<void> {
-    await runProfileEditorAction("restore-default", async () => {
+    await runTemplateWorkbenchAction("restore-default", async () => {
       const profile = this.#deps.profile;
       if (
         !profile ||
@@ -998,7 +1138,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       this.allowNoFile = true;
       this.#defaultDraft = true;
       await this.leaf.setViewState({
-        type: PROFILE_EDITOR_VIEW_TYPE,
+        type: TEMPLATE_WORKBENCH_VIEW_TYPE,
         state: { file: null, defaultDraft: true },
         active: true,
       });
@@ -1028,7 +1168,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       this.#bindingDraft = true;
       try {
         await this.leaf.setViewState({
-          type: PROFILE_EDITOR_VIEW_TYPE,
+          type: TEMPLATE_WORKBENCH_VIEW_TYPE,
           state: { ...this.getState(), defaultDraft: false, file: file.path },
           active: true,
         });
@@ -1043,7 +1183,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
         this.#bindingDraft = false;
       }
       this.#mount();
-      await openProfileWorkbench(this.app, this);
+      await openWorkbenchLayout(this.app, this);
     })()
       .catch((error: unknown) => {
         logger.error("Failed to customize Default Profile at {path}", {
@@ -1070,7 +1210,9 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       this.#stylesUnavailable = false;
       this.#mount();
     } catch (error) {
-      logger.warn("Failed to read Profile Editor citation styles", { error });
+      logger.warn("Failed to read Template Workbench citation styles", {
+        error,
+      });
       this.#stylesUnavailable = true;
       this.#mount();
     }
@@ -1129,6 +1271,10 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
     if (this.#closed) return;
     this.#itemGeneration++;
     this.#selectKey(item.id);
+    // An Item the reader picked is the Citation set they asked to see, so the
+    // built-in example that outranks it stands down.
+    if (this.documentKind === "citation")
+      this.preview?.setCitation({ citationExample: null });
   }
   async chooseAnnotation(): Promise<void> {
     const preview = this.preview;
@@ -1182,7 +1328,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
       });
       rememberTemplateItem(this.app, indexedKey);
     } catch (error) {
-      logger.warn("Failed to restore Profile Editor Item {indexedKey}", {
+      logger.warn("Failed to restore Template Workbench Item {indexedKey}", {
         indexedKey,
         error,
       });
@@ -1237,7 +1383,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
   }
   provide(content: ReactNode): ReactNode {
     return (
-      <WorkbenchThemeProvider theme={profileEditorTheme}>
+      <WorkbenchThemeProvider theme={templateWorkbenchTheme}>
         <WorkbenchHostProvider host={this.#host}>
           <WorkbenchEditorProvider
             key={this.#generation}
@@ -1266,7 +1412,7 @@ export class ProfileEditorView extends TextFileView implements HoverParent {
                 (region) =>
                   target.range.from >= region.from &&
                   target.range.from <= region.to,
-              )?.root ?? "note";
+              )?.root ?? this.#defaultRoot;
             if (this.store.getState().root !== root)
               this.store.getState().setRoot(root);
           }}
@@ -1281,7 +1427,7 @@ function EditorContent({
   insertRequest,
   onSelection,
 }: {
-  view: ProfileEditorView;
+  view: TemplateWorkbenchView;
   insertRequest: WorkbenchInsertTarget | null;
   onSelection: (target: WorkbenchInsertTarget) => void;
 }) {
@@ -1296,6 +1442,11 @@ function EditorContent({
   // choice rather than on a render while the reader has made none.
   const annotation = useSelectedAnnotation(view);
   const advanced = useWorkbenchStore((state) => state.advanced);
+  const kind = controller.kind;
+  const languageCaption =
+    controller.plainDocument?.manifest.language === "eta"
+      ? m.workbench_name_language_eta()
+      : m.workbench_name_language_liquid();
   const customization = useWorkbenchStore((state) => state.customization);
   const presentation = useWorkbenchStore((state) => state.presentation);
   const { selected, reveal, fieldFocus } = presentation;
@@ -1329,6 +1480,11 @@ function EditorContent({
   function openProblem(
     problem: Pick<WorkbenchProblem, "slice" | "range" | "params">,
   ) {
+    if (problem.slice === "source") {
+      // A plain document's every problem is in the one editor it opens with.
+      setReveal(problem.range ?? null);
+      return;
+    }
     const entry = entryPosition(problem.slice);
     state.setAdvanced(problem.slice === "advanced");
     state.setTab(
@@ -1376,23 +1532,25 @@ function EditorContent({
       onSelection({ slice, range });
   return (
     <div className="zt:flex zt:h-full zt:min-w-0 zt:flex-col zt:text-sm">
-      <EditorHeader view={view} />
+      {/* A Citation Template renders an example set, not the note of an Item,
+          so its selection is the preview pane's own. */}
+      {kind === "profile" && <EditorHeader view={view} />}
       {view.isDefaultDraft && (
         <p
           role="status"
           className="zt:px-3 zt:pb-2 zt:text-xs zt:leading-normal zt:text-muted-foreground"
         >
-          {m.profile_editor_default_inspect()}
+          {m.template_workbench_default_inspect()}
           <button
-            className={profileEditorButton}
+            className={templateWorkbenchButton}
             disabled={customization === "pending"}
             onClick={() => void view.customizeDefault()}
           >
             {customization === "pending"
-              ? m.profile_editor_default_creating()
+              ? m.template_workbench_default_creating()
               : customization === "failed"
                 ? m.settings_citation_engine_retry()
-                : m.profile_editor_customize()}
+                : m.template_workbench_customize()}
           </button>
           {customization === "failed" && (
             <span role="alert">
@@ -1412,6 +1570,7 @@ function EditorContent({
       ))}
       {!advanced && (
         <TabBar
+          tabs={tabsFor(kind)}
           defaultProfile={view.isDefaultProfile ? true : undefined}
           onTabChange={(tab) => {
             state.setRoot(
@@ -1419,7 +1578,9 @@ function EditorContent({
                 ? "annotation"
                 : tab === "name"
                   ? "filename"
-                  : "note",
+                  : tab === "citation"
+                    ? "citation"
+                    : "note",
             );
             setReveal(null);
             if (tab === "name") void view.refreshStyles();
@@ -1430,7 +1591,18 @@ function EditorContent({
         data-workbench-scroll="editor"
         className="zt:min-h-0 zt:flex-1 zt:overflow-auto"
       >
-        {advanced ? (
+        {kind === "citation" ? (
+          <TabPanel tab="citation">
+            <p className={selectionHint}>{languageCaption}</p>
+            <SliceEditor
+              controller={controller}
+              slice="source"
+              label={m.workbench_tab_citation()}
+              reveal={reveal}
+              onSelection={selection("source")}
+            />
+          </TabPanel>
+        ) : advanced ? (
           <SliceEditor
             controller={controller}
             slice="advanced"
@@ -1480,9 +1652,9 @@ function EditorContent({
             <TabPanel tab="properties">
               {controller.managedEntries === null ? (
                 <p>
-                  {m.profile_editor_properties_advanced()}{" "}
+                  {m.template_workbench_properties_advanced()}{" "}
                   <button
-                    className={profileEditorButton}
+                    className={templateWorkbenchButton}
                     onClick={() => state.setAdvanced(true)}
                   >
                     {m.workbench_advanced()}
@@ -1586,7 +1758,7 @@ function EditorContent({
  * The example the preview session holds, live as the reader chooses another.
  * The pane title carries the file, so the header names the selected data itself.
  */
-function useSelectedAnnotation(view: ProfileEditorView) {
+function useSelectedAnnotation(view: TemplateWorkbenchView) {
   const store = view.preview?.state;
   return useSyncExternalStore(
     useCallback(
@@ -1597,7 +1769,7 @@ function useSelectedAnnotation(view: ProfileEditorView) {
   );
 }
 
-function EditorHeader({ view }: { view: ProfileEditorView }) {
+function EditorHeader({ view }: { view: TemplateWorkbenchView }) {
   const root = useWorkbenchStore((state) => state.root);
   const item = useWorkbenchStore((state) => state.item);
   const annotation = useSelectedAnnotation(view);
