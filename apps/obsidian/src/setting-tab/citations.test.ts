@@ -25,6 +25,7 @@ describe("hover settings", () => {
   /** The Hover group's rows for a given saved hover action. */
   const hoverRows = (settings: Settings) => {
     const ctx = {
+      app: { internalPlugins: { getEnabledPluginById: () => null } },
       settings: { current: settings },
       pandocEngine: { getStatus: () => ({ kind: "absent" }) },
       manifest: { version: "test" },
@@ -155,5 +156,50 @@ describe("citationLocaleError", () => {
         "Enter a language code such as en-US, de, or zh-CN.",
       );
     }
+  });
+});
+
+describe("graph citations setting", () => {
+  /** The Graph view group's one row for a given core-plugin state. */
+  const graphRow = (graphEnabled: boolean) => {
+    const ctx = {
+      app: {
+        internalPlugins: {
+          getEnabledPluginById: (id: string) =>
+            id === "graph" && graphEnabled ? {} : null,
+        },
+      },
+      settings: { current: defaults },
+      pandocEngine: { getStatus: () => ({ kind: "absent" }) },
+      manifest: { version: "test" },
+      template: { loaded: false },
+    } as unknown as SettingTabContext;
+    const group = citationsPageItems(ctx).find(
+      (item) =>
+        "type" in item &&
+        item.type === "group" &&
+        item.heading === m.settings_citation_graph_heading(),
+    );
+    const row = group && "items" in group ? group.items?.[0] : undefined;
+    if (!row || "type" in row) throw new Error("graph row missing");
+    return row;
+  };
+
+  it("binds the toggle to the vault-wide switch, on by default", () => {
+    const row = graphRow(true);
+
+    expect(row.name).toBe(m.settings_citation_graph_name());
+    expect(row.desc).toBe(m.settings_citation_graph_desc());
+    expect(row.control).toEqual({
+      type: "toggle",
+      key: "citation.graph-citations",
+    });
+    expect(defaults["citation.graph-citations"]).toBe(true);
+  });
+
+  it("names the Graph view core plugin while it is disabled", () => {
+    expect(graphRow(false).desc).toBe(
+      m.settings_citation_graph_desc_disabled(),
+    );
   });
 });

@@ -14,6 +14,7 @@ import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
 import { DatabaseService } from "./database/service";
+import { GraphCitations } from "./graph-citations/service";
 import { getChsSegmenter } from "./item-lookup/chs-segmenter";
 import { ItemLookup } from "./item-lookup/service";
 import { LibraryScopeService } from "./library-scope/service";
@@ -464,6 +465,16 @@ export function buildServices(
           citationText,
           citationIndex,
           citationPopover,
+          citekeyEditor,
+          settings,
+        }),
+    })
+    .use({
+      graphCitations: ({ citationIndex, noteIndex, citekeyEditor, settings }) =>
+        new GraphCitations({
+          app: plugin.app,
+          citationIndex,
+          noteIndex,
           citekeyEditor,
           settings,
         }),
