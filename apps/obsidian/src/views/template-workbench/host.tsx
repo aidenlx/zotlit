@@ -45,6 +45,8 @@ import {
   FLAIR_ROW_CLASS,
 } from "@/services/item-lookup/render-hit";
 
+import { extractPartialMenu } from "./extract-partial";
+import type { ExtractPartial } from "./extract-partial";
 import { templateHover } from "./hover";
 import { templateWorkbenchIcons } from "./theme";
 
@@ -256,11 +258,21 @@ export function createTemplateWorkbenchHost(
     Partial<Pick<WorkbenchHost, "markdown" | "partials">> & {
       /** The view an editor hover popover belongs to; one popover shows at a time. */
       hoverParent?: HoverParent;
+      /**
+       * Moves a selection into a Shared Partial, which puts "Extract to
+       * partial…" on every Template editor's context menu. A host that writes
+       * no files supplies none and the menu stays away.
+       */
+      extractPartial?: ExtractPartial;
     },
   wrap: (content: ReactNode) => ReactNode = (content) => content,
 ): WorkbenchHost & Disposable {
   const open = new Set<() => void>();
-  const { hoverParent = { hoverPopover: null }, ...rest } = ports;
+  const {
+    hoverParent = { hoverPopover: null },
+    extractPartial,
+    ...rest
+  } = ports;
   function track(close: () => void): () => void {
     const release = () => {
       if (open.delete(release)) close();
@@ -297,6 +309,7 @@ export function createTemplateWorkbenchHost(
         })),
         templateCompletion(read, nativeCompletion),
         templateHover(read, hoverParent),
+        extractPartial ? extractPartialMenu(read, extractPartial) : [],
       ];
     },
     menu({ anchor, items, submenus }) {
