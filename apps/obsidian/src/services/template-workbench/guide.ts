@@ -12,9 +12,12 @@ import { DOCS_SITE_URL, RESERVED_KEYS } from "@/lib/constants";
 import type { DiagnosticCode } from "./envelope";
 import { CONTRACT_ROOT_NAMES } from "./schema";
 import {
+  CITATION_EXAMPLE_NAMES,
+  CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
   quotedList,
+  RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
 } from "./vocabulary";
 
@@ -22,31 +25,34 @@ function rootRow(slot: keyof typeof TEMPLATE_SLOT_ROOTS): string {
   return `  ${slot.padEnd(12)} ${TEMPLATE_SLOT_ROOTS[slot]}`;
 }
 
-function manList(names: readonly string[]): string {
+/** @param indent leading spaces of every row, so a list keeps its block's own hanging indent. */
+function manList(names: readonly string[], indent = "  "): string {
   const rows: string[] = [];
-  let row = "  ";
+  let row = indent;
   for (const name of names) {
-    const entry = row === "  " ? name : `, ${name}`;
+    const entry = row === indent ? name : `, ${name}`;
     if (row.length + entry.length > 78) {
       rows.push(row);
-      row = `  ${name}`;
+      row = `${indent}${name}`;
     } else {
       row += entry;
     }
   }
-  if (row !== "  ") rows.push(row);
+  if (row !== indent) rows.push(row);
   return rows.join("\n");
 }
 
 const ANNOTATION_REQUIRED: DiagnosticCode = "ANNOTATION_REQUIRED";
 const ETA_OPT_IN_REQUIRED: DiagnosticCode = "ETA_OPT_IN_REQUIRED";
 
-const TEMPLATE_DATA_SYNOPSIS = `obsidian zotlit:template-data key=<zotero-key> \\
+const TEMPLATE_DATA_SYNOPSIS = `obsidian zotlit:template-data \\
+    (key=<zotero-key> | example=<${CITATION_EXAMPLE_NAMES.join("|")}>) \\
     root=<${CONTRACT_ROOT_NAMES.join("|")}> expect-source=<source-id>`;
 
-const TEMPLATE_RENDER_SYNOPSIS = `obsidian zotlit:template-render key=<zotero-key> \\
-    template=<${TEMPLATE_SLOT_NAMES.join("|")}> expect-source=<source-id> \\
-    [format=<json|markdown>]`;
+const TEMPLATE_RENDER_SYNOPSIS = `obsidian zotlit:template-render \\
+    (key=<zotero-key> | example=<citation-set>) \\
+    template=<${RENDER_TEMPLATE_NAMES.join("|")}> expect-source=<source-id> \\
+    [variant=<${CITATION_VARIANT_NAMES.join("|")}>] [format=<json|markdown>]`;
 
 const DOCUMENT_RENDER_SYNOPSIS = `obsidian zotlit:template-document-render key=<zotero-key> \\
     (profile=<default|profile-id> | document=<reference> | source=<document-source>) \\
@@ -86,6 +92,9 @@ ROOTS
              Item's annotation array.
   annotation One Annotation. zt is that annotation; there is no zt.annotations.
   filename   One Item with filename-safe fields only.
+  citation   One in-text Citation. zt.citations pairs each cited item with its
+             locator, label, prefix, suffix, and suppressed-author flag;
+             zt.items is the same items bare; zt.variant names the gesture.
 
 SERIALIZATION
   Workbench output is serialized JSON, not a live runtime object.
@@ -104,6 +113,11 @@ KEY RESOLUTION
   annotation
            Requires an Annotation key, not an Item key. Other keys fail with
            ${ANNOTATION_REQUIRED}.
+  citation
+           Accepts the same keys as note and yields a one-item Citation with no
+           locator. example=<set> reads a built-in Citation instead, and the two
+           selectors are exclusive. Sets:
+${manList(CITATION_EXAMPLE_NAMES, " ".repeat(11))}
 
   See ${DOCS_SITE_URL}/docs/how-to/explore-template-data#indexed-key for how to
   obtain a Zotero key.
@@ -125,7 +139,7 @@ SYNOPSIS
   ${TEMPLATE_RENDER_SYNOPSIS}
 
 TEMPLATES
-  ${quotedList(TEMPLATE_SLOT_NAMES)}
+  ${quotedList(RENDER_TEMPLATE_NAMES)}
 
   note        Complete literature-note body. Used on create and overwrite. The
               built-in note template includes content.
@@ -133,12 +147,24 @@ TEMPLATES
               text outside the region.
   annotation  One annotation. Usually called by content for each annotation.
   filename    Name of a new literature note.
+  citation    One in-text citation. Renders zotlit-citation.md, or the built-in
+              citation text while the vault holds no such file.
 
 DATA ROOTS
   template-render infers the root from the template. It has no root option. For
   template-data, select the root shown below.
 
 ${TEMPLATE_SLOT_NAMES.map(rootRow).join("\n")}
+  ${"citation".padEnd(12)} citation
+
+CITATIONS
+  variant=<${CITATION_VARIANT_NAMES.join("|")}> names the Citation Variant, default main. The
+  suggester passes main on Enter and alt on Shift+Enter or a trailing slash;
+  the template reads it as zt.variant and decides what each variant renders.
+  Select the Citation with key=<indexed-key>, which cites that Item alone with
+  no locator, or with example=<set> for a built-in Citation. The built-in
+  citation text renders while the vault holds no zotlit-citation.md, and
+  template.source reports which one answered.
 
 FORMATS
   json        Default. Returns an envelope with "markdown", echoed request,
@@ -586,8 +612,9 @@ NAMESPACES
   .zt.<field> Reads the same field from template-data JSON with jq.
 
   Template roots: note and content use root=note; annotation uses root=annotation;
-  filename uses root=filename. The annotation root is one annotation, so zt is the
-  annotation. To read an Item's annotation array, use root=note and zt.annotations.
+  filename uses root=filename; the citation template uses root=citation. The
+  annotation root is one annotation, so zt is the annotation. To read an Item's
+  annotation array, use root=note and zt.annotations.
 
 WORKFLOW
   1. Run template-status. Record identity.source.id and verify the active file.

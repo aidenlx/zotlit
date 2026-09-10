@@ -1,5 +1,5 @@
 {
-  "contractVersion": 2,
+  "contractVersion": 3,
   "item": {
     "key": "IANNP5A2",
     "indexedKey": "IANNP5A2",
@@ -304,5 +304,5 @@
       "reason": "A personal-library web link carries the Zotero account name, so it is not included in Item Snapshots."
     }
   ],
-  "revision": "1af58b7cb6c9405e07b05d658ee8c93d7ed749f8a57d13cbd9770c18506cfc91"
+  "revision": "41274f82e0cf4ffae448a68b8b37248e2b784cded1a8fa9a39a7c215d1a9b138"
 }

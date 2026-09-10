@@ -1,6 +1,6 @@
 // Deterministic description of the Fixture.
 
-import { USER_LIBRARY_ID } from "@zotlit/db";
+import { CONTRACT_VERSION, USER_LIBRARY_ID } from "@zotlit/db";
 
 /** Names My Library in the printed Library table, beside the group IDs. */
 export const PERSONAL_SELECTOR = "my-library";
@@ -1211,7 +1211,7 @@ citationStyle: ${INSTALLED_STYLES[0]!.id}
 version: 1.0.0
 author: ZotLit
 description: A visibly distinct book layout for the End-to-end Run
-contract: 2
+contract: ${CONTRACT_VERSION}
 filename: 'books-{{ zt.citationKey | default: zt.key }}{% suffix %}'
 frontmatter:
   - key: fixture-title

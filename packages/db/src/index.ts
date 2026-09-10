@@ -141,6 +141,7 @@ export {
   type CitationVariant,
   type CiteRef,
   type ResolvedCiteRef,
+  type TemplateCiteItemData,
 } from "./lib/context/zt-template-cite";
 export { attachmentToTemplateData } from "./lib/context/zt-template-attach";
 export {

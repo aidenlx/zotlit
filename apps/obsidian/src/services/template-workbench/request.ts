@@ -3,11 +3,13 @@
 import type { CliData } from "obsidian";
 
 import { parseIndexedKey, TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
-import type { ContractRoot, TemplateSlot } from "@zotlit/db";
+import type { CitationVariant, ContractRoot, TemplateSlot } from "@zotlit/db";
 import type {
   FrontmatterLanguage,
   FrontmatterMergeStrategy,
 } from "@zotlit/templates/constants";
+import { isCitationExampleId } from "@zotlit/workbench/render";
+import type { CitationExampleId } from "@zotlit/workbench/render";
 
 import { diagnostic } from "./envelope";
 import type { Diagnostic, WorkbenchIdentity } from "./envelope";
@@ -16,15 +18,23 @@ import type { GuideTopic } from "./guide";
 import { CONTRACT_ROOT_NAMES, parseContractRoot } from "./schema";
 import {
   choices,
+  CITATION_EXAMPLE_NAMES,
+  CITATION_TEMPLATE,
+  CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
   quotedList,
+  RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
 } from "./vocabulary";
+import type { RenderTemplate } from "./vocabulary";
 
 export {
+  CITATION_EXAMPLE_NAMES,
+  CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
+  RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
 };
 
@@ -55,11 +65,19 @@ export const FRONTMATTER_SET_PARAMS = [
 ] as const;
 export const FRONTMATTER_REMOVE_PARAMS = ["field"] as const;
 export const FRONTMATTER_REORDER_PARAMS = ["order"] as const;
-export const DATA_PARAMS = ["key", "root", "format", "expect-source"] as const;
+export const DATA_PARAMS = [
+  "key",
+  "root",
+  "example",
+  "format",
+  "expect-source",
+] as const;
 export const SCHEMA_PARAMS = [] as const;
 export const RENDER_PARAMS = [
   "key",
   "template",
+  "variant",
+  "example",
   "format",
   "expect-source",
 ] as const;
@@ -73,17 +91,23 @@ export const DOCUMENT_RENDER_PARAMS = [
 export const GUIDE_PARAMS = ["topic"] as const;
 export const SOURCE_PARAMS = ["template"] as const;
 
-export interface DataRequest {
-  key: string;
+/**
+ * What one command reads: an Indexed Key naming a live Zotero object, or —
+ * for the `citation` root alone — one built-in example set.
+ */
+type ObjectSelector = { key: string } | { example: CitationExampleId };
+
+export type DataRequest = ObjectSelector & {
   root: ContractRoot;
   format: "json";
-}
+};
 
-export interface RenderRequest {
-  key: string;
-  template: TemplateSlot;
+export type RenderRequest = ObjectSelector & {
+  template: RenderTemplate;
+  /** The Citation Variant a citation render names; absent for every other Template. */
+  variant?: CitationVariant;
   format: "markdown" | "json";
-}
+};
 
 export type DocumentRenderRequest =
   | { key: string; profile: string }
@@ -98,17 +122,17 @@ export function parseDataRequest(params: CliData): ParsedRequest<DataRequest> {
   });
   if (rejected) return invalid(rejected.parameter, rejected.message);
 
-  const key = selectorKey(params);
-  if (key === null) return invalid("key", "key must be an Indexed Key.");
-
   const root = parseContractRoot(params.root);
   if (root === null) return invalid("root", rootVocabulary());
+
+  const selector = parseObjectSelector(params, root === "citation");
+  if (selector.kind === "invalid") return selector;
 
   const format = params.format ?? "json";
   if (format !== "json") {
     return invalid("format", "format must be 'json'.");
   }
-  return withExpectations(params, { key, root, format: "json" });
+  return withExpectations(params, { ...selector.value, root, format: "json" });
 }
 
 export function parseRenderRequest(
@@ -121,23 +145,98 @@ export function parseRenderRequest(
   });
   if (rejected) return invalid(rejected.parameter, rejected.message);
 
-  const key = selectorKey(params);
-  if (key === null) return invalid("key", "key must be an Indexed Key.");
-
-  const template = parseTemplateSlot(params.template);
+  const template = parseRenderTemplate(params.template);
   if (template === null) {
     return invalid(
       "template",
-      `template must be ${quotedList(TEMPLATE_SLOT_NAMES)}.`,
+      `template must be ${quotedList(RENDER_TEMPLATE_NAMES)}.`,
     );
   }
+  const citation = template === CITATION_TEMPLATE;
+
+  const selector = parseObjectSelector(params, citation);
+  if (selector.kind === "invalid") return selector;
+
+  const variant = parseCitationVariant(params, citation);
+  if (variant.kind === "invalid") return variant;
 
   const format = params.format ?? "json";
   if (format !== "markdown" && format !== "json") {
     return invalid("format", "format must be 'markdown' or 'json'.");
   }
-  return withExpectations(params, { key, template, format });
+  return withExpectations(params, {
+    ...selector.value,
+    template,
+    ...variant.value,
+    format,
+  });
 }
+
+/**
+ * The object a command reads. Every root takes an Indexed Key; the `citation`
+ * root takes one built-in example set instead, since a Citation the user has
+ * yet to insert has no Zotero object of its own.
+ */
+function parseObjectSelector(
+  params: CliData,
+  citation: boolean,
+): ParsedRequest<ObjectSelector> {
+  const example = params.example;
+  if (example !== undefined) {
+    if (!citation) return invalid("example", EXAMPLE_IS_CITATION_ONLY_MESSAGE);
+    if (params.key !== undefined) {
+      return invalid(
+        "example",
+        `Select the Citation with example=${choices(CITATION_EXAMPLE_NAMES)} or with key=<indexed-key>, not both.`,
+      );
+    }
+    if (!isCitationExampleId(example)) {
+      return invalid(
+        "example",
+        `example must be ${quotedList(CITATION_EXAMPLE_NAMES)}.`,
+      );
+    }
+    return { kind: "valid", value: { example } };
+  }
+
+  const key = selectorKey(params);
+  if (key === null) {
+    return invalid(
+      "key",
+      citation
+        ? `key must be an Indexed Key, or select a built-in Citation with example=${choices(CITATION_EXAMPLE_NAMES)}.`
+        : "key must be an Indexed Key.",
+    );
+  }
+  return { kind: "valid", value: { key } };
+}
+
+/** The Citation Variant a citation render names; `main` when it names none. */
+function parseCitationVariant(
+  params: CliData,
+  citation: boolean,
+): ParsedRequest<{ variant?: CitationVariant }> {
+  const variant = params.variant;
+  if (variant === undefined) {
+    return { kind: "valid", value: citation ? { variant: "main" } : {} };
+  }
+  if (!citation) {
+    return invalid(
+      "variant",
+      `variant names a Citation Variant; it applies to template=${CITATION_TEMPLATE} only.`,
+    );
+  }
+  if (!(CITATION_VARIANT_NAMES as readonly string[]).includes(variant)) {
+    return invalid(
+      "variant",
+      `variant must be ${quotedList(CITATION_VARIANT_NAMES)}.`,
+    );
+  }
+  return { kind: "valid", value: { variant: variant as CitationVariant } };
+}
+
+const EXAMPLE_IS_CITATION_ONLY_MESSAGE =
+  "example selects a built-in Citation set; it applies to the citation root only. Every other root selects a Zotero object with key=<indexed-key>.";
 
 /** Select one Profile, installed document, or in-memory source override. */
 export function parseDocumentRenderRequest(
@@ -498,6 +597,11 @@ function parseTemplateSlot(value: string | undefined): TemplateSlot | null {
   return value !== undefined && Object.hasOwn(TEMPLATE_SLOT_ROOTS, value)
     ? (value as TemplateSlot)
     : null;
+}
+
+function parseRenderTemplate(value: string | undefined): RenderTemplate | null {
+  if (value === CITATION_TEMPLATE) return CITATION_TEMPLATE;
+  return parseTemplateSlot(value);
 }
 
 function rootVocabulary(): string {

@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { inlineCitation } from "@zotlit/templates";
 import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 import {
   ContractMetadataError,
   markInertPlaceholder,
 } from "@zotlit/workbench/explorer";
+import { citationExampleData } from "@zotlit/workbench/render";
 
+import { CITATION_TEMPLATE_SOURCE } from "@/services/template/defaults";
 import { InertTemplateError } from "@/services/template/errors";
 import type { CompileError } from "@/services/template/service";
 
@@ -49,6 +52,15 @@ const FRONTMATTER_EVALUATE_EMPTY = () => ({
 });
 const FRONTMATTER_VALIDATE_EMPTY = () => null;
 const FRONTMATTER_WRITE_NOOP = () => {};
+/** The Citation Template status while the vault holds no `zotlit-citation.md`. */
+const BUILT_IN_CITATION_STATUS = () => ({
+  path: "Templates/zotlit-citation.md",
+  customized: false,
+  language: "liquid" as const,
+  inertPath: null,
+  compileError: null,
+});
+const NO_CITATION = async () => ({ kind: "not-found" }) as const;
 
 const TEMPLATE_FILES = [
   {
@@ -105,12 +117,15 @@ describe("Template Workbench CLI", () => {
     const callOrder: string[] = [];
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       getIdentity: () => {
         callOrder.push("identity");
         return IDENTITY;
       },
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => {
@@ -155,10 +170,13 @@ describe("Template Workbench CLI", () => {
     const getTemplateFileStatuses = vi.fn(() => TEMPLATE_FILES);
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       getIdentity,
       settleTimeoutMs: 25,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses,
@@ -199,9 +217,12 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity,
+      loadCitation: NO_CITATION,
       loadData,
       settleTimeoutMs: 25,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -265,8 +286,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -324,6 +348,7 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({
         kind: "data",
         data: {
@@ -333,6 +358,8 @@ describe("Template Workbench CLI", () => {
         },
       }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -372,6 +399,7 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({
         kind: "data",
         data: {
@@ -381,6 +409,8 @@ describe("Template Workbench CLI", () => {
         },
       }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -419,11 +449,14 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({
         kind: "data",
         data: { notAContractMember: () => "value" },
       }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -454,8 +487,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -491,8 +527,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -570,8 +609,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -599,8 +641,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -669,8 +714,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -708,8 +756,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -743,8 +794,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -777,8 +831,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -821,8 +878,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -865,8 +925,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -906,8 +969,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -959,8 +1025,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData,
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1007,8 +1076,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1054,8 +1126,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1096,8 +1171,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1136,8 +1214,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1183,8 +1264,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData,
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1221,8 +1305,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => [],
@@ -1273,8 +1360,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData,
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1312,8 +1402,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1372,8 +1465,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1406,9 +1502,12 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       settleTimeoutMs: 25,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1504,8 +1603,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1554,8 +1656,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1597,8 +1702,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData,
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1670,8 +1778,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData,
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1710,8 +1821,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "not-found" }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1748,8 +1862,11 @@ describe("Template Workbench CLI", () => {
     const handlers = createTemplateWorkbenchHandlers({
       pluginVersion: PLUGIN_VERSION,
       getIdentity: () => IDENTITY,
+      loadCitation: NO_CITATION,
       loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
       templates: {
+        getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+        renderCitationData: EMPTY_RENDER,
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
         getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1786,8 +1903,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1825,8 +1945,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1859,8 +1982,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1894,8 +2020,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1936,8 +2065,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -1968,8 +2100,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -2007,8 +2142,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -2042,8 +2180,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -2081,8 +2222,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -2111,8 +2255,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -2155,8 +2302,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -2196,8 +2346,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "data", data: { title: "Paper" } }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: new Map([
             ["note", { message: "Unexpected token", context }],
@@ -2256,8 +2409,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -2316,8 +2472,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: true,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -2355,8 +2514,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -2393,8 +2555,11 @@ describe("Template Workbench CLI", () => {
       const handlers = createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -2457,8 +2622,11 @@ describe("Template Workbench CLI", () => {
       return createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: overrides.loadData ?? (async () => ({ kind: "not-found" })),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled:
             overrides.javascriptTemplatesEnabled ?? false,
           compileErrors: NO_COMPILE_ERRORS,
@@ -2885,8 +3053,11 @@ describe("Template Workbench CLI", () => {
       return createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled:
             overrides.javascriptTemplatesEnabled ?? false,
           compileErrors: NO_COMPILE_ERRORS,
@@ -3310,8 +3481,11 @@ describe("Template Workbench CLI", () => {
       return createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -3499,8 +3673,11 @@ describe("Template Workbench CLI", () => {
       return createTemplateWorkbenchHandlers({
         pluginVersion: PLUGIN_VERSION,
         getIdentity: () => IDENTITY,
+        loadCitation: NO_CITATION,
         loadData: async () => ({ kind: "not-found" }),
         templates: {
+          getCitationTemplateStatus: BUILT_IN_CITATION_STATUS,
+          renderCitationData: EMPTY_RENDER,
           javascriptTemplatesEnabled: false,
           compileErrors: NO_COMPILE_ERRORS,
           getTemplateFileStatuses: () => TEMPLATE_FILES,
@@ -3697,6 +3874,266 @@ describe("Template Workbench CLI", () => {
         ok: true,
         fields: [{ key: "word-count" }, { key: "tags" }, { key: "summary" }],
       });
+    });
+  });
+});
+
+describe("zotlit:template-render for the Citation Template", () => {
+  /**
+   * The Citation Template rendered the way production renders it: the
+   * document's source through the facade, normalized to its inline form.
+   */
+  function citationHandlers(
+    source = CITATION_TEMPLATE_SOURCE,
+    status = BUILT_IN_CITATION_STATUS,
+  ) {
+    const facade = new TemplateFacade();
+    facade.define("citation", source, "liquid");
+    return createTemplateWorkbenchHandlers({
+      pluginVersion: PLUGIN_VERSION,
+      getIdentity: () => IDENTITY,
+      loadCitation: async (selector, variant) =>
+        "example" in selector
+          ? {
+              kind: "data",
+              data: citationExampleData(selector.example, variant),
+            }
+          : { kind: "not-found" },
+      loadData: async () => ({ kind: "not-found" }),
+      templates: {
+        getCitationTemplateStatus: status,
+        renderCitationData: (data) =>
+          inlineCitation(facade.render("citation", data)),
+        javascriptTemplatesEnabled: false,
+        compileErrors: NO_COMPILE_ERRORS,
+        getTemplateFileStatuses: () => [],
+        render: EMPTY_RENDER,
+        renderFilename: EMPTY_RENDER,
+        analyzeRootVariables: NO_ROOT_VARIABLES,
+        getTemplateSource: EMPTY_SOURCE,
+        waitUntilSettled: async () => "settled" as const,
+      },
+      frontmatter: {
+        read: FRONTMATTER_READ_EMPTY,
+        evaluate: FRONTMATTER_EVALUATE_EMPTY,
+        validateExpr: FRONTMATTER_VALIDATE_EMPTY,
+        write: FRONTMATTER_WRITE_NOOP,
+      },
+    });
+  }
+
+  async function renderCitation(
+    params: Record<string, string>,
+    handlers = citationHandlers(),
+  ): Promise<Record<string, unknown>> {
+    return JSON.parse(
+      await handlers[TEMPLATE_RENDER_COMMAND]({
+        template: "citation",
+        ...params,
+      }),
+    ) as Record<string, unknown>;
+  }
+
+  it("renders the bracketed form for the main variant", async () => {
+    expect(await renderCitation({ example: "one-item" })).toMatchObject({
+      contractVersion: CONTRACT_VERSION,
+      command: TEMPLATE_RENDER_COMMAND,
+      ok: true,
+      request: {
+        example: "one-item",
+        template: "citation",
+        variant: "main",
+        format: "json",
+      },
+      identity: IDENTITY,
+      template: {
+        name: "citation",
+        language: "liquid",
+        source: { kind: "embedded-default" },
+      },
+      warnings: [],
+      markdown: "[@ioannidisWhyMost2005]",
+    });
+  });
+
+  it("renders the author-in-text form for the alt variant", async () => {
+    expect(
+      await renderCitation({ example: "one-item", variant: "alt" }),
+    ).toMatchObject({
+      ok: true,
+      request: { variant: "alt" },
+      markdown: "@ioannidisWhyMost2005",
+    });
+  });
+
+  // The alt column repeats the main text wherever the author-in-text form has
+  // no author to lift out: a suppressed author, and a Citation Prefix that
+  // would otherwise lead the sentence.
+  it.each([
+    ["one-item", "[@ioannidisWhyMost2005]", "@ioannidisWhyMost2005"],
+    [
+      "two-items",
+      "[@ioannidisWhyMost2005; @Kahneman2011]",
+      "@ioannidisWhyMost2005 [@Kahneman2011]",
+    ],
+    [
+      "item-with-page",
+      "[@ioannidisWhyMost2005, {p. 12-14}]",
+      "@ioannidisWhyMost2005 [{p. 12-14}]",
+    ],
+    [
+      "suppressed-author",
+      "[-@ioannidisWhyMost2005]",
+      "[-@ioannidisWhyMost2005]",
+    ],
+    [
+      "prefix-and-suffix",
+      "[see @ioannidisWhyMost2005 for a review]",
+      "[see @ioannidisWhyMost2005 for a review]",
+    ],
+    [
+      "annotation-citation",
+      "[@ioannidisWhyMost2005, {p. 1}]",
+      "@ioannidisWhyMost2005 [{p. 1}]",
+    ],
+  ])(
+    "renders the %s example under both variants",
+    async (example, main, alt) => {
+      const handlers = citationHandlers();
+      expect(await renderCitation({ example }, handlers)).toMatchObject({
+        ok: true,
+        markdown: main,
+      });
+      expect(
+        await renderCitation({ example, variant: "alt" }, handlers),
+      ).toMatchObject({ ok: true, markdown: alt });
+    },
+  );
+
+  it("renders a customized document and reports its vault path", async () => {
+    const handlers = citationHandlers(
+      "{{ zt.variant }}:{{ zt.citations[0].item.citekey }}",
+      () => ({
+        path: "Templates/zotlit-citation.md",
+        customized: true,
+        language: "liquid" as const,
+        inertPath: null,
+        compileError: null,
+      }),
+    );
+
+    expect(
+      await renderCitation({ example: "one-item", variant: "alt" }, handlers),
+    ).toMatchObject({
+      ok: true,
+      template: {
+        name: "citation",
+        language: "liquid",
+        source: { kind: "vault", path: "Templates/zotlit-citation.md" },
+      },
+      markdown: "alt:ioannidisWhyMost2005",
+    });
+  });
+
+  it("returns the rendered bytes alone for format=markdown", async () => {
+    const handlers = citationHandlers();
+
+    expect(
+      await handlers[TEMPLATE_RENDER_COMMAND]({
+        template: "citation",
+        example: "one-item",
+        format: "markdown",
+      }),
+    ).toBe("[@ioannidisWhyMost2005]");
+  });
+
+  it.each([
+    [
+      { example: "one-item", variant: "sidebar" },
+      "variant",
+      "variant must be 'main', or 'alt'.",
+    ],
+    [
+      { example: "three-items" },
+      "example",
+      "example must be 'one-item', 'two-items', 'item-with-page', 'suppressed-author', 'prefix-and-suffix', or 'annotation-citation'.",
+    ],
+    [
+      { example: "one-item", key: "ITEM2345" },
+      "example",
+      "Select the Citation with example=<one-item|two-items|item-with-page|suppressed-author|prefix-and-suffix|annotation-citation> or with key=<indexed-key>, not both.",
+    ],
+    [
+      {},
+      "key",
+      "key must be an Indexed Key, or select a built-in Citation with example=<one-item|two-items|item-with-page|suppressed-author|prefix-and-suffix|annotation-citation>.",
+    ],
+  ])("refuses %o", async (params, parameter, message) => {
+    expect(
+      await renderCitation(params as Record<string, string>),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message,
+        hint: DIAGNOSTIC_HINTS.INVALID_SELECTOR,
+        details: { parameter },
+      },
+    });
+  });
+
+  it("refuses variant and example on a Legacy Template File slot", async () => {
+    const handlers = citationHandlers();
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_RENDER_COMMAND]({
+          key: "ITEM2345",
+          template: "note",
+          variant: "alt",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        message:
+          "variant names a Citation Variant; it applies to template=citation only.",
+        details: { parameter: "variant" },
+      },
+    });
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_RENDER_COMMAND]({
+          template: "note",
+          example: "one-item",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        details: { parameter: "example" },
+      },
+    });
+  });
+
+  it("refuses an example set on every other data root", async () => {
+    const handlers = citationHandlers();
+
+    expect(
+      JSON.parse(
+        await handlers[TEMPLATE_DATA_COMMAND]({
+          root: "note",
+          example: "one-item",
+        }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      diagnostic: {
+        code: "INVALID_SELECTOR",
+        details: { parameter: "example" },
+      },
     });
   });
 });

@@ -1,5 +1,5 @@
 {
-  "contractVersion": 2,
+  "contractVersion": 3,
   "item": {
     "key": "I49R3FTL",
     "indexedKey": "I49R3FTL",
@@ -240,5 +240,5 @@
       "reason": "A personal-library web link carries the Zotero account name, so it is not included in Item Snapshots."
     }
   ],
-  "revision": "14fbfb560eba79df4bc59ce78062de68b42d7fe0f0e9c0fb0ed707be98017793"
+  "revision": "296825c0efbbcb2ce871f5a5e50d5e274c65707fac53b84a347fd81630bbdde4"
 }

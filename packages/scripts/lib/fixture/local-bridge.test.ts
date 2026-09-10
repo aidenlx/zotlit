@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { CONTRACT_VERSION } from "@zotlit/db";
 import {
   BRIDGE_VERSION,
   DOCS_DEV_SERVER_ORIGIN,
@@ -88,7 +89,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
       storage: memoryStorage(),
       compatibility: {
         bridgeVersion: BRIDGE_VERSION,
-        templateDataContractVersion: 2,
+        templateDataContractVersion: CONTRACT_VERSION,
       },
     });
     // Nothing but the fragment says where the bridge is: the page reaches the
@@ -186,7 +187,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     const schemas = await client.readTemplateSchema();
     expect(Object.keys(schemas)).toEqual(["note", "annotation", "filename"]);
     expect(schemas.note).toMatchObject({
-      $id: "urn:zotlit:template-contract:v2:note",
+      $id: "urn:zotlit:template-contract:v3:note",
     });
 
     const snapshot = await client.loadSelectedItem();
@@ -359,10 +360,13 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     ).resolves.toEqual({
       state: "unavailable",
       reason: "version-mismatch",
-      expected: { bridgeVersion: 999, templateDataContractVersion: 2 },
+      expected: {
+        bridgeVersion: 999,
+        templateDataContractVersion: CONTRACT_VERSION,
+      },
       received: {
         bridgeVersion: BRIDGE_VERSION,
-        templateDataContractVersion: 2,
+        templateDataContractVersion: CONTRACT_VERSION,
       },
     });
     await expect(incompatible.readTemplateSchema()).rejects.toBeInstanceOf(
@@ -406,11 +410,11 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
       reason: "version-mismatch",
       expected: {
         bridgeVersion: BRIDGE_VERSION,
-        templateDataContractVersion: 2,
+        templateDataContractVersion: CONTRACT_VERSION,
       },
       received: {
         bridgeVersion: BRIDGE_VERSION + 1,
-        templateDataContractVersion: 2,
+        templateDataContractVersion: CONTRACT_VERSION,
       },
     });
 
@@ -443,14 +447,22 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
       });
 
     await expect(
-      save(profile.source.replace("contract: 2", "contract: 999")),
+      save(
+        profile.source.replace(
+          `contract: ${CONTRACT_VERSION}`,
+          "contract: 999",
+        ),
+      ),
     ).resolves.toMatchObject({
       state: "refused",
       reason: "unsupported-profile",
     });
     await expect(
       save(
-        profile.source.replace("contract: 2\n", "contract: 2\nlanguage: eta\n"),
+        profile.source.replace(
+          `contract: ${CONTRACT_VERSION}\n`,
+          `contract: ${CONTRACT_VERSION}\nlanguage: eta\n`,
+        ),
       ),
     ).resolves.toMatchObject({
       state: "refused",
@@ -481,8 +493,8 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
     await expect(
       save(
         profile.source.replace(
-          "contract: 2\n",
-          "contract: 2\nminAppVersion: 99.0.0\n",
+          `contract: ${CONTRACT_VERSION}\n`,
+          `contract: ${CONTRACT_VERSION}\nminAppVersion: 99.0.0\n`,
         ),
       ),
     ).resolves.toMatchObject({
@@ -742,7 +754,7 @@ function clientFor(
     storage: options.storage ?? memoryStorage(),
     compatibility: {
       bridgeVersion: options.expectedBridgeVersion ?? BRIDGE_VERSION,
-      templateDataContractVersion: 2,
+      templateDataContractVersion: CONTRACT_VERSION,
     },
   });
 }

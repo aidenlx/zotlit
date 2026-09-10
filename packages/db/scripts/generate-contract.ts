@@ -55,6 +55,11 @@ const ROOT_DECLARATIONS = {
     type: "TemplateFilenameItemData",
     references: [],
   },
+  citation: {
+    module: "src/lib/context/zt-template-cite.ts",
+    type: "CitationTemplateData",
+    references: [],
+  },
 } as const satisfies Record<
   ContractRoot,
   {

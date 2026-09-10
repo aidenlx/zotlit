@@ -33,11 +33,14 @@ import {
   TEMPLATE_SOURCE_COMMAND,
   TEMPLATE_STATUS_COMMAND,
 } from "./cli";
-import { loadTemplateData } from "./data";
+import { loadCitationData, loadTemplateData } from "./data";
 import { GUIDE_TOPIC_NAMES } from "./guide";
 import {
+  CITATION_EXAMPLE_NAMES,
+  CITATION_VARIANT_NAMES,
   FRONTMATTER_LANGUAGE_NAMES,
   FRONTMATTER_MERGE_NAMES,
+  RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
 } from "./request";
 import type {
@@ -64,12 +67,34 @@ interface TemplateWorkbenchRegistrationDeps {
   zoteroPref: ZoteroPrefService;
 }
 
-/** The Indexed Key selector both item-backed commands take. */
+/** The Indexed Key selector a command with no other way to name an object takes. */
 function keyFlag(): CliFlag {
   return {
     value: "<indexed-key>",
     description: "Zotero key for an object",
     required: true,
+  };
+}
+
+/**
+ * The Indexed Key selector on a command an `example=` set can select instead.
+ * Obsidian answers "Missing required parameter" before it calls the handler,
+ * so an either/or selector is declared optional here and the parser reports
+ * which of the two a call must name.
+ */
+function selectorKeyFlag(): CliFlag {
+  return {
+    value: "<indexed-key>",
+    description:
+      "Zotero key for an object; the citation root takes example instead",
+  };
+}
+
+/** The built-in Citation set the citation root reads in place of a key. */
+function exampleFlag(): CliFlag {
+  return {
+    value: choices(CITATION_EXAMPLE_NAMES),
+    description: "Built-in citation set to read instead of key",
   };
 }
 
@@ -103,8 +128,9 @@ function formatFlag(values: readonly string[]): CliFlag {
 
 function dataFlags(): CliFlags {
   return {
-    key: keyFlag(),
+    key: selectorKeyFlag(),
     root: rootFlag(),
+    example: exampleFlag(),
     format: formatFlag(["json"]),
     ...expectationFlags(),
   } satisfies Record<(typeof DATA_PARAMS)[number], CliFlag>;
@@ -121,12 +147,17 @@ function guideFlags(): CliFlags {
 
 function renderFlags(): CliFlags {
   return {
-    key: keyFlag(),
+    key: selectorKeyFlag(),
     template: {
-      value: choices(TEMPLATE_SLOT_NAMES),
+      value: choices(RENDER_TEMPLATE_NAMES),
       description: "Template to render",
       required: true,
     },
+    variant: {
+      value: choices(CITATION_VARIANT_NAMES),
+      description: "Citation Variant for template=citation, default main",
+    },
+    example: exampleFlag(),
     format: formatFlag(["markdown", "json"]),
     ...expectationFlags(),
   } satisfies Record<(typeof RENDER_PARAMS)[number], CliFlag>;
@@ -245,6 +276,8 @@ export function registerTemplateWorkbench(
       };
     },
     loadData: (indexedKey, root) => loadTemplateData(deps, indexedKey, root),
+    loadCitation: (selector, variant) =>
+      loadCitationData(deps, selector, variant),
     templates: deps.templates,
     literatureNotes: {
       readProfiles: () => {

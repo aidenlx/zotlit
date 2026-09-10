@@ -1,4 +1,4 @@
-import type { ContractRoot, TemplateSlot } from "@zotlit/db";
+import type { ContractRoot } from "@zotlit/db";
 import type {
   FrontmatterLanguage,
   FrontmatterMergeStrategy,
@@ -26,6 +26,7 @@ import type {
 
 import type { TemplateDataLoadResult } from "./data";
 import type { SchemaAsset } from "./schema";
+import type { RenderTemplate } from "./vocabulary";
 
 /**
  * The wire format of the `zotlit:template-*` and `zotlit:frontmatter-*`
@@ -284,15 +285,16 @@ export function dataLoadDiagnostic(
  * Classify a fault raised while a command evaluated Template data or rendered
  * a Template.
  *
- * @param template - The slot the render command invoked. The data command
- *   passes `null`: reading a data root runs no Template of its own, so
+ * @param template - The Template the render command invoked: a Legacy
+ *   Template File slot, or the Citation Template. The data command passes
+ *   `null`: reading a data root runs no Template of its own, so
  *   `details.template` then appears only when the error itself names one (see
- *   the `cite` label the annotation root's citation getter attaches).
+ *   the label the annotation root's citation getter attaches).
  */
 export function templateFaultDiagnostic(
   error: unknown,
   options: {
-    template: TemplateSlot | null;
+    template: RenderTemplate | null;
     compileErrors: ReadonlyMap<string, CompileError>;
   },
 ): Diagnostic {
