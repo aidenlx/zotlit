@@ -253,7 +253,7 @@ const nativeCompletion: TemplateCompletionPresentation = {
 export function createTemplateWorkbenchHost(
   app: App,
   ports: Pick<WorkbenchHost, "render" | "matchData" | "insertTarget"> &
-    Partial<Pick<WorkbenchHost, "markdown">> & {
+    Partial<Pick<WorkbenchHost, "markdown" | "partials">> & {
       /** The view an editor hover popover belongs to; one popover shows at a time. */
       hoverParent?: HoverParent;
     },

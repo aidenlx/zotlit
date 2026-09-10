@@ -1,4 +1,7 @@
-// Typed error naming an inert JavaScript-Templates artifact an operation requires.
+// Typed errors the template service raises: an inert JavaScript-Templates
+// artifact an operation requires, and a refused Shared Partial name.
+
+import type { PartialNameRefusal } from "./defaults";
 
 /**
  * Thrown when an operation requires an artifact the JavaScript Templates gate
@@ -20,5 +23,24 @@ export class InertTemplateError extends Error {
     super(message, options);
     this.name = "InertTemplateError";
     this.templateName = templateName;
+  }
+}
+
+/**
+ * Thrown when a name breaks the Shared Partial rule every entry point shares:
+ * letters, digits, and hyphens, free of the reserved names, and unique in the
+ * vault. Every entry point judges the name with `partialNameRefusal` before it
+ * calls, so this is the service's last guard: the message reads in a log, and
+ * `refusal` names the clause that refused.
+ */
+export class PartialNameError extends Error {
+  readonly partialName: string;
+  readonly refusal: PartialNameRefusal;
+
+  constructor(partialName: string, refusal: PartialNameRefusal) {
+    super(`Refused the Shared Partial name '${partialName}': ${refusal}`);
+    this.name = "PartialNameError";
+    this.partialName = partialName;
+    this.refusal = refusal;
   }
 }

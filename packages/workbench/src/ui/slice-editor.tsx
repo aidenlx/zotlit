@@ -16,6 +16,7 @@ import { useDocumentRevision } from "./editor";
 import { HiddenName, useOptionalHost } from "./host";
 import type { WorkbenchInsertTarget } from "./host";
 import { useWorkbenchMessages } from "./messages";
+import { partialSuggestions } from "./partial-suggestions";
 import { tagDescription } from "./tag-help";
 import { useParts, useEditorExtension } from "./theme";
 
@@ -142,7 +143,11 @@ export function SliceEditor({
       const expression = region?.expression ?? false;
       const supplied = report.current.suggest?.(masterPosition);
       return {
-        partials: controller.dependencies,
+        ...partialSuggestions(
+          report.current.m,
+          controller.dependencies,
+          report.current.adapter?.partials,
+        ),
         ...supplied,
         root,
         language: language === "json-e" ? "json-e" : region?.language,

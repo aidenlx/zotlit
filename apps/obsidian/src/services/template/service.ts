@@ -59,12 +59,14 @@ import {
   isLegacyCitationName,
   isTemplateName,
   MANAGED_CONTENT_TEMPLATE,
+  partialNameRefusal,
   partialPath,
+  RESERVED_PARTIAL_NAMES,
   templatePath,
   TEMPLATE_NAMES,
 } from "./defaults";
 import type { TemplateName } from "./defaults";
-import { InertTemplateError } from "./errors";
+import { InertTemplateError, PartialNameError } from "./errors";
 import { normalizeVaultPath } from "./path";
 
 const logger = getLogger("template");
@@ -73,16 +75,6 @@ const FLUSH_DEBOUNCE_MS = 500;
 const SETTLE_TIMEOUT_MS = 5_000;
 const LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES: ReadonlySet<TemplateName> =
   new Set(["filename", "note", "annotation", MANAGED_CONTENT_TEMPLATE]);
-
-/**
- * Names a Shared Partial file cannot claim: the Citation Template answers to
- * `citation`, and each Legacy Template File slot answers to its own name for
- * as long as the slots exist.
- */
-const RESERVED_PARTIAL_NAMES: ReadonlySet<string> = new Set<string>([
-  ...TEMPLATE_NAMES,
-  CITATION_TEMPLATE_NAME,
-]);
 
 /** localStorage key for the per-device JavaScript Templates consent flag. */
 const JS_TEMPLATES_STORAGE_KEY = "zotlit-javascript-templates";
@@ -419,6 +411,12 @@ export class TemplateService extends Service<void> {
   readonly #pending: TemplateWork = emptyTemplateWork();
   /** Partial name → the `zotlit-partial.<name>.md` document backing it. */
   readonly #partials = new Map<string, RegisteredPartial>();
+  /** Every name the folder holds a `zotlit-partial.<name>.md` for, whether or
+   *  not it compiled: the vault's namespace, which completion offers and the
+   *  name rule checks a new name against. */
+  readonly #partialNames = new Set<string>();
+  /** Reserved name → the partial file claiming it, reported in settings. */
+  readonly #reservedPartialFiles = new Map<string, string>();
   /** The Citation Template currently registered, `null` while none compiles. */
   #citation: RegisteredCitationTemplate | null = null;
   /** Vault paths of the `zotlit-` files no kind claims, reported in settings. */
@@ -1026,6 +1024,85 @@ export class TemplateService extends Service<void> {
   }
 
   /**
+   * Every Shared Partial the template folder holds a document for, sorted by
+   * name — the vault's one flat namespace, which completion offers, the
+   * settings list shows, and a new name is checked against. A document that
+   * failed to compile keeps its name here: the file exists, so the name is
+   * taken.
+   */
+  getPartialNames(): readonly string[] {
+    this.#requireLoaded("getPartialNames");
+    return [...this.#partialNames].sort();
+  }
+
+  /** {@link getPartialNames} as documents, for a caller that shows the file. */
+  getPartialDocuments(): readonly SharedPartialDocument[] {
+    return this.getPartialNames()
+      .map((name) => this.getPartialDocument(name))
+      .filter((document) => document !== null);
+  }
+
+  /**
+   * The partial files whose name already answers to another Template, keyed by
+   * that name — nothing renders them, so settings names each one instead.
+   */
+  getReservedPartialFiles(): readonly { name: string; path: string }[] {
+    this.#requireLoaded("getReservedPartialFiles");
+    return [...this.#reservedPartialFiles]
+      .map(([name, path]) => ({ name, path }))
+      .sort((left, right) => left.name.localeCompare(right.name));
+  }
+
+  /**
+   * Create `zotlit-partial.<name>.md` and wait for the reconciler to register
+   * it, so the caller can open the document and render through it at once.
+   *
+   * Awaits {@link ready} first, the way {@link materializeCitationTemplate}
+   * does: a create flow reached during startup waits for the folder scan.
+   *
+   * @param name a name the caller has already folded with
+   *   `normalizePartialName`.
+   * @throws {@link PartialNameError} when the name breaks the rule every entry
+   *   point shares.
+   */
+  async createPartial(
+    name: string,
+    options: { source?: string; language?: TemplateLanguage } = {},
+  ): Promise<TFile> {
+    await this.ready;
+    this.#requireLoaded("createPartial");
+    const refusal = partialNameRefusal(name, this.#partialNames);
+    if (refusal) throw new PartialNameError(name, refusal);
+    const folder = this.#currentTemplateFolder();
+    await ensureFolder(this.#app, folder || "/");
+    const source = options.source ?? "";
+    const file = await this.#app.vault.create(
+      partialPath(folder, name),
+      options.language === undefined
+        ? source
+        : formatPlainTemplateDocument(source, options.language),
+    );
+    await this.#settle();
+    logger.debug("Created a Shared Partial", { name, path: file.path });
+    return file;
+  }
+
+  /**
+   * Move a Shared Partial's document to Obsidian's recoverable trash. Every
+   * template that still calls the name reports a missing partial from then on:
+   * ZotLit rewrites no caller.
+   */
+  async deletePartial(name: string): Promise<void> {
+    this.#requireLoaded("deletePartial");
+    const file = this.#app.vault.getFileByPath(
+      partialPath(this.#currentTemplateFolder(), name),
+    );
+    if (!file) return;
+    await this.#app.fileManager.trashFile(file);
+    await this.#settle();
+  }
+
+  /**
    * Render a draft Shared Partial — the unsaved bytes of
    * `zotlit-partial.<name>.md` — against the installed partials, without
    * registering the draft or writing it. This is what the Template Workbench
@@ -1482,6 +1559,8 @@ export class TemplateService extends Service<void> {
       this.#inertEta.clear();
       this.#winners.clear();
       this.#partials.clear();
+      this.#partialNames.clear();
+      this.#reservedPartialFiles.clear();
       this.#citation = null;
       this.#unrecognizedFiles.clear();
       this.#facade.reset();
@@ -1753,23 +1832,27 @@ export class TemplateService extends Service<void> {
     const path = partialPath(this.#currentTemplateFolder(), name);
     const file = this.#app.vault.getFileByPath(path);
 
+    // A reserved name already answers to another Template, so the file owns
+    // nothing: it is reported by name in settings rather than registered.
     if (RESERVED_PARTIAL_NAMES.has(name)) {
-      if (!file) {
-        this.#unrecognizedFiles.delete(path);
-        return;
+      if (file) {
+        logger.debug("Partial file claims a reserved template name", {
+          name,
+          path,
+        });
+        this.#reservedPartialFiles.set(name, path);
+      } else {
+        this.#reservedPartialFiles.delete(name);
       }
-      logger.warn("Partial file claims a reserved template name", {
-        name,
-        path,
-      });
-      this.#unrecognizedFiles.add(path);
       return;
     }
 
     if (!file) {
+      this.#partialNames.delete(name);
       this.#removePartial(name);
       return;
     }
+    this.#partialNames.add(name);
 
     let source: string;
     try {

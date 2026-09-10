@@ -96,6 +96,8 @@ export const DIAGNOSTIC_HINTS = {
     "Rename the manifest partial named 'annotation' and update its calls. The Annotation Section supplies Profile annotation rendering.",
   DOCUMENT_INVALID:
     "Correct the document validation error, then inspect or render it again.",
+  RESERVED_PARTIAL_NAME:
+    "Rename the Shared Partial file to a name ZotLit does not already use. 'citation' names the Citation Template, and 'filename', 'note', 'annotation', and 'content' name the Literature Note Template slots.",
 } as const satisfies Record<string, string>;
 
 export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;

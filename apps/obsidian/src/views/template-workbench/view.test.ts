@@ -75,6 +75,11 @@ function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
     pluginVersion: "2.1.3",
     db: { ready: Promise.resolve(), state: "ready" },
     zoteroPref: { ready: Promise.resolve(), dataDir: null },
+    templates: {
+      loaded: true,
+      getPartialNames: () => [],
+      getPartialDocuments: () => [],
+    },
     ...deps,
   } as unknown as TemplateWorkbenchDeps);
   leaf.view = view;
@@ -1154,6 +1159,38 @@ language: liquid
     expect(titles(citation.view)).not.toContain(
       m.workbench_choose_annotation(),
     );
+  });
+
+  it("lists the vault's partials in the pane menu and ends with New partial", () => {
+    const { view } = setup({
+      templates: {
+        loaded: true,
+        getPartialNames: () => ["authors", "venue-line"],
+        getPartialDocuments: () => [
+          {
+            name: "authors",
+            path: "templates/zotlit-partial.authors.md",
+            language: "liquid",
+          },
+          {
+            name: "venue-line",
+            path: "templates/zotlit-partial.venue-line.md",
+            language: "liquid",
+          },
+        ],
+      } as unknown as TemplateWorkbenchDeps["templates"],
+    });
+    const menu = new Menu();
+    view.onPaneMenu(menu as never, "more-options");
+
+    const partials = menu.items.find(
+      (item) => item.title === m.template_workbench_partials(),
+    )!;
+    expect(partials.submenu?.items.map((item) => item.title)).toEqual([
+      "authors",
+      "venue-line",
+      m.workbench_partial_new(),
+    ]);
   });
 
   it("writes an Explorer field into the Citation Template's one editor", async () => {
