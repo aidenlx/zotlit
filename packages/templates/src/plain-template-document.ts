@@ -52,6 +52,18 @@ export class PlainTemplateDocumentError extends Error {
 }
 
 /**
+ * Serialize a plain Template Document — the inverse of
+ * {@link parsePlainTemplateDocument}. The manifest is always written, so a
+ * `source` that opens with its own `---` line survives the round trip.
+ */
+export function formatPlainTemplateDocument(
+  source: string,
+  language: TemplateLanguage,
+): string {
+  return `---\nlanguage: ${language}\n---\n${source}`;
+}
+
+/**
  * Read the Citation Template or a Shared Partial: a document that is one
  * template source, optionally opened by a manifest naming its rendering
  * language. A document with no manifest is Liquid.

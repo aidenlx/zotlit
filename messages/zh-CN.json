@@ -129,11 +129,12 @@
   "notice_literature_note_template_missing": "配置方案文档 {document} 不存在。请将其还原到模板文件夹，或清除配置方案中的文档引用。",
   "notice_literature_note_template_conversion_required": "请先转换旧版文献笔记模板，再使用其他配置方案。",
   "notice_literature_note_template_conversion_success": "文献笔记模板已转换。旧文件已移至系统废纸篓。",
+  "notice_literature_note_template_conversion_kept": "旧版模板文件已转换。引用文本按 Liquid 转换，以下 Eta 文件保持原样，不再影响引用：{files}。",
   "notice_literature_note_template_conversion_mismatch": "转换后的{difference}不一致，因此 ZotLit 保留了旧版模板，未作更改。",
   "notice_literature_note_template_conversion_unsupported": "此布局无法自动转换，因此 ZotLit 保留了旧版模板，未作更改。",
   "notice_literature_note_template_conversion_no_item": "请连接一个含有条目的 Zotero 数据库，然后重试。",
   "notice_literature_note_template_conversion_exists": "转换后的配置方案文档已存在。请重命名或移除该文档，然后重试。",
-  "notice_literature_note_template_conversion_none": "没有需要转换的旧版文献笔记模板。",
+  "notice_literature_note_template_conversion_none": "没有需要转换的旧版模板文件。",
   "notice_duplicate_literature_notes": "多个文献笔记使用同一个 Zotero 标识符：{paths}。ZotLit 已使用 {selected}；请解决重复项。",
   "notice_create_note_failed": "创建文献笔记失败。",
   "notice_empty_filename": "文件名模板呈现一个空名称。调整模板并重试。",
@@ -952,7 +953,16 @@
   "welcome_migration_title": "从 ZotLit v1 升级",
   "welcome_migration_body": "在您重命名自定义 Eta 模板并启用 JavaScript 模板门之前，不会加载自定义 Eta 模板。",
   "welcome_template_conversion_title": "转换文献笔记模板",
-  "welcome_template_conversion_body": "ZotLit 会将当前的笔记、内容和文件名模板合并为一个配置方案文档。在更改任何文件前，ZotLit 会验证转换前后的输出完全一致。",
+  "welcome_template_conversion_body": "ZotLit 会将旧版模板文件整理为模板文档：笔记、内容、文件名和批注文件合并为 {path}，cite 与 cite2 文件合并为一个引用文本，每个局部模板各自成文件。在写入任何文件前，ZotLit 会验证输出逐字节一致，随后将旧文件移至 Obsidian 设定的废纸篓。",
+  "welcome_template_conversion_completed_files": [
+    {
+      "declarations": ["input count", "local category = count: plural"],
+      "selectors": ["category"],
+      "match": {
+        "category=*": "已将 {count} 个旧模板文件移至 Obsidian 设定的废纸篓。"
+      }
+    }
+  ],
   "welcome_template_conversion_action": "转换模板",
   "welcome_action_open_migration_guide": "打开迁移指南",
   "creator_summary": [

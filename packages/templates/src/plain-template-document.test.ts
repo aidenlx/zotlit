@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { parsePlainTemplateDocument } from "./facade";
+import {
+  formatPlainTemplateDocument,
+  parsePlainTemplateDocument,
+} from "./facade";
 import type { PlainTemplateDocumentError } from "./facade";
 
 describe("plain Template Document", () => {
@@ -66,5 +69,23 @@ describe("plain Template Document", () => {
         offset: source.length,
       }),
     );
+  });
+});
+
+describe("formatPlainTemplateDocument", () => {
+  it("writes the manifest that names the language", () => {
+    expect(formatPlainTemplateDocument("{{ zt.title }}\n", "liquid")).toBe(
+      "---\nlanguage: liquid\n---\n{{ zt.title }}\n",
+    );
+  });
+
+  it("round-trips a source that opens with its own '---' line", () => {
+    const source = "---\ntitle: {{ zt.title }}\n---\n";
+    const document = parsePlainTemplateDocument(
+      formatPlainTemplateDocument(source, "eta"),
+    );
+
+    expect(document.manifest.language).toBe("eta");
+    expect(document.source).toBe(source);
   });
 });

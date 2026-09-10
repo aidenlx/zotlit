@@ -11,6 +11,7 @@ import type {
   FrontmatterLanguage,
 } from "@zotlit/templates/constants";
 import {
+  formatPlainTemplateDocument,
   LegacyTemplateConversionError,
   LiteratureNoteTemplateError,
   parsePlainTemplateDocument,
@@ -51,6 +52,7 @@ import {
   citationPath,
   classifyTemplateFolderFile,
   DEFAULT_TEMPLATES,
+  isLegacyCitationName,
   isTemplateName,
   MANAGED_CONTENT_TEMPLATE,
   partialPath,
@@ -184,6 +186,41 @@ export interface ConvertedLegacyProfileDocument extends ConvertedLegacyLiteratur
   readonly legacyFiles: readonly string[];
 }
 
+/** One 2.1.x Legacy Template File that folds into a plain Template Document. */
+export interface LegacyTemplateFile {
+  /** The bare 2.1.x name: `cite`, `cite2`, or the partial's own name. */
+  readonly name: string;
+  /** The `zotlit-<name>.(liquid|eta).md` file that owns the name. */
+  readonly path: string;
+  readonly language: TemplateLanguage;
+  /** The JavaScript Templates gate leaves this Eta file uncompiled. */
+  readonly inert: boolean;
+  /** Editions that lose to {@link path}, trashed along with it. */
+  readonly shadowed: readonly string[];
+}
+
+/** The Legacy Template Files the one-shot conversion still has to fold. */
+export interface LegacyTemplateDocuments {
+  /** `cite` before `cite2`, the order they fold in. */
+  readonly citation: readonly LegacyTemplateFile[];
+  /** Every bare partial file, by name. */
+  readonly partials: readonly LegacyTemplateFile[];
+}
+
+/** The plain Template Documents {@link LegacyTemplateDocuments} converts into. */
+export interface ConvertedLegacyTemplateDocuments {
+  /** Documents to create, each already verified. */
+  readonly documents: readonly {
+    readonly path: string;
+    readonly source: string;
+  }[];
+  /** Legacy files the documents replace, to move to trash. */
+  readonly trashed: readonly string[];
+  /** Legacy files no document claims, left in place and reported: the Eta
+   *  side of a mixed-language `cite` / `cite2` pair. */
+  readonly kept: readonly string[];
+}
+
 interface ReconciledLiteratureNoteTemplate {
   path: string;
   document: LiteratureNoteTemplateDocument;
@@ -280,7 +317,12 @@ function takeTemplateWork(pending: TemplateWork): TemplateWork {
 function collectTemplatePath(work: TemplateWork, path: string): boolean {
   const classified = classifyTemplateFolderFile(path);
   switch (classified?.kind) {
+    // A Legacy Template File keeps 2.1.x's registration by bare name until the
+    // one-shot conversion trashes it, so a note template that calls a legacy
+    // partial still resolves and the conversion reads one reconciled winner.
     case "legacy-slot":
+    case "legacy-citation":
+    case "legacy-partial":
       work.names.add(classified.name);
       return true;
     case "profile":
@@ -298,6 +340,17 @@ function collectTemplatePath(work: TemplateWork, path: string): boolean {
     default:
       return false;
   }
+}
+
+/**
+ * The language the folded Citation Template is written in. Liquid wins a
+ * mixed `cite` / `cite2` pair, the way it wins every other name, and the Eta
+ * side stays in the vault.
+ */
+function foldCitationLanguage(
+  files: readonly LegacyTemplateFile[],
+): TemplateLanguage {
+  return files.every((file) => file.language === "eta") ? "eta" : "liquid";
 }
 
 /** A recorded compile error: its message, and the liquidjs caret-annotated
@@ -985,6 +1038,152 @@ export class TemplateService extends Service<void> {
       ]);
   }
 
+  /**
+   * The vault's remaining 2.1.x Legacy Template Files that convert into plain
+   * Template Documents: the `cite` and `cite2` citation slots, and every bare
+   * `zotlit-<name>.(liquid|eta).md` partial.
+   */
+  getLegacyTemplateDocuments(): LegacyTemplateDocuments {
+    this.#requireLoaded("getLegacyTemplateDocuments");
+    const citation: LegacyTemplateFile[] = [];
+    const partials: LegacyTemplateFile[] = [];
+    // Sorted, so `cite` folds before `cite2` and both lists read stably.
+    for (const name of [...this.#winners.keys()].sort()) {
+      if (isTemplateName(name)) continue;
+      const file = this.#legacyTemplateFile(name);
+      if (!file) continue;
+      (isLegacyCitationName(name) ? citation : partials).push(file);
+    }
+    return { citation, partials };
+  }
+
+  /**
+   * Build and verify, in memory, the plain Template Documents the vault's
+   * remaining Legacy Template Files convert into: one Citation Template
+   * folding `cite` and `cite2`, and one `zotlit-partial.<name>.md` per bare
+   * partial. Nothing is written — the caller persists the returned documents
+   * only once every verification passed.
+   *
+   * @param refs the citation the fold verifies both Citation Variants
+   *   against, from one real Zotero item.
+   * @throws {@link LegacyTemplateConversionError} when a variant's output
+   *   differs from the legacy file it replaces, or when the fold is Eta while
+   *   the JavaScript Templates gate is off.
+   */
+  async convertLegacyTemplateDocuments(
+    refs: readonly CiteRef[],
+  ): Promise<ConvertedLegacyTemplateDocuments> {
+    this.#requireLoaded("convertLegacyTemplateDocuments");
+    const folder = this.#currentTemplateFolder();
+    const { citation, partials } = this.getLegacyTemplateDocuments();
+    const documents: { path: string; source: string }[] = [];
+    const trashed: string[] = [];
+    const kept: string[] = [];
+
+    if (citation.length > 0) {
+      const language = foldCitationLanguage(citation);
+      if (language === "eta" && !this.#javascriptTemplatesEnabled) {
+        throw new LegacyTemplateConversionError(
+          "unsupported-legacy-template",
+          "The legacy citation templates are Eta while JavaScript Templates are disabled",
+          {
+            difference: "inert template",
+            recovery:
+              "Enable JavaScript Templates on this device, then retry conversion.",
+          },
+        );
+      }
+      const legacy: {
+        language: TemplateLanguage;
+        main?: string;
+        alt?: string;
+      } = { language };
+      // The bare names the pass unregisters with the files it trashes. The
+      // fold is verified against the registry that remains, so a branch that
+      // renders one of them is refused rather than written.
+      const removedNames: string[] = [];
+      for (const file of citation) {
+        if (file.language !== language) {
+          kept.push(file.path);
+          continue;
+        }
+        legacy[file.name === "cite" ? "main" : "alt"] =
+          await this.#readLegacyTemplateFile(file.path);
+        trashed.push(file.path, ...file.shadowed);
+        removedNames.push(file.name);
+      }
+      const { source } = this.#facade.convertLegacyCitationTemplates(
+        legacy,
+        {
+          main: citekeysToCiteTemplateData(refs, "main"),
+          alt: citekeysToCiteTemplateData(refs, "alt"),
+        },
+        { removedNames },
+      );
+      documents.push({
+        path: citationPath(folder),
+        source: formatPlainTemplateDocument(source, language),
+      });
+    }
+
+    for (const file of partials) {
+      documents.push({
+        path: partialPath(folder, file.name),
+        source: formatPlainTemplateDocument(
+          await this.#readLegacyTemplateFile(file.path),
+          file.language,
+        ),
+      });
+      trashed.push(file.path, ...file.shadowed);
+    }
+    logger.debug("Planned the legacy Template Document conversion", {
+      documents: documents.map(({ path }) => path),
+      trashed,
+      kept,
+    });
+    return { documents, trashed, kept };
+  }
+
+  /** The reconciled state of one bare legacy name, `null` when no file backs it. */
+  #legacyTemplateFile(name: string): LegacyTemplateFile | null {
+    const winner = this.#winners.get(name);
+    if (!winner) return null;
+    const shadowed = this.#shadowed.get(name);
+    if (winner.source.kind === "vault") {
+      return {
+        name,
+        path: winner.source.path,
+        language: winner.language,
+        inert: false,
+        shadowed: shadowed ? [shadowed] : [],
+      };
+    }
+    const inertPath = this.#inertEta.get(name);
+    if (!inertPath) return null;
+    return {
+      name,
+      path: inertPath,
+      language: "eta",
+      inert: true,
+      shadowed: shadowed ? [shadowed] : [],
+    };
+  }
+
+  async #readLegacyTemplateFile(path: string): Promise<string> {
+    const file = this.#app.vault.getFileByPath(path);
+    if (!file) {
+      throw new LegacyTemplateConversionError(
+        "unsupported-legacy-template",
+        `Legacy template file '${path}' is no longer in the vault`,
+        {
+          difference: "missing legacy file",
+          recovery: "Reload the template folder, then retry conversion.",
+        },
+      );
+    }
+    return await this.#app.vault.cachedRead(file);
+  }
+
   /** Build and byte-verify the converted default Profile document in memory. */
   async convertLegacyLiteratureNoteTemplates(data: {
     readonly note: object;
@@ -1309,6 +1508,18 @@ export class TemplateService extends Service<void> {
     const etaFile = this.#app.vault.getFileByPath(
       templatePath(folder, name, "eta"),
     );
+
+    // One bare name, two file forms: the 2.1.x Legacy Template File and the
+    // `zotlit-partial.<name>.md` document that replaces it. The document owns
+    // the name — the conversion writes it before it trashes the legacy file,
+    // so the deletion event that follows leaves the registered partial alone.
+    if (this.#partials.has(name)) {
+      if (!liquidFile && !etaFile) {
+        this.#winners.delete(name);
+        this.#shadowed.delete(name);
+      }
+      return;
+    }
 
     // A shadowed eta file is reported as shadowed regardless of the gate —
     // the liquid edition wins either way, so the flag never changes its fate.

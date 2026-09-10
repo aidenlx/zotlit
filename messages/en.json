@@ -72,6 +72,7 @@
   "notice_literature_note_template_missing": "The profile document {document} is missing. Restore it in the template folder or clear the profile document reference.",
   "notice_literature_note_template_conversion_required": "Convert the legacy literature note templates before you use an added profile.",
   "notice_literature_note_template_conversion_success": "Literature note templates converted. The old files are in the system trash.",
+  "notice_literature_note_template_conversion_kept": "Legacy template files converted. The citation text converted as Liquid, so these Eta files stayed in place and no longer affect citations: {files}.",
   "notice_literature_note_template_conversion_mismatch": "ZotLit kept the legacy templates unchanged because the converted {difference} did not match.",
   "notice_literature_note_template_conversion_unsupported": "ZotLit kept the legacy templates unchanged because this layout cannot be converted automatically.",
   "notice_literature_note_template_conversion_frontmatter_inert": "Enable JavaScript Templates, then retry conversion; affected Managed Frontmatter fields: {fields}.",
@@ -79,7 +80,7 @@
   "notice_literature_note_template_conversion_no_item": "Connect a Zotero database that contains an item, then try again.",
   "notice_literature_note_template_conversion_no_annotation": "Add an annotation to a Zotero item, then try again.",
   "notice_literature_note_template_conversion_exists": "The converted profile document already exists. Rename or remove it, then try again.",
-  "notice_literature_note_template_conversion_none": "No legacy literature note templates need conversion.",
+  "notice_literature_note_template_conversion_none": "No legacy template files need conversion.",
   "notice_duplicate_literature_notes": "Multiple literature notes use this Zotero key: {paths}. ZotLit used {selected}; resolve the duplicates.",
   "notice_create_note_failed": "Failed to create literature note.",
   "notice_empty_filename": "The filename template rendered an empty name. Adjust the template and try again.",
@@ -1134,7 +1135,7 @@
   "welcome_migration_title": "Upgrading from ZotLit v1",
   "welcome_migration_body": "Custom Eta templates are not loaded until you rename them and enable the JavaScript Templates gate.",
   "welcome_template_conversion_title": "Convert your literature note templates",
-  "welcome_template_conversion_body": "ZotLit will combine your note, content, filename, and annotation templates into {path}. It verifies byte-identical output before writing the profile document, then moves the old files to Obsidian’s configured trash.",
+  "welcome_template_conversion_body": "ZotLit will fold your legacy template files into template documents: the note, content, filename, and annotation files into {path}, the cite and cite2 files into one citation text, and each partial into its own file. It verifies byte-identical output before it writes anything, then moves the old files to Obsidian’s configured trash.",
   "welcome_template_conversion_completed_title": "Literature note templates converted",
   "welcome_template_conversion_completed_body": [
     {
@@ -1147,6 +1148,16 @@
       "match": {
         "category=one": "Created {path} and moved one old template file to Obsidian’s configured trash.",
         "category=*": "Created {path} and moved {count} old template files to Obsidian’s configured trash."
+      }
+    }
+  ],
+  "welcome_template_conversion_completed_files": [
+    {
+      "declarations": ["input count", "local category = count: plural"],
+      "selectors": ["category"],
+      "match": {
+        "category=one": "Moved one old template file to Obsidian’s configured trash.",
+        "category=*": "Moved {count} old template files to Obsidian’s configured trash."
       }
     }
   ],

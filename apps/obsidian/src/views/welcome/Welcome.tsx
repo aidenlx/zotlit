@@ -383,10 +383,14 @@ function MigrationBanner() {
           {m.welcome_template_conversion_completed_title()}
         </StepHeading>
         <p className="zt:mt-1 zt:text-sm zt:text-muted-foreground">
-          {m.welcome_template_conversion_completed_body({
-            path: result.document,
-            count: result.trashed,
-          })}
+          {result.document
+            ? m.welcome_template_conversion_completed_body({
+                path: result.document,
+                count: result.trashed,
+              })
+            : m.welcome_template_conversion_completed_files({
+                count: result.trashed,
+              })}
         </p>
       </div>
     );

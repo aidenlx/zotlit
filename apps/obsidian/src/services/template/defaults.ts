@@ -81,6 +81,14 @@ export const TEMPLATE_NAMES = [
   MANAGED_CONTENT_TEMPLATE,
 ] as const;
 
+/**
+ * The 2.1.x citation slots, in the order they fold into the Citation
+ * Template: `cite` answered the main gesture and `cite2` the alternate one.
+ */
+export const LEGACY_CITATION_NAMES = ["cite", "cite2"] as const;
+
+export type LegacyCitationName = (typeof LEGACY_CITATION_NAMES)[number];
+
 export const DEFAULT_TEMPLATES: Record<TemplateName, string> = {
   filename,
   note,
@@ -129,6 +137,11 @@ export function partialPath(folder: string, name: string): string {
 /**
  * What a file in the template folder is, by its filename alone.
  *
+ * `"legacy-citation"` and `"legacy-partial"` are the remaining 2.1.x
+ * `zotlit-<name>.(liquid|eta).md` shapes the one-shot conversion folds: the
+ * two citation slots, and every other bare name, which 2.1.x registered as a
+ * partial.
+ *
  * `"unrecognized"` is a `zotlit-` prefixed Markdown file that is none of the
  * three Template Document kinds and no Legacy Template File: ZotLit reports it
  * once in settings rather than guessing at it.
@@ -138,6 +151,12 @@ export type TemplateFolderFile =
   | { kind: "citation" }
   | { kind: "partial"; name: string }
   | { kind: "legacy-slot"; name: TemplateName; language: TemplateLanguage }
+  | {
+      kind: "legacy-citation";
+      name: LegacyCitationName;
+      language: TemplateLanguage;
+    }
+  | { kind: "legacy-partial"; name: string; language: TemplateLanguage }
   | { kind: "unrecognized" };
 
 /**
@@ -162,16 +181,25 @@ export function classifyTemplateFolderFile(
   if (partial) return { kind: "partial", name: partial.groups.name };
 
   const legacy = TEMPLATE_FILE.exec(filename);
-  if (legacy && isTemplateName(legacy.groups.name)) {
-    return {
-      kind: "legacy-slot",
-      name: legacy.groups.name,
-      language: legacy.groups.language,
-    };
+  if (legacy) {
+    const { name, language } = legacy.groups;
+    if (isTemplateName(name)) return { kind: "legacy-slot", name, language };
+    if (isLegacyCitationName(name)) {
+      return { kind: "legacy-citation", name, language };
+    }
+    // `zotlit-citation.liquid.md` names the Citation Template, which is
+    // `zotlit-citation.md`; a partial may not claim that name either.
+    if (name !== CITATION_TEMPLATE_NAME) {
+      return { kind: "legacy-partial", name, language };
+    }
   }
   return { kind: "unrecognized" };
 }
 
 export function isTemplateName(name: string): name is TemplateName {
   return (TEMPLATE_NAMES as readonly string[]).includes(name);
+}
+
+export function isLegacyCitationName(name: string): name is LegacyCitationName {
+  return (LEGACY_CITATION_NAMES as readonly string[]).includes(name);
 }
