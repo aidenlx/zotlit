@@ -1,5 +1,5 @@
 // Obsidian owns Markdown rendering; each output owns and unloads its render children.
-import { Component, MarkdownRenderer, stringifyYaml } from "obsidian";
+import { Component, MarkdownRenderer } from "obsidian";
 import type { App } from "obsidian";
 import { useEffect, useRef, useState } from "react";
 
@@ -29,7 +29,9 @@ export function NativeMarkdown({
   result,
   marks = NO_MARKS,
   properties = [],
+  frontmatterBlock = null,
   showMarkdown = false,
+  expandProperties = false,
   onRendered,
 }: {
   app: App;
@@ -37,11 +39,18 @@ export function NativeMarkdown({
   result: NativeRenderResult | null;
   marks?: readonly RenderedRange[];
   properties?: readonly RenderedProperty[];
+  /** The note's YAML block as the render wrote it; the Markdown view prints it above the body. */
+  frontmatterBlock?: string | null;
   showMarkdown?: boolean;
+  /** Opens the Properties block when it turns true; the reader's toggle rules after that. */
+  expandProperties?: boolean;
   onRendered?: () => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    if (expandProperties) setCollapsed(false);
+  }, [expandProperties]);
   // Source that renders to nothing, such as an empty Managed Region between
   // its markers, is known only once the app has rendered it.
   const [renderedEmpty, setRenderedEmpty] = useState(false);
@@ -154,10 +163,7 @@ export function NativeMarkdown({
   const present = properties.filter(({ missing }) => !missing);
   const blank = markdown.trim() === "";
   if (showMarkdown) {
-    const frontmatter =
-      present.length === 0
-        ? ""
-        : `---\n${stringifyYaml(Object.fromEntries(present.map(({ key, value }) => [key, value])))}---\n`;
+    const frontmatter = frontmatterBlock ? `---\n${frontmatterBlock}---\n` : "";
     if (blank && !frontmatter) return <EmptyNote />;
     return (
       <pre className="zt:overflow-x-auto zt:font-mono zt:text-sm zt:[overflow-wrap:anywhere] zt:whitespace-pre-wrap zt:select-text">

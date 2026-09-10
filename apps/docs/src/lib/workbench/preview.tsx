@@ -1,6 +1,6 @@
 // The web Preview owns its display choices and render lifetime.
 import { useEffect, useMemo, useState } from "react";
-import type { ComponentProps, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
@@ -10,7 +10,6 @@ import {
   annotationSamples,
   createRenderScheduler,
   PreviewControls,
-  PropertiesResult,
   ResultColumn,
   useRenderState,
   useWorkbenchHost,
@@ -40,7 +39,6 @@ export function WebPreview({
   resources,
   hold,
   mode,
-  entries,
   sampleBar,
   annotationChoice,
   onAnnotationChoice,
@@ -53,7 +51,6 @@ export function WebPreview({
   resources: RenderResources | undefined;
   hold: boolean;
   mode: ResultColumnProps["mode"];
-  entries: ComponentProps<typeof PropertiesResult>["entries"];
   sampleBar: ReactNode;
   annotationChoice: string;
   onAnnotationChoice: (choice: string) => void;
@@ -163,17 +160,6 @@ export function WebPreview({
         openAnnotation={openAnnotation}
         goToEntry={goToEntry}
         openSource={openSource}
-        propertiesResult={
-          result && (
-            <PropertiesResult
-              entries={entries}
-              properties={result.properties}
-              fold={result.fold}
-              frontmatterBlock={result.frontmatterBlock}
-              showMarkdown={state.showMarkdown}
-            />
-          )
-        }
         help={
           <WorkbenchHelp title={m.workbench_result_heading()}>
             {mode === "annotation"

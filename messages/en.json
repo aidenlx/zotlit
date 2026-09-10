@@ -1504,8 +1504,6 @@
   "workbench_properties_move_down": "Move down",
   "workbench_properties_remove": "Remove property",
   "workbench_properties_override_hint": "Rules run in order. A later property can replace a value set earlier. Undo restores changes to these rules.",
-  "workbench_result_by_entry": "What each rule produced",
-  "workbench_result_fold": "Final properties",
   "workbench_name_lede": "Choose how notes are named and where Obsidian stores them.",
   "workbench_name_unreadable": "This profile isn't readable yet. Repair it in Source.",
   "workbench_name_field_name": "Name",

@@ -271,14 +271,6 @@ export const WEB_THEME: WorkbenchTheme = {
         "flex min-h-28 flex-col rounded-md border border-fd-border bg-fd-background",
       diagnostics:
         "flex flex-col gap-1 border-s-2 border-fd-foreground ps-3 text-xs leading-normal",
-      markdown: "font-mono text-xs leading-relaxed whitespace-pre-wrap",
-      result: "flex flex-col gap-4",
-      heading: "text-xs font-semibold",
-      "result-summary": "cursor-pointer py-1 text-xs text-fd-muted-foreground",
-      "result-rows": "mt-2 flex flex-col gap-2",
-      "result-row": "text-xs",
-      "result-key": "font-mono font-medium",
-      "result-empty": "text-fd-muted-foreground italic",
       summary:
         "col-span-2 col-start-1 row-start-2 block min-w-0 text-xs leading-normal break-words text-fd-muted-foreground data-[state=closed]:line-clamp-2",
       "row-action": buttonVariants({ variant: "ghost", size: "icon-xs" }),
@@ -393,7 +385,6 @@ export const WEB_THEME: WorkbenchTheme = {
     propertyList: {
       note: cn(propertyGrid, "mb-4 border-b border-fd-border pb-3"),
       spread: propertyGrid,
-      fold: cn(propertyGrid, "mt-2"),
       list: propertyGrid,
       row: "flex min-w-0 items-start @max-[250px]:flex-wrap",
       key: "flex w-32 min-w-0 shrink-0 items-start gap-1 py-0.5 text-fd-muted-foreground @max-[250px]:w-full",

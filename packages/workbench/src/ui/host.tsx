@@ -141,6 +141,8 @@ export interface WorkbenchPersistence {
 export interface WorkbenchMarkdownProps {
   readonly markdown: string;
   readonly properties: readonly RenderedProperty[];
+  /** The note's YAML block as the render wrote it, printed above `markdown` in the Markdown view. */
+  readonly frontmatterBlock?: string | null;
   readonly showMarkdown: boolean;
   readonly marks?: readonly RenderedRange[];
 }

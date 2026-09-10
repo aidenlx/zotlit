@@ -82,7 +82,6 @@ describe("preview scheduling", () => {
             resources={undefined}
             hold={false}
             mode="note"
-            entries={[]}
             sampleBar={null}
             annotationChoice=""
             onAnnotationChoice={() => {}}

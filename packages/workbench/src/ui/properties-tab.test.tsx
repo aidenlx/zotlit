@@ -5,7 +5,7 @@ import { afterEach, expect, it } from "vitest";
 
 import { useDocumentRevision } from "./editor";
 import { WorkbenchHostProvider } from "./host";
-import { PropertiesPane, PropertiesResult } from "./properties-tab";
+import { PropertiesPane } from "./properties-tab";
 import { fakeHost, renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
@@ -179,33 +179,6 @@ it("shows row diagnostics and the produced properties beside the final fold", ()
   expect(rows[0]?.textContent).not.toContain(
     m.workbench_properties_row_problem(),
   );
-  const output = render(
-    <PropertiesResult
-      entries={controller.managedEntries!}
-      properties={result.properties}
-      fold={result.fold}
-      frontmatterBlock={result.frontmatterBlock}
-      showMarkdown={false}
-    />,
-  );
-  expect(
-    [...output.container.querySelectorAll("section dt")].map(
-      (term) => term.textContent,
-    ),
-  ).toEqual(["title", "related", "collections", "citekey"]);
-  output.rerender(
-    <PropertiesResult
-      entries={controller.managedEntries!}
-      properties={result.properties}
-      fold={result.fold}
-      frontmatterBlock={result.frontmatterBlock}
-      showMarkdown
-    />,
-  );
-  expect(output.container.querySelector("pre")?.textContent).toContain(
-    "title: Why Most Published Research Findings Are False",
-  );
-  expect(output.container.querySelector("dl")).toBeNull();
 });
 
 it("keeps an authored expression until format confirmation and restores it with one undo", () => {

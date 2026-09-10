@@ -1,6 +1,6 @@
 // The Properties tab: one row per Managed Frontmatter entry, each editing its
-// own expression through a slice of the master document, and the result column
-// that shows what every row produced beside the frontmatter the note gets.
+// own expression through a slice of the master document, summarised by what
+// the row produced; the note preview's own Properties block shows the fold.
 
 import type {
   ManagedEntrySource,
@@ -568,72 +568,6 @@ function EntryForm({
         </label>
         <p {...part("hint")}>{m.workbench_properties_override_hint()}</p>
       </div>
-    </div>
-  );
-}
-
-export interface PropertiesResultProps {
-  entries: readonly ManagedEntrySource[];
-  properties: readonly RenderedProperty[];
-  /** The frontmatter the note gets once every entry has merged, in order. */
-  fold: readonly RenderedProperty[];
-  /** The fold as the note's own YAML block, for the Markdown toggle. */
-  frontmatterBlock: string | null;
-  showMarkdown: boolean;
-}
-
-/**
- * The result column while Properties is open: what each rule produced on its
- * own, grouped under the entry that produced it, beside the final ordered fold.
- * The Markdown toggle replaces both with the generated YAML the note carries.
- */
-export function PropertiesResult({
-  entries,
-  properties,
-  fold,
-  frontmatterBlock,
-  showMarkdown,
-}: PropertiesResultProps) {
-  const m = useWorkbenchMessages();
-  const part = useParts("properties");
-  if (showMarkdown) {
-    return (
-      <pre {...part("markdown")}>
-        {frontmatterBlock ?? m.workbench_properties_produced_none()}
-      </pre>
-    );
-  }
-  const produced = byEntry(properties);
-  return (
-    <div {...part("result")}>
-      <section>
-        <h3 {...part("heading")}>{m.workbench_result_fold()}</h3>
-        <PropertyList properties={fold} variant="fold" />
-      </section>
-      <details>
-        <summary {...part("result-summary")}>
-          {m.workbench_result_by_entry()}
-        </summary>
-        <ul {...part("result-rows")}>
-          {entries.map((entry) => {
-            const fields = produced.get(entry.position) ?? [];
-            return (
-              <li key={entry.position} {...part("result-row")}>
-                <p {...part("result-key")}>
-                  {entry.key ?? m.workbench_properties_spread()}
-                </p>
-                {fields.length === 0 ? (
-                  <p {...part("result-empty")}>
-                    {m.workbench_properties_produced_none()}
-                  </p>
-                ) : (
-                  <PropertyList properties={fields} />
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </details>
     </div>
   );
 }

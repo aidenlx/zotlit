@@ -1,9 +1,9 @@
 import { cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { PropertiesPane, PropertiesResult } from "./properties-tab";
-// Row summaries and generated frontmatter, migrated from the web Properties suite.
-import { mount, renderWithMessages as render } from "./test-host";
+import { PropertiesPane } from "./properties-tab";
+// Row summaries, migrated from the web Properties suite.
+import { renderWithMessages as render } from "./test-host";
 import { m } from "./test-messages";
 
 import { WorkbenchDocumentController } from "#/document/controller";
@@ -42,19 +42,6 @@ function pane(diagnostics: { position: number; message: string }[] = []) {
   };
 }
 
-function output(showMarkdown = false) {
-  const mounted = mount(
-    <PropertiesResult
-      entries={controller.managedEntries!}
-      properties={result.properties}
-      fold={result.fold}
-      frontmatterBlock={result.frontmatterBlock}
-      showMarkdown={showMarkdown}
-    />,
-  );
-  return Object.assign(mounted, { container: render(mounted.ui).container });
-}
-
 describe("the Properties rows", () => {
   it("shows a static entry's own value beside its name", () => {
     using mounted = pane();
@@ -83,31 +70,5 @@ describe("the Properties rows", () => {
     expect(mounted.container.textContent).not.toContain(
       m.workbench_properties_row_problem(),
     );
-  });
-});
-
-describe("the Properties result column", () => {
-  it("groups every produced field under the entry that produced it", () => {
-    using mounted = output();
-    expect(
-      [...mounted.container.querySelectorAll("details dt")].map(
-        (term) => term.textContent,
-      ),
-    ).toEqual(["title", "related", "collections", "citekey", "kind", "title"]);
-  });
-  it("lists the frontmatter the note gets in fold order", () => {
-    using mounted = output();
-    expect(
-      [...mounted.container.querySelectorAll("section dt")].map(
-        (term) => term.textContent,
-      ),
-    ).toEqual(["title", "related", "collections", "citekey", "kind"]);
-  });
-  it("hands over the generated YAML when Markdown is asked for", () => {
-    using mounted = output(true);
-    const raw = mounted.container.textContent;
-    expect(raw).toBe(result.frontmatterBlock);
-    expect(raw).toContain("title:");
-    expect(raw).not.toContain(m.workbench_result_fold());
   });
 });

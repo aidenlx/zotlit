@@ -171,3 +171,56 @@ it("shows the placeholder when the source renders to nothing, as an empty Manage
     container.querySelector("[data-zotlit-draft]")?.closest("[hidden]"),
   ).not.toBeNull();
 });
+
+it("prints the render's own frontmatter block above the body in the Markdown view", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const app = { vault: { getConfig: () => false } } as unknown as App;
+  await act(async () => {
+    render(
+      h(NativeMarkdown, {
+        app,
+        markdown: "# A study\n",
+        result: null,
+        frontmatterBlock: "title: A study\n",
+        showMarkdown: true,
+      }),
+      container,
+    );
+  });
+  expect(container.querySelector("pre")?.textContent).toBe(
+    "---\ntitle: A study\n---\n# A study\n",
+  );
+});
+
+it("opens the Properties block when the Properties tab asks, and leaves the toggle to the reader after that", async () => {
+  const container = document.createElement("div");
+  document.body.append(container);
+  const app = { vault: { getConfig: () => false } } as unknown as App;
+  const sheet = (expandProperties: boolean) =>
+    h(WorkbenchMessagesProvider, {
+      messages: m,
+      children: h(NativeMarkdown, {
+        app,
+        markdown: "",
+        result: null,
+        properties: [
+          { key: "title", value: "A study", missing: false, position: 1 },
+        ],
+        expandProperties,
+      }) as unknown as ReactNode,
+    });
+  const heading = () =>
+    container.querySelector<HTMLElement>(".metadata-properties-heading")!;
+  const collapsed = () =>
+    container
+      .querySelector(".metadata-container")
+      ?.classList.contains("is-collapsed");
+  await act(async () => render(sheet(false), container));
+  await act(async () => heading().click());
+  expect(collapsed()).toBe(true);
+  await act(async () => render(sheet(true), container));
+  expect(collapsed()).toBe(false);
+  await act(async () => heading().click());
+  expect(collapsed()).toBe(true);
+});

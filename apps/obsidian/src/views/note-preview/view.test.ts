@@ -1079,7 +1079,27 @@ Annotation`,
     );
   });
 
-  it("hides Updated section only outside the note result", async () => {
+  it("hides Updated section only in the annotation result", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    await act(async () => test.editor.store.getState().setRoot("annotation"));
+    const preview = await test.open();
+    await advance();
+    const menu = new Menu();
+    preview.onPaneMenu(menu as never, "more-options");
+    expect(
+      menu.items.find(
+        (item) => item.title === m.workbench_preview_updated_section(),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("keeps the note result and its section choice on the Properties tab", async () => {
     await using test = await setup();
     vi.useFakeTimers();
     await act(async () =>
@@ -1090,16 +1110,14 @@ Annotation`,
     await act(async () => test.editor.store.getState().setTab("properties"));
     const preview = await test.open();
     await advance();
+    expect(preview.contentEl.querySelector("h2")?.textContent).toBe(
+      m.workbench_result_heading(),
+    );
     const menu = new Menu();
     preview.onPaneMenu(menu as never, "more-options");
     expect(
       menu.items.find(
         (item) => item.title === m.workbench_preview_updated_section(),
-      ),
-    ).toBeUndefined();
-    expect(
-      menu.items.find(
-        (item) => item.title === m.workbench_preview_as_new_note(),
       ),
     ).toBeDefined();
   });

@@ -184,7 +184,9 @@ pane heading and a muted caption that names the chosen note as a short noun —
 New note, Updated note, Updated section only — and, in on-demand mode, "On
 demand". An on-demand result behind the edits shows an inline notice with
 Run; before the first render it says "No preview yet." The rendered note
-carries no border or inset of its own.
+carries no border or inset of its own. The Properties tab shows the same note
+preview; the sheet's Properties block at the top of the note is the final list,
+and it opens when the editor's tab becomes Properties.
 
 Use CSS selectors on Obsidian's native sidebar containers to switch these
 layouts. Container membership determines the layout; keep viewport and

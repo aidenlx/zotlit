@@ -276,7 +276,6 @@ export const profileEditorTheme: WorkbenchTheme = {
       note: "metadata-properties",
       list: "metadata-properties",
       spread: "metadata-properties",
-      fold: "metadata-properties",
       row: "metadata-property",
       key: "metadata-property-key",
       icon: "metadata-property-icon",
@@ -327,17 +326,6 @@ export const profileEditorTheme: WorkbenchTheme = {
       "managed-line": "zt-profile-editor-managed",
     },
     properties: {
-      result: stack,
-      heading: "zt-note-preview-heading zt:mb-2",
-      "result-summary": "zt:cursor-pointer zt:text-sm zt:text-muted-foreground",
-      "result-rows": "zt:mt-3 zt:flex zt:flex-col zt:gap-4",
-      "result-row": "zt:min-w-0",
-      "result-key":
-        "zt:mb-2 zt:text-sm zt:font-semibold zt:[overflow-wrap:anywhere]",
-      "result-empty": "zt:text-sm zt:text-muted-foreground",
-      markdown:
-        "zt:overflow-x-auto zt:whitespace-pre-wrap zt:[overflow-wrap:anywhere] zt:font-mono zt:text-sm zt:select-text",
-
       pane: stack,
       empty: hint,
       rows: "zt:flex zt:min-w-0 zt:flex-col zt:gap-2",
