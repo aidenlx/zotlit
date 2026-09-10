@@ -7,15 +7,14 @@ import type {
   ValueNode,
 } from "#/explorer/index";
 import { regex } from "arkregex";
-import { useEffect, useRef, useState } from "react";
+import { useId, useState } from "react";
 
 import { useTooltip } from "./host";
 import { useWorkbenchMessages } from "./messages";
-import type { ExplorerVariant } from "./store";
 import { useIcon, useParts } from "./theme";
 import type { WorkbenchIcon } from "./theme";
 
-import { copyValue, formatPath } from "#/explorer/index";
+import { formatPath } from "#/explorer/index";
 
 /** Shared Enter/Space activation for `role="button"` spans, so keyboard users get the same click behavior as a mouse. */
 function activateOnEnterOrSpace<E extends React.KeyboardEvent>(
@@ -29,62 +28,125 @@ function activateOnEnterOrSpace<E extends React.KeyboardEvent>(
   };
 }
 
+/** One section of the tree: its heading, its top-level nodes, and the names those nodes show. */
+export interface DisplaySection {
+  readonly id: string;
+  readonly label: string;
+  readonly collapsed: boolean;
+  readonly nodes: readonly DisplayNode[];
+  /** Reader-facing names by node key; a node without one shows its raw key. */
+  readonly labels: ReadonlyMap<string, string>;
+}
+
 export interface DisplayTreeProps {
-  variant?: ExplorerVariant;
-  nodes: readonly DisplayNode[];
+  sections: readonly DisplaySection[];
   /** Keys of nodes directly matched by the filter; null when no filter is active. */
   matchedKeys: ReadonlySet<string> | null;
   onToggle: (key: string) => void;
-  /** Copies the node's value; resolves on success so the row can flash a confirmation. */
-  onCopyValue: (node: DisplayNode) => Promise<void>;
+  /** Absent while a filter holds every matching section open. */
+  onToggleSection?: (id: string) => void;
   onInsert?: (node: DisplayNode) => void;
   onTemplateMenu: (node: DisplayNode, event: React.MouseEvent) => void;
 }
 
 export function DisplayTree({
-  variant = "all",
-  nodes,
+  sections,
   matchedKeys,
   onToggle,
-  onCopyValue,
+  onToggleSection,
   onInsert,
   onTemplateMenu,
 }: DisplayTreeProps): React.ReactElement {
   const part = useParts("explorerTree");
+  const id = useId();
   return (
-    <ul role="tree" {...part("tree", variant)}>
-      {nodes.map((node) => (
-        <TreeNode
-          key={node.key}
-          variant={variant}
-          node={node}
-          matchedKeys={matchedKeys}
-          onToggle={onToggle}
-          onCopyValue={onCopyValue}
-          onInsert={onInsert}
-          onTemplateMenu={onTemplateMenu}
-        />
+    <div {...part("sections")}>
+      {sections.map((section) => (
+        <section
+          key={section.id}
+          data-workbench-section={section.id}
+          {...part("section", section.collapsed ? "collapsed" : "expanded")}
+        >
+          <SectionHeader
+            section={section}
+            labelId={`${id}-${section.id}`}
+            onToggle={onToggleSection && (() => onToggleSection(section.id))}
+          />
+          {!section.collapsed && (
+            <ul
+              role="tree"
+              aria-labelledby={`${id}-${section.id}`}
+              {...part("tree")}
+            >
+              {section.nodes.map((node) => (
+                <TreeNode
+                  key={node.key}
+                  node={node}
+                  label={section.labels.get(node.key)}
+                  matchedKeys={matchedKeys}
+                  onToggle={onToggle}
+                  onInsert={onInsert}
+                  onTemplateMenu={onTemplateMenu}
+                />
+              ))}
+            </ul>
+          )}
+        </section>
       ))}
-    </ul>
+    </div>
+  );
+}
+
+/** The section's name and row count; its visible text is its accessible name. */
+function SectionHeader({
+  section,
+  labelId,
+  onToggle,
+}: {
+  section: DisplaySection;
+  /** The id the tree beneath points at for its name. */
+  labelId: string;
+  onToggle?: () => void;
+}) {
+  const part = useParts("explorerTree");
+  const icon = useIcon();
+  return (
+    <button
+      type="button"
+      aria-expanded={!section.collapsed}
+      aria-disabled={onToggle ? undefined : true}
+      onClick={onToggle}
+      {...part("section-header")}
+    >
+      <span
+        data-expanded={section.collapsed ? undefined : ""}
+        {...part("section-chevron")}
+      >
+        <span {...part("chevron-icon")}>{icon("chevron-right")}</span>
+      </span>
+      <span id={labelId} {...part("section-label")}>
+        {section.label}
+      </span>{" "}
+      <span {...part("section-count")}>({section.nodes.length})</span>
+    </button>
   );
 }
 
 interface TreeNodeProps {
-  variant: ExplorerVariant;
   node: DisplayNode;
+  /** The reader-facing name of a top-level field; nested keys show as written. */
+  label?: string;
   matchedKeys: ReadonlySet<string> | null;
   onToggle: (key: string) => void;
-  onCopyValue: (node: DisplayNode) => Promise<void>;
   onInsert?: (node: DisplayNode) => void;
   onTemplateMenu: (node: DisplayNode, event: React.MouseEvent) => void;
 }
 
 function TreeNode({
-  variant,
   node,
+  label,
   matchedKeys,
   onToggle,
-  onCopyValue,
   onInsert,
   onTemplateMenu,
 }: TreeNodeProps) {
@@ -99,23 +161,24 @@ function TreeNode({
       data-workbench-field={node.key}
       aria-expanded={isExpandable ? isExpanded : undefined}
     >
-      <div {...part("row", isMatched ? "matched" : undefined)}>
+      <div
+        {...part("row", isMatched ? "matched" : undefined)}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          onTemplateMenu(node, event);
+        }}
+      >
         {isExpandable ? (
           <Chevron expanded={isExpanded} onClick={() => onToggle(node.key)} />
         ) : (
           <span {...part("spacer")} />
         )}
-        {/* Key + hint + value flow as inline text, so a long value starts after its key and wraps beneath — never orphaning the key on its own line. */}
+        {/* The host lays the key and the value out as a wrapping row: one line while both fit, the value on its own line beneath the key when it does not. The space between them survives in text content only. */}
         <div {...part("contents")}>
-          {variant === "simple" ? (
-            <SimpleNodeRow node={node} />
-          ) : (
-            <NodeRow node={node} />
-          )}
+          <NodeRow node={node} label={label} />
         </div>
         <ActionCluster
           node={node}
-          onCopyValue={onCopyValue}
           onInsert={onInsert}
           onTemplateMenu={onTemplateMenu}
         />
@@ -125,11 +188,9 @@ function TreeNode({
           {node.children.map((child) => (
             <TreeNode
               key={child.key}
-              variant={variant}
               node={child}
               matchedKeys={matchedKeys}
               onToggle={onToggle}
-              onCopyValue={onCopyValue}
               onInsert={onInsert}
               onTemplateMenu={onTemplateMenu}
             />
@@ -165,43 +226,18 @@ function Chevron({
   );
 }
 
-/** Hover/focus-revealed row actions, floated top-right over the row so it never steals value width. */
+/** The row's two actions: insert, and the menu that holds everything else. The host reveals them on hover or focus. */
 function ActionCluster({
   node,
-  onCopyValue,
   onInsert,
   onTemplateMenu,
 }: {
   node: DisplayNode;
-  onCopyValue: (node: DisplayNode) => Promise<void>;
   onInsert?: (node: DisplayNode) => void;
   onTemplateMenu: (node: DisplayNode, event: React.MouseEvent) => void;
 }) {
   const m = useWorkbenchMessages();
   const part = useParts("explorerTree");
-  const hasValue = copyValue(node) !== null;
-  const [copied, setCopied] = useState(false);
-  const revertTimer = useRef<number | null>(null);
-  useEffect(
-    () => () => {
-      if (revertTimer.current !== null)
-        window.clearTimeout(revertTimer.current);
-    },
-    [],
-  );
-
-  const flashCopied = () => {
-    void onCopyValue(node).then(
-      () => {
-        setCopied(true);
-        if (revertTimer.current !== null)
-          window.clearTimeout(revertTimer.current);
-        revertTimer.current = window.setTimeout(() => setCopied(false), 1000);
-      },
-      () => {},
-    );
-  };
-
   return (
     <div {...part("actions")}>
       {onInsert && (
@@ -211,15 +247,8 @@ function ActionCluster({
           onClick={() => onInsert(node)}
         />
       )}
-      {hasValue && (
-        <ClusterButton
-          icon={copied ? "confirm" : "copy"}
-          label={m.workbench_explorer_menu_copy_value()}
-          onClick={flashCopied}
-        />
-      )}
       <ClusterButton
-        icon="advanced"
+        icon="more"
         label={m.workbench_explorer_row_actions()}
         onClick={(e) => onTemplateMenu(node, e)}
       />
@@ -253,42 +282,70 @@ function ClusterButton({
   );
 }
 
-function NodeRow({ node }: { node: DisplayNode }) {
+function NodeRow({ node, label }: { node: DisplayNode; label?: string }) {
   switch (node.kind) {
     case "value":
-      return <ValueRow node={node} />;
+      return <ValueRow node={node} label={label} />;
     case "helper":
-      return <HelperRow node={node} />;
+      return <HelperRow node={node} label={label} />;
     case "placeholder":
-      return <PlaceholderRow node={node} />;
+      return <PlaceholderRow node={node} label={label} />;
   }
 }
 
-/** The property name (or array index). Always `text-foreground`, distinct from every value tone. */
-function KeyLabel({ children }: { children: React.ReactNode }) {
+/**
+ * The property name, or the array index, or the reader-facing name of a
+ * top-level field. A named key keeps its raw path in the tooltip.
+ */
+function KeyLabel({ node, label }: { node: DisplayNode; label?: string }) {
   const part = useParts("explorerTree");
-  return <span {...part("key")}>{children}</span>;
+  const tooltip = useTooltip(formatPath(node.path, "zt"));
+  if (label === undefined) return <span {...part("key")}>{node.label}</span>;
+  return (
+    <span {...tooltip} {...part("key", "labeled")}>
+      {label}
+    </span>
+  );
 }
 
-function ValueRow({ node }: { node: ValueNode }) {
+function ValueRow({ node, label }: { node: ValueNode; label?: string }) {
+  const part = useParts("explorerTree");
   return (
     <>
-      <KeyLabel>{node.label}</KeyLabel> <ValueContent node={node} />
+      <KeyLabel node={node} label={label} />{" "}
+      <span {...part("value")}>
+        <ValueContent node={node} labeled={label !== undefined} />
+      </span>
     </>
   );
 }
 
-function ValueContent({ node }: { node: ValueNode }) {
+/**
+ * A named field counts a list in prose parentheses and lets an object speak
+ * through its preview alone; a raw key keeps the structural `[n]` / `{n}` hint.
+ */
+function ValueContent({
+  node,
+  labeled = false,
+}: {
+  node: ValueNode;
+  labeled?: boolean;
+}) {
   const part = useParts("explorerTree");
   if (node.valueType === "array" || node.valueType === "object") {
-    const hint =
-      node.valueType === "array" ? `[${node.size}]` : `{${node.size}}`;
+    const hint = labeled
+      ? node.valueType === "array"
+        ? `(${node.size})`
+        : null
+      : node.valueType === "array"
+        ? `[${node.size}]`
+        : `{${node.size}}`;
     return (
       <>
-        <span {...part("hint")}>{hint}</span>
+        {hint !== null && <span {...part("hint")}>{hint}</span>}
         {node.children === undefined && node.preview !== undefined && (
           <>
-            {" "}
+            {hint !== null && " "}
             <span {...part("placeholder")}>{node.preview}</span>
           </>
         )}
@@ -297,57 +354,6 @@ function ValueContent({ node }: { node: ValueNode }) {
   }
   if (node.valueType === "getter") return <span {...part("hint")}>…</span>;
   return <ScalarValue node={node} />;
-}
-
-function SimpleNodeRow({ node }: { node: DisplayNode }) {
-  const part = useParts("explorerTree");
-  const path = formatPath(node.path, "zt");
-  const tooltip = useTooltip(path);
-  const container =
-    node.kind === "value" &&
-    (node.valueType === "array" || node.valueType === "object")
-      ? node
-      : null;
-  if (container && !container.preview) {
-    return (
-      <div {...part("simple-row")} {...tooltip}>
-        <div {...part("simple-heading")}>
-          <KeyLabel>{node.label}</KeyLabel>
-          {container.valueType === "array" && (
-            <>
-              {" "}
-              <span {...part("hint")}>({container.size})</span>
-            </>
-          )}
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div {...part("simple-row")}>
-      <div {...part("simple-heading")} {...tooltip}>
-        <KeyLabel>{node.label}</KeyLabel>
-        <code {...part("path")} {...tooltip}>
-          {path}
-        </code>
-      </div>
-      <div {...part("simple-value")}>
-        {container ? (
-          <StringValue value={container.preview!} />
-        ) : node.kind === "value" ? (
-          <ValueContent node={node} />
-        ) : node.kind === "helper" ? (
-          node.evaluated === null ? (
-            <span {...part("null")}>null</span>
-          ) : (
-            <StringValue value={node.evaluated} />
-          )
-        ) : (
-          <span {...part("placeholder")}>{node.reason}</span>
-        )}
-      </div>
-    </div>
-  );
 }
 
 function ScalarValue({ node }: { node: ValueNode }) {
@@ -377,27 +383,37 @@ function ScalarValue({ node }: { node: ValueNode }) {
   }
 }
 
-function HelperRow({ node }: { node: HelperNode }) {
+function HelperRow({ node, label }: { node: HelperNode; label?: string }) {
   const part = useParts("explorerTree");
   return (
     <>
-      <KeyLabel>{node.label}</KeyLabel>{" "}
-      <span {...part("hint")}>{node.signatureHint}</span>{" "}
-      {node.evaluated === null ? (
-        <span {...part("null")}>null</span>
-      ) : (
-        <StringValue value={node.evaluated} />
-      )}
+      <KeyLabel node={node} label={label} />{" "}
+      <span {...part("value")}>
+        <span {...part("hint")}>{node.signatureHint}</span>{" "}
+        {node.evaluated === null ? (
+          <span {...part("null")}>null</span>
+        ) : (
+          <StringValue value={node.evaluated} />
+        )}
+      </span>
     </>
   );
 }
 
-function PlaceholderRow({ node }: { node: PlaceholderNode }) {
+function PlaceholderRow({
+  node,
+  label,
+}: {
+  node: PlaceholderNode;
+  label?: string;
+}) {
   const part = useParts("explorerTree");
   return (
     <>
-      <KeyLabel>{node.label}</KeyLabel>{" "}
-      <span {...part("placeholder")}>{node.reason}</span>
+      <KeyLabel node={node} label={label} />{" "}
+      <span {...part("value")}>
+        <span {...part("placeholder")}>{node.reason}</span>
+      </span>
     </>
   );
 }

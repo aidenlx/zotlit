@@ -27,6 +27,7 @@ export const profileEditorIcons: Record<WorkbenchIcon, string> = {
   edit: "pencil",
   "chevron-down": "chevron-down",
   "chevron-right": "chevron-right",
+  more: "ellipsis",
 };
 /** Text actions share the Match tab's outlined native control surface. */
 export const profileEditorButton =
@@ -161,37 +162,42 @@ export const profileEditorTheme: WorkbenchTheme = {
       "root-label": "zt:text-xs zt:text-muted-foreground",
       explorer:
         "zt-template-data-explorer zt:flex zt:min-h-0 zt:min-w-0 zt:flex-1 zt:flex-col zt:gap-3 zt:pt-3",
+      /** The native title already names the item and the Fields role in a full pane; the heading reads only where a sidebar hides that title. */
       header:
-        "zt:grid zt:grid-cols-[1fr_auto] zt:items-center zt:gap-x-2 zt:gap-y-3 zt:px-3",
+        "zt-workbench-sidebar-control zt:items-center zt:justify-between zt:gap-x-2 zt:px-3",
       heading: "",
-      variants:
-        "zt:col-span-2 zt:flex zt:flex-wrap zt:gap-1 zt:rounded-md zt:bg-card zt:p-1",
-      variant:
-        "clickable-icon zt:flex-1 zt:text-sm zt:whitespace-normal zt:focus-visible:shadow-(--input-box-shadow-focus)",
       search: "zt:mx-3 zt:w-auto zt:min-w-0 zt:shrink-0",
       body: "zt:min-h-0 zt:flex-1 zt:overflow-auto zt:px-2 zt:pb-3",
       empty:
         "zt:px-1 zt:py-3 zt:text-muted-foreground zt:text-sm zt:leading-normal",
     },
     explorerTree: {
-      "simple-row": "zt:flex zt:min-w-0 zt:flex-col zt:gap-1",
-      "simple-heading": "zt:text-sm zt:font-medium zt:leading-normal",
-      path: "zt:hidden",
-      "simple-value": "zt:text-sm zt:leading-normal",
-      tree: "zt:group/tree zt:font-mono zt:text-xs zt:leading-normal zt:data-[state=simple]:font-sans",
+      sections: "zt:flex zt:flex-col zt:gap-2",
+      section: "",
+      "section-header":
+        "clickable-icon zt:[--icon-size:var(--icon-xs)] zt:text-muted-foreground zt:focus-visible:shadow-(--input-box-shadow-focus)",
+      "section-chevron":
+        "zt:flex zt:size-(--icon-size) zt:shrink-0 zt:items-center zt:justify-center",
+      "section-label": "zt:min-w-0 zt:flex-1 zt:text-start",
+      "section-count": "zt:font-normal zt:tabular-nums zt:text-faint",
+      tree: "zt:text-xs zt:leading-normal",
       spacer: "zt:w-6 zt:shrink-0",
+      /** Key and value share one line while both fit; a longer value drops to its own line beneath the key. */
       contents:
-        "zt:min-w-0 zt:flex-1 zt:select-text zt:[overflow-wrap:anywhere]",
+        "zt:flex zt:min-w-0 zt:flex-1 zt:flex-wrap zt:gap-x-1.5 zt:select-text zt:[overflow-wrap:anywhere]",
       group:
         "zt:ms-2.5 zt:border-s zt:border-(--nav-indentation-guide-color) zt:ps-2",
       chevron:
-        "clickable-icon zt:w-6 zt:shrink-0 zt:[--icon-size:var(--icon-xs)] zt:group-data-[state=simple]/tree:text-sm zt:focus-visible:shadow-(--input-box-shadow-focus)",
+        "clickable-icon zt:w-6 zt:shrink-0 zt:[--icon-size:var(--icon-xs)] zt:focus-visible:shadow-(--input-box-shadow-focus)",
       "chevron-icon":
         "zt:flex zt:size-(--icon-size) zt:items-center zt:justify-center zt:in-data-[expanded]:rotate-90",
-      actions: "zt:flex zt:shrink-0 zt:items-center zt:gap-0.5",
+      /** Revealed by hover or focus; a touch device has neither, so it keeps them visible. */
+      actions:
+        "zt:flex zt:shrink-0 zt:items-center zt:gap-0.5 zt:opacity-0 zt:group-hover/row:opacity-100 zt:group-focus-within/row:opacity-100 zt:[.is-mobile_&]:opacity-100",
       action:
         "clickable-icon zt:[--icon-size:var(--icon-xs)] zt:focus-visible:shadow-(--input-box-shadow-focus)",
-      key: "zt:text-foreground",
+      key: "zt:font-mono zt:text-foreground zt:data-[state=labeled]:font-sans zt:data-[state=labeled]:font-medium",
+      value: "zt:min-w-0",
       hint: "zt:text-muted-foreground zt:tabular-nums",
       placeholder: "zt:text-muted-foreground zt:italic",
       "color-swatch":
@@ -199,16 +205,12 @@ export const profileEditorTheme: WorkbenchTheme = {
       link: "zt:[overflow-wrap:anywhere] zt:text-link zt:underline zt:decoration-dotted zt:hover:decoration-solid",
       "long-toggle":
         "zt:rounded-xs zt:ms-0.5 zt:cursor-pointer zt:px-1 zt:text-muted-foreground zt:underline zt:decoration-dotted zt:underline-offset-2 zt:select-none zt:hover:bg-muted zt:hover:text-foreground zt:focus-visible:shadow-(--input-box-shadow-focus)",
-      row: "zt:rounded-sm zt:flex zt:min-w-0 zt:items-start zt:gap-x-1 zt:px-1 zt:py-1 zt:group-data-[state=simple]/tree:py-2 zt:hover:bg-muted zt:focus-within:bg-muted zt:data-[state=matched]:bg-(--text-highlight-bg)",
-      opaque:
-        "zt:break-words zt:text-cyan zt:group-data-[state=simple]/tree:text-foreground",
-      color:
-        "zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-green zt:group-data-[state=simple]/tree:text-foreground",
-      string: "zt:text-green zt:group-data-[state=simple]/tree:text-foreground",
-      number:
-        "zt:tabular-nums zt:text-blue zt:group-data-[state=simple]/tree:text-foreground",
-      boolean:
-        "zt:text-purple zt:group-data-[state=simple]/tree:text-foreground",
+      row: "zt:group/row zt:rounded-sm zt:flex zt:min-w-0 zt:items-start zt:gap-x-1 zt:px-1 zt:py-1 zt:hover:bg-muted zt:focus-within:bg-muted zt:data-[state=matched]:bg-(--text-highlight-bg)",
+      opaque: "zt:break-words zt:text-cyan",
+      color: "zt:inline-flex zt:min-w-0 zt:items-center zt:gap-1 zt:text-green",
+      string: "zt:text-green",
+      number: "zt:tabular-nums zt:text-blue",
+      boolean: "zt:text-purple",
       null: "zt:text-muted-foreground zt:italic",
       undefined: "zt:text-muted-foreground zt:italic",
       "long-text":

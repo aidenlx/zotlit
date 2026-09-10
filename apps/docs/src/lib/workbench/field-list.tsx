@@ -7,11 +7,7 @@ import { initialTreeState, setAnchor } from "@zotlit/workbench/explorer";
 import type { TreeState } from "@zotlit/workbench/explorer";
 import type { AnnotationExample } from "@zotlit/workbench/render";
 import { DataExplorer } from "@zotlit/workbench/ui";
-import type {
-  DataExplorerProps,
-  ExplorerVariant,
-  TemplateRoot,
-} from "@zotlit/workbench/ui";
+import type { DataExplorerProps, TemplateRoot } from "@zotlit/workbench/ui";
 
 import { m } from "@/paraglide/messages.js";
 
@@ -30,8 +26,8 @@ export type FieldListProps = Omit<
   | "data"
   | "empty"
   | "copy"
-  | "variant"
-  | "onVariantChange"
+  | "collapsedSections"
+  | "onCollapsedSectionsChange"
   | "navigation"
   | "onNavigationChange"
 > &
@@ -40,7 +36,7 @@ interface FieldListState extends FieldListInput {
   itemKey: string | null;
   data: Record<string, unknown> | null;
   status: "no-item" | "loading" | "ready" | "empty";
-  variant: ExplorerVariant;
+  collapsedSections: ReadonlySet<string>;
   navigation: TreeState;
 }
 function itemKey(sample: SampleItem | null): string | null {
@@ -85,11 +81,11 @@ export function FieldList({
       root: props.root,
       itemKey: itemKey(sample),
       ...restore({ sample, annotation, citation, ready, root: props.root }),
-      variant: "simple",
+      collapsedSections: new Set<string>(),
       navigation: initialTreeState(anchor),
     })),
   );
-  const { variant, navigation, data, status } = useStore(store);
+  const { collapsedSections, navigation, data, status } = useStore(store);
   useLayoutEffect(() => {
     const current = store.getState();
     if (
@@ -130,8 +126,10 @@ export function FieldList({
             ? m.workbench_loading_item()
             : undefined
       }
-      variant={variant}
-      onVariantChange={(variant) => store.setState({ variant })}
+      collapsedSections={collapsedSections}
+      onCollapsedSectionsChange={(collapsedSections) =>
+        store.setState({ collapsedSections })
+      }
       navigation={navigation}
       onNavigationChange={(navigation) => store.setState({ navigation })}
       trigger={FIELD_TRIGGER}

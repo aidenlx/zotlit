@@ -12,29 +12,33 @@ import { createStore } from "zustand/vanilla";
 
 import { DataExplorer as ControlledDataExplorer } from "./data-explorer";
 import type { DataExplorerProps } from "./data-explorer";
-import type { ExplorerVariant } from "./store";
 
 import { initialTreeState } from "#/explorer/index";
 
 function DataExplorer(
   props: Omit<
     DataExplorerProps,
-    "variant" | "onVariantChange" | "navigation" | "onNavigationChange"
+    | "collapsedSections"
+    | "onCollapsedSectionsChange"
+    | "navigation"
+    | "onNavigationChange"
   >,
 ) {
   const [store] = useState(() =>
     createStore(() => ({
-      variant: "simple" as ExplorerVariant,
+      collapsedSections: new Set<string>() as ReadonlySet<string>,
       navigation: initialTreeState(),
     })),
   );
-  const { variant, navigation } = useStore(store);
+  const { collapsedSections, navigation } = useStore(store);
   return (
     <ControlledDataExplorer
       {...props}
-      variant={variant}
+      collapsedSections={collapsedSections}
       navigation={navigation}
-      onVariantChange={(variant) => store.setState({ variant })}
+      onCollapsedSectionsChange={(collapsedSections) =>
+        store.setState({ collapsedSections })
+      }
       onNavigationChange={(navigation) => store.setState({ navigation })}
     />
   );
@@ -45,7 +49,7 @@ import { m } from "./test-messages";
 afterEach(cleanup);
 
 describe("shared Data Explorer", () => {
-  it("shows common labels first, switches to raw keys, and keeps the choice in its owner", () => {
+  it("shows common fields first, then the rest under their sections, and keeps a closed section in its owner", () => {
     using mounted = mount(
       <DataExplorer
         root="note"
@@ -63,12 +67,17 @@ describe("shared Data Explorer", () => {
     expect(
       screen.getAllByRole("treeitem")[0]?.textContent?.endsWith("A paper"),
     ).toBe(true);
-    fireEvent.click(
-      screen.getByRole("button", { name: m.workbench_explorer_all() }),
-    );
-    expect(screen.getByText("title")).toBeTruthy();
+    expect(screen.getByText("Extra")).toBeTruthy();
+    const identifiers = screen.getByRole("button", {
+      name: `${m.workbench_explorer_section_identifiers()} (1)`,
+    });
+    expect(identifiers.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(identifiers);
+    expect(screen.queryByText("Extra")).toBeNull();
+    expect(identifiers.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText(m.workbench_field_title())).toBeTruthy();
   });
-  it("labels Simple containers without a separate structural count row", () => {
+  it("names a list by its count and an object by its preview", () => {
     const { ui } = mount(
       <DataExplorer
         root="note"
@@ -96,28 +105,38 @@ describe("shared Data Explorer", () => {
     );
     expect(screen.getByText("Ada")).toBeTruthy();
     expect(screen.getByText("Grace")).toBeTruthy();
-    fireEvent.click(
-      screen.getByRole("button", { name: m.workbench_explorer_all() }),
-    );
-    expect(screen.getByText("[2]")).toBeTruthy();
   });
 
-  it("copies values without an editor insertion target", () => {
+  it("copies values from the row menu without an editor insertion target", () => {
     const copy = vi.fn<(text: string) => Promise<void>>().mockResolvedValue();
     using mounted = mount(
       <DataExplorer root="note" data={{ title: "A paper" }} copy={copy} />,
     );
-    const { ui } = mounted;
+    const { ui, host } = mounted;
     render(ui);
     expect(
       screen.queryByRole("button", { name: m.workbench_fields_put_in_note() }),
     ).toBeNull();
     fireEvent.click(
-      screen.getByRole("button", {
-        name: m.workbench_explorer_menu_copy_value(),
-      }),
+      screen.getByRole("button", { name: m.workbench_explorer_row_actions() }),
     );
+    host.calls.menus[0]!.items.find(
+      (item) => item.label === m.workbench_explorer_menu_copy_value(),
+    )!.onSelect();
     expect(copy).toHaveBeenCalledWith("A paper");
+  });
+  it("opens the row menu from a right click", () => {
+    using mounted = mount(
+      <DataExplorer
+        root="note"
+        data={{ title: "A paper" }}
+        copy={async () => {}}
+      />,
+    );
+    const { ui, host } = mounted;
+    render(ui);
+    fireEvent.contextMenu(screen.getByText("A paper"));
+    expect(host.calls.menus).toHaveLength(1);
   });
   it("inserts the field in the selected template engine", () => {
     const insert = vi.fn<(snippet: string) => void>();
@@ -163,20 +182,63 @@ describe("shared Data Explorer", () => {
       host.calls.menus[0]?.submenus?.some((item) => item.label === "Eta"),
     ).toBe(true);
   });
-  it("finds a field by its Simple label", () => {
+  it.each([
+    ["its label", "Citation key"],
+    ["its raw key", "citationKey"],
+  ])(
+    "finds a field by %s and holds every matching section open",
+    (_, query) => {
+      using mounted = mount(
+        <DataExplorer
+          root="note"
+          data={{ citationKey: "smith2026", title: "A paper", DOI: "10.1/x" }}
+          copy={async () => {}}
+        />,
+      );
+      const { ui } = mounted;
+      render(ui);
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: `${m.workbench_explorer_section_common()} (2)`,
+        }),
+      );
+      expect(screen.queryByText("smith2026")).toBeNull();
+      const input = screen.getByRole("searchbox");
+      fireEvent.input(input, { target: { value: query } });
+      fireEvent.change(input, { target: { value: query } });
+      expect(screen.getByText("smith2026")).toBeTruthy();
+      expect(screen.queryByText("A paper")).toBeNull();
+      expect(screen.queryByText("10.1/x")).toBeNull();
+      expect(
+        screen
+          .getByRole("button", {
+            name: `${m.workbench_explorer_section_common()} (1)`,
+          })
+          .getAttribute("aria-disabled"),
+      ).toBe("true");
+    },
+  );
+
+  it("finds a field by its name alone and highlights it like a key match", () => {
     using mounted = mount(
       <DataExplorer
         root="note"
-        data={{ citationKey: "smith2026", title: "A paper" }}
+        data={{ creators: [{ family: "Ada" }], title: "A paper" }}
         copy={async () => {}}
       />,
     );
     const { ui } = mounted;
     render(ui);
     const input = screen.getByRole("searchbox");
-    fireEvent.input(input, { target: { value: "Citation key" } });
-    fireEvent.change(input, { target: { value: "Citation key" } });
-    expect(screen.getByText("smith2026")).toBeTruthy();
+    fireEvent.input(input, { target: { value: "all creators" } });
+    fireEvent.change(input, { target: { value: "all creators" } });
+    const row = screen.getByRole("treeitem");
+    expect(row.textContent?.startsWith(m.workbench_field_creators())).toBe(
+      true,
+    );
+    expect(
+      row.querySelector('[data-part="row"]')?.getAttribute("data-state"),
+    ).toBe("matched");
     expect(screen.queryByText("A paper")).toBeNull();
   });
 
@@ -249,12 +311,13 @@ describe("shared Data Explorer", () => {
     );
     const { ui, host } = mounted;
     render(ui);
+    fireEvent.click(
+      screen.getByRole("button", { name: m.workbench_explorer_row_actions() }),
+    );
     await act(async () => {
-      fireEvent.click(
-        screen.getByRole("button", {
-          name: m.workbench_explorer_menu_copy_value(),
-        }),
-      );
+      host.calls.menus[0]!.items.find(
+        (item) => item.label === m.workbench_explorer_menu_copy_value(),
+      )!.onSelect();
     });
     expect(host.calls.notices).toEqual([m.workbench_field_copy_failed()]);
   });
@@ -287,11 +350,11 @@ it("keeps two Explorer owners independent through display and filter changes", (
   );
   expect(left.getByText("Ada")).toBeTruthy();
   expect(right.queryByText("Grace")).toBeNull();
-  fireEvent.click(
-    left.getByRole("button", { name: m.workbench_explorer_all() }),
-  );
-  expect(left.getByText("title")).toBeTruthy();
+  const common = `${m.workbench_explorer_section_common()} (2)`;
+  fireEvent.click(left.getByRole("button", { name: common }));
+  expect(left.queryByText(m.workbench_field_title())).toBeNull();
   expect(right.getByText(m.workbench_field_title())).toBeTruthy();
+  fireEvent.click(left.getByRole("button", { name: common }));
   const filter = left.getByRole("searchbox");
   fireEvent.input(filter, { target: { value: "title" } });
   fireEvent.change(filter, { target: { value: "title" } });

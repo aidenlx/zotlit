@@ -119,7 +119,7 @@ Call sites pass no classes. `WorkbenchHostProvider` takes the host adapter —
 Obsidian shows its own `Menu`, `Modal`, `SuggestModal`, and `Notice` and the web
 shows Base UI. `WorkbenchEditorProvider` carries one editor instance: the
 zustand vanilla store from `createWorkbenchEditor` (tab, selected Item, focused
-root, preview mode and live state, Explorer variant, Advanced)
+root, preview mode and live state, Advanced)
 beside the `WorkbenchDocumentController`, which stays the document
 authority, and the one Render Scheduler its result surfaces share;
 `useWorkbenchStore`, `useWorkbenchController`, `useDocumentRevision`,

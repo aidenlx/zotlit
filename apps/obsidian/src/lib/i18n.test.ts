@@ -36,7 +36,7 @@ describe("ZotLit Language Pack setting integration", () => {
       });
       expect(lifecycle.locale).toBe("zh-CN");
       expect(m.workbench_tab_match()).toBe("Match");
-      expect(m.workbench_explorer_simple()).toBe("Simple");
+      expect(m.workbench_explorer_section_common()).toBe("Common fields");
       expect(m.workbench_explorer_menu_copy_value()).toBe("Copy value");
     },
   );
@@ -47,7 +47,7 @@ describe("ZotLit Language Pack setting integration", () => {
       ports: makePorts({ language: "fr" }).ports,
     });
     expect(m.workbench_tab_match()).toBe("Match");
-    expect(m.workbench_explorer_simple()).toBe("Simple");
+    expect(m.workbench_explorer_section_common()).toBe("Common fields");
   });
 
   test("stays hidden when ZotLit has no pack for the resolved locale", () => {
@@ -122,13 +122,13 @@ describe("ZotLit Language Pack setting integration", () => {
     // The lifecycle installed the pack into the very runtime the facade reads.
     expect(m.hello()).toBe(PACK_MESSAGE);
     expect(m.workbench_tab_match()).toBe("匹配（测试包）");
-    expect(m.workbench_explorer_simple()).toBe("Simple");
+    expect(m.workbench_explorer_section_common()).toBe("Common fields");
 
     restarted.reset();
     expect(m.workbench_tab_match()).toBe("匹配（测试包）");
     initI18n({ pluginVersion: "2.0.0", ports: harness.ports });
     expect(m.workbench_tab_match()).toBe("Match");
-    expect(m.workbench_explorer_simple()).toBe("Simple");
+    expect(m.workbench_explorer_section_common()).toBe("Common fields");
   });
 
   test("downloads the pack from the Resource Release of the running plugin version", async () => {

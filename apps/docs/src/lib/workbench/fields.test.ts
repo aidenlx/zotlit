@@ -152,8 +152,8 @@ describe("rowMatches", () => {
     expect(match("author")).toEqual([m.workbench_field_authors()]);
   });
 
-  it("leaves the raw key behind the name to Advanced", () => {
-    expect(match("citationKey")).toEqual([]);
+  it("matches the raw key a template author types", () => {
+    expect(match("citationKey")).toEqual([m.workbench_field_citation_key()]);
   });
 
   it("matches this paper's value", () => {

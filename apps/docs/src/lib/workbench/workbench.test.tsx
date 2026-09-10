@@ -83,16 +83,16 @@ it("keeps independent Preview and Explorer choices when a new document opens", a
     refresh().value = "demand";
     refresh().dispatchEvent(new Event("input", { bubbles: true }));
   });
-  page.press(m.workbench_explorer_all());
+  const section = () =>
+    page.host.querySelector<HTMLButtonElement>('[data-part="section-header"]')!;
+  expect(section().getAttribute("aria-expanded")).toBe("true");
+  page.press(section().textContent!);
   importFile(page.host, KEPT);
   await page.waitFor(() =>
     expect(page.host.querySelector("h1")?.textContent).toBe("Kept work"),
   );
   expect(refresh().value).toBe("demand");
-  const all = [...page.host.querySelectorAll("button")].find(
-    (button) => button.textContent === m.workbench_explorer_all(),
-  )!;
-  expect(all.getAttribute("aria-pressed")).toBe("true");
+  expect(section().getAttribute("aria-expanded")).toBe("false");
 });
 
 it("shows filename and property examples for the current Sample Item", async () => {

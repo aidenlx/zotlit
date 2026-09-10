@@ -126,6 +126,38 @@ Match reports "Matches selected item" or "Does not match selected item".
 Label the Note name result "Preview". Keep selection, retry, and data reload
 actions relevant to the displayed state.
 
+### Template fields
+
+The field list shows one tree for the selected Item or Annotation, grouped
+into sections. Common fields lead in a fixed order with the names a
+researcher uses. Every other field has one home: Reference, Identifiers,
+Content and files, Organization, Links, and Zotero record for an Item;
+Annotation, Source, Organization, Links, and Zotero record for an
+Annotation. A field the taxonomy does not name joins the first section. No
+field appears twice, and a field that is empty for every Item, such as the
+note-name root's note path, does not appear.
+
+Every top-level row shows a human name: ZotLit's label for its own fields,
+and Zotero's own field label in the reader's locale for the rest, with
+English Zotero labels in sentence case. The raw path stays in the tooltip
+and in Copy path. Search matches the name, the raw key, and the value.
+Nested keys show as written, in monospace.
+
+Every row uses one density: a 30 px minimum, name and value inline, long
+values wrapping beneath. A named list counts its entries in parentheses. A
+row carries two actions, Insert field and a menu, revealed on hover or focus
+and always visible on touch; a right click opens the same menu. Copy value
+lives in the menu.
+
+Sections open by default. A section's closed state is view state, saved with
+the workspace. Search opens every section that matches and disables their
+toggles. In Obsidian, the pane menu and a view action offer Collapse all
+sections and Expand all sections, swapping icon and label like the file
+explorer's collapse action; the sidebar keeps the same icon beside Choose
+item. The in-content heading appears only in a sidebar, where the native
+title is hidden. The search field names the root: "Search note fields",
+"Search annotation fields", "Search note name fields".
+
 ### Obsidian panes
 
 Native headers and titles lead with the selected data, followed by the
@@ -336,6 +368,9 @@ Named so a reviewer can point at one. Each has a decision above that replaces it
   maps onto the stored flags.
 - **Heading echo.** An in-content heading that repeats the native title. A
   heading earns its line by naming the role the title does not.
+- **Mode switch in content.** A segmented control above a list that chooses
+  between two vocabularies for the same data. Group the list into sections
+  and let disclosure carry the choice.
 - **Wrong-cause sentence.** One stale message for every cause, such as
   "Resolve the problem below" while the preview merely waits for Run.
 - **Layout in JavaScript.** Viewport or container detection in state to pick

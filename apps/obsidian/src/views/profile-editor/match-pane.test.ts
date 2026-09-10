@@ -182,7 +182,7 @@ it("applies the installed pack to shared Match and Explorer controls after resta
         locale: "zh-CN",
         messages: {
           workbench_match_conditions_desc: "测试包：匹配条件",
-          workbench_explorer_simple: "测试包：简洁",
+          workbench_explorer_section_common: "测试包：常用字段",
           workbench_field_title: "测试包：标题",
         },
       }),
@@ -238,8 +238,8 @@ it("applies the installed pack to shared Match and Explorer controls after resta
             { store, controller, scheduler },
             createElement(MatchPane, { controller, facts: null }),
             createElement(DataExplorer, {
-              variant: "simple",
-              onVariantChange: () => {},
+              collapsedSections: new Set<string>(),
+              onCollapsedSectionsChange: () => {},
               navigation: initialTreeState(),
               onNavigationChange: () => {},
               root: "note",
@@ -252,26 +252,23 @@ it("applies the installed pack to shared Match and Explorer controls after resta
     });
   await show();
   const englishMatch = m.workbench_match_conditions_desc();
-  const englishViews =
-    m.workbench_explorer_simple() + m.workbench_explorer_all();
-  const variant = () =>
-    [...el.querySelectorAll('[data-part="variants"] button')]
-      .map((button) => button.textContent)
-      .join("");
+  const englishSection = m.workbench_explorer_section_common();
+  const section = () =>
+    el.querySelector('[data-part="section-label"]')?.textContent;
   expect(el.textContent).toContain(englishMatch);
-  expect(variant()).toBe(englishViews);
+  expect(section()).toBe(englishSection);
   expect(host.getLocale()).toBe("en");
 
   await lifecycle.install();
   await show();
   expect(el.textContent).toContain(englishMatch);
-  expect(variant()).toBe(englishViews);
+  expect(section()).toBe(englishSection);
 
   initI18n({ pluginVersion: "2.0.0", ports });
   await show();
   expect(host.getLocale()).toBe("zh-CN");
   expect(el.textContent).toContain("测试包：匹配条件");
   expect(el.textContent).toContain("测试包：标题");
-  // The pack overrides Simple; All fields falls back to bundled English.
-  expect(variant()).toBe(`测试包：简洁${m.workbench_explorer_all()}`);
+  // The pack overrides the section name.
+  expect(section()).toBe("测试包：常用字段");
 });

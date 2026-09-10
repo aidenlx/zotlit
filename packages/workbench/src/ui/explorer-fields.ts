@@ -5,7 +5,7 @@ import type {
 } from "#/explorer/index";
 
 import { COMMON_FIELDS } from "./completion-fields";
-// Common field labels and values shared by both Explorer variants.
+// Common field labels and values shared by the Explorer and its hosts.
 import type { WorkbenchMessages } from "./generated/messages";
 import type { TemplateRoot } from "./store";
 
@@ -36,11 +36,12 @@ export function commonRows(
   });
 }
 
-/** Matches a row on the name the reader sees and on this paper's value. */
+/** Matches a row on the name the reader sees, on its raw key, and on this paper's value. */
 export function rowMatches(row: FieldRow, query: string): boolean {
   const needle = query.toLowerCase();
   return (
     row.label.toLowerCase().includes(needle) ||
+    row.node.label.toLowerCase().includes(needle) ||
     row.value.toLowerCase().includes(needle)
   );
 }

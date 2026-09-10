@@ -17,7 +17,6 @@ import {
 } from "@zotlit/workbench/render";
 import type { AnnotationExample } from "@zotlit/workbench/render";
 import type {
-  ExplorerVariant,
   ExplorerPresentation,
   TemplateRoot,
   WorkbenchItemChoice,
@@ -48,11 +47,12 @@ export interface ExplorerState {
   status: "no-item" | "loading" | "ready" | "empty" | "error";
   error: string | null;
   navigation: TreeState;
-  variant: ExplorerVariant;
+  /** Section ids the reader closed; saved with the workspace. */
+  collapsedSections: ReadonlySet<string>;
   setNavigation: (navigation: TreeState) => void;
   setFilter: (query: string) => void;
   toggleNode: (key: string) => void;
-  setVariant: (variant: ExplorerVariant) => void;
+  setCollapsedSections: (collapsed: ReadonlySet<string>) => void;
 }
 export function createExplorerStore() {
   return createStore<ExplorerState>()((set) => ({
@@ -68,13 +68,13 @@ export function createExplorerStore() {
     status: "no-item",
     error: null,
     navigation: initialTreeState(),
-    variant: "simple",
+    collapsedSections: new Set(),
     setNavigation: (navigation) => set({ navigation }),
     setFilter: (query) =>
       set((state) => ({ navigation: setFilter(state.navigation, query) })),
     toggleNode: (key) =>
       set((state) => ({ navigation: toggleNode(state.navigation, key) })),
-    setVariant: (variant) => set({ variant }),
+    setCollapsedSections: (collapsedSections) => set({ collapsedSections }),
   }));
 }
 export type ExplorerStore = ReturnType<typeof createExplorerStore>;

@@ -177,7 +177,7 @@ describe("the field list", () => {
   it("searches the complete Zotero tree without opening the foot first", async () => {
     using page = open();
     const search = page.host.querySelector<HTMLInputElement>(
-      `input[aria-label="${m.workbench_fields_search()}"]`,
+      `input[aria-label="${m.workbench_fields_search_note()}"]`,
     )!;
 
     act(() => {
@@ -189,7 +189,9 @@ describe("the field list", () => {
     });
 
     await page.waitFor(() =>
-      expect(fieldRow(page.host, "DOI").textContent).toContain("zt.DOI"),
+      expect(
+        fieldRow(page.host, "DOI").getAttribute("data-workbench-field"),
+      ).toBe("DOI"),
     );
     expect(page.host.textContent).not.toContain(
       m.workbench_fields_no_matches(),

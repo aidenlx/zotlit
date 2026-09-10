@@ -49,16 +49,16 @@ export interface WorkbenchParts {
     | "explorer"
     | "header"
     | "heading"
-    | "variants"
-    | "variant"
     | "search"
     | "body"
     | "empty";
   explorerTree:
-    | "simple-row"
-    | "simple-heading"
-    | "path"
-    | "simple-value"
+    | "sections"
+    | "section"
+    | "section-header"
+    | "section-chevron"
+    | "section-label"
+    | "section-count"
     | "tree"
     | "spacer"
     | "contents"
@@ -68,6 +68,7 @@ export interface WorkbenchParts {
     | "actions"
     | "action"
     | "key"
+    | "value"
     | "hint"
     | "placeholder"
     | "color-swatch"
@@ -263,7 +264,8 @@ export type WorkbenchIcon =
   | "preview"
   | "edit"
   | "chevron-down"
-  | "chevron-right";
+  | "chevron-right"
+  | "more";
 
 export interface WorkbenchTheme {
   readonly classes?: WorkbenchClassMap;

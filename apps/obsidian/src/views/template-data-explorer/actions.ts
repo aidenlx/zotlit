@@ -9,6 +9,8 @@ import { addCopyIndexedKeyMenuItem } from "@/services/indexed-key/menu";
 export interface ExplorerActions {
   onChooseItem(): void;
   onBackToNoteRoot(): void;
+  /** Closes every section, or opens every section once all are closed. */
+  onToggleSections(): void;
   onRefresh(): void;
   addCopyKeyMenuItem(menu: Menu): boolean;
   addExportMenuItem(menu: Menu): void;
@@ -17,6 +19,7 @@ export interface ExplorerActions {
 export function createExplorerActions(deps: {
   onChooseItem(this: void): void;
   onBackToNoteRoot(this: void): void;
+  onToggleSections(this: void): void;
   onRefresh(this: void): void;
   copyTarget(this: void): IndexedKeyCopyTarget | null;
   canExport(this: void): boolean;
@@ -26,6 +29,7 @@ export function createExplorerActions(deps: {
   return {
     onChooseItem: deps.onChooseItem,
     onBackToNoteRoot: deps.onBackToNoteRoot,
+    onToggleSections: deps.onToggleSections,
     onRefresh: deps.onRefresh,
     addCopyKeyMenuItem(menu) {
       return addCopyIndexedKeyMenuItem(menu, deps.copyTarget(), {
@@ -52,6 +56,7 @@ export function createExplorerActions(deps: {
 const NOOP_ACTIONS: ExplorerActions = {
   onChooseItem: () => {},
   onBackToNoteRoot: () => {},
+  onToggleSections: () => {},
   onRefresh: () => {},
   addCopyKeyMenuItem: () => false,
   addExportMenuItem: () => {},

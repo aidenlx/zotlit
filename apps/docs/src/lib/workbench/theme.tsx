@@ -17,6 +17,7 @@ import {
   Undo2,
   ChevronDown,
   ChevronRight,
+  Ellipsis,
 } from "lucide-react";
 // The web's look for the Workbench UI: the site's Tailwind classes for each
 // part of the shared tree, and Lucide for its icons. The tree carries no class
@@ -32,6 +33,7 @@ import { editorTheme } from "./editor-theme";
 
 const ICON: Record<WorkbenchIcon, typeof List> = {
   "chevron-right": ChevronRight,
+  more: Ellipsis,
   copy: Copy,
   confirm: Check,
   add: Plus,
@@ -110,30 +112,34 @@ export const WEB_THEME: WorkbenchTheme = {
       explorer: "flex min-h-0 flex-1 flex-col gap-2 p-2",
       header: "flex flex-wrap items-center justify-between gap-2",
       heading: "text-xs font-semibold",
-      variants: "flex gap-1",
-      variant:
-        "rounded px-2 py-1 text-xs data-[state=active]:bg-fd-primary data-[state=active]:text-fd-primary-foreground",
       search: "w-full",
       body: "min-h-0 flex-1 overflow-auto",
       empty: "text-fd-muted-foreground text-xs",
     },
     explorerTree: {
-      "simple-row": "py-1",
-      "simple-heading": "flex min-w-0 flex-wrap items-baseline gap-x-2",
-      path: "text-xs font-mono text-fd-muted-foreground",
-      "simple-value": "text-xs",
-      tree: "font-mono text-xs leading-relaxed data-[state=simple]:font-sans",
+      sections: "flex flex-col gap-2",
+      section: "",
+      "section-header":
+        "flex w-full cursor-pointer items-center gap-1 rounded px-1 py-1 text-start text-xs font-semibold text-fd-muted-foreground hover:bg-fd-muted hover:text-fd-foreground aria-disabled:cursor-default",
+      "section-chevron":
+        "flex size-3 shrink-0 items-center justify-center transition-transform duration-100 ease-out data-[expanded]:rotate-90",
+      "section-label": "min-w-0 flex-1",
+      "section-count": "font-normal tabular-nums text-fd-muted-foreground",
+      tree: "text-xs leading-relaxed",
       spacer: "mt-[3px] size-3 shrink-0",
-      contents: "min-w-0 flex-1 select-text",
+      /** Key and value share one line while both fit; a longer value drops to its own line beneath the key. */
+      contents:
+        "flex min-w-0 flex-1 flex-wrap gap-x-1.5 select-text [overflow-wrap:anywhere]",
       group: "ms-3 border-s border-fd-border ps-2",
       chevron:
         "mt-[3px] flex size-3 shrink-0 cursor-pointer items-center justify-center text-fd-muted-foreground transition-transform duration-100 ease-out hover:text-fd-foreground data-[expanded]:rotate-90",
       "chevron-icon": "size-3 [&_svg]:size-3",
       actions:
-        "absolute top-0.5 end-0 flex items-center gap-0.5 bg-linear-to-l from-fd-background from-60% to-transparent ps-6 opacity-0 group-hover:opacity-100 focus-within:opacity-100",
+        "absolute top-0.5 end-0 flex items-center gap-0.5 bg-linear-to-l from-fd-background from-60% to-transparent ps-6 opacity-0 group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100",
       action:
         "rounded-xs flex size-4 cursor-pointer items-center justify-center text-fd-muted-foreground hover:bg-fd-muted hover:text-fd-foreground",
-      key: "text-fd-foreground",
+      key: "font-mono text-fd-foreground data-[state=labeled]:font-sans data-[state=labeled]:font-medium",
+      value: "min-w-0",
       hint: "text-fd-muted-foreground",
       placeholder: "text-fd-muted-foreground italic",
       "color-swatch": "rounded-xs size-3 shrink-0 border border-fd-border",
