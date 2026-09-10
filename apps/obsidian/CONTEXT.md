@@ -321,11 +321,15 @@ _Avoid_: matched line, context preview, source preview
 
 **Graph Citations** _(Obsidian)_:
 The citation edges and Cited Work Nodes ZotLit adds to Obsidian's own graph views from the Citation Index, so a note connects to the works it cites. Membership follows the Document Citation Set: a literal Pandoc citation gains an edge to the cited Item's Literature Note, or to a Cited Work Node when no Literature Note exists; a wikilink citation is already a link and needs no addition. Turning the feature off removes every added edge and node and leaves Obsidian's graph as it was.
-_Avoid_: citation graph (implies a separate view), graph overlay (names the mechanism, not the feature)
+_Avoid_: citation graph (the preset-opened graph, see Citation Graph), graph overlay (names the mechanism, not the feature)
 
 **Cited Work Node** _(Obsidian)_:
 A node ZotLit places in Obsidian's graph for a work cited in the vault that has no Literature Note yet, or whose Citation Key is missing or ambiguous. Labelled by its Citation Key. Obsidian's "Existing files only" toggle hides it, and clicking it creates the Literature Note.
 _Avoid_: ghost node, virtual node, unresolved node (Obsidian's term for a link to a missing note)
+
+**Citation Graph** _(Obsidian)_:
+Obsidian's own graph view, global or local, opened with ZotLit's preset: only citation-connected nodes, citation edges coloured, arrows on, and the literature notes group applied. Not a separate view; every native control stays available.
+_Avoid_: ZotLit graph view (implies a view type), citation map, graph preset (names the mechanism)
 
 **Citation and References Style**:
 The Zotero-installed CSL style used for both Document Citation Text and rendered entries in the References Sidebar. A vault selection supplies the default, and a document's `zotlit-csl` property can select its own installed style by CSL ID. Zotero owns style installation; choosing Default uses the Pandoc Engine's embedded style. An unavailable selected style leaves in-text sources visible and the sidebar minimal, shows a settings warning, and raises one notice per plugin lifecycle with an action that opens the Citations settings.
