@@ -40,6 +40,8 @@ export interface RenderSchedulerState<
   readonly busy: boolean;
   /** Whether `result` describes a draft, paper, or mode the reader has left. */
   readonly stale: boolean;
+  /** Why `result` is stale, or why none exists yet; `null` while the shown result is current. */
+  readonly staleReason: "hold" | "demand" | "live" | null;
 }
 
 export interface RenderSchedulerOptions<R extends ProfileRenderResult> {
@@ -72,6 +74,16 @@ export interface RenderScheduler<
   fail(diagnostic: RenderDiagnostic): void;
 }
 
+/** Why the shown result is stale; `current` says it matches the input. */
+function staleReasonFor(
+  input: Pick<RenderSchedulerInput, "hold" | "live">,
+  current: boolean,
+): RenderSchedulerState["staleReason"] {
+  if (input.hold === true) return "hold";
+  if (current) return null;
+  return input.live ? "live" : "demand";
+}
+
 export function createRenderScheduler<R extends ProfileRenderResult>({
   render,
   failed,
@@ -83,6 +95,7 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
     result: null,
     busy: false,
     stale: false,
+    staleReason: staleReasonFor(initial, false),
   };
   let pending: ReturnType<typeof setTimeout> | undefined;
   let current: RenderIdentity | undefined;
@@ -98,26 +111,31 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
     if (closed) return;
     const result = next.result === undefined ? state.result : next.result;
     const busy = next.busy ?? state.busy;
-    const stale =
-      input.hold === true ||
-      (result !== null &&
-        (result.sourceRevision !== profileSourceRevision(input.source) ||
-          (input.snapshot !== null &&
-            result.snapshotRevision !== input.snapshot.revision) ||
-          // A result already on screen describes the example it was rendered
-          // for, so a reader who chooses another one has moved past it.
-          (input.annotation != null &&
-            (result.annotationId !== input.annotation.id ||
-              result.annotationRevision !== input.annotation.revision)) ||
-          result.previewMode !== input.mode));
+    const identityMismatch =
+      result !== null &&
+      (result.sourceRevision !== profileSourceRevision(input.source) ||
+        (input.snapshot !== null &&
+          result.snapshotRevision !== input.snapshot.revision) ||
+        // A result already on screen describes the example it was rendered
+        // for, so a reader who chooses another one has moved past it.
+        (input.annotation != null &&
+          (result.annotationId !== input.annotation.id ||
+            result.annotationRevision !== input.annotation.revision)) ||
+        result.previewMode !== input.mode);
+    const stale = input.hold === true || identityMismatch;
+    const staleReason = staleReasonFor(
+      input,
+      result !== null && !identityMismatch,
+    );
     if (
       result === state.result &&
       busy === state.busy &&
-      stale === state.stale
+      stale === state.stale &&
+      staleReason === state.staleReason
     ) {
       return;
     }
-    state = { result, busy, stale };
+    state = { result, busy, stale, staleReason };
     for (const listener of listeners) listener();
   }
 
@@ -217,7 +235,10 @@ export function createRenderScheduler<R extends ProfileRenderResult>({
         input.hold === previous.hold;
       if (sameRenderInput && input.live === previous.live) return;
       if (sameRenderInput && !input.live) {
+        // The queued render is dropped, so the reason the result is stale changes
+        // from "live" to "demand" without a new result or busy flag.
         pause();
+        publish({});
         return;
       }
       changed();

@@ -65,6 +65,7 @@ export function getIcon(name: IconName): SVGSVGElement | null {
 export function setIcon(el: HTMLElement, name: IconName): void {
   const icon = getIcon(name);
   el.replaceChildren(...(icon ? [icon] : []));
+  el.setAttribute("data-icon", name);
 }
 
 /** Stand-in for Obsidian's delegated tooltip attributes. */
@@ -394,6 +395,7 @@ export class ItemView {
   }
 
   onResize(): void {}
+  onPaneMenu(_menu: Menu, _source: string): void {}
   getViewType(): string {
     return "";
   }
@@ -753,6 +755,7 @@ export class MenuItem {
   #title = "";
   #section = "";
   #checked: boolean | null = null;
+  #disabled = false;
   #onClick: ((evt: MouseEvent) => unknown) | null = null;
 
   /** Populated by {@link setSubmenu}; lets tests inspect a submenu's items. */
@@ -772,6 +775,11 @@ export class MenuItem {
     return this.#section;
   }
 
+  /** Whether the row is disabled, as in Obsidian. */
+  get disabled(): boolean {
+    return this.#disabled;
+  }
+
   setTitle(title: string): this {
     this.#title = title;
     return this;
@@ -781,7 +789,8 @@ export class MenuItem {
     return this;
   }
 
-  setDisabled(_disabled: boolean): this {
+  setDisabled(disabled: boolean): this {
+    this.#disabled = disabled;
     return this;
   }
 
@@ -809,8 +818,10 @@ export class MenuItem {
     return this;
   }
 
-  /** Test helper: invoke the registered `onClick` handler. */
+  /** Test helper: invoke the registered `onClick` handler; a no-op while
+   * disabled, as Obsidian ignores clicks on disabled items. */
   click(): void {
+    if (this.#disabled) return;
     this.#onClick?.({} as MouseEvent);
   }
 }

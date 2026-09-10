@@ -91,8 +91,13 @@ export type { WorkbenchMarkdownProps } from "./host";
 export { COMMON_FIELDS, completionFields } from "./completion-fields";
 export type { CommonField } from "./completion-fields";
 export { tagDescription } from "./tag-help";
-export { ResultColumn, ResultHeader, ResultRegion } from "./result-column";
-export type { ResultColumnProps } from "./result-column";
+export {
+  ResultBody,
+  ResultColumn,
+  ResultHeader,
+  ResultRegion,
+} from "./result-column";
+export type { ResultBodyProps, ResultColumnProps } from "./result-column";
 export { PropertyList, PropertyValue, propertyText } from "./property-list";
 
 export { PreviewControls } from "./preview-controls";

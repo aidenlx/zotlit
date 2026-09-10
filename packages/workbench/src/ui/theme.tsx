@@ -205,6 +205,9 @@ export interface WorkbenchParts {
   resultRegion: "region";
   resultColumn:
     | "stale"
+    | "behind"
+    | "behind-text"
+    | "run"
     | "filename"
     | "filename-text"
     | "problem"

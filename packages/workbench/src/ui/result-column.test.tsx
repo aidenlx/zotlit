@@ -7,7 +7,7 @@ import { createStore } from "zustand/vanilla";
 
 import { PreviewControls } from "./preview-controls";
 import { PropertyList } from "./property-list";
-import { ResultColumn } from "./result-column";
+import { ResultBody, ResultColumn } from "./result-column";
 import type { ResultColumnProps } from "./result-column";
 import type { PreviewSettings } from "./store";
 import { mount, renderWithMessages as render } from "./test-host";
@@ -37,6 +37,7 @@ function column(overrides: Partial<ResultColumnProps> = {}) {
     result,
     mode: "note",
     stale: false,
+    staleReason: null,
     showMarkdown: false,
     onShowMarkdown: vi.fn<(show: boolean) => void>(),
     showManaged: false,
@@ -62,7 +63,7 @@ function column(overrides: Partial<ResultColumnProps> = {}) {
 }
 
 it("passes the complete note and folded properties to the host renderer", () => {
-  using mounted = column({ stale: true });
+  using mounted = column({ stale: true, staleReason: "hold" });
   const { props } = mounted;
   expect(
     screen
@@ -197,4 +198,55 @@ it("changes preview mode, runs on demand, and pauses future work", () => {
     (screen.getByLabelText(m.workbench_preview_refresh()) as HTMLSelectElement)
       .value,
   ).toBe("demand");
+});
+
+it("shows the behind notice with a working Run button when on demand", () => {
+  const onRun = vi.fn<() => void>();
+  using _mounted = column({ staleReason: "demand", onRun });
+  expect(screen.getByRole("status").textContent).toBe(
+    m.workbench_preview_behind() + m.workbench_preview_run(),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_preview_run() }),
+  );
+  expect(onRun).toHaveBeenCalledOnce();
+});
+
+it("shows the behind notice with no Run button when none is given", () => {
+  using _mounted = column({ staleReason: "demand" });
+  expect(screen.getByRole("status").textContent).toBe(
+    m.workbench_preview_behind(),
+  );
+  expect(
+    screen.queryByRole("button", { name: m.workbench_preview_run() }),
+  ).toBeNull();
+});
+
+it("shows no status while a live render is on its way", () => {
+  using _mounted = column({ stale: true, staleReason: "live" });
+  expect(screen.queryByRole("status")).toBeNull();
+});
+
+it("shows no status once the shown result is current", () => {
+  using _mounted = column({ stale: false, staleReason: null });
+  expect(screen.queryByRole("status")).toBeNull();
+});
+
+it("renders ResultBody with no heading", () => {
+  using mounted = mount(
+    <ResultBody
+      result={result}
+      mode="note"
+      stale={false}
+      staleReason={null}
+      showMarkdown={false}
+      showManaged={false}
+      openAnnotation={vi.fn<() => void>()}
+      goToEntry={vi.fn<(position: number) => void>()}
+      openSource={vi.fn<() => void>()}
+    />,
+  );
+  render(mounted.ui);
+  expect(screen.queryByRole("heading")).toBeNull();
+  expect(screen.getByText("Papers/Reading.md")).toBeDefined();
 });

@@ -117,6 +117,7 @@ const INERT_STATE: RenderSchedulerState = {
   result: null,
   busy: false,
   stale: false,
+  staleReason: null,
 };
 
 /** Never renders: what the tree reads where no editor is in context. */

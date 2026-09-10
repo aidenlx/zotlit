@@ -37,7 +37,7 @@ function Preview({ live = true }: { live?: boolean }) {
     })),
   );
   const preview = useStore(store);
-  const { result, busy, stale } = useRenderState();
+  const { result, busy, stale, staleReason } = useRenderState();
   return (
     <>
       <PreviewControls
@@ -53,6 +53,7 @@ function Preview({ live = true }: { live?: boolean }) {
         data-testid="result"
         data-busy={String(busy)}
         data-stale={String(stale)}
+        data-stale-reason={String(staleReason)}
       >
         {result?.creationBody ?? ""}
       </div>
@@ -97,11 +98,14 @@ const startRender = async (live: boolean) => {
 it("renders after the quiet time and no sooner, and at once on Run", async () => {
   using mounted = open();
   const { host, controller } = mounted;
+  // No result has landed yet, so the reason is why one is still on the way.
+  expect(output().dataset["staleReason"]).toBe("live");
   await advance(299);
   expect(host.renders).toHaveLength(0);
   act(() => void controller.setManifestKey("name", "Revised"));
   await advance(299);
   expect(host.renders).toHaveLength(0);
+  expect(output().dataset["staleReason"]).toBe("live");
   await advance(1);
   expect(host.renders).toHaveLength(1);
   expect(host.renders[0]!.request.source).toContain("name: Revised");
@@ -109,6 +113,8 @@ it("renders after the quiet time and no sooner, and at once on Run", async () =>
   await act(async () => host.renders[0]!.answer({ creationBody: "First" }));
   expect(output().textContent).toBe("First");
   expect(output().dataset["busy"]).toBe("false");
+  // The delivered result matches the current input, so nothing is stale.
+  expect(output().dataset["staleReason"]).toBe("null");
   fireEvent.input(screen.getByLabelText(m.workbench_preview_refresh()), {
     target: { value: "demand" },
   });
@@ -137,6 +143,27 @@ it("lets the render in flight finish after selecting On demand and starts no oth
   await advance(1000);
   expect(host.renders).toHaveLength(1);
   expect(output().dataset["stale"]).toBe("true");
+  // On demand and behind an edit no render has started for.
+  expect(output().dataset["staleReason"]).toBe("demand");
+});
+
+it("drops a queued render on selecting On demand and reports the result as behind", async () => {
+  using mounted = open();
+  const { host, controller } = mounted;
+  await advance(300);
+  await act(async () => host.renders[0]!.answer({ creationBody: "First" }));
+  expect(output().dataset["staleReason"]).toBe("null");
+  act(() => void controller.setManifestKey("name", "Revised"));
+  // The quiet time has not passed: the render is queued, not running.
+  await advance(100);
+  expect(output().dataset["staleReason"]).toBe("live");
+  fireEvent.input(screen.getByLabelText(m.workbench_preview_refresh()), {
+    target: { value: "demand" },
+  });
+  await advance(1000);
+  expect(host.renders).toHaveLength(1);
+  expect(output().textContent).toBe("First");
+  expect(output().dataset["staleReason"]).toBe("demand");
 });
 
 it("renders only on Run while the refresh setting is On demand", async () => {
@@ -270,6 +297,7 @@ it("holds rendering on the host's word while the last result stands", async () =
   );
   expect(output().textContent).toBe("Good");
   expect(output().dataset["stale"]).toBe("true");
+  expect(output().dataset["staleReason"]).toBe("hold");
   act(() => void controller.setManifestKey("name", "Held"));
   await advance(1000);
   expect(host.renders).toHaveLength(1);
@@ -278,6 +306,20 @@ it("holds rendering on the host's word while the last result stands", async () =
   );
   await advance(300);
   expect(host.renders).toHaveLength(2);
+});
+
+it("reads a fresh scheduler in on-demand mode as behind before any render starts", () => {
+  using mounted = mount(<Preview live={false} />);
+  render(mounted.ui);
+  act(() =>
+    mounted.scheduler.setInput({
+      snapshot: PAPER,
+      annotation: EXAMPLE,
+      live: false,
+    }),
+  );
+  // Nothing has rendered yet, and On demand starts nothing on its own.
+  expect(output().dataset["staleReason"]).toBe("demand");
 });
 
 /** The same shared result tree mounted without any editor authority. */
@@ -294,7 +336,7 @@ function IndependentPreview({
     })),
   );
   const { preview, showMarkdown, showManaged } = useStore(store);
-  const { result, busy, stale } = useRenderState(scheduler);
+  const { result, busy, stale, staleReason } = useRenderState(scheduler);
   useEffect(() => () => scheduler[Symbol.dispose](), [scheduler]);
   return (
     <>
@@ -313,6 +355,7 @@ function IndependentPreview({
         result={result}
         mode="note"
         stale={stale}
+        staleReason={staleReason}
         showMarkdown={showMarkdown}
         onShowMarkdown={(value) => store.setState({ showMarkdown: value })}
         showManaged={showManaged}
