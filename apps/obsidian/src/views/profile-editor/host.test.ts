@@ -143,28 +143,74 @@ describe("Profile Editor host", () => {
       return el;
     });
     expect(rows.map((el) => el.className)).toEqual([
-      "mod-complex",
-      "mod-complex",
+      "mod-complex zt-workbench-suggestion zt:@container",
+      "mod-complex zt-workbench-suggestion zt:@container",
     ]);
     expect(
       rows.map((el) => el.querySelector(".suggestion-title")!.textContent),
     ).toEqual(["APA", "IEEE"]);
     expect(
       rows.map(
-        (el) => el.querySelector(".suggestion-note")?.textContent ?? null,
+        (el) => el.querySelector(".suggestion-note .hint")?.textContent ?? null,
       ),
     ).toEqual(["Author-date", null]);
+    // The group takes the Library's two slots: a badge closing the note line
+    // on a narrow row, a trailing flair on a wide one.
+    expect(
+      rows.map((el) => [
+        el.querySelector(".suggestion-note .zt-suggestion-flair-inline")!
+          .textContent,
+        el.querySelector(".zt-suggestion-flair")!.textContent,
+      ]),
+    ).toEqual([
+      ["Installed", "Installed"],
+      ["Installed", "Installed"],
+    ]);
     expect(
       rows.map((el) =>
         [...el.querySelectorAll(".suggestion-aux .suggestion-flair")].map(
-          (flair) => flair.getAttribute("aria-label") ?? flair.textContent,
+          (flair) => flair.getAttribute("aria-label"),
         ),
       ),
-    ).toEqual([[m.modal_profile_current(), "Installed"], ["Installed"]]);
+    ).toEqual([[m.modal_profile_current()], []]);
     expect(rows.map((el) => el.getAttribute("aria-current"))).toEqual([
       "true",
       null,
     ]);
+  });
+
+  it("highlights the searched text in the title and the hint", () => {
+    const { host } = setup();
+    using open = vi.spyOn(SuggestModal.prototype, "open");
+    void host.suggester({
+      title: "Styles",
+      groups: [
+        {
+          label: "Installed",
+          options: [{ id: "ieee", label: "IEEE", hint: "Engineering" }],
+        },
+      ],
+    });
+    type Row = { id: string; label: string; hint?: string; group: string };
+    const modal = open.mock.contexts.at(-1)! as SuggestModal<Row>;
+    const [row] = modal.getSuggestions("ee") as Row[];
+    const el = document.createElement("div");
+    modal.renderSuggestion(row!, el);
+    expect(
+      [...el.querySelectorAll(".suggestion-highlight")].map((match) => [
+        match.parentElement!.className,
+        match.textContent,
+      ]),
+    ).toEqual([
+      [
+        "suggestion-title zt:truncate zt:text-sm zt:leading-tight zt:font-medium",
+        "EE",
+      ],
+      ["hint", "ee"],
+    ]);
+    // Words may land in different fields, the way the filter read before.
+    expect(modal.getSuggestions("installed engineer")).toHaveLength(1);
+    expect(modal.getSuggestions("apa")).toHaveLength(0);
   });
 
   it("keeps preferences in Obsidian's vault-local storage", () => {

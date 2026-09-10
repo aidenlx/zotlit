@@ -39,6 +39,11 @@ import * as m from "@/lib/i18n/generated/messages";
 import { runtime } from "@/lib/i18n/generated/runtime";
 import { BaseNotice } from "@/lib/notice";
 import { tooltipAttrs } from "@/lib/utils";
+import {
+  appendInlineFlair,
+  appendTrailingFlair,
+  FLAIR_ROW_CLASS,
+} from "@/services/item-lookup/render-hit";
 
 import { templateHover } from "./hover";
 import { profileEditorIcons } from "./theme";
@@ -113,6 +118,7 @@ class EditorSuggester extends SuggestModal<
 > {
   readonly #answer = Promise.withResolvers<string | null>();
   #picked = false;
+  #search = prepareSimpleSearch("");
   readonly #request: WorkbenchSuggesterRequest;
   constructor(app: App, request: WorkbenchSuggesterRequest) {
     super(app);
@@ -129,38 +135,65 @@ class EditorSuggester extends SuggestModal<
       this.emptyStateText = empty;
   }
   override getSuggestions(query: string) {
-    const search = query.toLocaleLowerCase();
+    this.#search = prepareSimpleSearch(query);
     return this.#request.groups
       .flatMap((group) =>
         group.options.map((option) => ({ ...option, group: group.label })),
       )
-      .filter((option) =>
-        `${option.label} ${option.hint ?? ""} ${option.group}`
-          .toLocaleLowerCase()
-          .includes(search),
+      .filter(
+        (option) =>
+          this.#search(
+            `${option.label} ${option.hint ?? ""} ${option.group}`,
+          ) !== null,
       );
   }
+  /**
+   * A row reads the way a citation row reads: the name in the title slot,
+   * the hint beneath it, and the group at the trailing edge once the row is
+   * wide enough, otherwise as a badge closing the hint line.
+   */
   override renderSuggestion(
     option: WorkbenchSuggesterOption & { group: string },
     el: HTMLElement,
   ): void {
-    el.addClass("mod-complex");
-    const content = el.createDiv("suggestion-content");
-    content.createDiv({ cls: "suggestion-title", text: option.label });
-    if (option.hint)
-      content.createDiv({ cls: "suggestion-note", text: option.hint });
-    const aux = el.createDiv("suggestion-aux");
+    el.addClass("mod-complex", "zt-workbench-suggestion", FLAIR_ROW_CLASS);
+    const content = el.createDiv({
+      cls: "suggestion-content zt:min-w-0 zt:gap-0.5",
+    });
+    renderMatches(
+      content.createDiv({
+        cls: "suggestion-title zt:truncate zt:text-sm zt:leading-tight zt:font-medium",
+      }),
+      option.label,
+      this.#search(option.label)?.matches ?? null,
+    );
+    if (option.hint || option.group) {
+      const note = content.createDiv({
+        cls: "suggestion-note zt:leading-tight",
+      });
+      if (option.hint)
+        renderMatches(
+          note.createSpan("hint"),
+          option.hint,
+          this.#search(option.hint)?.matches ?? null,
+        );
+      if (option.group)
+        appendInlineFlair(note, option.group, option.hint ? "zt:ms-1.5" : "");
+    }
+    for (const match of el.querySelectorAll(".suggestion-highlight")) {
+      match.classList.add("zt:text-accent-foreground");
+    }
     if (option.id === this.#request.selected) {
       el.setAttribute("aria-current", "true");
       setIcon(
-        aux.createSpan({
+        el.createDiv("suggestion-aux").createSpan({
           cls: "suggestion-flair",
           attr: { "aria-label": m.modal_profile_current() },
         }),
         "check",
       );
     }
-    aux.createSpan({ cls: "suggestion-flair", text: option.group });
+    if (option.group) appendTrailingFlair(el, option.group);
   }
   override selectSuggestion(
     value: WorkbenchSuggesterOption & { group: string },
