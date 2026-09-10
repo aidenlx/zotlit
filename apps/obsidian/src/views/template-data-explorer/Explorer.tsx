@@ -19,13 +19,14 @@ import {
 } from "@/views/profile-editor/selection";
 import {
   profileEditorButton,
-  selectionCaption,
+  selectionBar,
   selectionHint,
-  selectionTrigger,
 } from "@/views/profile-editor/theme";
 
 import { ExplorerActionsContext } from "./actions";
 import { useExplorerStore, useExplorerStoreApi } from "./store";
+
+const sidebarBar = selectionBar({ placement: "sidebar" });
 
 export function Explorer({
   explorer,
@@ -126,10 +127,10 @@ export function Explorer({
                 : "zt-workbench-sidebar-control zt:shrink-0 zt:justify-end zt:px-3 zt:py-2"
             }
           >
-            <div className="zt-workbench-sidebar-control zt:min-w-0 zt:flex-1 zt:flex-wrap zt:items-center zt:gap-x-2 zt:gap-y-1">
-              {name && <p className={selectionCaption}>{name}</p>}
+            <div className={sidebarBar.row({ className: "zt:flex-1" })}>
+              {name && <p className={sidebarBar.caption()}>{name}</p>}
               <button
-                className={cn(selectionTrigger, "zt:ms-auto")}
+                className={sidebarBar.trigger()}
                 aria-label={
                   root === "annotation"
                     ? m.workbench_choose_annotation()

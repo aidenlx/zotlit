@@ -21,11 +21,10 @@ import {
   SAMPLE_ITEM_CHOICES,
 } from "./selection-data";
 import {
+  selectionControl,
   selectionGroup,
   selectionGroupHeading,
   selectionHint,
-  selectionOption,
-  selectionTrigger,
 } from "./theme";
 
 type AnnotationChoice = Pick<AnnotationExample, "id" | "root">;
@@ -37,6 +36,9 @@ export type WorkbenchSelectionEvent = WorkbenchSelection & {
   leaf: WorkspaceLeaf;
   editor: WorkspaceLeaf | null;
 };
+
+const selectionTrigger = selectionControl({ kind: "trigger" });
+const selectionOption = selectionControl({ kind: "option" });
 
 /** Native association scopes user choices; receivers never echo a selection. */
 export function subscribeWorkbenchSelection(
