@@ -14,6 +14,7 @@ import type { TreeState } from "@zotlit/workbench/explorer";
 import {
   restoreTemplateData,
   SAMPLE_ANNOTATIONS,
+  sampleItemCitation,
 } from "@zotlit/workbench/render";
 import type { AnnotationExample } from "@zotlit/workbench/render";
 import type {
@@ -185,6 +186,11 @@ export class NativeExplorerSession implements Disposable {
         if (!item.id.startsWith("sample:"))
           return loadTemplateData(this.#deps, key, target);
         if (!snapshot) return Promise.resolve({ kind: "not-found" });
+        if (target === "citation")
+          return Promise.resolve({
+            kind: "data",
+            data: sampleItemCitation(snapshot, "main"),
+          });
         if (target !== "annotation")
           return Promise.resolve({
             kind: "data",

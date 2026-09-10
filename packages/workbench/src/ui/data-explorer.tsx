@@ -13,6 +13,7 @@ import type { WorkbenchMenuItem, WorkbenchMenuRequest } from "./host";
 // Both hosts use this field discovery tree. The host owns clipboard, insertion,
 // export, popup presentation, and the controlled filtering/expansion state.
 import { useWorkbenchMessages } from "./messages";
+import type { WorkbenchMessageLabel } from "./messages";
 import type { TemplateRoot } from "./store";
 import { useParts } from "./theme";
 
@@ -60,6 +61,22 @@ export interface DataExplorerProps {
   onExploreAnnotation?: (node: DisplayNode) => void;
   canExploreAnnotation?: (node: DisplayNode) => boolean;
 }
+
+/** The name each root goes by in the Explorer's header. */
+const ROOT_LABELS: Record<TemplateRoot, WorkbenchMessageLabel> = {
+  note: "workbench_fields_root_note",
+  annotation: "workbench_fields_root_annotation",
+  filename: "workbench_fields_root_filename",
+  citation: "workbench_fields_root_citation",
+};
+
+/** What each root's field search says it searches. */
+const SEARCH_LABELS: Record<TemplateRoot, WorkbenchMessageLabel> = {
+  note: "workbench_fields_search_note",
+  annotation: "workbench_fields_search_annotation",
+  filename: "workbench_fields_search_filename",
+  citation: "workbench_fields_search_citation",
+};
 
 export function DataExplorer({
   restore,
@@ -209,23 +226,12 @@ export function DataExplorer({
       });
     host.menu({ anchor: event.currentTarget as HTMLElement, items, submenus });
   };
-  const search =
-    root === "annotation"
-      ? m.workbench_fields_search_annotation()
-      : root === "filename"
-        ? m.workbench_fields_search_filename()
-        : m.workbench_fields_search_note();
+  const search = m[SEARCH_LABELS[root]]();
   return (
     <section {...part("explorer")}>
       <div {...part("header")}>
         <h2 {...part("heading")}>{m.workbench_fields_heading()}</h2>
-        <span {...part("root-label")}>
-          {root === "annotation"
-            ? m.workbench_fields_root_annotation()
-            : root === "filename"
-              ? m.workbench_fields_root_filename()
-              : m.workbench_fields_root_note()}
-        </span>
+        <span {...part("root-label")}>{m[ROOT_LABELS[root]]()}</span>
       </div>
       <input
         type="search"

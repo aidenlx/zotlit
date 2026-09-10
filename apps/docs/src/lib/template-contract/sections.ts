@@ -77,9 +77,69 @@ export const SECTIONS: readonly SectionSpec[] = [
   },
   {
     id: "citation-templates",
-    title: "Citation templates",
+    title: "Citation template",
     level: 2,
-    include: "./_citation-templates.mdx",
+    types: ["CitationTemplateData"],
+    sample: "zt",
+    prefix: "zt.",
+    lead: `The citation template (\`zotlit-citation.md\`) renders one in-text citation.
+
+Pass \`zt.citations\` to the Pandoc Citation formatter, which reads \`prefix\`, \`suffix\`, \`suppressAuthor\`, \`locator\`, and \`labelShort\`, and omits entries whose \`item.citationKey\` is null.
+
+| Language | Form                    | Expression                                                   |
+| -------- | ----------------------- | ------------------------------------------------------------ |
+| Liquid   | \`normal\`                | \`{{ zt.citations \\| pandoc_cite }}\`                          |
+| Eta      | \`normal\`                | \`<%= pandocCite(zt.citations) %>\`                            |
+| Liquid   | \`prefer-author-in-text\` | \`{{ zt.citations \\| pandoc_cite: "prefer-author-in-text" }}\` |
+| Eta      | \`prefer-author-in-text\` | \`<%= pandocCite(zt.citations, "prefer-author-in-text") %>\`   |`,
+  },
+  {
+    id: "citation-variant",
+    title: "Citation variants",
+    level: 3,
+    types: ["CitationVariant"],
+    lead: "The built-in citation template renders the author-in-text form for `alt` and the bracketed form for `main`.",
+  },
+  {
+    id: "citation-item",
+    title: "Citation item",
+    level: 3,
+    types: ["CitationTemplateItem"],
+    sample: "citation",
+    lead: "Each entry in `zt.citations`. Loop over them with `{% for citation in zt.citations %}`.",
+  },
+  {
+    id: "cited-item-fields",
+    title: "Cited item fields",
+    level: 3,
+    types: ["TemplateCiteItemData"],
+    sample: "citation.item",
+    prefix: "item.",
+    lead: "Each cited item also carries every [item field](#item-fields) of its type. The note-root properties it leaves behind are `key`, `libraryID`, `indexedKey`, `tags`, `dateAdded`, `dateModified`, `collections`, `backlink`, `weblink`, `annotations`, `attachments`, `authors`, `authorsShort`, `relatedItems`, `notes`, `notePath`, and `noteLink`.",
+  },
+  {
+    id: "locator-label-abbreviations",
+    title: "Locator label abbreviations",
+    level: 3,
+    lead: `\`labelShort\` maps the CSL \`label\` to its Pandoc locator term. Any label not listed (including \`"page"\`) yields \`p.\`.
+
+| \`label\`     | \`labelShort\` |
+| ----------- | ------------ |
+| \`book\`      | \`bk.\`        |
+| \`chapter\`   | \`chap.\`      |
+| \`column\`    | \`col.\`       |
+| \`figure\`    | \`fig.\`       |
+| \`folio\`     | \`fol.\`       |
+| \`issue\`     | \`no.\`        |
+| \`line\`      | \`l.\`         |
+| \`note\`      | \`n.\`         |
+| \`opus\`      | \`op.\`        |
+| \`paragraph\` | \`para.\`      |
+| \`part\`      | \`pt.\`        |
+| \`section\`   | \`sec.\`       |
+| \`sub-verbo\` | \`s.v.\`       |
+| \`verse\`     | \`v.\`         |
+| \`volume\`    | \`vol.\`       |`,
   },
   {
     id: "annotation-entry",

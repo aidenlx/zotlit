@@ -43,6 +43,11 @@ export const COMMON_FIELDS: Record<TemplateRoot, readonly CommonField[]> = {
     { key: "citationKey", label: "workbench_field_citation_key" },
     { key: "key", label: "workbench_field_key" },
   ],
+  citation: [
+    { key: "variant", label: "workbench_field_variant" },
+    { key: "citations", label: "workbench_field_citations" },
+    { key: "items", label: "workbench_field_items" },
+  ],
 };
 
 /** Human labels and common-field order shared by discovery and typing completion. */

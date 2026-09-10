@@ -3,7 +3,11 @@ import { TFile } from "obsidian";
 import type { App, EventRef, TAbstractFile } from "obsidian";
 
 import { citekeysToCiteTemplateData } from "@zotlit/db";
-import type { CitationVariant, CiteRef } from "@zotlit/db";
+import type {
+  CitationTemplateData,
+  CitationVariant,
+  CiteRef,
+} from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 import { inlineCitation } from "@zotlit/templates";
 import type {
@@ -972,12 +976,20 @@ export class TemplateService extends Service<void> {
    * @throws when the document has a compile error or fails to render.
    */
   renderCitation(refs: readonly CiteRef[], variant: CitationVariant): string {
-    return inlineCitation(
-      this.render(
-        CITATION_TEMPLATE_NAME,
-        citekeysToCiteTemplateData(refs, variant),
-      ),
-    );
+    return this.renderCitationData(citekeysToCiteTemplateData(refs, variant));
+  }
+
+  /**
+   * Render one in-text Citation from Citation Template data that is already
+   * built — a built-in example set, or a set another leg assembled — and
+   * normalize the output to its inline form.
+   *
+   * @throws {@link InertTemplateError} when the Citation Template document is
+   *   Eta and the JavaScript Templates gate is off.
+   * @throws when the document has a compile error or fails to render.
+   */
+  renderCitationData(data: CitationTemplateData): string {
+    return inlineCitation(this.render(CITATION_TEMPLATE_NAME, data));
   }
 
   /**

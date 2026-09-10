@@ -256,6 +256,14 @@ export function convertLegacyFrontmatterFields(
   );
 }
 
+/**
+ * The `zt` contract a synthesized manifest stamps. It is the same number as
+ * `CONTRACT_VERSION` in `@zotlit/db`, which the engine layer does not depend
+ * on; the web Workbench refuses a Profile whose stamp names another contract,
+ * so the two move together.
+ */
+const SYNTHESIZED_CONTRACT_VERSION = 3;
+
 /** Synthesize one document from the three legacy Literature Note slots. */
 export function synthesizeLegacyLiteratureNoteTemplate(
   legacy: LegacyLiteratureNoteTemplates,
@@ -317,7 +325,7 @@ export function synthesizeLegacyLiteratureNoteTemplate(
       description:
         manifestOverrides.description ??
         "Converted from legacy Literature Note Templates.",
-      contract: 2,
+      contract: SYNTHESIZED_CONTRACT_VERSION,
       filename: legacy.filename.source,
       language,
       ...(manifestOverrides.frontmatter === undefined

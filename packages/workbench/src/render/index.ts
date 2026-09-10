@@ -41,6 +41,13 @@ import conferencePaper from "#/samples/conference-paper.json" with { type: "json
 import journalArticle from "#/samples/journal-article.json" with { type: "json" };
 import thesis from "#/samples/thesis.json" with { type: "json" };
 
+export {
+  CITATION_EXAMPLE_IDS,
+  citationExampleData,
+  isCitationExampleId,
+  sampleItemCitation,
+} from "./citation-examples";
+export type { CitationExampleId } from "./citation-examples";
 export { DEFAULT_PROFILE_SOURCE } from "./default-profile";
 export { failedRender, profileSourceRevision, renderIdentity } from "./result";
 export type {

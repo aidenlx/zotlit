@@ -33,9 +33,7 @@ export function toJsonSchema(ir: ContractIR, root: ContractRoot): JsonSchema {
     $id: `urn:zotlit:template-contract:v${ir.contractVersion}:${root}`,
     $comment: ir.$comment,
     title: `zt (${root} root)`,
-    description: `The serialized \`zt\` data the ${formatList(rootIR.templates)} ${
-      rootIR.templates.length > 1 ? "templates receive" : "template receives"
-    }.`,
+    description: rootDescription(root, rootIR.templates),
     $ref: defRef(rootIR.type),
     $defs: Object.fromEntries(
       reachableTypes(ir, rootIR.type, rootIR.references).map(([name, type]) => [
@@ -366,6 +364,23 @@ function referenceMarkerSchema(path: string): JsonSchema {
     required: ["$ref"],
     additionalProperties: false,
   };
+}
+
+/**
+ * What a root's schema says it describes: the Legacy Template File slots
+ * rendering against it, or the root itself when a Template Document names the
+ * root directly and no slot does.
+ */
+function rootDescription(
+  root: ContractRoot,
+  templates: readonly string[],
+): string {
+  if (templates.length === 0) {
+    return `The serialized \`zt\` data of the \`${root}\` root.`;
+  }
+  return `The serialized \`zt\` data the ${formatList(templates)} ${
+    templates.length > 1 ? "templates receive" : "template receives"
+  }.`;
 }
 
 function formatList(items: readonly string[]): string {
