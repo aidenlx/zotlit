@@ -29,6 +29,11 @@ export interface NotePaneProps {
   onSelection?: (selection: WorkbenchSliceRange) => void;
   suggest?: SuggestionSource;
   preview: string | null;
+  /**
+   * The choice the reader owes before a preview exists, which the example
+   * region names in place of "Rendering…"; `null` while a render is on its way.
+   */
+  previewHint?: string | null;
   formatProblem: string | null;
   annotationSelector?: ReactNode;
   onOpenAnnotation: () => void;
@@ -114,7 +119,7 @@ export function NotePane({
   useEffect(() => {
     const element = host.current?.querySelector<HTMLElement>(".cm-editor");
     if (element) EditorView.findFromDOM(element)?.requestMeasure();
-  }, [example.preview, example.formatProblem]);
+  }, [example.preview, example.previewHint, example.formatProblem]);
   return (
     <div ref={host} {...part("note-pane")}>
       <SliceEditor
@@ -198,9 +203,13 @@ function AnnotationPlaceholder({
 function AnnotationPreview({
   id,
   preview,
+  previewHint = null,
   formatProblem,
   annotationSelector,
-}: Pick<NotePaneProps, "preview" | "formatProblem" | "annotationSelector"> & {
+}: Pick<
+  NotePaneProps,
+  "preview" | "previewHint" | "formatProblem" | "annotationSelector"
+> & {
   id: string;
 }) {
   const m = useWorkbenchMessages();
@@ -220,7 +229,9 @@ function AnnotationPreview({
         </Suspense>
       ) : (
         formatProblem === null && (
-          <p {...part("pending")}>{m.workbench_result_pending()}</p>
+          <p {...part("pending")}>
+            {previewHint ?? m.workbench_result_pending()}
+          </p>
         )
       )}
     </div>

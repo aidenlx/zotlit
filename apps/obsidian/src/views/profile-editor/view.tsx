@@ -1292,6 +1292,9 @@ function EditorContent({
   const formatProblem = result?.diagnostics.find(
     ({ part }) => part === "annotation",
   );
+  // A render reads the selected example, so the inline preview waits on a
+  // choice rather than on a render while the reader has made none.
+  const annotation = useSelectedAnnotation(view);
   const advanced = useWorkbenchStore((state) => state.advanced);
   const customization = useWorkbenchStore((state) => state.customization);
   const presentation = useWorkbenchStore((state) => state.presentation);
@@ -1441,6 +1444,9 @@ function EditorContent({
               <NotePane
                 controller={controller}
                 preview={result?.annotation ?? null}
+                previewHint={
+                  annotation ? null : m.workbench_preview_choose_annotation()
+                }
                 formatProblem={
                   formatProblem ? diagnosticText(m, formatProblem) : null
                 }
@@ -1576,7 +1582,10 @@ function EditorContent({
   );
 }
 
-/** The pane title carries the file, so the header names the selected data itself. */
+/**
+ * The example the preview session holds, live as the reader chooses another.
+ * The pane title carries the file, so the header names the selected data itself.
+ */
 function useSelectedAnnotation(view: ProfileEditorView) {
   const store = view.preview?.state;
   return useSyncExternalStore(
