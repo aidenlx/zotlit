@@ -1,3 +1,5 @@
+import { Menu } from "@mock/obsidian";
+import type { ItemView as MockItemView } from "@mock/obsidian";
 // @vitest-environment happy-dom
 import type { App, EventRef, TFile, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
@@ -200,15 +202,15 @@ async function setup(
   };
 }
 
-async function choose(view: Preview, label: string, value: string) {
-  const select = Array.from(view.contentEl.querySelectorAll("label"))
-    .find((element) => element.textContent?.includes(label))
-    ?.querySelector("select");
-  if (!select) throw new Error(`Missing control: ${label}`);
-  await act(async () => {
-    select.value = value;
-    select.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+function menuItem(view: Preview, title: string) {
+  const menu = new Menu();
+  view.onPaneMenu(menu as never, "more-options");
+  const item = menu.items.find((candidate) => candidate.title === title);
+  if (!item) throw new Error(`Missing pane menu item: ${title}`);
+  return item;
+}
+async function pick(view: Preview, title: string) {
+  await act(async () => menuItem(view, title).click());
 }
 const advance = (ms = 300) =>
   act(async () => void (await vi.advanceTimersByTimeAsync(ms)));
@@ -424,7 +426,7 @@ describe("independent native Note Preview", () => {
     );
     const first = await test.open();
     await advance();
-    await choose(first, m.workbench_preview_format(), "markdown");
+    await pick(first, m.workbench_show_markdown());
     const saved = first.getState();
     expect(saved).toMatchObject({
       source: { path: "templates/paper.md" },
@@ -442,9 +444,11 @@ describe("independent native Note Preview", () => {
     const restored = await test.open(saved);
     await advance();
     expect(restored.contentEl.textContent).toContain("Personal space.");
+    expect(menuItem(restored, m.workbench_show_markdown()).checked).toBe(true);
     expect(
-      [...restored.contentEl.querySelectorAll("select")].some(
-        (select) => select.value === "markdown",
+      (restored as unknown as MockItemView).actions.some(
+        (action) =>
+          action.getAttribute("aria-label") === m.workbench_show_reading_view(),
       ),
     ).toBe(true);
     expect(restored.getState()).toEqual(saved);
@@ -581,8 +585,8 @@ Annotation`,
       live: false,
       showManaged: true,
     });
-    expect(restored.contentEl.querySelectorAll("select")[1]?.value).toBe(
-      "demand",
+    expect(menuItem(restored, m.workbench_preview_auto_refresh()).checked).toBe(
+      false,
     );
     expect(renderNativeProfile).not.toHaveBeenCalled();
     await run(restored);
@@ -741,13 +745,16 @@ Annotation`,
     await advance();
     expect(first.contentEl.textContent).toContain("Personal space.");
     expect(second.contentEl.textContent).toContain("Personal space.");
-    await choose(first, m.workbench_preview_refresh(), "demand");
-    await choose(first, m.workbench_preview_mode(), "update");
-    await choose(first, m.workbench_preview_format(), "markdown");
-    expect(second.contentEl.querySelectorAll("select")[0]?.value).toBe(
-      "create",
+    await pick(first, m.workbench_preview_auto_refresh());
+    await pick(first, m.workbench_show_markdown());
+    await pick(first, m.workbench_preview_updated_section());
+    expect(menuItem(second, m.workbench_preview_auto_refresh()).checked).toBe(
+      true,
     );
-    expect(second.contentEl.querySelectorAll("select")[1]?.value).toBe("live");
+    expect(menuItem(second, m.workbench_show_markdown()).checked).toBe(false);
+    expect(menuItem(second, m.workbench_preview_as_new_note()).checked).toBe(
+      true,
+    );
     expect(test.editor.preview?.state.getState().preview).toEqual({
       mode: "create",
       live: false,
@@ -785,7 +792,7 @@ Annotation`,
     );
     const preview = await test.open();
     await advance();
-    await choose(preview, m.workbench_preview_refresh(), "demand");
+    await pick(preview, m.workbench_preview_auto_refresh());
     await act(async () =>
       test.editor.setViewData(
         PROFILE_SOURCE.replace("Personal space.", "Old output."),
@@ -965,5 +972,135 @@ Annotation`,
     expect(choose.disabled).toBe(false);
     await act(async () => choose.click());
     expect(chooseItem).toHaveBeenCalledOnce();
+  });
+
+  it("moves preview settings into the pane menu", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    const preview = await test.open();
+    await advance();
+    expect(menuItem(preview, m.workbench_preview_as_new_note())).toMatchObject({
+      checked: true,
+      section: "zotlit-preview",
+    });
+    expect(
+      menuItem(preview, m.workbench_preview_as_updated_note()),
+    ).toMatchObject({
+      checked: false,
+      disabled: true,
+      section: "zotlit-preview",
+    });
+    expect(
+      menuItem(preview, m.workbench_preview_updated_section()),
+    ).toMatchObject({
+      checked: false,
+      section: "zotlit-preview",
+    });
+    expect(menuItem(preview, m.workbench_preview_auto_refresh())).toMatchObject(
+      {
+        checked: true,
+        section: "zotlit-display",
+      },
+    );
+    expect(menuItem(preview, m.workbench_show_markdown())).toMatchObject({
+      checked: false,
+      section: "zotlit-display",
+    });
+    const captionText = () =>
+      preview.contentEl.querySelector(".zt-note-preview-heading")
+        ?.nextElementSibling?.textContent;
+    await pick(preview, m.workbench_preview_updated_section());
+    expect(
+      menuItem(preview, m.workbench_preview_updated_section()).checked,
+    ).toBe(true);
+    expect(menuItem(preview, m.workbench_preview_as_new_note()).checked).toBe(
+      false,
+    );
+    expect(captionText()).toContain(m.workbench_result_managed_toggle());
+    await pick(preview, m.workbench_preview_auto_refresh());
+    expect(captionText()).toBe("Updated section only · On demand");
+  });
+
+  it("swaps the format action like the reading-view toggle", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    const preview = await test.open();
+    await advance();
+    const action = (preview as unknown as MockItemView).actions.find(
+      (element) =>
+        element.getAttribute("aria-label") === m.workbench_show_markdown(),
+    );
+    if (!action) throw new Error("Missing format action");
+    await act(async () => void action.dispatchEvent(new MouseEvent("click")));
+    expect(preview.state.getState().showMarkdown).toBe(true);
+    expect(action.getAttribute("aria-label")).toBe(
+      m.workbench_show_reading_view(),
+    );
+  });
+
+  it("swaps the section action between the note and its updated section", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    const preview = await test.open();
+    await advance();
+    const action = (preview as unknown as MockItemView).actions.find(
+      (element) =>
+        element.getAttribute("aria-label") ===
+        m.workbench_preview_updated_section(),
+    );
+    if (!action) throw new Error("Missing section action");
+    expect(action.dataset["icon"]).toBe("rows-3");
+    await act(async () => void action.dispatchEvent(new MouseEvent("click")));
+    expect(preview.state.getState().showManaged).toBe(true);
+    expect(action.dataset["icon"]).toBe("file-text");
+    expect(action.getAttribute("aria-label")).toBe("Preview as new note");
+    expect(
+      menuItem(preview, m.workbench_preview_updated_section()).checked,
+    ).toBe(true);
+    await act(async () => void action.dispatchEvent(new MouseEvent("click")));
+    expect(preview.state.getState().showManaged).toBe(false);
+    expect(action.getAttribute("aria-label")).toBe(
+      "Preview updated section only",
+    );
+  });
+
+  it("hides Updated section only outside the note result", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    await act(async () =>
+      test.editor.store
+        .getState()
+        .setItem({ id: "MAIN2345", title: "Better figures" }),
+    );
+    await act(async () => test.editor.store.getState().setTab("properties"));
+    const preview = await test.open();
+    await advance();
+    const menu = new Menu();
+    preview.onPaneMenu(menu as never, "more-options");
+    expect(
+      menu.items.find(
+        (item) => item.title === m.workbench_preview_updated_section(),
+      ),
+    ).toBeUndefined();
+    expect(
+      menu.items.find(
+        (item) => item.title === m.workbench_preview_as_new_note(),
+      ),
+    ).toBeDefined();
   });
 });

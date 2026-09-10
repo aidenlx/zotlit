@@ -82,47 +82,44 @@ export function ResultRegion({
   );
 }
 
-export interface ResultColumnProps {
+export interface ResultBodyProps {
   result: ProfileRenderResult | null;
   annotationResult?: ProfileRenderResult | null;
   mode: "note" | "annotation" | "properties";
   stale: boolean;
+  /** Why `result` is stale, or why none exists yet; `null` while it is current. */
+  staleReason: "hold" | "demand" | "live" | null;
   showMarkdown: boolean;
-  onShowMarkdown: (show: boolean) => void;
   showManaged: boolean;
-  onShowManaged: (show: boolean) => void;
   sourceAvailable?: boolean;
   openAnnotation: () => void;
   goToEntry: (position: number) => void;
   openSource: () => void;
   propertiesResult?: ReactNode;
-  help?: ReactNode;
+  /** Runs a render now; on demand, this is how the stale-behind notice offers Run. */
+  onRun?: () => void;
+  busy?: boolean;
 }
 
-export function ResultColumn({
+/** The stale notice and rendered result, without the heading `ResultColumn` adds. */
+export function ResultBody({
   result,
   annotationResult,
   mode,
-  stale,
+  staleReason,
   showMarkdown,
-  onShowMarkdown,
   showManaged,
-  onShowManaged,
   sourceAvailable = true,
   openAnnotation,
   goToEntry,
   openSource,
   propertiesResult,
-  help,
-}: ResultColumnProps) {
+  onRun,
+  busy,
+}: ResultBodyProps) {
   const m = useWorkbenchMessages();
   const part = useParts("resultColumn");
   const Markdown = useWorkbenchHost().markdown;
-  const selectorTooltip = useTooltip(
-    showManaged
-      ? m.workbench_result_managed_toggle()
-      : m.workbench_preview_whole(),
-  );
   const filenameTooltip = useTooltip(result?.filename ?? "");
   const showAnnotation = mode === "annotation";
   const showNote = mode === "note";
@@ -134,45 +131,32 @@ export function ResultColumn({
         ({ part }) => part !== "annotation" || result.creationBody === null,
       );
   const pending = <p {...part("pending")}>{m.workbench_result_pending()}</p>;
+  // "Rendering…" is honest only while a render is on its way: on demand the
+  // notice below says Run starts one, and a hold shows its own problem.
+  const showPending = staleReason === "live";
   return (
     <>
-      <ResultHeader
-        heading={
-          showAnnotation
-            ? m.workbench_annotation_example()
-            : mode === "properties"
-              ? m.workbench_result_fold()
-              : m.workbench_result_heading()
-        }
-        showMarkdown={showMarkdown}
-        onShowMarkdown={onShowMarkdown}
-        controls={
-          showNote && (
-            <label {...part("label")}>
-              <span {...part("label-text")}>{m.workbench_preview_show()}</span>
-              <WorkbenchSelect
-                value={showManaged ? "managed" : "whole"}
-                onInput={(event) =>
-                  onShowManaged(event.currentTarget.value === "managed")
-                }
-                {...selectorTooltip}
-              >
-                <WorkbenchOption value="whole">
-                  {m.workbench_preview_whole()}
-                </WorkbenchOption>
-                <WorkbenchOption value="managed">
-                  {m.workbench_result_managed_toggle()}
-                </WorkbenchOption>
-              </WorkbenchSelect>
-            </label>
-          )
-        }
-        help={help}
-      />
-      {result && stale && (
+      {staleReason === "hold" && result && (
         <p role="status" {...part("stale")}>
           {m.workbench_preview_stale()}
         </p>
+      )}
+      {staleReason === "demand" && (
+        <div role="status" {...part("behind")}>
+          <span {...part("behind-text")}>
+            {result ? m.workbench_preview_behind() : m.workbench_preview_none()}
+          </span>
+          {onRun && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onRun}
+              {...part("run")}
+            >
+              {m.workbench_preview_run()}
+            </button>
+          )}
+        </div>
       )}
       <ResultRegion emphasis={false}>
         {result ? (
@@ -259,10 +243,101 @@ export function ResultColumn({
               />
             )}
           </Suspense>
-        ) : (
+        ) : showPending ? (
           pending
-        )}
+        ) : null}
       </ResultRegion>
+    </>
+  );
+}
+
+export interface ResultColumnProps extends ResultBodyProps {
+  showMarkdown: boolean;
+  onShowMarkdown: (show: boolean) => void;
+  showManaged: boolean;
+  onShowManaged: (show: boolean) => void;
+  help?: ReactNode;
+}
+
+export function ResultColumn({
+  result,
+  annotationResult,
+  mode,
+  stale,
+  staleReason,
+  showMarkdown,
+  onShowMarkdown,
+  showManaged,
+  onShowManaged,
+  sourceAvailable = true,
+  openAnnotation,
+  goToEntry,
+  openSource,
+  propertiesResult,
+  onRun,
+  busy,
+  help,
+}: ResultColumnProps) {
+  const m = useWorkbenchMessages();
+  const part = useParts("resultColumn");
+  const selectorTooltip = useTooltip(
+    showManaged
+      ? m.workbench_result_managed_toggle()
+      : m.workbench_preview_whole(),
+  );
+  const showNote = mode === "note";
+  const showAnnotation = mode === "annotation";
+  return (
+    <>
+      <ResultHeader
+        heading={
+          showAnnotation
+            ? m.workbench_annotation_example()
+            : mode === "properties"
+              ? m.workbench_result_fold()
+              : m.workbench_result_heading()
+        }
+        showMarkdown={showMarkdown}
+        onShowMarkdown={onShowMarkdown}
+        controls={
+          showNote && (
+            <label {...part("label")}>
+              <span {...part("label-text")}>{m.workbench_preview_show()}</span>
+              <WorkbenchSelect
+                value={showManaged ? "managed" : "whole"}
+                onInput={(event) =>
+                  onShowManaged(event.currentTarget.value === "managed")
+                }
+                {...selectorTooltip}
+              >
+                <WorkbenchOption value="whole">
+                  {m.workbench_preview_whole()}
+                </WorkbenchOption>
+                <WorkbenchOption value="managed">
+                  {m.workbench_result_managed_toggle()}
+                </WorkbenchOption>
+              </WorkbenchSelect>
+            </label>
+          )
+        }
+        help={help}
+      />
+      <ResultBody
+        result={result}
+        annotationResult={annotationResult}
+        mode={mode}
+        stale={stale}
+        staleReason={staleReason}
+        showMarkdown={showMarkdown}
+        showManaged={showManaged}
+        sourceAvailable={sourceAvailable}
+        openAnnotation={openAnnotation}
+        goToEntry={goToEntry}
+        openSource={openSource}
+        propertiesResult={propertiesResult}
+        onRun={onRun}
+        busy={busy}
+      />
     </>
   );
 }

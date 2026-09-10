@@ -122,7 +122,7 @@ export function WebPreview({
     state.mode,
     state.live,
   ]);
-  const { result, busy, stale } = useRenderState(scheduler);
+  const { result, busy, stale, staleReason } = useRenderState(scheduler);
   const annotationResult =
     result?.annotationId === example.id &&
     result.annotationRevision === example.revision
@@ -155,6 +155,7 @@ export function WebPreview({
         annotationResult={annotationResult}
         mode={mode}
         stale={stale}
+        staleReason={staleReason}
         showMarkdown={state.showMarkdown}
         onShowMarkdown={(showMarkdown) => store.setState({ showMarkdown })}
         showManaged={state.showManaged}

@@ -243,7 +243,7 @@ export const profileEditorTheme: WorkbenchTheme = {
     resultRegion: {
       region: cn(
         stack,
-        "zt:min-w-0 zt:rounded-md zt:border zt:border-border zt:bg-background zt:p-3 zt:select-text zt:focus-visible:outline-2 zt:focus-visible:outline-ring",
+        "zt:min-w-0 zt:rounded-sm zt:select-text zt:focus-visible:outline-2 zt:focus-visible:outline-ring",
       ),
     },
     resultColumn: {
@@ -254,6 +254,10 @@ export const profileEditorTheme: WorkbenchTheme = {
       problem: "zt:text-sm zt:text-(--text-error) zt:[overflow-wrap:anywhere]",
       "problem-heading": "zt:font-semibold",
       stale: "zt:text-sm zt:text-muted-foreground",
+      behind:
+        "zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-x-3 zt:gap-y-1 zt:border-s-2 zt:border-(--interactive-accent) zt:bg-(--background-secondary) zt:px-3 zt:py-2 zt:text-xs zt:leading-normal zt:text-muted-foreground",
+      "behind-text": "zt:min-w-0 zt:flex-1 zt:text-pretty",
+      run: cn(profileEditorButton, "zt:ms-auto zt:shrink-0"),
       pending: "zt:text-sm zt:text-muted-foreground",
       empty: "zt:text-sm zt:text-muted-foreground",
     },

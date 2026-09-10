@@ -1,6 +1,6 @@
 import "./style.css";
 // Each Preview owns its inputs, render work, data, and output presentation.
-import { ItemView } from "obsidian";
+import { ItemView, setIcon } from "obsidian";
 import type { Menu, ViewStateResult } from "obsidian";
 import type { TFile, WorkspaceLeaf } from "obsidian";
 import { useEffect } from "react";
@@ -11,8 +11,7 @@ import { useStore } from "zustand";
 import {
   createRenderScheduler,
   TABS,
-  PreviewControls,
-  ResultColumn,
+  ResultBody,
   PropertiesResult,
   WorkbenchHostProvider,
   WorkbenchThemeProvider,
@@ -68,6 +67,17 @@ export interface PreviewViewDeps extends NativeRenderDeps {
   settings: SettingsService;
   itemLookup: Pick<ItemLookup, "search">;
   profile: Pick<ProfileService, "getBuiltInSource">;
+}
+
+/** Which result the preview shows for the editor's current authoring context. */
+function resultMode(
+  context: ProfileAuthoringContext,
+): "note" | "annotation" | "properties" {
+  return context.root === "annotation"
+    ? "annotation"
+    : !context.advanced && context.tab === "properties"
+      ? "properties"
+      : "note";
 }
 
 export const NOTE_PREVIEW_VIEW_TYPE = "zotlit-note-preview";
@@ -132,6 +142,85 @@ export class NotePreviewView extends ItemView {
         .setIcon("refresh-cw")
         .onClick(() => this.#session?.refresh()),
     );
+    const state = this.state.getState();
+    const mode = state.context ? resultMode(state.context) : "note";
+    const result = this.#scheduler?.getState().result ?? null;
+    if (mode !== "annotation") {
+      menu.addItem((item) =>
+        item
+          .setSection("zotlit-preview")
+          .setTitle(m.workbench_preview_as_new_note())
+          .setIcon("file-plus")
+          .setChecked(
+            state.preview.mode === "create" &&
+              !(mode === "note" && state.showManaged),
+          )
+          .onClick(() => {
+            this.#session?.setPreview(
+              { mode: "create" },
+              { showManaged: false },
+            );
+          }),
+      );
+      menu.addItem((item) =>
+        item
+          .setSection("zotlit-preview")
+          .setTitle(m.workbench_preview_as_updated_note())
+          .setIcon("file-pen")
+          .setChecked(
+            state.preview.mode === "update" &&
+              !(mode === "note" && state.showManaged),
+          )
+          // A Sample Item, or an Item with no note in the vault yet, has no
+          // existing note to update; until a result lands the choice stays open.
+          .setDisabled(result !== null && !result.sourcePath)
+          .onClick(() => {
+            this.#session?.setPreview(
+              { mode: "update" },
+              { showManaged: false },
+            );
+          }),
+      );
+      if (mode === "note")
+        menu.addItem((item) =>
+          item
+            .setSection("zotlit-preview")
+            .setTitle(m.workbench_preview_updated_section())
+            .setIcon("rows-3")
+            .setChecked(state.showManaged)
+            .onClick(() => {
+              const session = this.#session;
+              if (!session) return;
+              session.state.setState({ showManaged: true });
+            }),
+        );
+    }
+    menu.addItem((item) =>
+      item
+        .setSection("zotlit-display")
+        .setTitle(m.workbench_preview_auto_refresh())
+        .setIcon("zap")
+        .setChecked(state.preview.live)
+        .onClick(() => {
+          const session = this.#session;
+          if (!session) return;
+          session.setPreview({ live: !session.state.getState().preview.live });
+        }),
+    );
+    menu.addItem((item) =>
+      item
+        .setSection("zotlit-display")
+        .setTitle(m.workbench_show_markdown())
+        .setIcon("code")
+        .setChecked(state.showMarkdown)
+        .onClick(() => {
+          const session = this.#session;
+          if (!session) return;
+          session.state.setState({
+            showMarkdown: !session.state.getState().showMarkdown,
+          });
+        }),
+    );
   }
   protected override async onOpen(): Promise<void> {
     using cleanup = new DisposableStack();
@@ -183,6 +272,29 @@ export class NotePreviewView extends ItemView {
     this.#scheduler = scheduler;
     this.#session = session;
     this.#host = host;
+    // Added first, so it sits nearest More options; Obsidian prepends actions.
+    const sectionAction = this.addAction(
+      "rows-3",
+      m.workbench_preview_updated_section(),
+      () => {
+        const session = this.#session;
+        if (session)
+          session.state.setState({
+            showManaged: !session.state.getState().showManaged,
+          });
+      },
+    );
+    const formatAction = this.addAction(
+      "code",
+      m.workbench_show_markdown(),
+      () => {
+        const session = this.#session;
+        if (session)
+          session.state.setState({
+            showMarkdown: !session.state.getState().showMarkdown,
+          });
+      },
+    );
     const chooseAction = this.addAction(
       "search",
       m.workbench_choose_item(),
@@ -192,6 +304,41 @@ export class NotePreviewView extends ItemView {
         else void this.#chooseItem();
       },
     );
+    let syncedMarkdown: boolean | null = null;
+    const syncFormatAction = () => {
+      const showMarkdown = this.state.getState().showMarkdown;
+      if (showMarkdown === syncedMarkdown) return;
+      syncedMarkdown = showMarkdown;
+      setIcon(formatAction, showMarkdown ? "book-open" : "code");
+      formatAction.setAttribute(
+        "aria-label",
+        showMarkdown
+          ? m.workbench_show_reading_view()
+          : m.workbench_show_markdown(),
+      );
+    };
+    syncFormatAction();
+    // Swaps icon and label like the format action: each names the note the
+    // next press shows. Outside the note result the action has no meaning.
+    let syncedSection: string | null = null;
+    const syncSectionAction = () => {
+      const state = this.state.getState();
+      const shown = state.context
+        ? resultMode(state.context) === "note"
+        : false;
+      const label = !state.showManaged
+        ? m.workbench_preview_updated_section()
+        : state.preview.mode === "update"
+          ? m.workbench_preview_as_updated_note()
+          : m.workbench_preview_as_new_note();
+      const key = `${shown}:${label}`;
+      if (key === syncedSection) return;
+      syncedSection = key;
+      sectionAction.toggle(shown);
+      setIcon(sectionAction, state.showManaged ? "file-text" : "rows-3");
+      sectionAction.setAttribute("aria-label", label);
+    };
+    syncSectionAction();
     cleanup.defer(
       subscribeWorkbenchSelection(this, {
         editor: () => this.#sourceEditor()?.leaf ?? null,
@@ -211,6 +358,8 @@ export class NotePreviewView extends ItemView {
             ? m.workbench_choose_annotation()
             : m.workbench_choose_item(),
         );
+        syncFormatAction();
+        syncSectionAction();
         const next = JSON.stringify(this.getState());
         if (next === persisted) return;
         persisted = next;
@@ -672,7 +821,7 @@ function PreviewContent({
   chooseAnnotation: () => void;
   reveal: (slice: "advanced" | "annotation" | `entry:${number}`) => void;
 }) {
-  const { result, busy, stale } = useRenderState(scheduler);
+  const { result, busy, stale, staleReason } = useRenderState(scheduler);
   const {
     context,
     preview,
@@ -698,10 +847,29 @@ function PreviewContent({
     annotation: example,
     annotationMode,
   });
+  const mode = context ? resultMode(context) : "note";
+  const heading =
+    mode === "annotation"
+      ? m.workbench_annotation_example()
+      : mode === "properties"
+        ? m.workbench_result_fold()
+        : m.workbench_result_heading();
+  const caption = [
+    ...(mode !== "annotation"
+      ? [
+          mode === "note" && showManaged
+            ? m.workbench_result_managed_toggle()
+            : preview.mode === "update"
+              ? m.workbench_preview_existing_note()
+              : m.workbench_preview_new_note(),
+        ]
+      : []),
+    ...(!preview.live ? [m.workbench_preview_on_demand()] : []),
+  ].join(m.workbench_selection_separator());
   return (
     <div
       data-zotlit-preview-result={result?.sourceRevision}
-      className="zt:flex zt:min-w-0 zt:flex-col zt:gap-4 zt:p-3"
+      className="zt:flex zt:min-w-0 zt:flex-col zt:gap-3 zt:p-3"
     >
       <div className={sidebarBar.row()}>
         {name && <p className={sidebarBar.caption()}>{name}</p>}
@@ -714,15 +882,6 @@ function PreviewContent({
           </span>
         </button>
       </div>
-      {ready && (
-        <PreviewControls
-          preview={preview}
-          onChange={(value) => session.setPreview(value)}
-          busy={busy}
-          disabled={!ready || sourceProblem !== null}
-          onRun={() => scheduler.run()}
-        />
-      )}
       {status === "empty" && !ready && (
         <div className="zt:flex zt:min-w-0 zt:flex-col zt:items-start zt:gap-2">
           <p className={selectionHint}>
@@ -785,41 +944,38 @@ function PreviewContent({
         </div>
       )}
       {ready && (
-        <ResultColumn
-          result={result}
-          annotationResult={result}
-          mode={
-            context?.root === "annotation"
-              ? "annotation"
-              : !context?.advanced && context?.tab === "properties"
-                ? "properties"
-                : "note"
-          }
-          stale={stale}
-          showMarkdown={showMarkdown}
-          onShowMarkdown={(value) =>
-            session.state.setState({ showMarkdown: value })
-          }
-          showManaged={showManaged}
-          onShowManaged={(value) =>
-            session.state.setState({ showManaged: value })
-          }
-          sourceAvailable={editorAvailable}
-          openAnnotation={() => reveal("annotation")}
-          goToEntry={(position) => reveal(`entry:${position}`)}
-          openSource={() => reveal("advanced")}
-          propertiesResult={
-            result && (
-              <PropertiesResult
-                entries={entries}
-                properties={result.properties}
-                fold={result.fold}
-                frontmatterBlock={result.frontmatterBlock}
-                showMarkdown={showMarkdown}
-              />
-            )
-          }
-        />
+        <>
+          <div className="zt:flex zt:min-w-0 zt:flex-wrap zt:items-baseline zt:justify-between zt:gap-x-3 zt:gap-y-1">
+            <h2 className="zt-note-preview-heading">{heading}</h2>
+            {caption && <p className={selectionHint}>{caption}</p>}
+          </div>
+          <ResultBody
+            result={result}
+            annotationResult={result}
+            mode={mode}
+            stale={stale}
+            staleReason={staleReason}
+            showMarkdown={showMarkdown}
+            showManaged={showManaged}
+            sourceAvailable={editorAvailable}
+            openAnnotation={() => reveal("annotation")}
+            goToEntry={(position) => reveal(`entry:${position}`)}
+            openSource={() => reveal("advanced")}
+            propertiesResult={
+              result && (
+                <PropertiesResult
+                  entries={entries}
+                  properties={result.properties}
+                  fold={result.fold}
+                  frontmatterBlock={result.frontmatterBlock}
+                  showMarkdown={showMarkdown}
+                />
+              )
+            }
+            onRun={() => scheduler.run()}
+            busy={busy}
+          />
+        </>
       )}
     </div>
   );

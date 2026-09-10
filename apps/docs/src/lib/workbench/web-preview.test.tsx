@@ -171,7 +171,7 @@ describe("preview scheduling", () => {
     page.edit("Another introduction\n");
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(renderInThread).toHaveBeenCalledTimes(1);
-    expect(page.host.textContent).toContain(m.workbench_preview_stale());
+    expect(page.host.textContent).toContain(m.workbench_preview_behind());
     page.press(m.workbench_preview_run());
     expect(renderInThread).toHaveBeenCalledTimes(2);
     expect(renderInThread.mock.calls[1]![0].source).toContain(
@@ -201,7 +201,7 @@ describe("preview scheduling", () => {
     page.edit("Later edit\n");
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(renderInThread).toHaveBeenCalledTimes(1);
-    expect(page.host.textContent).toContain(m.workbench_preview_stale());
+    expect(page.host.textContent).toContain(m.workbench_preview_behind());
     choose(page.host, m.workbench_preview_refresh(), "live");
     choose(page.host, m.workbench_preview_refresh(), "demand");
     await act(async () => vi.advanceTimersByTimeAsync(300));

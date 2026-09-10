@@ -350,6 +350,10 @@ export const WEB_THEME: WorkbenchTheme = {
     },
     resultColumn: {
       stale: "mb-2 text-xs font-medium",
+      behind:
+        "mb-2 flex flex-wrap items-center justify-between gap-2 border-s-2 border-fd-primary bg-fd-accent/40 px-3 py-2 text-xs leading-normal",
+      "behind-text": "text-pretty",
+      run: buttonVariants({ variant: "outline", size: "xs" }),
       filename:
         "-mx-4 -mt-4 mb-4 rounded-t-md border-b border-fd-border bg-fd-muted/40 px-3 py-1.5 text-xs font-medium",
       "filename-text": "truncate",

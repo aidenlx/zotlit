@@ -134,10 +134,16 @@ export class NativePreviewSession implements Disposable {
     this.state.setState({ item });
     this.refresh();
   }
-  setPreview(value: Partial<NativePreviewState["preview"]>): void {
+  /** `output` rides along in the same store write, so a note choice lands as one change. */
+  setPreview(
+    value: Partial<NativePreviewState["preview"]>,
+    output: Partial<
+      Pick<NativePreviewState, "showManaged" | "showMarkdown">
+    > = {},
+  ): void {
     if (this.#closed) return;
     const preview = { ...this.state.getState().preview, ...value };
-    this.state.setState({ preview });
+    this.state.setState({ preview, ...output });
     this.#scheduler.setInput(preview);
   }
   select(id: string | null): void {
