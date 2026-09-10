@@ -68,6 +68,7 @@ export interface NoteFeatureDeps {
     | "ready"
     | "loaded"
     | "render"
+    | "renderCitation"
     | "renderProfileAnnotation"
     | "renderFilename"
     | "frontmatterFields"

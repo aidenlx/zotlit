@@ -31,7 +31,7 @@ describe("Sample Items", () => {
         dependencies: {
           templates: [
             {
-              name: "cite",
+              name: "citation",
               language: "liquid",
               source: "{{ zt.citations | pandoc_cite }}",
             },
@@ -352,11 +352,11 @@ describe("Sample Items", () => {
     expect(result.diagnostics).toEqual([]);
   });
 
-  it("renders an annotation citation through the bundled cite partial", () => {
+  it("renders an annotation citation through the bundled Citation Template", () => {
     const source = SAMPLE_WITH_CITATION;
     const paper = SAMPLE_ITEMS[1]!;
 
-    // Standalone there is no `cite` partial to render it with, so the value
+    // Standalone there is no Citation Template to render it with, so the value
     // stays absent rather than guessing at Obsidian's own output.
     expect(renderProfile(source, paper).annotation).not.toContain(
       "riveraResearchInterfaces2026",
@@ -367,7 +367,7 @@ describe("Sample Items", () => {
         dependencies: {
           templates: [
             {
-              name: "cite",
+              name: "citation",
               language: "liquid",
               source: "{{ zt.citations | pandoc_cite }}\n",
             },

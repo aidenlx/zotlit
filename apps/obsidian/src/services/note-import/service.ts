@@ -3,12 +3,7 @@ import { normalizePath, stringifyYaml } from "obsidian";
 import type { FileManager, MetadataCache, TFile, Vault } from "obsidian";
 import pLimit from "p-limit";
 
-import {
-  citekeysToCiteTemplateData,
-  getAnnotationsByKey,
-  getItemsByID,
-  getNoteByKey,
-} from "@zotlit/db";
+import { getAnnotationsByKey, getItemsByID, getNoteByKey } from "@zotlit/db";
 import type {
   ChildNote,
   GroupIDMemo,
@@ -17,7 +12,6 @@ import type {
   TemplateNoteLink,
 } from "@zotlit/db";
 import type { NodeDatabaseClient } from "@zotlit/db/client/node";
-import { inlineCitation } from "@zotlit/templates";
 
 import { renderAnnotations } from "@/lib/annotation-render";
 import {
@@ -112,7 +106,10 @@ interface NoteImporterDeps {
   profile: Pick<ProfileService, "ready" | "resolveProfile" | "profileOf">;
   app: ImportVaultApp;
   noteIndex: Pick<NoteIndex, "getImportedNoteByNoteKey" | "getNotesByItemKey">;
-  template: Pick<TemplateService, "render" | "renderProfileAnnotation">;
+  template: Pick<
+    TemplateService,
+    "render" | "renderCitation" | "renderProfileAnnotation"
+  >;
   zoteroPref: Pick<ZoteroPrefService, "dataDir" | "baseAttachmentPath">;
   attachmentImport: Pick<AttachmentImportService, "prepare">;
 }
@@ -545,10 +542,7 @@ async function writeNote(
     body = parseNote(TurndownService, note.note, {
       client: run.client,
       libraryID: note.libraryID,
-      renderCite: (items) =>
-        inlineCitation(
-          ctx.template.render("cite", citekeysToCiteTemplateData(items)),
-        ),
+      renderCite: (items) => ctx.template.renderCitation(items, "main"),
       pathContext: {
         dataDir: ctx.zoteroPref.dataDir,
         baseAttachmentPath: ctx.zoteroPref.baseAttachmentPath,

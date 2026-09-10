@@ -15,7 +15,7 @@ import type { HoverAction } from "@/services/settings/schema";
 import type { SettingsKey, SettingTabContext } from "./context";
 import { pandocEngineDefinition } from "./pandoc-engine";
 import { pandocIntegrationDefinition } from "./pandoc-integration";
-import { citationTemplateItems } from "./templates";
+import { citationTextItems } from "./templates";
 
 /** Items for the "Citations" sub-page. */
 export function citationsPageItems(
@@ -115,11 +115,7 @@ export function citationsPageItems(
         pandocEngineDefinition(ctx),
       ],
     },
-    {
-      type: "group",
-      heading: m.settings_citation_templates_heading(),
-      items: citationTemplateItems(ctx),
-    },
+    ...citationTextItems(ctx),
     pandocIntegrationDefinition(ctx),
   ];
 }

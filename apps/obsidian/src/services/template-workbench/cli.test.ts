@@ -98,34 +98,6 @@ const TEMPLATE_FILES = [
     inertFiles: [],
     compileError: null,
   },
-  {
-    name: "cite",
-    winner: {
-      language: "eta",
-      source: {
-        kind: "vault",
-        path: "Templates/zotlit-cite.eta.md",
-      },
-    },
-    editablePath: "Templates/zotlit-cite.eta.md",
-    shadowedFiles: [],
-    inertFiles: ["Templates/zotlit-cite.eta.md"],
-    compileError: "Unexpected token",
-  },
-  {
-    name: "cite2",
-    winner: {
-      language: "liquid",
-      source: {
-        kind: "vault",
-        path: "Templates/zotlit-cite2.liquid.md",
-      },
-    },
-    editablePath: "Templates/zotlit-cite2.liquid.md",
-    shadowedFiles: ["Templates/zotlit-cite2.eta.md"],
-    inertFiles: [],
-    compileError: "Unknown filter",
-  },
 ] as const;
 
 describe("Template Workbench CLI", () => {
@@ -1253,7 +1225,7 @@ describe("Template Workbench CLI", () => {
       templates: {
         javascriptTemplatesEnabled: false,
         compileErrors: NO_COMPILE_ERRORS,
-        getTemplateFileStatuses: () => TEMPLATE_FILES.slice(-2),
+        getTemplateFileStatuses: () => [],
         render,
         renderFilename: EMPTY_RENDER,
         analyzeRootVariables: NO_ROOT_VARIABLES,
@@ -1490,13 +1462,13 @@ describe("Template Workbench CLI", () => {
     },
     {
       error: new InertTemplateError(
-        "Templates/zotlit-cite.eta.md is inert",
-        "cite",
+        "Templates/zotlit-citation.md is inert",
+        "citation",
       ),
       compileErrors: NO_COMPILE_ERRORS,
       code: "ETA_OPT_IN_REQUIRED",
-      message: "Templates/zotlit-cite.eta.md is inert",
-      template: "cite",
+      message: "Templates/zotlit-citation.md is inert",
+      template: "citation",
     },
     {
       error: new Error("note cannot compile"),
@@ -1521,7 +1493,7 @@ describe("Template Workbench CLI", () => {
     },
     {
       error: new Error("render failed: Unknown filter"),
-      compileErrors: new Map([["cite2", { message: "Unknown filter" }]]),
+      compileErrors: new Map([["citation", { message: "Unknown filter" }]]),
       code: "TEMPLATE_RENDER_ERROR",
       message: "render failed: Unknown filter",
       template: "note",

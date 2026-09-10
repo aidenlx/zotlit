@@ -15,7 +15,11 @@ import type { ProfileFixtureSettings as Settings } from "@/services/profile/__fi
 import { defaults } from "@/services/settings/schema";
 import { SettingsService } from "@/services/settings/service";
 
-import { DEFAULT_TEMPLATES, templatePath } from "./defaults";
+import {
+  CITATION_TEMPLATE_SOURCE,
+  DEFAULT_TEMPLATES,
+  templatePath,
+} from "./defaults";
 import { InertTemplateError } from "./errors";
 import { TemplateService } from "./service";
 import { MockVault, PluginStub } from "./test-vault";
@@ -661,10 +665,10 @@ partials:
     ["liquid", "{{ zt.citation }}"],
     ["eta", "<%= zt.citation %>"],
   ] as const)(
-    "preserves a cite compile failure through a %s citation getter",
+    "preserves a Citation Template compile failure through a %s citation getter",
     async (language, source) => {
       const vault = new MockVault();
-      vault.addFile("templates/zotlit-cite.liquid.md", "{% if zt.title %}");
+      vault.addFile("templates/zotlit-citation.md", "{% if zt.title %}");
       vault.addFile(`templates/zotlit-note.${language}.md`, source);
       const { service } = await makeHarness({
         vault,
@@ -672,7 +676,7 @@ partials:
       });
       const data = {
         get citation(): string {
-          return service.render("cite", {});
+          return service.render("citation", {});
         },
       };
 
@@ -684,18 +688,21 @@ partials:
       }
 
       expect(failure).toBeInstanceOf(TemplateError);
-      expect((failure as TemplateError).templateName).toBe("cite");
-      expect(service.compileErrors.get("cite")).toBeDefined();
+      expect((failure as TemplateError).templateName).toBe("citation");
+      expect(service.compileErrors.get("citation")).toBeDefined();
     },
   );
 
   it("preserves an inert winner through a real Eta include error", async () => {
     const vault = new MockVault();
     vault.addFile("templates/zotlit-note.liquid.md", "{{ zt.citation }}");
-    vault.addFile("templates/zotlit-cite.eta.md", "<%= zt.title %>");
+    vault.addFile(
+      "templates/zotlit-citation.md",
+      "---\nlanguage: eta\n---\n<%= zt.title %>",
+    );
     const { service } = await makeHarness({ vault });
     const eta = new TemplateFacade();
-    eta.define("parent", '<%~ include("cite", zt) %>', "eta");
+    eta.define("parent", '<%~ include("citation", zt) %>', "eta");
     const data = {
       get citation(): string {
         return eta.render("parent", {});
@@ -710,16 +717,19 @@ partials:
     }
 
     expect(failure).toBeInstanceOf(InertTemplateError);
-    expect((failure as InertTemplateError).templateName).toBe("cite");
+    expect((failure as InertTemplateError).templateName).toBe("citation");
   });
 
   it("leaves an application error untouched when its message names an inert template file", async () => {
     const vault = new MockVault();
     vault.addFile("templates/zotlit-note.liquid.md", "{{ zt.citation }}");
-    vault.addFile("templates/zotlit-cite.eta.md", "<%= zt.title %>");
+    vault.addFile(
+      "templates/zotlit-citation.md",
+      "---\nlanguage: eta\n---\n<%= zt.title %>",
+    );
     const { service } = await makeHarness({ vault });
     const thrown = new Error(
-      "ENOENT: no such file or directory, open 'templates/zotlit-cite.eta.md'",
+      "ENOENT: no such file or directory, open 'templates/zotlit-citation.md'",
     );
     const data = {
       get citation(): string {
@@ -746,10 +756,13 @@ partials:
   it("surfaces the localized inert message for a nested inert render", async () => {
     const vault = new MockVault();
     vault.addFile("templates/zotlit-note.liquid.md", "{{ zt.citation }}");
-    vault.addFile("templates/zotlit-cite.eta.md", "<%= zt.title %>");
+    vault.addFile(
+      "templates/zotlit-citation.md",
+      "---\nlanguage: eta\n---\n<%= zt.title %>",
+    );
     const { service } = await makeHarness({ vault });
     const eta = new TemplateFacade();
-    eta.define("parent", '<%~ include("cite", zt) %>', "eta");
+    eta.define("parent", '<%~ include("citation", zt) %>', "eta");
     const data = {
       get citation(): string {
         return eta.render("parent", {});
@@ -765,7 +778,7 @@ partials:
 
     expect(failure).toBeInstanceOf(InertTemplateError);
     expect((failure as InertTemplateError).message).toBe(
-      m.settings_template_inert_eta({ path: "templates/zotlit-cite.eta.md" }),
+      m.settings_template_inert_eta({ path: "templates/zotlit-citation.md" }),
     );
   });
 
@@ -773,9 +786,12 @@ partials:
     const vault = new MockVault();
     vault.addFile(
       "templates/zotlit-note.liquid.md",
-      '{% render "cite" with zt as zt %}',
+      '{% render "citation" with zt as zt %}',
     );
-    vault.addFile("templates/zotlit-cite.eta.md", "<%= zt.title %>");
+    vault.addFile(
+      "templates/zotlit-citation.md",
+      "---\nlanguage: eta\n---\n<%= zt.title %>",
+    );
     const { service } = await makeHarness({ vault });
 
     let failure: unknown;
@@ -786,18 +802,21 @@ partials:
     }
 
     expect(failure).toBeInstanceOf(InertTemplateError);
-    expect((failure as InertTemplateError).templateName).toBe("cite");
+    expect((failure as InertTemplateError).templateName).toBe("citation");
   });
 
   it("finds the inert template through an aggregated error chain", async () => {
     const vault = new MockVault();
     vault.addFile("templates/zotlit-note.liquid.md", "{{ zt.citation }}");
-    vault.addFile("templates/zotlit-cite.eta.md", "<%= zt.title %>");
+    vault.addFile(
+      "templates/zotlit-citation.md",
+      "---\nlanguage: eta\n---\n<%= zt.title %>",
+    );
     const { service } = await makeHarness({ vault });
     const data = {
       get citation(): string {
         throw new AggregateError(
-          [new TemplateError('Template "cite" not found', "cite")],
+          [new TemplateError('Template "citation" not found', "citation")],
           "render batch failed",
         );
       },
@@ -811,7 +830,7 @@ partials:
     }
 
     expect(failure).toBeInstanceOf(InertTemplateError);
-    expect((failure as InertTemplateError).templateName).toBe("cite");
+    expect((failure as InertTemplateError).templateName).toBe("citation");
   });
 
   it("records a compile error when a built-in default itself fails to compile", async () => {
@@ -1187,16 +1206,186 @@ partials:
       "note",
       "annotation",
       "content",
-      "cite",
-      "cite2",
     ]);
 
     settings.update({ "note.template-conversion-pending": false });
 
-    expect(service.getTemplateFileStatuses().map(({ name }) => name)).toEqual([
-      "cite",
-      "cite2",
-    ]);
+    // Nothing remains: Profile documents own the note sources and the Citation
+    // Template owns the citation text.
+    expect(service.getTemplateFileStatuses()).toEqual([]);
+  });
+
+  it("renders both Citation Variants from the built-in text", async () => {
+    // A vault holding no zotlit-citation.md still inserts what 2.1.x's cite
+    // and cite2 wrote: bracketed on Enter, Author-in-text on Shift+Enter.
+    const { service } = await makeHarness();
+
+    expect(service.renderCitation([{ citationKey: "smith2024" }], "main")).toBe(
+      "[@smith2024]",
+    );
+    expect(service.renderCitation([{ citationKey: "smith2024" }], "alt")).toBe(
+      "@smith2024",
+    );
+  });
+
+  it("renders both variants from one document that branches on zt.variant", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-citation.md",
+      "{% if zt.variant == 'alt' %}~{{ zt.citations[0].item.citationKey }}~" +
+        "{% else %}<{{ zt.citations[0].item.citationKey }}>{% endif %}",
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(service.renderCitation([{ citationKey: "smith2024" }], "main")).toBe(
+      "<smith2024>",
+    );
+    expect(service.renderCitation([{ citationKey: "smith2024" }], "alt")).toBe(
+      "~smith2024~",
+    );
+  });
+
+  it("normalizes a multi-line Citation Template to its inline form", async () => {
+    // A Citation is an in-text token, and a vault document ends with a
+    // newline: whatever whitespace the document renders, line-break runs
+    // collapse to one space and the ends are trimmed, so nothing breaks the
+    // line the citation is inserted into.
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-citation.md",
+      "[{{ zt.citations[0].item.citationKey }},\n   p. 1]   \n\n",
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(service.renderCitation([{ citationKey: "smith2024" }], "main")).toBe(
+      "[smith2024, p. 1]",
+    );
+  });
+
+  it("carries an annotation's page locator into the rendered citation", async () => {
+    const { service } = await makeHarness();
+
+    expect(
+      service.renderCitation(
+        [{ citationKey: "smith2024", label: "page", locator: "62" }],
+        "main",
+      ),
+    ).toBe("[@smith2024, {p. 62}]");
+  });
+
+  it("keeps an Eta Citation Template inert while JavaScript Templates are off", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-citation.md",
+      "---\nlanguage: eta\n---\n<%= pandocCite(zt.citations) %>",
+    );
+    const { service } = await makeHarness({ vault });
+
+    expect(() =>
+      service.renderCitation([{ citationKey: "smith2024" }], "main"),
+    ).toThrow(
+      m.settings_template_inert_eta({ path: "templates/zotlit-citation.md" }),
+    );
+    expect(service.getCitationTemplateStatus()).toMatchObject({
+      customized: true,
+      language: "liquid",
+      inertPath: "templates/zotlit-citation.md",
+    });
+  });
+
+  it("renders an Eta Citation Template once JavaScript Templates are on", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-citation.md",
+      "---\nlanguage: eta\n---\n<%= pandocCite(zt.citations, zt.variant === 'alt' ? 'prefer-author-in-text' : 'normal') %>",
+    );
+    const { service } = await makeHarness({
+      vault,
+      javascriptTemplates: true,
+    });
+
+    expect(service.renderCitation([{ citationKey: "smith2024" }], "alt")).toBe(
+      "@smith2024",
+    );
+    expect(service.getCitationTemplateStatus()).toMatchObject({
+      customized: true,
+      language: "eta",
+      inertPath: null,
+    });
+  });
+
+  it("materializes the Citation Template during startup, once the scan lands", async () => {
+    // "Customize citation text" is registered before the folder scan finishes,
+    // so an invocation mid-startup waits for the scan rather than failing the
+    // loaded-state check and reporting a notice.
+    const { service, vault } = await makeHarness({ skipReady: true });
+    expect(service.loaded).toBe(false);
+
+    const materialized = service.materializeCitationTemplate();
+    await vi.advanceTimersByTimeAsync(500);
+    const file = await materialized;
+
+    expect(file.path).toBe("templates/zotlit-citation.md");
+    expect(vault.contents.get(file.path)).toBe(CITATION_TEMPLATE_SOURCE);
+  });
+
+  it("materializes the Citation Template from the built-in text and restores it", async () => {
+    const { service, vault } = await makeHarness();
+
+    expect(service.getCitationTemplateStatus()).toMatchObject({
+      path: "templates/zotlit-citation.md",
+      customized: false,
+      language: "liquid",
+      compileError: null,
+    });
+
+    const materialized = service.materializeCitationTemplate();
+    await vi.advanceTimersByTimeAsync(500);
+    const file = await materialized;
+
+    expect(file.path).toBe("templates/zotlit-citation.md");
+    expect(vault.contents.get(file.path)).toBe(CITATION_TEMPLATE_SOURCE);
+    expect(service.getCitationTemplateStatus().customized).toBe(true);
+
+    // Opening an existing document hands it back rather than overwriting it.
+    vault.modifyFile(file.path, "EDITED {{ zt.variant }}");
+    await vi.advanceTimersByTimeAsync(500);
+    expect((await service.materializeCitationTemplate()).path).toBe(file.path);
+    expect(vault.contents.get(file.path)).toBe("EDITED {{ zt.variant }}");
+    expect(service.renderCitation([{ citationKey: "smith2024" }], "alt")).toBe(
+      "EDITED alt",
+    );
+
+    const restored = service.restoreCitationTemplate();
+    await vi.advanceTimersByTimeAsync(500);
+    await restored;
+
+    expect(vault.getFileByPath(file.path)).toBeNull();
+    expect(service.getCitationTemplateStatus().customized).toBe(false);
+    expect(service.renderCitation([{ citationKey: "smith2024" }], "main")).toBe(
+      "[@smith2024]",
+    );
+  });
+
+  it("offers the Citation Template to a pack that asks for it by name", async () => {
+    // The web bridge names it whether the draft calls it or not, because the
+    // page renders each annotation's citation through it.
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-citation.md", "[[{{ zt.variant }}]]");
+    const { service } = await makeHarness({ vault });
+
+    const exported = new TemplateFacade().parseLiteratureNoteTemplate(
+      await service.exportLiteratureNotePackSource(
+        literatureNoteDocument("Books"),
+        { include: ["citation"] },
+      ),
+    );
+
+    expect(exported.manifest.partials).toContainEqual({
+      name: "citation",
+      language: "liquid",
+      source: "[[{{ zt.variant }}]]",
+    });
   });
 
   it("reports the winner the reconciler compiled", async () => {
@@ -1796,6 +1985,9 @@ async function makeHarness(options?: {
   settings?: Record<string, unknown>;
   vault?: MockVault;
   javascriptTemplates?: boolean;
+  /** Hand the service back mid-startup, the way a command invoked during the
+   *  initial folder scan reaches it. */
+  skipReady?: boolean;
 }): Promise<Harness> {
   const vault = options?.vault ?? new MockVault();
   const localStorage = new Map<string, unknown>();
@@ -1805,6 +1997,11 @@ async function makeHarness(options?: {
   const app = {
     vault,
     workspace: { updateOptions: vi.fn() },
+    fileManager: {
+      trashFile: async (file: { path: string }) => {
+        vault.deleteFile(file.path);
+      },
+    },
     loadLocalStorage: (key: string) => localStorage.get(key) ?? null,
     saveLocalStorage: (key: string, data: unknown) => {
       if (data === null) localStorage.delete(key);
@@ -1835,7 +2032,7 @@ async function makeHarness(options?: {
     app,
     settings,
   });
-  await service.ready;
+  if (!options?.skipReady) await service.ready;
 
   const harness = { app, plugin, service, settings, vault, localStorage };
   harnesses.push(harness);

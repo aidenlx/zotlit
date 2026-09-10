@@ -25,7 +25,7 @@ export class InsertCitationModal extends ItemSearchModal {
     this.setInstructions([
       { command: "↑↓", purpose: m.instruction_navigate() },
       { command: "↵", purpose: m.instruction_insert_citation() },
-      { command: "⇧↵", purpose: m.instruction_insert_secondary_citation() },
+      { command: "⇧↵", purpose: m.instruction_insert_alternate_citation() },
       { command: "esc", purpose: m.instruction_dismiss() },
     ]);
     // The suggestion popup registers `Enter` with no modifiers and matches
@@ -44,7 +44,7 @@ export class InsertCitationModal extends ItemSearchModal {
     const outcome = resolveCitationInsert(
       this.#deps,
       hit,
-      Keymap.isModifier(evt, "Shift"),
+      Keymap.isModifier(evt, "Shift") ? "alt" : "main",
     );
     if (outcome.kind === "notice") {
       new BaseNotice(outcome.message);

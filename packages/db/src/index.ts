@@ -137,6 +137,8 @@ export {
   DEFAULT_LOCATOR_LABEL_SHORT,
   narrowBaseDataToCiteItemData,
   resolveCitedItem,
+  type CitationTemplateData,
+  type CitationVariant,
   type CiteRef,
   type ResolvedCiteRef,
 } from "./lib/context/zt-template-cite";

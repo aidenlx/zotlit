@@ -28,6 +28,7 @@ import type { DatabaseService } from "@/services/database/service";
 import type { NoteIndex } from "@/services/note-index/service";
 import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
+import { CITATION_TEMPLATE_NAME } from "@/services/template/defaults";
 import { InertTemplateError } from "@/services/template/errors";
 import {
   buildObsidianInertNoteResolvers,
@@ -36,9 +37,6 @@ import {
 } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
 import type { ZoteroPrefService } from "@/services/zotero-pref/service";
-
-/** The Template the annotation root's `citation` getter renders. */
-const CITE_TEMPLATE = "cite";
 
 export type TemplateDataLoadResult =
   | { kind: "data"; data: object }
@@ -55,7 +53,7 @@ export interface TemplateDataDeps {
     "getNotesByItemKey" | "getImportedNoteByNoteKey" | "whenIndexed"
   >;
   settings: Pick<SettingsService, "loaded">;
-  templates: Pick<TemplateService, "ready" | "render">;
+  templates: Pick<TemplateService, "ready" | "render" | "renderCitation">;
   zoteroPref: Pick<
     ZoteroPrefService,
     "ready" | "dataDir" | "baseAttachmentPath"
@@ -126,8 +124,8 @@ export async function loadTemplateData(
 
 /**
  * Render the annotation root's `citation` field, labeling its failure with the
- * Template that raised it: the getter runs the `cite` Template, so a fault
- * that names no Template belongs to `cite`.
+ * Template that raised it: the getter runs the Citation Template, so a fault
+ * that names no Template belongs to it.
  */
 function renderAnnotationCitation(
   parentItem: Parameters<typeof annotationCitation>[0],
@@ -139,14 +137,14 @@ function renderAnnotationCitation(
   } catch (error) {
     if (error instanceof InertTemplateError) {
       if (error.templateName !== undefined) throw error;
-      throw new InertTemplateError(error.message, CITE_TEMPLATE, {
+      throw new InertTemplateError(error.message, CITATION_TEMPLATE_NAME, {
         cause: error,
       });
     }
     if (error instanceof TemplateError) throw error;
     throw new TemplateError(
       error instanceof Error ? error.message : String(error),
-      CITE_TEMPLATE,
+      CITATION_TEMPLATE_NAME,
       { cause: error },
     );
   }

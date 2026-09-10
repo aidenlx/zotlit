@@ -50,6 +50,7 @@ export interface NativeRenderDeps extends TemplateDataDeps, NativeCitationDeps {
     TemplateService,
     | "ready"
     | "render"
+    | "renderCitation"
     | "prepareLiteratureNoteTemplateSource"
     | "frontmatterFields"
     | "javascriptTemplatesEnabled"

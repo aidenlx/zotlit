@@ -23,6 +23,13 @@ import { createMockLocalBridge } from "./local-bridge.ts";
 import { getWorkspaceRoot } from "#package-roots";
 
 const ORIGIN = "https://zotlit.aidenlx.site";
+/** The built-in Citation Template, as `@zotlit/templates` ships it. */
+const BUILT_IN_CITATION_SOURCE = `{% if zt.variant == "alt" %}
+  {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}
+{% else %}
+  {{ zt.citations | pandoc_cite }}
+{% endif %}
+`;
 /** The port a launch URL names, which the in-process app answers on. */
 const PORT = 23_120;
 const PARENT_STYLE_ID = "http://www.zotero.org/styles/fixture-parent";
@@ -507,7 +514,7 @@ describe("LocalBridgeClient against the mock Local Bridge", () => {
         `partials:
   - name: summary
     language: liquid
-    source: "{% render 'cite' %}"
+    source: "{% render 'citation' %}"
   - name: unused
     language: liquid
     source: Unused
@@ -519,14 +526,14 @@ frontmatter:\n`,
     ).resolves.toEqual({
       templates: [
         {
-          name: "cite",
+          name: "citation",
           language: "liquid",
-          source: "{{ zt.citations | pandoc_cite }}\n",
+          source: BUILT_IN_CITATION_SOURCE,
         },
         {
           name: "summary",
           language: "liquid",
-          source: "{% render 'cite' %}",
+          source: "{% render 'citation' %}",
         },
       ],
       diagnostics: [],
@@ -554,15 +561,15 @@ frontmatter:\n`,
 
     const unsupportedDependency = withDependencies
       .replace("language: liquid", "language: eta")
-      .replace("{% render 'cite' %}", "<%~ include('cite') %>");
+      .replace("{% render 'citation' %}", "<%~ include('citation') %>");
     await expect(
       client.readTemplateDependencies({ source: unsupportedDependency }),
     ).resolves.toMatchObject({
       templates: [
         {
-          name: "cite",
+          name: "citation",
           language: "liquid",
-          source: "{{ zt.citations | pandoc_cite }}\n",
+          source: BUILT_IN_CITATION_SOURCE,
         },
       ],
       diagnostics: [
