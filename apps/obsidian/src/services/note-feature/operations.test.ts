@@ -27,7 +27,7 @@ import { createClient } from "@zotlit/db/client/node";
 import { createFixtureSchema } from "@zotlit/db/test-utils";
 import { filenameSuffix, inlineCitation } from "@zotlit/templates";
 import defaultCitation from "@zotlit/templates/defaults/citation.liquid?raw";
-import { TemplateFacade } from "@zotlit/templates/facade";
+import { MissingTemplateError, TemplateFacade } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import { compileFrontmatterFields } from "@zotlit/templates/frontmatter";
 import type {
@@ -1612,6 +1612,59 @@ describe("createNote", () => {
     expect(renderLegacy).not.toHaveBeenCalledWith("note", expect.anything());
   });
 
+  it("rejects with MissingTemplateError and writes nothing when the Profile document calls a Shared Partial the vault holds no document for", async () => {
+    const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
+    const item = makeCreateGateItem();
+    vi.mocked(fetchNoteContext).mockReturnValue(createGateContext());
+    const app = makeApp();
+    // The error a Profile document render raises for a call to a partial the
+    // folder holds no document for; `template/service.test.ts` proves the real
+    // TemplateService surfaces exactly this out of `renderForCreate`.
+    const document = makeDocumentTemplate();
+    document.renderForCreate.mockImplementation(() => {
+      throw new MissingTemplateError("venue-line");
+    });
+    const deps: SyncRenderDeps = {
+      app,
+      template: {
+        ...makeTemplate(),
+        getLiteratureNoteTemplate: (reference) =>
+          reference === "books.md" ? document : undefined,
+      },
+      db: makeDb(),
+      noteIndex: {
+        getImportedNoteByNoteKey: () => [],
+        ready: Promise.resolve(),
+        whenIndexed: async () => {},
+        getNotesByItemKey: () => [],
+      },
+      zoteroPref: { dataDir: "/zotero", baseAttachmentPath: null },
+      settings: makeSettings({
+        profiles: [{ id: profileId, label: "Books", document: "books.md" }],
+      }),
+      attachmentImport: blockedAttachmentImport,
+      noteImport: {
+        prepare: async () => ({
+          resolveChildNote: () => ({
+            key: "",
+            indexedKey: "",
+            title: null,
+            noteLink: () => "",
+          }),
+          flush: async () => ({ created: 0, skipped: 0, failed: 0 }),
+        }),
+      },
+    };
+
+    await expect(
+      createNoteFeature(deps).createNote(item, { profile: profileId }),
+    ).rejects.toMatchObject({
+      name: "MissingTemplateError",
+      templateName: "venue-line",
+    });
+    expect(app.vault.create).not.toHaveBeenCalled();
+  });
+
   it.each([
     { entry: { key: "scripted", js: "zt.title" }, field: "scripted" },
     { entry: { js: "({ title: zt.title })" }, field: "entry #1" },
@@ -2439,6 +2492,66 @@ describe("updateNote", () => {
     expect(harness.renderContent).not.toHaveBeenCalled();
     expect(result).toEqual({ bodyUpdated: true, duplicateRegionCount: 0 });
   });
+
+  it.each([
+    {
+      what: "update",
+      run: (deps: SyncRenderDeps) =>
+        createNoteFeature(deps).updateNote(makeFile("Books/Root.md"), {
+          indexedKey: "ABC12345",
+        }),
+      render: "renderForUpdate" as const,
+    },
+    {
+      what: "overwrite",
+      run: (deps: SyncRenderDeps) =>
+        createNoteFeature(deps).overwriteNote(
+          makeFile("Books/Root.md"),
+          "ABC12345",
+        ),
+      render: "renderForCreate" as const,
+    },
+  ])(
+    "writes neither properties nor body when an $what renders through a missing Shared Partial",
+    async ({ run, render }) => {
+      const profileId = "Bk3Qn7XvT2Lp" as ProfileId;
+      stubIndexedKeyUpdate(updateContext());
+      const original = `User prefix\n${formatManagedRegion("OLD")}\nUser suffix`;
+      const harness = makeUpdateHarness({
+        content: original,
+        frontmatter: {
+          [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+          title: "Old title",
+        },
+        settings: {
+          profiles: [{ id: profileId, label: "Books", document: "books.md" }],
+        },
+      });
+      const document = makeDocumentTemplate({
+        frontmatter: compileDocumentFrontmatter([
+          { key: "title", merge: "replace", expr: "zt.title" },
+        ]),
+      });
+      document[render].mockImplementation(() => {
+        throw new MissingTemplateError("venue-line");
+      });
+      harness.deps.template.getLiteratureNoteTemplate = () => document;
+
+      await expect(run(harness.deps)).rejects.toMatchObject({
+        name: "MissingTemplateError",
+        templateName: "venue-line",
+      });
+
+      // The refusal notice says nothing was written, so neither the Properties
+      // block nor the body may carry a render that never finished.
+      expect(harness.content()).toBe(original);
+      expect(harness.frontmatter()).toEqual({
+        [FIELD_LITERATURE_NOTE_PROFILE]: profileId,
+        title: "Old title",
+      });
+      expect(harness.frontmatterMock).not.toHaveBeenCalled();
+    },
+  );
 
   it("uses document Managed Frontmatter in entry order and preserves other keys", async () => {
     const profileId = "Bk3Qn7XvT2Lp" as ProfileId;

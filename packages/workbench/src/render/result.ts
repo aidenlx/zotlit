@@ -15,6 +15,7 @@ export type RenderDiagnosticCode =
   | "contract-version-mismatch"
   | "invalid-profile"
   | "missing-dependency"
+  | "missing-partial"
   | "property-append-conflict"
   | "property-error"
   | "property-javascript"

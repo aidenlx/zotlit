@@ -1193,6 +1193,23 @@ language: liquid
     ]);
   });
 
+  it("names no partial while the template service is still scanning the folder", () => {
+    const { view } = setup({
+      templates: {
+        loaded: false,
+        getPartialNames: () => {
+          throw new Error(
+            "TemplateService.getPartialNames(): service is not ready",
+          );
+        },
+        getPartialDocuments: () => [],
+      } as unknown as TemplateWorkbenchDeps["templates"],
+    });
+
+    // The placeholder reads this during render, before the folder scan ends.
+    expect(view.partialNames).toEqual([]);
+  });
+
   it("writes an Explorer field into the Citation Template's one editor", async () => {
     const { view, leaf } = openKind(
       "templates/zotlit-citation.md",

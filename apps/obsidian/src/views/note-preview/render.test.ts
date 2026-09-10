@@ -16,7 +16,11 @@ import {
   SAVED_NOTE,
 } from "./__fixtures__/render";
 import { presentCitations } from "./markdown";
-import { renderNativeProfile, previewBaseline } from "./render";
+import {
+  renderNativeProfile,
+  previewBaseline,
+  renderRegisteredPartial,
+} from "./render";
 
 /** Where the counting template records how often its body has rendered. */
 const BODY_RENDERS = "__zotlitPreviewBodyRenders";
@@ -458,5 +462,35 @@ Body render <%= (globalThis.${BODY_RENDERS} = (globalThis.${BODY_RENDERS} ?? 0) 
     expect(failed.diagnostics).toContainEqual(
       expect.objectContaining({ code: "citation-style-error" }),
     );
+  });
+});
+
+describe("renderRegisteredPartial", () => {
+  it("reads the caller's own annotation data under the Annotation context, unlike the Note context", async () => {
+    await using fixture = await createRenderFixture({
+      partials: { "venue-line": "Page {{ zt.pageLabel }}" },
+    });
+    const { example } = annotationSamples(fixture.snapshot, null);
+    const request = {
+      source: PROFILE_SOURCE,
+      snapshot: fixture.snapshot,
+      annotation: example,
+    };
+
+    const underAnnotation = await renderRegisteredPartial(
+      fixture.deps,
+      request,
+      { name: "venue-line", context: "annotation", profile: null },
+    );
+    const underNote = await renderRegisteredPartial(fixture.deps, request, {
+      name: "venue-line",
+      context: "note",
+      profile: null,
+    });
+
+    // The fixture's annotation carries pageLabel "2" (see the fixture's
+    // itemAnnotations row); the note root has no such field.
+    expect(underAnnotation).toBe("Page 2");
+    expect(underNote).not.toBe(underAnnotation);
   });
 });

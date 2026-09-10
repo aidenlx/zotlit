@@ -51,7 +51,7 @@ Old generated body.
 Personal conclusion.
 `;
 
-export async function createRenderFixture(options: { existing?: string; javascript?: boolean; wikilinks?: boolean; defaultStyle?: string } = {}) {
+export async function createRenderFixture(options: { existing?: string; javascript?: boolean; wikilinks?: boolean; defaultStyle?: string; partials?: Record<string, string> } = {}) {
   const client = createClient(":memory:");
   const sqlite = client.$client as DatabaseSync;
   createFixtureSchema(sqlite);
@@ -71,6 +71,10 @@ export async function createRenderFixture(options: { existing?: string; javascri
   `);
   const vault = new MockVault();
   const file = options.existing === undefined ? null : vault.addFile("notes/paper.md", options.existing);
+  // Registered before `TemplateService` starts, so its initial folder scan
+  // discovers the Shared Partial the way a saved vault would.
+  for (const [name, source] of Object.entries(options.partials ?? {}))
+    vault.addFile(`templates/zotlit-partial.${name}.md`, source);
   const memory = new Map<string, unknown>(options.javascript ? [["zotlit-javascript-templates", "1"]] : []);
   const app = {
     vault: Object.assign(vault, { read: vault.cachedRead }),

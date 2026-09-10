@@ -7,6 +7,7 @@ import type {
   NoteTemplateContext,
 } from "@zotlit/db";
 import { replaceSuffixMarkers } from "@zotlit/templates";
+import { MissingTemplateError } from "@zotlit/templates/facade";
 import { FRONTMATTER_ABSENT } from "@zotlit/templates/frontmatter-merge";
 import type { FrontmatterMergeConflictHandler } from "@zotlit/templates/frontmatter-merge";
 import { replaceManagedRegion } from "@zotlit/templates/obsidian";
@@ -110,18 +111,7 @@ async function renderNativePartial(
 ): Promise<NativeRenderResult> {
   const identity = renderIdentity(request);
   try {
-    await deps.templates.ready;
-    const settings = await deps.settings.loaded;
-    const profile =
-      (selection.profile === null
-        ? undefined
-        : deps.profile.resolveProfile(selection.profile as ProfileId)) ??
-      bindProfile(settings, { selector: DEFAULT_PROFILE });
-    const dataDeps = {
-      ...deps,
-      settings: { loaded: Promise.resolve(profile.settings) },
-    };
-    const data = await partialContextData(dataDeps, request, selection.context);
+    const data = await partialRootData(deps, request, selection);
     if (data.kind !== "data") {
       return nativeResult(
         failedRender(identity, {
@@ -138,14 +128,53 @@ async function renderNativePartial(
       }),
     };
   } catch (error) {
-    return nativeResult(
-      failedRender(identity, {
-        code: "render-error",
-        message: errorText(error),
-        part: "render",
-      }),
-    );
+    return nativeResult(failedRender(identity, renderFault(error, "render")));
   }
+}
+
+/**
+ * The text the Shared Partial `selection` names produces for the caller it
+ * names, rendered from the document the vault registered rather than from the
+ * draft in the editor. This is what one Partial Placeholder's preview shows,
+ * so the reader sees the partial their call actually renders.
+ *
+ * @throws whatever the render raises, a {@link MissingTemplateError} for a
+ *   partial the vault holds no document for included.
+ */
+export async function renderRegisteredPartial(
+  deps: NativeRenderDeps,
+  request: RenderRequest,
+  selection: PartialPreviewSelection,
+): Promise<string> {
+  const data = await partialRootData(deps, request, selection);
+  if (data.kind !== "data") throw new Error(data.message);
+  return deps.templates.render(selection.name, data.data);
+}
+
+/**
+ * The root data one Shared Partial preview reads, built under the bindings of
+ * the Profile the reader chose, so folder, citation style, and the import
+ * settings a partial reads are a real Profile's.
+ */
+async function partialRootData(
+  deps: NativeRenderDeps,
+  request: RenderRequest,
+  selection: PartialPreviewSelection,
+): Promise<
+  { kind: "data"; data: object } | { kind: "unavailable"; message: string }
+> {
+  await deps.templates.ready;
+  const settings = await deps.settings.loaded;
+  const profile =
+    (selection.profile === null
+      ? undefined
+      : deps.profile.resolveProfile(selection.profile as ProfileId)) ??
+    bindProfile(settings, { selector: DEFAULT_PROFILE });
+  return partialContextData(
+    { ...deps, settings: { loaded: Promise.resolve(profile.settings) } },
+    request,
+    selection.context,
+  );
 }
 
 /**
@@ -244,13 +273,7 @@ async function renderNativeCitation(
       citation: deps.templates.renderCitationSource(request.source, data),
     };
   } catch (error) {
-    return nativeResult(
-      failedRender(identity, {
-        code: "render-error",
-        message: errorText(error),
-        part: "render",
-      }),
-    );
+    return nativeResult(failedRender(identity, renderFault(error, "render")));
   }
 }
 
@@ -450,11 +473,7 @@ export async function renderNativeProfile(
             ? root.citation
             : null;
       } catch (error) {
-        diagnostics.push({
-          code: "render-error",
-          part: "annotation",
-          message: errorText(error),
-        });
+        diagnostics.push(renderFault(error, "annotation"));
       }
     }
     const annotationRanges: { from: number; to: number }[] = [];
@@ -538,11 +557,7 @@ export async function renderNativeProfile(
     };
   } catch (error) {
     return {
-      ...failedRender(identity, {
-        code: "render-error",
-        message: errorText(error),
-        part: "render",
-      }),
+      ...failedRender(identity, renderFault(error, "render")),
       sourcePath,
       citations: [],
       annotationCitations: [],
@@ -552,4 +567,20 @@ export async function renderNativeProfile(
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The diagnostic one render failure reads as. A call to a Shared Partial the
+ * vault holds no document for is the engine's own missing-partial report,
+ * which the Partial Placeholder, the Problems strip, and a refused Literature
+ * Note all read by code; every other failure carries the engine's own words.
+ * @see docs/adr/0050-citation-template-and-shared-partials-are-template-documents.md
+ */
+function renderFault(
+  error: unknown,
+  part: RenderDiagnostic["part"],
+): RenderDiagnostic {
+  return error instanceof MissingTemplateError
+    ? { code: "missing-partial", params: { name: error.templateName }, part }
+    : { code: "render-error", message: errorText(error), part };
 }

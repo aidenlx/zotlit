@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { inlineCitation } from "@zotlit/templates";
-import { TemplateError, TemplateFacade } from "@zotlit/templates/facade";
+import {
+  MissingTemplateError,
+  TemplateError,
+  TemplateFacade,
+} from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 import {
   ContractMetadataError,
@@ -1628,6 +1632,13 @@ describe("Template Workbench CLI", () => {
       code: "TEMPLATE_COMPILE_ERROR",
       message: "Unknown filter",
       template: "content",
+    },
+    {
+      error: new MissingTemplateError("venue-line"),
+      compileErrors: NO_COMPILE_ERRORS,
+      code: "MISSING_PARTIAL",
+      message: 'Template "venue-line" not found',
+      template: "venue-line",
     },
     {
       error: new Error("render failed"),
@@ -4332,10 +4343,10 @@ describe("zotlit:template-render for a Shared Partial", () => {
     ).toMatchObject({
       ok: false,
       diagnostic: {
-        code: "INVALID_SELECTOR",
-        message:
-          "No Shared Partial named 'venue-line'. Create 'zotlit-partial.venue-line.md' in the template folder.",
-        details: { parameter: "template" },
+        code: "MISSING_PARTIAL",
+        message: "No Shared Partial named 'venue-line'.",
+        hint: "Create zotlit-partial.<name>.md in the template folder for the partial named in details.template, or correct the name the template calls.",
+        details: { template: "venue-line" },
       },
     });
   });

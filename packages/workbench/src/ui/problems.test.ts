@@ -103,6 +103,16 @@ describe("diagnosticText", () => {
     ).toBe("Template dependency 'summary' uses an unsupported language.");
   });
 
+  it("names the Shared Partial the engine could not resolve", () => {
+    expect(
+      diagnosticText(m, {
+        code: "missing-partial",
+        params: { name: "venue-line" },
+        part: "render",
+      }),
+    ).toBe(m.workbench_diagnostic_missing_partial({ name: "venue-line" }));
+  });
+
   it("shows the engine's own failure text for a render error", () => {
     expect(
       diagnosticText(m, {

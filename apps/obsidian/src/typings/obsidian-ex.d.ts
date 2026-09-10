@@ -110,6 +110,14 @@ declare module "obsidian" {
       callback: (request: { path: string }) => void,
       ctx?: any,
     ): EventRef;
+
+    /** `document` is the vault path of the Template Document holding the call
+     *  that refused; the Default Profile stands in when there is none. */
+    on(
+      name: "zotlit:open-template-workbench",
+      callback: (document?: string) => void,
+      ctx?: any,
+    ): EventRef;
   }
   interface MetadataCache {
     /**

@@ -9,7 +9,7 @@ import type {
 // stable machine surface agent scripts read, the message is context for a human
 // reading the transcript, and the hint is the recovery action the agent acts on.
 // Command and flag help text is localized (see `register.ts`).
-import { TemplateError } from "@zotlit/templates/facade";
+import { MissingTemplateError, TemplateError } from "@zotlit/templates/facade";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
 
@@ -98,6 +98,8 @@ export const DIAGNOSTIC_HINTS = {
     "Correct the document validation error, then inspect or render it again.",
   RESERVED_PARTIAL_NAME:
     "Rename the Shared Partial file to a name ZotLit does not already use. 'citation' names the Citation Template, and 'filename', 'note', 'annotation', and 'content' name the Literature Note Template slots.",
+  MISSING_PARTIAL:
+    "Create zotlit-partial.<name>.md in the template folder for the partial named in details.template, or correct the name the template calls.",
 } as const satisfies Record<string, string>;
 
 export type DiagnosticCode = keyof typeof DIAGNOSTIC_HINTS;
@@ -309,6 +311,14 @@ export function templateFaultDiagnostic(
   if (error instanceof InertTemplateError) {
     const details = named === null ? undefined : { template: named };
     return diagnostic("ETA_OPT_IN_REQUIRED", message, details);
+  }
+
+  // The engine reached a name nothing is registered under, which for a
+  // template is a Shared Partial the vault holds no document for.
+  if (error instanceof MissingTemplateError) {
+    return diagnostic("MISSING_PARTIAL", message, {
+      template: error.templateName,
+    });
   }
 
   const compileError =

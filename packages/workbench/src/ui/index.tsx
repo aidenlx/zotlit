@@ -81,6 +81,8 @@ export type {
 
 export { NotePane } from "./note-pane";
 export type { NotePaneProps } from "./note-pane";
+export { usePartialBoxes } from "./partial-boxes";
+export type { PartialBoxes, PartialPlaceholderHost } from "./partial-boxes";
 export { SliceEditor } from "./slice-editor";
 export type {
   SliceEditorProps,

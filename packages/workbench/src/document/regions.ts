@@ -1,7 +1,8 @@
-// The boxes a note pane draws over its own source: the Managed Block the note
-// update rewrites, and the annotation render calls the highlight editor opens
-// at. Both are read from the source alone, so a draft the parser refuses keeps
-// the boxes the reader is working in.
+// The boxes a pane draws over its own source: the Managed Block the note
+// update rewrites, the annotation render calls the highlight editor opens at,
+// and the Shared Partial calls a Partial Placeholder stands in for. All three
+// are read from the source alone, so a draft the parser refuses keeps the
+// boxes the reader is working in.
 
 import type { LiquidRange } from "#/language/liquid";
 import { regex } from "arkregex";
@@ -35,6 +36,29 @@ export interface ManagedBlockRegion {
   readonly close: WorkbenchSliceRange;
 }
 
+/**
+ * One Shared Partial call — a `render` or `include` tag whose first argument
+ * is a plain quoted name — in master offsets. Every other call form names its
+ * target at render time, so it stays as source.
+ */
+export interface PartialRenderSite {
+  /** The partial the call names, as written between its quotes. */
+  readonly name: string;
+  /**
+   * What the call passes after the name, so a box summarizes the call it
+   * stands in for; the empty string when the call passes nothing.
+   */
+  readonly arguments: string;
+  /** The call's own text, which a box takes the place of. */
+  readonly call: WorkbenchSliceRange;
+  /**
+   * The name alone, between its quotes, so Pick another writes the chosen name
+   * over exactly the name — a search of the call text would find a short name
+   * inside the `render` or `include` keyword first.
+   */
+  readonly nameRange: WorkbenchSliceRange;
+}
+
 export interface NoteRegions {
   /** Every annotation render call, in source order. */
   readonly annotationCalls: readonly AnnotationRenderSite[];
@@ -46,6 +70,19 @@ const ANNOTATION_CALL_TAGS: readonly string[] = ["render", "render_annotation"];
 
 /** The section the native call form names, in either quote the author wrote. */
 const ANNOTATION_PARTIALS: readonly string[] = ['"annotation"', "'annotation'"];
+
+/** The Liquid tag names that render a Shared Partial by name. */
+const PARTIAL_CALL_TAGS: readonly string[] = ["render", "include"];
+
+/**
+ * The names a call may spell that no Shared Partial can be given: the
+ * Annotation Section's own name, and the one the Citation Template registers
+ * under. A box over either would offer Edit partial for a document that cannot
+ * exist.
+ * @see docs/adr/0035-profile-annotation-section.md
+ * @see docs/adr/0050-citation-template-and-shared-partials-are-template-documents.md
+ */
+const RESERVED_CALL_NAMES: readonly string[] = ["annotation", "citation"];
 
 const FENCE = regex("^ {0,3}(?<marker>`{3,}|~{3,})");
 
@@ -60,20 +97,91 @@ export function noteRegions(
   note: WorkbenchSliceRange,
 ): NoteRegions {
   const body = source.slice(note.from, note.to);
-  const code = codeRanges(body);
-  // `liquidRanges` skips a `raw` or `comment` body whole; a Markdown code
-  // region is prose about a call rather than a call, so it is skipped here.
-  const tags = liquidRanges(body).filter(
-    (range) =>
-      range.closed &&
-      !code.some(({ from, to }) => from <= range.from && range.from < to),
-  );
+  const tags = callTags(body);
   const annotationCalls = tags.flatMap((range) => {
     if (range.kind !== "tag" || !isAnnotationCall(body, range)) return [];
     const call = { from: note.from + range.from, to: note.from + range.to };
     return [{ call, line: ownedLine(source, call) }];
   });
   return { annotationCalls, managedBlock: managedBlock(source, note, tags) };
+}
+
+/**
+ * Every Shared Partial call inside `region`, in source order and in the
+ * offsets `source` is read in. A pane over any region — the note body, the
+ * Annotation Section, or the one editor a plain document opens — reads its own
+ * calls through this.
+ */
+export function partialCalls(
+  source: string,
+  region: WorkbenchSliceRange,
+): readonly PartialRenderSite[] {
+  const body = source.slice(region.from, region.to);
+  const shift = ({ from, to }: WorkbenchSliceRange) => ({
+    from: region.from + from,
+    to: region.from + to,
+  });
+  return callTags(body).flatMap((range) => {
+    const named = partialCall(body, range);
+    if (!named) return [];
+    return [
+      {
+        ...named,
+        call: shift(range),
+        nameRange: shift(named.nameRange),
+      },
+    ];
+  });
+}
+
+/**
+ * The closed Liquid tags of `body` a box may stand in for. `liquidRanges`
+ * skips a `raw` or `comment` body whole; a Markdown code region is prose about
+ * a call rather than a call, so it is skipped here.
+ */
+function callTags(body: string): readonly LiquidRange[] {
+  const code = codeRanges(body);
+  return liquidRanges(body).filter(
+    (range) =>
+      range.closed &&
+      !code.some(({ from, to }) => from <= range.from && range.from < to),
+  );
+}
+
+/**
+ * The partial one tag names, and the arguments it passes it, or null when the
+ * tag renders something else: another tag name, a name held in a variable, or
+ * the Annotation Section's own reserved name.
+ */
+function partialCall(
+  body: string,
+  { from, to, kind, name }: LiquidRange,
+): Pick<PartialRenderSite, "name" | "arguments" | "nameRange"> | null {
+  if (kind !== "tag" || !PARTIAL_CALL_TAGS.includes(name)) return null;
+  const tag = body.slice(from, to);
+  const argument = tag.slice(tag.indexOf(name) + name.length).trimStart();
+  const quote = argument[0];
+  if (quote !== '"' && quote !== "'") return null;
+  const end = argument.indexOf(quote, 1);
+  if (end === -1) return null;
+  const partial = argument.slice(1, end);
+  if (partial.length === 0 || RESERVED_CALL_NAMES.includes(partial))
+    return null;
+  // The opening quote sits where the trimmed argument starts, so the name
+  // begins one character after it.
+  const open = from + tag.length - argument.length;
+  return {
+    name: partial,
+    nameRange: { from: open + 1, to: open + 1 + partial.length },
+    arguments: tagRest(argument.slice(end + 1)),
+  };
+}
+
+/** What a tag passes after the partial name, without the tag's own closer. */
+function tagRest(rest: string): string {
+  const close = rest.lastIndexOf("%}");
+  const text = (close === -1 ? rest : rest.slice(0, close)).trimEnd();
+  return (text.endsWith("-") ? text.slice(0, -1) : text).trim();
 }
 
 /**

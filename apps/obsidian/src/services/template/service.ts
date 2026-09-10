@@ -18,6 +18,7 @@ import {
   formatPlainTemplateDocument,
   LegacyTemplateConversionError,
   LiteratureNoteTemplateError,
+  MissingTemplateError,
   parsePlainTemplateDocument,
   TemplateError,
   TemplateFacade,
@@ -66,7 +67,11 @@ import {
   TEMPLATE_NAMES,
 } from "./defaults";
 import type { TemplateName } from "./defaults";
-import { InertTemplateError, PartialNameError } from "./errors";
+import {
+  InertTemplateError,
+  MissingPartialError,
+  PartialNameError,
+} from "./errors";
 import { normalizeVaultPath } from "./path";
 
 const logger = getLogger("template");
@@ -638,21 +643,25 @@ export class TemplateService extends Service<void> {
       frontmatter,
       hasManagedBlock: document.managedBlock !== null,
       renderForCreate: <T extends object>(data: T) =>
-        this.#classifyRender(() =>
-          facade.renderLiteratureNoteTemplateForCreate(document, data),
+        this.#classifyRender(
+          () => facade.renderLiteratureNoteTemplateForCreate(document, data),
+          path,
         ),
       renderForUpdate: <T extends object>(data: T) =>
-        this.#classifyRender(() =>
-          facade.renderLiteratureNoteTemplateForUpdate(document, data),
+        this.#classifyRender(
+          () => facade.renderLiteratureNoteTemplateForUpdate(document, data),
+          path,
         ),
       renderAnnotation: <T extends object>(data: T) =>
-        this.#classifyRender(() =>
-          facade.renderLiteratureNoteTemplateAnnotation(document, data),
+        this.#classifyRender(
+          () => facade.renderLiteratureNoteTemplateAnnotation(document, data),
+          path,
         ),
       renderFilename: <T extends object>(data: T) =>
         toSingleLine(
-          this.#classifyRender(() =>
-            facade.renderLiteratureNoteTemplateFilename(document, data),
+          this.#classifyRender(
+            () => facade.renderLiteratureNoteTemplateFilename(document, data),
+            path,
           ),
         ),
     };
@@ -663,12 +672,26 @@ export class TemplateService extends Service<void> {
    * Partial the JavaScript Templates gate left inert reports the localized
    * inert notice instead of the facade's bare "not found". Every render path
    * — {@link render} and every Profile document render — passes through here.
+   *
+   * @param documentPath - the document being rendered, when one is: a call to
+   *   a partial the vault holds no document for is re-raised as a
+   *   {@link MissingPartialError} naming it, which is where the refusal
+   *   notice's Open template workbench action goes.
    */
-  #classifyRender<T>(render: () => T): T {
+  #classifyRender<T>(render: () => T, documentPath?: string): T {
     try {
       return render();
     } catch (error) {
-      throw classifyRenderFailure(error, this.#compileErrors, this.#inertEta);
+      const failure = classifyRenderFailure(
+        error,
+        this.#compileErrors,
+        this.#inertEta,
+      );
+      throw documentPath !== undefined &&
+        failure instanceof MissingTemplateError &&
+        !(failure instanceof MissingPartialError)
+        ? new MissingPartialError(documentPath, failure.templateName, error)
+        : failure;
     }
   }
 

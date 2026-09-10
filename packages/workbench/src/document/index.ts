@@ -33,11 +33,12 @@ export type {
   ManagedFrontmatterList,
   ManifestScalar,
 } from "./manifest-patch";
-export { noteRegions } from "./regions";
+export { noteRegions, partialCalls } from "./regions";
 export type {
   AnnotationRenderSite,
   ManagedBlockRegion,
   NoteRegions,
+  PartialRenderSite,
 } from "./regions";
 export { workbenchSlice } from "./slice";
 

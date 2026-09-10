@@ -1325,9 +1325,12 @@ async function writeNoteUpdate(
   });
 }
 
-/** Compose a managed update from its steps: prepare and refresh frontmatter,
- *  then for the `full` scope replace the managed body region. A document field
- *  refusal returns before either write. Shared by
+/** Compose a managed update from its steps: prepare the frontmatter, then for
+ *  the `full` scope replace the managed body region, then commit the prepared
+ *  frontmatter. A document field refusal returns before either write, and the
+ *  body render — where a call to a Shared Partial the vault holds no document
+ *  for raises — runs while the note is still untouched, so a refusal leaves
+ *  both the Properties block and the body as authored. Shared by
  *  {@link updateNote} and {@link writeNoteUpdate}; the caller supplies the
  *  already-built context and its prepared `attachmentImport`. */
 async function applyManagedUpdate(
@@ -1352,13 +1355,14 @@ async function applyManagedUpdate(
     profile,
     document,
   } = input;
-  const diagnostic = await refreshFrontmatter(ctx, file, {
+  const prepared = prepareFrontmatter({
     context,
     itemKey,
-    profile,
     document,
+    diagnosticContext: { path: file.path },
   });
-  if (diagnostic) return { ...NO_BODY_UPDATE, diagnostic };
+  if ("diagnostic" in prepared)
+    return { ...NO_BODY_UPDATE, diagnostic: prepared.diagnostic };
   const result =
     scope === "full"
       ? document
@@ -1369,6 +1373,7 @@ async function applyManagedUpdate(
           })
         : await replaceManagedBody(ctx, file, { context, itemKey })
       : NO_BODY_UPDATE;
+  await commitFrontmatter(ctx, file, { context, itemKey, profile, prepared });
 
   await Promise.all([attachmentImport.flush(), noteImport.flush()]);
 
@@ -1470,16 +1475,25 @@ async function overwriteNote(
     sourcePath: file.path,
     settings: profile.settings,
   });
-  const diagnostic = await refreshFrontmatter(ctx, file, {
+  const prepared = prepareFrontmatter({
     context,
     itemKey: indexedKey,
-    profile,
     document,
+    diagnosticContext: { path: file.path },
   });
-  if (diagnostic) return { ...NO_BODY_UPDATE, diagnostic };
+  if ("diagnostic" in prepared)
+    return { ...NO_BODY_UPDATE, diagnostic: prepared.diagnostic };
+  // The body renders before either write, so a render that raises — a call to
+  // a Shared Partial the vault holds no document for — leaves the note whole.
   const body = document
     ? document.renderForCreate(context)
     : ctx.template.render("note", context);
+  await commitFrontmatter(ctx, file, {
+    context,
+    itemKey: indexedKey,
+    profile,
+    prepared,
+  });
   await ctx.app.vault.process(file, (content) => {
     const prefix = FRONTMATTER_BLOCK.exec(content)?.[0] ?? "";
     return `${prefix}${body}`;
@@ -1609,9 +1623,9 @@ function renderAnnotationCitation(
  * Assumes the caller has settled note-index and template readiness (and pinned
  * the client via `acquireRead`); {@link updateNote} and {@link overwriteNote} do
  * so before acquiring the lease. `template.ready` in particular gates
- * `refreshFrontmatter`, which reads `template.frontmatterFields` and writes
- * before `render()` would throw — without it, an early update could strip
- * managed frontmatter to the still-empty compiled fields.
+ * `commitFrontmatter`, which reads `template.frontmatterFields` — without it,
+ * an early update could strip managed frontmatter to the still-empty compiled
+ * fields.
  */
 async function contextForIndexedKey(
   ctx: NoteFeatureDeps,
@@ -1649,25 +1663,21 @@ async function contextForIndexedKey(
   return { context, noteImport };
 }
 
-async function refreshFrontmatter(
+/** Write one already-prepared Managed Frontmatter patch into the note's
+ *  Properties block. Kept apart from {@link prepareFrontmatter} so a caller
+ *  runs every render that can raise before this, its first write. */
+async function commitFrontmatter(
   ctx: OpsContext,
   file: TFile,
   input: {
     context: NoteTemplateContext;
     itemKey: string;
     profile: ResolvedProfile;
-    document: ResolvedLiteratureNoteTemplate | undefined;
+    prepared: PreparedManagedFrontmatter;
   },
-): Promise<ManagedFrontmatterRefusalDiagnostic | undefined> {
-  const prepared = prepareFrontmatter({
-    context: input.context,
-    itemKey: input.itemKey,
-    document: input.document,
-    diagnosticContext: { path: file.path },
-  });
-  if ("diagnostic" in prepared) return prepared.diagnostic;
+): Promise<void> {
   await ctx.app.fileManager.processFrontMatter(file, (fm) => {
-    applyComposedFrontmatter(ctx, fm, { ...input, prepared });
+    applyComposedFrontmatter(ctx, fm, input);
   });
 }
 

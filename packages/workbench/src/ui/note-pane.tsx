@@ -5,8 +5,8 @@ import type {
   WorkbenchDocumentController,
   WorkbenchSliceRange,
 } from "#/document/index";
-import { MapMode, StateEffect, StateField } from "@codemirror/state";
-import type { EditorState, Extension, Range } from "@codemirror/state";
+import { MapMode, StateEffect } from "@codemirror/state";
+import type { EditorState, Extension } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import type { DecorationSet } from "@codemirror/view";
 import { Suspense, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -14,8 +14,17 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { useDocumentRevision } from "./editor";
+import {
+  PreviewWidget,
+  boxAt,
+  boxField,
+  boxRanges,
+  revealSourceOnClick,
+} from "./editor-boxes";
 import { useOptionalHost, useTooltip } from "./host";
 import { useWorkbenchMessages } from "./messages";
+import { usePartialBoxes } from "./partial-boxes";
+import type { PartialPlaceholderHost } from "./partial-boxes";
 import { SliceEditor } from "./slice-editor";
 import type { SuggestionSource } from "./slice-editor";
 import { useParts, useIcon } from "./theme";
@@ -37,6 +46,8 @@ export interface NotePaneProps {
   formatProblem: string | null;
   annotationSelector?: ReactNode;
   onOpenAnnotation: () => void;
+  /** The Shared Partials this note's calls name; absent leaves them as source. */
+  partials?: PartialPlaceholderHost;
 }
 
 export function NotePane({
@@ -44,6 +55,7 @@ export function NotePane({
   reveal,
   onSelection,
   suggest,
+  partials,
   ...example
 }: NotePaneProps) {
   const m = useWorkbenchMessages();
@@ -75,7 +87,8 @@ export function NotePane({
   const previewHost = useMemo(() => document.createElement("div"), []);
   const managedStart = m.workbench_managed_start();
   const managedEnd = m.workbench_managed_end();
-  const extensions = useMemo(
+  const partialBoxes = usePartialBoxes(controller, "note", partials);
+  const noteExtensions = useMemo(
     () =>
       noteBoxes(boxes, previewHost, {
         labels: { start: managedStart, end: managedEnd },
@@ -85,6 +98,10 @@ export function NotePane({
         },
       }),
     [boxes, previewHost, managedClass, labelClass, managedStart, managedEnd],
+  );
+  const extensions = useMemo(
+    () => [noteExtensions, partialBoxes.extensions],
+    [noteExtensions, partialBoxes.extensions],
   );
   // The active line lives in master offsets so both Note and Source edits move
   // it with the text. Every call on that line reads this one selection.
@@ -142,7 +159,7 @@ export function NotePane({
             }
             onOpenAnnotation={example.onOpenAnnotation}
           />,
-          annotationBox(boxes, index),
+          boxAt(boxes, index),
           String(index),
         );
       })}
@@ -151,6 +168,7 @@ export function NotePane({
           <AnnotationPreview {...example} id={previewId} />,
           previewHost,
         )}
+      {partialBoxes.boxes}
     </div>
   );
 }
@@ -238,18 +256,6 @@ function AnnotationPreview({
   );
 }
 
-function annotationBox(
-  boxes: Map<number, HTMLElement>,
-  index: number,
-): HTMLElement {
-  let box = boxes.get(index);
-  if (!box) {
-    box = document.createElement("span");
-    boxes.set(index, box);
-  }
-  return box;
-}
-
 const expandPreview = StateEffect.define<number | null>();
 
 function noteBoxes(
@@ -272,7 +278,11 @@ function noteBoxes(
       from: 0,
       to: body.length,
     });
-    const ranges: Range<Decoration>[] = [];
+    const ranges = boxRanges(
+      annotationCalls.map(({ call }) => call),
+      boxes,
+      selection,
+    );
     const selected = ({ from, to }: WorkbenchSliceRange) =>
       selection.ranges.some((range) => range.from <= to && range.to >= from);
     if (managedBlock) {
@@ -315,36 +325,10 @@ function noteBoxes(
         }).range(expanded),
       );
     }
-    for (const [index, { call }] of annotationCalls.entries()) {
-      if (selected(call)) continue;
-      ranges.push(
-        Decoration.replace({
-          widget: new BoxWidget(annotationBox(boxes, index), call),
-        }).range(call.from, call.to),
-      );
-    }
     return Decoration.set(ranges, true);
   }
 
-  return StateField.define<{
-    expanded: number | null;
-    decorations: DecorationSet;
-  }>({
-    create: (state) => ({ expanded: null, decorations: build(state, null) }),
-    update: (value, transaction) => {
-      let expanded = value.expanded;
-      for (const effect of transaction.effects) {
-        if (effect.is(expandPreview)) expanded = effect.value;
-      }
-      return transaction.docChanged ||
-        transaction.selection ||
-        expanded !== value.expanded
-        ? { expanded, decorations: build(transaction.state, expanded) }
-        : value;
-    },
-    provide: (field) =>
-      EditorView.decorations.from(field, (value) => value.decorations),
-  });
+  return boxField(expandPreview, build);
 }
 
 /** A beginner name in place of a raw tag the reader does not have to read. */
@@ -373,62 +357,4 @@ class LabelWidget extends WidgetType {
     revealSourceOnClick(element, view, this.range);
     return element;
   }
-}
-
-/** The place the annotation box is painted into, held across every redraw. */
-class BoxWidget extends WidgetType {
-  constructor(
-    readonly box: HTMLElement,
-    readonly range: WorkbenchSliceRange,
-  ) {
-    super();
-  }
-
-  eq(other: BoxWidget): boolean {
-    return (
-      other.box === this.box &&
-      other.range.from === this.range.from &&
-      other.range.to === this.range.to
-    );
-  }
-
-  toDOM(view: EditorView): HTMLElement {
-    revealSourceOnClick(this.box, view, this.range);
-    return this.box;
-  }
-}
-
-/** One full-width block, placed after the line containing the open call. */
-class PreviewWidget extends WidgetType {
-  constructor(readonly host: HTMLElement) {
-    super();
-  }
-
-  eq(other: PreviewWidget): boolean {
-    return other.host === this.host;
-  }
-
-  toDOM(): HTMLElement {
-    return this.host;
-  }
-}
-
-function revealSourceOnClick(
-  element: HTMLElement,
-  view: EditorView,
-  range: WorkbenchSliceRange,
-): void {
-  element.onclick = (event) => {
-    if (
-      event.target instanceof Element &&
-      event.target.closest("button, [data-annotation-preview]")
-    )
-      return;
-    view.focus();
-    view.dispatch({
-      selection: { anchor: range.to, head: range.from },
-      scrollIntoView: true,
-      userEvent: "select.pointer",
-    });
-  };
 }

@@ -400,7 +400,7 @@ export function createTemplateWorkbenchHandlers(
           ok: false,
           request,
           identity,
-          diagnostic: inactivePartialDiagnostic(name),
+          diagnostic: missingPartialDiagnostic(name),
         }),
       );
     }
@@ -1325,15 +1325,13 @@ function selectedObject(
 }
 
 /**
- * A partial the vault registers no document for. #1045 replaces this with the
- * `MISSING_PARTIAL` diagnostic the Workbench and a refused note creation share.
+ * A partial the vault registers no document for, which the Workbench and a
+ * refused Literature Note render report under the same code.
  */
-function inactivePartialDiagnostic(name: string): Diagnostic {
-  return diagnostic(
-    "INVALID_SELECTOR",
-    `No Shared Partial named '${name}'. Create 'zotlit-partial.${name}.md' in the template folder.`,
-    { parameter: "template" },
-  );
+function missingPartialDiagnostic(name: string): Diagnostic {
+  return diagnostic("MISSING_PARTIAL", `No Shared Partial named '${name}'.`, {
+    template: name,
+  });
 }
 
 /**
