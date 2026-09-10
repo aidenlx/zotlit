@@ -164,6 +164,12 @@ declare module "obsidian" {
     filterOptions?: GraphControlSection;
     /** Saves the options where this graph persists them; debounced. */
     onOptionsChange?(): void;
+    /**
+     * The engine is the `HoverParent` of every hover its nodes answer: the
+     * popover hangs off it, and the engine's own unhover transitions it.
+     * Verified against Obsidian 1.14.1.
+     */
+    hoverPopover?: HoverPopover | null;
   }
   /**
    * One graph's options: the native keys, plus every key a controls-panel
@@ -195,9 +201,9 @@ declare module "obsidian" {
    */
   type GraphOptionListener = (value?: any) => any;
   /**
-   * The PIXI renderer one view owns; the click callback is an own property
+   * The PIXI renderer one view owns; the node callbacks are own properties
    * the engine binds in its constructor. Internal; shape verified against
-   * Obsidian 1.13.7 and 1.14.0.
+   * Obsidian 1.13.7 and 1.14.0, the hover members against 1.14.1.
    */
   interface GraphRenderer {
     onNodeClick?: GraphNodeCallback;
@@ -209,6 +215,18 @@ declare module "obsidian" {
     onNodeRightClick?: GraphNodeCallback;
     /** The data hand-off: diffs `data` into the live node set. */
     setData?(data: GraphData): void;
+    /** Fired once as the pointer enters a node. */
+    onNodeHover?: GraphNodeCallback;
+    /** Fired as the pointer leaves the node it entered, and before every hover. */
+    onNodeUnhover?: () => void;
+    /** `div.graph-view`, `position: relative`, in the graph's own window. */
+    containerEl?: HTMLElement;
+    /** Every drawn node by id, positioned in world coordinates. */
+    nodeLookup?: Record<string, { x: number; y: number } | undefined>;
+    /** World-to-screen: `screen_css = (world * scale + pan) / devicePixelRatio`. */
+    scale?: number;
+    panX?: number;
+    panY?: number;
   }
   /**
    * @param id the node id: a vault path, an unresolved linkpath, or a tag.

@@ -1,4 +1,4 @@
-// The Graph Citations service: installs the render facade and the click and right-click wraps on every graph leaf, re-renders on index changes, and restores every swapped member on feature-off and unload.
+// The Graph Citations service: installs the render facade and the click, right-click and hover wraps on every graph leaf, re-renders on index changes, and restores every swapped member on feature-off and unload.
 
 import type {
   App,
@@ -13,7 +13,9 @@ import { registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import type { CitationSyntax } from "@/services/citation-index/scan";
 import type { CitationIndex } from "@/services/citation-index/service";
+import type { CitationPopover } from "@/services/citation-popover/service";
 import type { CitekeyEditor } from "@/services/citekey-editor/service";
+import type { NavigationPane } from "@/services/citekey-navigation";
 import type { NoteIndex } from "@/services/note-index/service";
 import { Service } from "@/services/service-base";
 import type { Settings } from "@/services/settings/schema";
@@ -24,6 +26,8 @@ import type { GraphCitationAdditions } from "./adapter";
 import { wrapNodeClick } from "./click";
 import { renderWithFacade } from "./facade";
 import { graphCitationFilters, installFilterRows } from "./filters";
+import { wrapNodeHover } from "./hover";
+import type { NodeHoverDeps } from "./hover";
 import {
   GRAPH_CORE_PLUGIN_ID,
   GRAPH_VIEW_TYPES,
@@ -61,10 +65,12 @@ export interface GraphCitationsDeps {
   app: App;
   citationIndex: Pick<
     CitationIndex,
-    "ready" | "citationsByPath" | "resolveCitekey" | "on"
+    "ready" | "citationsByPath" | "resolveCitekey" | "citekeyOf" | "on"
   >;
   noteIndex: Pick<NoteIndex, "getIndexedItemKeys" | "getNotesByItemKey" | "on">;
   citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
+  /** The entries a hovered Literature Note or Cited Work Node shows. */
+  citationPopover: CitationPopover;
   settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
 }
 
@@ -90,7 +96,12 @@ export class GraphCitations extends Service<void> {
   readonly #citationIndex;
   readonly #noteIndex;
   readonly #citekeyEditor;
+  readonly #citationPopover;
   readonly #settings;
+  /** The Citekey Navigation open action, which every node surface runs. */
+  readonly #open = (citekey: string, pane: NavigationPane): void => {
+    void this.#citekeyEditor.openCitekey(citekey, pane);
+  };
   /**
    * Keyed by renderer, which its view owns for life and destroys on close,
    * so a closed leaf's installation is collected with it and nothing is
@@ -123,6 +134,7 @@ export class GraphCitations extends Service<void> {
     this.#citationIndex = deps.citationIndex;
     this.#noteIndex = deps.noteIndex;
     this.#citekeyEditor = deps.citekeyEditor;
+    this.#citationPopover = deps.citationPopover;
     this.#settings = deps.settings;
     this.ready = this.#load();
   }
@@ -260,11 +272,13 @@ export class GraphCitations extends Service<void> {
     const nodeDeps: NodeRightClickDeps = {
       citekeyOf: (id) => installation.additions.citedWorkNodes.get(id),
       resolveCitekey: (citekey) => this.#citationIndex.resolveCitekey(citekey),
-      open: (citekey, pane) =>
-        void this.#citekeyEditor.openCitekey(citekey, pane),
+      open: this.#open,
     };
     restores.use(wrapNodeClick(renderer, nodeDeps));
     restores.use(wrapNodeRightClick(renderer, nodeDeps));
+    restores.use(
+      wrapNodeHover(members, this.#hoverDeps(), () => installation.additions),
+    );
     this.#installations.set(renderer, installation);
     logger.debug("Graph citations installed", { viewType });
   }
@@ -328,10 +342,16 @@ export class GraphCitations extends Service<void> {
     }
   }
 
+  /**
+   * One walk per render answers every node the graph draws, the citing
+   * sources a hover reads a work's entry out of among them; the hover itself
+   * walks nothing.
+   */
   #additions(engine: GraphLeafMembers["engine"]): GraphCitationAdditions {
     // Wikilink occurrences derive from the link cache on every call, so they
-    // are asked for only while the vault-wide setting admits the syntax and
-    // the "Wikilink citations" row can take those edges away.
+    // are asked for only while the vault-wide setting admits the syntax — the
+    // one state in which a wikilink is a Citation at all, so also the one in
+    // which it names a citing source or the row can take its edges away.
     const syntaxes: CitationSyntax[] = this.#wikilinkCitations
       ? ["citekey", "wikilink"]
       : ["citekey"];
@@ -356,6 +376,17 @@ export class GraphCitations extends Service<void> {
     return this.#noteIndex
       .getNotesByItemKey(indexedKey)
       .map((note) => note.path);
+  }
+
+  /** What a hovered node is read as a citation through. */
+  #hoverDeps(): NodeHoverDeps {
+    return {
+      app: this.#app,
+      citationIndex: this.#citationIndex,
+      settings: this.#settings,
+      citationPopover: this.#citationPopover,
+      open: this.#open,
+    };
   }
 
   /** The installations the live graph leaves hold, each with its leaf, in leaf order. */

@@ -7,6 +7,7 @@ import type {
   GraphNodeCallback,
   GraphRenderer,
   GraphView,
+  HoverParent,
   LocalGraphView,
   WorkspaceLeaf,
 } from "obsidian";
@@ -25,11 +26,18 @@ export const GRAPH_VIEW_TYPES = ["graph", "localgraph"] as const;
 /** The internal members one installation wraps, each verified present. */
 export interface GraphLeafMembers {
   viewType: string;
-  engine: GraphEngine & { app: App; render: () => unknown };
+  engine: GraphEngine & HoverParent & { app: App; render: () => unknown };
   renderer: GraphRenderer & {
     onNodeClick: GraphNodeCallback;
     onNodeRightClick: GraphNodeCallback;
     setData: (data: GraphData) => unknown;
+    onNodeHover: GraphNodeCallback;
+    onNodeUnhover: () => void;
+    containerEl: HTMLElement;
+    nodeLookup: Record<string, { x: number; y: number } | undefined>;
+    scale: number;
+    panX: number;
+    panY: number;
   };
 }
 
@@ -58,11 +66,22 @@ export function graphMembersOf(leaf: WorkspaceLeaf): GraphLeafMembers | null {
       engine: Boolean(engine),
       "engine.app": Boolean(engine?.app),
       "engine.render": typeof engine?.render === "function",
+      // Null until a popover of its own opens, so presence is the check.
+      "engine.hoverPopover": engine ? "hoverPopover" in engine : false,
       renderer: Boolean(renderer),
       "renderer.onNodeClick": typeof renderer?.onNodeClick === "function",
       "renderer.onNodeRightClick":
         typeof renderer?.onNodeRightClick === "function",
       "renderer.setData": typeof renderer?.setData === "function",
+      "renderer.onNodeHover": typeof renderer?.onNodeHover === "function",
+      "renderer.onNodeUnhover": typeof renderer?.onNodeUnhover === "function",
+      "renderer.containerEl": Boolean(renderer?.containerEl),
+      // The renderer's constructor seeds all four, so an install-time check is
+      // the whole check: a node's place needs no guard of its own afterwards.
+      "renderer.nodeLookup": Boolean(renderer?.nodeLookup),
+      "renderer.scale": typeof renderer?.scale === "number",
+      "renderer.panX": typeof renderer?.panX === "number",
+      "renderer.panY": typeof renderer?.panY === "number",
     },
     { viewType },
   );

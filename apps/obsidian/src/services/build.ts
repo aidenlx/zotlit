@@ -470,12 +470,19 @@ export function buildServices(
         }),
     })
     .use({
-      graphCitations: ({ citationIndex, noteIndex, citekeyEditor, settings }) =>
+      graphCitations: ({
+        citationIndex,
+        noteIndex,
+        citekeyEditor,
+        citationPopover,
+        settings,
+      }) =>
         new GraphCitations({
           app: plugin.app,
           citationIndex,
           noteIndex,
           citekeyEditor,
+          citationPopover,
           settings,
         }),
     });

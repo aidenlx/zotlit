@@ -17,6 +17,7 @@ function additionsOf(
     resolvedLinks: {},
     unresolvedLinks: {},
     citedWorkNodes: new Map(),
+    citingSources: new Map(),
     literatureNotes: new Set(),
     hiddenLinks: {},
     survivingPaths: null,

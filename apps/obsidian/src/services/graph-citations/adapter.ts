@@ -55,6 +55,15 @@ export interface GraphCitationAdditions {
   unresolvedLinks: LinkMap;
   /** Every Cited Work Node the additions draw, by node id, with the citekey it stands for. */
   citedWorkNodes: ReadonlyMap<string, string>;
+  /**
+   * For each node standing for a work, the document whose bibliography holds
+   * that work's entry — what the hover reads the entry out of. Every document
+   * that cites the work qualifies, so the smallest path is taken and the same
+   * node reads under the same Citation Presentation on every render. Keyed by
+   * every node a Citation names, whatever the rows leave drawn: the rows
+   * decide which edges a render draws, and a work is cited either way.
+   */
+  citingSources: ReadonlyMap<string, string>;
   /** Every Literature Note path, whatever the rows say. */
   literatureNotes: ReadonlySet<string>;
   /**
@@ -77,6 +86,7 @@ export const NO_ADDITIONS: GraphCitationAdditions = {
   resolvedLinks: {},
   unresolvedLinks: {},
   citedWorkNodes: new Map(),
+  citingSources: new Map(),
   literatureNotes: new Set(),
   hiddenLinks: {},
   survivingPaths: null,
@@ -107,6 +117,11 @@ export function citedWorkNodeId(citekey: string): string {
  * with them the reason to leave a citekey edge out; "Citation-connected only"
  * names the paths that survive.
  *
+ * Both syntaxes also name a citing source, which is what a hover reads a
+ * work's entry out of, and a Wikilink Citation is the one way a Literature
+ * Note is cited with no edge added for it. One walk of each syntax answers
+ * every node, so a hover pays no walk of its own.
+ *
  * @returns additions keyed like Obsidian's own link maps; each edge once,
  *   however many times the note cites the work.
  */
@@ -117,10 +132,15 @@ export function graphCitationAdditions(
   const resolvedLinks: LinkMap = {};
   const unresolvedLinks: LinkMap = {};
   const citedWorkNodes = new Map<string, string>();
+  const citingSources = new Map<string, string>();
   const literatureNotes = new Set(input.literatureNotes);
   /** Paths that cite a work, whether or not the citation adds an edge. */
   const citingPaths = new Set<string>();
-  const wikilinks = wikilinkCitationEdges(input, literatureNotes);
+  const wikilinks = wikilinkCitationEdges(
+    input,
+    literatureNotes,
+    citingSources,
+  );
   const hiddenLinks = filters.wikilinkCitations === false ? wikilinks : {};
   // A note that cites only by wikilink is citation-connected only while those
   // edges are drawn; with the row off they are gone, and so is the note.
@@ -128,27 +148,31 @@ export function graphCitationAdditions(
     for (const path of Object.keys(wikilinks)) citingPaths.add(path);
   }
 
-  if (filters.pandocCitations) {
-    for (const [path, occurrences] of input.occurrences) {
-      const linked = input.resolvedLinks[path] ?? {};
-      for (const { kind, raw } of occurrences) {
-        if (kind !== "citekey") continue;
-        citingPaths.add(path);
-        const notes = literatureNotesOf(input, raw);
-        if (notes.length === 0) {
-          const id = citedWorkNodeId(raw);
-          citedWorkNodes.set(id, raw);
-          (unresolvedLinks[path] ??= {})[id] = 1;
-          continue;
-        }
-        const note = notes.find((candidate) => linked[candidate]) ?? notes[0]!;
-        // An edge this render still draws for the source is one the citekey
-        // must not duplicate; one it is about to take away is an edge the
-        // citekey draws itself.
-        const drawn = (linked[note] ?? 0) - (hiddenLinks[path]?.[note] ?? 0);
-        if (drawn > 0) continue;
-        (resolvedLinks[path] ??= {})[note] = 1;
+  for (const [path, occurrences] of input.occurrences) {
+    const linked = input.resolvedLinks[path] ?? {};
+    for (const { kind, raw } of occurrences) {
+      if (kind !== "citekey") continue;
+      const notes = literatureNotesOf(input, raw);
+      // Every node the work is drawn as reads its entry out of this document:
+      // each Literature Note of the cited Item, or the Cited Work Node the
+      // key stands for. The rows take edges away, not the citation itself.
+      const nodes = notes.length > 0 ? notes : [citedWorkNodeId(raw)];
+      for (const node of nodes) keepSmallest(citingSources, node, path);
+      if (!filters.pandocCitations) continue;
+      citingPaths.add(path);
+      if (notes.length === 0) {
+        const id = nodes[0]!;
+        citedWorkNodes.set(id, raw);
+        (unresolvedLinks[path] ??= {})[id] = 1;
+        continue;
       }
+      const note = notes.find((candidate) => linked[candidate]) ?? notes[0]!;
+      // An edge this render still draws for the source is one the citekey
+      // must not duplicate; one it is about to take away is an edge the
+      // citekey draws itself.
+      const drawn = (linked[note] ?? 0) - (hiddenLinks[path]?.[note] ?? 0);
+      if (drawn > 0) continue;
+      (resolvedLinks[path] ??= {})[note] = 1;
     }
   }
 
@@ -156,12 +180,23 @@ export function graphCitationAdditions(
     resolvedLinks,
     unresolvedLinks,
     citedWorkNodes,
+    citingSources,
     literatureNotes,
     hiddenLinks,
     survivingPaths: filters.citationConnectedOnly
       ? new Set([...literatureNotes, ...citingPaths])
       : null,
   };
+}
+
+/** Keeps the smallest path a node is cited from, which is what makes the choice deterministic. */
+function keepSmallest(
+  sources: Map<string, string>,
+  node: string,
+  path: string,
+): void {
+  const held = sources.get(node);
+  if (held === undefined || path < held) sources.set(node, path);
 }
 
 /**
@@ -171,12 +206,15 @@ export function graphCitationAdditions(
  * heading or a block, or from a note the index does not cover — is counted in
  * none of them and keeps its native Obsidian meaning.
  *
+ * @param citingSources the sources under build, which this walk names the
+ *   citing document of every note a Wikilink Citation reaches in.
  * @returns an empty map while the vault-wide setting excludes the syntax,
  *   when the index reports no wikilink occurrence at all.
  */
 function wikilinkCitationEdges(
   input: GraphCitationInput,
   literatureNotes: ReadonlySet<string>,
+  citingSources: Map<string, string>,
 ): LinkMap {
   const edges: LinkMap = {};
   for (const [path, occurrences] of input.occurrences) {
@@ -186,6 +224,7 @@ function wikilinkCitationEdges(
       if (target === null || !literatureNotes.has(target)) continue;
       const targets = (edges[path] ??= {});
       targets[target] = (targets[target] ?? 0) + 1;
+      keepSmallest(citingSources, target, path);
     }
   }
   return edges;
