@@ -3,7 +3,7 @@
 
 import { renderProfile } from "@zotlit/workbench/render";
 import type {
-  ProfileRenderResult,
+  TemplateRenderResult,
   RenderRequest,
 } from "@zotlit/workbench/render";
 
@@ -15,7 +15,7 @@ import { ensureTemporal } from "./temporal";
  */
 export async function renderInThread(
   request: RenderRequest,
-): Promise<ProfileRenderResult> {
+): Promise<TemplateRenderResult> {
   await ensureTemporal();
   return renderProfile(request.source, request.snapshot, request);
 }

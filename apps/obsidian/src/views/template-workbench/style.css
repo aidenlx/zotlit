@@ -1,4 +1,4 @@
-.view-content.zt-profile-editor {
+.view-content.zt-template-workbench {
   /* Shared native control surface; Match statements override these locally. */
   --input-shadow: 0 0 0 1px var(--background-modifier-border);
   --interactive-normal: var(--background-primary);
@@ -8,22 +8,22 @@
   padding: 0;
   overflow: hidden;
 }
-.view-content.zt-profile-editor [data-part="tab"][aria-selected="true"] {
+.view-content.zt-template-workbench [data-part="tab"][aria-selected="true"] {
   background: var(--background-modifier-active-hover);
   color: var(--text-accent);
 }
 /* Native pills keep their compact text/remove layout inside the Match input. */
-.view-content.zt-profile-editor [data-chip-input] .multi-select-pill {
+.view-content.zt-template-workbench [data-chip-input] .multi-select-pill {
   max-width: 100%;
 }
-.view-content.zt-profile-editor
+.view-content.zt-template-workbench
   [data-chip-input]
   .multi-select-pill-remove-button {
   padding: var(--size-2-1);
   height: auto;
   color: var(--pill-color-remove);
 }
-.view-content.zt-profile-editor
+.view-content.zt-template-workbench
   [data-chip-input]
   .multi-select-pill-remove-button:hover {
   color: var(--pill-color-remove-hover);
@@ -55,7 +55,7 @@
   --pill-background-hover: var(--tag-background-hover);
   --pill-border-color: var(--tag-border-color);
 }
-.view-content.suggestion-item.zt-profile-editor-suggestion {
+.view-content.suggestion-item.zt-template-workbench-suggestion {
   min-height: var(--size-4-6);
   margin-bottom: 0;
   padding: var(--size-4-1) var(--size-4-2);
@@ -67,12 +67,14 @@
    Code panes read in the code font at the code size, the way frontmatter and
    code blocks do in a note; the selector outranks the app's `.cm-scroller`
    font rule, which the CodeMirror theme facet cannot. */
-.view-content.zt-profile-editor .cm-editor.zt-profile-editor-code .cm-scroller {
+.view-content.zt-template-workbench
+  .cm-editor.zt-template-workbench-code
+  .cm-scroller {
   font-family: var(--font-monospace);
   font-size: var(--code-size);
 }
 /* Obsidian zeroes the line padding, so the band on a Managed line sets its own. */
-.view-content.zt-profile-editor .cm-line.zt-profile-editor-managed {
+.view-content.zt-template-workbench .cm-line.zt-template-workbench-managed {
   background-color: var(--code-background);
   padding-inline: var(--size-4-2);
 }
@@ -167,27 +169,27 @@
   overflow: auto;
 }
 /* The preview toggle shows its pressed state the way Obsidian's active icons do. */
-.view-content.zt-profile-editor
+.view-content.zt-template-workbench
   [data-part="annotation-toggle"][data-state="active"] {
   color: var(--icon-color-active);
   background-color: var(--background-modifier-active-hover);
 }
 /* Obsidian pads a reading view with the file margins of a full note page. The
    sheet renders inline in the editor, so the preview card owns the inset. */
-.view-content.zt-profile-editor
+.view-content.zt-template-workbench
   [data-part="annotation-preview"]
   .markdown-preview-view {
   padding: 0;
 }
 /* Obsidian gives rendered blocks their own margins; the preview card sets the edges. */
-.view-content.zt-profile-editor
+.view-content.zt-template-workbench
   [data-part="annotation-preview"]
   .markdown-rendered
   > *
   > :first-child {
   margin-top: 0;
 }
-.view-content.zt-profile-editor
+.view-content.zt-template-workbench
   [data-part="annotation-preview"]
   .markdown-rendered
   > *
@@ -196,7 +198,7 @@
 }
 
 /* Obsidian's unlayered heading defaults take precedence over Tailwind layers. */
-.view-content.zt-profile-editor-heading {
+.view-content.zt-template-workbench-heading {
   margin: 0;
   font-family: var(--font-interface);
   font-size: var(--font-ui-medium);
@@ -205,7 +207,7 @@
 }
 
 /* Keep the title and summary inside the native disclosure-button inset. */
-.view-content.zt-profile-editor [data-part="row-toggle"] {
+.view-content.zt-template-workbench [data-part="row-toggle"] {
   flex-direction: column;
   align-items: flex-start;
   height: auto;

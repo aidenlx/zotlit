@@ -4,20 +4,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
 import { annotationSamples } from "@zotlit/workbench/ui";
 
-import { loadTemplateData } from "@/services/template-workbench/data";
+import {
+  loadCitationData,
+  loadTemplateData,
+} from "@/services/template-workbench/data";
 import type {
+  CitationDataLoadResult,
   TemplateDataDeps,
   TemplateDataLoadResult,
 } from "@/services/template-workbench/data";
 import {
   getSampleItem,
   SAMPLE_ITEM_CHOICES,
-} from "@/views/profile-editor/selection-data";
-import type { ProfileAuthoringContext } from "@/views/profile-editor/view";
+} from "@/views/template-workbench/selection-data";
+import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
 import { NativeExplorerSession } from "./store";
 
 vi.mock("@/services/template-workbench/data", () => ({
+  loadCitationData: vi.fn(),
   loadTemplateData: vi.fn(),
 }));
 
@@ -196,14 +201,16 @@ describe("native Explorer sample data", () => {
   );
 
   it("follows annotation selection while preserving independently browsed roots", async () => {
-    const context: ProfileAuthoringContext = {
+    const context: TemplateAuthoringContext = {
       leaf: {} as WorkspaceLeaf,
       path: "profiles/paper.md",
+      kind: "profile",
       item: paper,
       root: "note",
       tab: "note",
       advanced: false,
       annotationId: null,
+      citation: null,
     };
     using annotation = new NativeExplorerSession(deps);
     using note = new NativeExplorerSession(deps);
@@ -228,5 +235,97 @@ describe("native Explorer sample data", () => {
     });
     annotation.setContext({ ...next, advanced: true });
     expect(annotation.state.getState().root).toBe("annotation");
+  });
+});
+
+describe("the citation root", () => {
+  it("lists the built-in example set while no Item is chosen", async () => {
+    using session = new NativeExplorerSession(deps);
+    session.setTarget(null, "citation");
+    await session.ready;
+
+    const state = session.state.getState();
+    expect(state.status).toBe("ready");
+    // The Citation root's own three fields, which the Explorer's Common
+    // section shows; the cited item's fields sit under `citations` and `items`.
+    expect(Object.keys(state.data!)).toEqual(["variant", "items", "citations"]);
+    expect(state.data!["variant"]).toBe("main");
+    expect(loadTemplateData).not.toHaveBeenCalled();
+  });
+
+  it("reads a chosen Item's own one-item set from the database", async () => {
+    vi.mocked(loadCitationData).mockResolvedValue({
+      kind: "data",
+      data: { variant: "main", items: [], citations: [] },
+    } as CitationDataLoadResult);
+    using session = new NativeExplorerSession(deps);
+    session.setTarget(real, "citation");
+    await session.ready;
+
+    expect(loadCitationData).toHaveBeenCalledWith(
+      deps,
+      { key: real.id },
+      "main",
+    );
+    expect(session.state.getState().status).toBe("ready");
+  });
+
+  it("lists the example set and Variant the editor's preview renders", async () => {
+    const context: TemplateAuthoringContext = {
+      leaf: {} as WorkspaceLeaf,
+      path: "templates/zotlit-citation.md",
+      kind: "citation",
+      item: null,
+      root: "citation",
+      tab: "citation",
+      advanced: false,
+      annotationId: null,
+      citation: { variant: "main", example: "one-item" },
+    };
+    using session = new NativeExplorerSession(deps);
+    session.setContext(context);
+    await session.ready;
+    expect(session.state.getState().data).toMatchObject({
+      variant: "main",
+      citations: [expect.anything()],
+    });
+
+    session.setContext({
+      ...context,
+      citation: { variant: "alt", example: "two-items" },
+    });
+    await session.ready;
+    // Two citations under the alternate Variant: the set and the gesture the
+    // preview renders, not the one the Explorer opened on.
+    const state = session.state.getState();
+    expect(state.data).toMatchObject({ variant: "alt" });
+    expect((state.data!["citations"] as unknown[]).length).toBe(2);
+    expect(loadCitationData).not.toHaveBeenCalled();
+  });
+
+  it("reads a chosen Item's set under the Variant the preview renders", async () => {
+    vi.mocked(loadCitationData).mockResolvedValue({
+      kind: "data",
+      data: { variant: "alt", items: [], citations: [] },
+    } as CitationDataLoadResult);
+    using session = new NativeExplorerSession(deps);
+    session.setContext({
+      leaf: {} as WorkspaceLeaf,
+      path: "templates/zotlit-citation.md",
+      kind: "citation",
+      item: real,
+      root: "citation",
+      tab: "citation",
+      advanced: false,
+      annotationId: null,
+      citation: { variant: "alt", example: null },
+    });
+    await session.ready;
+
+    expect(loadCitationData).toHaveBeenCalledWith(
+      deps,
+      { key: real.id },
+      "alt",
+    );
   });
 });

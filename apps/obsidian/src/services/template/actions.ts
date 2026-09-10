@@ -8,6 +8,7 @@ import type { App, Plugin } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import { BaseNotice } from "@/lib/notice";
+import { openTemplateWorkbench } from "@/views/template-workbench/register";
 
 import type { TemplateService } from "./service";
 
@@ -30,14 +31,19 @@ export function addCitationTemplateActions(
   });
 }
 
-/** Open the Citation Template for editing, creating its document when absent. */
+/**
+ * Open the Citation Template in the Template Workbench View, creating its
+ * document from the built-in citation text when the vault holds none. The
+ * "profile uses Eta" notice belongs to a Profile document, so it is not
+ * offered here.
+ */
 export async function openCitationTemplate(
-  app: Pick<App, "workspace">,
+  app: App,
   template: CitationTemplateActions,
 ): Promise<void> {
   try {
     const file = await template.materializeCitationTemplate();
-    await app.workspace.getLeaf(true).openFile(file);
+    await openTemplateWorkbench(app, file, { explainUnsupported: false });
   } catch (error) {
     logger.error("Failed to open the citation text", { error });
     new BaseNotice(m.notice_citation_text_open_failed());

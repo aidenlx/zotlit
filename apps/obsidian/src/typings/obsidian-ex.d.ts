@@ -76,7 +76,7 @@ declare module "obsidian" {
     on(
       name: "zotlit:workbench-selection",
       callback: (
-        selection: import("../views/profile-editor/selection").WorkbenchSelectionEvent,
+        selection: import("../views/template-workbench/selection").WorkbenchSelectionEvent,
       ) => void,
       ctx?: any,
     ): EventRef;
@@ -100,7 +100,7 @@ declare module "obsidian" {
     on(
       name: "zotlit:authoring-context",
       callback: (
-        context: import("@/views/profile-editor/view").ProfileAuthoringContext,
+        context: import("@/views/template-workbench/view").TemplateAuthoringContext,
       ) => void,
       ctx?: any,
     ): EventRef;

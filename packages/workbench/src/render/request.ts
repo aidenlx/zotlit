@@ -7,12 +7,15 @@ import type {
 } from "#/bridge/contracts";
 import type { ItemSnapshot } from "#/snapshot/index";
 
+import type { CitationPreviewSelection } from "./citation-examples";
 import type { AnnotationExample } from "./sample-annotations";
 
 export interface RenderOptions {
   /** Update uses a synthesized note when the host has no existing note. */
   readonly mode?: "create" | "update";
   readonly annotation?: AnnotationExample;
+  /** Present only on a Citation Template render, which produces one Citation. */
+  readonly citation?: CitationPreviewSelection;
   readonly resources?: RenderResources;
 }
 

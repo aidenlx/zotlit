@@ -12,6 +12,8 @@ import {
 } from "@zotlit/workbench/explorer";
 import type { TreeState } from "@zotlit/workbench/explorer";
 import {
+  citationExampleData,
+  DEFAULT_CITATION_EXAMPLE,
   restoreTemplateData,
   SAMPLE_ANNOTATIONS,
   sampleItemCitation,
@@ -26,20 +28,23 @@ import { annotationSamples } from "@zotlit/workbench/ui";
 
 import { getLogger } from "@/lib/log";
 import { indexedKeyForClipboard } from "@/services/indexed-key/actions";
-import { loadTemplateData } from "@/services/template-workbench/data";
+import {
+  loadCitationData,
+  loadTemplateData,
+} from "@/services/template-workbench/data";
 import type {
   TemplateDataDeps,
   TemplateDataLoadResult,
 } from "@/services/template-workbench/data";
-import { getSampleItem } from "@/views/profile-editor/selection-data";
-import type { ProfileAuthoringContext } from "@/views/profile-editor/view";
+import { getSampleItem } from "@/views/template-workbench/selection-data";
+import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
 const logger = getLogger(["views", "template-data-explorer"]);
 export interface ExplorerState {
   sourcePath: string | null;
   presentation: ExplorerPresentation;
   restore: ExplorerPresentation | null;
-  context: ProfileAuthoringContext | null;
+  context: TemplateAuthoringContext | null;
   item: WorkbenchItemChoice | null;
   root: TemplateRoot;
   annotationId: string | null;
@@ -91,7 +96,7 @@ export class NativeExplorerSession implements Disposable {
   get ready(): Promise<void> {
     return this.#loading;
   }
-  setContext(context: ProfileAuthoringContext): void {
+  setContext(context: TemplateAuthoringContext): void {
     if (this.#closed) return;
     const previous = this.state.getState().context;
     this.state.setState({ context, sourcePath: context.path });
@@ -111,6 +116,14 @@ export class NativeExplorerSession implements Disposable {
       previous.annotationId !== context.annotationId
     )
       this.setTarget(context.item, "annotation", context.annotationId);
+    // The Citation set names the same fields whichever it is, so a new set
+    // reloads their values and leaves the reader's navigation where it is.
+    else if (
+      this.state.getState().root === "citation" &&
+      (previous.citation?.variant !== context.citation?.variant ||
+        previous.citation?.example !== context.citation?.example)
+    )
+      this.refresh();
   }
   setTarget(
     item: WorkbenchItemChoice | null,
@@ -150,22 +163,42 @@ export class NativeExplorerSession implements Disposable {
   }
   async #load(): Promise<void> {
     const generation = ++this.#generation;
-    const { item, root, annotationId } = this.state.getState();
+    const { item, root, annotationId, context } = this.state.getState();
     const sample =
       root === "annotation"
         ? SAMPLE_ANNOTATIONS.find(({ id }) => id === annotationId)
         : undefined;
     const snapshot = item ? getSampleItem(item.id) : null;
+    // The Citation set and Variant the editor's preview renders, so the two
+    // panes show the one choice. With no editor to name a set, a chosen Item
+    // supplies it and the built-in default stands in for none.
+    const citation =
+      root === "citation"
+        ? (context?.citation ?? {
+            variant: "main" as const,
+            example: item ? null : DEFAULT_CITATION_EXAMPLE,
+          })
+        : null;
+    // A built-in example set carries its own citations, so it needs no Item —
+    // and it outranks the one chosen, exactly as the preview reads it.
+    const builtInCitation = citation?.example != null;
     this.state.setState({
       data: null,
       error: null,
-      status: item || sample ? "loading" : "no-item",
+      status: item || sample || builtInCitation ? "loading" : "no-item",
     });
     logger.debug("Explorer data load started", {
       generation,
       indexedKey: item?.id,
       root,
     });
+    if (citation?.example) {
+      this.state.setState({
+        data: { ...citationExampleData(citation.example, citation.variant) },
+        status: "ready",
+      });
+      return;
+    }
     if (!item && !sample) return;
     try {
       if (sample) {
@@ -184,12 +217,14 @@ export class NativeExplorerSession implements Disposable {
         target: TemplateRoot,
       ): Promise<TemplateDataLoadResult> => {
         if (!item.id.startsWith("sample:"))
-          return loadTemplateData(this.#deps, key, target);
+          return target === "citation"
+            ? loadCitationData(this.#deps, { key }, citation?.variant ?? "main")
+            : loadTemplateData(this.#deps, key, target);
         if (!snapshot) return Promise.resolve({ kind: "not-found" });
         if (target === "citation")
           return Promise.resolve({
             kind: "data",
-            data: sampleItemCitation(snapshot, "main"),
+            data: sampleItemCitation(snapshot, citation?.variant ?? "main"),
           });
         if (target !== "annotation")
           return Promise.resolve({

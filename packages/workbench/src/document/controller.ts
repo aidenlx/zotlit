@@ -17,15 +17,20 @@ import type {
 import { diffChars } from "diff";
 
 import { ANNOTATION_HEADER } from "@zotlit/templates/constants";
+import type { TemplateLanguage } from "@zotlit/templates/constants";
 import { updateLiteratureNoteTemplateMatch } from "@zotlit/templates/facade";
 import type { MatchTree } from "@zotlit/templates/facade";
 import {
+  formatPlainTemplateDocument,
   LiteratureNoteTemplateError,
+  parsePlainTemplateDocument,
   parseLiteratureNoteTemplate,
+  PlainTemplateDocumentError,
 } from "@zotlit/templates/facade";
 import type {
   LiteratureNoteTemplateDocument,
   LiteratureNoteTemplateErrorCode,
+  PlainTemplateDocument,
 } from "@zotlit/templates/facade";
 import { literatureNoteTemplateDependencies } from "@zotlit/templates/literature-note-pack";
 
@@ -53,6 +58,14 @@ import { pairingState, pairingHistory } from "#/language/pairing-state";
 export type WorkbenchEntrySliceId = `entry:${number}`;
 
 /**
+ * The Template Document this controller holds. A Profile document carries the
+ * manifest, the note body, and the Annotation Section that the six Profile
+ * tabs edit; the Citation Template is a plain document — an optional manifest
+ * naming its language, then one source — which one editor holds whole.
+ */
+export type WorkbenchDocumentKind = "profile" | "citation";
+
+/**
  * A pane a problem is repaired in. Every id but `details` is an editor over one
  * region of the master document; `details` is the Name and folder form, which
  * writes the manifest scalars it shows through controls of its own.
@@ -63,6 +76,7 @@ export type WorkbenchSliceId =
   | "filename"
   | "advanced"
   | "details"
+  | "source"
   | WorkbenchEntrySliceId;
 
 /** The Annotation Section as its two panes address it, in master offsets. */
@@ -135,7 +149,9 @@ export class WorkbenchDocumentController {
   #state: EditorState;
   #readOnly: boolean;
   readonly #runtime: "web" | "native";
+  readonly #kind: WorkbenchDocumentKind;
   #document: LiteratureNoteTemplateDocument | null = null;
+  #plain: PlainTemplateDocument | null = null;
   #problems: readonly WorkbenchProblem[] = [];
   #focused: WorkbenchSliceId | null = null;
   #entries: readonly ManagedEntrySource[] | null = null;
@@ -150,9 +166,14 @@ export class WorkbenchDocumentController {
 
   constructor(
     source: string,
-    options: { runtime?: "web" | "native"; readOnly?: boolean } = {},
+    options: {
+      runtime?: "web" | "native";
+      readOnly?: boolean;
+      kind?: WorkbenchDocumentKind;
+    } = {},
   ) {
     this.#runtime = options.runtime ?? "web";
+    this.#kind = options.kind ?? "profile";
     this.#readOnly = options.readOnly ?? false;
     this.#state = EditorState.create({
       doc: source,
@@ -177,6 +198,10 @@ export class WorkbenchDocumentController {
         }),
       ],
     });
+    // The one editor a plain document opens holds this slice, so it exists
+    // from the start, including for a draft whose manifest never parsed.
+    if (this.#kind === "citation")
+      this.#ranges.set("source", { from: 0, to: source.length });
     this.#analyze();
   }
 
@@ -199,9 +224,49 @@ export class WorkbenchDocumentController {
     return this.#state;
   }
 
+  /** The Template Document kind this controller was opened for. */
+  get kind(): WorkbenchDocumentKind {
+    return this.#kind;
+  }
+
   /** The parsed document, or null while the draft does not parse. */
   get document(): LiteratureNoteTemplateDocument | null {
     return this.#document;
+  }
+
+  /**
+   * The parsed plain document — the manifest and the source under it — or null
+   * on a Profile document and while a plain draft does not parse.
+   */
+  get plainDocument(): PlainTemplateDocument | null {
+    return this.#plain;
+  }
+
+  /**
+   * Writes the manifest's `language`, adding the key to a manifest that omits
+   * it and the manifest itself to a document that carries none — an empty
+   * manifest is valid and names the Liquid default. The source is left as
+   * authored: a Template changes language by being rewritten, never by being
+   * converted.
+   * @returns false on a Profile document, whose language the Profile tab writes.
+   */
+  setPlainLanguage(language: TemplateLanguage): boolean {
+    if (this.#kind === "profile") return false;
+    const plain = this.#plain;
+    if (plain === null) return false;
+    if (plain.sourceStart > 0) {
+      return this.setManifestKey("language", language);
+    }
+    this.dispatch({
+      changes: {
+        from: 0,
+        to: 0,
+        insert: formatPlainTemplateDocument("", language),
+      },
+      userEvent: "input.form",
+      annotations: isolateHistory.of("full"),
+    });
+    return true;
   }
 
   get problems(): readonly WorkbenchProblem[] {
@@ -259,10 +324,15 @@ export class WorkbenchDocumentController {
 
   /** Render scopes in master offsets, shared by completion and embedded highlighting. */
   get templateRegions(): readonly (WorkbenchSliceRange & {
-    root: "note" | "annotation" | "filename";
+    root: "note" | "annotation" | "filename" | "citation";
     expression: boolean;
     language?: "json-e";
   })[] {
+    if (this.#kind === "citation") {
+      return [
+        { ...this.sliceRange("source"), root: "citation", expression: false },
+      ];
+    }
     const annotation = this.annotationSection?.source;
     const filename = this.filenameSlice;
     return [
@@ -682,6 +752,10 @@ export class WorkbenchDocumentController {
   #analyze(): void {
     const source = this.#text;
     this.#ranges.set("advanced", { from: 0, to: source.length });
+    if (this.#kind === "citation") {
+      this.#analyzePlain(source);
+      return;
+    }
     this.#readManifest(source);
     try {
       const document = parseLiteratureNoteTemplate(source);
@@ -739,6 +813,34 @@ export class WorkbenchDocumentController {
       });
     }
     this.#regions = noteRegions(source, this.sliceRange("note"));
+  }
+
+  /**
+   * Re-derives the one source slice and the Problems list of a plain document.
+   * A draft whose manifest does not parse takes the whole document as its
+   * slice, so the one editor it opens holds the manifest the reader repairs.
+   */
+  #analyzePlain(source: string): void {
+    try {
+      const plain = parsePlainTemplateDocument(source);
+      this.#plain = plain;
+      this.#ranges.set("source", {
+        from: plain.sourceStart,
+        to: source.length,
+      });
+      this.#problems = [];
+    } catch (error) {
+      if (!(error instanceof PlainTemplateDocumentError)) throw error;
+      this.#plain = null;
+      this.#ranges.set("source", { from: 0, to: source.length });
+      this.#problems = [
+        {
+          code: error.code,
+          slice: "source",
+          range: this.#lineAround(error.offset),
+        },
+      ];
+    }
   }
 
   /**

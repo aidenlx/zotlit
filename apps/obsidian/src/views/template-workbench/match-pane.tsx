@@ -14,12 +14,12 @@ import { getLogger } from "@/lib/log";
 import type { DatabaseService } from "@/services/database/service";
 
 import { loadMatchFacts } from "./match-data";
-import { profileEditorTheme } from "./theme";
+import { templateWorkbenchTheme } from "./theme";
 
 const matchTheme = {
-  ...profileEditorTheme,
+  ...templateWorkbenchTheme,
   classes: {
-    ...profileEditorTheme.classes,
+    ...templateWorkbenchTheme.classes,
     select: {
       wrapper: "zt:min-w-0 zt:max-w-full",
       select: "dropdown zt:max-w-full",
@@ -28,7 +28,7 @@ const matchTheme = {
   },
 };
 
-const logger = getLogger(["views", "profile-editor", "match"]);
+const logger = getLogger(["views", "template-workbench", "match"]);
 
 export function NativeMatchPane({
   controller,

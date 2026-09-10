@@ -30,7 +30,7 @@ import type { RenderOptions } from "./request";
 import { restoreTemplateData } from "./restore-template-data";
 import { failedRender, renderIdentity } from "./result";
 import type {
-  ProfileRenderResult,
+  TemplateRenderResult,
   RenderDiagnostic,
   RenderedProperty,
   RenderedRange,
@@ -43,15 +43,25 @@ import thesis from "#/samples/thesis.json" with { type: "json" };
 
 export {
   CITATION_EXAMPLE_IDS,
+  CITATION_EXAMPLE_ITEM,
   citationExampleData,
+  DEFAULT_CITATION_EXAMPLE,
   isCitationExampleId,
   sampleItemCitation,
 } from "./citation-examples";
-export type { CitationExampleId } from "./citation-examples";
-export { DEFAULT_PROFILE_SOURCE } from "./default-profile";
-export { failedRender, profileSourceRevision, renderIdentity } from "./result";
 export type {
-  ProfileRenderResult,
+  CitationExampleId,
+  CitationPreviewSelection,
+} from "./citation-examples";
+export { DEFAULT_PROFILE_SOURCE } from "./default-profile";
+export {
+  emptyRender,
+  failedRender,
+  profileSourceRevision,
+  renderIdentity,
+} from "./result";
+export type {
+  TemplateRenderResult,
   RenderDiagnostic,
   RenderedProperty,
   RenderedRange,
@@ -73,7 +83,7 @@ export function renderProfile(
   source: string,
   snapshot: ItemSnapshot,
   options: RenderOptions = {},
-): ProfileRenderResult {
+): TemplateRenderResult {
   const { resources, annotation: example } = options;
   const identity = renderIdentity({ source, snapshot, ...options });
   if (snapshot.contractVersion !== CONTRACT_VERSION) {
@@ -204,6 +214,9 @@ export function renderProfile(
       frontmatterBlock: frontmatterBlock(frontmatter.fold),
       creationBody,
       managedRegion,
+      // The web host renders a Profile only; a Citation Template preview is
+      // Obsidian's, where the installed Citation Template lives.
+      citation: null,
       annotation: preview,
       annotationCitation,
       annotationRanges: locateOutputs(

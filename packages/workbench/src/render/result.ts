@@ -1,6 +1,7 @@
 // The render result shape and its identity stamp, shared by the renderer and
 // the scheduler that decides which result is still current.
 
+import type { CitationExampleId } from "./citation-examples";
 import type { RenderRequest } from "./request";
 
 /**
@@ -53,12 +54,17 @@ export interface RenderIdentity {
   readonly snapshotRevision: string;
   readonly annotationId?: string;
   readonly annotationRevision?: string;
+  /** The Citation Variant a Citation Template render produced its text under. */
+  readonly citationVariant?: "main" | "alt";
+  /** The built-in example set it rendered; absent when the chosen Item supplied one. */
+  readonly citationExample?: CitationExampleId;
 }
 
 export function renderIdentity({
   source,
   snapshot,
   annotation,
+  citation,
   mode,
 }: RenderRequest): RenderIdentity {
   return {
@@ -68,10 +74,16 @@ export function renderIdentity({
     ...(annotation
       ? { annotationId: annotation.id, annotationRevision: annotation.revision }
       : {}),
+    ...(citation
+      ? {
+          citationVariant: citation.variant,
+          ...(citation.example ? { citationExample: citation.example } : {}),
+        }
+      : {}),
   };
 }
 
-export interface ProfileRenderResult extends RenderIdentity {
+export interface TemplateRenderResult extends RenderIdentity {
   readonly filename: string | null;
   /** What each entry produced on its own, in list order. */
   readonly properties: readonly RenderedProperty[];
@@ -91,6 +103,8 @@ export interface ProfileRenderResult extends RenderIdentity {
   readonly annotation: string | null;
   /** The selected example's computed citation, for matching field and completion values. */
   readonly annotationCitation: string | null;
+  /** The Citation Template's own output for the selected set; null for a Profile. */
+  readonly citation: string | null;
   /**
    * Where each highlight the format rendered landed in `creationBody`, in
    * reading order, so a host can point at the many outputs of the one format.
@@ -115,10 +129,11 @@ export function profileSourceRevision(source: string): string {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-export function failedRender(
-  identity: RenderIdentity,
-  diagnostic: RenderDiagnostic,
-): ProfileRenderResult {
+/**
+ * A result that produced nothing, which every partial result fills in from: a
+ * render that failed outright, and one whose document produces a single part.
+ */
+export function emptyRender(identity: RenderIdentity): TemplateRenderResult {
   return {
     ...identity,
     filename: null,
@@ -129,7 +144,15 @@ export function failedRender(
     managedRegion: null,
     annotation: null,
     annotationCitation: null,
+    citation: null,
     annotationRanges: [],
-    diagnostics: [diagnostic],
+    diagnostics: [],
   };
+}
+
+export function failedRender(
+  identity: RenderIdentity,
+  diagnostic: RenderDiagnostic,
+): TemplateRenderResult {
+  return { ...emptyRender(identity), diagnostics: [diagnostic] };
 }

@@ -45,9 +45,12 @@ function keyTarget(key: string, index: number, length: number): number | null {
 export function TabBar({
   onTabChange,
   defaultProfile,
+  tabs = TABS,
 }: {
   onTabChange?: (tab: WorkbenchTab) => void;
   defaultProfile?: boolean;
+  /** The tabs this document shows; the Template Document kind picks the set. */
+  tabs?: readonly WorkbenchTab[];
 } = {}) {
   const m = useWorkbenchMessages();
   const editor = useOptionalEditor();
@@ -67,7 +70,7 @@ export function TabBar({
   if (editor?.controller.document)
     identity.current.id = editor.controller.document.manifest.id;
   const isDefault = defaultProfile ?? identity.current.id === "default";
-  const enabledTabs = TABS.filter((id) => !(isDefault && id === "match"));
+  const enabledTabs = tabs.filter((id) => !(isDefault && id === "match"));
   useEffect(() => {
     if (isDefault && tab === "match") setTab("note");
   }, [isDefault, tab, setTab]);
@@ -97,7 +100,7 @@ export function TabBar({
       {...part("tab-bar")}
     >
       <HiddenName id={nameId}>{m.workbench_title()}</HiddenName>
-      {TABS.map((id) => {
+      {tabs.map((id) => {
         const tabDisabled = disabled || (isDefault && id === "match");
         const active = id === tab && !tabDisabled;
         return (

@@ -33,6 +33,19 @@ export const CITATION_EXAMPLE_IDS = [
 /** The id naming one built-in Citation example set. */
 export type CitationExampleId = (typeof CITATION_EXAMPLE_IDS)[number];
 
+/** The example set a Citation Template preview and the Explorer open on. */
+export const DEFAULT_CITATION_EXAMPLE: CitationExampleId = "one-item";
+
+/**
+ * The Citation set a Citation Template preview renders, and the Citation
+ * Variant it renders under. A null `example` means the reader chose one of
+ * their own Items, whose one-item set {@link sampleItemCitation} builds.
+ */
+export interface CitationPreviewSelection {
+  readonly variant: CitationVariant;
+  readonly example: CitationExampleId | null;
+}
+
 export function isCitationExampleId(value: string): value is CitationExampleId {
   return (CITATION_EXAMPLE_IDS as readonly string[]).includes(value);
 }
@@ -81,6 +94,13 @@ function highlightPageLabel(): string {
 
 const article = journalArticle as unknown as ItemSnapshot;
 const monograph = book as unknown as ItemSnapshot;
+
+/**
+ * The Sample Item every example set cites, which a preview names as the paper
+ * it rendered: an example carries its own citation data, so this stands for
+ * the set rather than supplying it.
+ */
+export const CITATION_EXAMPLE_ITEM: ItemSnapshot = article;
 
 /**
  * The refs each example set names, built on demand. A browser without native

@@ -13,13 +13,16 @@ import * as m from "@/lib/i18n/generated/messages";
 import { pickItem } from "@/services/item-lookup/search-modal";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import type { SettingsService } from "@/services/settings/service";
-import { createProfileEditorHost } from "@/views/profile-editor/host";
-import { ProfileEditorView } from "@/views/profile-editor/view";
-import type { ProfileEditorDeps } from "@/views/profile-editor/view";
+import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
+import { TemplateWorkbenchView } from "@/views/template-workbench/view";
+import type { TemplateWorkbenchDeps } from "@/views/template-workbench/view";
 
 import { createRenderFixture, PROFILE_SOURCE } from "./__fixtures__/render";
-import { activeProfileEditor, subscribeActiveProfileEditor } from "./register";
-import { renderNativeProfile } from "./render";
+import {
+  activeTemplateWorkbench,
+  subscribeActiveTemplateWorkbench,
+} from "./register";
+import { renderNativeTemplate } from "./render";
 import { NotePreviewView } from "./view";
 import type { PreviewViewDeps } from "./view";
 
@@ -30,11 +33,12 @@ vi.mock("@zotlit/workbench/ui", async (original) => {
     createRenderScheduler: vi.fn(actual.createRenderScheduler),
   };
 });
-vi.mock("@/views/profile-editor/host", async (original) => {
-  const actual = await original<typeof import("@/views/profile-editor/host")>();
+vi.mock("@/views/template-workbench/host", async (original) => {
+  const actual =
+    await original<typeof import("@/views/template-workbench/host")>();
   return {
     ...actual,
-    createProfileEditorHost: vi.fn(actual.createProfileEditorHost),
+    createTemplateWorkbenchHost: vi.fn(actual.createTemplateWorkbenchHost),
   };
 });
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
@@ -46,16 +50,16 @@ vi.mock("./register", () => ({
   ) => {
     result.done = () => app.workspace.onLayoutReady(callback);
   },
-  subscribeActiveProfileEditor: vi.fn(),
+  subscribeActiveTemplateWorkbench: vi.fn(),
   registerCompanionHistory: vi.fn(() => () => {}),
-  openProfileWorkbench: vi.fn(),
-  activeProfileEditor: vi.fn(),
+  openWorkbenchLayout: vi.fn(),
+  activeTemplateWorkbench: vi.fn(),
 }));
 vi.mock("@/services/item-lookup/search-modal", () => ({
   pickItem: vi.fn(async () => null),
 }));
-vi.mock("@/views/profile-editor/selection", async (original) => ({
-  ...(await original<typeof import("@/views/profile-editor/selection")>()),
+vi.mock("@/views/template-workbench/selection", async (original) => ({
+  ...(await original<typeof import("@/views/template-workbench/selection")>()),
   chooseWorkbenchItem: async (
     _host: unknown,
     deps: Parameters<typeof pickItem>[0],
@@ -76,7 +80,10 @@ vi.mock("obsidian", async (original) => ({
 }));
 vi.mock("./render", async (original) => {
   const actual = await original<typeof import("./render")>();
-  return { ...actual, renderNativeProfile: vi.fn(actual.renderNativeProfile) };
+  return {
+    ...actual,
+    renderNativeTemplate: vi.fn(actual.renderNativeTemplate),
+  };
 });
 
 class Preview extends NotePreviewView {
@@ -87,7 +94,7 @@ class Preview extends NotePreviewView {
     return this.onClose();
   }
 }
-class Editor extends ProfileEditorView {
+class Editor extends TemplateWorkbenchView {
   close() {
     return this.onClose();
   }
@@ -142,14 +149,14 @@ async function setup(
     },
     zoteroPref: { ready: Promise.resolve(), dataDir: null },
     nativePreview: fixture.deps,
-  } as unknown as ProfileEditorDeps);
+  } as unknown as TemplateWorkbenchDeps);
   const file = fixture.vault.addFile("templates/paper.md", PROFILE_SOURCE);
   editor.file = file;
   editor.setViewData(PROFILE_SOURCE, true);
   // The editor's compact examples have their own refresh choice.
   editor.preview?.setPreview({ live: false });
-  const subscriptions = new Set<(view: ProfileEditorView | null) => void>();
-  vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+  const subscriptions = new Set<(view: TemplateWorkbenchView | null) => void>();
+  vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
     (_app, listener) => {
       subscriptions.add(listener);
       try {
@@ -230,7 +237,7 @@ describe("independent native Note Preview", () => {
     async (item) => {
       await using test = await setup();
       vi.useFakeTimers();
-      vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+      vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
         (_app, listener) => {
           listener(null);
           return () => {};
@@ -270,7 +277,7 @@ describe("independent native Note Preview", () => {
   it("discards standalone Item choices after context changes or closure", async () => {
     await using test = await setup();
     vi.useFakeTimers();
-    vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+    vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
       (_app, listener) => {
         listener(null);
         return () => {};
@@ -377,7 +384,7 @@ describe("independent native Note Preview", () => {
       );
     });
     const preview = await test.open();
-    vi.mocked(activeProfileEditor).mockReturnValue(test.editor);
+    vi.mocked(activeTemplateWorkbench).mockReturnValue(test.editor);
     const saved = {
       source: { builtin: true },
       item: "ABCD2345",
@@ -435,7 +442,7 @@ describe("independent native Note Preview", () => {
     });
     expect(Object.keys(saved)).not.toContain("sourceText");
     await act(async () => first.close());
-    vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+    vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
       (_app, listener) => {
         listener(null);
         return () => {};
@@ -468,7 +475,7 @@ describe("independent native Note Preview", () => {
     first.contentEl.scrollTop = 350;
     const saved = first.getState();
     const ephemeral = first.getEphemeralState();
-    vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+    vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
       (_app, listener) => {
         listener(null);
         return () => {};
@@ -542,7 +549,7 @@ Annotation`,
     );
     await using test = await setup(source.profile);
     vi.useFakeTimers();
-    vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+    vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
       (_app, listener) => {
         listener(null);
         return () => {};
@@ -564,7 +571,7 @@ Annotation`,
   it("restores a built-in source and keeps on-demand rendering paused", async () => {
     await using test = await setup();
     vi.useFakeTimers();
-    vi.mocked(subscribeActiveProfileEditor).mockImplementation(
+    vi.mocked(subscribeActiveTemplateWorkbench).mockImplementation(
       (_app, listener) => {
         listener(null);
         return () => {};
@@ -588,16 +595,16 @@ Annotation`,
     expect(menuItem(restored, m.workbench_preview_auto_refresh()).checked).toBe(
       false,
     );
-    expect(renderNativeProfile).not.toHaveBeenCalled();
+    expect(renderNativeTemplate).not.toHaveBeenCalled();
     await run(restored);
-    expect(renderNativeProfile).toHaveBeenCalled();
+    expect(renderNativeTemplate).toHaveBeenCalled();
   });
 
   it("rolls back failed binding resources and can retry the same view", async () => {
     await using test = await setup();
     const released = vi.fn();
     vi.spyOn(test.fixture.deps.db, "on").mockReturnValue(released);
-    vi.mocked(createProfileEditorHost).mockImplementationOnce(() => {
+    vi.mocked(createTemplateWorkbenchHost).mockImplementationOnce(() => {
       throw new Error("Host unavailable");
     });
     await expect(test.open()).rejects.toThrow("Host unavailable");
@@ -609,7 +616,7 @@ Annotation`,
       .mock.results.at(-1)!.value;
     scheduler.setInput({ snapshot: test.fixture.snapshot });
     scheduler.run();
-    expect(renderNativeProfile).not.toHaveBeenCalled();
+    expect(renderNativeTemplate).not.toHaveBeenCalled();
 
     vi.useFakeTimers();
     const preview = test.previews[0]!;
@@ -780,10 +787,12 @@ Annotation`,
     await using test = await setup();
     const actual = await vi.importActual<typeof import("./render")>("./render");
     const held = Promise.withResolvers<void>();
-    vi.mocked(renderNativeProfile).mockImplementation(async (deps, request) => {
-      if (request.source.includes("Old output.")) await held.promise;
-      return actual.renderNativeProfile(deps, request);
-    });
+    vi.mocked(renderNativeTemplate).mockImplementation(
+      async (deps, request) => {
+        if (request.source.includes("Old output.")) await held.promise;
+        return actual.renderNativeTemplate(deps, request);
+      },
+    );
     vi.useFakeTimers();
     await act(async () =>
       test.editor.store
@@ -819,13 +828,13 @@ Annotation`,
     await run(preview);
     expect(preview.contentEl.textContent).toContain("Current output.");
     expect(
-      vi.mocked(renderNativeProfile).mock.calls.at(-1)?.[1].source,
+      vi.mocked(renderNativeTemplate).mock.calls.at(-1)?.[1].source,
     ).toContain("name: Unsaved draft");
     const closing = Promise.withResolvers<void>();
-    vi.mocked(renderNativeProfile).mockImplementationOnce(
+    vi.mocked(renderNativeTemplate).mockImplementationOnce(
       async (deps, request) => {
         await closing.promise;
-        return actual.renderNativeProfile(deps, request);
+        return actual.renderNativeTemplate(deps, request);
       },
     );
     await act(async () =>
@@ -841,10 +850,10 @@ Annotation`,
     expect(preview.contentEl.textContent).toBe("");
     expect(test.subscriptions.size).toBe(0);
     expect(test.events.size).toBe(2);
-    const calls = vi.mocked(renderNativeProfile).mock.calls.length;
+    const calls = vi.mocked(renderNativeTemplate).mock.calls.length;
     test.editor.setViewData(PROFILE_SOURCE, true);
     await advance();
-    expect(vi.mocked(renderNativeProfile).mock.calls.length).toBe(calls);
+    expect(vi.mocked(renderNativeTemplate).mock.calls.length).toBe(calls);
   });
 
   it("keeps the last output visible while invalid source is repaired", async () => {
@@ -857,7 +866,7 @@ Annotation`,
     );
     const preview = await test.open();
     await advance();
-    const calls = vi.mocked(renderNativeProfile).mock.calls.length;
+    const calls = vi.mocked(renderNativeTemplate).mock.calls.length;
     await act(async () =>
       test.editor.setViewData("An incomplete Profile", false),
     );
@@ -867,7 +876,7 @@ Annotation`,
     expect(preview.contentEl.textContent).toContain(
       m.workbench_preview_stale(),
     );
-    expect(vi.mocked(renderNativeProfile).mock.calls.length).toBe(calls);
+    expect(vi.mocked(renderNativeTemplate).mock.calls.length).toBe(calls);
     await act(async () =>
       test.editor.setViewData(
         PROFILE_SOURCE.replace("Personal space.", "Repaired output."),
@@ -936,7 +945,7 @@ Annotation`,
         PROFILE_SOURCE.replace("Personal space.", "Books output."),
       chooseItem,
       revealSlice,
-    } as unknown as ProfileEditorView;
+    } as unknown as TemplateWorkbenchView;
     preview.leaf.pinned = true;
     await act(async () => {
       for (const listener of test.subscriptions) listener(earlierPeer);
@@ -1120,5 +1129,137 @@ Annotation`,
         (item) => item.title === m.workbench_preview_updated_section(),
       ),
     ).toBeDefined();
+  });
+});
+
+describe("the Citation Template preview", () => {
+  const CITATION_DOCUMENT = `---
+language: liquid
+---
+{% if zt.variant == "alt" %}
+  {{ zt.citations | pandoc_cite: "prefer-author-in-text" }}
+{% else %}
+  {{ zt.citations | pandoc_cite }}
+{% endif %}
+`;
+
+  async function openCitationPreview(test: Awaited<ReturnType<typeof setup>>) {
+    const file = test.fixture.vault.addFile(
+      "templates/zotlit-citation.md",
+      CITATION_DOCUMENT,
+    );
+    test.editor.file = file;
+    test.editor.setViewData(CITATION_DOCUMENT, true);
+    const preview = await test.open();
+    await advance();
+    return preview;
+  }
+
+  const caption = (preview: Preview) =>
+    [...preview.contentEl.querySelectorAll("p")].map((p) => p.textContent);
+
+  it("renders the selected example under the checked Citation Variant", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await openCitationPreview(test);
+
+    // The default citation text brackets the main gesture and leaves the
+    // alternate one author-in-text; the one-item example cites one Sample Item.
+    expect(preview.contentEl.textContent).toContain("[@ioannidisWhyMost2005]");
+    expect(caption(preview)).toContain(m.workbench_citation_variant_main());
+    expect(
+      menuItem(preview, m.template_workbench_preview_main_citation()).checked,
+    ).toBe(true);
+
+    await pick(preview, m.template_workbench_preview_alt_citation());
+    await advance();
+
+    expect(preview.contentEl.textContent).toContain("@ioannidisWhyMost2005");
+    expect(preview.contentEl.textContent).not.toContain(
+      "[@ioannidisWhyMost2005]",
+    );
+    expect(caption(preview)).toContain(m.workbench_citation_variant_alt());
+    expect(
+      menuItem(preview, m.template_workbench_preview_alt_citation()).checked,
+    ).toBe(true);
+    expect(preview.getState()).toMatchObject({
+      kind: "citation",
+      variant: "alt",
+      citationExample: "one-item",
+    });
+  });
+
+  it("offers the six example sets and re-renders the chosen one", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await openCitationPreview(test);
+
+    const examples = menuItem(preview, m.template_workbench_use_example())
+      .submenu!.items;
+    expect(examples.map((item) => item.title)).toEqual([
+      m.workbench_citation_example_one_item(),
+      m.workbench_citation_example_two_items(),
+      m.workbench_citation_example_item_with_page(),
+      m.workbench_citation_example_suppressed_author(),
+      m.workbench_citation_example_prefix_and_suffix(),
+      m.workbench_citation_example_annotation_citation(),
+    ]);
+    expect(examples[0]!.checked).toBe(true);
+
+    await act(async () =>
+      examples
+        .find(
+          (item) => item.title === m.workbench_citation_example_two_items(),
+        )!
+        .click(),
+    );
+    await advance();
+
+    expect(preview.contentEl.textContent).toContain(
+      "[@ioannidisWhyMost2005; @Kahneman2011]",
+    );
+    expect(preview.getState()["citationExample"]).toBe("two-items");
+  });
+
+  it("hands the Citation set to an Item the reader chooses", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await openCitationPreview(test);
+    expect(preview.getState()["citationExample"]).toBe("one-item");
+
+    vi.mocked(pickItem).mockResolvedValueOnce({
+      item: { indexedKey: "MAIN2345" },
+    } as NonNullable<Awaited<ReturnType<typeof pickItem>>>);
+    await pick(preview, m.workbench_choose_item());
+    await advance();
+
+    // The chosen Item is the set now, so no example stays checked and the
+    // caption names the paper rather than an example.
+    expect(preview.getState()).toMatchObject({
+      item: "MAIN2345",
+      citationExample: null,
+    });
+    expect(
+      menuItem(preview, m.template_workbench_use_example()).submenu!.items.some(
+        (item) => item.checked,
+      ),
+    ).toBe(false);
+    expect(preview.contentEl.textContent).toContain("@");
+  });
+
+  it("leaves the note choices to a Profile document", async () => {
+    await using test = await setup();
+    vi.useFakeTimers();
+    const preview = await openCitationPreview(test);
+
+    const titles = () => {
+      const menu = new Menu();
+      preview.onPaneMenu(menu as never, "more-options");
+      return menu.items.map((item) => item.title);
+    };
+    expect(titles()).not.toContain(m.workbench_preview_as_new_note());
+    expect(titles()).not.toContain(m.workbench_preview_as_updated_note());
+    expect(titles()).not.toContain(m.workbench_choose_annotation());
+    expect(titles()).toContain(m.workbench_choose_item());
   });
 });

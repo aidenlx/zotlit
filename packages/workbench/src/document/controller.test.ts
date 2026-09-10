@@ -563,3 +563,112 @@ it("keeps invalid JSON rule drafts in the document and points repair at the row"
   controller.undo();
   expect(controller.source).toBe(source);
 });
+
+describe("a plain Template Document", () => {
+  const CITATION = `---
+language: liquid
+---
+{{ zt.citations | pandoc_cite }}
+`;
+
+  it("holds one source slice under its manifest and one citation render scope", () => {
+    const controller = new WorkbenchDocumentController(CITATION, {
+      kind: "citation",
+    });
+    expect(controller.kind).toBe("citation");
+    expect(controller.plainDocument?.manifest.language).toBe("liquid");
+    // The manifest is three lines of 4, 16 and 4 characters, each with its
+    // break, so the source starts at offset 25.
+    expect(controller.sliceRange("source")).toEqual({
+      from: 25,
+      to: CITATION.length,
+    });
+    expect(controller.sliceText("source")).toBe(
+      "{{ zt.citations | pandoc_cite }}\n",
+    );
+    expect(controller.templateRegions).toEqual([
+      { from: 25, to: CITATION.length, root: "citation", expression: false },
+    ]);
+    expect(controller.problems).toEqual([]);
+  });
+
+  it("takes the whole document as its source when it carries no manifest", () => {
+    const bare = "{{ zt.citations | pandoc_cite }}\n";
+    const controller = new WorkbenchDocumentController(bare, {
+      kind: "citation",
+    });
+    expect(controller.plainDocument?.manifest.language).toBe("liquid");
+    expect(controller.sliceRange("source")).toEqual({
+      from: 0,
+      to: bare.length,
+    });
+
+    expect(controller.setPlainLanguage("eta")).toBe(true);
+    expect(controller.source).toBe(`---\nlanguage: eta\n---\n${bare}`);
+    controller.undo();
+    expect(controller.source).toBe(bare);
+  });
+
+  it("rewrites the manifest language in place and leaves the source as authored", () => {
+    const controller = new WorkbenchDocumentController(CITATION, {
+      kind: "citation",
+    });
+    expect(controller.setPlainLanguage("eta")).toBe(true);
+    expect(controller.source).toBe(
+      CITATION.replace("language: liquid", "language: eta"),
+    );
+    expect(controller.plainDocument?.manifest.language).toBe("eta");
+  });
+
+  it("reports a manifest it cannot read on the one editor that holds it", () => {
+    const controller = new WorkbenchDocumentController(
+      "---\nlanguage: [\n---\nx\n",
+      { kind: "citation" },
+    );
+    expect(controller.plainDocument).toBeNull();
+    expect(controller.problems).toEqual([
+      expect.objectContaining({ code: "invalid-manifest", slice: "source" }),
+    ]);
+  });
+
+  it("hands the one editor the manifest an external edit invalidated", () => {
+    const controller = new WorkbenchDocumentController(CITATION, {
+      kind: "citation",
+    });
+    expect(controller.sliceRange("source").from).toBe(25);
+
+    const broken = CITATION.replace("language: liquid", "language: [");
+    controller.applyExternalSource(broken);
+
+    expect(controller.plainDocument).toBeNull();
+    // The manifest sits inside the slice the reader repairs it in, as it does
+    // for a document whose manifest never parsed.
+    expect(controller.sliceRange("source")).toEqual({
+      from: 0,
+      to: broken.length,
+    });
+  });
+
+  it("adds the language key to a manifest that omits it", () => {
+    const controller = new WorkbenchDocumentController(
+      "---\n# the set this renders\n---\nx\n",
+      { kind: "citation" },
+    );
+    // An empty or comment-only manifest is valid and names the Liquid default.
+    expect(controller.plainDocument?.manifest.language).toBe("liquid");
+
+    expect(controller.setPlainLanguage("eta")).toBe(true);
+    expect(controller.source).toBe(
+      "---\n# the set this renders\nlanguage: eta\n---\nx\n",
+    );
+    expect(controller.plainDocument?.manifest.language).toBe("eta");
+    controller.undo();
+    expect(controller.plainDocument?.manifest.language).toBe("liquid");
+  });
+
+  it("refuses a language rewrite on a Profile document, whose own tab writes it", () => {
+    expect(
+      new WorkbenchDocumentController(HAND_WRITTEN).setPlainLanguage("eta"),
+    ).toBe(false);
+  });
+});

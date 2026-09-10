@@ -3,11 +3,22 @@ import { createStore } from "zustand/vanilla";
 import type { StoreApi } from "zustand/vanilla";
 
 import { parseIndexedKey } from "@zotlit/db";
-import { parseLiteratureNoteTemplate } from "@zotlit/templates/facade";
+import type { CitationVariant } from "@zotlit/db";
+import {
+  parseLiteratureNoteTemplate,
+  parsePlainTemplateDocument,
+} from "@zotlit/templates/facade";
 import { managedFrontmatterEntries } from "@zotlit/workbench/document";
 import type { ManagedEntrySource } from "@zotlit/workbench/document";
-import { SAMPLE_ANNOTATIONS } from "@zotlit/workbench/render";
-import type { AnnotationExample } from "@zotlit/workbench/render";
+import {
+  CITATION_EXAMPLE_ITEM,
+  DEFAULT_CITATION_EXAMPLE,
+  SAMPLE_ANNOTATIONS,
+} from "@zotlit/workbench/render";
+import type {
+  AnnotationExample,
+  CitationExampleId,
+} from "@zotlit/workbench/render";
 import { exportItemSnapshot } from "@zotlit/workbench/snapshot";
 import type { ItemSnapshot } from "@zotlit/workbench/snapshot";
 import { annotationSamples } from "@zotlit/workbench/ui";
@@ -21,15 +32,15 @@ import { getLogger } from "@/lib/log";
 import {
   getSampleAnnotationParent,
   getSampleItem,
-} from "@/views/profile-editor/selection-data";
-import type { ProfileAuthoringContext } from "@/views/profile-editor/view";
+} from "@/views/template-workbench/selection-data";
+import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
 import type { NativeRenderDeps, NativeRenderResult } from "./render";
 
 const logger = getLogger(["note-preview", "session"]);
 
 export interface NativePreviewState {
-  context: ProfileAuthoringContext | null;
+  context: TemplateAuthoringContext | null;
   annotationId: string | null;
   presentation: { scrollTop: number; reveal: string | null; pending: boolean };
   source: string | null;
@@ -44,6 +55,14 @@ export interface NativePreviewState {
   snapshot: ItemSnapshot | null;
   current: readonly AnnotationExample[];
   example: AnnotationExample | null;
+  /** The Citation Variant a Citation Template preview renders under. */
+  variant: CitationVariant;
+  /**
+   * The built-in Citation example set the preview renders, or null while the
+   * chosen Item supplies the set instead. It outranks `item`: a reader who
+   * picks an example is looking at the example, whichever Item is selected.
+   */
+  citationExample: CitationExampleId | null;
 }
 const EMPTY_PREVIEW: NativePreviewState = {
   context: null,
@@ -61,6 +80,8 @@ const EMPTY_PREVIEW: NativePreviewState = {
   snapshot: null,
   current: [],
   example: null,
+  variant: "main",
+  citationExample: DEFAULT_CITATION_EXAMPLE,
 };
 export const createNativePreviewStore = () =>
   createStore<NativePreviewState>(() => ({ ...EMPTY_PREVIEW }));
@@ -110,6 +131,13 @@ export class NativePreviewSession implements Disposable {
   refresh(): void {
     if (!this.#closed) this.#loading = this.#loadSnapshot();
   }
+  /** The authoring context the preview follows; its kind picks the root data. */
+  setContext(context: TemplateAuthoringContext | null): void {
+    if (this.#closed) return;
+    this.state.setState({ context });
+    this.#feed();
+  }
+
   setSource(source: string): void {
     const state = this.state.getState();
     if (
@@ -118,11 +146,17 @@ export class NativePreviewSession implements Disposable {
     )
       return;
     let sourceProblem: string | null = null;
-    let entries = this.state.getState().entries;
+    // A plain document is one source under an optional manifest: it authors no
+    // Properties, so the row list a Profile carries stays empty for it.
+    let entries = state.context?.kind === "citation" ? [] : state.entries;
     try {
-      parseLiteratureNoteTemplate(source);
-      const list = managedFrontmatterEntries(source);
-      entries = list.status === "rows" ? list.entries : [];
+      if (state.context?.kind === "citation")
+        parsePlainTemplateDocument(source);
+      else {
+        parseLiteratureNoteTemplate(source);
+        const list = managedFrontmatterEntries(source);
+        entries = list.status === "rows" ? list.entries : [];
+      }
     } catch (error) {
       sourceProblem = error instanceof Error ? error.message : String(error);
     }
@@ -146,6 +180,19 @@ export class NativePreviewSession implements Disposable {
     this.state.setState({ preview, ...output });
     this.#scheduler.setInput(preview);
   }
+  /**
+   * The Citation set and Variant the Citation Template preview renders. An
+   * example and a chosen Item are one choice: naming an example makes it the
+   * set, and clearing it hands the set back to the Item.
+   */
+  setCitation(
+    value: Partial<Pick<NativePreviewState, "variant" | "citationExample">>,
+  ): void {
+    if (this.#closed) return;
+    this.state.setState(value);
+    this.#feed();
+  }
+
   select(id: string | null): void {
     if (this.#closed) return;
     this.state.setState({
@@ -194,9 +241,18 @@ export class NativePreviewSession implements Disposable {
   }
   /** Hands the scheduler the paper and the example every render reads. */
   #feed(): void {
-    const { snapshot, example, item } = this.state.getState();
+    const { snapshot, example, item, context, variant, citationExample } =
+      this.state.getState();
+    // A Citation example carries its own citation data, so the render needs no
+    // Item; the paper it cites still stamps the result the scheduler compares.
+    const citation =
+      context?.kind === "citation"
+        ? { variant, example: citationExample }
+        : null;
     this.#scheduler.setInput({
+      citation,
       snapshot:
+        (citation?.example ? CITATION_EXAMPLE_ITEM : null) ??
         snapshot ??
         (!item && example ? getSampleAnnotationParent(example.id) : null),
       annotation: example,

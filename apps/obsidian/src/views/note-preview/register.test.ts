@@ -1,30 +1,30 @@
 import type { App, Plugin, WorkspaceLeaf, ItemView } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  ProfileEditorView,
-  PROFILE_EDITOR_VIEW_TYPE,
-} from "@/views/profile-editor/view";
-import type { ProfileEditorDeps } from "@/views/profile-editor/view";
 import { EXPLORER_VIEW_TYPE } from "@/views/template-data-explorer/view";
+import {
+  TemplateWorkbenchView,
+  TEMPLATE_WORKBENCH_VIEW_TYPE,
+} from "@/views/template-workbench/view";
+import type { TemplateWorkbenchDeps } from "@/views/template-workbench/view";
 
 import {
-  activeProfileEditor,
+  activeTemplateWorkbench,
   openNotePreview,
-  openProfileWorkbench,
+  openWorkbenchLayout,
   registerNotePreview,
   registerCompanionHistory,
   onCompanionStateRestored,
-  subscribeActiveProfileEditor,
+  subscribeActiveTemplateWorkbench,
 } from "./register";
 import { NOTE_PREVIEW_VIEW_TYPE } from "./view";
 
-vi.mock("@/views/profile-editor/view", async () => {
+vi.mock("@/views/template-workbench/view", async () => {
   const { createStore } = await import("zustand/vanilla");
   let nextProfile = 0;
   return {
-    PROFILE_EDITOR_VIEW_TYPE: "zotlit-profile-editor",
-    ProfileEditorView: class {
+    TEMPLATE_WORKBENCH_VIEW_TYPE: "zotlit-template-workbench",
+    TemplateWorkbenchView: class {
       constructor(readonly leaf: WorkspaceLeaf) {}
       file = { path: `templates/profile-${++nextProfile}.md` };
       isDefaultProfile = false;
@@ -32,7 +32,7 @@ vi.mock("@/views/profile-editor/view", async () => {
       ensureItem = vi.fn(async () => true);
       onResize = vi.fn();
       getViewType() {
-        return "zotlit-profile-editor";
+        return "zotlit-template-workbench";
       }
     },
   };
@@ -168,9 +168,9 @@ function setup() {
   } as unknown as Plugin;
   registerNotePreview(plugin, {} as import("./view").PreviewViewDeps);
   const editorLeaf = makeLeaf();
-  const editor = new ProfileEditorView(
+  const editor = new TemplateWorkbenchView(
     editorLeaf as unknown as WorkspaceLeaf,
-    {} as ProfileEditorDeps,
+    {} as TemplateWorkbenchDeps,
   );
   editorLeaf.view = editor;
   const activate = (view: { getViewType(): string }) => {
@@ -203,9 +203,9 @@ function addEditor(
   },
 ) {
   const leaf = test.makeLeaf(options.container);
-  const editor = new ProfileEditorView(
+  const editor = new TemplateWorkbenchView(
     leaf as unknown as WorkspaceLeaf,
-    {} as ProfileEditorDeps,
+    {} as TemplateWorkbenchDeps,
   );
   Object.assign(editor, {
     file: options.path === null ? null : { path: options.path },
@@ -215,13 +215,13 @@ function addEditor(
   return { editor, leaf };
 }
 
-describe("active Profile Editor sidebars", () => {
+describe("active Template Workbench sidebars", () => {
   it("removes a subscription whose initial binding fails", () => {
     const test = setup();
     const listener = vi.fn<() => void>(() => {
       throw new Error("Binding unavailable");
     });
-    expect(() => subscribeActiveProfileEditor(test.app, listener)).toThrow(
+    expect(() => subscribeActiveTemplateWorkbench(test.app, listener)).toThrow(
       "Binding unavailable",
     );
     listener.mockImplementation(() => {});
@@ -232,19 +232,19 @@ describe("active Profile Editor sidebars", () => {
 
   it("follows each editor, retains it in its sidebar, and clears when the editor closes", async () => {
     const test = setup();
-    const seen: (ProfileEditorView | null)[] = [];
-    const unsubscribe = subscribeActiveProfileEditor(test.app, (editor) =>
+    const seen: (TemplateWorkbenchView | null)[] = [];
+    const unsubscribe = subscribeActiveTemplateWorkbench(test.app, (editor) =>
       seen.push(editor),
     );
     test.activate(test.editor);
-    expect(activeProfileEditor(test.app)).toBe(test.editor);
+    expect(activeTemplateWorkbench(test.app)).toBe(test.editor);
     test.activate({ getViewType: () => NOTE_PREVIEW_VIEW_TYPE });
-    expect(activeProfileEditor(test.app)).toBe(test.editor);
+    expect(activeTemplateWorkbench(test.app)).toBe(test.editor);
     test.activate({ getViewType: () => EXPLORER_VIEW_TYPE });
-    expect(activeProfileEditor(test.app)).toBe(test.editor);
+    expect(activeTemplateWorkbench(test.app)).toBe(test.editor);
     test.leaves.splice(0, 1);
     test.callbacks.get("layout-change")?.();
-    expect(activeProfileEditor(test.app)).toBeNull();
+    expect(activeTemplateWorkbench(test.app)).toBeNull();
     expect(seen).toEqual([test.editor, null]);
     unsubscribe();
     for (const dispose of test.cleanup) dispose();
@@ -256,7 +256,7 @@ describe("active Profile Editor sidebars", () => {
     test.callbacks.get("layout-change")?.();
     await Promise.resolve();
     expect(test.leaves.map(({ view }) => view.getViewType())).toEqual([
-      PROFILE_EDITOR_VIEW_TYPE,
+      TEMPLATE_WORKBENCH_VIEW_TYPE,
     ]);
     expect(test.workspace.moveLeafToPopout).not.toHaveBeenCalled();
     expect(test.workspace.createLeafBySplit).not.toHaveBeenCalled();
@@ -269,8 +269,8 @@ describe("active Profile Editor sidebars", () => {
     test.activate(test.editor);
     const companion = test.makeLeaf();
     companion.view = { getViewType: () => NOTE_PREVIEW_VIEW_TYPE };
-    const seen: (ProfileEditorView | null)[] = [];
-    subscribeActiveProfileEditor(
+    const seen: (TemplateWorkbenchView | null)[] = [];
+    subscribeActiveTemplateWorkbench(
       test.app,
       (editor) => seen.push(editor),
       companion as unknown as WorkspaceLeaf,
@@ -282,8 +282,8 @@ describe("active Profile Editor sidebars", () => {
   it("moves the same editor into three columns only on explicit action and reuses its window", async () => {
     const test = setup();
     test.activate(test.editor);
-    const first = openProfileWorkbench(test.app, test.editor);
-    expect(openProfileWorkbench(test.app, test.editor)).toBe(first);
+    const first = openWorkbenchLayout(test.app, test.editor);
+    expect(openWorkbenchLayout(test.app, test.editor)).toBe(first);
     await first;
     expect(test.workspace.moveLeafToPopout).toHaveBeenCalledExactlyOnceWith(
       test.editorLeaf,
@@ -295,14 +295,14 @@ describe("active Profile Editor sidebars", () => {
       [test.editorLeaf, "vertical", false],
     ]);
     expect(test.leaves.map(({ view }) => view.getViewType())).toEqual([
-      PROFILE_EDITOR_VIEW_TYPE,
+      TEMPLATE_WORKBENCH_VIEW_TYPE,
       EXPLORER_VIEW_TYPE,
       NOTE_PREVIEW_VIEW_TYPE,
     ]);
     expect(
       test.leaves.every((leaf) => leaf.container === test.editorLeaf.container),
     ).toBe(true);
-    await openProfileWorkbench(test.app, test.editor);
+    await openWorkbenchLayout(test.app, test.editor);
     expect(test.workspace.moveLeafToPopout).toHaveBeenCalledOnce();
     expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
     expect(test.editorLeaf.container.focus).toHaveBeenCalledTimes(2);
@@ -319,14 +319,14 @@ describe("active Profile Editor sidebars", () => {
     preview.group = "saved-workbench";
     preview.view = { getViewType: () => NOTE_PREVIEW_VIEW_TYPE };
     restored.leaf.view = {
-      getViewType: () => PROFILE_EDITOR_VIEW_TYPE,
+      getViewType: () => TEMPLATE_WORKBENCH_VIEW_TYPE,
       getState: () => ({ file: test.editor.file!.path }),
     };
     const load = vi.fn(async () => {
       restored.leaf.view = restored.editor;
     });
     Object.assign(restored.leaf, { loadIfDeferred: load });
-    await openProfileWorkbench(test.app, test.editor);
+    await openWorkbenchLayout(test.app, test.editor);
     expect(load).toHaveBeenCalledOnce();
     expect(test.workspace.revealLeaf).toHaveBeenCalledWith(restored.leaf);
     expect(test.workspace.moveLeafToPopout).not.toHaveBeenCalled();
@@ -339,7 +339,7 @@ describe("active Profile Editor sidebars", () => {
       container: { focus: vi.fn() },
       path: test.editor.file!.path,
     });
-    await openProfileWorkbench(test.app, test.editor);
+    await openWorkbenchLayout(test.app, test.editor);
     expect(test.workspace.moveLeafToPopout).toHaveBeenCalledWith(
       test.editorLeaf,
       { size: { width: 1440, height: 900 } },
@@ -358,7 +358,7 @@ describe("active Profile Editor sidebars", () => {
       getViewType: () => NOTE_PREVIEW_VIEW_TYPE,
       getState: () => ({ source: { path: "templates/other.md" } }),
     };
-    await openProfileWorkbench(test.app, test.editor);
+    await openWorkbenchLayout(test.app, test.editor);
     expect(test.editorLeaf.container).not.toBe(original);
     expect(pinned.container).toBe(original);
     expect(pinned.group).toBeNull();
@@ -370,7 +370,7 @@ describe("active Profile Editor sidebars", () => {
     const ordinary = { focus: vi.fn() };
     test.editorLeaf.container = ordinary;
     test.activate(test.editor);
-    await openProfileWorkbench(test.app, test.editor);
+    await openWorkbenchLayout(test.app, test.editor);
     expect(test.workspace.moveLeafToPopout).not.toHaveBeenCalled();
     expect(test.editorLeaf.container).toBe(ordinary);
     expect(test.leaves.every((leaf) => leaf.container === ordinary)).toBe(true);
@@ -381,7 +381,7 @@ describe("active Profile Editor sidebars", () => {
     const restored = { focus: vi.fn() };
     test.editorLeaf.container = restored;
     test.activate(test.editor);
-    await openProfileWorkbench(test.app, test.editor);
+    await openWorkbenchLayout(test.app, test.editor);
     expect(test.workspace.moveLeafToPopout).not.toHaveBeenCalled();
     expect(test.leaves.every((leaf) => leaf.container === restored)).toBe(true);
   });
@@ -389,7 +389,7 @@ describe("active Profile Editor sidebars", () => {
   it("keeps a closed preview closed until its reopen command runs in the workbench window", async () => {
     const test = setup();
     test.activate(test.editor);
-    await openProfileWorkbench(test.app, test.editor);
+    await openWorkbenchLayout(test.app, test.editor);
     test.leaves.splice(2, 1);
     test.callbacks.get("layout-change")?.();
     test.activate(test.editor);
@@ -409,25 +409,25 @@ describe("active Profile Editor sidebars", () => {
   it("binds companion views to their native group across windows", async () => {
     const test = setup();
     test.activate(test.editor);
-    await openProfileWorkbench(test.app, test.editor);
+    await openWorkbenchLayout(test.app, test.editor);
     const companion = test.leaves[1]!;
-    const seen: (ProfileEditorView | null)[] = [];
-    subscribeActiveProfileEditor(
+    const seen: (TemplateWorkbenchView | null)[] = [];
+    subscribeActiveTemplateWorkbench(
       test.app,
       (editor) => seen.push(editor),
       companion as unknown as WorkspaceLeaf,
     );
     const otherLeaf = test.makeLeaf();
-    const other = new ProfileEditorView(
+    const other = new TemplateWorkbenchView(
       otherLeaf as unknown as WorkspaceLeaf,
-      {} as ProfileEditorDeps,
+      {} as TemplateWorkbenchDeps,
     );
     otherLeaf.view = other;
     test.activate(other);
-    expect(activeProfileEditor(test.app)).toBe(other);
+    expect(activeTemplateWorkbench(test.app)).toBe(other);
     expect(seen).toEqual([test.editor]);
     test.activate(companion.view);
-    expect(activeProfileEditor(test.app)).toBe(test.editor);
+    expect(activeTemplateWorkbench(test.app)).toBe(test.editor);
     test.leaves.splice(2, 1);
     test.commands.get("open-note-preview")!.checkCallback(false);
     await vi.waitFor(() =>
@@ -445,8 +445,8 @@ describe("active Profile Editor sidebars", () => {
     const companion = test.makeLeaf({ focus: vi.fn() });
     companion.view = { getViewType: () => NOTE_PREVIEW_VIEW_TYPE };
     companion.group = "research";
-    const seen: (ProfileEditorView | null)[] = [];
-    const dispose = subscribeActiveProfileEditor(
+    const seen: (TemplateWorkbenchView | null)[] = [];
+    const dispose = subscribeActiveTemplateWorkbench(
       test.app,
       (editor) => seen.push(editor),
       companion as unknown as WorkspaceLeaf,
@@ -454,9 +454,9 @@ describe("active Profile Editor sidebars", () => {
     cleanup.defer(dispose);
     expect(seen).toEqual([null]);
     const secondLeaf = test.makeLeaf();
-    const second = new ProfileEditorView(
+    const second = new TemplateWorkbenchView(
       secondLeaf as unknown as WorkspaceLeaf,
-      {} as ProfileEditorDeps,
+      {} as TemplateWorkbenchDeps,
     );
     secondLeaf.view = second;
     secondLeaf.group = "research";
@@ -479,22 +479,22 @@ describe("active Profile Editor sidebars", () => {
     companion.view = { getViewType: () => NOTE_PREVIEW_VIEW_TYPE };
     companion.setGroupMember(test.editorLeaf);
     const otherLeaf = test.makeLeaf();
-    const other = new ProfileEditorView(
+    const other = new TemplateWorkbenchView(
       otherLeaf as unknown as WorkspaceLeaf,
-      {} as ProfileEditorDeps,
+      {} as TemplateWorkbenchDeps,
     );
     otherLeaf.view = other;
     test.activate(other);
     expect(
-      activeProfileEditor(test.app, companion as unknown as WorkspaceLeaf),
+      activeTemplateWorkbench(test.app, companion as unknown as WorkspaceLeaf),
     ).toBe(test.editor);
     companion.group = "empty-group";
     expect(
-      activeProfileEditor(test.app, companion as unknown as WorkspaceLeaf),
+      activeTemplateWorkbench(test.app, companion as unknown as WorkspaceLeaf),
     ).toBeNull();
     companion.group = null;
     expect(
-      activeProfileEditor(test.app, companion as unknown as WorkspaceLeaf),
+      activeTemplateWorkbench(test.app, companion as unknown as WorkspaceLeaf),
     ).toBe(other);
   });
 
@@ -504,8 +504,8 @@ describe("active Profile Editor sidebars", () => {
     test.activate(test.editor);
     const companion = test.makeLeaf();
     companion.view = { getViewType: () => NOTE_PREVIEW_VIEW_TYPE };
-    const seen: (ProfileEditorView | null)[] = [];
-    const dispose = subscribeActiveProfileEditor(
+    const seen: (TemplateWorkbenchView | null)[] = [];
+    const dispose = subscribeActiveTemplateWorkbench(
       test.app,
       (editor) => seen.push(editor),
       companion as unknown as WorkspaceLeaf,
@@ -514,9 +514,9 @@ describe("active Profile Editor sidebars", () => {
     companion.pinned = true;
     companion.trigger("pinned-change");
     const otherLeaf = test.makeLeaf({ focus: vi.fn() });
-    const other = new ProfileEditorView(
+    const other = new TemplateWorkbenchView(
       otherLeaf as unknown as WorkspaceLeaf,
-      {} as ProfileEditorDeps,
+      {} as TemplateWorkbenchDeps,
     );
     otherLeaf.view = other;
     test.activate(other);
@@ -538,8 +538,8 @@ describe("active Profile Editor sidebars", () => {
     const companion = test.makeLeaf();
     companion.view = { getViewType: () => NOTE_PREVIEW_VIEW_TYPE };
     companion.group = "restored";
-    const seen: (ProfileEditorView | null)[] = [];
-    const dispose = subscribeActiveProfileEditor(
+    const seen: (TemplateWorkbenchView | null)[] = [];
+    const dispose = subscribeActiveTemplateWorkbench(
       test.app,
       (editor) => seen.push(editor),
       companion as unknown as WorkspaceLeaf,
@@ -563,7 +563,7 @@ describe("active Profile Editor sidebars", () => {
     preview.setGroupMember(test.editorLeaf);
     const group = test.editorLeaf.group;
     const resize = vi.spyOn(test.editor, "onResize");
-    await openProfileWorkbench(test.app, test.editor);
+    await openWorkbenchLayout(test.app, test.editor);
     expect(test.editorLeaf.group).toBe(group);
     expect(preview.group).toBe(group);
     expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(1);
@@ -577,15 +577,15 @@ describe("active Profile Editor sidebars", () => {
     companion.view = { getViewType: () => NOTE_PREVIEW_VIEW_TYPE };
     companion.pinned = true;
     const heldLeaf = test.makeLeaf();
-    const held = new ProfileEditorView(
+    const held = new TemplateWorkbenchView(
       heldLeaf as unknown as WorkspaceLeaf,
-      {} as ProfileEditorDeps,
+      {} as TemplateWorkbenchDeps,
     );
     heldLeaf.view = held;
     companion.setGroupMember(heldLeaf);
-    const seen: (ProfileEditorView | null)[] = [];
+    const seen: (TemplateWorkbenchView | null)[] = [];
     cleanup.defer(
-      subscribeActiveProfileEditor(
+      subscribeActiveTemplateWorkbench(
         test.app,
         (editor) => seen.push(editor),
         companion as unknown as WorkspaceLeaf,
@@ -642,7 +642,7 @@ it("waits for native layout readiness before choosing a restored companion's sou
   };
   test.activate(test.editor);
   const listener = vi.fn();
-  const stop = subscribeActiveProfileEditor(test.app, listener);
+  const stop = subscribeActiveTemplateWorkbench(test.app, listener);
   test.callbacks.get("layout-change")?.();
   expect(listener).not.toHaveBeenCalled();
   ready();
@@ -685,14 +685,14 @@ it("reveals an existing file-backed Default workbench for a compact built-in Def
     file: { path: "templates/zotlit-profile.default.md" },
     isDefaultProfile: true,
   });
-  await openProfileWorkbench(test.app, test.editor);
+  await openWorkbenchLayout(test.app, test.editor);
   const window = test.editorLeaf.container;
   const compact = addEditor(test, {
     container: { focus: vi.fn() },
     path: null,
     defaultProfile: true,
   });
-  await openProfileWorkbench(test.app, compact.editor);
+  await openWorkbenchLayout(test.app, compact.editor);
   expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(1);
   expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
   expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(test.editorLeaf);
@@ -706,7 +706,7 @@ it("reveals an existing file-backed Default workbench for a compact built-in Def
 
 it("moves another Profile's compact editor out of an existing workbench window and reuses its new workbench", async () => {
   const test = setup();
-  await openProfileWorkbench(test.app, test.editor);
+  await openWorkbenchLayout(test.app, test.editor);
   const firstWindow = test.editorLeaf.container;
   const originalLeaves = [...test.leaves];
   const books = addEditor(test, {
@@ -714,7 +714,7 @@ it("moves another Profile's compact editor out of an existing workbench window a
     path: "templates/books.md",
   });
   const historyOwner = books.editor;
-  await openProfileWorkbench(test.app, books.editor);
+  await openWorkbenchLayout(test.app, books.editor);
   expect(test.workspace.moveLeafToPopout).toHaveBeenLastCalledWith(books.leaf, {
     size: { width: 1440, height: 900 },
   });
@@ -731,7 +731,7 @@ it("moves another Profile's compact editor out of an existing workbench window a
   ).toHaveLength(3);
   expect(books.leaf.group).not.toBe(test.editorLeaf.group);
   const compact = addEditor(test, { path: "templates/books.md" });
-  await openProfileWorkbench(test.app, compact.editor);
+  await openWorkbenchLayout(test.app, compact.editor);
   expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(2);
   expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(4);
   expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(books.leaf);
@@ -739,7 +739,7 @@ it("moves another Profile's compact editor out of an existing workbench window a
 
 it("keeps an unlinked or partially closed workbench window occupied when another Profile opens", async () => {
   const test = setup();
-  await openProfileWorkbench(test.app, test.editor);
+  await openWorkbenchLayout(test.app, test.editor);
   const firstWindow = test.editorLeaf.container;
   const preview = test.leaves.find(
     (leaf) => leaf.view.getViewType() === NOTE_PREVIEW_VIEW_TYPE,
@@ -755,24 +755,24 @@ it("keeps an unlinked or partially closed workbench window occupied when another
     container: firstWindow,
     path: "templates/books.md",
   });
-  await openProfileWorkbench(test.app, books.editor);
+  await openWorkbenchLayout(test.app, books.editor);
   expect(books.leaf.container).not.toBe(firstWindow);
   expect(explorer.container).toBe(firstWindow);
   const compact = addEditor(test, { path: test.editor.file!.path });
-  await openProfileWorkbench(test.app, compact.editor);
+  await openWorkbenchLayout(test.app, compact.editor);
   expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(test.editorLeaf);
   expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(4);
 });
 
 it("reopens missing companions for the workbench's own editor without creating a window", async () => {
   const test = setup();
-  await openProfileWorkbench(test.app, test.editor);
+  await openWorkbenchLayout(test.app, test.editor);
   const window = test.editorLeaf.container;
   const explorer = test.leaves.find(
     (leaf) => leaf.view.getViewType() === EXPLORER_VIEW_TYPE,
   )!;
   test.leaves.splice(test.leaves.indexOf(explorer), 1);
-  await openProfileWorkbench(test.app, test.editor);
+  await openWorkbenchLayout(test.app, test.editor);
   expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(1);
   expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(3);
   expect(test.leaves.filter((leaf) => leaf.container === window)).toHaveLength(
@@ -784,8 +784,8 @@ it("converges simultaneous openings from two editors of the same Profile", async
   const test = setup();
   const compact = addEditor(test, { path: test.editor.file!.path });
   await Promise.all([
-    openProfileWorkbench(test.app, test.editor),
-    openProfileWorkbench(test.app, compact.editor),
+    openWorkbenchLayout(test.app, test.editor),
+    openWorkbenchLayout(test.app, compact.editor),
   ]);
   expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(1);
   expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
@@ -799,14 +799,14 @@ it("promotes a built-in Default workbench through the native leaf when its file 
     isDefaultProfile: true,
     getState: () => ({ itemIndexedKey: "MAIN2345", defaultDraft: true }),
   });
-  await openProfileWorkbench(test.app, test.editor);
+  await openWorkbenchLayout(test.app, test.editor);
   const compact = addEditor(test, {
     path: "templates/zotlit-profile.default.md",
     defaultProfile: true,
   });
-  await openProfileWorkbench(test.app, compact.editor);
+  await openWorkbenchLayout(test.app, compact.editor);
   expect(test.editorLeaf.setViewState).toHaveBeenCalledWith({
-    type: PROFILE_EDITOR_VIEW_TYPE,
+    type: TEMPLATE_WORKBENCH_VIEW_TYPE,
     state: {
       itemIndexedKey: "MAIN2345",
       defaultDraft: false,
@@ -824,7 +824,7 @@ it("keeps the requested Default workbench and its Item when another full Default
     isDefaultProfile: true,
     authoringContext: firstContext,
   });
-  await openProfileWorkbench(test.app, test.editor);
+  await openWorkbenchLayout(test.app, test.editor);
   const later = addEditor(test, {
     container: { focus: vi.fn() },
     path: test.editor.file!.path,
@@ -838,7 +838,7 @@ it("keeps the requested Default workbench and its Item when another full Default
     companion.group = later.leaf.group;
     companion.view = { getViewType: () => type };
   }
-  await openProfileWorkbench(test.app, later.editor);
+  await openWorkbenchLayout(test.app, later.editor);
   expect(test.workspace.revealLeaf).toHaveBeenLastCalledWith(later.leaf);
   expect(test.workspace.moveLeafToPopout).toHaveBeenCalledTimes(1);
   expect(test.workspace.createLeafBySplit).toHaveBeenCalledTimes(2);
@@ -850,7 +850,7 @@ it("keeps the requested Default workbench and its Item when another full Default
       leaf.view.getViewType() === NOTE_PREVIEW_VIEW_TYPE,
   )!;
   test.leaves.splice(test.leaves.indexOf(preview), 1);
-  await openProfileWorkbench(test.app, later.editor);
+  await openWorkbenchLayout(test.app, later.editor);
   expect(test.workspace.createLeafBySplit).toHaveBeenLastCalledWith(
     later.leaf,
     "vertical",

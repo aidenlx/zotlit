@@ -1,4 +1,4 @@
-// Native overlays and Markdown lifecycle for the shared Profile Editor tree.
+// Native overlays and Markdown lifecycle for the shared Template Workbench tree.
 import { Compartment } from "@codemirror/state";
 import { tooltips, ViewPlugin } from "@codemirror/view";
 import {
@@ -46,7 +46,7 @@ import {
 } from "@/services/item-lookup/render-hit";
 
 import { templateHover } from "./hover";
-import { profileEditorIcons } from "./theme";
+import { templateWorkbenchIcons } from "./theme";
 
 class EditorDialog extends Modal {
   #root: Root | null = null;
@@ -83,7 +83,7 @@ class MatchInputSuggest extends AbstractInputSuggest<WorkbenchSuggesterOption> {
   }
 
   override renderSuggestion(option: WorkbenchSuggesterOption, el: HTMLElement) {
-    el.addClass("zt-profile-editor-suggestion");
+    el.addClass("zt-template-workbench-suggestion");
     if (!option.hint) {
       el.addClass("mod-nowrap");
       renderMatches(
@@ -160,7 +160,7 @@ class EditorSuggester extends SuggestModal<
     if (option.icon)
       setIcon(
         el.createDiv("suggestion-icon").createSpan("suggestion-flair"),
-        profileEditorIcons[option.icon],
+        templateWorkbenchIcons[option.icon],
       );
     const content = el.createDiv({
       cls: "suggestion-content zt:min-w-0 zt:gap-0.5",
@@ -250,7 +250,7 @@ const nativeCompletion: TemplateCompletionPresentation = {
   ],
 };
 
-export function createProfileEditorHost(
+export function createTemplateWorkbenchHost(
   app: App,
   ports: Pick<WorkbenchHost, "render" | "matchData" | "insertTarget"> &
     Partial<Pick<WorkbenchHost, "markdown">> & {
@@ -305,7 +305,7 @@ export function createProfileEditorHost(
         menu.addItem((entry) =>
           entry
             .setTitle(item.label)
-            .setIcon(item.icon ? profileEditorIcons[item.icon] : null)
+            .setIcon(item.icon ? templateWorkbenchIcons[item.icon] : null)
             .setDisabled(item.disabled ?? false)
             .onClick(item.onSelect),
         );

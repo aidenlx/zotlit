@@ -11,7 +11,7 @@ import type {
 import type { SuggestionSource } from "#/language/completion";
 import type { RenderRequest } from "#/render/request";
 import type {
-  ProfileRenderResult,
+  TemplateRenderResult,
   RenderedProperty,
   RenderedRange,
 } from "#/render/result";
@@ -175,7 +175,7 @@ export interface WorkbenchHost {
   hoverCard(request: WorkbenchHoverCardRequest): WorkbenchHoverCardHandle;
   notice(text: string): void;
   /** Renders one request; the tree schedules it through the Render Scheduler. */
-  render: (request: RenderRequest) => Promise<ProfileRenderResult>;
+  render: (request: RenderRequest) => Promise<TemplateRenderResult>;
   /** The host reading view for a rendered note or annotation. */
   markdown: ComponentType<WorkbenchMarkdownProps>;
   /** Completion and hover presentation, with the editor's mount for window-local overlays. */

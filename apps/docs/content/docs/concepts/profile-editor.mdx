@@ -32,13 +32,13 @@ Select <UiLabel name={m.workbench_advanced()} /> to edit the complete profile do
 
 ## Preview data
 
-The preview uses a Zotero item or built-in example. Opening the editor from a literature note selects that note's item. The pane menu offers <UiLabel name={m.workbench_choose_item()} /> to change the preview data and <UiLabel name={m.profile_editor_open_workbench()} /> to open the editor, fields, and preview together.
+The preview uses a Zotero item or built-in example. Opening the editor from a literature note selects that note's item. The pane menu offers <UiLabel name={m.workbench_choose_item()} /> to change the preview data and <UiLabel name={m.template_workbench_open_layout()} /> to open the editor, fields, and preview together.
 
 The preview changes as you edit. A database or citation-style warning can limit the preview, but you can continue editing the profile.
 
 ## Saving changes
 
-The built-in Default profile is read-only. You can read and select its values without creating a document. <UiLabel name={m.profile_editor_customize()} /> creates its document in the configured template folder before editing becomes available, or opens the existing custom document.
+The built-in Default profile is read-only. You can read and select its values without creating a document. <UiLabel name={m.template_workbench_customize()} /> creates its document in the configured template folder before editing becomes available, or opens the existing custom document.
 
 If creation fails, the built-in values remain readable and an inline error offers a retry. Closing an untouched customization keeps the created document.
 
@@ -47,9 +47,9 @@ Once the document exists, the Profile Editor uses Obsidian's automatic saving fo
 Existing literature notes keep their current content. Run <Command name={m.command_update_note_name()} /> to apply the edited profile to the active note.
 
 <Callout type="info" title="Edit the Markdown document">
-  Select <UiLabel name={m.profile_editor_open_markdown()} /> to open an existing
-  profile document as Markdown. Customizing the built-in Default creates its
-  document before editing becomes available.
+  Select <UiLabel name={m.template_workbench_open_markdown()} /> to open an
+  existing profile document as Markdown. Customizing the built-in Default
+  creates its document before editing becomes available.
 </Callout>
 
 ## Open the editor

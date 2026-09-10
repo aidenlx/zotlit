@@ -10,6 +10,13 @@ import type { Root } from "react-dom/client";
 import { useStore } from "zustand";
 
 import {
+  CITATION_EXAMPLE_IDS,
+  DEFAULT_CITATION_EXAMPLE,
+  isCitationExampleId,
+} from "@zotlit/workbench/render";
+import {
+  citationExampleLabel,
+  citationVariantLabel,
   createRenderScheduler,
   TABS,
   ResultBody,
@@ -29,7 +36,7 @@ import { openSettingsTab } from "@/lib/open-settings";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
-import { createProfileEditorHost } from "@/views/profile-editor/host";
+import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import {
   chooseWorkbenchItem,
   chooseWorkbenchAnnotation,
@@ -38,30 +45,31 @@ import {
   selectionName,
   selectionViewTitle,
   updateSelectionTitle,
-} from "@/views/profile-editor/selection";
-import { currentProfileSource } from "@/views/profile-editor/source";
+} from "@/views/template-workbench/selection";
+import { currentProfileSource } from "@/views/template-workbench/source";
 import {
-  profileEditorButton,
-  profileEditorTheme,
+  templateWorkbenchButton,
+  templateWorkbenchTheme,
   selectionBar,
   selectionControl,
   selectionHint,
-} from "@/views/profile-editor/theme";
+} from "@/views/template-workbench/theme";
 import type {
-  ProfileEditorView,
-  ProfileAuthoringContext,
-} from "@/views/profile-editor/view";
+  TemplateWorkbenchView,
+  TemplateAuthoringContext,
+} from "@/views/template-workbench/view";
 
 import { NativeMarkdown } from "./markdown";
 import {
-  activeProfileEditor,
+  activeTemplateWorkbench,
   registerCompanionHistory,
   onCompanionStateRestored,
-  subscribeActiveProfileEditor,
+  subscribeActiveTemplateWorkbench,
 } from "./register";
-import { nativeResult, renderNativeProfile } from "./render";
+import { nativeResult, renderNativeTemplate } from "./render";
 import type { NativeRenderDeps, NativeRenderResult } from "./render";
 import { createNativePreviewStore, NativePreviewSession } from "./session";
+import type { NativePreviewState } from "./session";
 
 export interface PreviewViewDeps extends NativeRenderDeps {
   settings: SettingsService;
@@ -70,12 +78,15 @@ export interface PreviewViewDeps extends NativeRenderDeps {
 }
 
 /** Which result the preview shows for the editor's current authoring context. */
-function resultMode(context: ProfileAuthoringContext): "note" | "annotation" {
+function resultMode(
+  context: TemplateAuthoringContext,
+): "note" | "annotation" | "citation" {
+  if (context.kind === "citation") return "citation";
   return context.root === "annotation" ? "annotation" : "note";
 }
 
 /** The Properties tab reads the sheet's own Properties block, so it opens there. */
-function propertiesTabOpen(context: ProfileAuthoringContext | null): boolean {
+function propertiesTabOpen(context: TemplateAuthoringContext | null): boolean {
   return context !== null && !context.advanced && context.tab === "properties";
 }
 
@@ -97,7 +108,7 @@ export class NotePreviewView extends ItemView {
   readonly state = createNativePreviewStore();
   #root: Root | null = null;
   #cleanup: DisposableStack | null = null;
-  #editor: ProfileEditorView | null = null;
+  #editor: TemplateWorkbenchView | null = null;
   #file: TFile | null = null;
   #sourceGeneration = 0;
   #choiceGeneration = 0;
@@ -116,6 +127,19 @@ export class NotePreviewView extends ItemView {
   }
   override getDisplayText(): string {
     const state = this.state.getState();
+    if (state.context?.kind === "citation") {
+      // A Citation Template renders an example set, so the tab names the set
+      // rather than the note of an Item.
+      const name = state.citationExample
+        ? citationExampleLabel(m, state.citationExample)
+        : (state.item?.title ?? state.snapshot?.item.title ?? null);
+      return name === null
+        ? m.workbench_citation_result_heading()
+        : m.workbench_selection_title({
+            name,
+            view: m.workbench_view_preview(),
+          });
+    }
     return selectionViewTitle({
       item: state.item && {
         ...state.item,
@@ -131,6 +155,8 @@ export class NotePreviewView extends ItemView {
   }
   override onPaneMenu(menu: Menu, source: string): void {
     super.onPaneMenu(menu, source);
+    const state = this.state.getState();
+    const mode = state.context ? resultMode(state.context) : "note";
     menu.addItem((item) =>
       item
         .setSection("zotlit")
@@ -138,13 +164,15 @@ export class NotePreviewView extends ItemView {
         .setIcon("search")
         .onClick(() => void this.#chooseItem()),
     );
-    menu.addItem((item) =>
-      item
-        .setSection("zotlit")
-        .setTitle(m.workbench_choose_annotation())
-        .setIcon("highlighter")
-        .onClick(() => void this.#chooseAnnotation()),
-    );
+    if (mode === "citation") this.#addExampleMenu(menu, state);
+    else
+      menu.addItem((item) =>
+        item
+          .setSection("zotlit")
+          .setTitle(m.workbench_choose_annotation())
+          .setIcon("highlighter")
+          .onClick(() => void this.#chooseAnnotation()),
+      );
     menu.addItem((item) =>
       item
         .setSection("zotlit")
@@ -152,10 +180,9 @@ export class NotePreviewView extends ItemView {
         .setIcon("refresh-cw")
         .onClick(() => this.#session?.refresh()),
     );
-    const state = this.state.getState();
-    const mode = state.context ? resultMode(state.context) : "note";
     const result = this.#scheduler?.getState().result ?? null;
-    if (mode !== "annotation") {
+    if (mode === "citation") this.#addVariantMenu(menu, state);
+    if (mode !== "annotation" && mode !== "citation") {
       menu.addItem((item) =>
         item
           .setSection("zotlit-preview")
@@ -232,6 +259,46 @@ export class NotePreviewView extends ItemView {
         }),
     );
   }
+  /**
+   * The built-in Citation example sets, one checked. Choosing one makes it the
+   * set the preview renders, whichever Item the editor has selected.
+   */
+  #addExampleMenu(menu: Menu, state: NativePreviewState): void {
+    menu.addItem((item) => {
+      item
+        .setSection("zotlit")
+        .setTitle(m.template_workbench_use_example())
+        .setIcon("list");
+      const submenu = item.setSubmenu();
+      for (const id of CITATION_EXAMPLE_IDS)
+        submenu.addItem((entry) =>
+          entry
+            .setTitle(citationExampleLabel(m, id))
+            .setChecked(state.citationExample === id)
+            .onClick(() => this.#setCitation({ citationExample: id })),
+        );
+    });
+  }
+
+  /**
+   * The checked pair naming which gesture the preview renders. One store value
+   * answers for the menu's check, the caption, and the render alike.
+   */
+  #addVariantMenu(menu: Menu, state: NativePreviewState): void {
+    for (const [variant, title, icon] of [
+      ["main", m.template_workbench_preview_main_citation(), "quote"],
+      ["alt", m.template_workbench_preview_alt_citation(), "quote"],
+    ] as const)
+      menu.addItem((item) =>
+        item
+          .setSection("zotlit-preview")
+          .setTitle(title)
+          .setIcon(icon)
+          .setChecked(state.variant === variant)
+          .onClick(() => this.#setCitation({ variant })),
+      );
+  }
+
   protected override async onOpen(): Promise<void> {
     using cleanup = new DisposableStack();
     cleanup.defer(registerCompanionHistory(this));
@@ -253,7 +320,7 @@ export class NotePreviewView extends ItemView {
           snapshot: null,
           ...this.state.getState().preview,
         },
-        render: (request) => renderNativeProfile(deps, request),
+        render: (request) => renderNativeTemplate(deps, request),
         failed: nativeResult,
       }),
     );
@@ -261,8 +328,8 @@ export class NotePreviewView extends ItemView {
       new NativePreviewSession(deps, scheduler, { state: this.state }),
     );
     const host = resources.use(
-      createProfileEditorHost(this.app, {
-        render: (request) => renderNativeProfile(deps, request),
+      createTemplateWorkbenchHost(this.app, {
+        render: (request) => renderNativeTemplate(deps, request),
         matchData: {
           tags: async () => [],
           collections: async () => [],
@@ -355,7 +422,13 @@ export class NotePreviewView extends ItemView {
         editor: () => this.#sourceEditor()?.leaf ?? null,
         apply: (selection) => {
           if (selection.kind === "item") this.#setItem(selection.item);
-          else session.select(selection.annotationId);
+          else if (selection.kind === "annotation")
+            session.select(selection.annotationId);
+          else
+            session.setCitation({
+              variant: selection.variant,
+              citationExample: selection.example,
+            });
         },
       }),
     );
@@ -417,7 +490,7 @@ export class NotePreviewView extends ItemView {
       const session = this.#session;
       const context = session?.state.getState().context;
       if (file !== this.#file || !session || !context) return;
-      session.state.setState({ context: { ...context, path: file.path } });
+      session.setContext({ ...context, path: file.path });
       void this.#readSource(this.#file);
     });
     cleanup.defer(() => this.app.vault.offref(rename));
@@ -432,7 +505,7 @@ export class NotePreviewView extends ItemView {
     });
     cleanup.defer(() => this.app.vault.offref(remove));
     cleanup.defer(
-      subscribeActiveProfileEditor(
+      subscribeActiveTemplateWorkbench(
         this.app,
         (editor) => {
           if (resources.disposed) return;
@@ -460,7 +533,10 @@ export class NotePreviewView extends ItemView {
       annotationId: state.annotationId,
       root: context?.root ?? "note",
       tab: context?.tab ?? "note",
+      kind: context?.kind ?? "profile",
       advanced: context?.advanced ?? false,
+      variant: state.variant,
+      citationExample: state.citationExample,
       ...state.preview,
       showMarkdown: state.showMarkdown,
       showManaged: state.showManaged,
@@ -477,7 +553,11 @@ export class NotePreviewView extends ItemView {
       if (previous !== JSON.stringify(this.getState())) result.history = true;
       onCompanionStateRestored(this.app, result, () => {
         if (!this.#cleanup) return;
-        this.#editor = activeProfileEditor(this.app, this.leaf, this.#editor);
+        this.#editor = activeTemplateWorkbench(
+          this.app,
+          this.leaf,
+          this.#editor,
+        );
         if (this.#editor) this.#apply(this.#editor.authoringContext);
         this.#mount();
       });
@@ -497,14 +577,28 @@ export class NotePreviewView extends ItemView {
           ? { id: value["item"], title: null }
           : null;
       const previous = this.state.getState();
-      const context: ProfileAuthoringContext | null =
+      const citation = {
+        variant:
+          value["variant"] === "alt" ? ("alt" as const) : ("main" as const),
+        citationExample:
+          typeof value["citationExample"] === "string" &&
+          isCitationExampleId(value["citationExample"])
+            ? value["citationExample"]
+            : value["citationExample"] === null
+              ? null
+              : DEFAULT_CITATION_EXAMPLE,
+      };
+      const context: TemplateAuthoringContext | null =
         source && (path !== null || source.builtin === true)
           ? {
               leaf: this.leaf,
               path,
               item,
+              kind: value["kind"] === "citation" ? "citation" : "profile",
               root:
-                value["root"] === "annotation" || value["root"] === "filename"
+                value["root"] === "annotation" ||
+                value["root"] === "filename" ||
+                value["root"] === "citation"
                   ? value["root"]
                   : "note",
               tab: TABS.find((tab) => tab === value["tab"]) ?? "note",
@@ -512,6 +606,13 @@ export class NotePreviewView extends ItemView {
               annotationId:
                 typeof value["annotationId"] === "string"
                   ? value["annotationId"]
+                  : null,
+              citation:
+                value["kind"] === "citation"
+                  ? {
+                      variant: citation.variant,
+                      example: citation.citationExample,
+                    }
                   : null,
             }
           : null;
@@ -538,9 +639,10 @@ export class NotePreviewView extends ItemView {
       };
       if (this.#session) {
         this.#session.setPreview(preview);
+        this.#session.setCitation(citation);
         this.#session.setItem(item);
         this.#session.select(context?.annotationId ?? null);
-      } else this.state.setState({ item, preview });
+      } else this.state.setState({ item, preview, ...citation });
       await this.#restoreSource();
       this.#mount();
     }
@@ -658,7 +760,7 @@ export class NotePreviewView extends ItemView {
       this.#scheduler?.setInput({ hold: true });
     }
   }
-  #apply(context: ProfileAuthoringContext, explicit = false): void {
+  #apply(context: TemplateAuthoringContext, explicit = false): void {
     const session = this.#session;
     if (!session) return;
     const previous = session.state.getState().context;
@@ -677,8 +779,12 @@ export class NotePreviewView extends ItemView {
       session.state.setState({
         presentation: { scrollTop: 0, reveal: null, pending: false },
       });
-    session.state.setState({ context });
+    session.setContext(context);
     session.setItem(context.item);
+    // An Item the reader picked is the Citation set they asked to see, so the
+    // built-in example that outranks it stands down.
+    if (explicit && context.kind === "citation")
+      session.setCitation({ citationExample: null });
     if (
       this.#editor &&
       (previous === null ||
@@ -688,7 +794,7 @@ export class NotePreviewView extends ItemView {
     )
       session.setSource(this.#editor.getViewData());
   }
-  #sourceEditor(): ProfileEditorView | null {
+  #sourceEditor(): TemplateWorkbenchView | null {
     return this.#editor &&
       this.#session?.state.getState().context?.path ===
         this.#editor.authoringContext.path
@@ -747,6 +853,28 @@ export class NotePreviewView extends ItemView {
       presentation: { scrollTop: 0, reveal: null, pending: false },
     });
     session.setItem(item);
+    // An Item the reader picked is the Citation set they asked to see. This
+    // also serves a published Item choice, which a receiver never echoes, so
+    // the set changes here and is published nowhere.
+    if (context?.kind === "citation")
+      session.setCitation({ citationExample: null });
+  }
+  /**
+   * The Citation set and Variant this reader chose, published so the editor
+   * and the Template data explorer that follow it show the same set.
+   */
+  #setCitation(
+    value: Partial<Pick<NativePreviewState, "variant" | "citationExample">>,
+  ): void {
+    const session = this.#session;
+    if (!session) return;
+    session.setCitation(value);
+    const { variant, citationExample } = session.state.getState();
+    publishWorkbenchSelection(
+      this,
+      { kind: "citation", variant, example: citationExample },
+      this.#sourceEditor()?.leaf ?? null,
+    );
   }
   async #chooseAnnotation(): Promise<void> {
     const session = this.#session;
@@ -779,7 +907,7 @@ export class NotePreviewView extends ItemView {
     const host = this.#host;
     this.#root?.render(
       session && scheduler && host && session.state.getState().context ? (
-        <WorkbenchThemeProvider theme={profileEditorTheme}>
+        <WorkbenchThemeProvider theme={templateWorkbenchTheme}>
           <WorkbenchHostProvider host={host}>
             <PreviewContent
               session={session}
@@ -844,26 +972,40 @@ function PreviewContent({
     example,
     item,
     snapshot,
+    variant,
+    citationExample,
   } = useStore(session.state, (state) => state);
   useEffect(rendered, [result, status, showMarkdown, showManaged, rendered]);
-  const annotationMode = context?.root === "annotation";
-  const ready = status === "ready" || (annotationMode && example !== null);
-  const choose = annotationMode ? chooseAnnotation : chooseItem;
-  const name = selectionName({
-    item: item && {
-      ...item,
-      title: item.title ?? snapshot?.item.title ?? null,
-    },
-    annotation: example,
-    annotationMode,
-  });
   const mode = context ? resultMode(context) : "note";
-  const heading =
-    mode === "annotation"
+  const citationMode = mode === "citation";
+  const annotationMode = !citationMode && context?.root === "annotation";
+  // A Citation example carries its own data, so its preview is ready the moment
+  // the reader has one selected — no Item Snapshot to wait on.
+  const ready =
+    status === "ready" ||
+    (annotationMode && example !== null) ||
+    (citationMode && citationExample !== null);
+  const choose = annotationMode ? chooseAnnotation : chooseItem;
+  const name = citationMode
+    ? citationExample === null
+      ? (item?.title ?? snapshot?.item.title ?? null)
+      : citationExampleLabel(m, citationExample)
+    : selectionName({
+        item: item && {
+          ...item,
+          title: item.title ?? snapshot?.item.title ?? null,
+        },
+        annotation: example,
+        annotationMode,
+      });
+  const heading = citationMode
+    ? m.workbench_citation_result_heading()
+    : mode === "annotation"
       ? m.workbench_annotation_example()
       : m.workbench_result_heading();
   const caption = [
-    ...(mode !== "annotation"
+    ...(citationMode ? [citationVariantLabel(m, variant)] : []),
+    ...(!citationMode && mode !== "annotation"
       ? [
           mode === "note" && showManaged
             ? m.workbench_result_managed_toggle()
@@ -925,12 +1067,12 @@ function PreviewContent({
           </p>
           <div className="zt:flex zt:min-w-0 zt:flex-wrap zt:items-center zt:gap-2">
             <button
-              className={profileEditorButton}
+              className={templateWorkbenchButton}
               onClick={() => session.refresh()}
             >
               {m.workbench_example_retry()}
             </button>
-            <button className={profileEditorButton} onClick={chooseItem}>
+            <button className={templateWorkbenchButton} onClick={chooseItem}>
               {m.template_data_explorer_choose_item()}
             </button>
           </div>
@@ -943,7 +1085,7 @@ function PreviewContent({
         >
           <p className={selectionHint}>{sourceProblem}</p>
           <button
-            className={profileEditorButton}
+            className={templateWorkbenchButton}
             disabled={!editorAvailable}
             onClick={() => reveal("advanced")}
           >

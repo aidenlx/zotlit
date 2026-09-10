@@ -12,7 +12,7 @@ import { AnnotationPointer } from "@zotlit/workbench/ui";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import { createProfileEditorHost } from "./host";
+import { createTemplateWorkbenchHost } from "./host";
 
 function setup() {
   const memory = new Map<string, string | null>();
@@ -21,7 +21,7 @@ function setup() {
     saveLocalStorage: (key: string, value: string | null) =>
       memory.set(key, value),
   } as unknown as App;
-  const host = createProfileEditorHost(app, {
+  const host = createTemplateWorkbenchHost(app, {
     render: () => Promise.reject(new Error("This test renders nothing.")),
     matchData: {
       tags: async () => [],
@@ -33,7 +33,7 @@ function setup() {
   return { host, memory };
 }
 
-describe("Profile Editor host", () => {
+describe("Template Workbench host", () => {
   it("names the built-in citation style the same way as native citation settings", () => {
     using host = setup().host;
     expect(host.messages.workbench_name_value_no_style()).toBe(
@@ -229,7 +229,7 @@ describe("Profile Editor host", () => {
   });
 });
 
-describe("Profile Editor typing popup", () => {
+describe("Template Workbench typing popup", () => {
   it("wears Obsidian's suggestion classes, with the description and type as cells", async () => {
     const { host } = setup();
     const input = document.createElement("div");

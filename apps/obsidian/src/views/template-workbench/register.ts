@@ -10,15 +10,16 @@ import type { CustomizeAction } from "@/services/local-bridge/customize";
 import { itemKeyFromFrontmatter } from "@/services/note-index/parse";
 import type { ProfileService } from "@/services/profile/service";
 import {
-  findProfileWorkbench,
-  openProfileWorkbench,
+  findWorkbenchLayout,
+  openWorkbenchLayout,
 } from "@/views/note-preview/register";
 
-import { runProfileEditorAction } from "./actions";
-import { PROFILE_EDITOR_VIEW_TYPE, ProfileEditorView } from "./view";
-import type { ProfileEditorDeps } from "./view";
+import { runTemplateWorkbenchAction } from "./actions";
+import { templateDocumentKind } from "./document-kind";
+import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
+import type { TemplateWorkbenchDeps } from "./view";
 
-type RegistrationDeps = ProfileEditorDeps & {
+type RegistrationDeps = TemplateWorkbenchDeps & {
   webWorkbenchEnabled: boolean;
   customize: CustomizeAction;
   profile: Pick<
@@ -31,11 +32,14 @@ type RegistrationDeps = ProfileEditorDeps & {
     | "restoreDefault"
   >;
 };
-export function registerProfileEditor(
+export function registerTemplateWorkbenchView(
   plugin: Plugin,
   deps: RegistrationDeps,
 ): void {
   if (!Platform.isDesktopApp) return;
+  /** The Citation Template, which the view opens without any Profile flow. */
+  const isCitation = (file: TFile | null): file is TFile =>
+    file !== null && templateDocumentKind(file) === "citation";
   const isProfile = (file: TFile | null): file is TFile =>
     file !== null &&
     file.extension === "md" &&
@@ -43,9 +47,9 @@ export function registerProfileEditor(
       deps.profile.profiles.some((profile) => profile.path === file.path) ||
       file.basename.startsWith("zotlit-profile."));
   plugin.registerView(
-    PROFILE_EDITOR_VIEW_TYPE,
+    TEMPLATE_WORKBENCH_VIEW_TYPE,
     (leaf) =>
-      new ProfileEditorView(leaf, {
+      new TemplateWorkbenchView(leaf, {
         ...deps,
         pluginVersion: plugin.manifest.version,
       }),
@@ -92,41 +96,54 @@ export function registerProfileEditor(
   };
   plugin.addCommand({
     id: "customize-profile",
-    name: m.profile_editor_customize(),
+    name: m.template_workbench_customize(),
     checkCallback(checking) {
       const target = plugin.app.workspace.getActiveFile();
       if (!isProfile(target)) return false;
       if (!checking)
-        void runProfileEditorAction("customize", () => customizeTarget(target));
+        void runTemplateWorkbenchAction("customize", () =>
+          customizeTarget(target),
+        );
       return true;
     },
   });
   if (deps.webWorkbenchEnabled)
     plugin.addCommand({
       id: "open-profile-web-workbench",
-      name: m.profile_editor_web_open(),
+      name: m.template_workbench_web_open(),
       checkCallback(checking) {
         const target = targetOf(plugin.app.workspace.getActiveFile());
         if (!target) return false;
         if (!checking)
-          void runProfileEditorAction("open-web", () =>
+          void runTemplateWorkbenchAction("open-web", () =>
             customizeTarget(target, { destination: "web" }),
           );
         return true;
       },
     });
   plugin.addCommand({
-    id: "open-profile-editor",
-    name: m.profile_editor_open(),
+    id: "open-template-workbench-view",
+    name: m.template_workbench_open(),
     checkCallback(checking) {
       const active = plugin.app.workspace.getActiveFile();
+      // The Citation Template opens without any Profile flow, on the route the
+      // file menu and the Markdown header action already take.
+      if (isCitation(active)) {
+        if (!checking)
+          void runTemplateWorkbenchAction("open-editor", () =>
+            openTemplateWorkbench(plugin.app, active, {
+              explainUnsupported: false,
+            }),
+          );
+        return true;
+      }
       const target = targetOf(active);
       if (!target) return false;
       if (!checking) {
         const itemIndexedKey =
           active &&
           itemKeyFromFrontmatter(plugin.app.metadataCache.getFileCache(active));
-        void runProfileEditorAction("customize", () =>
+        void runTemplateWorkbenchAction("customize", () =>
           customizeTarget(target, {
             ...(itemIndexedKey ? { itemIndexedKey } : {}),
             destination: "native",
@@ -139,6 +156,23 @@ export function registerProfileEditor(
   plugin.registerEvent(
     plugin.app.workspace.on("file-menu", (menu, file) => {
       if (!(file instanceof TFile)) return;
+      if (isCitation(file)) {
+        menu.addItem((item) =>
+          item
+            .setSection("zotlit")
+            .setTitle(m.template_workbench_open())
+            .setIcon("file-pen-line")
+            .onClick(
+              () =>
+                void runTemplateWorkbenchAction("open-editor", () =>
+                  openTemplateWorkbench(plugin.app, file, {
+                    explainUnsupported: false,
+                  }),
+                ),
+            ),
+        );
+        return;
+      }
       const target = targetOf(file);
       if (!target) return;
       const itemIndexedKey = itemKeyFromFrontmatter(
@@ -149,11 +183,11 @@ export function registerProfileEditor(
         menu.addItem((item) =>
           item
             .setSection("zotlit")
-            .setTitle(m.profile_editor_customize())
+            .setTitle(m.template_workbench_customize())
             .setIcon("pencil")
             .onClick(
               () =>
-                void runProfileEditorAction("customize", () =>
+                void runTemplateWorkbenchAction("customize", () =>
                   customizeTarget(target, options),
                 ),
             ),
@@ -162,11 +196,11 @@ export function registerProfileEditor(
         menu.addItem((item) =>
           item
             .setSection("zotlit")
-            .setTitle(m.profile_editor_web_open())
+            .setTitle(m.template_workbench_web_open())
             .setIcon("external-link")
             .onClick(
               () =>
-                void runProfileEditorAction("open-web", () =>
+                void runTemplateWorkbenchAction("open-web", () =>
                   customizeTarget(target, {
                     ...options,
                     destination: "web",
@@ -177,11 +211,11 @@ export function registerProfileEditor(
       menu.addItem((item) =>
         item
           .setSection("zotlit")
-          .setTitle(m.profile_editor_open())
+          .setTitle(m.template_workbench_open())
           .setIcon("file-pen-line")
           .onClick(
             () =>
-              void runProfileEditorAction("customize", () =>
+              void runTemplateWorkbenchAction("customize", () =>
                 customizeTarget(target, { ...options, destination: "native" }),
               ),
           ),
@@ -196,7 +230,8 @@ export function registerProfileEditor(
         .map((leaf) => leaf.view)
         .filter(
           (view): view is MarkdownView =>
-            view instanceof MarkdownView && isProfile(view.file),
+            view instanceof MarkdownView &&
+            (isProfile(view.file) || isCitation(view.file)),
         ),
     );
     for (const [view, action] of actions)
@@ -208,11 +243,16 @@ export function registerProfileEditor(
       if (!actions.has(view))
         actions.set(
           view,
-          view.addAction("file-pen-line", m.profile_editor_open(), () => {
-            if (view.file)
-              void runProfileEditorAction("open-editor", () =>
-                customizeTarget(view.file!, { destination: "native" }),
-              );
+          view.addAction("file-pen-line", m.template_workbench_open(), () => {
+            const file = view.file;
+            if (!file) return;
+            void runTemplateWorkbenchAction("open-editor", () =>
+              isCitation(file)
+                ? openTemplateWorkbench(plugin.app, file, {
+                    explainUnsupported: false,
+                  })
+                : customizeTarget(file, { destination: "native" }),
+            );
           }),
         );
   }
@@ -245,20 +285,20 @@ export async function openNativeProfile(
     ? await app.vault.cachedRead(file)
     : await (target as Pick<ProfileService, "getSource">).getSource("default");
   if (file) {
-    await openProfileEditor(app, file, {
+    await openTemplateWorkbench(app, file, {
       ...options,
       ...(target instanceof TFile ? {} : { defaultProfile: true }),
     });
     return;
   }
   if (options.explainUnsupported !== false && requiresNative(source))
-    new BaseNotice(m.profile_editor_native_required());
+    new BaseNotice(m.template_workbench_native_required());
   const { itemIndexedKey } = options;
   const workbench = options.customize
-    ? await findProfileWorkbench(app, { file: null, defaultProfile: true })
+    ? await findWorkbenchLayout(app, { file: null, defaultProfile: true })
     : null;
   if (workbench?.file) {
-    await openProfileEditor(app, workbench.file, {
+    await openTemplateWorkbench(app, workbench.file, {
       ...options,
       leaf: workbench.leaf,
       defaultProfile: true,
@@ -268,14 +308,15 @@ export async function openNativeProfile(
   const leaf =
     workbench?.leaf ??
     app.workspace
-      .getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE)
+      .getLeavesOfType(TEMPLATE_WORKBENCH_VIEW_TYPE)
       .find(
         (entry) =>
-          entry.view instanceof ProfileEditorView && entry.view.isDefaultDraft,
+          entry.view instanceof TemplateWorkbenchView &&
+          entry.view.isDefaultDraft,
       ) ??
     app.workspace.getLeaf("tab");
   await leaf.setViewState({
-    type: PROFILE_EDITOR_VIEW_TYPE,
+    type: TEMPLATE_WORKBENCH_VIEW_TYPE,
     state: {
       defaultDraft: true,
       file: null,
@@ -285,7 +326,7 @@ export async function openNativeProfile(
   });
   await app.workspace.revealLeaf(leaf);
   leaf.getContainer().focus();
-  if (options.customize && leaf.view instanceof ProfileEditorView)
+  if (options.customize && leaf.view instanceof TemplateWorkbenchView)
     await leaf.view.customizeDefault();
 }
 
@@ -301,7 +342,7 @@ export function requiresNative(source: string): boolean {
 }
 
 /** Open a Profile document with an explicitly supplied launch Item. */
-export async function openProfileEditor(
+export async function openTemplateWorkbench(
   app: App,
   file: TFile,
   options: {
@@ -317,10 +358,10 @@ export async function openProfileEditor(
     options.explainUnsupported !== false &&
     requiresNative(await app.vault.cachedRead(file))
   )
-    new BaseNotice(m.profile_editor_native_required());
+    new BaseNotice(m.template_workbench_native_required());
   const { itemIndexedKey } = options;
   const workbench = options.customize
-    ? await findProfileWorkbench(app, {
+    ? await findWorkbenchLayout(app, {
         file: file.path,
         defaultProfile: options.defaultProfile ?? false,
       })
@@ -329,15 +370,15 @@ export async function openProfileEditor(
     workbench?.leaf ??
     options.leaf ??
     app.workspace
-      .getLeavesOfType(PROFILE_EDITOR_VIEW_TYPE)
+      .getLeavesOfType(TEMPLATE_WORKBENCH_VIEW_TYPE)
       .find(
         (entry) =>
-          entry.view instanceof ProfileEditorView &&
+          entry.view instanceof TemplateWorkbenchView &&
           entry.view.file?.path === file.path,
       ) ??
     app.workspace.getLeaf("tab");
   await leaf.setViewState({
-    type: PROFILE_EDITOR_VIEW_TYPE,
+    type: TEMPLATE_WORKBENCH_VIEW_TYPE,
     state: {
       file: file.path,
       ...(workbench && !workbench.file ? { defaultDraft: false } : {}),
@@ -348,6 +389,6 @@ export async function openProfileEditor(
   });
   await app.workspace.revealLeaf(leaf);
   leaf.getContainer().focus();
-  if (options.customize && leaf.view instanceof ProfileEditorView)
-    await openProfileWorkbench(app, leaf.view);
+  if (options.customize && leaf.view instanceof TemplateWorkbenchView)
+    await openWorkbenchLayout(app, leaf.view);
 }

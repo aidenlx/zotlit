@@ -14,8 +14,8 @@ import type {
   TemplateDataDeps,
   TemplateDataLoadResult,
 } from "@/services/template-workbench/data";
-import { chooseWorkbenchAnnotation } from "@/views/profile-editor/selection";
-import type { ProfileAuthoringContext } from "@/views/profile-editor/view";
+import { chooseWorkbenchAnnotation } from "@/views/template-workbench/selection";
+import type { TemplateAuthoringContext } from "@/views/template-workbench/view";
 
 import { ExplorerActionsContext } from "./actions";
 import { Explorer } from "./Explorer";
@@ -32,16 +32,18 @@ vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
 const deps = {} as TemplateDataDeps;
 const leaf = {} as WorkspaceLeaf;
 function context(
-  patch: Partial<ProfileAuthoringContext> = {},
-): ProfileAuthoringContext {
+  patch: Partial<TemplateAuthoringContext> = {},
+): TemplateAuthoringContext {
   return {
     leaf,
     path: "profiles/paper.md",
+    kind: "profile",
     item: { id: "PAPER234", title: "Paper" },
     root: "note",
     tab: "note",
     advanced: false,
     annotationId: null,
+    citation: null,
     ...patch,
   };
 }

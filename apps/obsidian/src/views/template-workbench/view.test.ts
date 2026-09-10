@@ -13,11 +13,11 @@ import { createStore } from "zustand/vanilla";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import { ProfileEditorView } from "./view";
-import type { ProfileEditorDeps } from "./view";
+import { TemplateWorkbenchView } from "./view";
+import type { TemplateWorkbenchDeps } from "./view";
 
 vi.mock("@/views/note-preview/register", () => ({
-  openProfileWorkbench: vi.fn(async () => {}),
+  openWorkbenchLayout: vi.fn(async () => {}),
 }));
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
@@ -35,7 +35,7 @@ A stable note.
 An annotation.
 `;
 
-class TestProfileEditorView extends ProfileEditorView {
+class TestTemplateWorkbenchView extends TemplateWorkbenchView {
   open() {
     return this.onOpen();
   }
@@ -44,7 +44,7 @@ class TestProfileEditorView extends ProfileEditorView {
   }
 }
 
-function setup(deps: Partial<ProfileEditorDeps> = {}, sharedApp?: App) {
+function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
   const setActiveLeaf = vi.fn();
   const modify = vi.fn<(file: TFile, source: string) => Promise<void>>(
     async () => {},
@@ -69,14 +69,14 @@ function setup(deps: Partial<ProfileEditorDeps> = {}, sharedApp?: App) {
     app,
     setViewState: vi.fn(async () => {}),
   } as unknown as WorkspaceLeaf;
-  const view = new TestProfileEditorView(leaf, {
+  const view = new TestTemplateWorkbenchView(leaf, {
     app,
     settings: { subscribe: () => () => {} },
     pluginVersion: "2.1.3",
     db: { ready: Promise.resolve(), state: "ready" },
     zoteroPref: { ready: Promise.resolve(), dataDir: null },
     ...deps,
-  } as unknown as ProfileEditorDeps);
+  } as unknown as TemplateWorkbenchDeps);
   leaf.view = view;
   const requestSave = vi.fn();
   view.requestSave = requestSave;
@@ -84,7 +84,7 @@ function setup(deps: Partial<ProfileEditorDeps> = {}, sharedApp?: App) {
   return { view, requestSave, leaf, setActiveLeaf, modify, app };
 }
 
-describe("ProfileEditorView", () => {
+describe("TemplateWorkbenchView", () => {
   it("updates the CodeMirror root after a native window move and keeps its document history", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup();
@@ -132,7 +132,9 @@ describe("ProfileEditorView", () => {
     await using cleanup = new AsyncDisposableStack();
     const path = "templates/zotlit-profile.default.md";
     const { view } = setup({
-      profile: { defaultDocumentPath: path } as ProfileEditorDeps["profile"],
+      profile: {
+        defaultDocumentPath: path,
+      } as TemplateWorkbenchDeps["profile"],
     });
     const file = new TFile();
     file.path = path;
@@ -198,7 +200,7 @@ describe("ProfileEditorView", () => {
         getSource: async () => SOURCE,
         getBuiltInSource: () => SOURCE,
         materializeDefault,
-      } as unknown as ProfileEditorDeps["profile"],
+      } as unknown as TemplateWorkbenchDeps["profile"],
     });
     await view.setState(
       { defaultDraft: true, file: null },
@@ -247,7 +249,7 @@ describe("ProfileEditorView", () => {
         getSource: async () => SOURCE,
         getBuiltInSource: () => SOURCE,
         materializeDefault,
-      } as unknown as ProfileEditorDeps["profile"],
+      } as unknown as TemplateWorkbenchDeps["profile"],
     });
     await view.setState({ defaultDraft: true }, {} as ViewStateResult);
     await view.customizeDefault();
@@ -270,7 +272,7 @@ describe("ProfileEditorView", () => {
         getSource: async () => SOURCE,
         getBuiltInSource: () => SOURCE,
         materializeDefault: async () => ({ file, created: false }),
-      } as unknown as ProfileEditorDeps["profile"],
+      } as unknown as TemplateWorkbenchDeps["profile"],
     });
     const existing = SOURCE.replace("name: Paper", "name: Existing Default");
     vi.spyOn(leaf, "setViewState").mockImplementation(async () => {
@@ -293,7 +295,7 @@ describe("ProfileEditorView", () => {
         getSource: async () => SOURCE,
         getBuiltInSource: () => SOURCE,
         materializeDefault,
-      } as unknown as ProfileEditorDeps["profile"],
+      } as unknown as TemplateWorkbenchDeps["profile"],
     });
     document.body.append(view.contentEl);
     await act(async () => {
@@ -306,7 +308,9 @@ describe("ProfileEditorView", () => {
     expect(editor?.state.readOnly).toBe(true);
     const customize = Array.from(
       view.contentEl.querySelectorAll("button"),
-    ).find((button) => button.textContent === m.profile_editor_customize())!;
+    ).find(
+      (button) => button.textContent === m.template_workbench_customize(),
+    )!;
     await act(async () => {
       customize.click();
       await view.customizeDefault();
@@ -329,7 +333,7 @@ describe("ProfileEditorView", () => {
         getSource: async () => SOURCE,
         getBuiltInSource: () => SOURCE,
         materializeDefault: () => pending.promise,
-      } as unknown as ProfileEditorDeps["profile"],
+      } as unknown as TemplateWorkbenchDeps["profile"],
     });
     await view.setState({ defaultDraft: true }, {} as ViewStateResult);
     const creating = view.customizeDefault();
@@ -348,7 +352,7 @@ describe("ProfileEditorView", () => {
         get ready() {
           return Promise.reject(new Error("Unavailable"));
         },
-      } as unknown as ProfileEditorDeps["db"],
+      } as unknown as TemplateWorkbenchDeps["db"],
     });
     await expect(
       view.setState(
@@ -372,7 +376,7 @@ describe("ProfileEditorView", () => {
             ? Promise.reject(new Error("Unavailable"))
             : Promise.resolve();
         },
-      } as unknown as ProfileEditorDeps["zoteroPref"],
+      } as unknown as TemplateWorkbenchDeps["zoteroPref"],
     });
     await expect(view.refreshStyles()).resolves.toBeUndefined();
     expect(view.unavailableDependencies).toHaveLength(1);
@@ -950,13 +954,13 @@ it("clamps stale restored ranges, ignores removed Properties, and discards a dif
     view.store.getState().setAdvanced(true);
   });
   const saved = view.getEphemeralState() as {
-    zotlitProfileEditor: Record<string, unknown>;
+    zotlitTemplateWorkbench: Record<string, unknown>;
   };
-  saved.zotlitProfileEditor.selection = {
+  saved.zotlitTemplateWorkbench.selection = {
     slice: "advanced",
     range: { from: -8, to: 99999 },
   };
-  saved.zotlitProfileEditor.selected = 55;
+  saved.zotlitTemplateWorkbench.selected = 55;
   await act(async () => view.setEphemeralState(saved));
   const editor = EditorView.findFromDOM(
     view.contentEl.querySelector<HTMLElement>(".cm-editor")!,
@@ -981,7 +985,7 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
   const { view, app } = setup({
     profile: {
       getBuiltInSource: () => builtin,
-    } as ProfileEditorDeps["profile"],
+    } as TemplateWorkbenchDeps["profile"],
   });
   cleanup.defer(() => act(async () => view.close()));
   const file = new TFile();
@@ -1013,4 +1017,193 @@ it("unloads and saves a named Profile before restoring a file-free built-in desc
   expect(view.controller.readOnly).toBe(true);
   expect(view.getViewData()).toBe(builtin);
   expect(publish).not.toHaveBeenCalledWith("quick-preview", file, builtin);
+});
+
+describe("the Template Document kind picks the tabs and the tab title", () => {
+  const CITATION_SOURCE = `---
+language: liquid
+---
+{% if zt.variant == "alt" %}{{ zt.citations | pandoc_cite: "prefer-author-in-text" }}{% else %}{{ zt.citations | pandoc_cite }}{% endif %}
+`;
+
+  function openKind(path: string, source: string) {
+    const harness = setup({
+      templates: {
+        materializeCitationTemplate: vi.fn(),
+      } as unknown as TemplateWorkbenchDeps["templates"],
+    });
+    const file = new TFile();
+    file.path = path;
+    harness.view.file = file;
+    harness.view.setViewData(source, true);
+    return harness;
+  }
+
+  const tabLabels = (view: TemplateWorkbenchView) =>
+    [...view.contentEl.querySelectorAll('[role="tab"]')].map(
+      (tab) => tab.textContent,
+    );
+
+  /** The Basic and Source view action, which only a Profile document offers. */
+  const sourceAction = (view: TemplateWorkbenchView) =>
+    (view as unknown as { actions: HTMLElement[] }).actions.find(
+      (action) => action.getAttribute("aria-label") === m.workbench_advanced(),
+    )!;
+
+  it("opens the Citation Template on a lone Citation tab titled Citation text", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = openKind("templates/zotlit-citation.md", CITATION_SOURCE);
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+
+    expect(view.getDisplayText()).toBe(m.template_workbench_title_citation());
+    expect(tabLabels(view)).toEqual([m.workbench_tab_citation()]);
+    expect(view.store.getState()).toMatchObject({
+      tab: "citation",
+      root: "citation",
+      advanced: false,
+    });
+    expect(sourceAction(view).style.display).toBe("none");
+  });
+
+  it("keeps a Profile document on its six tabs, titled by its name", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = openKind("templates/zotlit-profile.paper.md", SOURCE);
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+
+    expect(view.getDisplayText()).toBe(
+      m.template_workbench_title_profile({ label: "Paper" }),
+    );
+    expect(tabLabels(view)).toEqual([
+      m.workbench_tab_note(),
+      m.workbench_tab_properties(),
+      m.workbench_tab_annotation(),
+      m.workbench_tab_name_and_folder(),
+      m.workbench_tab_match(),
+      m.workbench_tab_profile(),
+    ]);
+    expect(sourceAction(view).style.display).not.toBe("none");
+  });
+
+  it("returns a leaf that held the Citation Template to the Profile tabs", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = openKind("templates/zotlit-citation.md", CITATION_SOURCE);
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    expect(view.store.getState()).toMatchObject({
+      tab: "citation",
+      root: "citation",
+    });
+
+    const profile = new TFile();
+    profile.path = "templates/zotlit-profile.paper.md";
+    await act(async () => {
+      view.file = profile;
+      view.setViewData(SOURCE, true);
+    });
+
+    // The Citation tab names no panel a Profile document has, so the six
+    // Profile tabs open on the first of them rather than on none.
+    expect(view.store.getState()).toMatchObject({ tab: "note", root: "note" });
+    expect(tabLabels(view)).toEqual([
+      m.workbench_tab_note(),
+      m.workbench_tab_properties(),
+      m.workbench_tab_annotation(),
+      m.workbench_tab_name_and_folder(),
+      m.workbench_tab_match(),
+      m.workbench_tab_profile(),
+    ]);
+    expect(
+      view.contentEl.querySelector('[role="tab"][aria-selected="true"]')
+        ?.textContent,
+    ).toBe(m.workbench_tab_note());
+  });
+
+  it("offers Open citation text on every kind, and the language switch on the Citation Template", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const profile = openKind("templates/zotlit-profile.paper.md", SOURCE);
+    cleanup.defer(() => act(async () => profile.view.close()));
+    const citation = openKind("templates/zotlit-citation.md", CITATION_SOURCE);
+    cleanup.defer(() => act(async () => citation.view.close()));
+
+    const titles = (view: TemplateWorkbenchView) => {
+      const menu = new Menu();
+      view.onPaneMenu(menu as never, "more-options");
+      return menu.items.map((item) => item.title);
+    };
+    expect(titles(profile.view)).toContain(
+      m.template_workbench_open_citation(),
+    );
+    expect(titles(profile.view)).not.toContain(
+      m.template_workbench_change_language(),
+    );
+    expect(titles(citation.view)).toContain(
+      m.template_workbench_open_citation(),
+    );
+    expect(titles(citation.view)).toContain(
+      m.template_workbench_change_language(),
+    );
+    // The annotation example belongs to a Profile's own Annotation Section.
+    expect(titles(citation.view)).not.toContain(
+      m.workbench_choose_annotation(),
+    );
+  });
+
+  it("writes an Explorer field into the Citation Template's one editor", async () => {
+    const { view, leaf } = openKind(
+      "templates/zotlit-citation.md",
+      CITATION_SOURCE,
+    );
+    await using cleanup = new AsyncDisposableStack();
+    document.body.append(view.contentEl);
+    cleanup.defer(() => view.contentEl.remove());
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    const editor = EditorView.findFromDOM(
+      view.contentEl.querySelector(".cm-editor")!,
+    )!;
+    await act(() => {
+      editor.focus();
+      editor.dispatch({ selection: { anchor: 0 } });
+    });
+    await act(() => {
+      expect(
+        view.insertTemplateField({
+          leaf,
+          node: {
+            kind: "value",
+            path: ["variant"],
+            key: "variant",
+            label: "variant",
+            valueType: "string",
+            value: "main",
+            expandable: false,
+          },
+        }),
+      ).toBe(true);
+    });
+    expect(view.getViewData()).toBe(
+      CITATION_SOURCE.replace("{% if", "{{ zt.variant }}{% if"),
+    );
+  });
+
+  it("switches the rendering language on the manifest key alone", () => {
+    const { view } = openKind("templates/zotlit-citation.md", CITATION_SOURCE);
+    const menu = new Menu();
+    view.onPaneMenu(menu as never, "more-options");
+    const language = menu.items.find(
+      (item) => item.title === m.template_workbench_change_language(),
+    )!;
+    language
+      .submenu!.items.find(
+        (item) => item.title === m.workbench_name_language_eta(),
+      )!
+      .click();
+
+    expect(view.getViewData()).toBe(
+      CITATION_SOURCE.replace("language: liquid", "language: eta"),
+    );
+    expect(view.controller.plainDocument?.manifest.language).toBe("eta");
+  });
 });
