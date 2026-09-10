@@ -28,13 +28,13 @@ import type { FixtureLayout } from "./layout.ts";
 import { LITERATURE_NOTE_PROFILES } from "./spec.ts";
 
 const FIXTURE_PLUGIN_VERSION = "2.1.1";
-/** The one partial every vault holds, which the bundle and the Save both offer. */
-const BUILT_IN_CITE_PARTIAL: LiteratureNoteTemplatePartial = {
-  name: "cite",
+/** The Citation Template every vault holds, which the bundle and the Save both offer. */
+const BUILT_IN_CITATION_TEMPLATE: LiteratureNoteTemplatePartial = {
+  name: "citation",
   language: "liquid",
   source: readFileSync(
     fileURLToPath(
-      import.meta.resolve("@zotlit/templates/defaults/cite.liquid"),
+      import.meta.resolve("@zotlit/templates/defaults/citation.liquid"),
     ),
     "utf8",
   ),
@@ -272,7 +272,7 @@ function expectedRevisionConflict(
 function dependencyBundle(source: string): TemplateDependenciesResponse {
   try {
     const bundledSource = exportLiteratureNotePack(source, [
-      BUILT_IN_CITE_PARTIAL,
+      BUILT_IN_CITATION_TEMPLATE,
     ]);
     const document = new TemplateFacade().parseLiteratureNoteTemplate(
       bundledSource,
@@ -338,7 +338,7 @@ function validateProfileSource(
     // The partials this Profile calls, resolved the way the dependency bundle
     // resolves them: a call no vault can answer refuses the Save here rather
     // than leaving behind a Profile the next render cannot run.
-    exportLiteratureNotePack(source, [BUILT_IN_CITE_PARTIAL]);
+    exportLiteratureNotePack(source, [BUILT_IN_CITATION_TEMPLATE]);
   } catch {
     return { state: "refused", reason: "invalid-source" };
   }

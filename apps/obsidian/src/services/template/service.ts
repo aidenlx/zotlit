@@ -2,7 +2,10 @@ import { dirname, join } from "node:path/posix";
 import { TFile } from "obsidian";
 import type { App, EventRef, TAbstractFile } from "obsidian";
 
+import { citekeysToCiteTemplateData } from "@zotlit/db";
+import type { CitationVariant, CiteRef } from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
+import { inlineCitation } from "@zotlit/templates";
 import type {
   AutoTrim,
   FrontmatterLanguage,
@@ -33,6 +36,7 @@ import type { LiteratureNoteTemplatePartial } from "@zotlit/templates/literature
 import { managedRegionTransform } from "@zotlit/templates/obsidian";
 
 import { RESERVED_KEYS } from "@/lib/constants";
+import { ensureFolder } from "@/lib/ensure-folder";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import type { UnknownProfileDiagnostic } from "@/lib/profile-stamp";
@@ -42,9 +46,11 @@ import type { Settings } from "@/services/settings/schema";
 import type { SettingsService } from "@/services/settings/service";
 
 import {
+  CITATION_TEMPLATE_NAME,
+  CITATION_TEMPLATE_SOURCE,
+  citationPath,
   classifyTemplateFolderFile,
   DEFAULT_TEMPLATES,
-  GLOBAL_TEMPLATE_NAMES,
   isTemplateName,
   MANAGED_CONTENT_TEMPLATE,
   partialPath,
@@ -57,6 +63,8 @@ import { normalizeVaultPath } from "./path";
 
 const logger = getLogger("template");
 const FLUSH_DEBOUNCE_MS = 500;
+/** Bounded wait for the reconciler after this service writes a document. */
+const SETTLE_TIMEOUT_MS = 5_000;
 const LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES: ReadonlySet<TemplateName> =
   new Set(["filename", "note", "annotation", MANAGED_CONTENT_TEMPLATE]);
 
@@ -65,9 +73,9 @@ const LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES: ReadonlySet<TemplateName> =
  * `citation`, and each Legacy Template File slot answers to its own name for
  * as long as the slots exist.
  */
-const RESERVED_PARTIAL_NAMES: ReadonlySet<string> = new Set([
+const RESERVED_PARTIAL_NAMES: ReadonlySet<string> = new Set<string>([
   ...TEMPLATE_NAMES,
-  "citation",
+  CITATION_TEMPLATE_NAME,
 ]);
 
 /** localStorage key for the per-device JavaScript Templates consent flag. */
@@ -188,6 +196,27 @@ interface RegisteredPartial {
   source: string;
 }
 
+/** The Citation Template as it currently resolves; `path` is `null` while the
+ *  built-in source stands in for a vault document. */
+interface RegisteredCitationTemplate {
+  path: string | null;
+  language: TemplateLanguage;
+  source: string;
+}
+
+/** The Citation Template's state, as the Citations settings row reads it. */
+export interface CitationTemplateStatus {
+  /** Where `zotlit-citation.md` lives, whether or not the vault holds it. */
+  readonly path: string;
+  /** The vault holds the document; `false` means the built-in text renders. */
+  readonly customized: boolean;
+  readonly language: TemplateLanguage;
+  /** The document's path while it is Eta and the JavaScript Templates gate
+   *  keeps it inert, `null` otherwise. */
+  readonly inertPath: string | null;
+  readonly compileError: string | null;
+}
+
 /**
  * The reconciliation work one folder scan or one debounce window collected,
  * bucketed by the Template Document kind that reconciles each entry.
@@ -196,6 +225,10 @@ interface TemplateWork {
   readonly names: Set<string>;
   readonly documentReferences: Set<string>;
   readonly partialNames: Set<string>;
+  /** Holds {@link CITATION_TEMPLATE_NAME} while the one Citation Template
+   *  awaits reconciliation; a set so it clears and counts with every other
+   *  bucket. */
+  readonly citation: Set<string>;
   readonly unrecognizedPaths: Set<string>;
 }
 
@@ -204,6 +237,7 @@ function emptyTemplateWork(): TemplateWork {
     names: new Set(),
     documentReferences: new Set(),
     partialNames: new Set(),
+    citation: new Set(),
     unrecognizedPaths: new Set(),
   };
 }
@@ -214,6 +248,7 @@ function templateWorkBuckets(work: TemplateWork): readonly Set<string>[] {
     work.names,
     work.documentReferences,
     work.partialNames,
+    work.citation,
     work.unrecognizedPaths,
   ];
 }
@@ -228,6 +263,7 @@ function takeTemplateWork(pending: TemplateWork): TemplateWork {
     names: new Set(pending.names),
     documentReferences: new Set(pending.documentReferences),
     partialNames: new Set(pending.partialNames),
+    citation: new Set(pending.citation),
     unrecognizedPaths: new Set(pending.unrecognizedPaths),
   };
   for (const bucket of templateWorkBuckets(pending)) bucket.clear();
@@ -239,8 +275,7 @@ function takeTemplateWork(pending: TemplateWork): TemplateWork {
  * reconciles from — the one place a kind maps to its reconciliation.
  *
  * @returns whether `path` landed in a bucket. A file ZotLit ignores lands in
- *   none, and so does the Citation Template: it is recognized, so it is read
- *   neither as a Profile document nor as an unrecognized file.
+ *   none.
  */
 function collectTemplatePath(work: TemplateWork, path: string): boolean {
   const classified = classifyTemplateFolderFile(path);
@@ -253,6 +288,9 @@ function collectTemplatePath(work: TemplateWork, path: string): boolean {
       return true;
     case "partial":
       work.partialNames.add(classified.name);
+      return true;
+    case "citation":
+      work.citation.add(CITATION_TEMPLATE_NAME);
       return true;
     case "unrecognized":
       work.unrecognizedPaths.add(path);
@@ -313,6 +351,8 @@ export class TemplateService extends Service<void> {
   readonly #pending: TemplateWork = emptyTemplateWork();
   /** Partial name → the `zotlit-partial.<name>.md` document backing it. */
   readonly #partials = new Map<string, RegisteredPartial>();
+  /** The Citation Template currently registered, `null` while none compiles. */
+  #citation: RegisteredCitationTemplate | null = null;
   /** Vault paths of the `zotlit-` files no kind claims, reported in settings. */
   readonly #unrecognizedFiles = new Set<string>();
   readonly #literatureNoteDocuments = new Map<
@@ -384,12 +424,69 @@ export class TemplateService extends Service<void> {
     return [...this.#unrecognizedFiles].sort();
   }
 
+  /**
+   * The Legacy Template File slots and how each currently resolves — empty
+   * once conversion has run: a converted vault keeps its note sources in
+   * Profile documents and its citation text in the Citation Template, so no
+   * slot remains.
+   */
   getTemplateFileStatuses(): readonly TemplateFileStatus[] {
     this.#requireLoaded("getTemplateFileStatuses");
-    const names = this.#settings.current?.["note.template-conversion-pending"]
-      ? TEMPLATE_NAMES
-      : GLOBAL_TEMPLATE_NAMES;
-    return this.#getTemplateFileStatuses(names);
+    return this.#settings.current?.["note.template-conversion-pending"]
+      ? this.#getTemplateFileStatuses(TEMPLATE_NAMES)
+      : [];
+  }
+
+  /**
+   * How the Citation Template currently resolves: the vault's
+   * `zotlit-citation.md`, or the built-in source that stands in for it.
+   */
+  getCitationTemplateStatus(): CitationTemplateStatus {
+    this.#requireLoaded("getCitationTemplateStatus");
+    const path = citationPath(this.#currentTemplateFolder());
+    const inertPath = this.#inertEta.get(CITATION_TEMPLATE_NAME) ?? null;
+    return {
+      path,
+      customized: this.#app.vault.getFileByPath(path) !== null,
+      language: this.#citation?.language ?? "liquid",
+      inertPath,
+      compileError:
+        this.#compileErrors.get(CITATION_TEMPLATE_NAME)?.message ?? null,
+    };
+  }
+
+  /**
+   * The Citation Template document, created from the built-in source when the
+   * vault holds none, so a first edit starts from the text ZotLit renders.
+   *
+   * Awaits {@link ready} first: the "Customize citation text" command is
+   * registered before the folder scan finishes, so an invocation during
+   * startup waits for the scan instead of failing the loaded-state check.
+   */
+  async materializeCitationTemplate(): Promise<TFile> {
+    await this.ready;
+    this.#requireLoaded("materializeCitationTemplate");
+    const path = citationPath(this.#currentTemplateFolder());
+    const existing = this.#app.vault.getFileByPath(path);
+    if (existing) return existing;
+    await ensureFolder(this.#app, this.#currentTemplateFolder() || "/");
+    const file = await this.#app.vault.create(path, CITATION_TEMPLATE_SOURCE);
+    await this.#settle();
+    return file;
+  }
+
+  /**
+   * Move the Citation Template document to Obsidian's recoverable trash, so
+   * the built-in citation text renders again and a bad edit is undoable.
+   */
+  async restoreCitationTemplate(): Promise<void> {
+    this.#requireLoaded("restoreCitationTemplate");
+    const file = this.#app.vault.getFileByPath(
+      citationPath(this.#currentTemplateFolder()),
+    );
+    if (!file) return;
+    await this.#app.fileManager.trashFile(file);
+    await this.#settle();
   }
 
   #getTemplateFileStatuses(
@@ -654,12 +751,21 @@ export class TemplateService extends Service<void> {
       )
     ).filter((partial) => partial !== null);
     // A Shared Partial bundles the source its document holds, without the
-    // manifest line that named the language.
+    // manifest line that named the language. The Citation Template joins them
+    // under its own name, so a host that renders an annotation's citation —
+    // the web Workbench — gets the text this vault would produce.
     for (const [name, partial] of this.#partials) {
       partials.push({
         name,
         language: partial.language,
         source: partial.source,
+      });
+    }
+    if (this.#citation) {
+      partials.push({
+        name: CITATION_TEMPLATE_NAME,
+        language: this.#citation.language,
+        source: this.#citation.source,
       });
     }
     return exportLiteratureNotePack(source, partials, options);
@@ -800,6 +906,25 @@ export class TemplateService extends Service<void> {
       );
     }
     return this.#classifyRender(() => this.#facade.render(name, data));
+  }
+
+  /**
+   * Render one in-text Citation through the Citation Template: `refs` become
+   * `zt.citations` and `zt.items`, and `variant` names the gesture as
+   * `zt.variant`. The output is normalized to its inline form, so a template
+   * that spans lines still inserts one in-text token.
+   *
+   * @throws {@link InertTemplateError} when the Citation Template document is
+   *   Eta and the JavaScript Templates gate is off.
+   * @throws when the document has a compile error or fails to render.
+   */
+  renderCitation(refs: readonly CiteRef[], variant: CitationVariant): string {
+    return inlineCitation(
+      this.render(
+        CITATION_TEMPLATE_NAME,
+        citekeysToCiteTemplateData(refs, variant),
+      ),
+    );
   }
 
   /**
@@ -1045,6 +1170,7 @@ export class TemplateService extends Service<void> {
       this.#inertEta.clear();
       this.#winners.clear();
       this.#partials.clear();
+      this.#citation = null;
       this.#unrecognizedFiles.clear();
       this.#facade.reset();
       this.#compileErrors.clear();
@@ -1070,6 +1196,9 @@ export class TemplateService extends Service<void> {
       for (const name of TEMPLATE_NAMES) {
         if (!work.names.has(name)) this.#useDefault(name);
       }
+      // Reconciled on every rebuild, file or none: with no document the
+      // built-in source registers, so `citation` always resolves to something.
+      work.citation.add(CITATION_TEMPLATE_NAME);
 
       await this.#reconcileWork(work, generation);
       if (generation !== this.#folderGeneration) return;
@@ -1158,6 +1287,7 @@ export class TemplateService extends Service<void> {
       ...[...work.partialNames].map((name) =>
         this.#reconcilePartial(name, generation),
       ),
+      ...(work.citation.size > 0 ? [this.#reconcileCitation(generation)] : []),
     ]);
   }
 
@@ -1359,8 +1489,113 @@ export class TemplateService extends Service<void> {
     this.#defineTemplate(name, parsed.source, language);
   }
 
+  /**
+   * Resolve the Citation Template from `zotlit-citation.md`, or register the
+   * built-in source when the vault holds no document. Either way the template
+   * answers to {@link CITATION_TEMPLATE_NAME}, so every citation render and
+   * the pack export reach it by that one name.
+   *
+   * A document that fails to parse or to compile is left undefined and records
+   * a compile error, and one written in Eta while the JavaScript Templates gate
+   * is off is left inert: inserting a citation then reports the inert notice
+   * rather than quietly falling back to the built-in text.
+   */
+  async #reconcileCitation(generation: number): Promise<void> {
+    if (generation !== this.#folderGeneration) return;
+
+    const name = CITATION_TEMPLATE_NAME;
+    const path = citationPath(this.#currentTemplateFolder());
+    const file = this.#app.vault.getFileByPath(path);
+    if (!file) {
+      this.#useBuiltInCitation();
+      return;
+    }
+
+    let source: string;
+    try {
+      source = await this.#app.vault.cachedRead(file);
+    } catch (error) {
+      if (generation !== this.#folderGeneration) return;
+      logger.warn("Failed to read the Citation Template", { error, path });
+      this.#useBuiltInCitation();
+      return;
+    }
+    if (generation !== this.#folderGeneration) return;
+
+    let parsed;
+    try {
+      parsed = parsePlainTemplateDocument(source);
+    } catch (error) {
+      this.#unregisterCitation();
+      this.#compileErrors.set(name, { message: errorMessage(error) });
+      logger.warn("Failed to parse the Citation Template", { error, path });
+      return;
+    }
+
+    const { language } = parsed.manifest;
+    if (language === "eta" && !this.#javascriptTemplatesEnabled) {
+      if (this.#inertEta.get(name) !== path) {
+        logger.debug(
+          "Citation Template inert while JavaScript templates are disabled",
+          { path },
+        );
+      }
+      this.#unregisterCitation();
+      this.#inertEta.set(name, path);
+      return;
+    }
+
+    this.#registerCitation({ path, language, source: parsed.source });
+  }
+
+  /** Register the packaged Citation Template, as a vault with no document renders it. */
+  #useBuiltInCitation(): void {
+    this.#registerCitation({
+      path: null,
+      language: "liquid",
+      source: CITATION_TEMPLATE_SOURCE,
+    });
+  }
+
+  /**
+   * Register the source that won the Citation Template, and log the branch on
+   * every change of winner, so a diagnosis reads which source rendered a
+   * citation instead of re-instrumenting the reconcile.
+   */
+  #registerCitation(citation: RegisteredCitationTemplate): void {
+    const previous = this.#citation;
+    this.#unregisterCitation();
+    this.#citation = citation;
+    this.#defineTemplate(
+      CITATION_TEMPLATE_NAME,
+      citation.source,
+      citation.language,
+    );
+    if (
+      previous?.path !== citation.path ||
+      previous.language !== citation.language
+    ) {
+      logger.debug("Citation Template resolved", {
+        selected: citation.path === null ? "built-in" : "vault",
+        path: citation.path,
+        language: citation.language,
+      });
+    }
+  }
+
+  #unregisterCitation(): void {
+    this.#citation = null;
+    this.#unregisterTemplate(CITATION_TEMPLATE_NAME);
+  }
+
   #removePartial(name: string): void {
     this.#partials.delete(name);
+    this.#unregisterTemplate(name);
+  }
+
+  /** Drop every trace of `name`: its compiled editions and the status a
+   *  previous reconcile recorded for it. */
+  #unregisterTemplate(name: string): void {
     this.#compileErrors.delete(name);
     this.#inertEta.delete(name);
     this.#facade.remove(name, "liquid");
@@ -1413,6 +1648,14 @@ export class TemplateService extends Service<void> {
         name,
       });
       this.#facade.remove(name, "liquid");
+    }
+  }
+
+  /** Wait for the debounced reconciler to observe a write this service made,
+   *  so a caller reads the state its own change produced. */
+  async #settle(): Promise<void> {
+    if ((await this.waitUntilSettled(SETTLE_TIMEOUT_MS)) !== "settled") {
+      throw new Error("The template folder did not finish scanning");
     }
   }
 

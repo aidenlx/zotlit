@@ -218,7 +218,10 @@ function makeService(
     existing?: TFile[];
     literatureNotes?: TFile[];
     attachmentImport?: Pick<AttachmentImportService, "prepare">;
-    template?: Pick<TemplateService, "render" | "renderProfileAnnotation">;
+    template?: Pick<
+      TemplateService,
+      "render" | "renderCitation" | "renderProfileAnnotation"
+    >;
   } = {},
 ): NoteImporter {
   let current: Settings = defaults;
@@ -235,8 +238,12 @@ function makeService(
       options.template ??
       ({
         render: vi.fn(() => "[@cite]"),
+        renderCitation: vi.fn(() => "[@cite]"),
         renderProfileAnnotation: vi.fn(() => "profile annotation"),
-      } as Pick<TemplateService, "render" | "renderProfileAnnotation">),
+      } as Pick<
+        TemplateService,
+        "render" | "renderCitation" | "renderProfileAnnotation"
+      >),
     zoteroPref: { dataDir: "/data", baseAttachmentPath: null },
     attachmentImport: options.attachmentImport ?? makeAttachmentImport(),
   });
@@ -726,8 +733,12 @@ describe("createNoteImporter", () => {
     const renderProfileAnnotation = vi.fn(() => "profile annotation");
     const template = {
       render: vi.fn(() => "[@cite]"),
+      renderCitation: vi.fn(() => "[@cite]"),
       renderProfileAnnotation,
-    } as Pick<TemplateService, "render" | "renderProfileAnnotation">;
+    } as Pick<
+      TemplateService,
+      "render" | "renderCitation" | "renderProfileAnnotation"
+    >;
     const { app } = makeApp();
     const settings = resolveProfile(profileSettings(), PROFILE_B)!.settings;
     const batch = await makeService(app, { template }).prepare({

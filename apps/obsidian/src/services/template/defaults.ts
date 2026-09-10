@@ -1,17 +1,10 @@
 import { regex } from "arkregex";
 import { basename, join } from "node:path/posix";
 
-import annotationEta from "@zotlit/templates/defaults/annotation.eta?raw";
 import annotation from "@zotlit/templates/defaults/annotation.liquid?raw";
-import citeEta from "@zotlit/templates/defaults/cite.eta?raw";
-import cite from "@zotlit/templates/defaults/cite.liquid?raw";
-import cite2Eta from "@zotlit/templates/defaults/cite2.eta?raw";
-import cite2 from "@zotlit/templates/defaults/cite2.liquid?raw";
-import contentEta from "@zotlit/templates/defaults/content.eta?raw";
+import citation from "@zotlit/templates/defaults/citation.liquid?raw";
 import content from "@zotlit/templates/defaults/content.liquid?raw";
-import filenameEta from "@zotlit/templates/defaults/filename.eta?raw";
 import filename from "@zotlit/templates/defaults/filename.liquid?raw";
-import noteEta from "@zotlit/templates/defaults/note.eta?raw";
 import note from "@zotlit/templates/defaults/note.liquid?raw";
 import type { TemplateLanguage } from "@zotlit/templates/facade";
 import type { FrontmatterField } from "@zotlit/templates/frontmatter";
@@ -60,6 +53,21 @@ const PROFILE_DOCUMENT_PREFIX = "zotlit-profile.";
 /** The Citation Template is exactly one file. */
 const CITATION_DOCUMENT_FILENAME = "zotlit-citation.md";
 
+/**
+ * The name the Citation Template registers under, so every host renders it —
+ * and bundles it for the web Workbench — by one name.
+ */
+export const CITATION_TEMPLATE_NAME = "citation" as const;
+
+/**
+ * The Citation Template ZotLit renders while the vault holds no
+ * `zotlit-citation.md`, and the source the settings row materializes that file
+ * from. It maps the `alt` Citation Variant to an Author-in-text Citation and
+ * every other variant to a bracketed one, which is what the 2.1.x `cite2` and
+ * `cite` files rendered.
+ */
+export const CITATION_TEMPLATE_SOURCE = citation;
+
 /** Template whose render output is wrapped in managed-region markers. */
 export const MANAGED_CONTENT_TEMPLATE = "content" as const;
 
@@ -71,33 +79,13 @@ export const TEMPLATE_NAMES = [
   "note",
   "annotation",
   MANAGED_CONTENT_TEMPLATE,
-  "cite",
-  "cite2",
 ] as const;
-
-/** Vault-global slots after Literature Note Template conversion. */
-export const GLOBAL_TEMPLATE_NAMES = [
-  "cite",
-  "cite2",
-] as const satisfies readonly TemplateName[];
 
 export const DEFAULT_TEMPLATES: Record<TemplateName, string> = {
   filename,
   note,
   annotation,
   content,
-  cite,
-  cite2,
-};
-
-/** Eta editions of the embedded defaults, byte-parity with {@link DEFAULT_TEMPLATES}; used when a Template row switches to Eta. */
-export const DEFAULT_TEMPLATES_ETA: Record<TemplateName, string> = {
-  filename: filenameEta,
-  note: noteEta,
-  annotation: annotationEta,
-  content: contentEta,
-  cite: citeEta,
-  cite2: cite2Eta,
 };
 
 function templateFilename(name: string, language: TemplateLanguage): string {
@@ -121,6 +109,14 @@ export function templateFileFromPath(
   const match = TEMPLATE_FILE.exec(basename(normalizeVaultPath(path)));
   if (!match) return null;
   return { name: match.groups.name, language: match.groups.language };
+}
+
+/** Vault path of the Citation Template inside `folder`. */
+export function citationPath(folder: string): string {
+  const normalizedFolder = normalizeVaultPath(folder);
+  return normalizedFolder === ""
+    ? CITATION_DOCUMENT_FILENAME
+    : join(normalizedFolder, CITATION_DOCUMENT_FILENAME);
 }
 
 /** Vault path of the Shared Partial named `name` inside `folder`. */

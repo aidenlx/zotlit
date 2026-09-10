@@ -138,7 +138,7 @@ export function renderProfile(
       return withRenderedCitation(
         facade,
         restoreTemplateData(annotation, descriptors),
-        defined.has(CITE_TEMPLATE),
+        defined.has(CITATION_TEMPLATE),
       );
     });
     // The format is rendered on its own first, so a failure inside it is named
@@ -150,7 +150,7 @@ export function renderProfile(
         ? withRenderedCitation(
             facade,
             restoreTemplateData(example.root, example.descriptors),
-            defined.has(CITE_TEMPLATE),
+            defined.has(CITATION_TEMPLATE),
           )
         : annotations[0];
       if (selected) {
@@ -247,37 +247,41 @@ export function renderProfile(
   }
 }
 
-/** The partial an annotation's page-pinned citation is rendered through. */
-const CITE_TEMPLATE = "cite";
+/** The Citation Template name an annotation's page-pinned citation renders through. */
+const CITATION_TEMPLATE = "citation";
 
 /**
  * The annotation's `citation`, produced here rather than carried in the
- * snapshot: Obsidian renders it from the parent Item with the annotation's page
- * as locator through the `cite` partial, so a preview holding that partial
- * produces the same text. A Profile whose `cite` partial is neither bundled nor
- * authored, and a parent Item with no citation key, leave the value null.
+ * snapshot: Obsidian renders it from the parent Item with the annotation's
+ * page as locator through the Citation Template under the main Citation
+ * Variant, so a preview holding that template produces the same text. A bundle
+ * carrying no Citation Template, and a parent Item with no citation key, leave
+ * the value null.
  * @see apps/obsidian/src/lib/annotation-render.ts annotationCitation
  */
 function withRenderedCitation(
   facade: TemplateFacade,
   restored: Record<string, unknown>,
-  hasCiteTemplate: boolean,
+  hasCitationTemplate: boolean,
 ): AnnotationTemplateContext {
   const annotation = restored as unknown as TemplateAnnotation;
   return withAnnotationCitation(annotation, () => {
     const parent = annotation.parentItem;
-    if (!hasCiteTemplate || !parent?.citekey) return null;
+    if (!hasCitationTemplate || !parent?.citekey) return null;
     return inlineCitation(
       facade.render(
-        CITE_TEMPLATE,
-        citekeysToCiteTemplateData([
-          {
-            citationKey: parent.citekey,
-            item: narrowBaseDataToCiteItemData(parent, parent.citekey),
-            label: "page",
-            locator: annotation.pageLabel,
-          },
-        ]),
+        CITATION_TEMPLATE,
+        citekeysToCiteTemplateData(
+          [
+            {
+              citationKey: parent.citekey,
+              item: narrowBaseDataToCiteItemData(parent, parent.citekey),
+              label: "page",
+              locator: annotation.pageLabel,
+            },
+          ],
+          "main",
+        ),
       ),
     );
   });

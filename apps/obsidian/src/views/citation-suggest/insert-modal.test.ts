@@ -26,7 +26,7 @@ function makeModal(
 }
 
 /**
- * Regression for discussion #644: the modal advertises `⇧↵` for the secondary
+ * Regression for discussion #644: the modal advertises `⇧↵` for the alternate
  * citation, but Obsidian's suggestion popup registers `Enter` with no
  * modifiers and matches them exactly, so Shift+Enter reached no handler at all
  * and the modal just sat there. The modal has to register the chord itself.

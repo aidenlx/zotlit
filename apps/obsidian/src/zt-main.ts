@@ -39,6 +39,7 @@ import { addProfileActions } from "./services/profile/actions";
 import { registerProtocolHandlers } from "./services/protocol/register";
 import { addReleaseActions } from "./services/release/actions";
 import { registerTemplateWorkbench } from "./services/template-workbench/register";
+import { addCitationTemplateActions } from "./services/template/actions";
 import { ZotLitSettingTab } from "./setting-tab";
 import { registerAnnotView } from "./views/annot-view/register";
 import { registerCitationPresentation } from "./views/citation-presentation/register";
@@ -272,6 +273,7 @@ export default class ZotLitPlugin extends Plugin {
       profile: services.profile,
       customize,
     });
+    addCitationTemplateActions(this, { template: services.template });
     addProfileActions(this, { importProfile: services.importProfile });
     addDatabaseActions(this, { db: services.db });
     addReleaseActions(this, { release: services.release });

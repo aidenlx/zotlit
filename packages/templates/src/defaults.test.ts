@@ -1,7 +1,5 @@
 import annotationEta from "@defaults/annotation.eta?raw";
 import annotationLiquid from "@defaults/annotation.liquid?raw";
-import citeLiquid from "@defaults/cite.liquid?raw";
-import cite2Liquid from "@defaults/cite2.liquid?raw";
 import contentEta from "@defaults/content.eta?raw";
 import contentLiquid from "@defaults/content.liquid?raw";
 import filenameEta from "@defaults/filename.eta?raw";
@@ -19,8 +17,6 @@ function defineLiquidDefaults(facade: TemplateFacade): void {
   facade.define("annotation", annotationLiquid, "liquid");
   facade.define("content", contentLiquid, "liquid");
   facade.define("note", noteLiquid, "liquid");
-  facade.define("cite", citeLiquid, "liquid");
-  facade.define("cite2", cite2Liquid, "liquid");
 }
 
 describe("Liquid default templates via the facade", () => {

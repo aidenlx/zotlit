@@ -2,6 +2,7 @@ import Ajv2020 from "ajv/dist/2020";
 import type { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
+import { citekeysToCiteTemplateData } from "@zotlit/db";
 import { createClient } from "@zotlit/db/client/node";
 import annotationSchema from "@zotlit/db/contract/annotation.schema.json";
 import filenameSchema from "@zotlit/db/contract/filename.schema.json";
@@ -98,12 +99,12 @@ describe("zotlit:template-data with the real loader", () => {
       code: "ETA_OPT_IN_REQUIRED",
     },
     {
-      error: new Error("cite cannot compile"),
+      error: new Error("citation cannot compile"),
       compileError: "Unexpected token",
       code: "TEMPLATE_COMPILE_ERROR",
     },
     {
-      error: new Error("cite render failed"),
+      error: new Error("citation render failed"),
       compileError: null,
       code: "TEMPLATE_RENDER_ERROR",
     },
@@ -129,7 +130,7 @@ describe("zotlit:template-data with the real loader", () => {
         },
         diagnostic: {
           code,
-          details: { template: "cite" },
+          details: { template: "citation" },
         },
       });
     },
@@ -411,8 +412,18 @@ function createFixture(options?: {
         templates: {
           ready: Promise.resolve(),
           compileErrors: options?.compileError
-            ? new Map([["cite", { message: options.compileError }]])
+            ? new Map([["citation", { message: options.compileError }]])
             : new Map(),
+          renderCitation: (refs, variant) => {
+            if (options?.renderError) throw options.renderError;
+            if (options?.render) {
+              return options.render(
+                "citation",
+                citekeysToCiteTemplateData(refs, variant),
+              );
+            }
+            return "Fixture citation";
+          },
           render: (name, data) => {
             if (options?.renderError) throw options.renderError;
             if (options?.render) return options.render(name, data);

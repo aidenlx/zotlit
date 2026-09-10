@@ -71,7 +71,7 @@ export interface ExplorerViewDeps extends TemplateDataDeps {
   settings: SettingsService;
   templates: Pick<
     TemplateService,
-    "javascriptTemplatesEnabled" | "ready" | "render"
+    "javascriptTemplatesEnabled" | "ready" | "render" | "renderCitation"
   >;
   pluginVersion: string;
 }

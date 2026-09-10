@@ -9,9 +9,10 @@ import {
 
 describe("citekeysToCiteTemplateData", () => {
   it("wraps each citekey in a citekey-only stub item at default citation props", () => {
-    const { items, citations } = citekeysToCiteTemplateData([
-      { citationKey: "smith2024" },
-    ]);
+    const { items, citations } = citekeysToCiteTemplateData(
+      [{ citationKey: "smith2024" }],
+      "main",
+    );
 
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
@@ -32,17 +33,32 @@ describe("citekeysToCiteTemplateData", () => {
     });
   });
 
+  it("carries the Citation Variant the caller named onto the root", () => {
+    // The variant names the gesture only; the Citation Template decides what
+    // each one renders, so the data hands it through untouched.
+    expect(
+      citekeysToCiteTemplateData([{ citationKey: "smith2024" }], "alt").variant,
+    ).toBe("alt");
+    expect(
+      citekeysToCiteTemplateData([{ citationKey: "smith2024" }], "main")
+        .variant,
+    ).toBe("main");
+  });
+
   it("carries a null citekey through unchanged (unresolved cite item)", () => {
-    const { items } = citekeysToCiteTemplateData([{ citationKey: null }]);
+    const { items } = citekeysToCiteTemplateData(
+      [{ citationKey: null }],
+      "main",
+    );
 
     expect(items[0]).toMatchObject({ citationKey: null, citekey: null });
   });
 
   it("keeps citations[i].item identical to items[i] and in order", () => {
-    const { items, citations } = citekeysToCiteTemplateData([
-      { citationKey: "a2020" },
-      { citationKey: "b2021" },
-    ]);
+    const { items, citations } = citekeysToCiteTemplateData(
+      [{ citationKey: "a2020" }, { citationKey: "b2021" }],
+      "main",
+    );
 
     expect(citations.map((c) => c.item.citationKey)).toEqual([
       "a2020",
@@ -53,17 +69,20 @@ describe("citekeysToCiteTemplateData", () => {
   });
 
   it("threads a ref's citation-scoped props onto the Citation Item instead of stubbing defaults", () => {
-    const { citations } = citekeysToCiteTemplateData([
-      {
-        citationKey: "smith2024",
-        locator: "62",
-        label: "page",
-        labelShort: "p.",
-        suppressAuthor: true,
-        prefix: "see",
-        suffix: "n. 4",
-      },
-    ]);
+    const { citations } = citekeysToCiteTemplateData(
+      [
+        {
+          citationKey: "smith2024",
+          locator: "62",
+          label: "page",
+          labelShort: "p.",
+          suppressAuthor: true,
+          prefix: "see",
+          suffix: "n. 4",
+        },
+      ],
+      "main",
+    );
 
     expect(citations[0]).toMatchObject({
       locator: "62",
@@ -76,15 +95,18 @@ describe("citekeysToCiteTemplateData", () => {
   });
 
   it("normalizes empty-string citation-scoped props to null", () => {
-    const { citations } = citekeysToCiteTemplateData([
-      {
-        citationKey: "smith2024",
-        locator: "",
-        label: "",
-        prefix: "",
-        suffix: "",
-      },
-    ]);
+    const { citations } = citekeysToCiteTemplateData(
+      [
+        {
+          citationKey: "smith2024",
+          locator: "",
+          label: "",
+          prefix: "",
+          suffix: "",
+        },
+      ],
+      "main",
+    );
 
     expect(citations[0]).toMatchObject({
       locator: null,
@@ -95,18 +117,20 @@ describe("citekeysToCiteTemplateData", () => {
   });
 
   it("normalizes an empty-string citation key to null", () => {
-    const { items, citations } = citekeysToCiteTemplateData([
-      { citationKey: "" },
-    ]);
+    const { items, citations } = citekeysToCiteTemplateData(
+      [{ citationKey: "" }],
+      "main",
+    );
 
     expect(items[0]).toMatchObject({ citationKey: null, citekey: null });
     expect(citations[0]?.item).toBe(items[0]);
   });
 
   it("falls back to default citation props for a ref missing them (DB-query leg)", () => {
-    const { citations } = citekeysToCiteTemplateData([
-      { citationKey: "doe2020" },
-    ]);
+    const { citations } = citekeysToCiteTemplateData(
+      [{ citationKey: "doe2020" }],
+      "main",
+    );
 
     expect(citations[0]).toMatchObject({
       locator: null,
@@ -127,9 +151,10 @@ describe("citekeysToCiteTemplateData", () => {
         date: "2011",
       });
 
-      const { items } = citekeysToCiteTemplateData([
-        { citationKey: "Hensher2011", item },
-      ]);
+      const { items } = citekeysToCiteTemplateData(
+        [{ citationKey: "Hensher2011", item }],
+        "main",
+      );
 
       expect(items[0]).toMatchObject({
         citationKey: "Hensher2011",
@@ -151,9 +176,10 @@ describe("citekeysToCiteTemplateData", () => {
         title: "Stated choice methods",
       });
 
-      const { items } = citekeysToCiteTemplateData([
-        { citationKey: "Hensher2011", item },
-      ]);
+      const { items } = citekeysToCiteTemplateData(
+        [{ citationKey: "Hensher2011", item }],
+        "main",
+      );
 
       expect(items[0]).not.toHaveProperty("tags");
       expect(items[0]).not.toHaveProperty("dateAdded");
@@ -171,9 +197,10 @@ describe("citekeysToCiteTemplateData", () => {
         extra: "DOI: 10.1/example\nFreeform note",
       });
 
-      const { items } = citekeysToCiteTemplateData([
-        { citationKey: "Example2024", item },
-      ]);
+      const { items } = citekeysToCiteTemplateData(
+        [{ citationKey: "Example2024", item }],
+        "main",
+      );
 
       expect(items[0]?.extra).toMatchObject({
         raw: "DOI: 10.1/example\nFreeform note",
@@ -188,9 +215,10 @@ describe("citekeysToCiteTemplateData", () => {
         citationKey: null,
       });
 
-      const { items } = citekeysToCiteTemplateData([
-        { citationKey: "Embedded2020", item },
-      ]);
+      const { items } = citekeysToCiteTemplateData(
+        [{ citationKey: "Embedded2020", item }],
+        "main",
+      );
 
       expect(items[0]).toMatchObject({
         citationKey: "Embedded2020",

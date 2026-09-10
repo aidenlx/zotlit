@@ -62,8 +62,17 @@ export interface CitationTemplateItem {
   suffix: string | null;
 }
 
-/** The cite-template data root (`zt`): `citations[i].item === items[i]`. */
+/**
+ * The gesture a Citation was requested with, handed to the Citation Template
+ * as `zt.variant`: `"main"` for Enter, `"alt"` for Shift+Enter or a trailing
+ * `/` in the suggester query. The enum names the gesture alone — the Citation
+ * Template decides what each variant renders.
+ */
+export type CitationVariant = "main" | "alt";
+
+/** The citation-template data root (`zt`): `citations[i].item === items[i]`. */
 export interface CitationTemplateData {
+  variant: CitationVariant;
   items: readonly TemplateCiteItemData[];
   citations: readonly CitationTemplateItem[];
 }
@@ -105,9 +114,13 @@ export type ResolvedCiteRef = Required<Omit<CiteRef, "item">> &
  * defaulted when a caller (the DB-query leg) doesn't supply them. The ref's
  * own `citationKey` always wins over the item's, so legs may mix (e.g. an
  * embedded-snapshot key with live DB item data).
+ *
+ * @param variant the Citation Variant this citation was requested with; every
+ *   caller names the gesture, so the Citation Template always reads one.
  */
 export function citekeysToCiteTemplateData(
   refs: readonly CiteRef[],
+  variant: CitationVariant,
 ): CitationTemplateData {
   const citations = refs.map((ref) => {
     const item = ref.item
@@ -121,7 +134,7 @@ export function citekeysToCiteTemplateData(
       : stubCiteItem(ref.citationKey);
     return toCitationItem(item, ref);
   });
-  return { items: citations.map((c) => c.item), citations };
+  return { variant, items: citations.map((c) => c.item), citations };
 }
 
 /** A raw DB {@link Item} carries `fields`; already-narrowed cite data never does. */
