@@ -92,10 +92,39 @@ describe("parseNoteSchema", () => {
     expect(parseNoteSchema(root)).toEqual({ supported: false, version: 5 });
   });
 
-  it("rejects a note with no schema container", () => {
+  it("reports a missing schema marker", () => {
     expect(parseNoteSchema(load("<p>plain note</p>"))).toEqual({
       supported: false,
       version: null,
+      fallbackReason: "missing-schema-marker",
+    });
+  });
+
+  // Zotero reads the marker with `parseInt`, so a value carrying trailing text
+  // is the leading integer to Zotero and must be to us as well — treating it as
+  // malformed would drop a real note to basic formatting.
+  it.each([
+    ["6invalid", 6],
+    ["6e0", 6],
+    ["06", 6],
+  ])("reads marker %s as version %i, as Zotero does", (marker, version) => {
+    expect(
+      parseNoteSchema(
+        load(`<div data-schema-version="${marker}"><p>x</p></div>`),
+      ),
+    ).toMatchObject({
+      supported: true,
+      version,
+    });
+  });
+
+  it("reports a marker with no leading integer as malformed", () => {
+    expect(
+      parseNoteSchema(load('<div data-schema-version="v6"><p>x</p></div>')),
+    ).toEqual({
+      supported: false,
+      version: null,
+      fallbackReason: "malformed-schema-marker",
     });
   });
 });

@@ -29,12 +29,16 @@ const MIN_SCHEMA_VERSION = 6;
  * conversion root — the `<div data-schema-version>` element passed to Turndown,
  * which converts only its children, so neither the `zotero-note znv1` storage
  * wrapper nor the container div itself leaks into output. Otherwise `version` is
- * the parsed version (or `null` when no schema container exists) for the caller
- * to log before rejecting the note as legacy.
+ * the parsed version, or `null` when no usable schema marker exists.
  */
 type NoteSchema =
   | { supported: true; container: HTMLElement; version: number }
-  | { supported: false; version: number | null };
+  | { supported: false; version: number }
+  | {
+      supported: false;
+      version: null;
+      fallbackReason: "missing-schema-marker" | "malformed-schema-marker";
+    };
 
 /**
  * Locate the note's schema container and read its `data-schema-version`.
@@ -45,18 +49,37 @@ type NoteSchema =
  * selector also matches the unwrapped form returned by `item.getNote()` / the
  * API.
  *
+ * The version parse matches Zotero's own: `parseInt` and a `Number.isInteger`
+ * guard, so a marker carrying trailing text (`"6invalid"`) reads as the leading
+ * integer Zotero reads. Only a marker with no leading integer at all counts as
+ * malformed and falls through to the Plain HTML Child Note path.
+ *
  * @see note-html-format-schema-report.md §2
+ * @see Zotero `note-editor/src/core/schema/metadata.js` `parseAttributes`
+ * @see Zotero `chrome/content/zotero/xpcom/data/notes.js` `upgradeSchemaV1`
  */
 export function parseNoteSchema(root: ParentNode): NoteSchema {
   const container = root.querySelector<HTMLDivElement>(
     "div[data-schema-version]",
   );
-  if (!container) return { supported: false, version: null };
+  if (!container) {
+    return {
+      supported: false,
+      version: null,
+      fallbackReason: "missing-schema-marker",
+    };
+  }
   const version = Number.parseInt(
     container.getAttribute("data-schema-version") ?? "",
     10,
   );
-  if (!Number.isInteger(version)) return { supported: false, version: null };
+  if (!Number.isInteger(version)) {
+    return {
+      supported: false,
+      version: null,
+      fallbackReason: "malformed-schema-marker",
+    };
+  }
   if (version < MIN_SCHEMA_VERSION) return { supported: false, version };
   return { supported: true, container, version };
 }

@@ -98,6 +98,19 @@ export const COLLECTIONS: readonly FixtureCollection[] = [
   { collectionID: 4, libraryID: 1, key: "PERSNAL2", name: "Personal only" },
 ];
 
+/**
+ * The Zotero Item types the Spec builds. Venue coverage drives the set: a
+ * native container field, an aliased one, an aliased publisher-role field, a
+ * native publisher field, and a type with neither role.
+ */
+export const FIXTURE_ITEM_TYPES = [
+  "journalArticle",
+  "bookSection",
+  "preprint",
+  "book",
+  "letter",
+] as const;
+
 export interface FixtureItem {
   itemID: number;
   libraryID: number;
@@ -106,14 +119,23 @@ export interface FixtureItem {
    * object-key format, so `isItemKey` accepts it.
    */
   key: string;
-  itemType: "journalArticle" | "bookSection";
+  itemType: (typeof FIXTURE_ITEM_TYPES)[number];
   /** `null` leaves the item without a native Zotero Citation Key. */
   citationKey: string | null;
   /** Fixture Vault filename stem when a prose page needs a stable target. */
   literatureNoteName?: string;
   title: string;
-  /** Container title, stored under the type-specific field of {@link itemType}. */
-  containerTitle: string;
+  /**
+   * The Item's **Venue**. The builder resolves which per-type field receives
+   * it — the container-role field where {@link itemType} has one, its
+   * publisher-role field otherwise. Omit it for a type that records neither.
+   */
+  venue?: string;
+  /**
+   * A publisher-role value on a type that also records a container role, so
+   * the container-first Venue chain has something to win against.
+   */
+  publisher?: string;
   /** Publication year, as Zotero stores the raw `date` string. */
   date: string;
   creators: readonly FixtureCreator[];
@@ -148,7 +170,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "personalAlpha2024",
     title: "Alpha of the personal library",
-    containerTitle: "Journal of Personal Records",
+    venue: "Journal of Personal Records",
     date: "2024",
     creators: [
       {
@@ -185,7 +207,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "duplicateWithin2020",
     title: "Within-library duplicate, first item",
-    containerTitle: "Journal of Personal Records",
+    venue: "Journal of Personal Records",
     date: "2020",
     creators: [author("Bo", "Duplicate")],
     dateModified: "2025-03-09 12:00:00",
@@ -198,7 +220,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "duplicateWithin2020",
     title: "Within-library duplicate, second item",
-    containerTitle: "Journal of Personal Records",
+    venue: "Journal of Personal Records",
     date: "2020",
     creators: [author("Cai", "Duplicate")],
     dateModified: "2025-03-08 12:00:00",
@@ -211,7 +233,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "duplicateAcross2019",
     title: "Cross-library duplicate, personal side",
-    containerTitle: "Journal of Personal Records",
+    venue: "Journal of Personal Records",
     date: "2019",
     creators: [author("Dee", "Across")],
     dateModified: "2025-03-07 12:00:00",
@@ -224,7 +246,8 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "bookSection",
     citationKey: null,
     title: "Personal item without a citation key",
-    containerTitle: "Collected Personal Essays",
+    venue: "Collected Personal Essays",
+    publisher: "Essay House",
     date: "2018",
     creators: [author("Eli", "Unkeyed")],
     relatedKeys: ["AAAAAAAA"],
@@ -238,7 +261,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "sharedReadingAlpha2023",
     title: "Alpha of the shared reading group",
-    containerTitle: "Journal of Shared Reading",
+    venue: "Journal of Shared Reading",
     date: "2023",
     creators: [author("Fay", "Shared")],
     dateModified: "2025-03-05 12:00:00",
@@ -251,7 +274,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "sharedReadingBeta2022",
     title: "Beta of the shared reading group",
-    containerTitle: "Journal of Shared Reading",
+    venue: "Journal of Shared Reading",
     date: "2022",
     creators: [author("Gil", "Shared")],
     dateModified: "2025-03-04 12:00:00",
@@ -264,7 +287,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "duplicateAcross2019",
     title: "Cross-library duplicate, lab side",
-    containerTitle: "Lab Archive Proceedings",
+    venue: "Lab Archive Proceedings",
     date: "2019",
     creators: [author("Hal", "Across")],
     dateModified: "2025-03-03 12:00:00",
@@ -277,7 +300,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "labArchiveAlpha2021",
     title: "Alpha of the lab archive",
-    containerTitle: "Lab Archive Proceedings",
+    venue: "Lab Archive Proceedings",
     date: "2021",
     creators: [author("Ivy", "Archive")],
     dateModified: "2025-03-04 12:00:00",
@@ -290,7 +313,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "consortiumAlpha2020",
     title: "Alpha of the read-only consortium",
-    containerTitle: "Consortium Reading Room Notes",
+    venue: "Consortium Reading Room Notes",
     date: "2020",
     creators: [author("Jo", "Consortium")],
     dateModified: "2025-03-02 12:00:00",
@@ -303,7 +326,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "personalTieFirst2017",
     title: "Personal tie, lower item id",
-    containerTitle: "Journal of Personal Records",
+    venue: "Journal of Personal Records",
     date: "2017",
     creators: [author("Kim", "Tie")],
     dateModified: "2025-03-01 12:00:00",
@@ -316,7 +339,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "personalTieSecond2017",
     title: "Personal tie, higher item id",
-    containerTitle: "Journal of Personal Records",
+    venue: "Journal of Personal Records",
     date: "2017",
     creators: [author("Lin", "Tie")],
     dateModified: "2025-03-01 12:00:00",
@@ -329,7 +352,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "bookSection",
     citationKey: "nafulaSakimasSong",
     title: "Sakima’s song",
-    containerTitle: "African Storybook",
+    venue: "African Storybook",
     date: "2015",
     creators: [author("Ursula", "Nafula")],
     dateModified: "2025-02-21 12:00:00",
@@ -342,7 +365,7 @@ export const ITEMS: readonly FixtureItem[] = [
     itemType: "journalArticle",
     citationKey: "ioannidisWhyMost2005",
     title: "Why Most Published Research Findings Are False",
-    containerTitle: "PLoS Medicine",
+    venue: "PLoS Medicine",
     date: "2005",
     creators: [author("John P. A.", "Ioannidis")],
     dateModified: "2025-02-13 12:00:00",
@@ -357,7 +380,7 @@ export const ITEMS: readonly FixtureItem[] = [
     literatureNoteName: "Hensher2011",
     title:
       "Interrogation of Responses to Stated Choice Experiments: Is there sense in what respondents tell us?",
-    containerTitle: "Journal of Choice Modelling",
+    venue: "Journal of Choice Modelling",
     date: "2011",
     creators: [author("David A.", "Hensher")],
     dateModified: "2025-02-11 12:00:00",
@@ -372,7 +395,7 @@ export const ITEMS: readonly FixtureItem[] = [
     literatureNoteName: "wallgren-petterssonDistalMyopathyCaused2007",
     title:
       "Distal myopathy caused by homozygous missense mutations in the nebulin gene",
-    containerTitle: "Brain",
+    venue: "Brain",
     date: "2007",
     creators: [author("Carina", "Wallgren-Pettersson")],
     dateModified: "2025-02-10 12:00:00",
@@ -387,7 +410,7 @@ export const ITEMS: readonly FixtureItem[] = [
     literatureNoteName: "wangMutationalClinicalSpectrum2020a",
     title:
       "Mutational and clinical spectrum in a cohort of Chinese patients with hereditary nemaline myopathy",
-    containerTitle: "Clinical Genetics",
+    venue: "Clinical Genetics",
     date: "2020",
     creators: [author("Zheng", "Wang")],
     dateModified: "2025-02-09 12:00:00",
@@ -402,7 +425,7 @@ export const ITEMS: readonly FixtureItem[] = [
     literatureNoteName: "wittNebulinRegulatesThin2006",
     title:
       "Nebulin regulates thin filament length, contractility, and Z-disk structure in vivo",
-    containerTitle: "The EMBO Journal",
+    venue: "The EMBO Journal",
     date: "2006",
     creators: [author("Christopher C.", "Witt")],
     dateModified: "2025-02-08 12:00:00",
@@ -416,7 +439,7 @@ export const ITEMS: readonly FixtureItem[] = [
     citationKey: null,
     literatureNoteName: "xuNoCitationKeyProperty2019",
     title: "A Literature Note whose Zotero item carries no native citation key",
-    containerTitle: "Fixture Journal",
+    venue: "Fixture Journal",
     date: "2019",
     creators: [author("Xiu", "Xu")],
     dateModified: "2025-02-07 12:00:00",
@@ -431,7 +454,7 @@ export const ITEMS: readonly FixtureItem[] = [
     literatureNoteName: "yinClinicopathologicalFeaturesMutational2021",
     title:
       "Clinico-pathological features and mutational spectrum of 16 nemaline myopathy patients from a Chinese neuromuscular center",
-    containerTitle: "Neuromuscular Disorders",
+    venue: "Neuromuscular Disorders",
     date: "2021",
     creators: [author("Huan", "Yin")],
     dateModified: "2025-02-06 12:00:00",
@@ -445,7 +468,7 @@ export const ITEMS: readonly FixtureItem[] = [
     citationKey: "rougierTenSimpleRules2014",
     literatureNoteName: "rougierTenSimpleRules2014",
     title: "Ten Simple Rules for Better Figures",
-    containerTitle: "PLOS Computational Biology",
+    venue: "PLOS Computational Biology",
     date: "2014",
     creators: [
       author("Nicolas P.", "Rougier"),
@@ -453,6 +476,44 @@ export const ITEMS: readonly FixtureItem[] = [
       author("Philip E.", "Bourne"),
     ],
     dateModified: "2025-02-05 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 57,
+    libraryID: 1,
+    key: "PREPRNT2",
+    itemType: "preprint",
+    citationKey: "yePreprintRepository2022",
+    title: "A preprint whose Venue is its repository",
+    venue: "arXiv",
+    date: "2022",
+    creators: [author("Lin", "Ye")],
+    dateModified: "2025-02-04 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 58,
+    libraryID: 1,
+    key: "BKPUBLR4",
+    itemType: "book",
+    citationKey: "weiBookPublisher2017",
+    title: "A book whose Venue is its publisher",
+    venue: "Fixture University Press",
+    date: "2017",
+    creators: [author("Xin", "Wei")],
+    dateModified: "2025-02-03 12:00:00",
+    collectionIDs: [1],
+  },
+  {
+    itemID: 59,
+    libraryID: 1,
+    key: "LETTERS5",
+    itemType: "letter",
+    citationKey: "chenLetterNoVenue2015",
+    title: "A letter that records no Venue at all",
+    date: "2015",
+    creators: [author("Mei", "Chen")],
+    dateModified: "2025-02-02 12:00:00",
     collectionIDs: [1],
   },
 ];
@@ -1076,7 +1137,7 @@ export function createStressItems(count: number): readonly FixtureItem[] {
       itemType: "journalArticle",
       citationKey: `stress${String(ordinal).padStart(7, "0")}`,
       title: `Synthetic stress item ${ordinal}`,
-      containerTitle: "Stress Build Journal",
+      venue: "Stress Build Journal",
       date: String(2000 + (seededIndex % 25)),
       creators: [author("Stress", `Author ${ordinal}`)],
       tags: [

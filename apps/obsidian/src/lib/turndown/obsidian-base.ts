@@ -15,6 +15,14 @@ export const obsidianTurndownOptions: TurndownService.Options = {
   linkStyle: "inlined",
 };
 
+export function createObsidianTurndown(
+  Turndown: typeof TurndownService,
+): TurndownService {
+  const td = new Turndown(obsidianTurndownOptions);
+  addObsidianRules(td);
+  return td;
+}
+
 const ATTR_WS = /(?:\n+\s*)+/g;
 const PARENS = /([()])/g;
 const LEAD_NL = /^\n+/;

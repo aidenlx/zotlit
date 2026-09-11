@@ -91,6 +91,10 @@ _Avoid_: extra field (ambiguous with the whole field), tag
 **Extra Line**:
 One source row of an **Extra** field in document order — either a parsed **Extra Pair** or a non-pair text/blank row. Retains the row's raw text so freeform prose interleaved with pairs is never dropped.
 
+**Venue**:
+The journal, book, website, repository, university, or publisher an Item appeared under — the first populated field from its container role (Zotero's `publicationTitle` base field) then its publisher role (the `publisher` base field). Item types with neither, such as Letter and Email, have no Venue.
+_Avoid_: source (collides with Source mode and the Immutable Source Read Mode), container title (Zotero's narrower `publicationTitle` base field), publication
+
 ### Creators
 
 **Primary Creators**:

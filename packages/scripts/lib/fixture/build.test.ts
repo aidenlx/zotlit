@@ -374,6 +374,37 @@ describe("the generated Zotero database", () => {
     });
   });
 
+  it("resolves a Venue for every shape of the chain", () => {
+    using db = openClient();
+
+    expect(
+      getItemsByID(db, [1, 5, 57, 58, 59]).map(({ key, venue }) => [
+        key,
+        venue,
+      ]),
+    ).toEqual([
+      // A native container field, then an aliased one.
+      ["AAAAAAAA", "Journal of Personal Records"],
+      ["EEEE5555", "Collected Personal Essays"],
+      // An aliased publisher-role field, then a native one.
+      ["PREPRNT2", "arXiv"],
+      ["BKPUBLR4", "Fixture University Press"],
+      // An item type that records neither role.
+      ["LETTERS5", null],
+    ]);
+  });
+
+  it("gives the container role precedence over the publisher role", () => {
+    using db = openClient();
+    const bookSection = getItemsByID(db, [5])[0]!;
+
+    expect(bookSection.baseFields).toMatchObject({
+      publicationTitle: "Collected Personal Essays",
+      publisher: "Essay House",
+    });
+    expect(bookSection.venue).toBe("Collected Personal Essays");
+  });
+
   it("reads manual and automatic tags through the public tag query", () => {
     using db = openClient();
 
