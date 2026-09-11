@@ -41,7 +41,7 @@ export const SECTIONS: readonly SectionSpec[] = [
     types: ["NoteTemplateContext"],
     sample: "zt",
     prefix: "zt.",
-    lead: "The note template (`zotlit-note.liquid.md`) and the content template (`zotlit-content.liquid.md`) share this context.",
+    lead: "The note body of a Profile document, and the `{% managed %}` block inside it, share this context.",
   },
   {
     id: "annotation-template",
@@ -50,7 +50,7 @@ export const SECTIONS: readonly SectionSpec[] = [
     types: ["AnnotationTemplateContext"],
     sample: "zt",
     prefix: "zt.",
-    lead: "The annotation template (`zotlit-annotation.liquid.md`) receives a single annotation as `zt`.",
+    lead: "The Annotation Section of a Profile document receives a single annotation as `zt`.",
   },
   {
     id: "filename-template",
@@ -59,7 +59,7 @@ export const SECTIONS: readonly SectionSpec[] = [
     types: ["TemplateFilenameItemData"],
     sample: "zt",
     prefix: "zt.",
-    lead: "The filename template (`zotlit-filename.liquid.md`) receives exactly the properties below.",
+    lead: "The `filename` template in a Profile document's manifest receives exactly the properties below.",
   },
   {
     id: "item-fields",

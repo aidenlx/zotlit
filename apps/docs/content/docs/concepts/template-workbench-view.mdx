@@ -1,0 +1,126 @@
+---
+title: "Template Workbench View"
+description: "How the Template Workbench View edits a profile, the citation text, or a partial, and previews each one in Obsidian."
+---
+
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+The Template Workbench View edits one template document and shows its output against data from your Zotero library.
+
+## One view, three kinds of document [#kinds]
+
+The view opens all three [kinds of template document](/docs/concepts/how-templates-work#kinds). The kind decides the tabs, the tab title, and what the preview renders.
+
+| Document      | Tab title                                                | Tabs                                               | Preview                              |
+| ------------- | -------------------------------------------------------- | -------------------------------------------------- | ------------------------------------ |
+| Profile       | The profile's name, then `Profile`                       | Six                                                | A literature note for one paper      |
+| Citation text | <UiLabel name={m.template_workbench_title_citation()} /> | One, <UiLabel name={m.workbench_tab_citation()} /> | One inserted citation                |
+| Partial       | The partial's name, then `Partial`                       | One, <UiLabel name={m.workbench_tab_partial()} />  | The partial as one template calls it |
+
+Everything you type is previewed, including bytes you have not saved yet. Editing uses Obsidian's automatic saving, with its Undo and Redo. A document with an error stays editable and saves with its diagnostics shown in the editor.
+
+The native Markdown view keeps working on the same file. Select <UiLabel name={m.template_workbench_open_markdown()} /> to open the document as Markdown, and right-click a template document in the file explorer for <UiLabel name={m.template_workbench_open()} />.
+
+## A profile document [#profile]
+
+A profile controls the name, folder, properties, and body of a literature note. It can also define how annotations appear and which Zotero items use the profile automatically.
+
+The view groups these parts into six tabs:
+
+- <UiLabel name={m.workbench_tab_note()} /> edits the literature note body.
+- <UiLabel name={m.workbench_tab_properties()} /> edits the YAML properties that
+  ZotLit manages.
+- <UiLabel name={m.workbench_tab_annotation()} /> edits the format of one
+  annotation.
+- <UiLabel name={m.workbench_tab_name_and_folder()} /> edits the note name,
+  folders, citation style, and template language.
+- <UiLabel name={m.workbench_tab_match()} /> selects the Zotero items that use
+  an added profile automatically.
+- <UiLabel name={m.workbench_tab_profile()} /> edits the profile's own name,
+  description, and version.
+
+Select <UiLabel name={m.workbench_advanced()} /> to edit the complete profile document as Markdown, and <UiLabel name={m.workbench_basic()} /> to return. Those two modes exist for a profile document only.
+
+### Preview data [#preview-data]
+
+The preview uses a Zotero item or built-in example. Opening the view from a literature note selects that note's item. The pane menu offers <UiLabel name={m.workbench_choose_item()} /> to change the preview data and <UiLabel name={m.template_workbench_open_layout()} /> to open the editor, fields, and preview together.
+
+The preview changes as you edit. A database or citation-style warning can limit the preview, but you can continue editing the profile.
+
+### Saving changes [#saving]
+
+The built-in Default profile is read-only. You can read and select its values without creating a document. <UiLabel name={m.template_workbench_customize()} /> creates its document in the configured template folder before editing becomes available, or opens the existing custom document.
+
+If creation fails, the built-in values remain readable and an inline error offers a retry. Closing an untouched customization keeps the created document.
+
+Existing literature notes keep their current content. Run <Command name={m.command_update_note_name()} /> to apply the edited profile to the active note.
+
+<Callout type="info" title="Edit the Markdown document">
+  Select <UiLabel name={m.template_workbench_open_markdown()} /> to open an
+  existing profile document as Markdown. Customizing the built-in Default
+  creates its document before editing becomes available.
+</Callout>
+
+## The citation text [#citation]
+
+The citation text opens on one <UiLabel name={m.workbench_tab_citation()} /> tab. Its tab title is the fixed <UiLabel name={m.template_workbench_title_citation()} />.
+
+The preview, headed <UiLabel name={m.workbench_citation_result_heading()} />, renders one citation. Its caption names the variant being previewed, <UiLabel name={m.workbench_citation_variant_main()} /> or <UiLabel name={m.workbench_citation_variant_alt()} />. The preview pane menu picks that variant, and offers <UiLabel name={m.template_workbench_use_example()} /> for a set of built-in citation shapes or <UiLabel name={m.workbench_choose_item()} /> for one of your own Zotero items.
+
+Each pane keeps its own variant and example, and Obsidian remembers them with the pane. See [Customize the citation text](/docs/how-to/customize-a-template#citation-text) for the steps.
+
+## A partial [#partial]
+
+A partial opens on one <UiLabel name={m.workbench_tab_partial()} /> tab. Its tab title is the partial's name, then `Partial`.
+
+A partial has no data of its own: it renders with the data of whichever template calls it. So its preview, headed <UiLabel name={m.workbench_partial_result_heading()} />, asks you which caller to render as. The pane menu offers <UiLabel name={m.template_workbench_preview_as_note()} />, <UiLabel name={m.template_workbench_preview_as_annotation()} />, and <UiLabel name={m.template_workbench_preview_as_citation()} />. It opens on Note, and remembers your choice per file. ZotLit never guesses the caller from the templates that call the partial.
+
+While your vault holds a profile besides Default, the pane menu also offers <UiLabel name={m.template_workbench_use_profile()} /> to preview against that profile's data. Saving a partial re-renders every open preview that uses it.
+
+## The document's language [#language]
+
+Above the editor of a citation text or a partial, a caption names the document's language, <UiLabel name={m.workbench_name_language_liquid()} /> or <UiLabel name={m.workbench_name_language_eta()} />. The caption reports; it does not switch.
+
+To switch, open the pane menu and select <UiLabel name={m.template_workbench_change_language()} />, then the language you want. ZotLit rewrites the manifest key alone and translates no source. See [How templates work](/docs/concepts/how-templates-work#manifest).
+
+A profile document sets its language on the <UiLabel name={m.workbench_tab_name_and_folder()} /> tab instead, under <UiLabel name={m.workbench_name_language_heading()} />.
+
+## Open the view [#open]
+
+- For a profile: select <UiLabel name={m.settings_template_customize()} /> on the <UiLabel name={m.settings_profile_document_name()} /> row at <SettingsPath />.
+- For the citation text: run <Command inline name={m.command_customize_citation_text_name()} />, or select <UiLabel name={m.template_workbench_open_citation()} /> from the pane menu, or select <UiLabel name={m.settings_citation_text_open()} /> on the <UiLabel name={m.settings_citation_text_name()} /> row at <SettingsPath page={m.settings_page_citations()} />.
+- For a partial: select <UiLabel name={m.settings_partial_open()} /> on its row under <UiLabel name={m.settings_partials_heading()} /> at <SettingsPath />.
+
+To edit the profile used by an existing literature note, open that note and run <Command name={m.command_customize_note_template_name()} />. ZotLit opens the profile with the note's paper selected for the preview.
+
+See [Customize a template](/docs/how-to/customize-a-template) for complete steps.
+
+## See also
+
+<Cards>
+  <Card
+    title="Customize a template"
+    description="Edit a profile, the citation text, or a partial, and preview the result."
+    href="/docs/how-to/customize-a-template"
+  />
+  <Card
+    title="How templates work"
+    description="The three kinds of template document and the two template languages."
+    href="/docs/concepts/how-templates-work"
+  />
+  <Card
+    title="Configure frontmatter properties"
+    description="Add and edit YAML properties managed by a profile."
+    href="/docs/how-to/configure-frontmatter-properties"
+  />
+  <Card
+    title="Template Workbench CLI"
+    description="Let an agent inspect and test templates through the Obsidian CLI."
+    href="/docs/concepts/template-workbench"
+  />
+</Cards>

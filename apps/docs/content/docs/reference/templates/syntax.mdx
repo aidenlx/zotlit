@@ -11,7 +11,7 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-This page documents the Liquid template language as configured in ZotLit: output expressions, tags, filters, whitespace control, the ZotLit-specific vocabulary, output coercion, includes, and template file naming.
+This page documents the Liquid template language as configured in ZotLit: output expressions, tags, filters, whitespace control, the ZotLit-specific vocabulary, output coercion, includes, and Template Document naming.
 
 All template data is accessible through a single variable, `zt`. The shape of `zt` depends on the template type: see the [Data reference](/docs/reference/templates/data) for the full property list.
 
@@ -444,35 +444,65 @@ This coercion applies only to `{{ }}` outputs. `{% echo %}` inside a `{% liquid 
 
 `with <value> as zt` binds the value to `zt` inside the child template. The child sees only what you pass. Parent variables are not inherited.
 
-The name resolves to a registered template. During Profile rendering, `"annotation"` selects the Profile's Annotation Section. Outside Profile rendering, it looks up `zotlit-annotation.liquid.md`. Other names keep their existing lookup; each is a name, not a file path.
+The name resolves to a registered template, not to a file path. During Profile rendering, `"annotation"` selects the Profile's Annotation Section.
 
-## Template file naming
+### Calling a partial [#calling-a-partial]
 
-Template files must sit directly inside the configured template folder. Files in subfolders are not scanned.
+A partial is called by its name, and the data it needs travels with the call:
 
-Template files follow a strict naming pattern:
-
-```
-zotlit-<name>.<language>.md
+```liquid
+{% render "authors" with zt as zt %}
 ```
 
-- `<name>` is one or more alphanumeric characters or hyphens (`[A-Za-z0-9-]+`).
-- `<language>` is `liquid` or `eta`.
-- The pattern is case-sensitive.
+`{% render %}` opens an isolated scope, so `zt` reaches the partial only because the call passes it by name. <UiLabel name={m.workbench_tag_render()} />
 
-The six canonical names (`filename`, `note`, `annotation`, `content`, `cite`, `cite2`) each bind to a template type. A file with a canonical name overrides that type's built-in default.
+A bare call reaches the partial with no `zt`, so every `zt` output in it comes out empty and only its literal text survives:
 
-Files with non-canonical names are compiled and available as partials via `{% render "<name>" %}`.
+```liquid
+{% render "authors" %}
+```
 
-## Liquid-wins shadowing
+`{% include %}` renders the same partial with the caller's variables in scope, so it needs no `with` clause. <UiLabel name={m.workbench_tag_include()} />
 
-When both a `.liquid.md` and a `.eta.md` file exist for the same template name, the Liquid file takes precedence. The Eta file is ignored regardless of whether <UiLabel name={m.settings_template_js_enable_name()} /> are enabled.
+```liquid
+{% include "authors" %}
+```
 
-<SettingsPath /> reports a warning on the shadowed file:
+Completion inside `{% render "` and `{% include "` lists every partial in the vault. It writes the name alone, so add the `with zt as zt` clause yourself.
 
-> The Eta template at \{path\} is ignored because a Liquid template with the same name takes precedence.
+## Template Document naming [#template-document-naming]
 
-This is the only shadowing rule. There is no priority between different canonical names or between canonical and non-canonical files.
+A Template Document sits directly inside the folder set by <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />. The scan is flat. Files in subfolders are never read, and a file without the `zotlit-` prefix is ignored.
+
+The filename prefix alone says what a document is:
+
+| Filename                   | Document                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------- |
+| `zotlit-profile.<slug>.md` | A Literature Note Profile: note name, folder, properties, body, and annotations |
+| `zotlit-citation.md`       | The citation text, one per vault, under exactly this name                       |
+| `zotlit-partial.<name>.md` | One partial, registered under `<name>`                                          |
+
+A `zotlit-` file that fits none of these patterns registers nothing and is reported in the <UiLabel name={m.settings_advanced_template_engine_heading()} /> group on <SettingsPath page={m.settings_page_advanced()} />. See [Unrecognized ZotLit files](/docs/reference/settings#unrecognized-files).
+
+### Language [#document-language]
+
+A citation document or a partial is Liquid unless its manifest says otherwise. The manifest is an optional YAML block at the top of the file, and `language` is its only legal key:
+
+```md
+---
+language: eta
+---
+
+<%= zt.title %>
+```
+
+The legal values are `liquid` and `eta`. A document with no manifest is Liquid. Switch a document between the two from the Template Workbench View's pane menu, with <UiLabel name={m.template_workbench_change_language()} />; it rewrites the manifest key and leaves the source as written.
+
+### Partial names [#partial-names]
+
+A partial name is one or more letters, digits, and hyphens. The <UiLabel name={m.settings_partial_add()} /> prompt trims what you type, turns each run of spaces into a hyphen, and lowercases the result, so `Journal line` becomes `journal-line`. Names are compared without case, so two files cannot claim one name in different casings.
+
+Five names are reserved, because another ZotLit template already answers to each: `filename`, `note`, `annotation`, `content`, and `citation`. A partial file that takes one registers nothing and is reported at <SettingsPath />. See [Partials](/docs/reference/settings#partials).
 
 ## See also
 
@@ -494,12 +524,12 @@ This is the only shadowing rule. There is no priority between different canonica
   />
   <Card
     title="How templates work"
-    description="Template types, languages, and the defaults-plus-eject model."
+    description="Template documents, languages, and where each template lives."
     href="/docs/concepts/how-templates-work"
   />
   <Card
     title="Customize a template"
-    description="Eject, edit, and test a template."
+    description="Open a template document, edit it, and test the result."
     href="/docs/how-to/customize-a-template"
   />
 </Cards>

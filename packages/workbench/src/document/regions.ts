@@ -80,7 +80,7 @@ const PARTIAL_CALL_TAGS: readonly string[] = ["render", "include"];
  * under. A box over either would offer Edit partial for a document that cannot
  * exist.
  * @see docs/adr/0035-profile-annotation-section.md
- * @see docs/adr/0050-citation-template-and-shared-partials-are-template-documents.md
+ * @see docs/adr/0050-the-citation-template-is-one-document-and-partials-are-files.md
  */
 const RESERVED_CALL_NAMES: readonly string[] = ["annotation", "citation"];
 

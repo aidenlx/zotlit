@@ -74,7 +74,9 @@ The same applies to frontmatter fields declared as `javascript`: any note write 
 
 ## Coexistence with Liquid
 
-Both `zotlit-note.liquid.md` and `zotlit-note.eta.md` can exist for the same template name. When both are present, the Liquid file always wins, per the [Liquid-wins shadowing](/docs/concepts/how-templates-work#liquid-wins-shadowing) rule. The effective template never depends on the gate when both files exist.
+A Template Document declares one language, so a Liquid document and an Eta document never compete for the same name.
+
+A ZotLit 2.1 name could carry both a `.liquid.md` and an `.eta.md` file. While both exist, the Liquid file wins and the Eta file is ignored, whether or not the gate is on. See [When two 2.1 files share a name](/docs/concepts/how-templates-work#liquid-wins-shadowing).
 
 ## See also
 
@@ -86,7 +88,7 @@ Both `zotlit-note.liquid.md` and `zotlit-note.eta.md` can exist for the same tem
   />
   <Card
     title="How templates work"
-    description="The six template types, languages, and the defaults-plus-eject model."
+    description="The three Template Document kinds, their filenames, and the two languages."
     href="/docs/concepts/how-templates-work"
   />
   <Card

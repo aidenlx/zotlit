@@ -1,6 +1,6 @@
 ---
 title: "How templates work"
-description: "The six template types, Liquid and Eta languages, filename matching, and the defaults-plus-eject model."
+description: "The three kinds of template document, how ZotLit finds them in the template folder, and the Liquid and Eta languages."
 introduced: "2.0.0"
 updated: "2.0.0"
 ---
@@ -11,7 +11,7 @@ import { SettingsPath } from "@/components/settings-path";
 import { UiLabel } from "@/components/ui-label";
 import { m } from "@/paraglide/messages.js";
 
-Templates are Markdown files with embedded expressions that control what your literature notes, citations, and filenames look like. Each template type handles one piece of the output, and you can customize any of them by ejecting the built-in default into your vault.
+Templates are Markdown files with embedded expressions that control what your literature notes and citations look like. ZotLit keeps them in one folder in your vault as **template documents**, and reads the filename to decide what each one does.
 
 <Callout type="info" title="Agent-assisted templates">
   The [Template Workbench CLI](/docs/concepts/template-workbench) lets an agent
@@ -19,22 +19,54 @@ Templates are Markdown files with embedded expressions that control what your li
   result without writing Liquid or Eta yourself.
 </Callout>
 
-## Template types
+## Three kinds of template document [#kinds]
 
-ZotLit uses six template types. Each type receives data from Zotero and renders one piece of output.
+Every template document is one of three kinds. The filename prefix says which.
 
-| Template     | Settings label                                           | Vault filename                | What it renders                                                                                                                  |
-| ------------ | -------------------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `filename`   | <UiLabel name={m.settings_template_name_filename()} />   | `zotlit-filename.liquid.md`   | Filename of a new literature note. Use a forward slash (`/`) to route the note into subfolders under the literature note folder. |
-| `note`       | <UiLabel name={m.settings_template_name_note()} />       | `zotlit-note.liquid.md`       | Body of a new literature note.                                                                                                   |
-| `annotation` | <UiLabel name={m.settings_template_name_annotation()} /> | `zotlit-annotation.liquid.md` | A single annotation.                                                                                                             |
-| `content`    | <UiLabel name={m.settings_template_name_content()} />    | `zotlit-content.liquid.md`    | Managed region that is overwritten on note update.                                                                               |
-| `cite`       | <UiLabel name={m.settings_template_name_cite()} />       | `zotlit-cite.liquid.md`       | Citation inserted into the editor.                                                                                               |
-| `cite2`      | <UiLabel name={m.settings_template_name_cite2()} />      | `zotlit-cite2.liquid.md`      | Alternate citation format.                                                                                                       |
+| Kind                    | Filename                   | What it holds                                                                                                         |
+| ----------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Literature note profile | `zotlit-profile.<slug>.md` | One profile: the note name, folder, properties, body, and annotation format. `zotlit-profile.books.md` is an example. |
+| Citation text           | `zotlit-citation.md`       | The text of every in-text citation ZotLit renders. One per vault, under exactly this name.                            |
+| Partial                 | `zotlit-partial.<name>.md` | A piece of template text that any other template renders by name. `zotlit-partial.authors.md` is an example.          |
 
-The `content` template is the one whose output is wrapped in managed-region markers. When you run an update, only the content between those markers is replaced. See [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region) for details.
+A profile document is the single authoring object for a literature note: its name, its properties, its body, and the format of one annotation all live in that one file. See [Literature notes and the managed region](/docs/concepts/literature-notes-and-the-managed-region) for how ZotLit updates a note it has already written.
 
-## Two template languages
+The citation text is the one source for every in-text citation: what you insert from the citation suggester or the command palette, the citation an annotation carries, and each citation inside an imported Zotero note. It receives [`zt.variant`](/docs/reference/templates/data#citation-variant), the string `main` or `alt`, naming the gesture that asked for the citation, and the template decides what each one renders. `alt` comes from `Shift+Enter`, or from a trailing `/` in the suggester query; annotations and imported notes are always `main`. See [What each gesture inserts](/docs/how-to/insert-citations#citation-text).
+
+Partials are how a piece of template text is shared. Several profiles, and the citation text, can render the same partial by name. See [Customize a template](/docs/how-to/customize-a-template#share-a-partial) for the steps.
+
+## How ZotLit finds them [#discovery]
+
+ZotLit scans the template folder for files whose name starts with `zotlit-`. The scan is flat: it reads the files directly inside the folder and does not descend into subfolders.
+
+A file without the `zotlit-` prefix is ignored, so your own Obsidian templates can sit in the same folder.
+
+A `zotlit-` file that is neither one of the three kinds nor a [2.1 template file](#convert-legacy) renders nothing. It gets an <UiLabel name={m.settings_template_unrecognized_name()} /> row at <SettingsPath page={m.settings_page_advanced()} setting={m.settings_advanced_template_engine_heading()} />, naming the file and the three valid names. `zotlit-citation.liquid.md` is one such file: the citation text carries no language in its name.
+
+### Template folder [#template-folder]
+
+Template documents live under the folder set at <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />, `templates` by default. Loading and file watching both use that folder. ZotLit recompiles a changed document immediately, so edits take effect without reloading the plugin.
+
+## The manifest and the language [#manifest]
+
+A citation text or partial document is an optional YAML manifest, then the template source:
+
+```text
+---
+language: eta
+---
+<template source>
+```
+
+`language` is the only key the manifest accepts, and its only values are `liquid` and `eta`. Any other key is an error.
+
+A document with no frontmatter is Liquid. A Liquid partial or citation text needs no manifest, and the file ZotLit creates for you when you first open the citation text carries none.
+
+To change the language, open the document in the [Template Workbench View](/docs/concepts/template-workbench-view) and select <UiLabel name={m.template_workbench_change_language()} /> from the pane menu. That rewrites the manifest key alone: your source is never translated between the two syntaxes.
+
+A profile document always carries a manifest, because its manifest also holds the profile's name, folder, and citation style.
+
+## Two template languages [#languages]
 
 ZotLit supports two template languages: **Liquid** and **Eta**.
 
@@ -42,57 +74,36 @@ ZotLit supports two template languages: **Liquid** and **Eta**.
 
 **Eta** is a JavaScript-based engine. Eta templates can run arbitrary JavaScript with the same access as ZotLit itself. Because of the wider security surface, Eta is disabled by default and requires a per-device opt-in called the <UiLabel name={m.settings_template_js_enable_name()} /> gate. See [JavaScript templates](/docs/concepts/javascript-templates) for the full explanation.
 
-## Filename matching
+An Eta document is inert while the gate is off. It is not compiled, and it does not fall back to the built-in default. ZotLit names the file it skipped and says why.
 
-Template files follow a strict naming pattern:
+## Built-in defaults [#defaults]
 
-```
-zotlit-<name>.<language>.md
-```
+The citation text works with no file in your vault: ZotLit renders a built-in Liquid default instead. Its settings row reads <UiLabel name={m.settings_template_using_default()} /> until a document exists. Opening the row creates the document from that built-in text, and resetting it moves your document to Obsidian's configured trash so the built-in text takes over again.
 
-The `<name>` slot accepts any combination of alphanumeric characters and hyphens. The `<language>` portion is either `liquid` or `eta`. The pattern is case-sensitive.
+Literature notes work the same way through the built-in Default profile, which you customize into a document of your own.
 
-The six canonical names in the table above (`filename`, `note`, `annotation`, `content`, `cite`, `cite2`) each bind to a template type. A file with a canonical name overrides that type's built-in default. Files with non-canonical names are also compiled and can be referenced from other templates via `include()`.
+## Converting 2.1 template files [#convert-legacy]
 
-Examples: `zotlit-note.liquid.md`, `zotlit-annotation.eta.md`.
+Template files from ZotLit 2.1 still load and still render, so you do not have to convert them to keep working. That covers `zotlit-note.liquid.md`, `zotlit-content.liquid.md`, `zotlit-annotation.liquid.md`, `zotlit-filename.liquid.md`, the two citation files, and any other `zotlit-<name>.(liquid|eta).md` that served as a partial.
 
-## Liquid-wins shadowing [#liquid-wins-shadowing]
+ZotLit offers the conversion once in the Welcome view, as <UiLabel name={m.welcome_template_conversion_title()} />, and repeats it as a reminder row at the top of settings with a <UiLabel name={m.settings_template_conversion_reminder_action()} /> action. One pass folds the note, content, filename, and annotation files into one profile document, folds the two citation files into one citation text, and gives every remaining file its own partial document.
 
-Both a `.liquid.md` and a `.eta.md` file can exist for the same template name at the same time. When both are present, the Liquid file always takes precedence, regardless of whether JavaScript templates are enabled. The shadowed Eta file is reported with a warning in <SettingsPath />:
+Before it writes anything, ZotLit renders both citation variants and the note, update, filename, and annotation output, and compares them byte for byte against what your old files produced. A mismatch converts nothing. The old files then go to Obsidian's configured trash, so you can recover them.
 
-> The Eta template at `{path}` is ignored because a Liquid template with the same name takes precedence.
+See [Migrate v1 Eta templates](/docs/how-to/migrate-v1-eta-templates) for the steps and the field mappings a v1 template also needs.
 
-## Built-in defaults and ejecting
+### When two 2.1 files share a name [#liquid-wins-shadowing]
 
-Every template type ships with a built-in Liquid default. When no vault file exists for a template name, ZotLit uses the embedded default.
-
-<Callout type="info" title="Using the built-in default">
-  <SettingsPath /> shows "
-  <UiLabel name={m.settings_template_using_default()} />" next to any template
-  that has not been ejected. The template works without any file in your vault.
-</Callout>
-
-To customize a template, you **eject** it: the built-in default is copied into your vault's template folder as a `.liquid.md` file and opened for editing. Each template's row in <SettingsPath /> shows a <UiLabel name={m.settings_template_eject()} /> action when that template still uses the default.
-
-Once ejected, the file is yours. ZotLit watches the template folder and recompiles any changed file immediately. Edits take effect without reloading the plugin.
-
-### Restoring the default
-
-Deleting an ejected template file returns that template to the built-in default. No plugin reload is needed. The watcher picks up the deletion and reverts immediately. See [Customize a template](/docs/how-to/customize-a-template) for the steps.
-
-### Template folder
-
-All template files live under the folder configured in <SettingsPath page={m.settings_page_advanced()} setting={m.settings_template_folder_name()} />. Ejecting, loading, and file watching all use that folder.
-
-## Switching languages
-
-Each template can use either Liquid or Eta. Switching to Eta trashes the Liquid file (recoverable) and reveals an existing `.eta.md` or creates one from the built-in Eta default. Switching to Liquid trashes the `.eta.md` and the template reverts to an existing Liquid file or the built-in default.
-
-The switch never converts content between the two syntaxes: it replaces the file. Switching to Eta requires the <UiLabel name={m.settings_template_js_enable_name()} /> gate to be on. See [Customize a template](/docs/how-to/customize-a-template) and [Enable JavaScript templates](/docs/how-to/enable-javascript-templates) for the procedures.
+A 2.1 name could carry both a `.liquid.md` and an `.eta.md` file. While both exist, the Liquid file wins and the Eta file is ignored, whether or not JavaScript templates are enabled. The conversion trashes both.
 
 ## See also
 
 <Cards>
+  <Card
+    title="Template Workbench View"
+    description="Edit and preview any template document in Obsidian."
+    href="/docs/concepts/template-workbench-view"
+  />
   <Card
     title="JavaScript templates"
     description="What the gate enables, why it exists, and what happens when disabled."
@@ -100,7 +111,7 @@ The switch never converts content between the two syntaxes: it replaces the file
   />
   <Card
     title="Customize a template"
-    description="Eject, edit, and test a template step by step."
+    description="Edit a profile, the citation text, or a partial step by step."
     href="/docs/how-to/customize-a-template"
   />
   <Card

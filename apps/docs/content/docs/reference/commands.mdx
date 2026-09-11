@@ -132,6 +132,18 @@ The export uses its own citation membership. Citation source, presentation, and 
 | --------------- | ------------------------- |
 | Command palette | Active on a Markdown note |
 
+### Citation text
+
+<Command name={m.command_customize_citation_text_name()} />
+
+Opens the citation text in the Template Workbench View. When the vault holds no citation document, the command creates `zotlit-citation.md` from the built-in citation text first.
+
+| Entry point             | Details                                                                                                                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Command palette         | Always available                                                                                                                                                                   |
+| Settings                | The <UiLabel name={m.settings_citation_text_open()} /> button on the <UiLabel name={m.settings_citation_text_name()} /> row at <SettingsPath page={m.settings_page_citations()} /> |
+| Template Workbench View | The pane menu's <UiLabel name={m.template_workbench_open_citation()} /> item                                                                                                       |
+
 ## Literature note actions
 
 The following commands operate on a literature note: the file currently open in the editor must be a ZotLit literature note. They also appear in the **file menu** (right-click the tab or use the file menu icon) under the **zotlit** section.
@@ -251,6 +263,7 @@ Opens the release notes for the installed ZotLit version.
 | <UiLabel name={m.command_open_references_view_name()} />        |   yes   |   no   |    no     |           no           |
 | <UiLabel name={m.command_set_citation_presentation_name()} />   |   yes   |   no   |    yes    |  Active Markdown note  |
 | <UiLabel name={m.command_pandoc_export_name()} />               |   yes   |   no   |    no     |  Active Markdown note  |
+| <UiLabel name={m.command_customize_citation_text_name()} />     |   yes   |   no   |    no     |           no           |
 | <UiLabel name={m.command_update_note_name()} />                 |   yes   |   no   |    yes    |           no           |
 | <UiLabel name={m.command_update_note_metadata_name()} />        |   yes   |   no   |    yes    |           no           |
 | <UiLabel name={m.command_overwrite_note_name()} />              |   yes   |   no   |    yes    |           no           |
