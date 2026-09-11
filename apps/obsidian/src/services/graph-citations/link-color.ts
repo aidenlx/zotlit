@@ -113,41 +113,71 @@ export function installLinkColors(
    * B links back to A and A sorts first, and the one line the reader sees is
    * B→A. Reading the pair either way puts the tint on whichever of the two
    * the frame draws.
+   *
+   * The reverse reading answers for a line the graph hides, so it stands only
+   * while the graph holds the edge that hides it. A local graph showing
+   * outgoing links alone keeps B→A and leaves the citation A→B out of the
+   * render entirely (`app.js` 1.14.1, the forelink pass of the local
+   * expansion); B→A is then the only line there is, and it is an ordinary
+   * link.
+   *
+   * @param rendered the direction of every edge of this hand-off.
    */
-  const isCitation = (link: GraphLink): boolean => {
+  const isCitation = (
+    link: GraphLink,
+    rendered: ReadonlySet<string>,
+  ): boolean => {
     const { citationLinks } = installation.additions;
     const source = link.source.id;
     const target = link.target.id;
+    if (citationLinks[source]?.[target] !== undefined) return true;
     return (
-      citationLinks[source]?.[target] !== undefined ||
-      citationLinks[target]?.[source] !== undefined
+      citationLinks[target]?.[source] !== undefined &&
+      rendered.has(directionOf(target, source))
     );
   };
 
   let tints = new DisposableStack();
   /** The colour the last hand-off left the edges standing to be drawn in. */
   let drawn: number | null = null;
-  const renew = (): void => {
+  /** The direction of every edge the last hand-off drew as a citation edge. */
+  let citations = new Set<string>();
+  /** @returns whether the hand-off changed which edges are citation edges. */
+  const renew = (): boolean => {
     tints.dispose();
     tints = new DisposableStack();
-    for (const link of renderer.links!) {
-      if (isCitation(link)) tints.use(installTint(link, tintOf));
+    const links = renderer.links!;
+    const rendered = new Set(
+      links.map((link) => directionOf(link.source.id, link.target.id)),
+    );
+    const next = new Set<string>();
+    for (const link of links) {
+      if (!isCitation(link, rendered)) continue;
+      next.add(directionOf(link.source.id, link.target.id));
+      tints.use(installTint(link, tintOf));
     }
+    const reclassified =
+      next.size !== citations.size ||
+      ![...next].every((direction) => citations.has(direction));
+    citations = next;
+    return reclassified;
   };
   const restores = new DisposableStack();
   restores.use(
     wrapMember(renderer, "setData", (setData) => (data) => {
       // After the hand-off: it is the hand-off that adds and removes edges.
       const handedOff = setData.call(renderer, data);
-      renew();
-      // The row and the theme both change the colour with no node and no edge
-      // changing, and a hand-off that changes neither asks for no frame of its
-      // own (`app.js` 1.14.1, `setData` calls `changed` only where one of them
-      // changed). So a graph standing still would keep the colour it was last
-      // drawn in until something else redrew it; the hand-off that reads a new
-      // colour asks for that frame itself.
+      const reclassified = renew();
+      // The row, the theme, and a citation added to or taken out of a note
+      // that also links the same target the ordinary way, all change what an
+      // edge is drawn in with no node and no edge changing, and a hand-off
+      // that changes neither asks for no frame of its own (`app.js` 1.14.1,
+      // `setData` calls `changed` only where one of them changed). So a graph
+      // standing still would keep the colours it was last drawn in until
+      // something else redrew it; the hand-off that changes them asks for that
+      // frame itself.
       const next = tint();
-      if (next !== drawn) {
+      if (next !== drawn || reclassified) {
         drawn = next;
         renderer.changed!();
       }
@@ -156,6 +186,15 @@ export function installLinkColors(
   );
   restores.defer(() => tints.dispose());
   return restores;
+}
+
+/**
+ * One edge's direction, as the edges of a hand-off are looked up by. A node id
+ * is a vault path, a tag, or a Cited Work Node's citekey node, and none of the
+ * three carries a newline, so the two ends stay told apart.
+ */
+function directionOf(source: string, target: string): string {
+  return `${source}\n${target}`;
 }
 
 /**
