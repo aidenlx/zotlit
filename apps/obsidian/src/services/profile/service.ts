@@ -130,6 +130,11 @@ export interface PreparedProfileShare {
    * a prose mention included, so it recommends and the reader decides.
    */
   readonly reachable: readonly string[];
+  /**
+   * Names the Profile calls that no document in the vault answers, so the
+   * sheet says which calls travel unresolved rather than refusing to open.
+   */
+  readonly missing: readonly string[];
   readonly filename: string;
   render(options: ProfileShareOptions): string;
 }
@@ -617,13 +622,20 @@ export class ProfileService extends Service {
         profile.bindings[binding],
       ]),
     ) as ProfileBindings;
+    // A call the vault answers with no document is what story 43 leaves behind
+    // after a rename, and what a quoted name in prose looks like. Neither can
+    // block the sheet: the name simply is not among the ones offered.
+    const missingPartials = new Set<string>();
     const source = await this.#deps.template.exportLiteratureNotePackSource(
       updateProfilePackMetadata(await this.getSource(selector), {
         id,
         name: label,
         ...bindings,
       }),
-      { includeFolders: true },
+      {
+        includeFolders: true,
+        onMissingPartial: (name) => missingPartials.add(name),
+      },
     );
     const facade = new TemplateFacade();
     const { manifest } = facade.parseLiteratureNoteTemplate(source);
@@ -649,16 +661,19 @@ export class ProfileService extends Service {
     const carried = bundled.filter(({ name }) =>
       RESERVED_PARTIAL_NAMES.has(name),
     );
+    const missing = offered(missingPartials);
     logger.debug("Prepared Profile sharing", {
       selector,
       id,
       partials,
       reachable,
+      missing,
     });
     return {
       manifest,
       partials,
       reachable,
+      missing,
       filename: `zotlit-profile.${profileSlug(label)}${selector === DEFAULT_PROFILE ? `-${id}` : ""}.md`,
       render: (options) => {
         const version = options.version.trim();

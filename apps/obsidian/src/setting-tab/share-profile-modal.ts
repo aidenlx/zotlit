@@ -154,6 +154,12 @@ export class ShareProfileModal extends Modal {
         ? m.profile_share_partials_desc()
         : m.profile_share_no_partials(),
     });
+    if (this.#plan.missing.length > 0)
+      note(parent, {
+        text: m.profile_share_missing_partials({
+          names: this.#plan.missing.join(", "),
+        }),
+      });
     for (const name of this.#plan.partials)
       new Setting(parent).setName(name).addToggle((toggle) =>
         toggle.setValue(this.#partials.has(name)).onChange((value) => {

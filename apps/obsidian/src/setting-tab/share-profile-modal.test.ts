@@ -338,3 +338,28 @@ it("checks the partials the profile calls, and drops one the reader clears", asy
   ).toBeUndefined();
   modal.onClose();
 });
+
+it("opens for a profile whose call no document answers, and names it", async () => {
+  // Story 43 leaves this behind: the reader renamed the partial file and the
+  // call in the profile still spells the old name.
+  await using f = await profileServiceFixture({
+    "templates/zotlit-profile.books.md": source,
+    "templates/zotlit-partial.venue-line.md": "{{ zt.publicationTitle }}",
+  });
+  const plan = await f.profile.prepareShare(id);
+
+  expect(plan.missing).toEqual(["summary"]);
+  expect(plan.reachable).toEqual([]);
+  expect(plan.partials).toEqual(["venue-line"]);
+
+  const modal = new ShareProfileModal(f.app, plan);
+  modal.contentEl = document.createElement("div");
+  using controls = observeControls(modal.contentEl);
+  modal.onOpen();
+
+  expect(modal.contentEl.textContent).toContain(
+    m.profile_share_missing_partials({ names: "summary" }),
+  );
+  expect(controls.toggle("venue-line").getValue()).toBe(false);
+  modal.onClose();
+});

@@ -396,6 +396,7 @@
   "profile_share_partials": "Partials",
   "profile_share_partials_desc": "Select the partials to include with this profile. The ones it appears to call are already selected.",
   "profile_share_no_partials": "Your vault has no partials to include.",
+  "profile_share_missing_partials": "These partials are not in your template folder, so this profile travels without them: {names}",
   "profile_match_metadata_changed": "These metadata changes would also change the match conditions. Keep the original metadata or turn off match conditions to continue.",
   "profile_share_include_match": "Include match conditions",
   "profile_import_include_match": "Import match conditions",
