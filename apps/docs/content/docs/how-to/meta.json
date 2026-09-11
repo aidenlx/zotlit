@@ -4,6 +4,7 @@
     "create-and-open-notes",
     "insert-citations",
     "review-copy-troubleshoot-references",
+    "explore-citations-in-graph",
     "export-note-with-citations",
     "export-with-native-pandoc",
     "keep-notes-updated",
