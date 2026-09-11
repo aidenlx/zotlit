@@ -611,6 +611,8 @@ describe("Template Workbench CLI", () => {
         "zotlit-partial.<name>.md",
         "template=partial:<name>",
         "root=<note|annotation|citation>",
+        // Every reserved name, so the guide cannot drift from defaults.ts.
+        "'filename', 'note', 'annotation', 'content', or 'citation'",
         "ADR 0050",
       ],
     ],
