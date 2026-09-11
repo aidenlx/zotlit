@@ -21,7 +21,7 @@ const packageRoot = import.meta.dirname;
 const workspaceRoot = await getWorkspaceRoot(packageRoot);
 
 const FLUENT_PREFIX = "zotlit";
-/** The inlang namespace holding Companion copy; see ADR 0027. */
+/** The inlang namespace holding Companion copy; see ADR 0053. */
 const FLUENT_NAMESPACE = "zotero.";
 /** Zotero's fallback chain looks for `en-US`, so the base `en` catalog lands there. */
 const FLUENT_LOCALE_ALIASES = { en: "en-US" };

@@ -1,6 +1,6 @@
 # Localization
 
-Author Companion copy under the top-level `zotero` object in `messages/{locale}.json` (base locale `en`). The build derives `addon/locale/{locale}/zotlit.ftl` from it (ADR 0027); the Derived Fluent Files are build output, never edited by hand. Zotero looks for `en-US`, so `en` lands there.
+Author Companion copy under the top-level `zotero` object in `messages/{locale}.json` (base locale `en`). The build derives `addon/locale/{locale}/zotlit.ftl` from it (ADR 0053); the Derived Fluent Files are build output, never edited by hand. Zotero looks for `en-US`, so `en` lands there.
 
 - **ID mapping**: `zotero.menu_item_open.label` emits `zotlit-menu-item-open` with the Fluent Attribute `.label`. The message segment converts snake case to kebab case and takes the `zotlit-` prefix; the build owns the prefix, so a key never spells it. A plain string, or a `value` leaf beside attributes, is the message value. One level of attribute nesting only.
 - **Attributes are structure**: a label, a tooltip, or an access key is a nested leaf under the message (`{ "label": "…", "tooltiptext": "…" }`), never a suffix on the key.

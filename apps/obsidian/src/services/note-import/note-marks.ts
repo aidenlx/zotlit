@@ -49,7 +49,14 @@ type NoteSchema =
  * selector also matches the unwrapped form returned by `item.getNote()` / the
  * API.
  *
+ * The version parse matches Zotero's own: `parseInt` and a `Number.isInteger`
+ * guard, so a marker carrying trailing text (`"6invalid"`) reads as the leading
+ * integer Zotero reads. Only a marker with no leading integer at all counts as
+ * malformed and falls through to the Plain HTML Child Note path.
+ *
  * @see note-html-format-schema-report.md §2
+ * @see Zotero `note-editor/src/core/schema/metadata.js` `parseAttributes`
+ * @see Zotero `chrome/content/zotero/xpcom/data/notes.js` `upgradeSchemaV1`
  */
 export function parseNoteSchema(root: ParentNode): NoteSchema {
   const container = root.querySelector<HTMLDivElement>(
@@ -62,14 +69,11 @@ export function parseNoteSchema(root: ParentNode): NoteSchema {
       fallbackReason: "missing-schema-marker",
     };
   }
-  const rawVersion = container.getAttribute("data-schema-version") ?? "";
-  const normalizedVersion = rawVersion.trim();
-  const version = Number(normalizedVersion);
-  if (
-    normalizedVersion === "" ||
-    !Number.isInteger(version) ||
-    String(version) !== normalizedVersion
-  ) {
+  const version = Number.parseInt(
+    container.getAttribute("data-schema-version") ?? "",
+    10,
+  );
+  if (!Number.isInteger(version)) {
     return {
       supported: false,
       version: null,
