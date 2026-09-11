@@ -86,20 +86,10 @@ const noticeElStub = {
 } as unknown as HTMLElement;
 
 export class Notice {
-  /** Every Notice a run constructed, in order; assert against the tail. */
-  static instances: Notice[] = [];
-
   noticeEl: HTMLElement = noticeElStub;
   containerEl: HTMLElement = noticeElStub;
   messageEl: HTMLElement = noticeElStub;
-
-  /** The copy the caller opened with, so a test reads it without a DOM. */
-  readonly message: string | DocumentFragment;
-
-  constructor(message: string | DocumentFragment, _duration?: number) {
-    this.message = message;
-    Notice.instances.push(this);
-  }
+  constructor(_message: string | DocumentFragment, _duration?: number) {}
   setMessage(_message: string | DocumentFragment): this {
     return this;
   }

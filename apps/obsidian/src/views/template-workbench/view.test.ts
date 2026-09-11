@@ -1,5 +1,5 @@
 import { EditorView } from "@codemirror/view";
-import { Menu, Notice, TextFileView as MockTextFileView } from "@mock/obsidian";
+import { Menu, TextFileView as MockTextFileView } from "@mock/obsidian";
 import type {
   ItemView as MockItemView,
   Scope as MockScope,
@@ -1617,7 +1617,7 @@ An annotation.
     );
   });
 
-  it("keeps a changed template and says the call was not written", async () => {
+  it("keeps a changed template rather than writing the call", async () => {
     await using cleanup = new AsyncDisposableStack();
     const prompt = Promise.withResolvers<string | null>();
     vi.mocked(createSharedPartial).mockReturnValueOnce(prompt.promise);
@@ -1640,19 +1640,17 @@ An annotation.
         userEvent: "input.type",
       });
     });
-    const shown = Notice.instances.length;
     await act(async () => {
       prompt.resolve("authors");
       await prompt.promise;
       await Promise.resolve();
     });
 
+    // The stale answer itself is extract-partial.test.ts's; here the claim is
+    // that the reader's own edit survives the gesture whole.
     expect(view.getViewData()).toBe(
       EXTRACT_SOURCE.replace(SELECTION, `${SELECTION} · 2020`),
     );
-    expect(
-      Notice.instances.slice(shown).map((notice) => notice.message),
-    ).toEqual([m.notice_partial_extract_stale()]);
   });
 
   it("cuts the selection out to the clipboard", async () => {
