@@ -9,7 +9,7 @@
 // Every HTML page is on the list — the pages with GitHub data bake the facts
 // their build saw and refresh them client-side — so the Worker renders only
 // the search and release-fact endpoints and the Pre-release Docs fallback.
-// @see docs/adr/0025-the-docs-site-prerenders-asset-first-and-falls-through-to-an-ssr-worker.md
+// @see docs/adr/0051-the-docs-site-prerenders-asset-first-and-falls-through-to-an-ssr-worker.md
 
 import { scanContent } from "./content-scan.js";
 import type { MarkdownSection } from "./markdown-routes.js";
