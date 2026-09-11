@@ -1,4 +1,4 @@
-// ZotLit's Display row, and the flag the citation edge colour reads back out of it.
+// Opt-in citation presentation controls in the graph Display section.
 
 import type { GraphEngine, GraphOptions } from "obsidian";
 
@@ -9,8 +9,11 @@ import { installToggleRow, rowFlag, toggleRowTarget } from "./rows";
 /** The option key the "Color citation links" row persists under. */
 export const COLOR_CITATION_LINKS = "zotlit-color-citation-links";
 
-/** Citation edges told apart from ordinary links: the graph a first-time reader gets. */
-const DEFAULT = true;
+/** Ordinary graphs use native link colors until explicitly changed. */
+const DEFAULT = false;
+
+/** The per-view opt-in to citation details on hover. */
+export const CITATION_POPOVER = "zotlit-citation-popover";
 
 export interface DisplayRowsOptions {
   /** The options this graph persisted, as `saved-options.ts` reads them. */
@@ -18,8 +21,8 @@ export interface DisplayRowsOptions {
 }
 
 /**
- * Builds the Display rows into the graph's own Display section, below the
- * native rows, each persisting like a native row.
+ * Prepends Display rows so Obsidian's last-row rule still hides only the
+ * native Animate row's empty label (app.css 1.14.1).
  *
  * @returns a Disposable that leaves the section as found. Empty when the
  *   section could not be read; the graph then draws ZotLit's default.
@@ -34,6 +37,8 @@ export function installDisplayRows(
     saved: options.saved,
   });
   if (!target) return rows;
+  const { childrenEl } = target.section;
+  const nativeRowCount = childrenEl.children.length;
   rows.use(
     installToggleRow(target, {
       key: COLOR_CITATION_LINKS,
@@ -42,6 +47,15 @@ export function installDisplayRows(
       defaultValue: DEFAULT,
     }),
   );
+  rows.use(
+    installToggleRow(target, {
+      key: CITATION_POPOVER,
+      name: m.graph_option_citation_popover_name(),
+      tooltip: m.graph_option_citation_popover_desc(),
+      defaultValue: false,
+    }),
+  );
+  childrenEl.prepend(...Array.from(childrenEl.children).slice(nativeRowCount));
   return rows;
 }
 

@@ -73,6 +73,12 @@ declare module "obsidian" {
     getConfig(key: "readableLineLength"): boolean;
   }
   interface Workspace {
+    /** Native pane menu, also used by Bookmarks (Obsidian 1.14.1). */
+    on(
+      name: "leaf-menu",
+      callback: (menu: Menu, leaf: WorkspaceLeaf) => void,
+      ctx?: unknown,
+    ): EventRef;
     on(
       name: "zotlit:workbench-selection",
       callback: (
@@ -138,12 +144,36 @@ declare module "obsidian" {
    * shape verified against Obsidian 1.13.7 and 1.14.0. Every member optional
    * so a build that drops one is a guarded branch, not a crash.
    */
+  /** Native Bookmarks records and operations used by graph views (Obsidian 1.14.1). */
+  interface GraphBookmark {
+    type: string;
+    options?: GraphOptions;
+    title?: string;
+    ctime?: number;
+  }
+  interface GraphBookmarks {
+    addItem(item: GraphBookmark): void;
+    openBookmarkInLeaf(
+      item: GraphBookmark,
+      leaf: WorkspaceLeaf,
+      state?: unknown,
+    ): Promise<void>;
+  }
+  interface App {
+    /** Native view factories, verified against Obsidian 1.14.1. */
+    viewRegistry?: {
+      getViewCreatorByType(
+        type: string,
+      ): ((leaf: WorkspaceLeaf) => View) | undefined;
+    };
+  }
   interface GraphView extends ItemView {
+    onOptionsChange?(): void;
     renderer?: GraphRenderer;
     dataEngine?: GraphEngine;
   }
   /** The core `localgraph` view; same provenance as {@link GraphView}. */
-  interface LocalGraphView extends ItemView {
+  interface LocalGraphView extends FileView {
     renderer?: GraphRenderer;
     engine?: GraphEngine;
   }
@@ -172,6 +202,7 @@ declare module "obsidian" {
      * the group rows, re-runs the search, and saves.
      */
     setOptions?(options: GraphOptions): void;
+    getOptions?(): GraphOptions;
     /** Saves the options where this graph persists them; debounced. */
     onOptionsChange?(): void;
     /**

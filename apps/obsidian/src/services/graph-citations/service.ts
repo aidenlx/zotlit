@@ -23,11 +23,12 @@ import type { SettingsService } from "@/services/settings/service";
 
 import { graphCitationAdditions, NO_ADDITIONS } from "./adapter";
 import type { GraphCitationAdditions } from "./adapter";
+import { installGraphBookmarks } from "./bookmarks";
 import { wrapNodeClick } from "./click";
 import { colorCitationLinks, installDisplayRows } from "./display";
 import { renderWithFacade } from "./facade";
 import { graphCitationFilters, installFilterRows } from "./filters";
-import { DEFAULT_COLOR, installGroupsButton } from "./groups";
+import { installGroupsButton } from "./groups";
 import { wrapNodeHover } from "./hover";
 import type { NodeHoverDeps } from "./hover";
 import {
@@ -42,11 +43,8 @@ import { GraphNodeColors, installNodeColors } from "./node-color";
 import { applyCitationGraphPreset } from "./preset";
 import { wrapNodeRightClick } from "./right-click";
 import type { NodeRightClickDeps } from "./right-click";
-import {
-  deferredLeafOptions,
-  savedGlobalOptions,
-  savedLeafOptions,
-} from "./saved-options";
+import { deferredLeafOptions, savedLeafOptions } from "./saved-options";
+import { installGraphViewCreation, installGraphViewState } from "./view-state";
 
 const logger = getLogger("graph-citations");
 
@@ -184,6 +182,14 @@ export class GraphCitations extends Service<void> {
 
     await using stack = new AsyncDisposableStack();
     const { workspace } = this.#app;
+    stack.use(installGraphBookmarks(this.#app, () => this.#enabled));
+    stack.use(
+      installGraphViewCreation(this.#app, (leaf, view) => {
+        if (this.#stopped || !this.#enabled) return;
+        const members = graphMembersOf({ view });
+        if (members) this.#install(leaf, members, { saved: null, view });
+      }),
+    );
     stack.use(
       registerEvent(workspace.on("layout-change", () => this.#refresh())),
     );
@@ -230,9 +236,8 @@ export class GraphCitations extends Service<void> {
    * controls-panel section writes only the keys its own rows answer, so the
    * rows have to stand before the preset names them.
    *
-   * The values persist where the graph persists, so a preset global graph
-   * keeps the reader's graph settings until "Restore default settings"
-   * returns them.
+   * The preset persists with this view and its bookmarks. Other graph views
+   * keep their own choices.
    *
    * @see apps/obsidian/docs/adr/0029-graph-citations-extend-obsidian-graph-through-a-per-render-metadata-facade.md
    */
@@ -240,7 +245,7 @@ export class GraphCitations extends Service<void> {
     this.#refresh();
     applyCitationGraphPreset(leaf, {
       wikilinkCitations: this.#wikilinkCitations,
-      color: this.#nodeColors.current().literatureNote ?? DEFAULT_COLOR,
+      color: this.#nodeColors.literatureNoteGroupColor(),
     });
   }
 
@@ -288,18 +293,16 @@ export class GraphCitations extends Service<void> {
         this.#leftNative.add(leaf.view);
         continue;
       }
-      this.#install(leaf, members, this.#savedOptions(leaf, members.viewType));
+      this.#install(leaf, members, { saved: this.#savedOptions(leaf) });
       this.#render(members);
     }
   }
 
   /**
-   * The options this graph persisted, which it applied before ZotLit's rows
-   * existed to hear them: the Graph core plugin's own for the global graph,
-   * the leaf's saved state for a local one.
+   * Startup options that arrived before ZotLit's controls existed. Consumed
+   * after the first installation; later installations use the live choices.
    */
-  #savedOptions(leaf: WorkspaceLeaf, viewType: string): GraphOptions | null {
-    if (viewType === "graph") return savedGlobalOptions(this.#app);
+  #savedOptions(leaf: WorkspaceLeaf): GraphOptions | null {
     return (
       this.#deferredOptions.get(leaf) ?? this.#savedLeaves.get(leaf.id) ?? null
     );
@@ -308,7 +311,7 @@ export class GraphCitations extends Service<void> {
   #install(
     leaf: WorkspaceLeaf,
     members: GraphLeafMembers,
-    saved: GraphOptions | null,
+    { saved, view = leaf.view }: { saved: GraphOptions | null; view?: View },
   ): void {
     const { engine, renderer, viewType } = members;
     const installation: GraphInstallation = {
@@ -318,6 +321,7 @@ export class GraphCitations extends Service<void> {
       additions: NO_ADDITIONS,
     };
     const { restores } = installation;
+    restores.use(installGraphViewState(view, engine));
     restores.use(
       wrapMember(engine, "render", (render) => () => {
         installation.additions = this.#additions(engine);
@@ -353,9 +357,10 @@ export class GraphCitations extends Service<void> {
     // released rather than left to the leaf: `Component.register` pushes onto
     // a list only `unload` drains and takes nothing back (`app.js` 1.14.1),
     // so a callback still holding this installation would outlive it.
-    restores.use(
-      releasedOnDispose(leaf.view, () => this.#uninstall(installation)),
-    );
+    restores.use(releasedOnDispose(view, () => this.#uninstall(installation)));
+    if (saved) engine.setOptions?.(saved);
+    this.#savedLeaves.delete(leaf.id);
+    this.#deferredOptions.delete(leaf);
     logger.debug("Graph citations installed", { viewType });
   }
 
@@ -384,7 +389,7 @@ export class GraphCitations extends Service<void> {
       installation.rows[Symbol.dispose]();
       installation.rows = this.#filterRows(
         installation.members.engine,
-        this.#savedOptions(leaf, installation.members.viewType),
+        this.#savedOptions(leaf),
       );
       this.#render(installation.members);
     }

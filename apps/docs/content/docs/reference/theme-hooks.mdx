@@ -74,11 +74,11 @@ ZotLit adds no style to `zt-entry-serial` either. The serials render as superscr
 
 ## Graph view colors [#graph]
 
-The graph and local graph views draw on a canvas, so ZotLit colors its nodes and edges through custom properties instead of classes. ZotLit reads each property off `body`, so set it on `body` or on `:root`. A property set on the view itself, such as on `.graph-view`, changes nothing.
+The graph and local graph views draw on a canvas, so ZotLit colors its nodes and edges through custom properties instead of classes. ZotLit reads each property off `body`, so set it on `body`. A property set on the view itself, such as on `.graph-view`, changes nothing.
 
 | Custom property                    | Meaning                                                                  |
 | ---------------------------------- | ------------------------------------------------------------------------ |
-| `--zt-graph-literature-note-color` | The fill color of a Literature Note that a citation reaches.             |
+| `--zt-graph-literature-note-color` | The starting color of a new literature notes group.                      |
 | `--zt-graph-cited-work-node-color` | The fill color of a cited work that has no Literature Note in the vault. |
 | `--zt-graph-citation-link-color`   | The line color of an edge that a citation draws.                         |
 
@@ -86,15 +86,24 @@ ZotLit accepts any color syntax the app itself accepts, `oklch()` and `color-mix
 
 ### Default appearance [#graph-defaults]
 
-A Literature Note node takes `--color-purple`. A cited work with no Literature Note takes `--text-faint`. A citation edge takes `--color-purple` as well, so an edge and the node it reaches read as one family. All three follow the theme and its dark mode.
+Literature Notes use native node colors. A new literature notes group starts with ZotLit orange: `#E8622C` in light mode or `#F0793F` in dark mode. ZotLit reads `--zt-graph-literature-note-color` when it creates the group through the graph button or a Citation Graph command.
 
-A color group defined in the graph settings wins over both node colors. ZotLit colors only the nodes that no color group matched.
+Existing groups keep their saved color across theme changes. Removing the group returns its nodes to the remaining native groups and native colors.
 
-An edge keeps Obsidian's own highlight color while the pointer rests on one of its nodes, and the <UiLabel name={m.graph_option_color_citation_links_name()} /> row in the graph's Display section turns the edge color off.
+A cited work with no Literature Note takes `--text-faint`, unless a native color group matches it. Citation edges use native colors by default. Enabling <UiLabel name={m.graph_option_color_citation_links_name()} /> applies `--zt-graph-citation-link-color`, which defaults to `--color-purple`.
+
+An edge keeps Obsidian's own highlight color while the pointer rests on one of its nodes.
 
 ```css
+body.theme-light {
+  --zt-graph-literature-note-color: #e8622c;
+}
+
+body.theme-dark {
+  --zt-graph-literature-note-color: #f0793f;
+}
+
 body {
-  --zt-graph-literature-note-color: var(--color-green);
   --zt-graph-cited-work-node-color: oklch(0.6 0.02 250);
   --zt-graph-citation-link-color: var(--color-cyan);
 }

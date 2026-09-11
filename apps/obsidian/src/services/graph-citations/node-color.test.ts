@@ -1,4 +1,5 @@
-// @vitest-environment happy-dom
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { GraphData } from "obsidian";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -14,6 +15,7 @@ import {
   readNodeColors,
   stampNodeColors,
 } from "./node-color";
+// @vitest-environment happy-dom
 import { graphNode, themeStates, themeStatesNothing } from "./test-stub";
 
 vi.mock("@/lib/log", () => ({
@@ -27,6 +29,7 @@ vi.mock("@/lib/log", () => ({
 
 afterEach(() => {
   themeStatesNothing();
+  document.body.classList.remove("theme-dark");
   vi.unstubAllGlobals();
 });
 
@@ -40,18 +43,42 @@ function additions(): GraphCitationAdditions {
 }
 
 describe("readNodeColors", () => {
+  it("exposes light and dark defaults through an overridable theme property", () => {
+    const style = document.createElement("style");
+    style.textContent = readFileSync(
+      join(import.meta.dirname, "style.css"),
+      "utf8",
+    );
+    document.head.append(style);
+    expect(new GraphNodeColors().literatureNoteGroupColor()).toEqual({
+      a: 1,
+      rgb: 0xe8622c,
+    });
+    document.body.classList.add("theme-dark");
+    expect(new GraphNodeColors().literatureNoteGroupColor()).toEqual({
+      a: 1,
+      rgb: 0xf0793f,
+    });
+    document.body.style.setProperty(
+      "--zt-graph-literature-note-color",
+      "rgb(0, 136, 0)",
+    );
+    expect(new GraphNodeColors().literatureNoteGroupColor()).toEqual({
+      a: 1,
+      rgb: 0x008800,
+    });
+  });
+
   it("reads the colour each theme property states", () => {
     themeStates("rgb(120, 82, 238)", "rgba(136, 136, 136, 0.5)");
 
     expect(readNodeColors()).toEqual({
-      literatureNote: { a: 1, rgb: 0x7852ee },
       citedWorkNode: { a: 0.5, rgb: 0x888888 },
     });
   });
 
-  it("states no colour where the document states none, and leaves nothing behind", () => {
+  it("leaves native virtual-node colors when the theme states none", () => {
     expect(readNodeColors()).toEqual({
-      literatureNote: null,
       citedWorkNode: null,
     });
     expect(document.body.children).toHaveLength(0);
@@ -74,12 +101,11 @@ describe("readNodeColors", () => {
    * was open before ZotLit loaded is drawn in: Obsidian inserts a plugin's
    * stylesheet after the plugin's `onload`.
    */
-  it("falls back to ZotLit's default variables where the theme states neither property", () => {
+  it("uses the native faint virtual-node color by default", () => {
     document.body.style.setProperty("--color-purple", "rgb(120, 82, 238)");
     document.body.style.setProperty("--text-faint", "rgb(171, 171, 171)");
 
     expect(readNodeColors()).toEqual({
-      literatureNote: { a: 1, rgb: 0x7852ee },
       citedWorkNode: { a: 1, rgb: 0xababab },
     });
   });
@@ -90,7 +116,6 @@ describe("readNodeColors", () => {
     themeStates("rgb(0, 0, 255)", "rgb(1, 2, 3)");
 
     expect(readNodeColors()).toEqual({
-      literatureNote: { a: 1, rgb: 0x0000ff },
       citedWorkNode: { a: 1, rgb: 0x010203 },
     });
   });
@@ -103,16 +128,16 @@ describe("GraphNodeColors", () => {
     const first = colors.current();
 
     document.body.style.setProperty(
-      themeProperty.graphLiteratureNote,
+      themeProperty.graphCitedWorkNode,
       "rgb(0, 0, 255)",
     );
 
     expect(colors.current()).toBe(first);
-    expect(first.literatureNote).toEqual({ a: 1, rgb: 0x7852ee });
+    expect(first.citedWorkNode).toEqual({ a: 1, rgb: 0x888888 });
 
     colors.invalidate();
 
-    expect(colors.current().literatureNote).toEqual({ a: 1, rgb: 0x0000ff });
+    expect(colors.current().citedWorkNode).toEqual({ a: 1, rgb: 0x0000ff });
   });
 });
 
@@ -187,11 +212,10 @@ describe("parseGraphColor through the browser's own reader", () => {
 
 describe("stampNodeColors", () => {
   const colors = {
-    literatureNote: { a: 1, rgb: 0x7852ee },
     citedWorkNode: { a: 0.5, rgb: 0x888888 },
   };
 
-  it("colours Literature Notes and Cited Work Nodes and no other node", () => {
+  it("colors only virtual Cited Work Nodes", () => {
     const data: GraphData = {
       nodes: {
         "Literature/Doe 2024.md": graphNode(""),
@@ -203,15 +227,13 @@ describe("stampNodeColors", () => {
 
     stampNodeColors(data, additions(), colors);
 
-    expect(data.nodes["Literature/Doe 2024.md"]!.color).toBe(
-      colors.literatureNote,
-    );
+    expect(data.nodes["Literature/Doe 2024.md"]!.color).toBeUndefined();
     expect(data.nodes["@typo2024"]!.color).toBe(colors.citedWorkNode);
     expect(data.nodes["Draft.md"]!.color).toBeUndefined();
     expect(data.nodes["missing"]!.color).toBeUndefined();
   });
 
-  it("colours a Literature Note no citation edge reaches", () => {
+  it("keeps uncited literature notes native", () => {
     const data: GraphData = {
       nodes: {
         "Literature/Doe 2024.md": graphNode(""),
@@ -233,9 +255,7 @@ describe("stampNodeColors", () => {
       colors,
     );
 
-    expect(data.nodes["Literature/Poe 2021.md"]!.color).toBe(
-      colors.literatureNote,
-    );
+    expect(data.nodes["Literature/Poe 2021.md"]!.color).toBeUndefined();
   });
 
   it("leaves a node the user's colour group already coloured", () => {
@@ -255,7 +275,6 @@ describe("stampNodeColors", () => {
     };
 
     stampNodeColors(data, additions(), {
-      literatureNote: null,
       citedWorkNode: null,
     });
 
@@ -288,15 +307,14 @@ describe("installNodeColors", () => {
       nodes: {
         "Literature/Doe 2024.md": graphNode(""),
         "Draft.md": graphNode(""),
+        "@typo2024": graphNode("unresolved"),
       },
     };
     expect(renderer.setData(data)).toBe("native");
 
     expect(handedOff).toEqual([data]);
-    expect(data.nodes["Literature/Doe 2024.md"]!.color).toEqual({
-      a: 1,
-      rgb: 0x7852ee,
-    });
+    expect(data.nodes["@typo2024"]!.color).toEqual({ a: 1, rgb: 0x888888 });
+    expect(data.nodes["Literature/Doe 2024.md"]!.color).toBeUndefined();
     expect(data.nodes["Draft.md"]!.color).toBeUndefined();
 
     restore[Symbol.dispose]();

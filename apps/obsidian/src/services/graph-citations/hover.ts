@@ -17,8 +17,10 @@ import { itemKeyFromFrontmatter } from "@/services/note-index/service";
 import type { SettingsService } from "@/services/settings/service";
 
 import type { GraphCitationAdditions } from "./adapter";
+import { CITATION_POPOVER } from "./display";
 import { wrapMember } from "./install";
 import type { GraphLeafMembers } from "./install";
+import { rowFlag } from "./rows";
 import "./style.css";
 
 const logger = getLogger("graph-citations");
@@ -82,7 +84,9 @@ export function wrapNodeHover(
   stack.use(
     wrapMember(renderer, "setData", (native) => (data) => {
       const result = native(data);
-      stand.retainNodes(data.nodes);
+      const enabled = rowFlag(members.engine, CITATION_POPOVER, false);
+      stand.retainNodes(enabled ? data.nodes : {});
+      if (!enabled) stand.release();
       return result;
     }),
   );
@@ -100,6 +104,7 @@ function hoverNode(
   evt: MouseEvent,
   id: string,
 ): boolean {
+  if (!rowFlag(members.engine, CITATION_POPOVER, false)) return false;
   const settings = deps.settings.current;
   if (!settings) return false;
   const drawn = additions();
