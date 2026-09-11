@@ -284,6 +284,23 @@ stay as links. This setting does not change export.
 
 Both settings can be off. ZotLit’s internal Citation Index remains active, and <UiLabel name={m.settings_citation_index_reset_name()} /> remains available under <SettingsPath page={m.settings_page_advanced()} />.
 
+### Graph view
+
+| Label                                               | Key                        | Control | Default | Dependency                        | Storage |
+| --------------------------------------------------- | -------------------------- | ------- | ------- | --------------------------------- | ------- |
+| <UiLabel name={m.settings_citation_graph_name()} /> | `citation.graph-citations` | Toggle  | On      | Obsidian's Graph view core plugin | Synced  |
+
+<UiLabel name={m.settings_citation_graph_name()} />: Connect each note to works
+it cites in the graph view: to the Literature Note, or to a node labeled with
+the citation key when no Literature Note exists. Turning it off returns every
+open graph to its native state, and the Citation Graph commands report that it
+is off instead of opening.
+
+The setting is vault-wide. The Graph view core plugin supplies the graph views
+themselves: while that plugin is disabled, no graph shows citations and the
+row reports it. See [Explore citations in the graph
+view](/docs/how-to/explore-citations-in-graph).
+
 ### In-text citations
 
 | Label                                                        | Key                       | Control | Default | Dependency                                                                  | Storage |
