@@ -27,8 +27,9 @@ import { NoteIndexStub } from "@/services/note-index/test-stub";
 import type { Settings } from "@/services/settings/schema";
 
 import type { LinkMap } from "./adapter";
+import { DEFAULT_COLOR } from "./groups";
 import { GraphCitations } from "./service";
-import { FakeControlSection } from "./test-double";
+import { FakeColorGroupSection, FakeControlSection } from "./test-double";
 import { graphNode, themeStates, themeStatesNothing } from "./test-stub";
 
 const warn = vi.hoisted(() => vi.fn());
@@ -167,6 +168,7 @@ class FakeEngine {
   readonly cachedFiles: string[][] = [];
   readonly renderer: FakeRenderer;
   readonly filterOptions = new FakeControlSection();
+  readonly colorGroupOptions = new FakeColorGroupSection();
   readonly onOptionsChange = vi.fn();
   options: GraphOptions = {};
   app: App;
@@ -185,6 +187,8 @@ class FakeEngine {
     this.renderer.onNodeRightClick = this.onNodeRightClick.bind(this);
     this.renderer.onNodeHover = this.onNodeHover.bind(this);
     this.renderer.onNodeUnhover = this.onNodeUnhover.bind(this);
+    // The native Groups section builds its body in its own constructor.
+    this.colorGroupOptions.setColorQueries([]);
     this.#realApp = realApp;
   }
 
@@ -196,6 +200,14 @@ class FakeEngine {
 
   setOptions(options: GraphOptions): void {
     this.filterOptions.setOptions(options);
+    const colorGroups = options.colorGroups;
+    if (Array.isArray(colorGroups)) {
+      // What the Groups section's own option listener does: rebuild the rows,
+      // then ask the engine to run the search again, which saves the options.
+      // Obsidian debounces that ask; the fake answers it straight away.
+      this.colorGroupOptions.setColorQueries(colorGroups);
+      this.onOptionsChange();
+    }
     this.render();
   }
 
@@ -1713,5 +1725,95 @@ describe("GraphCitations Filters rows", () => {
     expect(Object.hasOwn(engine.filterOptions, "setDefaultOptions")).toBe(
       false,
     );
+  });
+});
+
+/** Every button the Groups section carries, in the order the panel shows them. */
+function groupsButtons(engine: FakeEngine): string[] {
+  return [
+    ...engine.colorGroupOptions.childrenEl.querySelectorAll("button"),
+  ].map((button) => button.textContent ?? "");
+}
+
+/** ZotLit's own Groups button. */
+function groupsButton(engine: FakeEngine): HTMLButtonElement {
+  const buttons = [
+    ...engine.colorGroupOptions.childrenEl.querySelectorAll("button"),
+  ];
+  return buttons.find(
+    (button) =>
+      button.textContent === m.graph_citations_add_literature_notes_group(),
+  )!;
+}
+
+describe("GraphCitations Groups button", () => {
+  it("builds the button below the native New group control", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+
+    fixture.layoutReady();
+
+    expect(groupsButtons(engine)).toEqual([
+      "New group",
+      m.graph_citations_add_literature_notes_group(),
+    ]);
+    expect(engine.colorGroupOptions.getColoredQueries()).toEqual([]);
+  });
+
+  it("adds one literature notes group, keeps the groups the user has, and saves", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+    const mine = { query: "tag:#paper", color: { a: 1, rgb: 0x00ff00 } };
+    engine.colorGroupOptions.setColorQueries([mine]);
+
+    groupsButton(engine).click();
+
+    expect(engine.colorGroupOptions.getColoredQueries()).toEqual([
+      mine,
+      { query: '["zotero-key"]', color: DEFAULT_COLOR },
+    ]);
+    expect(engine.onOptionsChange).toHaveBeenCalledOnce();
+  });
+
+  it("adds nothing on a second press", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+    groupsButton(engine).click();
+    const added = engine.colorGroupOptions.getColoredQueries();
+
+    groupsButton(engine).click();
+
+    expect(engine.colorGroupOptions.getColoredQueries()).toEqual(added);
+    expect(engine.onOptionsChange).toHaveBeenCalledOnce();
+  });
+
+  it("takes the button away when the feature turns off, and brings it back on", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    fixture.settings.update({ "citation.graph-citations": false });
+
+    expect(groupsButtons(engine)).toEqual(["New group"]);
+    expect(Object.hasOwn(engine.colorGroupOptions, "setColorQueries")).toBe(
+      false,
+    );
+
+    fixture.settings.update({ "citation.graph-citations": true });
+
+    expect(groupsButtons(engine)).toEqual([
+      "New group",
+      m.graph_citations_add_literature_notes_group(),
+    ]);
   });
 });

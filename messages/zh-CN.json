@@ -541,6 +541,7 @@
   "graph_citations_menu_copy_citekey": "复制文献引用标识（citation key）",
   "graph_citations_citekey_copied": "文献引用标识已复制。",
   "graph_citations_citekey_copy_failed": "无法复制文献引用标识。",
+  "graph_citations_add_literature_notes_group": "添加文献笔记分组",
   "settings_citation_editor_heading": "文内引用",
   "settings_citation_show_formatted_name": "显示格式化引用",
   "settings_citation_show_formatted_desc": "在实时预览和阅读视图中使用所选的引用与参考文献样式显示引用。源码模式始终显示 Markdown。ZotLit 无法格式化引用时，引用保持不变。",
