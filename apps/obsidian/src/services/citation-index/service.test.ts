@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { yieldToMain } from "@/lib/yield-to-main";
 
+import type { CitationSyntax } from "./scan";
 import type { CitedBySnapshot, Citation, CitationIndex } from "./service";
 import {
   createCitationIndexHarness,
@@ -227,6 +228,59 @@ describe("CitationIndex", () => {
       citekey: "excluded",
       wikilink: "included",
     });
+  });
+
+  it("answers the admitted occurrences of every covered document by path", async () => {
+    const { index, metadataCache, settings, workspace } = await makeHarness(
+      {
+        "draft.md": "As @doe2024 and [[Roe 2025]] say; @doe2024 again.",
+        "plain.md": "No citation here.",
+        "other.md": "Only [[Doe 2024]].",
+      },
+      { settings: { "citation.wikilink-citations": true } },
+    );
+    metadataCache.fileCache.set("draft.md", {
+      links: [link("Roe 2025", 15)],
+    } as CachedMetadata);
+    metadataCache.fileCache.set("other.md", {
+      links: [link("Doe 2024", 5)],
+    } as CachedMetadata);
+    workspace.layoutReady();
+    await index.whenIndexed();
+
+    const summary = (syntaxes: CitationSyntax[] = ["citekey", "wikilink"]) =>
+      [...index.citationsByPath(syntaxes)].map(([path, occurrences]) => [
+        path,
+        occurrences.map(({ kind, raw }) => `${kind}:${raw}`),
+      ]);
+
+    expect(summary()).toEqual([
+      ["draft.md", ["citekey:doe2024", "citekey:doe2024", "wikilink:Roe 2025"]],
+      ["other.md", ["wikilink:Doe 2024"]],
+    ]);
+    expect(summary(["citekey"])).toEqual([
+      ["draft.md", ["citekey:doe2024", "citekey:doe2024"]],
+    ]);
+
+    settings.update({ "citation.wikilink-citations": false });
+    expect(summary()).toEqual([
+      ["draft.md", ["citekey:doe2024", "citekey:doe2024"]],
+    ]);
+
+    settings.update({
+      "citation.pandoc-citations": false,
+      "citation.wikilink-citations": true,
+    });
+    expect(summary()).toEqual([
+      ["draft.md", ["wikilink:Roe 2025"]],
+      ["other.md", ["wikilink:Doe 2024"]],
+    ]);
+  });
+
+  it("leaves a document the backfill has not reached out of the per-path read", async () => {
+    const { index } = await makeHarness({ "draft.md": "As @doe2024 wrote." });
+
+    expect(index.citationsByPath(["citekey", "wikilink"]).size).toBe(0);
   });
 
   it("reports malformed Citation Fragments without numbering them", async () => {

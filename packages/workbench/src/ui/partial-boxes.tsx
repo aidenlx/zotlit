@@ -39,7 +39,7 @@ export interface PartialPlaceholderHost {
   /**
    * The partials the last render could not resolve, which is what marks a call
    * as a problem: a missing partial is the engine's own render failure.
-   * @see docs/adr/0050-the-citation-template-is-one-document-and-partials-are-files.md
+   * @see docs/adr/0055-the-citation-template-is-one-document-and-partials-are-files.md
    */
   readonly missing: readonly string[];
   /**

@@ -309,6 +309,23 @@ stay as links. This setting does not change export.
 
 Both settings can be off. ZotLit’s internal Citation Index remains active, and <UiLabel name={m.settings_citation_index_reset_name()} /> remains available under <SettingsPath page={m.settings_page_advanced()} />.
 
+### Graph view
+
+| Label                                               | Key                        | Control | Default | Dependency                        | Storage |
+| --------------------------------------------------- | -------------------------- | ------- | ------- | --------------------------------- | ------- |
+| <UiLabel name={m.settings_citation_graph_name()} /> | `citation.graph-citations` | Toggle  | On      | Obsidian's Graph view core plugin | Synced  |
+
+<UiLabel name={m.settings_citation_graph_name()} />: Connect each note to works
+it cites in the graph view: to the Literature Note, or to a node labeled with
+the citation key when no Literature Note exists. Turning it off returns every
+open graph to its native state, and the Citation Graph commands report that it
+is off instead of opening.
+
+The setting is vault-wide. The Graph view core plugin supplies the graph views
+themselves: while that plugin is disabled, no graph shows citations and the
+row reports it. See [Explore citations in the graph
+view](/docs/how-to/explore-citations-in-graph).
+
 ### In-text citations
 
 | Label                                                        | Key                       | Control | Default | Dependency                                                                  | Storage |
@@ -333,7 +350,7 @@ The navigation setting also controls the four open-under-cursor commands. <UiLab
 | Label                                                        | Key                     | Control                                                                                                                                                                                                 | Default                                                       | Dependency                                                                                                                 | Storage |
 | ------------------------------------------------------------ | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ------- |
 | <UiLabel name={m.settings_citation_hover_action_name()} />   | `citation.hover-action` | Dropdown (<UiLabel name={m.settings_citation_hover_action_off()} />, <UiLabel name={m.settings_citation_hover_action_popover()} />, <UiLabel name={m.settings_citation_hover_action_page_preview()} />) | <UiLabel name={m.settings_citation_hover_action_popover()} /> | Active citation source                                                                                                     | Synced  |
-| <UiLabel name={m.settings_citation_hover_mod_page_name()} /> | (sub-page)              | Sub-page listing one toggle per editing mode                                                                                                                                                            | —                                                             | <UiLabel name={m.settings_citation_hover_action_name()} /> = <UiLabel name={m.settings_citation_hover_action_popover()} /> | Synced  |
+| <UiLabel name={m.settings_citation_hover_mod_page_name()} /> | (sub-page)              | Sub-page listing toggles for editing modes and the graph view                                                                                                                                           | —                                                             | <UiLabel name={m.settings_citation_hover_action_name()} /> = <UiLabel name={m.settings_citation_hover_action_popover()} /> | Synced  |
 
 <UiLabel name={m.settings_citation_hover_action_name()} />: What hovering a
 citation or literature note link shows. Page preview follows the Page preview
@@ -343,15 +360,16 @@ One hover shows one result. <UiLabel name={m.settings_citation_hover_action_popo
 
 #### Require modifier key
 
-Show the popover only while holding Ctrl (Windows) or Command (macOS). The sub-page appears only while <UiLabel name={m.settings_citation_hover_action_name()} /> is <UiLabel name={m.settings_citation_hover_action_popover()} />, and lists one toggle per editing mode, like the built-in Page preview plugin lists one toggle per hover source.
+Show the popover only while holding Ctrl (Windows) or Command (macOS). The sub-page appears only while <UiLabel name={m.settings_citation_hover_action_name()} /> is <UiLabel name={m.settings_citation_hover_action_popover()} />, and lists toggles for editing modes and the graph view.
 
 | Label                                                                | Key                                       | Control | Default |
 | -------------------------------------------------------------------- | ----------------------------------------- | ------- | ------- |
 | <UiLabel name={m.settings_citation_hover_mod_source_name()} />       | `citation.hover-require-mod-source`       | Toggle  | On      |
 | <UiLabel name={m.settings_citation_hover_mod_live_preview_name()} /> | `citation.hover-require-mod-live-preview` | Toggle  | Off     |
 | <UiLabel name={m.settings_citation_hover_mod_reading_name()} />      | `citation.hover-require-mod-reading`      | Toggle  | Off     |
+| <UiLabel name={m.settings_citation_hover_mod_graph_name()} />        | `citation.hover-require-mod-graph`        | Toggle  | Off     |
 
-Each toggle gates the popover in its own editing mode, and the modifier is read when the pointer arrives.
+Each toggle applies to its editing mode or the graph view. ZotLit checks the modifier when the pointer arrives.
 
 ### Formatting
 

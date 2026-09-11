@@ -8,6 +8,7 @@ import type {
 import { referencesStyleOptions, STYLE_DEFAULT } from "@/lib/citation-style";
 import * as m from "@/lib/i18n/generated/messages";
 import { isLanguageTag } from "@/lib/language-tag";
+import { GRAPH_CORE_PLUGIN_ID } from "@/services/graph-citations/install";
 import { listInstalledStyles } from "@/services/pandoc/styles";
 import type { InstalledCslStyle } from "@/services/pandoc/styles";
 import type { HoverAction } from "@/services/settings/schema";
@@ -61,6 +62,17 @@ export function citationsPageItems(
           name: m.settings_citation_wikilink_citations_name(),
           desc: m.settings_citation_wikilink_citations_desc(),
           control: { type: "toggle", key: "citation.wikilink-citations" },
+        },
+      ],
+    },
+    {
+      type: "group",
+      heading: m.settings_citation_graph_heading(),
+      items: [
+        {
+          name: m.settings_citation_graph_name(),
+          desc: graphCitationsDescription(ctx),
+          control: { type: "toggle", key: "citation.graph-citations" },
         },
       ],
     },
@@ -131,6 +143,17 @@ export function referencesStyleDefinition(
   };
 }
 
+/**
+ * Names the Graph view core plugin while it is disabled, since the toggle
+ * then changes nothing on screen. Read at build time: the page is rebuilt on
+ * every open, which is when a core-plugin change can reach it.
+ */
+function graphCitationsDescription(ctx: SettingTabContext): string {
+  return ctx.app.internalPlugins.getEnabledPluginById(GRAPH_CORE_PLUGIN_ID)
+    ? m.settings_citation_graph_desc()
+    : m.settings_citation_graph_desc_disabled();
+}
+
 /** The Hover Action choices, in the order the select offers them. */
 function hoverActionOptions(): Record<HoverAction, string> {
   return {
@@ -140,7 +163,7 @@ function hoverActionOptions(): Record<HoverAction, string> {
   };
 }
 
-/** The Require Mod toggle of each editing mode, in editing-mode order. */
+/** The Require Mod toggles for editing modes and graph views. */
 const REQUIRE_MOD_KEYS = [
   [
     "citation.hover-require-mod-source",
@@ -154,13 +177,17 @@ const REQUIRE_MOD_KEYS = [
     "citation.hover-require-mod-reading",
     m.settings_citation_hover_mod_reading_name,
   ],
+  [
+    "citation.hover-require-mod-graph",
+    m.settings_citation_hover_mod_graph_name,
+  ],
 ] as const satisfies readonly (readonly [SettingsKey, () => string])[];
 
 /**
- * The Require Mod toggles, on a sub-page of their own that lists one editing
- * mode per row, like the Page preview plugin lists one hover source per row.
+ * The Require Mod toggles, on a sub-page of their own that lists one hover
+ * surface per row, like the Page preview plugin lists one hover source per row.
  * The page's own title names the list, so the rows carry the requirement in the
- * page description instead of repeating it three times.
+ * page description instead of repeating it on each row.
  *
  * The toggles gate the Citation Popover alone — under Page preview the Page
  * preview plugin's own settings own that gate, and under Off there is nothing

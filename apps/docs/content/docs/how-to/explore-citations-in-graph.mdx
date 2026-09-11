@@ -1,0 +1,203 @@
+---
+title: "Explore citations in the graph view"
+description: "Draw citations as edges in Obsidian's graph views, control what they show, and open a Citation Graph from the command palette."
+---
+
+import { Steps, Step } from "fumadocs-ui/components/steps";
+import { Card, Cards } from "fumadocs-ui/components/card";
+import { Callout } from "@/components/callout";
+import { Command } from "@/components/command";
+import { SettingsPath } from "@/components/settings-path";
+import { UiLabel } from "@/components/ui-label";
+import { m } from "@/paraglide/messages.js";
+
+Use Obsidian's own graph and local graph to see which notes rest on which works.
+
+ZotLit draws an edge from each note to the works it cites. The edge ends on the Literature Note for that work, or on a **Cited Work Node** when your vault has no Literature Note for it yet. A Cited Work Node is labeled with the citation key you typed.
+
+Everything native keeps working: search, color groups, depth, incoming and outgoing links, arrows, and the local graph following the active note. Depth walks citation edges too, so depth 2 from a Literature Note reaches the notes that share its sources.
+
+## Before you start
+
+- Turn on Obsidian's **Graph view** core plugin under **Settings > Core plugins**.
+- Open <SettingsPath page={m.settings_page_citations()} /> and check that <UiLabel name={m.settings_citation_graph_name()} /> is on. It is on by default.
+- Leave at least one citation source on in the same page: <UiLabel name={m.settings_citation_pandoc_citations_name()} /> for `[@doe2024]` citations, <UiLabel name={m.settings_citation_wikilink_citations_name()} /> for unaliased Literature Note links. A syntax you turn off there draws no citation edge anywhere.
+
+Turning <UiLabel name={m.settings_citation_graph_name()} /> off removes added citation connections, Cited Work Nodes, and ZotLit controls. Your color groups and native graph settings remain.
+
+## Control what the graph draws
+
+ZotLit adds five rows to the graph controls panel. Open the panel with the settings icon in the top-right corner of any graph.
+
+| Section | Row                                                              | Default | What it does                                                                                   |
+| ------- | ---------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------- |
+| Filters | <UiLabel name={m.graph_option_pandoc_citations_name()} />        | On      | Draws an edge for each `[@doe2024]` citation.                                                  |
+| Filters | <UiLabel name={m.graph_option_wikilink_citations_name()} />      | On      | Draws an edge for each unaliased link to a Literature Note.                                    |
+| Filters | <UiLabel name={m.graph_option_citation_connected_only_name()} /> | Off     | Hides every node except Literature Notes, Cited Work Nodes, and the notes that cite them.      |
+| Display | <UiLabel name={m.graph_option_color_citation_links_name()} />    | Off     | Draws citation edges in their own color, including existing wikilinks classified as citations. |
+| Display | <UiLabel name={m.graph_option_citation_popover_name()} />        | Off     | Enables citation hover for Literature Notes and Cited Work Nodes.                              |
+
+The <UiLabel name={m.graph_option_wikilink_citations_name()} /> row is there only while <UiLabel name={m.settings_citation_wikilink_citations_name()} /> is on under <SettingsPath page={m.settings_page_citations()} />. With that setting off, a `[[wikilink]]` is not a citation and keeps its native meaning.
+
+Each global or local graph tab saves its own options. Global graph bookmarks restore the options captured for that view. A separately opened ordinary graph starts with citation link colors and citation popovers off. **Restore default settings** returns all five rows to the defaults above along with every native option.
+
+With Obsidian's **Bookmarks** core plugin enabled, use **Bookmark** in the global graph's pane menu.
+
+Obsidian's **Existing files only** hides Cited Work Nodes, because a cited work with no Literature Note is not a file in your vault.
+
+### Node and edge colors
+
+Literature Notes use native node colors. Add a color group to give them a shared color. Cited Work Nodes use a muted color unless a native group matches them.
+
+Turn on <UiLabel name={m.graph_option_color_citation_links_name()} /> to color citation edges. With it off, every edge uses native colors. Edges keep Obsidian's highlight color while you hover over a connected node.
+
+See [Theme hooks](/docs/reference/theme-hooks#graph) for the group starting color, Cited Work Node color, and citation edge color.
+
+## Color your Literature Notes as a group
+
+<Steps>
+  <Step>
+    ### Open the Groups section
+
+    Open the graph controls panel and expand **Groups**.
+
+  </Step>
+  <Step>
+    ### Add the group
+
+    Select <UiLabel name={m.graph_citations_add_literature_notes_group()} />, below the native **New group** control.
+
+    ZotLit inserts one color group whose search query matches every note carrying the `zotero-key` property, which is every Literature Note.
+
+  </Step>
+</Steps>
+
+The new group starts with ZotLit orange: `#E8622C` in light mode or `#F0793F` in dark mode. Themes and CSS snippets can [override its starting color](/docs/reference/theme-hooks#graph).
+
+Recolor, reorder, or delete it with native controls. Its saved color stays the same when you change themes. An existing matching group keeps its color and position. Selecting the button again adds a group only if you removed it.
+
+**Restore default settings** clears every color group, this one included. The button stays, so one more press brings the group back.
+
+## Open a Citation Graph
+
+A **Citation Graph** is the native graph with ZotLit's preset applied, so it opens as a research map instead of a full vault graph.
+
+<Steps>
+  <Step>
+    ### Run the command
+
+    Open the command palette (`Ctrl+P` on Windows and Linux, `Cmd+P` on macOS) and run one of:
+
+    <Command name={m.command_open_citation_graph_name()} />
+
+    <Command name={m.command_open_local_citation_graph_name()} />
+
+    The global command opens the graph where Obsidian's own **Open graph view** opens it. The local command opens a vertical split beside the note you are reading and follows that pane, like Obsidian's **Open local graph**. It appears in the palette only while a note is active.
+
+    Neither command has a default hotkey. Assign one under **Settings > Hotkeys**.
+
+  </Step>
+  <Step>
+    ### Read the preset
+
+    The graph opens with:
+
+    - <UiLabel name={m.graph_option_pandoc_citations_name()} /> on, and <UiLabel name={m.graph_option_wikilink_citations_name()} /> on where that row exists.
+    - <UiLabel name={m.graph_option_citation_connected_only_name()} /> on, so the graph keeps your Literature Notes and citation structure.
+    - <UiLabel name={m.graph_option_color_citation_links_name()} /> and <UiLabel name={m.graph_option_citation_popover_name()} /> on.
+    - **Tags**, **Attachments**, and **Orphans** off, **Arrows** on, and **Existing files only** off so Cited Work Nodes stay visible.
+    - One literature notes group, unless a group already uses its query.
+
+    Force settings and every other native option stay as you had them. Running either command a second time adds no second color group.
+
+  </Step>
+</Steps>
+
+The preset applies to the graph tab opened by the command. Separately opened ordinary graphs keep their own defaults. Bookmark a graph to restore its selected options later. Running the command again restores the literature notes group if you removed it.
+
+<Callout type="info">
+  A local Citation Graph does not hide orphans. Obsidian's local graph panel has
+  no **Orphans** row at all, so the preset has nothing to set. With{" "}
+  <UiLabel name={m.graph_option_citation_connected_only_name()} /> on, an orphan
+  rarely survives to be drawn.
+</Callout>
+
+### When a command opens nothing
+
+Both commands show a notice instead of opening a graph in three cases.
+
+- <UiLabel name={m.graph_citations_core_plugin_disabled()} /> Obsidian owns the
+  graph views, so no graph opens until its core plugin is on.
+- <UiLabel name={m.graph_citations_disabled()} /> The preset would otherwise
+  open a graph with no citations in it, so the command stops instead.
+- <UiLabel name={m.graph_citations_unavailable()} /> ZotLit could not start the
+  part that draws citation edges. Both settings above can be on and the command
+  still stops here.
+
+## Act on a cited work
+
+Select a Cited Work Node to fill the gap it marks.
+
+| The citation key             | What a click does                                                  |
+| ---------------------------- | ------------------------------------------------------------------ |
+| Matches one Zotero item      | Creates the Literature Note from your profile and opens it.        |
+| Matches several Zotero items | Offers the candidates so you can pick the right one.               |
+| Matches no Zotero item       | Shows a notice saying so, so you can correct the key in your note. |
+
+A key that matches one Zotero item loses its Cited Work Node once the note exists. The graph redraws, and the Literature Note node takes its place, keeping its edges.
+
+A key that matches several items keeps its Cited Work Node. Picking a candidate creates and opens that note, and leaves the key itself ambiguous, so the graph still has no single note to end the edge on. Resolve the key first — see [a key that matches several items](/docs/concepts/how-citekey-links-work#ambiguous-key).
+
+Right-click a Cited Work Node for the actions its key can carry out.
+
+| The citation key             | Menu items                                                                                                                                                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Matches one Zotero item      | <UiLabel name={m.graph_citations_menu_create_note()} />, <UiLabel name={m.references_open_in_zotero()} />, <UiLabel name={m.graph_citations_menu_copy_citekey()} /> |
+| Matches several Zotero items | <UiLabel name={m.graph_citations_menu_create_note()} />, <UiLabel name={m.graph_citations_menu_copy_citekey()} />                                                   |
+| Matches no Zotero item       | <UiLabel name={m.graph_citations_menu_copy_citekey()} />                                                                                                            |
+
+Every other node keeps Obsidian's own menu.
+
+## Hover a node
+
+Turn on <UiLabel name={m.graph_option_citation_popover_name()} /> in the graph's **Display** section to enable citation hover. With it off, Literature Notes keep native hover and Cited Work Nodes show no popover.
+
+With it on, hovering a Literature Note or a Cited Work Node follows <UiLabel name={m.settings_citation_hover_action_name()} /> under <SettingsPath page={m.settings_page_citations()} />, the same setting that governs hover in the editor.
+
+| <UiLabel name={m.settings_citation_hover_action_name()} />         | On a Literature Note                    | On a Cited Work Node          |
+| ------------------------------------------------------------------ | --------------------------------------- | ----------------------------- |
+| <UiLabel name={m.settings_citation_hover_action_popover()} />      | Shows the formatted entry for the work. | Shows the entry for the work. |
+| <UiLabel name={m.settings_citation_hover_action_page_preview()} /> | Shows the note preview.                 | Nothing.                      |
+| <UiLabel name={m.settings_citation_hover_action_off()} />          | Native hover.                           | Nothing.                      |
+
+Every other node keeps Obsidian's native hover.
+
+To require Ctrl (Windows) or Command (macOS) for graph popovers, turn on <UiLabel name={m.settings_citation_hover_mod_graph_name()} /> under <SettingsPath page={m.settings_page_citations()} setting={m.settings_citation_hover_mod_page_name()} />.
+
+<Callout type="info">
+  Under <UiLabel name={m.settings_citation_hover_action_popover()} />, graph
+  popovers use your vault's citation style and locale, including for uncited
+  Literature Notes. Entries appear without numbering. If the style has no
+  bibliography or formatting is unavailable, the popover shows the item's
+  summary. Its actions use the item shown.
+</Callout>
+
+## See also
+
+<Cards>
+  <Card
+    title="Insert citations"
+    description="Write the citations the graph draws."
+    href="/docs/how-to/insert-citations"
+  />
+  <Card
+    title="How in-text citation rendering and navigation work"
+    description="What a citation key resolves to, and what an ambiguous key does."
+    href="/docs/concepts/how-citekey-links-work"
+  />
+  <Card
+    title="Theme hooks"
+    description="Restyle the graph's node and edge colors from your theme or snippet."
+    href="/docs/reference/theme-hooks#graph"
+  />
+</Cards>

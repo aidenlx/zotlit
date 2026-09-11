@@ -4,7 +4,7 @@
 /**
  * The caller a Shared Partial is previewed as called from, which picks the
  * root data the partial reads. It is the reader's own choice, remembered per
- * file: ADR 0050 rules out reading it off the callers, since a partial nothing
+ * file: ADR 0055 rules out reading it off the callers, since a partial nothing
  * calls yet, and one two roots call, name no single caller to read it from.
  * This comment is the one place that argument is made; elsewhere link here.
  */

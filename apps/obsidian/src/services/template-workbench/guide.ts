@@ -562,7 +562,7 @@ SHARED PARTIALS
   editor and template-render therefore take the caller as a choice —
   root=<${PARTIAL_CONTEXT_NAMES.join("|")}>, default note — rather than reading it off
   the callers, since a partial nothing calls, and a partial two roots call,
-  each leave no single caller to read (ADR 0050).
+  each leave no single caller to read (ADR 0055).
 
   obsidian zotlit:template-render template=partial:<name> \\
       root=<${PARTIAL_CONTEXT_NAMES.join("|")}> key=<zotero-key> expect-source=<source-id>

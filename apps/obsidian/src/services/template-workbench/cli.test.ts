@@ -610,7 +610,7 @@ describe("Template Workbench CLI", () => {
         "root=<note|annotation|citation>",
         // Every reserved name, so the guide cannot drift from defaults.ts.
         "'filename', 'note', 'annotation', 'content', or 'citation'",
-        "ADR 0050",
+        "ADR 0055",
       ],
     ],
     ["editing", ["editablePath", "shadowedFiles"]],

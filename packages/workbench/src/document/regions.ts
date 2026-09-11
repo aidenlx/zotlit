@@ -91,7 +91,7 @@ const ETA_PARTIAL_CALL = "include";
  * The host refuses the same five names; keep this list and the host's own
  * reserved set naming the same templates.
  * @see docs/adr/0035-profile-annotation-section.md
- * @see docs/adr/0050-the-citation-template-is-one-document-and-partials-are-files.md
+ * @see docs/adr/0055-the-citation-template-is-one-document-and-partials-are-files.md
  */
 export const RESERVED_CALL_NAMES: readonly string[] = [
   ...Object.keys(TEMPLATE_SLOT_ROOTS),

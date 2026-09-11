@@ -1,7 +1,7 @@
 // The context menu a Template editor opens over a selection: the standard
 // clipboard actions, and "Extract to partial…".
 //
-// @see docs/adr/0050-the-citation-template-is-one-document-and-partials-are-files.md
+// @see docs/adr/0055-the-citation-template-is-one-document-and-partials-are-files.md
 
 import { isolateHistory } from "@codemirror/commands";
 import type { Extension } from "@codemirror/state";

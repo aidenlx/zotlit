@@ -639,7 +639,7 @@ function errorText(error: unknown): string {
  * vault holds no document for is the engine's own missing-partial report,
  * which the Partial Placeholder, the Problems strip, and a refused Literature
  * Note all read by code; every other failure carries the engine's own words.
- * @see docs/adr/0050-the-citation-template-is-one-document-and-partials-are-files.md
+ * @see docs/adr/0055-the-citation-template-is-one-document-and-partials-are-files.md
  */
 function renderFault(
   error: unknown,
