@@ -1,0 +1,12 @@
+---
+version: "2.1.4"
+companion: "2.1.4"
+date: "2026-09-12"
+description: "Empty imported notes, quick switcher details, Zotero menu commands on Zotero 10.0.2"
+---
+
+## Bug Fixes
+
+- Fixed imported notes arriving with nothing but frontmatter ([discussion #944](https://github.com/aidenlx/zotlit/discussions/944)). A Zotero child note created by another Zotero plugin or by automation, rather than typed in Zotero's own note editor, lost its entire body on import, with no warning. ZotLit only converted notes that carried Zotero's note-editor formatting marker. These notes now import with their content intact. Headings, paragraphs, bold text, and lists all become Markdown. Notes written in Zotero's note editor import exactly as before.
+- Fixed the "Open literature note quick switcher" command showing only a title for most item types ([discussion #939](https://github.com/aidenlx/zotlit/discussions/939)). The second line under each result, with authors, year, and where the work appeared, filled in for Journal Article items only. A Preprint, Book Section, Thesis, Report, Conference Paper, or Webpage showed a bare title, which made results hard to tell apart even though Zotero held the authors and ZotLit passed them to templates. Every item type now shows that second line, and the "where it appeared" part follows the item type, so a Preprint shows its repository such as arXiv and a Book shows its publisher. Custom item types and custom fields resolve too, and an item with no such field shows authors and year.
+- Fixed the note commands in Zotero's item menu doing nothing on Zotero 10.0.2 ([discussion #1064](https://github.com/aidenlx/zotlit/discussions/1064)). Right-clicking an item and choosing "Open Literature Note in Obsidian" or "Create or Update Literature Notes" gave no feedback of any kind. Obsidian stayed closed and no error dialog appeared, because Zotero 10.0.2 tightened how add-ons may hand links to the operating system. Annotation sync and starting from the Obsidian side kept working throughout. Both commands open Obsidian again once you update the ZotLit companion add-on in Zotero to 2.1.4. The Obsidian plugin update alone does not fix this.
