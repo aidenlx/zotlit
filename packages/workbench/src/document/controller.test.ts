@@ -43,6 +43,21 @@ function noteEdit(
   });
 }
 
+/** A Profile document carrying two partials in its manifest's transport list. */
+const BUNDLED = HAND_WRITTEN.replace(
+  "language: liquid",
+  [
+    "language: liquid",
+    "partials:",
+    "  - name: authors",
+    "    language: liquid",
+    "    source: Authors",
+    "  - name: venue-line",
+    "    language: liquid",
+    "    source: Venue",
+  ].join("\n"),
+);
+
 describe("WorkbenchDocumentController", () => {
   it("reads the note body as the region between the manifest and the annotation header", () => {
     const controller = new WorkbenchDocumentController(HAND_WRITTEN);
@@ -256,20 +271,29 @@ describe("WorkbenchDocumentController", () => {
     expect(controller.dependencies).toEqual(["cite", "summary"]);
   });
 
+  it("reports the transport copy as a problem on the vault host alone", () => {
+    const native = new WorkbenchDocumentController(BUNDLED, {
+      runtime: "native",
+    });
+
+    // A Profile edited beside the vault reads its partials from files, so the
+    // manifest copy is text with two homes until Unpack partials runs.
+    expect(native.problems).toEqual([
+      expect.objectContaining({
+        code: "bundled-partial",
+        params: { names: "authors, venue-line" },
+        slice: "advanced",
+      }),
+    ]);
+    const { range } = native.problems[0]!;
+    expect(BUNDLED.slice(range!.from, range!.to)).toContain("name: authors");
+
+    // The web host has no vault to unpack into, so the copy is the bundle.
+    expect(new WorkbenchDocumentController(BUNDLED).problems).toEqual([]);
+  });
+
   it("drops the transport copy of the partials a host has written to files", () => {
-    const bundled = HAND_WRITTEN.replace(
-      "language: liquid",
-      [
-        "language: liquid",
-        "partials:",
-        "  - name: authors",
-        "    language: liquid",
-        "    source: Authors",
-        "  - name: venue-line",
-        "    language: liquid",
-        "    source: Venue",
-      ].join("\n"),
-    );
+    const bundled = BUNDLED;
     const controller = new WorkbenchDocumentController(bundled, {
       runtime: "native",
     });
