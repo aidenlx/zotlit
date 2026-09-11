@@ -26,6 +26,7 @@ import type { GraphCitationAdditions } from "./adapter";
 import { wrapNodeClick } from "./click";
 import { renderWithFacade } from "./facade";
 import { graphCitationFilters, installFilterRows } from "./filters";
+import { installGroupsButton } from "./groups";
 import { wrapNodeHover } from "./hover";
 import type { NodeHoverDeps } from "./hover";
 import {
@@ -268,6 +269,7 @@ export class GraphCitations extends Service<void> {
       }),
     );
     restores.defer(() => installation.rows[Symbol.dispose]());
+    restores.use(installGroupsButton(engine, this.#nodeColors));
     restores.use(installNodeColors(renderer, installation, this.#nodeColors));
     const nodeDeps: NodeRightClickDeps = {
       citekeyOf: (id) => installation.additions.citedWorkNodes.get(id),

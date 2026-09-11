@@ -691,6 +691,7 @@
   "graph_citations_menu_copy_citekey": "Copy citation key",
   "graph_citations_citekey_copied": "Citation key copied.",
   "graph_citations_citekey_copy_failed": "Failed to copy citation key.",
+  "graph_citations_add_literature_notes_group": "Add literature notes group",
   "settings_citation_editor_heading": "In-text citations",
   "settings_citation_show_formatted_name": "Show formatted citations",
   "settings_citation_show_formatted_desc": "Show citations in Live Preview and reading view with the selected citation and references style. Source mode always shows Markdown. Citations stay unchanged when ZotLit cannot format them.",

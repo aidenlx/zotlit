@@ -162,6 +162,14 @@ declare module "obsidian" {
     options?: GraphOptions;
     /** The Filters section of the controls panel. */
     filterOptions?: GraphControlSection;
+    /** The Groups section of the controls panel. */
+    colorGroupOptions?: GraphColorGroupSection;
+    /**
+     * Hands `options` to every section, then re-renders. A colour group written
+     * this way reaches the Groups section's own option listener, which rebuilds
+     * the group rows, re-runs the search, and saves.
+     */
+    setOptions?(options: GraphOptions): void;
     /** Saves the options where this graph persists them; debounced. */
     onOptionsChange?(): void;
     /**
@@ -192,6 +200,29 @@ declare module "obsidian" {
      * button only through a wrap of this member.
      */
     setDefaultOptions(): void;
+  }
+  /**
+   * The Groups section of the graph controls panel, `engine.colorGroupOptions`.
+   * It carries no `setDefaultOptions` of its own: "Restore default settings"
+   * empties it through {@link GraphColorGroupSection.setColorQueries} instead.
+   * Internal; shape verified against Obsidian 1.14.1.
+   */
+  interface GraphColorGroupSection {
+    /** The section body: the group rows, then the native "New group" container. */
+    childrenEl: HTMLElement;
+    /** The colour groups as their rows stand now. */
+    getColoredQueries(): GraphColorGroup[];
+    /**
+     * Empties {@link childrenEl} and builds it again — one row per query, then
+     * the button container — so anything else built into the section is taken
+     * with it.
+     */
+    setColorQueries(queries: GraphColorGroup[]): void;
+  }
+  /** One colour group: a search query, and the colour its matches are drawn in. */
+  interface GraphColorGroup {
+    query: string;
+    color: GraphColor | null;
   }
   /**
    * What one controls-panel row registers under its option key. Reads the
