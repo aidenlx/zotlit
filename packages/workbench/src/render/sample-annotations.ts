@@ -3,7 +3,7 @@
 import type { SnapshotRootDescriptors } from "#/snapshot/descriptors";
 import type { ItemSnapshot } from "#/snapshot/types";
 
-import { profileSourceRevision } from "./result";
+import { templateSourceRevision } from "./result";
 
 import conferencePaper from "#/samples/conference-paper.json" with { type: "json" };
 
@@ -110,7 +110,7 @@ export const SAMPLE_ANNOTATIONS: readonly AnnotationExample[] = examples.map(
     };
     return {
       id: `example:${example.type}`,
-      revision: profileSourceRevision(
+      revision: templateSourceRevision(
         JSON.stringify([root, matchingDescriptors]),
       ),
       root,

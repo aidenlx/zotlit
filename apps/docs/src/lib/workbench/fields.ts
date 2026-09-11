@@ -22,20 +22,10 @@ import type { AnnotationExample, SAMPLE_ITEMS } from "@zotlit/workbench/render";
 import { fieldSnippet as sharedFieldSnippet } from "@zotlit/workbench/ui";
 import type { TemplateRoot } from "@zotlit/workbench/ui";
 
-import { m } from "@/paraglide/messages.js";
-
 export type SampleItem = (typeof SAMPLE_ITEMS)[number];
 
 /** The parsed Profile document, named without depending on the templates package. */
 type ProfileDocument = NonNullable<WorkbenchDocumentController["document"]>;
-
-/** The name shown in the panel's corner, so the reader knows what the list is for. */
-export const ROOT_LABEL: Record<TemplateRoot, () => string> = {
-  note: m.workbench_fields_root_note,
-  annotation: m.workbench_fields_root_annotation,
-  filename: m.workbench_fields_root_filename,
-  citation: m.workbench_fields_root_citation,
-};
 
 /**
  * The root an editor position writes against: the Annotation Section renders
