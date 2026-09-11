@@ -8,8 +8,7 @@ import type ZotLitPlugin from "@/zt-main";
 
 import { AttachmentImportService } from "./attachment-import/service";
 import { CitationIndex } from "./citation-index/service";
-import { createCitationPopover } from "./citation-popover/service";
-import type { CitationPopover } from "./citation-popover/service";
+import { CitationPopover } from "./citation-popover/service";
 import { CitationText } from "./citation-text/service";
 import { CitekeyEditor } from "./citekey-editor/service";
 import { CitekeyReading } from "./citekey-reading/service";
@@ -362,7 +361,7 @@ export function buildServices(
           bibliographyRender,
         }),
     })
-    .useValue({
+    .use({
       citationPopover: ({
         profile,
         db,
@@ -371,7 +370,7 @@ export function buildServices(
         bibliographyRender,
         libraryScope,
       }): CitationPopover =>
-        createCitationPopover({
+        new CitationPopover({
           profile,
           app: plugin.app,
           db,
