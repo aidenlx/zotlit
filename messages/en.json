@@ -691,7 +691,6 @@
   "graph_option_citation_connected_only_desc": "Hide every node except literature notes, cited works, and the notes that cite them.",
   "graph_option_citation_popover_name": "Citation popover",
   "graph_option_citation_popover_desc": "Show citation details when hovering over a literature note or cited work in this graph.",
-  "graph_citations_bookmark_local": "Bookmark local graph",
   "graph_option_color_citation_links_name": "Color citation links",
   "graph_option_color_citation_links_desc": "Draw citation links in their own color. Turn this off to draw every link in the same color.",
   "graph_citations_menu_create_note": "Create literature note",

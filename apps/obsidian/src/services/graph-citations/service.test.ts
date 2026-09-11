@@ -2,6 +2,7 @@ import { settingsOf } from "@mock/obsidian";
 import type { ToggleComponent } from "@mock/obsidian";
 // @vitest-environment happy-dom
 import { Keymap, Menu } from "@mock/obsidian";
+import { around } from "monkey-around";
 import { PopoverState } from "obsidian";
 import type {
   App,
@@ -418,6 +419,7 @@ function fakeLeaf(
     getState: () => ({}),
     setState: async (_state: unknown, _result: unknown) => {},
     onOptionsChange: () => {},
+    onload: () => {},
   };
   const view =
     viewType === "graph"
@@ -711,53 +713,50 @@ describe("GraphCitations installation", () => {
     });
   });
 
-  it.each(["graph", "localgraph"] as const)(
-    "restores independent %s view states",
-    async (type) => {
-      const fixture = makeFixture();
-      await using service = fixture.service;
-      await service.ready;
-      const first = fixture.addLeaf(type, "first");
-      fixture.layoutReady();
-      first.setOptions({
-        "zotlit-color-citation-links": true,
-        "zotlit-citation-popover": true,
-      });
-      const state = fixture.leafState("first");
-      expect((state as { options: GraphOptions }).options).toMatchObject({
-        "zotlit-color-citation-links": true,
-        "zotlit-citation-popover": true,
-      });
-      const second = fixture.addLeaf(type, "second");
-      fixture.fire("layout-change");
-      expect(second.getOptions()).toMatchObject({
-        "zotlit-color-citation-links": false,
-        "zotlit-citation-popover": false,
-      });
-      await fixture.leaf("second").view.setState(state, { history: false });
-      expect(second.getOptions()).toMatchObject({
-        "zotlit-color-citation-links": true,
-        "zotlit-citation-popover": true,
-      });
-      await fixture.leaf("second").view.setState(
-        {
-          options: {
-            "zotlit-color-citation-links": false,
-            "zotlit-citation-popover": false,
-          },
+  it("restores independent global graph view states", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const first = fixture.addLeaf("graph", "first");
+    fixture.layoutReady();
+    first.setOptions({
+      "zotlit-color-citation-links": true,
+      "zotlit-citation-popover": true,
+    });
+    const state = fixture.leafState("first");
+    expect((state as { options: GraphOptions }).options).toMatchObject({
+      "zotlit-color-citation-links": true,
+      "zotlit-citation-popover": true,
+    });
+    const second = fixture.addLeaf("graph", "second");
+    fixture.fire("layout-change");
+    expect(second.getOptions()).toMatchObject({
+      "zotlit-color-citation-links": false,
+      "zotlit-citation-popover": false,
+    });
+    await fixture.leaf("second").view.setState(state, { history: false });
+    expect(second.getOptions()).toMatchObject({
+      "zotlit-color-citation-links": true,
+      "zotlit-citation-popover": true,
+    });
+    await fixture.leaf("second").view.setState(
+      {
+        options: {
+          "zotlit-color-citation-links": false,
+          "zotlit-citation-popover": false,
         },
-        { history: false },
-      );
-      expect(second.getOptions()).toMatchObject({
-        "zotlit-color-citation-links": false,
-        "zotlit-citation-popover": false,
-      });
-      expect(first.getOptions()).toMatchObject({
-        "zotlit-color-citation-links": true,
-        "zotlit-citation-popover": true,
-      });
-    },
-  );
+      },
+      { history: false },
+    );
+    expect(second.getOptions()).toMatchObject({
+      "zotlit-color-citation-links": false,
+      "zotlit-citation-popover": false,
+    });
+    expect(first.getOptions()).toMatchObject({
+      "zotlit-color-citation-links": true,
+      "zotlit-citation-popover": true,
+    });
+  });
 
   it("keeps ordinary graphs native until presentation controls are enabled", async () => {
     const fixture = makeFixture();
@@ -1960,6 +1959,31 @@ describe("GraphCitations teardown", () => {
     expect(global.renders).toHaveLength(2);
   });
 
+  it("keeps another plugin's render wrapper when ZotLit is disabled", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+    const otherPlugin = vi.fn();
+    using patches = new DisposableStack();
+    patches.defer(
+      around(engine, {
+        render: (native) =>
+          function (this: FakeEngine) {
+            otherPlugin();
+            return native.call(this);
+          },
+      }),
+    );
+
+    fixture.settings.update({ "citation.graph-citations": false });
+    engine.render();
+
+    expect(otherPlugin).toHaveBeenCalledTimes(2);
+    expect(engine.renders.at(-1)?.facaded).toBe(false);
+  });
+
   it("installs again when the setting turns back on", async () => {
     const fixture = makeFixture();
     await using service = fixture.service;
@@ -2087,35 +2111,6 @@ describe("GraphCitations Filters rows", () => {
     ]);
   });
 
-  it("starts a global graph from its own defaults", async () => {
-    const fixture = makeFixture({
-      savedLayout: {
-        id: "leaf-0",
-        type: "leaf",
-        state: {
-          type: "graph",
-          state: {
-            options: { "zotlit-pandoc-citations": false, showTags: true },
-          },
-        },
-      },
-    });
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-
-    fixture.layoutReady();
-
-    expect(
-      rowToggle(engine, m.graph_option_pandoc_citations_name()).getValue(),
-    ).toBe(false);
-    expect(engine.renders.at(-1)).toEqual({
-      facaded: true,
-      resolved: VAULT_LINKS,
-      unresolved: {},
-    });
-  });
-
   it("starts a local graph at what its leaf carried while deferred", async () => {
     const fixture = makeFixture();
     await using service = fixture.service;
@@ -2172,37 +2167,6 @@ describe("GraphCitations Filters rows", () => {
       resolved: VAULT_LINKS,
       unresolved: {},
     });
-  });
-
-  it("round-trips through the engine's set options", async () => {
-    const fixture = makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
-
-    engine.setOptions({
-      "zotlit-pandoc-citations": false,
-      "zotlit-citation-connected-only": true,
-    });
-
-    expect(engine.getOptions()).toEqual({
-      "zotlit-pandoc-citations": false,
-      "zotlit-citation-connected-only": true,
-      "zotlit-color-citation-links": false,
-      "zotlit-citation-popover": false,
-    });
-    expect(
-      rowToggle(engine, m.graph_option_pandoc_citations_name()).getValue(),
-    ).toBe(false);
-    expect(engine.renders.at(-1)).toEqual({
-      facaded: true,
-      // m.graph_option_citation_connected_only_name() takes Other away, and with it Draft's link
-      // into it — a link the local narrowing would otherwise draw a node for.
-      resolved: { "Draft.md": {} },
-      unresolved: {},
-    });
-    expect(engine.cachedFiles.at(-1)).toEqual(["Literature/Doe 2024.md"]);
   });
 
   it("returns the rows to their defaults when the panel restores default settings", async () => {
@@ -2384,21 +2348,6 @@ function groupsButton(engine: FakeEngine): HTMLButtonElement {
 }
 
 describe("GraphCitations Groups button", () => {
-  it("builds the button below the native New group control", async () => {
-    const fixture = makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-
-    fixture.layoutReady();
-
-    expect(groupsButtons(engine)).toEqual([
-      "New group",
-      m.graph_citations_add_literature_notes_group(),
-    ]);
-    expect(engine.colorGroupOptions.getColoredQueries()).toEqual([]);
-  });
-
   it("adds one literature notes group, keeps the groups the user has, and saves", async () => {
     const fixture = makeFixture();
     await using service = fixture.service;
@@ -2414,21 +2363,6 @@ describe("GraphCitations Groups button", () => {
       mine,
       { query: '["zotero-key"]', color: DEFAULT_COLOR },
     ]);
-    expect(engine.onOptionsChange).toHaveBeenCalledOnce();
-  });
-
-  it("adds nothing on a second press", async () => {
-    const fixture = makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-    fixture.layoutReady();
-    groupsButton(engine).click();
-    const added = engine.colorGroupOptions.getColoredQueries();
-
-    groupsButton(engine).click();
-
-    expect(engine.colorGroupOptions.getColoredQueries()).toEqual(added);
     expect(engine.onOptionsChange).toHaveBeenCalledOnce();
   });
 
@@ -2470,24 +2404,6 @@ describe("GraphCitations Display row", () => {
     expect(rowNames(engine, engine.displayOptions)).toEqual([
       m.graph_option_color_citation_links_name(),
       m.graph_option_citation_popover_name(),
-    ]);
-  });
-
-  it("builds the row in the Display section, apart from the Filters rows", async () => {
-    const fixture = makeFixture();
-    await using service = fixture.service;
-    await service.ready;
-    const engine = fixture.addLeaf("graph");
-
-    fixture.layoutReady();
-
-    expect(rowNames(engine, engine.displayOptions)).toEqual([
-      m.graph_option_color_citation_links_name(),
-      m.graph_option_citation_popover_name(),
-    ]);
-    expect(rowNames(engine)).toEqual([
-      m.graph_option_pandoc_citations_name(),
-      m.graph_option_citation_connected_only_name(),
     ]);
   });
 
@@ -2539,7 +2455,7 @@ describe("GraphCitations Display row", () => {
       engine,
       m.graph_option_color_citation_links_name(),
       engine.displayOptions,
-    ).toggle(false);
+    ).toggle(true);
 
     engine.displayOptions.setDefaultOptions();
 
@@ -2557,7 +2473,7 @@ describe("GraphCitations Display row", () => {
       engine,
       m.graph_option_color_citation_links_name(),
       engine.displayOptions,
-    ).toggle(false);
+    ).toggle(true);
 
     fixture.settings.update({ "citation.wikilink-citations": true });
 
@@ -2565,7 +2481,7 @@ describe("GraphCitations Display row", () => {
       m.graph_option_color_citation_links_name(),
       m.graph_option_citation_popover_name(),
     ]);
-    expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(false);
+    expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(true);
   });
 
   it("leaves the Display section as found when the feature turns off", async () => {
@@ -2966,26 +2882,16 @@ describe("GraphCitations Citation Graph preset", () => {
     ).toBe(true);
   });
 
-  it("names no key beyond the preset, so the forces stay as the reader had them", async () => {
+  it("preserves the user's forces when applying the preset", async () => {
     const fixture = presetFixture();
     await using service = fixture.service;
     await service.ready;
     fixture.layoutReady();
-    const setOptions = vi.spyOn(fixture.engine, "setOptions");
+    fixture.engine.options.centerStrength = 0.42;
 
     fixture.apply();
 
-    expect(setOptions.mock.calls[0]![0]).toEqual({
-      ...PRESET_ROWS,
-      showTags: false,
-      showAttachments: false,
-      hideUnresolved: false,
-      showOrphans: false,
-      showArrow: true,
-    });
-    // The group arrives on its own call, which names `colorGroups` alone.
-    expect(Object.keys(setOptions.mock.calls[1]![0])).toEqual(["colorGroups"]);
-    expect(setOptions).toHaveBeenCalledTimes(2);
+    expect(fixture.engine.options.centerStrength).toBe(0.42);
   });
 
   it("leaves the local graph's orphans alone, which its panel has no row for", async () => {

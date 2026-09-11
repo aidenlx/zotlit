@@ -1,5 +1,6 @@
 // Per-view graph options: restore before rendering, serialize with the leaf, and keep global defaults independent.
 
+import { around } from "monkey-around";
 import type {
   App,
   GraphEngine,
@@ -9,13 +10,15 @@ import type {
   WorkspaceLeaf,
 } from "obsidian";
 
+import { disposable } from "@/lib/disposables";
+
 import { CITATION_POPOVER, COLOR_CITATION_LINKS } from "./display";
 import {
   CITATION_CONNECTED_ONLY,
   PANDOC_CITATIONS,
   WIKILINK_CITATIONS,
 } from "./filters";
-import { membersPresent, wrapMember } from "./install";
+import { membersPresent } from "./install";
 
 /** Installs before `load` / `setState`, so bookmark options find their controls. */
 export function installGraphViewCreation(
@@ -34,67 +37,69 @@ export function installGraphViewCreation(
     )
   )
     return new DisposableStack();
-  return wrapMember(
-    registry!,
-    "getViewCreatorByType",
-    (getCreator) => (type) => {
-      const creator = getCreator.call(registry, type);
-      if (!creator || (type !== "graph" && type !== "localgraph"))
-        return creator;
-      return (leaf) => {
-        const view = creator(leaf);
-        created(leaf, view);
-        return view;
-      };
-    },
+  return disposable(
+    around(registry!, {
+      getViewCreatorByType: (getCreator) => (type) => {
+        const creator = getCreator.call(registry, type);
+        if (!creator || (type !== "graph" && type !== "localgraph"))
+          return creator;
+        return (leaf) => {
+          const view = creator(leaf);
+          created(leaf, view);
+          return view;
+        };
+      },
+    }),
   );
 }
 
+/** Local graphs already persist options through their native view state. */
 export function installGraphViewState(
   view: View,
   engine: GraphEngine,
 ): Disposable {
-  using stack = new DisposableStack();
+  if (view.getViewType() !== "graph") return new DisposableStack();
+  const graph = view as GraphView;
   if (
     !membersPresent(
       "Graph view state unavailable; options remain native",
       {
-        "view.getState": typeof view.getState === "function",
-        "view.setState": typeof view.setState === "function",
+        "view.getState": typeof graph.getState === "function",
+        "view.setState": typeof graph.setState === "function",
+        "view.onload": typeof graph.onload === "function",
+        "view.onOptionsChange": typeof graph.onOptionsChange === "function",
         "engine.getOptions": typeof engine.getOptions === "function",
         "engine.setOptions": typeof engine.setOptions === "function",
       },
-      { viewType: view.getViewType() },
+      {},
     )
   )
-    return stack.move();
-  stack.use(
-    wrapMember(view, "getState", (native) => () => {
-      return {
-        ...native.call(view),
-        options: structuredClone(engine.getOptions!()),
-      };
-    }),
-  );
-  stack.use(
-    wrapMember(view, "setState", (native) => async (state, result) => {
-      const options = (state as { options?: GraphOptions } | null)?.options;
-      if (options) {
-        engine.setOptions!({
-          [COLOR_CITATION_LINKS]: false,
-          [CITATION_POPOVER]: false,
-          ...options,
-        });
-      }
-      await native.call(view, state, result);
-    }),
-  );
-  if (view.getViewType() === "graph") {
-    const graph = view as GraphView;
-    if (typeof graph.onload === "function") {
-      stack.use(
-        wrapMember(graph, "onload", (native) => () => {
-          native.call(graph);
+    return new DisposableStack();
+
+  return disposable(
+    around(graph, {
+      getState: (native) =>
+        function (this: GraphView) {
+          return {
+            ...native.call(this),
+            options: structuredClone(engine.getOptions!()),
+          };
+        },
+      setState: (native) =>
+        function (this: GraphView, state, result) {
+          const options = (state as { options?: GraphOptions } | null)?.options;
+          if (options)
+            engine.setOptions!({
+              [COLOR_CITATION_LINKS]: false,
+              [CITATION_POPOVER]: false,
+              ...options,
+            });
+          return native.call(this, state, result);
+        },
+      onload: (native) =>
+        function (this: GraphView) {
+          native.call(this);
+          // Old core-plugin data can contain ZotLit choices from earlier versions.
           engine.setOptions!({
             [COLOR_CITATION_LINKS]: false,
             [CITATION_POPOVER]: false,
@@ -102,16 +107,13 @@ export function installGraphViewState(
             [PANDOC_CITATIONS]: true,
             [WIKILINK_CITATIONS]: true,
           });
-        }),
-      );
-    }
-    if (typeof graph.onOptionsChange === "function") {
-      stack.use(
-        wrapMember(graph, "onOptionsChange", () => () => {
-          view.app.workspace.requestSaveLayout();
-        }),
-      );
-    }
-  }
-  return stack.move();
+        },
+      // Native persistence writes shared defaults, including the shortcut's groups
+      // and filters. Keep all choices with this view instead.
+      onOptionsChange: () =>
+        function (this: GraphView) {
+          this.app.workspace.requestSaveLayout();
+        },
+    }),
+  );
 }

@@ -1,16 +1,17 @@
 // The node-right-click wrap: a Cited Work Node opens ZotLit's own menu; every other node keeps the native one.
 
+import { around } from "monkey-around";
 import { Keymap, Menu } from "obsidian";
 
 import { itemSelectUri, parseIndexedKey } from "@zotlit/db";
 
+import { disposable } from "@/lib/disposables";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 import * as toast from "@/lib/toast";
 import type { CitekeyResolution } from "@/services/citation-index/service";
 
 import type { NodeClickDeps } from "./click";
-import { wrapMember } from "./install";
 import type { GraphLeafMembers } from "./install";
 
 const logger = getLogger("graph-citations");
@@ -30,23 +31,23 @@ export function wrapNodeRightClick(
   renderer: GraphLeafMembers["renderer"],
   deps: NodeRightClickDeps,
 ): Disposable {
-  return wrapMember(
-    renderer,
-    "onNodeRightClick",
-    (native) => (evt, id, type) => {
-      const citekey = deps.citekeyOf(id);
-      if (citekey === undefined) return native(evt, id, type);
-      const resolution = deps.resolveCitekey(citekey);
-      logger.debug("Cited Work Node right-clicked", {
-        citekey,
-        resolution: resolution?.kind ?? "pending",
-      });
-      citedWorkMenu({
-        citekey,
-        resolution,
-        open: deps.open,
-      }).showAtMouseEvent(evt);
-    },
+  return disposable(
+    around(renderer, {
+      onNodeRightClick: (native) => (evt, id, type) => {
+        const citekey = deps.citekeyOf(id);
+        if (citekey === undefined) return native(evt, id, type);
+        const resolution = deps.resolveCitekey(citekey);
+        logger.debug("Cited Work Node right-clicked", {
+          citekey,
+          resolution: resolution?.kind ?? "pending",
+        });
+        citedWorkMenu({
+          citekey,
+          resolution,
+          open: deps.open,
+        }).showAtMouseEvent(evt);
+      },
+    }),
   );
 }
 

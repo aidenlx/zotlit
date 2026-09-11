@@ -584,6 +584,9 @@ importers:
       idb:
         specifier: ^8.0.3
         version: 8.0.3
+      monkey-around:
+        specifier: 'catalog:'
+        version: 3.0.0
       nanoid:
         specifier: 'catalog:'
         version: 5.1.16

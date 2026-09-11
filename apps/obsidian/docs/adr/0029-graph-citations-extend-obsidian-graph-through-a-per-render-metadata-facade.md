@@ -18,7 +18,7 @@ The facade lives only inside one render call on one engine instance. Nothing els
 
 - Every touched surface is undocumented Obsidian runtime behaviour verified against 1.13.4; the wrapper must guard each access, degrade to a message when the Graph core plugin is unavailable, and be re-verified when the minimum app version moves.
 - The render wrapper depends on the engine reading its app reference once at the top of render; the edge tint proxy depends on the link sprite lifecycle. These two are the re-verification points.
-- Each graph view owns its selected options. Citation Graph commands apply their preset to the target view; separately opened ordinary graphs start from ordinary defaults. View restoration and bookmarks restore the options captured for that view. This requires isolation from Obsidian's shared global graph options.
+- Each graph view owns its selected options. Citation Graph commands apply their preset to the target view; separately opened ordinary graphs start from ordinary defaults. View restoration preserves each graph’s options; native bookmarks capture and restore global graph options. This requires isolation from Obsidian's shared global graph options.
 
 ## Native defaults and explicit presentation choices
 
@@ -28,7 +28,7 @@ Ordinary graphs use native styles for existing notes and links. Added connection
 
 "Color citation links" and "Citation popover" are independent per-view controls, both off by default. The link-color control applies to citation connections, including existing wikilinks classified as citations. With the popover control off, existing file nodes use native hover. Enabling it opts that view into citation popovers. ZotLit's graph controls remain available while Graph Citations is enabled.
 
-Both choices persist with the global or local graph view and with its bookmarks. Reopening a saved view restores its choices; opening a bookmark restores the choices captured in that bookmark. A separately opened ordinary graph starts with both controls off, even after a Citation Graph shortcut was used elsewhere.
+Both choices persist with the global or local graph view. Reopening a saved view restores its choices. Native global graph bookmarks capture and restore both choices. A separately opened ordinary graph starts with both controls off, even after a Citation Graph shortcut was used elsewhere.
 
 ## Literature Notes Group and shortcut
 
@@ -42,4 +42,4 @@ These choices make group removal effective and keep citation presentation under 
 
 ## Verification required for implementation
 
-Verify independent global and local views, view restoration, and bookmark restoration into both new and existing views. Include bookmarks with opposite toggle values, restoration after restart, native hover with popovers off, and group removal followed by shortcut reuse.
+Verify independent global and local views, view restoration, and native global graph bookmark restoration into both new and existing global views. Include bookmarks with opposite toggle values, restoration after restart, native hover with popovers off, and group removal followed by shortcut reuse.

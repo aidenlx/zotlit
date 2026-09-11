@@ -1,11 +1,12 @@
 // One native-styled toggle row in a section of the graph's controls panel, persisted the way a native row is.
 
+import { around } from "monkey-around";
 import { Setting } from "obsidian";
 import type { GraphControlSection, GraphEngine, GraphOptions } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 
-import { targetOnce, wrapMember } from "./install";
+import { targetOnce } from "./install";
 
 const logger = getLogger("graph-citations");
 
@@ -131,12 +132,14 @@ export function installToggleRow(
         }),
     );
   const restores = new DisposableStack();
-  restores.use(
-    wrapMember(section, "setDefaultOptions", (native) => {
-      return function (this: GraphControlSection) {
-        native.call(this);
-        section.optionListeners[row.key]?.(row.defaultValue);
-      };
+  restores.defer(
+    around(section, {
+      setDefaultOptions: (native) => {
+        return function (this: GraphControlSection) {
+          native.call(this);
+          section.optionListeners[row.key]?.(row.defaultValue);
+        };
+      },
     }),
   );
   restores.defer(() => {

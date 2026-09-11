@@ -1,12 +1,13 @@
 // The colour Graph Citations draws its own edges in: a tint substitution on each citation edge's line sprite, renewed on every data hand-off.
 
+import { around } from "monkey-around";
 import type { GraphColor, GraphLink, GraphLinkSprite } from "obsidian";
 
 import { disposable } from "@/lib/disposables";
 import { themeProperty } from "@/lib/theme-hooks";
 
 import type { GraphCitationAdditions } from "./adapter";
-import { membersPresent, wrapMember } from "./install";
+import { membersPresent } from "./install";
 import type { GraphLeafMembers } from "./install";
 import { readThemeColor } from "./node-color";
 import type { ThemeColorRole } from "./node-color";
@@ -163,25 +164,27 @@ export function installLinkColors(
     return reclassified;
   };
   const restores = new DisposableStack();
-  restores.use(
-    wrapMember(renderer, "setData", (setData) => (data) => {
-      // After the hand-off: it is the hand-off that adds and removes edges.
-      const handedOff = setData.call(renderer, data);
-      const reclassified = renew();
-      // The row, the theme, and a citation added to or taken out of a note
-      // that also links the same target the ordinary way, all change what an
-      // edge is drawn in with no node and no edge changing, and a hand-off
-      // that changes neither asks for no frame of its own (`app.js` 1.14.1,
-      // `setData` calls `changed` only where one of them changed). So a graph
-      // standing still would keep the colours it was last drawn in until
-      // something else redrew it; the hand-off that changes them asks for that
-      // frame itself.
-      const next = tint();
-      if (next !== drawn || reclassified) {
-        drawn = next;
-        renderer.changed!();
-      }
-      return handedOff;
+  restores.defer(
+    around(renderer, {
+      setData: (setData) => (data) => {
+        // After the hand-off: it is the hand-off that adds and removes edges.
+        const handedOff = setData.call(renderer, data);
+        const reclassified = renew();
+        // The row, the theme, and a citation added to or taken out of a note
+        // that also links the same target the ordinary way, all change what an
+        // edge is drawn in with no node and no edge changing, and a hand-off
+        // that changes neither asks for no frame of its own (`app.js` 1.14.1,
+        // `setData` calls `changed` only where one of them changed). So a graph
+        // standing still would keep the colours it was last drawn in until
+        // something else redrew it; the hand-off that changes them asks for that
+        // frame itself.
+        const next = tint();
+        if (next !== drawn || reclassified) {
+          drawn = next;
+          renderer.changed!();
+        }
+        return handedOff;
+      },
     }),
   );
   restores.defer(() => tints.dispose());

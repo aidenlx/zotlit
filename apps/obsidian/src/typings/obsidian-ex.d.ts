@@ -73,12 +73,6 @@ declare module "obsidian" {
     getConfig(key: "readableLineLength"): boolean;
   }
   interface Workspace {
-    /** Native pane menu, also used by Bookmarks (Obsidian 1.14.1). */
-    on(
-      name: "leaf-menu",
-      callback: (menu: Menu, leaf: WorkspaceLeaf) => void,
-      ctx?: unknown,
-    ): EventRef;
     on(
       name: "zotlit:workbench-selection",
       callback: (
@@ -139,26 +133,6 @@ declare module "obsidian" {
      */
     getCachedFiles?(): string[];
   }
-  /**
-   * The core `graph` view (`leaf.view` of view type `"graph"`). Internal;
-   * shape verified against Obsidian 1.13.7 and 1.14.0. Every member optional
-   * so a build that drops one is a guarded branch, not a crash.
-   */
-  /** Native Bookmarks records and operations used by graph views (Obsidian 1.14.1). */
-  interface GraphBookmark {
-    type: string;
-    options?: GraphOptions;
-    title?: string;
-    ctime?: number;
-  }
-  interface GraphBookmarks {
-    addItem(item: GraphBookmark): void;
-    openBookmarkInLeaf(
-      item: GraphBookmark,
-      leaf: WorkspaceLeaf,
-      state?: unknown,
-    ): Promise<void>;
-  }
   interface App {
     /** Native view factories, verified against Obsidian 1.14.1. */
     viewRegistry?: {
@@ -167,6 +141,11 @@ declare module "obsidian" {
       ): ((leaf: WorkspaceLeaf) => View) | undefined;
     };
   }
+  /**
+   * The core `graph` view (`leaf.view` of view type `"graph"`). Internal;
+   * shape verified against Obsidian 1.13.7 and 1.14.0. Every member optional
+   * so a build that drops one is a guarded branch, not a crash.
+   */
   interface GraphView extends ItemView {
     onOptionsChange?(): void;
     renderer?: GraphRenderer;

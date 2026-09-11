@@ -1,5 +1,6 @@
 // The "Add literature notes group" button beside the graph's native "New group" control, and the one colour group it inserts.
 
+import { around } from "monkey-around";
 import type {
   GraphColor,
   GraphColorGroupSection,
@@ -11,7 +12,7 @@ import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 
-import { targetOnce, wrapMember } from "./install";
+import { targetOnce } from "./install";
 import type { GraphNodeColors } from "./node-color";
 
 const logger = getLogger("graph-citations");
@@ -127,16 +128,14 @@ export function installGroupsButton(
   // element rather than building another. The native "New group" and the
   // per-row delete instead mutate the group rows in place, and leave the
   // button's own container standing.
-  restores.use(
-    wrapMember(
-      section,
-      "setColorQueries",
-      (setColorQueries) =>
+  restores.defer(
+    around(section, {
+      setColorQueries: (setColorQueries) =>
         function (this: GraphColorGroupSection, queries) {
           setColorQueries.call(this, queries);
           this.childrenEl.append(container);
         },
-    ),
+    }),
   );
   restores.defer(() => container.remove());
   logger.debug("Graph groups button installed");
