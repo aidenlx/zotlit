@@ -74,7 +74,7 @@ ZotLit adds no style to `zt-entry-serial` either. The serials render as superscr
 
 ## Graph view colors [#graph]
 
-The graph and local graph views draw on a canvas, so ZotLit colors its nodes and edges through custom properties instead of classes. Set one anywhere the view inherits from — `body` reaches every one of them.
+The graph and local graph views draw on a canvas, so ZotLit colors its nodes and edges through custom properties instead of classes. ZotLit reads each property off `body`, so set it on `body` or on `:root`. A property set on the view itself, such as on `.graph-view`, changes nothing.
 
 | Custom property                    | Meaning                                                                  |
 | ---------------------------------- | ------------------------------------------------------------------------ |

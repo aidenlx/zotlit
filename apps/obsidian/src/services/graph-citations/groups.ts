@@ -27,8 +27,11 @@ export const LITERATURE_NOTES_QUERY = `["${FIELD_ZOTERO_KEY}"]`;
 /**
  * Obsidian's own `--color-purple`, which the Literature Note colour falls back
  * to. Reached only where the browser states no colour at all for what the theme
- * says, so that the inserted group always carries a colour: a group with none
- * is a filter rather than a colour group.
+ * says, so that the inserted group always carries a colour: the Groups section
+ * writes a group that carries none as black (`app.js` 1.14.1,
+ * `setColorQueries` reads `color.rgb` and falls to `0`), which reads as a
+ * colour the user chose rather than as the colour the graph draws Literature
+ * Notes in.
  */
 export const DEFAULT_COLOR: GraphColor = { a: 1, rgb: 0x7852ee };
 
