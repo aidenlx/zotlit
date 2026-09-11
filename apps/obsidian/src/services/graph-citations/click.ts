@@ -1,11 +1,12 @@
 // The node-click wrap: a Cited Work Node runs the Citekey Navigation open action; every other node stays native.
 
+import { around } from "monkey-around";
 import { Keymap } from "obsidian";
 
+import { disposable } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import type { NavigationPane } from "@/services/citekey-navigation";
 
-import { wrapMember } from "./install";
 import type { GraphLeafMembers } from "./install";
 
 const logger = getLogger("graph-citations");
@@ -26,11 +27,15 @@ export function wrapNodeClick(
   renderer: GraphLeafMembers["renderer"],
   deps: NodeClickDeps,
 ): Disposable {
-  return wrapMember(renderer, "onNodeClick", (native) => (evt, id, type) => {
-    const citekey = deps.citekeyOf(id);
-    if (citekey === undefined) return native(evt, id, type);
-    const pane = Keymap.isModEvent(evt);
-    logger.debug("Cited Work Node clicked", { citekey, pane });
-    deps.open(citekey, pane);
-  });
+  return disposable(
+    around(renderer, {
+      onNodeClick: (native) => (evt, id, type) => {
+        const citekey = deps.citekeyOf(id);
+        if (citekey === undefined) return native(evt, id, type);
+        const pane = Keymap.isModEvent(evt);
+        logger.debug("Cited Work Node clicked", { citekey, pane });
+        deps.open(citekey, pane);
+      },
+    }),
+  );
 }

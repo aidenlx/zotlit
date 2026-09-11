@@ -1,13 +1,14 @@
 // Theme colors for literature-note group seeds and virtual Cited Work Nodes.
 
 import { regex } from "arkregex";
+import { around } from "monkey-around";
 import type { GraphColor, GraphData } from "obsidian";
 
+import { disposable } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import { themeProperty } from "@/lib/theme-hooks";
 
 import type { GraphCitationAdditions } from "./adapter";
-import { wrapMember } from "./install";
 import type { GraphLeafMembers } from "./install";
 
 const logger = getLogger("graph-citations");
@@ -143,10 +144,14 @@ export function installNodeColors(
   installation: { readonly additions: GraphCitationAdditions },
   colors: GraphNodeColors,
 ): Disposable {
-  return wrapMember(renderer, "setData", (setData) => (data) => {
-    stampNodeColors(data, installation.additions, colors.current());
-    return setData.call(renderer, data);
-  });
+  return disposable(
+    around(renderer, {
+      setData: (setData) => (data) => {
+        stampNodeColors(data, installation.additions, colors.current());
+        return setData.call(renderer, data);
+      },
+    }),
+  );
 }
 
 /** `rgb()` / `rgba()`, the legacy form a browser serializes a plain colour to. */
