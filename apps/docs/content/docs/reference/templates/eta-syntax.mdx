@@ -148,7 +148,7 @@ A partial is called by its name, with the data it needs as the second argument:
 <%~ include("authors", zt) %>
 ```
 
-The argument becomes the partial's `zt`. Omit it and the partial inherits the caller's `zt`. Completion inside `include("` lists every partial in the vault. It writes the name alone, so add the data argument yourself.
+The argument becomes the partial's `zt`. Omit it and the partial inherits the caller's `zt`. Completion inside `include("` lists every partial in the vault, and accepting a name writes the whole call, `zt` argument included. A call you have already given arguments keeps them, and only the name is replaced.
 
 ### The `content` include
 

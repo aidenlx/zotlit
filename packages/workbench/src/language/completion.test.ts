@@ -50,7 +50,9 @@ it("writes the created name into the call the completion was opened on", async (
   expect(flow.apply()).toBe(false);
   await flow.settle();
 
-  expect(flow.view.state.doc.toString()).toBe('{% render "venue-line');
+  expect(flow.view.state.doc.toString()).toBe(
+    '{% render "venue-line" with zt as zt %}',
+  );
 });
 
 it("leaves the source alone when the prompt is dismissed", async () => {

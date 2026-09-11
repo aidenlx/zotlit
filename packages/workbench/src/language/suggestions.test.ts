@@ -401,15 +401,55 @@ describe("suggestions: filters, tags, and partials", () => {
       },
     })!;
     const option = result.options.find((o) => o.label === "New partial…")!;
-    expect(await option.resolveInsert!()).toBe("venue-line");
+    const insert = await option.resolveInsert!();
+    expect(insert).toBe('venue-line" with zt as zt %}');
     expect(asked).toEqual(["ven"]);
-    const edit = completionEdit(source, result, {
-      ...option,
-      insert: "venue-line",
-    });
+    const edit = completionEdit(source, result, { ...option, insert: insert! });
     expect(
       source.slice(0, edit.from) + edit.insert + source.slice(edit.to),
-    ).toBe('{% render "venue-line');
+    ).toBe('{% render "venue-line" with zt as zt %}');
+  });
+
+  describe("an accepted name finishes the call it was opened on", () => {
+    /** The source an accepted `venue-line` leaves behind; `|` is the caret. */
+    const accept = (source: string, config: SuggestionConfig = note) => {
+      const plain = source.replace("|", "");
+      const result = suggestions(plain, source.indexOf("|"), {
+        ...config,
+        partials: ["venue-line"],
+      })!;
+      const option = result.options.find((o) => o.label === "venue-line")!;
+      const edit = completionEdit(plain, result, option);
+      return plain.slice(0, edit.from) + edit.insert + plain.slice(edit.to);
+    };
+
+    it.each([
+      // Liquid's render opens an isolated scope, so zt travels by name.
+      ['{% render "|', '{% render "venue-line" with zt as zt %}'],
+      ['{% render "| %}', '{% render "venue-line" with zt as zt %}'],
+      ['{% render "ven|" %}', '{% render "venue-line" with zt as zt %}'],
+      // include shares the caller's scope, so it needs no clause.
+      ['{% include "|" %}', '{% include "venue-line" %}'],
+      // A single-quoted call keeps its own quote.
+      ["{% include '|' %}", "{% include 'venue-line' %}"],
+    ])("writes %s as %s", (source, expected) => {
+      expect(accept(source)).toBe(expected);
+    });
+
+    it("hands Eta's include the root as its second argument", () => {
+      expect(accept('<%~ include("|") %>', eta)).toBe(
+        '<%~ include("venue-line", zt) %>',
+      );
+    });
+
+    it("replaces the name alone in a call that carries its own arguments", () => {
+      expect(accept('{% render "ven|" with zt as zt %}')).toBe(
+        '{% render "venue-line" with zt as zt %}',
+      );
+      expect(accept('<%~ include("ven|", other) %>', eta)).toBe(
+        '<%~ include("venue-line", other) %>',
+      );
+    });
   });
 
   it("offers no create entry to a host that writes no files", () => {

@@ -142,7 +142,7 @@ In Eta:
 <%~ include("authors", zt) %>
 ```
 
-In Liquid, the `with zt as zt` clause is not optional. The `render` tag opens an isolated scope, so a bare `{% render "authors" %}` cannot see the caller's `zt`: every `zt` output in the partial comes out empty, and only its literal text survives. Accepting a name from the completion list writes the name between the quotes and nothing else, so add the `with` clause yourself.
+In Liquid, the `with zt as zt` clause is not optional. The `render` tag opens an isolated scope, so a bare `{% render "authors" %}` cannot see the caller's `zt`: every `zt` output in the partial comes out empty, and only its literal text survives. Accepting a name from the completion list writes the clause for you.
 
 Liquid's `{% include %}` tag renders a partial with access to the caller's variables, and needs no `with` clause. Use `render` when you want the partial's scope kept separate. See [Calling a partial](/docs/reference/templates/syntax#calling-a-partial) for the complete rule, and [the Eta form](/docs/reference/templates/eta-syntax#calling-a-partial) for an Eta document.
 
