@@ -89,7 +89,7 @@ export interface BatchModalText {
   /** Notice shown when the run phase throws before or during execution. A
    * function receives the thrown error, letting operations surface a typed
    * error's own message instead of generic copy. */
-  runFailed: string | ((error: unknown) => string);
+  runFailed: string | ((error: unknown) => string | DocumentFragment);
   /** Run-phase headline over the determinate progress bar. */
   progressLabel: string;
   /** Confirm-phase intro line; receives the manifest's counts. */
