@@ -5,7 +5,7 @@ import type { GraphControlSection, GraphEngine, GraphOptions } from "obsidian";
 
 import { getLogger } from "@/lib/log";
 
-import { membersPresent, wrapMember } from "./install";
+import { targetOnce, wrapMember } from "./install";
 
 const logger = getLogger("graph-citations");
 
@@ -17,14 +17,6 @@ const SECTIONS = {
   filter: "filterOptions",
   display: "displayOptions",
 } as const satisfies Record<GraphSectionName, keyof GraphEngine>;
-
-/**
- * The sections of each engine's controls panel that could not be read. An
- * engine lives as long as the view that owns it and is collected with it, so
- * the report is once per section per graph however many times its rows are
- * rebuilt.
- */
-const reported = new WeakMap<GraphEngine, Set<GraphSectionName>>();
 
 /** The engine members one row writes when its value changes. */
 export interface RowEngine {
@@ -76,12 +68,12 @@ export function toggleRowTarget(
   options: ToggleRowTargetOptions,
 ): ToggleRowTarget | null {
   const { section: name } = options;
-  if (reported.get(engine)?.has(name)) return null;
   const member = SECTIONS[name];
   const section = engine[member];
-  const present = membersPresent(
-    "Graph controls section is missing a member; no rows built",
-    {
+  return targetOnce(engine, {
+    key: name,
+    message: "Graph controls section is missing a member; no rows built",
+    present: {
       "engine.options": Boolean(engine.options),
       "engine.render": typeof engine.render === "function",
       "engine.onOptionsChange": typeof engine.onOptionsChange === "function",
@@ -91,19 +83,13 @@ export function toggleRowTarget(
       "section.setDefaultOptions":
         typeof section?.setDefaultOptions === "function",
     },
-    { section: name },
-  );
-  if (!present) {
-    const sections = reported.get(engine) ?? new Set<GraphSectionName>();
-    sections.add(name);
-    reported.set(engine, sections);
-    return null;
-  }
-  return {
-    engine: engine as RowEngine,
-    section: section!,
-    saved: options.saved,
-  };
+    context: { section: name },
+    build: () => ({
+      engine: engine as RowEngine,
+      section: section!,
+      saved: options.saved,
+    }),
+  });
 }
 
 /**

@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import { addGraphCitationsActions } from "./actions";
+import { addGraphCitationsActions, citationGraphReadiness } from "./actions";
+import type { GraphCitationsActionDeps } from "./actions";
 
 /** Every command id, in registration order. */
 const ALL_COMMAND_IDS = ["open-citation-graph", "open-local-citation-graph"];
@@ -64,22 +65,28 @@ function setup(options: FixtureOptions = {}) {
     },
   } as unknown as App;
   const plugin = createMockPlugin();
-  addGraphCitationsActions(plugin, {
+  const ready =
+    (options.started ?? true)
+      ? Promise.resolve()
+      : Promise.reject(new Error("start failed"));
+  // Awaited by the readiness check alone in some cases, so it never counts as
+  // an unhandled rejection.
+  ready.catch(() => {});
+  const deps: GraphCitationsActionDeps = {
     app,
     graphCitations: {
-      ready:
-        (options.started ?? true)
-          ? Promise.resolve()
-          : Promise.reject(new Error("start failed")),
+      ready,
       enabled: options.featureEnabled ?? true,
       applyPreset: vi.fn((leaf: WorkspaceLeaf) => {
         preset.push({ leaf, showing: leafStates.get(leaf)?.state?.type });
       }),
     },
-  });
+  };
+  addGraphCitationsActions(plugin, deps);
   const command = (id: string): Command => plugin.commands.get(id)!;
   return {
     app,
+    deps,
     plugin,
     opened,
     preset,
@@ -207,5 +214,23 @@ describe("addGraphCitationsActions", () => {
     expect(
       fixture.command("open-local-citation-graph").checkCallback!(true),
     ).toBe(true);
+  });
+});
+
+describe("citationGraphReadiness", () => {
+  it("reads a Citation Graph as ready where everything it stands on is there", async () => {
+    await expect(citationGraphReadiness(setup().deps)).resolves.toBe("ready");
+  });
+
+  it("tells the three ways it cannot be opened apart", async () => {
+    await expect(
+      citationGraphReadiness(setup({ graphEnabled: false }).deps),
+    ).resolves.toBe("core-plugin-disabled");
+    await expect(
+      citationGraphReadiness(setup({ started: false }).deps),
+    ).resolves.toBe("unavailable");
+    await expect(
+      citationGraphReadiness(setup({ featureEnabled: false }).deps),
+    ).resolves.toBe("feature-off");
   });
 });

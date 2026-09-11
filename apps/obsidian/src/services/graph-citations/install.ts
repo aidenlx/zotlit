@@ -125,6 +125,47 @@ export function membersPresent(
   return false;
 }
 
+/** One reading of a graph engine's internals: what it reads, and what it builds. */
+export interface MemberProbe<T> {
+  /** Tells one probe's report from another's, so each surface is read on its own. */
+  key: string;
+  /** The one `warn` a build that moved a member gets. */
+  message: string;
+  /** Each member this probe reads, by name, against whether the build has it. */
+  present: Record<string, boolean>;
+  /** What the report names beside the missing members. */
+  context: Record<string, unknown>;
+  /** What the probe answers; read only once every member is there. */
+  build: () => T;
+}
+
+/** The probes each engine failed, by key, so each report is made once. */
+const failures = new WeakMap<GraphEngine, Set<string>>();
+
+/**
+ * Reads one surface of a graph engine, and reports a build that moved a member
+ * once per engine per probe — an engine lives as long as the view that owns it
+ * and is collected with it, so the report is once per graph however many times
+ * the surface is read. Each probe keeps a failure of its own, so a build that
+ * moved one section leaves every other section readable.
+ *
+ * @returns what the probe builds, or `null` where a member is missing — and
+ *   `null` on every later reading, so the caller leaves that surface native.
+ */
+export function targetOnce<T>(
+  engine: GraphEngine,
+  probe: MemberProbe<T>,
+): T | null {
+  const failed = failures.get(engine);
+  if (failed?.has(probe.key)) return null;
+  if (!membersPresent(probe.message, probe.present, probe.context)) {
+    if (failed) failed.add(probe.key);
+    else failures.set(engine, new Set([probe.key]));
+    return null;
+  }
+  return probe.build();
+}
+
 /**
  * Replaces `target[key]` with `wrap(original)` until the returned Disposable
  * runs, which puts the object back exactly as found: an inherited member is
