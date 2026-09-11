@@ -166,6 +166,90 @@ it("writes the partial Pick another chose into that call alone", async () => {
   expect(controller.source).toContain('{% render "authors" %}');
 });
 
+it("follows the call an edit moved while Pick another was open", async () => {
+  const { host, controller } = placeholders(withCalls(), {
+    missing: ["venue-line"],
+  });
+  const decision = Promise.withResolvers<string | null>();
+  host.suggester = () => decision.promise;
+
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_partial_pick() }),
+  );
+  // An external edit above the call, which moves every offset below it.
+  act(() =>
+    controller.dispatch({ changes: { from: 0, insert: "<!-- note -->\n" } }),
+  );
+  decision.resolve("authors");
+  await vi.waitFor(() =>
+    expect(controller.source).toContain("{% include 'authors' %}"),
+  );
+  expect(controller.source.startsWith("<!-- note -->\n")).toBe(true);
+  expect(controller.source).toContain('{% render "authors" %}');
+  expect(controller.source).toContain("{% render partial_name %}");
+});
+
+it("leaves the document alone when the edit took the name Pick another chose for", async () => {
+  const { host, controller } = placeholders(withCalls(), {
+    missing: ["venue-line"],
+  });
+  const decision = Promise.withResolvers<string | null>();
+  host.suggester = () => decision.promise;
+
+  fireEvent.click(
+    screen.getByRole("button", { name: m.workbench_partial_pick() }),
+  );
+  const call = controller.source.indexOf("{% include 'venue-line' %}");
+  act(() =>
+    controller.dispatch({
+      changes: { from: call, to: call + "{% include 'venue-line' %}".length },
+    }),
+  );
+  decision.resolve("authors");
+  const after = controller.source;
+  await vi.waitFor(() => expect(host.calls.notices).toEqual([]));
+  expect(controller.source).toBe(after);
+  expect(controller.source).not.toContain("authors' %}");
+});
+
+it("renders the open preview again when the caller data changes", async () => {
+  const onRender = vi
+    .fn<(name: string) => Promise<string>>()
+    .mockResolvedValueOnce("Smith, J.")
+    .mockResolvedValueOnce("Doe, A.");
+  const host = fakeHost();
+  const controller = new WorkbenchDocumentController(withCalls());
+  const pane = (dataRevision: string) => (
+    <WorkbenchHostProvider host={host}>
+      <NotePane
+        controller={controller}
+        preview={null}
+        formatProblem={null}
+        onOpenAnnotation={() => {}}
+        partials={{
+          names: ["authors", "venue-line"],
+          missing: [],
+          dataRevision,
+          onEdit: () => {},
+          onCreate: () => {},
+          onRender,
+        }}
+      />
+    </WorkbenchHostProvider>
+  );
+  const { rerender } = render(pane("item-1"));
+
+  fireEvent.click(
+    screen.getAllByRole("button", { name: m.workbench_partial_preview() })[0]!,
+  );
+  expect((await screen.findByRole("document")).textContent).toBe("Smith, J.");
+
+  await act(async () => rerender(pane("item-2")));
+
+  expect((await screen.findByRole("document")).textContent).toBe("Doe, A.");
+  expect(onRender).toHaveBeenCalledTimes(2);
+});
+
 it("boxes the calls inside the Annotation Section too", async () => {
   const host = fakeHost();
   const controller = new WorkbenchDocumentController(
