@@ -6,13 +6,14 @@ import * as m from "@/lib/i18n/generated/messages";
 
 import {
   addLiteratureNotesGroup,
-  DEFAULT_COLOR,
   groupsTarget,
   installGroupsButton,
 } from "./groups";
 import { GraphNodeColors } from "./node-color";
 import { FakeColorGroupSection } from "./test-double";
 import { themeStates, themeStatesNothing } from "./test-stub";
+
+const DEFAULT_COLOR = { a: 1, rgb: 0xe8622c };
 
 const warn = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/log", () => ({
@@ -31,6 +32,7 @@ const OTHER_GROUP = { query: "tag:#paper", color: { a: 1, rgb: 0x00ff00 } };
 
 afterEach(() => {
   themeStatesNothing();
+  document.body.classList.remove("theme-dark");
 });
 
 function fixture() {
@@ -113,6 +115,36 @@ describe("installGroupsButton", () => {
 
     button().click();
 
+    expect(section.getColoredQueries()).toEqual([
+      { query: '["zotero-key"]', color: RED },
+    ]);
+  });
+
+  it("uses the dark brand accent at insertion and preserves a saved group", () => {
+    const { engine, section, button, setOptions } = fixture();
+    const colors = new GraphNodeColors();
+    colors.current();
+    using _button = installGroupsButton(engine, colors);
+    document.body.classList.add("theme-dark");
+    button().click();
+    expect(section.getColoredQueries()).toEqual([
+      { query: '["zotero-key"]', color: { a: 1, rgb: 0xf0793f } },
+    ]);
+    document.body.classList.remove("theme-dark");
+    button().click();
+    expect(setOptions).toHaveBeenCalledOnce();
+    expect(section.getColoredQueries()).toEqual([
+      { query: '["zotero-key"]', color: { a: 1, rgb: 0xf0793f } },
+    ]);
+  });
+
+  it("reads a changed theme override when creating a group", () => {
+    const { engine, section, button } = fixture();
+    const colors = new GraphNodeColors();
+    colors.current();
+    using _button = installGroupsButton(engine, colors);
+    themeStates("rgb(255, 0, 0)", "rgb(0, 0, 255)");
+    button().click();
     expect(section.getColoredQueries()).toEqual([
       { query: '["zotero-key"]', color: RED },
     ]);

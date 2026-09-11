@@ -1,4 +1,4 @@
-// The colours Graph Citations gives its own nodes: read from the theme through a probe element, stamped on the renderer's data hand-off.
+// Theme colors for literature-note group seeds and virtual Cited Work Nodes.
 
 import { regex } from "arkregex";
 import type { GraphColor, GraphData } from "obsidian";
@@ -12,36 +12,26 @@ import type { GraphLeafMembers } from "./install";
 
 const logger = getLogger("graph-citations");
 
-/**
- * One thing ZotLit colours: the property a theme states its colour in, and
- * the Obsidian variable ZotLit falls back to. A Literature Note reads in the
- * accent-adjacent purple and a cited work with no note in the faint text
- * colour, so the two tell themselves apart in the theme and its dark mode.
- */
+/** A theme property and its fallback CSS variable or color value. */
 export interface ThemeColorRole {
   property: string;
   fallback: string;
 }
 
 const ROLE = {
-  literatureNote: {
-    property: themeProperty.graphLiteratureNote,
-    fallback: "--color-purple",
-  },
   citedWorkNode: {
     property: themeProperty.graphCitedWorkNode,
     fallback: "--text-faint",
   },
 } as const satisfies Record<string, ThemeColorRole>;
 
-/** The fill colour each ZotLit node role is drawn in; `null` where the theme states none. */
+/** The virtual-node fill; `null` where no fill is stated. */
 export interface NodeColors {
-  literatureNote: GraphColor | null;
   citedWorkNode: GraphColor | null;
 }
 
 /**
- * The two colours as the theme states them now, read once and held until the
+ * The virtual-node color as the theme states it, read once and held until the
  * theme changes. Reading costs a style recalculation, and every graph leaf
  * stamps from the same reading, so the caller invalidates on `css-change`
  * rather than reading per render.
@@ -53,6 +43,11 @@ export class GraphNodeColors {
     return (this.#current ??= readNodeColors());
   }
 
+  /** Reads the seed at insertion time; native groups keep their saved color. */
+  literatureNoteGroupColor(): GraphColor {
+    return readLiteratureNoteGroupColor();
+  }
+
   /** Drops the reading, so the next ask reads the theme again. */
   invalidate(): void {
     this.#current = null;
@@ -60,14 +55,26 @@ export class GraphNodeColors {
 }
 
 /**
- * @returns both colours as a throwaway probe element resolves them, the way
+ * @returns the virtual-node color as a throwaway probe element resolves it, the way
  *   Obsidian reads its own graph colours.
  */
 export function readNodeColors(): NodeColors {
   return {
-    literatureNote: readThemeColor(ROLE.literatureNote),
     citedWorkNode: readThemeColor(ROLE.citedWorkNode),
   };
+}
+
+/** @see docs/brand.md — light and dark ZotLit accent colors. */
+function readLiteratureNoteGroupColor(): GraphColor {
+  const rgb = document.body.classList.contains("theme-dark")
+    ? 0xf0793f
+    : 0xe8622c;
+  return (
+    readThemeColor({
+      property: themeProperty.graphLiteratureNote,
+      fallback: `#${rgb.toString(16)}`,
+    }) ?? { a: 1, rgb }
+  );
 }
 
 /**
@@ -88,7 +95,8 @@ export function readThemeColor(role: ThemeColorRole): GraphColor | null {
     role.property,
   );
   const probe = document.body.appendChild(document.createElement("div"));
-  probe.style.color = `var(${stated.trim() ? role.property : role.fallback})`;
+  const value = stated.trim() ? role.property : role.fallback;
+  probe.style.color = value.startsWith("--") ? `var(${value})` : value;
   const { color, opacity } = getComputedStyle(probe);
   probe.remove();
   const parsed = parseGraphColor(color, opacity);
@@ -102,13 +110,10 @@ export function readThemeColor(role: ThemeColorRole): GraphColor | null {
 }
 
 /**
- * Stamps each role's colour on the nodes of one data hand-off that carry none
- * of their own. A node the engine already coloured is left as it is: that
- * colour comes from a colour group the user wrote, which outranks ZotLit's.
+ * Colors virtual Cited Work Nodes that carry no native color. Literature-note
+ * files receive their colors through ordinary native groups.
  *
- * @param colors a colour object per role, shared across nodes and renders on
- *   purpose — the renderer compares the colour it holds by identity, so one
- *   object per theme leaves an unchanged node unchanged.
+ * @param colors shared by identity across renders, as the renderer expects.
  */
 export function stampNodeColors(
   data: GraphData,
@@ -119,15 +124,13 @@ export function stampNodeColors(
     if (node.color) continue;
     const color = additions.citedWorkNodes.has(id)
       ? colors.citedWorkNode
-      : additions.literatureNotes.has(id)
-        ? colors.literatureNote
-        : null;
+      : null;
     if (color) node.color = color;
   }
 }
 
 /**
- * Colours Literature Notes and Cited Work Nodes on every data hand-off.
+ * Colors virtual Cited Work Nodes on every data hand-off.
  *
  * @param installation read at hand-off time, so each render colours the nodes
  *   it drew.

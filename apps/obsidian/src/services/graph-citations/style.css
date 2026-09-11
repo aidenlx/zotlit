@@ -10,3 +10,12 @@
   height: 0;
   pointer-events: none;
 }
+
+/* Native groups capture this theme value when they are created. */
+:where(body) {
+  --zt-graph-literature-note-color: #e8622c;
+}
+
+:where(body.theme-dark) {
+  --zt-graph-literature-note-color: #f0793f;
+}

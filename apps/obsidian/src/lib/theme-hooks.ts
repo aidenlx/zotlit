@@ -32,7 +32,7 @@ export const themeHook = {
  * `body` reaches every one of them.
  */
 export const themeProperty = {
-  /** The fill colour of a Literature Note's node in the graph views. */
+  /** The initial color of a new native Literature Notes Group. */
   graphLiteratureNote: "--zt-graph-literature-note-color",
   /** The fill colour of a Cited Work Node in the graph views. */
   graphCitedWorkNode: "--zt-graph-cited-work-node-color",
