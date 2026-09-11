@@ -66,15 +66,19 @@ export function parseLiteratureNotePack(
  * What one bundled partial does to the vault's own Shared Partial files:
  * `write` for a name no document answers, `unchanged` for a document that
  * already holds this very source under this very language, `conflict` for one
- * that holds something else, which only a keep-or-replace answer settles, and
- * `refused` for a name no Shared Partial file can be given, which reaches no
- * vault path and keeps its transport copy.
+ * that holds something else, which only a keep-or-replace answer settles,
+ * `refused` for a name no Shared Partial file can be given, and `other-case`
+ * for a name the vault's own files answer only under another case — one file
+ * answers both spellings on a case-insensitive filesystem while a call
+ * resolves by exact name. The last two reach no vault path and keep their
+ * transport copy.
  */
 export type LiteratureNotePartialUnpackVerdict =
   | "write"
   | "unchanged"
   | "conflict"
-  | "refused";
+  | "refused"
+  | "other-case";
 
 /** One bundled partial and the file it unpacks to. */
 export interface LiteratureNotePartialUnpack {

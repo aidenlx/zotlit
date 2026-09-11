@@ -1403,9 +1403,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
    * Shared Partial file it belongs in, then drop the entries those names came
    * from, so each partial is edited in one place from here on.
    *
-   * A name the vault already holds a document for keeps that document, and its
-   * entry goes with the rest: the reader's own file answers the call. The
-   * keep-or-replace ask belongs to import, which is where the bundle's copy
+   * A name the vault already holds a document for under this very spelling
+   * keeps that document, and its entry goes with the rest: the reader's own
+   * file answers the call. A name the vault holds a file for only under
+   * another case keeps its entry, which is all that still answers the call.
+   * The keep-or-replace ask belongs to import, which is where the bundle's copy
    * still has somewhere to go.
    */
   unpackBundledPartials(): Promise<boolean> {
@@ -1415,7 +1417,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       if (!templates.loaded || this.#controller.readOnly || !bundled.length)
         return;
       const plan = templates.planPartialUnpack(bundled);
-      const { written, kept, dropped, refused } =
+      const { written, kept, dropped, refused, otherCase } =
         await templates.unpackPartials(plan);
       this.#controller.dropBundledPartials(dropped);
       if (written.length > 0)
@@ -1424,6 +1426,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         );
       if (kept.length > 0)
         new BaseNotice(m.notice_partials_kept({ names: kept.join(", ") }));
+      if (otherCase.length > 0)
+        new BaseNotice(
+          m.notice_partials_other_case({ names: otherCase.join(", ") }),
+        );
       // The manifest entry stays, so without this the action reads as inert:
       // the bundled-partial problem is still there the next time it is read.
       if (refused.length > 0)

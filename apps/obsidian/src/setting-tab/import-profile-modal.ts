@@ -429,6 +429,19 @@ export class ImportProfileModal extends Modal {
         cls: NOTE_CLASS,
         text: m.profile_import_partials_refused({ names: refused.join(", ") }),
       });
+    // A well-formed name the folder already answers in another case reaches no
+    // file of its own: one file answers both spellings, so the profile keeps
+    // carrying this copy too — for a reason of its own.
+    const otherCase = plan
+      .filter(({ verdict }) => verdict === "other-case")
+      .map(({ name }) => name);
+    if (otherCase.length > 0)
+      group.createEl("p", {
+        cls: NOTE_CLASS,
+        text: m.profile_import_partials_other_case({
+          names: otherCase.join(", "),
+        }),
+      });
     for (const { name } of plan.filter(
       ({ verdict }) => verdict === "conflict",
     )) {
