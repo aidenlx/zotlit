@@ -17,7 +17,7 @@ This page lists every property available on `zt` in each template type. Use the 
 
 The `zt` root for the `note` template: every item field plus the runtime-computed fields assembled at the app layer (backlinks, resolved attachment links, flattened annotations, author conveniences).
 
-The note template (`zotlit-note.liquid.md`) and the content template (`zotlit-content.liquid.md`) share this context.
+The note body of a Profile document, and the `{% managed %}` block inside it, share this context.
 
 <ContractTable section="note-and-content-templates" />
 
@@ -25,7 +25,7 @@ The note template (`zotlit-note.liquid.md`) and the content template (`zotlit-co
 
 The `zt` root of the `annotation` template: one annotation ([`TemplateAnnotation`](#annotation-entry)) plus [`citation`](#annotation-template-citation). Entries of `zt.annotations` on the note root carry no citation — only the single-annotation render resolves one.
 
-The annotation template (`zotlit-annotation.liquid.md`) receives a single annotation as `zt`.
+The Annotation Section of a Profile document receives a single annotation as `zt`.
 
 <ContractTable section="annotation-template" />
 
@@ -33,7 +33,7 @@ The annotation template (`zotlit-annotation.liquid.md`) receives a single annota
 
 The `zt` root of the `filename` template: an item's own fields, its collections, Primary Creators, an Author Summary, and inert `notePath` / `noteLink` stubs. It reads only this item when naming a note.
 
-The filename template (`zotlit-filename.liquid.md`) receives exactly the properties below.
+The `filename` template in a Profile document's manifest receives exactly the properties below.
 
 <ContractTable section="filename-template" />
 

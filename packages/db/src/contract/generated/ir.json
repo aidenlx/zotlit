@@ -3863,7 +3863,7 @@
       "members": [
         {
           "name": "citation",
-          "description": "Page-pinned citation of {@link TemplateAnnotation.parentItem}, rendered\nthrough the `cite` template with this annotation's {@link pageLabel} as\nlocator; `null` when there is no parent item or it carries no citation key.\nComputed at the app layer.",
+          "description": "Page-pinned citation of {@link TemplateAnnotation.parentItem}, rendered\nthrough the citation template (`zotlit-citation.md`) with this\nannotation's {@link pageLabel} as locator and the `main` variant; `null`\nwhen there is no parent item or it carries no citation key.\nComputed at the app layer.",
           "optional": false,
           "type": {
             "kind": "union",

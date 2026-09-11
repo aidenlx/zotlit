@@ -1,6 +1,6 @@
 ---
 title: "Insert citations"
-description: "Insert Markdown citations while typing or from the command palette, using the primary or secondary citation format."
+description: "Insert Markdown citations while typing or from the command palette, as the main citation or the alternate citation."
 introduced: "2.0.0"
 updated: "2.1.0"
 ---
@@ -39,15 +39,15 @@ With the opt-in <UiLabel name={m.settings_citation_at_trigger_name()} /> enabled
 
     Continue typing to filter the list. Select an item and press `Enter` to insert the citation. The citation is inserted with a trailing space so you can keep typing immediately.
 
-    By default, this inserts the primary citation format (e.g. `[@citationKey]`).
+    `Enter` asks for the **main citation**, which the built-in citation text renders as `[@citationKey]`.
 
     An `@` query ends at the first space. Type `_` where the search needs a space: `@machine_learning` finds "machine learning". Bracket trigger queries (`[@`) accept real spaces.
 
   </Step>
   <Step>
-    ### Insert the secondary format (optional)
+    ### Insert the alternate citation (optional)
 
-    To insert the secondary citation format instead (e.g. `@citationKey`), do one of:
+    To ask for the **alternate citation** instead, which the built-in citation text renders as `@citationKey`, do one of:
 
     - End your query with `/` before pressing `Enter`.
     - Press `Shift+Enter` on the selected item.
@@ -88,9 +88,9 @@ If the selected item has no citation key, nothing is inserted and a notice appea
   <Step>
     ### Select an item
 
-    Search for an item and press `Enter` to insert the primary citation.
+    Search for an item and press `Enter` to insert the main citation.
 
-    Press `Shift+Enter` to insert the secondary citation instead.
+    Press `Shift+Enter` to insert the alternate citation instead. The modal has no trailing-`/` shortcut; `Shift+Enter` is the only way to ask for the alternate citation here.
 
   </Step>
 </Steps>
@@ -148,18 +148,30 @@ ZotLit therefore refuses the insert, from either entry point, and shows: "Citati
 
 Keys already written in your notes stay readable. See [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work) for what such a key does in the editor, the citation popover, and the References Sidebar.
 
-## Citation formats
+## What each gesture inserts [#citation-text]
 
-ZotLit ships two citation templates:
+One template document, the **citation text**, renders every citation you insert. It receives [`zt.variant`](/docs/reference/templates/data#citation-variant), the string `main` or `alt`, and decides what each one renders.
 
-| Template  | Settings label                                      | Default output     | Example          |
-| --------- | --------------------------------------------------- | ------------------ | ---------------- |
-| Primary   | <UiLabel name={m.settings_template_name_cite()} />  | Bracketed citation | `[@citationKey]` |
-| Secondary | <UiLabel name={m.settings_template_name_cite2()} /> | Bare citation      | `@citationKey`   |
+- `main` comes from `Enter` in the suggester or in the command palette picker.
+- `alt` comes from `Shift+Enter` in either, or from a trailing `/` in the suggester query. The trailing `/` wins without `Shift`, and the `/` is stripped from the search.
 
-These are the default outputs. You can change them by editing the <UiLabel name={m.settings_template_name_cite()} /> and <UiLabel name={m.settings_template_name_cite2()} /> templates in the <UiLabel name={m.settings_citation_templates_heading()} /> group at <SettingsPath page={m.settings_page_citations()} />. The rendered citation is normalized to a single line (leading/trailing whitespace trimmed, line-break runs collapsed to a space). Each insert ends with a trailing space and places the cursor after it; if a space already follows the insert position, it is reused rather than doubled.
+The built-in citation text renders these:
 
-With <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_show_formatted_name()} /> on, both forms can show formatted text in Live Preview and reading view. Formatting requires the Pandoc engine and selected style.
+| What you cite                    | Main                    | Alternate                                    |
+| -------------------------------- | ----------------------- | -------------------------------------------- |
+| One key `smith2024`              | `[@smith2024]`          | `@smith2024`                                 |
+| Two keys                         | `[@a2020; @b2021]`      | The first item in text, the rest in brackets |
+| A locator of `62`                | `[@smith2024, {p. 62}]` | `@smith2024 [{p. 62}]`                       |
+| An item with a suppressed author | `[-@smith2024]`         | `[-@smith2024]`                              |
+| An item with a prefix            | `[see @smith2024]`      | A bracketed cluster, the fallback            |
+
+The alternate branch asks Pandoc to prefer the author in text. Where that is not possible (a prefix, or a suppressed author), Pandoc falls back to a bracketed cluster, so the two variants can render the same text. An item with no citation key is dropped from the output.
+
+The rendered citation is normalized to a single line: leading and trailing whitespace is trimmed, and any whitespace run containing a line break collapses to one space. Each insert ends with a trailing space and places the cursor after it; if a space already follows the insert position, it is reused rather than doubled.
+
+To change any of this, edit the <UiLabel name={m.settings_citation_text_name()} /> document. See [Customize the citation text](/docs/how-to/customize-a-template#citation-text), or run <Command inline name={m.command_customize_citation_text_name()} />. The fields your template can read are in [Citation templates](/docs/reference/templates/data#citation-templates).
+
+With <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_show_formatted_name()} /> on, both variants can show formatted text in Live Preview and reading view. Formatting requires the Pandoc engine and selected style.
 
 With <UiLabel name={m.settings_citation_pandoc_citations_name()} /> and <UiLabel name={m.settings_citation_open_as_links_name()} /> on, you can open the cited Literature Note. Use a click in Live Preview or Ctrl-click or Cmd-click in Source mode. See [How in-text citation rendering and navigation work](/docs/concepts/how-citekey-links-work).
 

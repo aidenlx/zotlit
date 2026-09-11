@@ -31,15 +31,15 @@ Two migration paths:
   <Step>
     ### Rename template files
 
-    v2 templates use a `zotlit-` prefix (replacing `zt-`) and the template formerly called `annots` is now `content`.
+    v2 reads templates from a `zotlit-` prefix, replacing `zt-`, and the template formerly called `annots` is now `content`. Rename your files to these names first. ZotLit loads and renders them under these names, and the [one-pass conversion](#convert) below folds them into v2's template documents.
 
-    | v1 filename        | v2 filename                |
-    | ------------------ | -------------------------- |
-    | `zt-note.eta.md`   | `zotlit-note.eta.md`       |
-    | `zt-annots.eta.md` | `zotlit-content.eta.md`    |
-    | `zt-annot.eta.md`  | `zotlit-annotation.eta.md` |
-    | `zt-cite.eta.md`   | `zotlit-cite.eta.md`       |
-    | `zt-cite2.eta.md`  | `zotlit-cite2.eta.md`      |
+    | v1 filename        | Rename to                  | Where its content ends up                                   |
+    | ------------------ | -------------------------- | ------------------------------------------------------------- |
+    | `zt-note.eta.md`   | `zotlit-note.eta.md`       | The note body of the default profile document               |
+    | `zt-annots.eta.md` | `zotlit-content.eta.md`    | The managed block inside that same note body                |
+    | `zt-annot.eta.md`  | `zotlit-annotation.eta.md` | The annotation section of that same profile document        |
+
+    Your two v1 citation files, `zt-cite*.eta.md`, take the same `zt-` to `zotlit-` rename. Both of them fold into one citation text document, `zotlit-citation.md`, as an `if`/`else` on `zt.variant`.
 
     Delete these files if present (they have no v2 equivalent):
 
@@ -210,7 +210,7 @@ Two migration paths:
 
   </Step>
   <Step>
-    ### Update citation templates
+    ### Update the citation source
 
     v1 passed `it` as a raw array. v2 wraps items in an object:
 
@@ -228,6 +228,7 @@ Two migration paths:
 
     - `it` (array) becomes `zt.citations` (array inside an object). `zt.items` exposes the same items without citation metadata.
     - `lit.citekey` becomes `c.item.citationKey` (or `c.item.citekey`).
+    - Both of your v1 citation files render from one v2 document. The conversion below writes them as the two branches of an `if`/`else` on `zt.variant`, which is `"main"` or `"alt"`. See [Citation templates](/docs/reference/templates/data#citation-templates).
 
   </Step>
   <Step>
@@ -266,7 +267,7 @@ Two migration paths:
   <Step>
     ### Update the filename template
 
-    The filename template is a template file (`zotlit-filename.eta.md`), not a setting string. The v2 default adds `suffix()` for collision avoidance:
+    The filename template is a template file (`zotlit-filename.eta.md`), not a setting string. The [one-pass conversion](#convert) later folds it into the `filename` key of your profile document's manifest. The v2 default adds `suffix()` for collision avoidance:
 
     ```eta
     <%= zt.citationKey ?? zt.DOI ?? zt.title ?? zt.key %><%= suffix() %>
@@ -280,7 +281,7 @@ Two migration paths:
   <Step>
     ### Migrate frontmatter fields
 
-    If you customized `zt-field.eta.md`, delete it and recreate the fields in your Profile's template document. Open it from the <UiLabel name={m.settings_profile_properties_name()} /> row at <SettingsPath /> with <UiLabel name={m.settings_template_eject()} />:
+    If you customized `zt-field.eta.md`, delete it and recreate the fields in your Profile's template document. Open it from the <UiLabel name={m.settings_profile_properties_name()} /> row at <SettingsPath /> with <UiLabel name={m.template_workbench_customize()} />:
 
     For each field, configure:
 
@@ -331,6 +332,26 @@ Two migration paths:
 
 After completing these steps, your custom Eta templates render with v2 field names and helpers. Notes that have been overwritten contain the `%%zt-managed%%` markers and respond to incremental updates. Notes you have not overwritten continue to work for frontmatter-only refreshes.
 
+## Convert to template documents [#convert]
+
+Renamed files load and render as they are, so you can stop here. ZotLit also offers to fold them into v2's template documents in one pass.
+
+The offer appears once in the Welcome view, as <UiLabel name={m.welcome_template_conversion_title()} />, and stays available as a reminder row at the top of settings with a <UiLabel name={m.settings_template_conversion_reminder_action()} /> action. Select <UiLabel name={m.welcome_template_conversion_action()} /> to run it.
+
+One pass does all of it:
+
+- Your note, content, filename, and annotation files fold into one profile document, `zotlit-profile.default.md`.
+- Your two citation files fold into one `zotlit-citation.md`, as an `if`/`else` on `zt.variant`. A side you never customized contributes ZotLit's built-in text.
+- Every other `zotlit-` file becomes its own partial, `zotlit-partial.<name>.md`, keeping its language in a manifest.
+
+Before it writes anything, ZotLit renders both citation variants and the note, update, filename, and annotation output, and compares them byte for byte against what your renamed files produce. A mismatch converts nothing, so nothing you rely on changes silently. The old files then move to Obsidian's configured trash, where you can recover them.
+
+The pass needs one Zotero item in scope to verify against, and an annotation as well if you customized the annotation file.
+
+Two things to know if your files mix languages. Where a `.liquid.md` and an `.eta.md` file share one name, the Liquid file is the one that renders and the conversion trashes both. Where your two citation files use different languages, the fold is Liquid, the Eta file stays where it is, and ZotLit tells you which files no longer affect citations.
+
+See [How templates work](/docs/concepts/how-templates-work#kinds) for what the resulting documents are.
+
 ## Eta to Liquid translations
 
 v2's default engine is Liquid. Converting your templates to Liquid removes the need for the <UiLabel name={m.settings_template_js_enable_name()} /> gate entirely. For each construct, the table below shows the Liquid equivalent and links to the relevant syntax reference section.
@@ -350,7 +371,7 @@ v2's default engine is Liquid. Converting your templates to Liquid removes the n
 | `zt.dateAdded` (Temporal.Instant formatting)          | `{{ zt.dateAdded \| date: "%Y-%m-%d" }}`          | [date filter](/docs/reference/templates/syntax#date-formatting-filter)         |
 | `-%>` (trim one newline after tag)                    | `-%}` / `-}}`                                     | [Whitespace control](/docs/reference/templates/syntax#whitespace-control)      |
 
-Liquid template files use the `.liquid.md` extension (e.g. `zotlit-note.liquid.md`). The data variable is still `zt` and the property names are identical to the Eta equivalents documented above.
+A renamed 2.1 Liquid file uses the `.liquid.md` extension (e.g. `zotlit-note.liquid.md`); a converted template document carries no language in its name. The data variable is still `zt` and the property names are identical to the Eta equivalents documented above.
 
 ## See also
 

@@ -12,7 +12,7 @@
       "properties": {
         "citation": {
           "type": ["string", "null"],
-          "description": "Page-pinned citation of `TemplateAnnotation.parentItem`, rendered through the `cite` template with this annotation's `pageLabel` as locator; `null` when there is no parent item or it carries no citation key. Computed at the app layer."
+          "description": "Page-pinned citation of `TemplateAnnotation.parentItem`, rendered through the citation template (`zotlit-citation.md`) with this annotation's `pageLabel` as locator and the `main` variant; `null` when there is no parent item or it carries no citation key. Computed at the app layer."
         },
         "imgLink": {
           "anyOf": [

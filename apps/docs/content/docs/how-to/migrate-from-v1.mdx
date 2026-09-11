@@ -63,11 +63,11 @@ What carries over:
 
 ## Migrate templates
 
-V2 template files use the naming pattern `zotlit-<name>.(liquid|eta).md`. V1 files used the `zt-` prefix (for example, `zt-note.eta.md`) and do not match the v2 pattern. Until you rename them, v2 does not load your custom templates and falls back to the built-in defaults.
+V2 reads template files whose name starts with `zotlit-`. V1 files used the `zt-` prefix (for example, `zt-note.eta.md`), which v2 does not read. Until you rename them, v2 does not load your custom templates and falls back to the built-in defaults.
 
 V1 templates were written in Eta (JavaScript). In v2, Eta templates require the <UiLabel name={m.settings_template_js_enable_name()} /> gate: a per-device opt-in stored outside synced settings, disabled by default. Until the gate is on:
 
-- Eta template files (`.eta.md`) that match the v2 naming pattern are inert. A notice names the file and explains that JavaScript templates are disabled.
+- Eta template files (`.eta.md`) that v2 reads are inert. A notice names the file and explains that JavaScript templates are disabled.
 - JavaScript-language frontmatter fields are also inert. A notice lists the skipped fields when you update a note.
 
 If you customized your Eta templates, these three steps are required to restore note generation:
@@ -76,7 +76,9 @@ If you customized your Eta templates, these three steps are required to restore 
 2. **Replace `it.*` with `zt.*`** throughout your templates.
 3. **Enable** the <UiLabel name={m.settings_template_js_enable_name()} /> gate on each device where you use ZotLit.
 
-Follow [Migrate v1 Eta templates](/docs/how-to/migrate-v1-eta-templates) for the full procedure, including field-by-field mappings and an optional Liquid conversion path.
+Your renamed note, content, and annotation files then render as the pieces of one literature note profile, and your two citation files render the text a citation inserts. ZotLit offers to fold them into v2's template documents in one verified pass, from the Welcome view or from a reminder row at the top of settings.
+
+Follow [Migrate v1 Eta templates](/docs/how-to/migrate-v1-eta-templates) for the full procedure, including field-by-field mappings, [the conversion pass](/docs/how-to/migrate-v1-eta-templates#convert), and an optional Liquid conversion path.
 
 <Callout type="info" title="Never customized your templates?">
   If you used only the v1 defaults, no action is needed. V2 ships updated
