@@ -1474,17 +1474,33 @@ export class TemplateService extends Service<void> {
 
   /** Vault files that make the default Profile use legacy Literature Note slots. */
   getLegacyLiteratureNoteTemplateFiles(): readonly string[] {
+    return this.#legacyLiteratureNoteSlots().flatMap(({ paths }) => paths);
+  }
+
+  /**
+   * Each legacy Literature Note slot a vault file backs right now, with the
+   * files behind it. A name with no file of its own stays out: its built-in
+   * renders the slot before the conversion and after it alike.
+   */
+  #legacyLiteratureNoteSlots(): {
+    name: TemplateName;
+    paths: string[];
+  }[] {
     return this.#getTemplateFileStatuses(TEMPLATE_NAMES)
       .filter((status) =>
         LEGACY_LITERATURE_NOTE_TEMPLATE_NAMES.has(status.name),
       )
-      .flatMap((status) => [
-        ...(status.winner.source.kind === "vault"
-          ? [status.winner.source.path]
-          : []),
-        ...status.shadowedFiles,
-        ...status.inertFiles,
-      ]);
+      .map((status) => ({
+        name: status.name,
+        paths: [
+          ...(status.winner.source.kind === "vault"
+            ? [status.winner.source.path]
+            : []),
+          ...status.shadowedFiles,
+          ...status.inertFiles,
+        ],
+      }))
+      .filter(({ paths }) => paths.length > 0);
   }
 
   /**
@@ -1512,6 +1528,12 @@ export class TemplateService extends Service<void> {
    * folding `cite` and `cite2`, and one `zotlit-partial.<name>.md` per bare
    * partial. Nothing is written — the caller persists the returned documents
    * only once every verification passed.
+   *
+   * The fold is verified against the registry the whole one-shot pass leaves
+   * behind, which retires the legacy Literature Note slots as well as the
+   * citation slots: those slot files fold into the default Profile document
+   * and reach the trash in this same pass, so each name a vault file backs
+   * today renders its built-in from there on.
    *
    * @param refs the citation the fold verifies both Citation Variants
    *   against, from one real Zotero item.
@@ -1547,10 +1569,14 @@ export class TemplateService extends Service<void> {
         main?: string;
         alt?: string;
       } = { language };
-      // The bare names the pass unregisters with the files it trashes. The
-      // fold is verified against the registry that remains, so a branch that
-      // renders one of them is refused rather than written.
-      const removedNames: string[] = [];
+      // Every bare name the pass unregisters with the files it trashes: the
+      // citation slots folded below, and the Literature Note slots the same
+      // pass folds into the default Profile document. The fold is verified
+      // against the registry that remains, so a branch that renders one of
+      // them is refused rather than written.
+      const removedNames: string[] = this.#legacyLiteratureNoteSlots().map(
+        ({ name }) => name,
+      );
       for (const file of citation) {
         if (file.language !== language) {
           kept.push(file.path);
