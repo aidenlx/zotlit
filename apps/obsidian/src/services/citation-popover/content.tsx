@@ -39,6 +39,7 @@ export interface CitationPopoverContentProps {
    * "not answered yet", never "matches no item".
    */
   pending?: boolean;
+  unavailable?: "database" | "item";
 }
 
 /**
@@ -52,7 +53,17 @@ export function CitationPopoverContent({
   profileFailure,
   actions,
   pending = false,
+  unavailable,
 }: CitationPopoverContentProps) {
+  if (unavailable) {
+    return (
+      <div className={cn(blockClass, "zt:text-destructive")} role="status">
+        {unavailable === "database"
+          ? m.citation_popover_database_unavailable()
+          : m.citation_popover_item_unavailable()}
+      </div>
+    );
+  }
   return (
     <>
       {profileFailure && (
@@ -127,7 +138,7 @@ function EntryStack({
           // a citation that writes one twice all the same.
           key={`${block.citekey}-${index}`}
           className={blockClass}
-          data-citation-popover-block={block.citekey}
+          data-citation-popover-block={block.citekey ?? ""}
         >
           {block.kind === "entry" ? (
             <>
@@ -175,7 +186,7 @@ function NoteCitation({
           <div
             key={`${block.citekey}-${index}`}
             className="zt:grid zt:grid-cols-[max-content_minmax(0,1fr)] zt:items-center zt:gap-x-2"
-            data-citation-popover-block={block.citekey}
+            data-citation-popover-block={block.citekey ?? ""}
           >
             {/* The serial this work's slot of the inline run showed, carrying
                 the same public class, so a theme styles the label and the run

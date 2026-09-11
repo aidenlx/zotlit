@@ -72,7 +72,7 @@ export interface GraphCitationsDeps {
     "ready" | "citationsByPath" | "resolveCitekey" | "citekeyOf" | "on"
   >;
   noteIndex: Pick<NoteIndex, "getIndexedItemKeys" | "getNotesByItemKey" | "on">;
-  citekeyEditor: Pick<CitekeyEditor, "openCitekey">;
+  citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "openIndexedKey">;
   /** The entries a hovered Literature Note or Cited Work Node shows. */
   citationPopover: CitationPopover;
   settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
@@ -463,10 +463,11 @@ export class GraphCitations extends Service<void> {
   #hoverDeps(): NodeHoverDeps {
     return {
       app: this.#app,
-      citationIndex: this.#citationIndex,
       settings: this.#settings,
       citationPopover: this.#citationPopover,
-      open: this.#open,
+      open: (indexedKey, pane) => {
+        void this.#citekeyEditor.openIndexedKey(indexedKey, pane);
+      },
     };
   }
 

@@ -1,11 +1,13 @@
 // The node-hover wrap: a Literature Note or a Cited Work Node answers the Hover Action — the Citation Popover, or a page preview under the shared citekey source — off an anchor at the node; every other node stays native.
 
 import { PopoverState } from "obsidian";
-import type { App } from "obsidian";
+import type { App, GraphData } from "obsidian";
 
 import { getLogger } from "@/lib/log";
-import type { CitationIndex } from "@/services/citation-index/service";
-import type { CitationPopover } from "@/services/citation-popover/service";
+import type {
+  CitationPopover,
+  WorkHoverRequest,
+} from "@/services/citation-popover/service";
 import {
   hoverPreferences,
   triggerCitekeyHover,
@@ -24,11 +26,10 @@ const logger = getLogger("graph-citations");
 /** What one graph leaf's hover wrap reads the world through. */
 export interface NodeHoverDeps {
   app: App;
-  citationIndex: Pick<CitationIndex, "resolveCitekey" | "citekeyOf">;
   settings: Pick<SettingsService, "current">;
   citationPopover: CitationPopover;
-  /** The Citekey Navigation open action, which the popover's own actions run. */
-  open: (citekey: string, pane: NavigationPane) => void;
+  /** Opens the exact Item displayed in the popover. */
+  open: (indexedKey: string, pane: NavigationPane) => void;
 }
 
 /** One graph leaf's hover context, built with the wrap rather than per hover. */
@@ -78,6 +79,13 @@ export function wrapNodeHover(
       stand.retire();
     }),
   );
+  stack.use(
+    wrapMember(renderer, "setData", (native) => (data) => {
+      const result = native(data);
+      stand.retainNodes(data.nodes);
+      return result;
+    }),
+  );
   stack.use(stand);
   return stack;
 }
@@ -124,7 +132,7 @@ function hoverNode(
   }
   if (action === "page-preview") {
     // A Cited Work Node names no file, so Page preview has nothing to show.
-    if (node.citedWork) return true;
+    if (node.work.kind === "citekey") return true;
     // A Literature Note is a file Obsidian previews itself. It goes out under
     // the shared citekey source, so the graph is the same row of Obsidian's
     // Page preview settings as every other ZotLit citation surface rather
@@ -132,7 +140,7 @@ function hoverNode(
     triggerCitekeyHover(deps.app.workspace, {
       event: evt,
       hoverParent: members.engine,
-      targetEl: stand.take(position),
+      targetEl: stand.take(position, id),
       linktext: node.id,
       // The node id is a full vault path, which resolves from anywhere; the
       // graph renders no document to resolve it against.
@@ -140,30 +148,12 @@ function hoverNode(
     });
     return true;
   }
-  const sourcePath = drawn.citingSources.get(node.id);
-  if (sourcePath === undefined) {
-    // FALLBACK, deliberate and not a bug. The popover names no work on its
-    // own: it reads a source document's Document Citation Set and formats the
-    // entry that set holds, so a work no document cites has no entry to show
-    // and the popover would state the work as reaching no Item. Such a node
-    // keeps the native hover instead — which for a Literature Note is
-    // Obsidian's own page preview. Showing the entry with no citing document
-    // needs a source-less read inside the Citation Popover service, which is
-    // its own ticket (#1052 decision).
-    logger.trace("Graph node cited by no document; hover left native", { id });
-    return false;
-  }
-  logger.debug("Graph node shows its entries", {
-    id,
-    citekey: node.citekey,
-    path: sourcePath,
-  });
-  deps.citationPopover.show({
+  logger.debug("Graph node shows its entry", { id, work: node.work });
+  deps.citationPopover.showWork({
     event: evt,
     hoverParent: members.engine,
-    sourcePath,
-    targetEl: stand.take(position),
-    works: [{ citekey: node.citekey, indexedKey: node.indexedKey }],
+    targetEl: stand.take(position, id),
+    work: node.work,
     open: deps.open,
   });
   return true;
@@ -172,43 +162,23 @@ function hoverNode(
 /** The work one hovered node stands for, and which kind of node stands for it. */
 interface HoveredNode {
   id: string;
-  citekey: string;
-  /** The Item the key names; absent for a key naming none or several. */
-  indexedKey: string | undefined;
-  /** Whether the node is a Cited Work Node rather than a Literature Note. */
-  citedWork: boolean;
+  work: WorkHoverRequest["work"];
 }
 
-/**
- * The work a hovered node stands for: the citation key a Cited Work Node was
- * drawn for, or the key of the Item a Literature Note carries in its
- * frontmatter. Every other node — an ordinary note, a tag, an attachment, an
- * unresolved link of Obsidian's own — stands for none, and so does a
- * Literature Note whose Item the resolution snapshot cannot name a key for.
- */
+/** A graph work carries either its node's Citation Key or its Literature Note's exact Item identity. */
 function hoveredNode(
   id: string,
   additions: GraphCitationAdditions,
   deps: NodeHoverDeps,
 ): HoveredNode | null {
-  const citedWork = additions.citedWorkNodes.get(id);
-  if (citedWork !== undefined) {
-    const resolution = deps.citationIndex.resolveCitekey(citedWork);
-    return {
-      id,
-      citekey: citedWork,
-      indexedKey:
-        resolution?.kind === "unique" ? resolution.item.indexedKey : undefined,
-      citedWork: true,
-    };
-  }
+  const citekey = additions.citedWorkNodes.get(id);
+  if (citekey !== undefined) return { id, work: { kind: "citekey", citekey } };
   const indexedKey = itemKeyFromFrontmatter(
     deps.app.metadataCache.getCache(id),
   );
-  if (indexedKey === null) return null;
-  const citekey = deps.citationIndex.citekeyOf(indexedKey);
-  if (citekey === null) return null;
-  return { id, citekey, indexedKey, citedWork: false };
+  return indexedKey === null
+    ? null
+    : { id, work: { kind: "item", indexedKey } };
 }
 
 /** Where a node sits in its container's own box, in CSS pixels. */
@@ -281,7 +251,7 @@ const HOLD_WAIT_MS = 2000;
 class NodeStand implements Disposable {
   readonly #members: GraphLeafMembers;
   /** Every anchor still in the container, oldest first. */
-  #anchors: HTMLElement[] = [];
+  readonly #anchors = new Map<HTMLElement, string>();
   #hold = 0;
   /**
    * The window the hold was armed on, which is the one that cancels it: a
@@ -306,13 +276,13 @@ class NodeStand implements Disposable {
    * Literature Notes before the first preview has finished hiding is exactly
    * that hover, so each one stands on an element of its own.
    */
-  take(position: NodePosition): HTMLElement {
+  take(position: NodePosition, id: string): HTMLElement {
     this.retire();
     const element = this.#build();
     element.style.left = `${position.left}px`;
     element.style.top = `${position.top}px`;
-    this.#anchors.push(element);
-    this.#startHold();
+    this.#anchors.set(element, id);
+    this.#startHold(element);
     return element;
   }
 
@@ -331,20 +301,31 @@ class NodeStand implements Disposable {
    */
   retire(): void {
     const standing = this.#members.engine.hoverPopover?.targetEl ?? null;
-    this.#anchors = this.#anchors.filter((anchor) => {
-      if (anchor === standing) return true;
+    for (const anchor of this.#anchors.keys()) {
+      if (anchor === standing) continue;
       anchor.remove();
-      return false;
-    });
+      this.#anchors.delete(anchor);
+    }
+  }
+
+  /** Retires removed nodes even after the pointer has moved into their popovers. */
+  retainNodes(nodes: GraphData["nodes"]): void {
+    for (const [anchor, id] of this.#anchors) {
+      if (Object.hasOwn(nodes, id)) continue;
+      const popover = this.#members.engine.hoverPopover;
+      if (popover?.targetEl === anchor) popover.hide();
+      anchor.remove();
+      this.#anchors.delete(anchor);
+    }
   }
 
   [Symbol.dispose](): void {
     this.release();
-    for (const anchor of this.#anchors) anchor.remove();
-    this.#anchors = [];
+    for (const anchor of this.#anchors.keys()) anchor.remove();
+    this.#anchors.clear();
   }
 
-  #startHold(): void {
+  #startHold(anchor: HTMLElement): void {
     this.release();
     const { engine, renderer } = this.#members;
     let stood = false;
@@ -353,6 +334,10 @@ class NodeStand implements Disposable {
     this.#holdWin = win;
     this.#hold = win.setInterval(() => {
       const popover = engine.hoverPopover;
+      if (!this.#anchors.has(anchor)) {
+        this.release();
+        return;
+      }
       if (!popover || popover.state === PopoverState.Hidden) {
         // A popover that stood on the anchor and has gone releases the hold,
         // which is how a popover hidden with no unhover is let go. One that

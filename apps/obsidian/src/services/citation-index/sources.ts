@@ -122,7 +122,7 @@ function filename(path: string): string {
  */
 export function readReferenceSources(
   db: Pick<DatabaseService, "state" | "client">,
-  citations: readonly Citation[],
+  citations: readonly Pick<Citation, "indexedKey" | "linkpath">[],
 ): ReferenceSourceJoin {
   const sources = new Map<string, ReferenceSource>();
   if (db.state !== "ready") return { sources, database: "unreadable" };
