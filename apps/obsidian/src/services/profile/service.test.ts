@@ -118,6 +118,29 @@ describe("ProfileService", () => {
     expect(f.vault.contents).toEqual(before);
   });
 
+  it("bundles a partial the JavaScript gate left inert rather than reporting it absent", async () => {
+    await using f = await harness({
+      "templates/zotlit-profile.books.md": document(BOOKS).replace(
+        "Managed",
+        '{% render "scripted" %}',
+      ),
+      "templates/zotlit-partial.scripted.md":
+        "---\nlanguage: eta\n---\nScripted partial",
+    });
+    const plan = await f.profile.prepareShare(BOOKS);
+
+    expect(plan.partials).toEqual(["scripted"]);
+    expect(plan.missing).toEqual([]);
+    expect(plan.reachable).toEqual(["scripted"]);
+    expect(
+      parseLiteratureNoteTemplate(
+        plan.render({ version: "2.0.0", author: "", description: "" }),
+      ).manifest.partials,
+    ).toEqual([
+      { name: "scripted", language: "eta", source: "Scripted partial" },
+    ]);
+  });
+
   it("discovers direct Profile documents, inherits absent bindings, and preserves explicit null", async () => {
     await using fixture = await harness({
       "templates/zotlit-profile.books.md": document(
