@@ -15,7 +15,7 @@ import {
 } from "@/views/note-preview/register";
 
 import { runTemplateWorkbenchAction } from "./actions";
-import { templateDocumentKind } from "./document-kind";
+import { templateDocumentKind, templateFolderOf } from "./document-kind";
 import { TEMPLATE_WORKBENCH_VIEW_TYPE, TemplateWorkbenchView } from "./view";
 import type { TemplateWorkbenchDeps } from "./view";
 
@@ -40,7 +40,8 @@ export function registerTemplateWorkbenchView(
   /** A plain document — the Citation Template or a Shared Partial — which the
    *  view opens on its own tab without any Profile flow. */
   const isPlainDocument = (file: TFile | null): file is TFile =>
-    file !== null && templateDocumentKind(file) !== "profile";
+    file !== null &&
+    templateDocumentKind(file, templateFolderOf(deps.settings)) !== "profile";
   const isProfile = (file: TFile | null): file is TFile =>
     file !== null &&
     file.extension === "md" &&

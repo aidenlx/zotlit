@@ -77,6 +77,8 @@ function setup() {
   const deps = {
     webWorkbenchEnabled: true,
     app,
+    // The classifier reads a filename only inside the template folder.
+    settings: { current: { "template.folder": "templates" } },
     profile: {
       profiles: [],
       defaultDocumentPath: "templates/zotlit-profile.default.md",
