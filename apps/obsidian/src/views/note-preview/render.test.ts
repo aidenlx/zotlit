@@ -517,4 +517,24 @@ describe("renderRegisteredPartial", () => {
     expect(underAnnotation).toBe("Page 2");
     expect(underNote).not.toBe(underAnnotation);
   });
+
+  it("renders from a partial document's own source, which names no Profile", async () => {
+    await using fixture = await createRenderFixture({
+      partials: { "venue-line": "Venue {{ zt.title }}" },
+    });
+
+    // The partial's own editor previews its own text, so the request source is
+    // the partial rather than a Profile document. It names no Profile to bind,
+    // and the render still reaches the note root.
+    const rendered = await renderRegisteredPartial(
+      fixture.deps,
+      {
+        source: "---\nlanguage: liquid\n---\nVenue {{ zt.title }}",
+        snapshot: fixture.snapshot,
+      },
+      { name: "venue-line", context: "note", profile: null },
+    );
+
+    expect(rendered).toBe("Venue Better figures");
+  });
 });

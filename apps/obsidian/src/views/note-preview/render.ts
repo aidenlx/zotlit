@@ -8,6 +8,7 @@ import type {
   NoteTemplateContext,
 } from "@zotlit/db";
 import { replaceSuffixMarkers } from "@zotlit/templates";
+import type { LiteratureNoteTemplateManifest } from "@zotlit/templates/facade";
 import { MissingTemplateError } from "@zotlit/templates/facade";
 import { FRONTMATTER_ABSENT } from "@zotlit/templates/frontmatter-merge";
 import type { FrontmatterMergeConflictHandler } from "@zotlit/templates/frontmatter-merge";
@@ -42,8 +43,10 @@ import {
   prepareLiteratureNote,
 } from "@/services/note-feature";
 import { bindProfile } from "@/services/profile/bindings";
+import type { ResolvedProfile } from "@/services/profile/bindings";
 import { seedProfileEntry } from "@/services/profile/service";
 import type { ProfileService } from "@/services/profile/service";
+import type { Settings } from "@/services/settings/schema";
 import {
   loadCitationData,
   loadTemplateData,
@@ -157,8 +160,8 @@ export async function renderRegisteredPartial(
 
 /**
  * The root data one Shared Partial preview reads, built under the bindings of
- * the Profile the reader chose, so folder, citation style, and the import
- * settings a partial reads are a real Profile's.
+ * the Profile the call renders under, so folder, citation style, and the
+ * import settings a partial reads are a real Profile's.
  */
 async function partialRootData(
   deps: NativeRenderDeps,
@@ -169,16 +172,64 @@ async function partialRootData(
 > {
   await deps.templates.ready;
   const settings = await deps.settings.loaded;
-  const profile =
-    (selection.profile === null
+  const chosen =
+    selection.profile === null
       ? undefined
-      : deps.profile.resolveProfile(selection.profile as ProfileId)) ??
-    bindProfile(settings, { selector: DEFAULT_PROFILE });
+      : deps.profile.resolveProfile(selection.profile as ProfileId);
+  // A partial's own pane names the Profile the reader chose. A Partial
+  // Placeholder inside a Profile document names none, and binds that
+  // document's own draft instead — the box reads the data of the slice it
+  // sits in, which is what the preview around it reads.
+  const draft = chosen ? null : draftProfileManifest(deps, request.source);
+  const profile =
+    chosen ??
+    (draft
+      ? bindDraftProfile(settings, draft)
+      : bindProfile(settings, { selector: DEFAULT_PROFILE }));
   return partialContextData(
     { ...deps, settings: { loaded: Promise.resolve(profile.settings) } },
     request,
     selection.context,
   );
+}
+
+/**
+ * The manifest of `source` when it is a Profile document naming its own
+ * Profile; null for every other Template Document, whose source names none.
+ */
+function draftProfileManifest(
+  deps: NativeRenderDeps,
+  source: string,
+): LiteratureNoteTemplateManifest | null {
+  try {
+    const { manifest } =
+      deps.templates.prepareLiteratureNoteTemplateSource(source);
+    return manifest.id ? manifest : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The Profile a draft Profile document resolves under, exactly as the registry
+ * resolves a saved one: one entry seeded from the manifest, bound by the
+ * shared resolver. The preview reads neither the entry's match nor its
+ * document reference, so the draft supplies no Library scope and no path.
+ */
+function bindDraftProfile(
+  settings: Settings,
+  manifest: LiteratureNoteTemplateManifest,
+): ResolvedProfile {
+  return manifest.id === DEFAULT_PROFILE
+    ? bindProfile(settings, { selector: DEFAULT_PROFILE })
+    : bindProfile(settings, {
+        selector: manifest.id as ProfileId,
+        entry: seedProfileEntry(manifest, {
+          document: "",
+          path: "",
+          libraries: [],
+        }),
+      });
 }
 
 /**
@@ -340,21 +391,7 @@ export async function renderNativeProfile(
     );
     const settings = await deps.settings.loaded;
     const manifest = document.manifest;
-    // The draft resolves exactly as the registry resolves a saved Profile:
-    // one entry seeded from the manifest, bound by the shared resolver. The
-    // preview reads neither the entry's match nor its document reference, so
-    // the draft supplies no Library scope and no path.
-    const profile =
-      manifest.id === DEFAULT_PROFILE
-        ? bindProfile(settings, { selector: DEFAULT_PROFILE })
-        : bindProfile(settings, {
-            selector: manifest.id as ProfileId,
-            entry: seedProfileEntry(manifest, {
-              document: "",
-              path: "",
-              libraries: [],
-            }),
-          });
+    const profile = bindDraftProfile(settings, manifest);
     const dataDeps = {
       ...deps,
       settings: { loaded: Promise.resolve(profile.settings) },
