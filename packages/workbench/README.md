@@ -79,13 +79,15 @@ The complete source is the authority ([ADR 0032](../../docs/adr/0032-web-workben
   a call rather than a call, so it is left out. The controller keeps the answer
   as `noteRegions`, and a host reads the same function over a pane's own text.
   @see docs/adr/0034-template-rendering-shortcut-is-annotation-specific.md
-- `partialCalls(source, region)` — every Shared Partial call inside one region:
-  a `render` or `include` tag whose first argument is a plain quoted name, with
-  the name, the arguments the call passes after it, and the line it owns. It
-  skips the same raw, comment, and code regions `noteRegions` does, and skips
-  the reserved name `annotation`, which belongs to the Annotation Section. Any
-  pane reads its own calls through it — the note body, the Annotation Section,
-  and the one editor a plain document opens.
+- `partialCalls(source, region, language)` — every Shared Partial call inside
+  one region: a Liquid `render` or `include` tag, or an Eta `include("name", …)`
+  call, whose first argument is a plain quoted name, with the name, the
+  arguments the call passes after it, and the line it owns. It skips the same
+  raw, comment, and code regions `noteRegions` does, and skips the five names
+  another ZotLit template already answers to — `filename`, `note`, `annotation`,
+  `content`, and `citation` — which no partial can be given. Any pane reads its
+  own calls through it — the note body, the Annotation Section, and the one
+  editor a plain document opens.
 - The controller's `annotationSection` — the Annotation Section's header line
   and the source under it, which is also the `annotation` slice. A draft the
   parser refuses keeps the regions it had, so the reader repairs the text in the

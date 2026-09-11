@@ -77,7 +77,7 @@ export function usePartialBoxes(
   } | null>(null);
   const range = controller.sliceRange(slice);
   const sites = host
-    ? partialCalls(controller.state.doc.toString(), range)
+    ? partialCalls(controller.state.doc.toString(), range, controller.language)
     : [];
   // Stable portal hosts let CodeMirror move the shared preview below its call
   // while React keeps the rendered text alive. Each is made on first use, so
@@ -90,8 +90,8 @@ export function usePartialBoxes(
   const previewHost = useMemo(() => document.createElement("div"), []);
   const pane = useRef<EditorView | null>(null);
   const extensions = useMemo(
-    () => partialBoxes(boxes, previewHost, pane),
-    [boxes, previewHost],
+    () => partialBoxes(boxes, previewHost, { pane, controller }),
+    [boxes, previewHost, controller],
   );
   const expanded =
     opened?.controller === controller
@@ -365,16 +365,25 @@ const expandPartial = StateEffect.define<number | null>();
 function partialBoxes(
   boxes: Map<number, HTMLElement>,
   previewHost: HTMLElement,
-  pane: { current: EditorView | null },
+  {
+    pane,
+    controller,
+  }: {
+    readonly pane: { current: EditorView | null };
+    /** Read live, so a document switched to Eta redraws its boxes in the Eta form. */
+    readonly controller: WorkbenchDocumentController;
+  },
 ): Extension {
   function build(
     { doc, selection }: EditorState,
     expanded: number | null,
   ): DecorationSet {
     const body = doc.toString();
-    const calls = partialCalls(body, { from: 0, to: body.length }).map(
-      ({ call }) => call,
-    );
+    const calls = partialCalls(
+      body,
+      { from: 0, to: body.length },
+      controller.language,
+    ).map(({ call }) => call);
     const ranges = boxRanges(calls, boxes, selection);
     if (
       expanded !== null &&

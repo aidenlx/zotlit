@@ -271,6 +271,20 @@ export class WorkbenchDocumentController {
   }
 
   /**
+   * The language the draft's manifest names, which every language-aware read
+   * of the source follows — the Partial Placeholder among them. A draft that
+   * stopped parsing keeps the last language that did, so a repair in progress
+   * keeps the boxes the reader is working in.
+   */
+  get language(): TemplateLanguage {
+    return (
+      this.#document?.manifest.language ??
+      this.#plain?.manifest.language ??
+      "liquid"
+    );
+  }
+
+  /**
    * Writes the manifest's `language`, adding the key to a manifest that omits
    * it and the manifest itself to a document that carries none — an empty
    * manifest is valid and names the Liquid default. The source is left as

@@ -148,11 +148,9 @@ Liquid's `{% include %}` tag renders a partial with access to the caller's varia
 
 ### Preview and edit a partial [#preview-a-partial]
 
-In a profile's <UiLabel name={m.workbench_basic()} /> mode, a Liquid `render` or `include` call with a plain quoted name is drawn as a **Partial Placeholder**: a compact control carrying the partial's name, the rest of the arguments as written, <UiLabel name={m.workbench_partial_preview()} />, and <UiLabel name={m.workbench_partial_edit()} />. The preview arrow opens a read-only render of that partial below the line, using the data of the slice the call sits in. Put your cursor in the call and the placeholder turns back into plain source, so you can edit the arguments.
+In a profile's <UiLabel name={m.workbench_basic()} /> mode, a call with a plain quoted name — Liquid `render` or `include`, Eta `include(...)` — is drawn as a **Partial Placeholder**: a compact control carrying the partial's name, the rest of the arguments as written, <UiLabel name={m.workbench_partial_preview()} />, and <UiLabel name={m.workbench_partial_edit()} />. The preview arrow opens a read-only render of that partial below the line, using the data of the slice the call sits in. Put your cursor in the call and the placeholder turns back into plain source, so you can edit the arguments.
 
-Two names are never partial names, so neither draws one: `{% render "annotation" %}` draws the annotation placeholder for the profile's annotation section, and a call on `citation` draws nothing. A call inside a fenced code block is prose about a call, and draws nothing either.
-
-Eta `include(...)` calls get completion but no placeholder.
+The five reserved names are never partial names, so none of them draws one: `{% render "annotation" %}` draws the annotation placeholder for the profile's annotation section, and a call on `filename`, `note`, `content`, or `citation` draws nothing. A call inside a fenced code block is prose about a call, and draws nothing either.
 
 A partial has no data of its own, so its own editor asks you which caller to render as: <UiLabel name={m.template_workbench_preview_as_note()} />, <UiLabel name={m.template_workbench_preview_as_annotation()} />, or <UiLabel name={m.template_workbench_preview_as_citation()} />, from the preview pane menu. It opens on Note and remembers your choice for that file.
 

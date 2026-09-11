@@ -5,10 +5,15 @@
 // boxes the reader is working in.
 
 import type { LiquidRange } from "#/language/liquid";
+import type { SyntaxNode } from "@lezer/common";
 import { regex } from "arkregex";
+
+import { TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
+import type { TemplateLanguage } from "@zotlit/templates/constants";
 
 import type { WorkbenchSliceRange } from "./manifest-patch";
 
+import { etaParser } from "#/language/eta-syntax";
 import { liquidRanges } from "#/language/liquid";
 
 /** One annotation render call in the note body, in master offsets. */
@@ -74,15 +79,25 @@ const ANNOTATION_PARTIALS: readonly string[] = ['"annotation"', "'annotation'"];
 /** The Liquid tag names that render a Shared Partial by name. */
 const PARTIAL_CALL_TAGS: readonly string[] = ["render", "include"];
 
+/** The Eta helper that renders a Shared Partial by name. */
+const ETA_PARTIAL_CALL = "include";
+
 /**
- * The names a call may spell that no Shared Partial can be given: the
- * Annotation Section's own name, and the one the Citation Template registers
- * under. A box over either would offer Edit partial for a document that cannot
- * exist.
+ * The names a call may spell that no Shared Partial can be given: every
+ * Legacy Template File slot — the Annotation Section's own name among them —
+ * and the one the Citation Template registers under. A box over any of them
+ * would offer Edit partial for a document that cannot exist.
+ *
+ * The host refuses the same five names; keep this list and the host's own
+ * reserved set naming the same templates.
  * @see docs/adr/0035-profile-annotation-section.md
  * @see docs/adr/0050-the-citation-template-is-one-document-and-partials-are-files.md
  */
-const RESERVED_CALL_NAMES: readonly string[] = ["annotation", "citation"];
+const RESERVED_CALL_NAMES: readonly string[] = [
+  ...Object.keys(TEMPLATE_SLOT_ROOTS),
+  // The Citation Template is a Template Document, so it is in no slot registry.
+  "citation",
+];
 
 const FENCE = regex("^ {0,3}(?<marker>`{3,}|~{3,})");
 
@@ -111,16 +126,28 @@ export function noteRegions(
  * offsets `source` is read in. A pane over any region — the note body, the
  * Annotation Section, or the one editor a plain document opens — reads its own
  * calls through this.
+ *
+ * `language` picks the call form: a Liquid `render` or `include` tag, or an
+ * Eta `include("name", …)` call. Both are what the completion offers and what
+ * Extract to partial writes, so both draw the same box.
  */
 export function partialCalls(
   source: string,
   region: WorkbenchSliceRange,
+  language: TemplateLanguage = "liquid",
 ): readonly PartialRenderSite[] {
   const body = source.slice(region.from, region.to);
   const shift = ({ from, to }: WorkbenchSliceRange) => ({
     from: region.from + from,
     to: region.from + to,
   });
+  if (language === "eta") {
+    return etaPartialCalls(body).map((site) => ({
+      ...site,
+      call: shift(site.call),
+      nameRange: shift(site.nameRange),
+    }));
+  }
   return callTags(body).flatMap((range) => {
     const named = partialCall(body, range);
     if (!named) return [];
@@ -174,6 +201,67 @@ function partialCall(
     name: partial,
     nameRange: { from: open + 1, to: open + 1 + partial.length },
     arguments: tagRest(argument.slice(end + 1)),
+  };
+}
+
+/**
+ * Every Eta Shared Partial call in `body`, in source order and in `body`'s own
+ * offsets. The Eta parser splices the tag's JavaScript in, so the tree names
+ * the callee and its first argument outright: a name held in a variable, a
+ * member call such as `it.include(…)`, a tag the author has not closed, and a
+ * tag doing anything besides the one call are all left as source, the way the
+ * Liquid scan leaves their tag equivalents.
+ */
+function etaPartialCalls(body: string): PartialRenderSite[] {
+  const code = codeRanges(body);
+  const sites: PartialRenderSite[] = [];
+  etaParser.parse(body).iterate({
+    enter: (node) => {
+      if (node.name !== "Tag") return true;
+      const tag = node.node;
+      if (
+        tag.getChild("TagClose") === null ||
+        code.some(({ from, to }) => from <= tag.from && tag.from < to)
+      )
+        return false;
+      const named = etaIncludeCall(body, tag.getChild("Script"));
+      if (named) sites.push({ ...named, call: { from: tag.from, to: tag.to } });
+      return false;
+    },
+  });
+  return sites;
+}
+
+/**
+ * The partial one Eta tag's script names, and what the call passes after it,
+ * or null when the tag holds anything but a single `include("name", …)` call.
+ */
+function etaIncludeCall(
+  body: string,
+  script: SyntaxNode | null,
+): Omit<PartialRenderSite, "call"> | null {
+  const statement = script?.firstChild;
+  if (!statement || statement.name !== "ExpressionStatement") return null;
+  if (statement.nextSibling) return null;
+  const call = statement.firstChild;
+  if (!call || call.name !== "CallExpression") return null;
+  const callee = call.firstChild;
+  if (
+    !callee ||
+    callee.name !== "VariableName" ||
+    body.slice(callee.from, callee.to) !== ETA_PARTIAL_CALL
+  )
+    return null;
+  const args = call.getChild("ArgList");
+  const first = args?.firstChild?.nextSibling;
+  if (!args || !first || first.name !== "String") return null;
+  const name = body.slice(first.from + 1, first.to - 1);
+  if (name.length === 0 || RESERVED_CALL_NAMES.includes(name)) return null;
+  const rest = body.slice(first.to, args.to - 1).trim();
+  return {
+    name,
+    nameRange: { from: first.from + 1, to: first.to - 1 },
+    arguments: rest.startsWith(",") ? rest.slice(1).trim() : rest,
   };
 }
 
