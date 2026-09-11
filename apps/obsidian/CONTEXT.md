@@ -56,7 +56,7 @@ A vault-global Template Document, `zotlit-partial.<name>.md`, that any template 
 _Avoid_: snippet, block, include file, annotation partial (the Annotation Section belongs to the Profile document), bundled partial (the manifest copy is a sharing transport, not the partial)
 
 **Partial Preview Context**:
-The caller a Shared Partial is previewed as called from — Note, Annotation, or Citation — which picks the root data the partial's own editor renders, completes, and explores against. It is the reader's choice, remembered per file with the workspace, and it opens on Note. ADR 0050 rules out reading it off the callers: a partial nothing calls yet names no caller, and one two roots call names two. User-facing copy says **Preview as called from Note**.
+The caller a Shared Partial is previewed as called from — Note, Annotation, or Citation — which picks the root data the partial's own editor renders, completes, and explores against. It is the reader's choice, remembered per file twice — with the workspace, which carries it back with a restored leaf, and on this device, which carries it back when the partial is closed and opened again — and it opens on Note. ADR 0050 rules out reading it off the callers: a partial nothing calls yet names no caller, and one two roots call names two. User-facing copy says **Preview as called from Note**.
 _Avoid_: partial root (a partial has no root of its own), inferred context, caller detection
 
 **Literature Note Template**:
