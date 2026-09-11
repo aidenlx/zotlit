@@ -1,7 +1,7 @@
 // Selector vocabulary shared by request.ts and guide.ts: the accepted `template`
 // values, and the phrasing every vocabulary message and value list uses.
 
-import { TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
+import { CITATION_VARIANTS, TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
 import type { CitationVariant, TemplateSlot } from "@zotlit/db";
 import type {
   FrontmatterLanguage,
@@ -62,10 +62,8 @@ export const PARTIAL_CONTEXT_NAMES: readonly PartialContext[] =
   PARTIAL_CONTEXTS;
 
 /** The accepted `variant` values, in the order selector messages list them. */
-export const CITATION_VARIANT_NAMES = [
-  "main",
-  "alt",
-] as const satisfies readonly CitationVariant[];
+export const CITATION_VARIANT_NAMES: readonly CitationVariant[] =
+  CITATION_VARIANTS;
 
 /** The accepted `example` values, in the order a chooser lists them. */
 export const CITATION_EXAMPLE_NAMES: readonly CitationExampleId[] =

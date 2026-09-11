@@ -155,6 +155,15 @@ export const RESERVED_PARTIAL_NAMES: ReadonlySet<string> = new Set<string>(
 const PARTIAL_NAME = /^[A-Za-z0-9-]+$/;
 const PARTIAL_NAME_SPACES = /\s+/g;
 
+/**
+ * Whether `name` has the shape a Shared Partial file carries: letters, digits,
+ * and hyphens. {@link partialNameRefusal} is the whole rule; an entry point
+ * that reports the reserved and duplicate halves itself asks only this.
+ */
+export function isPartialNameShape(name: string): boolean {
+  return PARTIAL_NAME.test(name);
+}
+
 /** Why a name cannot be given to a Shared Partial; `null` accepts it. */
 export type PartialNameRefusal =
   | "empty"
@@ -186,7 +195,7 @@ export function partialNameRefusal(
   taken: Iterable<string>,
 ): PartialNameRefusal | null {
   if (name === "") return "empty";
-  if (!PARTIAL_NAME.test(name)) return "characters";
+  if (!isPartialNameShape(name)) return "characters";
   if (RESERVED_PARTIAL_NAMES.has(name)) return "reserved";
   const folded = name.toLowerCase();
   return [...taken].some((used) => used.toLowerCase() === folded)

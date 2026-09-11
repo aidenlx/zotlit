@@ -2,6 +2,8 @@
 
 import type { TemplateLanguage } from "./constants";
 
+// `@zotlit/db` declares the Citation Variant, and depends on this package, so
+// the fold states the two gesture names rather than importing them back.
 type CitationVariant = "main" | "alt";
 
 /**

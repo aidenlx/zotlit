@@ -2,7 +2,11 @@
 
 import type { CliData } from "obsidian";
 
-import { parseIndexedKey, TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
+import {
+  DEFAULT_CITATION_VARIANT,
+  parseIndexedKey,
+  TEMPLATE_SLOT_ROOTS,
+} from "@zotlit/db";
 import type { CitationVariant, ContractRoot, TemplateSlot } from "@zotlit/db";
 import type {
   FrontmatterLanguage,
@@ -16,6 +20,8 @@ import type {
   CitationExampleId,
   PartialContext,
 } from "@zotlit/workbench/render";
+
+import { isPartialNameShape } from "@/services/template/defaults";
 
 import { diagnostic } from "./envelope";
 import type { Diagnostic, WorkbenchIdentity } from "./envelope";
@@ -47,9 +53,6 @@ export {
   RENDER_TEMPLATE_NAMES,
   TEMPLATE_SLOT_NAMES,
 };
-
-/** Shared Partial names: letters, digits, and hyphens, as the files allow. */
-const PARTIAL_NAME = /^[A-Za-z0-9-]+$/;
 
 /** A parsed selector, or the one parameter that made it invalid. */
 export type ParsedRequest<T> =
@@ -168,7 +171,7 @@ export function parseRenderRequest(
     );
   }
   const partial = partialTemplateName(template);
-  if (partial !== null && !PARTIAL_NAME.test(partial)) {
+  if (partial !== null && !isPartialNameShape(partial)) {
     return invalid(
       "template",
       "A Shared Partial name is letters, digits, and hyphens: template=partial:<name>.",
@@ -273,7 +276,10 @@ function parseCitationVariant(
 ): ParsedRequest<{ variant?: CitationVariant }> {
   const variant = params.variant;
   if (variant === undefined) {
-    return { kind: "valid", value: citation ? { variant: "main" } : {} };
+    return {
+      kind: "valid",
+      value: citation ? { variant: DEFAULT_CITATION_VARIANT } : {},
+    };
   }
   if (!citation) {
     return invalid(
