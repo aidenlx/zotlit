@@ -403,6 +403,8 @@ function fakeLeaf(
   load: () => void;
   /** Closes the view, which is what unloads it and runs what it registered. */
   close: () => void;
+  /** What the view still holds for its own unload, in registration order. */
+  registered: readonly (() => unknown)[];
 } {
   const engine = new FakeEngine(app, realApp);
   /** What the view registered for its own unload, as a `Component` holds it. */
@@ -433,6 +435,7 @@ function fakeLeaf(
     close: () => {
       for (const cb of registered.splice(0)) cb();
     },
+    registered,
   };
 }
 
@@ -489,6 +492,8 @@ function makeFixture(options: FixtureOptions = {}) {
   const leaves: WorkspaceLeaf[] = [];
   /** What unloads each leaf's view, which is what closing the leaf runs. */
   const closers = new Map<WorkspaceLeaf, () => void>();
+  /** What each leaf's view holds for that unload, as a `Component` holds it. */
+  const registrations = new Map<WorkspaceLeaf, readonly (() => unknown)[]>();
   let layoutReady: (() => void) | undefined;
   const workspace = {
     onLayoutReady(cb: () => void) {
@@ -564,7 +569,13 @@ function makeFixture(options: FixtureOptions = {}) {
       Object.assign(made.leaf, { id });
       leaves.push(made.leaf);
       closers.set(made.leaf, made.close);
+      registrations.set(made.leaf, made.registered);
       return made.engine;
+    },
+    /** What this leaf's view still holds for its own unload. */
+    viewCallbacks(id: string) {
+      const leaf = leaves.find((candidate) => candidate.id === id)!;
+      return registrations.get(leaf)!;
     },
     /** The leaf `addLeaf` gave this id, which is what a command hands the preset. */
     leaf: (id: string) => leaves.find((candidate) => candidate.id === id)!,
@@ -1196,6 +1207,40 @@ describe("GraphCitations hovers", () => {
     expect(rowNames(engine)).toEqual([]);
   });
 
+  it("lets go of a hold on the window that armed it, after the graph moved to a pop-out", async () => {
+    vi.useFakeTimers();
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph", "hovered");
+    const { containerEl } = engine.renderer;
+    fixture.layoutReady();
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "@typo2024",
+      "unresolved",
+    );
+    const popover = fakePopover();
+    engine.hoverPopover = popover;
+    vi.advanceTimersByTime(200);
+    expect(popover.transition).toHaveBeenCalledOnce();
+
+    // The reader moves the graph to a pop-out window: its container answers
+    // that window now, and the hold is the main window's still.
+    const popout = { clearInterval: vi.fn() };
+    Object.defineProperty(containerEl, "win", {
+      configurable: true,
+      value: popout,
+    });
+    fixture.closeLeaf("hovered");
+
+    popover.onTarget = false;
+    vi.advanceTimersByTime(600);
+    expect(popover.onTarget).toBe(false);
+    expect(popover.transition).toHaveBeenCalledOnce();
+    expect(popout.clearInterval).not.toHaveBeenCalled();
+  });
+
   it("states the popover's target again after Obsidian's sweep drops it, until the pointer leaves", async () => {
     vi.useFakeTimers();
     const fixture = makeFixture();
@@ -1628,6 +1673,27 @@ describe("GraphCitations teardown", () => {
     expect(engine.renders[2]!.facaded).toBe(true);
     expect(engine.renderer.onNodeClick).not.toBe(nativeClick);
     expect(engine.renderer.onNodeRightClick).not.toBe(nativeRightClick);
+  });
+
+  it("lets go of what the view holds for its unload once the installation ends", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph", "hovered");
+    fixture.layoutReady();
+    // What the view would run on its own unload, from the installation the
+    // feature going off is about to end.
+    const [stale] = fixture.viewCallbacks("hovered");
+    fixture.settings.update({ "citation.graph-citations": false });
+    fixture.settings.update({ "citation.graph-citations": true });
+
+    stale!();
+
+    // The installation the re-enable made is the service's still, so the next
+    // feature-off restores its leaf.
+    fixture.settings.update({ "citation.graph-citations": false });
+    expect(rowNames(engine)).toEqual([]);
+    expect(Object.hasOwn(engine, "render")).toBe(false);
   });
 
   it("restores every member, draws natively once, and unsubscribes on dispose", async () => {
@@ -2231,6 +2297,76 @@ describe("GraphCitations citation edge colour", () => {
     expect(paint(engine.renderer)).toEqual({
       "Draft.md -> Literature/Doe 2024.md": CITATION_LINK,
       "Literature/Doe 2024.md -> Draft.md": CITATION_LINK,
+    });
+  });
+
+  it("draws an ordinary edge natively while the citation the other way is out of the render", async () => {
+    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("localgraph");
+    // Doe's local graph, showing outgoing links alone: Draft's citation of
+    // Doe is no edge of this render, and the link Doe carries back to Draft
+    // is the one line there is — an ordinary one.
+    engine.renderer.drawEdges([["Literature/Doe 2024.md", "Draft.md"]]);
+    fixture.layoutReady();
+
+    expect(paint(engine.renderer)).toEqual({
+      "Literature/Doe 2024.md -> Draft.md": NATIVE_LINE,
+    });
+  });
+
+  it("asks for the frame that draws an edge natively once the citation that drew it is gone", async () => {
+    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
+    const fixture = makeFixture({
+      // Draft links Doe the ordinary way too, so the edge outlives the
+      // citation the row takes away.
+      links: { "Draft.md": { "Literature/Doe 2024.md": 1 } },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.renderer.drawEdges([["Draft.md", "Literature/Doe 2024.md"]]);
+    fixture.layoutReady();
+    // The frame the install asked for, so what follows stands on an idle graph.
+    expect(paint(engine.renderer)).toEqual({
+      "Draft.md -> Literature/Doe 2024.md": CITATION_LINK,
+    });
+
+    rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
+
+    expect(paint(engine.renderer)).toEqual({
+      "Draft.md -> Literature/Doe 2024.md": NATIVE_LINE,
+    });
+  });
+
+  it("asks for the frame that draws an edge in the citation colour once a citation names it", async () => {
+    vi.useFakeTimers();
+    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
+    const fixture = makeFixture({
+      wikilinkCitations: true,
+      links: { "Reading.md": { "Literature/Doe 2024.md": 1 } },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.renderer.drawEdges([["Reading.md", "Literature/Doe 2024.md"]]);
+    fixture.layoutReady();
+    expect(paint(engine.renderer)).toEqual({
+      "Reading.md -> Literature/Doe 2024.md": NATIVE_LINE,
+    });
+
+    // The reader writes the link Reading already carried as a Citation: the
+    // edge is the one that was there, drawn in another colour.
+    fixture.citationIndex.wikilinks.set("Reading.md", [
+      occurrence("Doe 2024", "wikilink"),
+    ]);
+    fixture.citationIndex.emit("changed");
+    vi.advanceTimersByTime(200);
+
+    expect(paint(engine.renderer)).toEqual({
+      "Reading.md -> Literature/Doe 2024.md": CITATION_LINK,
     });
   });
 
