@@ -1423,13 +1423,24 @@ language: liquid
     await act(async () => first.view.close());
 
     // A new leaf, so the workspace has no saved state to carry the choice.
+    // `openTemplateWorkbench` hands it a descriptor of the file alone.
     const reopened = openKind(
       "templates/zotlit-partial.authors.md",
       PARTIAL_SOURCE,
     );
+    await act(async () =>
+      reopened.view.setState(
+        { file: "templates/zotlit-partial.authors.md" },
+        { history: false },
+      ),
+    );
 
     expect(reopened.view.partialContext).toBe("citation");
     expect(reopened.view.partialProfile).toBe("reading1");
+    expect(reopened.view.getState()).toMatchObject({
+      partialContext: "citation",
+      partialProfile: "reading1",
+    });
   });
 
   it("opens another partial on the default caller, not the last one's", async () => {

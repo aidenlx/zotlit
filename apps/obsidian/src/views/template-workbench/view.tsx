@@ -980,17 +980,20 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     if (this.#applyKindDefaults()) {
       // A plain document has one tab and one editor, so nothing of the saved
       // tab or Basic and Source choice applies to it. A Shared Partial's root
-      // is the reader's own "as called from" choice, which is restored.
-      if (this.documentKind === "partial") {
-        store.setRoot(
-          isPartialContext(value.partialContext)
-            ? value.partialContext
-            : DEFAULT_PARTIAL_CONTEXT,
-        );
+      // is the reader's own "as called from" choice, which the workspace
+      // carries with the Profile it was chosen beside. A descriptor that names
+      // the file alone — every open through `openTemplateWorkbench` — keeps
+      // what `#applyKindDefaults` read back from this device instead. The
+      // Profile is set first, so the root subscription remembers the pair.
+      if (
+        this.documentKind === "partial" &&
+        isPartialContext(value.partialContext)
+      ) {
         this.#partialProfile =
           typeof value.partialProfile === "string"
             ? value.partialProfile
             : null;
+        store.setRoot(value.partialContext);
       }
     } else {
       if (TABS.some((tab) => tab === value.tab))
