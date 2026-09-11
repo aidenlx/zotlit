@@ -64,6 +64,9 @@ describe("readNodeColors", () => {
     expect(themeProperty.graphCitedWorkNode).toBe(
       "--zt-graph-cited-work-node-color",
     );
+    expect(themeProperty.graphCitationLink).toBe(
+      "--zt-graph-citation-link-color",
+    );
   });
 
   /**

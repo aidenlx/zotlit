@@ -8,6 +8,8 @@ import type {
   EventRef,
   GraphColor,
   GraphData,
+  GraphDrawnNode,
+  GraphLinkSprite,
   GraphOptions,
   HoverPopover,
   WorkspaceLeaf,
@@ -169,6 +171,7 @@ class FakeEngine {
   readonly renderer: FakeRenderer;
   readonly filterOptions = new FakeControlSection();
   readonly colorGroupOptions = new FakeColorGroupSection();
+  readonly displayOptions = new FakeControlSection();
   readonly onOptionsChange = vi.fn();
   options: GraphOptions = {};
   app: App;
@@ -195,11 +198,15 @@ class FakeEngine {
   readonly #realApp: App;
 
   getOptions(): GraphOptions {
-    return this.filterOptions.getOptions();
+    return {
+      ...this.filterOptions.getOptions(),
+      ...this.displayOptions.getOptions(),
+    };
   }
 
   setOptions(options: GraphOptions): void {
     this.filterOptions.setOptions(options);
+    this.displayOptions.setOptions(options);
     const colorGroups = options.colorGroups;
     if (Array.isArray(colorGroups)) {
       // What the Groups section's own option listener does: rebuild the rows,
@@ -275,6 +282,98 @@ class FakeRenderer {
   panX = 4;
   panY = 6;
   setData = vi.fn();
+  links: FakeLink[] = [];
+  /** The node the pointer rests on, which the renderer answers by identity. */
+  highlightNode: GraphDrawnNode | null = null;
+  readonly #nodes = new Map<string, GraphDrawnNode>();
+
+  getHighlightNode(): GraphDrawnNode | null {
+    return this.highlightNode;
+  }
+
+  /**
+   * Gives the renderer one edge per pair, in the direction the link maps
+   * state it.
+   *
+   * @param built whether each edge already owns its line sprite. An edge owns
+   *   none until the first frame that draws both its nodes, which is many
+   *   frames after the hand-off that named it.
+   */
+  drawEdges(pairs: readonly (readonly [string, string])[], built = true): void {
+    this.links = pairs.map(
+      ([source, target]) => new FakeLink(this.node(source), this.node(target)),
+    );
+    if (built) for (const link of this.links) link.initGraphics();
+  }
+
+  /** The one drawn node this id stands for, which a highlight is compared against. */
+  node(id: string): GraphDrawnNode {
+    const held = this.#nodes.get(id) ?? { id };
+    this.#nodes.set(id, held);
+    return held;
+  }
+}
+
+/**
+ * One line sprite. `tint` is declared on the class, where the real sprite
+ * declares it too — Obsidian 1.14.1 draws its edges as PIXI sprites, whose
+ * `tint` is an accessor on the sprite's prototype and whose setter is what
+ * colours the line.
+ */
+class FakeSprite implements GraphLinkSprite {
+  #tint = 0;
+
+  get tint(): number {
+    return this.#tint;
+  }
+
+  set tint(next: number) {
+    this.#tint = next;
+  }
+}
+
+/** One drawn edge, whose line sprite the frames build, clear, and tint. */
+class FakeLink {
+  /** The sprite behind whatever `line` answers, which a test reads the drawn tint off. */
+  readonly sprite: GraphLinkSprite = new FakeSprite();
+  line: GraphLinkSprite | null = null;
+
+  constructor(
+    readonly source: GraphDrawnNode,
+    readonly target: GraphDrawnNode,
+  ) {}
+
+  initGraphics(): void {
+    this.line = this.sprite;
+  }
+
+  clearGraphics(): void {
+    this.line = null;
+  }
+}
+
+/** The tints Obsidian's own frame writes, and the one ZotLit substitutes. */
+const NATIVE_LINE = 0x999999;
+const NATIVE_HIGHLIGHT = 0xffffff;
+const CITATION_LINK = 0x0000ff;
+
+/**
+ * One frame of Obsidian's own edge drawing: each built edge's line takes the
+ * link colour, or the highlight colour where the pointer's node is one of its
+ * ends.
+ *
+ * @returns the tint each edge ended the frame drawn in, read off the sprite
+ *   itself rather than through whatever stands in front of it.
+ */
+function paint(renderer: FakeRenderer): Record<string, number> {
+  const painted: Record<string, number> = {};
+  for (const link of renderer.links) {
+    const highlight = renderer.getHighlightNode();
+    const incident = highlight === link.source || highlight === link.target;
+    if (link.line) link.line.tint = incident ? NATIVE_HIGHLIGHT : NATIVE_LINE;
+    painted[`${link.source.id} -> ${link.target.id}`] = link.sprite.tint;
+  }
+  return painted;
 }
 
 /** A fake leaf; `deferred` starts it as Obsidian's placeholder view, with no members until `load()`. */
@@ -1452,13 +1551,20 @@ describe("GraphCitations teardown", () => {
   });
 });
 
-/** The rows the panel shows, in the order the user reads them. */
-function rowNames(engine: FakeEngine): string[] {
-  return settingsOf(engine.filterOptions.childrenEl).map((row) => row.name);
+/** The rows one section of the panel shows, in the order the user reads them. */
+function rowNames(
+  engine: FakeEngine,
+  section: FakeControlSection = engine.filterOptions,
+): string[] {
+  return settingsOf(section.childrenEl).map((row) => row.name);
 }
 
-function rowToggle(engine: FakeEngine, name: string): ToggleComponent {
-  const row = settingsOf(engine.filterOptions.childrenEl).find(
+function rowToggle(
+  engine: FakeEngine,
+  name: string,
+  section: FakeControlSection = engine.filterOptions,
+): ToggleComponent {
+  const row = settingsOf(section.childrenEl).find(
     (candidate) => candidate.name === name,
   );
   return row!.components[0] as ToggleComponent;
@@ -1480,6 +1586,7 @@ describe("GraphCitations Filters rows", () => {
     expect(engine.getOptions()).toEqual({
       "zotlit-pandoc-citations": true,
       "zotlit-citation-connected-only": false,
+      "zotlit-color-citation-links": true,
     });
   });
 
@@ -1590,6 +1697,7 @@ describe("GraphCitations Filters rows", () => {
     expect(engine.getOptions()).toEqual({
       "zotlit-pandoc-citations": false,
       "zotlit-citation-connected-only": true,
+      "zotlit-color-citation-links": true,
     });
     expect(rowToggle(engine, "Pandoc citations").getValue()).toBe(false);
     expect(engine.renders.at(-1)).toEqual({
@@ -1614,6 +1722,7 @@ describe("GraphCitations Filters rows", () => {
     expect(engine.getOptions()).toEqual({
       "zotlit-pandoc-citations": true,
       "zotlit-citation-connected-only": false,
+      "zotlit-color-citation-links": true,
     });
     expect(engine.filterOptions.natives).toBe(1);
     expect(engine.renders.at(-1)).toEqual({
@@ -1687,6 +1796,7 @@ describe("GraphCitations Filters rows", () => {
       options: {
         "zotlit-pandoc-citations": true,
         "zotlit-citation-connected-only": true,
+        "zotlit-color-citation-links": true,
       },
     });
   });
@@ -1815,5 +1925,288 @@ describe("GraphCitations Groups button", () => {
       "New group",
       m.graph_citations_add_literature_notes_group(),
     ]);
+  });
+});
+
+describe("GraphCitations Display row", () => {
+  it("builds the row in the Display section, apart from the Filters rows", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+
+    fixture.layoutReady();
+
+    expect(rowNames(engine, engine.displayOptions)).toEqual([
+      "Color citation links",
+    ]);
+    expect(rowNames(engine)).toEqual([
+      "Pandoc citations",
+      "Citation-connected only",
+    ]);
+  });
+
+  it("starts the global graph at what the Graph core plugin saved", async () => {
+    const fixture = makeFixture({
+      savedGlobal: { "zotlit-color-citation-links": false },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+
+    fixture.layoutReady();
+
+    expect(
+      rowToggle(
+        engine,
+        "Color citation links",
+        engine.displayOptions,
+      ).getValue(),
+    ).toBe(false);
+  });
+
+  it("round-trips through the engine's set options", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    engine.setOptions({ "zotlit-color-citation-links": false });
+
+    expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(false);
+    expect(
+      rowToggle(
+        engine,
+        "Color citation links",
+        engine.displayOptions,
+      ).getValue(),
+    ).toBe(false);
+  });
+
+  it("returns to its default when the panel restores default settings", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+    rowToggle(engine, "Color citation links", engine.displayOptions).toggle(
+      false,
+    );
+
+    engine.displayOptions.setDefaultOptions();
+
+    expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(true);
+    expect(engine.displayOptions.natives).toBe(1);
+  });
+
+  it("stays as the user left it while the Filters rows are rebuilt", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+    rowToggle(engine, "Color citation links", engine.displayOptions).toggle(
+      false,
+    );
+
+    fixture.settings.update({ "citation.wikilink-citations": true });
+
+    expect(rowNames(engine, engine.displayOptions)).toEqual([
+      "Color citation links",
+    ]);
+    expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(false);
+  });
+
+  it("leaves the Display section as found when the feature turns off", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    fixture.settings.update({ "citation.graph-citations": false });
+
+    expect(rowNames(engine, engine.displayOptions)).toEqual([]);
+    expect(engine.displayOptions.optionListeners).toEqual({});
+    expect(Object.hasOwn(engine.displayOptions, "setDefaultOptions")).toBe(
+      false,
+    );
+  });
+});
+
+describe("GraphCitations citation edge colour", () => {
+  /** Draft's own link to Other, and two of the edges its citations draw. */
+  const EDGES = [
+    ["Draft.md", "Other.md"],
+    ["Draft.md", "Literature/Doe 2024.md"],
+    ["Draft.md", "@typo2024"],
+  ] as const;
+
+  /** A graph whose edges are drawn and whose theme states a citation colour. */
+  async function drawn(options: FixtureOptions = {}) {
+    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
+    const fixture = makeFixture(options);
+    const service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.renderer.drawEdges(EDGES);
+    fixture.layoutReady();
+    return { fixture, service, engine };
+  }
+
+  it("draws the edges a citation named in its own colour and every other edge natively", async () => {
+    const { service, engine } = await drawn();
+    await using _service = service;
+
+    expect(paint(engine.renderer)).toEqual({
+      "Draft.md -> Other.md": NATIVE_LINE,
+      "Draft.md -> Literature/Doe 2024.md": CITATION_LINK,
+      "Draft.md -> @typo2024": CITATION_LINK,
+    });
+  });
+
+  it("leaves a coloured edge answering the one sprite the renderer built", async () => {
+    const { service, engine } = await drawn();
+    await using _service = service;
+    const cited = engine.renderer.links[1]!;
+
+    expect(cited.line).toBe(cited.sprite);
+  });
+
+  it("yields to the native highlight on the edges of the node under the pointer", async () => {
+    const { service, engine } = await drawn();
+    await using _service = service;
+
+    engine.renderer.highlightNode = engine.renderer.node(
+      "Literature/Doe 2024.md",
+    );
+
+    expect(paint(engine.renderer)).toEqual({
+      "Draft.md -> Other.md": NATIVE_LINE,
+      "Draft.md -> Literature/Doe 2024.md": NATIVE_HIGHLIGHT,
+      "Draft.md -> @typo2024": CITATION_LINK,
+    });
+  });
+
+  it("draws an edge whose sprite is built after the hand-off, and again after it is destroyed", async () => {
+    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.renderer.drawEdges(EDGES, false);
+    fixture.layoutReady();
+    const cited = engine.renderer.links[1]!;
+
+    cited.initGraphics();
+
+    expect(paint(engine.renderer)["Draft.md -> Literature/Doe 2024.md"]).toBe(
+      CITATION_LINK,
+    );
+
+    cited.clearGraphics();
+    expect(cited.line).toBeNull();
+    cited.initGraphics();
+
+    expect(paint(engine.renderer)["Draft.md -> Literature/Doe 2024.md"]).toBe(
+      CITATION_LINK,
+    );
+  });
+
+  it("draws every edge natively while the row is off", async () => {
+    const { service, engine } = await drawn();
+    await using _service = service;
+
+    rowToggle(engine, "Color citation links", engine.displayOptions).toggle(
+      false,
+    );
+
+    expect(paint(engine.renderer)).toEqual({
+      "Draft.md -> Other.md": NATIVE_LINE,
+      "Draft.md -> Literature/Doe 2024.md": NATIVE_LINE,
+      "Draft.md -> @typo2024": NATIVE_LINE,
+    });
+  });
+
+  it("draws natively the edges the Pandoc citations row took away", async () => {
+    const { service, engine } = await drawn();
+    await using _service = service;
+
+    rowToggle(engine, "Pandoc citations").toggle(false);
+
+    expect(paint(engine.renderer)).toEqual({
+      "Draft.md -> Other.md": NATIVE_LINE,
+      "Draft.md -> Literature/Doe 2024.md": NATIVE_LINE,
+      "Draft.md -> @typo2024": NATIVE_LINE,
+    });
+  });
+
+  it("draws a Wikilink Citation the vault already carried in the citation colour", async () => {
+    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
+    const fixture = makeFixture({
+      wikilinkCitations: true,
+      links: {
+        "Reading.md": { "Literature/Doe 2024.md": 1 },
+        "Alias.md": { "Literature/Doe 2024.md": 1 },
+      },
+    });
+    fixture.citationIndex.wikilinks.set("Reading.md", [
+      occurrence("Doe 2024", "wikilink"),
+    ]);
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.renderer.drawEdges([
+      ["Reading.md", "Literature/Doe 2024.md"],
+      ["Alias.md", "Literature/Doe 2024.md"],
+    ]);
+
+    fixture.layoutReady();
+
+    expect(paint(engine.renderer)).toEqual({
+      "Reading.md -> Literature/Doe 2024.md": CITATION_LINK,
+      "Alias.md -> Literature/Doe 2024.md": NATIVE_LINE,
+    });
+  });
+
+  it("leaves every edge holding its own sprite on teardown", async () => {
+    const { service, engine } = await drawn();
+    const cited = engine.renderer.links[1]!;
+
+    await service[Symbol.asyncDispose]();
+
+    expect(cited.line).toBe(cited.sprite);
+    expect(paint(engine.renderer)).toEqual({
+      "Draft.md -> Other.md": NATIVE_LINE,
+      "Draft.md -> Literature/Doe 2024.md": NATIVE_LINE,
+      "Draft.md -> @typo2024": NATIVE_LINE,
+    });
+  });
+
+  it("leaves the edges native when a build moved a renderer member, and says so once", async () => {
+    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.renderer.drawEdges(EDGES);
+    // The member is inherited, as the renderer's own is; the build this
+    // stands for declares none at all.
+    Object.defineProperty(engine.renderer, "getHighlightNode", {
+      value: undefined,
+      configurable: true,
+    });
+
+    fixture.layoutReady();
+
+    const cited = engine.renderer.links[2]!;
+    cited.line!.tint = NATIVE_LINE;
+
+    expect(cited.sprite.tint).toBe(NATIVE_LINE);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0]![1]).toMatchObject({
+      missing: ["renderer.getHighlightNode"],
+    });
   });
 });

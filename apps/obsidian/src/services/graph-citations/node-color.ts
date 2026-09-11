@@ -13,12 +13,12 @@ import type { GraphLeafMembers } from "./install";
 const logger = getLogger("graph-citations");
 
 /**
- * One node role: the property a theme states its colour in, and the Obsidian
- * variable ZotLit falls back to. A Literature Note reads in the
+ * One thing ZotLit colours: the property a theme states its colour in, and
+ * the Obsidian variable ZotLit falls back to. A Literature Note reads in the
  * accent-adjacent purple and a cited work with no note in the faint text
  * colour, so the two tell themselves apart in the theme and its dark mode.
  */
-interface NodeRole {
+export interface ThemeColorRole {
   property: string;
   fallback: string;
 }
@@ -32,7 +32,7 @@ const ROLE = {
     property: themeProperty.graphCitedWorkNode,
     fallback: "--text-faint",
   },
-} as const satisfies Record<string, NodeRole>;
+} as const satisfies Record<string, ThemeColorRole>;
 
 /** The fill colour each ZotLit node role is drawn in; `null` where the theme states none. */
 export interface NodeColors {
@@ -65,8 +65,8 @@ export class GraphNodeColors {
  */
 export function readNodeColors(): NodeColors {
   return {
-    literatureNote: readColor(ROLE.literatureNote),
-    citedWorkNode: readColor(ROLE.citedWorkNode),
+    literatureNote: readThemeColor(ROLE.literatureNote),
+    citedWorkNode: readThemeColor(ROLE.citedWorkNode),
   };
 }
 
@@ -81,7 +81,7 @@ export function readNodeColors(): NodeColors {
  * A theme's property wins wherever it stands, since the fallback is reached
  * only where the theme states nothing at all.
  */
-function readColor(role: NodeRole): GraphColor | null {
+export function readThemeColor(role: ThemeColorRole): GraphColor | null {
   // A theme states the property on `body`, or on something `body` inherits it
   // from, which is also where the probe inherits it from.
   const stated = getComputedStyle(document.body).getPropertyValue(
@@ -93,7 +93,7 @@ function readColor(role: NodeRole): GraphColor | null {
   probe.remove();
   const parsed = parseGraphColor(color, opacity);
   if (!parsed) {
-    logger.debug("Theme states no colour for a graph node; left native", {
+    logger.debug("Theme states no colour for a graph role; left native", {
       property: role.property,
       color,
     });

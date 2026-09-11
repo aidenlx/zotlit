@@ -537,6 +537,8 @@
   "graph_option_wikilink_citations_desc": "为每篇笔记与它链接的文献笔记之间绘制连线。",
   "graph_option_citation_connected_only_name": "仅显示引用相关节点",
   "graph_option_citation_connected_only_desc": "隐藏文献笔记、被引文献以及引用它们的笔记之外的所有节点。",
+  "graph_option_color_citation_links_name": "为引用连线着色",
+  "graph_option_color_citation_links_desc": "用单独的颜色绘制引用连线。关闭后所有连线使用同一种颜色。",
   "graph_citations_menu_create_note": "创建文献笔记",
   "graph_citations_menu_copy_citekey": "复制文献引用标识（citation key）",
   "graph_citations_citekey_copied": "文献引用标识已复制。",

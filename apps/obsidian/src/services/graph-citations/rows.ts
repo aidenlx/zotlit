@@ -1,4 +1,4 @@
-// One native-styled toggle row in the graph's Filters section, persisted the way a native row is.
+// One native-styled toggle row in a section of the graph's controls panel, persisted the way a native row is.
 
 import { Setting } from "obsidian";
 import type { GraphControlSection, GraphEngine, GraphOptions } from "obsidian";
@@ -9,12 +9,22 @@ import { membersPresent, wrapMember } from "./install";
 
 const logger = getLogger("graph-citations");
 
+/** Which section of the controls panel a row is built into. */
+export type GraphSectionName = "filter" | "display";
+
+/** The engine member each section stands behind. */
+const SECTIONS = {
+  filter: "filterOptions",
+  display: "displayOptions",
+} as const satisfies Record<GraphSectionName, keyof GraphEngine>;
+
 /**
- * Engines whose controls panel could not be read. An engine lives as long as
- * the view that owns it and is collected with it, so the report is once per
- * graph however many times its rows are rebuilt.
+ * The sections of each engine's controls panel that could not be read. An
+ * engine lives as long as the view that owns it and is collected with it, so
+ * the report is once per section per graph however many times its rows are
+ * rebuilt.
  */
-const reported = new WeakSet<GraphEngine>();
+const reported = new WeakMap<GraphEngine, Set<GraphSectionName>>();
 
 /** The engine members one row writes when its value changes. */
 export interface RowEngine {
@@ -48,14 +58,16 @@ export interface ToggleRow {
 }
 
 export interface ToggleRowTargetOptions {
+  /** Which section of the controls panel the rows are built into. */
+  section: GraphSectionName;
   /** What the graph persisted; see {@link ToggleRowTarget.saved}. */
   saved: GraphOptions | null;
 }
 
 /**
- * Locates the Filters section and the engine members a row writes. A build
- * that moved any of them is reported at `warn` once per graph and gets no
- * rows, so the panel keeps its native shape.
+ * Locates one section of the controls panel and the engine members a row
+ * writes. A build that moved any of them is reported at `warn` once per
+ * section per graph and gets no rows, so that section keeps its native shape.
  *
  * @returns `null` when a member is missing.
  */
@@ -63,24 +75,28 @@ export function toggleRowTarget(
   engine: GraphEngine,
   options: ToggleRowTargetOptions,
 ): ToggleRowTarget | null {
-  if (reported.has(engine)) return null;
-  const section = engine.filterOptions;
+  const { section: name } = options;
+  if (reported.get(engine)?.has(name)) return null;
+  const member = SECTIONS[name];
+  const section = engine[member];
   const present = membersPresent(
     "Graph controls section is missing a member; no rows built",
     {
       "engine.options": Boolean(engine.options),
       "engine.render": typeof engine.render === "function",
       "engine.onOptionsChange": typeof engine.onOptionsChange === "function",
-      "engine.filterOptions": Boolean(section),
+      [`engine.${member}`]: Boolean(section),
       "section.childrenEl": Boolean(section?.childrenEl),
       "section.optionListeners": Boolean(section?.optionListeners),
       "section.setDefaultOptions":
         typeof section?.setDefaultOptions === "function",
     },
-    { section: "filter" },
+    { section: name },
   );
   if (!present) {
-    reported.add(engine);
+    const sections = reported.get(engine) ?? new Set<GraphSectionName>();
+    sections.add(name);
+    reported.set(engine, sections);
     return null;
   }
   return {
@@ -143,6 +159,20 @@ export function installToggleRow(
   });
   logger.debug("Graph row installed", { key: row.key, value });
   return restores;
+}
+
+/**
+ * The value one row leaves in the graph's live options. A key the row never
+ * wrote — an engine whose section could not be read, or a read before the rows
+ * are built — reads as `defaultValue`.
+ */
+export function rowFlag(
+  engine: { options?: GraphOptions },
+  key: string,
+  defaultValue: boolean,
+): boolean {
+  const value = engine.options?.[key];
+  return typeof value === "boolean" ? value : defaultValue;
 }
 
 /** The value a row starts at: the live options, else the saved ones, else its default. */

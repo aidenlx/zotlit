@@ -625,3 +625,124 @@ describe("graphCitationAdditions citing sources", () => {
     ]);
   });
 });
+
+describe("graphCitationAdditions citation edges", () => {
+  it("names the edge a citekey draws, and the edge to a Cited Work Node", () => {
+    const additions = graphCitationAdditions(
+      input(
+        {
+          "Draft.md": [
+            occurrence("citekey", "doe2024"),
+            occurrence("citekey", "typo2024"),
+          ],
+        },
+        { resolvedLinks: { "Draft.md": { "Other.md": 1 } } },
+      ),
+    );
+
+    expect(additions.citationLinks).toEqual({
+      "Draft.md": { "Literature/Doe 2024.md": 1, "@typo2024": 1 },
+    });
+  });
+
+  it("names the one edge a note that cites by wikilink and by citekey draws", () => {
+    const additions = graphCitationAdditions(
+      input(
+        {
+          "Draft.md": [
+            occurrence("wikilink", "Doe 2024"),
+            occurrence("citekey", "doe2024"),
+          ],
+        },
+        { resolvedLinks: { "Draft.md": { "Literature/Doe 2024.md": 1 } } },
+      ),
+    );
+
+    expect(additions.resolvedLinks).toEqual({});
+    expect(additions.citationLinks).toEqual({
+      "Draft.md": { "Literature/Doe 2024.md": 1 },
+    });
+  });
+
+  it("names the edge a Wikilink Citation the vault already drew stands for", () => {
+    const additions = graphCitationAdditions(
+      input(
+        { "Reading.md": [occurrence("wikilink", "Doe 2024")] },
+        { resolvedLinks: { "Reading.md": { "Literature/Doe 2024.md": 1 } } },
+      ),
+    );
+
+    expect(additions.citationLinks).toEqual({
+      "Reading.md": { "Literature/Doe 2024.md": 1 },
+    });
+  });
+
+  it("names no edge an aliased link to a Literature Note draws", () => {
+    const additions = graphCitationAdditions(
+      input(
+        { "Alias.md": [] },
+        { resolvedLinks: { "Alias.md": { "Literature/Doe 2024.md": 1 } } },
+      ),
+    );
+
+    expect(additions.citationLinks).toEqual({});
+  });
+
+  it("names no edge while the vault-wide setting excludes the wikilink syntax", () => {
+    const additions = graphCitationAdditions(
+      input(
+        { "Reading.md": [] },
+        {
+          resolvedLinks: { "Reading.md": { "Literature/Doe 2024.md": 1 } },
+          filters: filters({ wikilinkCitations: null }),
+        },
+      ),
+    );
+
+    expect(additions.citationLinks).toEqual({});
+  });
+
+  it("names only the citekey edge while the Wikilink citations row is off", () => {
+    const additions = graphCitationAdditions(
+      input(
+        {
+          "Draft.md": [
+            occurrence("wikilink", "Doe 2024"),
+            occurrence("citekey", "doe2024"),
+          ],
+          "Reading.md": [occurrence("wikilink", "Poe 2021")],
+        },
+        {
+          resolvedLinks: {
+            "Draft.md": { "Literature/Doe 2024.md": 1 },
+            "Reading.md": { "Literature/Poe 2021.md": 1 },
+          },
+          filters: filters({ wikilinkCitations: false }),
+        },
+      ),
+    );
+
+    expect(additions.citationLinks).toEqual({
+      "Draft.md": { "Literature/Doe 2024.md": 1 },
+    });
+  });
+
+  it("names only the wikilink edge while the Pandoc citations row is off", () => {
+    const additions = graphCitationAdditions(
+      input(
+        {
+          "Draft.md": [occurrence("citekey", "doe2024")],
+          "Reading.md": [occurrence("wikilink", "Poe 2021")],
+        },
+        {
+          resolvedLinks: { "Reading.md": { "Literature/Poe 2021.md": 1 } },
+          filters: filters({ pandocCitations: false }),
+        },
+      ),
+    );
+
+    expect(additions.citationLinks).toEqual({
+      "Reading.md": { "Literature/Poe 2021.md": 1 },
+    });
+  });
+});

@@ -10,6 +10,7 @@ import { themeProperty } from "@/lib/theme-hooks";
 export function themeStates(
   literatureNote: string,
   citedWorkNode: string,
+  citationLink?: string,
 ): void {
   document.body.style.setProperty(
     themeProperty.graphLiteratureNote,
@@ -19,6 +20,12 @@ export function themeStates(
     themeProperty.graphCitedWorkNode,
     citedWorkNode,
   );
+  if (citationLink !== undefined) {
+    document.body.style.setProperty(
+      themeProperty.graphCitationLink,
+      citationLink,
+    );
+  }
 }
 
 /** Puts the document back to a theme that states neither colour. */

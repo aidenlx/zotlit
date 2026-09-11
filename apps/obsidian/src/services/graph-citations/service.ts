@@ -24,6 +24,7 @@ import type { SettingsService } from "@/services/settings/service";
 import { graphCitationAdditions, NO_ADDITIONS } from "./adapter";
 import type { GraphCitationAdditions } from "./adapter";
 import { wrapNodeClick } from "./click";
+import { colorCitationLinks, installDisplayRows } from "./display";
 import { renderWithFacade } from "./facade";
 import { graphCitationFilters, installFilterRows } from "./filters";
 import { installGroupsButton } from "./groups";
@@ -36,6 +37,7 @@ import {
   wrapMember,
 } from "./install";
 import type { GraphLeafMembers } from "./install";
+import { GraphLinkColor, installLinkColors } from "./link-color";
 import { GraphNodeColors, installNodeColors } from "./node-color";
 import { wrapNodeRightClick } from "./right-click";
 import type { NodeRightClickDeps } from "./right-click";
@@ -113,6 +115,8 @@ export class GraphCitations extends Service<void> {
   readonly #leftNative = new WeakSet<View>();
   /** The node colours the theme states, shared by every installed leaf. */
   readonly #nodeColors = new GraphNodeColors();
+  /** The citation edge colour the theme states, shared by every installed leaf. */
+  readonly #linkColor = new GraphLinkColor();
   /**
    * What a still-deferred graph leaf carries, so a row installed after the
    * leaf loads starts where the user left it: the load applies the saved
@@ -165,6 +169,7 @@ export class GraphCitations extends Service<void> {
       registerEvent(
         workspace.on("css-change", () => {
           this.#nodeColors.invalidate();
+          this.#linkColor.invalidate();
           this.#requestRender();
         }),
       ),
@@ -270,7 +275,14 @@ export class GraphCitations extends Service<void> {
     );
     restores.defer(() => installation.rows[Symbol.dispose]());
     restores.use(installGroupsButton(engine, this.#nodeColors));
+    restores.use(installDisplayRows(engine, { saved }));
     restores.use(installNodeColors(renderer, installation, this.#nodeColors));
+    restores.use(
+      installLinkColors(members, installation, {
+        color: this.#linkColor,
+        enabled: () => colorCitationLinks(engine),
+      }),
+    );
     const nodeDeps: NodeRightClickDeps = {
       citekeyOf: (id) => installation.additions.citedWorkNodes.get(id),
       resolveCitekey: (citekey) => this.#citationIndex.resolveCitekey(citekey),
