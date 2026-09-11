@@ -267,12 +267,13 @@ function partialCallTail(
 ): PartialCallTail | null {
   const { nameEnd, isEta, quote } = options;
   const rest = source.slice(nameEnd, range.to);
-  const empty = isEta
-    ? /^["']?\)?(?<close>\s*[-_]?%>)?$/
-    : /^["']?(?<close>\s*-?%\})?$/;
-  const match = empty.exec(rest);
+  const match = (
+    isEta
+      ? regex("^[\"']?\\)?(?<close>\\s*[-_]?%>)?$")
+      : regex("^[\"']?(?<close>\\s*-?%})?$")
+  ).exec(rest);
   if (!match) return null;
-  const close = match.groups?.close ?? (isEta ? " %>" : " %}");
+  const close = match.groups.close ?? (isEta ? " %>" : " %}");
   const args = isEta
     ? ", zt)"
     : "name" in range && range.name === "render"

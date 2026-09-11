@@ -47,6 +47,13 @@ export interface PartialPlaceholderHost {
    * renders the partial again. A host that never changes one leaves it out.
    */
   readonly revision?: string | number;
+  /**
+   * Changes whenever the caller data this pane's slice supplies does — the
+   * chosen Item, the annotation example, the Citation example — so an open
+   * preview renders again for the selection the reader has now. A host whose
+   * data never changes leaves it out.
+   */
+  readonly dataRevision?: string | number;
   /** Opens the Shared Partial's own editor. */
   readonly onEdit: (name: string) => void;
   /** Starts the host's create flow for `name`, which asks before it writes. */
@@ -157,6 +164,7 @@ export function usePartialBoxes(
               id={previewId}
               name={expanded.name}
               revision={host.revision}
+              dataRevision={host.dataRevision}
               onRender={host.onRender}
             />,
             previewHost,
@@ -283,23 +291,40 @@ async function pickPartial(
     empty: string;
   },
 ): Promise<void> {
-  const chosen = await adapter.suggester({
-    anchor,
-    title,
-    selected: site.name,
-    groups: [
-      {
-        label: title,
-        empty,
-        options: names.map((name) => ({ id: name, label: name })),
-      },
-    ],
+  // An edit can land from anywhere while the suggester is open, so the name
+  // this choice replaces is followed through every change: a call the document
+  // moved is still written in place, and one the document edited or deleted
+  // takes no write at all.
+  let target: { from: number; to: number } | null = { ...site.nameRange };
+  const unfollow = controller.subscribe(({ transaction, docChanged }) => {
+    if (!docChanged || target === null) return;
+    const from = transaction.changes.mapPos(target.from, 1, MapMode.TrackDel);
+    const to = transaction.changes.mapPos(target.to, -1, MapMode.TrackDel);
+    target = from === null || to === null ? null : { from, to };
   });
-  if (chosen === null || chosen === site.name) return;
-  controller.dispatch({
-    changes: { ...site.nameRange, insert: chosen },
-    userEvent: "input.form",
-  });
+  try {
+    const chosen = await adapter.suggester({
+      anchor,
+      title,
+      selected: site.name,
+      groups: [
+        {
+          label: title,
+          empty,
+          options: names.map((name) => ({ id: name, label: name })),
+        },
+      ],
+    });
+    if (chosen === null || chosen === site.name || target === null) return;
+    if (controller.state.doc.sliceString(target.from, target.to) !== site.name)
+      return;
+    controller.dispatch({
+      changes: { ...target, insert: chosen },
+      userEvent: "input.form",
+    });
+  } finally {
+    unfollow();
+  }
 }
 
 /** The partial's own text, rendered for the caller this pane supplies. */
@@ -307,11 +332,13 @@ function PartialPreview({
   id,
   name,
   revision,
+  dataRevision,
   onRender,
 }: {
   id: string;
   name: string;
   revision: string | number | undefined;
+  dataRevision: string | number | undefined;
   onRender: (name: string) => Promise<string>;
 }) {
   const m = useWorkbenchMessages();
@@ -342,8 +369,11 @@ function PartialPreview({
     return () => {
       current = false;
     };
-    // `revision` re-renders the open preview after the partial itself is saved.
-  }, [name, revision]);
+    // `revision` re-renders the open preview after the partial itself is
+    // saved, `dataRevision` after the reader chooses other data to read it
+    // against: the render callback is read through a ref, so the key alone
+    // decides when a preview follows the selection.
+  }, [name, revision, dataRevision]);
   return (
     <div id={id} data-partial-preview {...part("annotation-preview")}>
       {state?.kind === "error" && (
