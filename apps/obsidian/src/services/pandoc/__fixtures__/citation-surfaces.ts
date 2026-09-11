@@ -28,7 +28,7 @@ import {
   SettingsStub,
 } from "@/services/citation-index/test-harness";
 import type { CitationIndexHarness } from "@/services/citation-index/test-harness";
-import { createCitationPopover } from "@/services/citation-popover/service";
+import { CitationPopover } from "@/services/citation-popover/service";
 import { firstText } from "@/services/citation-text/__fixtures__";
 import { CitationText } from "@/services/citation-text/service";
 import { createCitationEngine } from "@/services/pandoc/engine";
@@ -382,7 +382,7 @@ export async function openCitationVault({
     document.body.replaceChildren();
   });
 
-  const popover = createCitationPopover({
+  const popover = stack.use(new CitationPopover({
     profile: profileReader(() => settings.current, harness.metadataCache),
     app: {
       metadataCache: harness.metadataCache,
@@ -396,7 +396,7 @@ export async function openCitationVault({
     citationText,
     bibliographyRender: cache,
     libraryScope: harness.libraryScope,
-  });
+  }));
 
   const copyAction = (): HTMLElement =>
     view.contentEl.querySelector<HTMLElement>(

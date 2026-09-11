@@ -20,5 +20,14 @@ export function registerCitekeyEditorNotices(
       new BaseNotice(m.notice_citekey_not_found({ citekey }));
     }),
   );
+  stack.defer(
+    service.on("item-unavailable", (reason) => {
+      new BaseNotice(
+        reason === "database"
+          ? m.citation_popover_database_unavailable()
+          : m.citation_popover_item_unavailable(),
+      );
+    }),
+  );
   return () => stack.dispose();
 }

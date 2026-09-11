@@ -319,6 +319,21 @@ _Avoid_: backlinks (Obsidian's view omits literal Pandoc citations), reverse ref
 The raw source range shown around one Citation Occurrence in the Cited By Sidebar. Its initial range contains every source line spanned by the occurrence, and the user can extend it independently before or after.
 _Avoid_: matched line, context preview, source preview
 
+**Graph Citations** _(Obsidian)_:
+The citation edges and Cited Work Nodes ZotLit adds to Obsidian's own graph views from the Citation Index, so a note connects to the works it cites. Membership follows the Document Citation Set: a literal Pandoc citation gains an edge to the cited Item's Literature Note, or to a Cited Work Node when no Literature Note exists; a wikilink citation is already a link and needs no addition. Turning the feature off removes every added edge and node; selected native groups and graph settings remain.
+_Avoid_: citation graph (the preset-opened graph, see Citation Graph), graph overlay (names the mechanism, not the feature)
+
+**Cited Work Node** _(Obsidian)_:
+A node ZotLit places in Obsidian's graph for a work cited in the vault that has no Literature Note yet, or whose Citation Key is missing or ambiguous. Labelled by its Citation Key. Obsidian's "Existing files only" toggle hides it, and clicking it creates the Literature Note.
+_Avoid_: ghost node, virtual node, unresolved node (Obsidian's term for a link to a missing note)
+
+**Literature Notes Group** _(Obsidian)_:
+An ordinary graph color group that matches Literature Notes, added by a Citation Graph command or the graph’s group shortcut. Its initial color is ZotLit orange; the graph’s native group controls own its color, order, and removal.
+
+**Citation Graph** _(Obsidian)_:
+Obsidian's own graph view, global or local, opened with ZotLit's preset: only citation-connected nodes, citation edges colored, citation popovers enabled, arrows on, and the Literature Notes Group applied. Not a separate view; every native control stays available.
+_Avoid_: ZotLit graph view (implies a view type), citation map, graph preset (names the mechanism)
+
 **Citation and References Style**:
 The Zotero-installed CSL style used for both Document Citation Text and rendered entries in the References Sidebar. A vault selection supplies the default, and a document's `zotlit-csl` property can select its own installed style by CSL ID. Zotero owns style installation; choosing Default uses the Pandoc Engine's embedded style. An unavailable selected style leaves in-text sources visible and the sidebar minimal, shows a settings warning, and raises one notice per plugin lifecycle with an action that opens the Citations settings.
 _Avoid_: citation style (conflicts with the `cite` Template's format), references style (omits in-text Citations), CSL file (names the file, not the selection)
@@ -336,7 +351,7 @@ The main language declared by a note's standard Pandoc `lang` metadata, which al
 _Avoid_: citation language (names only one effect), ZotLit language
 
 **Citation Presentation**:
-The document-specific combination of Citation and References Style and Citation Locale shared by Document Citation Text, the References Sidebar, the Citation Popover, the Copied Bibliography, and the initial built-in export choices. Vault selections supply defaults that `zotlit-csl` and `lang` can override; an invalid document override leaves citation source visible, shows the minimal References Sidebar with a note-scoped error, and keeps bibliography copy unavailable instead of silently falling back.
+The combination of Citation and References Style and Citation Locale shared by Document Citation Text, the References Sidebar, the Citation Popover, the Copied Bibliography, and the initial built-in export choices. A source-less Citation Popover uses the vault selections; for documents, vault selections supply defaults that `zotlit-csl` and `lang` can override, and an invalid document override leaves citation source visible, shows the minimal References Sidebar with a note-scoped error, and keeps bibliography copy unavailable instead of silently falling back.
 _Avoid_: citation format (omits references and locale), render settings
 
 **Pandoc Engine**:
@@ -421,7 +436,7 @@ The per-vault choice of what hovering a recognized citation or Literature Note w
 _Avoid_: hover mode, popover toggle (a three-way choice, not an on/off)
 
 **Citation Popover** _(Obsidian)_:
-The concise hover popover that shows each cited entry's formatted bibliography text — full entries stacked unclipped for a multi-item Citation, formatted note text for a note-class marker — with the three action buttons per entry in a cursor-proximal row. It is one Hover Action choice; the native page preview is another, and hover never shows both.
+The concise hover popover that shows each cited entry's formatted bibliography text — full entries stacked unclipped for a multi-item Citation, formatted note text for a note-class marker — or one work under the vault Citation Presentation when there is no source document, with the available Item actions in a cursor-proximal row. The source-less form shows the bibliography body or Item summary, with no Reference Number, Entry Marker, or Entry Serial; it is the same Hover Action choice as the document-backed form, and hover shows one result.
 _Avoid_: concise popover (the working name), hover tooltip, hover card
 
 **Citekey Reading Rendering** _(Obsidian)_:
