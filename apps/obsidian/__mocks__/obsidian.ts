@@ -12,6 +12,7 @@ import type {
   App,
   Command,
   Debouncer,
+  GraphOptionListener,
   EditorSuggestContext,
   FrontMatterInfo,
   EventRef,
@@ -1008,7 +1009,11 @@ export function controlsOf(containerEl: HTMLElement): Control[] {
  * TextComponent.type}, and {@link ButtonComponent.click}.
  */
 export class Setting {
-  readonly settingEl = containerElStub();
+  /** The row's own element. Removing it takes the row out of {@link settingsOf}, as it takes it off the screen. */
+  readonly settingEl: HTMLElement = Object.assign(containerElStub(), {
+    remove: () => this.#remove(),
+    detach: () => this.#remove(),
+  });
   readonly controlEl = containerElStub();
   /** Every component added to this row, in the order it was added. */
   readonly components: (
@@ -1021,6 +1026,10 @@ export class Setting {
 
   name = "";
   desc = "";
+  /** The hover text the row carries, as the user reads it. */
+  tooltip = "";
+  /** The classes the row was given, in the order it was given them. */
+  readonly classes: string[] = [];
   errorMessage: string | null = null;
 
   constructor(readonly containerEl: HTMLElement) {
@@ -1029,8 +1038,26 @@ export class Setting {
     settingRows.set(containerEl, rows);
   }
 
+  #remove(): void {
+    const rows = settingRows.get(this.containerEl) ?? [];
+    settingRows.set(
+      this.containerEl,
+      rows.filter((row) => row !== this),
+    );
+  }
+
   setName(name: string): this {
     this.name = name;
+    return this;
+  }
+
+  setTooltip(tooltip: string): this {
+    this.tooltip = tooltip;
+    return this;
+  }
+
+  setClass(cls: string): this {
+    this.classes.push(cls);
     return this;
   }
 
@@ -1210,6 +1237,21 @@ export class ToggleComponent {
   }
   setDisabled(disabled: boolean): this {
     this.disabled = disabled;
+    return this;
+  }
+  /**
+   * Publishes the value under `key`, the way a graph controls-panel row
+   * persists: the listener reads the value, and writes it when called with
+   * one — which fires `onChange`, as `setValue` does.
+   */
+  registerOptionListener(
+    listeners: Record<string, GraphOptionListener>,
+    key: string,
+  ): this {
+    listeners[key] = (value?: unknown) => {
+      if (typeof value === "boolean") this.setValue(value);
+      return this.getValue();
+    };
     return this;
   }
   onChange(callback: (value: boolean) => unknown): this {

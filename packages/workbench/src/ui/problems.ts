@@ -138,7 +138,7 @@ export function diagnosticText(
           });
     case "missing-partial":
       // The engine's own render failure, which names the partial it could not
-      // resolve; ADR 0050 rules out reading a missing partial off a scan.
+      // resolve; ADR 0055 rules out reading a missing partial off a scan.
       return m.workbench_diagnostic_missing_partial({
         name: String(params.name),
       });

@@ -32,42 +32,57 @@ export interface CitationPopoverActions {
 
 export interface CitationPopoverActionDeps {
   /** The open-or-create flow the hovering surface carries. */
-  open: (citekey: string, pane: NavigationPane) => void;
+  open: (block: CitationEntryBlock, pane: NavigationPane) => void;
   /** Hide the popover the entries are shown in. */
   hide: () => void;
   switchProfile: (path: string) => void;
+  /** Refresh source-less Item availability before any action. */
+  prepare?: (block: CitationEntryBlock) => CitationEntryBlock | null;
 }
 
 export function createCitationPopoverActions({
   open,
   hide,
   switchProfile,
+  prepare,
 }: CitationPopoverActionDeps): CitationPopoverActions {
+  let completed = true;
+  const read = (block: CitationEntryBlock): CitationEntryBlock | null => {
+    const current = prepare ? prepare(block) : block;
+    completed = current !== null;
+    return current;
+  };
   return {
     onOpenNote(block, event) {
+      const current = read(block);
+      if (!current) return;
       const pane = navigationPaneOf(event);
       logger.debug("Citation popover opens note", {
         citekey: block.citekey,
         pane,
       });
-      open(block.citekey, pane);
+      open(current, pane);
     },
     onOpenInZotero(block) {
-      // No reachability guard: the entry only shows because the Item resolved,
-      // and a Zotero-side deletion in between fails soft inside Zotero.
+      const current = read(block);
+      if (!current) return;
       logger.debug("Citation popover selects in Zotero", {
         itemKey: block.itemKey,
       });
-      window.open(itemSelectUri(block.itemKey, block.groupID));
+      window.open(itemSelectUri(current.itemKey, current.groupID));
     },
     onOpenAttachment(block, event) {
+      const current = read(block);
+      if (!current) return;
       logger.debug("Citation popover opens an attachment", {
         itemKey: block.itemKey,
         attachments: block.attachments.length,
       });
-      openAttachments(block.attachments, event);
+      openAttachments(current.attachments, event);
     },
-    onDone: hide,
+    onDone: () => {
+      if (completed) hide();
+    },
     onSwitchProfile: switchProfile,
   };
 }

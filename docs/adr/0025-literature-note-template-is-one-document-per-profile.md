@@ -4,7 +4,7 @@ status: amended by ADR-0031, ADR-0050
 
 # The Literature Note Template is one document per Profile
 
-> **Amended by ADR 0050.** `cite` / `cite2` no longer stay as slot files: one Citation Template document replaces them, and partials become `zotlit-partial.<name>.md` files.
+> **Amended by ADR 0055.** `cite` / `cite2` no longer stay as slot files: one Citation Template document replaces them, and partials become `zotlit-partial.<name>.md` files.
 >
 > **Amended by ADR 0031.** The document is the Profile itself, not a file a Profile points at: its manifest carries the Profile ID, label, and the five bindings as values, and the Template Pack install lifecycle is deleted — a Profile document is discovered in place, never installed.
 

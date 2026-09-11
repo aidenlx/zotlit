@@ -6,7 +6,7 @@
 // the Worker only after the asset layer found no file, so the lookup below is
 // a cheap miss for the server-rendered routes.
 //
-// @see docs/adr/0025-the-docs-site-prerenders-asset-first-and-falls-through-to-an-ssr-worker.md
+// @see docs/adr/0051-the-docs-site-prerenders-asset-first-and-falls-through-to-an-ssr-worker.md
 
 import handler, { createServerEntry } from "@tanstack/react-start/server-entry";
 import { env } from "cloudflare:workers";
