@@ -27,6 +27,9 @@ function additionsOf(
   };
 }
 
+/** The metadata of a file the reader tagged, which the tag scan draws a node from. */
+const TAGGED = { tags: [{ tag: "#todo" }] };
+
 /** A metadata cache whose one method reads its own state through `this`. */
 function cacheWith(links: {
   resolved: MetadataCache["resolvedLinks"];
@@ -39,6 +42,7 @@ function cacheWith(links: {
     getCachedFiles(this: { files: string[] }) {
       return this.files;
     },
+    getCache: () => TAGGED,
   } as unknown as MetadataCache;
 }
 
@@ -203,6 +207,27 @@ describe("facadeApp under the Filters rows", () => {
         facade.metadataCache as unknown as { getCachedFiles(): string[] }
       ).getCachedFiles(),
     ).toEqual(["Draft.md", "Other.md"]);
+  });
+
+  it("answers no metadata while Citation-connected only is on, so a surviving note's tags draw no node", () => {
+    const cache = cacheWith({ resolved: {}, unresolved: {} });
+    const app = { metadataCache: cache } as unknown as App;
+
+    const facade = facadeApp(
+      app,
+      additionsOf({ survivingPaths: new Set(["Draft.md"]) }),
+    );
+
+    expect(facade.metadataCache.getCache("Draft.md")).toBeNull();
+  });
+
+  it("reads a file's metadata through while Citation-connected only is off", () => {
+    const cache = cacheWith({ resolved: {}, unresolved: {} });
+    const app = { metadataCache: cache } as unknown as App;
+
+    const facade = facadeApp(app, additionsOf({}));
+
+    expect(facade.metadataCache.getCache("Draft.md")).toEqual(TAGGED);
   });
 
   it("takes the narrowed-away targets out of both link maps, and leaves the citations", () => {
