@@ -12,8 +12,8 @@ import type { ReferenceEntry } from "@/views/references/entries";
 /** One cited work as the Citation Popover shows it, with what its actions need. */
 export interface CitationEntryBlock {
   kind: "entry";
-  /** The citekey the hovered citation writes this work as, which the open action names. */
-  citekey: string;
+  /** The Citation Key, absent for an exact Item that has none. */
+  citekey: string | null;
   /** The style's Entry Marker, or `undefined` where the style writes none. */
   marker: Inlines | undefined;
   /** Entry Serial standing in for the marker, where the document's citations show serials. */

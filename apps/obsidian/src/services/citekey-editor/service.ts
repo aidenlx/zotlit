@@ -3,7 +3,11 @@ import type { Extension } from "@codemirror/state";
 // CodeMirror extension on and owns the click that opens a citekey's note.
 import type { App, Plugin } from "obsidian";
 
-import { getItemsByID } from "@zotlit/db";
+import {
+  getItemsByID,
+  getItemsByKey,
+  resolveIndexedKeyLibrary,
+} from "@zotlit/db";
 import { createNanoEvents } from "@zotlit/shared/nanoevents";
 
 import { dispatchToMarkdownEditors } from "@/lib/editor-decoration";
@@ -74,6 +78,7 @@ export interface AmbiguousCitekey {
 interface CitekeyEditorEvents {
   "db-unavailable": (citekey: string) => void;
   "citekey-not-found": (citekey: string) => void;
+  "item-unavailable": (reason: "database" | "item") => void;
   /** The citekey names several Items; a UI subscriber asks which one to open. */
   "citekey-ambiguous": (ambiguous: AmbiguousCitekey) => void;
 }
@@ -354,6 +359,34 @@ export class CitekeyEditor extends Service<void> {
   ): Promise<void> {
     await this.#noteIndex.whenIndexed();
     await this.#openItem(candidate, pane);
+  }
+
+  /** Opens an exact Item using current database identity and Literature Note paths. */
+  async openIndexedKey(
+    indexedKey: string,
+    pane: NavigationPane,
+  ): Promise<void> {
+    await this.#noteIndex.whenIndexed();
+    if (this.#db.state !== "ready") {
+      this.#emitter.emit("item-unavailable", "database");
+      return;
+    }
+    let item;
+    try {
+      const selector = resolveIndexedKeyLibrary(this.#db.client, indexedKey);
+      item = selector
+        ? getItemsByKey(this.#db.client, selector.libraryID, [selector.key])[0]
+        : undefined;
+    } catch (error) {
+      logger.warn("Cannot read Item for navigation", { indexedKey, error });
+      this.#emitter.emit("item-unavailable", "database");
+      return;
+    }
+    if (!item) {
+      this.#emitter.emit("item-unavailable", "item");
+      return;
+    }
+    await this.#openItem(item, pane);
   }
 
   /**

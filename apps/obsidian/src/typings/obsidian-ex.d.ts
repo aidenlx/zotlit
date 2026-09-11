@@ -82,6 +82,13 @@ declare module "obsidian" {
     ): EventRef;
     /** Active/recent navigating FileView, also used by native Outline. */
     getActiveFileView(): FileView | null;
+    /**
+     * Re-reads the serialized layout Obsidian restored this session's leaves
+     * from, `{}` when it cannot. Internal; shape verified against Obsidian
+     * 1.13.7 and 1.14.0. Optional so a build that drops it is a guarded
+     * branch, not a crash.
+     */
+    readWorkspaceFile?(): Promise<unknown>;
 
     on(
       name: "zotlit:insert-template-field",
@@ -119,7 +126,232 @@ declare module "obsidian" {
      * that drops it is a runtime branch, not a crash.
      */
     onCleanCache?(callback: () => void): void;
+    /**
+     * Every path the cache holds — the file list one graph render walks to
+     * build its nodes. Internal; shape verified against Obsidian 1.13.7 and
+     * 1.14.0. Optional so a build that drops it is a guarded branch.
+     */
+    getCachedFiles?(): string[];
   }
+  interface App {
+    /** Native view factories, verified against Obsidian 1.14.1. */
+    viewRegistry?: {
+      getViewCreatorByType(
+        type: string,
+      ): ((leaf: WorkspaceLeaf) => View) | undefined;
+    };
+  }
+  /**
+   * The core `graph` view (`leaf.view` of view type `"graph"`). Internal;
+   * shape verified against Obsidian 1.13.7 and 1.14.0. Every member optional
+   * so a build that drops one is a guarded branch, not a crash.
+   */
+  interface GraphView extends ItemView {
+    onOptionsChange?(): void;
+    renderer?: GraphRenderer;
+    dataEngine?: GraphEngine;
+  }
+  /** The core `localgraph` view; same provenance as {@link GraphView}. */
+  interface LocalGraphView extends FileView {
+    renderer?: GraphRenderer;
+    engine?: GraphEngine;
+  }
+  /**
+   * The graph data engine one view owns. `render()` reads `app` once at its
+   * top and hands the result to `renderer.setData` — the seam Graph Citations
+   * rests on. Internal; shape verified against Obsidian 1.13.7 and 1.14.0.
+   *
+   * @see apps/obsidian/docs/adr/0029-graph-citations-extend-obsidian-graph-through-a-per-render-metadata-facade.md
+   */
+  interface GraphEngine {
+    app?: App;
+    /** Rebuilds the node set from scratch on every call; returns the link count. */
+    render?(): unknown;
+    /** What one render reads. Only a key some section owns ever lands here. */
+    options?: GraphOptions;
+    /** The Filters section of the controls panel. */
+    filterOptions?: GraphControlSection;
+    /** The Groups section of the controls panel. */
+    colorGroupOptions?: GraphColorGroupSection;
+    /** The Display section of the controls panel. */
+    displayOptions?: GraphControlSection;
+    /**
+     * Hands `options` to every section, then re-renders. A colour group written
+     * this way reaches the Groups section's own option listener, which rebuilds
+     * the group rows, re-runs the search, and saves.
+     */
+    setOptions?(options: GraphOptions): void;
+    getOptions?(): GraphOptions;
+    /** Saves the options where this graph persists them; debounced. */
+    onOptionsChange?(): void;
+    /**
+     * The engine is the `HoverParent` of every hover its nodes answer: the
+     * popover hangs off it, and the engine's own unhover transitions it.
+     * Verified against Obsidian 1.14.1.
+     */
+    hoverPopover?: HoverPopover | null;
+  }
+  /**
+   * One graph's options: the native keys, plus every key a controls-panel
+   * section registered an option listener for. Persisted per graph — Graph
+   * core plugin data for the global graph, leaf state for a local one.
+   */
+  type GraphOptions = Record<string, unknown>;
+  /**
+   * One section of the graph controls panel, `engine.filterOptions` and its
+   * siblings. Internal; shape verified against Obsidian 1.13.7 and 1.14.0.
+   */
+  interface GraphControlSection {
+    /** The section body, below its header: what a row is built into. */
+    childrenEl: HTMLElement;
+    /** Keyed by option key. `engine.getOptions` enumerates these, not `engine.options`. */
+    optionListeners: Record<string, GraphOptionListener>;
+    /**
+     * What "Restore default settings" calls. It replays a fixed object of
+     * native keys, so a plugin key is skipped: a plugin row reaches the
+     * button only through a wrap of this member.
+     */
+    setDefaultOptions(): void;
+  }
+  /**
+   * The Groups section of the graph controls panel, `engine.colorGroupOptions`.
+   * It carries no `setDefaultOptions` of its own: "Restore default settings"
+   * empties it through {@link GraphColorGroupSection.setColorQueries} instead.
+   * Internal; shape verified against Obsidian 1.14.1.
+   */
+  interface GraphColorGroupSection {
+    /** The section body: the group rows, then the native "New group" container. */
+    childrenEl: HTMLElement;
+    /** The colour groups as their rows stand now. */
+    getColoredQueries(): GraphColorGroup[];
+    /**
+     * Empties {@link childrenEl} and builds it again — one row per query, then
+     * the button container — so anything else built into the section is taken
+     * with it.
+     */
+    setColorQueries(queries: GraphColorGroup[]): void;
+  }
+  /** One colour group: a search query, and the colour its matches are drawn in. */
+  interface GraphColorGroup {
+    query: string;
+    color: GraphColor | null;
+  }
+  /**
+   * What one controls-panel row registers under its option key. Reads the
+   * row's value, and writes it first when called with one. `any` because a
+   * section holds rows of every control type, as Obsidian's own
+   * `ValueComponent.registerOptionListener` declares them.
+   */
+  type GraphOptionListener = (value?: any) => any;
+  /**
+   * The PIXI renderer one view owns; the node callbacks are own properties
+   * the engine binds in its constructor. Internal; shape verified against
+   * Obsidian 1.13.7 and 1.14.0, the hover members against 1.14.1.
+   */
+  interface GraphRenderer {
+    onNodeClick?: GraphNodeCallback;
+    /**
+     * The right-click callback, bound beside {@link onNodeClick} in the same
+     * engine constructor and called by the renderer only where it is present.
+     * Shape verified against Obsidian 1.13.7 and 1.14.1.
+     */
+    onNodeRightClick?: GraphNodeCallback;
+    /** The data hand-off: diffs `data` into the live node set. */
+    setData?(data: GraphData): void;
+    /** Fired once as the pointer enters a node. */
+    onNodeHover?: GraphNodeCallback;
+    /**
+     * Fired as the pointer leaves the node it entered — the renderer's own
+     * pointer-out and the frame that finds the pointer out of every node's
+     * reach. The engine's hover handler also unhovers first, but it calls its
+     * own method rather than this one, so a wrap here does not see that call
+     * and does not stand between every unhover and the hover after it.
+     */
+    onNodeUnhover?: () => void;
+    /**
+     * Asks for the frame that draws the graph again, and puts the render loop
+     * back to work where it had gone idle. The hand-off asks for one itself
+     * only where a node or an edge changed, so a change to how an unchanged
+     * graph is drawn asks here.
+     */
+    changed?(): void;
+    /** `div.graph-view`, `position: relative`, in the graph's own window. */
+    containerEl?: HTMLElement;
+    /** Every drawn node by id, positioned in world coordinates. */
+    nodeLookup?: Record<string, { x: number; y: number } | undefined>;
+    /** World-to-screen: `screen_css = (world * scale + pan) / devicePixelRatio`. */
+    scale?: number;
+    panX?: number;
+    panY?: number;
+    /**
+     * Every edge the graph draws, source to target as the link maps state it.
+     * The renderer's constructor seeds the array and `setData` keeps the same
+     * one, so an install-time check is the whole check.
+     */
+    links?: GraphLink[];
+    /**
+     * The node the pointer rests on or a drag holds; `null` while neither. An
+     * edge incident to it is the one Obsidian draws in its highlight colour.
+     */
+    getHighlightNode?(): GraphDrawnNode | null;
+  }
+  /**
+   * One edge as the renderer draws it. Internal; shape verified against
+   * Obsidian 1.14.1.
+   */
+  interface GraphLink {
+    source: GraphDrawnNode;
+    target: GraphDrawnNode;
+    /**
+     * The sprite the edge's line is drawn as, whose `tint` every frame
+     * writes. Absent until the edge's graphics are built — the first frame
+     * both its nodes are drawn — and `null` again once they are cleared.
+     */
+    line?: GraphLinkSprite | null;
+  }
+  /** One node as the renderer draws it; the renderer holds one per node id. */
+  interface GraphDrawnNode {
+    id: string;
+  }
+  /** The sprite one edge's line is drawn as. */
+  interface GraphLinkSprite {
+    /** The line colour, packed as {@link GraphColor.rgb}. */
+    tint: number;
+  }
+  /**
+   * @param id the node id: a vault path, an unresolved linkpath, or a tag.
+   * @param type `""` for a note, else `"unresolved"`, `"tag"`, `"attachment"`, or `"focused"`.
+   */
+  type GraphNodeCallback = (evt: MouseEvent, id: string, type: string) => void;
+  /**
+   * The whole node set one render drew, keyed by node id. Internal; shape
+   * verified against Obsidian 1.13.7 through 1.14.1.
+   */
+  interface GraphData {
+    nodes: Record<string, GraphDataNode>;
+  }
+  interface GraphDataNode {
+    /** As {@link GraphNodeCallback} spells it. */
+    type: string;
+    /**
+     * The colour the node is drawn in, ahead of the one its type carries. The
+     * engine writes a matching colour group's colour here before the hand-off,
+     * and leaves it absent for every other node.
+     *
+     * Two colours stand ahead of this one (`app.js` 1.14.1,
+     * `GraphNode.getFillColor`): the node the pointer rests on or a drag holds
+     * takes the highlight colour, and a node typed `"focused"` takes the
+     * focused colour wherever the theme states one — a focused node never
+     * reaches this colour at all.
+     */
+    color?: GraphColor | null;
+  }
+  /** A graph colour: an alpha, and the channels packed `(r << 16) | (g << 8) | b`. */
+  interface GraphColor {
+    a: number;
+    rgb: number;
+  }
+
   interface App {
     /** Stable per-vault id, the namespace Obsidian gives its own IndexedDB databases. */
     appId: string;
