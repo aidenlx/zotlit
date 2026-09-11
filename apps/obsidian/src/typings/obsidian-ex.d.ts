@@ -250,7 +250,13 @@ declare module "obsidian" {
     setData?(data: GraphData): void;
     /** Fired once as the pointer enters a node. */
     onNodeHover?: GraphNodeCallback;
-    /** Fired as the pointer leaves the node it entered, and before every hover. */
+    /**
+     * Fired as the pointer leaves the node it entered — the renderer's own
+     * pointer-out and the frame that finds the pointer out of every node's
+     * reach. The engine's hover handler also unhovers first, but it calls its
+     * own method rather than this one, so a wrap here does not see that call
+     * and does not stand between every unhover and the hover after it.
+     */
     onNodeUnhover?: () => void;
     /**
      * Asks for the frame that draws the graph again, and puts the render loop
@@ -321,6 +327,12 @@ declare module "obsidian" {
      * The colour the node is drawn in, ahead of the one its type carries. The
      * engine writes a matching colour group's colour here before the hand-off,
      * and leaves it absent for every other node.
+     *
+     * Two colours stand ahead of this one (`app.js` 1.14.1,
+     * `GraphNode.getFillColor`): the node the pointer rests on or a drag holds
+     * takes the highlight colour, and a node typed `"focused"` takes the
+     * focused colour wherever the theme states one — a focused node never
+     * reaches this colour at all.
      */
     color?: GraphColor | null;
   }

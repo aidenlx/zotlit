@@ -165,7 +165,12 @@ export function installLinkColors(
  * The edge's `line` is read through an accessor rather than substituted once,
  * because an edge owns no sprite until the first frame that draws both its
  * nodes — many frames after the hand-off that named the edge — and owns a new
- * one each time it leaves the viewport and comes back. The accessor answers
+ * one after every graphics teardown: `clearGraphics` destroys the sprite and
+ * lets go of it, and the next frame's `initGraphics` builds another for the
+ * same edge. A graph whose canvas is rebuilt goes through both, which is what
+ * moving a graph leaf to a pop-out window does (`app.js` 1.14.1,
+ * `GraphRenderer.onIframeLoad`). An edge that merely leaves the viewport keeps
+ * the sprite it has and is hidden by a visibility flag. The accessor answers
  * the sprite of the moment, and the substitution moves to it; a sprite the
  * edge lets go of is left as it was built, which is what releasing on the
  * sprite's destruction amounts to.
