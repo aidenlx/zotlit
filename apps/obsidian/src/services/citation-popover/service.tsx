@@ -1,7 +1,9 @@
 // The Citation Popover: document citation entries and source-less works under the vault presentation.
 
-import type { App } from "obsidian";
+import { abortable } from "@std/async/abortable";
+import type { App, HoverParent } from "obsidian";
 
+import { registerEvent } from "@/lib/disposables";
 import type { Held } from "@/lib/held-reads";
 import { getLogger } from "@/lib/log";
 import { requestProfileSwitch } from "@/lib/profile-recovery";
@@ -26,6 +28,7 @@ import type { BibliographyEntry } from "@/services/pandoc/engine";
 import { noteContent } from "@/services/pandoc/inline-content";
 import type { BibliographyRenderCache } from "@/services/pandoc/render-cache";
 import type { ProfileReader } from "@/services/profile/service";
+import { Service } from "@/services/service-base";
 import { buildReferenceEntries } from "@/views/references/entries";
 import type { RenderedReference } from "@/views/references/entries";
 
@@ -73,10 +76,11 @@ export interface WorkHoverRequest extends Pick<
 
 type PopoverRequest = CitationHoverRequest | WorkHoverRequest;
 
-export interface CitationPopover {
-  /** Show the Citation Popover of one hovered citation. */
-  show: (request: CitationHoverRequest) => void;
-  showWork: (request: WorkHoverRequest) => void;
+interface PopoverVisit {
+  popover: CitationHoverPopover;
+  window: Window;
+  subscriptions: DisposableStack;
+  reading: AbortController | null;
 }
 
 /**
@@ -95,44 +99,108 @@ export interface CitationPopover {
  * and a note-class style's own note text are all read again, so a Citation
  * Presentation change leaves nothing of the previous style on screen.
  */
-export function createCitationPopover(
-  deps: CitationPopoverDeps,
-): CitationPopover {
-  const show = (request: PopoverRequest): void => {
-    const popover = new CitationHoverPopover(
-      request.hoverParent,
-      request.targetEl,
-    );
-    let reading = 0;
-    const draw = (): void => {
-      const own = ++reading;
-      void fill(deps, popover, { request, current: () => own === reading });
-    };
-    popover.register(() => {
-      reading += 1;
+export class CitationPopover extends Service {
+  readonly #deps;
+  readonly #visits = new Map<HoverParent, PopoverVisit>();
+  #closed = false;
+  ready: Promise<void>;
+
+  constructor(deps: CitationPopoverDeps) {
+    super();
+    this.#deps = deps;
+    this.ready = this.#load();
+  }
+
+  async #load(): Promise<void> {
+    await using stack = new AsyncDisposableStack();
+    stack.defer(() => {
+      this.#closed = true;
+      for (const { popover } of this.#visits.values()) popover.hide();
     });
-    popover.register(deps.bibliographyRender.on("invalidated", draw));
+    this.commit(stack.move());
+  }
+
+  show(request: CitationHoverRequest): void {
+    this.#show(request);
+  }
+
+  showWork(request: WorkHoverRequest): void {
+    this.#show(request);
+  }
+
+  /** Closes the owner's visit, including a card still waiting to open. */
+  hide(parent: HoverParent, targetEl?: HTMLElement): void {
+    const popover = this.#visits.get(parent)?.popover;
+    if (popover && (!targetEl || popover.targetEl === targetEl)) popover.hide();
+  }
+
+  #show(request: PopoverRequest): void {
+    if (this.#closed) return;
+    const deps = this.#deps;
+    const { hoverParent, targetEl } = request;
+    let visit = this.#visits.get(hoverParent);
+    if (visit && visit.window !== targetEl.win) {
+      visit.popover.hide();
+      visit = undefined;
+    }
+    if (!visit) {
+      const popover = new CitationHoverPopover(hoverParent, targetEl);
+      const opened: PopoverVisit = {
+        popover,
+        window: targetEl.win,
+        subscriptions: new DisposableStack(),
+        reading: null,
+      };
+      this.#visits.set(hoverParent, opened);
+      popover.register(() => {
+        opened.reading?.abort();
+        opened.subscriptions.dispose();
+        this.#visits.delete(hoverParent);
+      });
+      visit = opened;
+    } else {
+      visit.reading?.abort();
+      visit.subscriptions.dispose();
+      visit.subscriptions = new DisposableStack();
+      // Clear the old work and its actions before moving the card.
+      visit.popover.render(null);
+      visit.popover.retarget(targetEl);
+    }
+    const currentVisit = visit;
+    const { popover, subscriptions } = visit;
+    const draw = (): void => {
+      currentVisit.reading?.abort();
+      const reading = new AbortController();
+      currentVisit.reading = reading;
+      void fill(deps, popover, {
+        request,
+        signal: reading.signal,
+      });
+    };
+    subscriptions.defer(deps.bibliographyRender.on("invalidated", draw));
     if ("work" in request) {
       if (request.work.kind === "citekey")
-        popover.register(deps.citationIndex.on("resolution-changed", draw));
+        subscriptions.defer(deps.citationIndex.on("resolution-changed", draw));
     } else {
-      popover.registerEvent(
-        deps.app.metadataCache.on("deleted", (file) => {
-          if (file.path === request.sourcePath) {
-            reading += 1;
-            popover.hide();
-          }
-        }),
+      subscriptions.use(
+        registerEvent(
+          deps.app.metadataCache.on("deleted", (file) => {
+            if (file.path === request.sourcePath) {
+              popover.hide();
+            }
+          }),
+        ),
       );
-      popover.registerEvent(
-        deps.app.metadataCache.on("changed", (file) => {
-          if (file.path === request.sourcePath) draw();
-        }),
+      subscriptions.use(
+        registerEvent(
+          deps.app.metadataCache.on("changed", (file) => {
+            if (file.path === request.sourcePath) draw();
+          }),
+        ),
       );
     }
     draw();
-  };
-  return { show, showWork: show };
+  }
 }
 
 /** What one read of a hovered citation puts on screen. */
@@ -152,22 +220,19 @@ interface PopoverRead {
   unavailable?: "database" | "item";
 }
 
-/**
- * @param current whether this read is still the popover's own; a read the
- *   render cache outlived draws nothing and hides nothing.
- */
+/** A superseded request draws nothing and hides nothing. */
 async function fill(
   deps: CitationPopoverDeps,
   popover: CitationHoverPopover,
-  { request, current }: { request: PopoverRequest; current: () => boolean },
+  { request, signal }: { request: PopoverRequest; signal: AbortSignal },
 ): Promise<void> {
   let read: PopoverRead;
   try {
     read = await ("work" in request
       ? readWork(deps, request)
-      : readBlocks(deps, request));
+      : readBlocks(deps, request, signal));
   } catch (error) {
-    if (!current()) return;
+    if (signal.aborted) return;
     logger.warn("Cannot read the entries of a hovered citation", {
       path: "sourcePath" in request ? request.sourcePath : undefined,
       error,
@@ -175,7 +240,7 @@ async function fill(
     popover.hide();
     return;
   }
-  if (!current()) return;
+  if (signal.aborted) return;
   const { blocks, note, profileFailure, pending, unavailable } = read;
   // Every work the hover carries becomes a block, so an empty stack means
   // the document itself could not be read — nothing the popover can say.
@@ -321,6 +386,7 @@ async function readWork(
 async function readBlocks(
   deps: CitationPopoverDeps,
   request: CitationHoverRequest,
+  signal: AbortSignal,
 ): Promise<PopoverRead> {
   await deps.profile.ready;
   const file = deps.app.vault.getFileByPath(request.sourcePath);
@@ -367,7 +433,7 @@ async function readBlocks(
   // The document's own citations as they stand now, rather than as the hover
   // found them: a Citation Presentation change drops what was held for this
   // note, and this read is what puts the note text and the serials back.
-  const text = await settledCitationText(deps.citationText, file.path);
+  const text = await settledCitationText(deps.citationText, file.path, signal);
   // A note-class style writes its citation as a note the surfaces stand serials
   // in place of, so the popover is where that text is read — taken from the
   // formatted text of the very occurrence the pointer is on, and from no other
@@ -402,29 +468,35 @@ async function readBlocks(
 async function settledCitationText(
   citationText: Pick<CitationText, "on" | "peek">,
   path: string,
+  signal: AbortSignal,
 ): Promise<DocumentCitations | null> {
   while (true) {
+    signal.throwIfAborted();
     const held = citationText.peek(path);
     if (held === null) {
       const wake = Promise.withResolvers<
         Held<DocumentCitations> | null | undefined
       >();
-      const unsubscribes = [
+      using subscriptions = new DisposableStack();
+      subscriptions.defer(
         citationText.on("changed", (changedPath) => {
           if (changedPath === path) wake.resolve(undefined);
         }),
+      );
+      subscriptions.defer(
         citationText.on("invalidated", () => wake.resolve(undefined)),
+      );
+      subscriptions.defer(
         citationText.on("settled", (settledPath, settled) => {
           if (settledPath === path) wake.resolve(settled);
         }),
-      ];
-      const settled = await wake.promise;
-      for (const unsubscribe of unsubscribes) unsubscribe();
+      );
+      const settled = await abortable(wake.promise, signal);
       if (settled !== undefined) return settled?.value ?? null;
       continue;
     }
     if (held.status === "revalidating") {
-      await held.settled;
+      await abortable(held.settled, signal);
       continue;
     }
     return held.value;

@@ -71,7 +71,7 @@ export interface GraphCitationsDeps {
   noteIndex: Pick<NoteIndex, "getIndexedItemKeys" | "getNotesByItemKey" | "on">;
   citekeyEditor: Pick<CitekeyEditor, "openCitekey" | "openIndexedKey">;
   /** The entries a hovered Literature Note or Cited Work Node shows. */
-  citationPopover: CitationPopover;
+  citationPopover: Pick<CitationPopover, "showWork" | "hide">;
   settings: Pick<SettingsService, "ready" | "current" | "subscribe">;
 }
 
