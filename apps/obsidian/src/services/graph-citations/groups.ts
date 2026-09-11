@@ -11,7 +11,7 @@ import { FIELD_ZOTERO_KEY } from "@/lib/constants";
 import * as m from "@/lib/i18n/generated/messages";
 import { getLogger } from "@/lib/log";
 
-import { membersPresent, wrapMember } from "./install";
+import { targetOnce, wrapMember } from "./install";
 import type { GraphNodeColors } from "./node-color";
 
 const logger = getLogger("graph-citations");
@@ -32,12 +32,8 @@ export const LITERATURE_NOTES_QUERY = `["${FIELD_ZOTERO_KEY}"]`;
  */
 export const DEFAULT_COLOR: GraphColor = { a: 1, rgb: 0x7852ee };
 
-/**
- * Engines whose Groups section could not be read. An engine lives as long as
- * the view that owns it and is collected with it, so the report is once per
- * graph.
- */
-const reported = new WeakSet<GraphEngine>();
+/** What `targetOnce` keeps this probe's own report under. */
+const PROBE_KEY = "color-groups";
 
 /** The engine member the button writes a group through. */
 export interface GroupsEngine {
@@ -58,11 +54,11 @@ export interface GroupsTarget {
  * @returns `null` when a member is missing.
  */
 export function groupsTarget(engine: GraphEngine): GroupsTarget | null {
-  if (reported.has(engine)) return null;
   const section = engine.colorGroupOptions;
-  const present = membersPresent(
-    "Graph Groups section is missing a member; no button built",
-    {
+  return targetOnce(engine, {
+    key: PROBE_KEY,
+    message: "Graph Groups section is missing a member; no button built",
+    present: {
       "engine.setOptions": typeof engine.setOptions === "function",
       "engine.colorGroupOptions": Boolean(section),
       "section.childrenEl": Boolean(section?.childrenEl),
@@ -70,13 +66,9 @@ export function groupsTarget(engine: GraphEngine): GroupsTarget | null {
         typeof section?.getColoredQueries === "function",
       "section.setColorQueries": typeof section?.setColorQueries === "function",
     },
-    { section: "color-groups" },
-  );
-  if (!present) {
-    reported.add(engine);
-    return null;
-  }
-  return { engine: engine as GroupsEngine, section: section! };
+    context: { section: PROBE_KEY },
+    build: () => ({ engine: engine as GroupsEngine, section: section! }),
+  });
 }
 
 /**

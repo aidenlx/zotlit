@@ -54,7 +54,7 @@ export function addGraphCitationsActions(
 async function openCitationGraph(
   deps: GraphCitationsActionDeps,
 ): Promise<void> {
-  if (!(await canOpen(deps))) return;
+  if (!(await settled(deps))) return;
   const leaf = deps.app.workspace.getLeaf(
     Keymap.isModEvent(deps.app.lastEvent),
   );
@@ -71,7 +71,7 @@ async function openLocalCitationGraph(
   deps: GraphCitationsActionDeps,
   file: TFile,
 ): Promise<void> {
-  if (!(await canOpen(deps))) return;
+  if (!(await settled(deps))) return;
   const { workspace } = deps.app;
   // The leaf the split is taken from, read before the split so the graph joins
   // the pane the reader was in and follows its file. `getLeaf("split", …)` is
@@ -89,34 +89,64 @@ async function openLocalCitationGraph(
 }
 
 /**
+ * Whether a Citation Graph can be opened, and what stands in the way where it
+ * cannot: `"ready"`, or the one thing the reader has to put right.
+ */
+export type CitationGraphReadiness =
+  | "ready"
+  | "core-plugin-disabled"
+  | "unavailable"
+  | "feature-off";
+
+/** What each way of not opening says to the reader. */
+const BLOCKED = {
+  "core-plugin-disabled": m.graph_citations_core_plugin_disabled,
+  unavailable: m.graph_citations_unavailable,
+  "feature-off": m.graph_citations_disabled,
+} as const satisfies Record<
+  Exclude<CitationGraphReadiness, "ready">,
+  () => string
+>;
+
+/**
  * Both commands rest on the Graph core plugin, which owns the two view types,
  * on Graph Citations, which applies the preset, and on the vault-wide "Show
  * citations in graph view" setting, which is what draws the citations the
  * preset is there to show.
  *
- * @returns whether a Citation Graph can be opened; each way it cannot says so
- *   in a notice, since the reader asked for a graph and would otherwise get
- *   nothing at all.
+ * @returns what a Citation Graph stands on, each way it cannot be opened told
+ *   from the others.
  */
-async function canOpen(deps: GraphCitationsActionDeps): Promise<boolean> {
+export async function citationGraphReadiness(
+  deps: GraphCitationsActionDeps,
+): Promise<CitationGraphReadiness> {
   if (!deps.app.internalPlugins.getEnabledPluginById(GRAPH_CORE_PLUGIN_ID)) {
-    new BaseNotice(m.graph_citations_core_plugin_disabled());
-    logger.debug("Citation Graph not opened; Graph core plugin disabled");
-    return false;
+    return "core-plugin-disabled";
   }
   try {
     await deps.graphCitations.ready;
   } catch {
-    new BaseNotice(m.graph_citations_unavailable());
-    logger.debug("Citation Graph not opened; Graph Citations failed to start");
-    return false;
+    return "unavailable";
   }
   // Read once `ready` has settled, by which point the first settings snapshot
   // has landed and the flag holds the user's own choice.
-  if (!deps.graphCitations.enabled) {
-    new BaseNotice(m.graph_citations_disabled());
-    logger.debug("Citation Graph not opened; graph citations turned off");
-    return false;
-  }
-  return true;
+  return deps.graphCitations.enabled ? "ready" : "feature-off";
+}
+
+/**
+ * Says what stands in the way of a Citation Graph, since the reader asked for
+ * a graph and would otherwise get nothing at all. A reading of `"ready"` says
+ * nothing: the graph itself is the answer.
+ */
+export function notifyCitationGraph(readiness: CitationGraphReadiness): void {
+  if (readiness === "ready") return;
+  logger.debug("Citation Graph not opened", { readiness });
+  new BaseNotice(BLOCKED[readiness]());
+}
+
+/** Reads what a Citation Graph stands on and says what stands in the way. */
+async function settled(deps: GraphCitationsActionDeps): Promise<boolean> {
+  const readiness = await citationGraphReadiness(deps);
+  notifyCitationGraph(readiness);
+  return readiness === "ready";
 }

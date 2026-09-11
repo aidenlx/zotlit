@@ -1474,7 +1474,7 @@ describe("GraphCitations node colours", () => {
     engine.nodes = nodes;
     fixture.layoutReady();
 
-    rowToggle(engine, "Pandoc citations").toggle(false);
+    rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
 
     // The row takes every citekey edge away, and with it every Cited Work
     // Node; a Literature Note is one whatever the rows say.
@@ -1682,8 +1682,8 @@ describe("GraphCitations Filters rows", () => {
     fixture.layoutReady();
 
     expect(rowNames(engine)).toEqual([
-      "Pandoc citations",
-      "Citation-connected only",
+      m.graph_option_pandoc_citations_name(),
+      m.graph_option_citation_connected_only_name(),
     ]);
     expect(engine.getOptions()).toEqual({
       "zotlit-pandoc-citations": true,
@@ -1702,16 +1702,16 @@ describe("GraphCitations Filters rows", () => {
     fixture.settings.update({ "citation.wikilink-citations": true });
 
     expect(rowNames(engine)).toEqual([
-      "Pandoc citations",
-      "Wikilink citations",
-      "Citation-connected only",
+      m.graph_option_pandoc_citations_name(),
+      m.graph_option_wikilink_citations_name(),
+      m.graph_option_citation_connected_only_name(),
     ]);
 
     fixture.settings.update({ "citation.wikilink-citations": false });
 
     expect(rowNames(engine)).toEqual([
-      "Pandoc citations",
-      "Citation-connected only",
+      m.graph_option_pandoc_citations_name(),
+      m.graph_option_citation_connected_only_name(),
     ]);
   });
 
@@ -1725,7 +1725,9 @@ describe("GraphCitations Filters rows", () => {
 
     fixture.layoutReady();
 
-    expect(rowToggle(engine, "Pandoc citations").getValue()).toBe(false);
+    expect(
+      rowToggle(engine, m.graph_option_pandoc_citations_name()).getValue(),
+    ).toBe(false);
     expect(engine.renders.at(-1)).toEqual({
       facaded: true,
       resolved: VAULT_LINKS,
@@ -1745,7 +1747,12 @@ describe("GraphCitations Filters rows", () => {
     load();
     fixture.fire("layout-change");
 
-    expect(rowToggle(engine, "Citation-connected only").getValue()).toBe(true);
+    expect(
+      rowToggle(
+        engine,
+        m.graph_option_citation_connected_only_name(),
+      ).getValue(),
+    ).toBe(true);
     expect(engine.cachedFiles.at(-1)).toEqual([
       "Draft.md",
       "Literature/Doe 2024.md",
@@ -1776,7 +1783,9 @@ describe("GraphCitations Filters rows", () => {
 
     fixture.layoutReady();
 
-    expect(rowToggle(engine, "Pandoc citations").getValue()).toBe(false);
+    expect(
+      rowToggle(engine, m.graph_option_pandoc_citations_name()).getValue(),
+    ).toBe(false);
     expect(engine.renders.at(-1)).toEqual({
       facaded: true,
       resolved: VAULT_LINKS,
@@ -1801,10 +1810,12 @@ describe("GraphCitations Filters rows", () => {
       "zotlit-citation-connected-only": true,
       "zotlit-color-citation-links": true,
     });
-    expect(rowToggle(engine, "Pandoc citations").getValue()).toBe(false);
+    expect(
+      rowToggle(engine, m.graph_option_pandoc_citations_name()).getValue(),
+    ).toBe(false);
     expect(engine.renders.at(-1)).toEqual({
       facaded: true,
-      // "Citation-connected only" takes Other away, and with it Draft's link
+      // m.graph_option_citation_connected_only_name() takes Other away, and with it Draft's link
       // into it — a link the local narrowing would otherwise draw a node for.
       resolved: { "Draft.md": {} },
       unresolved: {},
@@ -1818,8 +1829,10 @@ describe("GraphCitations Filters rows", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     fixture.layoutReady();
-    rowToggle(engine, "Pandoc citations").toggle(false);
-    rowToggle(engine, "Citation-connected only").toggle(true);
+    rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
+    rowToggle(engine, m.graph_option_citation_connected_only_name()).toggle(
+      true,
+    );
 
     engine.filterOptions.setDefaultOptions();
 
@@ -1843,7 +1856,7 @@ describe("GraphCitations Filters rows", () => {
     const engine = fixture.addLeaf("graph");
     fixture.layoutReady();
 
-    rowToggle(engine, "Pandoc citations").toggle(false);
+    rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
 
     expect(engine.renders.at(-1)).toEqual({
       facaded: true,
@@ -1862,7 +1875,9 @@ describe("GraphCitations Filters rows", () => {
     const engine = fixture.addLeaf("graph");
     fixture.layoutReady();
 
-    rowToggle(engine, "Citation-connected only").toggle(true);
+    rowToggle(engine, m.graph_option_citation_connected_only_name()).toggle(
+      true,
+    );
 
     // Draft cites, so it survives; Other and todo have no citation of their
     // own, and each would draw a node where Draft's link stands.
@@ -1895,7 +1910,7 @@ describe("GraphCitations Filters rows", () => {
     const engine = fixture.addLeaf("graph");
     fixture.layoutReady();
 
-    rowToggle(engine, "Wikilink citations").toggle(false);
+    rowToggle(engine, m.graph_option_wikilink_citations_name()).toggle(false);
 
     expect(engine.renders.at(-1)!.resolved).toEqual({
       "Draft.md": { "Other.md": 1, "Literature/Doe 2024.md": 1 },
@@ -1916,7 +1931,9 @@ describe("GraphCitations Filters rows", () => {
     const engine = fixture.addLeaf("localgraph", "local-1");
     fixture.layoutReady();
 
-    rowToggle(engine, "Citation-connected only").toggle(true);
+    rowToggle(engine, m.graph_option_citation_connected_only_name()).toggle(
+      true,
+    );
 
     expect(fixture.leafState("local-1")).toEqual({
       options: {
@@ -1941,9 +1958,9 @@ describe("GraphCitations Filters rows", () => {
       [true],
     );
     expect(rowNames(engine)).toEqual([
-      "Pandoc citations",
-      "Wikilink citations",
-      "Citation-connected only",
+      m.graph_option_pandoc_citations_name(),
+      m.graph_option_wikilink_citations_name(),
+      m.graph_option_citation_connected_only_name(),
     ]);
   });
 
@@ -1977,7 +1994,8 @@ function groupsButton(engine: FakeEngine): HTMLButtonElement {
     ...engine.colorGroupOptions.childrenEl.querySelectorAll("button"),
   ];
   return buttons.find(
-    (button) => button.textContent === "Add literature notes group",
+    (button) =>
+      button.textContent === m.graph_citations_add_literature_notes_group(),
   )!;
 }
 
@@ -1992,7 +2010,7 @@ describe("GraphCitations Groups button", () => {
 
     expect(groupsButtons(engine)).toEqual([
       "New group",
-      "Add literature notes group",
+      m.graph_citations_add_literature_notes_group(),
     ]);
     expect(engine.colorGroupOptions.getColoredQueries()).toEqual([]);
   });
@@ -2048,7 +2066,7 @@ describe("GraphCitations Groups button", () => {
 
     expect(groupsButtons(engine)).toEqual([
       "New group",
-      "Add literature notes group",
+      m.graph_citations_add_literature_notes_group(),
     ]);
   });
 });
@@ -2063,11 +2081,11 @@ describe("GraphCitations Display row", () => {
     fixture.layoutReady();
 
     expect(rowNames(engine, engine.displayOptions)).toEqual([
-      "Color citation links",
+      m.graph_option_color_citation_links_name(),
     ]);
     expect(rowNames(engine)).toEqual([
-      "Pandoc citations",
-      "Citation-connected only",
+      m.graph_option_pandoc_citations_name(),
+      m.graph_option_citation_connected_only_name(),
     ]);
   });
 
@@ -2084,7 +2102,7 @@ describe("GraphCitations Display row", () => {
     expect(
       rowToggle(
         engine,
-        "Color citation links",
+        m.graph_option_color_citation_links_name(),
         engine.displayOptions,
       ).getValue(),
     ).toBe(false);
@@ -2103,7 +2121,7 @@ describe("GraphCitations Display row", () => {
     expect(
       rowToggle(
         engine,
-        "Color citation links",
+        m.graph_option_color_citation_links_name(),
         engine.displayOptions,
       ).getValue(),
     ).toBe(false);
@@ -2115,9 +2133,11 @@ describe("GraphCitations Display row", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     fixture.layoutReady();
-    rowToggle(engine, "Color citation links", engine.displayOptions).toggle(
-      false,
-    );
+    rowToggle(
+      engine,
+      m.graph_option_color_citation_links_name(),
+      engine.displayOptions,
+    ).toggle(false);
 
     engine.displayOptions.setDefaultOptions();
 
@@ -2131,14 +2151,16 @@ describe("GraphCitations Display row", () => {
     await service.ready;
     const engine = fixture.addLeaf("graph");
     fixture.layoutReady();
-    rowToggle(engine, "Color citation links", engine.displayOptions).toggle(
-      false,
-    );
+    rowToggle(
+      engine,
+      m.graph_option_color_citation_links_name(),
+      engine.displayOptions,
+    ).toggle(false);
 
     fixture.settings.update({ "citation.wikilink-citations": true });
 
     expect(rowNames(engine, engine.displayOptions)).toEqual([
-      "Color citation links",
+      m.graph_option_color_citation_links_name(),
     ]);
     expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(false);
   });
@@ -2264,9 +2286,11 @@ describe("GraphCitations citation edge colour", () => {
     const { service, engine } = await drawn();
     await using _service = service;
 
-    rowToggle(engine, "Color citation links", engine.displayOptions).toggle(
-      false,
-    );
+    rowToggle(
+      engine,
+      m.graph_option_color_citation_links_name(),
+      engine.displayOptions,
+    ).toggle(false);
 
     expect(paint(engine.renderer)).toEqual({
       "Draft.md -> Other.md": NATIVE_LINE,
@@ -2279,7 +2303,7 @@ describe("GraphCitations citation edge colour", () => {
     const { service, engine } = await drawn();
     await using _service = service;
 
-    rowToggle(engine, "Pandoc citations").toggle(false);
+    rowToggle(engine, m.graph_option_pandoc_citations_name()).toggle(false);
 
     expect(paint(engine.renderer)).toEqual({
       "Draft.md -> Other.md": NATIVE_LINE,
@@ -2437,7 +2461,10 @@ describe("GraphCitations Citation Graph preset", () => {
       showArrow: true,
     });
     expect(
-      rowToggle(fixture.engine, "Citation-connected only").getValue(),
+      rowToggle(
+        fixture.engine,
+        m.graph_option_citation_connected_only_name(),
+      ).getValue(),
     ).toBe(true);
     expect(fixture.engine.colorGroupOptions.getColoredQueries()).toEqual([
       { query: '["zotero-key"]', color: DEFAULT_COLOR },
@@ -2460,7 +2487,9 @@ describe("GraphCitations Citation Graph preset", () => {
     on.apply();
 
     expect(on.engine.options["zotlit-wikilink-citations"]).toBe(true);
-    expect(rowToggle(on.engine, "Wikilink citations").getValue()).toBe(true);
+    expect(
+      rowToggle(on.engine, m.graph_option_wikilink_citations_name()).getValue(),
+    ).toBe(true);
   });
 
   it("names no key beyond the preset, so the forces stay as the reader had them", async () => {
@@ -2513,8 +2542,8 @@ describe("GraphCitations Citation Graph preset", () => {
     fixture.apply();
 
     expect(rowNames(fixture.engine)).toEqual([
-      "Pandoc citations",
-      "Citation-connected only",
+      m.graph_option_pandoc_citations_name(),
+      m.graph_option_citation_connected_only_name(),
     ]);
     expect(fixture.engine.options).toMatchObject(PRESET_ROWS);
   });
