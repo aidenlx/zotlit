@@ -9,7 +9,13 @@ import type {
   ViewStateResult,
   WorkspaceLeaf,
 } from "obsidian";
-import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
@@ -115,6 +121,7 @@ import { createTemplateWorkbenchHost } from "./host";
 import { createMatchData } from "./match-data";
 import { NativeMatchPane } from "./match-pane";
 import { createSharedPartial } from "./new-partial";
+import { readPartialChoice, writePartialChoice } from "./partial-choice-memory";
 import { openTemplateWorkbench } from "./register";
 import {
   chooseWorkbenchItem,
@@ -142,6 +149,7 @@ export type TemplateWorkbenchDeps = Omit<ExplorerViewDeps, "pluginVersion"> & {
     Pick<
       TemplateService,
       | "loaded"
+      | "on"
       | "materializeCitationTemplate"
       | "getPartialDocument"
       | "getPartialDocuments"
@@ -310,8 +318,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         if (state.item !== previous.item) this.preview?.setItem(state.item);
         // The one editor a Shared Partial opens completes under the caller the
         // reader chose, which is this root.
-        if (state.root !== previous.root && this.documentKind === "partial")
+        if (state.root !== previous.root && this.documentKind === "partial") {
           this.#controller.setPartialContext(this.partialContext);
+          this.#rememberPartialChoice();
+        }
         if (
           state.item !== previous.item ||
           state.root !== previous.root ||
@@ -428,7 +438,21 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.#partialProfile = selection.profile;
     this.store.getState().setRoot(selection.context);
     this.app.workspace.requestSaveLayout();
+    this.#rememberPartialChoice();
     this.#publishAuthoringContext();
+  }
+
+  /**
+   * Hold this partial's caller and Profile against its own file, so reopening
+   * it — in a new leaf, or after a restart — shows the choice the reader made
+   * rather than the default the workspace has no leaf left to carry.
+   */
+  #rememberPartialChoice(): void {
+    if (this.documentKind !== "partial") return;
+    writePartialChoice(this.app, this.file?.path ?? null, {
+      context: this.partialContext,
+      profile: this.#partialProfile,
+    });
   }
   get authoringContext(): TemplateAuthoringContext {
     const { item, root, tab, advanced } = this.store.getState();
@@ -1025,8 +1049,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const path = this.file?.path ?? null;
     if (path !== this.#partialChoiceFile) {
       this.#partialChoiceFile = path;
-      this.#partialProfile = null;
-      store.setRoot(DEFAULT_PARTIAL_CONTEXT);
+      const held = readPartialChoice(this.app, path);
+      this.#partialProfile = held.profile;
+      store.setRoot(held.context);
     } else if (!isPartialContext(store.root))
       store.setRoot(DEFAULT_PARTIAL_CONTEXT);
     return true;
@@ -1325,6 +1350,14 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   get partialNames(): readonly string[] {
     const templates = this.#deps.templates;
     return templates.loaded ? templates.getPartialNames() : [];
+  }
+  /**
+   * Subscribes to the installed templates recompiling, which a saved or
+   * deleted Shared Partial triggers. A surface showing a registered partial's
+   * text reads it again from here, the way the preview pane does.
+   */
+  onTemplatesCompiled(listener: () => void): () => void {
+    return this.#deps.templates.on("compile-status-changed", listener);
   }
   /**
    * Open the Shared Partial `name` in a Template Workbench View of its own.
@@ -1688,6 +1721,20 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
 }
 
+/**
+ * Ticks whenever the installed templates recompile, which is what a saved or
+ * deleted Shared Partial does. An open Partial Placeholder preview reads it,
+ * so the box shows the partial as it now stands rather than as it was opened.
+ */
+function useTemplateRevision(view: TemplateWorkbenchView): number {
+  const [revision, setRevision] = useState(0);
+  useEffect(
+    () => view.onTemplatesCompiled(() => setRevision((count) => count + 1)),
+    [view],
+  );
+  return revision;
+}
+
 function EditorContent({
   view,
   insertRequest,
@@ -1737,6 +1784,7 @@ function EditorContent({
   }, [view, insertRequest]);
   const manifest = useRef(controller.document?.manifest ?? null);
   if (controller.document) manifest.current = controller.document.manifest;
+  const templateRevision = useTemplateRevision(view);
   // A missing partial is the engine's own render failure, so the boxes read
   // the names the last render could not resolve rather than a scan.
   const missingPartials = (result?.diagnostics ?? []).flatMap((diagnostic) =>
@@ -1755,6 +1803,7 @@ function EditorContent({
     return {
       names: view.partialNames,
       missing: missingPartials,
+      revision: templateRevision,
       onEdit: (name) => view.openPartial(name),
       onCreate: (name) => void view.createPartial(name),
       onRender: (name) => preview.renderPartial(name, partialContext),

@@ -8,7 +8,7 @@ import { TFile } from "obsidian";
 import type { App, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import { act } from "preact/test-utils";
 // @vitest-environment happy-dom
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createStore } from "zustand/vanilla";
 
 import * as m from "@/lib/i18n/generated/messages";
@@ -52,6 +52,17 @@ class TestTemplateWorkbenchView extends TemplateWorkbenchView {
   }
 }
 
+/** One device-local store behind every view a test opens, as Obsidian's is. */
+const deviceStorage = new Map<string, unknown>();
+beforeEach(() => deviceStorage.clear());
+
+const localStorageStub = {
+  loadLocalStorage: (key: string) => deviceStorage.get(key) ?? null,
+  saveLocalStorage: (key: string, value: unknown) => {
+    deviceStorage.set(key, value);
+  },
+};
+
 function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
   const setActiveLeaf = vi.fn();
   const modify = vi.fn<(file: TFile, source: string) => Promise<void>>(
@@ -70,7 +81,7 @@ function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
         setActiveLeaf,
         getActiveFile: () => null,
       },
-      loadLocalStorage: () => null,
+      ...localStorageStub,
       vault: { modify },
     } as unknown as App);
   const leaf = {
@@ -85,6 +96,7 @@ function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
     zoteroPref: { ready: Promise.resolve(), dataDir: null },
     templates: {
       loaded: true,
+      on: () => () => {},
       getPartialNames: () => [],
       getPartialDocuments: () => [],
     },
@@ -706,7 +718,7 @@ function sharedWorkspace() {
         leaves.forEach(callback);
       },
     },
-    loadLocalStorage: () => null,
+    ...localStorageStub,
     vault: { read },
   } as unknown as App;
   const file = new TFile();
@@ -1048,6 +1060,7 @@ language: liquid
   function openKind(path: string, source: string) {
     const harness = setup({
       templates: {
+        on: () => () => {},
         materializeCitationTemplate: vi.fn(),
       } as unknown as TemplateWorkbenchDeps["templates"],
     });
@@ -1172,6 +1185,7 @@ language: liquid
   it("lists the vault's partials in the pane menu and ends with New partial", () => {
     const { view } = setup({
       templates: {
+        on: () => () => {},
         loaded: true,
         getPartialNames: () => ["authors", "venue-line"],
         getPartialDocuments: () => [
@@ -1218,6 +1232,7 @@ language: liquid
     const unpacked: string[] = [];
     const { view } = setup({
       templates: {
+        on: () => () => {},
         loaded: true,
         getPartialNames: () => [],
         getPartialDocuments: () => [],
@@ -1264,6 +1279,7 @@ language: liquid
   it("names no partial while the template service is still scanning the folder", () => {
     const { view } = setup({
       templates: {
+        on: () => () => {},
         loaded: false,
         getPartialNames: () => {
           throw new Error(
@@ -1391,6 +1407,29 @@ language: liquid
     expect(reopened.view.controller.templateRegions[0]!.root).toBe(
       "annotation",
     );
+  });
+
+  it("shows the caller again when the partial is reopened in a new leaf", async () => {
+    const first = openKind(
+      "templates/zotlit-partial.authors.md",
+      PARTIAL_SOURCE,
+    );
+    await act(async () =>
+      first.view.setPartialSelection({
+        context: "citation",
+        profile: "reading1",
+      }),
+    );
+    await act(async () => first.view.close());
+
+    // A new leaf, so the workspace has no saved state to carry the choice.
+    const reopened = openKind(
+      "templates/zotlit-partial.authors.md",
+      PARTIAL_SOURCE,
+    );
+
+    expect(reopened.view.partialContext).toBe("citation");
+    expect(reopened.view.partialProfile).toBe("reading1");
   });
 
   it("opens another partial on the default caller, not the last one's", async () => {
