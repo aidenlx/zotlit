@@ -283,6 +283,12 @@ class NodeStand implements Disposable {
   /** Every anchor still in the container, oldest first. */
   #anchors: HTMLElement[] = [];
   #hold = 0;
+  /**
+   * The window the hold was armed on, which is the one that cancels it: a
+   * graph moved to a pop-out window answers a new `containerEl.win`, and an
+   * interval is the window's own (apps/obsidian/policies/hover-popover.md).
+   */
+  #holdWin: Window | null = null;
 
   constructor(members: GraphLeafMembers) {
     this.#members = members;
@@ -313,8 +319,9 @@ class NodeStand implements Disposable {
   /** Stops holding the popover open: the pointer has left the node. */
   release(): void {
     if (this.#hold === 0) return;
-    this.#members.renderer.containerEl.win.clearInterval(this.#hold);
+    this.#holdWin?.clearInterval(this.#hold);
     this.#hold = 0;
+    this.#holdWin = null;
   }
 
   /**
@@ -342,7 +349,9 @@ class NodeStand implements Disposable {
     const { engine, renderer } = this.#members;
     let stood = false;
     let waited = 0;
-    this.#hold = renderer.containerEl.win.setInterval(() => {
+    const win = renderer.containerEl.win;
+    this.#holdWin = win;
+    this.#hold = win.setInterval(() => {
       const popover = engine.hoverPopover;
       if (!popover || popover.state === PopoverState.Hidden) {
         // A popover that stood on the anchor and has gone releases the hold,

@@ -9,7 +9,7 @@ import type {
   WorkspaceLeaf,
 } from "obsidian";
 
-import { registerEvent } from "@/lib/disposables";
+import { disposable, registerEvent } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 import type { CitationSyntax } from "@/services/citation-index/scan";
 import type { CitationIndex } from "@/services/citation-index/service";
@@ -90,6 +90,23 @@ interface GraphInstallation {
   rows: Disposable;
   /** What the last facaded render drew; the click wrap answers node ids from it. */
   additions: GraphCitationAdditions;
+}
+
+/**
+ * Runs `callback` when `view` unloads, and no longer once the returned
+ * Disposable is disposed.
+ *
+ * The registration itself cannot be taken back, so what it holds is let go of
+ * instead: the callback the view keeps is a stand-in that answers nothing
+ * after disposal, and the one that holds anything is reachable only through a
+ * reference this scope drops.
+ */
+function releasedOnDispose(view: View, callback: () => void): Disposable {
+  let held: (() => void) | null = callback;
+  view.register(() => held?.());
+  return disposable(() => {
+    held = null;
+  });
 }
 
 /**
@@ -328,11 +345,17 @@ export class GraphCitations extends Service<void> {
       wrapNodeHover(members, this.#hoverDeps(), () => installation.additions),
     );
     this.#installations.set(renderer, installation);
-    // The view closing is what ends this installation: a closed leaf is gone
-    // from the walk the service tears down through, and nothing native
-    // unhovers a node on the way out — so a hold left standing would keep its
-    // popover on screen and its engine alive for as long as it ran.
-    leaf.view.register(() => this.#uninstall(installation));
+    // The view closing is one of the two things that end this installation: a
+    // closed leaf is gone from the walk the service tears down through, and
+    // nothing native unhovers a node on the way out — so a hold left standing
+    // would keep its popover on screen and its engine alive for as long as it
+    // ran. The other is the feature turning off, which is why the callback is
+    // released rather than left to the leaf: `Component.register` pushes onto
+    // a list only `unload` drains and takes nothing back (`app.js` 1.14.1),
+    // so a callback still holding this installation would outlive it.
+    restores.use(
+      releasedOnDispose(leaf.view, () => this.#uninstall(installation)),
+    );
     logger.debug("Graph citations installed", { viewType });
   }
 
