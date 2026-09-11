@@ -280,6 +280,12 @@ export interface PartialUnpackOutcome {
    * report the next time the document is read.
    */
   readonly refused: readonly string[];
+  /**
+   * The names the template folder holds a file for under another case. One
+   * file answers both spellings, while a call resolves by exact name, so these
+   * keep their manifest entries — the copy that still answers the call.
+   */
+  readonly otherCase: readonly string[];
 }
 
 /** The Citation Template's state, as the Citations settings row reads it. */
@@ -1127,9 +1133,10 @@ export class TemplateService extends Service<void> {
    * a document of its own, so no partial file is written for it and its
    * transport entry simply goes.
    *
-   * A held name is matched the way the Shared Partial name rule folds case, so
-   * a bundled `Authors` reads against the vault's own `authors` rather than
-   * asking for a second file the same filesystem entry answers to.
+   * A name the vault answers only under another case — a bundled `Authors`
+   * against the vault's own `authors` — reads as `other-case`: one file
+   * answers both on a case-insensitive filesystem, while a call resolves by
+   * exact name, so the bundle keeps the copy that still answers `Authors`.
    *
    * A name the Shared Partial name rule refuses outright reads as `refused`,
    * so an import says which names stay in the profile rather than promising a
@@ -1145,13 +1152,17 @@ export class TemplateService extends Service<void> {
       string,
       Pick<LiteratureNoteTemplatePartial, "language" | "source"> | null
     >();
+    const otherCase = new Set<string>();
     for (const partial of bundled) {
       if (RESERVED_PARTIAL_NAMES.has(partial.name)) {
         held.set(partial.name, partial);
         continue;
       }
       const name = this.#heldPartialName(partial.name);
-      if (name === undefined) continue;
+      if (name !== partial.name) {
+        if (name !== undefined) otherCase.add(partial.name);
+        continue;
+      }
       const registered = this.#partials.get(name);
       held.set(
         partial.name,
@@ -1160,11 +1171,20 @@ export class TemplateService extends Service<void> {
           : null,
       );
     }
-    return unpackLiteratureNotePartials(
+    const plan = unpackLiteratureNotePartials(
       bundled,
       held,
-      // `taken` is empty: a name the vault already answers is settled above.
-      (name) => partialNameRefusal(name, []) === null,
+      // A name the vault answers under this very spelling is settled above, so
+      // `taken` speaks for the case-folded ones alone.
+      (name) => partialNameRefusal(name, this.#partialNames) === null,
+    );
+    // The name rule refuses a case-folded name only because the vault answers
+    // it, which is a reason of its own. This plan says so once, and every
+    // caller reads that one decision.
+    return plan.map((step) =>
+      otherCase.has(step.name)
+        ? { ...step, verdict: "other-case" as const }
+        : step,
     );
   }
 
@@ -1176,8 +1196,9 @@ export class TemplateService extends Service<void> {
    *
    * Either way that name has no transport left — the reader's own document
    * answers it from now on — so it lands in `dropped` beside the ones written.
-   * The one name that stays out of `dropped` is a name no Shared Partial file
-   * can carry, which the manifest copy alone answers.
+   * The names that stay out of `dropped` are the ones the manifest copy alone
+   * answers: a `refused` name no Shared Partial file can carry, and an
+   * `other-case` name the folder holds a file for under another case.
    */
   async unpackPartials(
     plan: readonly LiteratureNotePartialUnpack[],
@@ -1190,10 +1211,18 @@ export class TemplateService extends Service<void> {
     const written: string[] = [];
     const kept: string[] = [];
     const refused: string[] = [];
+    const otherCase: string[] = [];
     const dropped: string[] = [];
     for (const step of plan) {
       if (step.verdict === "unchanged") {
         dropped.push(step.name);
+        continue;
+      }
+      // One file answers every spelling of a name, so writing here would land
+      // in the reader's own document while the call keeps asking for a name
+      // the registry has no exact key for.
+      if (step.verdict === "other-case") {
+        otherCase.push(step.name);
         continue;
       }
       // The name arrives inside a pasted bundle, so it passes the rule every
@@ -1209,8 +1238,13 @@ export class TemplateService extends Service<void> {
       dropped.push(step.name);
     }
     if (written.length > 0) await this.#settle();
-    logger.debug("Unpacked bundled partials", { written, kept, refused });
-    return { written, kept, dropped, refused };
+    logger.debug("Unpacked bundled partials", {
+      written,
+      kept,
+      refused,
+      otherCase,
+    });
+    return { written, kept, dropped, refused, otherCase };
   }
 
   /**

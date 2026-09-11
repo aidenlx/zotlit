@@ -2175,6 +2175,7 @@ describe("Template Document kinds", () => {
       kept: ["authors"],
       dropped: ["summary", "authors", "venue-line", "citation"],
       refused: [],
+      otherCase: [],
     });
     expect(vault.contents.get("templates/zotlit-partial.venue-line.md")).toBe(
       "---\nlanguage: liquid\n---\n{{ zt.venue }}",
@@ -2199,6 +2200,44 @@ describe("Template Document kinds", () => {
     expect(await replaced).toMatchObject({ written: ["authors"], kept: [] });
     expect(vault.contents.get("templates/zotlit-partial.authors.md")).toBe(
       "---\nlanguage: liquid\n---\nTheirs",
+    );
+  });
+
+  it("keeps the transport copy of a partial the folder answers only in another case", async () => {
+    const vault = new MockVault();
+    vault.addFile("templates/zotlit-partial.authors.md", "{{ zt.authors }}");
+    const { service } = await makeHarness({ vault });
+    const bundled = [
+      { name: "Authors", language: "liquid", source: "{{ zt.authors }}" },
+    ] as const;
+
+    const plan = service.planPartialUnpack(bundled);
+    expect(plan.map(({ name, verdict }) => `${name}:${verdict}`)).toEqual([
+      "Authors:other-case",
+    ]);
+
+    const outcome = await service.unpackPartials(plan);
+
+    expect(outcome).toEqual({
+      written: [],
+      kept: [],
+      dropped: [],
+      refused: [],
+      otherCase: ["Authors"],
+    });
+    // One file answers both names on a case-insensitive filesystem, so nothing
+    // is written — and the vault's own document is left exactly as it is.
+    expect([...vault.contents.keys()]).toEqual([
+      "templates/zotlit-partial.authors.md",
+    ]);
+    // A Shared Partial resolves by exact name, so the manifest copy is all
+    // that answers `{% render "Authors" %}`: its entry has to stay.
+    expect(() =>
+      service.render("Authors", { authors: "Ada Lovelace" }),
+    ).toThrowError(
+      expect.objectContaining<Partial<TemplateError>>({
+        templateName: "Authors",
+      }),
     );
   });
 
@@ -2235,6 +2274,7 @@ describe("Template Document kinds", () => {
       kept: ["authors"],
       dropped: ["authors"],
       refused: ["../../../escape"],
+      otherCase: [],
     });
   });
 

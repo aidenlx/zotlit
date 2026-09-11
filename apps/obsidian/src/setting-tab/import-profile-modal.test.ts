@@ -61,7 +61,14 @@ function observeButtons() {
     [Symbol.dispose]: () => cleanup.dispose(),
   };
 }
-function fixture(kind: "fresh" | "replace" = "fresh") {
+function fixture(
+  kind: "fresh" | "replace" = "fresh",
+  partials: { name: string; verdict: string; document: string }[] = [
+    { name: "summary", verdict: "write", document: "Summary" },
+    { name: "authors", verdict: "conflict", document: "Authors" },
+    { name: "venue-line", verdict: "unchanged", document: "Venue" },
+  ],
+) {
   const save = vi.fn(async () => ({
     id,
     label: "Shared",
@@ -91,11 +98,7 @@ function fixture(kind: "fresh" | "replace" = "fresh") {
         { name: "venue-line" },
       ],
     },
-    partials: [
-      { name: "summary", verdict: "write", document: "Summary" },
-      { name: "authors", verdict: "conflict", document: "Authors" },
-      { name: "venue-line", verdict: "unchanged", document: "Venue" },
-    ],
+    partials,
     source: "Shared source",
     path: "templates/zotlit-profile.shared.md",
     profile: {
@@ -183,6 +186,25 @@ it("opens fresh consent with metadata, recipient preview, editable bindings and 
     includeMatch: true,
     replacePartials: [],
   });
+});
+
+it("names each reason a partial stays in the profile", () => {
+  const f = fixture("fresh", [
+    { name: "../../../escape", verdict: "refused", document: "Escaped" },
+    { name: "Authors", verdict: "other-case", document: "Theirs" },
+  ]);
+  f.modal.onOpen();
+  // The name rule speaks for the escaping name alone: `Authors` is a
+  // well-formed name, kept because one file already answers it in another case.
+  expect(f.modal.contentEl.textContent).toContain(
+    m.profile_import_partials_refused({ names: "../../../escape" }),
+  );
+  expect(f.modal.contentEl.textContent).toContain(
+    m.profile_import_partials_other_case({ names: "Authors" }),
+  );
+  expect(f.modal.contentEl.textContent).not.toContain(
+    m.profile_import_partials_refused({ names: "Authors" }),
+  );
 });
 
 it("keeps a partial the reader leaves alone and replaces the one they approve", async () => {
