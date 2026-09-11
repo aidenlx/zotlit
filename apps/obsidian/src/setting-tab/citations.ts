@@ -167,7 +167,7 @@ function hoverActionOptions(): Record<HoverAction, string> {
   };
 }
 
-/** The Require Mod toggle of each editing mode, in editing-mode order. */
+/** The Require Mod toggles for editing modes and graph views. */
 const REQUIRE_MOD_KEYS = [
   [
     "citation.hover-require-mod-source",
@@ -181,13 +181,17 @@ const REQUIRE_MOD_KEYS = [
     "citation.hover-require-mod-reading",
     m.settings_citation_hover_mod_reading_name,
   ],
+  [
+    "citation.hover-require-mod-graph",
+    m.settings_citation_hover_mod_graph_name,
+  ],
 ] as const satisfies readonly (readonly [SettingsKey, () => string])[];
 
 /**
- * The Require Mod toggles, on a sub-page of their own that lists one editing
- * mode per row, like the Page preview plugin lists one hover source per row.
+ * The Require Mod toggles, on a sub-page of their own that lists one hover
+ * surface per row, like the Page preview plugin lists one hover source per row.
  * The page's own title names the list, so the rows carry the requirement in the
- * page description instead of repeating it three times.
+ * page description instead of repeating it on each row.
  *
  * The toggles gate the Citation Popover alone — under Page preview the Page
  * preview plugin's own settings own that gate, and under Off there is nothing

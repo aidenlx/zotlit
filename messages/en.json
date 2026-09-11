@@ -715,6 +715,7 @@
   "settings_citation_hover_mod_source_name": "Source mode",
   "settings_citation_hover_mod_live_preview_name": "Live Preview",
   "settings_citation_hover_mod_reading_name": "Reading view",
+  "settings_citation_hover_mod_graph_name": "Graph view",
   "settings_citation_references_heading": "Formatting",
   "settings_citation_references_style_name": "Citation and references style",
   "settings_citation_references_style_desc": "CSL style used to format in-text citations and the references sidebar. Install and manage styles in Zotero.",

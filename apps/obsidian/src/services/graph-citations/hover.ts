@@ -1,6 +1,6 @@
 // The node-hover wrap: a Literature Note or a Cited Work Node answers the Hover Action — the Citation Popover, or a page preview under the shared citekey source — off an anchor at the node; every other node stays native.
 
-import { PopoverState } from "obsidian";
+import { Keymap, PopoverState } from "obsidian";
 import type { App, GraphData } from "obsidian";
 
 import { getLogger } from "@/lib/log";
@@ -106,12 +106,6 @@ function hoverNode(
   const node = hoveredNode(id, drawn, deps);
   if (node === null) return false;
   const { action } = hoverPreferences(settings);
-  // The Require Mod gate `citationHoverIntent` reads for a rendered citation
-  // is keyed by the editing mode the hover happened in — source, Live Preview,
-  // reading — and a graph node sits in none of them: the graph renders no
-  // document, and a node is a target the pointer reaches on purpose rather
-  // than text it crosses on the way elsewhere. So the graph arms no gate and
-  // reads the Hover Action alone, which is all the spec asks of it.
   if (action === "off") return false;
   // ZotLit is desktop-only, so a hover a pen or a finger produced shows
   // nothing — the same guard every other citation surface states, and one the
@@ -119,6 +113,14 @@ function hoverNode(
   const { pointerType } = evt as Partial<PointerEvent>;
   if (pointerType !== undefined && pointerType !== "mouse") {
     logger.trace("Graph node hover suppressed", { id, reason: "not-a-mouse" });
+    return true;
+  }
+  if (
+    action === "popover" &&
+    settings["citation.hover-require-mod-graph"] &&
+    !Keymap.isModifier(evt, "Mod")
+  ) {
+    logger.trace("Graph node hover suppressed", { id, reason: "needs-mod" });
     return true;
   }
   const position = nodeScreenPosition(members.renderer, id);
