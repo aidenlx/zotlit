@@ -107,7 +107,10 @@ import type {
   NativeRenderDeps,
   NativeRenderResult,
 } from "@/views/note-preview/render";
-import { nativeResult, renderNativeProfile } from "@/views/note-preview/render";
+import {
+  nativeResult,
+  renderNativeTemplate,
+} from "@/views/note-preview/render";
 import { NativePreviewSession } from "@/views/note-preview/session";
 import { exportTemplateDataFile } from "@/views/template-data-explorer/export-file";
 import type { TemplateDataExportTarget } from "@/views/template-data-explorer/export-file";
@@ -259,7 +262,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     this.contentEl.addClass("zt-root", "zt-template-workbench");
     const render: WorkbenchHost["render"] =
       (deps.nativePreview
-        ? (request) => renderNativeProfile(deps.nativePreview!, request)
+        ? (request) => renderNativeTemplate(deps.nativePreview!, request)
         : deps.render) ??
       ((request) =>
         Promise.resolve(
@@ -504,10 +507,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     };
   }
   #publishAuthoringContext(): void {
-    this.app.workspace.trigger(
-      "zotlit:authoring-context",
-      this.authoringContext,
-    );
+    const context = this.authoringContext;
+    // The session reads the kind from here, so the context lands before the
+    // source it picks the parser and the root data for.
+    this.preview?.setContext(context);
+    this.app.workspace.trigger("zotlit:authoring-context", context);
   }
 
   override onResize(): void {
@@ -727,6 +731,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       this.app.workspace.trigger("quick-preview", this.file, this.data);
     }
     this.#publishAuthoringContext();
+    this.preview?.setSource(this.#controller.source);
   }
   override async loadFileInternal(file: TFile, clear: boolean): Promise<void> {
     const generation = ++this.#readGeneration;
@@ -1301,8 +1306,9 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
 
   /**
    * Move an editor selection into a new Shared Partial through the same create
-   * flow, under this document's own language: an Eta document gets a manifest
-   * naming it, and a Liquid one is a plain source file.
+   * flow, under this document's own language. The language always writes a
+   * manifest, which is what keeps a selection that opens with its own `---`
+   * line out of the manifest position.
    *
    * @returns the call that replaces the selection, or `null` when the reader
    *   dismisses the prompt.
@@ -1311,7 +1317,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
     const language = this.#documentLanguage;
     const name = await createSharedPartial(this.app, this.#deps.templates, {
       source,
-      ...(language === "eta" ? { language } : {}),
+      language,
       open: "split",
     });
     return name === null ? null : partialCall(name, language);
@@ -1688,6 +1694,7 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         if (this.file && !this.#receivingSource)
           this.app.workspace.trigger("quick-preview", this.file, this.data);
         this.#publishAuthoringContext();
+        this.preview?.setSource(this.#controller.source);
         if (transaction.annotation(externalEdit) !== true) {
           if (!this.#defaultDraft) this.requestSave();
         }
@@ -1808,6 +1815,7 @@ function EditorContent({
   const manifest = useRef(controller.document?.manifest ?? null);
   if (controller.document) manifest.current = controller.document.manifest;
   const templateRevision = useTemplateRevision(view);
+  const dataRevision = usePreviewDataRevision(view);
   // A missing partial is the engine's own render failure, so the boxes read
   // the names the last render could not resolve rather than a scan.
   const missingPartials = (result?.diagnostics ?? []).flatMap((diagnostic) =>
@@ -1827,6 +1835,7 @@ function EditorContent({
       names: view.partialNames,
       missing: missingPartials,
       revision: templateRevision,
+      dataRevision,
       onEdit: (name) => view.openPartial(name),
       onCreate: (name) => void view.createPartial(name),
       onRender: (name) => preview.renderPartial(name, partialContext),
@@ -1850,8 +1859,9 @@ function EditorContent({
   function openProblem(
     problem: Pick<WorkbenchProblem, "slice" | "range" | "params">,
   ) {
-    if (problem.slice === "source") {
-      // A plain document's every problem is in the one editor it opens with.
+    if (kind !== "profile" || problem.slice === "source") {
+      // A plain document's every problem is in the one editor it opens with,
+      // so every reveal target lands there and its tabs stay as they are.
       setReveal(problem.range ?? null);
       return;
     }
@@ -2151,6 +2161,35 @@ function useSelectedAnnotation(view: TemplateWorkbenchView) {
       [store],
     ),
     () => store?.getState().example ?? null,
+  );
+}
+
+/**
+ * The data a Shared Partial preview reads, as one value that changes whenever
+ * the reader chooses another Item, annotation, or Citation example — which is
+ * what an open Partial Placeholder preview renders again for.
+ */
+function usePreviewDataRevision(view: TemplateWorkbenchView): string {
+  const store = view.preview?.state;
+  return useSyncExternalStore(
+    useCallback(
+      (listener: () => void) => store?.subscribe(listener) ?? (() => {}),
+      [store],
+    ),
+    () => {
+      const state = store?.getState();
+      return state
+        ? [
+            state.item?.id ?? "",
+            state.annotationId ?? "",
+            state.example?.id ?? "",
+            state.variant,
+            state.citationExample ?? "",
+            state.snapshot?.revision ?? "",
+            state.context?.partial?.profile ?? "",
+          ].join(" ")
+        : "";
+    },
   );
 }
 
