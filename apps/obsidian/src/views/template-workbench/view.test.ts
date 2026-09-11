@@ -11,7 +11,13 @@ import { act } from "preact/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createStore } from "zustand/vanilla";
 
+import {
+  formatPlainTemplateDocument,
+  parsePlainTemplateDocument,
+} from "@zotlit/templates/facade";
+
 import * as m from "@/lib/i18n/generated/messages";
+import { renderNativeTemplate } from "@/views/note-preview/render";
 
 import { createSharedPartial } from "./new-partial";
 import { TemplateWorkbenchView } from "./view";
@@ -29,6 +35,28 @@ vi.mock("./new-partial", () => ({
 }));
 
 vi.mock("zustand", () => import("@/views/__fixtures__/zustand"));
+
+// The renderers are note-preview's own; here they stand in, so a render reports
+// which document kind the view asked for and what the session fed it.
+vi.mock("@/views/note-preview/render", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/views/note-preview/render")>();
+  const { failedRender, renderIdentity } =
+    await import("@zotlit/workbench/render");
+  const stub = () =>
+    vi.fn(async (_deps: unknown, request: { source: string }) =>
+      actual.nativeResult(
+        failedRender(renderIdentity(request as never), {
+          code: "render-error",
+        }),
+      ),
+    );
+  return {
+    ...actual,
+    renderNativeTemplate: stub(),
+    renderNativeProfile: stub(),
+  };
+});
 
 const SOURCE = `---
 id: paper
@@ -78,6 +106,7 @@ function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
         on: vi.fn(() => ({})),
         offref: vi.fn(),
         iterateAllLeaves: vi.fn(),
+        revealLeaf: vi.fn(async () => {}),
         setActiveLeaf,
         getActiveFile: () => null,
       },
@@ -1098,6 +1127,25 @@ language: liquid
     expect(sourceAction(view).style.display).toBe("none");
   });
 
+  it("reveals a Citation Template problem in the one editor it opens with", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = openKind("templates/zotlit-citation.md", CITATION_SOURCE);
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+
+    // The companion preview asks for the advanced slice, which a Profile holds
+    // behind its own view; a plain document has nowhere else to open.
+    await act(async () => view.revealSlice("advanced"));
+
+    expect(view.store.getState()).toMatchObject({
+      tab: "citation",
+      root: "citation",
+      advanced: false,
+    });
+    expect(tabLabels(view)).toEqual([m.workbench_tab_citation()]);
+    expect(view.contentEl.querySelector(".cm-editor")).not.toBeNull();
+  });
+
   it("keeps a Profile document on its six tabs, titled by its name", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = openKind("templates/zotlit-profile.paper.md", SOURCE);
@@ -1540,12 +1588,15 @@ An annotation.
     m.template_workbench_extract_partial(),
   ];
 
-  async function openProfile(language: "liquid" | "eta") {
+  async function openProfile(
+    language: "liquid" | "eta",
+    source = EXTRACT_SOURCE,
+  ) {
     const harness = setup();
     harness.view.setViewData(
       language === "eta"
-        ? EXTRACT_SOURCE.replace("language: liquid", "language: eta")
-        : EXTRACT_SOURCE,
+        ? source.replace("language: liquid", "language: eta")
+        : source,
       true,
     );
     document.body.append(harness.view.contentEl);
@@ -1589,9 +1640,38 @@ An annotation.
 
     expect(vi.mocked(createSharedPartial).mock.lastCall?.[2]).toEqual({
       source: SELECTION,
+      language: "liquid",
       open: "split",
     });
     expect(view.getViewData()).toBe(EXTRACT_SOURCE.replace(SELECTION, CALL));
+  });
+
+  it("keeps a selection that opens with a rule out of the manifest", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    vi.mocked(createSharedPartial).mockResolvedValueOnce("authors");
+    // A Markdown rule on the first line reads as a manifest opener where the
+    // create flow writes the raw source.
+    const ruled = `---\n${SELECTION}`;
+    const { view, editor } = await openProfile(
+      "liquid",
+      EXTRACT_SOURCE.replace(SELECTION, ruled),
+    );
+    cleanup.defer(() => act(async () => view.close()));
+    cleanup.defer(() => view.contentEl.remove());
+
+    await extract(editor, ruled.length);
+
+    const options = vi.mocked(createSharedPartial).mock.lastCall![2]!;
+    expect(options).toEqual({
+      source: ruled,
+      language: "liquid",
+      open: "split",
+    });
+    expect(
+      parsePlainTemplateDocument(
+        formatPlainTemplateDocument(options.source!, options.language!),
+      ).source,
+    ).toBe(ruled);
   });
 
   it("writes an Eta include and asks the create flow for an Eta partial", async () => {
@@ -1749,5 +1829,76 @@ An annotation.
 
     expect(rightClick(editor)).toBeNull();
     expect(createSharedPartial).not.toHaveBeenCalled();
+  });
+});
+
+describe("the native preview session of a plain Template Document", () => {
+  const CITATION_SOURCE = `---
+language: liquid
+---
+{{ zt.citations | pandoc_cite }}
+`;
+
+  function openCitation() {
+    const harness = setup({
+      nativePreview: {
+        app: { vault: { on: () => ({}), offref: () => {} } },
+        db: { on: () => () => {}, acquireRead: vi.fn() },
+        templates: { on: () => () => {} },
+        bibliographyRender: { on: () => () => {} },
+      } as unknown as TemplateWorkbenchDeps["nativePreview"],
+      templates: {
+        on: () => () => {},
+        loaded: true,
+        getPartialNames: () => [],
+        getPartialDocuments: () => [],
+        materializeCitationTemplate: vi.fn(),
+      } as unknown as TemplateWorkbenchDeps["templates"],
+    });
+    const file = new TFile();
+    file.path = "templates/zotlit-citation.md";
+    harness.view.file = file;
+    harness.view.setViewData(CITATION_SOURCE, true);
+    return harness;
+  }
+
+  it("follows the document context and the source the editor holds", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = openCitation();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+
+    expect(view.preview!.state.getState()).toMatchObject({
+      context: expect.objectContaining({
+        kind: "citation",
+        path: "templates/zotlit-citation.md",
+      }),
+      source: CITATION_SOURCE,
+      sourceProblem: null,
+    });
+
+    const edited = CITATION_SOURCE.replace("pandoc_cite", "pandoc_cite: 'alt'");
+    await act(async () => view.setViewData(edited, false));
+
+    expect(view.preview!.state.getState().source).toBe(edited);
+  });
+
+  it("renders the Citation Template through the document-kind dispatcher", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = openCitation();
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+
+    await act(async () => {
+      view.scheduler.run();
+      await Promise.resolve();
+    });
+
+    expect(vi.mocked(renderNativeTemplate)).toHaveBeenCalledOnce();
+    // The default Citation set, which the session feeds from the context alone.
+    expect(vi.mocked(renderNativeTemplate).mock.lastCall?.[1]).toMatchObject({
+      source: CITATION_SOURCE,
+      citation: { variant: "main", example: "one-item" },
+    });
   });
 });
