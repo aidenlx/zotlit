@@ -560,7 +560,7 @@ function makeFixture(options: FixtureOptions = {}) {
   });
   const openCitekey = vi.fn(() => Promise.resolve());
   const openIndexedKey = vi.fn(() => Promise.resolve());
-  const citationPopover = { show: vi.fn(), showWork: vi.fn() };
+  const citationPopover = { show: vi.fn(), showWork: vi.fn(), hide: vi.fn() };
   const service = new GraphCitations({
     app,
     citationIndex,
@@ -1709,6 +1709,7 @@ function fakePopover(targetEl: HTMLElement | null = null): HoverPopover & {
     onTarget: true,
     targetEl,
     transition: vi.fn(),
+    hide: vi.fn(),
   } as unknown as HoverPopover & {
     onTarget: boolean;
     transition: ReturnType<typeof vi.fn>;

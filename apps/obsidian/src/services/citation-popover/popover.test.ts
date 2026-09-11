@@ -83,4 +83,18 @@ describe("CitationHoverPopover", () => {
     expect(shown.hoverEl.textContent).toBe("");
     expect(shown.render(entry())).toBe(false);
   });
+
+  it("moves a reused card immediately and clears a previous fixed position", () => {
+    vi.useFakeTimers();
+    const shown = popover();
+    vi.advanceTimersByTime(300);
+    shown.staticPos = { x: 10, y: 20 };
+    const target = document.body.appendChild(document.createElement("span"));
+    const position = vi.spyOn(shown, "position");
+
+    shown.retarget(target);
+
+    expect(shown.staticPos).toBeNull();
+    expect(position).toHaveBeenCalled();
+  });
 });

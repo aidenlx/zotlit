@@ -29,7 +29,7 @@ const logger = getLogger("graph-citations");
 export interface NodeHoverDeps {
   app: App;
   settings: Pick<SettingsService, "current">;
-  citationPopover: CitationPopover;
+  citationPopover: Pick<CitationPopover, "showWork" | "hide">;
   /** Opens the exact Item displayed in the popover. */
   open: (indexedKey: string, pane: NavigationPane) => void;
 }
@@ -63,7 +63,7 @@ export function wrapNodeHover(
   additions: () => GraphCitationAdditions,
 ): Disposable {
   const { renderer } = members;
-  const stand = new NodeStand(members);
+  const stand = new NodeStand(members, deps.citationPopover);
   const context: NodeHoverContext = { members, deps, stand, additions };
   const stack = new DisposableStack();
   stack.defer(
@@ -255,6 +255,7 @@ const HOLD_WAIT_MS = 2000;
  */
 class NodeStand implements Disposable {
   readonly #members: GraphLeafMembers;
+  readonly #citationPopover;
   /** Every anchor still in the container, oldest first. */
   readonly #anchors = new Map<HTMLElement, string>();
   #hold = 0;
@@ -265,8 +266,12 @@ class NodeStand implements Disposable {
    */
   #holdWin: Window | null = null;
 
-  constructor(members: GraphLeafMembers) {
+  constructor(
+    members: GraphLeafMembers,
+    citationPopover: Pick<CitationPopover, "hide">,
+  ) {
     this.#members = members;
+    this.#citationPopover = citationPopover;
   }
 
   /**
@@ -317,6 +322,7 @@ class NodeStand implements Disposable {
   retainNodes(nodes: GraphData["nodes"]): void {
     for (const [anchor, id] of this.#anchors) {
       if (Object.hasOwn(nodes, id)) continue;
+      this.#citationPopover.hide(this.#members.engine, anchor);
       const popover = this.#members.engine.hoverPopover;
       if (popover?.targetEl === anchor) popover.hide();
       anchor.remove();
@@ -326,6 +332,10 @@ class NodeStand implements Disposable {
 
   [Symbol.dispose](): void {
     this.release();
+    this.#citationPopover.hide(this.#members.engine);
+    const popover = this.#members.engine.hoverPopover;
+    if (popover?.targetEl && this.#anchors.has(popover.targetEl))
+      popover.hide();
     for (const anchor of this.#anchors.keys()) anchor.remove();
     this.#anchors.clear();
   }

@@ -19,7 +19,7 @@ import type {
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 
 import type { CitationPopoverContentProps } from "./content";
-import { createCitationPopover } from "./service";
+import { CitationPopover } from "./service";
 import type { WorkHoverRequest } from "./service";
 
 const popovers = vi.hoisted(
@@ -33,14 +33,18 @@ const popovers = vi.hoisted(
 vi.mock("./popover", () => ({
   CitationHoverPopover: class {
     readonly render = vi.fn(() => true);
-    readonly hide = vi.fn();
+    readonly #cleanup: (() => void)[] = [];
+    readonly hide = vi.fn(() => {
+      for (const cleanup of this.#cleanup.splice(0).reverse()) cleanup();
+    });
 
     constructor() {
       popovers.push(this);
     }
 
-    register(): void {}
-    registerEvent(): void {}
+    register(cleanup: () => void): void {
+      this.#cleanup.push(cleanup);
+    }
   },
 }));
 
@@ -87,7 +91,7 @@ function harness(initial: Held<DocumentCitations> | null) {
       },
     ),
   };
-  const service = createCitationPopover({
+  const service = new CitationPopover({
     app: {
       vault: {
         getFileByPath: () => file,
@@ -160,6 +164,7 @@ function harness(initial: Held<DocumentCitations> | null) {
       held = value;
     },
     show,
+    [Symbol.asyncDispose]: () => service[Symbol.asyncDispose](),
   };
 }
 
@@ -171,7 +176,7 @@ describe("Citation Popover citation text", () => {
   it("settles the second hover after the first citation-text read failed", async () => {
     vi.useFakeTimers();
     try {
-      const run = harness(null);
+      await using run = harness(null);
 
       run.show();
       await vi.advanceTimersByTimeAsync(0);
@@ -206,7 +211,7 @@ describe("Citation Popover citation text", () => {
       (run: ReturnType<typeof harness>) => run.emitInvalidated(),
     ],
   ])("follows a replaced first read when %s", async (_name, invalidate) => {
-    const run = harness(null);
+    await using run = harness(null);
     run.show();
     await vi.waitFor(() =>
       expect(run.citationText.peek).toHaveBeenCalledOnce(),
@@ -251,7 +256,7 @@ describe("Citation Popover citation text", () => {
         ],
       ]),
     };
-    const run = harness({
+    await using run = harness({
       value: text,
       status: "failed",
       settled: Promise.resolve(null),
@@ -285,7 +290,7 @@ describe("source-less Citation Popover", () => {
         },
       },
     }));
-    const service = createCitationPopover({
+    await using service = new CitationPopover({
       app: {},
       db: { state: "ready", client: {} },
       citationIndex: { resolution: null },
@@ -346,7 +351,7 @@ function workHarness() {
     reason: "engine-absent",
   }));
   const open = vi.fn();
-  const service = createCitationPopover({
+  const service = new CitationPopover({
     app: {},
     db,
     citationIndex,
@@ -387,7 +392,8 @@ function workHarness() {
       await act(() => root.render(content));
       return element;
     },
-    [Symbol.dispose]() {
+    async [Symbol.asyncDispose]() {
+      await service[Symbol.asyncDispose]();
       root.unmount();
     },
   };
@@ -399,7 +405,7 @@ describe("source-less lookup states", () => {
   });
 
   it("distinguishes an unavailable database from an absent exact Item", async () => {
-    using run = workHarness();
+    await using run = workHarness();
     run.db.state = "loading";
     run.show();
     const element = await run.shown();
@@ -419,7 +425,7 @@ describe("source-less lookup states", () => {
 
 describe("source-less Citation Key refresh", () => {
   it("refreshes pending, missing, unique, and ambiguous results while open", async () => {
-    using run = workHarness();
+    await using run = workHarness();
     run.citationIndex.resolveCitekey.mockReturnValue(null);
     run.show({ kind: "citekey", citekey: "doe2024" });
     expect((await run.shown()).textContent).toBe(
@@ -477,7 +483,7 @@ describe("source-less Citation Key refresh", () => {
 
 describe("source-less Item actions", () => {
   it("keeps the displayed Item identity and reports deletion before an action", async () => {
-    using run = workHarness();
+    await using run = workHarness();
     vi.mocked(getItemsByKey).mockReturnValue([
       makeItem({
         key: "ABCD2345",
@@ -512,7 +518,7 @@ describe("source-less Item actions", () => {
 
 describe("popover failure and lifetime", () => {
   it("keeps a readable Item when the formatting request throws", async () => {
-    using run = workHarness();
+    await using run = workHarness();
     vi.mocked(getItemsByKey).mockReturnValue([
       makeItem({ key: "ABCD2345", title: "Alpha kernels" }),
     ]);
@@ -526,7 +532,7 @@ describe("popover failure and lifetime", () => {
 
   it("closes a document popover when its source is deleted", async () => {
     const text = emptyText();
-    const run = harness({
+    await using run = harness({
       value: text,
       status: "fresh",
       settled: Promise.resolve(text),
@@ -542,7 +548,7 @@ describe("source-less presentation updates", () => {
   it.each(["engine-absent", "style-missing", "failed"] as const)(
     "keeps Item actions when formatting is %s",
     async (reason) => {
-      using run = workHarness();
+      await using run = workHarness();
       vi.mocked(getItemsByKey).mockReturnValue([
         makeItem({
           key: "ABCD2345",
@@ -561,7 +567,7 @@ describe("source-less presentation updates", () => {
   );
 
   it("retains the new Item data when an older render finishes later", async () => {
-    using run = workHarness();
+    await using run = workHarness();
     const pending = Promise.withResolvers<BibliographyRenderOutcome>();
     run.render.mockReturnValueOnce(pending.promise);
     vi.mocked(getItemsByKey).mockReturnValue([
@@ -581,7 +587,7 @@ describe("source-less presentation updates", () => {
   });
 
   it("recovers from a database read failure without changing exact identity", async () => {
-    using run = workHarness();
+    await using run = workHarness();
     vi.mocked(getItemsByKey).mockImplementationOnce(() => {
       throw new Error("Database locked");
     });
@@ -604,7 +610,7 @@ describe("source-less bibliography revalidation", () => {
   it.each([true, false])(
     "consumes the replacement bibliography (success: %s)",
     async (success) => {
-      using run = workHarness();
+      await using run = workHarness();
       vi.mocked(getItemsByKey).mockReturnValue([
         makeItem({ key: "ABCD2345", title: "Alpha kernels" }),
       ]);
@@ -656,7 +662,7 @@ describe("source-less bibliography revalidation", () => {
 
 describe("source-less empty bibliography entries", () => {
   it("shows the LETTERS5 summary when the engine returns an empty entry", async () => {
-    using run = workHarness();
+    await using run = workHarness();
     vi.mocked(getItemsByKey).mockReturnValue([
       makeItem({
         key: "LETTERS5",
