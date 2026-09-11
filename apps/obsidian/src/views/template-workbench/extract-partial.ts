@@ -86,7 +86,9 @@ export function extractPartialMenu(
         item
           .setTitle(m.template_workbench_extract_partial())
           .setIcon("file-output")
-          .onClick(() => void extractSelection(view, extract)),
+          .onClick(
+            () => void extractSelection(view, extract).then(reportExtraction),
+          ),
       );
       menu.showAtMouseEvent(event);
       event.preventDefault();
@@ -120,26 +122,31 @@ async function pasteOverSelection(view: EditorView): Promise<void> {
   });
 }
 
+/** What one Extract to partial gesture did with the editor's selection. */
+export type ExtractOutcome = "extracted" | "dismissed" | "stale";
+
 /**
  * Replace the selection with the call the host answers with, as one isolated
  * history event: undo brings the whole selection back in one step and leaves
  * the created file where it is.
+ *
+ * @returns `dismissed` when the reader closes the name prompt without a name,
+ *   and `stale` when an edit landed while the prompt was open: the prompt
+ *   lasts as long as the reader takes, and such an edit moves every offset
+ *   measured before it, so the document keeps its text and the created partial
+ *   stands on its own.
  */
-async function extractSelection(
+export async function extractSelection(
   view: EditorView,
   extract: ExtractPartial,
-): Promise<void> {
+): Promise<ExtractOutcome> {
   const { from, to } = view.state.selection.main;
   const source = view.state.doc.toString();
   const call = await extract(source.slice(from, to));
-  if (call === null) return;
-  // The prompt lasts as long as the reader takes, and an edit that lands while
-  // it is open moves every offset measured before it, so a changed document
-  // keeps its text and the created partial stands on its own.
+  if (call === null) return "dismissed";
   if (view.state.doc.toString() !== source) {
     logger.debug("Dropped an extraction onto a changed document", { call });
-    new BaseNotice(m.notice_partial_extract_stale());
-    return;
+    return "stale";
   }
   view.dispatch({
     changes: { from, to, insert: call },
@@ -147,4 +154,10 @@ async function extractSelection(
     annotations: isolateHistory.of("full"),
     userEvent: "input.extract-partial",
   });
+  return "extracted";
+}
+
+/** The seam that renders one {@link extractSelection} outcome. */
+function reportExtraction(outcome: ExtractOutcome): void {
+  if (outcome === "stale") new BaseNotice(m.notice_partial_extract_stale());
 }
