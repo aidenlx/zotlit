@@ -2727,6 +2727,13 @@ describe("GraphCitations citation edge colour", () => {
       "Reading.md -> Literature/Doe 2024.md": CITATION_LINK,
       "Alias.md -> Literature/Doe 2024.md": NATIVE_LINE,
     });
+
+    fixture.settings.update({ "citation.graph-citations": false });
+
+    expect(paint(engine.renderer)).toEqual({
+      "Reading.md -> Literature/Doe 2024.md": NATIVE_LINE,
+      "Alias.md -> Literature/Doe 2024.md": NATIVE_LINE,
+    });
   });
 
   it("leaves every edge holding its own sprite on teardown", async () => {
