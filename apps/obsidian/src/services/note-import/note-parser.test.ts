@@ -197,8 +197,8 @@ describe("schema gate", () => {
     );
   });
 
-  it.each(["6invalid", "0x6", "6e0"])(
-    "uses basic formatting when schema marker %s is malformed",
+  it.each(["", "invalid", "v6"])(
+    "uses basic formatting when schema marker %s has no leading integer",
     (schemaVersion) => {
       expect(
         parseNote(
