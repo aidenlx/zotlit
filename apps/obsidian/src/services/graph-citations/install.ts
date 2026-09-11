@@ -1,4 +1,4 @@
-// Per-leaf installation: locate a graph leaf's internal members, and swap one member for the life of a Disposable.
+// Locate and validate the internal members used by each graph installation.
 
 import type {
   App,
@@ -12,7 +12,6 @@ import type {
   WorkspaceLeaf,
 } from "obsidian";
 
-import { disposable } from "@/lib/disposables";
 import { getLogger } from "@/lib/log";
 
 const logger = getLogger("graph-citations");
@@ -166,26 +165,4 @@ export function targetOnce<T>(
     return null;
   }
   return probe.build();
-}
-
-/**
- * Replaces `target[key]` with `wrap(original)` until the returned Disposable
- * runs, which puts the object back exactly as found: an inherited member is
- * inherited again, an own member is the same value again.
- *
- * @param wrap receives the member as it was — own or inherited — and returns
- *   its replacement.
- */
-export function wrapMember<T extends object, K extends keyof T>(
-  target: T,
-  key: K,
-  wrap: (original: NonNullable<T[K]>) => T[K],
-): Disposable {
-  const own = Object.hasOwn(target, key);
-  const original = target[key] as NonNullable<T[K]>;
-  target[key] = wrap(original);
-  return disposable(() => {
-    if (own) target[key] = original;
-    else delete target[key];
-  });
 }

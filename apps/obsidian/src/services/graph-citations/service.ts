@@ -1,5 +1,6 @@
 // The Graph Citations service: installs the render facade and the click, right-click and hover wraps on every graph leaf, re-renders on index changes, and restores every swapped member on feature-off and unload.
 
+import { around } from "monkey-around";
 import type {
   App,
   GraphOptions,
@@ -23,7 +24,6 @@ import type { SettingsService } from "@/services/settings/service";
 
 import { graphCitationAdditions, NO_ADDITIONS } from "./adapter";
 import type { GraphCitationAdditions } from "./adapter";
-import { installGraphBookmarks } from "./bookmarks";
 import { wrapNodeClick } from "./click";
 import { colorCitationLinks, installDisplayRows } from "./display";
 import { renderWithFacade } from "./facade";
@@ -35,7 +35,6 @@ import {
   GRAPH_CORE_PLUGIN_ID,
   GRAPH_VIEW_TYPES,
   graphMembersOf,
-  wrapMember,
 } from "./install";
 import type { GraphLeafMembers } from "./install";
 import { GraphLinkColor, installLinkColors } from "./link-color";
@@ -182,7 +181,6 @@ export class GraphCitations extends Service<void> {
 
     await using stack = new AsyncDisposableStack();
     const { workspace } = this.#app;
-    stack.use(installGraphBookmarks(this.#app, () => this.#enabled));
     stack.use(
       installGraphViewCreation(this.#app, (leaf, view) => {
         if (this.#stopped || !this.#enabled) return;
@@ -236,8 +234,8 @@ export class GraphCitations extends Service<void> {
    * controls-panel section writes only the keys its own rows answer, so the
    * rows have to stand before the preset names them.
    *
-   * The preset persists with this view and its bookmarks. Other graph views
-   * keep their own choices.
+   * The preset persists with this view and native global graph bookmarks.
+   * Other graph views keep their own choices.
    *
    * @see apps/obsidian/docs/adr/0029-graph-citations-extend-obsidian-graph-through-a-per-render-metadata-facade.md
    */
@@ -322,10 +320,12 @@ export class GraphCitations extends Service<void> {
     };
     const { restores } = installation;
     restores.use(installGraphViewState(view, engine));
-    restores.use(
-      wrapMember(engine, "render", (render) => () => {
-        installation.additions = this.#additions(engine);
-        return renderWithFacade(engine, render, installation.additions);
+    restores.defer(
+      around(engine, {
+        render: (render) => () => {
+          installation.additions = this.#additions(engine);
+          return renderWithFacade(engine, render, installation.additions);
+        },
       }),
     );
     restores.defer(() => installation.rows[Symbol.dispose]());

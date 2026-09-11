@@ -45,6 +45,7 @@
     "fflate": "catalog:",
     "hono": "catalog:",
     "idb": "^8.0.3",
+    "monkey-around": "catalog:",
     "nanoid": "catalog:",
     "p-limit": "^7.3.0",
     "preact": "catalog:",

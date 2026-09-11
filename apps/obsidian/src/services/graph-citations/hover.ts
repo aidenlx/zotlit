@@ -1,5 +1,6 @@
 // The node-hover wrap: a Literature Note or a Cited Work Node answers the Hover Action — the Citation Popover, or a page preview under the shared citekey source — off an anchor at the node; every other node stays native.
 
+import { around } from "monkey-around";
 import { Keymap, PopoverState } from "obsidian";
 import type { App, GraphData } from "obsidian";
 
@@ -18,7 +19,6 @@ import type { SettingsService } from "@/services/settings/service";
 
 import type { GraphCitationAdditions } from "./adapter";
 import { CITATION_POPOVER } from "./display";
-import { wrapMember } from "./install";
 import type { GraphLeafMembers } from "./install";
 import { rowFlag } from "./rows";
 import "./style.css";
@@ -66,28 +66,26 @@ export function wrapNodeHover(
   const stand = new NodeStand(members);
   const context: NodeHoverContext = { members, deps, stand, additions };
   const stack = new DisposableStack();
-  stack.use(
-    wrapMember(renderer, "onNodeHover", (native) => (evt, id, type) => {
-      if (!hoverNode(context, evt, id)) native(evt, id, type);
-    }),
-  );
-  stack.use(
-    wrapMember(renderer, "onNodeUnhover", (native) => () => {
-      // The pointer has left the node, so the stand stops holding the popover
-      // open, Obsidian's own transition decides what becomes of it, and the
-      // anchor goes unless the popover is still standing on it.
-      stand.release();
-      native();
-      stand.retire();
-    }),
-  );
-  stack.use(
-    wrapMember(renderer, "setData", (native) => (data) => {
-      const result = native(data);
-      const enabled = rowFlag(members.engine, CITATION_POPOVER, false);
-      stand.retainNodes(enabled ? data.nodes : {});
-      if (!enabled) stand.release();
-      return result;
+  stack.defer(
+    around(renderer, {
+      onNodeHover: (native) => (evt, id, type) => {
+        if (!hoverNode(context, evt, id)) native(evt, id, type);
+      },
+      onNodeUnhover: (native) => () => {
+        // The pointer has left the node, so the stand stops holding the popover
+        // open, Obsidian's own transition decides what becomes of it, and the
+        // anchor goes unless the popover is still standing on it.
+        stand.release();
+        native();
+        stand.retire();
+      },
+      setData: (native) => (data) => {
+        const result = native(data);
+        const enabled = rowFlag(members.engine, CITATION_POPOVER, false);
+        stand.retainNodes(enabled ? data.nodes : {});
+        if (!enabled) stand.release();
+        return result;
+      },
     }),
   );
   stack.use(stand);
