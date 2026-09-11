@@ -4,6 +4,7 @@ import { parseYaml, stringifyYaml, getFrontMatterInfo } from "obsidian";
 import { withAnnotationCitation } from "@zotlit/db";
 import type {
   AnnotationTemplateContext,
+  CitationTemplateData,
   NoteTemplateContext,
 } from "@zotlit/db";
 import { replaceSuffixMarkers } from "@zotlit/templates";
@@ -43,7 +44,10 @@ import {
 import { bindProfile } from "@/services/profile/bindings";
 import { seedProfileEntry } from "@/services/profile/service";
 import type { ProfileService } from "@/services/profile/service";
-import { loadTemplateData } from "@/services/template-workbench/data";
+import {
+  loadCitationData,
+  loadTemplateData,
+} from "@/services/template-workbench/data";
 import type { TemplateDataDeps } from "@/services/template-workbench/data";
 import { findExistingLitNote } from "@/services/template/inert-resolver-host";
 import type { TemplateService } from "@/services/template/service";
@@ -191,16 +195,7 @@ async function partialContextData(
   { kind: "data"; data: object } | { kind: "unavailable"; message: string }
 > {
   const sample = request.snapshot.provenance.kind === "sample";
-  if (context === "citation") {
-    const selection = request.citation;
-    const variant = selection?.variant ?? "main";
-    return {
-      kind: "data",
-      data: selection?.example
-        ? citationExampleData(selection.example, variant)
-        : sampleItemCitation(request.snapshot, variant),
-    };
-  }
+  if (context === "citation") return citationRootData(deps, request);
   if (context === "annotation") {
     const example = request.annotation;
     if (!example) {
@@ -262,19 +257,52 @@ async function renderNativeCitation(
   request: RenderRequest,
 ): Promise<NativeRenderResult> {
   const identity = renderIdentity(request);
-  const selection = request.citation!;
   try {
     await deps.templates.ready;
-    const data = selection.example
-      ? citationExampleData(selection.example, selection.variant)
-      : sampleItemCitation(request.snapshot, selection.variant);
+    const data = await citationRootData(deps, request);
+    if (data.kind !== "data") throw new Error(data.message);
     return {
       ...nativeResult(emptyRender(identity)),
-      citation: deps.templates.renderCitationSource(request.source, data),
+      citation: deps.templates.renderCitationSource(request.source, data.data),
     };
   } catch (error) {
     return nativeResult(failedRender(identity, renderFault(error, "render")));
   }
+}
+
+/**
+ * The `citation` root this preview renders against: the selected example set
+ * when the reader picked one, a Sample Item's own snapshot, and a real Item
+ * read from the live database — which is the same read the Data Explorer's
+ * citation root makes, so the two panes show one Item's one Citation.
+ */
+async function citationRootData(
+  deps: NativeRenderDeps,
+  request: RenderRequest,
+): Promise<
+  | { kind: "data"; data: CitationTemplateData }
+  | { kind: "unavailable"; message: string }
+> {
+  const selection = request.citation;
+  const variant = selection?.variant ?? "main";
+  if (selection?.example)
+    return {
+      kind: "data",
+      data: citationExampleData(selection.example, variant),
+    };
+  if (request.snapshot.provenance.kind === "sample")
+    return {
+      kind: "data",
+      data: sampleItemCitation(request.snapshot, variant),
+    };
+  const loaded = await loadCitationData(
+    deps,
+    { key: request.snapshot.item.indexedKey },
+    variant,
+  );
+  return loaded.kind === "data"
+    ? { kind: "data", data: loaded.data }
+    : { kind: "unavailable", message: m.workbench_example_missing_item() };
 }
 
 /** Keep the real note's outside body and unrelated Properties, entirely in memory. */
