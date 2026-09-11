@@ -826,6 +826,8 @@
   "references_db_unavailable": "Open the Zotero database to see references.",
   "references_item_missing": "{linkpath} points to an item that is no longer in your Zotero library.",
   "references_citekey_unresolved": "@{citekey} matches no item in your Zotero library.",
+  "citation_popover_database_unavailable": "Cannot read the Zotero database.",
+  "citation_popover_item_unavailable": "Zotero item not found.",
   "references_citekey_pending": "Looking up @{citekey} in your Zotero library…",
   "references_citekey_ambiguous": "@{citekey} matches multiple items in your Zotero library.",
   "references_citation_fragment_invalid": "This link has an invalid citation fragment.",
