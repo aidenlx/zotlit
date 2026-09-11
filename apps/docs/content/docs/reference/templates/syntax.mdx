@@ -468,7 +468,7 @@ A bare call reaches the partial with no `zt`, so every `zt` output in it comes o
 {% include "authors" %}
 ```
 
-Completion inside `{% render "` and `{% include "` lists every partial in the vault. It writes the name alone, so add the `with zt as zt` clause yourself.
+Completion inside `{% render "` and `{% include "` lists every partial in the vault. Accepting a name writes the whole call: `render` gets the `with zt as zt` clause, `include` needs none. A call you have already given arguments keeps them, and only the name is replaced.
 
 ## Template Document naming [#template-document-naming]
 

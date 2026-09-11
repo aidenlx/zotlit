@@ -237,14 +237,64 @@ interface LanguageProfile {
   }): SuggestionResult | null | undefined;
 }
 
+/** The rest of a call an accepted partial name finishes, and what it replaces. */
+interface PartialCallTail {
+  /** Written after the name: the closing quote, the arguments, and the close. */
+  readonly text: string;
+  /** End of the text the accepted name replaces. */
+  readonly to: number;
+}
+
+/**
+ * How an accepted name finishes the call it is written into, so what the
+ * reader accepts renders the partial rather than an empty scope. Liquid's
+ * `render` opens one, so `zt` travels by name; `include` shares the caller's
+ * scope and Eta takes the root as its second argument.
+ *
+ * A call already carrying arguments is the reader's own: `null` leaves it
+ * alone and only the name is replaced.
+ */
+function partialCallTail(
+  source: string,
+  range: TemplateRange,
+  options: {
+    /** End of the name the accepted option replaces. */
+    readonly nameEnd: number;
+    readonly isEta: boolean;
+    /** The quote the call opened the name with, which it closes with too. */
+    readonly quote: string;
+  },
+): PartialCallTail | null {
+  const { nameEnd, isEta, quote } = options;
+  const rest = source.slice(nameEnd, range.to);
+  const empty = isEta
+    ? /^["']?\)?(?<close>\s*[-_]?%>)?$/
+    : /^["']?(?<close>\s*-?%\})?$/;
+  const match = empty.exec(rest);
+  if (!match) return null;
+  const close = match.groups?.close ?? (isEta ? " %>" : " %}");
+  const args = isEta
+    ? ", zt)"
+    : "name" in range && range.name === "render"
+      ? " with zt as zt"
+      : "";
+  return { text: `${quote}${args}${close}`, to: range.to };
+}
+
 /**
  * Every partial the host has registered, in the order it supplied them, and —
- * where the host creates files — the create entry that ends the list.
+ * where the host creates files — the create entry that ends the list. Each
+ * writes the whole call when `tail` names one.
  */
-function partialOptions(config: SuggestionConfig, query: string): Suggestion[] {
+function partialOptions(
+  config: SuggestionConfig,
+  query: string,
+  tail: PartialCallTail | null,
+): Suggestion[] {
   const options: Suggestion[] = config.partials.map((name) => ({
     label: name,
-    insert: name,
+    insert: name + (tail?.text ?? ""),
+    ...(tail ? { to: tail.to } : {}),
     category: "partial",
     detail: "A partial the host has registered.",
   }));
@@ -253,10 +303,14 @@ function partialOptions(config: SuggestionConfig, query: string): Suggestion[] {
     options.push({
       label: create.label,
       insert: "",
+      ...(tail ? { to: tail.to } : {}),
       category: "new-partial",
       detail: create.detail,
       pinned: true,
-      resolveInsert: () => create.run(query),
+      resolveInsert: async () => {
+        const name = await create.run(query);
+        return name === null ? null : name + (tail?.text ?? "");
+      },
     });
   return options;
 }
@@ -623,12 +677,24 @@ export function suggestions(
   });
 
   const partial = profile.partialPattern.exec(before);
-  if (partial)
+  if (partial) {
+    const { query } = partial.groups;
+    const nameEnd =
+      position + (/^[\w#-]*/.exec(source.slice(position))?.[0].length ?? 0);
     return result(
       "Partial names",
-      partial.groups.query,
-      partialOptions(config, partial.groups.query),
+      query,
+      partialOptions(
+        config,
+        query,
+        partialCallTail(source, range, {
+          nameEnd,
+          isEta,
+          quote: source[position - query.length - 1] ?? '"',
+        }),
+      ),
     );
+  }
 
   const triggered = profile.extraTrigger({
     range,
