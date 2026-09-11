@@ -18,7 +18,14 @@ function makeHarness(options?: {
   defaultDocument?: string;
   ejectedAnnotation?: boolean;
   verificationAnnotation?: object | null;
+  /**
+   * The 2.1.x documents the folder holds. Supplying them makes this a vault
+   * with no Legacy Template File slots at all, which the prompt still arms
+   * for: a `cite` or a bare partial is a legacy file like any other.
+   */
+  legacyDocuments?: LegacyTemplateDocuments;
 }) {
+  const documentsOnly = options?.legacyDocuments !== undefined;
   const state = {
     "note.default-profile": {
       ...defaults["note.default-profile"],
@@ -30,11 +37,13 @@ function makeHarness(options?: {
     } | null,
     "template.folder": "templates",
   };
-  const legacyPaths = [
-    "templates/zotlit-note.liquid.md",
-    "templates/zotlit-content.liquid.md",
-    "templates/zotlit-filename.liquid.md",
-  ];
+  const legacyPaths = documentsOnly
+    ? (options.legacyDocuments?.partials ?? []).map(({ path }) => path)
+    : [
+        "templates/zotlit-note.liquid.md",
+        "templates/zotlit-content.liquid.md",
+        "templates/zotlit-filename.liquid.md",
+      ];
   if (options?.ejectedAnnotation) {
     legacyPaths.push("templates/zotlit-annotation.liquid.md");
   }
@@ -62,14 +71,18 @@ function makeHarness(options?: {
   };
   const template = {
     ready: Promise.resolve(),
-    getLegacyLiteratureNoteTemplateFiles: vi.fn(() => [
-      "templates/zotlit-filename.liquid.md",
-      "templates/zotlit-note.liquid.md",
-      ...(options?.ejectedAnnotation
-        ? ["templates/zotlit-annotation.liquid.md"]
-        : []),
-      "templates/zotlit-content.liquid.md",
-    ]),
+    getLegacyLiteratureNoteTemplateFiles: vi.fn(() =>
+      documentsOnly
+        ? []
+        : [
+            "templates/zotlit-filename.liquid.md",
+            "templates/zotlit-note.liquid.md",
+            ...(options?.ejectedAnnotation
+              ? ["templates/zotlit-annotation.liquid.md"]
+              : []),
+            "templates/zotlit-content.liquid.md",
+          ],
+    ),
     convertLegacyLiteratureNoteTemplates: vi.fn(async () => ({
       source: "converted source",
       legacyFiles: [
@@ -82,7 +95,8 @@ function makeHarness(options?: {
       ],
     })),
     getLegacyTemplateDocuments: vi.fn(
-      (): LegacyTemplateDocuments => ({ citation: [], partials: [] }),
+      (): LegacyTemplateDocuments =>
+        options?.legacyDocuments ?? { citation: [], partials: [] },
     ),
     convertLegacyTemplateDocuments: vi.fn(async () => ({
       documents: [] as { path: string; source: string }[],
@@ -146,6 +160,31 @@ describe("LiteratureNoteTemplateMigrationService", () => {
     expect([...harness.files.keys()]).toEqual(paths);
     expect(harness.create).not.toHaveBeenCalled();
     expect(harness.trashFile).not.toHaveBeenCalled();
+  });
+
+  it("arms the prompt for a vault whose only legacy files are 2.1.x documents", async () => {
+    const harness = makeHarness({
+      legacyDocuments: {
+        citation: [],
+        partials: [
+          {
+            name: "venue",
+            path: "templates/zotlit-venue.liquid.md",
+            language: "liquid",
+            inert: false,
+            shadowed: [],
+          },
+        ],
+      },
+    });
+
+    await harness.service.ready;
+    harness.layoutReady();
+
+    expect(harness.settings.update).toHaveBeenCalledWith({
+      "note.template-conversion-pending": true,
+    });
+    expect(harness.openPrompt).toHaveBeenCalledOnce();
   });
 
   it("writes the verified document before persisting and trashing legacy files", async () => {

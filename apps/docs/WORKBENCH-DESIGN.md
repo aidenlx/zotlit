@@ -345,7 +345,8 @@ Shared surfaces and their owners:
 | `toast.add()` | [toast.tsx](src/components/ui/toast.tsx) | Routine action confirmations |
 | `ResultHeader`, `ResultBody`, `ResultColumn`, `PreviewControls` | `@zotlit/workbench/ui` | The rendered result and its stale notice on both hosts; a host that owns its own heading composes `ResultBody` |
 | Render scheduler `staleReason` | `@zotlit/workbench/ui` | Which stale sentence a host shows: hold, on demand, or none |
-| Theme parts per component | [web theme](src/lib/workbench/theme.tsx), [Obsidian theme](../obsidian/src/views/template-workbench/theme.tsx) | Every class a shared part wears; a new part needs a value in both |
+| Theme parts per component | [web theme](src/lib/workbench/theme.tsx), [Obsidian theme](../obsidian/src/views/template-workbench/theme.tsx) | Every class a shared part wears; a new part needs a value in both, unless only one host draws it |
+| `partial-box`, `partial-name`, `partial-arguments`, `partial-problem`, `partial-action` | Obsidian theme | The Partial Placeholder. Shared Partials are vault files (ADR 0050), so the web passes no placeholder host and carries no values for these parts |
 | `templateWorkbenchButton`, `selectionBar`, `selectionControl`, `selectionHint` | Obsidian theme | Text buttons, the selection row, its triggers, and hint text in the Obsidian panes |
 | `addAction`, `onPaneMenu` with `setSection` and `setChecked` | Obsidian API | Header actions and grouped, checked pane menu items |
 

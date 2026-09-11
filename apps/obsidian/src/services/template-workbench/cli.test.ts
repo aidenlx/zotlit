@@ -35,7 +35,8 @@ import {
   TEMPLATE_STATUS_COMMAND,
 } from "./cli";
 import { CONTRACT_VERSION, DIAGNOSTIC_HINTS } from "./envelope";
-import { TEMPLATE_SLOT_NAMES } from "./request";
+import { GUIDE_TOPIC_NAMES } from "./guide";
+import { RENDER_TEMPLATE_NAMES } from "./request";
 import { CONTRACT_ROOT_NAMES } from "./schema";
 
 const PLUGIN_VERSION = "1.2.3";
@@ -582,16 +583,9 @@ describe("Template Workbench CLI", () => {
     expect(output).toContain("frontmatter-set");
     expect(output).toContain("frontmatter-remove");
     expect(output).toContain("frontmatter-reorder");
-    for (const topic of [
-      "data",
-      "render",
-      "editing",
-      "eta",
-      "liquid",
-      "frontmatter",
-    ]) {
-      expect(output).toContain(topic);
-    }
+    // Every topic the index offers, read from the registry the guide renders
+    // it from, so a topic added later cannot be left out of the index.
+    for (const topic of GUIDE_TOPIC_NAMES) expect(output).toContain(topic);
   });
 
   it.each([
@@ -599,8 +593,11 @@ describe("Template Workbench CLI", () => {
     [
       "render",
       [
-        ...TEMPLATE_SLOT_NAMES,
-        "partial:<name>",
+        // Every form template-render accepts, the Citation Template and a
+        // Shared Partial among them, each with the row that explains it.
+        ...RENDER_TEMPLATE_NAMES,
+        "Renders zotlit-citation.md",
+        "zotlit-partial.<name>.md",
         "root=<note|annotation|citation>",
       ],
     ],
