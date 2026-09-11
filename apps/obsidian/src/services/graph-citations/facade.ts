@@ -55,21 +55,39 @@ function facadeMetadataCache(
   cache: MetadataCache,
   additions: GraphCitationAdditions,
 ): MetadataCache {
-  const resolvedLinks = mergeLinkMaps(
+  let resolvedLinks = mergeLinkMaps(
     withoutLinks(cache.resolvedLinks, additions.hiddenLinks),
     additions.resolvedLinks,
   );
-  const unresolvedLinks = mergeLinkMaps(
+  let unresolvedLinks = mergeLinkMaps(
     cache.unresolvedLinks,
     additions.unresolvedLinks,
   );
-  const { survivingPaths } = additions;
+  const { survivingPaths, citedWorkNodes } = additions;
   // The scan builds a node per cached file, so the narrowed list is what
   // "Citation-connected only" takes away — and the local narrowing and the
   // orphan sweep, which run after it inside the same render, run on what is
   // left. An edge into a file that is gone draws nothing.
   const narrows =
     survivingPaths !== null && typeof cache.getCachedFiles === "function";
+  if (narrows) {
+    // A link is more than an edge, so the narrowed list is not the whole of
+    // it. An unresolved link draws a node of its own, and a local graph's
+    // depth expansion draws one for any link target a surviving note reaches,
+    // whichever list that target was in (`app.js` 1.14.1, the unresolved walk
+    // in the engine's `render` and the forelink pass of the local expansion).
+    // So a `[[todo]]` a citing note happens to carry would put a node back
+    // that has no citation relationship at all. Each syntax keeps the targets
+    // its own nodes stand for: a surviving path, and a Cited Work Node this
+    // render drew. Every citation the additions state reaches one or the
+    // other, so this takes no citation away.
+    resolvedLinks = onlyLinksTo(resolvedLinks, (target) =>
+      survivingPaths.has(target),
+    );
+    unresolvedLinks = onlyLinksTo(unresolvedLinks, (target) =>
+      citedWorkNodes.has(target),
+    );
+  }
   return new Proxy(cache, {
     get(target, key, receiver) {
       if (key === "resolvedLinks") return resolvedLinks;
@@ -106,6 +124,26 @@ export function withoutLinks(base: LinkMap, hidden: LinkMap): LinkMap {
     stripped[source] = kept;
   }
   return stripped;
+}
+
+/**
+ * Subtracts every link into a target `kept` turns down, counted per source.
+ *
+ * @returns `base` with those targets gone; `base` itself when `kept` turns
+ *   none of them down. Neither the input nor its entries are mutated.
+ */
+export function onlyLinksTo(
+  base: LinkMap,
+  kept: (target: string) => boolean,
+): LinkMap {
+  const stripped: LinkMap = {};
+  let dropped = false;
+  for (const [source, links] of Object.entries(base)) {
+    const entries = Object.entries(links).filter(([target]) => kept(target));
+    if (entries.length !== Object.keys(links).length) dropped = true;
+    stripped[source] = Object.fromEntries(entries);
+  }
+  return dropped ? stripped : base;
 }
 
 /**

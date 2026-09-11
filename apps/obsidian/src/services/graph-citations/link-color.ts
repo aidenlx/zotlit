@@ -78,27 +78,55 @@ export function installLinkColors(
       "renderer.links": Array.isArray(renderer.links),
       "renderer.getHighlightNode":
         typeof renderer.getHighlightNode === "function",
+      "renderer.changed": typeof renderer.changed === "function",
     },
     { viewType },
   );
   if (!present) return disposable(() => {});
 
   /**
+   * The colour a citation edge stands to be drawn in: the theme's, while the
+   * row is on. `null` where the row is off or the theme states no colour,
+   * which is the graph drawn in Obsidian's own link colour throughout.
+   */
+  const tint = (): number | null =>
+    options.enabled() ? (options.color.current()?.rgb ?? null) : null;
+
+  /**
    * What one frame writes to a citation edge's line. `null` leaves the write
-   * as it came: the row is off, the theme states no colour, or the edge is
-   * one of those the pointer's node highlights.
+   * as it came: there is no citation colour to draw, or the edge is one of
+   * those the pointer's node highlights.
    */
   const tintOf = (link: GraphLink): number | null => {
-    if (!options.enabled()) return null;
+    const substitute = tint();
+    if (substitute === null) return null;
     const highlight = renderer.getHighlightNode!();
     if (highlight === link.source || highlight === link.target) return null;
-    return options.color.current()?.rgb ?? null;
+    return substitute;
   };
-  const isCitation = (link: GraphLink): boolean =>
-    installation.additions.citationLinks[link.source.id]?.[link.target.id] !==
-    undefined;
+  /**
+   * Whether a Citation named this edge, in either direction. Obsidian keeps
+   * both edges of a reciprocal pair but draws one line for the two: a link
+   * whose source also holds a reverse link from its target draws nothing
+   * where `source.id.localeCompare(target.id) < 0` (`app.js` 1.14.1,
+   * `GraphLink.render`). So the citation A→B is the hidden line whenever
+   * B links back to A and A sorts first, and the one line the reader sees is
+   * B→A. Reading the pair either way puts the tint on whichever of the two
+   * the frame draws.
+   */
+  const isCitation = (link: GraphLink): boolean => {
+    const { citationLinks } = installation.additions;
+    const source = link.source.id;
+    const target = link.target.id;
+    return (
+      citationLinks[source]?.[target] !== undefined ||
+      citationLinks[target]?.[source] !== undefined
+    );
+  };
 
   let tints = new DisposableStack();
+  /** The colour the last hand-off left the edges standing to be drawn in. */
+  let drawn: number | null = null;
   const renew = (): void => {
     tints.dispose();
     tints = new DisposableStack();
@@ -110,9 +138,20 @@ export function installLinkColors(
   restores.use(
     wrapMember(renderer, "setData", (setData) => (data) => {
       // After the hand-off: it is the hand-off that adds and removes edges.
-      const drawn = setData.call(renderer, data);
+      const handedOff = setData.call(renderer, data);
       renew();
-      return drawn;
+      // The row and the theme both change the colour with no node and no edge
+      // changing, and a hand-off that changes neither asks for no frame of its
+      // own (`app.js` 1.14.1, `setData` calls `changed` only where one of them
+      // changed). So a graph standing still would keep the colour it was last
+      // drawn in until something else redrew it; the hand-off that reads a new
+      // colour asks for that frame itself.
+      const next = tint();
+      if (next !== drawn) {
+        drawn = next;
+        renderer.changed!();
+      }
+      return handedOff;
     }),
   );
   restores.defer(() => tints.dispose());
