@@ -687,6 +687,8 @@
   "graph_option_wikilink_citations_desc": "Draw an edge from each note to the literature notes it links to.",
   "graph_option_citation_connected_only_name": "Citation-connected only",
   "graph_option_citation_connected_only_desc": "Hide every node except literature notes, cited works, and the notes that cite them.",
+  "graph_option_color_citation_links_name": "Color citation links",
+  "graph_option_color_citation_links_desc": "Draw citation links in their own color. Turn this off to draw every link in the same color.",
   "graph_citations_menu_create_note": "Create literature note",
   "graph_citations_menu_copy_citekey": "Copy citation key",
   "graph_citations_citekey_copied": "Citation key copied.",

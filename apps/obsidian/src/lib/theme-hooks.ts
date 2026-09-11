@@ -36,4 +36,6 @@ export const themeProperty = {
   graphLiteratureNote: "--zt-graph-literature-note-color",
   /** The fill colour of a Cited Work Node in the graph views. */
   graphCitedWorkNode: "--zt-graph-cited-work-node-color",
+  /** The line colour of a citation edge in the graph views. */
+  graphCitationLink: "--zt-graph-citation-link-color",
 } as const;

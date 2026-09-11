@@ -5,7 +5,7 @@ import type { GraphEngine, GraphOptions } from "obsidian";
 import * as m from "@/lib/i18n/generated/messages";
 
 import type { GraphCitationFilters } from "./adapter";
-import { installToggleRow, toggleRowTarget } from "./rows";
+import { installToggleRow, rowFlag, toggleRowTarget } from "./rows";
 
 /** The option key the "Pandoc citations" row persists under. */
 export const PANDOC_CITATIONS = "zotlit-pandoc-citations";
@@ -46,7 +46,10 @@ export function installFilterRows(
   options: FilterRowsOptions,
 ): Disposable {
   const rows = new DisposableStack();
-  const target = toggleRowTarget(engine, { saved: options.saved });
+  const target = toggleRowTarget(engine, {
+    section: "filter",
+    saved: options.saved,
+  });
   if (!target) return rows;
   rows.use(
     installToggleRow(target, {
@@ -94,17 +97,18 @@ export function graphCitationFilters(
   engine: { options?: GraphOptions },
   options: GraphCitationFiltersOptions,
 ): GraphCitationFilters {
-  const live = engine.options ?? {};
   return {
-    pandocCitations: flag(live, PANDOC_CITATIONS),
+    pandocCitations: flag(engine, PANDOC_CITATIONS),
     wikilinkCitations: options.wikilinkCitations
-      ? flag(live, WIKILINK_CITATIONS)
+      ? flag(engine, WIKILINK_CITATIONS)
       : null,
-    citationConnectedOnly: flag(live, CITATION_CONNECTED_ONLY),
+    citationConnectedOnly: flag(engine, CITATION_CONNECTED_ONLY),
   };
 }
 
-function flag(options: GraphOptions, key: keyof typeof DEFAULTS): boolean {
-  const value = options[key];
-  return typeof value === "boolean" ? value : DEFAULTS[key];
+function flag(
+  engine: { options?: GraphOptions },
+  key: keyof typeof DEFAULTS,
+): boolean {
+  return rowFlag(engine, key, DEFAULTS[key]);
 }

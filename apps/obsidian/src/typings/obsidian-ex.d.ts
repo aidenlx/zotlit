@@ -164,6 +164,8 @@ declare module "obsidian" {
     filterOptions?: GraphControlSection;
     /** The Groups section of the controls panel. */
     colorGroupOptions?: GraphColorGroupSection;
+    /** The Display section of the controls panel. */
+    displayOptions?: GraphControlSection;
     /**
      * Hands `options` to every section, then re-renders. A colour group written
      * this way reaches the Groups section's own option listener, which rebuilds
@@ -258,6 +260,40 @@ declare module "obsidian" {
     scale?: number;
     panX?: number;
     panY?: number;
+    /**
+     * Every edge the graph draws, source to target as the link maps state it.
+     * The renderer's constructor seeds the array and `setData` keeps the same
+     * one, so an install-time check is the whole check.
+     */
+    links?: GraphLink[];
+    /**
+     * The node the pointer rests on or a drag holds; `null` while neither. An
+     * edge incident to it is the one Obsidian draws in its highlight colour.
+     */
+    getHighlightNode?(): GraphDrawnNode | null;
+  }
+  /**
+   * One edge as the renderer draws it. Internal; shape verified against
+   * Obsidian 1.14.1.
+   */
+  interface GraphLink {
+    source: GraphDrawnNode;
+    target: GraphDrawnNode;
+    /**
+     * The sprite the edge's line is drawn as, whose `tint` every frame
+     * writes. Absent until the edge's graphics are built — the first frame
+     * both its nodes are drawn — and `null` again once they are cleared.
+     */
+    line?: GraphLinkSprite | null;
+  }
+  /** One node as the renderer draws it; the renderer holds one per node id. */
+  interface GraphDrawnNode {
+    id: string;
+  }
+  /** The sprite one edge's line is drawn as. */
+  interface GraphLinkSprite {
+    /** The line colour, packed as {@link GraphColor.rgb}. */
+    tint: number;
   }
   /**
    * @param id the node id: a vault path, an unresolved linkpath, or a tag.

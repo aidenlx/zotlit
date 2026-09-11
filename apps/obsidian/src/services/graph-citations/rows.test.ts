@@ -143,27 +143,59 @@ describe("installToggleRow", () => {
 });
 
 describe("toggleRowTarget", () => {
-  it("reads the Filters section off the engine", () => {
-    const section = new FakeControlSection();
+  it("reads the section the caller names off the engine", () => {
+    const filterOptions = new FakeControlSection();
+    const displayOptions = new FakeControlSection();
     const engine = {
       options: {},
       render: vi.fn(),
       onOptionsChange: vi.fn(),
-      filterOptions: section,
+      filterOptions,
+      displayOptions,
     };
 
-    expect(toggleRowTarget(engine, { saved: null })).toEqual({
-      engine,
-      section,
-      saved: null,
-    });
+    expect(toggleRowTarget(engine, { section: "filter", saved: null })).toEqual(
+      { engine, section: filterOptions, saved: null },
+    );
+    expect(
+      toggleRowTarget(engine, { section: "display", saved: null }),
+    ).toEqual({ engine, section: displayOptions, saved: null });
   });
 
-  it("answers null when the build moved a member, and reports it once per engine", () => {
+  it("answers null when the build moved a member, and reports it once per section", () => {
     const engine = { options: {}, render: vi.fn() } as GraphEngine;
 
-    expect(toggleRowTarget(engine, { saved: null })).toBeNull();
-    expect(toggleRowTarget(engine, { saved: null })).toBeNull();
-    expect(warn).toHaveBeenCalledOnce();
+    expect(
+      toggleRowTarget(engine, { section: "filter", saved: null }),
+    ).toBeNull();
+    expect(
+      toggleRowTarget(engine, { section: "filter", saved: null }),
+    ).toBeNull();
+    expect(
+      toggleRowTarget(engine, { section: "display", saved: null }),
+    ).toBeNull();
+
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls.map(([, context]) => context.section)).toEqual([
+      "filter",
+      "display",
+    ]);
+  });
+
+  it("leaves the other section readable when one of them moved", () => {
+    const displayOptions = new FakeControlSection();
+    const engine = {
+      options: {},
+      render: vi.fn(),
+      onOptionsChange: vi.fn(),
+      displayOptions,
+    } as unknown as GraphEngine;
+
+    expect(
+      toggleRowTarget(engine, { section: "filter", saved: null }),
+    ).toBeNull();
+    expect(
+      toggleRowTarget(engine, { section: "display", saved: null }),
+    ).toMatchObject({ section: displayOptions });
   });
 });

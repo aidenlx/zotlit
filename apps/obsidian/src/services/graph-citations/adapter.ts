@@ -53,6 +53,14 @@ export interface GraphCitationAdditions {
   resolvedLinks: LinkMap;
   /** Note -> Cited Work Node edges; the target is a node id, never a path. */
   unresolvedLinks: LinkMap;
+  /**
+   * Every edge one render draws because of a Citation, source and target once
+   * each: the edge each citekey occurrence names, added here or already drawn
+   * by a link of the note's own, and each Wikilink Citation edge the rows
+   * keep. An ordinary link into a Literature Note is in none of them, and an
+   * edge the rows take away is in none of them either.
+   */
+  citationLinks: LinkMap;
   /** Every Cited Work Node the additions draw, by node id, with the citekey it stands for. */
   citedWorkNodes: ReadonlyMap<string, string>;
   /**
@@ -85,6 +93,7 @@ export interface GraphCitationAdditions {
 export const NO_ADDITIONS: GraphCitationAdditions = {
   resolvedLinks: {},
   unresolvedLinks: {},
+  citationLinks: {},
   citedWorkNodes: new Map(),
   citingSources: new Map(),
   literatureNotes: new Set(),
@@ -131,6 +140,7 @@ export function graphCitationAdditions(
   const { filters } = input;
   const resolvedLinks: LinkMap = {};
   const unresolvedLinks: LinkMap = {};
+  const citationLinks: LinkMap = {};
   const citedWorkNodes = new Map<string, string>();
   const citingSources = new Map<string, string>();
   const literatureNotes = new Set(input.literatureNotes);
@@ -145,7 +155,12 @@ export function graphCitationAdditions(
   // A note that cites only by wikilink is citation-connected only while those
   // edges are drawn; with the row off they are gone, and so is the note.
   if (filters.wikilinkCitations === true) {
-    for (const path of Object.keys(wikilinks)) citingPaths.add(path);
+    for (const [path, targets] of Object.entries(wikilinks)) {
+      citingPaths.add(path);
+      for (const target of Object.keys(targets)) {
+        (citationLinks[path] ??= {})[target] = 1;
+      }
+    }
   }
 
   for (const [path, occurrences] of input.occurrences) {
@@ -164,9 +179,13 @@ export function graphCitationAdditions(
         const id = nodes[0]!;
         citedWorkNodes.set(id, raw);
         (unresolvedLinks[path] ??= {})[id] = 1;
+        (citationLinks[path] ??= {})[id] = 1;
         continue;
       }
       const note = notes.find((candidate) => linked[candidate]) ?? notes[0]!;
+      // The citekey names this edge whoever draws it, so it is a citation
+      // edge even where a link of the note's own already carries it.
+      (citationLinks[path] ??= {})[note] = 1;
       // An edge this render still draws for the source is one the citekey
       // must not duplicate; one it is about to take away is an edge the
       // citekey draws itself.
@@ -179,6 +198,7 @@ export function graphCitationAdditions(
   return {
     resolvedLinks,
     unresolvedLinks,
+    citationLinks,
     citedWorkNodes,
     citingSources,
     literatureNotes,
