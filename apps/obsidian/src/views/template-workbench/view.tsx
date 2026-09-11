@@ -115,7 +115,11 @@ import { rememberTemplateItem } from "@/views/template-data-explorer/item-memory
 import type { ExplorerViewDeps } from "@/views/template-data-explorer/view";
 
 import { runTemplateWorkbenchAction } from "./actions";
-import { templateDocumentKind, templatePartialName } from "./document-kind";
+import {
+  templateDocumentKind,
+  templateFolderOf,
+  templatePartialName,
+} from "./document-kind";
 import { partialCall } from "./extract-partial";
 import { createTemplateWorkbenchHost } from "./host";
 import { createMatchData } from "./match-data";
@@ -411,7 +415,11 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   /** The Template Document this view holds, which picks its tabs and its root. */
   get documentKind(): WorkbenchDocumentKind {
-    return templateDocumentKind(this.file);
+    return templateDocumentKind(this.file, this.#templateFolder);
+  }
+  /** The folder a filename has to sit in to name a Template Document. */
+  get #templateFolder(): string {
+    return templateFolderOf(this.#deps.settings);
   }
   /** The root an editor with no template region of its own writes. */
   get #defaultRoot(): TemplateRoot {
@@ -456,7 +464,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   }
   get authoringContext(): TemplateAuthoringContext {
     const { item, root, tab, advanced } = this.store.getState();
-    const partialName = templatePartialName(this.file?.path ?? "");
+    const partialName = templatePartialName(
+      this.file?.path ?? "",
+      this.#templateFolder,
+    );
     return {
       leaf: this.leaf,
       path: this.file?.path ?? null,
@@ -645,7 +656,10 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
   override getDisplayText(): string {
     if (this.documentKind === "citation")
       return m.template_workbench_title_citation();
-    const name = templatePartialName(this.file?.path ?? "");
+    const name = templatePartialName(
+      this.file?.path ?? "",
+      this.#templateFolder,
+    );
     if (name !== null) return m.template_workbench_title_partial({ name });
     const label = this.profileLabel;
     return label === null

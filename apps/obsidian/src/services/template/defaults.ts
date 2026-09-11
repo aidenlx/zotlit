@@ -1,5 +1,5 @@
 import { regex } from "arkregex";
-import { basename, join } from "node:path/posix";
+import { basename, dirname, join } from "node:path/posix";
 
 import annotation from "@zotlit/templates/defaults/annotation.liquid?raw";
 import citation from "@zotlit/templates/defaults/citation.liquid?raw";
@@ -234,6 +234,18 @@ export type TemplateFolderFile =
     }
   | { kind: "legacy-partial"; name: string; language: TemplateLanguage }
   | { kind: "unrecognized" };
+
+/**
+ * Whether `path` names a direct child of `folder`. The folder scan is flat, so
+ * a `zotlit-` file one level down is a note like any other — and so is the
+ * same filename anywhere else in the vault.
+ */
+export function inTemplateFolder(path: string, folder: string): boolean {
+  return (
+    normalizeVaultPath(dirname(normalizeVaultPath(path))) ===
+    normalizeVaultPath(folder)
+  );
+}
 
 /**
  * Classify one file of the template folder by its filename prefix.

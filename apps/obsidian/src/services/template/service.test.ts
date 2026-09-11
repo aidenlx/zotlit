@@ -2238,6 +2238,30 @@ describe("Template Document kinds", () => {
     });
   });
 
+  it("bundles a partial the JavaScript Templates gate left inert, and skips one that will not parse", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-partial.scripted.md",
+      "---\nlanguage: eta\n---\n<%= it.title %>",
+    );
+    vault.addFile("templates/zotlit-partial.authors.md", "{{ zt.authors }}");
+    vault.addFile(
+      "templates/zotlit-partial.broken.md",
+      "---\nlanguage: liquid\n",
+    );
+    // The gate is off, so `scripted` renders nothing on this device.
+    const { service } = await makeHarness({ vault });
+
+    expect(service.render("authors", { authors: "Rougier" })).toBe("Rougier");
+    // The reader can still share the text they wrote; the recipient's own gate
+    // decides whether it runs there. A document with no readable source cannot
+    // travel at all.
+    expect(service.getPartialEntries()).toEqual([
+      { name: "authors", language: "liquid", source: "{{ zt.authors }}" },
+      { name: "scripted", language: "eta", source: "<%= it.title %>" },
+    ]);
+  });
+
   it("creates a Shared Partial that renders at once and trashes it again", async () => {
     const { service, vault } = await makeHarness();
 

@@ -42,7 +42,10 @@ import { openSettingsTab } from "@/lib/open-settings";
 import type { ItemLookup } from "@/services/item-lookup/service";
 import type { ProfileService } from "@/services/profile/service";
 import type { SettingsService } from "@/services/settings/service";
-import { templatePartialName } from "@/views/template-workbench/document-kind";
+import {
+  templateFolderOf,
+  templatePartialName,
+} from "@/views/template-workbench/document-kind";
 import { createTemplateWorkbenchHost } from "@/views/template-workbench/host";
 import {
   chooseWorkbenchItem,
@@ -701,7 +704,10 @@ export class NotePreviewView extends ItemView {
         value["root"] === "citation"
           ? value["root"]
           : "note";
-      const partialName = path === null ? null : templatePartialName(path);
+      const partialName =
+        path === null
+          ? null
+          : templatePartialName(path, templateFolderOf(this.#deps.settings));
       const context: TemplateAuthoringContext | null =
         source && (path !== null || source.builtin === true)
           ? {

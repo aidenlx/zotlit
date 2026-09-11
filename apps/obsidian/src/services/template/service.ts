@@ -445,6 +445,10 @@ export class TemplateService extends Service<void> {
   readonly #pending: TemplateWork = emptyTemplateWork();
   /** Partial name → the `zotlit-partial.<name>.md` document backing it. */
   readonly #partials = new Map<string, RegisteredPartial>();
+  /** Partial name → the text of a document the JavaScript Templates gate left
+   *  inert. Nothing renders it here; a Share still carries what the reader
+   *  wrote, since the gate rules out running the text, not copying it. */
+  readonly #inertPartials = new Map<string, LiteratureNoteTemplatePartial>();
   /** Every name the folder holds a `zotlit-partial.<name>.md` for, whether or
    *  not it compiled: the vault's namespace, which completion offers and the
    *  name rule checks a new name against. */
@@ -1097,17 +1101,24 @@ export class TemplateService extends Service<void> {
   /**
    * {@link getPartialNames} as bundle entries — the name, the language, and
    * the source under the manifest — which is what a Share writes into a
-   * Profile manifest's transport list. A name whose document failed to parse
-   * or is left inert by the JavaScript Templates gate carries no source, so it
-   * is left out: a bundle holds only text this vault can render.
+   * Profile manifest's transport list.
+   *
+   * A document the JavaScript Templates gate left inert is carried all the
+   * same: the gate rules out running the text on this device, not copying it,
+   * and the recipient's own gate decides there. A document that failed to
+   * parse has no source to separate from its manifest, so it is left out and
+   * the Share sheet reports the name as one the bundle could not answer.
    */
   getPartialEntries(): readonly LiteratureNoteTemplatePartial[] {
     this.#requireLoaded("getPartialEntries");
     return this.getPartialNames().flatMap((name) => {
       const registered = this.#partials.get(name);
-      return registered
-        ? [{ name, language: registered.language, source: registered.source }]
-        : [];
+      if (registered)
+        return [
+          { name, language: registered.language, source: registered.source },
+        ];
+      const inert = this.#inertPartials.get(name);
+      return inert ? [inert] : [];
     });
   }
 
@@ -1777,6 +1788,7 @@ export class TemplateService extends Service<void> {
       this.#inertEta.clear();
       this.#winners.clear();
       this.#partials.clear();
+      this.#inertPartials.clear();
       this.#partialNames.clear();
       this.#reservedPartialFiles.clear();
       this.#citation = null;
@@ -2106,6 +2118,7 @@ export class TemplateService extends Service<void> {
       }
       this.#removePartial(name);
       this.#inertEta.set(name, path);
+      this.#inertPartials.set(name, { name, language, source: parsed.source });
       return;
     }
 
@@ -2215,6 +2228,7 @@ export class TemplateService extends Service<void> {
 
   #removePartial(name: string): void {
     this.#partials.delete(name);
+    this.#inertPartials.delete(name);
     this.#unregisterTemplate(name);
   }
 
