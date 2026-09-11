@@ -187,7 +187,11 @@ export function installLinkColors(
       },
     }),
   );
-  restores.defer(() => tints.dispose());
+  restores.defer(() => {
+    tints.dispose();
+    // Unchanged topology does not trigger a native redraw after teardown.
+    renderer.changed!();
+  });
   return restores;
 }
 
