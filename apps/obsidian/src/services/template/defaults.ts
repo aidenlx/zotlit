@@ -142,10 +142,15 @@ export function partialFilename(name: string): string {
  * name replaces that slot's compiled template: a `zotlit-partial.filename.md`
  * would name every new Literature Note.
  */
-export const RESERVED_PARTIAL_NAMES: ReadonlySet<string> = new Set<string>([
+export const RESERVED_PARTIAL_NAME_LIST: readonly string[] = [
   ...TEMPLATE_NAMES,
   CITATION_TEMPLATE_NAME,
-]);
+];
+
+/** {@link RESERVED_PARTIAL_NAME_LIST} as a membership test. */
+export const RESERVED_PARTIAL_NAMES: ReadonlySet<string> = new Set<string>(
+  RESERVED_PARTIAL_NAME_LIST,
+);
 
 const PARTIAL_NAME = /^[A-Za-z0-9-]+$/;
 const PARTIAL_NAME_SPACES = /\s+/g;

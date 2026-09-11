@@ -8,6 +8,7 @@ import {
 } from "@zotlit/templates/liquid";
 
 import { DOCS_SITE_URL, RESERVED_KEYS } from "@/lib/constants";
+import { RESERVED_PARTIAL_NAME_LIST } from "@/services/template/defaults";
 
 import type { DiagnosticCode } from "./envelope";
 import { CONTRACT_ROOT_NAMES } from "./schema";
@@ -549,8 +550,9 @@ INSPECTION
 SHARED PARTIALS
   A Shared Partial is a zotlit-partial.<name>.md document directly inside the
   template folder, vault-global and reachable from every Template by name. The
-  name is letters, digits, and hyphens, unique in the vault, and never
-  annotation or citation. Like the Citation Template, the document is an
+  name is letters, digits, and hyphens, unique in the vault, and never one of
+  the reserved names ${quotedList(RESERVED_PARTIAL_NAME_LIST)}.
+  Like the Citation Template, the document is an
   optional YAML manifest carrying language, then the source under it; no
   manifest means Liquid. Rename and delete are file operations; ZotLit never
   rewrites the calls.
@@ -559,8 +561,8 @@ SHARED PARTIALS
   body, from an Annotation Section, and from the Citation Template. Its own
   editor and template-render therefore take the caller as a choice —
   root=<${PARTIAL_CONTEXT_NAMES.join("|")}>, default note — rather than reading it off
-  the callers, since a partial nothing calls and one two roots call each name
-  no caller to read (ADR 0050).
+  the callers, since a partial nothing calls, and a partial two roots call,
+  each leave no single caller to read (ADR 0050).
 
   obsidian zotlit:template-render template=partial:<name> \\
       root=<${PARTIAL_CONTEXT_NAMES.join("|")}> key=<zotero-key> expect-source=<source-id>
