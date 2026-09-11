@@ -1,13 +1,42 @@
+// @vitest-environment happy-dom
 import { TFile } from "obsidian";
 import type { Command } from "obsidian";
+import type { App } from "obsidian";
 import { expect, it, vi } from "vitest";
+
+import { MissingTemplateError } from "@zotlit/templates/facade";
 
 import * as m from "@/lib/i18n/generated/messages";
 
-import { addNoteFeatureActions } from "./actions";
+import {
+  addNoteFeatureActions,
+  overwriteNoteToast,
+  reimportNoteToast,
+} from "./actions";
 import { switchNoteProfileInteractively } from "./switch-view";
 
 vi.mock("./switch-view", () => ({ switchNoteProfileInteractively: vi.fn() }));
+
+// Every Literature Note write that hits a missing partial names it and offers
+// the route back to the Workbench; create and single update already did.
+it.each([
+  ["overwrite", () => overwriteNoteToast({ app: appStub() }).error],
+  [
+    "reimport",
+    () => reimportNoteToast({ app: appStub(), path: "Books/Reading.md" }).error,
+  ],
+] as const)("names the missing partial when %s fails on one", (_name, make) => {
+  const notice = make()("msg", new MissingTemplateError("venue-line"));
+
+  expect(notice).toBeInstanceOf(DocumentFragment);
+  expect((notice as DocumentFragment).textContent).toContain(
+    m.notice_note_missing_partial({ name: "venue-line" }),
+  );
+});
+
+function appStub(): App {
+  return { workspace: { trigger: vi.fn() } } as unknown as App;
+}
 
 it("offers Profile switching only for the active Literature Note and opens its consent flow", () => {
   const file = new TFile();

@@ -11,6 +11,7 @@ import { confirm } from "@/lib/confirm";
 import * as m from "@/lib/i18n/generated/messages";
 import { BaseNotice } from "@/lib/notice";
 import * as toast from "@/lib/toast";
+import { missingPartialNotice } from "@/lib/workbench-recovery";
 import type {
   BatchImport,
   ReimportResult,
@@ -27,7 +28,11 @@ import {
 } from "@/services/note-index/service";
 import { InertTemplateError } from "@/services/template/errors";
 
-import type { NoteFeature, UpdateScope } from "./operations";
+import type {
+  NoteFeature,
+  NoteOperationDiagnostic,
+  UpdateScope,
+} from "./operations";
 import { switchNoteProfileInteractively } from "./switch-view";
 import type { InteractiveProfileSwitchDeps } from "./switch-view";
 import type { BatchUpdateResult } from "./update-batch";
@@ -241,7 +246,8 @@ async function reimportNote(
   );
 }
 
-function reimportNoteToast(options: { app: App; path: string }): {
+/** The copy one Reimport note reports with. */
+export function reimportNoteToast(options: { app: App; path: string }): {
   loading: string;
   success: (result: ReimportResult) => string | undefined;
   error: (_msg: string, e: unknown) => string | DocumentFragment;
@@ -250,10 +256,11 @@ function reimportNoteToast(options: { app: App; path: string }): {
     loading: m.notice_reimporting_note(),
     success: reimportNoteNotice,
     error: (_msg, e) =>
-      e instanceof InertTemplateError
+      missingPartialNotice(e, options) ??
+      (e instanceof InertTemplateError
         ? e.message
         : (importedNoteProfileErrorNotice(e, options) ??
-          m.notice_reimport_note_failed()),
+          m.notice_reimport_note_failed())),
   };
 }
 
@@ -322,17 +329,32 @@ async function handleOverwriteNote(
     deps.app,
   );
   if (!yes) return;
-  await toast.promise(deps.noteFeature.overwriteNote(file, itemKey), {
+  await toast.promise(
+    deps.noteFeature.overwriteNote(file, itemKey),
+    overwriteNoteToast({ app: deps.app }),
+  );
+}
+
+/** The copy one Overwrite note reports with, which every caller of it shares. */
+export function overwriteNoteToast(options: { app: App }): {
+  loading: string;
+  success: (result: {
+    diagnostic?: NoteOperationDiagnostic;
+  }) => string | DocumentFragment;
+  error: (_msg: string, e: unknown) => string | DocumentFragment;
+} {
+  return {
     loading: m.notice_overwriting_note(),
     success: (result) =>
       result.diagnostic
-        ? noteOperationDiagnosticContent(deps.app, result.diagnostic)
+        ? noteOperationDiagnosticContent(options.app, result.diagnostic)
         : m.notice_overwrote_note(),
     error: (_msg, e) =>
-      e instanceof InertTemplateError
+      missingPartialNotice(e, options) ??
+      (e instanceof InertTemplateError
         ? e.message
-        : m.notice_overwrite_note_failed(),
-  });
+        : m.notice_overwrite_note_failed()),
+  };
 }
 
 function handleChildImport(
