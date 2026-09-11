@@ -42,6 +42,26 @@ export interface GraphLeafMembers {
 }
 
 /**
+ * The engine a graph leaf draws through: the global view names it
+ * `dataEngine`, the local one `engine`.
+ *
+ * @param viewType the leaf's view type, where the caller already read it.
+ * @returns `undefined` for a leaf that is not a graph leaf, for a deferred
+ *   leaf whose placeholder view holds no engine, and for a build that moved
+ *   the member — all of which the caller reports as it sees fit.
+ */
+export function graphEngineOf(
+  leaf: WorkspaceLeaf,
+  viewType: string = leaf.view.getViewType(),
+): GraphEngine | undefined {
+  return viewType === "graph"
+    ? (leaf.view as GraphView).dataEngine
+    : viewType === "localgraph"
+      ? (leaf.view as LocalGraphView).engine
+      : undefined;
+}
+
+/**
  * Reads the engine and renderer off a `graph` or `localgraph` leaf. A leaf
  * missing any member — an Obsidian build that moved one — is reported at
  * `warn` and skipped, so the graph keeps its native behaviour; the service
@@ -53,12 +73,7 @@ export interface GraphLeafMembers {
  */
 export function graphMembersOf(leaf: WorkspaceLeaf): GraphLeafMembers | null {
   const viewType = leaf.view.getViewType();
-  const engine =
-    viewType === "graph"
-      ? (leaf.view as GraphView).dataEngine
-      : viewType === "localgraph"
-        ? (leaf.view as LocalGraphView).engine
-        : undefined;
+  const engine = graphEngineOf(leaf, viewType);
   const renderer = (leaf.view as GraphView).renderer;
   const present = membersPresent(
     "Graph leaf is missing an internal member; left native",

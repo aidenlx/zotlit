@@ -534,6 +534,8 @@ function makeFixture(options: FixtureOptions = {}) {
       leaves.push(made.leaf);
       return made.engine;
     },
+    /** The leaf `addLeaf` gave this id, which is what a command hands the preset. */
+    leaf: (id: string) => leaves.find((candidate) => candidate.id === id)!,
     /**
      * A leaf in a background tab: its view is Obsidian's placeholder, which
      * carries the state the leaf saved until the leaf loads.
@@ -2207,6 +2209,205 @@ describe("GraphCitations citation edge colour", () => {
     expect(warn).toHaveBeenCalledOnce();
     expect(warn.mock.calls[0]![1]).toMatchObject({
       missing: ["renderer.getHighlightNode"],
+    });
+  });
+});
+
+/**
+ * Seeds the engine's native options and registers the native rows the preset
+ * names, the way Obsidian registers them: one option listener per key,
+ * reading and writing the engine's options. The row's own re-render and save
+ * hang off the toggle's change callback, which the values these tests read do
+ * not rest on.
+ *
+ * The orphans row is the global graph's alone — Obsidian's local Filters
+ * section builds none, while its engine defaults still carry `showOrphans`
+ * (`app.js` 1.14.1) — so a local graph answers no listener for the key and
+ * keeps whatever it started at.
+ */
+function addNativeRows(
+  engine: FakeEngine,
+  viewType: "graph" | "localgraph",
+): void {
+  // Obsidian's own engine defaults, which every graph starts from.
+  Object.assign(engine.options, {
+    showTags: false,
+    showAttachments: false,
+    hideUnresolved: false,
+    showOrphans: true,
+    showArrow: false,
+  });
+  const rows: [FakeControlSection, string][] = [
+    [engine.filterOptions, "showTags"],
+    [engine.filterOptions, "showAttachments"],
+    [engine.filterOptions, "hideUnresolved"],
+    [engine.displayOptions, "showArrow"],
+  ];
+  if (viewType === "graph") rows.push([engine.filterOptions, "showOrphans"]);
+  for (const [section, key] of rows) {
+    section.optionListeners[key] = (value?: boolean) => {
+      if (value !== undefined) engine.options[key] = value;
+      return engine.options[key];
+    };
+  }
+}
+
+/** A graph leaf carrying the native rows, ready for the preset. */
+function presetFixture(
+  options: FixtureOptions & { viewType?: "graph" | "localgraph" } = {},
+) {
+  const fixture = makeFixture(options);
+  const viewType = options.viewType ?? "graph";
+  const engine = fixture.addLeaf(viewType, "preset-leaf");
+  addNativeRows(engine, viewType);
+  return {
+    ...fixture,
+    engine,
+    leaf: fixture.leaf("preset-leaf"),
+    apply: () => fixture.service.applyPreset(fixture.leaf("preset-leaf")),
+  };
+}
+
+/** What the preset leaves a graph's options at, beside the native keys. */
+const PRESET_ROWS = {
+  "zotlit-pandoc-citations": true,
+  "zotlit-citation-connected-only": true,
+  "zotlit-color-citation-links": true,
+};
+
+describe("GraphCitations Citation Graph preset", () => {
+  it("presets the global graph, and adds the literature notes group", async () => {
+    const fixture = presetFixture();
+    await using service = fixture.service;
+    await service.ready;
+    fixture.layoutReady();
+
+    fixture.apply();
+
+    expect(fixture.engine.options).toMatchObject({
+      ...PRESET_ROWS,
+      showTags: false,
+      showAttachments: false,
+      hideUnresolved: false,
+      showOrphans: false,
+      showArrow: true,
+    });
+    expect(
+      rowToggle(fixture.engine, "Citation-connected only").getValue(),
+    ).toBe(true);
+    expect(fixture.engine.colorGroupOptions.getColoredQueries()).toEqual([
+      { query: '["zotero-key"]', color: DEFAULT_COLOR },
+    ]);
+  });
+
+  it("names the Wikilink citations key only where its row stands", async () => {
+    const off = presetFixture();
+    await using offService = off.service;
+    await offService.ready;
+    off.layoutReady();
+    off.apply();
+
+    expect(off.engine.options["zotlit-wikilink-citations"]).toBeUndefined();
+
+    const on = presetFixture({ wikilinkCitations: true });
+    await using onService = on.service;
+    await onService.ready;
+    on.layoutReady();
+    on.apply();
+
+    expect(on.engine.options["zotlit-wikilink-citations"]).toBe(true);
+    expect(rowToggle(on.engine, "Wikilink citations").getValue()).toBe(true);
+  });
+
+  it("names no key beyond the preset, so the forces stay as the reader had them", async () => {
+    const fixture = presetFixture();
+    await using service = fixture.service;
+    await service.ready;
+    fixture.layoutReady();
+    const setOptions = vi.spyOn(fixture.engine, "setOptions");
+
+    fixture.apply();
+
+    expect(setOptions.mock.calls[0]![0]).toEqual({
+      ...PRESET_ROWS,
+      showTags: false,
+      showAttachments: false,
+      hideUnresolved: false,
+      showOrphans: false,
+      showArrow: true,
+    });
+    // The group arrives on its own call, which names `colorGroups` alone.
+    expect(Object.keys(setOptions.mock.calls[1]![0])).toEqual(["colorGroups"]);
+    expect(setOptions).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves the local graph's orphans alone, which its panel has no row for", async () => {
+    const fixture = presetFixture({ viewType: "localgraph" });
+    await using service = fixture.service;
+    await service.ready;
+    fixture.layoutReady();
+
+    fixture.apply();
+
+    expect(fixture.engine.options).toMatchObject({
+      ...PRESET_ROWS,
+      showTags: false,
+      showArrow: true,
+      // No row answers the key, so the graph keeps Obsidian's own default.
+      showOrphans: true,
+    });
+  });
+
+  it("installs the leaf first, so a graph opened by the command hears ZotLit's keys", async () => {
+    const fixture = presetFixture();
+    await using service = fixture.service;
+    await service.ready;
+    // No layout event has reached the service, which is where a command that
+    // just opened a leaf stands: Obsidian fires `layout-change` a frame later.
+    expect(rowNames(fixture.engine)).toEqual([]);
+
+    fixture.apply();
+
+    expect(rowNames(fixture.engine)).toEqual([
+      "Pandoc citations",
+      "Citation-connected only",
+    ]);
+    expect(fixture.engine.options).toMatchObject(PRESET_ROWS);
+  });
+
+  it("adds no second literature notes group on a second run", async () => {
+    const fixture = presetFixture();
+    await using service = fixture.service;
+    await service.ready;
+    fixture.layoutReady();
+    fixture.apply();
+
+    fixture.apply();
+
+    expect(fixture.engine.colorGroupOptions.getColoredQueries()).toEqual([
+      { query: '["zotero-key"]', color: DEFAULT_COLOR },
+    ]);
+  });
+
+  it("leaves a graph whose set-options path moved as Obsidian opened it", async () => {
+    const fixture = presetFixture();
+    await using service = fixture.service;
+    await service.ready;
+    fixture.layoutReady();
+    warn.mockClear();
+    Object.defineProperty(fixture.engine, "setOptions", {
+      value: undefined,
+      configurable: true,
+    });
+
+    fixture.apply();
+
+    expect(fixture.engine.options["zotlit-citation-connected-only"]).toBe(
+      false,
+    );
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0]![1]).toMatchObject({
+      missing: ["engine.setOptions"],
     });
   });
 });

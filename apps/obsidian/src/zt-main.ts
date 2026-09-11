@@ -22,6 +22,7 @@ import { registerCitekeyCandidatePicker } from "./services/citekey-editor/candid
 import { registerCitekeyEditorNotices } from "./services/citekey-editor/notices";
 import { addDatabaseActions } from "./services/database/actions";
 import { reapReadClones } from "./services/database/reap-temps";
+import { addGraphCitationsActions } from "./services/graph-citations/actions";
 import { addIndexedKeyActions } from "./services/indexed-key/actions";
 import { registerIndexedKeyFileMenu } from "./services/indexed-key/menu";
 import { registerLibraryScopeCli } from "./services/library-scope/cli";
@@ -277,6 +278,10 @@ export default class ZotLitPlugin extends Plugin {
     addReleaseActions(this, { release: services.release });
     addIndexedKeyActions(this);
     addCitekeyEditorActions(this, { citekeyEditor: services.citekeyEditor });
+    addGraphCitationsActions(this, {
+      app: this.app,
+      graphCitations: services.graphCitations,
+    });
     registerIndexedKeyFileMenu(this);
     const updateAll = () =>
       runBatchUpdateAll({
