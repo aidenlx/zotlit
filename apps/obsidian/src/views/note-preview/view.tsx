@@ -9,6 +9,7 @@ import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import { useStore } from "zustand";
 
+import { DEFAULT_CITATION_VARIANT, isCitationVariant } from "@zotlit/db";
 import {
   CITATION_EXAMPLE_IDS,
   DEFAULT_CITATION_EXAMPLE,
@@ -681,8 +682,9 @@ export class NotePreviewView extends ItemView {
           : null;
       const previous = this.state.getState();
       const citation = {
-        variant:
-          value["variant"] === "alt" ? ("alt" as const) : ("main" as const),
+        variant: isCitationVariant(value["variant"])
+          ? value["variant"]
+          : DEFAULT_CITATION_VARIANT,
         citationExample:
           typeof value["citationExample"] === "string" &&
           isCitationExampleId(value["citationExample"])

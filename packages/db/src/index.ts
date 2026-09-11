@@ -133,8 +133,11 @@ export {
   type TemplateParentItemData,
 } from "./lib/context/zt-template-item";
 export {
+  CITATION_VARIANTS,
   citekeysToCiteTemplateData,
+  DEFAULT_CITATION_VARIANT,
   DEFAULT_LOCATOR_LABEL_SHORT,
+  isCitationVariant,
   narrowBaseDataToCiteItemData,
   resolveCitedItem,
   type CitationTemplateData,

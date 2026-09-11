@@ -3,7 +3,7 @@ import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore } from "zustand/vanilla";
 
-import { parseIndexedKey } from "@zotlit/db";
+import { DEFAULT_CITATION_VARIANT, parseIndexedKey } from "@zotlit/db";
 import {
   initialTreeState,
   setAnchor,
@@ -175,7 +175,7 @@ export class NativeExplorerSession implements Disposable {
     const citation =
       root === "citation"
         ? (context?.citation ?? {
-            variant: "main" as const,
+            variant: DEFAULT_CITATION_VARIANT,
             example: item ? null : DEFAULT_CITATION_EXAMPLE,
           })
         : null;
@@ -218,13 +218,20 @@ export class NativeExplorerSession implements Disposable {
       ): Promise<TemplateDataLoadResult> => {
         if (!item.id.startsWith("sample:"))
           return target === "citation"
-            ? loadCitationData(this.#deps, { key }, citation?.variant ?? "main")
+            ? loadCitationData(
+                this.#deps,
+                { key },
+                citation?.variant ?? DEFAULT_CITATION_VARIANT,
+              )
             : loadTemplateData(this.#deps, key, target);
         if (!snapshot) return Promise.resolve({ kind: "not-found" });
         if (target === "citation")
           return Promise.resolve({
             kind: "data",
-            data: sampleItemCitation(snapshot, citation?.variant ?? "main"),
+            data: sampleItemCitation(
+              snapshot,
+              citation?.variant ?? DEFAULT_CITATION_VARIANT,
+            ),
           });
         if (target !== "annotation")
           return Promise.resolve({

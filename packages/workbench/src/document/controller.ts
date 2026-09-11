@@ -1083,7 +1083,7 @@ function webProblems(
  * its partials from `zotlit-partial.<name>.md` files, so the manifest's
  * transport copy is text with two homes until it is unpacked. The web host
  * has no vault to unpack into and reads the copy as the bundle it is.
- * @see docs/adr/0050-citation-template-and-shared-partials-are-template-documents.md
+ * @see docs/adr/0050-the-citation-template-is-one-document-and-partials-are-files.md
  */
 function bundledPartialProblems(
   document: LiteratureNoteTemplateDocument,

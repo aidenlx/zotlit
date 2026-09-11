@@ -1,6 +1,6 @@
 import type { CliData, CliHandler } from "obsidian";
 
-import { TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
+import { DEFAULT_CITATION_VARIANT, TEMPLATE_SLOT_ROOTS } from "@zotlit/db";
 // The Template Workbench commands and their response boundaries.
 import type {
   CitationTemplateData,
@@ -368,7 +368,8 @@ export function createTemplateWorkbenchHandlers(
           deps.templates.analyzeRootVariables(CITATION_TEMPLATE),
         ),
       },
-      load: () => deps.loadCitation(request, request.variant ?? "main"),
+      load: () =>
+        deps.loadCitation(request, request.variant ?? DEFAULT_CITATION_VARIANT),
       render: (data) => deps.templates.renderCitationData(data),
     });
 
@@ -427,7 +428,10 @@ export function createTemplateWorkbenchHandlers(
       },
       load: () =>
         root === "citation"
-          ? deps.loadCitation(request, request.variant ?? "main")
+          ? deps.loadCitation(
+              request,
+              request.variant ?? DEFAULT_CITATION_VARIANT,
+            )
           : deps.loadData(selectedObject(request), root),
       render: (data) => deps.templates.render(name, data as object),
     });

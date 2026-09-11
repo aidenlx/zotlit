@@ -1,6 +1,8 @@
 // The render result shape and its identity stamp, shared by the renderer and
 // the scheduler that decides which result is still current.
 
+import type { CitationVariant } from "@zotlit/db";
+
 import type { CitationExampleId } from "./citation-examples";
 import type { PartialContext } from "./partial-preview";
 import type { RenderRequest } from "./request";
@@ -57,7 +59,7 @@ export interface RenderIdentity {
   readonly annotationId?: string;
   readonly annotationRevision?: string;
   /** The Citation Variant a Citation Template render produced its text under. */
-  readonly citationVariant?: "main" | "alt";
+  readonly citationVariant?: CitationVariant;
   /** The built-in example set it rendered; absent when the chosen Item supplied one. */
   readonly citationExample?: CitationExampleId;
   /** The caller a Shared Partial render read its root data as. */

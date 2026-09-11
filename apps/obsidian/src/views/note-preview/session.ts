@@ -2,7 +2,7 @@
 import { createStore } from "zustand/vanilla";
 import type { StoreApi } from "zustand/vanilla";
 
-import { parseIndexedKey } from "@zotlit/db";
+import { DEFAULT_CITATION_VARIANT, parseIndexedKey } from "@zotlit/db";
 import type { CitationVariant } from "@zotlit/db";
 import {
   parseLiteratureNoteTemplate,
@@ -83,7 +83,7 @@ const EMPTY_PREVIEW: NativePreviewState = {
   snapshot: null,
   current: [],
   example: null,
-  variant: "main",
+  variant: DEFAULT_CITATION_VARIANT,
   citationExample: DEFAULT_CITATION_EXAMPLE,
 };
 export const createNativePreviewStore = () =>

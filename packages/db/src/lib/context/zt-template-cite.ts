@@ -100,6 +100,19 @@ export type CitationVariant =
   /** Shift+Enter, or a trailing `/` in the suggester query. */
   | "alt";
 
+/** Every Citation Variant, in the order a chooser offers them. */
+export const CITATION_VARIANTS = [
+  "main",
+  "alt",
+] as const satisfies readonly CitationVariant[];
+
+/** The variant a Citation takes when no gesture asks for the other one. */
+export const DEFAULT_CITATION_VARIANT: CitationVariant = "main";
+
+export function isCitationVariant(value: unknown): value is CitationVariant {
+  return (CITATION_VARIANTS as readonly unknown[]).includes(value);
+}
+
 /** The citation-template data root (`zt`): `citations[i].item === items[i]`. */
 export interface CitationTemplateData {
   /** The gesture this Citation was requested with. */

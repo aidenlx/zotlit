@@ -1,7 +1,7 @@
 // Read-only rendering of a draft Profile against the installed template pipeline.
 import { parseYaml, stringifyYaml, getFrontMatterInfo } from "obsidian";
 
-import { withAnnotationCitation } from "@zotlit/db";
+import { DEFAULT_CITATION_VARIANT, withAnnotationCitation } from "@zotlit/db";
 import type {
   AnnotationTemplateContext,
   CitationTemplateData,
@@ -335,7 +335,7 @@ async function citationRootData(
   | { kind: "unavailable"; message: string }
 > {
   const selection = request.citation;
-  const variant = selection?.variant ?? "main";
+  const variant = selection?.variant ?? DEFAULT_CITATION_VARIANT;
   if (selection?.example)
     return {
       kind: "data",
@@ -639,7 +639,7 @@ function errorText(error: unknown): string {
  * vault holds no document for is the engine's own missing-partial report,
  * which the Partial Placeholder, the Problems strip, and a refused Literature
  * Note all read by code; every other failure carries the engine's own words.
- * @see docs/adr/0050-citation-template-and-shared-partials-are-template-documents.md
+ * @see docs/adr/0050-the-citation-template-is-one-document-and-partials-are-files.md
  */
 function renderFault(
   error: unknown,
