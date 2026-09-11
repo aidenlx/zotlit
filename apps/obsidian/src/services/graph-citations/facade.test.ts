@@ -5,6 +5,7 @@ import type { GraphCitationAdditions } from "./adapter";
 import {
   facadeApp,
   mergeLinkMaps,
+  onlyLinksTo,
   renderWithFacade,
   withoutLinks,
 } from "./facade";
@@ -202,6 +203,73 @@ describe("facadeApp under the Filters rows", () => {
         facade.metadataCache as unknown as { getCachedFiles(): string[] }
       ).getCachedFiles(),
     ).toEqual(["Draft.md", "Other.md"]);
+  });
+
+  it("takes the narrowed-away targets out of both link maps, and leaves the citations", () => {
+    const cache = cacheWith({
+      resolved: { "Draft.md": { "Other.md": 1 } },
+      unresolved: { "Draft.md": { todo: 1 } },
+    });
+    const app = { metadataCache: cache } as unknown as App;
+
+    const facade = facadeApp(
+      app,
+      additionsOf({
+        resolvedLinks: { "Draft.md": { "Literature/Doe 2024.md": 1 } },
+        unresolvedLinks: { "Draft.md": { "@typo2024": 1 } },
+        citedWorkNodes: new Map([["@typo2024", "typo2024"]]),
+        survivingPaths: new Set(["Draft.md", "Literature/Doe 2024.md"]),
+      }),
+    );
+
+    // Other and todo both draw a node of their own where the link stands, so
+    // the row that took their nodes away takes the links with them.
+    expect(facade.metadataCache.resolvedLinks).toEqual({
+      "Draft.md": { "Literature/Doe 2024.md": 1 },
+    });
+    expect(facade.metadataCache.unresolvedLinks).toEqual({
+      "Draft.md": { "@typo2024": 1 },
+    });
+  });
+
+  it("leaves both link maps whole while Citation-connected only is off", () => {
+    const cache = cacheWith({
+      resolved: { "Draft.md": { "Other.md": 1 } },
+      unresolved: { "Draft.md": { todo: 1 } },
+    });
+    const app = { metadataCache: cache } as unknown as App;
+
+    const facade = facadeApp(app, additionsOf({}));
+
+    expect(facade.metadataCache.resolvedLinks).toEqual({
+      "Draft.md": { "Other.md": 1 },
+    });
+    expect(facade.metadataCache.unresolvedLinks).toEqual({
+      "Draft.md": { todo: 1 },
+    });
+  });
+});
+
+describe("onlyLinksTo", () => {
+  it("returns the base itself when every target is kept", () => {
+    const base = { "Draft.md": { "Other.md": 1 } };
+    expect(onlyLinksTo(base, () => true)).toBe(base);
+  });
+
+  it("drops the turned-down targets without touching the base", () => {
+    const base = {
+      "Draft.md": { "Other.md": 1, "Kept.md": 2 },
+      "Alias.md": { "Other.md": 1 },
+    };
+
+    expect(onlyLinksTo(base, (target) => target === "Kept.md")).toEqual({
+      "Draft.md": { "Kept.md": 2 },
+      "Alias.md": {},
+    });
+    expect(base).toEqual({
+      "Draft.md": { "Other.md": 1, "Kept.md": 2 },
+      "Alias.md": { "Other.md": 1 },
+    });
   });
 });
 

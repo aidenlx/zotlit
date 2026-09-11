@@ -285,10 +285,17 @@ class FakeRenderer {
   links: FakeLink[] = [];
   /** The node the pointer rests on, which the renderer answers by identity. */
   highlightNode: GraphDrawnNode | null = null;
+  /** Whether a frame has been asked for and not yet drawn. */
+  pending = false;
   readonly #nodes = new Map<string, GraphDrawnNode>();
 
   getHighlightNode(): GraphDrawnNode | null {
     return this.highlightNode;
+  }
+
+  /** Asks for the frame that draws the graph again. */
+  changed(): void {
+    this.pending = true;
   }
 
   /**
@@ -358,22 +365,31 @@ const NATIVE_HIGHLIGHT = 0xffffff;
 const CITATION_LINK = 0x0000ff;
 
 /**
- * One frame of Obsidian's own edge drawing: each built edge's line takes the
- * link colour, or the highlight colour where the pointer's node is one of its
- * ends.
+ * Draws the frame the renderer was asked for, if it was asked for one, as
+ * Obsidian's own frame draws the edges: each built edge's line takes the link
+ * colour, or the highlight colour where the pointer's node is one of its ends.
+ * A renderer that was asked for no frame draws nothing and leaves every edge
+ * standing in the colour it was last drawn in, which is what an idle graph
+ * does.
  *
- * @returns the tint each edge ended the frame drawn in, read off the sprite
- *   itself rather than through whatever stands in front of it.
+ * @returns the tint each edge stands drawn in, read off the sprite itself
+ *   rather than through whatever stands in front of it.
  */
 function paint(renderer: FakeRenderer): Record<string, number> {
-  const painted: Record<string, number> = {};
-  for (const link of renderer.links) {
-    const highlight = renderer.getHighlightNode();
-    const incident = highlight === link.source || highlight === link.target;
-    if (link.line) link.line.tint = incident ? NATIVE_HIGHLIGHT : NATIVE_LINE;
-    painted[`${link.source.id} -> ${link.target.id}`] = link.sprite.tint;
+  if (renderer.pending) {
+    renderer.pending = false;
+    for (const link of renderer.links) {
+      const highlight = renderer.getHighlightNode();
+      const incident = highlight === link.source || highlight === link.target;
+      if (link.line) link.line.tint = incident ? NATIVE_HIGHLIGHT : NATIVE_LINE;
+    }
   }
-  return painted;
+  return Object.fromEntries(
+    renderer.links.map((link) => [
+      `${link.source.id} -> ${link.target.id}`,
+      link.sprite.tint,
+    ]),
+  );
 }
 
 /** A fake leaf; `deferred` starts it as Obsidian's placeholder view, with no members until `load()`. */
@@ -381,18 +397,26 @@ function fakeLeaf(
   viewType: "graph" | "localgraph",
   app: App,
   realApp: App,
-): { leaf: WorkspaceLeaf; engine: FakeEngine; load: () => void } {
+): {
+  leaf: WorkspaceLeaf;
+  engine: FakeEngine;
+  load: () => void;
+  /** Closes the view, which is what unloads it and runs what it registered. */
+  close: () => void;
+} {
   const engine = new FakeEngine(app, realApp);
+  /** What the view registered for its own unload, as a `Component` holds it. */
+  const registered: (() => unknown)[] = [];
+  const shared = {
+    getViewType: () => viewType,
+    renderer: engine.renderer,
+    register: (cb: () => unknown) => registered.push(cb),
+  };
   const view =
     viewType === "graph"
-      ? {
-          getViewType: () => viewType,
-          renderer: engine.renderer,
-          dataEngine: engine,
-        }
+      ? { ...shared, dataEngine: engine }
       : {
-          getViewType: () => viewType,
-          renderer: engine.renderer,
+          ...shared,
           engine,
           // `LocalGraphView.getState` reports the engine's options, which is
           // how a local graph's rows reach the workspace file.
@@ -405,6 +429,9 @@ function fakeLeaf(
     load: () => {
       leaf.view = view;
       leaf.isDeferred = false;
+    },
+    close: () => {
+      for (const cb of registered.splice(0)) cb();
     },
   };
 }
@@ -447,6 +474,8 @@ interface FixtureOptions {
   wikilinkCitations?: boolean;
   /** The vault's own resolved links. */
   links?: LinkMap;
+  /** The vault's own unresolved links: the `[[wikilink]]`s that reach no file. */
+  unresolved?: LinkMap;
   /** The Note Index's key-to-notes table; Doe's one note by default. */
   notes?: Record<string, { path: string }[]>;
   /** The serialized layout Obsidian restored this session's leaves from. */
@@ -458,6 +487,8 @@ interface FixtureOptions {
 function makeFixture(options: FixtureOptions = {}) {
   const listeners = new Map<string, Set<() => void>>();
   const leaves: WorkspaceLeaf[] = [];
+  /** What unloads each leaf's view, which is what closing the leaf runs. */
+  const closers = new Map<WorkspaceLeaf, () => void>();
   let layoutReady: (() => void) | undefined;
   const workspace = {
     onLayoutReady(cb: () => void) {
@@ -486,7 +517,7 @@ function makeFixture(options: FixtureOptions = {}) {
     },
     metadataCache: {
       resolvedLinks: options.links ?? VAULT_LINKS,
-      unresolvedLinks: {},
+      unresolvedLinks: options.unresolved ?? {},
       getCachedFiles: () => [...CACHED_FILES],
       getFirstLinkpathDest: (linkpath: string) => {
         const path = LINK_TARGETS[linkpath];
@@ -532,10 +563,20 @@ function makeFixture(options: FixtureOptions = {}) {
       const made = fakeLeaf(viewType, app, app);
       Object.assign(made.leaf, { id });
       leaves.push(made.leaf);
+      closers.set(made.leaf, made.close);
       return made.engine;
     },
     /** The leaf `addLeaf` gave this id, which is what a command hands the preset. */
     leaf: (id: string) => leaves.find((candidate) => candidate.id === id)!,
+    /**
+     * Closes a leaf as Obsidian closes one: the leaf leaves the workspace, so
+     * no walk of the live leaves reaches it again, and its view unloads.
+     */
+    closeLeaf(id: string) {
+      const leaf = leaves.find((candidate) => candidate.id === id)!;
+      leaves.splice(leaves.indexOf(leaf), 1);
+      closers.get(leaf)!();
+    },
     /**
      * A leaf in a background tab: its view is Obsidian's placeholder, which
      * carries the state the leaf saved until the leaf loads.
@@ -1086,7 +1127,7 @@ describe("GraphCitations hovers", () => {
     );
     expect(containerEl.children).toHaveLength(1);
 
-    engine.hoverPopover = fakePopover();
+    engine.hoverPopover = fakePopover(containerEl.children[0] as HTMLElement);
     engine.renderer.onNodeUnhover();
     expect(containerEl.children).toHaveLength(1);
     expect(engine.nativeUnhovers).toBe(1);
@@ -1095,6 +1136,64 @@ describe("GraphCitations hovers", () => {
     engine.renderer.onNodeUnhover();
     expect(containerEl.children).toHaveLength(0);
     expect(engine.nativeUnhovers).toBe(2);
+  });
+
+  it("gives a second hovered node an anchor of its own, so its preview is not read as the first one again", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    const { containerEl } = engine.renderer;
+    fixture.layoutReady();
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "@typo2024",
+      "unresolved",
+    );
+    const first = containerEl.children[0] as HTMLElement;
+    // The first popover is still on its way out, so its anchor stays.
+    engine.hoverPopover = fakePopover(first);
+    engine.renderer.onNodeUnhover();
+
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "Literature/Doe 2024.md",
+      "",
+    );
+
+    const shown = fixture.citationPopover.show.mock.lastCall![0];
+    expect(shown.targetEl).not.toBe(first);
+    expect(containerEl.children).toHaveLength(2);
+  });
+
+  it("lets go of a hold when the hovered graph closes", async () => {
+    vi.useFakeTimers();
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph", "hovered");
+    const { containerEl } = engine.renderer;
+    fixture.layoutReady();
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "@typo2024",
+      "unresolved",
+    );
+    const popover = fakePopover();
+    engine.hoverPopover = popover;
+    vi.advanceTimersByTime(200);
+    expect(popover.transition).toHaveBeenCalledOnce();
+
+    // Closing by keyboard leaves the pointer where it was, so nothing
+    // unhovers the node on the way out.
+    fixture.closeLeaf("hovered");
+
+    popover.onTarget = false;
+    vi.advanceTimersByTime(600);
+    expect(popover.onTarget).toBe(false);
+    expect(popover.transition).toHaveBeenCalledOnce();
+    expect(containerEl.children).toHaveLength(0);
+    expect(rowNames(engine)).toEqual([]);
   });
 
   it("states the popover's target again after Obsidian's sweep drops it, until the pointer leaves", async () => {
@@ -1252,13 +1351,14 @@ describe("GraphCitations hovers", () => {
 });
 
 /** A popover already shown, as the engine holds the one its nodes stand on. */
-function fakePopover(): HoverPopover & {
+function fakePopover(targetEl: HTMLElement | null = null): HoverPopover & {
   onTarget: boolean;
   transition: ReturnType<typeof vi.fn>;
 } {
   return {
     state: PopoverState.Shown,
     onTarget: true,
+    targetEl,
     transition: vi.fn(),
   } as unknown as HoverPopover & {
     onTarget: boolean;
@@ -1704,7 +1804,9 @@ describe("GraphCitations Filters rows", () => {
     expect(rowToggle(engine, "Pandoc citations").getValue()).toBe(false);
     expect(engine.renders.at(-1)).toEqual({
       facaded: true,
-      resolved: VAULT_LINKS,
+      // "Citation-connected only" takes Other away, and with it Draft's link
+      // into it — a link the local narrowing would otherwise draw a node for.
+      resolved: { "Draft.md": {} },
       unresolved: {},
     });
     expect(engine.cachedFiles.at(-1)).toEqual(["Literature/Doe 2024.md"]);
@@ -1747,6 +1849,28 @@ describe("GraphCitations Filters rows", () => {
       facaded: true,
       resolved: VAULT_LINKS,
       unresolved: {},
+    });
+  });
+
+  it("takes a citing note's own links to narrowed-away targets away with them", async () => {
+    const fixture = makeFixture({
+      links: { "Draft.md": { "Other.md": 1 } },
+      unresolved: { "Draft.md": { todo: 1 } },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+
+    rowToggle(engine, "Citation-connected only").toggle(true);
+
+    // Draft cites, so it survives; Other and todo have no citation of their
+    // own, and each would draw a node where Draft's link stands.
+    expect(engine.renders.at(-1)!.resolved).toEqual({
+      "Draft.md": { "Literature/Doe 2024.md": 1 },
+    });
+    expect(engine.renders.at(-1)!.unresolved).toEqual({
+      "Draft.md": EXPECTED_UNRESOLVED["Draft.md"],
     });
   });
 
@@ -1853,8 +1977,7 @@ function groupsButton(engine: FakeEngine): HTMLButtonElement {
     ...engine.colorGroupOptions.childrenEl.querySelectorAll("button"),
   ];
   return buttons.find(
-    (button) =>
-      button.textContent === m.graph_citations_add_literature_notes_group(),
+    (button) => button.textContent === "Add literature notes group",
   )!;
 }
 
@@ -1869,7 +1992,7 @@ describe("GraphCitations Groups button", () => {
 
     expect(groupsButtons(engine)).toEqual([
       "New group",
-      m.graph_citations_add_literature_notes_group(),
+      "Add literature notes group",
     ]);
     expect(engine.colorGroupOptions.getColoredQueries()).toEqual([]);
   });
@@ -1925,7 +2048,7 @@ describe("GraphCitations Groups button", () => {
 
     expect(groupsButtons(engine)).toEqual([
       "New group",
-      m.graph_citations_add_literature_notes_group(),
+      "Add literature notes group",
     ]);
   });
 });
@@ -2065,6 +2188,27 @@ describe("GraphCitations citation edge colour", () => {
       "Draft.md -> Other.md": NATIVE_LINE,
       "Draft.md -> Literature/Doe 2024.md": CITATION_LINK,
       "Draft.md -> @typo2024": CITATION_LINK,
+    });
+  });
+
+  it("draws the one line a reciprocal pair shows in the citation colour", async () => {
+    themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    // Doe links back to Draft, so Obsidian keeps both edges and draws one:
+    // the citation Draft → Doe is the line it hides, and Doe → Draft is the
+    // one the reader sees.
+    engine.renderer.drawEdges([
+      ["Draft.md", "Literature/Doe 2024.md"],
+      ["Literature/Doe 2024.md", "Draft.md"],
+    ]);
+    fixture.layoutReady();
+
+    expect(paint(engine.renderer)).toEqual({
+      "Draft.md -> Literature/Doe 2024.md": CITATION_LINK,
+      "Literature/Doe 2024.md -> Draft.md": CITATION_LINK,
     });
   });
 

@@ -280,7 +280,8 @@ const HOLD_WAIT_MS = 2000;
  */
 class NodeStand implements Disposable {
   readonly #members: GraphLeafMembers;
-  #element: HTMLElement | null = null;
+  /** Every anchor still in the container, oldest first. */
+  #anchors: HTMLElement[] = [];
   #hold = 0;
 
   constructor(members: GraphLeafMembers) {
@@ -288,13 +289,23 @@ class NodeStand implements Disposable {
   }
 
   /**
-   * Places the anchor at `position` and answers it, holding the popover that
-   * is about to stand on it open until the pointer leaves the node.
+   * Places an anchor of this node's own at `position` and answers it, holding
+   * the popover that is about to stand on it open until the pointer leaves
+   * the node.
+   *
+   * A node gets an anchor rather than the stand holding one, because
+   * Obsidian's own page preview reads a hover it has a popover on that same
+   * element for as the hover it is already showing, and shows nothing for the
+   * second node (`app.js` 1.14.1, Page preview `onLinkHover`). Moving between
+   * Literature Notes before the first preview has finished hiding is exactly
+   * that hover, so each one stands on an element of its own.
    */
   take(position: NodePosition): HTMLElement {
-    const element = (this.#element ??= this.#build());
+    this.retire();
+    const element = this.#build();
     element.style.left = `${position.left}px`;
     element.style.top = `${position.top}px`;
+    this.#anchors.push(element);
     this.#startHold();
     return element;
   }
@@ -307,20 +318,23 @@ class NodeStand implements Disposable {
   }
 
   /**
-   * Takes the anchor out of the container, unless a popover still stands on
-   * it — one hiding on its own delay reads the anchor's place again as its
-   * entries land. The next hover builds another.
+   * Takes the anchors out of the container, except the one a popover still
+   * stands on — a popover hiding on its own delay reads its anchor's place
+   * again as its entries land.
    */
   retire(): void {
-    if (this.#members.engine.hoverPopover) return;
-    this.#element?.remove();
-    this.#element = null;
+    const standing = this.#members.engine.hoverPopover?.targetEl ?? null;
+    this.#anchors = this.#anchors.filter((anchor) => {
+      if (anchor === standing) return true;
+      anchor.remove();
+      return false;
+    });
   }
 
   [Symbol.dispose](): void {
     this.release();
-    this.#element?.remove();
-    this.#element = null;
+    for (const anchor of this.#anchors) anchor.remove();
+    this.#anchors = [];
   }
 
   #startHold(): void {

@@ -252,6 +252,13 @@ declare module "obsidian" {
     onNodeHover?: GraphNodeCallback;
     /** Fired as the pointer leaves the node it entered, and before every hover. */
     onNodeUnhover?: () => void;
+    /**
+     * Asks for the frame that draws the graph again, and puts the render loop
+     * back to work where it had gone idle. The hand-off asks for one itself
+     * only where a node or an edge changed, so a change to how an unchanged
+     * graph is drawn asks here.
+     */
+    changed?(): void;
     /** `div.graph-view`, `position: relative`, in the graph's own window. */
     containerEl?: HTMLElement;
     /** Every drawn node by id, positioned in world coordinates. */

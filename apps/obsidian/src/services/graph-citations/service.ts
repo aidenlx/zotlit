@@ -271,7 +271,7 @@ export class GraphCitations extends Service<void> {
         this.#leftNative.add(leaf.view);
         continue;
       }
-      this.#install(members, this.#savedOptions(leaf, members.viewType));
+      this.#install(leaf, members, this.#savedOptions(leaf, members.viewType));
       this.#render(members);
     }
   }
@@ -288,7 +288,11 @@ export class GraphCitations extends Service<void> {
     );
   }
 
-  #install(members: GraphLeafMembers, saved: GraphOptions | null): void {
+  #install(
+    leaf: WorkspaceLeaf,
+    members: GraphLeafMembers,
+    saved: GraphOptions | null,
+  ): void {
     const { engine, renderer, viewType } = members;
     const installation: GraphInstallation = {
       members,
@@ -324,7 +328,18 @@ export class GraphCitations extends Service<void> {
       wrapNodeHover(members, this.#hoverDeps(), () => installation.additions),
     );
     this.#installations.set(renderer, installation);
+    // The view closing is what ends this installation: a closed leaf is gone
+    // from the walk the service tears down through, and nothing native
+    // unhovers a node on the way out — so a hold left standing would keep its
+    // popover on screen and its engine alive for as long as it ran.
+    leaf.view.register(() => this.#uninstall(installation));
     logger.debug("Graph citations installed", { viewType });
+  }
+
+  /** Puts one leaf's swapped members back and lets go of its installation. */
+  #uninstall(installation: GraphInstallation): void {
+    installation.restores.dispose();
+    this.#installations.delete(installation.members.renderer);
   }
 
   #filterRows(
@@ -358,9 +373,8 @@ export class GraphCitations extends Service<void> {
   /** Restores every installed leaf and draws each natively once. */
   #uninstallAll(): void {
     for (const { installation } of this.#installed()) {
-      const { members, restores } = installation;
-      restores.dispose();
-      this.#installations.delete(members.renderer);
+      const { members } = installation;
+      this.#uninstall(installation);
       this.#render(members);
       logger.debug("Graph citations restored", { viewType: members.viewType });
     }
