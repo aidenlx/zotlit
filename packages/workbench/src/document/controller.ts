@@ -53,7 +53,7 @@ import type {
   ManifestScalar,
   WorkbenchSliceRange,
 } from "./manifest-patch";
-import { noteRegions } from "./regions";
+import { noteRegions, RESERVED_CALL_NAMES } from "./regions";
 import type { NoteRegions } from "./regions";
 
 import { pairingState, pairingHistory } from "#/language/pairing-state";
@@ -327,9 +327,12 @@ export class WorkbenchDocumentController {
   }
 
   /**
-   * The partial names this draft calls, sorted, which is what a Local Bridge
-   * bundles for the preview. A draft that does not parse keeps the last list
-   * that did, so a repair in progress never drops the bundle it needs.
+   * The Shared Partial names this draft calls, sorted, which is what a Local
+   * Bridge bundles for the preview. A name no Shared Partial can be given is
+   * left out, so a pane that offers this list offers no call a partial file
+   * could never answer. A draft that does not parse keeps the last list that
+   * did, so a repair in progress never drops the bundle it needs.
+   * @see {@link RESERVED_CALL_NAMES}
    */
   get dependencies(): readonly string[] {
     return this.#dependencies;
@@ -852,7 +855,9 @@ export class WorkbenchDocumentController {
         from: document.annotationSection.start,
         to: document.annotationSection.end,
       });
-      this.#dependencies = literatureNoteTemplateDependencies(document);
+      this.#dependencies = literatureNoteTemplateDependencies(document).filter(
+        (name) => !RESERVED_CALL_NAMES.includes(name),
+      );
       this.#problems = [
         ...webProblems(document, source).filter(
           (problem) =>

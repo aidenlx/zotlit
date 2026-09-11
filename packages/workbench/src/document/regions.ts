@@ -93,7 +93,7 @@ const ETA_PARTIAL_CALL = "include";
  * @see docs/adr/0035-profile-annotation-section.md
  * @see docs/adr/0050-the-citation-template-is-one-document-and-partials-are-files.md
  */
-const RESERVED_CALL_NAMES: readonly string[] = [
+export const RESERVED_CALL_NAMES: readonly string[] = [
   ...Object.keys(TEMPLATE_SLOT_ROOTS),
   // The Citation Template is a Template Document, so it is in no slot registry.
   "citation",
