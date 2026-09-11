@@ -129,8 +129,6 @@ describe("partialCalls", () => {
       "{% render partial_name %}",
       "{% include zt.partial %}",
       '{% render_annotation "authors" %}',
-      '{% render "annotation" %}',
-      '{% render "citation" %}',
       '{% assign name = "authors" %}',
     ].join("\n");
 
@@ -138,6 +136,16 @@ describe("partialCalls", () => {
       "authors",
       "venue-line",
     ]);
+  });
+
+  it("draws no box over a name a Shared Partial cannot be given", () => {
+    // All five names the host refuses: a box over one would offer Edit partial
+    // for a document that cannot exist.
+    const body = ["filename", "note", "annotation", "content", "citation"]
+      .map((name) => `{% render "${name}" %}`)
+      .join("\n");
+
+    expect(calls(body)).toEqual([]);
   });
 
   it("summarizes what a call passes after the name", () => {
@@ -196,5 +204,74 @@ Write \`{% render "authors" %}\` in the note.
     expect(source.slice(site!.nameRange.from, site!.nameRange.to)).toBe(
       "authors",
     );
+  });
+
+  describe("in an Eta document", () => {
+    const etaCalls = (body: string) =>
+      partialCalls(body, { from: 0, to: body.length }, "eta");
+
+    it("recognizes include with a plain quoted name, and nothing else", () => {
+      const body = [
+        '<%~ include("authors", zt) %>',
+        "<%= include('venue-line') %>",
+        "<%~ include(name) %>",
+        '<%~ it.include("authors") %>',
+        '<%~ include("annotation", annotation) %>',
+        '<%~ include("citation") %>',
+        '<%~ include("content") %>',
+        '<% const name = "authors" %>',
+        '<%~ include("unclosed", zt)',
+      ].join("\n");
+
+      expect(etaCalls(body).map(({ name }) => name)).toEqual([
+        "authors",
+        "venue-line",
+      ]);
+    });
+
+    it("summarizes what a call passes after the name", () => {
+      const body = [
+        '<%~ include("authors") %>',
+        '<%~ include("authors", zt.creators) %>',
+      ].join("\n");
+
+      expect(etaCalls(body).map(({ arguments: passed }) => passed)).toEqual([
+        "",
+        "zt.creators",
+      ]);
+    });
+
+    it("boxes the whole tag and marks the name alone", () => {
+      const source = '---\nid: x\n---\n<%~ include("end", zt) %>\n';
+      const [site] = partialCalls(
+        source,
+        { from: 14, to: source.length },
+        "eta",
+      );
+
+      expect(source.slice(site!.call.from, site!.call.to)).toBe(
+        '<%~ include("end", zt) %>',
+      );
+      expect(source.slice(site!.nameRange.from, site!.nameRange.to)).toBe(
+        "end",
+      );
+    });
+
+    it("ignores a call inside a code region", () => {
+      const body = [
+        "```eta",
+        '<%~ include("authors", zt) %>',
+        "```",
+        'Write `<%~ include("authors", zt) %>` in the note.',
+        "",
+        '<%~ include("authors", zt) %>',
+      ].join("\n");
+
+      expect(etaCalls(body)).toHaveLength(1);
+    });
+
+    it("leaves a Liquid tag in an Eta document as source", () => {
+      expect(etaCalls('{% render "authors" with zt as zt %}')).toEqual([]);
+    });
   });
 });
