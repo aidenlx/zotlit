@@ -96,6 +96,14 @@ function facadeMetadataCache(
         return () =>
           target.getCachedFiles!().filter((path) => survivingPaths.has(path));
       }
+      // The tag scan is the one thing the engine reads a file's metadata for
+      // inside `render`, and it draws a node per tag it finds on a file that
+      // survived (`app.js` 1.14.1, the `showTags` pass over `getCache`). A tag
+      // node is no Literature Note, no Cited Work Node and no note a citation
+      // edge reaches, so this render finds no tags on any file — and the Tags
+      // option itself is left as the reader saved it, for the row to give back
+      // when it goes off.
+      if (key === "getCache" && narrows) return () => null;
       return forward(target, key, receiver);
     },
   });
