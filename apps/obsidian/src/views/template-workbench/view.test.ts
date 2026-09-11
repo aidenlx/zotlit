@@ -1241,6 +1241,7 @@ language: liquid
             written,
             kept: ["venue-line"],
             dropped: plan.map(({ name }) => name),
+            refused: [],
           };
         },
       } as unknown as TemplateWorkbenchDeps["templates"],
