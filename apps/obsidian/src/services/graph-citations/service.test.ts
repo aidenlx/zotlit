@@ -1,7 +1,7 @@
 import { settingsOf } from "@mock/obsidian";
 import type { ToggleComponent } from "@mock/obsidian";
 // @vitest-environment happy-dom
-import { Menu } from "@mock/obsidian";
+import { Keymap, Menu } from "@mock/obsidian";
 import { PopoverState } from "obsidian";
 import type {
   App,
@@ -1027,6 +1027,46 @@ describe("GraphCitations right-clicks", () => {
 });
 
 describe("GraphCitations hovers", () => {
+  it("requires the platform modifier for graph popovers only when enabled", async () => {
+    const fixture = makeFixture({
+      settings: { "citation.hover-require-mod-graph": true },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+    vi.spyOn(Keymap, "isModifier").mockImplementation((event) => event.metaKey);
+
+    hoverEach(engine);
+    expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
+    expect(engine.nativeHovers).toEqual([]);
+    expect(
+      engine.renderer.containerEl.querySelector(".zt-graph-hover-anchor"),
+    ).toBeNull();
+
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover", { metaKey: true }),
+      "Literature/Doe 2024.md",
+      "",
+    );
+    expect(fixture.citationPopover.showWork).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        work: { kind: "item", indexedKey: "DEE23456" },
+      }),
+    );
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover", { metaKey: true }),
+      "@typo2024",
+      "unresolved",
+    );
+    expect(fixture.citationPopover.showWork).toHaveBeenCalledTimes(2);
+
+    fixture.citationPopover.showWork.mockClear();
+    fixture.settings.update({ "citation.hover-require-mod-graph": false });
+    hoverEach(engine);
+    expect(fixture.citationPopover.showWork).toHaveBeenCalledTimes(2);
+  });
+
   it("shows the Citation Popover of a Cited Work Node, anchored at the node", async () => {
     const fixture = makeFixture();
     await using service = fixture.service;
@@ -1080,7 +1120,10 @@ describe("GraphCitations hovers", () => {
 
   it("keeps the native hover on every node while the Hover Action is off", async () => {
     const fixture = makeFixture({
-      settings: { "citation.hover-action": "off" },
+      settings: {
+        "citation.hover-action": "off",
+        "citation.hover-require-mod-graph": true,
+      },
     });
     await using service = fixture.service;
     await service.ready;
@@ -1098,7 +1141,10 @@ describe("GraphCitations hovers", () => {
 
   it("asks for a Literature Note's page preview under the shared citekey source, and shows nothing for a Cited Work Node", async () => {
     const fixture = makeFixture({
-      settings: { "citation.hover-action": "page-preview" },
+      settings: {
+        "citation.hover-action": "page-preview",
+        "citation.hover-require-mod-graph": true,
+      },
     });
     await using service = fixture.service;
     await service.ready;
@@ -1382,7 +1428,10 @@ describe("GraphCitations hovers", () => {
   it("waits for a page preview that opens on Obsidian's own delay, then holds it", async () => {
     vi.useFakeTimers();
     const fixture = makeFixture({
-      settings: { "citation.hover-action": "page-preview" },
+      settings: {
+        "citation.hover-action": "page-preview",
+        "citation.hover-require-mod-graph": true,
+      },
     });
     await using service = fixture.service;
     await service.ready;
@@ -1409,7 +1458,10 @@ describe("GraphCitations hovers", () => {
   it("gives up on a hover no popover ever answers", async () => {
     vi.useFakeTimers();
     const fixture = makeFixture({
-      settings: { "citation.hover-action": "page-preview" },
+      settings: {
+        "citation.hover-action": "page-preview",
+        "citation.hover-require-mod-graph": true,
+      },
     });
     await using service = fixture.service;
     await service.ready;

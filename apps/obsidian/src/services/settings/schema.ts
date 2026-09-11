@@ -128,10 +128,11 @@ export const schema = v.object({
   "citation.locale": v.nullable(v.string()),
   /** What hovering a Citation shows, on every surface that carries one. */
   "citation.hover-action": hoverAction,
-  /** Whether the Citation Popover needs a held Mod, per editing mode. */
+  /** Whether the Citation Popover needs a held Mod, per surface. */
   "citation.hover-require-mod-source": v.boolean(),
   "citation.hover-require-mod-live-preview": v.boolean(),
   "citation.hover-require-mod-reading": v.boolean(),
+  "citation.hover-require-mod-graph": v.boolean(),
 
   "note.default-profile": defaultLiteratureNoteProfileSchema,
   "note.template-conversion-pending": v.boolean(),
@@ -196,6 +197,7 @@ export const defaults: Readonly<Settings> = Object.freeze({
   "citation.hover-require-mod-source": true,
   "citation.hover-require-mod-live-preview": false,
   "citation.hover-require-mod-reading": false,
+  "citation.hover-require-mod-graph": false,
   "note.default-profile": DEFAULT_LITERATURE_NOTE_PROFILE,
   "note.template-conversion-pending": false,
   "note.template-conversion-result": null,
