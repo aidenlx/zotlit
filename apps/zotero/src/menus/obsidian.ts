@@ -20,6 +20,7 @@ import type {
 
 import { formatValue } from "@/lib/l10n";
 import type { FluentMessageArgs } from "@/lib/l10n";
+import { launchExternalUrl } from "@/lib/launch-url";
 import { logger as appLogger } from "@/lib/logger";
 import { notifyUrl } from "@/notify/shared";
 import { sourceId } from "@/notify/source";
@@ -37,8 +38,8 @@ const URL_LENGTH_CAP = 2000;
 /**
  * Open Obsidian for one literature item via its
  * `obsidian://zotlit/<action>?item=<id>&source-id=<hash>` link.
- * `Zotero.launchURL` routes the non-`zotero:`/`http(s):` scheme to the OS
- * default handler.
+ * {@link launchExternalUrl} routes the non-`zotero:`/`http(s):` scheme to the
+ * OS default handler.
  */
 export function openInObsidian(
   action: ProtocolAction,
@@ -50,7 +51,7 @@ export function openInObsidian(
     scope,
   });
   logger.info("opening obsidian", { action, itemID: item.id, scope, url });
-  Zotero.launchURL(url);
+  launchExternalUrl(url);
 }
 
 export function exploreInObsidian(
@@ -66,7 +67,7 @@ export function exploreInObsidian(
     annotation,
     url,
   });
-  Zotero.launchURL(url);
+  launchExternalUrl(url);
 }
 
 /**
@@ -84,7 +85,7 @@ export function updateAllInObsidian(
 ): void {
   const url = buildUpdateAllProtocolUrl(sourceId(), groupID, collectionKey);
   logger.info("opening obsidian (update-all)", { groupID, collectionKey, url });
-  Zotero.launchURL(url);
+  launchExternalUrl(url);
 }
 
 /**
@@ -109,7 +110,7 @@ export function importAllNotesInObsidian(
     collectionKey,
     url,
   });
-  Zotero.launchURL(url);
+  launchExternalUrl(url);
 }
 
 /** l10n ids driving one {@link launchOrPut} run's progress-window copy. */
@@ -149,7 +150,7 @@ async function launchOrPut(
       count,
       length: url.length,
     });
-    Zotero.launchURL(url);
+    launchExternalUrl(url);
     return;
   }
 
@@ -288,7 +289,7 @@ async function showServerHint(): Promise<void> {
 export function importInObsidian(itemID: number, mode: ImportMode): void {
   const url = buildImportProtocolUrl(itemID, { sourceId: sourceId(), mode });
   logger.info("opening obsidian (import link)", { itemID, mode, url });
-  Zotero.launchURL(url);
+  launchExternalUrl(url);
 }
 
 /**
