@@ -76,7 +76,7 @@ export function renderIdentity({
 }: RenderRequest): RenderIdentity {
   return {
     ...(mode ? { previewMode: mode } : {}),
-    sourceRevision: profileSourceRevision(source),
+    sourceRevision: templateSourceRevision(source),
     snapshotRevision: snapshot.revision,
     ...(annotation
       ? { annotationId: annotation.id, annotationRevision: annotation.revision }
@@ -135,7 +135,7 @@ export interface RenderedRange {
 }
 
 /** FNV-1a over the source, so a result can name the revision it rendered. */
-export function profileSourceRevision(source: string): string {
+export function templateSourceRevision(source: string): string {
   let hash = 2_166_136_261;
   for (let index = 0; index < source.length; index++) {
     hash ^= source.charCodeAt(index);

@@ -395,7 +395,7 @@ A pinpoint reference within a cited work (CSL locator), e.g. a page number, with
 ### Citation insertion
 
 **Citation Suggester** _(Obsidian)_:
-The inline dropdown that searches Zotero Items as the user types a trigger in the editor and, on selection, replaces the typed trigger text with a rendered Citation followed by a single space — primary format by default; a trailing `/` in the query or Shift+Enter selects the secondary format. It remains available independently of the Document Citation Set and In-text Citation Rendering. Distinct from the command-palette insert modal.
+The inline dropdown that searches Zotero Items as the user types a trigger in the editor and, on selection, replaces the typed trigger text with a rendered Citation followed by a single space — the **main** Citation Variant by default; a trailing `/` in the query or Shift+Enter asks for **alt**. It remains available independently of the Document Citation Set and In-text Citation Rendering. Distinct from the command-palette insert modal.
 _Avoid_: autocomplete, citation picker, editor suggester (names the mechanism, not the feature)
 
 **Bracket Trigger**:

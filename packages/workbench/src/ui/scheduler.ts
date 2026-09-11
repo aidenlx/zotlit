@@ -14,7 +14,7 @@ import type { PreviewMode } from "./store";
 
 import {
   failedRender,
-  profileSourceRevision,
+  templateSourceRevision,
   renderIdentity,
 } from "#/render/result";
 
@@ -125,7 +125,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
     const busy = next.busy ?? state.busy;
     const identityMismatch =
       result !== null &&
-      (result.sourceRevision !== profileSourceRevision(input.source) ||
+      (result.sourceRevision !== templateSourceRevision(input.source) ||
         (input.snapshot !== null &&
           result.snapshotRevision !== input.snapshot.revision) ||
         // A result already on screen describes the example it was rendered
@@ -280,7 +280,7 @@ export function createRenderScheduler<R extends TemplateRenderResult>({
           failedRender(
             {
               previewMode: input.mode,
-              sourceRevision: profileSourceRevision(input.source),
+              sourceRevision: templateSourceRevision(input.source),
               snapshotRevision: input.snapshot?.revision ?? "",
               ...(input.annotation
                 ? {

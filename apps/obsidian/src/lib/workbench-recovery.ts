@@ -1,5 +1,5 @@
-// The route back to the Template Workbench from a note operation that refused,
-// shared by every surface that reports one.
+// The route back to the Template Workbench from a note operation that refused:
+// one notice, shared by every surface that reports one.
 import type { App } from "obsidian";
 
 import { MissingTemplateError } from "@zotlit/templates/facade";
@@ -20,7 +20,7 @@ const logger = getLogger("workbench-recovery");
  *   that refused, so the reader lands on it; the Default Profile stands in
  *   when the failure names no document.
  */
-export function requestTemplateWorkbench(app: App, document?: string): void {
+function requestTemplateWorkbench(app: App, document?: string): void {
   logger.debug("Requested the Template Workbench from a refused operation", {
     document: document ?? null,
   });
