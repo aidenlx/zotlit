@@ -1,4 +1,4 @@
-// The Citation Popover: the entries one hovered citation shows, read for the document it is written in.
+// The Citation Popover: document citation entries and source-less works under the vault presentation.
 
 import type { App } from "obsidian";
 
@@ -42,7 +42,7 @@ export interface CitationPopoverDeps {
   db: Pick<DatabaseService, "state" | "client">;
   citationIndex: Pick<
     CitationIndex,
-    "getDocumentCitationSet" | "resolveCitekey" | "resolution"
+    "getDocumentCitationSet" | "resolveCitekey" | "resolution" | "on"
   >;
   /** Names the Library each candidate of an Ambiguous Citation Key lives in. */
   libraryScope: Pick<LibraryScopeService, "current">;
@@ -56,9 +56,27 @@ export interface CitationPopoverDeps {
   >;
 }
 
+/** One work shown independently of a document or citation occurrence. */
+export interface WorkHoverRequest extends Pick<
+  CitationHoverRequest,
+  "event" | "hoverParent" | "targetEl"
+> {
+  work:
+    | { kind: "item"; indexedKey: string }
+    | { kind: "citekey"; citekey: string };
+  /** Open the exact Item displayed, using its current Literature Note. */
+  open: (
+    indexedKey: string,
+    pane: Parameters<CitationHoverRequest["open"]>[1],
+  ) => void;
+}
+
+type PopoverRequest = CitationHoverRequest | WorkHoverRequest;
+
 export interface CitationPopover {
   /** Show the Citation Popover of one hovered citation. */
   show: (request: CitationHoverRequest) => void;
+  showWork: (request: WorkHoverRequest) => void;
 }
 
 /**
@@ -80,27 +98,41 @@ export interface CitationPopover {
 export function createCitationPopover(
   deps: CitationPopoverDeps,
 ): CitationPopover {
-  return {
-    show(request) {
-      const popover = new CitationHoverPopover(
-        request.hoverParent,
-        request.targetEl,
+  const show = (request: PopoverRequest): void => {
+    const popover = new CitationHoverPopover(
+      request.hoverParent,
+      request.targetEl,
+    );
+    let reading = 0;
+    const draw = (): void => {
+      const own = ++reading;
+      void fill(deps, popover, { request, current: () => own === reading });
+    };
+    popover.register(() => {
+      reading += 1;
+    });
+    popover.register(deps.bibliographyRender.on("invalidated", draw));
+    if ("work" in request) {
+      if (request.work.kind === "citekey")
+        popover.register(deps.citationIndex.on("resolution-changed", draw));
+    } else {
+      popover.registerEvent(
+        deps.app.metadataCache.on("deleted", (file) => {
+          if (file.path === request.sourcePath) {
+            reading += 1;
+            popover.hide();
+          }
+        }),
       );
-      let reading = 0;
-      const draw = (): void => {
-        const own = ++reading;
-        void fill(deps, popover, { request, current: () => own === reading });
-      };
-      // Both listeners live exactly as long as this popover does.
-      popover.register(deps.bibliographyRender.on("invalidated", draw));
       popover.registerEvent(
         deps.app.metadataCache.on("changed", (file) => {
           if (file.path === request.sourcePath) draw();
         }),
       );
-      draw();
-    },
+    }
+    draw();
   };
+  return { show, showWork: show };
 }
 
 /** What one read of a hovered citation puts on screen. */
@@ -115,6 +147,9 @@ interface PopoverRead {
    * an unresolved block is a lookup in progress rather than a missing Item.
    */
   pending: boolean;
+  /** Exact identity of the single source-less entry. */
+  indexedKey?: string;
+  unavailable?: "database" | "item";
 }
 
 /**
@@ -124,33 +159,63 @@ interface PopoverRead {
 async function fill(
   deps: CitationPopoverDeps,
   popover: CitationHoverPopover,
-  {
-    request,
-    current,
-  }: { request: CitationHoverRequest; current: () => boolean },
+  { request, current }: { request: PopoverRequest; current: () => boolean },
 ): Promise<void> {
   let read: PopoverRead;
   try {
-    read = await readBlocks(deps, request);
+    read = await ("work" in request
+      ? readWork(deps, request)
+      : readBlocks(deps, request));
   } catch (error) {
     if (!current()) return;
     logger.warn("Cannot read the entries of a hovered citation", {
-      path: request.sourcePath,
+      path: "sourcePath" in request ? request.sourcePath : undefined,
       error,
     });
     popover.hide();
     return;
   }
   if (!current()) return;
-  const { blocks, note, profileFailure, pending } = read;
+  const { blocks, note, profileFailure, pending, unavailable } = read;
   // Every work the hover carries becomes a block, so an empty stack means
   // the document itself could not be read — nothing the popover can say.
-  if (blocks.length === 0) {
+  if (blocks.length === 0 && !unavailable) {
     popover.hide();
     return;
   }
   const actions = createCitationPopoverActions({
-    open: request.open,
+    open: (block, pane) => {
+      if ("work" in request) {
+        if (read.indexedKey) request.open(read.indexedKey, pane);
+      } else if (block.citekey !== null) {
+        request.open(block.citekey, pane);
+      }
+    },
+    prepare:
+      "work" in request && read.indexedKey
+        ? (block) => {
+            const { sources, database } = readReferenceSources(deps.db, [
+              { indexedKey: read.indexedKey!, linkpath: null },
+            ]);
+            const source = sources.get(read.indexedKey!);
+            if (database === "unreadable" || !source) {
+              popover.render(
+                <CitationPopoverContent
+                  blocks={[]}
+                  actions={actions}
+                  unavailable={database === "unreadable" ? "database" : "item"}
+                />,
+              );
+              return null;
+            }
+            return {
+              ...block,
+              itemKey: source.itemKey,
+              groupID: source.groupID,
+              attachments: source.attachments,
+            };
+          }
+        : undefined,
     hide: () => popover.hide(),
     switchProfile: (path) => requestProfileSwitch(deps.app, path),
   });
@@ -161,14 +226,96 @@ async function fill(
       profileFailure={profileFailure}
       actions={actions}
       pending={pending}
+      unavailable={unavailable}
     />,
   );
   logger.debug("Citation popover entries read", {
-    path: request.sourcePath,
+    path: "sourcePath" in request ? request.sourcePath : undefined,
     blocks: blocks.length,
     note: note !== undefined && note.length > 0,
     shown,
   });
+}
+
+async function readWork(
+  deps: CitationPopoverDeps,
+  request: WorkHoverRequest,
+): Promise<PopoverRead> {
+  await deps.profile.ready;
+  const work = request.work;
+  const resolution =
+    work.kind === "citekey"
+      ? deps.citationIndex.resolveCitekey(work.citekey)
+      : null;
+  const indexedKey =
+    work.kind === "item"
+      ? work.indexedKey
+      : resolution?.kind === "unique"
+        ? resolution.item.indexedKey
+        : undefined;
+  const empty: PopoverRead = {
+    blocks: [],
+    note: undefined,
+    profileFailure: undefined,
+    pending: false,
+  };
+  if (deps.db.state !== "ready") return { ...empty, unavailable: "database" };
+  if (work.kind === "citekey" && indexedKey === undefined) {
+    return {
+      ...empty,
+      pending: resolution === null,
+      blocks: [
+        resolution?.kind === "ambiguous"
+          ? {
+              kind: "ambiguous",
+              citekey: work.citekey,
+              candidates: describeCandidates(deps, resolution.candidates),
+            }
+          : { kind: "unresolved", citekey: work.citekey },
+      ],
+    };
+  }
+  if (indexedKey === undefined) return empty;
+  const { sources, database } = readReferenceSources(deps.db, [
+    { indexedKey, linkpath: null },
+  ]);
+  if (database === "unreadable") return { ...empty, unavailable: "database" };
+  const source = sources.get(indexedKey);
+  if (!source) return { ...empty, unavailable: "item" };
+  const outcome = await deps.bibliographyRender
+    .render([source.csl])
+    .catch((error: unknown) => {
+      logger.warn("Cannot format source-less Item", { indexedKey, error });
+      return null;
+    });
+  const bibliography =
+    outcome?.kind === "held"
+      ? outcome.record.status === "revalidating"
+        ? await outcome.record.settled
+        : outcome.record.status === "failed"
+          ? null
+          : outcome.record.value
+      : null;
+  const entry = bibliography?.entries.find(
+    (entry) => entry.id === String(source.csl.id),
+  );
+  return {
+    ...empty,
+    indexedKey,
+    blocks: [
+      {
+        kind: "entry",
+        citekey: source.citekey,
+        marker: undefined,
+        serial: undefined,
+        content: entry?.content.length ? entry.content : null,
+        summary: source.summary,
+        itemKey: source.itemKey,
+        groupID: source.groupID,
+        attachments: source.attachments,
+      },
+    ],
+  };
 }
 
 async function readBlocks(

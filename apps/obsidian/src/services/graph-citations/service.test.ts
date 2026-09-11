@@ -541,7 +541,8 @@ function makeFixture(options: FixtureOptions = {}) {
     ...options.settings,
   });
   const openCitekey = vi.fn(() => Promise.resolve());
-  const citationPopover = { show: vi.fn() };
+  const openIndexedKey = vi.fn(() => Promise.resolve());
+  const citationPopover = { show: vi.fn(), showWork: vi.fn() };
   const service = new GraphCitations({
     app,
     citationIndex,
@@ -550,7 +551,7 @@ function makeFixture(options: FixtureOptions = {}) {
       NoteIndex,
       "getIndexedItemKeys" | "getNotesByItemKey" | "on"
     >,
-    citekeyEditor: { openCitekey },
+    citekeyEditor: { openCitekey, openIndexedKey },
     citationPopover,
     settings,
   });
@@ -561,6 +562,7 @@ function makeFixture(options: FixtureOptions = {}) {
     noteIndex,
     settings,
     openCitekey,
+    openIndexedKey,
     citationPopover,
     /** What a page preview goes out through: `workspace.trigger("hover-link", …)`. */
     trigger: workspace.trigger,
@@ -786,6 +788,81 @@ describe("GraphCitations clicks", () => {
     expect(engine.nativeClicks).toEqual([]);
   });
 
+  it.each([false, true])(
+    "replaces the hover target when a Literature Note is created and deleted (pointer in popover: %s)",
+    async (inPopover) => {
+      vi.useFakeTimers();
+      const notes: Record<string, { path: string }[]> = {};
+      const fixture = makeFixture({ notes });
+      await using service = fixture.service;
+      await service.ready;
+      const engine = fixture.addLeaf("graph");
+      fixture.layoutReady();
+      const { renderer } = engine;
+      renderer.nodeLookup["@doe2024"] = { x: 2, y: 3 };
+      renderer.onNodeHover(
+        new MouseEvent("mouseover"),
+        "@doe2024",
+        "unresolved",
+      );
+      const initial = fixture.citationPopover.showWork.mock.lastCall![0];
+      expect(initial.work).toEqual({ kind: "citekey", citekey: "doe2024" });
+      const old = fakePopover(initial.targetEl);
+      const hide = vi.fn();
+      old.hide = hide;
+      engine.hoverPopover = old;
+      if (inPopover) renderer.onNodeUnhover();
+      engine.renderer.onNodeClick(
+        new MouseEvent("click"),
+        "@doe2024",
+        "unresolved",
+      );
+      expect(fixture.openCitekey).toHaveBeenCalledExactlyOnceWith(
+        "doe2024",
+        false,
+      );
+
+      notes.DEE23456 = [{ path: "Literature/Doe 2024.md" }];
+      delete renderer.nodeLookup["@doe2024"];
+      fixture.noteIndex.emit("changed");
+      await vi.advanceTimersByTimeAsync(400);
+      expect(hide).toHaveBeenCalledOnce();
+      renderer.onNodeHover(
+        new MouseEvent("mouseover"),
+        "Literature/Doe 2024.md",
+        "",
+      );
+      const created = fixture.citationPopover.showWork.mock.lastCall![0];
+      expect(created.work).toEqual({ kind: "item", indexedKey: "DEE23456" });
+      created.open("DEE23456", "tab");
+      expect(fixture.openIndexedKey).toHaveBeenCalledExactlyOnceWith(
+        "DEE23456",
+        "tab",
+      );
+      const notePopover = fakePopover(created.targetEl);
+      const hideNote = vi.fn();
+      notePopover.hide = hideNote;
+      engine.hoverPopover = notePopover;
+      if (inPopover) renderer.onNodeUnhover();
+
+      delete notes.DEE23456;
+      delete renderer.nodeLookup["Literature/Doe 2024.md"];
+      renderer.nodeLookup["@doe2024"] = { x: 2, y: 3 };
+      fixture.noteIndex.emit("changed");
+      await vi.advanceTimersByTimeAsync(400);
+      expect(hideNote).toHaveBeenCalledOnce();
+      renderer.onNodeHover(
+        new MouseEvent("mouseover"),
+        "@doe2024",
+        "unresolved",
+      );
+      expect(fixture.citationPopover.showWork.mock.lastCall![0].work).toEqual({
+        kind: "citekey",
+        citekey: "doe2024",
+      });
+    },
+  );
+
   it("calls through for every other node", async () => {
     const fixture = makeFixture();
     await using service = fixture.service;
@@ -963,14 +1040,13 @@ describe("GraphCitations hovers", () => {
       "unresolved",
     );
 
-    expect(fixture.citationPopover.show).toHaveBeenCalledOnce();
-    const request = fixture.citationPopover.show.mock.calls[0]![0];
+    expect(fixture.citationPopover.showWork).toHaveBeenCalledOnce();
+    const request = fixture.citationPopover.showWork.mock.calls[0]![0];
     expect(request).toMatchObject({
       hoverParent: engine,
-      sourcePath: "Draft.md",
-      works: [{ citekey: "typo2024" }],
+      work: { kind: "citekey", citekey: "typo2024" },
     });
-    expect(request.works[0].indexedKey).toBeUndefined();
+    expect(request).not.toHaveProperty("sourcePath");
     // The node sits at world (10, 20), drawn at scale 2 with pan (4, 6).
     const anchor = request.targetEl as HTMLElement;
     expect(anchor.parentElement).toBe(engine.renderer.containerEl);
@@ -991,11 +1067,10 @@ describe("GraphCitations hovers", () => {
       "",
     );
 
-    expect(fixture.citationPopover.show).toHaveBeenCalledOnce();
-    const request = fixture.citationPopover.show.mock.calls[0]![0];
+    expect(fixture.citationPopover.showWork).toHaveBeenCalledOnce();
+    const request = fixture.citationPopover.showWork.mock.calls[0]![0];
     expect(request).toMatchObject({
-      sourcePath: "Draft.md",
-      works: [{ citekey: "doe2024", indexedKey: "DEE23456" }],
+      work: { kind: "item", indexedKey: "DEE23456" },
     });
     // The node sits at world (-5, 5), drawn at scale 2 with pan (4, 6).
     const anchor = request.targetEl as HTMLElement;
@@ -1014,7 +1089,7 @@ describe("GraphCitations hovers", () => {
 
     hoverEach(engine);
 
-    expect(fixture.citationPopover.show).not.toHaveBeenCalled();
+    expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
     expect(engine.nativeHovers).toEqual([
       ["@typo2024", "unresolved"],
       ["Literature/Doe 2024.md", ""],
@@ -1032,7 +1107,7 @@ describe("GraphCitations hovers", () => {
 
     hoverEach(engine);
 
-    expect(fixture.citationPopover.show).not.toHaveBeenCalled();
+    expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
     // Both node kinds are answered here, so neither reaches the graph's own
     // hover — and with it the graph's row of Obsidian's Page preview settings.
     expect(engine.nativeHovers).toEqual([]);
@@ -1077,15 +1152,14 @@ describe("GraphCitations hovers", () => {
       "",
     );
 
-    expect(fixture.citationPopover.show).toHaveBeenCalledOnce();
-    expect(fixture.citationPopover.show.mock.calls[0]![0]).toMatchObject({
-      sourcePath: "Notes/Wiki.md",
-      works: [{ citekey: "lee2019", indexedKey: "LEE56789" }],
+    expect(fixture.citationPopover.showWork).toHaveBeenCalledOnce();
+    expect(fixture.citationPopover.showWork.mock.calls[0]![0]).toMatchObject({
+      work: { kind: "item", indexedKey: "LEE56789" },
     });
     expect(engine.nativeHovers).toEqual([]);
   });
 
-  it("keeps the native hover on a Literature Note no document cites", async () => {
+  it("shows a source-less popover on a Literature Note no document cites", async () => {
     const fixture = makeFixture();
     await using service = fixture.service;
     await service.ready;
@@ -1098,8 +1172,12 @@ describe("GraphCitations hovers", () => {
       "",
     );
 
-    expect(fixture.citationPopover.show).not.toHaveBeenCalled();
-    expect(engine.nativeHovers).toEqual([["Literature/Kay 2020.md", ""]]);
+    expect(fixture.citationPopover.showWork).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        work: { kind: "item", indexedKey: "KAY23456" },
+      }),
+    );
+    expect(engine.nativeHovers).toEqual([]);
   });
 
   it("calls through for every other node", async () => {
@@ -1116,7 +1194,7 @@ describe("GraphCitations hovers", () => {
       "unresolved",
     );
 
-    expect(fixture.citationPopover.show).not.toHaveBeenCalled();
+    expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
     expect(engine.nativeHovers).toEqual([
       ["Other.md", ""],
       ["missing", "unresolved"],
@@ -1172,7 +1250,7 @@ describe("GraphCitations hovers", () => {
       "",
     );
 
-    const shown = fixture.citationPopover.show.mock.lastCall![0];
+    const shown = fixture.citationPopover.showWork.mock.lastCall![0];
     expect(shown.targetEl).not.toBe(first);
     expect(containerEl.children).toHaveLength(2);
   });
@@ -1369,7 +1447,7 @@ describe("GraphCitations hovers", () => {
       "",
     );
 
-    expect(fixture.citationPopover.show).not.toHaveBeenCalled();
+    expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
     expect(engine.nativeHovers).toEqual([["Literature/Doe 2024.md", ""]]);
   });
 

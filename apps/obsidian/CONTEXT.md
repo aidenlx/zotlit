@@ -348,7 +348,7 @@ The main language declared by a note's standard Pandoc `lang` metadata, which al
 _Avoid_: citation language (names only one effect), ZotLit language
 
 **Citation Presentation**:
-The document-specific combination of Citation and References Style and Citation Locale shared by Document Citation Text, the References Sidebar, the Citation Popover, the Copied Bibliography, and the initial built-in export choices. Vault selections supply defaults that `zotlit-csl` and `lang` can override; an invalid document override leaves citation source visible, shows the minimal References Sidebar with a note-scoped error, and keeps bibliography copy unavailable instead of silently falling back.
+The combination of Citation and References Style and Citation Locale shared by Document Citation Text, the References Sidebar, the Citation Popover, the Copied Bibliography, and the initial built-in export choices. A source-less Citation Popover uses the vault selections; for documents, vault selections supply defaults that `zotlit-csl` and `lang` can override, and an invalid document override leaves citation source visible, shows the minimal References Sidebar with a note-scoped error, and keeps bibliography copy unavailable instead of silently falling back.
 _Avoid_: citation format (omits references and locale), render settings
 
 **Pandoc Engine**:
@@ -433,7 +433,7 @@ The per-vault choice of what hovering a recognized citation or Literature Note w
 _Avoid_: hover mode, popover toggle (a three-way choice, not an on/off)
 
 **Citation Popover** _(Obsidian)_:
-The concise hover popover that shows each cited entry's formatted bibliography text — full entries stacked unclipped for a multi-item Citation, formatted note text for a note-class marker — with the three action buttons per entry in a cursor-proximal row. It is one Hover Action choice; the native page preview is another, and hover never shows both.
+The concise hover popover that shows each cited entry's formatted bibliography text — full entries stacked unclipped for a multi-item Citation, formatted note text for a note-class marker — or one work under the vault Citation Presentation when there is no source document, with the available Item actions in a cursor-proximal row. The source-less form shows the bibliography body or Item summary, with no Reference Number, Entry Marker, or Entry Serial; it is the same Hover Action choice as the document-backed form, and hover shows one result.
 _Avoid_: concise popover (the working name), hover tooltip, hover card
 
 **Citekey Reading Rendering** _(Obsidian)_:

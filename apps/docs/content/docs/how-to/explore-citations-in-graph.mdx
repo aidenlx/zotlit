@@ -175,10 +175,11 @@ Hovering a Literature Note or a Cited Work Node follows <UiLabel name={m.setting
 Every other node keeps Obsidian's native hover.
 
 <Callout type="info">
-  Under <UiLabel name={m.settings_citation_hover_action_popover()} />, a
-  Literature Note that nothing in your vault cites shows Obsidian's own page
-  preview instead. The popover reads the entry from a citing note, and an
-  uncited note has none to read.
+  Under <UiLabel name={m.settings_citation_hover_action_popover()} />, graph
+  popovers use your vault's citation style and locale, including for uncited
+  Literature Notes. Entries appear without numbering. If the style has no
+  bibliography or formatting is unavailable, the popover shows the item's
+  summary. Its actions use the item shown.
 </Callout>
 
 ## See also
