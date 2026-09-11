@@ -271,6 +271,18 @@ describe("WorkbenchDocumentController", () => {
     expect(controller.dependencies).toEqual(["cite", "summary"]);
   });
 
+  it("leaves out a call no Shared Partial can answer", () => {
+    const controller = new WorkbenchDocumentController(
+      HAND_WRITTEN.replace(
+        "# {{ zt.title }}",
+        `{% render 'citation' %}{% render 'note' %}{% render 'content' %}
+{% render 'filename' %}{% render 'annotation' %}{% render 'summary' %}`,
+      ),
+    );
+
+    expect(controller.dependencies).toEqual(["summary"]);
+  });
+
   it("reports the transport copy as a problem on the vault host alone", () => {
     const native = new WorkbenchDocumentController(BUNDLED, {
       runtime: "native",

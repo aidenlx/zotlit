@@ -153,9 +153,11 @@ export interface LiteratureNotePackDiffRow {
 }
 
 /**
- * The partial names a document's own templates call, before any bundle resolves
- * them. The reserved `annotation` name is the document's own section rather
- * than a partial, so it is left out.
+ * Every name a document's own templates call, sorted, before any bundle
+ * resolves them. A name another Template already answers — the document's own
+ * Annotation Section among them — is a call this scan reports all the same:
+ * which of them can be a Shared Partial is the caller's own list to hold, and
+ * this package carries none.
  */
 export function literatureNoteTemplateDependencies(
   document: LiteratureNoteTemplateDocument,
@@ -165,7 +167,7 @@ export function literatureNoteTemplateDependencies(
     document.annotationSection.source,
     document.manifest.filename,
   ].flatMap(referencedPartialNames);
-  return [...new Set(names)].filter((name) => name !== "annotation").sort();
+  return [...new Set(names)].sort();
 }
 
 /** The fields Share and Import can change while retaining authored template text. */
