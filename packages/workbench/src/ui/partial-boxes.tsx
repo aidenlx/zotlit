@@ -42,6 +42,11 @@ export interface PartialPlaceholderHost {
    * @see docs/adr/0050-the-citation-template-is-one-document-and-partials-are-files.md
    */
   readonly missing: readonly string[];
+  /**
+   * Changes whenever a registered partial's own text does, so an open preview
+   * renders the partial again. A host that never changes one leaves it out.
+   */
+  readonly revision?: string | number;
   /** Opens the Shared Partial's own editor. */
   readonly onEdit: (name: string) => void;
   /** Starts the host's create flow for `name`, which asks before it writes. */
@@ -151,6 +156,7 @@ export function usePartialBoxes(
             <PartialPreview
               id={previewId}
               name={expanded.name}
+              revision={host.revision}
               onRender={host.onRender}
             />,
             previewHost,
@@ -300,10 +306,12 @@ async function pickPartial(
 function PartialPreview({
   id,
   name,
+  revision,
   onRender,
 }: {
   id: string;
   name: string;
+  revision: string | number | undefined;
   onRender: (name: string) => Promise<string>;
 }) {
   const m = useWorkbenchMessages();
@@ -334,7 +342,8 @@ function PartialPreview({
     return () => {
       current = false;
     };
-  }, [name]);
+    // `revision` re-renders the open preview after the partial itself is saved.
+  }, [name, revision]);
   return (
     <div id={id} data-partial-preview {...part("annotation-preview")}>
       {state?.kind === "error" && (
