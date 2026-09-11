@@ -51,7 +51,7 @@ export interface GraphLeafMembers {
  *   the member — all of which the caller reports as it sees fit.
  */
 export function graphEngineOf(
-  leaf: WorkspaceLeaf,
+  leaf: Pick<WorkspaceLeaf, "view">,
   viewType: string = leaf.view.getViewType(),
 ): GraphEngine | undefined {
   return viewType === "graph"
@@ -71,7 +71,9 @@ export function graphEngineOf(
  *   with no members by design, and is the caller's to skip.
  * @returns `null` when the leaf is not a graph leaf or a member is missing.
  */
-export function graphMembersOf(leaf: WorkspaceLeaf): GraphLeafMembers | null {
+export function graphMembersOf(
+  leaf: Pick<WorkspaceLeaf, "view">,
+): GraphLeafMembers | null {
   const viewType = leaf.view.getViewType();
   const engine = graphEngineOf(leaf, viewType);
   const renderer = (leaf.view as GraphView).renderer;

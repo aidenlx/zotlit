@@ -29,10 +29,11 @@ import { NoteIndexStub } from "@/services/note-index/test-stub";
 import type { Settings } from "@/services/settings/schema";
 
 import type { LinkMap } from "./adapter";
-import { DEFAULT_COLOR } from "./groups";
 import { GraphCitations } from "./service";
 import { FakeColorGroupSection, FakeControlSection } from "./test-double";
 import { graphNode, themeStates, themeStatesNothing } from "./test-stub";
+
+const DEFAULT_COLOR = { a: 1, rgb: 0xe8622c };
 
 const warn = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/log", () => ({
@@ -410,9 +411,13 @@ function fakeLeaf(
   /** What the view registered for its own unload, as a `Component` holds it. */
   const registered: (() => unknown)[] = [];
   const shared = {
+    app: realApp,
     getViewType: () => viewType,
     renderer: engine.renderer,
     register: (cb: () => unknown) => registered.push(cb),
+    getState: () => ({}),
+    setState: async (_state: unknown, _result: unknown) => {},
+    onOptionsChange: () => {},
   };
   const view =
     viewType === "graph"
@@ -470,6 +475,7 @@ class CitationIndexStub {
 }
 
 interface FixtureOptions {
+  presentation?: boolean;
   graphEnabled?: boolean;
   /** What the Graph core plugin saved, which the global graph starts from. */
   savedGlobal?: GraphOptions;
@@ -512,10 +518,20 @@ function makeFixture(options: FixtureOptions = {}) {
       leaves.filter((leaf) => leaf.view.getViewType() === type),
     readWorkspaceFile: () => Promise.resolve(options.savedLayout ?? {}),
     trigger: vi.fn(),
+    requestSaveLayout: vi.fn(),
   };
   const graphPlugin = { options: options.savedGlobal ?? {} };
   const app = {
     workspace,
+    viewRegistry: {
+      getViewCreatorByType: (type: "graph" | "localgraph") => () => {
+        const made = fakeLeaf(type, app, app);
+        Object.assign(made.leaf.view, {
+          onload: () => made.engine.setOptions(graphPlugin.options),
+        });
+        return made.leaf.view;
+      },
+    },
     internalPlugins: {
       getEnabledPluginById: (id: string) =>
         id === "graph" && (options.graphEnabled ?? true) ? graphPlugin : null,
@@ -568,6 +584,11 @@ function makeFixture(options: FixtureOptions = {}) {
     trigger: workspace.trigger,
     addLeaf(viewType: "graph" | "localgraph", id = `leaf-${leaves.length}`) {
       const made = fakeLeaf(viewType, app, app);
+      if (options.presentation)
+        Object.assign(made.engine.options, {
+          "zotlit-color-citation-links": true,
+          "zotlit-citation-popover": true,
+        });
       Object.assign(made.leaf, { id });
       leaves.push(made.leaf);
       closers.set(made.leaf, made.close);
@@ -596,6 +617,11 @@ function makeFixture(options: FixtureOptions = {}) {
      */
     addDeferredLeaf(viewType: "graph" | "localgraph", saved?: GraphOptions) {
       const made = fakeLeaf(viewType, app, app);
+      if (options.presentation)
+        Object.assign(made.engine.options, {
+          "zotlit-color-citation-links": true,
+          "zotlit-citation-popover": true,
+        });
       Object.assign(made.leaf, {
         id: `leaf-${leaves.length}`,
         view: {
@@ -621,6 +647,10 @@ function makeFixture(options: FixtureOptions = {}) {
   };
 }
 
+function makePresentationFixture(options: FixtureOptions = {}) {
+  return makeFixture({ ...options, presentation: true });
+}
+
 afterEach(() => {
   vi.useRealTimers();
   warn.mockClear();
@@ -628,6 +658,132 @@ afterEach(() => {
 });
 
 describe("GraphCitations installation", () => {
+  it("keeps current view choices after the graph feature is toggled off and on", async () => {
+    const fixture = makeFixture({
+      savedLayout: {
+        id: "leaf-0",
+        type: "leaf",
+        state: {
+          type: "graph",
+          state: { options: { "zotlit-citation-popover": false } },
+        },
+      },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    fixture.layoutReady();
+    engine.setOptions({ "zotlit-citation-popover": true });
+    fixture.settings.update({ "citation.graph-citations": false });
+    fixture.settings.update({ "citation.graph-citations": true });
+    expect(engine.getOptions()["zotlit-citation-popover"]).toBe(true);
+  });
+
+  it("installs before a new view loads and ignores shared presentation choices", async () => {
+    const fixture = makeFixture({
+      savedGlobal: {
+        "zotlit-color-citation-links": true,
+        "zotlit-citation-popover": true,
+      },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    const leaf = { id: "new" } as WorkspaceLeaf;
+    const create = fixture.app.viewRegistry!.getViewCreatorByType("graph")!;
+    const view = create(leaf);
+    Object.assign(leaf, { view });
+    view.onload();
+    expect(
+      (view.getState() as { options: GraphOptions }).options,
+    ).toMatchObject({
+      "zotlit-color-citation-links": false,
+      "zotlit-citation-popover": false,
+    });
+    await view.setState(
+      { options: { "zotlit-citation-popover": true } },
+      { history: false },
+    );
+    expect(
+      (view.getState() as { options: GraphOptions }).options,
+    ).toMatchObject({
+      "zotlit-color-citation-links": false,
+      "zotlit-citation-popover": true,
+    });
+  });
+
+  it.each(["graph", "localgraph"] as const)(
+    "restores independent %s view states",
+    async (type) => {
+      const fixture = makeFixture();
+      await using service = fixture.service;
+      await service.ready;
+      const first = fixture.addLeaf(type, "first");
+      fixture.layoutReady();
+      first.setOptions({
+        "zotlit-color-citation-links": true,
+        "zotlit-citation-popover": true,
+      });
+      const state = fixture.leafState("first");
+      expect((state as { options: GraphOptions }).options).toMatchObject({
+        "zotlit-color-citation-links": true,
+        "zotlit-citation-popover": true,
+      });
+      const second = fixture.addLeaf(type, "second");
+      fixture.fire("layout-change");
+      expect(second.getOptions()).toMatchObject({
+        "zotlit-color-citation-links": false,
+        "zotlit-citation-popover": false,
+      });
+      await fixture.leaf("second").view.setState(state, { history: false });
+      expect(second.getOptions()).toMatchObject({
+        "zotlit-color-citation-links": true,
+        "zotlit-citation-popover": true,
+      });
+      await fixture.leaf("second").view.setState(
+        {
+          options: {
+            "zotlit-color-citation-links": false,
+            "zotlit-citation-popover": false,
+          },
+        },
+        { history: false },
+      );
+      expect(second.getOptions()).toMatchObject({
+        "zotlit-color-citation-links": false,
+        "zotlit-citation-popover": false,
+      });
+      expect(first.getOptions()).toMatchObject({
+        "zotlit-color-citation-links": true,
+        "zotlit-citation-popover": true,
+      });
+    },
+  );
+
+  it("keeps ordinary graphs native until presentation controls are enabled", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const graph = fixture.addLeaf("graph");
+    fixture.layoutReady();
+    expect(graph.getOptions()).toMatchObject({
+      "zotlit-color-citation-links": false,
+      "zotlit-citation-popover": false,
+    });
+    graph.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "Literature/Doe 2024.md",
+      "",
+    );
+    expect(fixture.citationPopover.showWork).not.toHaveBeenCalled();
+    graph.setOptions({ "zotlit-citation-popover": true });
+    graph.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "Literature/Doe 2024.md",
+      "",
+    );
+    expect(fixture.citationPopover.showWork).toHaveBeenCalled();
+  });
+
   it("installs once per renderer across repeated layout events and draws the additions", async () => {
     const fixture = makeFixture();
     await using service = fixture.service;
@@ -749,7 +905,7 @@ describe("GraphCitations installation", () => {
 
 describe("GraphCitations clicks", () => {
   it("opens a Cited Work Node through the citekey action and never natively", async () => {
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -769,7 +925,7 @@ describe("GraphCitations clicks", () => {
   });
 
   it("opens an ambiguous Cited Work Node through the citekey action, which offers the candidates", async () => {
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("localgraph");
@@ -793,7 +949,7 @@ describe("GraphCitations clicks", () => {
     async (inPopover) => {
       vi.useFakeTimers();
       const notes: Record<string, { path: string }[]> = {};
-      const fixture = makeFixture({ notes });
+      const fixture = makePresentationFixture({ notes });
       await using service = fixture.service;
       await service.ready;
       const engine = fixture.addLeaf("graph");
@@ -864,7 +1020,7 @@ describe("GraphCitations clicks", () => {
   );
 
   it("calls through for every other node", async () => {
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1027,8 +1183,27 @@ describe("GraphCitations right-clicks", () => {
 });
 
 describe("GraphCitations hovers", () => {
+  it("closes citation details when this view's popover control is turned off", async () => {
+    const fixture = makePresentationFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
+    fixture.layoutReady();
+    engine.renderer.onNodeHover(
+      new MouseEvent("mouseover"),
+      "Literature/Doe 2024.md",
+      "",
+    );
+    const target = fixture.citationPopover.showWork.mock.calls[0]![0].targetEl;
+    const popover = Object.assign(fakePopover(target), { hide: vi.fn() });
+    engine.hoverPopover = popover;
+    engine.setOptions({ "zotlit-citation-popover": false });
+    expect(popover.hide).toHaveBeenCalledOnce();
+  });
+
   it("requires the platform modifier for graph popovers only when enabled", async () => {
-    const fixture = makeFixture({
+    const fixture = makePresentationFixture({
       settings: { "citation.hover-require-mod-graph": true },
     });
     await using service = fixture.service;
@@ -1068,7 +1243,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("shows the Citation Popover of a Cited Work Node, anchored at the node", async () => {
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1095,7 +1270,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("shows the Citation Popover of the Item a Literature Note carries", async () => {
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("localgraph");
@@ -1119,7 +1294,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("keeps the native hover on every node while the Hover Action is off", async () => {
-    const fixture = makeFixture({
+    const fixture = makePresentationFixture({
       settings: {
         "citation.hover-action": "off",
         "citation.hover-require-mod-graph": true,
@@ -1140,7 +1315,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("asks for a Literature Note's page preview under the shared citekey source, and shows nothing for a Cited Work Node", async () => {
-    const fixture = makeFixture({
+    const fixture = makePresentationFixture({
       settings: {
         "citation.hover-action": "page-preview",
         "citation.hover-require-mod-graph": true,
@@ -1176,7 +1351,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("shows the Citation Popover of a Literature Note only a wikilink Citation cites", async () => {
-    const fixture = makeFixture({
+    const fixture = makePresentationFixture({
       wikilinkCitations: true,
       notes: {
         DEE23456: [{ path: "Literature/Doe 2024.md" }],
@@ -1206,7 +1381,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("shows a source-less popover on a Literature Note no document cites", async () => {
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1227,7 +1402,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("calls through for every other node", async () => {
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1248,7 +1423,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("retires the anchor on the unhover no popover outlives, and keeps it for one that does", async () => {
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1274,7 +1449,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("gives a second hovered node an anchor of its own, so its preview is not read as the first one again", async () => {
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1303,7 +1478,7 @@ describe("GraphCitations hovers", () => {
 
   it("lets go of a hold when the hovered graph closes", async () => {
     vi.useFakeTimers();
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph", "hovered");
@@ -1333,7 +1508,7 @@ describe("GraphCitations hovers", () => {
 
   it("lets go of a hold on the window that armed it, after the graph moved to a pop-out", async () => {
     vi.useFakeTimers();
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph", "hovered");
@@ -1367,7 +1542,7 @@ describe("GraphCitations hovers", () => {
 
   it("states the popover's target again after Obsidian's sweep drops it, until the pointer leaves", async () => {
     vi.useFakeTimers();
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1397,7 +1572,7 @@ describe("GraphCitations hovers", () => {
 
   it("stops holding a popover that has hidden, with no unhover of its own", async () => {
     vi.useFakeTimers();
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1427,7 +1602,7 @@ describe("GraphCitations hovers", () => {
 
   it("waits for a page preview that opens on Obsidian's own delay, then holds it", async () => {
     vi.useFakeTimers();
-    const fixture = makeFixture({
+    const fixture = makePresentationFixture({
       settings: {
         "citation.hover-action": "page-preview",
         "citation.hover-require-mod-graph": true,
@@ -1457,7 +1632,7 @@ describe("GraphCitations hovers", () => {
 
   it("gives up on a hover no popover ever answers", async () => {
     vi.useFakeTimers();
-    const fixture = makeFixture({
+    const fixture = makePresentationFixture({
       settings: {
         "citation.hover-action": "page-preview",
         "citation.hover-require-mod-graph": true,
@@ -1486,7 +1661,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("keeps the native hover on a node the renderer holds no place for", async () => {
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1504,7 +1679,7 @@ describe("GraphCitations hovers", () => {
   });
 
   it("restores both hover members and takes the anchor away on teardown", async () => {
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     const service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -1604,7 +1779,7 @@ describe("GraphCitations node colours", () => {
     "Literature/Doe 2024.md": graphNode("", GROUP),
   });
 
-  it("colours Literature Notes and Cited Work Nodes and no other node", async () => {
+  it("colors only Cited Work Nodes without a group", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
     const fixture = makeFixture();
     await using service = fixture.service;
@@ -1615,7 +1790,7 @@ describe("GraphCitations node colours", () => {
     fixture.layoutReady();
 
     expect(colorsOf(engine.handedOff)).toEqual({
-      "Literature/Doe 2024.md": { a: 1, rgb: 0x7852ee },
+      "Literature/Doe 2024.md": undefined,
       "@typo2024": { a: 1, rgb: 0x888888 },
       "@roe2025": { a: 1, rgb: 0x888888 },
       "Draft.md": undefined,
@@ -1640,7 +1815,7 @@ describe("GraphCitations node colours", () => {
     });
   });
 
-  it("colours a Literature Note while the Pandoc citations row is off", async () => {
+  it("keeps a Literature Note native while the Pandoc citations row is off", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
     const fixture = makeFixture();
     await using service = fixture.service;
@@ -1654,14 +1829,14 @@ describe("GraphCitations node colours", () => {
     // The row takes every citekey edge away, and with it every Cited Work
     // Node; a Literature Note is one whatever the rows say.
     expect(colorsOf(engine.handedOff)).toEqual({
-      "Literature/Doe 2024.md": { a: 1, rgb: 0x7852ee },
+      "Literature/Doe 2024.md": undefined,
       "@typo2024": undefined,
       "@roe2025": undefined,
       "Draft.md": undefined,
     });
   });
 
-  it("colours a Literature Note only a Wikilink Citation reaches", async () => {
+  it("keeps native colors on a Literature Note only a Wikilink Citation reaches", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)");
     const fixture = makeFixture({
       wikilinkCitations: true,
@@ -1690,8 +1865,8 @@ describe("GraphCitations node colours", () => {
     fixture.layoutReady();
 
     expect(colorsOf(engine.handedOff)).toEqual({
-      "Literature/Doe 2024.md": { a: 1, rgb: 0x7852ee },
-      "Literature/Roe 2025.md": { a: 1, rgb: 0x7852ee },
+      "Literature/Doe 2024.md": undefined,
+      "Literature/Roe 2025.md": undefined,
       "@typo2024": { a: 1, rgb: 0x888888 },
       "@roe2025": { a: 1, rgb: 0x888888 },
       "Draft.md": undefined,
@@ -1717,7 +1892,7 @@ describe("GraphCitations node colours", () => {
 
     expect(engine.renders).toHaveLength(2);
     expect(colorsOf(engine.handedOff)).toEqual({
-      "Literature/Doe 2024.md": { a: 1, rgb: 0x0000ff },
+      "Literature/Doe 2024.md": undefined,
       "@typo2024": { a: 1, rgb: 0x888888 },
       "@roe2025": { a: 1, rgb: 0x888888 },
       "Draft.md": undefined,
@@ -1884,7 +2059,8 @@ describe("GraphCitations Filters rows", () => {
     expect(engine.getOptions()).toEqual({
       "zotlit-pandoc-citations": true,
       "zotlit-citation-connected-only": false,
-      "zotlit-color-citation-links": true,
+      "zotlit-color-citation-links": false,
+      "zotlit-citation-popover": false,
     });
   });
 
@@ -1911,9 +2087,18 @@ describe("GraphCitations Filters rows", () => {
     ]);
   });
 
-  it("starts the global graph at what the Graph core plugin saved", async () => {
+  it("starts a global graph from its own defaults", async () => {
     const fixture = makeFixture({
-      savedGlobal: { "zotlit-pandoc-citations": false, showTags: true },
+      savedLayout: {
+        id: "leaf-0",
+        type: "leaf",
+        state: {
+          type: "graph",
+          state: {
+            options: { "zotlit-pandoc-citations": false, showTags: true },
+          },
+        },
+      },
     });
     await using service = fixture.service;
     await service.ready;
@@ -2004,7 +2189,8 @@ describe("GraphCitations Filters rows", () => {
     expect(engine.getOptions()).toEqual({
       "zotlit-pandoc-citations": false,
       "zotlit-citation-connected-only": true,
-      "zotlit-color-citation-links": true,
+      "zotlit-color-citation-links": false,
+      "zotlit-citation-popover": false,
     });
     expect(
       rowToggle(engine, m.graph_option_pandoc_citations_name()).getValue(),
@@ -2035,7 +2221,8 @@ describe("GraphCitations Filters rows", () => {
     expect(engine.getOptions()).toEqual({
       "zotlit-pandoc-citations": true,
       "zotlit-citation-connected-only": false,
-      "zotlit-color-citation-links": true,
+      "zotlit-color-citation-links": false,
+      "zotlit-citation-popover": false,
     });
     expect(engine.filterOptions.natives).toBe(1);
     expect(engine.renders.at(-1)).toEqual({
@@ -2135,7 +2322,8 @@ describe("GraphCitations Filters rows", () => {
       options: {
         "zotlit-pandoc-citations": true,
         "zotlit-citation-connected-only": true,
-        "zotlit-color-citation-links": true,
+        "zotlit-color-citation-links": false,
+        "zotlit-citation-popover": false,
       },
     });
   });
@@ -2268,6 +2456,23 @@ describe("GraphCitations Groups button", () => {
 });
 
 describe("GraphCitations Display row", () => {
+  it("prepends controls so native last-row CSS still targets the Animate row", async () => {
+    const fixture = makeFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    const section = engine.displayOptions.childrenEl;
+    const arrows = section.createDiv("setting-item");
+    const animate = section.createDiv("setting-item");
+    fixture.layoutReady();
+    expect(section.lastElementChild).toBe(animate);
+    expect([...section.children].indexOf(arrows)).toBe(2);
+    expect(rowNames(engine, engine.displayOptions)).toEqual([
+      m.graph_option_color_citation_links_name(),
+      m.graph_option_citation_popover_name(),
+    ]);
+  });
+
   it("builds the row in the Display section, apart from the Filters rows", async () => {
     const fixture = makeFixture();
     await using service = fixture.service;
@@ -2278,6 +2483,7 @@ describe("GraphCitations Display row", () => {
 
     expect(rowNames(engine, engine.displayOptions)).toEqual([
       m.graph_option_color_citation_links_name(),
+      m.graph_option_citation_popover_name(),
     ]);
     expect(rowNames(engine)).toEqual([
       m.graph_option_pandoc_citations_name(),
@@ -2285,7 +2491,7 @@ describe("GraphCitations Display row", () => {
     ]);
   });
 
-  it("starts the global graph at what the Graph core plugin saved", async () => {
+  it("starts a global graph from its own defaults", async () => {
     const fixture = makeFixture({
       savedGlobal: { "zotlit-color-citation-links": false },
     });
@@ -2337,7 +2543,7 @@ describe("GraphCitations Display row", () => {
 
     engine.displayOptions.setDefaultOptions();
 
-    expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(true);
+    expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(false);
     expect(engine.displayOptions.natives).toBe(1);
   });
 
@@ -2357,6 +2563,7 @@ describe("GraphCitations Display row", () => {
 
     expect(rowNames(engine, engine.displayOptions)).toEqual([
       m.graph_option_color_citation_links_name(),
+      m.graph_option_citation_popover_name(),
     ]);
     expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(false);
   });
@@ -2389,7 +2596,7 @@ describe("GraphCitations citation edge colour", () => {
   /** A graph whose edges are drawn and whose theme states a citation colour. */
   async function drawn(options: FixtureOptions = {}) {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makeFixture(options);
+    const fixture = makePresentationFixture(options);
     const service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2411,7 +2618,7 @@ describe("GraphCitations citation edge colour", () => {
 
   it("draws the one line a reciprocal pair shows in the citation colour", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2432,7 +2639,7 @@ describe("GraphCitations citation edge colour", () => {
 
   it("draws an ordinary edge natively while the citation the other way is out of the render", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("localgraph");
@@ -2449,7 +2656,7 @@ describe("GraphCitations citation edge colour", () => {
 
   it("asks for the frame that draws an edge natively once the citation that drew it is gone", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makeFixture({
+    const fixture = makePresentationFixture({
       // Draft links Doe the ordinary way too, so the edge outlives the
       // citation the row takes away.
       links: { "Draft.md": { "Literature/Doe 2024.md": 1 } },
@@ -2474,7 +2681,7 @@ describe("GraphCitations citation edge colour", () => {
   it("asks for the frame that draws an edge in the citation colour once a citation names it", async () => {
     vi.useFakeTimers();
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makeFixture({
+    const fixture = makePresentationFixture({
       wikilinkCitations: true,
       links: { "Reading.md": { "Literature/Doe 2024.md": 1 } },
     });
@@ -2525,7 +2732,7 @@ describe("GraphCitations citation edge colour", () => {
 
   it("draws an edge whose sprite is built after the hand-off, and again after it is destroyed", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2580,7 +2787,7 @@ describe("GraphCitations citation edge colour", () => {
 
   it("draws a Wikilink Citation the vault already carried in the citation colour", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makeFixture({
+    const fixture = makePresentationFixture({
       wikilinkCitations: true,
       links: {
         "Reading.md": { "Literature/Doe 2024.md": 1 },
@@ -2622,7 +2829,7 @@ describe("GraphCitations citation edge colour", () => {
 
   it("leaves the edges native when a build moved a renderer member, and says so once", async () => {
     themeStates("rgb(120, 82, 238)", "rgb(136, 136, 136)", "rgb(0, 0, 255)");
-    const fixture = makeFixture();
+    const fixture = makePresentationFixture();
     await using service = fixture.service;
     await service.ready;
     const engine = fixture.addLeaf("graph");
@@ -2690,7 +2897,7 @@ function addNativeRows(
 function presetFixture(
   options: FixtureOptions & { viewType?: "graph" | "localgraph" } = {},
 ) {
-  const fixture = makeFixture(options);
+  const fixture = makePresentationFixture(options);
   const viewType = options.viewType ?? "graph";
   const engine = fixture.addLeaf(viewType, "preset-leaf");
   addNativeRows(engine, viewType);
@@ -2707,6 +2914,7 @@ const PRESET_ROWS = {
   "zotlit-pandoc-citations": true,
   "zotlit-citation-connected-only": true,
   "zotlit-color-citation-links": true,
+  "zotlit-citation-popover": true,
 };
 
 describe("GraphCitations Citation Graph preset", () => {

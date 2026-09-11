@@ -24,17 +24,6 @@ const logger = getLogger("graph-citations");
  */
 export const LITERATURE_NOTES_QUERY = `["${FIELD_ZOTERO_KEY}"]`;
 
-/**
- * Obsidian's own `--color-purple`, which the Literature Note colour falls back
- * to. Reached only where the browser states no colour at all for what the theme
- * says, so that the inserted group always carries a colour: the Groups section
- * writes a group that carries none as black (`app.js` 1.14.1,
- * `setColorQueries` reads `color.rgb` and falls to `0`), which reads as a
- * colour the user chose rather than as the colour the graph draws Literature
- * Notes in.
- */
-export const DEFAULT_COLOR: GraphColor = { a: 1, rgb: 0x7852ee };
-
 /** What `targetOnce` keeps this probe's own report under. */
 const PROBE_KEY = "color-groups";
 
@@ -104,8 +93,8 @@ export function addLiteratureNotesGroup(
  * Builds the "Add literature notes group" button into the Groups section, below
  * the native "New group" control and styled as it is.
  *
- * @param colors read at click time, so the group starts in the colour the graph
- *   draws Literature Notes in under the theme in force.
+ * @param colors read at click time, so the group starts with the theme override
+ *   or the ZotLit accent for the active color scheme.
  * @returns a Disposable that leaves the section as found. Empty when the
  *   section could not be read; the panel then keeps its native shape.
  */
@@ -125,10 +114,7 @@ export function installGroupsButton(
         { text: m.graph_citations_add_literature_notes_group() },
         (button) => {
           button.addEventListener("click", () => {
-            addLiteratureNotesGroup(
-              target,
-              colors.current().literatureNote ?? DEFAULT_COLOR,
-            );
+            addLiteratureNotesGroup(target, colors.literatureNoteGroupColor());
           });
         },
       );
