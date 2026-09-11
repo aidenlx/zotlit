@@ -1016,7 +1016,7 @@
       "declarations": ["input count", "local category = count: plural"],
       "selectors": ["category"],
       "match": {
-        "category=*": "已将 {count} 个旧模板文件移至 Obsidian 设定的废纸篓。"
+        "category=*": "已将 {count} 个旧模板文件移至 Obsidian 设定的回收站。"
       }
     }
   ],
