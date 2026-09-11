@@ -873,16 +873,12 @@ export class TemplateService extends Service<void> {
       )
     ).filter((partial) => partial !== null);
     // A Shared Partial bundles the source its document holds, without the
-    // manifest line that named the language. The Citation Template joins them
-    // under its own name, so a host that renders an annotation's citation —
-    // the web Workbench — gets the text this vault would produce.
-    for (const [name, partial] of this.#partials) {
-      partials.push({
-        name,
-        language: partial.language,
-        source: partial.source,
-      });
-    }
+    // manifest line that named the language — a document the JavaScript
+    // Templates gate left inert among them, which is why this reads the same
+    // set the Share sheet offers. The Citation Template joins them under its
+    // own name, so a host that renders an annotation's citation — the web
+    // Workbench — gets the text this vault would produce.
+    partials.push(...this.getPartialEntries());
     if (this.#citation) {
       partials.push({
         name: CITATION_TEMPLATE_NAME,
