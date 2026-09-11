@@ -1333,13 +1333,29 @@ export class TemplateService extends Service<void> {
     options: { name: string },
   ): string {
     this.#requireLoaded("renderPartialSource");
+    return this.#renderPlainSource(source, data, {
+      name: options.name,
+      path: partialPath(this.#currentTemplateFolder(), options.name),
+    });
+  }
+
+  /**
+   * Render one plain Template Document's draft bytes under the name the facade
+   * registers that document by, without registering the draft or writing it.
+   *
+   * @param options.path - the document's own vault path, which the inert
+   *   notice names; the draft may not be written there yet.
+   */
+  #renderPlainSource<T extends object>(
+    source: string,
+    data: T,
+    options: { name: string; path: string },
+  ): string {
     const parsed = parsePlainTemplateDocument(source);
     const { language } = parsed.manifest;
     if (language === "eta" && !this.#javascriptTemplatesEnabled) {
       throw new InertTemplateError(
-        m.settings_template_inert_eta({
-          path: partialPath(this.#currentTemplateFolder(), options.name),
-        }),
+        m.settings_template_inert_eta({ path: options.path }),
         options.name,
       );
     }
@@ -1364,23 +1380,11 @@ export class TemplateService extends Service<void> {
    */
   renderCitationSource(source: string, data: CitationTemplateData): string {
     this.#requireLoaded("renderCitationSource");
-    const parsed = parsePlainTemplateDocument(source);
-    const { language } = parsed.manifest;
-    if (language === "eta" && !this.#javascriptTemplatesEnabled) {
-      throw new InertTemplateError(
-        m.settings_template_inert_eta({
-          path: citationPath(this.#currentTemplateFolder()),
-        }),
-        CITATION_TEMPLATE_NAME,
-      );
-    }
     return inlineCitation(
-      this.#classifyRender(() =>
-        this.#facade.render(CITATION_TEMPLATE_NAME, data, {
-          source: parsed.source,
-          language,
-        }),
-      ),
+      this.#renderPlainSource(source, data, {
+        name: CITATION_TEMPLATE_NAME,
+        path: citationPath(this.#currentTemplateFolder()),
+      }),
     );
   }
 
