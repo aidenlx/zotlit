@@ -27,7 +27,7 @@ import { wrapNodeClick } from "./click";
 import { colorCitationLinks, installDisplayRows } from "./display";
 import { renderWithFacade } from "./facade";
 import { graphCitationFilters, installFilterRows } from "./filters";
-import { installGroupsButton } from "./groups";
+import { DEFAULT_COLOR, installGroupsButton } from "./groups";
 import { wrapNodeHover } from "./hover";
 import type { NodeHoverDeps } from "./hover";
 import {
@@ -39,6 +39,7 @@ import {
 import type { GraphLeafMembers } from "./install";
 import { GraphLinkColor, installLinkColors } from "./link-color";
 import { GraphNodeColors, installNodeColors } from "./node-color";
+import { applyCitationGraphPreset } from "./preset";
 import { wrapNodeRightClick } from "./right-click";
 import type { NodeRightClickDeps } from "./right-click";
 import {
@@ -144,6 +145,15 @@ export class GraphCitations extends Service<void> {
     this.ready = this.#load();
   }
 
+  /**
+   * Whether the vault-wide "Show citations in graph view" setting is on. The
+   * first settings snapshot lands while {@link ready} is still pending, so a
+   * caller that awaits `ready` reads the user's own choice.
+   */
+  get enabled(): boolean {
+    return this.#enabled;
+  }
+
   async #load(): Promise<void> {
     // Read before layout-ready where startup allows it: Obsidian saves the
     // layout no earlier, and a save made while ZotLit's rows are absent
@@ -195,6 +205,26 @@ export class GraphCitations extends Service<void> {
     });
     this.commit(stack.move());
     logger.info("Graph citations ready", { enabled: this.#enabled });
+  }
+
+  /**
+   * Turns a graph leaf one of the Citation Graph commands just opened into a
+   * Citation Graph. Installing first is what makes ZotLit's keys land: a
+   * controls-panel section writes only the keys its own rows answer, so the
+   * rows have to stand before the preset names them.
+   *
+   * The values persist where the graph persists, so a preset global graph
+   * keeps the reader's graph settings until "Restore default settings"
+   * returns them.
+   *
+   * @see apps/obsidian/docs/adr/0029-graph-citations-extend-obsidian-graph-through-a-per-render-metadata-facade.md
+   */
+  applyPreset(leaf: WorkspaceLeaf): void {
+    this.#refresh();
+    applyCitationGraphPreset(leaf, {
+      wikilinkCitations: this.#wikilinkCitations,
+      color: this.#nodeColors.current().literatureNote ?? DEFAULT_COLOR,
+    });
   }
 
   #applySettings(settings: Readonly<Settings>): void {
