@@ -1365,7 +1365,8 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
       if (!templates.loaded || this.#controller.readOnly || !bundled.length)
         return;
       const plan = templates.planPartialUnpack(bundled);
-      const { written, kept, dropped } = await templates.unpackPartials(plan);
+      const { written, kept, dropped, refused } =
+        await templates.unpackPartials(plan);
       this.#controller.dropBundledPartials(dropped);
       if (written.length > 0)
         new BaseNotice(
@@ -1373,6 +1374,12 @@ export class TemplateWorkbenchView extends TextFileView implements HoverParent {
         );
       if (kept.length > 0)
         new BaseNotice(m.notice_partials_kept({ names: kept.join(", ") }));
+      // The manifest entry stays, so without this the action reads as inert:
+      // the bundled-partial problem is still there the next time it is read.
+      if (refused.length > 0)
+        new BaseNotice(
+          m.notice_partials_refused({ names: refused.join(", ") }),
+        );
     });
   }
   async restoreDefault(): Promise<void> {

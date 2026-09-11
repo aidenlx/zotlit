@@ -273,6 +273,13 @@ export interface PartialUnpackOutcome {
    * stays out: the manifest copy is all that answers it.
    */
   readonly dropped: readonly string[];
+  /**
+   * The names no Shared Partial file can be given, which reached no vault path
+   * and keep their manifest entries. A caller that reports nothing for these
+   * leaves Unpack partials looking inert, since the entry is still there to
+   * report the next time the document is read.
+   */
+  readonly refused: readonly string[];
 }
 
 /** The Citation Template's state, as the Citations settings row reads it. */
@@ -1117,6 +1124,10 @@ export class TemplateService extends Service<void> {
    * a bundled `Authors` reads against the vault's own `authors` rather than
    * asking for a second file the same filesystem entry answers to.
    *
+   * A name the Shared Partial name rule refuses outright reads as `refused`,
+   * so an import says which names stay in the profile rather than promising a
+   * file the write then declines to make.
+   *
    * @see unpackPartials for the write this plan feeds.
    */
   planPartialUnpack(
@@ -1142,7 +1153,12 @@ export class TemplateService extends Service<void> {
           : null,
       );
     }
-    return unpackLiteratureNotePartials(bundled, held);
+    return unpackLiteratureNotePartials(
+      bundled,
+      held,
+      // `taken` is empty: a name the vault already answers is settled above.
+      (name) => partialNameRefusal(name, []) === null,
+    );
   }
 
   /**
@@ -1187,7 +1203,7 @@ export class TemplateService extends Service<void> {
     }
     if (written.length > 0) await this.#settle();
     logger.debug("Unpacked bundled partials", { written, kept, refused });
-    return { written, kept, dropped };
+    return { written, kept, dropped, refused };
   }
 
   /**

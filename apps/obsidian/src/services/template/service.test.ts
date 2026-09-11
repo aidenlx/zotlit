@@ -2174,6 +2174,7 @@ describe("Template Document kinds", () => {
       written: ["venue-line"],
       kept: ["authors"],
       dropped: ["summary", "authors", "venue-line", "citation"],
+      refused: [],
     });
     expect(vault.contents.get("templates/zotlit-partial.venue-line.md")).toBe(
       "---\nlanguage: liquid\n---\n{{ zt.venue }}",
@@ -2208,9 +2209,11 @@ describe("Template Document kinds", () => {
       { name: "authors", language: "liquid", source: "Theirs" },
       { name: "../../../escape", language: "liquid", source: "Escaped" },
     ]);
+    // The plan says up front that the escaping name reaches no file, so an
+    // import never announces it as one it will write.
     expect(plan.map(({ name, verdict }) => `${name}:${verdict}`)).toEqual([
       "authors:write",
-      "../../../escape:write",
+      "../../../escape:refused",
     ]);
 
     // The reader writes their own authors between the plan and the write.
@@ -2225,10 +2228,13 @@ describe("Template Document kinds", () => {
     expect([...vault.contents.keys()]).toEqual([
       "templates/zotlit-partial.authors.md",
     ]);
+    // The refused name keeps its manifest entry, and the outcome names it, so
+    // the caller can say why Unpack partials left the bundle carrying it.
     expect(await outcome).toEqual({
       written: [],
       kept: ["authors"],
       dropped: ["authors"],
+      refused: ["../../../escape"],
     });
   });
 

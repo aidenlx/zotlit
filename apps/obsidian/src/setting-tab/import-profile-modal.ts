@@ -419,6 +419,16 @@ export class ImportProfileModal extends Modal {
         cls: NOTE_CLASS,
         text: m.profile_import_partials({ names: unpacked.join(", ") }),
       });
+    // A name the Shared Partial name rule refuses reaches no file either, and
+    // it does need a word: the profile keeps carrying its copy.
+    const refused = plan
+      .filter(({ verdict }) => verdict === "refused")
+      .map(({ name }) => name);
+    if (refused.length > 0)
+      group.createEl("p", {
+        cls: NOTE_CLASS,
+        text: m.profile_import_partials_refused({ names: refused.join(", ") }),
+      });
     for (const { name } of plan.filter(
       ({ verdict }) => verdict === "conflict",
     )) {

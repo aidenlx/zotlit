@@ -65,13 +65,16 @@ export function parseLiteratureNotePack(
 /**
  * What one bundled partial does to the vault's own Shared Partial files:
  * `write` for a name no document answers, `unchanged` for a document that
- * already holds this very source under this very language, and `conflict` for
- * one that holds something else, which only a keep-or-replace answer settles.
+ * already holds this very source under this very language, `conflict` for one
+ * that holds something else, which only a keep-or-replace answer settles, and
+ * `refused` for a name no Shared Partial file can be given, which reaches no
+ * vault path and keeps its transport copy.
  */
 export type LiteratureNotePartialUnpackVerdict =
   | "write"
   | "unchanged"
-  | "conflict";
+  | "conflict"
+  | "refused";
 
 /** One bundled partial and the file it unpacks to. */
 export interface LiteratureNotePartialUnpack {
@@ -89,6 +92,9 @@ export interface LiteratureNotePartialUnpack {
  * @param held - what the vault holds under each name, keyed by name: a name
  *   the map does not carry has no document, and one mapped to `null` has a
  *   document whose text is unavailable, which reads as a conflict.
+ * @param accepts - whether a name a bundle brings may become a file of its
+ *   own. A name held under a document of the vault's own is settled before
+ *   this is asked, so a reserved name still reads as `unchanged`.
  */
 export function unpackLiteratureNotePartials(
   bundled: readonly LiteratureNoteTemplatePartial[],
@@ -96,11 +102,14 @@ export function unpackLiteratureNotePartials(
     string,
     Pick<LiteratureNoteTemplatePartial, "language" | "source"> | null
   >,
+  accepts: (name: string) => boolean = () => true,
 ): LiteratureNotePartialUnpack[] {
   return bundled.map((partial) => {
     const current = held.get(partial.name);
     const verdict: LiteratureNotePartialUnpackVerdict = !held.has(partial.name)
-      ? "write"
+      ? accepts(partial.name)
+        ? "write"
+        : "refused"
       : current?.language === partial.language &&
           current.source === partial.source
         ? "unchanged"
