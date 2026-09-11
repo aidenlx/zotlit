@@ -71,7 +71,7 @@ Authoring conventions live in [`policies/`](policies/), one topic per file:
 - [resource-disposal](policies/resource-disposal.md) — scope-bound `using`, safe-constructor, destructuring gotcha
 - [regex](policies/regex.md) — arkregex for typed captures; `/arkregex` skill
 - [event-naming](policies/event-naming.md) — nanoevents event names are dash-case, not camelCase
-- [scratch-artifacts](policies/scratch-artifacts.md) — probe scripts and trial output go in workspace `tmp/`, not `/tmp`
+- [scratch-artifacts](policies/scratch-artifacts.md) — probe scripts and trial output go in workspace `tmp/`, not `/tmp`; research notes go in `tmp/notes/`
 - [package and workspace roots](policies/package-roots.md) — package-root paths and pnpm workspace discovery
 - [logging](policies/logging.md) — LogTape, structured fields
 - [observability](policies/observability.md) — lean `info`; permanent `debug` / `trace` at decision points
