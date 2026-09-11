@@ -2105,6 +2105,29 @@ describe("Template Document kinds", () => {
     ]);
   });
 
+  it("refuses a legacy citation that renders a Literature Note slot the same pass retires", async () => {
+    const vault = new MockVault();
+    vault.addFile(
+      "templates/zotlit-cite.liquid.md",
+      '[{% render "filename" with zt as zt %}]',
+    );
+    // The reader's own slot files, which this one pass folds into the default
+    // Profile document and trashes: after it, `filename` is the built-in again.
+    vault.addFile("templates/zotlit-filename.liquid.md", "my-own-filename");
+    vault.addFile("templates/zotlit-note.liquid.md", "# {{ zt.title }}");
+    const { service } = await makeHarness({ vault });
+
+    await expect(
+      service.convertLegacyTemplateDocuments([{ citationKey: "doe2020" }]),
+    ).rejects.toMatchObject({
+      code: "unsupported-legacy-template",
+      difference: "citation render",
+    });
+    expect(vault.contents.get("templates/zotlit-filename.liquid.md")).toBe(
+      "my-own-filename",
+    );
+  });
+
   it("names every Shared Partial the folder holds, sorted", async () => {
     const vault = new MockVault();
     vault.addFile("templates/zotlit-partial.venue-line.md", "{{ zt.venue }}");
