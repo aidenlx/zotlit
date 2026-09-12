@@ -139,6 +139,148 @@ function setup(deps: Partial<TemplateWorkbenchDeps> = {}, sharedApp?: App) {
 }
 
 describe("TemplateWorkbenchView", () => {
+  it("shows only Markdown marker hints alongside Liquid tokens", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    view.setViewData(
+      SOURCE.replace(
+        "A stable note.",
+        "# Heading {{ zt.title }}\n> Quote\n- List\n`{{ zt.title }}`\n```\n{{ zt.title }}\n```",
+      ),
+      true,
+    );
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    const tokens = (hook: string) =>
+      [...view.contentEl.querySelectorAll(`.${hook}`)].map(
+        (node) => node.textContent,
+      );
+    expect(tokens("zt-template-markdown-marker")).toEqual(["#", ">", "-"]);
+    expect(tokens("zt-template-markdown-list-marker")).toEqual(["-"]);
+    expect(tokens("zt-template-property")).toEqual(["title", "title", "title"]);
+  });
+
+  it.each(["liquid", "eta"])(
+    "uses %s in Annotation, filename, and Advanced",
+    async (engine) => {
+      await using cleanup = new AsyncDisposableStack();
+      const { view } = setup();
+      const tag =
+        engine === "eta" ? "<%= zt.title %>" : "{{ zt.title | downcase }}";
+      view.setViewData(
+        SOURCE.replace("language: liquid", `language: ${engine}`)
+          .replace("filename: paper", `filename: '${tag}'`)
+          .replace("An annotation.", `# ${tag}`),
+        true,
+      );
+      cleanup.defer(() => act(async () => view.close()));
+      await act(async () => view.open());
+      const tokens = (hook: string) =>
+        [...view.contentEl.querySelectorAll(`.${hook}`)].map(
+          (node) => node.textContent,
+        );
+      for (const tab of ["annotation", "name"] as const) {
+        await act(async () => view.store.getState().setTab(tab));
+        expect(tokens("zt-template-delimiter")).toEqual(
+          engine === "eta" ? ["<%=", "%>"] : ["{{", "}}"],
+        );
+      }
+      await act(async () => view.store.getState().setAdvanced(true));
+      expect(tokens("zt-template-frontmatter")).toContain("id: paper");
+      expect(tokens("zt-template-yaml-key")).toEqual([]);
+      expect(tokens("zt-template-delimiter")).toEqual(
+        engine === "eta"
+          ? ["<%=", "%>", "<%=", "%>"]
+          : ["{{", "}}", "{{", "}}"],
+      );
+      expect(tokens("zt-template-markdown-marker")).toEqual(["#"]);
+    },
+  );
+
+  it("keeps Eta wrapping and undo when switching to Advanced", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    const source = SOURCE.replace("language: liquid", "language: eta").replace(
+      "A stable note.",
+      "title",
+    );
+    view.setViewData(source, true);
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    const editor = EditorView.findFromDOM(
+      view.contentEl.querySelector(".cm-editor")!,
+    )!;
+    await act(async () => {
+      editor.dispatch({ selection: { anchor: 0, head: 5 } });
+      for (const text of ["<", "%"]) {
+        const { from, to } = editor.state.selection.main;
+        const insert = () =>
+          editor.state.update({
+            changes: { from, to, insert: text },
+            selection: { anchor: from + text.length },
+            userEvent: "input.type",
+          });
+        if (
+          !editor.state
+            .facet(EditorView.inputHandler)
+            .some((handler) => handler(editor, from, to, text, insert))
+        )
+          editor.dispatch(insert());
+      }
+    });
+    expect(view.getViewData()).toContain("<% title %>");
+    expect(editor.state.selection.main.from).toBe(3);
+    expect(editor.state.selection.main.to).toBe(8);
+    await act(async () => view.store.getState().setAdvanced(true));
+    await act(async () => {
+      view.controller.undo();
+    });
+    expect(view.getViewData()).toBe(source);
+  });
+
+  it("keeps Liquid colors in a multiline YAML filename", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    view.setViewData(
+      SOURCE.replace(
+        "filename: paper",
+        "filename: |\n  prefix {{ zt.title\n  | downcase }} suffix",
+      ),
+      true,
+    );
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    await act(async () => view.store.getState().setAdvanced(true));
+    expect(
+      [...view.contentEl.querySelectorAll(".zt-template-delimiter")].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(["{{", "}}"]);
+    expect(
+      view.contentEl.querySelector(".zt-template-filter")?.textContent,
+    ).toBe("downcase");
+  });
+
+  it("selects basic Eta highlighting in the mounted Note pane", async () => {
+    await using cleanup = new AsyncDisposableStack();
+    const { view } = setup();
+    view.setViewData(
+      SOURCE.replace("language: liquid", "language: eta").replace(
+        "A stable note.",
+        "<%= zt.title %>",
+      ),
+      true,
+    );
+    cleanup.defer(() => act(async () => view.close()));
+    await act(async () => view.open());
+    const tokens = (hook: string) =>
+      [...view.contentEl.querySelectorAll(`.${hook}`)].map(
+        (node) => node.textContent,
+      );
+    expect(tokens("zt-template-delimiter")).toEqual(["<%=", "%>"]);
+    expect(tokens("zt-template-property")).toEqual([]);
+  });
+
   it("updates the CodeMirror root after a native window move and keeps its document history", async () => {
     await using cleanup = new AsyncDisposableStack();
     const { view } = setup();

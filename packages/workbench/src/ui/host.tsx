@@ -91,15 +91,6 @@ export interface WorkbenchInputSuggestionsRequest {
   readonly onSelect: (value: string) => void;
 }
 
-export interface WorkbenchHoverCardRequest {
-  readonly anchor: HTMLElement | DOMRect;
-  readonly content: ReactNode;
-}
-
-export interface WorkbenchHoverCardHandle {
-  close(): void;
-}
-
 /** A Library as a Match condition names it (ADR 0039). */
 export interface WorkbenchLibrary {
   /** `personal`, or `group:<groupID>`. */
@@ -184,7 +175,6 @@ export interface WorkbenchHost {
   ): WorkbenchDialogHandle;
   /** The attributes that give an in-page element a tooltip reading `text`. */
   tooltip(text: string): HTMLAttributes<HTMLElement>;
-  hoverCard(request: WorkbenchHoverCardRequest): WorkbenchHoverCardHandle;
   notice(text: string): void;
   /** Renders one request; the tree schedules it through the Render Scheduler. */
   render: (request: RenderRequest) => Promise<TemplateRenderResult>;

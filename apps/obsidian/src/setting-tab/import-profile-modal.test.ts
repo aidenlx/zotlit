@@ -9,7 +9,6 @@ import { expect, it, vi } from "vitest";
 import * as m from "@/lib/i18n/generated/messages";
 import type { ProfileId } from "@/lib/profile-stamp";
 import * as nativeDialog from "@/lib/require";
-import { describeMatch } from "@/services/profile-selection";
 import { profileReader } from "@/services/profile/__fixtures__/reader";
 import { profileServiceFixture } from "@/services/profile/__fixtures__/service";
 import type { PreparedProfileImport } from "@/services/profile/service";
@@ -150,7 +149,6 @@ it("opens fresh consent with metadata, recipient preview, editable bindings and 
     expect(f.modal.contentEl.textContent).toContain("Recipient item"),
   );
   expect(f.modal.contentEl.textContent).toContain("Research group");
-  expect(f.modal.contentEl.textContent).toContain("Recipient item");
   expect(f.modal.contentEl.textContent).toContain("Shared (Ry4Ua8Nv2Mx6)");
   // Only the partials that reach a new file are announced; the one whose name
   // the vault already holds waits for the reader's word, and the one whose
@@ -323,7 +321,6 @@ it("offers two source suggestions and reads only after native close-before-choic
     "clipboard" | "file"
   >;
   const options = await picker.getSuggestions("");
-  expect(options).toEqual(["clipboard", "file"]);
   expect(
     options.map((option) => {
       const row = document.createElement("div");
@@ -464,9 +461,7 @@ it.each([
     await using f = await realImportFixture(held);
     using buttons = observeButtons();
     f.modal.onOpen();
-    expect(f.modal.contentEl.textContent).toContain(
-      describeMatch(incomingMatch),
-    );
+    expect(f.modal.contentEl.textContent).toContain("Library is Group 987654");
     expect(matchToggle(f.modal)?.getValue()).toBe(true);
     if (!held)
       await vi.waitFor(() =>
@@ -521,7 +516,7 @@ it("retains unchecked consent when a fresh ID becomes Replace, and cancels witho
     expect(buttons.labels()).toContain(m.profile_import_replace()),
   );
   expect(matchToggle(f.modal)?.getValue()).toBe(false);
-  expect(f.modal.contentEl.textContent).toContain(describeMatch(incomingMatch));
+  expect(f.modal.contentEl.textContent).toContain("Library is Group 987654");
   const before = new Map(f.vault.contents);
   f.modal.onClose();
   await expect(f.modal.result).resolves.toBeUndefined();

@@ -32,7 +32,11 @@ export interface PairedRunReady {
 
 export interface PairedRunPorts {
   assertObsidianHost(): Promise<void>;
-  assertFixtureIdle(): Promise<void>;
+  /**
+   * Close a Paired Zotero that still holds this Fixture, so the rebuild that
+   * follows starts on a Fixture root no process keeps open.
+   */
+  stopLivePairedZotero(): Promise<void>;
   /** A port that is free right now, for this run's Live Updates channel. */
   allocateLiveUpdatePort(): Promise<number>;
   /** A port that is free right now, for this run's Zotero HTTP server. */
@@ -56,7 +60,7 @@ export async function runPairedRun(
   ports: PairedRunPorts,
 ): Promise<void> {
   if (options.mode === "open") {
-    await ports.assertFixtureIdle();
+    await ports.stopLivePairedZotero();
     const liveUpdatePort = await ports.allocateLiveUpdatePort();
     const zoteroHttpPort = await ports.allocateZoteroHttpPort();
     await ports.assertObsidianHost();
@@ -81,7 +85,7 @@ export async function runPairedRun(
   }
 
   await ports.assertObsidianHost();
-  await ports.assertFixtureIdle();
+  await ports.stopLivePairedZotero();
   // Two fresh ports per Paired Run keep both loopback servers independent of
   // other ZotLit and Zotero profiles on the machine.
   const liveUpdatePort = await ports.allocateLiveUpdatePort();

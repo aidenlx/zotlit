@@ -16,6 +16,7 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 Package-specific authoring conventions live in [`policies/`](policies/), one topic per file (root `policies/` still applies):
 
 - [local-storage](policies/local-storage.md) — `app.loadLocalStorage`/`saveLocalStorage`, never `window.localStorage`
+- [pop-out windows](policies/popout-windows.md) — window-local DOM, cross-window type checks, and renderer migration
 - [tooltips](policies/tooltips.md) — `aria-label` is the tooltip; spread `tooltipAttrs` in React
 - [file-ops](policies/file-ops.md) — attempt the file op, don't stat-then-fileop; branch on `isErrno`
 - [hover-popover](policies/hover-popover.md) — extend `PopoutAwareHoverPopover`; cancel a timer on the window that armed it

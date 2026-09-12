@@ -23,6 +23,36 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
+it("keeps native Markdown outside the plugin preflight and preserves its footer boundary", async () => {
+  renderer.render.mockImplementation(
+    async (
+      ...args: Parameters<typeof import("obsidian").MarkdownRenderer.render>
+    ) => {
+      const [, , target] = args;
+      target.append(document.createElement("blockquote"));
+    },
+  );
+  const container = document.createElement("div");
+  document.body.append(container);
+  await act(async () => {
+    render(
+      h(NativeMarkdown, {
+        app: { vault: { getConfig: () => false } } as unknown as App,
+        markdown: "> Quoted paragraph",
+        result: null,
+      }),
+      container,
+    );
+  });
+  await vi.waitFor(() =>
+    expect(container.querySelector("blockquote")).not.toBeNull(),
+  );
+  const sheet = container.querySelector(".markdown-rendered");
+  const draft = sheet?.querySelector("[data-zotlit-draft]");
+  expect(sheet?.classList.contains("zt-native-markdown")).toBe(true);
+  expect(draft?.nextElementSibling?.className).toBe("mod-footer mod-ui");
+});
+
 it("keeps original Markdown, marks its managed text, and unloads children when replaced or closed", async () => {
   const unloaded = vi.fn();
   const calls: string[] = [];

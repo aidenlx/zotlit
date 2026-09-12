@@ -1,7 +1,5 @@
-import { parseMixed } from "@lezer/common";
 import { styleTags, tags } from "@lezer/highlight";
 // Eta parsing and range resolution without editor state or DOM dependencies.
-import { parser as javascriptParser } from "@lezer/javascript";
 
 import { parser } from "./eta-parser";
 
@@ -11,9 +9,6 @@ export const etaParser = parser.configure({
       "TagOpen TagOpenInterp TagOpenRaw TagClose": tags.special(tags.brace),
     }),
   ],
-  wrap: parseMixed((node) =>
-    node.name === "TagContent" ? { parser: javascriptParser } : null,
-  ),
 });
 
 export interface EtaRange {
@@ -21,7 +16,7 @@ export interface EtaRange {
   to: number;
   kind: "output" | "tag" | "comment";
   closed: boolean;
-  /** The position sits inside a JavaScript string or template literal. */
+  /** The position sits inside an Eta quoted string. */
   inLiteral: boolean;
 }
 
@@ -39,15 +34,27 @@ export function etaRange(source: string, position: number): EtaRange | null {
   const close = tag.getChild("TagClose");
   if (close && position > close.from) return null;
   const node = tree.resolveInner(position, -1);
+  const literal = node.name === "String" || node.name === "BlockComment";
+  const text = source.slice(node.from, node.to);
+  let escapeStart = text.length - 2;
+  while (text[escapeStart] === "\\") escapeStart--;
+  const ended =
+    node.name === "BlockComment"
+      ? text.endsWith("*/")
+      : text.length > 1 &&
+        text.at(-1) === text[0] &&
+        (text.length - 2 - escapeStart) % 2 === 0;
+  const inside = literal && (position < node.to || !ended);
   return {
     from: tag.from,
     to: tag.to,
-    kind: node.name.endsWith("Comment")
-      ? "comment"
-      : open.name === "TagOpen"
-        ? "tag"
-        : "output",
+    kind:
+      inside && node.name === "BlockComment"
+        ? "comment"
+        : open.name === "TagOpen"
+          ? "tag"
+          : "output",
     closed: !!close,
-    inLiteral: node.name === "String" || node.name === "TemplateString",
+    inLiteral: inside && node.name === "String",
   };
 }

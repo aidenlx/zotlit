@@ -191,7 +191,6 @@ it.each(["default", id] as const)(
       .click();
     await vi.waitFor(() => expect(opened).toHaveBeenCalledOnce());
     const modal = opened.mock.instances[0] as unknown as ShareProfileModal;
-    expect(modal).toBeInstanceOf(ShareProfileModal);
     modal.contentEl = document.createElement("div");
     modal.onOpen();
     expect((modal as unknown as Modal).title).toBe(

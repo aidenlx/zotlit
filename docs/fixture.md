@@ -69,6 +69,8 @@ The open and sync operations rebuild the Fixture Vault before they copy it. A no
 packages/scripts/scripts/obsidian-vault.ts open --purge
 ```
 
+A purge deletes the Development Vault folder and the plugin's vault-scoped local storage, which Obsidian keeps outside that folder. Run `pnpm fixture --help` for the state each purge clears.
+
 Vault creation needs Obsidian 1.13.4 or later. Enable **Settings → General → Advanced → Command line interface**, and keep one Obsidian vault window open to host the registration calls.
 
 Verify the registered cross-platform command in a new terminal:
@@ -113,7 +115,7 @@ Each Paired Run takes two free TCP ports. It writes the Live Updates port into t
 
 The Scope Case defaults to `all`. You can use `available`, `partial`, or `unavailable` instead. Each command uses the per-worktree Development Vault and keeps files that exist only there. Add `--purge` to restore the exact generated seed. Add `--vault-case <id>` to open the Development Vault of a different [Vault Case](#vault-cases).
 
-Both commands check for an existing Paired Zotero before they rebuild the Fixture. Close that instance if the command refuses to start. Both commands also support `ZOTERO_APP` as described in [Run the Paired Zotero](#run-the-paired-zotero).
+Both commands close an existing Paired Zotero on this Fixture before they rebuild it, then start a fresh instance. Each waits for the old instance to release the database and reports the process it closed. Both commands also support `ZOTERO_APP` as described in [Run the Paired Zotero](#run-the-paired-zotero).
 
 These commands prepare the environment and report readiness. Run the manual smoke-test checklist separately.
 
@@ -210,7 +212,7 @@ Name a Vault Case on a Paired Run:
 pnpm fixture open --vault-case upgrader
 ```
 
-Each Vault Case other than the default opens its own Development Vault, `tests/fixture-vault-<worktree-folder-name>-<case>`, so the cases never overwrite one another. The first open seeds the case vault with the bundle from `apps/obsidian/dist-dev`. The `select` command changes only the Scope Case; rebuild to change the Vault Case.
+Each Vault Case other than the default opens its own Development Vault, `tests/fixture-vault-<worktree-folder-name>-<case>`, so the cases never overwrite one another. Every open seeds the case vault with the bundle from `apps/obsidian/dist-dev`, so a new dev build always reaches the vault. The `select` command changes only the Scope Case; rebuild to change the Vault Case.
 
 `pnpm fixture dev --vault-case <id>` sets `ZT_VAULT_CASE` for the Obsidian watcher, so the Vite build copies each bundle into that case's vault and hot reload reaches it. Set `ZT_VAULT_CASE` yourself to point `dev:vault` or a plain `obsidian-vault.ts open` at a case vault:
 

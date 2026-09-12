@@ -298,7 +298,7 @@ it("skips call brackets supplied by an Eta loop snippet", () => {
 });
 
 it("keeps an escaped quote inside its generated string", () => {
-  using e = editor("", "eta", "expression");
+  using e = editor("", "liquid", "expression");
   type(e.view, '"');
   type(e.view, "word\\");
   type(e.view, '"');
@@ -307,25 +307,29 @@ it("keeps an escaped quote inside its generated string", () => {
   expect(snapshot(e.view)).toBe('"word\\""|');
 });
 
-it("keeps Eta comments, template strings, and incomplete regex literals inactive", () => {
+it("keeps Eta quoted strings and block comments inactive", () => {
   for (const source of [
-    "value /* comment ",
-    "value // comment ",
-    "`value ",
-    "`value \\`",
-    "`outer ${`inner`",
-    "/foo",
-    "/[/",
-    "/foo\\/",
+    "<% /* comment ",
+    "<% `value ",
+    "<% 'value ",
+    '<% "value ',
   ]) {
-    using e = editor(source, "eta", "expression");
+    using e = editor(source, "eta");
     type(e.view, "(");
     expect(snapshot(e.view)).toBe(`${source}(|`);
   }
-  using regex = editor("<% const pattern = /foo", "eta");
-  type(regex.view, "(");
-  expect(snapshot(regex.view)).toBe("<% const pattern = /foo(|");
-  using closed = editor("<% /[/]/g", "eta");
-  type(closed.view, "(");
-  expect(snapshot(closed.view)).toBe("<% /[/]/g(|)");
+});
+
+it("wraps selected source in a padded Eta tag", () => {
+  using e = editor("title", "eta");
+  e.view.dispatch({ selection: EditorSelection.range(0, 5) });
+  type(e.view, "<");
+  type(e.view, "%");
+  expect(e.view.state.doc.toString()).toBe("<% title %>");
+  expect(
+    e.view.state.sliceDoc(
+      e.view.state.selection.main.from,
+      e.view.state.selection.main.to,
+    ),
+  ).toBe("title");
 });

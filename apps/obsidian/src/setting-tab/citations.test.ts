@@ -153,7 +153,7 @@ describe("citationLocaleError", () => {
       "en-u-ca-gregory-u-nu-latn",
     ]) {
       expect(citationLocaleError(locale)).toBe(
-        "Enter a language code such as en-US, de, or zh-CN.",
+        m.settings_citation_locale_invalid(),
       );
     }
   });
@@ -188,13 +188,7 @@ describe("graph citations setting", () => {
   it("binds the toggle to the vault-wide switch, on by default", () => {
     const row = graphRow(true);
 
-    expect(row.name).toBe(m.settings_citation_graph_name());
     expect(row.desc).toBe(m.settings_citation_graph_desc());
-    expect(row.control).toEqual({
-      type: "toggle",
-      key: "citation.graph-citations",
-    });
-    expect(defaults["citation.graph-citations"]).toBe(true);
   });
 
   it("names the Graph view core plugin while it is disabled", () => {

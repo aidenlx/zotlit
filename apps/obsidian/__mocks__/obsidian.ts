@@ -1136,6 +1136,12 @@ export class DropdownComponent {
     return this;
   }
 
+  addOptions(options: Record<string, string>): this {
+    for (const [value, label] of Object.entries(options))
+      this.addOption(value, label);
+    return this;
+  }
+
   getValue(): string {
     return this.#value;
   }

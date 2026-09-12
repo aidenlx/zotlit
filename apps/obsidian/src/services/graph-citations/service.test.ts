@@ -12,6 +12,9 @@ import type {
   GraphDrawnNode,
   GraphLinkSprite,
   GraphOptions,
+  GraphTextStyle,
+  GraphTextContainer,
+  GraphTextDisplay,
   HoverPopover,
   WorkspaceLeaf,
 } from "obsidian";
@@ -39,6 +42,17 @@ const DEFAULT_COLOR = { a: 1, rgb: 0xe8622c };
 const warn = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/log", () => ({
   getLogger: () => ({ trace: vi.fn(), debug: vi.fn(), info: vi.fn(), warn }),
+}));
+
+const labelReads = vi.hoisted(() => vi.fn());
+vi.mock("@zotlit/db", async (original) => ({
+  ...(await original<typeof import("@zotlit/db")>()),
+  resolveIndexedKeyLibrary: (_client: unknown, key: string) => ({
+    libraryID: 1,
+    key,
+  }),
+  getItemsByKey: (_client: unknown, _libraryID: number, keys: string[]) =>
+    labelReads(keys),
 }));
 
 const DOE = {
@@ -281,9 +295,16 @@ class FakeRenderer {
     ...NODE_POSITIONS,
   };
   scale = 2;
+  fTextShowMult: number | undefined = 0;
   panX = 4;
   panY = 6;
-  setData = vi.fn();
+  nodes: FakeLabelNode[] = [];
+  setData = vi.fn((data: GraphData) => {
+    this.nodes = Object.keys(data.nodes).map(
+      (id) =>
+        this.nodes.find((node) => node.id === id) ?? new FakeLabelNode(id),
+    );
+  });
   links: FakeLink[] = [];
   /** The node the pointer rests on, which the renderer answers by identity. */
   highlightNode: GraphDrawnNode | null = null;
@@ -478,6 +499,8 @@ class CitationIndexStub {
 
 interface FixtureOptions {
   presentation?: boolean;
+  labelDatabase?: boolean;
+  labelLibraryScope?: number[];
   graphEnabled?: boolean;
   /** What the Graph core plugin saved, which the global graph starts from. */
   savedGlobal?: GraphOptions;
@@ -563,6 +586,22 @@ function makeFixture(options: FixtureOptions = {}) {
   const citationPopover = { show: vi.fn(), showWork: vi.fn(), hide: vi.fn() };
   const service = new GraphCitations({
     app,
+    db: {
+      state: options.labelDatabase ? "ready" : "disconnected",
+      client: {},
+    } as unknown as import("./service").GraphCitationsDeps["db"],
+    libraryScope: {
+      current: {
+        mode: "all",
+        invalid: false,
+        available: (options.labelLibraryScope ?? [1]).map((libraryID) => ({
+          libraryID,
+          name: "Library",
+          selector: { type: "personal" as const },
+        })),
+        unavailable: [],
+      },
+    },
     citationIndex,
     // The stub answers plain `{ path }` records where the index answers files.
     noteIndex: noteIndex as unknown as Pick<
@@ -700,6 +739,7 @@ describe("GraphCitations installation", () => {
     ).toMatchObject({
       "zotlit-color-citation-links": false,
       "zotlit-citation-popover": false,
+      "zotlit-author-title-labels": false,
     });
     await view.setState(
       { options: { "zotlit-citation-popover": true } },
@@ -733,6 +773,7 @@ describe("GraphCitations installation", () => {
     expect(second.getOptions()).toMatchObject({
       "zotlit-color-citation-links": false,
       "zotlit-citation-popover": false,
+      "zotlit-author-title-labels": false,
     });
     await fixture.leaf("second").view.setState(state, { history: false });
     expect(second.getOptions()).toMatchObject({
@@ -744,6 +785,7 @@ describe("GraphCitations installation", () => {
         options: {
           "zotlit-color-citation-links": false,
           "zotlit-citation-popover": false,
+          "zotlit-author-title-labels": false,
         },
       },
       { history: false },
@@ -751,6 +793,7 @@ describe("GraphCitations installation", () => {
     expect(second.getOptions()).toMatchObject({
       "zotlit-color-citation-links": false,
       "zotlit-citation-popover": false,
+      "zotlit-author-title-labels": false,
     });
     expect(first.getOptions()).toMatchObject({
       "zotlit-color-citation-links": true,
@@ -767,6 +810,7 @@ describe("GraphCitations installation", () => {
     expect(graph.getOptions()).toMatchObject({
       "zotlit-color-citation-links": false,
       "zotlit-citation-popover": false,
+      "zotlit-author-title-labels": false,
     });
     graph.renderer.onNodeHover(
       new MouseEvent("mouseover"),
@@ -2086,6 +2130,7 @@ describe("GraphCitations Filters rows", () => {
       "zotlit-citation-connected-only": false,
       "zotlit-color-citation-links": false,
       "zotlit-citation-popover": false,
+      "zotlit-author-title-labels": false,
     });
   });
 
@@ -2188,6 +2233,7 @@ describe("GraphCitations Filters rows", () => {
       "zotlit-citation-connected-only": false,
       "zotlit-color-citation-links": false,
       "zotlit-citation-popover": false,
+      "zotlit-author-title-labels": false,
     });
     expect(engine.filterOptions.natives).toBe(1);
     expect(engine.renders.at(-1)).toEqual({
@@ -2289,6 +2335,7 @@ describe("GraphCitations Filters rows", () => {
         "zotlit-citation-connected-only": true,
         "zotlit-color-citation-links": false,
         "zotlit-citation-popover": false,
+        "zotlit-author-title-labels": false,
       },
     });
   });
@@ -2401,10 +2448,11 @@ describe("GraphCitations Display row", () => {
     const animate = section.createDiv("setting-item");
     fixture.layoutReady();
     expect(section.lastElementChild).toBe(animate);
-    expect([...section.children].indexOf(arrows)).toBe(2);
+    expect([...section.children].indexOf(arrows)).toBe(3);
     expect(rowNames(engine, engine.displayOptions)).toEqual([
       m.graph_option_color_citation_links_name(),
       m.graph_option_citation_popover_name(),
+      m.graph_option_author_title_labels_name(),
     ]);
   });
 
@@ -2481,6 +2529,7 @@ describe("GraphCitations Display row", () => {
     expect(rowNames(engine, engine.displayOptions)).toEqual([
       m.graph_option_color_citation_links_name(),
       m.graph_option_citation_popover_name(),
+      m.graph_option_author_title_labels_name(),
     ]);
     expect(engine.getOptions()["zotlit-color-citation-links"]).toBe(true);
   });
@@ -2835,6 +2884,7 @@ function presetFixture(
 
 /** What the preset leaves a graph's options at, beside the native keys. */
 const PRESET_ROWS = {
+  "zotlit-author-title-labels": true,
   "zotlit-pandoc-citations": true,
   "zotlit-citation-connected-only": true,
   "zotlit-color-citation-links": true,
@@ -2842,6 +2892,30 @@ const PRESET_ROWS = {
 };
 
 describe("GraphCitations Citation Graph preset", () => {
+  it("keeps a saved citation graph's labels off until the command preset runs", async () => {
+    const fixture = presetFixture({
+      savedGlobal: {
+        "zotlit-pandoc-citations": true,
+        "zotlit-citation-popover": true,
+      },
+    });
+    await using service = fixture.service;
+    await service.ready;
+    fixture.layoutReady();
+
+    expect(fixture.engine.getOptions()).toMatchObject({
+      "zotlit-pandoc-citations": true,
+      "zotlit-citation-popover": true,
+      "zotlit-author-title-labels": false,
+    });
+
+    fixture.apply();
+
+    expect(fixture.engine.getOptions()["zotlit-author-title-labels"]).toBe(
+      true,
+    );
+  });
+
   it("presets the global graph, and adds the literature notes group", async () => {
     const fixture = presetFixture();
     await using service = fixture.service;
@@ -2896,10 +2970,12 @@ describe("GraphCitations Citation Graph preset", () => {
     await service.ready;
     fixture.layoutReady();
     fixture.engine.options.centerStrength = 0.42;
+    fixture.engine.options.textFadeMultiplier = -0.5;
 
     fixture.apply();
 
     expect(fixture.engine.options.centerStrength).toBe(0.42);
+    expect(fixture.engine.options.textFadeMultiplier).toBe(-0.5);
   });
 
   it("leaves the local graph's orphans alone, which its panel has no row for", async () => {
@@ -2942,9 +3018,11 @@ describe("GraphCitations Citation Graph preset", () => {
     await service.ready;
     fixture.layoutReady();
     fixture.apply();
+    const firstOptions = structuredClone(fixture.engine.options);
 
     fixture.apply();
 
+    expect(fixture.engine.options).toEqual(firstOptions);
     expect(fixture.engine.colorGroupOptions.getColoredQueries()).toEqual([
       { query: '["zotero-key"]', color: DEFAULT_COLOR },
     ]);
@@ -2970,5 +3048,377 @@ describe("GraphCitations Citation Graph preset", () => {
     expect(warn.mock.calls[0]![1]).toMatchObject({
       missing: ["engine.setOptions"],
     });
+  });
+});
+
+/** Native text/container lifecycle sufficient to exercise lazy node graphics. */
+class FakeLabelContainer implements GraphTextContainer {
+  updateTransform(): void {}
+  x = 0;
+  y = 0;
+  alpha = 1;
+  visible = true;
+  zIndex = 2;
+  eventMode = "none";
+  parent: GraphTextContainer | null = null;
+  children: GraphTextDisplay[] = [];
+  destroyed = false;
+  scale = {
+    x: 1,
+    y: 1,
+    set(x: number, y = x) {
+      this.x = x;
+      this.y = y;
+    },
+  };
+  addChild(child: GraphTextDisplay): void {
+    this.children.push(child);
+    child.parent = this;
+  }
+  removeChild(child: GraphTextDisplay): void {
+    this.children = this.children.filter((held) => held !== child);
+    child.parent = null;
+  }
+  destroy(options?: { children?: boolean }): void {
+    if (options?.children) for (const child of this.children) child.destroy();
+    this.children = [];
+    this.parent?.removeChild(this);
+    this.destroyed = true;
+  }
+}
+class FakeLabelText extends FakeLabelContainer {
+  anchor = {
+    x: 0,
+    y: 0,
+    set(x: number, y: number) {
+      this.x = x;
+      this.y = y;
+    },
+  };
+  resolution = 1;
+  constructor(
+    public text: string,
+    public style: GraphTextStyle,
+  ) {
+    super();
+  }
+  get width(): number {
+    return Array.from(this.text).reduce(
+      (sum, character) => sum + (character.codePointAt(0)! > 255 ? 20 : 10),
+      0,
+    );
+  }
+  get height(): number {
+    return this.style.fontSize;
+  }
+}
+class FakeLabelNode implements GraphDrawnNode {
+  text: GraphTextDisplay | null = null;
+  hanger = new FakeLabelContainer();
+  constructor(public id: string) {}
+  getTextStyle(): GraphTextStyle {
+    return {
+      fontFamily: "Arial",
+      fontSize: 16,
+      fill: 0x112233,
+      wordWrap: true,
+    };
+  }
+  initGraphics(): boolean {
+    if (this.text) return false;
+    this.text = new FakeLabelText(this.id, this.getTextStyle());
+    this.hanger.addChild(this.text);
+    return true;
+  }
+  clearGraphics(): void {
+    this.text?.destroy();
+    this.text = null;
+  }
+}
+
+function labelLines(node: FakeLabelNode): FakeLabelText[] {
+  return (node.text as FakeLabelContainer).children as FakeLabelText[];
+}
+function installFakeLabelPixi(): Disposable {
+  using cleanup = new DisposableStack();
+  cleanup.defer(() => {
+    vi.unstubAllGlobals();
+    labelReads.mockReset();
+  });
+  vi.stubGlobal("PIXI", { Container: FakeLabelContainer, Text: FakeLabelText });
+  labelReads.mockImplementation((keys: string[]) =>
+    keys.map((key) => ({
+      key,
+      primaryCreatorType: "author",
+      creators: [{ creatorType: "author", lastName: "Doe", firstName: "Jane" }],
+      fields: {
+        itemType: "book",
+        title: "A study of graphs",
+        shortTitle: "Graph study",
+        date: "2024",
+      },
+    })),
+  );
+  return cleanup.move();
+}
+
+describe("Graph Work Labels", () => {
+  it("persists the Display row and restores its default", async () => {
+    const fixture = makePresentationFixture();
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.nodes = () => ({
+      "Literature/Doe 2024.md": graphNode(""),
+      "@pine2023": graphNode("unresolved"),
+      "@roe2025": graphNode("unresolved"),
+      "@typo2024": graphNode("unresolved"),
+      "Other.md": graphNode(""),
+    });
+    fixture.layoutReady();
+    expect(rowNames(engine, engine.displayOptions)).toContain(
+      m.graph_option_author_title_labels_name(),
+    );
+    expect(engine.getOptions()["zotlit-author-title-labels"]).toBe(false);
+    engine.setOptions({ "zotlit-author-title-labels": true });
+    expect(engine.getOptions()["zotlit-author-title-labels"]).toBe(true);
+    engine.displayOptions.setDefaultOptions();
+    expect(engine.getOptions()["zotlit-author-title-labels"]).toBe(false);
+  });
+
+  it("fills only drawn works outside render and covers lazy rebuild, width, refresh, and native restoration", async () => {
+    vi.useFakeTimers();
+    using _pixi = installFakeLabelPixi();
+    const fixture = makePresentationFixture({ labelDatabase: true });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.nodes = () => ({
+      "Literature/Doe 2024.md": graphNode(""),
+      "@pine2023": graphNode("unresolved"),
+      "@roe2025": graphNode("unresolved"),
+      "@typo2024": graphNode("unresolved"),
+      "Other.md": graphNode(""),
+    });
+    fixture.layoutReady();
+    engine.setOptions({ "zotlit-author-title-labels": true });
+    expect(labelReads).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(150);
+    expect(labelReads.mock.calls.map(([keys]) => keys)).toEqual([
+      ["DEE23456"],
+      ["PINE2345g4"],
+    ]);
+    const doe = engine.renderer.nodes.find(
+      (node) => node.id === "Literature/Doe 2024.md",
+    )!;
+    const pine = engine.renderer.nodes.find((node) => node.id === "@pine2023")!;
+    const init = Reflect.get(doe, "initGraphics");
+    doe.initGraphics();
+    pine.initGraphics();
+    expect(labelLines(doe).map((line) => line.text)).toEqual([
+      "Doe 2024",
+      "Graph study",
+    ]);
+    expect(labelLines(pine).map((line) => line.text)).toEqual([
+      "Doe 2024",
+      "Graph study",
+    ]);
+    expect(doe.text).not.toBe(pine.text);
+    expect(labelLines(doe)[1]!.alpha).toBe(0.6);
+    const labelContainer = doe.text as FakeLabelContainer;
+    const titleY = labelLines(doe)[1]!.y;
+    engine.renderer.scale = 0.25;
+    labelContainer.updateTransform();
+    expect(labelLines(doe)[1]!.alpha).toBe(0);
+    expect(labelLines(doe)[1]!.y).toBe(titleY);
+    engine.renderer.highlightNode = doe;
+    labelContainer.updateTransform();
+    expect(labelLines(doe)[1]!.alpha).toBe(0.6);
+    engine.renderer.highlightNode = null;
+    engine.renderer.scale = 2;
+    engine.renderer.fTextShowMult = 0.5;
+    labelContainer.updateTransform();
+    expect(labelLines(doe)[1]!.alpha).toBe(0.3);
+    engine.renderer.fTextShowMult = undefined;
+    labelContainer.updateTransform();
+    expect(labelLines(doe)[1]!.alpha).toBe(0.6);
+    expect(labelLines(doe)[0]!.anchor.y).toBe(0);
+    expect(labelLines(doe)[0]!.style.wordWrap).toBe(false);
+    engine.render();
+    expect(doe).toHaveProperty("initGraphics", init);
+    expect(labelReads).toHaveBeenCalledTimes(2);
+    const oldLines = labelLines(doe);
+    doe.clearGraphics();
+    expect(oldLines.every((line) => line.destroyed)).toBe(true);
+    doe.initGraphics();
+    expect(labelLines(doe)[0]!.text).toBe("Doe 2024");
+    for (const id of ["@roe2025", "@typo2024", "Other.md"]) {
+      const node = engine.renderer.nodes.find(
+        (candidate) => candidate.id === id,
+      )!;
+      node.initGraphics();
+      expect(node.text).toBeInstanceOf(FakeLabelText);
+    }
+    labelReads.mockImplementation((keys: string[]) =>
+      keys.map((key) => ({
+        key,
+        primaryCreatorType: "author",
+        creators: [{ creatorType: "author", lastName: "Lee", firstName: "" }],
+        fields: {
+          itemType: "book",
+          shortTitle: "文献关系图谱研究文献关系图谱研究文献关系图谱研究",
+          date: "2025",
+        },
+      })),
+    );
+    fixture.citationIndex.emit("resolution-changed");
+    await vi.advanceTimersByTimeAsync(150);
+    expect(labelLines(doe)[0]!.text).toBe("Lee 2025");
+    expect(labelLines(doe)[1]!.text).toBe("文献关系图谱研究文献关…");
+    expect(labelLines(doe)[1]!.width).toBeLessThanOrEqual(240);
+    doe.text!.style = { fontFamily: "Arial", fontSize: 20, fill: 0xabcdef };
+    expect(labelLines(doe)[0]!.style.fill).toBe(0xabcdef);
+    const renders = engine.renders.length;
+    engine.displayOptions.optionListeners["zotlit-author-title-labels"]!(false);
+    await vi.advanceTimersByTimeAsync(150);
+    expect(engine.renders.length).toBe(renders + 1);
+    expect(doe.text).toBeInstanceOf(FakeLabelText);
+    expect(doe).toHaveProperty(
+      "initGraphics",
+      Reflect.get(FakeLabelNode.prototype, "initGraphics"),
+    );
+  });
+
+  it("keeps native labels for unreadable items and missing PIXI", async () => {
+    vi.useFakeTimers();
+    using _pixi = installFakeLabelPixi();
+    const fixture = makePresentationFixture({ labelDatabase: true });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.nodes = () => ({
+      "Literature/Doe 2024.md": graphNode(""),
+      "@pine2023": graphNode("unresolved"),
+      "@roe2025": graphNode("unresolved"),
+      "@typo2024": graphNode("unresolved"),
+      "Other.md": graphNode(""),
+    });
+    fixture.layoutReady();
+    labelReads.mockReturnValue([]);
+    engine.setOptions({ "zotlit-author-title-labels": true });
+    await vi.advanceTimersByTimeAsync(150);
+    const node = engine.renderer.nodes.find(
+      (node) => node.id === "Literature/Doe 2024.md",
+    )!;
+    node.initGraphics();
+    expect(node.text).toBeInstanceOf(FakeLabelText);
+    labelReads.mockImplementation((keys: string[]) =>
+      keys.map((key) => ({
+        key,
+        primaryCreatorType: "author",
+        creators: [
+          { creatorType: "author", lastName: "Doe", firstName: "Jane" },
+        ],
+        fields: { itemType: "book", title: "Graph study" },
+      })),
+    );
+    vi.stubGlobal("PIXI", undefined);
+    fixture.citationIndex.emit("changed");
+    await vi.advanceTimersByTimeAsync(150);
+    expect(node.text).toBeInstanceOf(FakeLabelText);
+    expect(warn).toHaveBeenCalledWith(
+      "Graph Work Label graphics failed; left native",
+      expect.objectContaining({ nodeId: node.id }),
+    );
+  });
+
+  it("leaves excluded Library items native", async () => {
+    vi.useFakeTimers();
+    using _pixi = installFakeLabelPixi();
+    const fixture = makePresentationFixture({
+      labelDatabase: true,
+      labelLibraryScope: [],
+    });
+    await using service = fixture.service;
+    await service.ready;
+    const first = fixture.addLeaf("graph");
+    const second = fixture.addLeaf("localgraph");
+    for (const engine of [first, second]) {
+      engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
+    }
+    fixture.layoutReady();
+    for (const engine of [first, second])
+      engine.setOptions({ "zotlit-author-title-labels": true });
+    await vi.advanceTimersByTimeAsync(150);
+    expect(labelReads).not.toHaveBeenCalled();
+    for (const engine of [first, second]) {
+      engine.renderer.nodes[0]!.initGraphics();
+      expect(engine.renderer.nodes[0]!.text).toBeInstanceOf(FakeLabelText);
+    }
+  });
+
+  it("destroys owned sprites and restores native labels once per leaf on unload", async () => {
+    vi.useFakeTimers();
+    using _pixi = installFakeLabelPixi();
+    const fixture = makePresentationFixture({ labelDatabase: true });
+    await using service = fixture.service;
+    await service.ready;
+    const engines = [fixture.addLeaf("graph"), fixture.addLeaf("localgraph")];
+    for (const engine of engines)
+      engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
+    fixture.layoutReady();
+    for (const engine of engines)
+      engine.setOptions({ "zotlit-author-title-labels": true });
+    await vi.advanceTimersByTimeAsync(150);
+    const snapshots = engines.map((engine) => {
+      const node = engine.renderer.nodes[0]!;
+      node.initGraphics();
+      return {
+        engine,
+        node,
+        lines: labelLines(node),
+        renders: engine.renders.length,
+      };
+    });
+    expect(labelReads).toHaveBeenCalledOnce();
+    await service[Symbol.asyncDispose]();
+    for (const { engine, node, lines, renders } of snapshots) {
+      expect(node.text).toBeInstanceOf(FakeLabelText);
+      expect(lines.every((line) => line.destroyed)).toBe(true);
+      expect(engine.renders.length).toBe(renders + 1);
+    }
+  });
+
+  it("restores native text after a failed style update and requests a frame", async () => {
+    vi.useFakeTimers();
+    using _pixi = installFakeLabelPixi();
+    const fixture = makePresentationFixture({ labelDatabase: true });
+    await using service = fixture.service;
+    await service.ready;
+    const engine = fixture.addLeaf("graph");
+    engine.nodes = () => ({ "Literature/Doe 2024.md": graphNode("") });
+    fixture.layoutReady();
+    engine.setOptions({ "zotlit-author-title-labels": true });
+    await vi.advanceTimersByTimeAsync(150);
+    const node = engine.renderer.nodes[0]!;
+    node.initGraphics();
+    const container = node.text;
+    const lines = labelLines(node);
+    Object.defineProperty(lines[0], "width", {
+      get: () => {
+        throw new Error("font measurement failed");
+      },
+    });
+    engine.renderer.pending = false;
+    node.text!.style = { fontFamily: "Arial", fontSize: 22, fill: 0xffffff };
+    expect(node.text).toBe(container);
+    await Promise.resolve();
+    expect(node.text).toBeInstanceOf(FakeLabelText);
+    expect(lines.every((line) => line.destroyed)).toBe(true);
+    expect(engine.renderer.pending).toBe(true);
+    expect(warn).toHaveBeenCalledWith(
+      "Graph Work Label style refresh failed; restoring native text",
+      expect.objectContaining({ nodeId: node.id }),
+    );
   });
 });

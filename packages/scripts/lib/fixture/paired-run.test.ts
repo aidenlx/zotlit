@@ -4,6 +4,7 @@ import { getFixtureLayout } from "./layout.ts";
 import {
   createNodePairedRunPorts,
   findPairedZoteroProcesses,
+  findWindowsPairedZoteroProcesses,
 } from "./paired-run-node.ts";
 import type {
   DevelopmentSession,
@@ -15,7 +16,7 @@ import { runPairedRun } from "./paired-run.ts";
 function testPorts(overrides: Partial<PairedRunPorts> = {}): PairedRunPorts {
   return {
     assertObsidianHost: async () => {},
-    assertFixtureIdle: async () => {},
+    stopLivePairedZotero: async () => {},
     allocateLiveUpdatePort: async () => 51_234,
     allocateZoteroHttpPort: async () => 52_234,
     prepareDevelopmentVault: async () => ({
@@ -58,14 +59,46 @@ describe("Paired Run", () => {
       findPairedZoteroProcesses(
         "p16893\ncObsidian Helper (Renderer)\np27078\nczotero\n",
       ),
-    ).toEqual(["zotero (pid 27078)"]);
+    ).toEqual([{ command: "zotero", pid: 27_078 }]);
   });
 
-  it("refuses an active Paired Zotero before changing the Fixture", async () => {
+  it("reads the process id the Windows Fixture scan reports", () => {
+    expect(findWindowsPairedZoteroProcesses("27078 zotero.exe\n\n")).toEqual([
+      { command: "zotero.exe", pid: 27_078 },
+    ]);
+  });
+
+  it("closes a live Paired Zotero before it changes the Fixture", async () => {
+    const calls: string[] = [];
+    const ports = testPorts({
+      stopLivePairedZotero: async () => {
+        calls.push("stop");
+      },
+      prepareDevelopmentVault: async () => {
+        calls.push("prepare");
+        return {
+          id: "fixture-vault-test-fixture",
+          path: "/workspace/tests/fixture-vault-test-fixture",
+        };
+      },
+      openPairedZotero: async () => {
+        calls.push("open");
+        return { applicationDir: "/Applications/Zotero.app", pid: 804 };
+      },
+    });
+
+    await runPairedRun({ mode: "open", scopeCase: "all", purge: false }, ports);
+
+    expect(calls).toEqual(["stop", "prepare", "open"]);
+  });
+
+  it("keeps the Fixture unchanged when a live Paired Zotero stays open", async () => {
     let changedFixture = false;
     const ports = testPorts({
-      assertFixtureIdle: async () => {
-        throw new Error("Paired Zotero is using zotero.sqlite");
+      stopLivePairedZotero: async () => {
+        throw new Error(
+          "the Fixture database stays open by zotero (pid 27078)",
+        );
       },
       prepareDevelopmentVault: async () => {
         changedFixture = true;
@@ -75,7 +108,7 @@ describe("Paired Run", () => {
 
     await expect(
       runPairedRun({ mode: "open", scopeCase: "all", purge: false }, ports),
-    ).rejects.toThrow("Paired Zotero is using zotero.sqlite");
+    ).rejects.toThrow("the Fixture database stays open by zotero (pid 27078)");
     expect(changedFixture).toBe(false);
   });
 

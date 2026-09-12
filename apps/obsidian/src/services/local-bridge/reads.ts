@@ -102,11 +102,15 @@ export function createLocalBridgeReads(
   deps: LocalBridgeReadDeps,
 ): LocalBridgeReads {
   return {
-    templateSchema: () => ({
-      note: noteSchema,
-      annotation: annotationSchema,
-      filename: filenameSchema,
-    }),
+    templateSchema: () => {
+      if (!__WEB_WORKBENCH_ENABLED__)
+        throw new Error("Web Workbench support is disabled.");
+      return {
+        note: noteSchema,
+        annotation: annotationSchema,
+        filename: filenameSchema,
+      };
+    },
 
     async selectedItem(item) {
       await Promise.all([deps.noteIndex.whenIndexed(), deps.zoteroPref.ready]);

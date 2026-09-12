@@ -145,7 +145,8 @@ interface CitationIndexEvents {
   /** The vault-wide backfill finished; the index covers every Markdown file. */
   backfilled: () => void;
   /**
-   * The citation-key resolution snapshot was rebuilt and now answers differently.
+   * The citation-key resolution snapshot was refreshed successfully. Item metadata
+   * can change while keys stay equal, so every work surface refreshes its data.
    * Vault-wide, unlike `changed`: every surface that resolves a citekey redraws.
    */
   "resolution-changed": () => void;
@@ -615,11 +616,6 @@ export class CitationIndex extends Service<void> {
       this.#libraryScope.on("changed", () => this.#invalidateSnapshot()),
     );
     stack.defer(
-      this.#snapshots.on("changed", () =>
-        this.#emitter.emit("resolution-changed"),
-      ),
-    );
-    stack.defer(
       this.#snapshots.on("settled", (_key, snapshot) => {
         // A no-value settlement leaves the public resolution pending. Waking a
         // reverse observer would make its next ask repeat the failed read.
@@ -630,6 +626,8 @@ export class CitationIndex extends Service<void> {
           );
           return;
         }
+        if (snapshot.status === "fresh")
+          this.#emitter.emit("resolution-changed");
         this.#emitter.emit("cited-by-invalidated");
       }),
     );

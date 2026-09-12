@@ -1,11 +1,10 @@
 // The web's binding of the Workbench UI host adapter: Base UI for the menu,
-// the dialog, the confirmation, and the hover card; the searchable picker the
+// the dialog and the confirmation; the searchable picker the
 // paper choice already uses for the suggester; the browser's own tooltip; the
 // status line for a notice; the page's own renderer; the Item Snapshot's names
 // for a match; and browser storage for a preference.
 
 import { Menu as MenuPrimitive } from "@base-ui/react/menu";
-import { PreviewCard } from "@base-ui/react/preview-card";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -15,7 +14,6 @@ import type {
   WorkbenchConfirmRequest,
   WorkbenchDialogRequest,
   WorkbenchHost,
-  WorkbenchHoverCardRequest,
   WorkbenchInsertTarget,
   WorkbenchMenuRequest,
   WorkbenchSuggesterRequest,
@@ -121,9 +119,6 @@ export function useWebHost({
     WorkbenchSuggesterRequest,
     string | null
   > | null>(null);
-  const [hoverCard, setHoverCard] = useState<WorkbenchHoverCardRequest | null>(
-    null,
-  );
   const search = useRef<HTMLInputElement>(null);
   // Handlers read the latest values through refs, so the host object itself
   // stays the same across renders.
@@ -147,10 +142,6 @@ export function useWebHost({
       suggester: (request) =>
         new Promise((answer) => setSuggester({ request, answer })),
       tooltip: (text) => ({ title: text }),
-      hoverCard(request) {
-        setHoverCard(request);
-        return { close: () => setHoverCard(null) };
-      },
       notice: (text) => latest.current.notice(text),
       render: renderInThread,
       markdown: ResultSheet,
@@ -368,38 +359,6 @@ export function useWebHost({
           </DialogContent>
         )}
       </Dialog>
-      <PreviewCard.Root
-        open={hoverCard !== null}
-        onOpenChange={(open) => {
-          if (!open) setHoverCard(null);
-        }}
-      >
-        {hoverCard && (
-          <PreviewCard.Portal>
-            <PreviewCard.Positioner
-              anchor={
-                hoverCard.anchor instanceof DOMRect
-                  ? { getBoundingClientRect: () => hoverCard.anchor as DOMRect }
-                  : hoverCard.anchor
-              }
-              side="top"
-              align="start"
-              sideOffset={6}
-              collisionPadding={16}
-              className="z-50"
-            >
-              <PreviewCard.Popup
-                data-slot="hover-card-content"
-                className="max-h-(--available-height) w-80 max-w-[calc(100vw-2rem)] space-y-2 overflow-y-auto overscroll-contain rounded-lg bg-fd-popover p-3 text-xs leading-normal break-words text-fd-popover-foreground shadow-lg ring-1 ring-fd-border"
-              >
-                <WorkbenchMessagesProvider messages={m}>
-                  {hoverCard.content}
-                </WorkbenchMessagesProvider>
-              </PreviewCard.Popup>
-            </PreviewCard.Positioner>
-          </PreviewCard.Portal>
-        )}
-      </PreviewCard.Root>
     </>
   );
 
