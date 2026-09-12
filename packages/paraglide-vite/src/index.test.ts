@@ -60,7 +60,7 @@ test("generates before framework configuration and updates messages through Vite
   const server = await createServer({
     root,
     configFile: false,
-    server: { middlewareMode: true, hmr: false },
+    server: { middlewareMode: true, ws: false },
     plugins: [
       paraglideVitePlugin({
         project: join(root, "project.inlang"),
@@ -105,7 +105,7 @@ test("keeps compiler output caches separate for two plugin instances", async () 
     const server = await createServer({
       root,
       configFile: false,
-      server: { middlewareMode: true, hmr: false },
+      server: { middlewareMode: true, ws: false },
       plugins: [
         paraglideVitePlugin({
           project: join(root, "project.inlang"),
@@ -130,7 +130,7 @@ test("preserves unchanged outputs across starts and repairs removed output files
     return createServer({
       root,
       configFile: false,
-      server: { middlewareMode: true, hmr: false },
+      server: { middlewareMode: true, ws: false },
       plugins: [
         paraglideVitePlugin({
           project: join(root, "project.inlang"),

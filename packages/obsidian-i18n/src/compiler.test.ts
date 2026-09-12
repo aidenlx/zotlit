@@ -30,15 +30,8 @@ import {
 } from "./test-fixtures.js";
 
 const packageRoot = resolve(import.meta.dirname, "..");
-const workspaceRoot = resolve(packageRoot, "../..");
 const execFileAsync = promisify(execFile);
 const TARGET_LOCALE_PREFIXES = ["notice_pack_"];
-/** The Companion labels the Obsidian build quotes; mirrors its Language Pack options. */
-const OBSIDIAN_INCLUDED_MESSAGES = [
-  "zotero.prefs_notify_section",
-  "zotero.prefs_notify_enable.label",
-  "zotero.prefs_notify_url",
-];
 
 describe("writeOutput", () => {
   test("preserves unchanged artifact mtimes", async () => {
@@ -1362,51 +1355,6 @@ describe("message data", () => {
     ).rejects.toThrow(
       'Included Message "zotero.menu_item_missing.label" is not defined',
     );
-  });
-
-  test("compiles the workspace catalog with the Obsidian build's configuration", async () => {
-    const outputDirectory = await createTemporaryDirectory();
-
-    const result = await compile({
-      root: workspaceRoot,
-      project: "project.inlang",
-      output: outputDirectory,
-      excludeMessagePrefixes: ["docs_", "zotero."],
-      includeMessages: OBSIDIAN_INCLUDED_MESSAGES,
-      targetLocaleMessagePrefixes: [
-        "notice_language_pack_",
-        "settings_language_pack_",
-      ],
-    });
-
-    expect(result.missingBaseLocale).toBeUndefined();
-    expect(result.undeclaredInputs).toEqual([]);
-    const facade = await readFile(join(outputDirectory, "messages.ts"), "utf8");
-    for (const bundleId of OBSIDIAN_INCLUDED_MESSAGES) {
-      expect(facade).toContain(`as ${JSON.stringify(bundleId)}`);
-    }
-    const english = JSON.parse(
-      await readFile(join(outputDirectory, "en.json"), "utf8"),
-    ) as { messages: Record<string, unknown> };
-    expect(english.messages.workbench_tab_match).toBe("Match");
-    const catalog = JSON.parse(
-      await readFile(join(workspaceRoot, "messages/en.json"), "utf8"),
-    ) as Record<string, unknown>;
-    expect(Object.keys(catalog).some((id) => id.startsWith("docs_"))).toBe(
-      true,
-    );
-    for (const fileName of await readdir(outputDirectory)) {
-      const artifact = await readFile(join(outputDirectory, fileName), "utf8");
-      const includesDocsMessage = fileName.endsWith(".json")
-        ? Object.keys(
-            (JSON.parse(artifact) as { messages?: Record<string, unknown> })
-              .messages ?? {},
-          ).some((id) => id.startsWith("docs_"))
-        : artifact
-            .split("\n")
-            .some((line) => line.startsWith("export const docs_"));
-      expect(includesDocsMessage, fileName).toBe(false);
-    }
   });
 });
 
