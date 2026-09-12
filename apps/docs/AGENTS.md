@@ -25,7 +25,7 @@ Run `build` / `test` / `lint` via turbo (see root AGENTS.md → Commands). Packa
 - `pnpm --filter @zotlit/docs deploy:beta` — the same for Pre-release Docs. `CLOUDFLARE_ENV` picks the Cloudflare environment at build time, so the beta build has to be its own; a build made without it carries the production line's variables whatever `wrangler deploy --env` says.
 - `pnpm --filter @zotlit/docs cf-typegen` — regenerate the committed `worker-configuration.d.ts` from `wrangler.jsonc`. Both TypeScript configurations consume it; run this command after a Worker binding, variable, secret, compatibility date, or compatibility flag changes. The typecheck verifies that the generated file is current.
 - The stock Fumadocs Vite plugin compiles the macros in `src/lib/collections.ts`; collection entry files are disabled with `index: false`. Keep compile-time imports inside macro arguments so the transform removes them from app modules.
-- The Paraglide Vite plugin generates the site's typed message facade, including `workbench_*`, during dev and build. Turbo typecheck, lint, and test tasks depend on the real site build; its cached output restores `src/paraglide/` for checks.
+- The Paraglide Vite plugin generates the site's typed message facade, including `workbench_*`, during dev. Build, typecheck, lint, and test use the cached `generate:messages` task, and the Vite build verifies the same output through the same compiler options.
 - `pnpm exec turbo run generate:template-data --filter=@zotlit/docs` — regenerate the template-data reference page.
 
 ## Content pipeline

@@ -11,6 +11,7 @@ import type { Plugin } from "vite";
 
 import { paraglideVitePlugin } from "@zotlit/paraglide-vite";
 
+import { paraglideOptions } from "./paraglide.config.js";
 import { agentSkillAssets } from "./src/lib/agent-skills.js";
 import { renderHeadersFile } from "./src/lib/headers.js";
 import { createOgCardRenderer } from "./src/lib/og-card.js";
@@ -197,13 +198,10 @@ export default defineConfig(({ command }) => ({
   plugins: [
     fumadocsServerOnWorker(),
     paraglideVitePlugin({
-      project: "../../project.inlang",
-      outdir: "./src/paraglide",
+      ...paraglideOptions,
       // Group messages in dev to avoid one HTTP request per message.
       outputStructure:
         command === "serve" ? "locale-modules" : "message-modules",
-      strategy: ["baseLocale"],
-      emitTsDeclarations: true,
     }),
     devtools(),
     tailwindcss(),
