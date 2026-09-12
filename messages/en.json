@@ -985,7 +985,7 @@
   "template_workbench_preference_web": "Web Workbench",
   "template_workbench_web_open": "Start in the web Workbench",
   "template_workbench_name": "Template workbench view",
-  "template_workbench_open": "Edit in template workbench",
+  "template_workbench_open": "Switch to template workbench view",
   "template_workbench_open_layout": "Open template workbench",
   "template_workbench_title_profile": "{label} · Profile",
   "template_workbench_title_citation": "Citation text",
