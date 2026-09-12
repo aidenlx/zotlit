@@ -234,7 +234,9 @@ Paired Zotero and leaves the Development Vault window open:
   pnpm fixture dev
 
 The host-vault check must succeed before the dev command starts.
-Close an existing Paired Zotero before either command rebuilds the Fixture.
+Either command closes a Paired Zotero that still holds this Fixture, then
+rebuilds and starts a fresh one. It waits for that instance to release the
+database, and reports the process it closed.
 
 Fixture builds and Paired Zotero launches install Better BibTeX ${PINNED_BETTER_BIBTEX_VERSION} from its
 verified, cached XPI.
