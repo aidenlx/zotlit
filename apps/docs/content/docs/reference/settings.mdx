@@ -77,31 +77,6 @@ The template document is their editor. While the Profile uses the built-in templ
 
 See [Configure frontmatter properties](/docs/how-to/configure-frontmatter-properties) for what each field does.
 
-### Partials [#partials]
-
-The <UiLabel name={m.settings_partials_heading()} /> list holds every partial in the vault. A partial is a piece of template text that any template renders by name, so several Profiles can share it. The list sits between the template document rows and the <UiLabel name={m.settings_imported_notes_heading()} /> group, and it covers the whole vault rather than one Profile.
-
-Until you add one, the list reads <UiLabel name={m.settings_partials_empty_desc()} /> Its header carries one action, <UiLabel name={m.settings_partial_add()} />, which asks for a name and creates the file.
-
-Each partial has one row with its name and its vault path:
-
-| Action                                                                                         | Effect                                                                     |
-| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| <UiLabel name={m.settings_partial_open()} />                                                   | Opens the partial in the Template Workbench View.                          |
-| <UiLabel name={m.workbench_more_actions()} /> > <UiLabel name={m.settings_partial_delete()} /> | Moves the partial's file to Obsidian's configured trash after you confirm. |
-
-The delete confirmation reads <UiLabel name={m.settings_partial_delete_confirm_title()} /> with the body <UiLabel name={m.settings_partial_delete_confirm_body({ path: "…" })} /> It rewrites no caller, so every template that calls the deleted partial reports a missing partial afterwards.
-
-Renaming a partial is an ordinary Obsidian file rename. ZotLit has no rename action and rewrites no call, so each caller reports a missing partial until you change the name in the call yourself.
-
-A partial file whose name belongs to another ZotLit template registers nothing and gets its own row instead:
-
-| Row                                                   | Text                                                                          |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------- |
-| <UiLabel name={m.settings_partial_reserved_name()} /> | <UiLabel name={m.settings_partial_reserved_desc({ path: "…", name: "…" })} /> |
-
-See [Template Document naming](/docs/reference/templates/syntax#template-document-naming) for the reserved names and the filename rule.
-
 ### Imported notes [#imported-notes]
 
 Settings for notes imported from Zotero, under the <UiLabel name={m.settings_imported_notes_heading()} /> heading.
@@ -152,6 +127,31 @@ Each row offers these actions:
 A new Profile starts with the default Profile's template. Its own document can set a folder, citation style, appearance, or Profile Match.
 
 Each Profile is edited in its own document. Deleting a Profile that notes still use asks where those notes go first.
+
+### Partials [#partials]
+
+The <UiLabel name={m.settings_partials_heading()} /> list at <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} /> holds every partial in the vault. A partial is a piece of template text that any template renders by name, so several Profiles can share it. The list sits below the Profile list, and it covers the whole vault rather than one Profile.
+
+Until you add one, the list reads <UiLabel name={m.settings_partials_empty_desc()} /> Its header carries one action, <UiLabel name={m.settings_partial_add()} />, which asks for a name and creates the file.
+
+Each partial has one row with its name and its vault path:
+
+| Action                                                                                         | Effect                                                                     |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| <UiLabel name={m.settings_partial_open()} />                                                   | Opens the partial in the Template Workbench View.                          |
+| <UiLabel name={m.workbench_more_actions()} /> > <UiLabel name={m.settings_partial_delete()} /> | Moves the partial's file to Obsidian's configured trash after you confirm. |
+
+The delete confirmation reads <UiLabel name={m.settings_partial_delete_confirm_title()} /> with the body <UiLabel name={m.settings_partial_delete_confirm_body({ path: "…" })} /> It rewrites no caller, so every template that calls the deleted partial reports a missing partial afterwards.
+
+Renaming a partial is an ordinary Obsidian file rename. ZotLit has no rename action and rewrites no call, so each caller reports a missing partial until you change the name in the call yourself.
+
+A partial file whose name belongs to another ZotLit template registers nothing and gets its own row instead:
+
+| Row                                                   | Text                                                                          |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------- |
+| <UiLabel name={m.settings_partial_reserved_name()} /> | <UiLabel name={m.settings_partial_reserved_desc({ path: "…", name: "…" })} /> |
+
+See [Template Document naming](/docs/reference/templates/syntax#template-document-naming) for the reserved names and the filename rule.
 
 ### Profile Match [#profile-match]
 

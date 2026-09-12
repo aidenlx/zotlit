@@ -367,7 +367,7 @@
   "settings_note_add_setup_desc": "Use a different folder or citation style for some literature notes.",
   "settings_profile_new_label": "New profile",
   "settings_page_profiles": "Literature note profiles",
-  "settings_page_profiles_desc": "Use a different folder, citation style, or look for some notes.",
+  "settings_page_profiles_desc": "Use a different template, folder, or citation style for some notes, and share template text between them.",
   "settings_page_zotero": "Zotero",
   "settings_page_zotero_desc": "Connect ZotLit to Zotero, choose libraries, and receive live updates.",
   "settings_page_advanced": "Advanced",

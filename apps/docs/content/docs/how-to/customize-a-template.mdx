@@ -120,7 +120,7 @@ A **partial** is a template document that any other template renders by name. Wr
 
 Three ways, all of which name the file for you:
 
-- Open <SettingsPath /> and select <UiLabel name={m.settings_partial_add()} /> under the <UiLabel name={m.settings_partials_heading()} /> heading.
+- Open <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} /> and select <UiLabel name={m.settings_partial_add()} />.
 - Type `{% render "` or `{% include "` in a Liquid template, or `include("` in an Eta one. The completion lists every partial in your vault and ends with <UiLabel name={m.workbench_partial_new()} />. The new document opens in a split beside what you were editing.
 - Select some template text, right-click it, and choose <UiLabel name={m.template_workbench_extract_partial()} />. ZotLit moves the selection into the new document, leaves the matching call behind, and opens the new document in a split. In the template you extracted from, that is one undo step.
 
@@ -158,7 +158,7 @@ A partial has no data of its own, so its own editor asks you which caller to ren
 
 Renaming is an ordinary Obsidian file rename. ZotLit has no rename action and rewrites no calls, so every template that called the old name then reports a missing partial on its placeholder, with <UiLabel name={m.workbench_partial_create()} /> and <UiLabel name={m.workbench_partial_pick()} /> to fix that one call.
 
-To delete, open the partial's row under <UiLabel name={m.settings_partials_heading()} /> at <SettingsPath />, open its <UiLabel name={m.workbench_more_actions()} /> menu, and select <UiLabel name={m.settings_partial_delete()} />. ZotLit moves the file to Obsidian's configured trash and rewrites no callers.
+To delete, open the partial's row at <SettingsPath page={m.settings_page_profiles()} setting={m.settings_partials_heading()} />, open its <UiLabel name={m.workbench_more_actions()} /> menu, and select <UiLabel name={m.settings_partial_delete()} />. ZotLit moves the file to Obsidian's configured trash and rewrites no callers.
 
 A note that ZotLit writes through a template calling a partial your vault no longer holds is not written at all. ZotLit says which partial is missing and offers <UiLabel name={m.template_workbench_open_layout()} /> to open the document holding the failing call.
 
