@@ -2,6 +2,9 @@ packages:
   - apps/*
   - packages/*
 
+patchedDependencies:
+  "@codemirror/lang-liquid@6.3.2": patches/@codemirror__lang-liquid@6.3.2.patch
+
 allowBuilds:
   agent-browser: false
   core-js: false

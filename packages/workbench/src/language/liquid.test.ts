@@ -8,6 +8,14 @@ function nodeNames(source: string, from = 0, to = source.length): string[] {
 }
 
 describe("liquidTemplate grammar", () => {
+  it("keeps markup as plain text around Liquid syntax", () => {
+    const source = "<b>{{ zt.title }}</b>";
+    const tree = liquidTemplate.language.parser.parse(source);
+
+    expect(tree.resolveInner(1, 1).name).toBe("Text");
+    expect(tree.resolveInner(7, 1).name).toBe("VariableName");
+  });
+
   it("parses an output with a filter chain inside Markdown", () => {
     const source = "# {{ zt.title | upcase }}";
     expect(nodeNames(source)).toEqual([

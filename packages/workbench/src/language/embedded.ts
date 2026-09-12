@@ -1,4 +1,4 @@
-import { liquidLanguage } from "@codemirror/lang-liquid";
+import { liquidTagLanguage } from "@codemirror/lang-liquid";
 import { yamlFrontmatter } from "@codemirror/lang-yaml";
 // Embedded Liquid values retain their own token colors inside YAML manifest scalars.
 import type { Range } from "@codemirror/state";
@@ -32,7 +32,7 @@ export function embeddedLiquid(
         source.slice(region.from, region.to) +
         (region.expression ? " }}" : "");
       highlightTree(
-        liquidLanguage.parser.parse(text),
+        liquidTagLanguage.parser.parse(text),
         templateHighlighter,
         (from, to, classes) => {
           const start = Math.max(
