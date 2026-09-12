@@ -9,6 +9,7 @@ import type {
 import { describe, expect, it, vi } from "vitest";
 
 import { highlightEmoji } from "@/lib/highlight-mapping";
+import * as m from "@/lib/i18n/generated/messages";
 import { defaults } from "@/services/settings/schema";
 import type { Settings } from "@/services/settings/schema";
 
@@ -71,7 +72,8 @@ describe("highlight mapping page", () => {
       });
     setEnabled(true);
 
-    const dropdown = render(row("Blue")).components[0] as DropdownComponent;
+    const dropdown = render(row(m.annot_view_color_blue()))
+      .components[0] as DropdownComponent;
     expect(dropdown.getValue()).toBe("🔵");
     expect(dropdown.options.map(({ value }) => value)).toEqual([
       "mark",
@@ -87,15 +89,23 @@ describe("highlight mapping page", () => {
     setEnabled(false);
     setEnabled(true);
     expect(
-      (render(row("Blue")).components[0] as DropdownComponent).getValue(),
+      (
+        render(row(m.annot_view_color_blue()))
+          .components[0] as DropdownComponent
+      ).getValue(),
     ).toBe("mark");
     expect(ctx.requestUpdate).toHaveBeenCalledOnce();
   });
 
   it("shows custom input, validates it, and preserves it across output changes", () => {
     const { ctx, row } = setup();
-    const dropdown = render(row("Blue")).components[0] as DropdownComponent;
-    const inputRow = row("Blue custom emoji");
+    const dropdown = render(row(m.annot_view_color_blue()))
+      .components[0] as DropdownComponent;
+    const inputRow = row(
+      m.settings_note_import_custom_emoji_name({
+        color: m.annot_view_color_blue(),
+      }),
+    );
     expect(visible(inputRow)).toBe(false);
     dropdown.choose("custom");
     expect(visible(inputRow)).toBe(true);
