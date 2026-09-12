@@ -65,8 +65,6 @@ function vaultWith(
   } as unknown as App["vault"];
 }
 
-const flush = () => new Promise((resolve) => setTimeout(resolve));
-
 /** The configured Literature Note template folder in the fixture settings. */
 const CONFIGURED_TEMPLATE_FOLDER = "templates";
 
@@ -104,7 +102,7 @@ async function runCheck(opts: {
 }> {
   const update = vi.fn();
   const openWelcomeView = vi.fn();
-  let layoutReady: (() => void) | undefined;
+  let layoutReady: (() => void | Promise<void>) | undefined;
   const settings = {
     loaded: Promise.resolve({
       "release.previous-version": opts.recordedVersion ?? null,
@@ -117,7 +115,7 @@ async function runCheck(opts: {
   } as unknown as SettingsService;
   const app = {
     workspace: {
-      onLayoutReady: (cb: () => void) => {
+      onLayoutReady: (cb: () => void | Promise<void>) => {
         layoutReady = cb;
       },
     },
@@ -132,8 +130,7 @@ async function runCheck(opts: {
     openWelcomeView,
   });
   await service.ready;
-  layoutReady?.();
-  await flush();
+  await layoutReady?.();
   return { update, openWelcomeView };
 }
 

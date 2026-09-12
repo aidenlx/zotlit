@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createObsidianHostReadiness } from "./obsidian-host-readiness.ts";
 
 describe("Obsidian host readiness", () => {
+  afterEach(() => vi.useRealTimers());
+
   it("reports recovery instructions when Obsidian is stopped", async () => {
     const check = createObsidianHostReadiness(
       {
@@ -121,6 +123,7 @@ describe("Obsidian host readiness", () => {
   });
 
   it("times out when an open selected vault does not answer its probe", async () => {
+    vi.useFakeTimers();
     let calls = 0;
     const check = createObsidianHostReadiness(
       {
@@ -143,13 +146,17 @@ describe("Obsidian host readiness", () => {
       },
     );
 
-    await expect(check()).rejects.toThrow(
-      "No live Obsidian vault answered within 10 milliseconds.",
-    );
+    await Promise.all([
+      expect(check()).rejects.toThrow(
+        "No live Obsidian vault answered within 10 milliseconds.",
+      ),
+      vi.advanceTimersByTimeAsync(10),
+    ]);
     expect(calls).toBe(3);
   });
 
   it("stops a nonresponsive CLI probe at the configured timeout", async () => {
+    vi.useFakeTimers();
     const check = createObsidianHostReadiness(
       {
         pathExists: async () => false,
@@ -159,14 +166,11 @@ describe("Obsidian host readiness", () => {
       { environment: {}, timeoutMs: 10 },
     );
 
-    const result = Promise.race([
-      check(),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("probe hung")), 100),
+    await Promise.all([
+      expect(check()).rejects.toThrow(
+        "No live Obsidian vault answered within 10 milliseconds.",
       ),
+      vi.advanceTimersByTimeAsync(10),
     ]);
-    await expect(result).rejects.toThrow(
-      "No live Obsidian vault answered within 10 milliseconds.",
-    );
   });
 });

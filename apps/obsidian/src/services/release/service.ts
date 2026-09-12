@@ -63,9 +63,7 @@ export class ReleaseService extends Service<void> {
     });
     // The launch check needs settings loaded and the workspace ready to open
     // leaves; `ready` settles now, the check runs after layout is ready.
-    this.#app.workspace.onLayoutReady(() => {
-      void this.#runCheck();
-    });
+    this.#app.workspace.onLayoutReady(() => this.#runCheck());
     this.commit(stack.move());
   }
 

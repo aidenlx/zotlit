@@ -1,9 +1,9 @@
 import { zipSync } from "fflate";
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import { resolvePandocEnginePin } from "./pandoc-engine.ts";
 
@@ -17,6 +17,7 @@ function sha256Hex(bytes: Uint8Array): string {
 /** Writes the layout `resolvePandocEnginePin` reads an installed package as. */
 async function installedPackage() {
   const packageDir = await mkdtemp(join(tmpdir(), "zotlit-pandoc-wasm-"));
+  onTestFinished(() => rm(packageDir, { recursive: true, force: true }));
   await mkdir(join(packageDir, "src"));
   await writeFile(join(packageDir, "pandoc-version.txt"), `${VERSION}\n`);
   await writeFile(join(packageDir, "src", "pandoc.wasm"), BINARY);
@@ -76,7 +77,8 @@ describe("resolvePandocEnginePin", () => {
     ).resolves.toEqual({
       version: VERSION,
       url: ASSET_URL,
-      sha256: sha256Hex(BINARY),
+      sha256:
+        "519be700975f67c0706c4c142e01d421e2b834a44368a8e9bc4d11dbe6d7866f",
     });
   });
 

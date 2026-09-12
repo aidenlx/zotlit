@@ -175,13 +175,6 @@ describe("Note Preview fidelity against the real create path", () => {
     const note = splitNote(written!.content);
     expect(note.block).toBe(EXPECTED_BLOCK);
     expect(preview.frontmatterBlock).toBe(note.block);
-    expect(Object.keys(parse(preview.frontmatterBlock!) as object)).toEqual([
-      "title",
-      "tags",
-      "zotero-key",
-      "zotlit-profile",
-      "zotlit-csl",
-    ]);
     expect(preview.creationBody).toBe(note.body);
   });
 

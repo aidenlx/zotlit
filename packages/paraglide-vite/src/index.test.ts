@@ -60,7 +60,7 @@ test("generates before framework configuration and updates messages through Vite
   const server = await createServer({
     root,
     configFile: false,
-    server: { middlewareMode: true },
+    server: { middlewareMode: true, hmr: false },
     plugins: [
       paraglideVitePlugin({
         project: join(root, "project.inlang"),
@@ -86,6 +86,8 @@ test("generates before framework configuration and updates messages through Vite
     join(root, "en.json"),
     JSON.stringify({ greeting: "Second greeting", stable: "Unchanged" }),
   );
+  // Vite has registered its watched paths; deliver the fixture change explicitly.
+  server.watcher.emit("change", join(root, "en.json"));
   await expect
     .poll(async () => readFile(file, "utf8"), { timeout: 5000 })
     .toContain("Second greeting");
@@ -103,7 +105,7 @@ test("keeps compiler output caches separate for two plugin instances", async () 
     const server = await createServer({
       root,
       configFile: false,
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       plugins: [
         paraglideVitePlugin({
           project: join(root, "project.inlang"),
@@ -128,7 +130,7 @@ test("preserves unchanged outputs across starts and repairs removed output files
     return createServer({
       root,
       configFile: false,
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       plugins: [
         paraglideVitePlugin({
           project: join(root, "project.inlang"),

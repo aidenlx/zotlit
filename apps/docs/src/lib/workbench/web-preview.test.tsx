@@ -225,7 +225,7 @@ describe("preview scheduling", () => {
   });
 
   it("passes create and update inputs while preserving the synthesized note's outside text", async () => {
-    using page = open();
+    await using page = await open();
     editNote(page.host, "My own introduction\n");
     await act(async () => vi.advanceTimersByTimeAsync(300));
     expect(renderInThread.mock.lastCall![0].mode).toBe("create");
