@@ -34,14 +34,14 @@ const execFileAsync = promisify(execFile);
  * fixes both the managed install and the schema era the Fixture targets.
  */
 export const PINNED_ZOTERO_VERSION = "10.0";
-export const PINNED_BETTER_BIBTEX_VERSION = "9.0.55";
+export const PINNED_BETTER_BIBTEX_VERSION = "9.0.64";
 
 export const ZOTERO_APP_ENV = "ZOTERO_APP";
 
 const DOWNLOAD_ROOT = `https://download.zotero.org/client/release/${PINNED_ZOTERO_VERSION}`;
 const BETTER_BIBTEX_ADDON_ID = "better-bibtex@iris-advies.com";
 const BETTER_BIBTEX_SHA256 =
-  "2d914ebb174c2c590ecff741a6903f1979065b42740f301d938ec2cb6c03e4d6";
+  "84c4b5b05ffac9a9c7e2ff79663612486f7781690dd59b12a1e62aecdcfa7c27";
 const BETTER_BIBTEX_ARCHIVE = `zotero-better-bibtex-${PINNED_BETTER_BIBTEX_VERSION}.xpi`;
 const BETTER_BIBTEX_DOWNLOAD_URL = `https://github.com/retorquere/zotero-better-bibtex/releases/download/v${PINNED_BETTER_BIBTEX_VERSION}/${BETTER_BIBTEX_ARCHIVE}`;
 
